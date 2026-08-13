@@ -370,7 +370,7 @@ def serve() -> int:
 USAGE = """\
 cadgen-daemon takes no arguments.
 
-It is the warm-process server, started for you by cadgen_daemon.client when
+It is the warm-process server, started for you by cadgen.daemon.client when
 CADGEN_WARM=1 -- not a command to run by hand. It sits in scripts/ beside the
 CLIs you probably meant: scripts/gen, scripts/export, scripts/inspect,
 scripts/artifact, scripts/snapshot. Each of those takes --help.\

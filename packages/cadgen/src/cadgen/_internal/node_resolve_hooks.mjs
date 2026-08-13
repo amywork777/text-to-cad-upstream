@@ -9,7 +9,7 @@
  * package `implicitjs` *through its exports map* -- but **Node's ESM resolver ignores
  * NODE_PATH entirely** (verified on v22.22.0: the import throws ERR_MODULE_NOT_FOUND while
  * `require.resolve` on the same specifier, same env, returns the right file). esbuild honors
- * NODE_PATH itself, which is why the bundling path in `bundle-cad.sh` never hit this.
+ * NODE_PATH itself, which is why the bundling path never hit this.
  *
  * So this hook forwards the specifier the ESM resolver could not see to the CJS resolver,
  * which CAN see NODE_PATH and which applies the package's exports map for us. Nothing about
