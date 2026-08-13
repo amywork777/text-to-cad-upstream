@@ -57,12 +57,10 @@ rolling onto another port. Local dev and production servers stay running unless
 `VIEWER_SERVER_LIFETIME_MS` is set or production `serve` is started with
 `--shutdown-after <duration>`.
 
-Install the local Python artifact package when iterating on local STEP
-regeneration:
-
-```bash
-python -m pip install -r requirements.txt
-```
+The backend lives in `cadgen.viewer`, so the Python side comes from cadgen. In this
+repo that is the editable install from `requirements-dev.txt`; anywhere else it is
+`pip install cadgen`, which also carries a built client and can serve it directly with
+`cadgen viewer` — no clone required.
 
 Agent handoff links from the cad-viewer skill must use an absolute directory as
 the URL path, with `?file=` relative to it. The URL is the only source of truth —
@@ -78,21 +76,21 @@ there is no stored fallback, so the same URL always shows the same thing.
 - `src/client/ui/`: viewer-owned browser utilities such as clipboard, color
   scheme, class merging, and DOM helpers.
 - `src/shared/`: config helpers shared by the client and the launchers.
-- `server_py/`: the Python backend — local filesystem CAD API (`/__cad/*`),
-  artifact generation, and the production static server for `dist/`.
+- (backend) `cadgen.viewer` — the local filesystem CAD API (`/__cad/*`), artifact
+  generation, and the static server for `dist/`. It lives in `packages/cadgen`, not
+  here, because it shares cadgen's coordination, locks and freshness internals.
 - `scripts/`: developer and runtime launchers, the test runner, and the
   end-to-end sweeps.
 - `docs/`: workflow reference docs for backend storage, browser persistence,
   render types, settings UI, and MoveIt2.
 - `moveit2_server/`: optional Python websocket backend for SRDF controls.
-- `packages/cadjs`, `packages/implicitjs`, `packages/cadgen`: the shared
-  runtimes this app depends on. Keep reusable parsing, rendering, sidecar,
+- `packages/cadjs`, `packages/implicitjs`: the shared client runtimes this app
+  builds against. Keep reusable parsing, rendering, sidecar,
   selector, topology, implicit shader, snapshot, and export logic in these
   packages rather than in `src/`.
 
-`packages/*` is a symlinked development layout inside the text-to-cad workbench
-and a real vendored copy in a standalone checkout; every path in this app is
-written to work either way.
+`packages/*` is a symlinked development layout inside the text-to-cad workbench; the
+client is built against those sources and its bundle ships inside the cadgen wheel.
 
 ## Common Commands
 
@@ -115,7 +113,7 @@ node scripts/run-tests.mjs src/shared/viewerConfig.test.mjs
 Python backend tests run separately:
 
 ```bash
-python -m unittest discover -s server_py/tests -t .
+python -m unittest discover -s ../tests/python/packages/cadgen/viewer -t ..
 ```
 
 ## Runtime Configuration

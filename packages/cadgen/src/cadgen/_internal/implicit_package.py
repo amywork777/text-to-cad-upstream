@@ -275,7 +275,7 @@ def write_implicit_package(
         "packageSchemaVersion": IMPLICIT_PACKAGE_SCHEMA_VERSION,
         # The validator's generated-vs-imported discriminator, not a claim about the
         # language: "python" selects the branch that re-hashes a recorded SOURCE CLOSURE
-        # (viewer/server_py/artifact.py), which is what a script-generated package of any
+        # (cadgen/viewer/artifact.py), which is what a script-generated package of any
         # language needs. An implicit model IS generated -- by a JS module -- so it takes
         # that branch. `sourceLanguage` records what it actually is.
         "sourceKind": "python",

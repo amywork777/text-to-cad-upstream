@@ -1,6 +1,6 @@
 """Client manager for the persistent warm-OCCT CAD worker (viewer-specific).
 
-Owns the lifecycle of one :mod:`server_py.worker` subprocess on behalf of the
+Owns the lifecycle of one :mod:`cadgen.viewer.worker` subprocess on behalf of the
 long-lived server: lazy spawn, serialized request/response over stdio JSON-RPC,
 transparent respawn after a crash/EOF, and periodic recycle to bound the OCP
 kernel's memory growth. Exposes :func:`run_cadgen` with the same
@@ -21,9 +21,13 @@ import threading
 
 from . import cadgen_bridge
 
-# viewer/ (dev) or the bundled runtime root — the dir that holds the `server_py`
-# package, so the worker resolves as `-m server_py.worker`.
-_SERVER_PY_PARENT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# The directory holding the `cadgen` package, so a child resolves `-m cadgen.viewer.worker`
+# from source even when cadgen is not installed in the interpreter running it. It must be
+# cadgen's PARENT, not cadgen itself: pointing at the package dir both fails to import
+# `cadgen.viewer` and leaks every submodule as a top-level name (`import viewer`).
+_CADGEN_PARENT = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+)
 
 
 def _worker_enabled() -> bool:
@@ -60,7 +64,7 @@ class CadWorker:
     # --- process lifecycle -------------------------------------------------------
     def _env_for(self, repo_root: str) -> dict:
         env = dict(os.environ)
-        parts = [_SERVER_PY_PARENT]
+        parts = [_CADGEN_PARENT]
         pythonpath = cadgen_bridge.cadgen_pythonpath(repo_root)
         if pythonpath:
             parts.append(pythonpath)
@@ -78,7 +82,7 @@ class CadWorker:
         stderr = None if str(os.environ.get("VIEWER_CAD_WORKER_STDERR")) == "1" else subprocess.DEVNULL
         try:
             self._proc = subprocess.Popen(
-                [sys.executable, "-m", "server_py.worker"],
+                [sys.executable, "-m", "cadgen.viewer.worker"],
                 cwd=repo_root if repo_root and os.path.isdir(repo_root) else None,
                 env=self._env_for(repo_root),
                 stdin=subprocess.PIPE,

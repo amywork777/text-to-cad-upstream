@@ -5,7 +5,7 @@ GET /__cad/catalog, GET /__cad/asset, GET /__cad/download, GET /__cad/artifact,
 POST /__cad/artifact (build) and POST /__cad/export, plus the static dist/SPA and
 legacy Referer assets.
 
-Run: python -m server_py.server [--port N] [--host H]
+Run: python -m cadgen.viewer.server [--port N] [--host H]
 
 There is no served root. A page URL's PATH is the absolute directory to open
 (`http://host:port/Users/me/models`), exactly as in a file:// URL; the client
@@ -30,21 +30,13 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs, unquote
 
-if __package__ in (None, ""):
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from server_py import backend as backend_mod
-    from server_py import cadgen_bridge
-    from server_py import paths
-    from server_py import server_info as server_info_mod
-    from server_py import encoding as enc
-    from server_py.content_types import content_type_for_static_asset
-else:
-    from . import backend as backend_mod
-    from . import cadgen_bridge
-    from . import paths
-    from . import server_info as server_info_mod
-    from . import encoding as enc
-    from .content_types import content_type_for_static_asset
+from cadgen.assets import AssetMissing, viewer_dist_dir
+from cadgen.viewer import backend as backend_mod
+from cadgen.viewer import cadgen_bridge
+from cadgen.viewer import encoding as enc
+from cadgen.viewer import paths
+from cadgen.viewer import server_info as server_info_mod
+from cadgen.viewer.content_types import content_type_for_static_asset
 
 LOCAL_SERVER_FEATURES = ["path-directory"]
 _BAD_PERCENT_RE = re.compile(r"%(?![0-9A-Fa-f]{2})")
@@ -356,9 +348,14 @@ def main(argv=None):
             print(str(exc), file=sys.stderr)
             return 1
     _Ctx.directory_root = directory_root
-    # viewer app root is the parent of this server_py package -> dist is <viewer>/dist.
-    viewer_app_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    _Ctx.dist_root = os.path.abspath(args.dist_root) if args.dist_root else os.path.join(viewer_app_root, "dist")
+    # The built client used to sit beside this module (cadgen/viewer -> viewer/dist), before it moved into cadgen.
+    # It ships inside the distribution now, so ask cadgen.assets: --dist wins, then
+    # CADGEN_VIEWER_DIST, then the packaged copy.
+    try:
+        _Ctx.dist_root = str(viewer_dist_dir(args.dist_root))
+    except AssetMissing as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     _Ctx.port = server_info_mod.normalize_viewer_port(args.port)
     _Ctx.host = args.host
     _Ctx.backend = backend_mod.LocalAssetBackend()

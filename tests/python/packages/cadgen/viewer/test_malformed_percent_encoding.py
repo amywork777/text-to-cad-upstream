@@ -38,7 +38,7 @@ class MalformedPercentEncodingTests(unittest.TestCase):
         self.assertEqual("/__cad/foo%zz.step", unquote("/__cad/foo%zz.step"))
 
     def test_the_path_helpers_survive_it(self):
-        from server_py import backend  # noqa: PLC0415 - deferred like its callers
+        from cadgen.viewer import backend  # noqa: PLC0415 - deferred like its callers
 
         for value in MALFORMED:
             with self.subTest(value=value):

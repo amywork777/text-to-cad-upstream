@@ -45,12 +45,16 @@ function parseArgs(argv) {
 //
 // `parts` is the capability that decides whether the viewport menu carries assembly-tree
 // entries; everything else must show the camera section and nothing else.
+// Paths are relative to --dir and must track the models/ layout. They silently rotted once
+// already (fun/, simple/ and a top-level dxf/ that no longer exist), which turns the sweep
+// into a gate that fails on fixture 1 for a reason that has nothing to do with the change
+// under test. assertFixturesExist() below now fails loudly on that instead.
 const FIXTURES = [
-  { format: "stl", file: "fun/miniature_spiral_staircase_highres.stl", parts: false },
-  { format: "3mf", file: "fun/miniature_spiral_staircase_highres.3mf", parts: false },
-  { format: "glb", file: "fun/miniature_spiral_staircase_highres.glb", parts: false },
-  { format: "step", file: "simple/cam_follower_roller.step.py", parts: true },
-  { format: "dxf", file: "dxf/alu_extrusion_profile.dxf", parts: false },
+  { format: "stl", file: "mesh/stl/miniature_spiral_staircase_highres.stl", parts: false },
+  { format: "3mf", file: "mesh/3mf/miniature_spiral_staircase_highres.3mf", parts: false },
+  { format: "glb", file: "mesh/glb/miniature_spiral_staircase_highres.glb", parts: false },
+  { format: "step", file: "step/parts/cam_follower_roller.step.py", parts: true },
+  { format: "dxf", file: "drawings/dxf/alu_extrusion_profile.dxf", parts: false },
   { format: "implicit", file: "implicits/rounded-orb.implicit.js", parts: false },
   // The robot family had no fixture here at all, which is how it kept missing features
   // nobody was looking at. Needs `git lfs checkout models/robots/so101` first, like the
@@ -61,6 +65,27 @@ const FIXTURES = [
 // Select, pan and draw act on the VIEWPORT, so every format gets them. They were off for
 // plain meshes and for robots until the capability rows were made uniform: opening an STL
 // lost three buttons that have nothing to do with what the file contains.
+// A missing fixture is a broken gate, not a failing viewer: report every one up front and
+// name the root, rather than letting the first one fail as if the change under test did it.
+// LFS pointers count as missing — an unhydrated worktree renders nothing.
+function assertFixturesExist(modelsRoot) {
+  const problems = [];
+  for (const { file } of FIXTURES) {
+    const full = path.join(modelsRoot, file);
+    if (!fs.existsSync(full)) {
+      problems.push(`${file} (missing)`);
+    } else if (fs.readFileSync(full, { encoding: "utf8", flag: "r" }).slice(0, 40).includes("git-lfs")) {
+      problems.push(`${file} (unhydrated LFS pointer)`);
+    }
+  }
+  if (problems.length) {
+    console.error(`fixtures unusable under ${modelsRoot}:`);
+    for (const problem of problems) console.error(`  ${problem}`);
+    console.error("Fix the FIXTURES paths, or run: git lfs checkout models");
+    process.exit(2);
+  }
+}
+
 const VIEWPORT_TOOL_LABELS = ["Select", "Pan", "Draw", "Orbit", "Copy screenshot"];
 
 async function toolProblem(page) {
@@ -159,6 +184,7 @@ async function main() {
   const { chromium } = require("playwright");
   const { PNG } = require("pngjs");
 
+  assertFixturesExist(modelsRoot);
   const fixtures = [...FIXTURES];
   if (args.allImplicits) {
     const implicitDir = path.join(modelsRoot, "implicits");

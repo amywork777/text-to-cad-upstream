@@ -47,15 +47,11 @@ done < <("$LIST_SKILLS_SCRIPT")
 
 run_suite "MoveIt2 server Python tests" "tests/python/viewer/moveit2_server" "viewer/moveit2_server"
 
-# The CAD Viewer backend keeps its tests beside the package it covers rather
-# than under tests/, so name the directory explicitly. It owns the only cross-process
-# coverage of the generation lock (test_artifact.py drives a real second process and
-# SIGKILLs it), which is why it must run in CI.
-# packages/cadgen/src is on the path because the viewer server imports cadgen's
-# stdlib-only modules directly (coordination, source_hash) rather than reimplementing
-# them. Without it an installed/editable cadgen from another checkout wins and the
-# coordination package is missing.
-run_suite "CAD Viewer backend Python tests" "viewer/server_py/tests" "viewer" "packages/cadgen/src"
+# The CAD Viewer backend is cadgen.viewer now, so its tests sit with the rest of the
+# cadgen suite. It owns the only cross-process coverage of the generation lock
+# (test_artifact.py drives a real second process and SIGKILLs it), which is why it must
+# run in CI, and it pins the property that the long-lived server imports without OCP.
+run_suite "CAD Viewer backend Python tests" "tests/python/packages/cadgen/viewer" "packages/cadgen/src"
 
 if [ "${#failed_suites[@]}" -gt 0 ]; then
   printf '\n==> FAILING SUITES (%d)\n' "${#failed_suites[@]}"

@@ -34,11 +34,10 @@ how you resume a failed publish; it is never a release setting.
 The standalone `Deploy Docs` workflow redeploys the docs site without running a
 release. It deploys a source ref (defaulting to `develop`), never `main`: the
 publish tree drops `docs/` and `packages/`, which the docs app builds against.
-The CAD Viewer is a local-filesystem app with no hosted deployment, but each
-release mirrors `viewer/` into the standalone `earthtojake/cad-viewer` repo
-through the `Sync CAD Viewer Repo` workflow, which `Release` calls after
-publishing and which can also be dispatched on its own. Both of those read the
-release SOURCE commit, because `main` carries only what installs.
+The CAD Viewer is a local-filesystem app with no hosted deployment: it ships
+inside the `cadgen` distribution (client bundle and backend both) and is started
+with `cadgen viewer`. `Deploy Docs` reads the release SOURCE commit, because
+`main` carries only what installs.
 `main` is publish-only; pushing `develop` runs tests but
 never publishes. See the Releases section in `CONTRIBUTING.md` for the full
 flow, CI/CD-testing and resume options, and local/manual fallbacks.
@@ -97,11 +96,11 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   Code preserves them, and Codex `plugin add` drops them with no error, shipping
   a skill with missing files. `scripts/github-workflows/check-builds.sh` enforces
   this; do not relax it.
-- `viewer/` must stay self-contained: nothing under it may reference a path,
-  command, or document above it, because it is mirrored verbatim into the
-  standalone `cad-viewer` repo with no rewriting step. Keep repo-level tooling
-  in `scripts/`, not under `viewer/`.
-  `viewer/scripts/selfContained.test.mjs` enforces this.
+- `viewer/` is the CAD Viewer's CLIENT source only. Its backend is
+  `cadgen.viewer` and its built bundle ships in the cadgen wheel
+  (`cadgen/_runtime/viewer`), so the app is distributed by `pip install cadgen`
+  and started with `cadgen viewer` — there is no second copy of it anywhere.
+  Keep repo-level tooling in `scripts/`, not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
   belong in `viewer/`.
 - `packages/implicitjs` must stay reusable/non-React and independent of
@@ -238,23 +237,18 @@ wrapper unless you are debugging a lower-level script.
 
 ### Starting the Viewer from a lightweight worktree
 
-The `cad-viewer` skill documents the PRODUCTION runtime and assumes a hydrated
-checkout. In a lightweight worktree its one-liner fails four times in a row, each
-with an error that does not name the real cause, because worktrees deliberately
-carry no `node_modules` and no built bundle:
+The backend is `cadgen.viewer`, so a worktree only needs an interpreter with cadgen
+importable — the repo venv from the primary checkout does:
 
-1. `npm --prefix skills/cad-viewer/scripts/viewer run start` dies with
-   `Cannot find package 'cadjs'`. `skills/cad-viewer/scripts/viewer` is a symlink
-   to `viewer/`, so the "packaged" runtime still needs the worktree's modules.
-2. With those linked, the server starts and the CAD API answers but `/` returns
-   404: `start` serves a prebuilt bundle and there is no `viewer/dist` yet. A live
-   backend with no front end looks like a broken link, not a missing build.
-3. `npm --prefix viewer run build` then fails one bare specifier at a time —
-   `implicitjs`, `three`, `meshoptimizer` — each from `packages/cadjs/src/...`.
-4. `meshoptimizer` is not under `packages/cadjs/node_modules` anywhere; the only
-   copy in the repo is `docs/node_modules/meshoptimizer`.
+```bash
+PYTHONPATH=<worktree>/packages/cadgen/src <main>/.venv/bin/python -m cadgen.viewer \
+  --dist <worktree>/viewer/dist --host 127.0.0.1 --port <n>
+```
 
-From the worktree root, with `<main>` the primary checkout:
+`--dist` is the only worktree-specific part: without it the server serves the client
+baked into the installed cadgen, which is not the one you are editing. Building that
+client needs the worktree's `node_modules`, which worktrees deliberately do not carry —
+link them from the primary checkout first:
 
 ```bash
 ln -s <main>/viewer/node_modules viewer/node_modules
@@ -263,7 +257,6 @@ ln -s ../../implicitjs                                packages/cadjs/node_module
 ln -s <main>/packages/cadjs/node_modules/three        packages/cadjs/node_modules/three
 ln -s <main>/docs/node_modules/meshoptimizer          packages/cadjs/node_modules/meshoptimizer
 npm --prefix viewer run build
-npm --prefix skills/cad-viewer/scripts/viewer run start -- --host 127.0.0.1 --port <n>
 ```
 
 Use an explicit free `--port`: a Viewer already running from another checkout

@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Thin shim: launch the Python CAD Viewer launcher (server_py.start_viewer)
-// using the project's discovered venv Python + cadgen PYTHONPATH, so `npm start`
-// can run the Python backend without the caller knowing the venv path. Reuses the
-// proven cadPythonExecutable/cadPythonEnv discovery from the STEP pipeline.
+// Thin shim: launch the CAD Viewer backend (cadgen.viewer) using the project's
+// discovered venv Python, so `npm start` runs it without the caller knowing the venv
+// path. Reuses the proven cadPythonExecutable/cadPythonEnv discovery from the STEP
+// pipeline.
+//
+// The backend lives in cadgen now, not under viewer/, so this passes --dist to point it
+// at THIS checkout's freshly built client rather than the copy inside the installed
+// cadgen. That is the whole difference between iterating here and running the shipped
+// viewer: same server, different client bundle.
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,14 +19,13 @@ const viewerRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".
 const repoRoot = path.resolve(viewerRoot, "..");
 const python = cadPythonExecutable(repoRoot);
 const baseEnv = cadPythonEnv(repoRoot);
-// server_py lives under viewer/ — prepend it so `python -m server_py.*` resolves.
-baseEnv.PYTHONPATH = [viewerRoot, baseEnv.PYTHONPATH].filter(Boolean).join(path.delimiter);
 
 // The backend has no configured directory: a URL path IS the directory, and the bare
 // origin falls back to the process cwd. So the child's cwd must be where the USER ran
 // `npm start` (npm's INIT_CWD), not viewer/ — `npm --prefix` would otherwise make the
 // default directory the viewer's own source tree.
-const child = spawn(python, ["-m", "server_py.start_viewer", ...process.argv.slice(2)], {
+const distRoot = path.join(viewerRoot, "dist");
+const child = spawn(python, ["-m", "cadgen.viewer", "--dist", distRoot, ...process.argv.slice(2)], {
   cwd: resolveDirectoryRoot({ env: baseEnv, appRoot: viewerRoot }),
   env: baseEnv,
   stdio: "inherit",

@@ -15,19 +15,30 @@ edit it.
 Use this skill to open existing or newly generated CAD, implicit CAD,
 robot-description, or DXF files in CAD Viewer and hand back live review links. The expected input is one or more explicit file paths.
 
+## Setup
+
+The Viewer ships inside the `cadgen` distribution — client bundle, backend and all.
+Install it once:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
 ## Start Viewer
 
-Start one local CAD Viewer with `npm run start`. It serves the prebuilt Viewer
-bundle plus the CAD API on a single fixed port (`3245`). It is NOT started
-against a directory — a URL names the directory, so one Viewer serves any folder.
+Start one local CAD Viewer with `cadgen viewer`. It serves the bundled Viewer client
+plus the CAD API on a single fixed port (`3245`). It is NOT started against a
+directory — a URL names the directory, so one Viewer serves any folder.
 
 > The default port `3245` is `0xCAD` — "CAD" in hexadecimal.
 
-Run from this skill directory:
-
 ```bash
-npm --prefix scripts/viewer run start -- --host 127.0.0.1
+cadgen viewer --host 127.0.0.1
 ```
+
+Equivalently `python -m cadgen.viewer --host 127.0.0.1`, which is what to use when
+`cadgen` is not on `PATH`. Both print the review URL and, with `--json`, the
+`{"url", "port", "action": "start"}` line.
 
 ## URL shape
 

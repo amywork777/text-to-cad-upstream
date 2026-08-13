@@ -331,7 +331,7 @@ import {
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
 // The source formats whose renderable geometry lives in a `__cadgen__` render package, and
 // therefore go through the /__cad/artifact state machine before they can render. Mirrors
-// `owns_entry` in viewer/server_py/artifact.py; an entry listed here and not there (or the
+// `owns_entry` in cadgen's viewer/artifact.py; an entry listed here and not there (or the
 // reverse) is a format that either never builds or reports ready forever.
 // Which formats build a package before they can render is a capability
 // (`artifactManaged`), declared once and mirrored against the server's `owns_entry`.

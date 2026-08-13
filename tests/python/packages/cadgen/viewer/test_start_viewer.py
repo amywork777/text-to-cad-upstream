@@ -1,4 +1,4 @@
-"""Tests for the single-port CAD Viewer launcher (server_py.start_viewer).
+"""Tests for the single-port CAD Viewer launcher (cadgen.viewer.start_viewer).
 
 Cover the two branches (start when the port is free / error when it is occupied),
 port selection, the URL shape, and the --json contract, with the port probe and
@@ -20,7 +20,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import start_viewer as sav  # noqa: E402
+from cadgen.viewer import start_viewer as sav  # noqa: E402
 
 
 class _FakeChild:
@@ -37,8 +37,9 @@ def _run(argv, port_free=True, child_code=0, cad_backend_error=""):
     (rc, out, err, calls)."""
     calls = {"spawn": []}
 
-    def fake_spawn(host, port):
+    def fake_spawn(host, port, dist_root=""):
         calls["spawn"].append((host, port))
+        calls.setdefault("dist", []).append(dist_root)
         return _FakeChild(child_code)
 
     out, err = io.StringIO(), io.StringIO()

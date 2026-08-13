@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Generates golden.json from the REAL JS semantics so the Python ports can be
-// asserted byte-for-byte. Run: node viewer/server_py/tests/gen_golden.mjs
+// asserted byte-for-byte. Run: node tests/python/packages/cadgen/viewer/gen_golden.mjs
 // (Re-run whenever the JS encoders change; this file is the parity spec.)
 import fs from "node:fs";
 import path from "node:path";

@@ -3,7 +3,7 @@
 One derivation, imported by BOTH the producer (cadgen) and the reader (the CAD Viewer's
 server), so the two can no longer disagree about which file to look at. Before this module
 the derivation existed twice -- ``cadgen._internal.generation_status.generation_lock_path``
-and a hand-written copy in ``viewer/server_py/artifact.py`` -- kept in sync only by a test
+and a hand-written copy in ``cadgen/viewer/artifact.py`` -- kept in sync only by a test
 that compared path strings.
 
 All three files are HIDDEN SIBLINGS of the artifact's output directory, so they live under

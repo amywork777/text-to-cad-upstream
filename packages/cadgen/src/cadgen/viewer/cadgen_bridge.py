@@ -4,7 +4,7 @@ OCP/OpenCascade is kept OUT of the long-lived server process (crash/memory
 isolation, same as the Node backend). Two execution paths share one contract,
 ``run_cadgen(module, args, repo_root) -> dict``:
 
-* warm worker (default): a persistent :mod:`server_py.worker` subprocess imports
+* warm worker (default): a persistent :mod:`cadgen.viewer.worker` subprocess imports
   OCP once and services every build/export in-process — no per-request cold start.
 * cold subprocess (fallback): a fresh ``python -m <module>`` per request, used when
   the worker is disabled (``VIEWER_CAD_WORKER=0``) or a worker transport fault
@@ -20,11 +20,6 @@ import os
 import subprocess
 import sys
 
-_PYTHONPATH_REL_CANDIDATES = [
-    os.path.join("scripts", "packages", "cadgen", "src"),
-    os.path.join("viewer", "packages", "cadgen", "src"),
-    os.path.join("packages", "cadgen", "src"),
-]
 _CAD_BACKEND_PROBE = (
     "import OCP\n"
     "import build123d\n"
@@ -33,28 +28,24 @@ _CAD_BACKEND_PROBE = (
 _CAD_BACKEND_PROBE_TIMEOUT_SECONDS = 30
 
 
-def _find_up_dir(rel: str, start: str) -> str:
-    cur = os.path.abspath(start or ".")
-    while True:
-        candidate = os.path.join(cur, rel)
-        if os.path.isdir(candidate):
-            return candidate
-        parent = os.path.dirname(cur)
-        if parent == cur:
-            return ""
-        cur = parent
+def cadgen_pythonpath(repo_root: str = "") -> str:
+    """``PYTHONPATH`` for a cadgen child process.
 
+    This used to WALK for a ``packages/cadgen/src`` to prepend, because the viewer ran out
+    of ``viewer/`` and cadgen was only reachable through a vendored copy. cadgen is
+    importable in this process now, and every child is spawned with ``sys.executable``, so
+    it inherits the same import path for free.
 
-def cadgen_pythonpath(repo_root: str) -> str:
+    What remains is the explicit escape hatch: the ``*_PYTHONPATH`` variables still win, so
+    a child can be pointed at a different cadgen deliberately. ``repo_root`` is accepted for
+    call-site compatibility and unused.
+    """
+    del repo_root
     entries = []
     for env_name in ("VIEWER_CAD_PYTHONPATH", "CAD_PYTHONPATH", "VIEWER_CADPY_PYTHONPATH"):
         value = str(os.environ.get(env_name) or "").strip()
         if value:
             entries.append(value)
-    for rel in _PYTHONPATH_REL_CANDIDATES:
-        found = _find_up_dir(rel, repo_root) or _find_up_dir(rel, os.getcwd())
-        if found:
-            entries.append(found)
     existing = str(os.environ.get("PYTHONPATH") or "").strip()
     if existing:
         entries.append(existing)

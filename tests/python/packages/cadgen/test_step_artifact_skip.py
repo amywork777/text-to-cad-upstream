@@ -65,7 +65,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.calls = self.root / "gen_calls.log"
 
     def _build(self, *extra):
-        """Run the module exactly as viewer/server_py/backend.py does."""
+        """Run the module exactly as cadgen/viewer/backend.py does."""
         proc = subprocess.run(
             [
                 sys.executable, "-m", "cadgen.step_artifact_cli",

@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py.backend import LocalAssetBackend  # noqa: E402
+from cadgen.viewer.backend import LocalAssetBackend  # noqa: E402
 
 GENERATOR = """from pathlib import Path
 
