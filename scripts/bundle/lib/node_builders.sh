@@ -120,9 +120,33 @@ bundle_node_builders() {
       --main-fields=module,main \
       --minify \
       --keep-names \
-      --legal-comments=none \
+      --legal-comments=eof \
       --outfile="$out_dir/$basename_out" || return 1
+    node_builder_assert_not_empty "$out_dir/$basename_out" "$entry" || return 1
   done
+}
+
+# A builder whose whole job is a side effect can be tree-shaken to NOTHING and esbuild will
+# not fail: `import "implicitjs/cli/export"` emitted a 20-byte shebang because implicitjs's
+# package.json `sideEffects` list did not name the script. esbuild says so in a note, but the
+# build succeeds, the file exists, and every other check passes -- the only symptom would be
+# a builder that runs and does nothing.
+#
+# A raw size floor is the wrong test: implicitClosureHooks.mjs is a legitimate 370 bytes.
+# What is never legitimate is emitting no CODE, so strip the shebang and check what is left.
+NODE_BUILDER_MIN_CODE_BYTES="${NODE_BUILDER_MIN_CODE_BYTES:-32}"
+
+node_builder_assert_not_empty() {
+  local emitted="$1" entry="$2" code_bytes
+  code_bytes="$(sed '1{/^#!/d;}' "$emitted" | tr -d '[:space:]' | wc -c | tr -d '[:space:]')"
+  if [ "$code_bytes" -lt "$NODE_BUILDER_MIN_CODE_BYTES" ]; then
+    echo "Node builder bundled to $code_bytes bytes of code, which cannot be a working builder:" >&2
+    echo "  entry:   $entry" >&2
+    echo "  emitted: $emitted" >&2
+    echo "esbuild tree-shakes a side-effect-only import unless the package's \`sideEffects\`" >&2
+    echo "field names the file. Add the entry there, or import a binding it actually uses." >&2
+    return 1
+  fi
 }
 
 # check_node_builders <committed_bin_dir> <check_bin_dir> <label> <fix_hint> <entry_file>...

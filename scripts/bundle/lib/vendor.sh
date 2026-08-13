@@ -16,6 +16,10 @@
 # Canonical exclude list for vendoring a Python source package into a skill
 # runtime: caches, build artifacts, docs, and tests — never runtime code.
 BUNDLE_PY_EXCLUDES=(
+  # cadgen's packaged JS/SPA runtime. Skill copies of cadgen must not duplicate it:
+  # the assets resolve inside the distribution now (cadgen.assets), and a vendored
+  # second copy would be tens of MB of dead weight per skill.
+  _runtime
   __pycache__
   .pytest_cache
   '*.pyc'
