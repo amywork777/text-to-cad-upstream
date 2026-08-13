@@ -259,7 +259,7 @@ class DrawingPackageCurrencyGateTests(unittest.TestCase):
 
 class TopologySidecarGateTests(unittest.TestCase):
     def _match(self, manifest, descriptor):
-        from cadgen.step_artifacts import _topology_sidecar_matches_descriptor
+        from cadgen.step_topology_artifact import _topology_sidecar_matches_descriptor
 
         return _topology_sidecar_matches_descriptor(manifest, descriptor)
 

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from cadgen import step_artifacts
+from cadgen import step_topology_artifact as step_artifacts
 from cadgen._internal import generation
 from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact
 

@@ -744,7 +744,7 @@ def cad_ref_for_step_path(repo_root: Path, step_path: Path) -> str:
 def load_ensure_step_topology_artifact():
     global ensure_step_topology_artifact
     if ensure_step_topology_artifact is None:
-        from cadgen.step_artifacts import ensure_step_topology_artifact as imported_ensure
+        from cadgen.step_topology_artifact import ensure_step_topology_artifact as imported_ensure
 
         ensure_step_topology_artifact = imported_ensure
     return ensure_step_topology_artifact
