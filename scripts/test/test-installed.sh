@@ -17,13 +17,25 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PYTHON_BIN="${PYTHON_BIN:-$REPO_ROOT/.venv/bin/python}"
+# Shared resolution: the repo venv in a checkout, python3 otherwise. CI installs the CAD
+# dependencies into the interpreter that setup-python provides and has no .venv at all, so
+# hardcoding one here fails there and only there.
+# shellcheck source=scripts/test/common.sh
+source "$SCRIPT_DIR/common.sh"
+
 KEEP=0
 [ "${1:-}" = "--keep" ] && KEEP=1
 
-if [ ! -x "$PYTHON_BIN" ]; then
-  echo "No Python at $PYTHON_BIN. Set PYTHON_BIN to an interpreter with the CAD deps." >&2
+if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 && [ ! -x "$PYTHON_BIN" ]; then
+  echo "No usable Python ($PYTHON_BIN). Set PYTHON_BIN to an interpreter with the CAD deps." >&2
+  exit 1
+fi
+
+# The wheel is installed with --no-deps and reuses this interpreter's heavy packages, so it
+# must actually have them; otherwise the failure surfaces much later as a viewer that will
+# not bind its port.
+if ! "$PYTHON_BIN" -c "import OCP, build123d" >/dev/null 2>&1; then
+  echo "$PYTHON_BIN cannot import OCP/build123d; installed-mode checks need the CAD deps." >&2
   exit 1
 fi
 
