@@ -34,20 +34,20 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { MeshoptEncoder } from "meshoptimizer";
-import { assertWriteLock } from "implicitjs/glb/assertWriteLock.js";
+import { assertWriteLock } from "../src/lib/glb/assertWriteLock.js";
 import {
   reportAdvance,
   reportPhase,
   reportResult,
   reportTotal,
-} from "implicitjs/glb/progressStream.js";
-import { meshImplicitCadModelParallel, planeCounts } from "implicitjs/lib/implicitCad/meshWorkers.js";
+} from "../src/lib/glb/progressStream.js";
+import { meshImplicitCadModelParallel, planeCounts } from "../src/lib/implicitCad/meshWorkers.js";
 import {
   buildImplicitExportGlb,
   buildImplicitRenderGlb,
   weldImplicitMesh,
-} from "implicitjs/lib/implicitCad/renderGlb.js";
-import { normalizeImplicitCadModel } from "implicitjs/model";
+} from "../src/lib/implicitCad/renderGlb.js";
+import { normalizeImplicitCadModel } from "../src/lib/implicitCad/model.js";
 
 import { beginClosureCapture } from "./implicitClosure.mjs";
 

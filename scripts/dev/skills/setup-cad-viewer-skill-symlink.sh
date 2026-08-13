@@ -63,7 +63,6 @@ check_no_tracked_viewer_dist() {
 
 cd "$REPO_ROOT"
 setup_link "$MODE" "viewer/packages/cadjs" "../../packages/cadjs"
-setup_link "$MODE" "viewer/packages/implicitjs" "../../packages/implicitjs"
 if [ "$MODE" = "check" ]; then
   check_no_tracked_viewer_dist
 fi

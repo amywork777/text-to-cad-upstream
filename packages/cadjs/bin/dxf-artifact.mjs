@@ -33,11 +33,11 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { MeshoptEncoder } from "meshoptimizer";
-import { assertWriteLock } from "implicitjs/glb/assertWriteLock.js";
+import { assertWriteLock } from "../src/lib/glb/assertWriteLock.js";
 import {
   reportPhase,
   reportResult,
-} from "implicitjs/glb/progressStream.js";
+} from "../src/lib/glb/progressStream.js";
 
 import { parseDxf } from "../src/lib/dxf/parseDxf.js";
 import {

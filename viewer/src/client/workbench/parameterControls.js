@@ -1,7 +1,7 @@
 import {
   normalizeParameterValue,
   normalizeParameterValues
-} from "cadjs/implicit/parameters";
+} from "cadjs/common/parameters.js";
 
 const DEFAULT_NUMBER_CONTROL_STEP = 0.01;
 const MIN_NUMBER_CONTROL_STEP = 0.000001;

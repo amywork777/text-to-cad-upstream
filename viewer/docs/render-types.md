@@ -163,11 +163,11 @@ here rather than silently dropped.
 | `materials.*` roughness/metalness/clearcoat/opacity/emissive | honoured | unsupported — fixed BRDF |
 | per-part fill cycling | honoured | unsupported — one SDF body, no parts |
 
-**The schema lives in two files.** `packages/implicitjs` may not import `packages/cadjs`,
-so `common/themeSettings.js` is duplicated in both. A field added to one and not the other
-is silently dropped for that renderer at normalization time, before any uniform wiring can
-matter — that is exactly how `lighting.fill` and `lighting.rim` came to be ignored. Change
-both, together.
+**The schema lives in one file again.** `common/themeSettings.js` used to be duplicated
+across two packages, and a field added to one and not the other was silently dropped for
+that renderer at normalization time — that is how `lighting.fill` and `lighting.rim` came
+to be ignored. The implicit runtime moved into `packages/cadjs`, so both renderers now
+normalize through the same module and that failure mode is gone.
 
 **The implicit has two backdrops.** In the viewer the raymarch pass composites over the
 shared stage, so what you see behind an implicit model is `cadjs/lib/viewer/stageTheme.js`,

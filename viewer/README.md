@@ -84,7 +84,7 @@ there is no stored fallback, so the same URL always shows the same thing.
 - `docs/`: workflow reference docs for backend storage, browser persistence,
   render types, settings UI, and MoveIt2.
 - `moveit2_server/`: optional Python websocket backend for SRDF controls.
-- `packages/cadjs`, `packages/implicitjs`: the shared client runtimes this app
+- `packages/cadjs`: the shared client runtime this app
   builds against. Keep reusable parsing, rendering, sidecar,
   selector, topology, implicit shader, snapshot, and export logic in these
   packages rather than in `src/`.
@@ -152,8 +152,6 @@ assets are served by the local backend and are not copied into `dist/`.
 - [MoveIt2 server](./docs/moveit2-server.md): optional SRDF websocket backend.
 - [`cadjs` render pipeline](./packages/cadjs/docs/render-pipeline.md): shared
   render APIs used by the viewer, docs, and snapshot runtime.
-- [`implicitjs` runtime](./packages/implicitjs/README.md): shared implicit CAD
-  model, shader render, snapshot, and export APIs.
 
 ## Verification
 

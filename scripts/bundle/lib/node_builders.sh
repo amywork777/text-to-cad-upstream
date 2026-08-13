@@ -3,7 +3,7 @@
 #
 # cadgen builds the implicit and DXF render packages by spawning a Node child
 # (packages/cadgen/src/cadgen/_internal/node_runtime.py). The builders themselves live in
-# packages/cadjs/bin and import three, meshoptimizer and implicitjs -- a dependency GRAPH,
+# packages/cadjs/bin and import three and meshoptimizer -- a dependency GRAPH,
 # not just a file. A published skill ships no node_modules (design
 # §4.5, "Node the binary is available; the dependency graph is not"), so the builders are
 # esbuild-bundled into ONE self-contained --platform=node file each, exactly as
@@ -107,7 +107,7 @@ bundle_node_builders() {
       return 1
     fi
     basename_out="$(basename "$entry")"
-    # NODE_PATH resolves the bare `implicitjs/...` specifiers through implicitjs's exports
+    # NODE_PATH resolves the builders' remaining bare specifiers (three, meshoptimizer)
     # map and the pinned three/meshoptimizer out of the tmp toolchain, so the bundle is
     # hermetic on a fresh checkout with no packages/*/node_modules. A directory --alias
     # cannot do the first: it bypasses the exports map.
@@ -127,7 +127,7 @@ bundle_node_builders() {
 }
 
 # A builder whose whole job is a side effect can be tree-shaken to NOTHING and esbuild will
-# not fail: `import "implicitjs/cli/export"` emitted a 20-byte shebang because implicitjs's
+# not fail: a re-export-only entry emitted a 20-byte shebang because the package's
 # package.json `sideEffects` list did not name the script. esbuild says so in a note, but the
 # build succeeds, the file exists, and every other check passes -- the only symptom would be
 # a builder that runs and does nothing.

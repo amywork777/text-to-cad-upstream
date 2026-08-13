@@ -315,7 +315,7 @@ import {
 import {
   normalizeParameterValue,
   normalizeParameterValues
-} from "cadjs/implicit/parameters";
+} from "cadjs/common/parameters.js";
 import { copyTextToClipboard, readTextFromClipboard } from "@/ui/clipboard";
 import { triggerUrlDownload } from "@/ui/download";
 import {

@@ -30,7 +30,7 @@ moment it builds, so a missing one is reported then rather than at import.
 
 ## File Format
 
-An implicit CAD file is an ES module exporting an `implicit.js/0.1.0` object. The schema source of truth lives in the bundled package at `scripts/packages/implicitjs/src/lib/implicitCad/schema.js`; `scripts/lib/implicit-cad.mjs` re-exports it as `SCHEMA` for helper-authored modules.
+An implicit CAD file is an ES module exporting an `implicit.js/0.1.0` object. `scripts/lib/implicit-cad.mjs` declares it as `SCHEMA` for helper-authored modules.
 
 ```js
 export default {
@@ -50,7 +50,7 @@ vec3 color(vec3 p, vec3 normal) {
 };
 ```
 
-Models may also declare params and animations. Parameter definitions use the implicitjs control schema: `number`, `boolean`, `enum`/`select`, `color`, `string`, and `button`. Number, boolean, color, and button params automatically become GLSL uniforms with the same name; do not add a separate `uniforms` object. `bounds` is optional and is estimated from the SDF when omitted; add explicit bounds only when the auto estimate is too broad, too slow, or misses an unusual field. `bounds` and `render` may be JavaScript functions that receive `{ ...params, params, animation, animationState, elapsedSec, progress, t }`.
+Models may also declare params and animations. Parameter definitions use the implicit control schema: `number`, `boolean`, `enum`/`select`, `color`, `string`, and `button`. Number, boolean, color, and button params automatically become GLSL uniforms with the same name; do not add a separate `uniforms` object. `bounds` is optional and is estimated from the SDF when omitted; add explicit bounds only when the auto estimate is too broad, too slow, or misses an unusual field. `bounds` and `render` may be JavaScript functions that receive `{ ...params, params, animation, animationState, elapsedSec, progress, t }`.
 
 Built-in GLSL helpers use the `implicit_*` namespace, for example `implicit_sphere`, `implicit_box_centered`, and `implicit_union_round`.
 

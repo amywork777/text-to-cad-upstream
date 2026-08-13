@@ -25,16 +25,15 @@ import {
   resolveHeadlessJobKind
 } from "./headlessJobKind.js";
 // The unified snapshot runtime carries both backends: the mesh path below and
-// the implicit raymarch path from implicitjs. cadjs -> implicitjs is the
-// sanctioned dependency direction, and this is a cadjs-internal import (not a
-// public cadjs/implicit/* subpath), so the whole snapshot bundle exposes a
-// single window.__snapshotRender entry that dispatches by job kind.
+// the implicit raymarch path, which now lives beside this file rather than in a
+// separate implicitjs package, so the whole snapshot bundle exposes a single
+// window.__snapshotRender entry that dispatches by job kind.
 import {
   runImplicitCadHeadlessRenderJob
-} from "implicitjs/headlessRenderEntry";
-// The GIF palette/encoder logic is shared with the implicit entry (single source in
-// implicitjs, same as camera.js) so both backends pick the SAME transparent slot.
-import { encodeGifFrameImageData } from "implicitjs/common/gifFrameEncoder.js";
+} from "./implicitHeadlessRenderEntry.js";
+// The GIF palette/encoder logic is shared with the implicit entry (single source,
+// same as camera.js) so both backends pick the SAME transparent slot.
+import { encodeGifFrameImageData } from "./gifFrameEncoder.js";
 
 const GIFEncoder = exportedGifEncoder || gifencDefault?.GIFEncoder || gifencDefault;
 

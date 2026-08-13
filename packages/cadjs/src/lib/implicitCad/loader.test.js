@@ -5,7 +5,7 @@ import {
   loadImplicitModuleFromSource,
   loadImplicitSource,
   normalizeImplicitModel
-} from "../../index.js";
+} from "./index.js";
 
 test("loadImplicitModuleFromSource normalizes editable implicit source strings", async () => {
   const model = await loadImplicitModuleFromSource(`

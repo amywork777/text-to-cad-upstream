@@ -9,7 +9,7 @@ import {
   updateImplicitCadGraphicsUniforms,
   updateImplicitCadMaterialUniforms,
   updateImplicitCadModelUniforms
-} from "cadjs/implicit/render";
+} from "cadjs/lib/implicitCad/render.js";
 import {
   implicitGraphicsRenderResolutionScale,
   implicitGraphicsRenderSettings,

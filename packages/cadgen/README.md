@@ -81,7 +81,7 @@ From a text-to-cad checkout:
 
 Source edits under `packages/cadgen/src/cadgen` take effect immediately. The packaged
 JavaScript is generated rather than committed in full, so build it once — and again
-after changing anything under `packages/cadjs`, `packages/implicitjs`, or `viewer/`:
+after changing anything under `packages/cadjs` or `viewer/`:
 
 ```bash
 scripts/bundle/bundle-skill.sh cadgen-runtime
