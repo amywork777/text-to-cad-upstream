@@ -15,9 +15,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MeshoptEncoder } from "meshoptimizer";
-import { meshImplicitCadModel } from "implicitjs/mesh";
-import { normalizeImplicitCadModel } from "implicitjs/model";
-import { buildImplicitRenderGlb } from "implicitjs/lib/implicitCad/renderGlb.js";
+import { meshImplicitCadModel } from "../implicitCad/mesh.js";
+import { normalizeImplicitCadModel } from "../implicitCad/model.js";
+import { buildImplicitRenderGlb } from "../implicitCad/renderGlb.js";
 
 import { buildMeshDataFromGlbBuffer } from "./glbMeshData.js";
 

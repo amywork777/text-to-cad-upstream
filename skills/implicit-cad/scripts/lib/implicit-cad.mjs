@@ -1,6 +1,8 @@
-import { IMPLICIT_CAD_SCHEMA } from "../packages/implicitjs/src/lib/implicitCad/schema.js";
-
-export const SCHEMA = IMPLICIT_CAD_SCHEMA;
+// The schema id a `.implicit.js` module must declare. Inlined, not imported: a skill ships
+// without the repo's packages beside it, so reaching into one resolves on a developer's
+// machine and nowhere else. tests/python/global/test_implicit_schema_parity.py pins this
+// against cadjs's definition so the two cannot drift.
+export const SCHEMA = "implicit.js/0.1.0";
 export const PI = Math.PI;
 export const TWO_PI = Math.PI * 2;
 export const SQRT2 = Math.sqrt(2);

@@ -4,7 +4,7 @@ name: Deploy Docs
 #
 # The docs app is a website, not something anyone installs, and it builds against
 # repo-root packages/: docs/tsconfig.json maps cadjs/* to ../packages/cadjs/src/*,
-# and packages/cadjs/src/common pulls implicitjs. Both docs/ and packages/ are
+# which includes the implicit CAD runtime. Both docs/ and packages/ are
 # therefore trimmed out of the publish tree, so main cannot build this.
 #
 # Releases pass the release SOURCE commit (release-pr's source_sha), which already
@@ -53,7 +53,6 @@ jobs:
           missing=""
           [ -d docs ] || missing="$missing docs/"
           [ -d packages/cadjs/src ] || missing="$missing packages/cadjs/src"
-          [ -d packages/implicitjs/src ] || missing="$missing packages/implicitjs/src"
           if [ -n "$missing" ]; then
             echo "This ref cannot build the docs site; missing:$missing" >&2
             echo "main is the publish branch and drops docs/ and packages/." >&2

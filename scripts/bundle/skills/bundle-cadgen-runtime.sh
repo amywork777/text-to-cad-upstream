@@ -48,7 +48,7 @@ BUILDER_ENTRIES=(
   "$REPO_ROOT/packages/cadjs/bin/implicit-artifact.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicit-export.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"
-  "$REPO_ROOT/packages/implicitjs/src/lib/implicitCad/meshWorkerEntry.js"
+  "$REPO_ROOT/packages/cadjs/src/lib/implicitCad/meshWorkerEntry.js"
 )
 
 MODE="write"

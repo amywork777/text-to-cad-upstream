@@ -33,7 +33,7 @@ import {
 // single window.__snapshotRender entry that dispatches by job kind.
 import {
   runImplicitCadHeadlessRenderJob
-} from "implicitjs/headlessRenderEntry";
+} from "./implicitHeadlessRenderEntry.js";
 
 const GIFEncoder = exportedGifEncoder || gifencDefault?.GIFEncoder || gifencDefault;
 const quantize = exportedQuantize || gifencDefault?.quantize;

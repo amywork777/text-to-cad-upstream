@@ -50,8 +50,6 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 - `models/`: sample and durable CAD/robot-description fixtures.
 - `viewer/`: editable CAD Viewer source app.
 - `packages/cadjs`: shared JS CAD/render/runtime code, UI-framework agnostic.
-- `packages/implicitjs`: standalone JS implicit CAD model, shader render,
-  snapshot, mesh sampling, and export runtime.
 - `packages/cadgen`: the published distribution — STEP/GLB/topology generation,
   the skill CLI parsers, the CAD Viewer backend + client, and the Node/browser
   runtimes it executes.
@@ -108,15 +106,15 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   and started with `cadgen viewer` — there is no second copy of it anywhere.
   Keep repo-level tooling in `scripts/`, not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
-  belong in `viewer/`.
-- `packages/implicitjs` must stay reusable/non-React and independent of
-  `packages/cadjs` (`implicitjs` must never import `cadjs`). The dependency
-  flows one way: `cadjs` depends on `implicitjs` and re-exports its shared
-  render/export APIs under `cadjs/implicit/*`, so consumers (CAD Viewer,
-  snapshot tools) install and import `cadjs` alone rather than depending on
-  `implicitjs` directly or duplicating implicit CAD logic. Shared primitives
-  that both packages need live in `implicitjs` as the single source of truth
-  and are re-exported from `cadjs` (e.g. `cadjs/common/camera.js`).
+  belong in `viewer/`. It holds the shared CAD render/runtime code AND the implicit
+  CAD runtime.
+- The implicit CAD runtime lives in `packages/cadjs` under `src/lib/implicitCad`
+  (model schema, GLSL raymarch, SDF evaluation, mesh sampling, export), reached by
+  consumers through the `cadjs/implicit/*` export names. It was a separate
+  `implicitjs` package until 2026-08-13; nothing outside cadjs ever imported it, and
+  the split cost a re-export layer, a NODE_PATH/exports-map bridge and a derived
+  alias table in the docs build — while quietly hosting a forked copy of the theme
+  system. One package, one copy of each shared primitive.
 - `packages/cadgen` is the whole distribution, not just the Python: artifact
   generation, the CLI parsers behind every skill command (`cadgen/cli`), the CAD
   Viewer backend (`cadgen/viewer`), the warm build daemon (`cadgen/daemon`), and
@@ -173,8 +171,8 @@ when touching shared surfaces or before handoff:
 - Development symlink layout: `scripts/dev/setup-symlinks.sh --check`
 - Canonical release version: `scripts/release/check-version.sh`
 - Generated runtime freshness: `scripts/bundle/bundle.sh --check`
-- CAD Viewer, `packages/cadjs`, or `packages/implicitjs`:
-  `npm --prefix packages/cadjs test`, `npm --prefix packages/implicitjs test`,
+- CAD Viewer or `packages/cadjs`:
+  `npm --prefix packages/cadjs test`,
   `npm --prefix viewer run test`, `npm --prefix viewer run build`
 - Docs site: `npm --prefix docs run check`
 - Targeted Python tests: `./.venv/bin/python -m unittest <changed test paths>`
@@ -218,7 +216,7 @@ the dev server and delete `viewer/node_modules/.vite`.
 ### Dev by default, prod only for e2e
 
 Iterate with the **dev** server — Vite serves the client from source with HMR, so
-your `viewer/`, `packages/cadjs`, and `packages/implicitjs` edits show up live:
+your `viewer/` and `packages/cadjs` edits show up live:
 
 ```bash
 npm --prefix viewer run dev -- --host 127.0.0.1 --port <n>
@@ -263,7 +261,6 @@ link them from the primary checkout first:
 ```bash
 ln -s <main>/viewer/node_modules viewer/node_modules
 mkdir -p packages/cadjs/node_modules
-ln -s ../../implicitjs                                packages/cadjs/node_modules/implicitjs
 ln -s <main>/packages/cadjs/node_modules/three        packages/cadjs/node_modules/three
 ln -s <main>/docs/node_modules/meshoptimizer          packages/cadjs/node_modules/meshoptimizer
 npm --prefix viewer run build

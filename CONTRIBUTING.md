@@ -139,9 +139,9 @@ Canonical source directories are:
 - `viewer/` for the CAD Viewer client app. Its backend is `cadgen.viewer`, and its
   built client ships inside the cadgen wheel.
 - `packages/*` for the shared runtimes. `packages/cadgen` is the published
-  distribution; `packages/{cadjs,implicitjs}` are its JS build inputs.
+  distribution; `packages/cadjs` is its JS build input.
 
-On `develop`, `viewer/packages/{cadjs,implicitjs}` are symlinks mirroring the root
+On `develop`, `viewer/packages/cadjs` is a symlink mirroring the root
 sources. Treat them as aliases, not separate source roots — edit the canonical path.
 
 Production-output checks are intentionally centralized. Normal development
@@ -212,7 +212,7 @@ documentation checks, and runs the code tests against that generated output.
 Most generated paths cannot drift on `develop` because they are symlinks to
 their canonical sources, and the freshness check skips those. It covers the
 generated outputs that `develop` does commit as real files, such as the CAD
-snapshot runtime built from `packages/cadjs` and `packages/implicitjs`, and
+snapshot runtime built from `packages/cadjs`, and
 version metadata derived from `VERSION`.
 
 ## Releases

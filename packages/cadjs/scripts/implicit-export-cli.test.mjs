@@ -6,7 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), "export.mjs");
+const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), "implicit-export-cli.mjs");
 
 function runCli(args, { cwd = process.cwd() } = {}) {
   return spawnSync(process.execPath, [cli, ...args], { cwd, encoding: "utf-8" });

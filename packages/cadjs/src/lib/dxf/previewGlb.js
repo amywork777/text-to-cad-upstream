@@ -22,7 +22,7 @@
  * would need invalidating when someone moves a slider.
  */
 
-import { writeGlb } from "../../glb/writeGlb.js";
+import { writeGlb } from "../glb/writeGlb.js";
 
 import {
   buildDxfPreviewMeshData,
