@@ -7,9 +7,9 @@
 # not just a file. A published skill ships no node_modules (design
 # §4.5, "Node the binary is available; the dependency graph is not"), so the builders are
 # esbuild-bundled into ONE self-contained --platform=node file each, exactly as
-# scripts/bundle/skills/bundle-cad.sh does for snapshot-render.js.
+# scripts/bundle/lib/snapshot_runtime.sh does for snapshot-render.js.
 #
-# The outputs land at <skill>/scripts/packages/cadjs/bin/<name>, which is the path
+# The outputs land in cadgen's packaged runtime, which is the path
 # `node_builder_script()` already derives (node_package_root() is cadgen's own
 # parents[4] -- packages/ in the dev checkout, <skill>/scripts/packages/ in a vendored
 # runtime). Nothing in the Python side changes, and the dev checkout keeps resolving the
@@ -20,7 +20,7 @@
 #
 # shellcheck shell=bash
 
-# Pinned so the committed bundles are reproducible. esbuild matches bundle-cad.sh; three and
+# Pinned so the committed bundles are reproducible. three and
 # meshoptimizer are read from packages/cadjs/package-lock.json, the one place their exact
 # versions are already pinned, so a dependency bump cannot silently change what ships without
 # also changing the committed bundle.

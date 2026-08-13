@@ -250,7 +250,7 @@ camera presets, and deterministic renderer settings.
 
 It does not write files. The CAD skill snapshot CLI writes the returned data to
 disk. Source checkouts use `packages/cadjs`; generated snapshot browser assets
-bundle this entrypoint into `skills/cad/scripts/snapshot/runtime`.
+bundle this entrypoint into cadgen's packaged runtime (`cadgen/_runtime/browser`).
 
 `renderMeshJob(meshData, job)` is a compatibility wrapper that builds a context,
 builds a model, renders/captures it, and disposes owned resources.

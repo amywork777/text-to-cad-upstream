@@ -70,7 +70,7 @@ COMPONENT_PROVENANCE_KEYS = (
     "generatedAt",
     "assemblyMates",
 )
-# Lazy full-manifest sidecar inside the package, built on demand by inspect_refs
+# Lazy full-manifest sidecar inside the package, built on demand by cadgen.cli.step_inspect
 # (faces/edges/selectors) — the build itself never produces it (that is the win).
 TOPOLOGY_GLB_NAME = "topology.glb"
 

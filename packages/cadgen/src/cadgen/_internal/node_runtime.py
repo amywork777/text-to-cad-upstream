@@ -29,14 +29,14 @@ Two invariants this module exists to hold:
    child is spawned with ``NODE_PATH=<packages dir>``: a ``NODE_PATH`` entry is treated as a
    ``node_modules`` directory, which makes ``packages/implicitjs`` resolve as the package
    ``implicitjs`` *through its exports map*. A directory ``--alias`` cannot do this -- it
-   bypasses the exports map entirely. Same mechanism as
-   ``scripts/bundle/skills/bundle-cad.sh:166-167``.
+   bypasses the exports map entirely. Same mechanism the bundler uses
+   (``scripts/bundle/lib/node_builders.sh``).
 
    **Correction to the design doc, measured here:** NODE_PATH alone is NOT sufficient for a
    real ``node`` child. Node's *ESM* resolver ignores NODE_PATH (verified on v22.22.0:
    ``import "implicitjs/glb/progressStream.js"`` throws ERR_MODULE_NOT_FOUND while
    ``require.resolve`` of the same specifier under the same env returns the right file).
-   bundle-cad.sh never hit this because esbuild implements NODE_PATH itself. So the child is
+   The bundler never hit this because esbuild implements NODE_PATH itself. So the child is
    also spawned with ``--import node_resolve_register.mjs``, whose resolve hook forwards a
    bare specifier the ESM resolver could not see to the CJS resolver -- which reads NODE_PATH
    and applies the exports map. Nothing about the exports map is re-implemented.
