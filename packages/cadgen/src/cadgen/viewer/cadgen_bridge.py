@@ -42,7 +42,7 @@ def cadgen_pythonpath(repo_root: str = "") -> str:
     """
     del repo_root
     entries = []
-    for env_name in ("VIEWER_CAD_PYTHONPATH", "CAD_PYTHONPATH", "VIEWER_CADPY_PYTHONPATH"):
+    for env_name in ("VIEWER_CAD_PYTHONPATH", "CAD_PYTHONPATH"):
         value = str(os.environ.get(env_name) or "").strip()
         if value:
             entries.append(value)

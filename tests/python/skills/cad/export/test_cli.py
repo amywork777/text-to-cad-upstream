@@ -9,7 +9,7 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/cad/scripts")
 
-from export import cli
+from cadgen.cli import step_export as cli
 
 _OK_PAYLOAD = {"ok": True, "files": [{"format": "stl", "path": "/abs/sample.stl"}]}
 
@@ -142,7 +142,7 @@ class ExportCliTests(unittest.TestCase):
     def test_cli_does_not_reserve_common_module_name(self) -> None:
         skill_root = repo_path("skills/cad")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import export.cli; "
+            "import sys; import cadgen.cli.step_export; "
             "print('common' in sys.modules); "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"

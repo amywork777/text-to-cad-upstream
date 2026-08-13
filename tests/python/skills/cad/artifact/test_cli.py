@@ -11,7 +11,7 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/cad/scripts")
 
-from artifact import cli
+from cadgen.cli import step_artifact as cli
 
 _OK_PAYLOAD = {"ok": True, "packagePath": "/abs/__cadgen__/models/sample.step"}
 
@@ -101,7 +101,7 @@ class ArtifactCliTests(unittest.TestCase):
     def test_cli_does_not_reserve_common_module_name(self) -> None:
         skill_root = repo_path("skills/cad")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import artifact.cli; "
+            "import sys; import cadgen.cli.step_artifact; "
             "print('common' in sys.modules); "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"

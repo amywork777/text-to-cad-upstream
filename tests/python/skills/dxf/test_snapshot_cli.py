@@ -2,6 +2,8 @@ import importlib.util
 import subprocess
 import sys
 import unittest
+
+from cadgen.assets import browser_runtime_dir
 from pathlib import Path
 from unittest import mock
 
@@ -102,7 +104,7 @@ class DxfSnapshotCliTests(unittest.TestCase):
     def test_runtime_is_bundled_beside_the_cli(self) -> None:
         # The skill must carry its own render runtime: it may not reach into the CAD
         # skill's copy, and a published skill ships no node_modules.
-        runtime = repo_path("skills/dxf/scripts/snapshot/runtime")
+        runtime = browser_runtime_dir()
         self.assertTrue((Path(runtime) / "render.html").is_file())
         self.assertTrue((Path(runtime) / "snapshot-render.js").is_file())
 

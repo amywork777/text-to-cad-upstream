@@ -27,7 +27,7 @@ class InspectCliWrapperTests(unittest.TestCase):
         code = (
             "import sys; "
             "sys.path.insert(0, 'scripts/inspect'); "
-            "import inspect_refs.cli; "
+            "import cadgen.cli.step_inspect.cli; "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"
         )

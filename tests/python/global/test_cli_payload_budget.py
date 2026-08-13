@@ -78,12 +78,29 @@ class CompactStdoutTests(unittest.TestCase):
         "packages/cadgen/src/cadgen/snapshot_core.py",
         "packages/cadgen/src/cadgen/step_artifact_cli.py",
         "packages/cadgen/src/cadgen/dxf_artifact.py",
-        "skills/cad/scripts/inspect/inspect_refs/cli.py",
-        "skills/cad/scripts/artifact/cli.py",
-        "skills/dxf/scripts/artifact/cli.py",
-        "skills/cad/scripts/gen/cli.py",
-        "skills/cad/scripts/export/cli.py",
+        "packages/cadgen/src/cadgen/cli/step_inspect/cli.py",
+        "packages/cadgen/src/cadgen/cli/step_artifact.py",
+        "packages/cadgen/src/cadgen/cli/dxf_artifact.py",
+        "packages/cadgen/src/cadgen/cli/step_gen.py",
+        "packages/cadgen/src/cadgen/cli/step_export.py",
     )
+
+    def test_the_source_list_covers_every_json_emitting_cli(self):
+        """A new JSON-emitting CLI must be added above, or it is silently unchecked.
+
+        The list is hand-written, which is how `cad artifact` and `dxf artifact` went
+        unchecked the first time. Derive the expectation instead: anything under
+        `cadgen.cli` that serialises JSON is in scope, and nothing else is.
+        """
+        repo = Path(repo_path("."))
+        cli_dir = Path(repo_path("packages/cadgen/src/cadgen/cli"))
+        emitters = {
+            path.relative_to(repo).as_posix()
+            for path in cli_dir.rglob("*.py")
+            if "json.dumps" in path.read_text(encoding="utf-8")
+        }
+        missing = emitters - set(self.STDOUT_JSON_SOURCES)
+        self.assertFalse(missing, f"add these to STDOUT_JSON_SOURCES: {sorted(missing)}")
 
     def test_no_indented_json_reaches_stdout(self):
         for rel in self.STDOUT_JSON_SOURCES:

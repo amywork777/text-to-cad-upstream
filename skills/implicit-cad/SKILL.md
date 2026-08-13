@@ -9,6 +9,25 @@ Use this skill for implicit CAD models that should run directly in CAD Viewer as
 
 This skill is experimental. ALWAYS prefer conventional STEP-first CAD workflows unless the user explicitly asks for an implicit model.
 
+## Setup
+
+This skill's commands are thin entrypoints over the `cadgen` distribution, which
+carries the Python build runtime and the JavaScript it executes. Install it once:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Rendering additionally needs a browser, which pip cannot supply:
+
+```bash
+python -m playwright install chromium
+```
+
+Building also needs **Node 20 or newer on `PATH`**. cadgen ships the builder
+scripts themselves, but not an interpreter to run them; it resolves `node` at the
+moment it builds, so a missing one is reported then rather than at import.
+
 ## File Format
 
 An implicit CAD file is an ES module exporting an `implicit.js/0.1.0` object. The schema source of truth lives in the bundled package at `scripts/packages/implicitjs/src/lib/implicitCad/schema.js`; `scripts/lib/implicit-cad.mjs` re-exports it as `SCHEMA` for helper-authored modules.

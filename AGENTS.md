@@ -52,7 +52,9 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 - `packages/cadjs`: shared JS CAD/render/runtime code, UI-framework agnostic.
 - `packages/implicitjs`: standalone JS implicit CAD model, shader render,
   snapshot, mesh sampling, and export runtime.
-- `packages/cadgen`: shared Python STEP/GLB/topology artifact code.
+- `packages/cadgen`: the published distribution — STEP/GLB/topology generation,
+  the skill CLI parsers, the CAD Viewer backend + client, and the Node/browser
+  runtimes it executes.
 - `docs/`: documentation site.
 - `tests/`: root-owned test suites for skills, packages, viewer services, and
   repo-wide policy.
@@ -70,14 +72,18 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 - Keep the primary local `develop` checkout in symlink layout with
   `scripts/dev/setup-symlinks.sh`. Do not auto-repair that layout from
   Codex or Claude Code startup hooks in linked worktrees.
-- Each skill must be self-contained and independent at runtime. A skill must
-  not refer to or import or depend on code from another skill, from `skills/`
-  root, or from repository-root modules. Do not add `skills/`, the repository
-  root, or sibling skill directories to `sys.path`, `PYTHONPATH`, `NODE_PATH`,
-  or similar runtime lookup paths. Shared runtime helpers must live under
-  `packages/` as the source of truth and be vendored/generated from there into
-  each consuming skill runtime; do not keep shared helper modules directly under
-  `skills/`.
+- A skill must not import another skill, a `skills/` root module, or a
+  repository-root module, and must not add `skills/`, the repository root, or a
+  sibling skill directory to `sys.path`, `PYTHONPATH`, `NODE_PATH`, or any other
+  runtime lookup path. Skills are independent of each other, not of everything.
+- Shared runtime comes from the **`cadgen` distribution**, named in each skill's
+  `requirements.txt` — unpinned on `develop` so the editable install in
+  `requirements-dev.txt` satisfies it, pinned to the release at publish. Skills do
+  not vendor it: a skill script is a thin entrypoint whose parser and behaviour
+  live in `cadgen.cli`, and which fails with the `pip install -r requirements.txt`
+  hint when cadgen is missing. cadgen carries the JavaScript it executes too (Node
+  builders, the snapshot browser bundle, the CAD Viewer client), so a skill ships
+  no runtime of its own.
 - Edit the source reached by the `develop` symlink layout first, then regenerate
   explicit derived outputs when a production-output task requires it.
 - Write all test, sample, permanent, and generated CAD/robot-description
@@ -111,8 +117,12 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   `implicitjs` directly or duplicating implicit CAD logic. Shared primitives
   that both packages need live in `implicitjs` as the single source of truth
   and are re-exported from `cadjs` (e.g. `cadjs/common/camera.js`).
-- `packages/cadgen` owns reusable Python artifact generation; skills should use
-  bundled package code, not sibling skill imports.
+- `packages/cadgen` is the whole distribution, not just the Python: artifact
+  generation, the CLI parsers behind every skill command (`cadgen/cli`), the CAD
+  Viewer backend (`cadgen/viewer`), the warm build daemon (`cadgen/daemon`), and
+  the JS/SPA assets it executes (`cadgen/_runtime`, built by
+  `scripts/bundle/skills/bundle-cadgen-runtime.sh`). Skills consume it as an
+  installed distribution.
 - Create lightweight shared Python packages under `packages/` when a helper
   should not inherit heavier package dependencies.
 - Use path-targeted search, validation, and `git status`; avoid broad scans over

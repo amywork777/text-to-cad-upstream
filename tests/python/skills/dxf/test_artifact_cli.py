@@ -8,7 +8,7 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/dxf/scripts")
 
-from artifact import cli as artifact
+from cadgen.cli import dxf_artifact as artifact
 
 
 class DxfArtifactCliTests(unittest.TestCase):
@@ -80,7 +80,7 @@ class DxfArtifactCliTests(unittest.TestCase):
         # solid-modelling stack.
         skill_root = repo_path("skills/dxf")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import artifact.cli; "
+            "import sys; import cadgen.cli.dxf_artifact; "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"
         )

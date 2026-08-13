@@ -16,9 +16,9 @@ from tests.python.support.tmp_root import temporary_directory
 
 add_repo_path("skills/cad/scripts")
 
-from cadgen_daemon import client as daemon_client
+from cadgen.daemon import client as daemon_client
 
-DAEMON_DIR = REPO_ROOT / "skills" / "cad" / "scripts" / "cadgen_daemon"
+DAEMON_DIR = REPO_ROOT / "packages" / "cadgen" / "src" / "cadgen" / "daemon"
 GEN_LAUNCHER = REPO_ROOT / "skills" / "cad" / "scripts" / "gen"
 SPAWN_WAIT_SECONDS = 90.0  # daemon startup pays the full OCP import once
 

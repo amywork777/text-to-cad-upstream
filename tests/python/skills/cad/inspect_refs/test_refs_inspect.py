@@ -10,8 +10,8 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/cad/scripts/inspect")
 
-from inspect_refs import cli as inspect_cli
-from inspect_refs import inspect as refs_inspect
+from cadgen.cli.step_inspect import cli as inspect_cli
+from cadgen.cli.step_inspect import inspect as refs_inspect
 from cadgen import cad_ref_syntax as refs_syntax
 from cadgen._internal import assembly_spec
 from cadgen._internal import generation as cad_generation

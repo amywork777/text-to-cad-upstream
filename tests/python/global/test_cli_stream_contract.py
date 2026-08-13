@@ -12,6 +12,7 @@ it is the only way to catch a stream that drifts through a library three layers 
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import unittest
@@ -25,9 +26,17 @@ ROBOT = "models/robots/tom/tom.urdf"
 
 
 def run(skill: str, tool: str, *args: str) -> subprocess.CompletedProcess:
+    # A skill entry is a shim over the installed cadgen. Point the child at THIS checkout's
+    # source so the contract is tested against the code under review, not against whatever
+    # cadgen the interpreter happens to have (in a worktree, that is another branch's).
+    env = dict(os.environ)
+    own_cadgen = str(REPO / "packages" / "cadgen" / "src")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [own_cadgen, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
+    )
     return subprocess.run(
         [sys.executable, str(REPO / "skills" / skill / "scripts" / tool), *args],
-        cwd=REPO, capture_output=True, text=True, check=False,
+        cwd=REPO, capture_output=True, text=True, check=False, env=env,
     )
 
 

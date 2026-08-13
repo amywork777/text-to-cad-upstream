@@ -72,7 +72,6 @@ export function cadPythonEnv() {
   for (const configured of [
     process.env.VIEWER_CAD_PYTHONPATH,
     process.env.CAD_PYTHONPATH,
-    process.env.VIEWER_CADPY_PYTHONPATH,
   ]) {
     const value = String(configured || "").trim();
     if (value) {

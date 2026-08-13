@@ -1,3 +1,1 @@
---editable ./scripts/packages/cadgen
-ezdxf
-shapely
+cadgen

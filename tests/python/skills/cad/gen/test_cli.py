@@ -9,7 +9,7 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/cad/scripts")
 
-from gen import cli
+from cadgen.cli import step_gen as cli
 
 
 class GenCliTests(unittest.TestCase):
@@ -187,7 +187,7 @@ class GenCliTests(unittest.TestCase):
     def test_cli_does_not_reserve_common_module_name(self) -> None:
         skill_root = repo_path("skills/cad")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import gen.cli; "
+            "import sys; import cadgen.cli.step_gen; "
             "print('common' in sys.modules); "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"

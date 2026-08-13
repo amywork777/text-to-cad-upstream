@@ -65,6 +65,7 @@ add_repo_path("packages/cadgen/src")
 # runtime directory.
 import cadgen.snapshot_cli as snapshot_main
 import snapshot.__main__ as cad_snapshot_entry
+from cadgen.assets import browser_runtime_dir
 from cadgen.snapshot_cli import (
     SnapshotError,
     load_job_from_options,
@@ -74,7 +75,9 @@ from cadgen.snapshot_cli import (
     timestamp_output_path,
 )
 
-RUNTIME_DIR = cad_snapshot_entry.RUNTIME_DIR
+# The shim no longer names a runtime directory: cadgen.assets resolves it, finding the
+# repo's live source here and the packaged copy in an installed wheel.
+RUNTIME_DIR = browser_runtime_dir()
 RENDER_HTML_PATH = RUNTIME_DIR / "render.html"
 CAD_KINDS = snapshot_main.enabled_kinds(cad_snapshot_entry.KINDS)
 
@@ -1529,11 +1532,17 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertNotIn("--single-process", captured_launch_options.get("args") or [])
 
     def test_snapshot_tool_has_no_sideways_runtime_dependencies(self) -> None:
-        snapshot_root = repo_path("skills/cad/scripts/snapshot")
+        """The shipped runtime must not reach outside itself.
+
+        It used to be vendored beside the skill; it now ships inside cadgen, but the
+        invariant is the same and matters more: a reference to a repo path or a
+        node_modules tree resolves on a developer's machine and nowhere else, so it
+        would pass every check here and fail for anyone who installed the wheel.
+        """
         checked_files = [
-            snapshot_root / "__main__.py",
-            snapshot_root / "runtime" / "render.html",
-            snapshot_root / "runtime" / "snapshot-render.js",
+            repo_path("skills/cad/scripts/snapshot") / "__main__.py",
+            RUNTIME_DIR / "render.html",
+            RUNTIME_DIR / "snapshot-render.js",
         ]
         forbidden = (
             "packages/cadjs",

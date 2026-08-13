@@ -15,6 +15,21 @@ This skill is for **SDFormat**, not signed-distance-field geometry.
 
 The `.sdf` file is the source of truth: author and edit the XML directly. There is no `gen_sdf()` contract.
 
+## Setup
+
+This skill's commands are thin entrypoints over the `cadgen` distribution, which
+carries the Python build runtime and the JavaScript it executes. Install it once:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Rendering additionally needs a browser, which pip cannot supply:
+
+```bash
+python -m playwright install chromium
+```
+
 ## Core rules
 
 1. Author `.sdf` XML directly and validate every created or modified file with `scripts/validate` before reporting completion.
