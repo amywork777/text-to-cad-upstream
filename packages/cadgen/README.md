@@ -44,8 +44,8 @@ identical output.
 The supported surface is the root `cadgen` exports plus the top-level `cadgen.*` modules:
 
 - **Generator-script helpers**: root exports (`AssemblyHelper`, `MateRelation`,
-  `MateTarget`, `label_text`, `label_shape`, `target`, `ensure_step_glb_artifact`,
-  `validate_step_glb_artifact`), `cadgen.assembly`, and `cadgen.step_scene`
+  `MateTarget`, `label_text`, `label_shape`, `target`, `ensure_step_topology_artifact`,
+  `validate_step_topology_artifact`), `cadgen.assembly`, and `cadgen.step_scene`
   (`import_step`, `load_step_scene`, `located_shape`, `occurrence_selector_id`,
   `scene_occurrence_shape`).
 - **2D generators**: `cadgen.sources` (`load_source_module`) and `cadgen.flatten`
@@ -54,7 +54,7 @@ The supported surface is the root `cadgen` exports plus the top-level `cadgen.*`
   `generate_dxf_targets`, `targets_include_output_pairs`), `cadgen.catalog`,
   `cadgen.metadata`, `cadgen.analysis`, `cadgen.lookup`, `cadgen.cad_ref_syntax`,
   `cadgen.selector_types`, `cadgen.reporting`, `cadgen.cli_logging`, `cadgen.render`,
-  `cadgen.step_artifacts`, `cadgen.step_targets`, `cadgen.step_export`,
+  `cadgen.step_topology_artifact`, `cadgen.step_targets`, `cadgen.step_export`,
   `cadgen.drawing_checks`, `cadgen.drawing_render`.
 - **Asset resolution**: `cadgen.assets` (`node_builders_dir`, `browser_runtime_dir`,
   `viewer_dist_dir`) — where the packaged JavaScript lives, resolved at call time.

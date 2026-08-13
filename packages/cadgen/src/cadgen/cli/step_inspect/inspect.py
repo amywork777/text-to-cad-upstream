@@ -241,7 +241,7 @@ def _load_step_context(
     *,
     profile: SelectorProfile,
 ) -> EntryContext:
-    from cadgen.step_artifacts import ensure_step_topology_artifact
+    from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
     artifact = ensure_step_topology_artifact(
         target,

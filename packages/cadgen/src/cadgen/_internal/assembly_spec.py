@@ -5,7 +5,7 @@ Historically this module also parsed Python ``gen_step()`` assembly recipes
 That contract is gone — ``gen_step()`` is shape-only — and the parser was
 deleted with it. Only the catalog-path helpers and the identity-transform
 constants survive, kept here so the established import paths in
-``step_artifacts``, ``step_targets``, and ``generation`` continue to resolve.
+``step_topology_artifact``, ``step_targets``, and ``generation`` continue to resolve.
 """
 
 from __future__ import annotations

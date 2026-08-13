@@ -9,23 +9,24 @@ __all__ = [
     "MateRelation",
     "MateTarget",
     "compound_from_instances",
-    "ensure_step_glb_artifact",
+    "ensure_step_topology_artifact",
     "label_text",
     "label_shape",
     "report",
     "target",
     "track",
-    "validate_step_glb_artifact",
+    "validate_step_topology_artifact",
 ]
 
 
 def __getattr__(name: str):
-    if name in {"ensure_step_glb_artifact", "validate_step_glb_artifact"}:
-        from cadgen.api import ensure_step_glb_artifact, validate_step_glb_artifact
+    if name in {"ensure_step_topology_artifact", "validate_step_topology_artifact"}:
+        from cadgen.step_targets import validate_step_topology_artifact
+        from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
         return {
-            "ensure_step_glb_artifact": ensure_step_glb_artifact,
-            "validate_step_glb_artifact": validate_step_glb_artifact,
+            "ensure_step_topology_artifact": ensure_step_topology_artifact,
+            "validate_step_topology_artifact": validate_step_topology_artifact,
         }[name]
     if name in {"AssemblyHelper", "MateRelation", "MateTarget", "label_shape", "label_text", "target"}:
         from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
