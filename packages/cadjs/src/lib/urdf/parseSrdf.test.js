@@ -102,7 +102,7 @@ test("parseSrdf reads MoveIt2 semantics directly from SRDF XML", () => {
   assert.equal(srdfData.disabledCollisionPairs[0].source, "adjacent");
 });
 
-test("motionFromSrdf converts direct SRDF data into MoveIt2 CAD Viewer controls", () => {
+test("motionFromSrdf converts direct SRDF data into CAD Viewer controls", () => {
   const srdfData = {
     planningGroups: [{ name: "manipulator" }],
     endEffectors: [{ name: "gripper" }],
@@ -111,8 +111,6 @@ test("motionFromSrdf converts direct SRDF data into MoveIt2 CAD Viewer controls"
   };
 
   const motion = motionFromSrdf(srdfData);
-
-  assert.equal(motion.transport, "moveit2Server");
   assert.equal(motion.srdf, srdfData);
   assert.deepEqual(motion.endEffectors, srdfData.endEffectors);
   assert.deepEqual(motion.groupStates, srdfData.groupStates);

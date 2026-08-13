@@ -398,7 +398,6 @@ export function motionFromSrdf(srdf) {
     return null;
   }
   return {
-    transport: "moveit2Server",
     planningGroups: srdf.planningGroups,
     endEffectors: srdf.endEffectors,
     groupStates: srdf.groupStates,

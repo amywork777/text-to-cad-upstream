@@ -122,7 +122,6 @@ const ROBOT_CAPABILITIES = Object.freeze({
   themeProjection: true,
   params: null,
   animations: false,
-  posePicker: true,
   artifactManaged: false,
   exportFormats: Object.freeze([])
 });
@@ -146,7 +145,6 @@ const DEFAULT_CAPABILITIES = Object.freeze({
   themeProjection: true,
   params: null,
   animations: false,
-  posePicker: false,
   // Formats whose VIEWPORT CONTENT comes from a generated package, so the viewer checks
   // freshness and may block on a build.
   //

@@ -115,9 +115,6 @@ function DesktopFloatingToolBar({
   referenceSelectionPending = false,
   referenceSelectionUnavailable = false,
   referenceSelectionDeferred = false,
-  urdfPosePickerAvailable = false,
-  urdfPosePickerActive = false,
-  handleToggleUrdfPosePicker,
   animationAvailable = false,
   animationPlaying = false,
   animationDisabled = false,
@@ -165,7 +162,6 @@ function DesktopFloatingToolBar({
     referenceSelectionPending ||
     referenceSelectionUnavailable ||
     referenceSelectionDeferred;
-  const posePickerDisabled = viewerLoading || !viewportContent || !urdfPosePickerAvailable;
   const selectLabel = referenceSelectionPending ? "Preparing selection" : "Select";
   // Any format with animation clips gets transport controls, whichever store backs them.
   const showAnimationPlay = capabilities.animations && animationAvailable;
@@ -317,18 +313,6 @@ function DesktopFloatingToolBar({
 
                   {animationButton}
                 </>
-              ) : null}
-
-              {capabilities.posePicker ? (
-                <ToolbarButton
-                  label="Select Pose"
-                  active={urdfPosePickerActive}
-                  onClick={handleToggleUrdfPosePicker}
-                  disabled={posePickerDisabled}
-                  aria-pressed={urdfPosePickerActive}
-                >
-                  <Crosshair className="size-3" strokeWidth={2} aria-hidden="true" />
-                </ToolbarButton>
               ) : null}
 
               <ToolbarButton

@@ -4,7 +4,6 @@ import { test } from "node:test";
 import {
   buildUrdfJointAnglesCopyText,
   cloneJointValueMap,
-  emptyUrdfPosePickerState,
   findBestMatchingJointValueState,
   interpolateTrajectoryJointValues,
   jointValueSubsetClose,
@@ -92,10 +91,6 @@ test("trajectory interpolation keeps fallback values and interpolates only targe
 });
 
 test("URDF pose and copy helpers preserve formatting and numeric rounding", () => {
-  assert.deepEqual(emptyUrdfPosePickerState(), {
-    fileRef: "",
-    originalPerspective: null
-  });
   assert.deepEqual(normalizePoint3(["1", 2, 3]), [1, 2, 3]);
   assert.equal(normalizePoint3([1, Number.NaN, 3]), null);
   assert.equal(roundedUrdfJointValue(-0.0001), 0);

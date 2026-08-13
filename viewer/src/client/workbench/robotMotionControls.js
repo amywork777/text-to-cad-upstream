@@ -139,13 +139,6 @@ export function roundedUrdfJointValue(value) {
   return Object.is(rounded, -0) ? 0 : rounded;
 }
 
-export function emptyUrdfPosePickerState() {
-  return {
-    fileRef: "",
-    originalPerspective: null
-  };
-}
-
 export function normalizePoint3(value) {
   if (!Array.isArray(value) || value.length < 3) {
     return null;

@@ -276,68 +276,12 @@ function normalizeJointValues(value) {
   );
 }
 
-function normalizeMotionTargets(value) {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-  const targets = {};
-  for (const [name, target] of Object.entries(value)) {
-    const normalizedName = normalizeString(name);
-    if (!normalizedName || !Array.isArray(target)) {
-      continue;
-    }
-    targets[normalizedName] = [
-      normalizeNumber(target[0], 0),
-      normalizeNumber(target[1], 0),
-      normalizeNumber(target[2], 0)
-    ];
-  }
-  return targets;
-}
-
-function normalizeUrdfMotionState(value) {
-  if (!isPlainObject(value)) {
-    return {};
-  }
-  const state = {};
-  for (const key of [
-    "activePlanningGroupName",
-    "activeEndEffectorName",
-    "targetFrame",
-    "planningPipeline",
-    "plannerId"
-  ]) {
-    const normalized = normalizeString(value[key]);
-    if (normalized) {
-      state[key] = normalized;
-    }
-  }
-  for (const key of [
-    "ikTimeout",
-    "ikAttempts",
-    "ikTolerance",
-    "planningTime",
-    "maxVelocityScalingFactor",
-    "maxAccelerationScalingFactor"
-  ]) {
-    if (hasOwn(value, key)) {
-      state[key] = normalizeNumber(value[key], 0);
-    }
-  }
-  const targetsByEndEffector = normalizeMotionTargets(value.targetsByEndEffector);
-  if (Object.keys(targetsByEndEffector).length) {
-    state.targetsByEndEffector = targetsByEndEffector;
-  }
-  return state;
-}
-
 function normalizeUrdfSlice(value) {
   if (!isPlainObject(value)) {
     return null;
   }
   return {
-    jointValues: normalizeJointValues(value.jointValues),
-    motionState: normalizeUrdfMotionState(value.motionState)
+    jointValues: normalizeJointValues(value.jointValues)
   };
 }
 
