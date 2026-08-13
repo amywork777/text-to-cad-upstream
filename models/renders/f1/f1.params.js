@@ -31,7 +31,7 @@
 // KINEMATICS
 //
 // Inlined deliberately. The viewer's asset gate (`_is_declared_params_sidecar`
-// in viewer/server_py/scanner.py) serves ONLY the exact file a package
+// in cadgen/viewer/scanner.py) serves ONLY the exact file a package
 // descriptor names as `paramsPath` — a sibling module next to it is not
 // served, so `import "./f1_kinematics.js"` 404s in the browser even though it
 // resolves fine under node. A parameter sidecar therefore has to be one file.

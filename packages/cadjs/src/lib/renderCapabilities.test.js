@@ -106,7 +106,7 @@ test("implicit renders live: parameters from its module, never artifact-managed"
 });
 
 test("artifact-managed formats are exactly STEP and DXF", () => {
-  // A SUBSET of owns_entry in viewer/server_py/artifact.py, which also owns implicit
+  // A SUBSET of owns_entry in cadgen/viewer/artifact.py, which also owns implicit
   // entries — the server builds implicit packages for export and snapshot, but the viewer
   // raymarches the model live and must never wait on that build. A format listed here that
   // the server does not own blocks forever; implicit is the reverse case and belongs out.

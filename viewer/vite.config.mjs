@@ -164,14 +164,15 @@ function cadViewerBackendProxyPlugin() {
     name: "cad-viewer-python-backend",
     async configureServer(server) {
       backendPort = await findFreePort();
+      // No PYTHONPATH juggling: the backend is cadgen.viewer, imported from whichever
+      // cadgen the chosen interpreter has (the repo's editable install, in dev).
       const env = cadPythonEnv();
-      env.PYTHONPATH = [viewerAppRoot, env.PYTHONPATH].filter(Boolean).join(path.delimiter);
       env.VIEWER_AGENT_START_MODE = env.VIEWER_AGENT_START_MODE || "dev";
       // No --dir: a URL path IS the directory. cwd is the backend's only fallback,
       // used when a request names no directory at all (the bare origin).
       child = spawn(
         cadPythonExecutable(repoRoot),
-        ["-m", "server_py.server", "--host", "127.0.0.1", "--port", String(backendPort)],
+        ["-m", "cadgen.viewer.server", "--host", "127.0.0.1", "--port", String(backendPort)],
         { cwd: directoryRoot, env, stdio: "inherit" },
       );
       child.on("error", (error) => {

@@ -1,1 +1,1 @@
---editable ./scripts/viewer/packages/cadgen
+cadgen

@@ -31,11 +31,11 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import backend as backend_mod  # noqa: E402
-from server_py import paths  # noqa: E402
-from server_py import server as server_mod  # noqa: E402
-from server_py import server_info  # noqa: E402
-from server_py import start_viewer  # noqa: E402
+from cadgen.viewer import backend as backend_mod  # noqa: E402
+from cadgen.viewer import paths  # noqa: E402
+from cadgen.viewer import server as server_mod  # noqa: E402
+from cadgen.viewer import server_info  # noqa: E402
+from cadgen.viewer import start_viewer  # noqa: E402
 
 
 def _as_windows():

@@ -60,13 +60,12 @@ The local backend serves asset bytes from the active root and writes regenerated
 artifacts back into it. It rejects path traversal and only serves or writes
 supported CAD Viewer asset types.
 
-Local STEP GLB/topology regeneration calls the Python `cadgen` package. This app
-carries an installable copy under `packages/cadgen`, so regeneration works from
-this directory alone — install `requirements.txt` into the Python runtime used
-by the viewer:
+Local STEP GLB/topology regeneration calls the Python `cadgen` package — which is
+also where this backend lives (`cadgen.viewer`). Install it into the Python runtime
+used by the viewer:
 
 ```bash
-python -m pip install -r requirements.txt
+pip install cadgen          # or, in this repo, the editable install from requirements-dev.txt
 ```
 
 Before binding its HTTP port, the Viewer validates that its selected Python can

@@ -419,10 +419,9 @@ jobs:
       # target branch is copied into every install. None of these is part of what
       # installs:
       #   models/            fixture data
-      #   viewer/            the SOURCE app -- what runs is the dereferenced
-      #                      runtime the bundle wrote to
-      #                      skills/cad-viewer/scripts/viewer, and no skill
-      #                      imports repo-root viewer/
+      #   viewer/            the client SOURCE. Its built output ships inside the
+      #                      cadgen wheel (cadgen/_runtime/viewer) and is served by
+      #                      `cadgen viewer`; nothing on main reads viewer/.
       #   tests/             source-only; nothing under skills/ or docs/ reads it,
       #                      and test.yml runs on develop, never here
       #   requirements-dev.txt  a source-checkout dev environment whose editable
@@ -430,15 +429,13 @@ jobs:
       #                      survive the trim anyway
       #   docs/              a website, not an install; Deploy Docs builds and
       #                      deploys it from the release SOURCE commit
-      #   packages/          the shared source runtimes. Every skill already
-      #                      carries its own vendored copy, and the only other
-      #                      consumer was the docs build, which now runs from
-      #                      source too.
+      #   packages/          the shared source runtimes, including cadgen itself.
+      #                      Skills install cadgen from PyPI -- the wheel is built
+      #                      and uploaded a few steps above, before this trim -- and
+      #                      the docs build runs from the release SOURCE commit.
       #
       # This runs after the bundle, check-builds, and the tests, so the tree they
-      # validated is untouched and only the published tree is trimmed. The
-      # standalone cad-viewer mirror syncs from the release SOURCE commit rather
-      # than from here (.github/workflows/sync-cad-viewer.yml).
+      # validated is untouched and only the published tree is trimmed.
       #
       # PUBLISH_TREE_REMOVED_ROOTS is the single source of truth for what was
       # dropped: the commit step below reads it both to assert the roots are
@@ -454,11 +451,10 @@ jobs:
               exit 1
             fi
           done
-          if [ ! -f skills/cad-viewer/scripts/viewer/package.json ]; then
-            echo "Refusing to publish without the bundled CAD Viewer runtime:" >&2
-            echo "  skills/cad-viewer/scripts/viewer/package.json is missing." >&2
-            exit 1
-          fi
+          # No CAD Viewer guard here any more: the Viewer ships inside the cadgen wheel,
+          # not beside the skill, and "Check cadgen wheel contents" above already refuses
+          # a wheel without it (CADGEN_REQUIRE_VIEWER_DIST=1). That check runs before this
+          # trim, while packages/ still exists — the only point where it can be verified.
           # Every skill vendors what it needs, so no skill SOURCE may reach
           # repo-root packages/ -- one that does would break silently on install
           # rather than here. Generated artifacts are exempt: a bundled dist/ is
@@ -605,25 +601,11 @@ jobs:
       ref: ${{ needs.release-pr.outputs.source_sha }}
     secrets: inherit
 
-  # Mirrors from the release SOURCE commit, not the publish commit: the publish
-  # tree deliberately drops viewer/, and the mirror is a source repo.
-  sync-cad-viewer:
-    name: Sync CAD Viewer Repo
-    needs:
-      - release-pr
-      - publish
-    if: ${{ needs.publish.outputs.published == 'true' && inputs.target_branch == 'main' }}
-    uses: ./.github/workflows/sync-cad-viewer.yml
-    with:
-      ref: ${{ needs.release-pr.outputs.source_sha }}
-    secrets: inherit
-
   tag-release:
     name: Tag and GitHub Release
     needs:
       - publish
       - deploy-docs
-      - sync-cad-viewer
     if: ${{ needs.publish.outputs.published == 'true' && inputs.target_branch == 'main' }}
     runs-on: ubuntu-latest
 

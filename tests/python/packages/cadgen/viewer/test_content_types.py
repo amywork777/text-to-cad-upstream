@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import content_types  # noqa: E402
+from cadgen.viewer import content_types  # noqa: E402
 
 
 class AssetContentType(unittest.TestCase):

@@ -9,7 +9,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import cadgen_bridge, save_dialog  # noqa: E402
+from cadgen.viewer import cadgen_bridge, save_dialog  # noqa: E402
 
 _WORKTREE = pathlib.Path(__file__).resolve().parents[3]
 
@@ -41,11 +41,13 @@ class SaveDialogEnvHooks(unittest.TestCase):
 
 
 class CadpyPythonpath(unittest.TestCase):
-    def test_discovers_cadgen_src(self):
-        if not (_WORKTREE / "packages" / "cadgen" / "src").is_dir():
-            self.skipTest("packages/cadgen/src not present")
-        pp = cadgen_bridge.cadgen_pythonpath(str(_WORKTREE))
-        self.assertIn(os.path.join("packages", "cadgen", "src"), pp)
+    def test_forwards_the_explicit_pythonpath_override(self):
+        # cadgen is importable in-process and children are spawned with sys.executable, so
+        # nothing is discovered any more -- but the explicit override must still reach the
+        # child, which is how a caller points one at a different cadgen.
+        with mock.patch.dict(os.environ, {"VIEWER_CAD_PYTHONPATH": "/tmp/other-cadgen/src"}):
+            pp = cadgen_bridge.cadgen_pythonpath()
+        self.assertIn("/tmp/other-cadgen/src", pp.split(os.pathsep))
 
     def test_cadgen_runtime_probe_checks_required_imports(self):
         completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")

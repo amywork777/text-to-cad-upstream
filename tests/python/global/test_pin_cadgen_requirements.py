@@ -37,12 +37,30 @@ class PinScriptPresenceTest(unittest.TestCase):
         commit_at = workflow.index("Commit publish result")
         self.assertLess(pin_at, commit_at, "pinning must run before the publish commit")
 
-    def test_checked_in_requirements_stay_editable(self):
-        """A source checkout must NOT be pinned — the pin is publish-only."""
-        for rel in ("skills/cad/requirements.txt", "viewer/requirements.txt"):
-            text = (REPO_ROOT / rel).read_text()
-            self.assertIn("--editable", text, f"{rel} should stay editable in-tree")
+    def test_checked_in_requirements_stay_unpinned(self):
+        """A source checkout must NOT be pinned — the pin is publish-only.
+
+        Two unpinned spellings are legal on develop, and both must resolve to the repo's
+        own cadgen locally: `--editable <path>/packages/cadgen` for a skill that still
+        vendors it, and the bare distribution name (optionally with extras) for one that
+        installs it. Either way `cadgen==` must not appear in the tree, or a developer
+        would silently install a released cadgen over their working copy.
+        """
+        checked = 0
+        for req in sorted(REPO_ROOT.glob("skills/*/requirements.txt")):
+            text = req.read_text()
+            if "cadgen" not in text:
+                continue
+            checked += 1
+            rel = req.relative_to(REPO_ROOT)
             self.assertNotIn("cadgen==", text, f"{rel} must not be pinned in the source tree")
+            self.assertTrue(
+                "--editable" in text or any(
+                    line.strip().startswith("cadgen") for line in text.splitlines()
+                ),
+                f"{rel} should name cadgen editable or as a bare distribution",
+            )
+        self.assertTrue(checked, "no skill requirements name cadgen")
 
 
 class PinScriptBehaviourTest(unittest.TestCase):

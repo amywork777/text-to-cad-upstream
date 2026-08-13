@@ -150,7 +150,7 @@ const DEFAULT_CAPABILITIES = Object.freeze({
   // Formats whose VIEWPORT CONTENT comes from a generated package, so the viewer checks
   // freshness and may block on a build.
   //
-  // This is a SUBSET of `owns_entry` in viewer/server_py/artifact.py, not a mirror of it.
+  // This is a SUBSET of `owns_entry` in cadgen/viewer/artifact.py, not a mirror of it.
   // The server also owns implicit entries — it builds their packages for export and
   // snapshot — but an implicit renders live from its own GLSL, so the viewer must never
   // wait on that build. Anything listed here and NOT owned by the server blocks forever;

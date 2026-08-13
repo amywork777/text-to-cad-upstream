@@ -40,7 +40,7 @@ generator, so it uses the `<name>.step.js` filename convention below instead.
 module.** Only the sidecar itself is served — the exact path a package
 descriptor names as `paramsPath`, or the `<name>.step.js` beside an imported
 STEP (`_is_declared_params_sidecar` / `is_step_sidecar_path` in
-`viewer/server_py/scanner.py`) — so
+`cadgen/viewer/scanner.py`) — so
 `import { solve } from "./my_kinematics.js"` 404s in the browser. It resolves
 fine under node, so the failure appears only in the viewer. Splitting the maths
 out for testability is the natural first move and it does not work; inline it
@@ -79,7 +79,7 @@ export default { manifest: { /* ... */ }, update({ params, effects }) { /* ... *
   nothing in the CAD pipeline reads it, and no render package records it.
   Serving stays gated: a `.js` is served under this rule only when the STEP file
   it is named after actually exists beside it (`is_step_sidecar_path` in
-  `viewer/server_py/scanner.py`). `scripts/snapshot` renders the same file, but
+  `cadgen/viewer/scanner.py`). `scripts/snapshot` renders the same file, but
   you must name it explicitly with `--params-path` (see Validation below); it
   never guesses by filename. Do not add a wrapper `<name>.step.py` that only
   re-imports the `.step` to declare `params`; it makes the imported file look

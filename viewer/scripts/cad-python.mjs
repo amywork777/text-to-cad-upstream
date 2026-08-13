@@ -1,5 +1,5 @@
 // Discover the project's venv Python + cadgen PYTHONPATH for spawning the Python
-// CAD Viewer backend (server_py) from Node tooling (the Vite dev proxy and the
+// CAD Viewer backend (cadgen.viewer) from Node tooling (the Vite dev proxy and the
 // `start` launcher shim). Extracted from the former src/server/step/pythonStepArtifact
 // venv discovery so it survives the Node-backend deletion.
 import fs from "node:fs";
@@ -79,10 +79,15 @@ export function cadPythonEnv() {
       pythonPathEntries.push(value);
     }
   }
+  // A checkout's OWN cadgen source must win. These candidates walk UPWARD, and a git
+  // worktree lives inside its parent checkout, so one that matches further up silently
+  // binds the backend to another branch's cadgen — which then cannot import
+  // `cadgen.viewer` at all if that branch predates it. Nearest-and-most-canonical first.
+  // (`viewer/packages/cadgen/src` used to lead here and did exactly that; the symlink it
+  // named is gone now that the viewer's Python side ships inside cadgen.)
   for (const discovered of [
-    findUpDirectory(path.join("scripts", "packages", "cadgen", "src")),
-    findUpDirectory(path.join("viewer", "packages", "cadgen", "src")),
     findUpDirectory(path.join("packages", "cadgen", "src")),
+    findUpDirectory(path.join("scripts", "packages", "cadgen", "src")),
     path.join(PACKAGE_ROOT, "vendor", "python"),
     findUpDirectory(path.join("runtime", "vendor", "python")),
     findUpDirectory(path.join("vendor", "python")),

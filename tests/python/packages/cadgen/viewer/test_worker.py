@@ -14,12 +14,13 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import cadgen_bridge, worker, worker_client  # noqa: E402
+from cadgen.viewer import cadgen_bridge, worker, worker_client  # noqa: E402
 
 _WORKTREE = pathlib.Path(__file__).resolve().parents[3]
 _FIXTURE = _WORKTREE / "models/step/parts/basic_shape_mating_test_fixture.step.py"
@@ -207,6 +208,34 @@ class WorkerBuildIntegration(unittest.TestCase):
         self.assertNotIn("cadgen", "".join(cold_closure[1]), cold_closure)
         self.assertEqual(w1, cold_closure)
         self.assertEqual(w2, cold_closure)
+
+
+class WorkerPythonPath(unittest.TestCase):
+    """The PYTHONPATH the client hands its worker child.
+
+    Worth pinning because the failure mode is invisible in the common case: when cadgen
+    is installed in the interpreter, `-m cadgen.viewer.worker` resolves from site-packages
+    no matter what this path says, so a wrong entry only bites a source checkout.
+    """
+
+    def test_pythonpath_leads_with_the_parent_of_the_cadgen_package(self):
+        env = worker_client.CadWorker()._env_for(str(_WORKTREE))
+        lead = env["PYTHONPATH"].split(os.pathsep)[0]
+        cadgen_pkg = pathlib.Path(worker_client.__file__).resolve().parent.parent
+        self.assertEqual(pathlib.Path(lead).resolve(), cadgen_pkg.parent)
+        # Not the package dir itself: that both fails to import cadgen.viewer and makes
+        # every cadgen submodule importable as a bare top-level name.
+        self.assertNotEqual(pathlib.Path(lead).resolve(), cadgen_pkg)
+
+    def test_that_pythonpath_actually_imports_the_worker(self):
+        env = worker_client.CadWorker()._env_for(str(_WORKTREE))
+        proc = subprocess.run(
+            [sys.executable, "-c", "import cadgen.viewer.worker"],
+            env={"PATH": os.environ.get("PATH", ""), "PYTHONPATH": env["PYTHONPATH"]},
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":

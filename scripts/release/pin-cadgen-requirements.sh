@@ -43,10 +43,15 @@ fi
 # The editable form a source checkout uses. Any path prefix is accepted because
 # each skill points at its own vendored copy.
 EDITABLE_RE='^--editable \./([A-Za-z0-9_./-]*/)?packages/cadgen[[:space:]]*$'
+# A skill that no longer vendors cadgen names the DISTRIBUTION instead, optionally with
+# extras (`cadgen[snapshot]`). Unpinned on develop so the editable install from
+# requirements-dev.txt satisfies it; pinned here so a published skill resolves the exact
+# release from PyPI.
+DIST_RE='^cadgen(\[[a-z0-9_,-]+\])?[[:space:]]*$'
 
 pending=0
 while IFS= read -r manifest; do
-  if ! grep -Eq "$EDITABLE_RE" "$manifest"; then
+  if ! grep -Eq "$EDITABLE_RE" "$manifest" && ! grep -Eq "$DIST_RE" "$manifest"; then
     continue
   fi
   if [ "$CHECK_ONLY" -eq 1 ]; then
@@ -54,7 +59,7 @@ while IFS= read -r manifest; do
     pending=1
     continue
   fi
-  sed -E -i.bak "s|$EDITABLE_RE|cadgen==$version|" "$manifest"
+  sed -E -i.bak -e "s|$EDITABLE_RE|cadgen==$version|" -e "s|$DIST_RE|cadgen\1==$version|" "$manifest"
   rm -f "$manifest.bak"
   echo "pinned: $manifest -> cadgen==$version"
 done < <(

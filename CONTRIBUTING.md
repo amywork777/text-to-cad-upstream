@@ -135,13 +135,13 @@ directories on `sys.path`, `PYTHONPATH`, `NODE_PATH`, or similar lookup paths.
 Canonical source directories are:
 
 - `skills/*` for skill instructions, references, and skill-owned scripts.
-- `viewer/` for CAD Viewer app and server source.
+- `viewer/` for the CAD Viewer client app. Its backend is `cadgen.viewer`, and its
+  built client ships inside the cadgen wheel.
 - `packages/*` for shared runtime helpers that are copied into consuming skills
   for production.
 
-On `develop`, paths such as `skills/cad-viewer/scripts/viewer`,
-`skills/*/scripts/packages/*`, and `viewer/packages/*`
-should be symlinks when they mirror root sources. Treat those paths as
+On `develop`, paths such as `skills/*/scripts/packages/*` and
+`viewer/packages/{cadjs,implicitjs}` should be symlinks when they mirror root sources. Treat those paths as
 generated-output aliases, not separate source roots. Edit the canonical source
 path instead.
 
@@ -193,9 +193,8 @@ package as it can be.
 Nothing is lost, because each of those has a consumer that reads **source**
 rather than the published tree:
 
-- `viewer/` — what installs and runs is the dereferenced runtime under
-  `skills/cad-viewer/scripts/viewer`, and the standalone cad-viewer mirror syncs
-  from the release source commit.
+- `viewer/` — the client source. Its built bundle ships inside the cadgen wheel
+  (`cadgen/_runtime/viewer`) and is served by `cadgen viewer`.
 - `docs/` and `packages/` — `Deploy Docs` builds and deploys from the release
   source commit. `packages/` has no other published consumer: every skill
   vendors the runtimes it needs, and the trim step fails the publish if a skill
@@ -342,50 +341,6 @@ gh workflow run deploy-docs.yml -f ref="$(git rev-parse 0.4.6^2)"
 
 The CAD Viewer is a local-filesystem app and has no hosted deployment.
 
-### Mirroring the CAD Viewer repo
-
-`viewer/` is published as its own standalone repo,
-[`earthtojake/cad-viewer`](https://github.com/earthtojake/cad-viewer). The
-`Release` workflow calls `Sync CAD Viewer Repo` after publishing to `main`, so
-the mirror tracks releases rather than in-flight `develop` work. It mirrors from
-the release **source** commit, not from `main`, which carries no `viewer/`.
-Dispatch it on its own for an out-of-band sync, or with `dry_run` to build and
-verify the mirror without pushing:
-
-```bash
-gh workflow run sync-cad-viewer.yml -f ref=develop
-gh workflow run sync-cad-viewer.yml -f ref=develop -f dry_run=true
-```
-
-Use a past release's source commit — `git rev-parse <tag>^2` — to re-sync the
-mirror as it stood at that release.
-
-The workflow needs a `CAD_VIEWER_SYNC_TOKEN` secret with `contents:write` on the
-mirror repo. Before pushing, it runs `npm ci`, `npm run test`, `npm run build`,
-`pip install -r requirements.txt`, and the `server_py` tests inside the mirror,
-so a mirror that cannot stand on its own fails the release instead of shipping.
-
-The sync is a **straight copy** — nothing rewrites paths, commands, or prose on
-the way out, and it does not run or depend on `bundle.sh`. The only structural
-change is dereferencing `viewer/packages/*` into real directories; the script
-refuses to publish a tree that still contains a symlink. What lands in the
-mirror's `packages/` is whatever `viewer/packages/` holds, so syncing from a
-published `main` mirrors the committed bundle output that `bundle.sh --check`
-already validated. A sync from `develop` dereferences the symlinks to the live
-package sources instead — a development snapshot, not what a release publishes,
-and the script says so when it sees that layout. That works only because
-`viewer/` stays self-contained, which `viewer/scripts/selfContained.test.mjs`
-enforces on every test run: no import, markdown link, or `package.json` script
-under `viewer/` may reach above it. Repo-level tooling belongs in `scripts/`,
-not under `viewer/`.
-
-To sync into a local clone, or to check an existing one for drift:
-
-```bash
-scripts/viewer/sync-cad-viewer-repo.sh ../cad-viewer
-scripts/viewer/sync-cad-viewer-repo.sh --check ../cad-viewer
-```
-
 ### Local and manual fallbacks
 
 For local release preparation, use the same scripts the workflow calls:
@@ -454,7 +409,7 @@ Python tests live under `tests/python/`, grouped by tested surface:
 `skills/<skill>`, `packages/<package>`, `viewer/<service>`, and `global`.
 
 For fast CAD Viewer source iteration, run the root viewer app in dev mode. Do
-not run the generated viewer from the cad-viewer skill while modifying Viewer
+not run the packaged viewer from an installed cadgen while modifying Viewer
 behavior:
 
 ```bash

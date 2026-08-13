@@ -27,7 +27,7 @@ from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from server_py import artifact, scanner  # noqa: E402
+from cadgen.viewer import artifact, scanner  # noqa: E402
 
 from cadgen._internal import drawing_package as _drawing_package  # noqa: E402
 from cadgen._internal.drawing_package import (  # noqa: E402
@@ -454,7 +454,7 @@ class GenerationLock(unittest.TestCase):
 def _reference_closure_hash(root, relative_files):
     """Independent re-derivation of the closure digest cadgen records.
 
-    Deliberately NOT calling server_py.source_hash: a fixture built by the module
+    Deliberately NOT calling cadgen.viewer.source_hash: a fixture built by the module
     under test could not catch a bug in that module's digest construction. Parity
     with the real cadgen implementation is pinned separately in
     tests/python/global/test_viewer_cadgen_mirror.py.
@@ -1176,7 +1176,7 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
     that does not exist, report `ready` for the missing-source code, and never build."""
 
     def setUp(self):
-        from server_py import backend as backend_mod
+        from cadgen.viewer import backend as backend_mod
 
         self.backend = backend_mod.LocalAssetBackend()
 
@@ -1205,7 +1205,7 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
         # The warm worker keeps its own module allowlist; a producer missing from it fails at
         # RUNTIME with "Unknown cadgen module for worker", which no unit test of either side
         # alone would catch.
-        from server_py import worker
+        from cadgen.viewer import worker
 
         dispatch = worker._module_dispatch()
         for module in (
