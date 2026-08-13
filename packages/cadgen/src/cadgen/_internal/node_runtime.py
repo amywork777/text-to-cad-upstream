@@ -25,9 +25,9 @@ Two invariants this module exists to hold:
    "a thin Python process owns the child" design was chosen to prevent, and is why the
    server request thread was rejected as the lock holder.
 2. **Bare specifiers resolve through the exports map.** The published skill runtime ships
-   ``packages/implicitjs`` and ``packages/cadjs`` as SOURCE with no ``node_modules``, so the
+   ``packages/cadjs`` as SOURCE with no ``node_modules`` beside the entry, so the
    child is spawned with ``NODE_PATH=<packages dir>``: a ``NODE_PATH`` entry is treated as a
-   ``node_modules`` directory, which makes ``packages/implicitjs`` resolve as the package
+   ``node_modules`` directory, which makes ``packages/cadjs`` resolve as the package
    ``implicitjs`` *through its exports map*. A directory ``--alias`` cannot do this -- it
    bypasses the exports map entirely. Same mechanism the bundler uses
    (``scripts/bundle/lib/node_builders.sh``).

@@ -42,12 +42,12 @@ from cadgen.coordination import IMPLICIT_PACKAGE, generator_busy
 from cadgen.render import relative_to_cwd
 
 # The formats the exporter offers, in menu order. Mirrors IMPLICIT_CAD_EXPORT_FORMATS in
-# packages/implicitjs/src/lib/implicitCad/export.js, which is also where the CLI's
+# packages/cadjs/src/lib/implicitCad/export.js, which is also where the CLI's
 # flag-per-format surface is derived from.
 IMPLICIT_EXPORT_FORMATS = ("stl", "glb", "3mf")
 
 # The export CLI, spawned like any other builder. It used to run straight out of
-# packages/implicitjs/scripts, which made it the one Node entry that was not bundled --
+# packages/cadjs/scripts, which made it the one Node entry that was not bundled --
 # and an unbundled entry needs its whole dependency graph at runtime, which is why every
 # skill that exported an implicit model had to vendor all of implicitjs beside it. The
 # thin wrapper in packages/cadjs/bin is esbuilt self-contained into the distribution; the

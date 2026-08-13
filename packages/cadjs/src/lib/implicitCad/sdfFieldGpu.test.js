@@ -24,7 +24,7 @@
 // result depends on whether a browser happens to be installed is not a test, it is a coin
 // flip. Off by default, `npm test` behaves identically everywhere.
 //
-//   IMPLICIT_GPU_SHADER_CHECK=1 npm --prefix packages/implicitjs test
+//   IMPLICIT_GPU_SHADER_CHECK=1 npm --prefix packages/cadjs test
 //   (first time: npx playwright install chromium)
 
 import assert from "node:assert/strict";

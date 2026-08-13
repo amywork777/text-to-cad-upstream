@@ -35,7 +35,6 @@ from pathlib import Path
 from tests.python.support.paths import add_repo_path
 
 add_repo_path("packages/cadgen/src")
-add_repo_path("viewer")
 
 HAS_NODE = shutil.which("node") is not None
 
@@ -180,7 +179,7 @@ class PackagePortabilityTest(unittest.TestCase):
             build_implicit_artifact(repo_root=root, source_path=root / "orb.implicit.js")
 
     def _validators(self, root: Path):
-        from server_py.artifact import (
+        from cadgen.viewer.artifact import (
             validate_dxf_freshness,
             validate_implicit_freshness,
             validate_step_freshness,

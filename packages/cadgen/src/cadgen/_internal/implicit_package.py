@@ -59,7 +59,7 @@ IMPLICIT_BUILDER = "implicit-artifact.mjs"
 IMPLICIT_SUFFIXES = (".implicit.js", ".implicit.mjs")
 
 # --- the bake -------------------------------------------------------------------------
-# `DEFAULT_RESOLUTION` in packages/implicitjs/src/lib/implicitCad/mesh.js, and the resolution
+# `DEFAULT_RESOLUTION` in packages/cadjs/src/lib/implicitCad/mesh.js, and the resolution
 # all 43 shipped models were authored against. Lowering it would visibly coarsen every one of
 # them to save time on an artifact that is built once and cached (§0.1 decision 2).
 DEFAULT_BAKE_RESOLUTION = 144
