@@ -75,6 +75,29 @@ Use the active project Python interpreter; treat `python` in examples as an inte
 
 **Streams.** stdout carries the result; stderr carries progress, timing, and failures. Every tool answers on stdout — `gen` prints `<outcome> <package path>` per target — so `2>/dev/null` leaves something parseable and `>/dev/null` leaves a readable log. JSON on stdout is always compact; pipe through `jq .` to read it. The two never interleave, so `2>/dev/null` leaves a clean parseable result and `>/dev/null` leaves a readable log. For machine-readable output: `gen`, `export`, and `snapshot` take `--json`; `inspect` already emits JSON and takes `--format text` for prose. `--verbose` adds stage timing (and full tracebacks) on stderr. Output volume does not grow with model size — a 600-occurrence assembly logs the same dozen lines a single part does.
 
+**Reporting progress from a generator.** A long build spends most of its wall time inside
+`gen_step()`, which takes no arguments and so cannot be handed the run. Import the reporter
+instead — it binds to whichever build is running, and does nothing when there is none:
+
+```python
+from cadgen import report, track
+
+def gen_step():
+    report("bearing housing")                              # name the current phase
+    for rib in track(ribs, label=lambda r: r.name):        # count through a work list
+        ...
+```
+
+`track()` advances the count when an item's work is DONE and labels the item in flight, so a
+reader sees "3 finished, now on engines". Without this a multi-minute assembly says nothing
+during its longest phase.
+
+It surfaces in two places, and neither is ordinary stderr output: a **live inline line** on a
+terminal, and the **CAD Viewer's progress bar** during an on-demand build. The inline line is
+deliberately silent when stderr is not a tty, so a redirected log keeps the lines rather than
+the repainting — do not conclude the calls are doing nothing because `2>file` shows no labels.
+Silent generators are unaffected.
+
 **Failures** print the exception and the frames *in your own generator*, not the runtime's:
 
 ```text
