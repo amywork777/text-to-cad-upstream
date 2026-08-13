@@ -219,10 +219,8 @@ import {
 import {
   buildUrdfJointAnglesCopyText,
   cloneJointValueMap,
-  emptyUrdfPosePickerState,
   findBestMatchingJointValueState,
   interpolateTrajectoryJointValues,
-  normalizePoint3,
   srdfHomeGroupStateJointValuesToDisplay,
   srdfGroupStateJointValuesToDisplay
 } from "@/workbench/robotMotionControls";
@@ -257,13 +255,6 @@ import {
   linkOriginInFrame,
   rootPointInFrame
 } from "cadjs/lib/urdf/kinematics";
-import {
-  jointValuesByNameToNative,
-  measureUrdfMotionResult,
-  normalizeMotionTargetPosition,
-  validateUrdfMotionTrajectory,
-  validateUrdfMotionJointValues
-} from "cadjs/lib/urdf/motion";
 import {
   advanceUrdfJointValues,
   interpolateUrdfJointValues,
@@ -1219,7 +1210,6 @@ export default function CadWorkspace({
   const [screenshotStatus, setScreenshotStatus] = useState("");
   const [fileAccessBusyKey, setFileAccessBusyKey] = useState("");
   const [persistenceStatus, setPersistenceStatus] = useState("");
-  const [motionErrorStatus, setMotionErrorStatus] = useState("");
   const [viewerLayoutMode, setViewerLayoutMode] = useState(readViewerLayoutMode);
   const [sidebarOpen, setSidebarOpen] = useState(() => (
     readDirectorySessionState().fileViewerOpen
@@ -1313,7 +1303,6 @@ export default function CadWorkspace({
   const [drawingRedoStack, setDrawingRedoStack] = useState([]);
   const [jointValuesByFileRef, setJointValuesByFileRef] = useState({});
   const [selectedUrdfGroupStateIdByFileRef, setSelectedUrdfGroupStateIdByFileRef] = useState({});
-  const [urdfMotionStateByFileRef, setUrdfMotionStateByFileRef] = useState({});
   const [stepModuleLoadState, setStepModuleLoadState] = useState({
     url: "",
     status: "idle",
@@ -1343,7 +1332,6 @@ export default function CadWorkspace({
   const [implicitGraphicsSettings, setImplicitGraphicsSettings] = useState(() => normalizeImplicitGraphicsSettings());
   const [implicitParameterInteractionActive, setImplicitParameterInteractionActive] = useState(false);
   const implicitParameterInteractionTimerRef = useRef(0);
-  const [urdfPosePickerState, setUrdfPosePickerState] = useState(emptyUrdfPosePickerState);
   const lastPersistenceFailureKeyRef = useRef("");
   const urdfTrajectoryPlaybackRef = useRef({
     frameId: 0,
@@ -1897,75 +1885,6 @@ export default function CadWorkspace({
     selectedEntrySourceFormat,
     selectedImplicitDefinition
   ]);
-
-  const selectedUrdfMotionControls = selectedUrdfMotion;
-  const selectedUrdfMotionState = useMemo(() => {
-    if (!selectedUrdfFileRef) {
-      return {};
-    }
-    const state = urdfMotionStateByFileRef?.[selectedUrdfFileRef];
-    return state && typeof state === "object" ? state : {};
-  }, [selectedUrdfFileRef, urdfMotionStateByFileRef]);
-  const selectedUrdfMotionPlanningGroups = selectedUrdfMotionControls?.planningGroups || EMPTY_LIST;
-  const selectedUrdfMotionPlanningGroupName = useMemo(() => {
-    const storedName = String(selectedUrdfMotionState.activePlanningGroupName || "").trim();
-    if (storedName && selectedUrdfMotionPlanningGroups.some((group) => String(group?.name || "").trim() === storedName)) {
-      return storedName;
-    }
-    return String(selectedUrdfMotionPlanningGroups[0]?.name || "").trim();
-  }, [selectedUrdfMotionPlanningGroups, selectedUrdfMotionState.activePlanningGroupName]);
-  const selectedUrdfMotionEndEffectors = selectedUrdfMotionControls?.endEffectors || EMPTY_LIST;
-  const selectedUrdfMotionEndEffectorName = useMemo(() => {
-    const storedName = String(selectedUrdfMotionState.activeEndEffectorName || "").trim();
-    if (storedName && selectedUrdfMotionEndEffectors.some((endEffector) => String(endEffector?.name || "").trim() === storedName)) {
-      return storedName;
-    }
-    return String(selectedUrdfMotionEndEffectors[0]?.name || "").trim();
-  }, [selectedUrdfMotionEndEffectors, selectedUrdfMotionState.activeEndEffectorName]);
-  const selectedUrdfMotionEndEffector = useMemo(() => (
-    selectedUrdfMotionEndEffectors.find((endEffector) => String(endEffector?.name || "").trim() === selectedUrdfMotionEndEffectorName) || null
-  ), [selectedUrdfMotionEndEffectorName, selectedUrdfMotionEndEffectors]);
-  const selectedUrdfMotionTargetFrames = useMemo(() => (
-    Array.isArray(selectedUrdfData?.links)
-      ? selectedUrdfData.links.map((link) => String(link?.name || "").trim()).filter(Boolean)
-      : []
-  ), [selectedUrdfData]);
-  const selectedUrdfMotionTargetFrameName = useMemo(() => {
-    const storedName = String(selectedUrdfMotionState.targetFrame || "").trim();
-    if (storedName && selectedUrdfMotionTargetFrames.includes(storedName)) {
-      return storedName;
-    }
-    if (selectedUrdfData?.rootLink && selectedUrdfMotionTargetFrames.includes(selectedUrdfData.rootLink)) {
-      return selectedUrdfData.rootLink;
-    }
-    return selectedUrdfMotionTargetFrames[0] || "";
-  }, [selectedUrdfData, selectedUrdfMotionState.targetFrame, selectedUrdfMotionTargetFrames]);
-  const selectedUrdfMotionCurrentPosition = useMemo(() => {
-    if (!selectedUrdfData || !selectedUrdfMotionEndEffector || !selectedUrdfMotionTargetFrameName) {
-      return null;
-    }
-    return linkOriginInFrame(
-      selectedUrdfData,
-      selectedUrdfJointValues,
-      selectedUrdfMotionEndEffector.link,
-      selectedUrdfMotionTargetFrameName
-    );
-  }, [selectedUrdfData, selectedUrdfMotionEndEffector, selectedUrdfJointValues, selectedUrdfMotionTargetFrameName]);
-  const selectedUrdfMotionTargetPosition = useMemo(() => {
-    const targetsByEndEffector = selectedUrdfMotionState.targetsByEndEffector && typeof selectedUrdfMotionState.targetsByEndEffector === "object"
-      ? selectedUrdfMotionState.targetsByEndEffector
-      : {};
-    const storedTarget = selectedUrdfMotionEndEffectorName ? targetsByEndEffector[selectedUrdfMotionEndEffectorName] : null;
-    return normalizeMotionTargetPosition(storedTarget, selectedUrdfMotionCurrentPosition || [0, 0, 0]);
-  }, [selectedUrdfMotionCurrentPosition, selectedUrdfMotionEndEffectorName, selectedUrdfMotionState.targetsByEndEffector]);
-  const selectedUrdfMotionSolving = Boolean(
-    selectedUrdfMotionEndEffectorName &&
-    selectedUrdfMotionState.solvingEndEffectorName === selectedUrdfMotionEndEffectorName
-  );
-  const selectedUrdfPosePickerState = selectedUrdfFileRef && urdfPosePickerState.fileRef === selectedUrdfFileRef
-    ? urdfPosePickerState
-    : null;
-  const urdfPosePickerActive = Boolean(selectedUrdfFileRef && selectedUrdfPosePickerState);
   const selectedUrdfMeshGeometryResult = useMemo(() => {
     if (!selectedUrdfData || !selectedUrdfMeshes) {
       return {
@@ -3726,7 +3645,6 @@ export default function CadWorkspace({
     selectedStepModuleDefinition,
     selectedStepModuleError,
     selectedStepModuleStatus,
-    selectedUrdfMotionEndEffectors,
     drawingBends,
     drawingLayers
   ]);
@@ -3906,9 +3824,6 @@ export default function CadWorkspace({
     const targetUrdfJointValues = targetFileKey && jointValuesByFileRef?.[targetFileKey]
       ? jointValuesByFileRef[targetFileKey]
       : {};
-    const targetUrdfMotionState = targetFileKey && urdfMotionStateByFileRef?.[targetFileKey]
-      ? urdfMotionStateByFileRef[targetFileKey]
-      : {};
     const snapshotStepModuleAnimationState = stepModuleAnimationState.playing
       ? {
           ...stepModuleAnimationState,
@@ -3931,7 +3846,6 @@ export default function CadWorkspace({
         },
         urdf: {
           jointValues: targetUrdfJointValues,
-          motionState: targetUrdfMotionState
         },
         largeFile: {
           selectableTopologyEnabled: largeFileState.selectableTopologyEnabled
@@ -3949,7 +3863,6 @@ export default function CadWorkspace({
     stepModuleAnimationState,
     stepModuleEnabled,
     stepModuleParameterValues,
-    urdfMotionStateByFileRef
   ]);
 
   const clearFileSessionSaveTimer = useCallback(() => {
@@ -4039,20 +3952,8 @@ export default function CadWorkspace({
         ...current,
         [normalizedKey]: urdfSlice.jointValues || {}
       }));
-      setUrdfMotionStateByFileRef((current) => ({
-        ...current,
-        [normalizedKey]: urdfSlice.motionState || {}
-      }));
     } else {
       setJointValuesByFileRef((current) => {
-        if (!current?.[normalizedKey]) {
-          return current;
-        }
-        const next = { ...current };
-        delete next[normalizedKey];
-        return next;
-      });
-      setUrdfMotionStateByFileRef((current) => {
         if (!current?.[normalizedKey]) {
           return current;
         }
@@ -5523,24 +5424,6 @@ export default function CadWorkspace({
     selectedAssemblyInteractionReady
   ]);
 
-  const clearUrdfMotionStatusForFile = useCallback((fileRef) => {
-    if (!fileRef) {
-      return;
-    }
-    setUrdfMotionStateByFileRef((current) => {
-      const currentState = current?.[fileRef];
-      if (!currentState?.statusesByEndEffector) {
-        return current;
-      }
-      return {
-        ...current,
-        [fileRef]: {
-          ...currentState,
-          statusesByEndEffector: {}
-        }
-      };
-    });
-  }, []);
   const clearTrackedUrdfGroupStateForFile = useCallback((fileRef) => {
     const normalizedFileRef = String(fileRef || "").trim();
     if (!normalizedFileRef) {
@@ -5783,58 +5666,6 @@ export default function CadWorkspace({
     cancelUrdfTrajectoryPlayback();
   }, [cancelUrdfTrajectoryPlayback]);
 
-  const syncUrdfMotionTargetToJointValues = useCallback((fileRef, nextJointValues) => {
-    const normalizedFileRef = String(fileRef || "").trim();
-    if (
-      !normalizedFileRef ||
-      !selectedUrdfData ||
-      !selectedUrdfMotionEndEffector ||
-      !selectedUrdfMotionEndEffectorName ||
-      !selectedUrdfMotionTargetFrameName ||
-      !nextJointValues ||
-      typeof nextJointValues !== "object"
-    ) {
-      return;
-    }
-    const currentPosition = linkOriginInFrame(
-      selectedUrdfData,
-      nextJointValues,
-      selectedUrdfMotionEndEffector.link,
-      selectedUrdfMotionTargetFrameName
-    );
-    if (!currentPosition) {
-      return;
-    }
-    const normalizedTargetPosition = normalizeMotionTargetPosition(currentPosition);
-    setUrdfMotionStateByFileRef((current) => {
-      const currentState = current?.[normalizedFileRef] && typeof current[normalizedFileRef] === "object"
-        ? current[normalizedFileRef]
-        : {};
-      const targetsByEndEffector = currentState.targetsByEndEffector && typeof currentState.targetsByEndEffector === "object"
-        ? currentState.targetsByEndEffector
-        : {};
-      const statusesByEndEffector = currentState.statusesByEndEffector && typeof currentState.statusesByEndEffector === "object"
-        ? { ...currentState.statusesByEndEffector }
-        : {};
-      delete statusesByEndEffector[selectedUrdfMotionEndEffectorName];
-      return {
-        ...current,
-        [normalizedFileRef]: {
-          ...currentState,
-          targetsByEndEffector: {
-            ...targetsByEndEffector,
-            [selectedUrdfMotionEndEffectorName]: normalizedTargetPosition
-          },
-          statusesByEndEffector
-        }
-      };
-    });
-  }, [
-    selectedUrdfData,
-    selectedUrdfMotionEndEffector,
-    selectedUrdfMotionEndEffectorName,
-    selectedUrdfMotionTargetFrameName
-  ]);
 
   const handleUrdfJointValueChange = useCallback((joint, nextValueDeg, options = {}) => {
     const jointName = String(joint?.name || "").trim();
@@ -5866,16 +5697,12 @@ export default function CadWorkspace({
       );
     }
     clearTrackedUrdfGroupStateForFile(selectedUrdfFileRef);
-    syncUrdfMotionTargetToJointValues(selectedUrdfFileRef, nextJointValues);
-    clearUrdfMotionStatusForFile(selectedUrdfFileRef);
   }, [
     animateUrdfJointValues,
-    clearUrdfMotionStatusForFile,
     clearTrackedUrdfGroupStateForFile,
     followUrdfJointValues,
     selectedUrdfFileRef,
     selectedUrdfJointValues,
-    syncUrdfMotionTargetToJointValues
   ]);
   const handleResetUrdfPose = useCallback(() => {
     if (!selectedUrdfFileRef) {
@@ -5884,17 +5711,13 @@ export default function CadWorkspace({
     cancelUrdfTrajectoryPlayback();
     clearTrackedUrdfGroupStateForFile(selectedUrdfFileRef);
     animateUrdfJointValues(selectedUrdfFileRef, selectedUrdfJointValues, defaultSelectedUrdfJointValues);
-    syncUrdfMotionTargetToJointValues(selectedUrdfFileRef, defaultSelectedUrdfJointValues);
-    clearUrdfMotionStatusForFile(selectedUrdfFileRef);
   }, [
     animateUrdfJointValues,
     cancelUrdfTrajectoryPlayback,
-    clearUrdfMotionStatusForFile,
     clearTrackedUrdfGroupStateForFile,
     defaultSelectedUrdfJointValues,
     selectedUrdfFileRef,
     selectedUrdfJointValues,
-    syncUrdfMotionTargetToJointValues
   ]);
   const handleSelectUrdfGroupState = useCallback((groupState) => {
     if (!selectedUrdfFileRef || !groupState?.jointValuesByName || typeof groupState.jointValuesByName !== "object") {
@@ -5917,219 +5740,14 @@ export default function CadWorkspace({
       }));
     }
     animateUrdfJointValues(selectedUrdfFileRef, selectedUrdfJointValues, nextJointValues);
-    syncUrdfMotionTargetToJointValues(selectedUrdfFileRef, nextJointValues);
-    clearUrdfMotionStatusForFile(selectedUrdfFileRef);
   }, [
     animateUrdfJointValues,
     cancelUrdfTrajectoryPlayback,
-    clearUrdfMotionStatusForFile,
     selectedUrdfFileRef,
     selectedUrdfJointValues,
-    syncUrdfMotionTargetToJointValues
   ]);
-  const handleUrdfMotionEndEffectorChange = useCallback((nextName) => {
-    if (!selectedUrdfFileRef) {
-      return;
-    }
-    const normalizedName = String(nextName || "").trim();
-    startTransition(() => {
-      setUrdfMotionStateByFileRef((current) => ({
-        ...current,
-        [selectedUrdfFileRef]: {
-          ...(current?.[selectedUrdfFileRef] && typeof current[selectedUrdfFileRef] === "object"
-            ? current[selectedUrdfFileRef]
-            : {}),
-          activeEndEffectorName: normalizedName
-        }
-      }));
-    });
-  }, [selectedUrdfFileRef]);
-  const handleUrdfMotionTargetPositionChange = useCallback((axisIndex, nextValue) => {
-    if (!selectedUrdfFileRef || !selectedUrdfMotionEndEffectorName) {
-      return;
-    }
-    const index = Number(axisIndex);
-    if (!Number.isInteger(index) || index < 0 || index > 2) {
-      return;
-    }
-    const numericValue = toFiniteNumber(nextValue, selectedUrdfMotionTargetPosition[index] ?? 0);
-    startTransition(() => {
-      setUrdfMotionStateByFileRef((current) => {
-        const currentState = current?.[selectedUrdfFileRef] && typeof current[selectedUrdfFileRef] === "object"
-          ? current[selectedUrdfFileRef]
-          : {};
-        const targetsByEndEffector = currentState.targetsByEndEffector && typeof currentState.targetsByEndEffector === "object"
-          ? currentState.targetsByEndEffector
-          : {};
-        const nextTarget = normalizeMotionTargetPosition(
-          targetsByEndEffector[selectedUrdfMotionEndEffectorName],
-          selectedUrdfMotionTargetPosition
-        );
-        nextTarget[index] = numericValue;
-        const statusesByEndEffector = currentState.statusesByEndEffector && typeof currentState.statusesByEndEffector === "object"
-          ? { ...currentState.statusesByEndEffector }
-          : {};
-        delete statusesByEndEffector[selectedUrdfMotionEndEffectorName];
-        return {
-          ...current,
-          [selectedUrdfFileRef]: {
-            ...currentState,
-            targetsByEndEffector: {
-              ...targetsByEndEffector,
-              [selectedUrdfMotionEndEffectorName]: nextTarget
-            },
-            statusesByEndEffector
-          }
-        };
-      });
-    });
-  }, [selectedUrdfFileRef, selectedUrdfMotionEndEffectorName, selectedUrdfMotionTargetPosition]);
-  const handleUseCurrentUrdfMotionPosition = useCallback(() => {
-    if (!selectedUrdfFileRef || !selectedUrdfMotionEndEffectorName || !selectedUrdfMotionCurrentPosition) {
-      return;
-    }
-    const currentPosition = normalizeMotionTargetPosition(selectedUrdfMotionCurrentPosition);
-    startTransition(() => {
-      setUrdfMotionStateByFileRef((current) => {
-        const currentState = current?.[selectedUrdfFileRef] && typeof current[selectedUrdfFileRef] === "object"
-          ? current[selectedUrdfFileRef]
-          : {};
-        const targetsByEndEffector = currentState.targetsByEndEffector && typeof currentState.targetsByEndEffector === "object"
-          ? currentState.targetsByEndEffector
-          : {};
-        const statusesByEndEffector = currentState.statusesByEndEffector && typeof currentState.statusesByEndEffector === "object"
-          ? { ...currentState.statusesByEndEffector }
-          : {};
-        delete statusesByEndEffector[selectedUrdfMotionEndEffectorName];
-        return {
-          ...current,
-          [selectedUrdfFileRef]: {
-            ...currentState,
-            targetsByEndEffector: {
-              ...targetsByEndEffector,
-              [selectedUrdfMotionEndEffectorName]: currentPosition
-            },
-            statusesByEndEffector
-          }
-        };
-      });
-    });
-  }, [selectedUrdfFileRef, selectedUrdfMotionCurrentPosition, selectedUrdfMotionEndEffectorName]);
-  const restoreUrdfPosePickerPerspective = useCallback((perspective) => {
-    const restoredPerspective = clonePerspectiveSnapshot(perspective);
-    if (!restoredPerspective) {
-      return false;
-    }
-    viewerRef.current?.setPerspective?.(restoredPerspective, { animate: true });
-    activePerspectiveRef.current = restoredPerspective;
-    setViewerPerspective(restoredPerspective);
-    return true;
-  }, []);
-  const handleBeginUrdfPosePicker = useCallback(() => {
-    if (!selectedUrdfFileRef) {
-      return;
-    }
-    const originalPerspective = clonePerspectiveSnapshot(viewerRef.current?.getPerspective?.() || activePerspectiveRef.current);
-    setUrdfPosePickerState({
-      fileRef: selectedUrdfFileRef,
-      originalPerspective
-    });
-  }, [selectedUrdfFileRef]);
-  const handleCancelUrdfPosePicker = useCallback(() => {
-    const originalPerspective = urdfPosePickerState.fileRef ? urdfPosePickerState.originalPerspective : null;
-    setUrdfPosePickerState(emptyUrdfPosePickerState());
-    restoreUrdfPosePickerPerspective(originalPerspective);
-  }, [restoreUrdfPosePickerPerspective, urdfPosePickerState.fileRef, urdfPosePickerState.originalPerspective]);
-  const handleToggleUrdfPosePicker = useCallback(() => {
-    if (urdfPosePickerActive) {
-      handleCancelUrdfPosePicker();
-      return;
-    }
-    handleBeginUrdfPosePicker();
-  }, [handleBeginUrdfPosePicker, handleCancelUrdfPosePicker, urdfPosePickerActive]);
 
-  useEffect(() => {
-    if (!urdfPosePickerActive || typeof window === "undefined") {
-      return undefined;
-    }
-    const handleKeyDown = (event) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-      if (event.key !== "Escape" && event.key !== "Esc" && event.code !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      handleCancelUrdfPosePicker();
-    };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [handleCancelUrdfPosePicker, urdfPosePickerActive]);
 
-  const commitUrdfMotionTargetPosition = useCallback((normalizedTargetPosition) => {
-    if (!selectedUrdfFileRef || !selectedUrdfMotionEndEffectorName) {
-      return;
-    }
-    setUrdfMotionStateByFileRef((current) => {
-      const currentState = current?.[selectedUrdfFileRef] && typeof current[selectedUrdfFileRef] === "object"
-        ? current[selectedUrdfFileRef]
-        : {};
-      const targetsByEndEffector = currentState.targetsByEndEffector && typeof currentState.targetsByEndEffector === "object"
-        ? currentState.targetsByEndEffector
-        : {};
-      const statusesByEndEffector = currentState.statusesByEndEffector && typeof currentState.statusesByEndEffector === "object"
-        ? { ...currentState.statusesByEndEffector }
-        : {};
-      delete statusesByEndEffector[selectedUrdfMotionEndEffectorName];
-      return {
-        ...current,
-        [selectedUrdfFileRef]: {
-          ...currentState,
-          targetsByEndEffector: {
-            ...targetsByEndEffector,
-            [selectedUrdfMotionEndEffectorName]: normalizedTargetPosition
-          },
-          statusesByEndEffector
-        }
-      };
-    });
-  }, [selectedUrdfFileRef, selectedUrdfMotionEndEffectorName]);
-  const handleUrdfPosePointPick = useCallback(async ({ point } = {}) => {
-    if (!selectedUrdfFileRef || !selectedUrdfData || !selectedUrdfMotionEndEffector || !selectedUrdfMotionEndEffectorName) {
-      return;
-    }
-    const pickedPoint = normalizePoint3(point);
-    if (!pickedPoint || !selectedUrdfPosePickerState) {
-      return;
-    }
-    const targetPosition = rootPointInFrame(
-      selectedUrdfData,
-      selectedUrdfJointValues,
-      pickedPoint,
-      selectedUrdfMotionTargetFrameName
-    );
-    if (!targetPosition) {
-      return;
-    }
-    const normalizedTargetPosition = normalizeMotionTargetPosition(targetPosition);
-    const originalPerspective = selectedUrdfPosePickerState.originalPerspective;
-    setUrdfPosePickerState(emptyUrdfPosePickerState());
-    restoreUrdfPosePickerPerspective(originalPerspective);
-    commitUrdfMotionTargetPosition(normalizedTargetPosition);
-  }, [
-    commitUrdfMotionTargetPosition,
-    restoreUrdfPosePickerPerspective,
-    selectedUrdfData,
-    selectedUrdfFileRef,
-    selectedUrdfMotionEndEffector,
-    selectedUrdfMotionEndEffectorName,
-    selectedUrdfMotionTargetFrameName,
-    selectedUrdfJointValues,
-    selectedUrdfPosePickerState
-  ]);
   const handleCopyUrdfJointAngles = useCallback(async () => {
     setScreenshotStatus("");
     if (!movableUrdfJoints.length) {
@@ -6143,18 +5761,6 @@ export default function CadWorkspace({
       setCopyStatus(error instanceof Error ? error.message : "Clipboard write failed");
     }
   }, [movableUrdfJoints, selectedEntrySourceFormat, selectedUrdfJointValues]);
-  useEffect(() => {
-    if (urdfPosePickerState.fileRef && urdfPosePickerState.fileRef !== selectedUrdfFileRef) {
-      const originalPerspective = urdfPosePickerState.originalPerspective;
-      setUrdfPosePickerState(emptyUrdfPosePickerState());
-      restoreUrdfPosePickerPerspective(originalPerspective);
-    }
-  }, [
-    restoreUrdfPosePickerPerspective,
-    selectedUrdfFileRef,
-    urdfPosePickerState.fileRef,
-    urdfPosePickerState.originalPerspective
-  ]);
   const copySelectionPayload = useMemo(() => {
     const selectedReferencesForCopy = selectedReferenceIds
       .map((id) => (
@@ -8409,8 +8015,6 @@ export default function CadWorkspace({
                 referenceSelectionPending={referenceSelectionPending}
                 referenceSelectionUnavailable={referenceSelectionUnavailable}
                 referenceSelectionDeferred={selectedTopologyDeferredByCost}
-                urdfPosePickerActive={urdfPosePickerActive}
-                handleToggleUrdfPosePicker={handleToggleUrdfPosePicker}
                 animationAvailable={!!activeAnimationRuntime?.available}
                 animationPlaying={!!activeAnimationRuntime?.playing}
                 animationDisabled={!!activeAnimationRuntime?.disabled}
@@ -8728,13 +8332,11 @@ export default function CadWorkspace({
           copyStatus={copyStatus}
           screenshotStatus={screenshotStatus}
           persistenceStatus={persistenceStatus}
-          motionErrorStatus={motionErrorStatus}
           previewMode={previewMode}
           onClear={() => {
             setCopyStatus("");
             setScreenshotStatus("");
             setPersistenceStatus("");
-            setMotionErrorStatus("");
             lastPersistenceFailureKeyRef.current = "";
           }}
         />

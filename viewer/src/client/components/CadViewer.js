@@ -57,14 +57,6 @@ import {
   resolveDisplayEdgeSettings
 } from "cadjs/lib/displaySettings";
 import {
-  createUrdfPosePickerHoverCellMesh,
-  createUrdfPosePickerHoverCellOutline,
-  createUrdfPosePickerShell,
-  intersectUrdfPosePickerShell,
-  resolveUrdfPosePickerShell,
-  syncUrdfPosePickerHoverObjects
-} from "cadjs/lib/viewer/urdfPosePicker";
-import {
   clampSceneModelRadius,
   defaultSceneGridRadius,
   getLightingScopeRadius,
@@ -1524,10 +1516,6 @@ function disposeOverlayChild(runtime, child) {
 }
 
 function clearOverlayGroup(runtime, group) {
-  if (group === runtime?.urdfPosePickerGuideGroup) {
-    runtime.urdfPosePickerHoverCellMesh = null;
-    runtime.urdfPosePickerHoverCellOutline = null;
-  }
   while (group?.children?.length) {
     const child = group.children[group.children.length - 1];
     if (!child) {
@@ -1810,7 +1798,6 @@ const CadViewer = forwardRef(function CadViewer({
   allowMeshVertexSnap = false,
   onViewerAlertChange,
   onStepModuleTransformDetectedChange,
-  urdfPosePicker = null
 }, ref) {
   const stepParameterRuntime = stepParameters;
   const stepAnimationPlaying = Boolean(stepParameterRuntime?.animationState?.playing);
@@ -1848,13 +1835,6 @@ const CadViewer = forwardRef(function CadViewer({
   const perspectiveChangeRef = useRef(onPerspectiveChange);
   const viewerAlertChangeRef = useRef(onViewerAlertChange);
   const stepModuleTransformDetectedChangeRef = useRef(onStepModuleTransformDetectedChange);
-  const urdfPosePickerRef = useRef(urdfPosePicker);
-  // The pose picker shares the canvas cursor with the pan tool, so it may only
-  // reset what it actually set. Its pointer-move handler runs for every file
-  // kind, and blindly clearing on each move wiped the pan cursor after one
-  // mouse movement.
-  const urdfPosePickerOwnsCursorRef = useRef(false);
-  const posePickerPointerRef = useRef(null);
   const lastEmittedPerspectiveRef = useRef(null);
   const lastProjectionRef = useRef(normalizedProjection);
   const suppressPerspectiveEventsRef = useRef(0);
@@ -1888,8 +1868,6 @@ const CadViewer = forwardRef(function CadViewer({
   const [activeViewPlaneFace, setActiveViewPlaneFace] = useState("");
   const [viewPlaneOrientation, setViewPlaneOrientation] = useState(DEFAULT_VIEW_PLANE_ORIENTATION);
   const [cameraZoomPercent, setCameraZoomPercent] = useState(100);
-  const [urdfPosePickerGuidePoint, setUrdfPosePickerGuidePoint] = useState(null);
-  const [urdfPosePickerHoverActive, setUrdfPosePickerHoverActive] = useState(false);
   // Bumped whenever the exploded view reaches a POSE it will hold: the end of the
   // explode/collapse animation, a slider scrub, or a collapse back to rest. Overlays that bake
   // a record's matrix at build time -- the reference highlight's edge lines and its face fill --
@@ -2604,171 +2582,13 @@ const CadViewer = forwardRef(function CadViewer({
     };
   };
 
-  const readUrdfPosePickerModelPoint = (runtime, picker) => {
-    if (!runtime?.raycaster || !runtime?.modelGroup || !picker?.active) {
-      return null;
-    }
-    return intersectUrdfPosePickerShell(runtime, picker);
-  };
 
-  const updateUrdfPosePickerHoverFromPointer = (event) => {
-    const picker = urdfPosePickerRef.current;
-    const runtime = runtimeRef.current;
-    const canvas = runtime?.renderer?.domElement || mountRef.current;
-    if (
-      !picker?.active ||
-      previewModeRef.current ||
-      !runtime?.raycaster ||
-      !runtime?.camera ||
-      !canvas ||
-      !isPointerInsideElement(event, canvas)
-    ) {
-      if (runtime) {
-        runtime.urdfPosePickerPointerNdc = null;
-        syncUrdfPosePickerHoverObjects(runtime, picker);
-        if (canvas?.style && urdfPosePickerOwnsCursorRef.current) {
-          canvas.style.cursor = "";
-          urdfPosePickerOwnsCursorRef.current = false;
-        }
-        runtime.requestRender?.();
-      }
-      setUrdfPosePickerHoverActive(false);
-      setUrdfPosePickerGuidePoint((current) => (current ? null : current));
-      return null;
-    }
 
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
-    runtime.pointer.x = ((event.clientX - rect.left) / width) * 2 - 1;
-    runtime.pointer.y = -((event.clientY - rect.top) / height) * 2 + 1;
-    runtime.urdfPosePickerPointerNdc = { x: runtime.pointer.x, y: runtime.pointer.y };
-    runtime.raycaster.setFromCamera(runtime.pointer, runtime.camera);
 
-    const pick = readUrdfPosePickerModelPoint(runtime, picker);
-    syncUrdfPosePickerHoverObjects(runtime, picker);
-    if (canvas.style) {
-      canvas.style.cursor = pick?.point ? "pointer" : "crosshair";
-      urdfPosePickerOwnsCursorRef.current = true;
-    }
-    setUrdfPosePickerHoverActive(Boolean(pick?.point));
-    setUrdfPosePickerGuidePoint((current) => {
-      if (!pick?.point) {
-        return current ? null : current;
-      }
-      const guidePoint = pick.point;
-      if (
-        Array.isArray(current) &&
-        Math.hypot(current[0] - guidePoint[0], current[1] - guidePoint[1], current[2] - guidePoint[2]) < 0.001
-      ) {
-        return current;
-      }
-      return guidePoint;
-    });
-    runtime.requestRender?.();
-    return pick;
-  };
 
-  const pickUrdfPosePoint = (event) => {
-    const picker = urdfPosePickerRef.current;
-    const runtime = runtimeRef.current;
-    const canvas = runtime?.renderer?.domElement || mountRef.current;
-    if (!picker?.active || !runtime?.raycaster || !runtime?.camera || !runtime?.modelGroup || !canvas) {
-      return false;
-    }
 
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
-    runtime.pointer.x = ((event.clientX - rect.left) / width) * 2 - 1;
-    runtime.pointer.y = -((event.clientY - rect.top) / height) * 2 + 1;
-    runtime.urdfPosePickerPointerNdc = { x: runtime.pointer.x, y: runtime.pointer.y };
-    runtime.raycaster.setFromCamera(runtime.pointer, runtime.camera);
 
-    const pick = readUrdfPosePickerModelPoint(runtime, picker);
-    if (!pick) {
-      setUrdfPosePickerHoverActive(false);
-      return false;
-    }
-    setUrdfPosePickerHoverActive(true);
-    setUrdfPosePickerGuidePoint(pick.point);
-    picker.onPickPoint?.({
-      point: pick.point,
-      source: pick.source
-    });
-    return true;
-  };
 
-  const handlePosePickerPointerDown = (event) => {
-    const picker = urdfPosePickerRef.current;
-    const runtime = runtimeRef.current;
-    const canvas = runtime?.renderer?.domElement || mountRef.current;
-    if (!picker?.active || previewModeRef.current || event.button !== 0 || !isPointerInsideElement(event, canvas)) {
-      return;
-    }
-    posePickerPointerRef.current = {
-      pointerId: event.pointerId,
-      x: event.clientX,
-      y: event.clientY
-    };
-  };
-
-  const handlePosePickerPointerMove = (event) => {
-    updateUrdfPosePickerHoverFromPointer(event);
-  };
-
-  const handlePosePickerPointerUp = (event) => {
-    const pointerDown = posePickerPointerRef.current;
-    posePickerPointerRef.current = null;
-    const picker = urdfPosePickerRef.current;
-    const runtime = runtimeRef.current;
-    const canvas = runtime?.renderer?.domElement || mountRef.current;
-    if (
-      !picker?.active ||
-      previewModeRef.current ||
-      !pointerDown ||
-      pointerDown.pointerId !== event.pointerId ||
-      !isPointerInsideElement(event, canvas)
-    ) {
-      return;
-    }
-    const travel = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
-    if (travel > 8) {
-      return;
-    }
-    pickUrdfPosePoint(event);
-  };
-
-  const handlePosePickerPointerCancel = () => {
-    const runtime = runtimeRef.current;
-    posePickerPointerRef.current = null;
-    if (runtime) {
-      runtime.urdfPosePickerPointerNdc = null;
-      syncUrdfPosePickerHoverObjects(runtime, urdfPosePickerRef.current);
-      if (runtime.renderer?.domElement?.style && urdfPosePickerOwnsCursorRef.current) {
-        runtime.renderer.domElement.style.cursor = "";
-        urdfPosePickerOwnsCursorRef.current = false;
-      }
-      runtime.requestRender?.();
-    }
-    setUrdfPosePickerHoverActive(false);
-  };
-
-  const handlePosePickerPointerLeave = () => {
-    const runtime = runtimeRef.current;
-    posePickerPointerRef.current = null;
-    if (runtime) {
-      runtime.urdfPosePickerPointerNdc = null;
-      syncUrdfPosePickerHoverObjects(runtime, urdfPosePickerRef.current);
-      if (runtime.renderer?.domElement?.style && urdfPosePickerOwnsCursorRef.current) {
-        runtime.renderer.domElement.style.cursor = "";
-        urdfPosePickerOwnsCursorRef.current = false;
-      }
-      runtime.requestRender?.();
-    }
-    setUrdfPosePickerHoverActive(false);
-    setUrdfPosePickerGuidePoint((current) => (current ? null : current));
-  };
 
   const activateViewPlaneFace = (faceId) => {
     const runtime = runtimeRef.current;
@@ -3618,9 +3438,6 @@ const CadViewer = forwardRef(function CadViewer({
     stepModuleTransformDetectedChangeRef.current = onStepModuleTransformDetectedChange;
   }, [onStepModuleTransformDetectedChange]);
 
-  useEffect(() => {
-    urdfPosePickerRef.current = urdfPosePicker;
-  }, [urdfPosePicker]);
 
   useEffect(() => {
     setTransformedSelectorRuntime(null);
@@ -3655,21 +3472,6 @@ const CadViewer = forwardRef(function CadViewer({
     normalizedClipSettings.offset
   ]);
 
-  useEffect(() => {
-    if (urdfPosePicker?.active) {
-      return;
-    }
-    const runtime = runtimeRef.current;
-    if (runtime) {
-      runtime.urdfPosePickerPointerNdc = null;
-      if (runtime.renderer?.domElement?.style && urdfPosePickerOwnsCursorRef.current) {
-        runtime.renderer.domElement.style.cursor = "";
-        urdfPosePickerOwnsCursorRef.current = false;
-      }
-    }
-    setUrdfPosePickerHoverActive(false);
-    setUrdfPosePickerGuidePoint(null);
-  }, [urdfPosePicker?.active]);
 
   useEffect(() => {
     drawingStrokesRef.current = Array.isArray(drawingStrokes) ? drawingStrokes : [];
@@ -4016,41 +3818,8 @@ const CadViewer = forwardRef(function CadViewer({
     runtime.requestRender();
   }, [previewMode, viewerReadyTick]);
 
-  const urdfPosePickerInteractionActive = Boolean(urdfPosePicker?.active && !previewMode);
-  const urdfPosePickerCursor = urdfPosePickerInteractionActive
-    ? (urdfPosePickerHoverActive ? "pointer" : "crosshair")
-    : undefined;
 
-  useEffect(() => {
-    const runtime = runtimeRef.current;
-    if (!urdfPosePicker?.active || !runtime?.controls) {
-      return;
-    }
-    runtime.controls.enabled = true;
-    runtime.controls.enableDamping = true;
-    runtime.controls.dampingFactor = DEFAULT_DAMPING_FACTOR;
-    runtime.requestRender();
-  }, [urdfPosePicker?.active, viewerReadyTick]);
 
-  useEffect(() => {
-    const runtime = runtimeRef.current;
-    const canvas = runtime?.renderer?.domElement;
-    if (!urdfPosePickerInteractionActive || !canvas) {
-      return;
-    }
-    const handleCanvasPointerMove = (event) => {
-      updateUrdfPosePickerHoverFromPointer(event);
-    };
-    const handleCanvasPointerLeave = () => {
-      handlePosePickerPointerLeave();
-    };
-    canvas.addEventListener("pointermove", handleCanvasPointerMove, { passive: true });
-    canvas.addEventListener("pointerleave", handleCanvasPointerLeave);
-    return () => {
-      canvas.removeEventListener("pointermove", handleCanvasPointerMove);
-      canvas.removeEventListener("pointerleave", handleCanvasPointerLeave);
-    };
-  }, [urdfPosePickerInteractionActive, viewerReadyTick]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -5020,59 +4789,6 @@ const CadViewer = forwardRef(function CadViewer({
     };
   }, [isLoading, meshData, modelKey, displayEdgeSettings, viewerReadyTick, viewerTheme]);
 
-  useEffect(() => {
-    const runtime = runtimeRef.current;
-    if (!runtime?.THREE || !runtime?.edgesGroup) {
-      return;
-    }
-
-    const { THREE, edgesGroup } = runtime;
-    if (!runtime.urdfPosePickerGuideGroup || runtime.urdfPosePickerGuideGroup.parent !== edgesGroup) {
-      runtime.urdfPosePickerGuideGroup = new THREE.Group();
-      runtime.urdfPosePickerGuideGroup.renderOrder = 28;
-      edgesGroup.add(runtime.urdfPosePickerGuideGroup);
-    }
-    const guideGroup = runtime.urdfPosePickerGuideGroup;
-    clearOverlayGroup(runtime, guideGroup);
-
-    if (!urdfPosePicker?.active) {
-      return () => {
-        clearOverlayGroup(runtime, guideGroup);
-      };
-    }
-
-    const shell = resolveUrdfPosePickerShell(runtime, urdfPosePicker);
-    if (!shell) {
-      return () => {
-        clearOverlayGroup(runtime, guideGroup);
-      };
-    }
-
-    const shellMesh = createUrdfPosePickerShell(runtime, urdfPosePicker);
-    if (shellMesh) {
-      guideGroup.add(shellMesh);
-    }
-    const hoverCellMesh = createUrdfPosePickerHoverCellMesh(runtime, urdfPosePicker);
-    if (hoverCellMesh) {
-      guideGroup.add(hoverCellMesh);
-    }
-    const hoverCellOutline = createUrdfPosePickerHoverCellOutline(runtime, urdfPosePicker);
-    if (hoverCellOutline) {
-      guideGroup.add(hoverCellOutline);
-    }
-    guideGroup.visible = guideGroup.children.length > 0;
-    runtime.requestRender();
-
-    return () => {
-      clearOverlayGroup(runtime, guideGroup);
-    };
-  }, [
-    urdfPosePicker?.active,
-    urdfPosePicker?.center,
-    urdfPosePickerGuidePoint,
-    urdfPosePickerHoverActive,
-    viewerReadyTick
-  ]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -5514,12 +5230,6 @@ const CadViewer = forwardRef(function CadViewer({
     <div
       ref={interactionHostRef}
       className="relative h-full w-full"
-      style={urdfPosePickerCursor ? { cursor: urdfPosePickerCursor } : undefined}
-      onPointerDownCapture={handlePosePickerPointerDown}
-      onPointerMoveCapture={handlePosePickerPointerMove}
-      onPointerUpCapture={handlePosePickerPointerUp}
-      onPointerCancelCapture={handlePosePickerPointerCancel}
-      onPointerLeave={handlePosePickerPointerLeave}
     >
       <div className="h-full w-full" ref={mountRef} />
       <canvas

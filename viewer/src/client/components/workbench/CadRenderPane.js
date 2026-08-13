@@ -352,7 +352,6 @@ export default function CadRenderPane({
   panToolActive = false,
   handleCopySelection,
   handleScreenshotCopy,
-  urdfPosePicker = null
 }) {
   const liveStepAnimation = useStepAnimationSnapshot();
   const resolvedStepParameters = useMemo(() => {
@@ -416,12 +415,6 @@ export default function CadRenderPane({
   const topologySelectionPending = Boolean(referenceSelectionPending && hasTopology);
   const topologySelectionUnavailable = Boolean(referenceSelectionUnavailable && hasTopology);
   const topologySelectionDeferred = Boolean(referenceSelectionDeferred && selectedMeshData && hasTopology);
-  const urdfPosePickerActive = Boolean(urdfPosePicker?.active);
-  const urdfPosePickerPrompt = "Select target";
-  const posePickerExitStyle = {
-    left: `calc(${Math.max(Number(viewportFrameInsets?.left) || 0, 0)}px + 0.75rem)`,
-    top: `calc(${Math.max(Number(viewportFrameInsets?.top) || 0, 0)}px + 0.75rem)`
-  };
   // Is there anything on screen? For every mesh-backed format that means mesh data -- DXF
   // included, since it lost its 2D fallback in phase 3a and now renders its baked preview,
   // so a failed build must read as "nothing renderable" and let the viewer alert block.
@@ -505,28 +498,6 @@ export default function CadRenderPane({
     [viewerContextMenu, viewportFrameInsets]
   );
 
-  useEffect(() => {
-    if (!urdfPosePickerActive || typeof window === "undefined" || typeof document === "undefined") {
-      return undefined;
-    }
-    const handleEscape = (event) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-      if (event.key !== "Escape" && event.key !== "Esc" && event.code !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      event.stopPropagation();
-      urdfPosePicker?.onCancel?.();
-    };
-    window.addEventListener("keydown", handleEscape, true);
-    document.addEventListener("keydown", handleEscape, true);
-    return () => {
-      window.removeEventListener("keydown", handleEscape, true);
-      document.removeEventListener("keydown", handleEscape, true);
-    };
-  }, [urdfPosePicker, urdfPosePickerActive]);
 
   return (
     <div className="absolute inset-0">
@@ -624,7 +595,6 @@ export default function CadRenderPane({
         allowMeshVertexSnap={!hasTopology}
         onViewerAlertChange={handleViewerAlertChange}
         onStepModuleTransformDetectedChange={handleStepModuleTransformDetectedChange}
-        urdfPosePicker={urdfPosePicker}
       />
       {!previewMode ? (
         <ViewerContextMenu
@@ -738,32 +708,6 @@ export default function CadRenderPane({
             className="cad-glass-popover w-auto px-3 py-1.5 text-[11px] font-medium text-popover-foreground shadow-sm"
           >
             Preparing selectable topology...
-          </Alert>
-        </div>
-      ) : null}
-      {!previewMode && urdfPosePickerActive ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="icon-xs"
-          className="cad-glass-popover pointer-events-auto absolute z-30 size-6 rounded-md border-sidebar-border p-0 text-popover-foreground shadow-sm"
-          style={posePickerExitStyle}
-          onClick={() => {
-            urdfPosePicker?.onCancel?.();
-          }}
-          aria-label="Exit Select Pose"
-          title="Exit Select Pose"
-        >
-          <X className="size-3.5" strokeWidth={2} aria-hidden="true" />
-        </Button>
-      ) : null}
-      {!previewMode && urdfPosePickerActive ? (
-        <div className="pointer-events-none absolute z-20 flex justify-center px-4" style={modelViewportBottomOverlayStyle}>
-          <Alert
-            role="status"
-            className="cad-glass-popover w-auto px-3 py-1.5 text-[11px] font-medium text-popover-foreground shadow-sm"
-          >
-            {urdfPosePickerPrompt}
           </Alert>
         </div>
       ) : null}

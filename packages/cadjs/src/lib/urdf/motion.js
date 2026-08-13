@@ -21,6 +21,7 @@ export function nativeJointValueToDisplay(joint, value) {
   return isAngularJoint(joint) ? (numericValue * 180) / Math.PI : numericValue;
 }
 
+// Used by jointValuesByNameToNative below; exported for tests.
 export function displayJointValueToNative(joint, value) {
   const numericValue = toFiniteNumber(value, 0);
   return isAngularJoint(joint) ? (numericValue * Math.PI) / 180 : numericValue;
@@ -45,6 +46,7 @@ export function normalizeMotionTargetPosition(value, fallback = [0, 0, 0]) {
   return [0, 1, 2].map((index) => toFiniteNumber(source[index], fallback[index] ?? 0));
 }
 
+// Used by measureUrdfMotionResult below; exported for tests.
 export function positionDistance(left, right) {
   const a = normalizeMotionTargetPosition(left);
   const b = normalizeMotionTargetPosition(right);
@@ -53,7 +55,7 @@ export function positionDistance(left, right) {
 
 export function validateUrdfMotionJointValues(urdfData, jointValuesByName, { native = false } = {}) {
   if (!isPlainObject(jointValuesByName)) {
-    throw new Error("MoveIt2 server response jointValuesByName must be an object");
+    throw new Error("motion result jointValuesByName must be an object");
   }
   const joints = Array.isArray(urdfData?.joints) ? urdfData.joints : [];
   const jointByName = new Map(joints.map((joint) => [String(joint?.name || ""), joint]).filter(([name]) => name));
@@ -61,27 +63,27 @@ export function validateUrdfMotionJointValues(urdfData, jointValuesByName, { nat
   for (const [name, rawValue] of Object.entries(jointValuesByName)) {
     const jointName = String(name || "").trim();
     if (!jointName) {
-      throw new Error("MoveIt2 server response includes an empty joint name");
+      throw new Error("motion result includes an empty joint name");
     }
     const joint = jointByName.get(jointName);
     if (!joint) {
-      throw new Error(`MoveIt2 server response references unknown joint ${jointName}`);
+      throw new Error(`motion result references unknown joint ${jointName}`);
     }
     const jointType = String(joint?.type || "fixed");
     if (jointType === "fixed") {
-      throw new Error(`MoveIt2 server response cannot set fixed joint ${jointName}`);
+      throw new Error(`motion result cannot set fixed joint ${jointName}`);
     }
     if (joint?.mimic) {
-      throw new Error(`MoveIt2 server response cannot set mimic joint ${jointName}`);
+      throw new Error(`motion result cannot set mimic joint ${jointName}`);
     }
     const rawNumericValue = Number(rawValue);
     if (!Number.isFinite(rawNumericValue)) {
-      throw new Error(`MoveIt2 server response joint ${jointName} must be a finite number`);
+      throw new Error(`motion result joint ${jointName} must be a finite number`);
     }
     const numericValue = native ? nativeJointValueToDisplay(joint, rawNumericValue) : rawNumericValue;
     const clampedValue = clampJointValueDeg(joint, numericValue);
     if (jointType !== "continuous" && Math.abs(clampedValue - numericValue) > MOTION_LIMIT_EPSILON) {
-      throw new Error(`MoveIt2 server response joint ${jointName} must stay within joint limits`);
+      throw new Error(`motion result joint ${jointName} must stay within joint limits`);
     }
     validated[jointName] = numericValue;
   }
@@ -90,31 +92,31 @@ export function validateUrdfMotionJointValues(urdfData, jointValuesByName, { nat
 
 export function validateUrdfMotionTrajectory(urdfData, trajectory) {
   if (!isPlainObject(trajectory)) {
-    throw new Error("MoveIt2 server response trajectory must be an object");
+    throw new Error("motion result trajectory must be an object");
   }
   const rawJointNames = Array.isArray(trajectory.jointNames) ? trajectory.jointNames : [];
   const jointNames = rawJointNames.map((name) => String(name || "").trim()).filter(Boolean);
   if (!jointNames.length) {
-    throw new Error("MoveIt2 server response trajectory.jointNames must be a non-empty array");
+    throw new Error("motion result trajectory.jointNames must be a non-empty array");
   }
   const rawPoints = Array.isArray(trajectory.points) ? trajectory.points : [];
   if (!rawPoints.length) {
-    throw new Error("MoveIt2 server response trajectory.points must be a non-empty array");
+    throw new Error("motion result trajectory.points must be a non-empty array");
   }
   let previousTime = -Number.EPSILON;
   const points = rawPoints.map((point, pointIndex) => {
     if (!isPlainObject(point)) {
-      throw new Error(`MoveIt2 server response trajectory point ${pointIndex + 1} must be an object`);
+      throw new Error(`motion result trajectory point ${pointIndex + 1} must be an object`);
     }
     const timeFromStartSec = Number(point.timeFromStartSec);
     if (!Number.isFinite(timeFromStartSec) || timeFromStartSec < 0 || timeFromStartSec < previousTime) {
-      throw new Error("MoveIt2 server response trajectory times must be finite, non-negative, and sorted");
+      throw new Error("motion result trajectory times must be finite, non-negative, and sorted");
     }
     previousTime = timeFromStartSec;
     const hasNativePositions = Array.isArray(point.positions);
     const nativePositions = hasNativePositions ? point.positions.map((value) => Number(value)) : [];
     if (hasNativePositions && (nativePositions.length !== jointNames.length || nativePositions.some((value) => !Number.isFinite(value)))) {
-      throw new Error("MoveIt2 server response trajectory positions must match trajectory.jointNames");
+      throw new Error("motion result trajectory positions must match trajectory.jointNames");
     }
     const positionsDeg = hasNativePositions
       ? nativePositions.map((value, index) => {
@@ -123,7 +125,7 @@ export function validateUrdfMotionTrajectory(urdfData, trajectory) {
       })
       : (Array.isArray(point.positionsDeg) ? point.positionsDeg.map((value) => Number(value)) : []);
     if (positionsDeg.length !== jointNames.length || positionsDeg.some((value) => !Number.isFinite(value))) {
-      throw new Error("MoveIt2 server response trajectory positions must match trajectory.jointNames");
+      throw new Error("motion result trajectory positions must match trajectory.jointNames");
     }
     const positionsByNameDeg = Object.fromEntries(jointNames.map((jointName, index) => [jointName, positionsDeg[index]]));
     validateUrdfMotionJointValues(urdfData, positionsByNameDeg);

@@ -368,28 +368,13 @@ test("file session state restores urdf slices only when robot assets match", () 
     entry: oldEntry,
     slices: {
       urdf: {
-        jointValues: { shoulder: 12.5 },
-        motionState: {
-          activeEndEffectorName: "tool0",
-          targetFrame: "base",
-          targetsByEndEffector: {
-            tool0: [1, 2, 3]
-          },
-          solvingEndEffectorName: "tool0"
-        }
+        jointValues: { shoulder: 12.5 }
       }
     }
   }), { storage });
 
   assert.deepEqual(readFileSessionState("models", oldEntry.file, matchingEntry, { storage }).slices.urdf, {
-    jointValues: { shoulder: 12.5 },
-    motionState: {
-      activeEndEffectorName: "tool0",
-      targetFrame: "base",
-      targetsByEndEffector: {
-        tool0: [1, 2, 3]
-      }
-    }
+    jointValues: { shoulder: 12.5 }
   });
   assert.equal(readFileSessionState("models", oldEntry.file, staleEntry, { storage }).slices.urdf, undefined);
 });
