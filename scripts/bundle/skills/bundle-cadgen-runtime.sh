@@ -16,7 +16,6 @@ set -euo pipefail
 # Stages (default: all of them):
 #   --node      esbuilt builders          -> _runtime/node       (committed)
 #   --browser   snapshot browser bundle   -> _runtime/browser    (committed)
-#   --moveit2   copy of the MoveIt2 server-> _runtime/moveit2    (committed)
 #   --viewer    vite build of the SPA     -> _runtime/viewer     (GITIGNORED; CI/publish)
 #
 # The viewer stage is deliberately not committed: it is a 16 MB vite output that would
@@ -36,10 +35,8 @@ RUNTIME_DIR="$REPO_ROOT/packages/cadgen/src/cadgen/_runtime"
 NODE_DIR="$RUNTIME_DIR/node"
 BROWSER_DIR="$RUNTIME_DIR/browser"
 VIEWER_DIR="$RUNTIME_DIR/viewer"
-MOVEIT2_DIR="$RUNTIME_DIR/moveit2"
 
 VIEWER_SRC="$REPO_ROOT/viewer"
-MOVEIT2_SRC="$REPO_ROOT/viewer/moveit2_server"
 CHECK_DIR="${CADGEN_RUNTIME_CHECK_DIR:-$REPO_ROOT/tmp/cadgen-runtime-check}"
 SNAPSHOT_BUILD_DEPS_DIR="${CADGEN_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/cadgen-snapshot-build}"
 
@@ -57,7 +54,6 @@ PRINT_OUTPUTS=0
 STAGE_NODE=0
 STAGE_BROWSER=0
 STAGE_VIEWER=0
-STAGE_MOVEIT2=0
 ANY_STAGE=0
 
 usage() {
@@ -70,7 +66,6 @@ Builds cadgen's packaged runtime assets into packages/cadgen/src/cadgen/_runtime
 Stages (default: all):
   --node      esbuilt Node builders     -> _runtime/node      (committed)
   --browser   snapshot browser bundle   -> _runtime/browser   (committed)
-  --moveit2   MoveIt2 server copy       -> _runtime/moveit2   (committed)
   --viewer    built CAD Viewer SPA      -> _runtime/viewer    (gitignored; CI/publish)
 
 Options:
@@ -90,7 +85,6 @@ while [ "$#" -gt 0 ]; do
     --node) STAGE_NODE=1; ANY_STAGE=1 ;;
     --browser) STAGE_BROWSER=1; ANY_STAGE=1 ;;
     --viewer) STAGE_VIEWER=1; ANY_STAGE=1 ;;
-    --moveit2) STAGE_MOVEIT2=1; ANY_STAGE=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -98,7 +92,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$ANY_STAGE" -eq 0 ]; then
-  STAGE_NODE=1; STAGE_BROWSER=1; STAGE_MOVEIT2=1; STAGE_VIEWER=1
+  STAGE_NODE=1; STAGE_BROWSER=1; STAGE_VIEWER=1
 fi
 
 # The viewer output is not committed, so --check cannot demand it by default: a developer
@@ -112,8 +106,7 @@ fi
 if [ "$PRINT_OUTPUTS" -eq 1 ]; then
   printf '%s\n' \
     "${NODE_DIR#"$REPO_ROOT"/}" \
-    "${BROWSER_DIR#"$REPO_ROOT"/}" \
-    "${MOVEIT2_DIR#"$REPO_ROOT"/}"
+    "${BROWSER_DIR#"$REPO_ROOT"/}"
   exit 0
 fi
 
@@ -123,19 +116,6 @@ fi
 
 require_dir() {
   [ -d "$1" ] || { echo "Missing $2: $1" >&2; exit 1; }
-}
-
-# --- moveit2 ------------------------------------------------------------------------
-# A copy, not a build. The source of truth stays in viewer/ (it is a conda-managed ROS
-# thing with its own pyproject); the wheel carries it so `cadgen moveit2 …` can reach it.
-sync_moveit2() {
-  local target="$1"
-  rm -rf "$target"
-  mkdir -p "$target"
-  rsync -a --delete \
-    --exclude __pycache__ --exclude '*.pyc' --exclude '.pytest_cache' \
-    --exclude '*.egg-info' --exclude .DS_Store \
-    "$MOVEIT2_SRC/" "$target/"
 }
 
 # --- viewer -------------------------------------------------------------------------
@@ -210,11 +190,6 @@ build_all() {
     write_third_party_notices "$root/browser"
     echo "Bundled ${root#"$REPO_ROOT"/}/browser"
   fi
-  if [ "$STAGE_MOVEIT2" -eq 1 ]; then
-    require_dir "$MOVEIT2_SRC" "MoveIt2 server source"
-    sync_moveit2 "$root/moveit2"
-    echo "Bundled ${root#"$REPO_ROOT"/}/moveit2"
-  fi
   if [ "$STAGE_VIEWER" -eq 1 ]; then
     build_viewer_dist "$root/viewer"
     write_third_party_notices "$root/viewer"
@@ -227,11 +202,10 @@ if [ "$MODE" = "check" ]; then
   mkdir -p "$CHECK_DIR"
   build_all "$CHECK_DIR"
   stale=0
-  for stage in node browser moveit2 viewer; do
+  for stage in node browser viewer; do
     case "$stage" in
       node) [ "$STAGE_NODE" -eq 1 ] || continue ;;
       browser) [ "$STAGE_BROWSER" -eq 1 ] || continue ;;
-      moveit2) [ "$STAGE_MOVEIT2" -eq 1 ] || continue ;;
       viewer) [ "$STAGE_VIEWER" -eq 1 ] || continue ;;
     esac
     label="packages/cadgen/src/cadgen/_runtime/$stage"

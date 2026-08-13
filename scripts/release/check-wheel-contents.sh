@@ -46,7 +46,6 @@ REQUIRED=(
   "cadgen/_runtime/node/THIRD_PARTY_LICENSES.txt"
   "cadgen/_runtime/browser/snapshot-render.js"
   "cadgen/_runtime/browser/render.html"
-  "cadgen/_runtime/moveit2/moveit2_server/server.py"
 )
 
 if [ "${CADGEN_REQUIRE_VIEWER_DIST:-0}" = "1" ]; then

@@ -73,13 +73,6 @@ function formatMotionCoordinate(value) {
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
-function motionPositionsClose(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 3 || b.length < 3) {
-    return false;
-  }
-  return [0, 1, 2].every((index) => Math.abs(Number(a[index]) - Number(b[index])) <= 0.0005);
-}
-
 function clampJointInputValue(valueDeg, minValueDeg, maxValueDeg, fallbackValueDeg) {
   const numericValue = Number.isFinite(Number(valueDeg)) ? Number(valueDeg) : fallbackValueDeg;
   return Math.min(Math.max(numericValue, minValueDeg), Math.max(minValueDeg, maxValueDeg));
@@ -215,58 +208,6 @@ const UrdfJointRow = memo(function UrdfJointRow({
   );
 });
 
-const MotionCoordinateInput = memo(function MotionCoordinateInput({
-  axis,
-  value,
-  disabled,
-  onValueChange
-}) {
-  const safeValue = Number.isFinite(Number(value)) ? Number(value) : 0;
-  const [draftValue, setDraftValue] = useState(() => formatMotionCoordinate(safeValue));
-
-  useEffect(() => {
-    setDraftValue(formatMotionCoordinate(safeValue));
-  }, [safeValue]);
-
-  const commitValue = (nextValue) => {
-    const numericValue = Number(nextValue);
-    const committedValue = Number.isFinite(numericValue) ? numericValue : safeValue;
-    setDraftValue(formatMotionCoordinate(committedValue));
-    onValueChange?.(committedValue);
-  };
-
-  return (
-    <FileSheetField label={axis}>
-      <Input
-        type="number"
-        step="0.001"
-        inputMode="decimal"
-        disabled={disabled}
-        value={draftValue}
-        onChange={(event) => {
-          setDraftValue(event.target.value);
-        }}
-        onFocus={(event) => {
-          event.currentTarget.select();
-        }}
-        onMouseUp={(event) => {
-          event.preventDefault();
-        }}
-        onBlur={() => {
-          commitValue(draftValue);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.currentTarget.blur();
-          }
-        }}
-        className={`${compactNumericInputClasses} text-right`}
-        aria-label={`Target ${axis} coordinate`}
-      />
-    </FileSheetField>
-  );
-});
-
 const SdfValueField = FileSheetValueField;
 
 function formatSdfMetadataItem(item, fields) {
@@ -312,7 +253,6 @@ export default function UrdfFileSheet({
   title = "URDF",
   sourceFormat = "urdf",
   showJoints = true,
-  showMotion = true,
   isDesktop,
   width,
   selectedEntry = null,
@@ -326,7 +266,6 @@ export default function UrdfFileSheet({
   onGroupStateSelect,
   onCopyJointAngles,
   onResetPose,
-  motion = null,
   sdf = null,
   fileDownloadAvailable = false,
   viewerServerInfo = null,
@@ -361,21 +300,6 @@ export default function UrdfFileSheet({
     sdfLights.length ||
     sdfPhysics.length
   );
-  const motionEndEffectors = Array.isArray(motion?.endEffectors) ? motion.endEffectors : [];
-  const motionPlanningGroups = Array.isArray(motion?.planningGroups) ? motion.planningGroups : [];
-  const motionTargetFrames = Array.isArray(motion?.targetFrames) ? motion.targetFrames : [];
-  const motionEnabled = showMotion && motion?.serverLive === true && motionEndEffectors.length > 0;
-  const activeMotionEndEffectorName = String(motion?.activeEndEffectorName || motionEndEffectors[0]?.name || "").trim();
-  const activeMotionPlanningGroupName = String(motion?.activePlanningGroupName || motionPlanningGroups[0]?.name || "").trim();
-  const activeMotionTargetFrameName = String(motion?.activeTargetFrameName || motionTargetFrames[0] || "").trim();
-  const motionTargetPosition = Array.isArray(motion?.targetPosition) ? motion.targetPosition : [0, 0, 0];
-  const motionCurrentPosition = Array.isArray(motion?.currentPosition) ? motion.currentPosition : null;
-  const moveit2Settings = motion?.moveit2 && typeof motion.moveit2 === "object" ? motion.moveit2 : {};
-  const motionBusy = Boolean(motion?.solving);
-  const motionActionsEnabled = motion?.actionsEnabled !== false;
-  const motionServerStatus = motion?.serverLive ? "connected" : "offline";
-  const motionSelectPoseActive = Boolean(motion?.selectPoseActive);
-  const motionTargetMatchesCurrentPosition = motionCurrentPosition ? motionPositionsClose(motionTargetPosition, motionCurrentPosition) : true;
   const activeGroupStateValue = groupStatePresets.some((state) => String(state?.id || "").trim() === activeGroupStateId)
     ? activeGroupStateId
     : "__custom__";
@@ -426,276 +350,6 @@ export default function UrdfFileSheet({
                     <SdfMetadataList title="Physics" items={sdfPhysics} fields={["name", "type", "default"]} />
                   </FileSheetSubsection>
                 ) : null}
-              </div>
-      )
-    } : null,
-    motionEnabled ? {
-      id: "motion",
-      title: "MoveIt2",
-      content: (
-              <div>
-                <FileSheetSubsection title="Status">
-                <FileSheetFieldGrid columns={2}>
-                  <SdfValueField
-                    label="SRDF"
-                    value={motion?.srdf?.srdf || motion?.srdf?.srdfHash || "linked"}
-                  />
-                  <SdfValueField label="MoveIt2 server" value={motionServerStatus} />
-                </FileSheetFieldGrid>
-                </FileSheetSubsection>
-
-                <FileSheetSubsection title="Target">
-                <FileSheetFieldGrid columns={2}>
-                  <FileSheetField label="Planning group">
-                    <Select
-                      value={activeMotionPlanningGroupName}
-                      disabled={motionBusy || motionPlanningGroups.length <= 1}
-                      onValueChange={(value) => {
-                        motion?.onMoveIt2SettingChange?.("activePlanningGroupName", value);
-                      }}
-                    >
-                      <SelectTrigger size="sm" className={FILE_SHEET_SELECT_TRIGGER_CLASSES} aria-label="Planning group">
-                        <SelectValue placeholder="Select group" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {motionPlanningGroups.map((group) => {
-                          const name = String(group?.name || "").trim();
-                          return name ? (
-                            <SelectItem key={name} value={name} className="text-xs">
-                              {name}
-                            </SelectItem>
-                          ) : null;
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </FileSheetField>
-                  <FileSheetField label="End effector">
-                    <Select
-                      value={activeMotionEndEffectorName}
-                      disabled={motionBusy || motionEndEffectors.length <= 1}
-                      onValueChange={(value) => {
-                        motion?.onEndEffectorChange?.(value);
-                      }}
-                    >
-                      <SelectTrigger size="sm" className={FILE_SHEET_SELECT_TRIGGER_CLASSES} aria-label="End effector">
-                        <SelectValue placeholder="Select end effector" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {motionEndEffectors.map((endEffector) => {
-                          const name = String(endEffector?.name || "").trim();
-                          return name ? (
-                            <SelectItem key={name} value={name} className="text-xs">
-                              {name}
-                            </SelectItem>
-                          ) : null;
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </FileSheetField>
-                  <FileSheetField label="Target frame">
-                    <Select
-                      value={activeMotionTargetFrameName}
-                      disabled={motionBusy || motionTargetFrames.length <= 1}
-                      onValueChange={(value) => {
-                        motion?.onMoveIt2SettingChange?.("targetFrame", value);
-                      }}
-                    >
-                      <SelectTrigger size="sm" className={FILE_SHEET_SELECT_TRIGGER_CLASSES} aria-label="Target frame">
-                        <SelectValue placeholder="Select frame" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {motionTargetFrames.map((frame) => {
-                          const name = String(frame || "").trim();
-                          return name ? (
-                            <SelectItem key={name} value={name} className="text-xs">
-                              {name}
-                            </SelectItem>
-                          ) : null;
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </FileSheetField>
-                </FileSheetFieldGrid>
-
-                <FileSheetFieldGrid columns={3}>
-                  {["X", "Y", "Z"].map((axis, index) => (
-                    <MotionCoordinateInput
-                      key={axis}
-                      axis={axis}
-                      value={motionTargetPosition[index]}
-                      disabled={motionBusy}
-                      onValueChange={(nextValue) => {
-                        motion?.onTargetPositionChange?.(index, nextValue);
-                      }}
-                    />
-                  ))}
-                </FileSheetFieldGrid>
-                </FileSheetSubsection>
-
-                <FileSheetSubsection title="Solver">
-                <FileSheetFieldGrid columns={3}>
-                  <FileSheetField label="IK timeout">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0.001"
-                      value={moveit2Settings.ikTimeout ?? 0.05}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("ikTimeout", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="IK timeout"
-                    />
-                  </FileSheetField>
-                  <FileSheetField label="IK attempts">
-                    <Input
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={moveit2Settings.ikAttempts ?? 1}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("ikAttempts", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="IK attempts"
-                    />
-                  </FileSheetField>
-                  <FileSheetField label="Tolerance">
-                    <Input
-                      type="number"
-                      step="0.001"
-                      min="0.0001"
-                      value={moveit2Settings.ikTolerance ?? 0.002}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("ikTolerance", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="IK tolerance"
-                    />
-                  </FileSheetField>
-                </FileSheetFieldGrid>
-                </FileSheetSubsection>
-
-                <FileSheetSubsection title="Planning">
-                <FileSheetFieldGrid columns={2}>
-                  <FileSheetField label="Planning pipeline">
-                    <Input
-                      value={moveit2Settings.planningPipeline ?? "ompl"}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("planningPipeline", event.target.value)}
-                      className={compactNumericInputClasses}
-                      aria-label="Planning pipeline"
-                    />
-                  </FileSheetField>
-                  <FileSheetField label="Planner ID">
-                    <Input
-                      value={moveit2Settings.plannerId ?? "RRTConnectkConfigDefault"}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("plannerId", event.target.value)}
-                      className={compactNumericInputClasses}
-                      aria-label="Planner ID"
-                    />
-                  </FileSheetField>
-                </FileSheetFieldGrid>
-
-                <FileSheetFieldGrid columns={3}>
-                  <FileSheetField label="Plan time">
-                    <Input
-                      type="number"
-                      step="0.1"
-                      min="0.1"
-                      value={moveit2Settings.planningTime ?? 1}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("planningTime", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="Plan time"
-                    />
-                  </FileSheetField>
-                  <FileSheetField label="Velocity">
-                    <Input
-                      type="number"
-                      step="0.05"
-                      min="0.01"
-                      max="1"
-                      value={moveit2Settings.maxVelocityScalingFactor ?? 1}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("maxVelocityScalingFactor", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="Velocity scaling"
-                    />
-                  </FileSheetField>
-                  <FileSheetField label="Acceleration">
-                    <Input
-                      type="number"
-                      step="0.05"
-                      min="0.01"
-                      max="1"
-                      value={moveit2Settings.maxAccelerationScalingFactor ?? 1}
-                      disabled={motionBusy}
-                      onChange={(event) => motion?.onMoveIt2SettingChange?.("maxAccelerationScalingFactor", event.target.value)}
-                      className={`${compactNumericInputClasses} text-right`}
-                      aria-label="Acceleration scaling"
-                    />
-                  </FileSheetField>
-                </FileSheetFieldGrid>
-                </FileSheetSubsection>
-
-                <FileSheetSubsection title="Actions">
-                <FileSheetButtonRow columns={2}>
-                  <Button
-                    type="button"
-                    variant={motionSelectPoseActive ? "secondary" : "outline"}
-                    size="sm"
-                    className={cn(compactButtonClasses, "justify-center")}
-                    disabled={motionBusy || !motionActionsEnabled}
-                    onClick={() => {
-                      if (motionSelectPoseActive) {
-                        motion?.onCancelSelectPose?.();
-                        return;
-                      }
-                      motion?.onSelectPose?.();
-                    }}
-                    aria-pressed={motionSelectPoseActive}
-                  >
-                    <span>Select pose</span>
-                  </Button>
-                  {!motionTargetMatchesCurrentPosition ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className={cn(compactButtonClasses, "justify-center")}
-                      disabled={motionBusy}
-                      onClick={() => {
-                        motion?.onUseCurrentPosition?.();
-                      }}
-                    >
-                      <span>Reset</span>
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className={cn(compactButtonClasses, "justify-center")}
-                    disabled={motionBusy || !motionActionsEnabled || motionTargetMatchesCurrentPosition}
-                    onClick={() => {
-                      void motion?.onSolve?.();
-                    }}
-                  >
-                    <span>{motionBusy ? "Solving..." : "Solve pose"}</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="default"
-                    size="sm"
-                    className={cn(compactButtonClasses, "justify-center")}
-                    disabled={motionBusy || !motionActionsEnabled || motionTargetMatchesCurrentPosition}
-                    onClick={() => {
-                      void motion?.onPlan?.();
-                    }}
-                  >
-                    <span>{motionBusy ? "Planning..." : "Plan to pose"}</span>
-                  </Button>
-                </FileSheetButtonRow>
-                </FileSheetSubsection>
               </div>
       )
     } : null,

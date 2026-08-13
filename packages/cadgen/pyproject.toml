@@ -51,7 +51,7 @@ include = ["cadgen*"]
 [tool.setuptools.package-data]
 # _runtime holds everything cadgen executes that is not Python: the esbuilt Node builders,
 # the headless browser bundle the snapshot CLI drives, the built CAD Viewer client, and a
-# copy of the MoveIt2 server. It is data, not a subpackage (no __init__), and it is found
+# It is data, not a subpackage (no __init__), and it is found
 # at call time by cadgen.assets. The viewer client is gitignored but still ships -- setuptools
 # does not read .gitignore, and CI/publish bundle before building the wheel.
 # Verified by scripts/release/check-wheel-contents.sh.

@@ -20,7 +20,6 @@ CAD references, and verify generated assets without leaving the browser.
 - Can regenerate STEP GLB/topology artifacts and generated-DXF drawing
   packages when the CAD Python runtime is
   available.
-- Provides optional MoveIt2 websocket controls for SRDF IK and planning.
 
 ## Quick Start
 
@@ -82,8 +81,7 @@ there is no stored fallback, so the same URL always shows the same thing.
 - `scripts/`: developer and runtime launchers, the test runner, and the
   end-to-end sweeps.
 - `docs/`: workflow reference docs for backend storage, browser persistence,
-  render types, settings UI, and MoveIt2.
-- `moveit2_server/`: optional Python websocket backend for SRDF controls.
+  render types, and settings UI.
 - `packages/cadjs`: the shared client runtime this app
   builds against. Keep reusable parsing, rendering, sidecar,
   selector, topology, implicit shader, snapshot, and export logic in these
@@ -130,7 +128,6 @@ Important environment variables:
 - `VIEWER_DISCORD_URL`: optional top-bar Discord community link target.
 - `VIEWER_ALLOWED_HOSTS`: extra hostnames accepted by local Vite dev and
   production servers.
-- `VIEWER_MOVEIT2_WS_URL`: optional websocket URL for SRDF MoveIt2 controls.
 - `VIEWER_CAD_PYTHON`: optional Python executable for local STEP/DXF artifact regeneration.
 - `VIEWER_CAD_PYTHONPATH` / `CAD_PYTHONPATH`: optional Python source path for
   the `cadgen` package.
@@ -149,7 +146,6 @@ assets are served by the local backend and are not copied into `dist/`.
 - [Backend storage](./docs/backend.md): local filesystem backend contracts.
 - [Browser storage](./docs/storage.md): URL, `localStorage`, and
   `sessionStorage` ownership.
-- [MoveIt2 server](./docs/moveit2-server.md): optional SRDF websocket backend.
 - [`cadjs` render pipeline](./packages/cadjs/docs/render-pipeline.md): shared
   render APIs used by the viewer, docs, and snapshot runtime.
 

@@ -425,7 +425,7 @@ jobs:
       #   tests/             source-only; nothing under skills/ or docs/ reads it,
       #                      and test.yml runs on develop, never here
       #   requirements-dev.txt  a source-checkout dev environment whose editable
-      #                      paths (packages/cadgen, viewer/moveit2_server) do not
+      #                      paths (packages/cadgen) do not
       #                      survive the trim anyway
       #   docs/              a website, not an install; Deploy Docs builds and
       #                      deploys it from the release SOURCE commit
