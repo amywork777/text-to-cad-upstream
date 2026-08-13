@@ -22,7 +22,7 @@
 // sweep would silently accept both of those changes.
 //
 // To re-baseline after an INTENTIONAL change:
-//   IMPLICIT_SDF_BASELINE_WRITE=1 npm --prefix packages/implicitjs test -- src/lib/implicitCad/sdfEquality.test.js
+//   IMPLICIT_SDF_BASELINE_WRITE=1 npm --prefix packages/cadjs test -- src/lib/implicitCad/sdfEquality.test.js
 // Re-baselining is a deliberate act; it should appear in a diff and be justified in review.
 
 import assert from "node:assert/strict";

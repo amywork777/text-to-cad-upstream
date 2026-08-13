@@ -2,10 +2,10 @@
  * ESM resolve hook: make bare `implicitjs/...` / `cadjs/...` specifiers resolvable in a
  * builder child that has no `node_modules`.
  *
- * The published skill runtime ships `packages/implicitjs` and `packages/cadjs` as SOURCE
- * with no `node_modules` anywhere, so a builder's `import … from "implicitjs/glb/…"` has
+ * A source checkout runs builders from `packages/cadjs` with no `node_modules` beside the
+ * entry, so a builder's bare `import … from "cadjs/glb/…"` has
  * nothing to resolve against. `NODE_PATH=<packages>` fixes that for CommonJS -- a NODE_PATH
- * entry is treated as a `node_modules` directory, so `packages/implicitjs` resolves as the
+ * entry is treated as a `node_modules` directory, so `packages/cadjs` resolves as the
  * package `implicitjs` *through its exports map* -- but **Node's ESM resolver ignores
  * NODE_PATH entirely** (verified on v22.22.0: the import throws ERR_MODULE_NOT_FOUND while
  * `require.resolve` on the same specifier, same env, returns the right file). esbuild honors

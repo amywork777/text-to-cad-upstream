@@ -68,7 +68,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # Deliberately NOT one shared number: a drawing rebuild is milliseconds and a
         # large STEP assembly is tens of seconds, so a DXF change must not re-mesh every
         # STEP model on next open.
-        source = (ROOT / "viewer/server_py/artifact.py").read_text()
+        source = (ROOT / "packages/cadgen/src/cadgen/viewer/artifact.py").read_text()
         for constant in (
             "STEP_PACKAGE_VERSION",
             "DXF_PACKAGE_SCHEMA_VERSION",
@@ -103,7 +103,7 @@ class DeadVersionsStayDeadTest(unittest.TestCase):
     def test_viewer_server_info_schema_version_is_gone(self) -> None:
         self.assertNotIn(
             "VIEWER_SERVER_INFO_SCHEMA_VERSION",
-            (ROOT / "viewer/server_py/server_info.py").read_text(),
+            (ROOT / "packages/cadgen/src/cadgen/viewer/server_info.py").read_text(),
         )
 
     def test_the_gltf_container_version_is_declared_once(self) -> None:

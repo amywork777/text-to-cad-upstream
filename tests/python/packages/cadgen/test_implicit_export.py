@@ -3,7 +3,7 @@
 Export used to happen in the BROWSER -- the client loaded the `.implicit.js` module, meshed
 and serialized it in the tab, and POSTed the bytes for the server to write. That kept a
 second live geometry runtime in the viewer for the sake of one menu item. This module runs
-the same shipped exporter (`packages/implicitjs/scripts/export.mjs`) in a Node child instead,
+the same shipped exporter (`packages/cadjs/scripts/implicit-export-cli.mjs`) in a Node child instead,
 so the viewer keeps exactly one render path.
 
 Every test here spawns the real exporter. The properties worth pinning are properties of the

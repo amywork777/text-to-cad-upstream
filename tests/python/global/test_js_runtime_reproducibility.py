@@ -25,13 +25,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 VIEWER_DIR = REPO_ROOT / "viewer"
-VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cad-viewer.sh"
-IMPLICITJS_RUNNER = REPO_ROOT / "packages" / "implicitjs" / "scripts" / "run-tests.mjs"
+VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cadgen-runtime.sh"
+IMPLICITJS_RUNNER = REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs"
 NODE_MODULE_SUPPORT = (
-    REPO_ROOT / "packages" / "implicitjs" / "src" / "lib" / "implicitCad" / "nodeModuleSupport.js"
+    REPO_ROOT / "packages" / "cadjs" / "src" / "lib" / "implicitCad" / "nodeModuleSupport.js"
 )
 TEST_RUNNERS = (
-    REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs",
     IMPLICITJS_RUNNER,
     REPO_ROOT / "viewer" / "scripts" / "run-tests.mjs",
 )
@@ -71,7 +70,9 @@ def resolved_viewer_package_manager(*lockfiles: str, override: str = "") -> str:
         env.update(
             {
                 "PATH": f"{bin_dir}:{env.get('PATH', '')}",
-                "VIEWER_DIR": str(viewer_dir),
+                # The resolver reads the viewer SOURCE dir; in bundle-cadgen-runtime.sh
+                # VIEWER_DIR is the packaged output, so the source is VIEWER_SRC.
+                "VIEWER_SRC": str(viewer_dir),
                 "VIEWER_PACKAGE_MANAGER": override,
             }
         )
@@ -171,7 +172,7 @@ class TestRunnersStartOnCurrentNodeTest(unittest.TestCase):
         # package that owns .js tests declares itself a module package.
         for package_json in (
             REPO_ROOT / "packages" / "cadjs" / "package.json",
-            REPO_ROOT / "packages" / "implicitjs" / "package.json",
+            REPO_ROOT / "packages" / "cadjs" / "package.json",
             VIEWER_DIR / "package.json",
         ):
             with self.subTest(package=package_json.parent.name):
