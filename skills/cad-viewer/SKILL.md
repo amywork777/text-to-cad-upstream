@@ -98,4 +98,3 @@ URL points at the launch directory; replace its path to review any other folder.
 ## References
 
 - Read `references/viewer-features.md` when you need supported file types, Viewer controls, or file-specific feature details.
-- Read `references/moveit2-server.md` only when the user specifically needs optional SRDF MoveIt2 IK or path-planning controls.

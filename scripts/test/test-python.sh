@@ -45,8 +45,6 @@ while IFS= read -r skill; do
   fi
 done < <("$LIST_SKILLS_SCRIPT")
 
-run_suite "MoveIt2 server Python tests" "tests/python/viewer/moveit2_server" "viewer/moveit2_server"
-
 # The CAD Viewer backend is cadgen.viewer now, so its tests sit with the rest of the
 # cadgen suite. It owns the only cross-process coverage of the generation lock
 # (test_artifact.py drives a real second process and SIGKILLs it), which is why it must

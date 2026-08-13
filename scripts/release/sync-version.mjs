@@ -36,7 +36,6 @@ export const jsonTargets = [
 
 const tomlTargets = [
   "packages/cadgen/pyproject.toml",
-  "viewer/moveit2_server/pyproject.toml",
 ];
 
 function usage() {

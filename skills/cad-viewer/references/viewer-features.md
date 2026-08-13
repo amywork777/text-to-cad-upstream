@@ -9,7 +9,7 @@ Load this only when a task needs Viewer file-support details or UI control guida
 - `.dxf`: read-only 3D flat-pattern viewing. The extruded pattern is baked into the drawing's `__cadgen__` render package on first open (thickness and bend state are producer-owned bake settings, not live controls), so both generated `.dxf.py` drawings and imported `.dxf` files render through the same mesh path as everything else.
 - `.implicit.js`, `.implicit.mjs`: implicit-CAD models raymarched on the GPU from their own GLSL — no bake, nothing cached to go stale. Parameters, animations and raymarch graphics settings are live viewport controls; `export --stl/--3mf/--glb` meshes on demand for exchange.
 - `.urdf`: robot link/mesh viewing with movable joint sliders, reset pose, and copied joint values.
-- `.srdf`: paired-URDF viewing with planning groups, group-state presets, joint controls, and optional MoveIt2 IK/planning controls.
+- `.srdf`: paired-URDF viewing with planning groups, group-state presets, and joint controls.
 - `.sdf`: SDF model/world viewing with metadata, counts, warnings, and joint controls when available.
 
 ## Controls

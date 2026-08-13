@@ -14,7 +14,6 @@ Use query params only for shareable state that should survive copying a URL:
 - `file`: active catalog entry, always relative to the directory in the URL path.
   The path itself is the directory the Viewer scans — there is no `dir` param on
   the page URL (`dir` survives only inside `/__cad/asset` request URLs).
-- `moveit2Ws`: explicit MoveIt2 websocket override for local or hosted sessions.
 - `resetTips`: debug-only. Clears the record of seen one-shot tutorial tips so
   they fire again. It applies once during bootstrap and is then stripped from
   the address bar, so it is a reset action rather than a persistent mode.
