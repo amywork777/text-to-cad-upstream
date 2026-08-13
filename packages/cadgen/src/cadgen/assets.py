@@ -68,16 +68,12 @@ def _dev_builders_dir() -> Path | None:
 def node_builders_dir() -> Path:
     """Directory holding the esbuilt Node builders (``dxf-artifact.mjs`` and friends).
 
-    ``CADGEN_NODE_BUILDERS_DIR`` names it directly. ``CADGEN_NODE_PACKAGES`` is the older
-    knob and names a ``packages`` directory, so ``cadjs/bin`` is appended -- kept because
-    it is documented and because vendored skill runtimes set it.
+    ``CADGEN_NODE_BUILDERS_DIR`` names it directly. Otherwise a checkout's live
+    ``packages/cadjs/bin`` wins over the packaged copy, so builder JS stays editable.
     """
     override = _env_dir("CADGEN_NODE_BUILDERS_DIR")
     if override:
         return override
-    legacy = _env_dir("CADGEN_NODE_PACKAGES")
-    if legacy:
-        return legacy / "cadjs" / "bin"
     dev = _dev_builders_dir()
     if dev:
         return dev

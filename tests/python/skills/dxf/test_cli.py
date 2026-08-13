@@ -7,7 +7,7 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/dxf/scripts")
 
-from gen import cli as gen
+from cadgen.cli import dxf_gen as gen
 
 
 class DxfGenCliTests(unittest.TestCase):
@@ -72,7 +72,7 @@ class DxfGenCliTests(unittest.TestCase):
     def test_cli_import_does_not_import_heavy_cad_modules(self) -> None:
         skill_root = repo_path("skills/dxf")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import gen.cli; "
+            "import sys; import cadgen.cli.dxf_gen; "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"
         )

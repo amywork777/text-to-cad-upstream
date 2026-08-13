@@ -1,8 +1,17 @@
+#!/usr/bin/env python3
+"""Build a DXF's drawing package.
+
+A shim over the `cadgen` distribution named in this skill's requirements.txt. The parser,
+the behaviour and the output contract all live in ``cadgen.cli.dxf_artifact``; this file exists so the
+skill keeps a stable `scripts/artifact` entrypoint, and so a missing install fails with an
+instruction instead of a traceback.
+"""
+
 from __future__ import annotations
 
-import os
 import sys
-from pathlib import Path
+
+import os
 
 # Drawing packages are content-addressed (drawing.json dxfHash) and must be
 # byte-deterministic. ezdxf's object-section creation order depends on Python
@@ -22,30 +31,15 @@ if os.environ.get("PYTHONHASHSEED") != "0":
     os.environ["PYTHONHASHSEED"] = "0"
     raise SystemExit(subprocess.run([sys.executable, *sys.argv], check=False).returncode)
 
-# Prefer the skill's bundled cadgen over any pip-installed copy, exactly as
-# skills/dxf/scripts/gen/__main__.py does.
-# This skill got away without it only because its requirements.txt installs
-# `--editable ./scripts/packages/cadgen`; run without that install and it silently binds
-# whichever cadgen is on the interpreter's path -- a different checkout, at a different
-# version. That is now worse than a version mismatch: node_package_root() derives the Node
-# builder directory from cadgen's own __file__, so the wrong cadgen resolves
-# preview.glb's builder to another skill's runtime, or to none.
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-PACKAGES_DIR = SCRIPTS_DIR / "packages"
-CADGEN_SRC_DIR = PACKAGES_DIR / "cadgen" / "src"
-for _runtime_path in (SCRIPTS_DIR, PACKAGES_DIR, CADGEN_SRC_DIR):
-    _runtime_path_text = str(_runtime_path)
-    if _runtime_path.is_dir() and _runtime_path_text not in sys.path:
-        sys.path.insert(0, _runtime_path_text)
-
-if __package__ in {None, ""}:
-    tool_dir = Path(__file__).resolve().parent
-    if str(tool_dir) not in sys.path:
-        sys.path.insert(0, str(tool_dir))
-    from cli import main
-else:
-    from .cli import main
+try:
+    from cadgen.cli import dxf_artifact as _cli
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "cadgen is not installed. From the skill directory run:\n"
+        "  python -m pip install -r requirements.txt\n"
+    )
+    raise SystemExit(3)
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(_cli.main(sys.argv[1:]))

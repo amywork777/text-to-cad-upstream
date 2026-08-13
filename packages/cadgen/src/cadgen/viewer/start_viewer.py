@@ -70,8 +70,15 @@ def spawn_backend(host: str, port: int, dist_root: str = ""):
     return subprocess.Popen(cmd, env=env)
 
 
-def main(argv=None):
-    parser = argparse.ArgumentParser(description="Start the Python CAD Viewer backend on a single port")
+# Both front doors reach this: `cadgen viewer` (which passes its own name) and
+# `python -m cadgen.viewer` (which does not, so argparse derives it from argv[0]).
+DEFAULT_PROG = "python -m cadgen.viewer"
+
+
+def main(argv=None, *, prog: str = DEFAULT_PROG):
+    parser = argparse.ArgumentParser(
+        prog=prog, description="Start the Python CAD Viewer backend on a single port"
+    )
     parser.add_argument("--host", default=DEFAULT_VIEWER_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_VIEWER_PORT)
     parser.add_argument("--json", action="store_true", dest="json_result")

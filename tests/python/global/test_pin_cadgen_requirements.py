@@ -22,7 +22,11 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "release" / "pin-cadgen-requirements.sh"
-EDITABLE = "--editable ./scripts/packages/cadgen"
+# What a skill's requirements.txt says on develop: the distribution, unpinned.
+UNPINNED = "cadgen"
+# With extras, which the pin must preserve -- dropping them silently uninstalls
+# playwright from every published skill that renders.
+UNPINNED_EXTRAS = "cadgen[snapshot]"
 
 
 class PinScriptPresenceTest(unittest.TestCase):
@@ -55,10 +59,8 @@ class PinScriptPresenceTest(unittest.TestCase):
             rel = req.relative_to(REPO_ROOT)
             self.assertNotIn("cadgen==", text, f"{rel} must not be pinned in the source tree")
             self.assertTrue(
-                "--editable" in text or any(
-                    line.strip().startswith("cadgen") for line in text.splitlines()
-                ),
-                f"{rel} should name cadgen editable or as a bare distribution",
+                any(line.strip().startswith("cadgen") for line in text.splitlines()),
+                f"{rel} should name the cadgen distribution",
             )
         self.assertTrue(checked, "no skill requirements name cadgen")
 
@@ -88,56 +90,65 @@ class PinScriptBehaviourTest(unittest.TestCase):
             cwd=self.root,
         )
 
-    def test_rewrites_editable_to_the_canonical_version(self):
-        target = self._write("skills/cad/requirements.txt", f"{EDITABLE}\nplaywright\n")
+    def test_pins_the_distribution_to_the_canonical_version(self):
+        target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\nplaywright\n")
         result = self._run()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("cadgen==9.9.9\nplaywright\n", target.read_text())
 
+    def test_extras_survive_pinning(self):
+        """`cadgen[snapshot]==X`, not `cadgen==X`.
+
+        Pinning to the bare name drops the extra, so a published rendering skill
+        installs without playwright and fails on its first snapshot -- at the user,
+        not here.
+        """
+        target = self._write("skills/urdf/requirements.txt", f"{UNPINNED_EXTRAS}\n")
+        self._run()
+        self.assertEqual("cadgen[snapshot]==9.9.9\n", target.read_text())
+
     def test_preserves_sibling_requirements(self):
-        target = self._write("skills/dxf/requirements.txt", f"{EDITABLE}\nezdxf\nshapely\n")
+        target = self._write("skills/dxf/requirements.txt", f"{UNPINNED}\nezdxf\nshapely\n")
         self._run()
         self.assertEqual("cadgen==9.9.9\nezdxf\nshapely\n", target.read_text())
 
-    def test_pins_every_manifest_including_vendored_runtimes(self):
-        a = self._write("skills/cad/requirements.txt", f"{EDITABLE}\n")
-        b = self._write(
-            "skills/cad-viewer/requirements.txt", "--editable ./scripts/viewer/packages/cadgen\n"
-        )
-        c = self._write("viewer/requirements.txt", "--editable ./packages/cadgen\n")
+    def test_pins_every_manifest_it_finds(self):
+        a = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
+        b = self._write("skills/cad-viewer/requirements.txt", f"{UNPINNED}\n")
+        c = self._write("skills/dxf/requirements.txt", f"{UNPINNED}\n")
         self._run()
         for path in (a, b, c):
             self.assertEqual("cadgen==9.9.9\n", path.read_text(), path)
 
     def test_is_idempotent(self):
-        target = self._write("skills/cad/requirements.txt", f"{EDITABLE}\n")
+        target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         self._run()
         second = self._run()
         self.assertEqual(0, second.returncode)
         self.assertEqual("cadgen==9.9.9\n", target.read_text())
 
     def test_check_mode_reports_without_writing(self):
-        target = self._write("skills/cad/requirements.txt", f"{EDITABLE}\n")
+        target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         result = self._run("--check")
         self.assertEqual(1, result.returncode, "unpinned requirements must fail --check")
         self.assertIn("would pin", result.stdout)
-        self.assertEqual(f"{EDITABLE}\n", target.read_text(), "--check must not write")
+        self.assertEqual(f"{UNPINNED}\n", target.read_text(), "--check must not write")
 
     def test_check_mode_passes_once_pinned(self):
-        self._write("skills/cad/requirements.txt", f"{EDITABLE}\n")
+        self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         self._run()
         self.assertEqual(0, self._run("--check").returncode)
 
     def test_skips_excluded_trees(self):
-        vendored = self._write("node_modules/pkg/requirements.txt", f"{EDITABLE}\n")
-        models = self._write("models/requirements.txt", f"{EDITABLE}\n")
+        vendored = self._write("node_modules/pkg/requirements.txt", f"{UNPINNED}\n")
+        models = self._write("models/requirements.txt", f"{UNPINNED}\n")
         self._run()
-        self.assertEqual(f"{EDITABLE}\n", vendored.read_text(), "node_modules must be skipped")
-        self.assertEqual(f"{EDITABLE}\n", models.read_text(), "models must be skipped")
+        self.assertEqual(f"{UNPINNED}\n", vendored.read_text(), "node_modules must be skipped")
+        self.assertEqual(f"{UNPINNED}\n", models.read_text(), "models must be skipped")
 
     def test_missing_version_is_an_error(self):
         (self.root / "VERSION").write_text("\n")
-        self._write("skills/cad/requirements.txt", f"{EDITABLE}\n")
+        self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         result = self._run()
         self.assertEqual(1, result.returncode)
         self.assertIn("Missing canonical release version", result.stderr)

@@ -83,6 +83,24 @@ while IFS= read -r generated_path; do
   check_generated_path "$generated_path"
 done < <(generated_paths)
 
+# The generated paths above are all inside cadgen now, so they no longer cover skills/ --
+# and skills/ is precisely what ships to the three plugin installers. Sweep it directly.
+# Nothing under it is generated any more (skills carry no vendored runtime), so the rule
+# is simply: no symlinks, anywhere, ever. See the note above on why this matters: Codex
+# drops them silently, shipping a skill with missing files and no error.
+check_skills_tree_has_no_symlinks() {
+  local first_link
+  first_link="$(find "$REPO_ROOT/skills" -name node_modules -prune -o -type l -print -quit)"
+  if [ -n "$first_link" ]; then
+    echo "skills/ must not contain symlinks: they are dropped silently by Codex" >&2
+    echo "plugin installs, shipping a skill with missing files." >&2
+    echo "First symlink: $first_link" >&2
+    exit 1
+  fi
+}
+
+check_skills_tree_has_no_symlinks
+
 if [ "$RUN_BUNDLE_CHECK" -eq 1 ]; then
   "$REPO_ROOT/scripts/bundle/bundle.sh" --check
 else

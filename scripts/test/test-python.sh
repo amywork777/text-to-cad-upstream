@@ -37,11 +37,11 @@ run_suite "cadgen package Python tests" "tests/python/packages/cadgen" "packages
 while IFS= read -r skill; do
   test_dir="tests/python/skills/$skill"
   if [ -d "$test_dir" ]; then
-    skill_paths=("skills/$skill/scripts")
-    if [ "$skill" = "cad" ] || [ "$skill" = "dxf" ]; then
-      skill_paths+=("skills/$skill/scripts/packages/cadgen/src")
-    fi
-    run_suite "$skill skill Python tests" "$test_dir" "${skill_paths[@]}"
+    # Skills no longer vendor cadgen; they import the distribution. In a checkout that is
+    # the repo's own source, so put it on the path rather than depending on whatever the
+    # interpreter happens to have installed.
+    run_suite "$skill skill Python tests" "$test_dir" \
+      "skills/$skill/scripts" "packages/cadgen/src"
   fi
 done < <("$LIST_SKILLS_SCRIPT")
 

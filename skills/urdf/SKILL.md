@@ -11,6 +11,21 @@ repository link is only for provenance and release review.
 
 Use this skill for URDF robot-description outputs. Treat URDF work as constrained kinematic modeling, not just XML writing. The main correctness risks are frame placement, joint-axis semantics, unit consistency, mesh scale, and inertial data.
 
+## Setup
+
+This skill's commands are thin entrypoints over the `cadgen` distribution, which
+carries the Python build runtime and the JavaScript it executes. Install it once:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Rendering additionally needs a browser, which pip cannot supply:
+
+```bash
+python -m playwright install chromium
+```
+
 ## Core Rules
 
 1. The `.urdf` file is the source of truth. Author and edit URDF XML directly; do not build a Python generation pipeline for it. There is no `gen_urdf()` contract.

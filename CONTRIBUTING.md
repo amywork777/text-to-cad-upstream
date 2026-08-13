@@ -121,29 +121,28 @@ keeps them out of `models/`.
 
 ## Source Boundaries
 
-Each skill must be self-contained and independent when it is installed from a
-production branch: it must not import or depend on code from another skill or
-from repository-root modules at runtime.
+A skill must not import another skill or a repository-root module at runtime, and
+must not put `skills/`, the repository root, or a sibling skill directory on
+`sys.path`, `PYTHONPATH`, `NODE_PATH`, or any similar lookup path. Skills are
+independent of *each other*.
 
-The `develop` branch uses symlinks as a checkout layout convenience. Those symlinks
-point generated-output paths back to the canonical sources so contributors can
-edit one copy of shared code. They do not relax the runtime self-containment
-rule: production branches must be able to replace the symlinks with real copies
-that still run without `skills/`, the repository root, or sibling skill
-directories on `sys.path`, `PYTHONPATH`, `NODE_PATH`, or similar lookup paths.
+They are not independent of `cadgen`. Each skill's `requirements.txt` names that
+distribution, and a skill's `scripts/<tool>` is a thin entrypoint whose parser and
+behaviour live in `cadgen.cli` — so what a published skill needs is an install, not
+a copy. Skills used to vendor cadgen and its Node builders into
+`skills/*/scripts/packages/`; six copies of one runtime is what that cost, and it
+is gone. cadgen now carries the JavaScript it executes as well as the Python.
 
 Canonical source directories are:
 
-- `skills/*` for skill instructions, references, and skill-owned scripts.
+- `skills/*` for skill instructions, references, and the thin entrypoints.
 - `viewer/` for the CAD Viewer client app. Its backend is `cadgen.viewer`, and its
   built client ships inside the cadgen wheel.
-- `packages/*` for shared runtime helpers that are copied into consuming skills
-  for production.
+- `packages/*` for the shared runtimes. `packages/cadgen` is the published
+  distribution; `packages/{cadjs,implicitjs}` are its JS build inputs.
 
-On `develop`, paths such as `skills/*/scripts/packages/*` and
-`viewer/packages/{cadjs,implicitjs}` should be symlinks when they mirror root sources. Treat those paths as
-generated-output aliases, not separate source roots. Edit the canonical source
-path instead.
+On `develop`, `viewer/packages/{cadjs,implicitjs}` are symlinks mirroring the root
+sources. Treat them as aliases, not separate source roots — edit the canonical path.
 
 Production-output checks are intentionally centralized. Normal development
 should stay in the symlinked `develop` layout. When you specifically need to inspect
@@ -196,9 +195,10 @@ rather than the published tree:
 - `viewer/` — the client source. Its built bundle ships inside the cadgen wheel
   (`cadgen/_runtime/viewer`) and is served by `cadgen viewer`.
 - `docs/` and `packages/` — `Deploy Docs` builds and deploys from the release
-  source commit. `packages/` has no other published consumer: every skill
-  vendors the runtimes it needs, and the trim step fails the publish if a skill
-  is found reaching into repo-root `packages/`.
+  source commit. `packages/` has no other published consumer: the cadgen wheel is
+  built and uploaded to PyPI BEFORE this trim, and published skills resolve cadgen
+  from there at the pinned release version. The trim step fails the publish if a
+  skill is found reaching into repo-root `packages/`.
 - `models/`, `tests/`, `requirements-dev.txt` — source-only, with no consumer
   outside a source checkout.
 

@@ -204,6 +204,16 @@ def _interpreter_roots() -> tuple[Path, ...]:
             add(entry)
     for prefix in (sys.prefix, sys.base_prefix, sys.exec_prefix, sys.base_exec_prefix):
         add(prefix)
+    # ...plus any OTHER installed-package directory that actually reached sys.path. Everything
+    # above asks the interpreter where it INSTALLS things; none of it sees a site-packages
+    # that arrived by .pth line, PYTHONPATH or a vendored bundle, which belongs to no scheme
+    # and no prefix. scripts/test/test-installed.sh reaches one exactly that way.
+    for entry in sys.path:
+        if not entry:
+            continue
+        candidate = Path(entry)
+        if candidate.name in {"site-packages", "dist-packages"}:
+            add(candidate)
     return tuple(roots)
 
 

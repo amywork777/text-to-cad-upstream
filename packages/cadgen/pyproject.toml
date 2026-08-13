@@ -29,6 +29,13 @@ dependencies = [
   "shapely",
 ]
 
+# Extras gate DEPENDENCIES, not files: the JavaScript runtime ships to everyone because it
+# is small and because a skill cannot know in advance which command a user will reach for.
+# Playwright is different -- it is a large install plus a browser download -- so rendering
+# is opt-in.
+[project.optional-dependencies]
+snapshot = ["playwright"]
+
 [project.urls]
 Homepage = "https://github.com/earthtojake/text-to-cad"
 Repository = "https://github.com/earthtojake/text-to-cad"

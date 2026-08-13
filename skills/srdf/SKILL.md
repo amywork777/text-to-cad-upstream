@@ -13,6 +13,21 @@ Use this skill for MoveIt semantic robot descriptions on top of an existing vali
 
 SRDF correctness is a **planning semantics** problem. The common failure is not invalid XML; it is a plausible SRDF that gives MoveIt the wrong planning group, wrong tool link, wrong default state, unsafe disabled-collision matrix, or wrong joint units. Because language models are weak at spatial and kinematic reasoning, derive planning groups, end effectors, group states, and disabled collisions from the URDF topology, MoveIt Setup Assistant output, sampled collision analysis, or explicit user data. Do not infer them from visual theme alone — and do not type any link or joint name from memory: extract the URDF's link/joint table first and copy names from it.
 
+## Setup
+
+This skill's commands are thin entrypoints over the `cadgen` distribution, which
+carries the Python build runtime and the JavaScript it executes. Install it once:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+Rendering additionally needs a browser, which pip cannot supply:
+
+```bash
+python -m playwright install chromium
+```
+
 ## Format boundary
 
 - **URDF** owns physical robot structure: links, joints, geometry, inertials, limits, mimic joints, transmissions, and robot-state publishing.
