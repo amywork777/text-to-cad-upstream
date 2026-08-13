@@ -8285,12 +8285,6 @@ export default function CadWorkspace({
           panToolActive={panToolActive}
           handleCopySelection={handleCopySelection}
           handleScreenshotCopy={handleScreenshotCopy}
-          urdfPosePicker={isUrdfView ? {
-            active: urdfPosePickerActive,
-            center: URDF_POSE_PICKER_DEFAULT_CENTER,
-            onPickPoint: handleUrdfPosePointPick,
-            onCancel: handleCancelUrdfPosePicker
-          } : null}
         />
       </div>
 
@@ -8380,7 +8374,6 @@ export default function CadWorkspace({
                 referenceSelectionPending={referenceSelectionPending}
                 referenceSelectionUnavailable={referenceSelectionUnavailable}
                 referenceSelectionDeferred={selectedTopologyDeferredByCost}
-                urdfPosePickerAvailable={isUrdfView}
                 urdfPosePickerActive={urdfPosePickerActive}
                 handleToggleUrdfPosePicker={handleToggleUrdfPosePicker}
                 animationAvailable={!!activeAnimationRuntime?.available}
