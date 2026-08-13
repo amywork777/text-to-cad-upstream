@@ -127,15 +127,15 @@ Use the frame method that matches native build123d joint inputs: `rigid_frame()`
 When a generated assembly's `gen_step()` builds on a child part, that child is a **dependency** of the parent generator. Wire it in by the child's kind (see "Generated vs imported STEP" in `step-generation.md`):
 
 - **Generated child** (its source is a `gen_step()` script): path-load the child `.step.py` and call its `gen_step()` — or the underlying build function it returns — inside the parent's `gen_step`, composing from the live generator. You cannot `import` the child by name; load it by path (see "Entry generators are named `<name>.step.py`" in `step-generation.md` for the snippet). Do NOT route a generated child through an exported STEP; keep the dependency at the source level so a child edit flows into the parent on the next rebuild and there are no committed `.step` bytes to keep in sync.
-- **Imported child** (the STEP is its own source — purchased, downloaded, or otherwise not generated here): import it through the cached `cadgen.step_scene.import_step` util (see "Imported components" below).
+- **Imported child** (the STEP is its own source — purchased, downloaded, or otherwise not generated here): import it through the cached `cadgen.import_step` util (see "Imported components" below).
 - **Decoupling a generated child — only on explicit request:** if the user explicitly asks for a generated child NOT to be a direct dependency of the parent, export that child to a STEP file and then import it as an imported child via `import_step`. This is never the default — by default a generated child is composed directly from its `gen_step`.
 
 ## Imported components
 
-For purchased or downloaded parts (see `$step-parts`), import the STEP file and add it like any authored part. Always import STEP parts through `cadgen.step_scene.import_step`, not `build123d.import_step` — it is a drop-in that returns a topologically and chromatically identical shape but reuses an inline `__cadgen__` binary-BREP cache, so re-imports of the same part (an assembly with repeated fasteners or servos) and rebuilds skip re-parsing the text STEP:
+For purchased or downloaded parts (see `$step-parts`), import the STEP file and add it like any authored part. Always import STEP parts through `cadgen.import_step`, not `build123d.import_step` — it is a drop-in that returns a topologically and chromatically identical shape but reuses an inline `__cadgen__` binary-BREP cache, so re-imports of the same part (an assembly with repeated fasteners or servos) and rebuilds skip re-parsing the text STEP:
 
 ```python
-from cadgen.step_scene import import_step
+from cadgen import import_step
 
 servo = asm.add(import_step("models/parts/sg90_servo.step"), "servo")
 ```
