@@ -8,6 +8,7 @@
       "browser": "./src/browser.js",
       "default": "./src/index.js"
     },
+    "./cli/export": "./scripts/export.mjs",
     "./browser": "./src/browser.js",
     "./schema": "./src/lib/implicitCad/schema.js",
     "./animation": "./src/lib/implicitCad/animation.js",
@@ -34,7 +35,8 @@
     "verify:exports": "node scripts/verify-implicit-cad-exports.mjs"
   },
   "sideEffects": [
-    "./src/common/implicitHeadlessRenderEntry.js"
+    "./src/common/implicitHeadlessRenderEntry.js",
+    "./scripts/export.mjs"
   ],
   "dependencies": {
     "gifenc": "^1.0.3",

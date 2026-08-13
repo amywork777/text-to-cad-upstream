@@ -32,6 +32,7 @@ from typing import Any
 
 import cadgen.cad_ref_syntax as cad_ref_syntax
 import cadgen.lookup as lookup
+from cadgen.assets import browser_runtime_dir
 from cadgen.catalog import render_package_dir
 from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact, StepTopologyArtifactError
 
@@ -1484,7 +1485,7 @@ async def run_render_cli_async(
     argv: Sequence[str],
     *,
     kinds: Sequence[str],
-    runtime_dir: Path,
+    runtime_dir: Path | None = None,
     prog: str = "scripts/snapshot",
     cwd: Path | None = None,
     stdout: Any = sys.stdout,
@@ -1522,7 +1523,7 @@ async def run_render_cli_async(
         )
         progress.phase(PHASE_BROWSER)
         result = await render_resolved_job_packet(
-            packet, runtime_dir=Path(runtime_dir), progress=progress
+            packet, runtime_dir=browser_runtime_dir(runtime_dir), progress=progress
         )
         progress.finish()
     write_render_outputs(result)
@@ -1534,7 +1535,7 @@ def run_snapshot_cli(
     argv: Sequence[str],
     *,
     kinds: Sequence[str],
-    runtime_dir: Path,
+    runtime_dir: Path | None = None,
     prog: str = "scripts/snapshot",
     cwd: Path | None = None,
     stdout: Any = sys.stdout,

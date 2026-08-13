@@ -64,3 +64,11 @@ models/**/*.mkv
 .*.step.glb
 .*.stp.glb/
 .*.stp.glb
+
+# `python -m build` scratch space (scripts/release/check-wheel-contents.sh).
+packages/cadgen/build/
+
+# cadgen's packaged CAD Viewer client is a vite build output (~16 MB): built by
+# scripts/bundle, shipped in the wheel, never committed. setuptools does not read
+# .gitignore, so it still lands in the wheel when present on disk.
+packages/cadgen/src/cadgen/_runtime/viewer/

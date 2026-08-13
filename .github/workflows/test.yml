@@ -55,6 +55,16 @@ jobs:
       - name: Check production bundle layout
         run: scripts/github-workflows/check-builds.sh --skip-bundle-check
 
+      # cadgen ships the JS it executes as package data. A package-data glob that stops
+      # matching produces a wheel that imports fine and fails on a user's machine, so the
+      # wheel is built and inspected here rather than trusted.
+      - name: Check cadgen wheel contents
+        env:
+          CADGEN_REQUIRE_VIEWER_DIST: "1"
+        run: |
+          python -m pip install build
+          scripts/release/check-wheel-contents.sh
+
       - name: Run documentation checks
         run: scripts/test/test-docs.sh
 

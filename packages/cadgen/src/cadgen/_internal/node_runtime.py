@@ -58,6 +58,8 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from cadgen.assets import node_builders_dir
+
 __all__ = [
     "NODE_ENV_VARS",
     "NodeBuilderError",
@@ -129,35 +131,34 @@ def cad_node_executable(repo_root: Path | str | None = None) -> str:
 
 
 def node_package_root() -> Path:
-    """The ``packages/`` directory this cadgen was loaded from, for ``NODE_PATH``.
+    """The directory to put on ``NODE_PATH`` for a builder child.
 
-    Derived from THIS module's location rather than from a repo root, because it has to be
-    right in both layouts: ``packages/cadgen/src/cadgen/_internal/node_runtime.py`` in the
-    dev checkout, and ``skills/<skill>/scripts/packages/cadgen/src/cadgen/_internal/...`` in
-    a vendored skill runtime. In both, ``parents[4]`` is the ``packages`` dir that also holds
-    ``implicitjs`` and ``cadjs``. ``CADGEN_NODE_PACKAGES`` overrides it.
+    Only the DEV path needs this: a source checkout runs the live ``packages/cadjs/bin``
+    sources, whose bare ``implicitjs/...`` specifiers resolve through the resolve hook
+    against a ``packages`` directory. A packaged builder is esbuilt self-contained and
+    imports nothing bare, so the value is inert there.
+
+    Derived from :func:`cadgen.assets.node_builders_dir` so there is ONE resolution order
+    (assets.py) rather than two that can disagree.
     """
-    override = str(os.environ.get("CADGEN_NODE_PACKAGES") or "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[4]
+    return node_builders_dir().parent.parent
 
 
 def node_builder_script(name: str) -> Path:
-    """Absolute path of a builder under ``packages/cadjs/bin``, e.g. ``dxf-artifact.mjs``.
+    """Absolute path of a builder, e.g. ``dxf-artifact.mjs``.
 
-    Derived from :func:`node_package_root` for the same reason it is: the dev checkout and a
-    vendored skill runtime lay the ``packages`` dir out differently, and only one of the two
-    can be hard-coded. Missing is a PACKAGING failure, not a user error -- a runtime that
-    vendors ``cadgen`` but not ``cadjs`` cannot build this format at all -- so it raises with
-    the path it looked at rather than degrading to a build that silently writes no preview.
+    Resolution order lives in :mod:`cadgen.assets`: explicit env, then the live sources of
+    a source checkout, then the copy shipped inside the wheel. Missing is a PACKAGING
+    failure, not a user error -- a cadgen that cannot find its own builders cannot build
+    this format at all -- so it raises with the path it looked at rather than degrading to
+    a build that silently writes no preview.
     """
-    path = node_package_root() / "cadjs" / "bin" / str(name)
+    path = node_builders_dir() / str(name)
     if not path.is_file():
         raise NodeBuilderError(
-            f"Node builder is missing: {path}. The runtime that ships cadgen must also ship "
-            "packages/cadjs (and packages/implicitjs, which it imports); set "
-            "CADGEN_NODE_PACKAGES to the packages directory that holds them."
+            f"Node builder is missing: {path}. This cadgen installation is incomplete; "
+            "reinstall it, or set CADGEN_NODE_BUILDERS_DIR to a directory holding the "
+            "esbuilt builders."
         )
     return path
 

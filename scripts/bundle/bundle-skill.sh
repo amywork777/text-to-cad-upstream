@@ -31,12 +31,21 @@ list_bundleable_skills() {
     LC_ALL=C sort
 }
 
+# Bundle targets that are not skills. cadgen-runtime builds the JS/SPA assets that ship
+# INSIDE the cadgen distribution rather than beside a skill; it lives here so --all,
+# --check and --print-outputs keep working through one entry point.
+NON_SKILL_TARGETS=" cadgen-runtime "
+
+is_non_skill_target() {
+  case "$NON_SKILL_TARGETS" in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
 run_skill_bundle() {
   local skill_id="$1"
   shift
   local bundle_script="$SKILL_BUNDLE_DIR/bundle-$skill_id.sh"
 
-  if [ ! -f "$REPO_ROOT/skills/$skill_id/SKILL.md" ]; then
+  if ! is_non_skill_target "$skill_id" && [ ! -f "$REPO_ROOT/skills/$skill_id/SKILL.md" ]; then
     echo "Unknown skill: $skill_id" >&2
     echo "Known skills:" >&2
     "$REPO_ROOT/scripts/utils/list-skills.sh" | sed 's/^/- /' >&2

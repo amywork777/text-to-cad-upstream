@@ -394,6 +394,14 @@ jobs:
             exit 1
           fi
 
+      - name: Check cadgen wheel contents
+        if: steps.gate.outputs.should_publish == 'true'
+        env:
+          CADGEN_REQUIRE_VIEWER_DIST: "1"
+        run: |
+          python -m pip install build
+          scripts/release/check-wheel-contents.sh
+
       - name: Build cadgen sdist and wheel
         if: steps.gate.outputs.should_publish == 'true'
         run: |

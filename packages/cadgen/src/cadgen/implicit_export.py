@@ -33,8 +33,8 @@ from cadgen._internal.implicit_package import is_implicit_source_path
 from cadgen._internal.node_runtime import (
     NodeBuilderError,
     cad_node_executable,
+    node_builder_script,
     node_child_env,
-    node_package_root,
     node_resolve_bootstrap,
 )
 from cadgen.catalog import render_package_dir
@@ -46,10 +46,13 @@ from cadgen.render import relative_to_cwd
 # flag-per-format surface is derived from.
 IMPLICIT_EXPORT_FORMATS = ("stl", "glb", "3mf")
 
-# The shipped export CLI. Not a builder under packages/cadjs/bin: this one predates the
-# render packages, is a user-facing command in its own right, and is reused rather than
-# reimplemented (design §4.7 -- "alignment, not creation").
-IMPLICIT_EXPORT_CLI = ("implicitjs", "scripts", "export.mjs")
+# The export CLI, spawned like any other builder. It used to run straight out of
+# packages/implicitjs/scripts, which made it the one Node entry that was not bundled --
+# and an unbundled entry needs its whole dependency graph at runtime, which is why every
+# skill that exported an implicit model had to vendor all of implicitjs beside it. The
+# thin wrapper in packages/cadjs/bin is esbuilt self-contained into the distribution; the
+# CLI itself still lives in implicitjs and is still its own `npm run export`.
+IMPLICIT_EXPORT_BUILDER = "implicit-export.mjs"
 
 
 def normalize_export_format(value: str) -> str:
@@ -60,21 +63,13 @@ def normalize_export_format(value: str) -> str:
 
 
 def implicit_export_cli() -> Path:
-    """Absolute path of ``packages/implicitjs/scripts/export.mjs``.
+    """Absolute path of the implicit CAD export builder.
 
-    Derived from :func:`node_package_root` so it is right in the dev checkout AND in a
-    vendored skill runtime. Missing is a PACKAGING failure -- a runtime that ships cadgen
-    but not implicitjs cannot export this format at all -- so it says which path it looked
-    at rather than failing later with a confusing node error.
+    Resolved exactly like every other builder, so the source checkout gets the live
+    wrapper under ``packages/cadjs/bin`` and an installed cadgen gets its own esbuilt
+    copy. See :mod:`cadgen.assets` for the order.
     """
-    path = node_package_root().joinpath(*IMPLICIT_EXPORT_CLI)
-    if not path.is_file():
-        raise NodeBuilderError(
-            f"The implicit CAD export CLI is missing: {path}. The runtime that ships cadgen "
-            "must also ship packages/implicitjs; set CADGEN_NODE_PACKAGES to the packages "
-            "directory that holds it."
-        )
-    return path
+    return node_builder_script(IMPLICIT_EXPORT_BUILDER)
 
 
 def _last_json_object(stdout: str) -> dict[str, object]:
