@@ -9,6 +9,11 @@ __all__ = [
     "MateRelation",
     "MateTarget",
     "compound_from_instances",
+    "import_step",
+    "load_step_scene",
+    "located_shape",
+    "occurrence_selector_id",
+    "scene_occurrence_shape",
     "ensure_step_topology_artifact",
     "label_text",
     "label_shape",
@@ -38,6 +43,22 @@ def __getattr__(name: str):
             "label_text": label_text,
             "label_shape": label_shape,
             "target": target,
+        }[name]
+    if name in {"import_step", "load_step_scene", "located_shape", "occurrence_selector_id", "scene_occurrence_shape"}:
+        from cadgen.step_scene import (
+            import_step,
+            load_step_scene,
+            located_shape,
+            occurrence_selector_id,
+            scene_occurrence_shape,
+        )
+
+        return {
+            "import_step": import_step,
+            "load_step_scene": load_step_scene,
+            "located_shape": located_shape,
+            "occurrence_selector_id": occurrence_selector_id,
+            "scene_occurrence_shape": scene_occurrence_shape,
         }[name]
     if name in {"srgb", "srgb_to_linear", "linear_to_srgb"}:
         from cadgen import color

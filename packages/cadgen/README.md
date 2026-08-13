@@ -43,11 +43,12 @@ identical output.
 
 The supported surface is the root `cadgen` exports plus the top-level `cadgen.*` modules:
 
-- **Generator-script helpers**: root exports (`AssemblyHelper`, `MateRelation`,
-  `MateTarget`, `label_text`, `label_shape`, `target`, `ensure_step_topology_artifact`,
-  `validate_step_topology_artifact`), `cadgen.assembly`, and `cadgen.step_scene`
-  (`import_step`, `load_step_scene`, `located_shape`, `occurrence_selector_id`,
-  `scene_occurrence_shape`).
+- **Generator-script helpers**, all at the root: `AssemblyHelper`, `MateRelation`,
+  `MateTarget`, `label_text`, `label_shape`, `target`, `report`, `track`, `srgb`,
+  `compound_from_instances`, `ensure_step_topology_artifact`,
+  `validate_step_topology_artifact`, and the STEP scene helpers `import_step`,
+  `load_step_scene`, `located_shape`, `occurrence_selector_id`,
+  `scene_occurrence_shape`. Resolved lazily, so `import cadgen` does not pay for OCP.
 - **2D generators**: `cadgen.sources` (`load_source_module`) and `cadgen.flatten`
   (planar-face projection/unfold, contour emission, kerf offsetting) for `.dxf.py`.
 - **Build and inspection**: `cadgen.generation` (`generate_step_targets`,
