@@ -38,9 +38,9 @@ $PY ../../../skills/cad/scripts/inspect validate <entry>.step.py
 $PY ../../../skills/cad/scripts/snapshot --job <job.json>
 ```
 
-Do NOT use `CADGEN_WARM=1` while several builders run in parallel — the warm
-daemon serializes jobs per worktree. (Killing a client now aborts its
-in-daemon job.)
+Parallel builders are fine now: the warm daemon runs a pool of worker processes and
+overflows to cold rather than queueing, so several builders no longer serialize behind
+one another. (It used to, which is why this said to avoid `CADGEN_WARM=1` here.)
 
 ## Modeling rules
 
