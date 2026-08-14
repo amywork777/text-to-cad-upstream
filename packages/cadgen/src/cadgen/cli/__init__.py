@@ -15,7 +15,6 @@ imports when adding commands.
 from __future__ import annotations
 
 import importlib
-import inspect
 import re
 import sys
 
@@ -139,6 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     # says "cadgen step gen" and the skill's own `scripts/gen` still says "scripts/gen".
     # Not every command has a parser to name (the viewer and daemon own their own), hence
     # the signature check rather than a blanket keyword.
+    import inspect  # only the dispatcher needs it; every skill shim imports this
+                    # module just for enforce_requirements_pin and should not pay for it.
+
     if "prog" in inspect.signature(module.main).parameters:
         return int(module.main(rest, prog=f"cadgen {command}") or 0)
     return int(module.main(rest) or 0)
