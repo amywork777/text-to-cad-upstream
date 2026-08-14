@@ -97,7 +97,12 @@ def run_via_daemon(
     tool: str, argv: list[str], cwd: str | None = None, prog: str | None = None
 ) -> int | None:
     """Run one CLI invocation on the warm daemon; ``None`` means run inline instead."""
-    if os.environ.get("CADGEN_WARM") != "1" or os.environ.get("CADGEN_DAEMON_CHILD"):
+    # Warm by DEFAULT. It was opt-in while the daemon could only hold one job, because
+    # turning it on serialised parallel builds -- the moonwatch README told people to
+    # avoid it for exactly that. The pool removed the reason: a burst spawns workers up
+    # to the cap and overflows cold rather than queueing. An optimisation nobody enables
+    # is the same as not having one.
+    if os.environ.get("CADGEN_WARM") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
     argv = [str(arg) for arg in argv]
     if "-" in argv:

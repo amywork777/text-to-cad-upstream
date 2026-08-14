@@ -119,30 +119,35 @@ python scripts/inspect refs path/to/model.step --facts --planes --positioning
 ## Warm daemon (opt-in)
 
 Every `scripts/gen` / `scripts/export` / `scripts/artifact` / `scripts/inspect`
-/ `scripts/snapshot` invocation pays a multi-second OCP/build123d import. Set
-`CADGEN_WARM=1` to route these CLIs through a shared warm-process daemon
-instead:
+/ `scripts/snapshot` invocation would otherwise pay a multi-second OCP/build123d
+import. They are routed through a shared warm daemon **by default**; set
+`CADGEN_WARM=0` to force the cold path.
 
 ```bash
-CADGEN_WARM=1 python scripts/gen path/to/part.step.py
+python scripts/gen path/to/part.step.py     # warm, no flag needed
+CADGEN_WARM=0 python scripts/gen part.step.py   # force a cold in-process run
 ```
 
-- The first warm call spawns the daemon (paying the import cost once) and each
-  later call runs in the warm process, streaming the CLI's stdout/stderr and
-  exit code back unchanged. Arguments, cwd resolution, and outputs match the
-  cold CLIs; requests are handled sequentially.
+- The daemon is a **supervisor over a pool of warm worker processes**. It never imports
+  OCP itself, so a model that crashes the CAD kernel costs one worker rather than the
+  daemon. The first call spawns a worker (paying the import once); later calls run in a
+  warm one and stream the CLI's stdout/stderr and exit code back unchanged.
+- **Parallel builds are supported.** A burst spawns workers up to a cap
+  (`CADGEN_DAEMON_MAX_WORKERS`, default `min(4, cores-2)`); beyond that, callers run cold
+  rather than queue. A second burst reuses the first's workers, so repeated parallel work
+  converges to warm. This is a change: the daemon used to hold exactly one job, which is
+  why parallel builders were told to avoid it.
+- Both front doors use it — `scripts/gen` and `cadgen step gen` alike — and so does the
+  CAD Viewer, so a terminal build and a viewer build share the same warm processes.
 - The daemon is **per worktree**: the socket is
   `$TMPDIR/cadgen-daemon-<sha256(worktree-root)[:12]>.sock` (falling back to
   `/tmp`), with a `.log` file beside it for daemon lifecycle and C-level OCP
   noise. `CADGEN_DAEMON_SOCKET` overrides the socket path.
-- **Staleness:** the daemon records a version token (max mtime over
-  `packages/cadgen/src/cadgen/**/*.py` and `skills/cad/scripts/**/*.py`) at
-  startup. When a client's token differs — i.e. cadgen or the skill CLIs
-  changed — the daemon exits and the client transparently respawns a fresh one,
-  so edits to runtime code always take effect on the next call.
-- **Idle exit:** the daemon exits after 10 minutes without a request
-  (`CADGEN_DAEMON_IDLE_TIMEOUT` seconds overrides) and cleans up its socket.
-- Without `CADGEN_WARM=1` nothing changes; on any daemon spawn or protocol
-  problem the CLI silently falls back to the normal cold in-process run.
-  Invocations reading a payload from stdin (e.g. `scripts/snapshot --job -`)
-  always run cold.
+- **Staleness:** the daemon records a version token at startup. When a client's token
+  differs — i.e. cadgen changed — the daemon exits and the client transparently respawns
+  a fresh one, so edits to runtime code always take effect on the next call.
+- **Idle exit:** workers reap down to one after 5 minutes idle, and the daemon exits
+  after 10 minutes without a request (`CADGEN_DAEMON_IDLE_TIMEOUT` seconds overrides).
+- On any daemon spawn or protocol problem the CLI silently falls back to a cold
+  in-process run. Invocations reading a payload from stdin (e.g. `scripts/snapshot
+  --job -`) always run cold.

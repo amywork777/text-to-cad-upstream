@@ -116,6 +116,10 @@ _DAEMON_TOOLS = {
     "step artifact": "artifact",
     "step inspect": "inspect",
     "step snapshot": "snapshot",
+    # Warm workers carry PYTHONHASHSEED=0, so a served dxf build is deterministic
+    # without paying the re-run below.
+    "dxf gen": "dxf-gen",
+    "dxf artifact": "dxf-artifact",
 }
 
 # Drawing packages are content-addressed and ezdxf's object ordering depends on hash
@@ -145,7 +149,10 @@ def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
     CADGEN_DAEMON_CHILD is set in the process the daemon serves from, so this cannot
     recurse. A daemon that is not installed or not running just falls through.
     """
-    if os.environ.get("CADGEN_WARM") != "1" or os.environ.get("CADGEN_DAEMON_CHILD"):
+    # Warm by default; CADGEN_WARM=0 opts out. There are two gates on this path -- this
+    # one and the client's -- and only changing the client's left the default a no-op,
+    # which a live check caught rather than any test.
+    if os.environ.get("CADGEN_WARM") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
     try:
         from cadgen.daemon.client import run_via_daemon
@@ -191,13 +198,16 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # Both of these must happen before the command's module is imported.
-    if command in _HASH_SEED_COMMANDS and os.environ.get("PYTHONHASHSEED") != "0":
-        return _rerun_with_stable_hash_seed()
+    # The daemon first: its workers already have a stable hash seed, so a served dxf
+    # build skips the re-run entirely. Only a build that will actually run in THIS
+    # process needs the interpreter restart.
     daemon_tool = _DAEMON_TOOLS.get(command)
     if daemon_tool is not None:
         exit_code = _run_via_daemon(daemon_tool, rest, f"cadgen {command}")
         if exit_code is not None:
             return exit_code
+    if command in _HASH_SEED_COMMANDS and os.environ.get("PYTHONHASHSEED") != "0":
+        return _rerun_with_stable_hash_seed()
 
     module_name, _ = entry
     module = importlib.import_module(module_name)

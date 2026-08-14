@@ -3,7 +3,7 @@
 One long-lived process imports cadgen / OCP / build123d ONCE and then services
 ``scripts/gen`` / ``scripts/export`` / ``scripts/artifact`` / ``scripts/inspect``
 / ``scripts/snapshot`` invocations over a per-worktree unix socket, so opted-in
-sessions (``CADGEN_WARM=1``) skip the multi-second interpreter+OCP startup on
+sessions skip the multi-second interpreter+OCP startup on
 every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
 never recurses into it.
 
@@ -63,6 +63,11 @@ _TOOL_IMPORTS = {
     "artifact": "cadgen.cli.step_artifact",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
+    # DXF is safe to serve warm because every worker is spawned with PYTHONHASHSEED=0.
+    # That is strictly better than dispatch's re-run: same determinism, no interpreter
+    # restart on the warm path.
+    "dxf-gen": "cadgen.cli.dxf_gen",
+    "dxf-artifact": "cadgen.cli.dxf_artifact",
 }
 _TOOL_MAINS: dict[str, object] = {}
 
