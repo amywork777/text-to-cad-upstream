@@ -80,13 +80,21 @@ Vite dev mounts this backend for:
 - `GET /__cad/catalog`
 - `GET /__cad/asset?file=...`
 - `GET /__cad/download?file=...&asset=output|source`
-- `POST /__cad/reveal?file=...&asset=output|source`
-- `POST /__cad/step-artifact`
+- `POST /__cad/artifact?dir=...&file=...` (build; `&force=1` to rebuild)
+- `POST /__cad/export?dir=...&file=...&format=...`
+- `POST /__cad/reveal?file=...&asset=output|source` — **client-side only today**: the
+  Python backend has no such route, so this currently answers 405.
 
 `download` streams the requested asset bytes from the local backend. `reveal`
 opens the asset in Finder or the platform file manager. `asset=output` resolves
 the catalog entry file itself; `asset=source` resolves optional source code, such
 as a same-stem Python generator for Python-backed STEP files.
+
+**Every POST must send `x-cadgen-viewer: 1`.** The value carries no meaning — a
+custom header is what forces a browser to preflight a cross-origin request, and the
+backend answers no CORS, so the preflight fails and a hostile page can never reach a
+route that builds (and therefore executes a generator). A POST without it gets 403.
+GETs are unaffected. See the trust-model docstring in `cadgen/viewer/server.py`.
 
 The local production server uses the same backend:
 

@@ -134,5 +134,73 @@ class LauncherTest(unittest.TestCase):
             self.assertIn(os.getcwd(), payload["url"])
 
 
+class OpenBrowserFlagTest(unittest.TestCase):
+    """`--open` is opt-in: agents start this viewer far more often than humans do, so the
+    default inverts Jupyter's auto-open. Everything about it is best-effort -- the URL on
+    stdout stays the real interface, and no browser problem may fail a start."""
+
+    def test_default_never_opens_a_browser(self):
+        with mock.patch.object(sav, "open_when_ready") as opener, \
+                _run(["--port", "4321"]) as (rc, out, _err, _calls):
+            self.assertEqual(rc, 0)
+            opener.assert_not_called()
+        self.assertIn("CAD Viewer URL:", out)
+
+    def test_open_flag_opens_the_printed_url(self):
+        with mock.patch.object(sav, "open_when_ready", return_value=True) as opener, \
+                _run(["--port", "4321", "--open"]) as (rc, out, _err, _calls):
+            self.assertEqual(rc, 0)
+            opener.assert_called_once()
+            opened_url = opener.call_args.args[0]
+        # Exactly the URL the user was told about, not a reconstruction.
+        self.assertIn(f"CAD Viewer URL: {opened_url}", out)
+
+    def test_stdout_contract_is_unchanged_by_the_flag(self):
+        """Agents parse these lines; --open may add stderr noise but not touch stdout."""
+        with mock.patch.object(sav, "open_when_ready", return_value=True), \
+                _run(["--port", "4321", "--open", "--json"]) as (_rc, with_open, _e, _c):
+            pass
+        with _run(["--port", "4321", "--json"]) as (_rc, without_open, _e, _c):
+            pass
+        self.assertEqual(with_open, without_open)
+
+
+class OpenWhenReadyTest(unittest.TestCase):
+    """The poll-then-open helper in isolation."""
+
+    def test_opens_once_the_backend_answers(self):
+        response = mock.MagicMock()
+        response.status = 200
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        with mock.patch("urllib.request.urlopen", return_value=response), \
+                mock.patch("webbrowser.open", return_value=True) as opener:
+            self.assertTrue(sav.open_when_ready("http://127.0.0.1:4321/", "127.0.0.1", 4321))
+        opener.assert_called_once_with("http://127.0.0.1:4321/")
+
+    def test_timeout_warns_and_never_opens(self):
+        err = io.StringIO()
+        with mock.patch("urllib.request.urlopen", side_effect=OSError("refused")), \
+                mock.patch("webbrowser.open") as opener, \
+                contextlib.redirect_stderr(err):
+            self.assertFalse(
+                sav.open_when_ready("http://127.0.0.1:4321/", "127.0.0.1", 4321, timeout_s=0.25)
+            )
+        opener.assert_not_called()
+        self.assertIn("did not answer", err.getvalue())
+
+    def test_a_raising_browser_is_reported_not_propagated(self):
+        response = mock.MagicMock()
+        response.status = 200
+        response.__enter__ = mock.Mock(return_value=response)
+        response.__exit__ = mock.Mock(return_value=False)
+        err = io.StringIO()
+        with mock.patch("urllib.request.urlopen", return_value=response), \
+                mock.patch("webbrowser.open", side_effect=RuntimeError("no display")), \
+                contextlib.redirect_stderr(err):
+            self.assertFalse(sav.open_when_ready("http://127.0.0.1:4321/", "127.0.0.1", 4321))
+        self.assertIn("Could not open a browser", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
