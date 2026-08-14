@@ -7,6 +7,7 @@ from typing import Literal
 import xml.etree.ElementTree as ET
 
 from cadgen.findings import ValidationResult, format_findings
+from cadgen.xml_common import duplicate_values, display_path
 
 SRDF_SUFFIX = ".srdf"
 
@@ -95,7 +96,7 @@ def file_ref_from_srdf_path(srdf_path: Path) -> str:
     resolved = srdf_path.resolve()
     if resolved.suffix.lower() != SRDF_SUFFIX:
         raise SrdfSourceError(f"{resolved} is not an SRDF source file")
-    return _relative_to_repo(resolved)
+    return display_path(resolved)
 
 
 def read_srdf_source(srdf_path: Path) -> SrdfSource:
@@ -124,7 +125,7 @@ def parse_srdf_file(srdf_path: Path) -> tuple[SrdfSource | None, ValidationResul
     try:
         xml_text = resolved_path.read_text(encoding="utf-8")
     except OSError as exc:
-        result.add("error", "unreadable_file", f"{_relative_to_repo(resolved_path)} could not be read: {exc}", path="/")
+        result.add("error", "unreadable_file", f"{display_path(resolved_path)} could not be read: {exc}", path="/")
         return None, result
     return parse_srdf_text(xml_text, source_path=resolved_path)
 
@@ -132,7 +133,7 @@ def parse_srdf_file(srdf_path: Path) -> tuple[SrdfSource | None, ValidationResul
 def parse_srdf_text(xml_text: str, *, source_path: Path) -> tuple[SrdfSource | None, ValidationResult]:
     result = ValidationResult()
     resolved_path = source_path.resolve()
-    display = _relative_to_repo(resolved_path)
+    display = display_path(resolved_path)
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -147,7 +148,7 @@ def _parse_srdf_root(
     source_path: Path,
     result: ValidationResult,
 ) -> tuple[SrdfSource | None, ValidationResult]:
-    display = _relative_to_repo(source_path)
+    display = display_path(source_path)
     if root.tag != "robot":
         result.add("error", "invalid_root", f"{display} root element must be <robot>", path="/")
         return None, result
@@ -370,7 +371,7 @@ def _parse_srdf_root(
         return None, result
 
     source = SrdfSource(
-        file_ref=_relative_to_repo(source_path),
+        file_ref=display_path(source_path),
         source_path=source_path.resolve(),
         robot_name=robot_name,
         planning_groups=tuple(planning_groups),
@@ -424,17 +425,12 @@ def _child_names(element: ET.Element, tag: str) -> tuple[str, ...]:
 
 
 def _report_duplicates(names: list[str], result: ValidationResult, display: str, *, label: str) -> None:
-    seen = set()
-    duplicates = []
-    for name in names:
-        if name in seen:
-            duplicates.append(name)
-        seen.add(name)
+    duplicates = duplicate_values(names)
     if duplicates:
         result.add(
             "error",
             "duplicate_name",
-            f"{display} has duplicate {label} name(s): {sorted(set(duplicates))!r}",
+            f"{display} has duplicate {label} name(s): {duplicates!r}",
             path="/robot",
         )
 
@@ -454,9 +450,3 @@ def _disabled_collision_source(
     return "manual"
 
 
-def _relative_to_repo(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        return resolved.relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return resolved.as_posix()

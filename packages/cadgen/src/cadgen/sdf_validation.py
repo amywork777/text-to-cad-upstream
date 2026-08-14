@@ -8,6 +8,11 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
 from cadgen.findings import ValidationResult, format_findings
+# The inertia tensor is the same physics in both formats, and this was a verbatim copy
+# of URDF's routine. Imported rather than duplicated -- a divergent eigenvalue check
+# would make one format accept a tensor the other rejects.
+from cadgen.urdf_source import symmetric_inertia_eigenvalues
+from cadgen.xml_common import children, display_path, local_name
 
 EXTERNAL_URI_SCHEMES = {"model", "package", "http", "https", "fuel"}
 COMMON_JOINT_TYPES = {
@@ -72,7 +77,7 @@ def validate_sdf_xml(
         result.add(
             "error",
             "invalid_xml",
-            f"{_display_path(source_path)} could not be parsed as SDF XML: {exc}",
+            f"{display_path(source_path)} could not be parsed as SDF XML: {exc}",
             path="/",
         )
         return result
@@ -92,11 +97,11 @@ def validate_sdf_root(
     resolved_path = source_path.resolve()
     resolved_base_dir = Path(base_dir).resolve() if base_dir is not None else resolved_path.parent
 
-    if _local_name(root.tag) != "sdf":
+    if local_name(root.tag) != "sdf":
         result.add(
             "error",
             "invalid_root",
-            f"{_display_path(resolved_path)} root element must be <sdf>",
+            f"{display_path(resolved_path)} root element must be <sdf>",
             path="/",
         )
         return result
@@ -106,7 +111,7 @@ def validate_sdf_root(
         result.add(
             "error",
             "missing_version",
-            f"{_display_path(resolved_path)} SDF version is required",
+            f"{display_path(resolved_path)} SDF version is required",
             path="/sdf",
         )
     elif not re.match(r"^\d+\.\d+(?:\.\d+)?$", version):
@@ -125,24 +130,24 @@ def validate_sdf_root(
         )
 
     meaningful_tags = {"model", "world", "actor", "light", "include", "plugin"}
-    if not any(_local_name(child.tag) in meaningful_tags for child in list(root)):
+    if not any(local_name(child.tag) in meaningful_tags for child in list(root)):
         result.add(
             "error",
             "empty_document",
-            f"{_display_path(resolved_path)} must define at least one <model>, <world>, or other SDF content",
+            f"{display_path(resolved_path)} must define at least one <model>, <world>, or other SDF content",
             path="/sdf",
         )
 
-    _check_unique_named(_children(root, "world"), result, "/sdf", "world")
-    _check_unique_named(_children(root, "model"), result, "/sdf", "model")
+    _check_unique_named(children(root, "world"), result, "/sdf", "world")
+    _check_unique_named(children(root, "model"), result, "/sdf", "model")
 
-    for include_element in _children(root, "include"):
+    for include_element in children(root, "include"):
         _validate_include(include_element, result, "/sdf/include")
-    for plugin_element in _children(root, "plugin"):
+    for plugin_element in children(root, "plugin"):
         _validate_plugin(plugin_element, result, "/sdf/plugin")
-    for world_element in _children(root, "world"):
+    for world_element in children(root, "world"):
         _validate_world(world_element, result, resolved_base_dir)
-    for model_element in _children(root, "model"):
+    for model_element in children(root, "model"):
         _validate_model(model_element, result, resolved_base_dir, parent_targets={"world"})
 
     return result
@@ -165,26 +170,26 @@ def _validate_world(world_element: ET.Element, result: ValidationResult, base_di
         world_name = "world"
     targets = {"world", world_name}
 
-    _check_unique_named(_children(world_element, "model"), result, world_path, "model")
-    _check_unique_named(_children(world_element, "frame"), result, world_path, "frame")
+    _check_unique_named(children(world_element, "model"), result, world_path, "model")
+    _check_unique_named(children(world_element, "frame"), result, world_path, "frame")
 
-    frames = _children(world_element, "frame")
+    frames = children(world_element, "frame")
     frame_names = _names(frames)
     targets.update(frame_names)
     for frame_element in frames:
         _validate_frame(frame_element, result, targets, world_path)
     _validate_frame_cycles(frames, result, world_path)
 
-    for pose_element in _children(world_element, "pose"):
+    for pose_element in children(world_element, "pose"):
         _validate_pose(pose_element, result, f"{world_path}/pose", targets)
-    _check_unique_named(_children(world_element, "light"), result, world_path, "light")
-    for light_element in _children(world_element, "light"):
+    _check_unique_named(children(world_element, "light"), result, world_path, "light")
+    for light_element in children(world_element, "light"):
         _validate_light(light_element, result, targets, world_path)
-    for include_element in _children(world_element, "include"):
+    for include_element in children(world_element, "include"):
         _validate_include(include_element, result, f"{world_path}/include")
-    for plugin_element in _children(world_element, "plugin"):
+    for plugin_element in children(world_element, "plugin"):
         _validate_plugin(plugin_element, result, f"{world_path}/plugin")
-    for model_element in _children(world_element, "model"):
+    for model_element in children(world_element, "model"):
         _validate_model(model_element, result, base_dir, parent_targets=targets)
 
 
@@ -202,12 +207,12 @@ def _validate_model(
 
     _warn_unknown_children(model_element, KNOWN_MODEL_CHILDREN, result, model_path)
 
-    link_elements = _children(model_element, "link")
-    joint_elements = _children(model_element, "joint")
-    frame_elements = _children(model_element, "frame")
-    nested_model_elements = _children(model_element, "model")
-    include_elements = _children(model_element, "include")
-    plugin_elements = _children(model_element, "plugin")
+    link_elements = children(model_element, "link")
+    joint_elements = children(model_element, "joint")
+    frame_elements = children(model_element, "frame")
+    nested_model_elements = children(model_element, "model")
+    include_elements = children(model_element, "include")
+    plugin_elements = children(model_element, "plugin")
 
     _check_unique_named(link_elements, result, model_path, "link")
     _check_unique_named(joint_elements, result, model_path, "joint")
@@ -246,10 +251,10 @@ def _validate_model(
         *nested_model_names,
     }
 
-    for pose_element in _children(model_element, "pose"):
+    for pose_element in children(model_element, "pose"):
         _validate_pose(pose_element, result, f"{model_path}/pose", local_targets)
 
-    for static_element in _children(model_element, "static"):
+    for static_element in children(model_element, "static"):
         _validate_boolean_text(static_element, result, f"{model_path}/static", "static")
 
     for frame_element in frame_elements:
@@ -262,7 +267,7 @@ def _validate_model(
         _validate_link(link_element, result, base_dir, local_targets, model_path)
     for joint_element in joint_elements:
         _validate_joint(joint_element, result, link_names, local_targets, model_path)
-    for include_element in _children(model_element, "include"):
+    for include_element in children(model_element, "include"):
         _validate_include(include_element, result, f"{model_path}/include")
     for plugin_element in plugin_elements:
         _validate_plugin(plugin_element, result, f"{model_path}/plugin")
@@ -275,8 +280,8 @@ def _validate_model(
             if (
                 name
                 and name in referenced_links
-                and _children(link_element, "collision")
-                and not _children(link_element, "inertial")
+                and children(link_element, "collision")
+                and not children(link_element, "inertial")
             ):
                 result.add(
                     "warning",
@@ -300,20 +305,20 @@ def _validate_link(
     link_path = f"{model_path}/link[@name='{link_name}']" if link_name else f"{model_path}/link"
 
     _warn_unknown_children(link_element, KNOWN_LINK_CHILDREN, result, link_path)
-    for pose_element in _children(link_element, "pose"):
+    for pose_element in children(link_element, "pose"):
         _validate_pose(pose_element, result, f"{link_path}/pose", targets)
 
-    _check_unique_named(_children(link_element, "visual"), result, link_path, "visual")
-    _check_unique_named(_children(link_element, "collision"), result, link_path, "collision")
-    _check_unique_named(_children(link_element, "sensor"), result, link_path, "sensor")
-    _check_unique_named(_children(link_element, "light"), result, link_path, "light")
-    for light_element in _children(link_element, "light"):
+    _check_unique_named(children(link_element, "visual"), result, link_path, "visual")
+    _check_unique_named(children(link_element, "collision"), result, link_path, "collision")
+    _check_unique_named(children(link_element, "sensor"), result, link_path, "sensor")
+    _check_unique_named(children(link_element, "light"), result, link_path, "light")
+    for light_element in children(link_element, "light"):
         _validate_light(light_element, result, targets, link_path)
 
     visual_meshes: set[str] = set()
-    for visual_element in _children(link_element, "visual"):
+    for visual_element in children(link_element, "visual"):
         visual_meshes.update(_validate_geometry_owner(visual_element, result, base_dir, targets, f"{link_path}/visual"))
-    for collision_element in _children(link_element, "collision"):
+    for collision_element in children(link_element, "collision"):
         collision_meshes = _validate_geometry_owner(
             collision_element,
             result,
@@ -330,9 +335,9 @@ def _validate_link(
                     path=f"{link_path}/collision",
                     hint="Use simplified collision geometry for physics when possible.",
                 )
-    for inertial_element in _children(link_element, "inertial"):
+    for inertial_element in children(link_element, "inertial"):
         _validate_inertial(inertial_element, result, targets, f"{link_path}/inertial")
-    for sensor_element in _children(link_element, "sensor"):
+    for sensor_element in children(link_element, "sensor"):
         _validate_sensor(sensor_element, result, targets, f"{link_path}/sensor")
 
 
@@ -342,7 +347,7 @@ def _validate_frame(frame_element: ET.Element, result: ValidationResult, targets
     attached_to = str(frame_element.attrib.get("attached_to") or "").strip()
     if attached_to:
         _check_reference(attached_to, result, frame_path, "attached_to", targets)
-    for pose_element in _children(frame_element, "pose"):
+    for pose_element in children(frame_element, "pose"):
         _validate_pose(pose_element, result, f"{frame_path}/pose", targets)
 
 
@@ -369,11 +374,11 @@ def _validate_joint(
     if child_link:
         _validate_link_reference(child_link, result, link_names, f"{joint_path}/child", allow_world=False)
 
-    for pose_element in _children(joint_element, "pose"):
+    for pose_element in children(joint_element, "pose"):
         _validate_pose(pose_element, result, f"{joint_path}/pose", targets)
 
-    axis_elements = _children(joint_element, "axis")
-    axis2_elements = _children(joint_element, "axis2")
+    axis_elements = children(joint_element, "axis")
+    axis2_elements = children(joint_element, "axis2")
     if joint_type in {"continuous", "revolute", "prismatic"} and not axis_elements:
         result.add(
             "warning",
@@ -424,7 +429,7 @@ def _validate_axis(
         if expressed_in:
             _check_reference(expressed_in, result, f"{axis_path}/xyz", "expressed_in", targets)
 
-    for limit_element in _children(axis_element, "limit"):
+    for limit_element in children(axis_element, "limit"):
         lower = _optional_number_child(limit_element, "lower", result, f"{axis_path}/limit/lower", allow_infinite=True)
         upper = _optional_number_child(limit_element, "upper", result, f"{axis_path}/limit/upper", allow_infinite=True)
         if lower is not None and upper is not None and lower > upper:
@@ -446,7 +451,7 @@ def _validate_axis(
                 "continuous joints usually should not use finite position limits",
                 path=f"{axis_path}/limit",
             )
-    for dynamics_element in _children(axis_element, "dynamics"):
+    for dynamics_element in children(axis_element, "dynamics"):
         for tag in ("damping", "friction", "spring_stiffness"):
             value = _optional_number_child(dynamics_element, tag, result, f"{axis_path}/dynamics/{tag}")
             if value is not None and value < 0 and tag != "spring_stiffness":
@@ -466,27 +471,27 @@ def _validate_geometry_owner(
     targets: set[str],
     owner_path: str,
 ) -> set[str]:
-    owner_name = _required_name(owner, result, owner_path, _local_name(owner.tag))
+    owner_name = _required_name(owner, result, owner_path, local_name(owner.tag))
     path = f"{owner_path}[@name='{owner_name}']" if owner_name else owner_path
     _warn_unknown_children(owner, KNOWN_GEOMETRY_OWNER_CHILDREN, result, path)
-    for pose_element in _children(owner, "pose"):
+    for pose_element in children(owner, "pose"):
         # Visual/collision pose defaults to the owning link frame, which is
         # unambiguous; only flag explicit-but-unresolvable relative_to.
         _validate_pose(pose_element, result, f"{path}/pose", targets, warn_missing_relative_to=False)
 
-    geometry_elements = _children(owner, "geometry")
+    geometry_elements = children(owner, "geometry")
     if len(geometry_elements) != 1:
         result.add(
             "error",
             "invalid_geometry_count",
-            f"{_local_name(owner.tag)} must contain exactly one <geometry>",
+            f"{local_name(owner.tag)} must contain exactly one <geometry>",
             path=path,
         )
         return set()
 
     geometry = geometry_elements[0]
     known_children = [
-        child for child in list(geometry) if _local_name(child.tag) in {"box", "sphere", "cylinder", "capsule", "plane", "mesh"}
+        child for child in list(geometry) if local_name(child.tag) in {"box", "sphere", "cylinder", "capsule", "plane", "mesh"}
     ]
     if len(known_children) != 1:
         result.add(
@@ -498,7 +503,7 @@ def _validate_geometry_owner(
         return set()
 
     shape = known_children[0]
-    shape_name = _local_name(shape.tag)
+    shape_name = local_name(shape.tag)
     if shape_name == "box":
         _validate_positive_vector_child(shape, "size", 3, result, f"{path}/geometry/box/size")
     elif shape_name == "sphere":
@@ -522,7 +527,7 @@ def _validate_geometry_owner(
 
 def _validate_inertial(inertial_element: ET.Element, result: ValidationResult, targets: set[str], inertial_path: str) -> None:
     _warn_unknown_children(inertial_element, KNOWN_INERTIAL_CHILDREN, result, inertial_path)
-    for pose_element in _children(inertial_element, "pose"):
+    for pose_element in children(inertial_element, "pose"):
         # Inertial pose defaults to the owning link frame (unambiguous).
         _validate_pose(pose_element, result, f"{inertial_path}/pose", targets, warn_missing_relative_to=False)
     mass = _optional_number_child(inertial_element, "mass", result, f"{inertial_path}/mass", required=True)
@@ -548,7 +553,7 @@ def _validate_inertial(inertial_element: ET.Element, result: ValidationResult, t
             path=f"{inertial_path}/inertia",
         )
         return
-    low, mid, high = sorted(_symmetric_inertia_eigenvalues(components))
+    low, mid, high = sorted(symmetric_inertia_eigenvalues(components))
     scale = max(abs(value) for value in components.values())
     if low + mid + (scale * 1e-6 + 1e-12) < high:
         result.add(
@@ -574,7 +579,7 @@ def _validate_sensor(sensor_element: ET.Element, result: ValidationResult, targe
             path=path,
             hint="Check for typos (e.g. 'gpu_lidar' vs 'lidar'); custom types need type=\"custom\".",
         )
-    for pose_element in _children(sensor_element, "pose"):
+    for pose_element in children(sensor_element, "pose"):
         _validate_pose(pose_element, result, f"{path}/pose", targets)
     update_rate = _optional_number_child(sensor_element, "update_rate", result, f"{path}/update_rate")
     if update_rate is not None and update_rate < 0:
@@ -924,12 +929,8 @@ def _norm(values: list[float]) -> float:
     return math.sqrt(sum(value * value for value in values))
 
 
-def _children(parent: ET.Element, tag_name: str) -> list[ET.Element]:
-    return [child for child in list(parent) if _local_name(child.tag) == tag_name]
-
-
 def _first_child(parent: ET.Element, tag_name: str) -> ET.Element | None:
-    return next(iter(_children(parent, tag_name)), None)
+    return next(iter(children(parent, tag_name)), None)
 
 
 def _child_text(parent: ET.Element, tag_name: str) -> str:
@@ -945,23 +946,11 @@ def _names(elements: list[ET.Element]) -> list[str]:
     return [_name(element) for element in elements if _name(element)]
 
 
-def _local_name(tag: object) -> str:
-    return str(tag).rsplit("}", 1)[-1]
-
-
 def _path(tag: str, element: ET.Element, *, fallback: str | None = None) -> str:
     name = _name(element)
     if name:
         return f"/sdf/{tag}[@name='{name}']"
     return fallback or f"/sdf/{tag}"
-
-
-def _display_path(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        return resolved.relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return resolved.as_posix()
 
 
 def _validate_light(light_element: ET.Element, result: ValidationResult, targets: set[str], owner_path: str) -> None:
@@ -977,7 +966,7 @@ def _validate_light(light_element: ET.Element, result: ValidationResult, targets
             f"light type {light_type!r} must be one of: " + ", ".join(sorted(LIGHT_TYPES)),
             path=light_path,
         )
-    for pose_element in _children(light_element, "pose"):
+    for pose_element in children(light_element, "pose"):
         _validate_pose(pose_element, result, f"{light_path}/pose", targets)
 
 
@@ -1029,7 +1018,7 @@ def _warn_unknown_children(
     for child in list(element):
         if not isinstance(child.tag, str):
             continue  # comments / processing instructions
-        tag = _local_name(child.tag)
+        tag = local_name(child.tag)
         if tag != child.tag:
             continue  # namespaced extensions pass through
         if tag not in known_children:
@@ -1040,30 +1029,3 @@ def _warn_unknown_children(
                 path=f"{path}/{tag}",
                 hint=_UNKNOWN_ELEMENT_HINT,
             )
-
-
-def _symmetric_inertia_eigenvalues(values: dict[str, float]) -> tuple[float, float, float]:
-    """Closed-form eigenvalues of the symmetric 3x3 inertia tensor."""
-    ixx, iyy, izz = values["ixx"], values["iyy"], values["izz"]
-    ixy, ixz, iyz = values["ixy"], values["ixz"], values["iyz"]
-    p1 = ixy * ixy + ixz * ixz + iyz * iyz
-    if p1 == 0.0:
-        return ixx, iyy, izz
-    q = (ixx + iyy + izz) / 3.0
-    p2 = (ixx - q) ** 2 + (iyy - q) ** 2 + (izz - q) ** 2 + 2.0 * p1
-    p = math.sqrt(p2 / 6.0)
-    if p == 0.0:
-        return q, q, q
-    b_xx, b_yy, b_zz = (ixx - q) / p, (iyy - q) / p, (izz - q) / p
-    b_xy, b_xz, b_yz = ixy / p, ixz / p, iyz / p
-    det_b = (
-        b_xx * (b_yy * b_zz - b_yz * b_yz)
-        - b_xy * (b_xy * b_zz - b_yz * b_xz)
-        + b_xz * (b_xy * b_yz - b_yy * b_xz)
-    )
-    r = max(-1.0, min(1.0, det_b / 2.0))
-    phi = math.acos(r) / 3.0
-    eig1 = q + 2.0 * p * math.cos(phi)
-    eig3 = q + 2.0 * p * math.cos(phi + (2.0 * math.pi / 3.0))
-    eig2 = 3.0 * q - eig1 - eig3
-    return eig1, eig2, eig3

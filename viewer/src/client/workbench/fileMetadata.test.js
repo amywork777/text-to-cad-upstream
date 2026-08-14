@@ -210,3 +210,27 @@ test("file metadata byte formatting handles empty and raw byte values", () => {
   assert.equal(formatFileMetadataBytes(42), "42 B");
   assert.equal(formatFileMetadataBytes(1048576), "1 MB (1,048,576 B)");
 });
+
+test("a source asset is never given a download action", () => {
+  // Download is for outputs the viewer may regenerate; the server refuses to stream a
+  // .step.py at all, so a download action on a source row would only ever 404. Reveal is
+  // the affordance for source. No caller wires source here today -- this keeps it that way.
+  const rows = fileMetadataGroupsForEntry(
+    {
+      file: "/root/widget.step.py",
+      kind: "step",
+      source: { sourcePath: "/root/widget.step.py", file: "/root/widget.step.py" },
+      sourceKind: "python",
+    },
+    { includeFileDownloadActions: true }
+  );
+  const downloadHrefs = rows
+    .flatMap((group) => group.rows || [])
+    .filter((row) => row.action === "download")
+    .map((row) => row.href || "");
+  assert.equal(
+    downloadHrefs.some((href) => href.includes("asset=source")),
+    false,
+    "a download action was offered for a source asset"
+  );
+});

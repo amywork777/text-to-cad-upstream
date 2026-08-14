@@ -6,6 +6,7 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
 from cadgen.sdf_validation import raise_for_validation_errors, validate_sdf_root
+from cadgen.xml_common import duplicate_values, children, display_path, local_name
 
 SDF_SUFFIX = ".sdf"
 EXTERNAL_URI_SCHEMES = {"model", "package", "http", "https", "fuel"}
@@ -41,7 +42,7 @@ def file_ref_from_sdf_path(sdf_path: Path) -> str:
     resolved = sdf_path.resolve()
     if resolved.suffix.lower() != SDF_SUFFIX:
         raise SdfSourceError(f"{resolved} is not an SDF source file")
-    return _relative_to_repo(resolved)
+    return display_path(resolved)
 
 
 def read_sdf_source(sdf_path: Path) -> SdfSource:
@@ -52,7 +53,7 @@ def read_sdf_source(sdf_path: Path) -> SdfSource:
     try:
         root = ET.fromstring(resolved_path.read_text(encoding="utf-8"))
     except (OSError, ET.ParseError) as exc:
-        raise SdfSourceError(f"{_relative_to_repo(resolved_path)} could not be parsed as SDF XML") from exc
+        raise SdfSourceError(f"{display_path(resolved_path)} could not be parsed as SDF XML") from exc
     return parse_sdf_root(root, source_path=resolved_path, base_dir=resolved_path.parent)
 
 
@@ -60,7 +61,7 @@ def parse_sdf_xml(xml_text: str, *, source_path: Path, base_dir: Path | None = N
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
-        raise SdfSourceError(f"{_relative_to_repo(source_path)} could not be parsed as SDF XML") from exc
+        raise SdfSourceError(f"{display_path(source_path)} could not be parsed as SDF XML") from exc
     return parse_sdf_root(root, source_path=source_path, base_dir=base_dir)
 
 
@@ -70,19 +71,19 @@ def parse_sdf_root(root: ET.Element, *, source_path: Path, base_dir: Path | None
     validation = validate_sdf_root(root, source_path=resolved_path, base_dir=resolved_base_dir)
     raise_for_validation_errors(validation)
 
-    if _local_name(root.tag) != "sdf":
-        raise SdfSourceError(f"{_relative_to_repo(resolved_path)} root element must be <sdf>")
+    if local_name(root.tag) != "sdf":
+        raise SdfSourceError(f"{display_path(resolved_path)} root element must be <sdf>")
     version = str(root.attrib.get("version") or "").strip()
     if not version:
-        raise SdfSourceError(f"{_relative_to_repo(resolved_path)} SDF version is required")
+        raise SdfSourceError(f"{display_path(resolved_path)} SDF version is required")
 
-    world_elements = _children(root, "world")
+    world_elements = children(root, "world")
     world_names = [_required_name(world, source_path=resolved_path, label="world") for world in world_elements]
     _raise_on_duplicates(world_names, source_path=resolved_path, label="world")
 
-    model_elements = list(_children(root, "model"))
+    model_elements = list(children(root, "model"))
     for world in world_elements:
-        model_elements.extend(_children(world, "model"))
+        model_elements.extend(children(world, "model"))
 
     model_names: list[str] = []
     links: list[str] = []
@@ -127,14 +128,14 @@ def _read_model(
 ) -> tuple[list[str], list[SdfJoint], list[Path], list[Path]]:
     link_names = [
         _required_name(link_element, source_path=source_path, label=f"model {model_name!r} link")
-        for link_element in _children(model_element, "link")
+        for link_element in children(model_element, "link")
     ]
     _raise_on_duplicates(link_names, source_path=source_path, label=f"model {model_name!r} link")
     link_name_set = set(link_names)
 
     visual_mesh_paths: list[Path] = []
     collision_mesh_paths: list[Path] = []
-    for link_element in _children(model_element, "link"):
+    for link_element in children(model_element, "link"):
         visual_mesh_paths.extend(
             _geometry_mesh_paths(
                 link_element,
@@ -154,13 +155,13 @@ def _read_model(
 
     joint_names: list[str] = []
     joints: list[SdfJoint] = []
-    for joint_element in _children(model_element, "joint"):
+    for joint_element in children(model_element, "joint"):
         joint_name = _required_name(joint_element, source_path=source_path, label=f"model {model_name!r} joint")
         joint_names.append(joint_name)
         joint_type = str(joint_element.attrib.get("type") or "").strip()
         if not joint_type:
             raise SdfSourceError(
-                f"{_relative_to_repo(source_path)} model {model_name!r} joint {joint_name!r} type is required"
+                f"{display_path(source_path)} model {model_name!r} joint {joint_name!r} type is required"
             )
         parent_link = _required_child_text(
             joint_element,
@@ -200,18 +201,10 @@ def _read_model(
     return link_names, joints, visual_mesh_paths, collision_mesh_paths
 
 
-def _children(parent: ET.Element, tag_name: str) -> list[ET.Element]:
-    return [child for child in list(parent) if _local_name(child.tag) == tag_name]
-
-
-def _local_name(tag: str) -> str:
-    return str(tag).rsplit("}", 1)[-1]
-
-
 def _required_name(element: ET.Element, *, source_path: Path, label: str) -> str:
     name = str(element.attrib.get("name") or "").strip()
     if not name:
-        raise SdfSourceError(f"{_relative_to_repo(source_path)} {label} name is required")
+        raise SdfSourceError(f"{display_path(source_path)} {label} name is required")
     return name
 
 
@@ -222,10 +215,10 @@ def _required_child_text(
     source_path: Path,
     label: str,
 ) -> str:
-    element = next(iter(_children(parent, tag_name)), None)
+    element = next(iter(children(parent, tag_name)), None)
     value = str(element.text if element is not None else "").strip()
     if not value:
-        raise SdfSourceError(f"{_relative_to_repo(source_path)} {label} is required")
+        raise SdfSourceError(f"{display_path(source_path)} {label} is required")
     return value
 
 
@@ -242,7 +235,7 @@ def _validate_link_reference(
     if "::" in link_ref:
         return
     if link_ref not in link_names:
-        raise SdfSourceError(f"{_relative_to_repo(source_path)} {context} references missing link {link_ref!r}")
+        raise SdfSourceError(f"{display_path(source_path)} {context} references missing link {link_ref!r}")
 
 
 def _geometry_mesh_paths(
@@ -253,11 +246,11 @@ def _geometry_mesh_paths(
     base_dir: Path,
 ) -> list[Path]:
     mesh_paths: list[Path] = []
-    for geometry_owner in _children(link_element, element_name):
-        geometry_element = next(iter(_children(geometry_owner, "geometry")), None)
+    for geometry_owner in children(link_element, element_name):
+        geometry_element = next(iter(children(geometry_owner, "geometry")), None)
         if geometry_element is None:
             continue
-        mesh_element = next(iter(_children(geometry_element, "mesh")), None)
+        mesh_element = next(iter(children(geometry_element, "mesh")), None)
         if mesh_element is None:
             continue
         uri = _required_child_text(
@@ -270,7 +263,7 @@ def _geometry_mesh_paths(
         if mesh_path is not None:
             if not mesh_path.is_file():
                 raise SdfSourceError(
-                    f"{_relative_to_repo(source_path)} references missing mesh file: {uri!r}"
+                    f"{display_path(source_path)} references missing mesh file: {uri!r}"
                 )
             mesh_paths.append(mesh_path)
     return mesh_paths
@@ -288,22 +281,11 @@ def _resolve_local_mesh_uri(uri: str, *, base_dir: Path) -> Path | None:
 
 
 def _raise_on_duplicates(values: list[str], *, source_path: Path, label: str) -> None:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-            continue
-        seen.add(value)
+    duplicates = duplicate_values(values)
     if duplicates:
-        duplicate_text = ", ".join(repr(item) for item in sorted(duplicates))
+        duplicate_text = ", ".join(repr(item) for item in duplicates)
         raise SdfSourceError(
-            f"{_relative_to_repo(source_path)} {label} names contain duplicates {duplicate_text}"
+            f"{display_path(source_path)} {label} names contain duplicates {duplicate_text}"
         )
 
 
-def _relative_to_repo(path: Path) -> str:
-    try:
-        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return path.resolve().as_posix()
