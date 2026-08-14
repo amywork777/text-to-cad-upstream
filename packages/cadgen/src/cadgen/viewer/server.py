@@ -14,10 +14,30 @@ origin names no directory, which the backend reads as the process cwd. The only
 paths that are NOT a directory are the bundle's /assets/* and the /__cad/* API.
 
 Security / trust model: binds to loopback (127.0.0.1) and serves UNAUTHENTICATED.
-Any local process can read files under --dir (GET /__cad/asset), trigger STEP
-builds/exports, and activate directories. This is a single-user, local-filesystem
-viewer where loopback binding is the trust boundary. Do NOT bind a non-loopback
---host or expose this server beyond localhost without adding auth.
+Any local PROCESS can read files under the requested directory (GET /__cad/asset),
+trigger STEP builds/exports, and activate directories. This is a single-user,
+local-filesystem viewer where loopback binding is the trust boundary for other
+processes and other machines. Do NOT bind a non-loopback --host or expose this
+server beyond localhost without adding auth.
+
+Loopback is NOT a boundary against the user's own BROWSER, which can reach this port
+from any page they have open, so two gates defend against that specifically:
+
+* Host validation (`_host_is_allowed`) refuses a request whose Host names anything but
+  127.0.0.1/localhost/::1. That is the DNS-rebinding case, where an attacker domain
+  re-resolves to loopback and the browser therefore treats us as same-origin, which
+  otherwise lets the page read our responses. Skipped when bound non-loopback, matching
+  Jupyter's allow_remote_access.
+* Every POST requires an `x-cadgen-viewer` header. POST /__cad/artifact executes the
+  target's generator, and since all params ride in the query string with no body read,
+  a cross-origin POST is otherwise a no-preflight "simple request" that fires even
+  though the page cannot read the reply. A custom header forces a preflight instead.
+
+No Access-Control-* headers are served, deliberately: their absence is what makes the
+same-origin policy block cross-origin reads and what makes the preflight above fail.
+Do not add them. There is no token or cookie auth by design -- the URL is the
+filesystem path and must stay pasteable -- which is sound only because the two gates
+above hold.
 """
 
 from __future__ import annotations

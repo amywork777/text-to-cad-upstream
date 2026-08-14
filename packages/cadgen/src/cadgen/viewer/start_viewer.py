@@ -26,6 +26,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 
 from cadgen.viewer import cadgen_bridge
 from cadgen.viewer.paths import url_path_from_filesystem_path
@@ -70,6 +71,43 @@ def spawn_backend(host: str, port: int, dist_root: str = ""):
     return subprocess.Popen(cmd, env=env)
 
 
+def open_when_ready(url: str, host: str, port: int, timeout_s: float = 2.0) -> bool:
+    """Wait for the backend to answer, then open `url` in the user's browser.
+
+    Opening immediately after spawn races the child's bind and lands on a connection
+    error, so poll /__cad/server first. Best-effort throughout: a timeout or a machine
+    with no browser is a warning, never a failed start -- the URL is already on stdout
+    and remains the real interface.
+    """
+    import urllib.error
+    import urllib.request
+
+    probe = f"http://{host}:{port}/__cad/server"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(probe, timeout=0.25) as response:
+                if response.status == 200:
+                    break
+        except (urllib.error.URLError, OSError):
+            pass
+        time.sleep(0.1)
+    else:
+        print(f"Viewer did not answer within {timeout_s:g}s; not opening a browser.", file=sys.stderr)
+        return False
+
+    import webbrowser
+
+    try:
+        if webbrowser.open(url):
+            return True
+    except Exception as exc:  # noqa: BLE001 - a browser launcher must never fail the start
+        print(f"Could not open a browser: {exc}", file=sys.stderr)
+        return False
+    print("Could not open a browser; use the URL above.", file=sys.stderr)
+    return False
+
+
 # Both front doors reach this: `cadgen viewer` (which passes its own name) and
 # `python -m cadgen.viewer` (which does not, so argparse derives it from argv[0]).
 DEFAULT_PROG = "python -m cadgen.viewer"
@@ -82,6 +120,14 @@ def main(argv=None, *, prog: str = DEFAULT_PROG):
     parser.add_argument("--host", default=DEFAULT_VIEWER_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_VIEWER_PORT)
     parser.add_argument("--json", action="store_true", dest="json_result")
+    # Opt-in, the inverse of Jupyter's auto-open-by-default: this viewer is started by
+    # agents far more often than by humans, and an agent does not want a browser window.
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        dest="open_browser",
+        help="Open the Viewer URL in your browser once the backend answers.",
+    )
     parser.add_argument(
         "--dist",
         default="",
@@ -115,6 +161,9 @@ def main(argv=None, *, prog: str = DEFAULT_PROG):
         print(json.dumps({"url": url, "port": port, "action": "start"}))
     sys.stdout.flush()
     child = spawn_backend(host, port, args.dist_root)
+    if args.open_browser:
+        # After spawn (nothing to poll before it), before wait() blocks for the child.
+        open_when_ready(url, host, port)
     return child.wait()
 
 
