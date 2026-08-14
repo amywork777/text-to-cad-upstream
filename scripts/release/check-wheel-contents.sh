@@ -52,6 +52,12 @@ REQUIRED=(
   "cadgen/findings.py"
   "cadgen/viewer/__init__.py"
   "cadgen/viewer/server.py"
+  # The instance registry and its two CLIs: `cadgen viewer list`/`stop` are the only
+  # way to find or stop a running viewer, so a packaging regression that dropped them
+  # would leave orphaned servers undiagnosable.
+  "cadgen/viewer/registry.py"
+  "cadgen/cli/viewer_list.py"
+  "cadgen/cli/viewer_stop.py"
   "cadgen/daemon/__init__.py"
   "cadgen/daemon/server.py"
   # Doubles as a rename sentinel: step_artifacts.py became step_topology_artifact.py, so a
