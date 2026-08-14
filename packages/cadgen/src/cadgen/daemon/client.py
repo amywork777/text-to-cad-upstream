@@ -93,7 +93,9 @@ def compute_version_token(root: Path | None = None) -> str:
     return f"{__version__}:{newest}"
 
 
-def run_via_daemon(tool: str, argv: list[str], cwd: str | None = None) -> int | None:
+def run_via_daemon(
+    tool: str, argv: list[str], cwd: str | None = None, prog: str | None = None
+) -> int | None:
     """Run one CLI invocation on the warm daemon; ``None`` means run inline instead."""
     if os.environ.get("CADGEN_WARM") != "1" or os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
@@ -104,6 +106,11 @@ def run_via_daemon(tool: str, argv: list[str], cwd: str | None = None) -> int | 
         return None
     payload = {
         "tool": str(tool),
+        # The name the caller is known by. Without it the daemon invented
+        # "scripts/<tool>", so `cadgen step gen --help` printed a different
+        # usage line warm than cold -- the same command answering to two names
+        # depending on whether a daemon happened to be running.
+        "prog": str(prog) if prog else None,
         "argv": argv,
         "cwd": str(cwd) if cwd else os.getcwd(),
         "token": compute_version_token(),

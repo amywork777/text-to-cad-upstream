@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import inspect
 import io
 import json
 import os
@@ -272,7 +273,8 @@ def _handle_request(
             if isinstance(cwd, str) and os.path.isdir(cwd):
                 os.chdir(cwd)
             argv = [str(arg) for arg in argv]
-            sys.argv = [f"scripts/{tool}", *argv]
+            prog = str(request.get("prog") or "") or None
+            sys.argv = [prog or f"scripts/{tool}", *argv]
             watchdog = threading.Thread(
                 target=_watch_client,
                 args=(conn, send_lock, watchdog_done, str(tool)),
@@ -280,7 +282,16 @@ def _handle_request(
             )
             watchdog.start()
             try:
-                result = _tool_main(tool)(argv)
+                # Pass the caller's program name where the parser accepts one, exactly
+                # as cadgen.cli's dispatch does. Without it the parser falls back to its
+                # DEFAULT_PROG and `cadgen step gen --help` printed "usage: scripts/gen"
+                # warm against "usage: cadgen step gen" cold -- one command, two names,
+                # depending on whether a daemon happened to be running.
+                tool_main = _tool_main(tool)
+                if prog and "prog" in inspect.signature(tool_main).parameters:
+                    result = tool_main(argv, prog=prog)
+                else:
+                    result = tool_main(argv)
                 exit_code = 0 if result is None else int(result)
             except _DaemonShutdown:
                 raise
