@@ -1663,11 +1663,6 @@ export default function CadWorkspace({
     () => ({ ...defaultSelectedUrdfJointValues, ...storedSelectedUrdfJointValues }),
     [defaultSelectedUrdfJointValues, storedSelectedUrdfJointValues]
   );
-  const selectedUrdfMotion = useMemo(() => {
-    const motion = selectedUrdfData?.motion;
-    const endEffectors = Array.isArray(motion?.endEffectors) ? motion.endEffectors : [];
-    return endEffectors.length ? { ...motion, endEffectors } : null;
-  }, [selectedUrdfData]);
   const selectedUrdfGroupStates = useMemo(() => {
     const groupStates = Array.isArray(selectedUrdfData?.srdf?.groupStates)
       ? selectedUrdfData.srdf.groupStates

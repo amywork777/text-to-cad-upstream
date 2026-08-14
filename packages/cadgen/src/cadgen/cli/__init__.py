@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import re
 import sys
 
 # name -> (module, "one-line help"). The module must expose ``main(argv)`` returning an
@@ -46,6 +47,54 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "viewer": ("cadgen.viewer.start_viewer", "start the CAD Viewer on a local directory"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
 }
+
+# `cadgen==1.2.3` / `cadgen[snapshot]==1.2.3`, as written by
+# scripts/release/pin-cadgen-requirements.sh. Only the `==` form is a pin: a bare
+# `cadgen` line is the development checkout, which resolves to the editable install.
+_PIN_RE = re.compile(r"^cadgen(?:\[[a-z0-9_,.-]+\])?\s*==\s*(?P<pin>[^\s;#]+)")
+
+
+def enforce_requirements_pin(requirements_path) -> None:
+    """Fail fast when a published skill's pinned cadgen is not the installed one.
+
+    A skill is published with `cadgen==<release>` in its requirements.txt, but nothing
+    makes pip re-resolve it on a machine that already has some other cadgen. The skill
+    then runs against a runtime it was never tested against and fails somewhere far from
+    the cause. Called by every shim that hands off to installed cadgen, so the mismatch
+    is reported at the entrypoint instead.
+
+    Silent (the common cases) when: the file is absent, names cadgen unpinned -- which is
+    exactly the development checkout, whose editable install has no release version to
+    match -- or pins the version already installed. Exits 3 otherwise, the same code the
+    shims use for "cadgen is not installed", since both mean the same fix.
+
+    Compares the pin as a string rather than through PEP 440. The pins are written
+    mechanically as exact `==`, and shims must stay stdlib-only.
+    """
+    try:
+        with open(requirements_path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
+    except OSError:
+        return  # No manifest (or unreadable): nothing claims a version.
+
+    pin = next(
+        (match.group("pin") for match in map(_PIN_RE.match, (line.strip() for line in lines)) if match),
+        None,
+    )
+    if pin is None:
+        return
+
+    from cadgen import __version__ as installed
+
+    if pin == installed:
+        return
+    sys.stderr.write(
+        f"This skill is pinned to cadgen=={pin} but cadgen {installed} is installed.\n"
+        "From the skill directory run:\n"
+        "  python -m pip install -r requirements.txt\n"
+    )
+    raise SystemExit(3)
+
 
 _USAGE_HEAD = "usage: cadgen <command> [args...]\n\ncommands:\n"
 _USAGE_TAIL = (

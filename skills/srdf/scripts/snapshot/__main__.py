@@ -13,15 +13,22 @@ so rendering resolves that robot first and then applies the selected state.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
+# Fail fast when the installed cadgen is not the one this skill was published against:
+# everything below this line runs INSIDE that install.
 try:
-    from cadgen.cli.snapshot import SKILL_KINDS, run
+    from cadgen.cli import enforce_requirements_pin
 except ModuleNotFoundError:
     sys.stderr.write(
         "cadgen is not installed. From the skill directory run:\n"
         "  python -m pip install -r requirements.txt\n"
     )
     raise SystemExit(3)
+
+enforce_requirements_pin(Path(__file__).resolve().parents[2] / "requirements.txt")
+
+from cadgen.cli.snapshot import SKILL_KINDS, run
 
 KINDS = SKILL_KINDS["srdf"]
 
