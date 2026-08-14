@@ -68,6 +68,50 @@ class _Ctx:
     host = server_info_mod.DEFAULT_VIEWER_HOST
 
 
+# Hostnames that mean "this machine" for the DNS-rebinding check below.
+_LOOPBACK_NAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+# Required on every POST. Any CUSTOM header forces the browser to preflight a
+# cross-origin request; we serve no Access-Control-* headers, so that preflight fails
+# and the real request is never sent. The value is not a secret and must never be
+# treated as one -- presence is the whole check.
+POST_GUARD_HEADER = "x-cadgen-viewer"
+
+
+def _hostname_only(host_header: str) -> str:
+    """The hostname in a Host header, minus any port. ``[::1]:3245`` -> ``::1``."""
+    value = str(host_header or "").strip()
+    if value.startswith("["):  # bracketed IPv6 literal
+        end = value.find("]")
+        return (value[1:end] if end != -1 else value).lower()
+    head, sep, tail = value.rpartition(":")
+    return (head if sep and tail.isdigit() else value).lower()
+
+
+def _host_is_allowed(host_header: str, bound_host: str) -> bool:
+    """DNS-rebinding defense, matching Jupyter's ``allow_remote_access`` semantics.
+
+    When an attacker's domain re-resolves to 127.0.0.1 the browser treats this server as
+    same-origin, so the same-origin policy stops protecting us and the page can READ our
+    responses. The Host header is what still names the attacker, so it is what we check.
+
+    The NAME is compared, never the port: the attack requires a non-local name, not a
+    wrong port, and ignoring the port keeps odd-port instances and the vite dev proxy
+    working.
+
+    Skipped entirely when the operator bound a non-loopback interface -- they have
+    deliberately left the loopback trust model, and the module docstring already tells
+    them to put auth in front of it.
+    """
+    if _hostname_only(bound_host) not in _LOOPBACK_NAMES:
+        return True
+    if not str(host_header or "").strip():
+        # HTTP/1.0 clients omit Host. Browsers always send it, and the browser is the
+        # threat this check exists for, so absence is not suspicious.
+        return True
+    return _hostname_only(host_header) in _LOOPBACK_NAMES
+
+
 def _server_info(root_dir: str = "") -> dict:
     return server_info_mod.build_viewer_server_info(
         root_dir=root_dir or "",
@@ -114,8 +158,42 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # quieter
         pass
 
+    # --- browser-borne request gates ---
+    def _rejected_by_host_check(self) -> bool:
+        """True when a 403 has been written and the caller must stop."""
+        host_header = self.headers.get("Host") or ""
+        if _host_is_allowed(host_header, _Ctx.host):
+            return False
+        self._send_json(
+            403,
+            {
+                "error": f"Host header {_hostname_only(host_header)!r} is not a local name; "
+                "refusing (DNS-rebinding defense)"
+            },
+        )
+        return True
+
+    def _rejected_as_cross_site_post(self) -> bool:
+        """Every POST here is state-changing -- /__cad/artifact executes the target's
+        generator -- and all params ride in the query string, which is exactly what makes
+        a cross-origin POST a no-preflight 'simple request'. Requiring one custom header
+        removes that: the browser must preflight, and the preflight fails."""
+        if self.headers.get(POST_GUARD_HEADER):
+            return False
+        self._send_json(
+            403,
+            {
+                "error": f"missing {POST_GUARD_HEADER} header (cross-site POST blocked); "
+                f"send '{POST_GUARD_HEADER}: 1'"
+            },
+        )
+        return True
+
     # --- dispatch ---
     def do_GET(self):
+        # do_HEAD delegates here, so this covers HEAD too -- do not repeat it there.
+        if self._rejected_by_host_check():
+            return
         path, q = self._query()
         try:
             if path == "/__cad/server":
@@ -142,6 +220,10 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": str(exc)})
 
     def do_POST(self):
+        # Gated before dispatch, not per route, so a POST route added later is covered
+        # by construction.
+        if self._rejected_by_host_check() or self._rejected_as_cross_site_post():
+            return
         path, q = self._query()
         try:
             if path == "/__cad/artifact":
@@ -359,6 +441,13 @@ def main(argv=None):
     _Ctx.port = server_info_mod.normalize_viewer_port(args.port)
     _Ctx.host = args.host
     _Ctx.backend = backend_mod.LocalAssetBackend()
+
+    if _hostname_only(args.host) not in _LOOPBACK_NAMES:
+        print(
+            f"WARNING: binding {args.host} (not loopback) serves this filesystem unauthenticated "
+            "to the network, and disables the Host-header check. Put auth in front of it.",
+            file=sys.stderr,
+        )
 
     httpd = ThreadingHTTPServer((args.host, _Ctx.port), Handler)
     print(f"Python CAD Viewer backend listening on http://{args.host}:{_Ctx.port}/ (local-fs)")

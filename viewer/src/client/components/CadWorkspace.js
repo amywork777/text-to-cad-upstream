@@ -7409,6 +7409,9 @@ export default function CadWorkspace({
       const response = await fetch(revealUrl, {
         method: "POST",
         cache: "no-store",
+        // Any custom header forces a CORS preflight, which the backend does not answer
+        // cross-origin -- that is what stops a hostile page POSTing to the viewer.
+        headers: { "x-cadgen-viewer": "1" },
       });
       if (!response.ok) {
         throw new Error(await readResponseError(
