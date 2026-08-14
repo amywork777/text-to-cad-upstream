@@ -39,8 +39,14 @@ When running a tool manually, use that skill's interpreter:
 
 ```bash
 .venv/skills/cad/bin/python skills/cad/scripts/gen --help
-python3 skills/urdf/scripts/validate --help  # stdlib-only validator, no venv needed
+./.venv/bin/python skills/urdf/scripts/validate --help
 ```
+
+Every skill command is a shim over installed cadgen, so it needs an interpreter
+that can import it — the repo `.venv` above, or a skill-specific one. The robot
+validators used to be the exception, running on bare `python3` while their logic
+lived under `skills/`; that logic is `cadgen.{urdf,sdf,srdf}_*` now, so they need
+cadgen like everything else.
 
 ## Link Skills Into Your Agent
 
