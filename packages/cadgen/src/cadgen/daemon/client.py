@@ -214,6 +214,11 @@ def _run_request(conn: socket.socket, payload: dict) -> int | object | None:
                     return None
                 if message.get("restart"):
                     return _RESTART
+                if message.get("cold"):
+                    # Every warm worker is busy and the pool is capped. Returning None
+                    # runs this invocation cold, which is the point: queueing behind a
+                    # full pool would make parallel work slower than no daemon at all.
+                    return None
                 if "exit" in message:
                     return int(message["exit"])
                 target = streams.get(message.get("stream"))

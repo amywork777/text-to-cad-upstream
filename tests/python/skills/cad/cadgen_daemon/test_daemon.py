@@ -166,7 +166,7 @@ class CadgenDaemonTests(unittest.TestCase):
         else:
             self.fail("daemon did not exit after the restart reply")
 
-    def test_d_client_disconnect_aborts_orphaned_job(self) -> None:
+    def test_d_client_disconnect_kills_the_worker_not_the_daemon(self) -> None:
         # test_c leaves the daemon exited via the staleness path; start fresh.
         type(self)._start_server()
 
@@ -176,11 +176,14 @@ class CadgenDaemonTests(unittest.TestCase):
             BOX_SOURCE.replace("10.0, 8.0, 4.0", "9.0, 7.0, 3.0"), encoding="utf-8"
         )
 
-        # Send a valid request, then close the connection without reading the
-        # response — the daemon-side view of a killed client. The liveness
-        # watchdog must abort the orphaned build by exiting the daemon
-        # (previously it burned CPU to completion while new requests queued
-        # silently behind it).
+        # Send a valid request, then close the connection without reading the response —
+        # the daemon-side view of a killed client. The liveness watchdog must stop the
+        # orphaned build.
+        #
+        # This used to require the DAEMON to exit: the build ran inside it, so there was
+        # no smaller thing to stop, and every queued request died with it. Now the job
+        # runs in a pooled worker, so the watchdog kills that one worker and the
+        # supervisor keeps serving — which is what the assertions below check.
         conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             conn.settimeout(10.0)
@@ -199,15 +202,31 @@ class CadgenDaemonTests(unittest.TestCase):
 
         deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
-            if self.server is None or self.server.poll() is not None:
+            if "killing worker" in self.log_path.read_text():
                 break
             time.sleep(0.2)
         else:
             self.fail(
-                "daemon kept running an orphaned job after its client disconnected:\n"
+                "watchdog never killed the orphaned job's worker:\n"
                 f"{self.log_path.read_text()}"
             )
-        self.assertIn("aborting orphaned job", self.log_path.read_text())
+
+        # The supervisor survived, which is the point of moving work into workers.
+        self.assertIsNone(
+            self.server.poll(),
+            "the daemon exited; a lost client should cost one worker, not the daemon",
+        )
+
+        # And it still serves: the pool replaces the killed worker on the next acquire.
+        # run_via_daemon gates on CADGEN_WARM, which this test process does not set.
+        with mock.patch.dict(
+            os.environ,
+            {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.socket_path)},
+        ):
+            exit_code = daemon_client.run_via_daemon(
+                "gen", ["box_orphan.step.py"], str(self.model_dir)
+            )
+        self.assertEqual(exit_code, 0, self.log_path.read_text())
 
 
 if __name__ == "__main__":
