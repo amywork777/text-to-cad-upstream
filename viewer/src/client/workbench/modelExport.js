@@ -81,7 +81,9 @@ export async function requestModelExport({ file, format } = {}) {
   }
   const response = await fetch(
     `/__cad/export?file=${encodeURIComponent(fileRef)}&format=${encodeURIComponent(exportFormat)}`,
-    { method: "POST" }
+    // Custom header => cross-origin callers get a preflight the backend does not
+    // answer, so only this app can trigger an export.
+    { method: "POST", headers: { "x-cadgen-viewer": "1" } }
   );
   let payload = null;
   try {

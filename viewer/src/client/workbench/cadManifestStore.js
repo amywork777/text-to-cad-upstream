@@ -280,6 +280,9 @@ export async function requestArtifact(fileRef, { force = false, signal } = {}) {
     method: "POST",
     cache: "no-store",
     signal,
+    // Custom header => a cross-origin caller must preflight, and the backend answers
+    // no CORS, so a hostile page can never trigger a build (which runs the generator).
+    headers: { "x-cadgen-viewer": "1" },
   });
   if (!response.ok) {
     throw new Error(await readJsonError(
