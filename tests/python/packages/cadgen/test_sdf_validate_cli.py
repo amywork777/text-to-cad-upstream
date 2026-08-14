@@ -10,7 +10,7 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/sdf/scripts")
 
-from sdf import cli
+from cadgen.cli import sdf_validate as cli
 
 
 VALID_MODEL_SDF = """\

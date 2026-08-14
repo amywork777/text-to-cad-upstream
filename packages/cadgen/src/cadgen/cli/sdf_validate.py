@@ -6,16 +6,15 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(SCRIPTS_DIR))
 
-from sdf.external import run_gz_sdf_check
-from sdf.source import SdfSource, SdfSourceError, parse_sdf_xml
-from sdf.validation import validate_sdf_xml
+from cadgen.sdf_external import run_gz_sdf_check
+from cadgen.sdf_source import SdfSource, SdfSourceError, parse_sdf_xml
+from cadgen.sdf_validation import validate_sdf_xml
 
 SDF_SUFFIX = ".sdf"
 
+
+DEFAULT_PROG = "scripts/validate"
 
 def validate_sdf_targets(
     targets: Sequence[str],
@@ -33,13 +32,13 @@ def validate_sdf_targets(
         if not report["ok"]:
             failed = True
     if output_format == "json":
-        print(json.dumps({"files": reports}, indent=2))
+        print(json.dumps({"files": reports}, separators=(",", ":")))
     return 1 if failed else 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     parser = argparse.ArgumentParser(
-        prog="scripts/validate",
+        prog=prog,
         description="Validate explicit SDFormat/SDF targets.",
     )
     parser.add_argument(

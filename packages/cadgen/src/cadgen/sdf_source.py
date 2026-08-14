@@ -5,7 +5,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-from .validation import raise_for_validation_errors, validate_sdf_root
+from cadgen.sdf_validation import raise_for_validation_errors, validate_sdf_root
 
 SDF_SUFFIX = ".sdf"
 EXTERNAL_URI_SCHEMES = {"model", "package", "http", "https", "fuel"}

@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-from urdf.findings import ValidationResult, format_findings
+from cadgen.findings import ValidationResult, format_findings
 
 URDF_SUFFIX = ".urdf"
 SUPPORTED_JOINT_TYPES = {"fixed", "continuous", "revolute", "prismatic"}

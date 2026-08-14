@@ -5,10 +5,10 @@ easily-forgotten line in a file that is otherwise copy-pasted. This test states 
 by CRITERION rather than by a list of known shims, so a skill added later is covered the
 day it lands instead of the day someone remembers.
 
-The criterion is "imports cadgen", not "is a shim": three validate commands
-(sdf/srdf/urdf) are self-contained stdlib and never run installed cadgen, so there is no
-version to disagree about. Adding the guard there would give them a hard cadgen
-dependency they do not have today.
+The criterion is "imports cadgen" rather than "is a shim". Every shim satisfies it today
+-- the last three that did not were sdf/srdf/urdf `validate`, whose logic lived in the
+skills until it moved to cadgen -- but stating the rule as a criterion keeps it honest if
+a skill ever ships a command that genuinely does not need the distribution.
 
 Known and accepted gap: skills/implicit-cad/scripts/export.mjs is a Node shim that execs
 `python -m cadgen.cli.implicit_export_js`, so it gets no guard.

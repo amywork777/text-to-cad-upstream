@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 
-from .findings import ValidationResult
+from cadgen.findings import ValidationResult
 
 GzCheckMode = str
 

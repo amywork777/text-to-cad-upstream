@@ -10,7 +10,7 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/urdf/scripts")
 
-from urdf import cli
+from cadgen.cli import urdf_validate as cli
 
 
 VALID_URDF = """\
