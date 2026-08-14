@@ -4,11 +4,12 @@ OCP/OpenCascade is kept OUT of the long-lived server process (crash/memory
 isolation, same as the Node backend). Two execution paths share one contract,
 ``run_cadgen(module, args, repo_root) -> dict``:
 
-* warm worker (default): a persistent :mod:`cadgen.viewer.worker` subprocess imports
-  OCP once and services every build/export in-process — no per-request cold start.
-* cold subprocess (fallback): a fresh ``python -m <module>`` per request, used when
-  the worker is disabled (``VIEWER_CAD_WORKER=0``) or a worker transport fault
-  occurs. Always available, fully isolated.
+* warm pool (default): :mod:`cadgen.daemon`'s worker pool, shared with the CLI. A
+  terminal build and a viewer build reuse the same warm processes; the viewer used to
+  run its own worker system for this and paid a second OCP import for the privilege.
+* cold subprocess (fallback): a fresh ``python -m <module>`` per request, used when the
+  pool is unavailable, at capacity, or switched off (``VIEWER_CAD_WORKER=0``). Always
+  available, fully isolated.
 
 Both call the SAME general cadgen callables; only warmth/lifetime differ.
 """
@@ -111,15 +112,25 @@ def require_cadgen_runtime(repo_root: str) -> dict:
 
 def run_cadgen(module: str, args, repo_root: str) -> dict:
     """Run a cadgen build/export op and return its payload dict (``{ok:false,error}``
-    on failure). Prefers the warm worker; falls back to a cold subprocess on any
-    worker spawn/transport fault so the path is always available."""
-    try:
-        from . import worker_client
+    on failure).
 
-        return worker_client.run_cadgen(module, args, repo_root)
-    except worker_client._WorkerError:
-        pass  # worker disabled or faulted -> cold subprocess below
+    Prefers the shared warm pool in cadgen.daemon, falling back to a cold subprocess
+    whenever it is unavailable, at capacity, or switched off. The viewer used to own a
+    separate warm-worker system for this; one pool means a terminal build and a viewer
+    build reuse each other's warm processes instead of each paying its own OCP import.
+    """
+    if _warm_enabled():
+        from cadgen.daemon import client as daemon_client
+
+        payload = daemon_client.invoke(module, args, repo_root)
+        if payload is not None:
+            return payload
     return run_cadgen_cold(module, args, repo_root)
+
+
+def _warm_enabled() -> bool:
+    """VIEWER_CAD_WORKER=0 forces the cold path (tests and debugging use it)."""
+    return str(os.environ.get("VIEWER_CAD_WORKER", "1")).strip() not in {"0", "false", "no", ""}
 
 
 def run_cadgen_cold(module: str, args, repo_root: str) -> dict:

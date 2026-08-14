@@ -1193,8 +1193,9 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
     def test_every_producer_the_backend_shells_out_to_is_worker_dispatchable(self):
         # The warm worker keeps its own module allowlist; a producer missing from it fails at
         # RUNTIME with "Unknown cadgen module for worker", which no unit test of either side
-        # alone would catch.
-        from cadgen.viewer import worker
+        # alone would catch. The worker lives in cadgen.daemon now -- one pool serves both
+        # the CLI and the viewer -- but the allowlist and this guarantee moved with it.
+        from cadgen.daemon import worker
 
         dispatch = worker._module_dispatch()
         for module in (
