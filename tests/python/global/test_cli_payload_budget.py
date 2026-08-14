@@ -87,6 +87,7 @@ class CompactStdoutTests(unittest.TestCase):
         "packages/cadgen/src/cadgen/cli/sdf_validate.py",
         "packages/cadgen/src/cadgen/cli/srdf_validate.py",
         "packages/cadgen/src/cadgen/cli/viewer_list.py",
+        "packages/cadgen/src/cadgen/cli/daemon_status.py",
     )
 
     def test_the_source_list_covers_every_json_emitting_cli(self):
