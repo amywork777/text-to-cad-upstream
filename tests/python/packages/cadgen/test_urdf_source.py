@@ -3,7 +3,7 @@ import unittest
 import warnings
 from pathlib import Path
 
-from urdf.source import (
+from cadgen.urdf_source import (
     MeshUriKind,
     UrdfSourceError,
     UrdfSourceWarning,

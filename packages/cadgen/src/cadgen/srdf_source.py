@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 import xml.etree.ElementTree as ET
 
-from srdf.findings import ValidationResult, format_findings
+from cadgen.findings import ValidationResult, format_findings
 
 SRDF_SUFFIX = ".srdf"
 

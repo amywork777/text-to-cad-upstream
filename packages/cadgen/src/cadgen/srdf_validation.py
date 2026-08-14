@@ -1,151 +1,25 @@
+"""Validating an SRDF against the URDF it plans for.
+
+SRDF is a description OF another robot: every group, chain, end effector and group
+state names links and joints that must exist in the paired URDF, with the right
+kinds and values. So validation is inherently cross-file, and the bulk of it is
+here rather than in :mod:`cadgen.srdf_source`, which only reads the SRDF itself.
+
+Lived in the srdf skill's cli.py until the validators moved into cadgen, where it
+was ~600 lines of cross-validation wedged behind an argparse front end.
+"""
+
 from __future__ import annotations
 
-import argparse
-import json
-import sys
-from collections.abc import Sequence
+import xml.etree.ElementTree as ET
 from math import isfinite
 from pathlib import Path
-import xml.etree.ElementTree as ET
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1]
-if __package__ in {None, ""}:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+from cadgen.findings import ValidationResult
+from cadgen.srdf_source import SrdfPlanningGroup
 
-from srdf.findings import ValidationResult
-from srdf.source import SrdfPlanningGroup, SrdfSource, parse_srdf_file
-
-SRDF_SUFFIX = ".srdf"
 URDF_SUFFIX = ".urdf"
 MANUAL_PAIR_WARNING_THRESHOLD = 25
-
-
-def validate_srdf_targets(
-    targets: Sequence[str],
-    *,
-    strict: bool = False,
-    output_format: str = "text",
-) -> int:
-    target_paths = [_resolve_target_path(target) for target in targets]
-    reports: list[dict[str, object]] = []
-    failed = False
-    for target_path in target_paths:
-        report = _validate_target(target_path, strict=strict, output_format=output_format)
-        reports.append(report)
-        if not report["ok"]:
-            failed = True
-    if output_format == "json":
-        print(json.dumps({"files": reports}, indent=2))
-    return 1 if failed else 0
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="scripts/validate",
-        description="Validate explicit MoveIt2 SRDF targets against their paired URDF.",
-    )
-    parser.add_argument(
-        "targets",
-        nargs="+",
-        help="Explicit .srdf file to validate.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Treat validation warnings as failures.",
-    )
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        dest="output_format",
-        help="Output format: human-readable text (default) or a JSON findings document.",
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Narrate each target and its timing on stderr.",
-    )
-    args = parser.parse_args(list(argv) if argv is not None else None)
-    if args.verbose:
-        # Narration goes to stderr; the findings document on stdout stays exactly the same
-        # so `--verbose` never changes what a caller parses.
-        for target in args.targets:
-            print(f"[srdf] validating {target}", file=sys.stderr)
-    return validate_srdf_targets(args.targets, strict=args.strict, output_format=args.output_format)
-
-
-def _resolve_target_path(raw_target: object) -> Path:
-    value = str(raw_target or "").strip()
-    if not value:
-        raise ValueError("srdf target must be a non-empty path")
-    target_path = Path(value).expanduser()
-    return target_path.resolve() if target_path.is_absolute() else (Path.cwd() / target_path).resolve()
-
-
-def _validate_target(target_path: Path, *, strict: bool, output_format: str) -> dict[str, object]:
-    display = _display_path(target_path)
-    text_mode = output_format == "text"
-    if target_path.suffix.lower() != SRDF_SUFFIX:
-        return _report_precheck_failure(display, "target must be a .srdf file", text_mode)
-    if not target_path.is_file():
-        return _report_precheck_failure(display, "file not found", text_mode)
-
-    srdf_source, result = parse_srdf_file(target_path)
-    urdf_path: Path | None = None
-    if srdf_source is not None:
-        urdf_path = _resolve_paired_urdf(srdf_source.robot_name, srdf_dir=target_path.parent, result=result)
-        if urdf_path is not None:
-            urdf_robot = _read_urdf_robot(urdf_path, result)
-            if urdf_robot is not None:
-                _validate_srdf_against_urdf(srdf_source, urdf_robot=urdf_robot, result=result)
-
-    result = result.deduplicated()
-    ok = _report_findings(display, result, strict=strict, text_mode=text_mode)
-    summary = ""
-    if srdf_source is not None and urdf_path is not None:
-        summary = _summary_line(display, srdf_source, urdf_path)
-    if text_mode and ok and summary:
-        print(summary)
-    return {
-        "path": display,
-        "ok": ok,
-        "summary": summary,
-        "findings": [finding.to_dict() for finding in result.all_findings()],
-    }
-
-
-def _report_precheck_failure(display: str, message: str, text_mode: bool) -> dict[str, object]:
-    if text_mode:
-        print(f"FAIL {display}: {message}", file=sys.stderr)
-    return {
-        "path": display,
-        "ok": False,
-        "summary": "",
-        "findings": [{"severity": "error", "code": "invalid_target", "message": message}],
-    }
-
-
-def _report_findings(display: str, result: ValidationResult, *, strict: bool, text_mode: bool) -> bool:
-    if text_mode:
-        for finding in result.all_findings():
-            print(finding.format(), file=sys.stderr)
-    blocking = len(result.errors) + (len(result.warnings) if strict else 0)
-    if blocking:
-        if text_mode:
-            print(f"FAIL {display}: {blocking} blocking finding(s)", file=sys.stderr)
-        return False
-    return True
-
-
-def _summary_line(display: str, srdf_source: SrdfSource, urdf_path: Path) -> str:
-    return (
-        f"OK {display}: robot {srdf_source.robot_name!r}, urdf {_display_path(urdf_path)}, "
-        f"{len(srdf_source.planning_groups)} groups, {len(srdf_source.end_effectors)} end effectors, "
-        f"{len(srdf_source.group_states)} group states, "
-        f"{len(srdf_source.disabled_collision_pairs)} disabled collision pairs, "
-        f"{len(srdf_source.virtual_joints)} virtual joints"
-    )
 
 
 def find_paired_urdf(robot_name: str, srdf_dir: Path) -> tuple[Path | None, list[Path]]:
@@ -169,7 +43,7 @@ def _urdf_root_name(urdf_path: Path) -> str | None:
     return None
 
 
-def _resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationResult) -> Path | None:
+def resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationResult) -> Path | None:
     if not robot_name:
         return None
     urdf_path, matches = find_paired_urdf(robot_name, srdf_dir)
@@ -179,7 +53,7 @@ def _resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationR
         result.add(
             "error",
             "no_paired_urdf",
-            f"no .urdf in {_display_path(srdf_dir)} declares robot name {robot_name!r}",
+            f"no .urdf in {display_path(srdf_dir)} declares robot name {robot_name!r}",
             path="/robot",
             hint="An SRDF pairs with the same-folder URDF whose <robot name> matches; "
             "colocate the URDF and make the names identical.",
@@ -188,19 +62,19 @@ def _resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationR
     result.add(
         "error",
         "ambiguous_paired_urdf",
-        f"multiple .urdf files in {_display_path(srdf_dir)} declare robot name {robot_name!r}: "
-        f"{[_display_path(match) for match in matches]!r}",
+        f"multiple .urdf files in {display_path(srdf_dir)} declare robot name {robot_name!r}: "
+        f"{[display_path(match) for match in matches]!r}",
         path="/robot",
         hint="Exactly one URDF per robot name per folder; rename or move the extras.",
     )
     return None
 
 
-def _read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, object] | None:
+def read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, object] | None:
     try:
         root = ET.parse(urdf_path).getroot()
     except (OSError, ET.ParseError):
-        result.add("error", "invalid_paired_urdf", f"URDF is invalid XML: {_display_path(urdf_path)}", path="/robot")
+        result.add("error", "invalid_paired_urdf", f"URDF is invalid XML: {display_path(urdf_path)}", path="/robot")
         return None
     if root.tag != "robot":
         result.add("error", "invalid_paired_urdf", "URDF root must be <robot>", path="/robot")
@@ -245,7 +119,7 @@ def _read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, obj
         result.add(
             "warning",
             "paired_urdf_not_a_tree",
-            f"paired URDF {_display_path(urdf_path)} is not a single-rooted tree; "
+            f"paired URDF {display_path(urdf_path)} is not a single-rooted tree; "
             "chain and adjacency checks may be unreliable",
             path="/robot",
             hint="Validate the URDF with the URDF skill validator first.",
@@ -253,7 +127,7 @@ def _read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, obj
     return {"name": robot_name, "links": links, "joints": joints}
 
 
-def _validate_srdf_against_urdf(
+def validate_srdf_against_urdf(
     srdf_source: SrdfSource,
     *,
     urdf_robot: dict[str, object],
@@ -768,7 +642,7 @@ def _check_names_exist(
             )
 
 
-def _display_path(path: Path) -> str:
+def display_path(path: Path) -> str:
     resolved = path.resolve()
     try:
         return resolved.relative_to(Path.cwd().resolve()).as_posix()

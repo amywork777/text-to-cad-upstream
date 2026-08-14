@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sdf.source import SdfSourceError, parse_sdf_xml, read_sdf_source
+from cadgen.sdf_source import SdfSourceError, parse_sdf_xml, read_sdf_source
 
 
 class SdfSourceTests(unittest.TestCase):

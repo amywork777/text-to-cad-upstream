@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sdf.validation import validate_sdf_xml
+from cadgen.sdf_validation import validate_sdf_xml
 
 
 class SdfValidationTests(unittest.TestCase):

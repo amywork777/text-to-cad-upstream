@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from srdf.source import SrdfSourceError, parse_srdf_file, read_srdf_source
+from cadgen.srdf_source import SrdfSourceError, parse_srdf_file, read_srdf_source
 
 
 SAMPLE_SRDF = """\

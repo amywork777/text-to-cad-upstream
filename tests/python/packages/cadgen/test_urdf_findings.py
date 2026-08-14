@@ -15,7 +15,7 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/urdf/scripts")
 
-from urdf.source import symmetric_inertia_eigenvalues, validate_urdf_file
+from cadgen.urdf_source import symmetric_inertia_eigenvalues, validate_urdf_file
 
 
 def _wrap(body: str, name: str = "edge") -> str:

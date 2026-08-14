@@ -15,7 +15,7 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/sdf/scripts")
 
-from sdf.validation import validate_sdf_xml
+from cadgen.sdf_validation import validate_sdf_xml
 
 
 def _model(body: str, *, name: str = "edge_bot", version: str = "1.12") -> str:

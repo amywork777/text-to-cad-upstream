@@ -7,7 +7,7 @@ import re
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-from .findings import ValidationResult, format_findings
+from cadgen.findings import ValidationResult, format_findings
 
 EXTERNAL_URI_SCHEMES = {"model", "package", "http", "https", "fuel"}
 COMMON_JOINT_TYPES = {
@@ -151,7 +151,9 @@ def validate_sdf_root(
 def raise_for_validation_errors(result: ValidationResult, *, strict: bool = False) -> None:
     findings = result.errors + (result.warnings if strict else [])
     if findings:
-        from .source import SdfSourceError
+        # Deferred: cadgen.sdf_source imports this module at import time, so taking
+        # SdfSourceError at the top would close the cycle.
+        from cadgen.sdf_source import SdfSourceError
 
         raise SdfSourceError(format_findings(findings))
 

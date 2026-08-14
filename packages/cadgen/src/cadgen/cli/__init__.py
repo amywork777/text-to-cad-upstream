@@ -41,6 +41,10 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "implicit gen": ("cadgen.cli.implicit_gen", "build implicit CAD targets"),
     "implicit export": ("cadgen.cli.implicit_export_js", "export an implicit model (via Node)"),
     "implicit snapshot": ("cadgen.cli.implicit_snapshot", "render an implicit model"),
+    # Robot descriptions
+    "urdf validate": ("cadgen.cli.urdf_validate", "validate URDF robot descriptions"),
+    "sdf validate": ("cadgen.cli.sdf_validate", "validate SDF worlds and models"),
+    "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
     "viewer": ("cadgen.viewer.start_viewer", "start the CAD Viewer on a local directory"),
