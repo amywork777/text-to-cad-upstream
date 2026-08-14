@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
 from cadgen.findings import ValidationResult, format_findings
+from cadgen.xml_common import duplicate_values, display_path
 
 URDF_SUFFIX = ".urdf"
 SUPPORTED_JOINT_TYPES = {"fixed", "continuous", "revolute", "prismatic"}
@@ -88,7 +89,7 @@ def file_ref_from_urdf_path(urdf_path: Path) -> str:
     resolved = urdf_path.resolve()
     if resolved.suffix.lower() != URDF_SUFFIX:
         raise UrdfSourceError(f"{resolved} is not a URDF source file")
-    return _relative_to_repo(resolved)
+    return display_path(resolved)
 
 
 def read_urdf_source(urdf_path: Path, *, package_map: dict[str, Path] | None = None) -> UrdfSource:
@@ -115,7 +116,7 @@ def validate_urdf_file(
     try:
         xml_text = resolved_path.read_text(encoding="utf-8")
     except OSError as exc:
-        result.add("error", "unreadable_file", f"{_relative_to_repo(resolved_path)} could not be read: {exc}", path="/")
+        result.add("error", "unreadable_file", f"{display_path(resolved_path)} could not be read: {exc}", path="/")
         return None, result
     return validate_urdf_xml(xml_text, source_path=resolved_path, package_map=package_map)
 
@@ -128,7 +129,7 @@ def validate_urdf_xml(
 ) -> tuple[UrdfSource | None, ValidationResult]:
     result = ValidationResult()
     resolved_path = source_path.resolve()
-    display = _relative_to_repo(resolved_path)
+    display = display_path(resolved_path)
 
     try:
         root = ET.fromstring(xml_text)
@@ -363,7 +364,7 @@ def validate_urdf_xml(
         return None, result
 
     source = UrdfSource(
-        file_ref=_relative_to_repo(resolved_path),
+        file_ref=display_path(resolved_path),
         source_path=resolved_path,
         robot_name=robot_name,
         root_link=root_link,
@@ -1164,15 +1165,9 @@ def _report_duplicates(
     label: str,
     code: str,
 ) -> None:
-    seen: set[str] = set()
-    duplicates: set[str] = set()
-    for value in values:
-        if value in seen:
-            duplicates.add(value)
-            continue
-        seen.add(value)
+    duplicates = duplicate_values(values)
     if duplicates:
-        duplicate_text = ", ".join(repr(item) for item in sorted(duplicates))
+        duplicate_text = ", ".join(repr(item) for item in duplicates)
         result.add(
             "error",
             code,
@@ -1242,8 +1237,3 @@ def resolve_mesh_uri(uri: str, package_map: dict[str, Path] | None = None) -> Pa
     return None
 
 
-def _relative_to_repo(path: Path) -> str:
-    try:
-        return path.resolve().relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return path.resolve().as_posix()

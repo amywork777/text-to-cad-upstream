@@ -132,6 +132,15 @@ function downloadActionOptionsForAsset(asset) {
   if (!asset) {
     return {};
   }
+  // Download is for OUTPUTS -- a STEP, a GLB, a drawing -- the things the viewer may have
+  // to (re)generate before handing them over. Source code is not one of those: the server
+  // deliberately refuses to stream a `.step.py` (it is not in SOURCE_EXTENSIONS), so
+  // offering the action would produce a 404. Reveal is how you get to a source file.
+  // Today no caller passes the source asset here; this makes that a rule rather than a
+  // coincidence.
+  if (String(asset.asset || "").trim() === "source") {
+    return {};
+  }
   return {
     href: cleanText(asset.downloadUrl) || downloadUrlForFileAsset(asset.fileRef, asset.asset),
     action: "download",
