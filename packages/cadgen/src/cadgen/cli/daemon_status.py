@@ -1,0 +1,76 @@
+"""``cadgen daemon status`` — is anything warm, and what is it doing?
+
+Warm compute you cannot see is warm compute you stop trusting. The daemon is on by
+default now and starts itself, so the question "why was that build slow" needs an answer
+that is not "read the log file beside a hashed socket path". Same reasoning as
+``cadgen viewer list``.
+
+Asks the running daemon rather than inspecting the filesystem: the socket's existence
+proves nothing (a stale file outlives a killed daemon), and only the supervisor knows
+which workers are busy.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from collections.abc import Sequence
+
+from cadgen.daemon import client as daemon_client
+
+DEFAULT_PROG = "cadgen daemon status"
+
+
+def _age(started: float) -> str:
+    if not started:
+        return ""
+    seconds = max(0, int(time.time() - started))
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+    return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+def _render(status: dict) -> str:
+    workers = status.get("workers") or []
+    busy = sum(1 for w in workers if w.get("busy"))
+    lines = [
+        f"CAD daemon running (pid {status.get('pid')}, up {_age(status.get('startedAt') or 0)})",
+        f"  socket   {status.get('socket')}",
+        f"  version  cadgen {status.get('version') or '?'}  token {status.get('token') or '?'}",
+        f"  workers  {len(workers)}/{status.get('maxWorkers')} ({busy} busy)",
+    ]
+    for worker in workers:
+        state = "busy" if worker.get("busy") else "idle"
+        lines.append(f"    pid {worker.get('pid')}  {state}  {worker.get('jobsServed', 0)} jobs")
+    lines.append(
+        f"  totals   {status.get('jobs', 0)} jobs, "
+        f"{status.get('coldOverflows', 0)} cold overflows, "
+        f"{status.get('recycles', 0)} recycles, "
+        f"{status.get('crashes', 0)} crashes"
+    )
+    return "\n".join(lines)
+
+
+def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
+    parser = argparse.ArgumentParser(prog=prog, description="Show the warm CAD daemon's state")
+    parser.add_argument("--json", action="store_true", dest="json_result")
+    args = parser.parse_args(list(argv) if argv is not None else None)
+
+    status = daemon_client.status()
+    if args.json_result:
+        sys.stdout.write(json.dumps(status or {}, separators=(",", ":")) + "\n")
+        return 0
+    if not status:
+        sys.stdout.write(
+            "No CAD daemon is running. One starts on the next build "
+            "(set CADGEN_WARM=0 to keep builds cold).\n"
+        )
+        return 0
+    sys.stdout.write(_render(status) + "\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

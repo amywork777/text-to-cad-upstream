@@ -203,3 +203,68 @@ class RealWorkerProcess(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DaemonStatusCommand(unittest.TestCase):
+    """`cadgen daemon status` — warm compute you can see.
+
+    It asks the supervisor rather than looking at the filesystem: a socket file outlives
+    a killed daemon, and only the supervisor knows which workers are busy.
+    """
+
+    def test_no_daemon_reports_that_plainly_without_starting_one(self):
+        import io
+        import contextlib as _ctx
+
+        from cadgen.cli import daemon_status
+
+        buffer = io.StringIO()
+        with mock.patch("cadgen.daemon.client.status", return_value=None) as asked, \
+                _ctx.redirect_stdout(buffer):
+            self.assertEqual(daemon_status.main([]), 0)
+        asked.assert_called_once()
+        self.assertIn("No CAD daemon is running", buffer.getvalue())
+
+    def test_a_running_daemon_is_rendered_with_its_workers(self):
+        import io
+        import contextlib as _ctx
+
+        from cadgen.cli import daemon_status
+
+        payload = {
+            "pid": 99, "socket": "/tmp/x.sock", "version": "1.2.3", "token": "t",
+            "maxWorkers": 4, "startedAt": 0, "jobs": 7, "coldOverflows": 2,
+            "recycles": 1, "crashes": 0,
+            "workers": [{"pid": 100, "busy": True, "jobsServed": 5}],
+        }
+        buffer = io.StringIO()
+        with mock.patch("cadgen.daemon.client.status", return_value=payload), \
+                _ctx.redirect_stdout(buffer):
+            daemon_status.main([])
+        rendered = buffer.getvalue()
+        self.assertIn("pid 99", rendered)
+        self.assertIn("1/4 (1 busy)", rendered)
+        self.assertIn("pid 100  busy  5 jobs", rendered)
+        self.assertIn("2 cold overflows", rendered)
+
+    def test_json_output_is_the_raw_payload(self):
+        import io
+        import json as _json
+        import contextlib as _ctx
+
+        from cadgen.cli import daemon_status
+
+        payload = {"pid": 5, "workers": []}
+        buffer = io.StringIO()
+        with mock.patch("cadgen.daemon.client.status", return_value=payload), \
+                _ctx.redirect_stdout(buffer):
+            daemon_status.main(["--json"])
+        self.assertEqual(_json.loads(buffer.getvalue()), payload)
+
+    def test_the_two_word_command_beats_the_one_word_daemon(self):
+        # Same dispatch trap as `viewer list`: without the two-word entry, `daemon status`
+        # would run the daemon itself with "status" as a stray argument.
+        from cadgen.cli import _COMMANDS
+
+        self.assertEqual(_COMMANDS["daemon status"][0], "cadgen.cli.daemon_status")
+        self.assertEqual(_COMMANDS["daemon"][0], "cadgen.daemon")

@@ -255,6 +255,23 @@ def _watch_client(
             return
 
 
+def _status_payload() -> dict:
+    """What the supervisor knows that nothing else can: which workers exist and their
+    state. A socket file on disk proves none of it."""
+    from cadgen import __version__
+
+    snapshot = _POOL.snapshot()
+    snapshot.update({
+        "pid": os.getpid(),
+        "socket": str(socket_path()),
+        "version": __version__,
+        "token": compute_version_token(),
+        "startedAt": _STARTED_AT,
+        "jobs": _JOBS_SERVED[0],
+    })
+    return snapshot
+
+
 def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: float) -> None:
     """The CAD Viewer's contract: run a cadgen module and return its payload.
 
@@ -313,6 +330,10 @@ def _handle_request(
     del stdout_proxy, stderr_proxy
     send_lock = threading.Lock()
     started = time.perf_counter()
+    if request.get("kind") == "status":
+        with send_lock:
+            _send(conn, {"status": _status_payload()})
+        return
     if request.get("kind") == "invoke":
         _handle_invoke(conn, request, send_lock, started)
         return
@@ -369,6 +390,7 @@ def _handle_request(
         # A killed worker is not reusable; release() drops it and the pool respawns.
         _POOL.release(worker, healthy=healthy and worker.alive())
 
+    _JOBS_SERVED[0] += 1
     _log(f"{tool} {argv!r} -> exit {exit_code} in {time.perf_counter() - started:.2f}s "
          f"(worker {worker.pid})")
     with contextlib.suppress(OSError):
@@ -377,6 +399,8 @@ def _handle_request(
 
 
 _INFLIGHT: set[threading.Thread] = set()
+_STARTED_AT = time.time()
+_JOBS_SERVED = [0]
 
 
 def _serve_connection(conn, request, stdout_proxy, stderr_proxy) -> None:

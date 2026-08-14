@@ -8,6 +8,7 @@ problem — the daemon is a fast path, never a requirement.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -318,3 +319,41 @@ def _run_invoke(conn: socket.socket, payload: dict) -> dict | object | None:
                     return message["result"] or {}
     except (OSError, TimeoutError):
         return None
+
+
+def status() -> dict | None:
+    """The running daemon's state, or None if there is none.
+
+    Deliberately does NOT spawn one: "is anything warm?" must be answerable without
+    changing the answer.
+    """
+    sock_path = socket_path()
+    try:
+        conn = _connect(sock_path)
+    except OSError:
+        return None
+    try:
+        payload = {"kind": "status", "token": compute_version_token()}
+        conn.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        conn.shutdown(socket.SHUT_WR)
+        conn.settimeout(10.0)
+        buffer = b""
+        while True:
+            chunk = conn.recv(65536)
+            if not chunk:
+                return None
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                if not line.strip():
+                    continue
+                message = json.loads(line)
+                if message.get("restart"):
+                    return None  # a stale daemon is on its way out; report nothing warm
+                if "status" in message:
+                    return message["status"]
+    except (OSError, TimeoutError, ValueError):
+        return None
+    finally:
+        with contextlib.suppress(OSError):
+            conn.close()
