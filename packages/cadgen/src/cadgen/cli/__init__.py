@@ -15,6 +15,7 @@ imports when adding commands.
 from __future__ import annotations
 
 import importlib
+import os
 import re
 import sys
 
@@ -104,6 +105,46 @@ def enforce_requirements_pin(requirements_path) -> None:
     raise SystemExit(3)
 
 
+# Commands the warm daemon can serve, mapped to its tool names. The daemon exists to
+# avoid paying the multi-second OCP/build123d import per invocation, so the handoff has to
+# happen BEFORE the command's module is imported -- which is why it lives here in dispatch
+# rather than inside each command. It served only the skill launchers until now, so
+# `cadgen step gen` was an order of magnitude slower than `scripts/gen` for no reason.
+_DAEMON_TOOLS = {
+    "step gen": "gen",
+    "step export": "export",
+    "step artifact": "artifact",
+    "step inspect": "inspect",
+    "step snapshot": "snapshot",
+}
+
+# Drawing packages are content-addressed and ezdxf's object ordering depends on hash
+# randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read at
+# interpreter start, so the only way to guarantee it is to re-exec once.
+_HASH_SEED_COMMANDS = {"dxf gen", "dxf artifact"}
+
+
+def _reexec_with_stable_hash_seed() -> None:
+    os.environ["PYTHONHASHSEED"] = "0"
+    # argv[0] is the console script or __main__.py; either runs correctly under python.
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+def _run_via_daemon(tool: str, rest: list[str]) -> int | None:
+    """Exit code when the daemon handled it, None to run in this process.
+
+    CADGEN_DAEMON_CHILD is set in the process the daemon serves from, so this cannot
+    recurse. A daemon that is not installed or not running just falls through.
+    """
+    if os.environ.get("CADGEN_WARM") != "1" or os.environ.get("CADGEN_DAEMON_CHILD"):
+        return None
+    try:
+        from cadgen.daemon.client import run_via_daemon
+    except ModuleNotFoundError:
+        return None
+    return run_via_daemon(tool, rest, os.getcwd())
+
+
 _USAGE_HEAD = "usage: cadgen <command> [args...]\n\ncommands:\n"
 _USAGE_TAIL = (
     "\nRun 'cadgen <command> --help' for a command's own options.\n"
@@ -139,6 +180,15 @@ def main(argv: list[str] | None = None) -> int:
     if entry is None:
         sys.stderr.write(f"cadgen: unknown command {command!r}\n\n" + _usage())
         return 2
+
+    # Both of these must happen before the command's module is imported.
+    if command in _HASH_SEED_COMMANDS and os.environ.get("PYTHONHASHSEED") != "0":
+        _reexec_with_stable_hash_seed()
+    daemon_tool = _DAEMON_TOOLS.get(command)
+    if daemon_tool is not None:
+        exit_code = _run_via_daemon(daemon_tool, rest)
+        if exit_code is not None:
+            return exit_code
 
     module_name, _ = entry
     module = importlib.import_module(module_name)
