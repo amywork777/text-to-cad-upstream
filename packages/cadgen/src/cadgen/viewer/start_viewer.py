@@ -29,6 +29,7 @@ import sys
 import time
 
 from cadgen.viewer import cadgen_bridge
+from cadgen.viewer import registry
 from cadgen.viewer.paths import url_path_from_filesystem_path
 from cadgen.viewer.server_info import DEFAULT_VIEWER_PORT, DEFAULT_VIEWER_HOST
 
@@ -141,6 +142,21 @@ def main(argv=None, *, prog: str = DEFAULT_PROG):
     host, port = args.host, args.port
 
     if not port_is_free(host, port):
+        # Deliberately NOT reuse (source-blind reuse of whatever held the port was a real
+        # bug here): say who has it so the collision is diagnosable, then still refuse.
+        holder = registry.find_by_port(port)
+        if holder is not None:
+            print(
+                f"Port {port} on {host} is already serving a CAD Viewer: "
+                f"pid {holder.get('pid')}, cadgen {holder.get('version') or '?'}, "
+                f"from {holder.get('packageDir') or '?'}.",
+                file=sys.stderr,
+            )
+            print(
+                f"Stop it with `cadgen viewer stop --port {port}`, or rerun with --port <n>.",
+                file=sys.stderr,
+            )
+            return 1
         print(
             f"Port {port} on {host} is already in use. "
             f"Rerun with --port <n> to use a different port.",
