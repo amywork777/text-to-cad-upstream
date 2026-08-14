@@ -117,25 +117,65 @@ def _run(request: dict) -> int:
         _evict_first_party_modules()
 
 
+def _module_dispatch() -> dict:
+    """cadgen module name -> its in-process payload entrypoint.
+
+    An ALLOWLIST on purpose, ported from the viewer's own worker: `invoke` names a module
+    over a socket, and importing whatever it says would be both a wider surface and a
+    worse failure (an unknown name would raise deep inside an import instead of here).
+    Imported lazily so the OCP cost lands in this process, never in the supervisor.
+    """
+    from cadgen import dxf_artifact, implicit_artifact, implicit_export, step_artifact, step_export_target
+
+    return {
+        "cadgen.dxf_artifact": dxf_artifact.run_cli_payload,
+        "cadgen.implicit_artifact": implicit_artifact.run_cli_payload,
+        "cadgen.implicit_export": implicit_export.run_cli_payload,
+        "cadgen.step_artifact": step_artifact.run_cli_payload,
+        "cadgen.step_export_target": step_export_target.run_cli_payload,
+    }
+
+
+_DISPATCH: dict | None = None
+
+
 def _invoke(request: dict) -> dict:
-    """Run a cadgen module's main and return its payload — the CAD Viewer's contract."""
+    """Run a cadgen module's payload entrypoint — the CAD Viewer's contract.
+
+    Returns the payload dict directly rather than parsing it back out of stdout: these
+    entrypoints exist precisely so a warm caller does not have to.
+    """
+    global _DISPATCH
     module_name = str(request.get("module") or "")
     args = [str(a) for a in request.get("args") or []]
     repo_root = request.get("repo_root")
+    noise = io.StringIO()
     try:
+        if _DISPATCH is None:
+            _DISPATCH = _module_dispatch()
+        run = _DISPATCH.get(module_name)
+        if run is None:
+            return {"ok": False, "error": f"Unknown cadgen module for worker: {module_name}"}
         if isinstance(repo_root, str) and os.path.isdir(repo_root):
             os.chdir(repo_root)
-        module = importlib.import_module(module_name)
-        # Its stdout is data to the caller, not something to stream.
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(_FrameWriter("stderr")):
-            code = module.main(args)
-        return {"code": 0 if code is None else int(code), "stdout": buffer.getvalue()}
-    except BaseException as exc:  # noqa: BLE001
-        return {"code": 1, "stdout": "", "error": f"{type(exc).__name__}: {exc}"}
+        # reset_runtime_closure keeps repeated warm builds recording the same
+        # sourceClosureHash a cold build would. stderr is captured rather than streamed:
+        # the cold path reports a failure's text in the payload, and warm must match.
+        noise = io.StringIO()
+        with contextlib.redirect_stdout(noise), contextlib.redirect_stderr(noise):
+            return dict(run(args, reset_runtime_closure=True))
+    except SystemExit as exc:
+        # argparse exits rather than raising. Cold reports the usage text and the code,
+        # so warm does too -- otherwise the same bad call reads as "SystemExit: 2" in one
+        # path and a usage message in the other.
+        code = exc.code if isinstance(exc.code, int) else 1
+        message = noise.getvalue().strip() or f"cadgen {module_name} exited with code {code}"
+        return {"ok": False, "exitCode": code, "error": message}
+    except BaseException as exc:  # noqa: BLE001 - a failed build must not kill the worker
+        detail = noise.getvalue().strip()
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}" + (f"\n{detail}" if detail else "")}
     finally:
         _park()
-        _evict_first_party_modules()
 
 
 def serve() -> int:

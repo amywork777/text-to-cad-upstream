@@ -243,3 +243,73 @@ def _run_request(conn: socket.socket, payload: dict) -> int | object | None:
     except (OSError, ValueError):
         return None
     return None  # EOF without an exit frame
+
+
+
+def invoke(module: str, args, repo_root: str) -> dict | None:
+    """Run a cadgen module in a warm worker and return its payload dict.
+
+    None means "not served" -- daemon unavailable, pool at capacity, or the caller is
+    already inside a worker -- and the caller should run cold. The CAD Viewer's bridge
+    uses this in place of the warm-worker system it used to own, so a terminal build and
+    a viewer build now share one set of warm processes.
+
+    Unlike run_via_daemon this does NOT gate on CADGEN_WARM: the viewer has its own
+    switch (VIEWER_CAD_WORKER=0), and a long-lived server is exactly the caller that
+    should always prefer warm.
+    """
+    if os.environ.get("CADGEN_DAEMON_CHILD"):
+        return None
+    payload = {
+        "kind": "invoke",
+        "module": str(module),
+        "args": [str(arg) for arg in args],
+        "repo_root": str(repo_root) if repo_root else os.getcwd(),
+        "token": compute_version_token(),
+    }
+    sock_path = socket_path()
+    for attempt in range(2):
+        conn = _connect_or_spawn(sock_path)
+        if conn is None:
+            return None
+        try:
+            outcome = _run_invoke(conn, payload)
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+        if outcome is _RESTART and attempt == 0:
+            continue  # stale daemon exited; respawn once and retry
+        return outcome if isinstance(outcome, dict) else None
+    return None
+
+
+def _run_invoke(conn: socket.socket, payload: dict) -> dict | object | None:
+    """Send an invoke request and read its single result frame."""
+    try:
+        conn.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        conn.shutdown(socket.SHUT_WR)
+        conn.settimeout(request_timeout() or None)
+        buffer = b""
+        while True:
+            chunk = conn.recv(65536)
+            if not chunk:
+                return None
+            buffer += chunk
+            while b"\n" in buffer:
+                line, buffer = buffer.split(b"\n", 1)
+                if not line.strip():
+                    continue
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    return None
+                if message.get("restart"):
+                    return _RESTART
+                if message.get("cold"):
+                    return None
+                if "result" in message:
+                    return message["result"] or {}
+    except (OSError, TimeoutError):
+        return None
