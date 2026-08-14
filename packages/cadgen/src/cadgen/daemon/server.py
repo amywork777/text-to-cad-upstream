@@ -250,6 +250,45 @@ def _watch_client(
             return
 
 
+def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: float) -> None:
+    """The CAD Viewer's contract: run a cadgen module and return its payload.
+
+    Same pool, same workers as the CLI path -- which is the point. The viewer used to
+    carry its own warm-worker system for exactly this, so a terminal build and a viewer
+    build each paid their own OCP import and neither could reuse the other's.
+    """
+    module = str(request.get("module") or "")
+    worker = _POOL.acquire()
+    if worker is None:
+        with send_lock:
+            _send(conn, {"cold": True})
+        return
+    healthy = True
+    try:
+        worker.send({
+            "kind": "invoke",
+            "module": module,
+            "args": [str(a) for a in request.get("args") or []],
+            "repo_root": request.get("repo_root"),
+        })
+        result = None
+        for frame in worker.frames():
+            if "result" in frame:
+                result = frame["result"]
+        with send_lock:
+            _send(conn, {"result": result or {}})
+    except pool_mod.WorkerGone as exc:
+        healthy = False
+        with contextlib.suppress(OSError):
+            with send_lock:
+                _send(conn, {"result": {"ok": False, "error": str(exc)}})
+    except OSError:
+        pass  # client vanished; the worker is fine
+    finally:
+        _POOL.release(worker, healthy=healthy and worker.alive())
+    _log(f"invoke {module} in {time.perf_counter() - started:.2f}s (worker {worker.pid})")
+
+
 def _handle_request(
     conn: socket.socket,
     request: dict,
@@ -267,10 +306,14 @@ def _handle_request(
     and are kept only so the signature matches what serve() passes.
     """
     del stdout_proxy, stderr_proxy
-    tool = request.get("tool")
-    argv = request.get("argv")
     send_lock = threading.Lock()
     started = time.perf_counter()
+    if request.get("kind") == "invoke":
+        _handle_invoke(conn, request, send_lock, started)
+        return
+
+    tool = request.get("tool")
+    argv = request.get("argv")
 
     if tool not in _TOOL_IMPORTS or not isinstance(argv, list):
         with send_lock:
