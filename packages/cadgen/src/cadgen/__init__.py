@@ -1,5 +1,7 @@
 """Shared CAD artifact generation runtime."""
 
+from typing import TYPE_CHECKING
+
 __all__ = [
     "__version__",
     "AssemblyHelper",
@@ -73,6 +75,26 @@ def __getattr__(name: str):
     if name == "__version__":
         return _resolve_version()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+if TYPE_CHECKING:
+    # Mirrors the lazy __getattr__ above so type checkers and editors see the root exports
+    # without importing OCP. Every name here must have a branch there. develop's version of
+    # this block pulled two names from the api alias module, which this branch deletes --
+    # they come from their real modules now.
+    from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
+    from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
+    from cadgen.instances import compound_from_instances
+    from cadgen.progress import report, track
+    from cadgen.step_scene import (
+        import_step,
+        load_step_scene,
+        located_shape,
+        occurrence_selector_id,
+        scene_occurrence_shape,
+    )
+    from cadgen.step_targets import validate_step_topology_artifact
+    from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
 
 def _resolve_version() -> str:

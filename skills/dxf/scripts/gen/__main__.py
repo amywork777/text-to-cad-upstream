@@ -11,14 +11,25 @@ from __future__ import annotations
 
 import sys
 
-# Drawing packages are content-addressed and ezdxf's object ordering depends on hash
-# randomization, so a build must be byte-deterministic. Re-exec once with the seed pinned
-# rather than hoping the caller set it.
 import os
 
+# Drawing packages are content-addressed (drawing.json dxfHash) and must be
+# byte-deterministic. ezdxf's object-section creation order depends on Python
+# hash randomization, so pin the seed and re-run once before any ezdxf import.
+#
+# subprocess rather than os.execv: on Windows execv hands the argument vector to the C
+# runtime, which re-joins it into a command line WITHOUT quoting, so an interpreter path
+# containing a space -- C:\Program Files\Python311\python.exe, which is where the
+# python.org all-users installer puts it -- arrives as two arguments and the child tries to
+# run "Files\Python311\python.exe" as a script relative to the working directory. subprocess
+# applies Windows quoting rules. Nothing is lost on POSIX either: os.execv never replaced the
+# process on Windows, so the parent lingered there regardless, and the child's exit code is
+# passed straight through here.
 if os.environ.get("PYTHONHASHSEED") != "0":
+    import subprocess
+
     os.environ["PYTHONHASHSEED"] = "0"
-    os.execv(sys.executable, [sys.executable, *sys.argv])
+    raise SystemExit(subprocess.run([sys.executable, *sys.argv], check=False).returncode)
 
 from pathlib import Path
 

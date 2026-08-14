@@ -30,6 +30,8 @@ import os
 import tempfile
 import time
 
+from cadgen._internal.atomic_replace import replace_atomic
+
 REGISTRY_DIR_NAME = "cadgen-viewer-info"
 _PROBE_TIMEOUT_S = 0.5
 
@@ -104,7 +106,10 @@ def register(host: str, port: int, *, pid: int | None = None) -> str:
     try:
         with open(temporary, "w", encoding="utf-8") as handle:
             json.dump(payload, handle)
-        os.replace(temporary, target)  # atomic: a reader never sees a partial entry
+        # Atomic so a reader never sees a partial entry, and through the shared helper
+        # so it inherits the WinError 32 retry every other rename in cadgen has
+        # (issue #241: an SMB redirector can still hold the handle we just closed).
+        replace_atomic(temporary, target)
     except OSError:
         try:
             os.unlink(temporary)

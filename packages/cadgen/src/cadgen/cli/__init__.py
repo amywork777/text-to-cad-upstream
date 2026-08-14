@@ -124,10 +124,19 @@ _DAEMON_TOOLS = {
 _HASH_SEED_COMMANDS = {"dxf gen", "dxf artifact"}
 
 
-def _reexec_with_stable_hash_seed() -> None:
+# subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows
+# execv hands the argument VECTOR to the C runtime, which re-joins it into a command line
+# without quoting, so an interpreter path containing a space -- C:\Program Files\... --
+# arrives as two arguments and the child tries to run the tail as a script. subprocess
+# applies Windows quoting rules, and nothing is lost on POSIX because execv never replaced
+# the process on Windows anyway. argv[0] is the console script or __main__.py; either runs
+# under python.
+def _rerun_with_stable_hash_seed() -> int:
+    """Re-run this command once with the seed pinned, and return its exit code."""
+    import subprocess
+
     os.environ["PYTHONHASHSEED"] = "0"
-    # argv[0] is the console script or __main__.py; either runs correctly under python.
-    os.execv(sys.executable, [sys.executable, *sys.argv])
+    return subprocess.run([sys.executable, *sys.argv], check=False).returncode
 
 
 def _run_via_daemon(tool: str, rest: list[str]) -> int | None:
@@ -183,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Both of these must happen before the command's module is imported.
     if command in _HASH_SEED_COMMANDS and os.environ.get("PYTHONHASHSEED") != "0":
-        _reexec_with_stable_hash_seed()
+        return _rerun_with_stable_hash_seed()
     daemon_tool = _DAEMON_TOOLS.get(command)
     if daemon_tool is not None:
         exit_code = _run_via_daemon(daemon_tool, rest)
