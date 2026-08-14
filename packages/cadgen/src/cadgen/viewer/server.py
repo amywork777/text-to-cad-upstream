@@ -2,7 +2,7 @@
 
 Serves the /__cad/* contract the client consumes: GET /__cad/server,
 GET /__cad/catalog, GET /__cad/asset, GET /__cad/download, GET /__cad/artifact,
-POST /__cad/artifact (build) and POST /__cad/export, plus the static dist/SPA and
+POST /__cad/artifact (build), POST /__cad/export and POST /__cad/reveal, plus the static dist/SPA and
 legacy Referer assets.
 
 Run: python -m cadgen.viewer.server [--port N] [--host H]
@@ -57,6 +57,7 @@ from cadgen.viewer import cadgen_bridge
 from cadgen.viewer import encoding as enc
 from cadgen.viewer import paths
 from cadgen.viewer import registry
+from cadgen.viewer import reveal
 from cadgen.viewer import server_info as server_info_mod
 from cadgen.viewer.content_types import content_type_for_static_asset
 
@@ -253,6 +254,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._artifact_build(q)
             elif path == "/__cad/export":
                 self._export(q)
+            elif path == "/__cad/reveal":
+                self._reveal(q)
             else:
                 self.send_response(405)
                 self.send_header("allow", "POST")
@@ -412,6 +415,43 @@ class Handler(BaseHTTPRequestHandler):
         next_catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
         status = 500 if result.get("ok") is False else 200
         self._send_json(status, {**result, "catalog": next_catalog})
+
+    def _reveal(self, q):
+        """Show an entry in the OS file manager.
+
+        The client and viewer/docs/backend.md have specified this route for a while and
+        no backend implemented it, so the "Reveal in Finder" menu item answered 405 and
+        surfaced an error. It resolves through the same containment as every other asset
+        route, and being a POST it sits behind the cross-site header gate -- which matters
+        more here than elsewhere, since it spawns a process.
+        """
+        root_dir = q.get("dir", "")
+        file_ref = q.get("file", "")
+        resolved = _Ctx.backend.resolve_root(root_dir) if root_dir else None
+        target = _Ctx.backend.contained_path_for_file_ref(file_ref, resolved_root=resolved, root_dir=root_dir)
+        if target and str(q.get("asset", "output")).strip() == "source":
+            catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=file_ref)
+            entry = _Ctx.backend.catalog_entry_for_file_ref(catalog, file_ref) or {}
+            source_path = ((entry.get("source") or {}) if isinstance(entry.get("source"), dict) else {}).get("sourcePath")
+            if source_path:
+                # Re-resolve rather than trusting the catalog: the same containment must
+                # apply to the source path as to the entry itself.
+                source_target = _Ctx.backend.contained_path_for_file_ref(
+                    source_path, resolved_root=resolved, root_dir=root_dir
+                )
+                if source_target:
+                    target = source_target
+        if not target or not os.path.exists(target):
+            self._send_json(404, {"ok": False, "error": "Not found"})
+            return
+        result = reveal.reveal_path(target)
+        if result.get("unsupported"):
+            self._send_json(501, {"ok": False, "error": "Revealing files is not supported here"})
+            return
+        if not result.get("ok"):
+            self._send_json(500, {"ok": False, "error": result.get("error", "Reveal failed")})
+            return
+        self._send_json(200, {"ok": True, "path": target})
 
     def _export(self, q):
         root_dir = q.get("dir", "")
