@@ -12,7 +12,6 @@ was ~600 lines of cross-validation wedged behind an argparse front end.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
-from math import isfinite
 from pathlib import Path
 
 from cadgen.findings import ValidationResult
@@ -20,6 +19,10 @@ from cadgen.srdf_source import SrdfPlanningGroup
 
 URDF_SUFFIX = ".urdf"
 MANUAL_PAIR_WARNING_THRESHOLD = 25
+
+# URDF errors that mean "the joint graph is not a usable tree" as opposed to "this file is
+# not a URDF". Only the first kind degrades to a warning here.
+_TREE_SHAPE_CODES = frozenset({"not_a_tree", "joint_graph_cycle", "disconnected_links", "wrong_joint_count"})
 
 
 def find_paired_urdf(robot_name: str, srdf_dir: Path) -> tuple[Path | None, list[Path]]:
@@ -71,60 +74,66 @@ def resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationRe
 
 
 def read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, object] | None:
+    """Read the paired URDF through cadgen's real URDF reader.
+
+    This used to hand-parse <robot> here, because the skill-isolation rule meant the srdf
+    skill could not import the urdf skill's source module. Both live in cadgen now, so the
+    duplicate is gone and SRDF validation sees exactly the URDF the URDF validator sees --
+    including the tree, cycle and mimic checks the local copy only approximated.
+
+    The paired URDF's own findings are deliberately NOT merged into the SRDF report: this
+    command validates the SRDF, and a broken URDF is one finding here plus a pointer at the
+    tool that explains it properly.
+    """
+    from cadgen.urdf_source import validate_urdf_file
+
     try:
-        root = ET.parse(urdf_path).getroot()
+        source, urdf_result = validate_urdf_file(urdf_path)
     except (OSError, ET.ParseError):
-        result.add("error", "invalid_paired_urdf", f"URDF is invalid XML: {display_path(urdf_path)}", path="/robot")
-        return None
-    if root.tag != "robot":
-        result.add("error", "invalid_paired_urdf", "URDF root must be <robot>", path="/robot")
-        return None
-    robot_name = str(root.get("name") or "").strip()
-    if not robot_name:
-        result.add("error", "invalid_paired_urdf", "URDF robot name is required", path="/robot")
-        return None
-    links = {
-        str(link.get("name") or "").strip()
-        for link in root.findall("link")
-        if str(link.get("name") or "").strip()
-    }
-    joints: dict[str, dict[str, object]] = {}
-    child_links: list[str] = []
-    for joint in root.findall("joint"):
-        name = str(joint.get("name") or "").strip()
-        if not name:
-            continue
-        parent_element = joint.find("parent")
-        child_element = joint.find("child")
-        joint_type = str(joint.get("type") or "").strip()
-        lower: float | None = None
-        upper: float | None = None
-        limit_element = joint.find("limit")
-        if limit_element is not None and joint_type in {"revolute", "prismatic"}:
-            lower = _optional_finite_float(limit_element.get("lower"))
-            upper = _optional_finite_float(limit_element.get("upper"))
-        child_link = str(child_element.get("link") if child_element is not None else "").strip()
-        child_links.append(child_link)
-        joints[name] = {
-            "type": joint_type,
-            "parent": str(parent_element.get("link") if parent_element is not None else "").strip(),
-            "child": child_link,
-            "lower": lower,
-            "upper": upper,
-            "mimic": joint.find("mimic") is not None,
-        }
-    # Chain-path and adjacency checks assume a well-formed tree; surface it if not.
-    roots = [link for link in links if link not in set(child_links)]
-    if len(roots) != 1 or len(set(child_links)) != len([c for c in child_links if c]):
         result.add(
-            "warning",
-            "paired_urdf_not_a_tree",
-            f"paired URDF {display_path(urdf_path)} is not a single-rooted tree; "
-            "chain and adjacency checks may be unreliable",
-            path="/robot",
-            hint="Validate the URDF with the URDF skill validator first.",
+            "error", "invalid_paired_urdf",
+            f"URDF is invalid XML: {display_path(urdf_path)}", path="/robot",
         )
-    return {"name": robot_name, "links": links, "joints": joints}
+        return None
+    if urdf_result.errors:
+        codes = {finding.code for finding in urdf_result.errors}
+        if codes <= _TREE_SHAPE_CODES:
+            # A malformed graph is the URDF's problem, not the SRDF's, so this stays a
+            # warning and the SRDF still passes -- the contract the hand-rolled reader had.
+            # The graph checks are skipped rather than run on a broken tree, which is the
+            # one narrowing here: that reader ran them and called them "unreliable".
+            result.add(
+                "warning",
+                "paired_urdf_not_a_tree",
+                f"paired URDF {display_path(urdf_path)} is not a single-rooted tree; "
+                "chain and adjacency checks were skipped",
+                path="/robot",
+                hint="Validate the URDF with the URDF skill validator first.",
+            )
+            return None
+        result.add(
+            "error", "invalid_paired_urdf",
+            f"paired URDF {display_path(urdf_path)} is not valid: "
+            f"{urdf_result.errors[0].message}",
+            path="/robot",
+            hint="Validate the URDF with the URDF skill validator for the full report.",
+        )
+        return None
+    return {
+        "name": source.robot_name,
+        "links": set(source.links),
+        "joints": {
+            joint.name: {
+                "type": joint.joint_type,
+                "parent": joint.parent_link,
+                "child": joint.child_link,
+                "lower": joint.lower,
+                "upper": joint.upper,
+                "mimic": joint.mimic,
+            }
+            for joint in source.joints
+        },
+    }
 
 
 def validate_srdf_against_urdf(
@@ -361,15 +370,6 @@ def _links_are_adjacent(urdf_robot: dict[str, object], link1: str, link2: str) -
             return True
     return False
 
-
-def _optional_finite_float(value: object) -> float | None:
-    if value is None:
-        return None
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return None
-    return parsed if isfinite(parsed) else None
 
 
 def _joint_path_for_chain(urdf_robot: dict[str, object], *, base_link: str, tip_link: str) -> list[str]:

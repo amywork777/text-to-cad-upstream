@@ -65,6 +65,9 @@ class UrdfJoint:
     # Fixed joints carry (0.0, 0.0); continuous joints carry (None, None).
     lower: float | None
     upper: float | None
+    # Whether the joint is driven by another via <mimic>. Not a planning variable, so
+    # SRDF validation must not let a group state set it.
+    mimic: bool = False
 
 
 @dataclass(frozen=True)
@@ -290,6 +293,7 @@ def validate_urdf_xml(
                 child_link=child_link,
                 lower=lower,
                 upper=upper,
+                mimic=bool(mimic_target),
             )
         )
 
