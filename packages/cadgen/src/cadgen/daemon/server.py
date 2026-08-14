@@ -66,6 +66,10 @@ _TOOL_IMPORTS = {
 }
 _TOOL_MAINS: dict[str, object] = {}
 
+from cadgen.daemon import pool as pool_mod  # noqa: E402 - after _TOOL_IMPORTS, which worker.py reads
+
+_POOL = pool_mod.Pool()
+
 
 class _DaemonShutdown(BaseException):
     """Raised from the SIGTERM/SIGINT handler. A BaseException subclass distinct
@@ -220,18 +224,20 @@ def _watch_client(
     send_lock: threading.Lock,
     done: threading.Event,
     tool: str,
+    worker,
 ) -> None:
-    """Abort the daemon when the requesting client vanishes mid-job.
+    """Kill the WORKER when the requesting client vanishes mid-job.
 
-    Clients half-close their write side right after the request, so read-side
-    EOF is normal and the only reliable death signal is a FAILED SEND (AF_UNIX
-    raises immediately once the peer socket is gone). An empty stdout chunk is
-    a no-op for every client, so it doubles as the liveness probe. Requests
-    are strictly sequential, so the only in-flight work belongs to the dead
-    requester: exiting hard is correct — the killed client's job stops burning
-    CPU, and the next invocation transparently respawns a fresh daemon (the
-    client already treats a missing/refused socket that way) instead of
-    queueing silently behind an orphaned build."""
+    Clients half-close their write side right after the request, so read-side EOF is
+    normal and the only reliable death signal is a FAILED SEND (AF_UNIX raises immediately
+    once the peer socket is gone). An empty stdout chunk is a no-op for every client, so
+    it doubles as the liveness probe.
+
+    The single-process daemon had to exit outright here, because the orphaned build was
+    running inside it and there was no smaller thing to stop. With a pool there is: kill
+    the one worker, leave the supervisor and every other job alone. The pool replaces it
+    on the next acquire.
+    """
     while not done.wait(CLIENT_LIVENESS_INTERVAL_SECONDS):
         try:
             with send_lock:
@@ -239,11 +245,9 @@ def _watch_client(
         except OSError:
             if done.is_set():
                 return
-            _log(f"{tool}: client disconnected mid-request; aborting orphaned job "
-                 "(next call spawns a fresh daemon)")
-            with contextlib.suppress(OSError):
-                os.unlink(socket_path())
-            os._exit(0)
+            _log(f"{tool}: client disconnected mid-request; killing worker {worker.pid}")
+            worker.kill()
+            return
 
 
 def _handle_request(
@@ -252,66 +256,90 @@ def _handle_request(
     stdout_proxy: _StreamProxy,
     stderr_proxy: _StreamProxy,
 ) -> None:
+    """Relay one job to a warm worker and stream its frames back to the client.
+
+    The supervisor no longer runs tools itself. It used to, which is why it could hold
+    exactly one job: a tool needs os.chdir and sys.argv, and those are process globals.
+    Each worker is its own process with its own globals, so jobs run concurrently without
+    any of that reasoning -- and a segfaulting model costs one worker, not the daemon.
+
+    The proxies are vestigial here (nothing in this process writes tool output any more)
+    and are kept only so the signature matches what serve() passes.
+    """
+    del stdout_proxy, stderr_proxy
     tool = request.get("tool")
     argv = request.get("argv")
-    cwd = request.get("cwd")
     send_lock = threading.Lock()
-    out = _ChunkWriter(conn, "stdout", send_lock)
-    err = _ChunkWriter(conn, "stderr", send_lock)
-    previous_cwd = os.getcwd()
-    previous_argv = sys.argv
-    stdout_proxy.set_target(out)
-    stderr_proxy.set_target(err)
-    exit_code = 1
     started = time.perf_counter()
+
+    if tool not in _TOOL_IMPORTS or not isinstance(argv, list):
+        with send_lock:
+            _send(conn, {"stream": "stderr", "data": f"cadgen-daemon: invalid request for tool {tool!r}\n"})
+            _send(conn, {"exit": 1})
+        return
+
+    worker = _POOL.acquire()
+    if worker is None:
+        # Every worker busy and the pool is capped. Queueing here is what made the old
+        # single-process daemon worse than useless for parallel work, so tell the client
+        # to run cold instead.
+        _log(f"{tool}: pool at capacity; client runs cold")
+        with send_lock:
+            _send(conn, {"cold": True})
+        return
+
+    exit_code, healthy = 1, True
     watchdog_done = threading.Event()
-    watchdog: threading.Thread | None = None
+    watchdog = threading.Thread(
+        target=_watch_client, args=(conn, send_lock, watchdog_done, tool, worker), daemon=True
+    )
+    watchdog.start()
     try:
-        if tool not in _TOOL_IMPORTS or not isinstance(argv, list):
-            err.write(f"cadgen-daemon: invalid request for tool {tool!r}\n")
-        else:
-            if isinstance(cwd, str) and os.path.isdir(cwd):
-                os.chdir(cwd)
-            argv = [str(arg) for arg in argv]
-            prog = str(request.get("prog") or "") or None
-            sys.argv = [prog or f"scripts/{tool}", *argv]
-            watchdog = threading.Thread(
-                target=_watch_client,
-                args=(conn, send_lock, watchdog_done, str(tool)),
-                daemon=True,
-            )
-            watchdog.start()
-            try:
-                # Pass the caller's program name where the parser accepts one, exactly
-                # as cadgen.cli's dispatch does. Without it the parser falls back to its
-                # DEFAULT_PROG and `cadgen step gen --help` printed "usage: scripts/gen"
-                # warm against "usage: cadgen step gen" cold -- one command, two names,
-                # depending on whether a daemon happened to be running.
-                tool_main = _tool_main(tool)
-                if prog and "prog" in inspect.signature(tool_main).parameters:
-                    result = tool_main(argv, prog=prog)
-                else:
-                    result = tool_main(argv)
-                exit_code = 0 if result is None else int(result)
-            except _DaemonShutdown:
-                raise
-            except SystemExit as exc:
-                exit_code = _exit_code(exc, err)
-            except BaseException:  # noqa: BLE001 — a failed build must not kill the daemon
-                err.write(traceback.format_exc())
+        worker.send({
+            "kind": "run",
+            "tool": tool,
+            "prog": request.get("prog"),
+            "argv": [str(a) for a in argv],
+            "cwd": request.get("cwd"),
+        })
+        for frame in worker.frames():
+            if "exit" in frame:
+                exit_code = int(frame.get("exit") or 0)
+                break
+            with send_lock:
+                _send(conn, frame)
+    except pool_mod.WorkerGone as exc:
+        healthy = False
+        with send_lock:
+            _send(conn, {"stream": "stderr", "data": f"cadgen-daemon: {exc}\n"})
+    except OSError:
+        # The CLIENT went away mid-job. The worker is fine; stop relaying.
+        healthy = True
     finally:
         watchdog_done.set()
-        if watchdog is not None:
-            watchdog.join(timeout=CLIENT_LIVENESS_INTERVAL_SECONDS + 1.0)
-        stdout_proxy.reset()
-        stderr_proxy.reset()
-        sys.argv = previous_argv
+        watchdog.join(timeout=CLIENT_LIVENESS_INTERVAL_SECONDS + 1.0)
+        # A killed worker is not reusable; release() drops it and the pool respawns.
+        _POOL.release(worker, healthy=healthy and worker.alive())
+
+    _log(f"{tool} {argv!r} -> exit {exit_code} in {time.perf_counter() - started:.2f}s "
+         f"(worker {worker.pid})")
+    with contextlib.suppress(OSError):
+        with send_lock:
+            _send(conn, {"exit": exit_code})
+
+
+_INFLIGHT: set[threading.Thread] = set()
+
+
+def _serve_connection(conn, request, stdout_proxy, stderr_proxy) -> None:
+    try:
+        _handle_request(conn, request, stdout_proxy, stderr_proxy)
+    except Exception:  # noqa: BLE001 - a job must never kill the supervisor
+        _log("unhandled error serving a job:\n" + traceback.format_exc())
+    finally:
+        _INFLIGHT.discard(threading.current_thread())
         with contextlib.suppress(OSError):
-            os.chdir(previous_cwd)
-        _evict_first_party_modules()
-    _log(f"{tool} {argv!r} -> exit {exit_code} in {time.perf_counter() - started:.2f}s")
-    with send_lock:
-        _send(conn, {"exit": exit_code})
+            conn.close()
 
 
 def serve() -> int:
@@ -346,6 +374,9 @@ def serve() -> int:
             try:
                 conn, _ = server.accept()
             except TimeoutError:
+                if any(thread.is_alive() for thread in list(_INFLIGHT)):
+                    continue  # a long build is still running; not idle
+                _POOL.reap_idle()
                 _log("idle timeout; exiting")
                 return 0
             try:
@@ -362,16 +393,29 @@ def serve() -> int:
                         _send(conn, {"restart": True})
                     _log("version token changed; restarting")
                     return 0
-                _handle_request(conn, request, stdout_proxy, stderr_proxy)
+                # One thread per job so a second client is served rather than queued.
+                # The supervisor itself stays trivial -- it never imports OCP, so no
+                # amount of model badness can take it down.
+                worker_thread = threading.Thread(
+                    target=_serve_connection,
+                    args=(conn, request, stdout_proxy, stderr_proxy),
+                    daemon=True,
+                )
+                _INFLIGHT.add(worker_thread)
+                worker_thread.start()
+                conn = None  # the thread owns it now
             except OSError:
                 continue  # client vanished mid-request; keep serving
             finally:
-                with contextlib.suppress(OSError):
-                    conn.close()
+                if conn is not None:
+                    with contextlib.suppress(OSError):
+                        conn.close()
+            _POOL.reap_idle()
     except _DaemonShutdown:
         _log("signal received; exiting")
         return 0
     finally:
+        _POOL.shutdown()
         with contextlib.suppress(OSError):
             server.close()
         with contextlib.suppress(OSError):
