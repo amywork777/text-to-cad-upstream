@@ -139,7 +139,7 @@ def _rerun_with_stable_hash_seed() -> int:
     return subprocess.run([sys.executable, *sys.argv], check=False).returncode
 
 
-def _run_via_daemon(tool: str, rest: list[str]) -> int | None:
+def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
     """Exit code when the daemon handled it, None to run in this process.
 
     CADGEN_DAEMON_CHILD is set in the process the daemon serves from, so this cannot
@@ -151,7 +151,7 @@ def _run_via_daemon(tool: str, rest: list[str]) -> int | None:
         from cadgen.daemon.client import run_via_daemon
     except ModuleNotFoundError:
         return None
-    return run_via_daemon(tool, rest, os.getcwd())
+    return run_via_daemon(tool, rest, os.getcwd(), prog=prog)
 
 
 _USAGE_HEAD = "usage: cadgen <command> [args...]\n\ncommands:\n"
@@ -195,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
         return _rerun_with_stable_hash_seed()
     daemon_tool = _DAEMON_TOOLS.get(command)
     if daemon_tool is not None:
-        exit_code = _run_via_daemon(daemon_tool, rest)
+        exit_code = _run_via_daemon(daemon_tool, rest, f"cadgen {command}")
         if exit_code is not None:
             return exit_code
 
