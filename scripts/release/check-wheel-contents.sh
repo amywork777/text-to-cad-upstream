@@ -64,6 +64,7 @@ REQUIRED=(
   # cannot spawn a worker, so every build silently falls back to cold.
   "cadgen/daemon/pool.py"
   "cadgen/daemon/worker.py"
+  "cadgen/cli/daemon_status.py"
   # Doubles as a rename sentinel: step_artifacts.py became step_topology_artifact.py, so a
   # merge that resurrected the old name would ship a wheel missing this one.
   "cadgen/step_topology_artifact.py"

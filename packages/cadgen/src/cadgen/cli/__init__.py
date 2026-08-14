@@ -55,6 +55,8 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "viewer list": ("cadgen.cli.viewer_list", "list running CAD Viewers"),
     "viewer stop": ("cadgen.cli.viewer_stop", "stop a running CAD Viewer"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
+    # Two-word first, same dispatch trap as `viewer list`.
+    "daemon status": ("cadgen.cli.daemon_status", "show the warm daemon's workers"),
 }
 
 # `cadgen==1.2.3` / `cadgen[snapshot]==1.2.3`, as written by
