@@ -126,6 +126,13 @@ class Worker:
                         proc.kill()
         except OSError:
             pass
+        finally:
+            # Close the pipes explicitly; a supervisor that churns workers over a long
+            # session would otherwise leak a file descriptor pair per worker.
+            for stream in (proc.stdin, proc.stdout):
+                if stream is not None:
+                    with contextlib.suppress(OSError):
+                        stream.close()
 
 
 class Pool:
