@@ -34,7 +34,23 @@ fi
 # Paths every wheel must carry. The Node builders are what cadgen spawns for DXF and
 # implicit; the browser bundle is what the snapshot CLI loads in a page.
 REQUIRED=(
+  # The Python the wheel must actually contain. Asset globs were the whole list once,
+  # back when cadgen was Python-plus-data; it now also carries the CLI parsers, the CAD
+  # Viewer backend and the warm daemon, and a packages.find regression that dropped any
+  # of them would produce a wheel whose `cadgen` console script dies at import. This is
+  # the ONLY packaging gate the publish job runs -- test-installed.sh covers the same
+  # ground far better but runs in test.yml, not at publish.
+  "cadgen/__init__.py"
   "cadgen/assets.py"
+  "cadgen/cli/__init__.py"
+  "cadgen/cli/step_gen.py"
+  "cadgen/viewer/__init__.py"
+  "cadgen/viewer/server.py"
+  "cadgen/daemon/__init__.py"
+  "cadgen/daemon/server.py"
+  # Doubles as a rename sentinel: step_artifacts.py became step_topology_artifact.py, so a
+  # merge that resurrected the old name would ship a wheel missing this one.
+  "cadgen/step_topology_artifact.py"
   "cadgen/_internal/node_resolve_register.mjs"
   "cadgen/_internal/node_resolve_hooks.mjs"
   "cadgen/_runtime/node/dxf-artifact.mjs"

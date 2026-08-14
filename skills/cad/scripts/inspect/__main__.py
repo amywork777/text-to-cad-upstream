@@ -10,6 +10,20 @@ instruction instead of a traceback.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
+
+# Fail fast when the installed cadgen is not the one this skill was published against:
+# every line below runs INSIDE that install, including the warm-daemon handoff.
+try:
+    from cadgen.cli import enforce_requirements_pin
+except ModuleNotFoundError:
+    sys.stderr.write(
+        "cadgen is not installed. From the skill directory run:\n"
+        "  python -m pip install -r requirements.txt\n"
+    )
+    raise SystemExit(3)
+
+enforce_requirements_pin(Path(__file__).resolve().parents[2] / "requirements.txt")
 
 # Warm-daemon handoff, BEFORE the cadgen import below -- that import is the multi-second
 # OCP/build123d cost the daemon exists to avoid paying per invocation. The daemon sets
@@ -26,14 +40,7 @@ if os.environ.get("CADGEN_WARM") == "1" and not os.environ.get("CADGEN_DAEMON_CH
         if _warm_exit is not None:
             raise SystemExit(_warm_exit)
 
-try:
-    from cadgen.cli import step_inspect as _cli
-except ModuleNotFoundError:
-    sys.stderr.write(
-        "cadgen is not installed. From the skill directory run:\n"
-        "  python -m pip install -r requirements.txt\n"
-    )
-    raise SystemExit(3)
+from cadgen.cli import step_inspect as _cli
 
 
 if __name__ == "__main__":

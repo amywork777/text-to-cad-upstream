@@ -10,15 +10,22 @@ instruction instead of a traceback.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
+# Fail fast when the installed cadgen is not the one this skill was published against:
+# everything below this line runs INSIDE that install.
 try:
-    from cadgen.cli import implicit_snapshot as _cli
+    from cadgen.cli import enforce_requirements_pin
 except ModuleNotFoundError:
     sys.stderr.write(
         "cadgen is not installed. From the skill directory run:\n"
         "  python -m pip install -r requirements.txt\n"
     )
     raise SystemExit(3)
+
+enforce_requirements_pin(Path(__file__).resolve().parents[2] / "requirements.txt")
+
+from cadgen.cli import implicit_snapshot as _cli
 
 # Re-exported so this entry still answers "which inputs does this skill accept" without a
 # caller having to know which cadgen module backs it.
