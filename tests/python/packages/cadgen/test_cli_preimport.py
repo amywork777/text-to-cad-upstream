@@ -30,13 +30,21 @@ import cadgen.cli as cli  # noqa: E402
 
 
 class DaemonHandoff(unittest.TestCase):
-    def test_the_daemon_serves_exactly_the_step_commands(self):
-        # The daemon's _TOOL_IMPORTS are all cadgen.cli.step_*; a dxf or implicit command
-        # routed there would import the wrong module.
+    def test_every_routed_command_has_a_tool_the_daemon_knows(self):
+        # A command mapped to a name the daemon does not import would fail at runtime
+        # with nothing useful; this is the only place the two registries meet.
         from cadgen.daemon import server
 
         self.assertEqual(set(cli._DAEMON_TOOLS.values()), set(server._TOOL_IMPORTS))
-        self.assertTrue(all(name.startswith("step ") for name in cli._DAEMON_TOOLS))
+
+    def test_the_served_set_is_step_and_dxf(self):
+        # dxf joined once workers carried PYTHONHASHSEED=0: a served dxf build is
+        # deterministic without the interpreter restart the cold path needs.
+        self.assertEqual(
+            set(cli._DAEMON_TOOLS),
+            {"step gen", "step export", "step artifact", "step inspect", "step snapshot",
+             "dxf gen", "dxf artifact"},
+        )
 
     def test_a_step_command_hands_off_and_never_imports_the_module(self):
         with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
@@ -56,7 +64,8 @@ class DaemonHandoff(unittest.TestCase):
             self.assertEqual(cli.main(["step", "gen", "part.step.py"]), 0)
         imported.assert_called_once()
 
-    def test_no_handoff_without_CADGEN_WARM(self):
+    def test_no_handoff_when_explicitly_disabled(self):
+        # Warm is the default now; CADGEN_WARM=0 is the opt-out.
         with mock.patch.dict("os.environ", {"CADGEN_WARM": "0"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
@@ -73,22 +82,36 @@ class DaemonHandoff(unittest.TestCase):
             cli.main(["step", "gen", "x"])
         daemon.assert_not_called()
 
-    def test_a_non_step_command_is_never_routed_to_the_daemon(self):
-        # PYTHONHASHSEED pinned so the dxf branch does not really re-exec the test runner
-        # -- which is exactly what the first draft of this test did.
-        with mock.patch.dict(
-            "os.environ", {"CADGEN_WARM": "1", "PYTHONHASHSEED": "0"}, clear=False
-        ), \
-                mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
-                mock.patch.object(cli.importlib, "import_module") as imported:
-            imported.return_value.main.return_value = 0
-            cli.main(["dxf", "gen", "x"])
-        daemon.assert_not_called()
+    def test_an_unserved_command_is_never_routed_to_the_daemon(self):
+        # implicit and the generic snapshot have no warm tool; routing them would import
+        # the wrong module in the worker.
+        for command in (["implicit", "gen", "x"], ["snapshot", "x"], ["viewer", "list"]):
+            with self.subTest(command=command):
+                with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
+                        mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
+                        mock.patch.object(cli.importlib, "import_module") as imported:
+                    imported.return_value.main.return_value = 0
+                    cli.main(command)
+                daemon.assert_not_called()
+
+    def test_a_served_dxf_build_skips_the_hash_seed_rerun(self):
+        # The worker already has a stable seed, so paying an interpreter restart on the
+        # warm path would be pure waste.
+        with mock.patch.dict("os.environ", {"CADGEN_WARM": "1", "PYTHONHASHSEED": ""}, clear=False), \
+                mock.patch("cadgen.daemon.client.run_via_daemon", return_value=0) as daemon, \
+                mock.patch("subprocess.run") as rerun:
+            self.assertEqual(cli.main(["dxf", "gen", "x"]), 0)
+        daemon.assert_called_once()
+        rerun.assert_not_called()
 
 
 class HashSeedRerun(unittest.TestCase):
+    """The COLD re-run. Every case sets CADGEN_WARM=0: warm is the default now, and a
+    served build gets its stable seed from the worker's environment instead, so without
+    the opt-out these would route past the code they are about."""
+
     def test_a_dxf_build_reruns_when_the_seed_is_unset(self):
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             run.return_value = mock.Mock(returncode=0)
@@ -101,7 +124,7 @@ class HashSeedRerun(unittest.TestCase):
 
     def test_the_reruns_exit_code_reaches_the_caller(self):
         # Swallowing it would turn every failed generator into a success.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(cli.importlib, "import_module"):
             run.return_value = mock.Mock(returncode=3)
@@ -109,7 +132,7 @@ class HashSeedRerun(unittest.TestCase):
 
     def test_no_rerun_once_the_seed_is_already_stable(self):
         # Otherwise the second pass would spawn again, forever.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0", "CADGEN_WARM": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
@@ -121,7 +144,7 @@ class HashSeedRerun(unittest.TestCase):
         # interpreter start on the daemon's hot path.
         for command in (["step", "gen", "x"], ["dxf", "snapshot", "x"], ["implicit", "gen", "x"]):
             with self.subTest(command=command):
-                with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
+                with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
                         mock.patch("subprocess.run") as run, \
                         mock.patch.object(cli.importlib, "import_module") as imported:
                     imported.return_value.main.return_value = 0
@@ -135,7 +158,7 @@ class HashSeedRerun(unittest.TestCase):
             recorded["seed"] = cli.os.environ.get("PYTHONHASHSEED")
             return mock.Mock(returncode=0)
 
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
                 mock.patch("subprocess.run", side_effect=capture), \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
