@@ -168,6 +168,13 @@ function cadViewerBackendProxyPlugin() {
       // cadgen the chosen interpreter has (the repo's editable install, in dev).
       const env = cadPythonEnv();
       env.VIEWER_AGENT_START_MODE = env.VIEWER_AGENT_START_MODE || "dev";
+      // The backend registers itself for `cadgen viewer list`, but in dev the URL a human
+      // opens is vite's, not the backend's ephemeral port -- so hand it down rather than
+      // let the registry guess from host:port and advertise an unusable URL.
+      const devPort = server.config.server?.port;
+      if (devPort) {
+        env.CADGEN_VIEWER_PUBLIC_URL = `http://127.0.0.1:${devPort}/`;
+      }
       // No --dir: a URL path IS the directory. cwd is the backend's only fallback,
       // used when a request names no directory at all (the bare origin).
       child = spawn(

@@ -43,6 +43,7 @@ above hold.
 from __future__ import annotations
 
 import argparse
+import atexit
 import os
 import posixpath
 import re
@@ -55,6 +56,7 @@ from cadgen.viewer import backend as backend_mod
 from cadgen.viewer import cadgen_bridge
 from cadgen.viewer import encoding as enc
 from cadgen.viewer import paths
+from cadgen.viewer import registry
 from cadgen.viewer import server_info as server_info_mod
 from cadgen.viewer.content_types import content_type_for_static_asset
 
@@ -138,6 +140,7 @@ def _server_info(root_dir: str = "") -> dict:
         port=_Ctx.port,
         host=_Ctx.host,
         backend="local-fs",
+        viewer_version=registry.cadgen_version(),
         step_artifact_generation_available=True,
         server_mode="serve",
         server_features=LOCAL_SERVER_FEATURES,
@@ -471,10 +474,17 @@ def main(argv=None):
 
     httpd = ThreadingHTTPServer((args.host, _Ctx.port), Handler)
     print(f"Python CAD Viewer backend listening on http://{args.host}:{_Ctx.port}/ (local-fs)")
+
+    # Announce this instance so `cadgen viewer list` can find it. After the bind, so we
+    # never advertise a port we failed to take.
+    registry.register(args.host, _Ctx.port)
+    atexit.register(registry.unregister)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         httpd.shutdown()
+    finally:
+        registry.unregister()
     return 0
 
 

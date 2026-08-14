@@ -6,6 +6,7 @@ empty.
 from __future__ import annotations
 
 import os
+import time
 
 from .paths import filesystem_path_from_url_path
 
@@ -32,6 +33,19 @@ def _resolve_view_root(root_dir: str) -> dict:
     `C:\\D:\\models`."""
     resolved = os.path.abspath(filesystem_path_from_url_path(str(root_dir or "").strip()) or os.getcwd())
     return {"dir": resolved, "rootPath": resolved, "rootName": os.path.basename(resolved)}
+
+
+_STARTED_AT = time.time()
+
+
+def _package_dir() -> str:
+    """Directory of the running cadgen package, i.e. which checkout is answering."""
+    try:
+        import cadgen
+
+        return os.path.dirname(os.path.abspath(cadgen.__file__ or ""))
+    except Exception:  # noqa: BLE001 - identity metadata must never break a response
+        return ""
 
 
 def build_viewer_server_info(
@@ -63,5 +77,11 @@ def build_viewer_server_info(
     info["port"] = normalized_port
     info["pid"] = pid if isinstance(pid, int) else os.getpid()
     info["stepArtifactGenerationAvailable"] = step_artifact_generation_available is not False
+    # Identity, for the instance registry: `cadgen viewer list` probes this endpoint and
+    # requires the pid above to match its entry, and reports which checkout's code that
+    # pid is running -- the thing two viewers on two ports actually differ by. Additive
+    # only; the SPA reads this payload.
+    info["packageDir"] = _package_dir()
+    info["startedAt"] = _STARTED_AT
     info["url"] = f"http://{host}:{normalized_port}"
     return info

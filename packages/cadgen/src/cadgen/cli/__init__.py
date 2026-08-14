@@ -48,6 +48,11 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     # Generic / services
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
     "viewer": ("cadgen.viewer.start_viewer", "start the CAD Viewer on a local directory"),
+    # Two-word entries are required, not cosmetic: dispatch matches argv[0:2] first, so
+    # without these `cadgen viewer list` falls through to one-word `viewer` and the
+    # launcher treats "list" as a stray argument.
+    "viewer list": ("cadgen.cli.viewer_list", "list running CAD Viewers"),
+    "viewer stop": ("cadgen.cli.viewer_stop", "stop a running CAD Viewer"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
 }
 
