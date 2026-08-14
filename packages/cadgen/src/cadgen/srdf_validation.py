@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from cadgen.findings import ValidationResult
+from cadgen.xml_common import display_path
 from cadgen.srdf_source import SrdfPlanningGroup
 
 URDF_SUFFIX = ".urdf"
@@ -642,13 +643,3 @@ def _check_names_exist(
             )
 
 
-def display_path(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        return resolved.relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return resolved.as_posix()
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

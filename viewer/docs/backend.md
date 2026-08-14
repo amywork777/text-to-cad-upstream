@@ -90,9 +90,12 @@ on the containing folder), and answers 501 where no file manager is known or whe
 `VIEWER_DISABLE_NATIVE_REVEAL=1`. Because it transfers no bytes, `reveal` resolves paths
 with `contained_path_for_file_ref` -- the root and hidden-path rules without the
 served-asset extension filter, so a `.step.py` generator can be revealed even though it
-is never streamed. `asset=output` resolves
-the catalog entry file itself; `asset=source` resolves optional source code, such
-as a same-stem Python generator for Python-backed STEP files.
+is never streamed. `asset=output` resolves the catalog entry file itself; `asset=source` resolves optional
+source code, such as a same-stem Python generator for Python-backed STEP files.
+
+`download` serves OUTPUTS only -- the artifacts the viewer may have to (re)generate. It
+never streams source code: a `.step.py` is not in the served-asset extension set, so
+`asset=source` is not offered for download and the UI wires it only to `reveal`.
 
 **Every POST must send `x-cadgen-viewer: 1`.** The value carries no meaning — a
 custom header is what forces a browser to preflight a cross-origin request, and the
