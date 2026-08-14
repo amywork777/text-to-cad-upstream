@@ -82,11 +82,15 @@ Vite dev mounts this backend for:
 - `GET /__cad/download?file=...&asset=output|source`
 - `POST /__cad/artifact?dir=...&file=...` (build; `&force=1` to rebuild)
 - `POST /__cad/export?dir=...&file=...&format=...`
-- `POST /__cad/reveal?file=...&asset=output|source` — **client-side only today**: the
-  Python backend has no such route, so this currently answers 405.
+- `POST /__cad/reveal?file=...&asset=output|source`
 
-`download` streams the requested asset bytes from the local backend. `reveal`
-opens the asset in Finder or the platform file manager. `asset=output` resolves
+`download` streams the requested asset bytes from the local backend. `reveal` opens the
+asset in Finder or the platform file manager (`open -R` / `explorer /select,` / `xdg-open`
+on the containing folder), and answers 501 where no file manager is known or when
+`VIEWER_DISABLE_NATIVE_REVEAL=1`. Because it transfers no bytes, `reveal` resolves paths
+with `contained_path_for_file_ref` -- the root and hidden-path rules without the
+served-asset extension filter, so a `.step.py` generator can be revealed even though it
+is never streamed. `asset=output` resolves
 the catalog entry file itself; `asset=source` resolves optional source code, such
 as a same-stem Python generator for Python-backed STEP files.
 

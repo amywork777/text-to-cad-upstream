@@ -208,6 +208,30 @@ class LocalAssetBackend:
                 return None
         return candidate
 
+    def contained_path_for_file_ref(self, file_ref: str, resolved_root: dict | None = None, root_dir: str = "") -> str | None:
+        """Containment WITHOUT the served-asset extension filter, for callers that do not
+        stream bytes.
+
+        `asset_path_for_file_ref` answers "may the server send this file's contents", so it
+        also asks `is_served_cad_asset` -- which excludes a `.step.py` generator. Revealing
+        a file in the OS file manager transfers nothing, so that question does not apply,
+        but the root and hidden-path rules still must.
+        """
+        normalized = normalized_file_ref(file_ref)
+        if not normalized or not os.path.isabs(normalized):
+            return None
+        candidate = os.path.abspath(normalized)
+        if scanner._is_hidden_name(os.path.basename(candidate)):
+            return None
+        active = resolved_root or (self.resolve_root(root_dir) if root_dir else None)
+        if active:
+            if not (candidate == active["rootPath"] or scanner.path_is_inside(candidate, active["rootPath"])):
+                raise ForbiddenAssetError("Forbidden")
+            relative = os.path.relpath(candidate, active["rootPath"])
+            if any(part.startswith(".") for part in relative.split(os.sep) if part and part != ".."):
+                return None
+        return candidate
+
     def content_type_for_path(self, file_path: str) -> str:
         return content_type_for_path(file_path)
 
