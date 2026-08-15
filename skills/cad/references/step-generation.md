@@ -149,10 +149,18 @@ CADGEN_WARM=0 python scripts/gen part.step.py   # force a cold in-process run
   normal work means the machine is genuinely saturated, not that the cap is too small.
 - Both front doors use it — `scripts/gen` and `cadgen step gen` alike — and so does the
   CAD Viewer, so a terminal build and a viewer build share the same warm processes.
-- The daemon is **per worktree**: the socket is
-  `$TMPDIR/cadgen-daemon-<sha256(worktree-root)[:12]>.sock` (falling back to
-  `/tmp`), with a `.log` file beside it for daemon lifecycle and C-level OCP
-  noise. `CADGEN_DAEMON_SOCKET` overrides the socket path.
+- **It runs on Windows too.** The channel is a Unix socket on macOS and Linux and a named
+  pipe on Windows, both through `multiprocessing.connection`, so warm builds are not a
+  POSIX-only feature. A named pipe is ACL'd to its creator exactly as a Unix socket takes
+  its permissions from the filesystem — a loopback TCP port would have been reachable by
+  any local process, which is not a property to give up on a channel that runs code.
+- The daemon is **per worktree**, keyed by `sha256(cadgen-dir)[:12]`:
+  `<tempdir>/cadgen-daemon/cadgen-daemon-v<protocol>-<key>.sock` on POSIX, and
+  `\\.\pipe\cadgen-daemon-v<protocol>-<key>` on Windows. A `.log` file holds daemon
+  lifecycle and C-level OCP noise. `CADGEN_DAEMON_SOCKET` overrides the address, and means
+  a path or a pipe name depending on the platform. The address carries a protocol version,
+  so a client never reaches a daemon speaking an older wire format — it starts its own and
+  the old one idles out.
 - **Staleness:** the daemon records a version token at startup. When a client's token
   differs — i.e. cadgen changed — the daemon exits and the client transparently respawns
   a fresh one, so edits to runtime code always take effect on the next call.

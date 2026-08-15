@@ -233,10 +233,10 @@ def _watch_client(
 ) -> None:
     """Kill the WORKER when the requesting client vanishes mid-job.
 
-    Clients half-close their write side right after the request, so read-side EOF is
-    normal and the only reliable death signal is a FAILED SEND (AF_UNIX raises immediately
-    once the peer socket is gone). An empty stdout chunk is a no-op for every client, so
-    it doubles as the liveness probe.
+    A client sends one request frame and then only reads, so having nothing to read from
+    it is the normal state rather than a symptom. The reliable death signal is a FAILED
+    SEND: the channel raises as soon as the peer is gone. An empty stdout chunk is a no-op
+    for every client, so it doubles as the liveness probe.
 
     The single-process daemon had to exit outright here, because the orphaned build was
     running inside it and there was no smaller thing to stop. With a pool there is: kill

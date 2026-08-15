@@ -111,7 +111,7 @@ def _physical_memory() -> int | None:
         return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
     except (ValueError, OSError, AttributeError):
         pass
-    if sys.platform == "win32":  # pragma: no cover - no daemon on Windows yet
+    if sys.platform == "win32":  # pragma: no cover - not exercised by the POSIX runners
         import ctypes
 
         class _MemoryStatusEx(ctypes.Structure):
