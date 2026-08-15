@@ -132,11 +132,21 @@ CADGEN_WARM=0 python scripts/gen part.step.py   # force a cold in-process run
   OCP itself, so a model that crashes the CAD kernel costs one worker rather than the
   daemon. The first call spawns a worker (paying the import once); later calls run in a
   warm one and stream the CLI's stdout/stderr and exit code back unchanged.
-- **Parallel builds are supported.** A burst spawns workers up to a cap
-  (`CADGEN_DAEMON_MAX_WORKERS`, default `min(4, cores-2)`); beyond that, callers run cold
-  rather than queue. A second burst reuses the first's workers, so repeated parallel work
-  converges to warm. This is a change: the daemon used to hold exactly one job, which is
-  why parallel builders were told to avoid it.
+- **Parallel builds are supported.** A burst spawns workers up to a cap, and a second
+  burst reuses the first's workers, so repeated parallel work converges to warm. This is a
+  change: the daemon used to hold exactly one job, which is why parallel builders were
+  told to avoid it.
+- **The cap follows the machine**: the smaller of what memory allows (half of RAM, or the
+  cgroup limit inside a container, divided by ~300 MB a warm worker holds) and what the
+  cores allow (`cores - 2`), never more than 32. A 64 GB workstation gets 30 where it used
+  to get 4. `CADGEN_DAEMON_MAX_WORKERS` overrides it outright.
+- **At the cap a caller waits briefly**, then runs cold if nothing frees up —
+  `CADGEN_DAEMON_WAIT`, default 2s, and 0 restores the old give-up-immediately behaviour.
+  Jobs are usually short next to an OCP import, so most waits end in a warm worker. The
+  wait is what makes the cap mean anything: without it every overflow caller starts its
+  own OCP process, so the pool bounded nothing.
+- `cadgen daemon status` reports `waits` and `coldOverflows`. Overflows climbing during
+  normal work means the machine is genuinely saturated, not that the cap is too small.
 - Both front doors use it — `scripts/gen` and `cadgen step gen` alike — and so does the
   CAD Viewer, so a terminal build and a viewer build share the same warm processes.
 - The daemon is **per worktree**: the socket is

@@ -171,11 +171,17 @@ class Sizing(unittest.TestCase):
             self.assertEqual(pool_mod.max_workers(), 7)
 
     def test_the_default_leaves_the_machine_room(self):
+        import os as _os
+
         with mock.patch.dict(os.environ, {"CADGEN_DAEMON_MAX_WORKERS": ""}):
             cap = pool_mod.max_workers()
-        # ~274 MB resident each, so the default is deliberately small.
+        # The cap follows the machine now rather than a constant, so the property is that
+        # it leaves headroom -- at least one worker, never more cores than the box has
+        # spare, and never past the ceiling. Which bound binds is per-machine and is
+        # covered against simulated hardware in test_daemon_pool_sizing.
         self.assertGreaterEqual(cap, 1)
-        self.assertLessEqual(cap, pool_mod.DEFAULT_MAX_WORKERS)
+        self.assertLessEqual(cap, pool_mod.MAX_WORKERS_CEILING)
+        self.assertLessEqual(cap, max(1, (_os.cpu_count() or 4) - 2))
 
     def test_a_nonsense_cap_falls_back_rather_than_crashing(self):
         with mock.patch.dict(os.environ, {"CADGEN_DAEMON_MAX_WORKERS": "banana"}):
