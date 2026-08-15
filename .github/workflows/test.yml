@@ -92,6 +92,20 @@ jobs:
       - name: Set up dependencies
         uses: ./.github/actions/setup-deps
 
-      - name: Run code tests
-        run: scripts/test/test.sh
+      # Three steps rather than test.sh, each running even if an earlier one failed, and the
+      # Python runner in --keep-going mode. While Windows is being brought up the failures are
+      # independent POSIX-isms in unrelated suites, and stopping at the first one turns a list
+      # into one ~10 minute round trip per entry. The Linux job keeps the fail-fast default.
+      - name: Run JS tests
+        run: scripts/test/test-js.sh
+        shell: bash
+
+      - name: Run Python tests
+        if: ${{ !cancelled() }}
+        run: scripts/test/test-python.sh --keep-going
+        shell: bash
+
+      - name: Run global policy tests
+        if: ${{ !cancelled() }}
+        run: scripts/test/test-global.sh
         shell: bash
