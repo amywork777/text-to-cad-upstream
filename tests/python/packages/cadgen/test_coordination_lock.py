@@ -131,9 +131,16 @@ class GenerationLockBehaviourTest(unittest.TestCase):
                 done.set()
                 time.sleep(0.05)
 
+        thread = threading.Thread(target=run, daemon=True)
         with exclusive(self.lock):
-            threading.Thread(target=run, daemon=True).start()
+            thread.start()
             self.assertTrue(done.wait(10), "an unrelated model blocked on this one's lock")
+        # Join before the temp dir is removed. The thread is still inside exclusive() with
+        # the sentinel open when the assertion passes, and on Windows a file cannot be
+        # unlinked while a handle is open -- so leaving it running failed the CLEANUP, not
+        # the test. POSIX unlinks open files happily, which is why this never showed here.
+        thread.join(10)
+        self.assertFalse(thread.is_alive(), "the unrelated model's lock was never released")
 
     def test_threads_in_one_process_serialize(self):
         order = []
