@@ -63,6 +63,15 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
         sys.stdout.write(json.dumps(status or {}, separators=(",", ":")) + "\n")
         return 0
     if not status:
+        # "One starts on the next build" is false where the daemon cannot run at all, and
+        # a user following it would keep waiting for a warm process that never appears.
+        if not daemon_client.daemon_supported():
+            sys.stdout.write(
+                "The CAD daemon does not run on this platform, so builds are always cold. "
+                "It speaks over an AF_UNIX socket, which CPython does not provide on "
+                "Windows; nothing needs switching off.\n"
+            )
+            return 0
         sys.stdout.write(
             "No CAD daemon is running. One starts on the next build "
             "(set CADGEN_WARM=0 to keep builds cold).\n"
