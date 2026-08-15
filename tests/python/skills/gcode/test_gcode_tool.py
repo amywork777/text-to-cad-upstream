@@ -18,9 +18,21 @@ add_repo_path("skills/gcode/scripts")
 import gcode_tool as gcode
 
 
-def make_executable(path: Path) -> None:
+def make_executable(path: Path) -> Path:
+    """Create a fake backend that this platform will actually treat as executable.
+
+    A shebang plus the exec bit is the POSIX answer and means nothing on Windows: there
+    CreateProcess wants a real image, and shutil.which() only considers names carrying a
+    PATHEXT extension -- so an extension-less `OrcaSlicer` is invisible to discovery and
+    unrunnable if found. A .cmd is both, and is what an installed slicer looks like there.
+    """
+    if os.name == "nt":
+        shim = path.with_suffix(".cmd")
+        shim.write_text("@exit /b 0\r\n", encoding="utf-8")
+        return shim
     path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     path.chmod(0o755)
+    return path
 
 
 def write_profile(tmp: Path, backend: str = "orcaslicer") -> Path:
