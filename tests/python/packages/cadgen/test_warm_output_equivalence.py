@@ -137,6 +137,14 @@ def _manifest(root: pathlib.Path) -> dict[str, str]:
     return out
 
 
+def _daemon_available() -> bool:
+    """Whether a daemon can be reached at all on this platform."""
+    sys.path.insert(0, str(CADGEN_SRC))
+    from cadgen.daemon.client import daemon_supported
+
+    return daemon_supported()
+
+
 class _Daemon:
     """A real daemon on a private socket, so tests never touch a developer's."""
 
@@ -166,6 +174,16 @@ class _Daemon:
         return self.log.is_file() and "-> exit" in self.log.read_text(errors="replace")
 
 
+# The whole harness compares a WARM run against a cold one, so it needs a daemon to
+# exist. AF_UNIX is the daemon's only transport and CPython does not provide it on
+# Windows, so every "warm" run there is silently a cold one and the comparison stops
+# meaning anything -- `served_a_job()` is what catches that. Asking cadgen whether a
+# daemon is reachable, rather than testing os.name here, keeps this in step with the
+# client: if the transport ever becomes portable, these run without being edited.
+_DAEMON_AVAILABLE = _daemon_available()
+
+
+@unittest.skipUnless(_DAEMON_AVAILABLE, "no daemon transport on this platform")
 class WarmOutputEquivalence(unittest.TestCase):
     maxDiff = None
 
@@ -251,6 +269,7 @@ class WarmOutputEquivalence(unittest.TestCase):
         self.assertIn("FAILED", warm_out)
 
 
+@unittest.skipUnless(_DAEMON_AVAILABLE, "no daemon transport on this platform")
 class InputSurfaceEquivalence(unittest.TestCase):
     """`--help` is the input contract made visible.
 

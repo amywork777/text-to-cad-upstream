@@ -42,7 +42,11 @@ class DisplayPath(unittest.TestCase):
                 shown = display_path(root.parent / "elsewhere.urdf")
             finally:
                 os.chdir(previous)
-        self.assertTrue(shown.startswith("/"), shown)
+        # Absolute, not "starts with /": on Windows the absolute form is "C:/Users/...",
+        # which has a drive and no leading slash. as_posix() has already normalised the
+        # separators, so PurePosixPath reads the result the same way on either platform.
+        self.assertTrue(pathlib.PurePath(shown).is_absolute() or shown[1:3] == ":/", shown)
+        self.assertIn("elsewhere.urdf", shown)
 
     def test_posix_separators_on_every_platform(self):
         self.assertNotIn("\\", display_path(pathlib.Path("a") / "b" / "c.urdf"))
