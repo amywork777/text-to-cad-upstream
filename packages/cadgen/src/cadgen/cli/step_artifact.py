@@ -61,7 +61,11 @@ def _sibling_step_path(target: str) -> str:
     # foo.step.py -> foo.step; plain foo.py -> foo.step (the generator's logical STEP).
     if target.lower().endswith(".step.py"):
         return target[: -len(".py")]
-    return str(Path(target).with_suffix(".step"))
+    # as_posix() for the same reason as step_gen's _sibling_step_output: this is a logical
+    # path, and str() on a Path renders the NATIVE separator, so on Windows the two branches
+    # disagree -- the slice above keeps "parts/second.step" while this one would produce
+    # "parts\second.step" from the same shape of input. Windows accepts forward slashes.
+    return Path(target).with_suffix(".step").as_posix()
 
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.

@@ -44,6 +44,23 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 600.0
 _RESTART = object()
 
 
+def daemon_supported() -> bool:
+    """Whether this platform can reach a daemon at all.
+
+    AF_UNIX is the only transport here, and CPython does not expose it on Windows. That
+    is a platform gap in the daemon, not something a caller can retry around, so the three
+    entry points below report "not served" and every caller takes the cold path it already
+    has for a daemon that is missing or busy.
+
+    It has to be checked rather than caught: `socket.AF_UNIX` raises AttributeError, and
+    the fallbacks in this module and its callers are all keyed on OSError or on a None
+    return, so the exception would escape past every one of them. Nothing hit it while the
+    daemon was opt-in -- a Windows user simply never set CADGEN_WARM. Serving builds warm
+    by default is what puts this on the path of `cadgen step gen`.
+    """
+    return hasattr(socket, "AF_UNIX")
+
+
 def socket_path() -> Path:
     override = os.environ.get("CADGEN_DAEMON_SOCKET")
     if override:
@@ -104,6 +121,8 @@ def run_via_daemon(
     # to the cap and overflows cold rather than queueing. An optimisation nobody enables
     # is the same as not having one.
     if os.environ.get("CADGEN_WARM") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
+        return None
+    if not daemon_supported():
         return None
     argv = [str(arg) for arg in argv]
     if "-" in argv:
@@ -266,6 +285,8 @@ def invoke(module: str, args, repo_root: str) -> dict | None:
     """
     if os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
+    if not daemon_supported():
+        return None
     payload = {
         "kind": "invoke",
         "module": str(module),
@@ -327,6 +348,8 @@ def status() -> dict | None:
     Deliberately does NOT spawn one: "is anything warm?" must be answerable without
     changing the answer.
     """
+    if not daemon_supported():
+        return None
     sock_path = socket_path()
     try:
         conn = _connect(sock_path)
