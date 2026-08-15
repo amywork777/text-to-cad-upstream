@@ -1,14 +1,19 @@
-"""The release version stamp has to survive the development symlink layout.
+"""The release version stamp has to reach every version field it owns.
 
-`scripts/release/sync-version.mjs` names several paths that are the SAME FILE here: the
-mirrored `viewer/packages/...` and `skills/.../packages/...` entries are symlinks to the
-canonical package. Each target reads its file before any write happens, so two targets
-stamping one file means the last write wins -- and a mirror declaring fewer fields than the
-canonical target silently reverts the field only the canonical one knows about.
+`scripts/release/sync-version.mjs` can name several paths that are the SAME FILE: a mirrored
+`viewer/packages/...` entry is a symlink to the canonical package. Each target reads its file
+before any write happens, so two targets stamping one file means the last write wins -- and a
+mirror declaring fewer fields than the canonical target silently reverts the field only the
+canonical one knows about.
 
 That is not hypothetical: adding the implicitjs version to `packages/cadjs/package-lock.json`
 without adding it to that file's two symlinked mirrors made the 0.4.10 release fail its own
 version gate, after the bump and before anything was published.
+
+Both halves of that failure are asserted below -- targets naming one file are merged, and no
+first-party version field in a lockfile is left undeclared. The specific field that broke
+0.4.10 is gone (implicitjs is folded into cadjs), and so are the vendored skill mirrors, so
+the guard is stated as the property rather than as that one package's name.
 """
 
 from __future__ import annotations
@@ -48,7 +53,7 @@ class VersionSyncMirrorTests(unittest.TestCase):
             "const { mergeTargetsByRealPath } = await import(%s);\n"
             "const merged = mergeTargetsByRealPath([\n"
             '  { path: "packages/cadjs/package-lock.json",'
-            ' fields: [["version"], ["packages", "../implicitjs", "version"]] },\n'
+            ' fields: [["version"], ["packages", "", "version"]] },\n'
             '  { path: "viewer/packages/cadjs/package-lock.json", fields: [["version"]], required: false },\n'
             "]);\n"
             "console.log(JSON.stringify({ count: merged.length, fields: merged[0].fields,"
@@ -58,18 +63,20 @@ class VersionSyncMirrorTests(unittest.TestCase):
         payload = json.loads(_node(script))
         self.assertEqual(1, payload["count"], "a symlinked mirror must not get its own write")
         self.assertIn(
-            ["packages", "../implicitjs", "version"],
+            ["packages", "", "version"],
             payload["fields"],
             "the merged target must keep the field only the canonical target declared",
         )
         self.assertTrue(payload["treatedAsRequired"], "a required target keeps the file required")
 
-    def test_every_cadjs_lockfile_target_stamps_the_implicitjs_version(self) -> None:
-        """The field that broke 0.4.10, asserted across every copy of that lockfile.
+    def test_every_lockfile_target_stamps_every_first_party_version(self) -> None:
+        """The 0.4.10 failure, stated as the property rather than as one package name.
 
-        cadjs's lockfile embeds implicitjs as a linked workspace package, so every target
-        naming a `cadjs/package-lock.json` has to stamp it -- including the vendored copies
-        that ship inside skills, which are real files rather than symlinks.
+        A lockfile carries a version for the package itself and for each workspace package
+        linked into it, all of which move with the release; every other version in the file
+        belongs to a dependency and must not be touched. First-party entries are the ones
+        outside `node_modules`. A release breaks when the file gains such an entry and the
+        target does not gain the matching field, which is exactly what 0.4.10 hit.
         """
         targets = json.loads(
             _node(
@@ -77,15 +84,24 @@ class VersionSyncMirrorTests(unittest.TestCase):
                 "console.log(JSON.stringify(jsonTargets));" % json.dumps(SYNC_SCRIPT.as_uri())
             )
         )
-        lockfiles = [t for t in targets if t["path"].endswith("cadjs/package-lock.json")]
-        self.assertGreaterEqual(len(lockfiles), 2, "expected the canonical lockfile and its mirrors")
+        lockfiles = [t for t in targets if t["path"].endswith("package-lock.json")]
+        self.assertTrue(lockfiles, "expected at least one lockfile target")
         for target in lockfiles:
-            with self.subTest(path=target["path"]):
-                self.assertIn(
-                    ["packages", "../implicitjs", "version"],
-                    target["fields"],
-                    f"{target['path']} would ship a stale implicitjs version",
-                )
+            path = repo_path(target["path"])
+            if not path.is_file():
+                self.assertFalse(target.get("required", True), f"{target['path']} is required but missing")
+                continue
+            declared = {tuple(field) for field in target["fields"]}
+            entries = json.loads(path.read_text(encoding="utf-8")).get("packages", {})
+            for name in entries:
+                if "node_modules" in name:
+                    continue
+                with self.subTest(path=target["path"], entry=name or "<root>"):
+                    self.assertIn(
+                        ("packages", name, "version"),
+                        declared,
+                        f"{target['path']} would ship a stale version for {name or 'the root package'}",
+                    )
 
     def test_derived_metadata_is_synced_at_the_current_version(self) -> None:
         """The gate the Release workflow runs, at the version in VERSION."""

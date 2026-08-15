@@ -32,6 +32,8 @@ class ImplicitCadSkillStructureTests(unittest.TestCase):
                 )
 
     def test_gen_package_is_runnable_as_a_module(self) -> None:
+        # The parser and the behaviour live in cadgen now, so the package is just the two
+        # files that make `python scripts/gen` work; there is no local cli.py to carry.
         gen_dir = self.skill_root / "scripts" / "gen"
+        self.assertTrue((gen_dir / "__init__.py").is_file())
         self.assertTrue((gen_dir / "__main__.py").is_file())
-        self.assertTrue((gen_dir / "cli.py").is_file())
