@@ -13,12 +13,7 @@ export const jsonTargets = [
   { path: "docs/package.json", fields: [["version"]] },
   { path: "docs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
   { path: "packages/cadjs/package.json", fields: [["version"]] },
-  {
-    path: "packages/cadjs/package-lock.json",
-    fields: [["version"], ["packages", "", "version"], ["packages", "../implicitjs", "version"]],
-  },
-  { path: "packages/implicitjs/package.json", fields: [["version"]] },
-  { path: "packages/implicitjs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
+  { path: "packages/cadjs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
   { path: "viewer/package.json", fields: [["version"]] },
   {
     path: "viewer/package-lock.json",
@@ -26,7 +21,6 @@ export const jsonTargets = [
       ["version"],
       ["packages", "", "version"],
       ["packages", "packages/cadjs", "version"],
-      ["packages", "packages/implicitjs", "version"],
     ],
   },
   { path: ".claude-plugin/plugin.json", fields: [["version"]] },

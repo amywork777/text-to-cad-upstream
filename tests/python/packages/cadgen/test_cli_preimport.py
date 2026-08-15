@@ -9,7 +9,10 @@ second-class front door for the same work:
   magnitude slower than `scripts/gen` with no indication why.
 * PYTHONHASHSEED is read once at interpreter start. A DXF build has to be
   byte-deterministic because drawing packages are content-addressed and ezdxf's object
-  ordering depends on hash randomization, so the only way to guarantee it is to re-exec.
+  ordering depends on hash randomization, so the only way to guarantee it is to re-run.
+  Through subprocess, not os.execv -- execv does not quote on Windows, which broke the dxf
+  launcher for interpreter paths containing a space (issue #245). The re-run's exit code
+  must reach the caller or every generator failure would read as a success.
 
 Neither can be tested by calling a command's `main()`; both are properties of dispatch.
 """
@@ -83,46 +86,61 @@ class DaemonHandoff(unittest.TestCase):
         daemon.assert_not_called()
 
 
-class HashSeedReexec(unittest.TestCase):
-    def test_a_dxf_build_reexecs_when_the_seed_is_unset(self):
+class HashSeedRerun(unittest.TestCase):
+    def test_a_dxf_build_reruns_when_the_seed_is_unset(self):
         with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
-                mock.patch.object(cli.os, "execv") as execv, \
+                mock.patch("subprocess.run") as run, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
+            run.return_value = mock.Mock(returncode=0)
             imported.return_value.main.return_value = 0
             cli.main(["dxf", "gen", "part.dxf.py"])
-        execv.assert_called_once()
-        # Re-exec with the SAME argv, so the second pass reaches the same command.
-        self.assertEqual(execv.call_args.args[1][0], sys.executable)
+        run.assert_called_once()
+        # Same interpreter, same argv, so the second pass reaches the same command.
+        self.assertEqual(run.call_args.args[0][0], sys.executable)
+        self.assertNotIn("execv", str(run.call_args))
 
-    def test_no_reexec_once_the_seed_is_already_stable(self):
-        # Otherwise the second pass would exec again, forever.
+    def test_the_reruns_exit_code_reaches_the_caller(self):
+        # Swallowing it would turn every failed generator into a success.
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
+                mock.patch("subprocess.run") as run, \
+                mock.patch.object(cli.importlib, "import_module"):
+            run.return_value = mock.Mock(returncode=3)
+            self.assertEqual(cli.main(["dxf", "gen", "part.dxf.py"]), 3)
+
+    def test_no_rerun_once_the_seed_is_already_stable(self):
+        # Otherwise the second pass would spawn again, forever.
         with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0"}, clear=False), \
-                mock.patch.object(cli.os, "execv") as execv, \
+                mock.patch("subprocess.run") as run, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
             cli.main(["dxf", "gen", "part.dxf.py"])
-        execv.assert_not_called()
+        run.assert_not_called()
 
-    def test_only_dxf_builds_reexec(self):
-        # A STEP build has no ordering sensitivity, and re-execing it would cost a whole
+    def test_only_dxf_builds_rerun(self):
+        # A STEP build has no ordering sensitivity, and re-running it would cost a whole
         # interpreter start on the daemon's hot path.
         for command in (["step", "gen", "x"], ["dxf", "snapshot", "x"], ["implicit", "gen", "x"]):
             with self.subTest(command=command):
                 with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
-                        mock.patch.object(cli.os, "execv") as execv, \
+                        mock.patch("subprocess.run") as run, \
                         mock.patch.object(cli.importlib, "import_module") as imported:
                     imported.return_value.main.return_value = 0
                     cli.main(command)
-                execv.assert_not_called()
+                run.assert_not_called()
 
-    def test_the_seed_is_set_before_the_exec(self):
+    def test_the_seed_is_set_before_the_child_starts(self):
         recorded = {}
+
+        def capture(*args, **kwargs):
+            recorded["seed"] = cli.os.environ.get("PYTHONHASHSEED")
+            return mock.Mock(returncode=0)
+
         with mock.patch.dict("os.environ", {"PYTHONHASHSEED": ""}, clear=False), \
-                mock.patch.object(cli.os, "execv", side_effect=lambda *a: recorded.update(
-                    seed=cli.os.environ.get("PYTHONHASHSEED"))), \
+                mock.patch("subprocess.run", side_effect=capture), \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
             cli.main(["dxf", "artifact", "x"])
+        # The child inherits the environment, so it must be set before the spawn.
         self.assertEqual(recorded.get("seed"), "0")
 
 

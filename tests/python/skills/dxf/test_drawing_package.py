@@ -51,7 +51,7 @@ class DrawingProfilePackageTest(unittest.TestCase):
         viewer_root = str(_Path(__file__).resolve().parents[4] / "viewer")
         if viewer_root not in sys.path:
             sys.path.insert(0, viewer_root)
-        from server_py import artifact as viewer_artifact
+        from cadgen.viewer import artifact as viewer_artifact
 
         self.assertIs(viewer_artifact.drawing_payload_keys, drawing_package.drawing_payload_keys)
         self.assertEqual(

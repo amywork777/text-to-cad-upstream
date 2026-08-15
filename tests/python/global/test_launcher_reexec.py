@@ -7,8 +7,13 @@ runtime re-joins it into a command line WITHOUT quoting, so the default all-user
 path ``C:\\Program Files\\Python311\\python.exe`` arrived as two arguments and the child tried to
 run ``Files\\Python311\\python.exe`` as a script (issue #245).
 
-The bug is Windows-only and CI is Linux, so the guard here is the policy: no launcher re-runs
-itself through ``os.execv``. ``subprocess`` quotes correctly on every platform, and on Windows
+The same re-run now also lives in ``cadgen.cli``'s dispatch, which owns the hash seed for
+``cadgen dxf gen`` / ``dxf artifact`` -- and it was written with the execv form before this
+test was widened to see it. Anything that re-runs a command to pin the seed is in scope,
+wherever it lives.
+
+The bug is Windows-only and CI is Linux, so the guard here is the policy: no re-runner uses
+``os.execv``. ``subprocess`` quotes correctly on every platform, and on Windows
 ``os.execv`` never replaced the process anyway, so nothing was gained by it.
 """
 
@@ -20,14 +25,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SKILLS_DIR = REPO_ROOT / "skills"
+# cadgen's dispatcher re-runs for the same reason a launcher does, so it is held to the
+# same rule. Named explicitly rather than globbed: a glob over cadgen would sweep in
+# modules that legitimately exec other programs.
+DISPATCH_SOURCE = REPO_ROOT / "packages/cadgen/src/cadgen/cli/__init__.py"
 
 
 def launcher_sources() -> list[Path]:
-    return sorted(
+    found = sorted(
         path
         for path in SKILLS_DIR.glob("*/scripts/*/__main__.py")
         if "__pycache__" not in path.parts
     )
+    if DISPATCH_SOURCE.is_file():
+        found.append(DISPATCH_SOURCE)
+    return found
 
 
 class LauncherReExecTest(unittest.TestCase):
@@ -59,10 +71,12 @@ class LauncherReExecTest(unittest.TestCase):
             if "PYTHONHASHSEED" not in source:
                 continue
             with self.subTest(launcher=str(path.relative_to(REPO_ROOT))):
+                # Two idioms, one property: a launcher raises SystemExit with the
+                # child's code, a dispatcher returns it up to its own main().
                 self.assertRegex(
                     source,
-                    r"SystemExit\(\s*subprocess\.run\(",
-                    "the re-run must exit with the child's return code",
+                    r"(?:SystemExit\(\s*subprocess\.run\(|return subprocess\.run\()",
+                    "the re-run must pass the child's return code to its caller",
                 )
                 self.assertIn(
                     "sys.executable",
