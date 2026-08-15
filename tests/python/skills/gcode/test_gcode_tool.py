@@ -261,7 +261,11 @@ class GCodeToolTests(unittest.TestCase):
                 plan = gcode.build_slice_plan(args, search_path=str(bin_dir))
 
                 command = plan["command"]
-                self.assertEqual(Path(command[0]).name, executable)
+                # stem on Windows: an executable IS its extension there, and which() hands
+                # back the name as PATHEXT spells it -- "OrcaSlicer.CMD". What this asserts
+                # is WHICH backend was selected, not how the filesystem writes it down.
+                found = Path(command[0])
+                self.assertEqual(found.stem if os.name == "nt" else found.name, executable)
                 for part in expected_parts:
                     self.assertIn(part, command)
                 self.assertEqual(plan["backend"], backend)
