@@ -47,13 +47,13 @@ class InvokeContract(unittest.TestCase):
             raise RuntimeError("kaboom")
 
         patcher = mock.patch.object(
-            worker, "_DISPATCH", {"cadgen.step_artifact": echo, "cadgen.dxf_artifact": boom}
+            worker, "_DISPATCH", {"cadgen.step_artifact_cli": echo, "cadgen.dxf_artifact": boom}
         )
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def test_a_known_module_is_routed_with_the_closure_reset(self):
-        result = worker._invoke({"module": "cadgen.step_artifact", "args": ["--x", "1"]})
+        result = worker._invoke({"module": "cadgen.step_artifact_cli", "args": ["--x", "1"]})
         self.assertEqual(result, {"ok": True, "args": ["--x", "1"]})
         # Without the reset, a warm build records a different sourceClosureHash.
         self.assertEqual(self.calls, [(("--x", "1"), True)])
@@ -80,7 +80,7 @@ class Allowlist(unittest.TestCase):
                 "cadgen.dxf_artifact",
                 "cadgen.implicit_artifact",
                 "cadgen.implicit_export",
-                "cadgen.step_artifact",
+                "cadgen.step_artifact_cli",
                 "cadgen.step_export_target",
             },
         )
