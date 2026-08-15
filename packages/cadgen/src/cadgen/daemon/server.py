@@ -349,9 +349,8 @@ def _handle_request(
 
     worker = _POOL.acquire()
     if worker is None:
-        # Every worker busy and the pool is capped. Queueing here is what made the old
-        # single-process daemon worse than useless for parallel work, so tell the client
-        # to run cold instead.
+        # Capped, and nothing freed up within the wait. acquire() has already spent that
+        # budget, so this really is the point where running cold beats waiting longer.
         _log(f"{tool}: pool at capacity; client runs cold")
         with send_lock:
             _send(conn, {"cold": True})
