@@ -60,3 +60,38 @@ jobs:
 
       - name: Run code tests
         run: scripts/test/test.sh
+
+  # A SEPARATE JOB, never a matrix on `test` above. A matrix renames that job's check to
+  # "Test (ubuntu-latest)", and `Test` is a required status check on develop -- it would stop
+  # being reported and every pull request would wait forever for a check that no longer exists.
+  #
+  # Runs the TESTS only, not the hygiene steps the Linux job wraps them in. Bundle freshness,
+  # the symlink layout and the published-tree checks are properties of the repository, not of
+  # an operating system; bundling is deterministic, so re-checking it here would buy nothing
+  # and cost minutes. The platform risk is in file I/O -- locks, paths, subprocesses, file
+  # URLs -- which is what the test suites exercise.
+  #
+  # Why this job exists at all: four of the last five user-reported bugs were Windows-only
+  # (#260, #266, #267, #269), and every one of them passed CI. The coverage was mostly already
+  # written -- test_coordination.py's holder test asserts exactly the cross-process sentinel
+  # read that #269 broke -- so what was missing was a runner, not a test.
+  test-windows:
+    name: Test (Windows)
+    runs-on: windows-latest
+
+    steps:
+      # Before checkout: Git for Windows materializes symlinks as text files containing the
+      # target path unless this is set, and `develop` is a symlink layout by design. Without
+      # it the runtime paths under skills/ are plain files and the suite tests nothing real.
+      - name: Enable Git symlinks
+        run: git config --global core.symlinks true
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up dependencies
+        uses: ./.github/actions/setup-deps
+
+      - name: Run code tests
+        run: scripts/test/test.sh
+        shell: bash
