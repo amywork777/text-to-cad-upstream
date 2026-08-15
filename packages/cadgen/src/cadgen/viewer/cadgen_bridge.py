@@ -24,7 +24,7 @@ import sys
 _CAD_BACKEND_PROBE = (
     "import OCP\n"
     "import build123d\n"
-    "import cadgen.step_artifact\n"
+    "import cadgen.step_artifact_cli\n"
 )
 _CAD_BACKEND_PROBE_TIMEOUT_SECONDS = 30
 
@@ -104,7 +104,7 @@ def require_cadgen_runtime(repo_root: str) -> dict:
     raise RuntimeError(
         "CAD Viewer requires a working CAD Python backend before startup.\n"
         f"Selected interpreter: {python}\n"
-        "Required imports: OCP, build123d, cadgen.step_artifact\n"
+        "Required imports: OCP, build123d, cadgen.step_artifact_cli\n"
         f"{detail}\n"
         "Set VIEWER_CAD_PYTHON to an absolute Python path with the viewer CAD requirements installed."
     )

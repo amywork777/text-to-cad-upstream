@@ -59,6 +59,9 @@ The supported surface is the root `cadgen` exports plus the top-level `cadgen.*`
   `cadgen.drawing_checks`, `cadgen.drawing_render`.
 - **Asset resolution**: `cadgen.assets` (`node_builders_dir`, `browser_runtime_dir`,
   `viewer_dist_dir`) — where the packaged JavaScript lives, resolved at call time.
+- Process entry points: `cadgen` (the console script), `cadgen-step-artifact`,
+  `python -m cadgen.step_artifact_cli`, `python -m cadgen.step_export_target`, and
+  `python -m cadgen.dxf_artifact`.
 
 `cadgen.cli` holds the argument parsers, `cadgen.viewer` the Viewer backend, and
 `cadgen.daemon` the warm build process. Everything under `cadgen._internal` is private

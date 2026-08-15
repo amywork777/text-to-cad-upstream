@@ -69,7 +69,7 @@ pip install cadgen          # or, in this repo, the editable install from requir
 ```
 
 Before binding its HTTP port, the Viewer validates that its selected Python can
-import `OCP`, `build123d`, and `cadgen.step_artifact`. Startup fails instead of
+import `OCP`, `build123d`, and `cadgen.step_artifact_cli`. Startup fails instead of
 serving a Viewer that cannot build missing artifacts. Set
 `VIEWER_CAD_PYTHON=/absolute/path/to/python` when the CAD environment is not in
 the checkout's `.venv`.
