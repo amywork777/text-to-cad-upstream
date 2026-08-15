@@ -66,7 +66,9 @@ class CadgenDaemonTests(unittest.TestCase):
         # short dir rather than the repo tmp root. A Windows pipe name is not a path and
         # has no such ceiling, so it is simply named after this test run.
         cls.socket_dir = tempfile.TemporaryDirectory(
-            prefix="cadgen-daemon-", dir=None if os.name == "nt" else "/tmp"
+            prefix="cadgen-daemon-",
+            dir=None if os.name == "nt" else "/tmp",
+            ignore_cleanup_errors=True,
         )
         if os.name == "nt":
             cls.address = rf"\\.\pipe\cadgen-daemon-test-{os.getpid()}"
@@ -128,6 +130,10 @@ class CadgenDaemonTests(unittest.TestCase):
             except subprocess.TimeoutExpired:
                 cls.server.kill()
         cls.model_tmp.cleanup()
+        # The daemon's log handle can outlive terminate() by a moment, and Windows refuses
+        # to delete a file another process still holds open (WinError 32). That is a
+        # teardown race over a temp directory, not a defect worth failing a suite for --
+        # the OS reclaims it either way.
         cls.socket_dir.cleanup()
 
     def _warm_run(self, argv: list[str]) -> tuple[int | None, str]:

@@ -137,23 +137,33 @@ def _manifest(root: pathlib.Path) -> dict[str, str]:
     return out
 
 
+sys.path.insert(0, str(CADGEN_SRC))
+from cadgen.daemon import client as daemon_client  # noqa: E402
+
+
 def _daemon_available() -> bool:
     """Whether a daemon can be reached at all on this platform."""
-    sys.path.insert(0, str(CADGEN_SRC))
-    from cadgen.daemon.client import daemon_supported
-
-    return daemon_supported()
+    return daemon_client.daemon_supported()
 
 
 class _Daemon:
-    """A real daemon on a private socket, so tests never touch a developer's."""
+    """A real daemon on a private address, so tests never touch a developer's."""
 
     def __init__(self, tmp: pathlib.Path):
-        self.socket = tmp / "d.sock"
-        self.log = self.socket.with_suffix(".log")  # d.sock -> d.log, not d.sock.log
+        # A pipe name is not a filesystem path, so a temp FILE is not a usable address on
+        # Windows. Handing one over does not fail loudly either -- the daemon simply never
+        # binds, every "warm" run is quietly cold, and the comparison stops meaning
+        # anything. served_a_job() is what catches that, and it caught exactly this.
+        if os.name == "nt":
+            self.address = rf"\\.\pipe\cadgen-warm-eq-{tmp.name}"
+        else:
+            self.address = str(tmp / "d.sock")
+        # Ask the client where it will put the log rather than guessing: on POSIX that is
+        # a sibling of the socket, on Windows it cannot be.
+        self.log = daemon_client.log_path(self.address)
 
     def env(self) -> dict:
-        return {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.socket)}
+        return {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
 
     def __enter__(self):
         return self
@@ -175,11 +185,10 @@ class _Daemon:
 
 
 # The whole harness compares a WARM run against a cold one, so it needs a daemon to
-# exist. AF_UNIX is the daemon's only transport and CPython does not provide it on
-# Windows, so every "warm" run there is silently a cold one and the comparison stops
-# meaning anything -- `served_a_job()` is what catches that. Asking cadgen whether a
-# daemon is reachable, rather than testing os.name here, keeps this in step with the
-# client: if the transport ever becomes portable, these run without being edited.
+# exist. Every platform we ship on has a transport now -- AF_UNIX on POSIX, AF_PIPE on
+# Windows -- so this normally runs everywhere. It is asked of cadgen rather than of
+# os.name so that a platform which somehow has neither skips instead of failing, and so
+# that a silent cold fallback still shows up as a failure rather than a pass.
 _DAEMON_AVAILABLE = _daemon_available()
 
 
