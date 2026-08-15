@@ -219,7 +219,11 @@ class DaemonStatusCommand(unittest.TestCase):
         from cadgen.cli import daemon_status
 
         buffer = io.StringIO()
+        # Pin the supported platform: where the daemon cannot run at all the command says
+        # so instead, and promising "one starts on the next build" there would be false.
+        # That branch has its own coverage in test_daemon_unsupported_platform.
         with mock.patch("cadgen.daemon.client.status", return_value=None) as asked, \
+                mock.patch("cadgen.daemon.client.daemon_supported", return_value=True), \
                 _ctx.redirect_stdout(buffer):
             self.assertEqual(daemon_status.main([]), 0)
         asked.assert_called_once()

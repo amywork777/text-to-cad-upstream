@@ -241,17 +241,37 @@ class StopCommand(unittest.TestCase):
                 probe.bind(("127.0.0.1", 0))
                 port = probe.getsockname()[1]
 
-            env = dict(os.environ, TMPDIR=tmp, VIEWER_CAD_BACKEND_VALIDATED="1")
+            # gettempdir() reads TMPDIR, then TEMP, then TMP. Only the first is set on
+            # POSIX; Windows uses the other two, so setting one alone puts the child's
+            # registry somewhere the parent is not looking and the entry never appears.
+            env = dict(os.environ, TMPDIR=tmp, TEMP=tmp, TMP=tmp, VIEWER_CAD_BACKEND_VALIDATED="1")
             env["PYTHONPATH"] = str(pathlib.Path(registry.__file__).resolve().parents[2])
+            # The viewer's built client is a vite output: gitignored, absent until something
+            # bundles. The server refuses to start without one, so a test about REGISTRATION
+            # would otherwise depend on a build step -- true on any fresh checkout, and on
+            # the Windows job, which deliberately runs tests without bundling.
+            dist = pathlib.Path(tmp) / "dist"
+            dist.mkdir()
+            (dist / "index.html").write_text("<!doctype html>")
+            env["CADGEN_VIEWER_DIST"] = str(dist)
+            # Captured, not discarded: when the child dies early this is the only account
+            # of why, and DEVNULL turned that into a bare "never registered itself".
             child = subprocess.Popen(
                 [sys.executable, "-m", "cadgen.viewer.server", "--port", str(port)],
-                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
             )
             try:
                 with mock.patch.object(registry, "registry_dir", lambda: registry_path):
                     deadline = time.time() + 10
                     while time.time() < deadline and not registry.live_entries():
+                        if child.poll() is not None:
+                            break
                         time.sleep(0.2)
+                    if child.poll() is not None:
+                        self.fail(
+                            "the child viewer exited before registering "
+                            f"(rc={child.returncode}): {child.stderr.read().strip()}"
+                        )
                     self.assertEqual(
                         [e["port"] for e in registry.live_entries()], [port],
                         "the child viewer never registered itself",
