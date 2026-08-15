@@ -36,14 +36,18 @@ import io
 import json
 import os
 import signal
-import socket
 import sys
 import threading
 import time
 import traceback
 from pathlib import Path
 
-from cadgen.daemon.client import compute_version_token, socket_path
+from cadgen.daemon import transport
+from cadgen.daemon.client import (
+    compute_version_token,
+    daemon_address,
+    daemon_identity,
+)
 
 # No sys.path setup: every tool the daemon serves is an ordinary cadgen module now, so it
 # imports from the same distribution this file was loaded from. The block that used to
@@ -123,9 +127,9 @@ class _ChunkWriter:
     """File-like sink that forwards writes to the client as protocol frames.
 
     Shares ``send_lock`` with the liveness watchdog so job output and probe
-    frames cannot interleave bytes on the socket."""
+    frames cannot interleave on the channel."""
 
-    def __init__(self, conn: socket.socket, stream: str, send_lock: threading.Lock) -> None:
+    def __init__(self, conn: transport.Channel, stream: str, send_lock: threading.Lock) -> None:
         self._conn = conn
         self._stream = stream
         self._send_lock = send_lock
@@ -144,8 +148,8 @@ class _ChunkWriter:
         return False
 
 
-def _send(conn: socket.socket, frame: dict) -> None:
-    conn.sendall(json.dumps(frame, separators=(",", ":")).encode("utf-8") + b"\n")
+def _send(conn: transport.Channel, frame: dict) -> None:
+    conn.send(json.dumps(frame, separators=(",", ":")).encode("utf-8"))
 
 
 def _log(message: str) -> None:
@@ -191,20 +195,16 @@ def _evict_first_party_modules() -> None:
         evict_first_party_modules()
 
 
-def _read_request(conn: socket.socket) -> dict | None:
-    conn.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
-    chunks: list[bytes] = []
+def _read_request(conn: transport.Channel) -> dict | None:
+    """The client's single request frame, or None if it never arrived.
+
+    A message boundary says "request over", which is what the old protocol needed a
+    half-close for; there is no partial-read buffering left to do.
+    """
     try:
-        while b"\n" not in (chunks[-1] if chunks else b""):
-            data = conn.recv(65536)
-            if not data:
-                break
-            chunks.append(data)
-    except OSError:
+        raw = conn.recv(REQUEST_READ_TIMEOUT_SECONDS)
+    except (OSError, EOFError):
         return None
-    finally:
-        conn.settimeout(None)
-    raw = b"".join(chunks).split(b"\n", 1)[0].strip()
     if not raw:
         return None
     try:
@@ -225,7 +225,7 @@ def _exit_code(exc: SystemExit, err: _ChunkWriter) -> int:
 
 
 def _watch_client(
-    conn: socket.socket,
+    conn: transport.Channel,
     send_lock: threading.Lock,
     done: threading.Event,
     tool: str,
@@ -263,7 +263,7 @@ def _status_payload() -> dict:
     snapshot = _POOL.snapshot()
     snapshot.update({
         "pid": os.getpid(),
-        "socket": str(socket_path()),
+        "socket": str(daemon_address()),
         "version": __version__,
         "token": compute_version_token(),
         "startedAt": _STARTED_AT,
@@ -312,7 +312,7 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
 
 
 def _handle_request(
-    conn: socket.socket,
+    conn: transport.Channel,
     request: dict,
     stdout_proxy: _StreamProxy,
     stderr_proxy: _StreamProxy,
@@ -415,22 +415,21 @@ def _serve_connection(conn, request, stdout_proxy, stderr_proxy) -> None:
 
 def serve() -> int:
     os.environ["CADGEN_DAEMON_CHILD"] = "1"
-    sock_path = socket_path()
+    address = daemon_address()
     token = compute_version_token()
     stdout_proxy = _StreamProxy(sys.stdout)
     stderr_proxy = _StreamProxy(sys.stderr)
     sys.stdout = stdout_proxy
     sys.stderr = stderr_proxy
     _warm_imports()
-    with contextlib.suppress(FileNotFoundError):
-        os.unlink(sock_path)
-    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    if transport.address_is_stale(address):
+        transport.clear_address(address)
+    authkey = transport.ensure_authkey(daemon_identity())
     try:
-        server.bind(str(sock_path))
+        server = transport.Server(address, authkey, backlog=8)
     except OSError as exc:
-        _log(f"cannot bind {sock_path}: {exc}")
+        _log(f"cannot bind {address}: {exc}")
         return 1
-    server.listen(8)
 
     def _shutdown_handler(*_args) -> None:
         raise _DaemonShutdown
@@ -438,28 +437,47 @@ def serve() -> int:
     for signum in (signal.SIGTERM, signal.SIGINT):
         signal.signal(signum, _shutdown_handler)
     idle_timeout = _idle_timeout()
-    _log(f"pid {os.getpid()} serving {sock_path} (token {token}, idle timeout {idle_timeout:.0f}s)")
+    _log(f"pid {os.getpid()} serving {address} (token {token}, idle timeout {idle_timeout:.0f}s)")
+
+    # accept() cannot take a timeout the way a socket could, so idleness is watched from
+    # the side: the watchdog closes the listener, which makes the pending accept return.
+    # Closing is portable across both families and does not reach into Listener internals.
+    state = {"last_activity": time.monotonic(), "idle_exit": False}
+
+    def _watch_for_idle() -> None:
+        slice_seconds = max(0.5, min(idle_timeout / 4, 5.0))
+        while not server.closed:
+            time.sleep(slice_seconds)
+            if server.closed:
+                return
+            if any(thread.is_alive() for thread in list(_INFLIGHT)):
+                state["last_activity"] = time.monotonic()  # a long build is not idleness
+                continue
+            if time.monotonic() - state["last_activity"] >= idle_timeout:
+                state["idle_exit"] = True
+                server.close()
+                return
+
+    threading.Thread(target=_watch_for_idle, daemon=True).start()
+
     try:
         while True:
-            server.settimeout(idle_timeout)
-            try:
-                conn, _ = server.accept()
-            except TimeoutError:
-                if any(thread.is_alive() for thread in list(_INFLIGHT)):
-                    continue  # a long build is still running; not idle
-                _POOL.reap_idle()
-                _log("idle timeout; exiting")
+            conn = server.accept()
+            if conn is None:
+                if state["idle_exit"]:
+                    _POOL.reap_idle()
+                    _log("idle timeout; exiting")
                 return 0
+            state["last_activity"] = time.monotonic()
             try:
                 request = _read_request(conn)
                 if request is None:
                     continue
                 if request.get("token") != token:
-                    # Unlink BEFORE replying so the client's respawn cannot race
-                    # this daemon's cleanup and lose the fresh daemon's socket.
+                    # Close BEFORE replying so the client's respawn cannot race this
+                    # daemon's cleanup and lose the fresh daemon's address.
                     server.close()
-                    with contextlib.suppress(OSError):
-                        os.unlink(sock_path)
+                    transport.clear_address(address)
                     with contextlib.suppress(OSError):
                         _send(conn, {"restart": True})
                     _log("version token changed; restarting")
@@ -487,10 +505,8 @@ def serve() -> int:
         return 0
     finally:
         _POOL.shutdown()
-        with contextlib.suppress(OSError):
-            server.close()
-        with contextlib.suppress(OSError):
-            os.unlink(sock_path)
+        server.close()
+        transport.clear_address(address)
 
 
 USAGE = """\
