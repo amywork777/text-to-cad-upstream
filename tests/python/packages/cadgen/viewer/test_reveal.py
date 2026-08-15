@@ -180,12 +180,66 @@ class RevealPath(unittest.TestCase):
         self.assertFalse(result["ok"])
         spawn.assert_not_called()
 
-    @unittest.skipUnless(sys.platform == "darwin", "macOS reveal command")
+    # Each branch is exercised with the PLATFORM simulated rather than the host detected.
+    # Gating on the host meant only one of the three was ever checked, and never the one
+    # that matters most: the Windows branch does not go through _spawn at all, so a fault
+    # in it was invisible on every runner this project has.
+
     def test_macos_selects_the_file(self):
-        with mock.patch.object(reveal, "_spawn", return_value={"ok": True}) as spawn:
+        with mock.patch.object(reveal.sys, "platform", "darwin"), \
+                mock.patch.object(reveal.os, "name", "posix"), \
+                mock.patch.object(reveal, "_spawn", return_value={"ok": True}) as spawn:
             self.assertTrue(reveal.reveal_path(__file__)["ok"])
         # -R is what makes Finder select the file rather than open it.
         self.assertEqual(spawn.call_args.args[0][:2], ["open", "-R"])
+
+    def test_windows_selects_the_file_through_explorer(self):
+        # Popen, not _spawn: explorer exits nonzero even when it worked, so its exit code
+        # carries no information and waiting on it would report a failure that did not
+        # happen. The comma in "/select,<path>" is explorer's own syntax, not a typo.
+        with mock.patch.object(reveal.sys, "platform", "win32"), \
+                mock.patch.object(reveal.os, "name", "nt"), \
+                mock.patch.object(reveal.subprocess, "Popen") as popen:
+            self.assertTrue(reveal.reveal_path(__file__)["ok"])
+        argv = popen.call_args.args[0]
+        self.assertEqual("explorer", argv[0])
+        self.assertTrue(argv[1].startswith("/select,"), argv[1])
+        self.assertIn("test_reveal.py", argv[1])
+
+    def test_windows_reports_a_missing_explorer_rather_than_raising(self):
+        with mock.patch.object(reveal.sys, "platform", "win32"), \
+                mock.patch.object(reveal.os, "name", "nt"), \
+                mock.patch.object(reveal.subprocess, "Popen", side_effect=OSError("nope")):
+            result = reveal.reveal_path(__file__)
+        self.assertFalse(result["ok"])
+        self.assertIn("explorer", result["error"])
+
+    def test_linux_opens_the_containing_folder(self):
+        # No portable "reveal and select" on Linux, so the folder is opened instead —
+        # the directory, never the file, which is the part worth pinning.
+        with mock.patch.object(reveal.sys, "platform", "linux"), \
+                mock.patch.object(reveal.os, "name", "posix"), \
+                mock.patch.object(reveal, "_spawn", return_value={"ok": True}) as spawn:
+            self.assertTrue(reveal.reveal_path(__file__)["ok"])
+        argv = spawn.call_args.args[0]
+        self.assertEqual("xdg-open", argv[0])
+        self.assertEqual(str(pathlib.Path(__file__).parent), argv[-1])
+
+    def test_linux_falls_through_to_the_next_opener(self):
+        # xdg-open is absent on plenty of desktops; the chain is the point.
+        attempts = []
+
+        def spawn(argv):
+            attempts.append(argv[0])
+            if argv[0] == "xdg-open":
+                return {"ok": False, "error": "could not run xdg-open"}
+            return {"ok": True}
+
+        with mock.patch.object(reveal.sys, "platform", "linux"), \
+                mock.patch.object(reveal.os, "name", "posix"), \
+                mock.patch.object(reveal, "_spawn", side_effect=spawn):
+            self.assertTrue(reveal.reveal_path(__file__)["ok"])
+        self.assertEqual(["xdg-open", "gio"], attempts)
 
     def test_a_nonzero_exit_becomes_an_error(self):
         with mock.patch("subprocess.run") as run:

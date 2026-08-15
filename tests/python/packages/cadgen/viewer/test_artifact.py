@@ -18,15 +18,12 @@ import tempfile
 import threading
 import time
 
-try:
-    import fcntl
-except ImportError:  # Windows -- see GenerationLock, which is the only user.
-    fcntl = None
 import unittest
 from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
+from cadgen.coordination import lock as lock_mod  # noqa: E402
 from cadgen.viewer import artifact, scanner  # noqa: E402
 
 from cadgen._internal import drawing_package as _drawing_package  # noqa: E402
@@ -313,17 +310,20 @@ class BakeHashGate(unittest.TestCase):
             )
 
 
-@unittest.skipIf(
-    fcntl is None,
-    "these drive raw fcntl.flock, which is the POSIX backend specifically. The Windows "
-    "backend's equivalent cross-process coverage lives in "
-    "tests/python/packages/cadgen/test_coordination_lock.py::RealBackendRegressionTests, "
-    "which runs on whatever platform it finds.",
+@unittest.skipUnless(
+    lock_mod.locking_available(),
+    "no kernel locking backend here, so there is no state for the snapshot to report",
 )
 class GenerationLock(unittest.TestCase):
     """The snapshot reports what the kernel says. There is no pid, heartbeat, or age to
-    fake, so these drive the real fcntl states — including from a separate process,
-    which is the case that actually matters."""
+    fake, so these drive REAL lock states — including from a separate process, which is
+    the case that actually matters.
+
+    Held through coordination.lock rather than raw fcntl. The lock has two backends and
+    the snapshot is supposed to read either; calling flock directly meant this whole class
+    skipped on Windows, leaving the msvcrt backend's contribution to the viewer's "is a
+    build running" answer untested on the only platform where it is used.
+    """
 
     def _lock_for(self, package_dir):
         from cadgen.coordination.paths import write_lock_path
@@ -356,11 +356,8 @@ class GenerationLock(unittest.TestCase):
     def test_held_lock_reads_as_writing(self):
         with tempfile.TemporaryDirectory() as d:
             pkg = os.path.join(d, "x.step")
-            handle = open(self._lock_for(pkg), "a+b")
-            self.addCleanup(handle.close)
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            self.assertEqual("writing", artifact.generation_snapshot(pkg).state)
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            with lock_mod.exclusive(self._lock_for(pkg)):
+                self.assertEqual("writing", artifact.generation_snapshot(pkg).state)
             self.assertEqual("idle", artifact.generation_snapshot(pkg).state)
 
     def test_concurrent_readers_do_not_see_a_phantom_build(self):
@@ -392,12 +389,14 @@ class GenerationLock(unittest.TestCase):
             pkg = os.path.join(d, "x.step")
             lp = self._lock_for(pkg)
             ready = os.path.join(d, "ready")
+            # Holds it the way a real builder does, so this exercises whichever backend
+            # the platform actually ships rather than a POSIX-only call.
             code = (
-                "import fcntl,os,sys,time\n"
-                f"h=open({lp!r},'a+b')\n"
-                "fcntl.flock(h.fileno(), fcntl.LOCK_EX)\n"
-                f"open({ready!r},'wb').close()\n"
-                "time.sleep(30)\n"
+                "import time\n"
+                "from cadgen.coordination import lock\n"
+                f"with lock.exclusive({lp!r}):\n"
+                f"    open({ready!r},'wb').close()\n"
+                "    time.sleep(30)\n"
             )
             proc = subprocess.Popen([sys.executable, "-c", code])
             try:
@@ -443,10 +442,8 @@ class GenerationLock(unittest.TestCase):
                     progress={"phase": "components", "done": 31, "total": 50, "ratio": 0.77},
                 ),
             )
-            handle = open(self._lock_for(pkg), "a+b")
-            self.addCleanup(handle.close)
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            snap = artifact.generation_snapshot(pkg)
+            with lock_mod.exclusive(self._lock_for(pkg)):
+                snap = artifact.generation_snapshot(pkg)
             self.assertEqual("writing", snap.state)
             self.assertIsNone(snap.progress)
 
