@@ -145,12 +145,20 @@ class Channel:
 
         ``poll`` replaces the socket timeout the old code set per read: a daemon that is
         streaming output keeps resetting the clock, so only genuine silence trips it.
+
+        A dead peer is END-OF-STREAM (``b""``), never an exception, and the two platforms
+        report it differently: POSIX as EOFError from ``recv_bytes``, Windows as
+        BrokenPipeError — an OSError, not an EOFError — raised by ``recv_bytes`` OR by
+        ``poll`` itself (PeekNamedPipe fails once the write end is gone and the buffer is
+        drained). One shape for callers on both.
         """
-        if timeout is not None and not self._conn.poll(timeout):
-            return None
         try:
+            if timeout is not None and not self._conn.poll(timeout):
+                return None
             return self._conn.recv_bytes()
         except EOFError:
+            return b""
+        except OSError:
             return b""
 
     def close(self) -> None:

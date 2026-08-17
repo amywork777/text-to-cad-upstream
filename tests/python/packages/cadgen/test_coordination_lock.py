@@ -233,6 +233,24 @@ class GenerationLockBehaviourTest(unittest.TestCase):
                 ["icacls", str(directory), "/remove:d", "*S-1-1-0"],
                 capture_output=True,
             )
+            # Probe before relying on it: icacls exiting 0 proves an ACE was written, not
+            # that access checks honour it for THIS token. The first CI run hit exactly
+            # that — rc 0, lock acquired anyway — so an impotent deny must fail here with
+            # the DACL and token in hand, not later with a bare run id.
+            probe = directory / "fixture-probe"
+            try:
+                probe.mkdir()
+            except PermissionError:
+                return  # the deny is live
+            probe.rmdir()
+            dacl = subprocess.run(["icacls", str(directory)], capture_output=True, text=True)
+            token = subprocess.run(
+                ["whoami", "/groups", "/priv"], capture_output=True, text=True
+            )
+            self.fail(
+                "the deny ACE was applied but does not bite on this runner.\n"
+                f"--- icacls ---\n{dacl.stdout}\n--- token ---\n{token.stdout}"
+            )
         else:
             if hasattr(os, "geteuid") and os.geteuid() == 0:
                 self.skipTest("root ignores permission bits, so nothing would be denied")
