@@ -203,22 +203,56 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         threading.Thread(target=lambda: (self._acquire_release(), done.set()), daemon=True).start()
         self.assertTrue(done.wait(15), "a SIGKILLed builder left a stale lock")
 
-    @unittest.skipIf(
-        os.name == "nt",
-        "chmod only toggles the read-only bit on Windows and does not stop a directory "
-        "being written, so this would pass without ever reaching the degradation it claims "
-        "to cover. Making a directory truly unwritable there needs an ACL edit.",
-    )
+    def _deny_new_entries(self, directory: Path) -> None:
+        """Make ``directory`` genuinely refuse new files and subdirectories.
+
+        chmod is the POSIX mechanism; on Windows its read-only bit is decorative on
+        directories, which is why this test used to skip there — and skipping mattered,
+        because an unwritable directory takes the one degradation path that runs
+        Windows-specific code (the two-file mutex/sentinel open) and the one place where
+        EACCES means "denied" rather than msvcrt's "contended". A deny ACE is the real
+        mechanism: Everyone by SID (*S-1-1-0) so it binds under any UI language and any
+        elevation — deny beats allow, admins included. WD is FILE_ADD_FILE and AD is
+        FILE_ADD_SUBDIRECTORY; the lock's parent does not exist, so the first refusal
+        this test needs is the mkdir.
+        """
+        if os.name == "nt":
+            applied = subprocess.run(
+                ["icacls", str(directory), "/deny", "*S-1-1-0:(WD,AD)"],
+                capture_output=True,
+                text=True,
+            )
+            if applied.returncode != 0:
+                self.skipTest(f"cannot apply a deny ACE here: {applied.stderr.strip()}")
+            # Removed before the temp tree is deleted (cleanups run LIFO). The owner
+            # keeps WRITE_DAC through ownership, so the removal itself cannot be denied;
+            # and even if it were skipped, the directory is empty and deleting it needs
+            # DELETE, which was never denied — teardown cannot be locked out.
+            self.addCleanup(
+                subprocess.run,
+                ["icacls", str(directory), "/remove:d", "*S-1-1-0"],
+                capture_output=True,
+            )
+        else:
+            if hasattr(os, "geteuid") and os.geteuid() == 0:
+                self.skipTest("root ignores permission bits, so nothing would be denied")
+            os.chmod(directory, 0o500)
+            self.addCleanup(os.chmod, directory, 0o700)
+
     def test_unwritable_lock_directory_does_not_fail_the_build(self):
         blocked = self.root / "ro"
         blocked.mkdir()
         lock = blocked / "sub" / ".part.step.py.generation.lock"
-        os.chmod(blocked, 0o500)
-        self.addCleanup(os.chmod, blocked, 0o700)
+        self._deny_new_entries(blocked)
         ran = []
-        with exclusive(lock):
+        with exclusive(lock) as recorded:
             ran.append(True)
         self.assertEqual([True], ran, "an unwritable package dir must not fail the build")
+        # None is the degraded yield. Asserting it makes the fixture self-verifying: if
+        # the denial did not actually bite — exactly how the old chmod version would have
+        # passed vacuously on Windows — the lock is acquired normally, a run id comes
+        # back, and this fails instead of covering nothing.
+        self.assertIsNone(recorded, "the lock should have degraded, not been acquired")
 
     def test_skip_if_current_is_evaluated_under_the_lock(self):
         """The pre-lock fast path cannot see a peer that started after it ran, so the
