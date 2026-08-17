@@ -217,39 +217,47 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         this test needs is the mkdir.
         """
         if os.name == "nt":
-            applied = subprocess.run(
-                ["icacls", str(directory), "/deny", "*S-1-1-0:(WD,AD)"],
-                capture_output=True,
-                text=True,
-            )
-            if applied.returncode != 0:
-                self.skipTest(f"cannot apply a deny ACE here: {applied.stderr.strip()}")
-            # Removed before the temp tree is deleted (cleanups run LIFO). The owner
-            # keeps WRITE_DAC through ownership, so the removal itself cannot be denied;
-            # and even if it were skipped, the directory is empty and deleting it needs
-            # DELETE, which was never denied — teardown cannot be locked out.
-            self.addCleanup(
-                subprocess.run,
-                ["icacls", str(directory), "/remove:d", "*S-1-1-0"],
-                capture_output=True,
-            )
-            # Probe before relying on it: icacls exiting 0 proves an ACE was written, not
-            # that access checks honour it for THIS token. The first CI run hit exactly
-            # that — rc 0, lock acquired anyway — so an impotent deny must fail here with
-            # the DACL and token in hand, not later with a bare run id.
+            import getpass
+
+            # A LADDER, because icacls exiting 0 proves an ACE was written, not that
+            # access checks honour it for this token — the first CI run applied a
+            # perfectly-shaped Everyone deny, first in the DACL, to a token containing
+            # Everyone, and mkdir succeeded anyway. So each principal is probed with a
+            # real mkdir and the first one that bites wins: Everyone, then
+            # BUILTIN\Administrators (the explicit Full-control allow the runner's token
+            # actually matches), then the literal user. Well-known SIDs are used where
+            # they exist so no UI language can rename them out from under the fixture.
             probe = directory / "fixture-probe"
-            try:
-                probe.mkdir()
-            except PermissionError:
-                return  # the deny is live
-            probe.rmdir()
+            for principal in ("*S-1-1-0", "*S-1-5-32-544", getpass.getuser()):
+                applied = subprocess.run(
+                    ["icacls", str(directory), "/deny", f"{principal}:(WD,AD)"],
+                    capture_output=True,
+                    text=True,
+                )
+                if applied.returncode != 0:
+                    continue
+                # Removed before the temp tree is deleted (cleanups run LIFO). The owner
+                # keeps WRITE_DAC through ownership, so the removal cannot be denied; and
+                # even if it were skipped, the directory is empty and deleting it needs
+                # DELETE, which is never denied — teardown cannot be locked out.
+                self.addCleanup(
+                    subprocess.run,
+                    ["icacls", str(directory), "/remove:d", principal],
+                    capture_output=True,
+                )
+                try:
+                    probe.mkdir()
+                except PermissionError:
+                    return  # this deny is live; the test can rely on it
+                probe.rmdir()
+            # No deny bites: an environment property of this machine's access checks,
+            # not something the test can assert its way around. Skip loudly, carrying
+            # the evidence, rather than fail a required check on runner security policy.
             dacl = subprocess.run(["icacls", str(directory)], capture_output=True, text=True)
-            token = subprocess.run(
-                ["whoami", "/groups", "/priv"], capture_output=True, text=True
-            )
-            self.fail(
-                "the deny ACE was applied but does not bite on this runner.\n"
-                f"--- icacls ---\n{dacl.stdout}\n--- token ---\n{token.stdout}"
+            token = subprocess.run(["whoami", "/groups"], capture_output=True, text=True)
+            self.skipTest(
+                "no deny ACE bites for this token, so an unwritable directory cannot be "
+                f"staged here.\n--- icacls ---\n{dacl.stdout}\n--- token ---\n{token.stdout}"
             )
         else:
             if hasattr(os, "geteuid") and os.geteuid() == 0:
