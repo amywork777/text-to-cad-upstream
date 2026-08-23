@@ -29,7 +29,7 @@ from cadgen.snapshot_core import (  # noqa: E402
     WORKBENCH_RENDER_THEME_IDS,
 )
 
-THEME_SETTINGS_JS = Path(repo_path("packages/implicitjs/src/common/themeSettings.js"))
+THEME_SETTINGS_JS = Path(repo_path("packages/cadjs/src/common/themeSettings.js"))
 DISPLAY_SETTINGS_JS = Path(repo_path("packages/cadjs/src/common/displaySettings.js"))
 
 
@@ -37,12 +37,14 @@ def _js_source() -> str:
     return THEME_SETTINGS_JS.read_text(encoding="utf-8")
 
 
-def _cadjs_still_reexports_theme_settings() -> bool:
-    # The declarations moved to implicitjs (single source of truth); the viewer consumes
-    # them through cadjs's re-export. If that link is ever dropped, this guard must move
-    # with it rather than quietly compare against a module the viewer no longer loads.
-    shim = Path(repo_path("packages/cadjs/src/common/themeSettings.js")).read_text(encoding="utf-8")
-    return "implicitjs/common/themeSettings.js" in shim
+def _cadjs_declares_theme_settings() -> bool:
+    # The declarations lived in implicitjs for a while, with cadjs re-exporting them, and
+    # this guard checked that link. implicitjs is folded into cadjs now, so the link is the
+    # absence of one: the module below must declare the presets itself rather than forward
+    # to somewhere else. If they ever move again, this guard moves with them rather than
+    # quietly comparing against a module the viewer no longer loads.
+    source = _js_source()
+    return "export const THEME_PRESETS" in source and "implicitjs" not in source
 
 
 def _preset_ids() -> set[str]:
@@ -88,11 +90,11 @@ class DisplayParityTests(unittest.TestCase):
 
 class ThemeParityTests(unittest.TestCase):
     def test_the_viewer_still_loads_the_shared_theme_source(self):
-        # The parity checks below read implicitjs's declarations because that is where
-        # they live now; this keeps the viewer's consumption path honest.
+        # The parity checks below read cadjs's declarations because that is where they
+        # live now; this keeps the viewer's consumption path honest.
         self.assertTrue(
-            _cadjs_still_reexports_theme_settings(),
-            "cadjs/common/themeSettings.js no longer re-exports the implicitjs module",
+            _cadjs_declares_theme_settings(),
+            "cadjs/common/themeSettings.js no longer declares the theme presets itself",
         )
 
     def test_the_snapshot_default_is_the_render_only_snapshot_theme(self):
