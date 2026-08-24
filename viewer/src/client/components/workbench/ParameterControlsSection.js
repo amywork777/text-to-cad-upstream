@@ -5,6 +5,7 @@ import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";
 import {
   FILE_SHEET_COMPACT_BUTTON_CLASSES,
+  FILE_SHEET_COMPACT_ICON_BUTTON_CLASSES,
   FILE_SHEET_PRECISION_SLIDER_CLASSES,
   FileSheetButtonRow,
   FileSheetColorPicker,
@@ -260,19 +261,21 @@ export default function ParameterControlsSection({
                       disabled={!enabled}
                       ariaLabel={`${parameter.label} slider value`}
                     />
-                    {/* Disabled at the default so the row also answers "have I changed
-                        this?" without needing to remember what the default was. */}
+                    {/* Outline rather than ghost: it sits in a column of value inputs,
+                        dropdowns and colour swatches, and `outline` carries the same
+                        border/surface those do, at the h-7 every control in the sheet
+                        shares. Disabled at the default, so the row also answers "have I
+                        changed this?" without needing to remember what the default was. */}
                     <Button
                       type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      variant="outline"
+                      className={cn(FILE_SHEET_COMPACT_ICON_BUTTON_CLASSES, "shrink-0")}
                       onClick={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
                       disabled={!enabled || isDefault}
                       aria-label={`Reset ${parameter.label} to default`}
                       title={`Reset to ${formatControlNumber(parameter.defaultValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
                     >
-                      <RotateCcw strokeWidth={2} aria-hidden="true" />
+                      <RotateCcw className="size-3" strokeWidth={2} aria-hidden="true" />
                     </Button>
                   </div>
                 )}
