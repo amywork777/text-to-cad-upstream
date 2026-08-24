@@ -37,6 +37,19 @@ function formatControlNumber(value) {
   return numericValue.toFixed(2);
 }
 
+// Whether a number parameter is sitting on its default, which is what decides if its
+// reset is live. Not an exact compare: a slider stepping by 0.1 lands on values like
+// 0.30000000000000004, and an exact test would leave the reset enabled on a value the
+// readout already shows as the default.
+function numbersMatch(value, other) {
+  const left = Number(value);
+  const right = Number(other);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) {
+    return false;
+  }
+  return Math.abs(left - right) <= 1e-9 * Math.max(1, Math.abs(left), Math.abs(right));
+}
+
 function formatSeconds(value) {
   const numericValue = Math.max(Number(value) || 0, 0);
   return `${numericValue.toFixed(numericValue >= 10 ? 1 : 2)}s`;
@@ -226,22 +239,43 @@ export default function ParameterControlsSection({
                 />
               );
             }
+            const isDefault = numbersMatch(currentValue, parameter.defaultValue);
             return (
               <FileSheetSliderField
                 key={parameter.id}
                 label={parameter.label}
-                value={`${formatControlNumber(currentValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
-                onValueCommit={(nextValue) => {
-                  runtime?.onParameterChange?.(parameter.id, parseFileSheetNumberInput(nextValue, {
-                    fallback: currentValue,
-                    min: parameter.min,
-                    max: parameter.max
-                  }));
-                }}
-                valueInputProps={{
-                  disabled: !enabled,
-                  ariaLabel: `${parameter.label} slider value`
-                }}
+                // Composed rather than left to the field's own value input, because the
+                // reset has to sit beside that input rather than under the slider.
+                trailing={(
+                  <div className="flex min-w-0 items-center gap-1">
+                    <FileSheetValueInput
+                      value={`${formatControlNumber(currentValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
+                      onValueCommit={(nextValue) => {
+                        runtime?.onParameterChange?.(parameter.id, parseFileSheetNumberInput(nextValue, {
+                          fallback: currentValue,
+                          min: parameter.min,
+                          max: parameter.max
+                        }));
+                      }}
+                      disabled={!enabled}
+                      ariaLabel={`${parameter.label} slider value`}
+                    />
+                    {/* Disabled at the default so the row also answers "have I changed
+                        this?" without needing to remember what the default was. */}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
+                      onClick={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
+                      disabled={!enabled || isDefault}
+                      aria-label={`Reset ${parameter.label} to default`}
+                      title={`Reset to ${formatControlNumber(parameter.defaultValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
+                    >
+                      <RotateCcw strokeWidth={2} aria-hidden="true" />
+                    </Button>
+                  </div>
+                )}
               >
                 <Slider
                   className={FILE_SHEET_PRECISION_SLIDER_CLASSES}
