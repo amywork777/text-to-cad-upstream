@@ -38,19 +38,6 @@ function formatControlNumber(value) {
   return numericValue.toFixed(2);
 }
 
-// Whether a number parameter is sitting on its default, which is what decides if its
-// reset is live. Not an exact compare: a slider stepping by 0.1 lands on values like
-// 0.30000000000000004, and an exact test would leave the reset enabled on a value the
-// readout already shows as the default.
-function numbersMatch(value, other) {
-  const left = Number(value);
-  const right = Number(other);
-  if (!Number.isFinite(left) || !Number.isFinite(right)) {
-    return false;
-  }
-  return Math.abs(left - right) <= 1e-9 * Math.max(1, Math.abs(left), Math.abs(right));
-}
-
 function formatSeconds(value) {
   const numericValue = Math.max(Number(value) || 0, 0);
   return `${numericValue.toFixed(numericValue >= 10 ? 1 : 2)}s`;
@@ -240,7 +227,6 @@ export default function ParameterControlsSection({
                 />
               );
             }
-            const isDefault = numbersMatch(currentValue, parameter.defaultValue);
             return (
               <FileSheetSliderField
                 key={parameter.id}
@@ -264,14 +250,16 @@ export default function ParameterControlsSection({
                     {/* Outline rather than ghost: it sits in a column of value inputs,
                         dropdowns and colour swatches, and `outline` carries the same
                         border/surface those do, at the h-7 every control in the sheet
-                        shares. Disabled at the default, so the row also answers "have I
-                        changed this?" without needing to remember what the default was. */}
+                        shares. Stays live at the default -- a control that greys out
+                        when the value "looks right" invites the reading that something
+                        is wrong with the row, and resetting to where you already are
+                        costs nothing. */}
                     <Button
                       type="button"
                       variant="outline"
                       className={cn(FILE_SHEET_COMPACT_ICON_BUTTON_CLASSES, "shrink-0")}
                       onClick={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
-                      disabled={!enabled || isDefault}
+                      disabled={!enabled}
                       aria-label={`Reset ${parameter.label} to default`}
                       title={`Reset to ${formatControlNumber(parameter.defaultValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
                     >
