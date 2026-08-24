@@ -3,9 +3,9 @@
 CAD Viewer has four browser persistence tiers. Choose the smallest tier that
 matches the lifetime and sharing behavior the user expects.
 
-This doc covers browser state only. Catalogs, CAD assets, hidden STEP
-GLB/topology artifacts, and hosted Blob uploads are backend concerns; use
-[backend.md](./backend.md) for that interface.
+This doc covers browser state only. Catalogs, CAD assets, and hidden STEP
+GLB/topology artifacts are backend concerns; use [backend.md](./backend.md) for
+that interface.
 
 ## URL Query Params
 
