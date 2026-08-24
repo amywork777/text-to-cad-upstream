@@ -213,9 +213,9 @@ async function main() {
     page.on("pageerror", onPageError);
     page.on("console", onConsole);
 
-    // The model root is the URL PATH for this backend; a bare ?dir= alone resolves nothing.
-    const url = `${args.url}${modelsRoot}?dir=${encodeURIComponent(modelsRoot)}` +
-      `&file=${encodeURIComponent(fixture.file)}`;
+    // The viewer under test must already be serving modelsRoot (--root): the URL carries
+    // only the file, because a request cannot name its own directory.
+    const url = `${args.url}?file=${encodeURIComponent(fixture.file)}`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
     // STEP builds its package on first open; everything else, robots included, is well
     // inside this window.

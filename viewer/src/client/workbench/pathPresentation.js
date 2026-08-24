@@ -45,20 +45,6 @@ function pathRelativeToPrefix(filePath, prefix) {
     : "";
 }
 
-export function stripViewerRootDirPrefix(filePath, rootDir = "") {
-  const normalizedPath = normalizeRelativePath(filePath);
-  const normalizedRootDir = normalizeRelativePath(rootDir);
-  if (!normalizedPath || !normalizedRootDir) {
-    return normalizedPath;
-  }
-  if (normalizedPath === normalizedRootDir) {
-    return "";
-  }
-  return normalizedPath.startsWith(`${normalizedRootDir}/`)
-    ? normalizedPath.slice(normalizedRootDir.length + 1)
-    : normalizedPath;
-}
-
 function suffixFromAnchorDirectory(filePath, anchorFile = "") {
   const normalizedPath = normalizeRelativePath(filePath);
   const normalizedAnchor = normalizeRelativePath(anchorFile);
@@ -87,30 +73,13 @@ export function viewerRootRelativePath(value, viewerServerInfo = {}, {
     return "";
   }
 
+  // One root, so one prefix to try. There used to be a second pass against
+  // `directoryRoot` with the per-request `rootDir` stripped back off -- two names for
+  // the same directory, reconciled on every path. The server sends `rootPath` alone.
   const rootPathRelative = pathRelativeToPrefix(stripQueryAndHash(text), viewerServerInfo?.rootPath);
   if (rootPathRelative) {
     return normalizeRelativePath(rootPathRelative);
   }
 
-  const directoryRootRelative = pathRelativeToPrefix(stripQueryAndHash(text), viewerServerInfo?.directoryRoot);
-  if (directoryRootRelative) {
-    return suffixFromAnchorDirectory(
-      stripViewerRootDirPrefix(directoryRootRelative, viewerServerInfo?.rootDir),
-      anchorFile
-    );
-  }
-
-  const pathText = normalizeRelativePath(pathnameFromUrlOrPath(text));
-  return suffixFromAnchorDirectory(
-    stripViewerRootDirPrefix(pathText, viewerServerInfo?.rootDir),
-    anchorFile
-  );
-}
-
-export function viewerPathOptionsFromServerInfo(viewerServerInfo = {}) {
-  return {
-    rootDir: viewerServerInfo?.rootDir || "",
-    rootPath: viewerServerInfo?.rootPath || "",
-    directoryRoot: viewerServerInfo?.directoryRoot || "",
-  };
+  return suffixFromAnchorDirectory(normalizeRelativePath(pathnameFromUrlOrPath(text)), anchorFile);
 }

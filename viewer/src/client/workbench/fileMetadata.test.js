@@ -17,8 +17,6 @@ function rowByLabel(groups, label) {
 }
 
 const viewerServerInfo = {
-  directoryRoot: "/project/text-to-cad",
-  rootDir: "models",
   rootPath: "/project/text-to-cad/models",
 };
 

@@ -1,7 +1,6 @@
 import { entryStepSourceKind } from "./entryIconStatus.js";
 import {
   normalizeRelativePath as normalizedRelativePath,
-  stripViewerRootDirPrefix,
   viewerRootRelativePath
 } from "./pathPresentation.js";
 import { fileKey } from "./sidebar.js";
@@ -85,24 +84,6 @@ function joinLocalPath(basePath, relativePath) {
   return `${normalizedBase}${separator}${normalizedRelative}`;
 }
 
-function directoryPathIsInsideViewerRoot(directoryRelativePath, rootDir) {
-  const directoryPath = normalizedRelativePath(directoryRelativePath);
-  const normalizedRootDir = normalizedRelativePath(rootDir);
-  if (!directoryPath) {
-    return false;
-  }
-  if (!normalizedRootDir) {
-    return true;
-  }
-  return directoryPath === normalizedRootDir || directoryPath.startsWith(`${normalizedRootDir}/`);
-}
-
-function rootRelativePathFromDirectoryRelativePath(directoryRelativePath, rootDir) {
-  return directoryPathIsInsideViewerRoot(directoryRelativePath, rootDir)
-    ? stripViewerRootDirPrefix(directoryRelativePath, rootDir)
-    : "";
-}
-
 export function fileAccessAssetsForEntry(entry, {
   stepSourceStatus = null,
   viewerServerInfo = {},
@@ -130,11 +111,7 @@ export function fileAccessAssetsForEntry(entry, {
     : "";
   const sourceRef = explicitSourceRef || stepSourcePath || inferredSourceRootRef;
   const sourceDirectoryRef = stepSourcePath || explicitSourceDirectoryRef;
-  const hasViewerPathContext = Boolean(
-    viewerServerInfo?.rootDir ||
-    viewerServerInfo?.rootPath ||
-    viewerServerInfo?.directoryRoot
-  );
+  const hasViewerPathContext = Boolean(viewerServerInfo?.rootPath);
   const sourceRootRef = sourceRef
     ? hasViewerPathContext
       ? (viewerRootRelativePath(sourceRef, viewerServerInfo, { anchorFile: outputFileRef }) || sourceRef)
@@ -195,19 +172,17 @@ export function openUrlForFileAsset(fileRef, asset = "output", baseUrl = "") {
 }
 
 export function copyTargetsForFileAccessAsset(asset, viewerServerInfo = {}) {
-  const rootDir = normalizedRelativePath(viewerServerInfo?.rootDir);
+  // A path relative to the served directory IS a path relative to the root: they are
+  // the same directory now, so the old re-basing between them is gone.
   const directoryRelativePath = normalizedRelativePath(asset?.directoryRelativePath);
-  const directoryRootRelativePath = rootRelativePathFromDirectoryRelativePath(directoryRelativePath, rootDir);
-  const rawRootRelativePath = directoryRootRelativePath || normalizedRelativePath(asset?.rootRelativePath);
+  const rawRootRelativePath = directoryRelativePath || normalizedRelativePath(asset?.rootRelativePath);
   const rootRelativePath = rawRootRelativePath
     ? viewerRootRelativePath(rawRootRelativePath, viewerServerInfo, { anchorFile: asset?.fileRef })
     : "";
   const relativePath = rootRelativePath || directoryRelativePath;
   const absolutePath = rootRelativePath && viewerServerInfo?.rootPath
-      ? joinLocalPath(viewerServerInfo.rootPath, rootRelativePath)
-      : directoryRelativePath && viewerServerInfo?.directoryRoot
-        ? joinLocalPath(viewerServerInfo.directoryRoot, directoryRelativePath)
-        : "";
+    ? joinLocalPath(viewerServerInfo.rootPath, rootRelativePath)
+    : "";
 
   return {
     path: absolutePath,

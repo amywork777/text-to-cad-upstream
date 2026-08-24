@@ -70,9 +70,6 @@ Current `cad-viewer:directory-session:v1` fields:
   `{themeId, custom}` shape as the global key. The global theme itself belongs
   to `localStorage`.
 
-`cad-viewer:active-dir:v1` stores the tab's preferred directory after a `?dir=`
-URL is loaded or a directory is selected.
-
 Do not put selected-file state, model controls, drawing state, or
 generated-asset decisions in directory session state. Those belong in per-file
 session state.

@@ -20,10 +20,11 @@ function attachmentContentDisposition(filename) {
   const quotedFilename = safeFilename.replace(/[^\x20-\x7e]/g, "_");
   return `attachment; filename="${quotedFilename}"; filename*=UTF-8''${encodeContentDispositionFilename(safeFilename)}`;
 }
-function localAssetUrl(file, dir, v) {
+function localAssetUrl(file, v) {
+  // No `dir`: a viewer serves one root, fixed at startup, so the server already
+  // knows the directory and the request does not restate it.
   const url = new URL("/__cad/asset", "http://cad.local");
   url.searchParams.set("file", file);
-  if (dir) url.searchParams.set("dir", dir);
   if (v) url.searchParams.set("v", v);
   return `${url.pathname}${url.search}`;
 }
@@ -42,10 +43,10 @@ const filenames = [
 ];
 const base36Values = [0, 1, 35, 36, 2158, 1719440100123, "1719440100123456789"];
 const assetUrls = [
-  ["/abs/p a th/x(1).glb", "/root dir", "zz-1a"],
-  ["/abs/plain.glb", "", ""],
-  ["/abs/ünï.glb", "/r", "1-2"],
-  ["/abs/tilde~.glb", "", "abc"],
+  ["/abs/p a th/x(1).glb", "zz-1a"],
+  ["/abs/plain.glb", ""],
+  ["/abs/ünï.glb", "1-2"],
+  ["/abs/tilde~.glb", "abc"],
 ];
 const sortLists = [
   ["file10.step", "file2.step", "File1.step", "alpha.STL", "alpha.stl"],
@@ -62,7 +63,7 @@ const golden = {
   encodeUriComponent: Object.fromEntries(encodeStrings.map((s) => [s, encodeURIComponent(s)])),
   contentDisposition: Object.fromEntries(filenames.map((s) => [s, attachmentContentDisposition(s)])),
   base36: Object.fromEntries(base36Values.map((v) => [String(v), BigInt(v).toString(36)])),
-  assetUrls: assetUrls.map(([file, dir, v]) => ({ file, dir, v, url: localAssetUrl(file, dir, v) })),
+  assetUrls: assetUrls.map(([file, v]) => ({ file, v, url: localAssetUrl(file, v) })),
   sort: sortLists.map((list) => ({ input: list, sorted: [...list].sort(compareEntries) })),
 };
 

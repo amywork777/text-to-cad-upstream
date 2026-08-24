@@ -38,11 +38,11 @@ directory-relative file path in the URL:
 npm run dev -- --host 127.0.0.1
 ```
 
-Open the URL printed by Vite. A Viewer URL's PATH is the absolute directory to
-open, exactly as in a `file://` URL, and `?file=` selects one artifact within it:
+Open the URL printed by Vite. A Viewer instance serves one directory, fixed when it
+starts, and `?file=` selects one artifact inside it:
 
 ```text
-http://127.0.0.1:3245/path/to/root?file=assemblies/robot-arm/robot-arm.step
+http://127.0.0.1:3245/?file=assemblies/robot-arm/robot-arm.step
 ```
 
 The bare origin names no directory and falls back to the server's cwd. One Viewer

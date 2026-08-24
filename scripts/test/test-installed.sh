@@ -147,7 +147,7 @@ echo "   built a STEP package"
 
 step "Serve the viewer and answer a catalog request"
 PORT="$("$VENV/bin/python" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
-"$VENV/bin/cadgen" viewer --host 127.0.0.1 --port "$PORT" >"$WORK/viewer.log" 2>&1 &
+"$VENV/bin/cadgen" viewer --root "$EMPTY/models" --host 127.0.0.1 --port "$PORT" >"$WORK/viewer.log" 2>&1 &
 VIEWER_PID=$!
 # `wait` after the kill so bash reaps the child quietly; without it the shell prints a
 # "Terminated" job notice AFTER the success line, which reads like a failure.
@@ -161,7 +161,8 @@ curl -fsS -m 5 "http://127.0.0.1:$PORT/__cad/server" >/dev/null \
   || { cat "$WORK/viewer.log" >&2; fail "viewer did not come up"; }
 curl -fsS -m 10 "http://127.0.0.1:$PORT/" | grep -qi '<title>' \
   || fail "viewer served no SPA (is the client bundled into the wheel?)"
-curl -fsS -m 20 "http://127.0.0.1:$PORT/__cad/catalog?dir=$EMPTY/models" | grep -q 'probe' \
+# No ?dir=: the instance was started with --root, and the catalog is that root.
+curl -fsS -m 20 "http://127.0.0.1:$PORT/__cad/catalog" | grep -q 'probe' \
   || fail "catalog did not list the generated model"
 echo "   SPA + catalog OK on port $PORT"
 

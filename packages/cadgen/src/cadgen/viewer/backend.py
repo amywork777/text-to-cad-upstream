@@ -14,7 +14,6 @@ from urllib.parse import urlsplit, parse_qs, unquote
 
 from . import artifact as artifact_mod
 from . import cadgen_bridge
-from . import paths
 from . import scanner
 from .content_types import content_type_for_path
 from .save_dialog import pick_save_destination
@@ -51,8 +50,10 @@ def normalized_file_ref(value: str) -> str:
         return ""
     if "\0" in raw:
         raise ValueError("File path contains an invalid null byte")
-    # A ref can reach us in URL-path form (`/D:/models/part.step`) the same way ?dir= does.
-    raw = paths.filesystem_path_from_url_path(raw)
+    # `file=` carries a filesystem path, not a URL path. It used to be able to arrive in
+    # URL form (`/D:/models/part.step`) because the page URL's path was the directory and
+    # the client read refs off it; the catalog is the only source now, and it emits
+    # `absolute_file_ref` (`D:/models/part.step`), which needs no decoding.
     return absolute_file_ref(raw) if os.path.isabs(raw) else raw.lstrip("/")
 
 
@@ -119,18 +120,18 @@ def _absolutize_artifact(artifact, scan_repo_root):
     return _absolutize_keyed(artifact, scan_repo_root, ("stepPath", "packagePath", "sourcePath", "cadPath"))
 
 
-def _absolutize_entry(entry: dict, *, root_path: str, scan_repo_root: str, root_dir: str) -> dict:
+def _absolutize_entry(entry: dict, *, root_path: str, scan_repo_root: str) -> dict:
     output_path = os.path.abspath(os.path.join(root_path, str(entry.get("file") or "")))
     nxt = dict(entry)
     nxt["file"] = absolute_file_ref(output_path)
     nxt["rootRelativeFile"] = relative_file_ref(root_path, output_path)
     if entry.get("url"):
         asset_path = _asset_path_from_catalog_url(scan_repo_root, entry["url"])
-        nxt["url"] = local_asset_url_for_path(asset_path, version=_query_value(entry["url"], "v"), root_dir=root_dir)
+        nxt["url"] = local_asset_url_for_path(asset_path, version=_query_value(entry["url"], "v"))
         nxt["assetFile"] = absolute_file_ref(asset_path)
     if entry.get("moduleUrl"):
         module_path = _asset_path_from_catalog_url(scan_repo_root, entry["moduleUrl"])
-        nxt["moduleUrl"] = local_asset_url_for_path(module_path, version=_query_value(entry["moduleUrl"], "v"), root_dir=root_dir)
+        nxt["moduleUrl"] = local_asset_url_for_path(module_path, version=_query_value(entry["moduleUrl"], "v"))
         nxt["moduleFile"] = absolute_file_ref(module_path)
     if entry.get("source"):
         nxt["source"] = _absolutize_source(entry["source"], scan_repo_root)
@@ -151,7 +152,7 @@ def _absolutize_entry(entry: dict, *, root_path: str, scan_repo_root: str, root_
             nxt_relation["rootRelativeFile"] = relative_file_ref(root_path, relation_path)
             if relation.get("url"):
                 rel_asset = _asset_path_from_catalog_url(scan_repo_root, relation["url"])
-                nxt_relation["url"] = local_asset_url_for_path(rel_asset, version=_query_value(relation["url"], "v"), root_dir=root_dir)
+                nxt_relation["url"] = local_asset_url_for_path(rel_asset, version=_query_value(relation["url"], "v"))
                 nxt_relation["assetFile"] = absolute_file_ref(rel_asset)
             nxt_relations[key] = nxt_relation
         nxt["relations"] = nxt_relations
@@ -159,56 +160,64 @@ def _absolutize_entry(entry: dict, *, root_path: str, scan_repo_root: str, root_
 
 
 class LocalAssetBackend:
-    """Serves whatever directory a request names. There is no configured root.
+    """Serves ONE directory, fixed when the process starts.
 
-    A request's directory is an absolute filesystem path (the page URL's path;
-    see server.py). It is its own scan root, so there is no base-vs-request root
-    to reconcile, no relative-vs-absolute resolution, and no re-basing of scanned
-    entries. An empty directory means the process cwd.
+    The root is resolved and validated here, once, so every later request is
+    checked against a root that is known to exist. Requests do not name a
+    directory: a page URL is just the origin, and `?file=` names a file inside
+    this root. An empty root means the process cwd.
+
+    The containment check below is therefore unconditional. It used to be
+    skipped whenever a request named no root, which made it opt-in by the
+    caller; `RootIsPinnedAtStartup` in test_path_adversarial.py pins that shut.
     """
 
     kind = "local-fs"
 
-    def resolve_root(self, root_dir: str = "") -> dict:
-        # ?dir= is a URL path, so a Windows root arrives as `/D:/models`; abspath would
-        # read the leading slash as the current drive's root and answer `C:\D:\models`.
-        requested = paths.filesystem_path_from_url_path(str(root_dir or "").strip())
-        root_path = os.path.abspath(requested or os.getcwd())
+    def __init__(self, root: str = ""):
+        root_path = os.path.abspath(str(root or "").strip() or os.getcwd())
         if "\0" in root_path:
             raise ValueError("CAD Viewer directory contains an invalid null byte")
         require_directory(root_path)
-        return {"dir": absolute_file_ref(root_path), "rootPath": root_path, "rootName": os.path.basename(root_path)}
+        self._root = {"rootPath": root_path, "rootName": os.path.basename(root_path)}
 
-    def read_catalog(self, root_dir: str = "", file_ref: str = "") -> dict:
-        resolved_root = self.resolve_root(root_dir)
-        root_path = resolved_root["rootPath"]
+    def resolve_root(self) -> dict:
+        return self._root
+
+    def read_catalog(self, file_ref: str = "") -> dict:
+        root_path = self._root["rootPath"]
         raw = scanner.scan_cad_directory(root_path, include_artifact_status=False)
         entries = [
-            _absolutize_entry(entry, root_path=root_path, scan_repo_root=root_path, root_dir=resolved_root["dir"])
+            _absolutize_entry(entry, root_path=root_path, scan_repo_root=root_path)
             for entry in raw["entries"]
         ]
         return {"schemaVersion": scanner.CAD_CATALOG_SCHEMA_VERSION, "entries": entries}
 
-    def asset_path_for_file_ref(self, file_ref: str, resolved_root: dict | None = None, root_dir: str = "") -> str | None:
+    def _reject_outside_root(self, candidate: str) -> bool:
+        """Raise for anything outside the root; True when a hidden path should 404.
+
+        Hidden (dot-prefixed) directories below the served root are never served;
+        only root-relative components are checked so a root that itself lives under
+        a hidden absolute path still works.
+        """
+        root_path = self._root["rootPath"]
+        if not (candidate == root_path or scanner.path_is_inside(candidate, root_path)):
+            raise ForbiddenAssetError("Forbidden")
+        relative = os.path.relpath(candidate, root_path)
+        return any(part.startswith(".") for part in relative.split(os.sep) if part and part != "..")
+
+    def asset_path_for_file_ref(self, file_ref: str) -> str | None:
         normalized = normalized_file_ref(file_ref)
         if not normalized or not os.path.isabs(normalized):
             return None
         candidate = os.path.abspath(normalized)
         if not scanner.is_served_cad_asset(candidate):
             return None
-        active = resolved_root or (self.resolve_root(root_dir) if root_dir else None)
-        if active:
-            if not (candidate == active["rootPath"] or scanner.path_is_inside(candidate, active["rootPath"])):
-                raise ForbiddenAssetError("Forbidden")
-            # Hidden (dot-prefixed) directories below the served root are never served;
-            # only root-relative components are checked so a root that itself lives under
-            # a hidden absolute path still works.
-            relative = os.path.relpath(candidate, active["rootPath"])
-            if any(part.startswith(".") for part in relative.split(os.sep) if part and part != ".."):
-                return None
+        if self._reject_outside_root(candidate):
+            return None
         return candidate
 
-    def contained_path_for_file_ref(self, file_ref: str, resolved_root: dict | None = None, root_dir: str = "") -> str | None:
+    def contained_path_for_file_ref(self, file_ref: str) -> str | None:
         """Containment WITHOUT the served-asset extension filter, for callers that do not
         stream bytes.
 
@@ -223,13 +232,8 @@ class LocalAssetBackend:
         candidate = os.path.abspath(normalized)
         if scanner._is_hidden_name(os.path.basename(candidate)):
             return None
-        active = resolved_root or (self.resolve_root(root_dir) if root_dir else None)
-        if active:
-            if not (candidate == active["rootPath"] or scanner.path_is_inside(candidate, active["rootPath"])):
-                raise ForbiddenAssetError("Forbidden")
-            relative = os.path.relpath(candidate, active["rootPath"])
-            if any(part.startswith(".") for part in relative.split(os.sep) if part and part != ".."):
-                return None
+        if self._reject_outside_root(candidate):
+            return None
         return candidate
 
     def content_type_for_path(self, file_path: str) -> str:

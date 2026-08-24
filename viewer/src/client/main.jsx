@@ -50,7 +50,7 @@ function bootstrap() {
 }
 
 function AppRoot() {
-  const { manifest, revision, catalogHydrated, catalogRefreshing, catalogError, activeDir } = useSyncExternalStore(
+  const { manifest, revision, catalogHydrated, catalogRefreshing, catalogError } = useSyncExternalStore(
     subscribeCadManifest,
     getCadManifestSnapshot,
     getCadManifestSnapshot,
@@ -63,7 +63,6 @@ function AppRoot() {
       catalogHydrated={catalogHydrated}
       catalogRefreshing={catalogRefreshing}
       catalogError={catalogError}
-      activeDir={activeDir}
     />
   );
 }

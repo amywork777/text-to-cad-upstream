@@ -1,6 +1,5 @@
 const CAD_CATALOG_REFRESH_INTERVAL_MS = 2_000;
 const CAD_CATALOG_FETCH_TIMEOUT_MS = 10_000;
-const CAD_DIR_QUERY_PARAM = "dir";
 const CAD_FILE_QUERY_PARAM = "file";
 
 function normalizeCadManifest(manifest) {
@@ -25,7 +24,6 @@ let currentSnapshot = {
   catalogHydrated: false,
   catalogRefreshing: typeof window !== "undefined",
   catalogError: "",
-  activeDir: "",
 };
 let refreshRequestId = 0;
 let refreshInFlight = null;
@@ -33,7 +31,7 @@ let refreshLoopStarted = false;
 
 currentManifestSignature = JSON.stringify(currentSnapshot.manifest);
 
-function publishCadManifest(nextManifest, { hydrated = true, refreshing = false, error = "", activeDir = currentSnapshot.activeDir } = {}) {
+function publishCadManifest(nextManifest, { hydrated = true, refreshing = false, error = "" } = {}) {
   const manifest = normalizeCadManifest(nextManifest);
   const manifestSignature = JSON.stringify(manifest);
   const manifestChanged = manifestSignature !== currentManifestSignature;
@@ -43,14 +41,12 @@ function publishCadManifest(nextManifest, { hydrated = true, refreshing = false,
     catalogHydrated: hydrated,
     catalogRefreshing: refreshing,
     catalogError: error,
-    activeDir,
   };
   if (
     !manifestChanged &&
     nextSnapshot.catalogHydrated === currentSnapshot.catalogHydrated &&
     nextSnapshot.catalogRefreshing === currentSnapshot.catalogRefreshing &&
-    nextSnapshot.catalogError === currentSnapshot.catalogError &&
-    nextSnapshot.activeDir === currentSnapshot.activeDir
+    nextSnapshot.catalogError === currentSnapshot.catalogError
   ) {
     return;
   }
@@ -65,11 +61,10 @@ function publishCadManifest(nextManifest, { hydrated = true, refreshing = false,
   }
 }
 
-function publishCadRefreshState({ refreshing = currentSnapshot.catalogRefreshing, error = currentSnapshot.catalogError, activeDir = currentSnapshot.activeDir } = {}) {
+function publishCadRefreshState({ refreshing = currentSnapshot.catalogRefreshing, error = currentSnapshot.catalogError } = {}) {
   if (
     refreshing === currentSnapshot.catalogRefreshing &&
-    error === currentSnapshot.catalogError &&
-    activeDir === currentSnapshot.activeDir
+    error === currentSnapshot.catalogError
   ) {
     return;
   }
@@ -78,7 +73,6 @@ function publishCadRefreshState({ refreshing = currentSnapshot.catalogRefreshing
     revision: currentSnapshot.revision + 1,
     catalogRefreshing: refreshing,
     catalogError: error,
-    activeDir,
   };
   for (const listener of listeners) {
     listener();
@@ -96,45 +90,13 @@ function readSearchParam(name) {
   }
 }
 
-/**
- * The directory the page is showing: the URL's PATH, exactly as in a file:// URL.
- *
- * `http://127.0.0.1:3245/Users/me/models` opens `/Users/me/models`. The bare origin
- * names no directory and returns "", which the backend reads as its cwd.
- *
- * The URL is the only source of truth — there is deliberately no stored fallback.
- * A dir that persisted in sessionStorage used to make the same URL render different
- * models depending on what you had opened before.
- */
-export function readActiveCadDir() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  let pathname = "";
-  try {
-    pathname = new URL(window.location.href).pathname;
-  } catch {
-    return "";
-  }
-  let decoded = pathname;
-  try {
-    decoded = decodeURIComponent(pathname);
-  } catch {
-    // A malformed escape leaves the raw path; the backend rejects it with a clear error.
-  }
-  const trimmed = String(decoded || "").replace(/\/+$/, "");
-  return trimmed === "" || trimmed === "/" ? "" : trimmed;
-}
-
 function cadApiUrl(path, {
-  activeDir = readActiveCadDir(),
   includeFile = false,
   params = {},
 } = {}) {
+  // No directory param: the server serves one root, fixed at startup, and a request
+  // that named its own would be a second source of truth for the same fact.
   const url = new URL(path, "http://cad.local");
-  if (activeDir) {
-    url.searchParams.set(CAD_DIR_QUERY_PARAM, activeDir);
-  }
   if (includeFile) {
     const file = readSearchParam(CAD_FILE_QUERY_PARAM);
     if (file) {
@@ -196,14 +158,13 @@ export async function refreshCadCatalog({ markRefreshing = !currentSnapshot.cata
     return refreshInFlight;
   }
   const requestId = ++refreshRequestId;
-  const activeDir = readActiveCadDir();
   if (markRefreshing) {
-    publishCadRefreshState({ refreshing: true, error: "", activeDir });
+    publishCadRefreshState({ refreshing: true, error: "" });
   }
   refreshInFlight = (async () => {
     try {
       const response = await fetchWithTimeout(
-        cadApiUrl("/__cad/catalog", { activeDir, includeFile: true }),
+        cadApiUrl("/__cad/catalog", { includeFile: true }),
         { cache: "no-store" },
         CAD_CATALOG_FETCH_TIMEOUT_MS,
         `Timed out loading CAD catalog after ${CAD_CATALOG_FETCH_TIMEOUT_MS / 1000}s`
@@ -216,7 +177,7 @@ export async function refreshCadCatalog({ markRefreshing = !currentSnapshot.cata
       }
       const catalog = await response.json();
       if (requestId === refreshRequestId) {
-        publishCadManifest(catalog, { hydrated: true, refreshing: false, error: "", activeDir });
+        publishCadManifest(catalog, { hydrated: true, refreshing: false, error: "" });
       }
     } catch (error) {
       if (requestId === refreshRequestId) {
@@ -224,7 +185,6 @@ export async function refreshCadCatalog({ markRefreshing = !currentSnapshot.cata
           hydrated: true,
           refreshing: false,
           error: error instanceof Error ? error.message : String(error),
-          activeDir,
         });
       }
       throw error;
@@ -310,11 +270,8 @@ export function subscribeCadManifest(listener) {
 
 if (import.meta.hot) {
   import.meta.hot.on("cad-catalog:changed", (data = {}) => {
-    const changedDir = String(data?.dir || "").trim();
-    const activeDir = readActiveCadDir();
-    if (changedDir && activeDir && changedDir !== activeDir) {
-      return;
-    }
+    // One root per instance, so a change anywhere the dev server watches is a change
+    // in the directory this page is showing.
     refreshCadCatalog().catch((error) => {
       console.warn("Failed to refresh CAD catalog", error);
     });

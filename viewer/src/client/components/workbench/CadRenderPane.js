@@ -404,7 +404,7 @@ export default function CadRenderPane({
   // the model and sends you looking for a build problem that isn't there, so
   // say which of the two it actually is.
   const servedRoot = String(
-    viewerServerInfo?.rootPath || viewerServerInfo?.directoryRoot || ""
+    viewerServerInfo?.rootPath || ""
   ).trim();
   const missingFileOutsideRoot = Boolean(
     missingFileLabel

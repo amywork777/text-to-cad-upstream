@@ -5,17 +5,16 @@ GET /__cad/catalog, GET /__cad/asset, GET /__cad/download, GET /__cad/artifact,
 POST /__cad/artifact (build), POST /__cad/export and POST /__cad/reveal, plus the static dist/SPA and
 legacy Referer assets.
 
-Run: python -m cadgen.viewer.server [--port N] [--host H]
+Run: python -m cadgen.viewer.server [--port N] [--host H] [--root DIR]
 
-There is no served root. A page URL's PATH is the absolute directory to open
-(`http://host:port/Users/me/models`), exactly as in a file:// URL; the client
-reads it from location.pathname and passes it to /__cad/* as ?dir=. The bare
-origin names no directory, which the backend reads as the process cwd. The only
-paths that are NOT a directory are the bundle's /assets/* and the /__cad/* API.
+This instance serves ONE directory, `--root`, defaulting to the process cwd and
+validated before the port is taken. The page is the bare origin and `?file=` names
+a file inside that root; requests never carry a directory of their own. Anything
+resolving outside the root is refused, unconditionally.
 
 Security / trust model: binds to loopback (127.0.0.1) and serves UNAUTHENTICATED.
-Any local PROCESS can read files under the requested directory (GET /__cad/asset),
-trigger STEP builds/exports, and activate directories. This is a single-user,
+Any local PROCESS can read files under the SERVED ROOT (GET /__cad/asset) and
+trigger STEP builds/exports there. This is a single-user,
 local-filesystem viewer where loopback binding is the trust boundary for other
 processes and other machines. Do NOT bind a non-loopback --host or expose this
 server beyond localhost without adding auth.
@@ -55,7 +54,6 @@ from cadgen.assets import AssetMissing, viewer_dist_dir
 from cadgen.viewer import backend as backend_mod
 from cadgen.viewer import cadgen_bridge
 from cadgen.viewer import encoding as enc
-from cadgen.viewer import paths
 from cadgen.viewer import registry
 from cadgen.viewer import reveal
 from cadgen.viewer import server_info as server_info_mod
@@ -135,9 +133,9 @@ def _host_is_allowed(host_header: str, bound_host: str) -> bool:
     return _hostname_only(host_header) in _LOOPBACK_NAMES
 
 
-def _server_info(root_dir: str = "") -> dict:
+def _server_info() -> dict:
     return server_info_mod.build_viewer_server_info(
-        root_dir=root_dir or "",
+        root_path=_Ctx.directory_root,
         port=_Ctx.port,
         host=_Ctx.host,
         backend="local-fs",
@@ -221,14 +219,13 @@ class Handler(BaseHTTPRequestHandler):
         path, q = self._query()
         try:
             if path == "/__cad/server":
-                self._send_json(200, _server_info(q.get("dir", "")))
+                self._send_json(200, _server_info())
             elif path == "/__cad/catalog":
-                catalog = _Ctx.backend.read_catalog(root_dir=q.get("dir", ""), file_ref=q.get("file", ""))
+                catalog = _Ctx.backend.read_catalog(file_ref=q.get("file", ""))
                 self._send_json(200, catalog)
             elif path == "/__cad/artifact":
-                root_dir = q.get("dir", "")
-                catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
-                resolved = _Ctx.backend.resolve_root(root_dir)
+                catalog = _Ctx.backend.read_catalog(file_ref=q.get("file", ""))
+                resolved = _Ctx.backend.resolve_root()
                 self._send_json(200, _Ctx.backend.artifact_status(q.get("file", ""), resolved, catalog))
             elif path == "/__cad/asset":
                 self._serve_asset(q, download=False)
@@ -312,9 +309,8 @@ class Handler(BaseHTTPRequestHandler):
         file_ref = _sibling_file_ref(self._request_referer_file_ref(), relative_path)
         if not file_ref:
             return False
-        root_dir = q.get("dir", "")
         try:
-            candidate = _Ctx.backend.asset_path_for_file_ref(file_ref, root_dir=root_dir)
+            candidate = _Ctx.backend.asset_path_for_file_ref(file_ref)
         except backend_mod.ForbiddenAssetError:
             self.send_response(403)
             self.send_header("content-length", str(len(b"Forbidden")))
@@ -330,19 +326,13 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_dist(self, path: str):
         # Static dist + SPA fallback (serve mode). dev mode serves the client via Vite.
         #
-        # Every path that is not a bundle asset is a DIRECTORY the client will open
-        # (the page URL's path is the absolute directory), so it must fall through to
-        # index.html. That includes directory paths containing dots — `/Users/j/v0.4/models`
-        # is a directory, not a missing file — which is why "has an extension" cannot be
-        # the static-asset test here; only the bundle's own /assets/ prefix can be.
-        #
-        # The join must be given a RELATIVE path: a Windows directory request arrives as
-        # `/D:/models`, and os.path.join drops its base when a later component is
-        # drive-absolute, so joining that raw escaped dist_root and the containment check
-        # below rejected an ordinary directory as traversal (issue #211). Stripping the
-        # drive keeps the join inside dist_root, where no such file exists, so the request
-        # falls through to index.html like any other directory. Traversal segments survive
-        # the strip and are still caught by the check.
+        # The page lives at `/` and nothing else here is a directory, so this is an
+        # ordinary static server: serve the file if the bundle has it, otherwise fall
+        # through to index.html. It used to be harder, because a URL path WAS a directory
+        # to open -- which meant a path with a dot in it (`/Users/j/v0.4/models`) had to
+        # reach index.html rather than 404 as a missing file, and a Windows request
+        # arrived as `/D:/models`, whose drive letter made os.path.join drop dist_root
+        # entirely and read an ordinary directory as traversal (issue #211).
         dist_root = _Ctx.dist_root
         request_path = "/index.html" if path == "/" else path
         try:
@@ -350,7 +340,7 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             self._plain(400, "Bad request")
             return
-        file_path = os.path.abspath(os.path.join(dist_root, paths.url_path_as_relative(decoded)))
+        file_path = os.path.abspath(os.path.join(dist_root, decoded.lstrip("/")))
         if not (file_path == dist_root or file_path.startswith(dist_root + os.sep)):
             self._plain(403, "Forbidden")
             return
@@ -392,9 +382,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         file_ref = q.get("file", "")
-        root_dir = q.get("dir", "")
-        resolved = _Ctx.backend.resolve_root(root_dir) if root_dir else None
-        candidate = _Ctx.backend.asset_path_for_file_ref(file_ref, resolved_root=resolved, root_dir=root_dir)
+        candidate = _Ctx.backend.asset_path_for_file_ref(file_ref)
         if not candidate or not os.path.isfile(candidate):
             self._send_json(404, {"error": "Not found"})
             return
@@ -407,12 +395,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send_bytes(200, data, content_type, disposition=disposition)
 
     def _artifact_build(self, q):
-        root_dir = q.get("dir", "")
-        catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
-        resolved = _Ctx.backend.resolve_root(root_dir)
+        catalog = _Ctx.backend.read_catalog(file_ref=q.get("file", ""))
+        resolved = _Ctx.backend.resolve_root()
         result = _Ctx.backend.resolve_artifact(q.get("file", ""), q.get("force", "") == "1", resolved, catalog)
         # Refresh the catalog AFTER the build (even on failure) and attach it, matching Node.
-        next_catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
+        next_catalog = _Ctx.backend.read_catalog(file_ref=q.get("file", ""))
         status = 500 if result.get("ok") is False else 200
         self._send_json(status, {**result, "catalog": next_catalog})
 
@@ -425,20 +412,16 @@ class Handler(BaseHTTPRequestHandler):
         route, and being a POST it sits behind the cross-site header gate -- which matters
         more here than elsewhere, since it spawns a process.
         """
-        root_dir = q.get("dir", "")
         file_ref = q.get("file", "")
-        resolved = _Ctx.backend.resolve_root(root_dir) if root_dir else None
-        target = _Ctx.backend.contained_path_for_file_ref(file_ref, resolved_root=resolved, root_dir=root_dir)
+        target = _Ctx.backend.contained_path_for_file_ref(file_ref)
         if target and str(q.get("asset", "output")).strip() == "source":
-            catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=file_ref)
+            catalog = _Ctx.backend.read_catalog(file_ref=file_ref)
             entry = _Ctx.backend.catalog_entry_for_file_ref(catalog, file_ref) or {}
             source_path = ((entry.get("source") or {}) if isinstance(entry.get("source"), dict) else {}).get("sourcePath")
             if source_path:
                 # Re-resolve rather than trusting the catalog: the same containment must
                 # apply to the source path as to the entry itself.
-                source_target = _Ctx.backend.contained_path_for_file_ref(
-                    source_path, resolved_root=resolved, root_dir=root_dir
-                )
+                source_target = _Ctx.backend.contained_path_for_file_ref(source_path)
                 if source_target:
                     target = source_target
         if not target or not os.path.exists(target):
@@ -454,9 +437,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json(200, {"ok": True, "path": target})
 
     def _export(self, q):
-        root_dir = q.get("dir", "")
-        catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
-        resolved = _Ctx.backend.resolve_root(root_dir)
+        catalog = _Ctx.backend.read_catalog(file_ref=q.get("file", ""))
+        resolved = _Ctx.backend.resolve_root()
         result = _Ctx.backend.generate_export(q.get("file", ""), q.get("format", "step") or "step", resolved, catalog)
         if result.get("cancelled"):
             self._send_json(200, {"ok": False, "cancelled": True})
@@ -470,8 +452,7 @@ class Handler(BaseHTTPRequestHandler):
         if result.get("fallback") and result.get("outputFileRef"):
             payload["fallback"] = True
             payload["downloadUrl"] = (
-                f"/__cad/download?dir={enc.encode_uri_component(root_dir)}"
-                f"&file={enc.encode_uri_component(result['outputFileRef'])}&asset=output"
+                f"/__cad/download?file={enc.encode_uri_component(result['outputFileRef'])}&asset=output"
             )
         self._send_json(200, payload)
 
@@ -481,11 +462,17 @@ def main(argv=None):
     parser.add_argument("--port", type=int, default=server_info_mod.DEFAULT_VIEWER_PORT)
     parser.add_argument("--host", default=server_info_mod.DEFAULT_VIEWER_HOST)
     parser.add_argument("--dist-root", default="", help="built SPA dist directory (serve mode)")
+    parser.add_argument("--root", default="", help="the directory this viewer serves (default: cwd)")
     args = parser.parse_args(argv)
 
-    # No served root: the request's URL path IS the directory (see Handler.do_GET).
-    # cwd is only the fallback for a request that names no directory at all.
-    directory_root = os.getcwd()
+    # The one directory this instance serves, fixed here. Requests never name a
+    # directory: `?file=` is resolved inside this root and checked against it.
+    directory_root = os.path.abspath(str(args.root or "").strip() or os.getcwd())
+    if not os.path.isdir(directory_root):
+        # Booting a viewer whose root does not exist would answer every request with a
+        # 404 that looks like a missing model rather than a missing root.
+        print(f"CAD Viewer root is not a directory: {directory_root}", file=sys.stderr)
+        return 1
     if os.environ.get("VIEWER_CAD_BACKEND_VALIDATED") != "1":
         try:
             cadgen_bridge.require_cadgen_runtime(directory_root)
@@ -503,7 +490,7 @@ def main(argv=None):
         return 1
     _Ctx.port = server_info_mod.normalize_viewer_port(args.port)
     _Ctx.host = args.host
-    _Ctx.backend = backend_mod.LocalAssetBackend()
+    _Ctx.backend = backend_mod.LocalAssetBackend(directory_root)
 
     if _hostname_only(args.host) not in _LOOPBACK_NAMES:
         print(
@@ -517,7 +504,7 @@ def main(argv=None):
 
     # Announce this instance so `cadgen viewer list` can find it. After the bind, so we
     # never advertise a port we failed to take.
-    registry.register(args.host, _Ctx.port)
+    registry.register(args.host, _Ctx.port, root=_Ctx.directory_root)
     atexit.register(registry.unregister)
     try:
         httpd.serve_forever()

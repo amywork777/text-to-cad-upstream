@@ -15,8 +15,6 @@ import {
 import { BUILDABLE_STEP_ARTIFACT_ERROR_CODES } from "./stepArtifactStatus.js";
 
 const viewerServerInfo = {
-  directoryRoot: "/project/text-to-cad",
-  rootDir: "models",
   rootPath: "/project/text-to-cad/models",
 };
 

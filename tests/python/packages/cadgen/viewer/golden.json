@@ -33,25 +33,21 @@
   "assetUrls": [
     {
       "file": "/abs/p a th/x(1).glb",
-      "dir": "/root dir",
       "v": "zz-1a",
-      "url": "/__cad/asset?file=%2Fabs%2Fp+a+th%2Fx%281%29.glb&dir=%2Froot+dir&v=zz-1a"
+      "url": "/__cad/asset?file=%2Fabs%2Fp+a+th%2Fx%281%29.glb&v=zz-1a"
     },
     {
       "file": "/abs/plain.glb",
-      "dir": "",
       "v": "",
       "url": "/__cad/asset?file=%2Fabs%2Fplain.glb"
     },
     {
       "file": "/abs/ünï.glb",
-      "dir": "/r",
       "v": "1-2",
-      "url": "/__cad/asset?file=%2Fabs%2F%C3%BCn%C3%AF.glb&dir=%2Fr&v=1-2"
+      "url": "/__cad/asset?file=%2Fabs%2F%C3%BCn%C3%AF.glb&v=1-2"
     },
     {
       "file": "/abs/tilde~.glb",
-      "dir": "",
       "v": "abc",
       "url": "/__cad/asset?file=%2Fabs%2Ftilde%7E.glb&v=abc"
     }

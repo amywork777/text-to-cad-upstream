@@ -17,13 +17,14 @@ test("resolvePackageDirRef collapses self-contained and legacy refs", () => {
 
 test("resolvePackageAssetUrl repoints the file param on query-style (local-fs) URLs", () => {
   const meshUrl =
-    "/__cad/asset?file=%2Fmodels%2Fstep%2Fparts%2F__cadgen__%2Fmodels%2Fpart.step&dir=%2Fmodels&v=abc123";
+    "/__cad/asset?file=%2Fmodels%2Fstep%2Fparts%2F__cadgen__%2Fmodels%2Fpart.step&v=abc123";
 
   const descriptorUrl = resolvePackageAssetUrl(meshUrl, "assembly.json");
   const descriptor = new URL(descriptorUrl, "http://x.local");
   assert.equal(descriptor.searchParams.get("file"), "/models/step/parts/__cadgen__/models/part.step/assembly.json");
-  // dir and v survive so the sub-asset stays scoped to the active root with a cache key.
-  assert.equal(descriptor.searchParams.get("dir"), "/models");
+  // v survives so the sub-asset keeps its cache key. There is no dir param: the server
+  // serves one root and the request does not name a directory.
+  assert.equal(descriptor.searchParams.get("dir"), null);
   assert.equal(descriptor.searchParams.get("v"), "abc123");
 
   const componentUrl = resolvePackageAssetUrl(meshUrl, "components/7e4f.glb");

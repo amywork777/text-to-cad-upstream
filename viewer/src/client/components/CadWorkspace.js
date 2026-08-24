@@ -263,7 +263,7 @@ import {
   URDF_JOINT_ANIMATION_EPSILON,
   URDF_JOINT_ANIMATION_FOLLOW_MS
 } from "cadjs/lib/urdf/jointAnimation";
-import { readActiveCadDir, requestArtifactStatus } from "../workbench/cadManifestStore.js";
+import { requestArtifactStatus } from "../workbench/cadManifestStore.js";
 import {
   FILE_STATUS_LEVELS,
   buildFileStatusItems,
@@ -1158,12 +1158,14 @@ export default function CadWorkspace({
   catalogHydrated = false,
   catalogRefreshing = false,
   catalogError = "",
-  activeDir = ""
 }) {
   const manifestEntries = Array.isArray(manifestEntriesProp) ? manifestEntriesProp : [];
   const catalogEntries = manifestEntries;
   const explicitFileParam = readCadParam();
-  const catalogRootDir = String(activeDir || "").trim();
+  // Session state is namespaced per origin, and an origin (host + port) is one viewer
+  // serving one root. This used to be keyed on the directory in the URL path, back when
+  // one instance could show any folder.
+  const catalogRootDir = "";
   const [query, setQuery] = useState("");
   const initialFileViewerDirectoryStateRef = useRef(null);
   if (!initialFileViewerDirectoryStateRef.current) {
@@ -1560,7 +1562,7 @@ export default function CadWorkspace({
   const fileAccessBackend = viewerServerInfo ? (viewerServerBackend || "local-fs") : "";
   const fileRevealAvailable = fileAccessBackend === "local-fs";
   const filePathCopyAvailable = fileAccessBackend === "local-fs" && Boolean(
-    viewerServerInfo?.rootPath || viewerServerInfo?.directoryRoot
+    viewerServerInfo?.rootPath
   );
   // The local-fs viewer has no remote asset links; the copy-link affordance is hosted-only.
   const fileLinkCopyAvailable = false;
@@ -1725,11 +1727,7 @@ export default function CadWorkspace({
     const controller = new AbortController();
     let active = true;
     const url = new URL("/__cad/server", window.location.href);
-    const activeViewerDir = readActiveCadDir();
     const activeFile = readCadParam();
-    if (activeViewerDir) {
-      url.searchParams.set("dir", activeViewerDir);
-    }
     if (activeFile) {
       url.searchParams.set("file", activeFile);
     }

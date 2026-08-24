@@ -29,11 +29,22 @@ from cadgen.viewer import reveal, server  # noqa: E402
 
 
 class _LiveServer:
+    def __init__(self, root: str = ""):
+        # The served root, as `cadgen viewer --root` fixes it at startup.
+        self._root = str(root or "")
+
     def __enter__(self):
-        self._prev = (server._Ctx.backend, server._Ctx.host, server._Ctx.port, server._Ctx.dist_root)
-        server._Ctx.backend = backend_mod.LocalAssetBackend()
+        self._prev = (
+            server._Ctx.backend,
+            server._Ctx.host,
+            server._Ctx.port,
+            server._Ctx.dist_root,
+            server._Ctx.directory_root,
+        )
+        server._Ctx.backend = backend_mod.LocalAssetBackend(self._root)
         server._Ctx.host = "127.0.0.1"
         server._Ctx.dist_root = ""
+        server._Ctx.directory_root = self._root
 
         class _Quiet(ThreadingHTTPServer):
             def handle_error(self, request, client_address):
@@ -50,7 +61,13 @@ class _LiveServer:
         self.httpd.shutdown()
         self.httpd.server_close()
         self._thread.join(timeout=5)
-        server._Ctx.backend, server._Ctx.host, server._Ctx.port, server._Ctx.dist_root = self._prev
+        (
+            server._Ctx.backend,
+            server._Ctx.host,
+            server._Ctx.port,
+            server._Ctx.dist_root,
+            server._Ctx.directory_root,
+        ) = self._prev
         return False
 
     def post(self, path: str, *, guard: bool = True):
@@ -78,53 +95,53 @@ class _Tree:
 
 class RevealRoute(unittest.TestCase):
     def test_revealing_an_entry_calls_the_file_manager_with_that_path(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path", return_value={"ok": True}) as revealer:
             target = tree.root / "widget.step"
-            status, body = live.post(f"/__cad/reveal?dir={tree.root}&file={target}")
+            status, body = live.post(f"/__cad/reveal?file={target}")
         self.assertEqual(status, 200)
         self.assertTrue(json.loads(body)["ok"])
         revealer.assert_called_once()
         self.assertEqual(os.path.realpath(revealer.call_args.args[0]), os.path.realpath(str(target)))
 
     def test_a_missing_entry_is_404_and_reveals_nothing(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path") as revealer:
-            status, _ = live.post(f"/__cad/reveal?dir={tree.root}&file={tree.root / 'nope.step'}")
+            status, _ = live.post(f"/__cad/reveal?file={tree.root / 'nope.step'}")
         self.assertEqual(status, 404)
         revealer.assert_not_called()
 
     def test_a_path_outside_the_root_is_refused(self):
         # Reveal resolves through the same containment as every other asset route.
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path") as revealer:
             status, _ = live.post(
-                f"/__cad/reveal?dir={tree.root}&file={tree.root.parent / 'outside.step'}"
+                f"/__cad/reveal?file={tree.root.parent / 'outside.step'}"
             )
         self.assertNotEqual(status, 200)
         revealer.assert_not_called()
 
     def test_the_cross_site_gate_applies(self):
         # It spawns a process, so this matters more here than on any other route.
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path") as revealer:
             status, _ = live.post(
-                f"/__cad/reveal?dir={tree.root}&file={tree.root / 'widget.step'}", guard=False
+                f"/__cad/reveal?file={tree.root / 'widget.step'}", guard=False
             )
         self.assertEqual(status, 403)
         revealer.assert_not_called()
 
     def test_an_unsupported_platform_reports_501(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path", return_value={"unsupported": True}):
-            status, body = live.post(f"/__cad/reveal?dir={tree.root}&file={tree.root / 'widget.step'}")
+            status, body = live.post(f"/__cad/reveal?file={tree.root / 'widget.step'}")
         self.assertEqual(status, 501)
         self.assertFalse(json.loads(body)["ok"])
 
     def test_a_failing_file_manager_reports_500_with_its_message(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path", return_value={"ok": False, "error": "boom"}):
-            status, body = live.post(f"/__cad/reveal?dir={tree.root}&file={tree.root / 'widget.step'}")
+            status, body = live.post(f"/__cad/reveal?file={tree.root / 'widget.step'}")
         self.assertEqual(status, 500)
         self.assertIn("boom", json.loads(body)["error"])
 
@@ -140,29 +157,29 @@ class GeneratorSources(unittest.TestCase):
     """
 
     def test_a_step_py_generator_can_be_revealed(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path", return_value={"ok": True}) as revealer:
             generator = tree.root / "widget.step.py"
             generator.write_text("# generator")
-            status, _ = live.post(f"/__cad/reveal?dir={tree.root}&file={generator}")
+            status, _ = live.post(f"/__cad/reveal?file={generator}")
         self.assertEqual(status, 200)
         revealer.assert_called_once()
 
     def test_containment_still_applies_to_non_asset_files(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path") as revealer:
             outside = tree.root.parent / "outside.step.py"
             outside.write_text("# not yours")
-            status, _ = live.post(f"/__cad/reveal?dir={tree.root}&file={outside}")
+            status, _ = live.post(f"/__cad/reveal?file={outside}")
         self.assertNotEqual(status, 200)
         revealer.assert_not_called()
 
     def test_hidden_files_are_still_refused(self):
-        with _Tree() as tree, _LiveServer() as live, \
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live, \
                 mock.patch.object(reveal, "reveal_path") as revealer:
             hidden = tree.root / ".secret.step.py"
             hidden.write_text("# hidden")
-            status, _ = live.post(f"/__cad/reveal?dir={tree.root}&file={hidden}")
+            status, _ = live.post(f"/__cad/reveal?file={hidden}")
         self.assertNotEqual(status, 200)
         revealer.assert_not_called()
 

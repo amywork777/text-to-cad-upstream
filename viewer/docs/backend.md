@@ -26,7 +26,7 @@ production server:
 
 ```js
 {
-  resolveRoot(rootDir),
+  resolveRoot(),
   openFileAsset({ fileRef, asset, catalog }),
   assetPathForFileRef(fileRef, { resolvedRoot }),
   entryForSourcePath(catalog, resolvedRoot, sourcePath),
@@ -43,18 +43,16 @@ local CAD generation.
 
 `src/server/localAssetBackend.mjs` is the development and local deployment
 implementation. `readCatalog()` and `refreshCatalog()` scan
-the absolute `?dir=` root for the current request, keep the catalog as an
+the served root, keep the catalog as an
 in-memory object, and return schema v4 entries whose `file` values are absolute
 paths plus `rootRelativeFile` values for URL navigation. The local backend does
 not write `catalog.json` or any hidden catalog cache file.
 
-Local filesystem deployments are intentionally URL-driven. `?dir=` may be
-absolute or relative to the directory where the Viewer was started; when omitted
-it defaults to the startup `--dir`, or to the startup directory if `--dir` was
-not passed. That default directory is also the first active directory. `?file=`
-values are always relative to the active `?dir=` directory.
-`VIEWER_LOCAL_ROOT_DIR`, `VIEWER_LOCAL_WORKSPACE_ROOT`, and the old fixed-root
-startup flag have been removed and now fail at startup.
+A Viewer instance serves ONE directory, given by `--root` at startup and defaulting
+to the process cwd. Requests never name a directory: there is no `?dir=` param, and
+`?file=` is always relative to the served root. Anything resolving outside that root
+is refused, unconditionally -- serving a second directory means starting a second
+Viewer on another port.
 
 The local backend serves asset bytes from the active root and writes regenerated
 artifacts back into it. It rejects path traversal and only serves or writes
@@ -80,8 +78,8 @@ Vite dev mounts this backend for:
 - `GET /__cad/catalog`
 - `GET /__cad/asset?file=...`
 - `GET /__cad/download?file=...&asset=output|source`
-- `POST /__cad/artifact?dir=...&file=...` (build; `&force=1` to rebuild)
-- `POST /__cad/export?dir=...&file=...&format=...`
+- `POST /__cad/artifact?file=...` (build; `&force=1` to rebuild)
+- `POST /__cad/export?file=...&format=...`
 - `POST /__cad/reveal?file=...&asset=output|source`
 
 `download` streams the requested asset bytes from the local backend. `reveal` opens the
@@ -110,6 +108,5 @@ npm run build
 npm run serve
 ```
 
-Then open the printed server URL with
-`?dir=/absolute/root&file=model.step`. Pass `--port <number>` to
+Then open the printed server URL with `?file=model.step`. Pass `--port <number>` to
 `npm run serve --` only when the default production port is already in use.

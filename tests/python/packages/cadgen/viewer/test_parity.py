@@ -58,9 +58,7 @@ class Base36Parity(unittest.TestCase):
 class AssetUrlParity(unittest.TestCase):
     def test_matches_node(self):
         for case in load_golden()["assetUrls"]:
-            built = urls.local_asset_url_for_path(
-                case["file"], version=case["v"], root_dir=case["dir"]
-            )
+            built = urls.local_asset_url_for_path(case["file"], version=case["v"])
             self.assertEqual(built, case["url"], case)
 
 

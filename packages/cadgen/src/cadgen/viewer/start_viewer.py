@@ -7,9 +7,10 @@ use it exits 1 with a `--port <n>` hint. It does NOT probe-and-reuse a running
 Viewer or roll onto another port. Prints the load-bearing stdout contract (the
 CAD Viewer URL line + optional --json {url,port,action}).
 
-The Viewer serves no configured directory: a page URL's PATH is the absolute
-directory to open, so one Viewer serves any folder without being told about it
-up front. The bare origin opens the process cwd.
+A Viewer serves ONE directory, given by --root and defaulting to the process
+cwd. The page is always the bare origin; `?file=` selects a file inside that
+root. To serve a second directory, start a second Viewer on another port --
+`cadgen viewer list` shows which root each running instance holds.
 
 This is the consumer entry point for running the built Viewer. For local client
 iteration in a source checkout use `npm run dev` (Vite/HMR) instead; see the
@@ -30,21 +31,18 @@ import time
 
 from cadgen.viewer import cadgen_bridge
 from cadgen.viewer import registry
-from cadgen.viewer.paths import url_path_from_filesystem_path
 from cadgen.viewer.server_info import DEFAULT_VIEWER_PORT, DEFAULT_VIEWER_HOST
 
 _PROBE_TIMEOUT_S = 0.35
 
 
-def viewer_url(host: str, port: int, directory: str = "") -> str:
-    """The Viewer URL for a directory: the absolute path IS the URL path, exactly as
-    in a file:// URL. No directory yields the bare origin, which opens the cwd.
+def viewer_url(host: str, port: int) -> str:
+    """The Viewer URL: just the origin.
 
-    A Windows path is not already a URL path — pasting `D:\\models` on the end of the
-    origin yields `http://127.0.0.1:3245D:\\models`, which is not a URL at all — so the
-    absolute path is converted rather than concatenated."""
-    path = url_path_from_filesystem_path(os.path.abspath(directory)) if str(directory or "").strip() else ""
-    return f"http://{host}:{port}{path or '/'}"
+    The path used to BE the served directory, which is why this once had to convert a
+    filesystem path into URL form. A viewer serves one root now, so there is nothing
+    to encode -- `?file=` names a file inside it."""
+    return f"http://{host}:{port}/"
 
 
 def port_is_free(host: str, port: int) -> bool:
@@ -60,11 +58,13 @@ def port_is_free(host: str, port: int) -> bool:
         return False
 
 
-def spawn_backend(host: str, port: int, dist_root: str = ""):
+def spawn_backend(host: str, port: int, dist_root: str = "", root: str = ""):
     """Spawn the Python backend (serves the built dist + /__cad) on host:port."""
     env = dict(os.environ)
     env["VIEWER_CAD_BACKEND_VALIDATED"] = "1"
     cmd = [sys.executable, "-m", "cadgen.viewer.server", "--host", host, "--port", str(port)]
+    if root:
+        cmd += ["--root", str(root)]
     # --dist is threaded through rather than resolved here so the child reports the
     # missing-client error itself, with the same text however it was started.
     if dist_root:
@@ -136,9 +136,20 @@ def main(argv=None, *, prog: str = DEFAULT_PROG):
         help="Directory holding the built CAD Viewer client. Defaults to the copy shipped "
              "inside cadgen; CADGEN_VIEWER_DIST is the environment equivalent.",
     )
+    parser.add_argument(
+        "--root",
+        default="",
+        help="The directory this Viewer serves. Defaults to the current directory. "
+             "One root per instance: start another Viewer on another port to serve another.",
+    )
     args, _unknown = parser.parse_known_args(argv)
 
-    directory = os.getcwd()
+    # The one directory this Viewer will serve. Validated before the port is taken, so a
+    # bad --root fails immediately instead of after the instance is registered.
+    directory = os.path.abspath(str(args.root or "").strip() or os.getcwd())
+    if not os.path.isdir(directory):
+        print(f"CAD Viewer root is not a directory: {directory}", file=sys.stderr)
+        return 1
     host, port = args.host, args.port
 
     if not port_is_free(host, port):
@@ -170,13 +181,13 @@ def main(argv=None, *, prog: str = DEFAULT_PROG):
         print(str(exc), file=sys.stderr)
         return 1
 
-    url = viewer_url(host, port, directory)
-    print(f"Starting CAD Viewer at {url}")
+    url = viewer_url(host, port)
+    print(f"Starting CAD Viewer at {url} (serving {directory})")
     print(f"CAD Viewer URL: {url}")
     if args.json_result:
         print(json.dumps({"url": url, "port": port, "action": "start"}))
     sys.stdout.flush()
-    child = spawn_backend(host, port, args.dist_root)
+    child = spawn_backend(host, port, args.dist_root, root=directory)
     if args.open_browser:
         # After spawn (nothing to poll before it), before wait() blocks for the child.
         open_when_ready(url, host, port)

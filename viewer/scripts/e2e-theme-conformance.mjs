@@ -121,6 +121,15 @@ async function main() {
     process.exit(2);
   }
   const modelsRoot = path.resolve(args.dir);
+  // The URL no longer names the directory, so a viewer pointed at the wrong --root would
+  // just render nothing after a 9s wait per scene. Fail here instead, on the same paths
+  // the viewer will be asked for.
+  const missing = SCENES.map(({ file }) => file).filter((file) => !fs.existsSync(path.join(modelsRoot, file)));
+  if (missing.length) {
+    console.error(`scenes missing under ${modelsRoot} (is the viewer serving this root?):`);
+    for (const file of missing) console.error(`  ${file}`);
+    process.exit(2);
+  }
   const { chromium } = require("playwright");
   const { PNG } = require("pngjs");
 
@@ -139,8 +148,8 @@ async function main() {
       const errors = [];
       page.on("pageerror", (error) => errors.push(String(error).slice(0, 160)));
 
-      const url = `${args.url}${modelsRoot}?dir=${encodeURIComponent(modelsRoot)}` +
-        `&file=${encodeURIComponent(scene.file)}`;
+      // The viewer under test must already be serving modelsRoot (--root).
+      const url = `${args.url}?file=${encodeURIComponent(scene.file)}`;
       await page.goto(url, { waitUntil: "domcontentloaded" });
       await page.waitForTimeout(9000);
 

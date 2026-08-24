@@ -9,8 +9,6 @@ import {
 } from "./fileAccessAssets.js";
 
 const viewerServerInfo = {
-  directoryRoot: "/project/text-to-cad",
-  rootDir: "models",
   rootPath: "/project/text-to-cad/models",
 };
 
@@ -130,8 +128,6 @@ test("file access copy targets include absolute and directory-relative local pat
   const targets = copyTargetsForFileAccessAsset({
     rootRelativePath: "assemblies/robot-arm/robot-arm.step",
   }, {
-    directoryRoot: "/project/text-to-cad",
-    rootDir: "models",
     rootPath: "/project/text-to-cad/models",
   });
 
@@ -143,12 +139,13 @@ test("file access copy targets include absolute and directory-relative local pat
 });
 
 test("file access copy targets prefer loaded source directory-relative paths", () => {
+  // The directory-relative path is relative to the SERVED root. It used to be relative
+  // to a repo root one level up, carrying a leading "models/" that then had to be
+  // stripped back off against rootDir.
   const targets = copyTargetsForFileAccessAsset({
     rootRelativePath: "generated/robot.py",
-    directoryRelativePath: "models/generated/source/robot_module.py",
+    directoryRelativePath: "generated/source/robot_module.py",
   }, {
-    directoryRoot: "/project/text-to-cad",
-    rootDir: "models",
     rootPath: "/project/text-to-cad/models",
   });
 
@@ -159,13 +156,16 @@ test("file access copy targets prefer loaded source directory-relative paths", (
   });
 });
 
-test("file access copy targets preserve directory-relative paths outside the viewer root", () => {
+test("file access copy targets resolve directory-relative paths against the served root", () => {
+  // This used to resolve against a SECOND root (the repo root, one level above the
+  // served directory), which is how a path outside the served root still got an
+  // absolute form. There is one root now, so a relative path is relative to it.
   const targets = copyTargetsForFileAccessAsset({
     directoryRelativePath: "cad/source/robot_module.py",
   }, viewerServerInfo);
 
   assert.deepEqual(targets, {
-    path: "/project/text-to-cad/cad/source/robot_module.py",
+    path: "/project/text-to-cad/models/cad/source/robot_module.py",
     filename: "robot_module.py",
     relativePath: "cad/source/robot_module.py",
   });

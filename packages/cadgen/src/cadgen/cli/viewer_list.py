@@ -1,9 +1,9 @@
 """``cadgen viewer list`` — what CAD Viewers are running, and whose code they run.
 
-The equivalent of ``jupyter server list`` / TensorBoard's ``.tensorboard-info``. One
-viewer serves any directory by URL, so instances never differ by what they serve; they
-differ by WHICH CHECKOUT'S CODE answers a port, which is why every row leads with the
-version and package directory.
+The equivalent of ``jupyter server list`` / TensorBoard's ``.tensorboard-info``. A
+viewer serves one directory, fixed at startup, so instances differ both by what they
+serve and by WHICH CHECKOUT'S CODE answers the port -- every row carries the served
+root and the package directory for that reason.
 """
 
 from __future__ import annotations
@@ -34,7 +34,8 @@ def format_entry(entry: dict) -> str:
         f"  port {entry.get('port')}  pid {entry.get('pid')}  "
         f"cadgen {entry.get('version') or '?'}{_age(entry.get('startedAt') or 0)}\n"
         f"    {url}\n"
-        f"    {entry.get('packageDir') or '?'}"
+        f"    serving  {entry.get('root') or '?'}\n"
+        f"    code     {entry.get('packageDir') or '?'}"
     )
 
 

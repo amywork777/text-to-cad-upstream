@@ -7,11 +7,12 @@ it is per-user on macOS, outside every checkout (so parallel worktrees share one
 what is running), and entries orphaned by a hard kill die at reboot instead of
 accumulating forever.
 
-The field that earns this module its keep is ``packageDir``. One viewer serves any
-directory by URL, so instances do not differ by what they serve -- they differ by WHICH
-CHECKOUT'S CODE they run, and a viewer started from another clone answering on the port
-you wanted is this project's recurring confusion. ``cadgen viewer list`` makes that
-visible.
+Two fields earn this module its keep. ``root`` is the directory an instance serves:
+a viewer serves exactly one, fixed at startup, so serving a second directory means
+running a second viewer and this is the only way to see which is which. ``packageDir``
+is WHICH CHECKOUT'S CODE is answering, because a viewer started from another clone
+holding the port you wanted is this project's recurring confusion. ``cadgen viewer
+list`` shows both.
 
 Liveness is an HTTP identity probe, never a signal: ``os.kill(pid, 0)`` is the usual
 POSIX idiom but on Windows any non-special signal terminates the target, and a recycled
@@ -81,7 +82,7 @@ def cadgen_version() -> str:
         return ""
 
 
-def register(host: str, port: int, *, pid: int | None = None) -> str:
+def register(host: str, port: int, *, pid: int | None = None, root: str = "") -> str:
     """Record this process as a live viewer. Returns the file written, or "" on failure.
 
     Best-effort by contract: a viewer that cannot write its entry still serves.
@@ -95,6 +96,10 @@ def register(host: str, port: int, *, pid: int | None = None) -> str:
         "host": str(host),
         "port": int(port),
         "version": cadgen_version(),
+        # Passed in, not looked up: the server runs as `python -m cadgen.viewer.server`,
+        # so its module is __main__ and importing it back here would read a second,
+        # untouched copy of _Ctx.
+        "root": str(root or ""),
         "packageDir": _package_dir(),
         # The URL a human should open. In dev that is vite's port, not the backend's,
         # so the spawning process passes it down rather than us guessing from host:port.

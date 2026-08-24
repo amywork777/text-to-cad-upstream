@@ -37,9 +37,10 @@ def _run(argv, port_free=True, child_code=0, cad_backend_error=""):
     (rc, out, err, calls)."""
     calls = {"spawn": []}
 
-    def fake_spawn(host, port, dist_root=""):
+    def fake_spawn(host, port, dist_root="", root=""):
         calls["spawn"].append((host, port))
         calls.setdefault("dist", []).append(dist_root)
+        calls.setdefault("root", []).append(root)
         return _FakeChild(child_code)
 
     out, err = io.StringIO(), io.StringIO()
@@ -53,32 +54,26 @@ def _run(argv, port_free=True, child_code=0, cad_backend_error=""):
 
 
 class ViewerUrlTest(unittest.TestCase):
-    """The absolute directory IS the URL path, like a file:// URL."""
+    """The URL is the bare origin. The served directory is not in it.
 
-    @unittest.skipIf(
-        os.name == "nt",
-        "pins a POSIX absolute path to a POSIX URL path. On Windows a leading-slash path\n        is drive-relative, so the answer is D:/Users/me/models -- correct there, and not\n        what this literal says. The drive-letter form is covered by test_windows_drive_paths.",
-    )
-    def test_directory_becomes_the_url_path(self):
-        self.assertEqual(
-            "http://127.0.0.1:3245/Users/me/models",
-            sav.viewer_url("127.0.0.1", 3245, "/Users/me/models"),
-        )
+    It used to be: the absolute directory WAS the URL path, like a file:// URL, so one
+    instance could serve any folder. A viewer serves one root now, given by --root, so
+    the path carries nothing and `?file=` selects within that root.
+    """
 
-    def test_no_directory_is_the_bare_origin(self):
-        self.assertEqual("http://127.0.0.1:3245/", sav.viewer_url("127.0.0.1", 3245, ""))
+    def test_the_url_is_the_bare_origin(self):
+        self.assertEqual("http://127.0.0.1:3245/", sav.viewer_url("127.0.0.1", 3245))
 
-    def test_path_is_not_percent_encoded(self):
-        url = sav.viewer_url("127.0.0.1", 3245, "/Users/me/robots/text-to-cad/models")
-        self.assertNotIn("%2F", url)
-        self.assertIn("/Users/me/robots/text-to-cad/models", url)
+    def test_the_url_does_not_depend_on_the_directory(self):
+        # The old signature took a directory and spliced it in. Nothing about the served
+        # root may reach the URL now -- the server already knows it.
+        first = sav.viewer_url("127.0.0.1", 3245)
+        with contextlib.chdir(pathlib.Path(__file__).parent):
+            second = sav.viewer_url("127.0.0.1", 3245)
+        self.assertEqual(first, second)
 
-    def test_relative_directory_is_resolved_absolute(self):
-        url = sav.viewer_url("127.0.0.1", 3245, "models")
-        # as_posix(): the URL spells an absolute path in URL form, so on Windows it reads
-        # D:/a/.../models while os.path.abspath gives D:\a\...\models. Same path, and
-        # only the same STRING on POSIX.
-        self.assertIn(pathlib.Path("models").resolve().as_posix(), url)
+    def test_the_port_is_honoured(self):
+        self.assertEqual("http://127.0.0.1:4321/", sav.viewer_url("127.0.0.1", 4321))
 
 
 class LauncherTest(unittest.TestCase):
@@ -103,12 +98,26 @@ class LauncherTest(unittest.TestCase):
             self.assertEqual(calls["spawn"], [])
 
     def test_dir_flag_is_gone(self):
-        """--dir was removed with the served-root concept; argparse must not take it."""
+        """The root flag is --root, not --dir; argparse must not adopt the old name."""
         parser_argv = ["--dir", self.directory]
         with _run(parser_argv, port_free=True) as (rc, _out, _err, calls):
             # parse_known_args ignores the unknown flag rather than adopting it as a root.
             self.assertEqual(rc, 0)
             self.assertEqual(len(calls["spawn"]), 1)
+
+    def test_the_root_reaches_the_backend(self):
+        # The backend does the containment checking, so a --root the child never receives
+        # is a viewer serving the wrong directory with no sign anything is wrong.
+        with _run(["--root", self.directory], port_free=True) as (rc, _out, _err, calls):
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls["root"], [os.path.abspath(self.directory)])
+
+    def test_a_root_that_is_not_a_directory_refuses_to_start(self):
+        missing = os.path.join(self.directory, "no-such-directory")
+        with _run(["--root", missing], port_free=True) as (rc, _out, err, calls):
+            self.assertEqual(rc, 1)
+            self.assertIn("not a directory", err)
+            self.assertEqual(calls["spawn"], [])
 
     def test_custom_port_is_used(self):
         with _run(["--port", "4321"], port_free=True) as (rc, out, err, calls):
@@ -136,9 +145,10 @@ class LauncherTest(unittest.TestCase):
             self.assertEqual(payload["action"], "start")
             self.assertEqual(payload["port"], sav.DEFAULT_VIEWER_PORT)
             self.assertTrue(payload["url"].startswith("http://"))
-            # The URL carries the cwd as its path, never a ?dir= query.
+            # The served directory is the server's, not the URL's: it appears neither as
+            # the path (the old file://-style form) nor as a ?dir= query.
             self.assertNotIn("?dir=", payload["url"])
-            self.assertIn(pathlib.Path.cwd().as_posix(), payload["url"])
+            self.assertNotIn(pathlib.Path.cwd().as_posix(), payload["url"])
 
 
 class OpenBrowserFlagTest(unittest.TestCase):

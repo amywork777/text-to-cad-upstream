@@ -183,30 +183,31 @@ the development symlink layout afterward if you are continuing on `develop`.
 
 ## CAD Viewer
 
-A Viewer URL's PATH is the absolute directory it opens, exactly as in a `file://`
-URL, and `?file=` selects one artifact within it:
+A Viewer instance serves ONE directory, fixed when it starts. The page is always the
+bare origin and `?file=` selects an artifact inside that root:
 
 ```text
-http://127.0.0.1:3245/absolute/model/root?file=path/relative/to/that/root
+http://127.0.0.1:3245/?file=path/relative/to/the/served/root
 ```
 
-On Windows the drive is part of that path, after the leading slash and with
-forward slashes: `D:\project\models` is `.../3245/D:/project/models`.
+Start it against a directory with `--root`, which defaults to the current one:
 
-The Viewer is not started against a directory — it opens whatever a URL names, so
-one instance serves any folder **under its own served root**. That qualifier
-matters in a worktree: an instance started from another checkout resolves paths
-against ITS root, so an absolute path into a different clone is simply not found
-and the pane reports it as outside this viewer's root. If a Viewer from another
-checkout already holds the default port, start one for this workspace on a free
-port (`--port <n>`) rather than pointing the running one at your path.
+```bash
+cadgen viewer --root <absolute dir> --host 127.0.0.1
+```
 
-When reviewing repo fixtures, use the repo
-`models/` directory as the path and keep permanent or generated
-CAD/robot-description files there so the catalog and artifacts stay in one place.
-Always use an absolute path: the Viewer runs from an arbitrary working directory,
-so a relative one resolves against the wrong place. Do not stop another Viewer
-unless the user asks.
+To review a second directory, start a second Viewer on another port. `cadgen viewer
+list` shows every running instance with the root it serves and the checkout its code
+came from, and `cadgen viewer stop --port <n>` ends one. A Viewer from another
+checkout holding the port you wanted is this repo's recurring confusion; the
+collision message names its pid, version and package directory rather than silently
+reusing it.
+
+When reviewing repo fixtures, start the Viewer with the repo `models/` directory as
+its root and keep permanent or generated CAD/robot-description files there so the
+catalog and artifacts stay in one place. Pass an absolute `--root`: the Viewer runs
+from an arbitrary working directory, so a relative one resolves against the wrong
+place. Do not stop another Viewer unless the user asks.
 
 Editing `viewer/` or `packages/cadjs` source and not seeing the change? Vite's
 server-side transform cache can outlive both HMR and a hard reload — the browser
@@ -220,7 +221,7 @@ your `viewer/` and `packages/cadjs` edits show up live:
 
 ```bash
 npm --prefix viewer run dev -- --host 127.0.0.1 --port <n>
-# then open http://127.0.0.1:<port><repo>/models?file=<path>
+# then open http://127.0.0.1:<port>/?file=<path relative to the served root>
 ```
 
 Use the **prod** path only for end-to-end tests against the shipped bundle, or
@@ -230,7 +231,7 @@ backend (the `cad-viewer` skill's `start` command), so build first:
 ```bash
 npm --prefix viewer run build
 npm --prefix viewer run start -- --host 127.0.0.1 --port <n>
-# then open http://127.0.0.1:<port><repo>/models?file=<path>
+# then open http://127.0.0.1:<port>/?file=<path relative to the served root>
 ```
 
 ### Ports
@@ -250,11 +251,13 @@ importable — the repo venv from the primary checkout does:
 
 ```bash
 PYTHONPATH=<worktree>/packages/cadgen/src <main>/.venv/bin/python -m cadgen.viewer \
-  --dist <worktree>/viewer/dist --host 127.0.0.1 --port <n>
+  --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --port <n>
 ```
 
 `--dist` is the only worktree-specific part: without it the server serves the client
-baked into the installed cadgen, which is not the one you are editing. Building that
+baked into the installed cadgen, which is not the one you are editing. `--root` names
+the directory this instance serves, so point it at the worktree rather than relying on
+the shell's cwd. Building that
 client needs the worktree's `node_modules`, which worktrees deliberately do not carry —
 link them from the primary checkout first:
 
@@ -266,15 +269,17 @@ ln -s <main>/docs/node_modules/meshoptimizer          packages/cadjs/node_module
 npm --prefix viewer run build
 ```
 
-Use an explicit free `--port`: a Viewer already running from another checkout
-resolves paths against ITS root, so it will never find a model in this worktree.
+Use an explicit free `--port`: a Viewer already running from another checkout serves
+ITS root, not this worktree, and starting a second one on the same port is refused
+rather than silently reused.
 
 Two behaviours worth knowing before you conclude a model is broken:
 
 - **The catalog scan skips dot-directories.** A buildable entry under `.review/`
-  or any other dotted path resolves by a direct `?dir=` query but never appears
-  in a scan from the project root, and the Viewer reports that the file does not
-  exist. Keep buildable entries out of dotted directories.
+  or any other dotted path never appears in a scan of the served root, and the
+  Viewer reports that the file does not exist. Pointing `--root` straight at the
+  dotted directory does not help either: entries below the root are filtered on the
+  same rule. Keep buildable entries out of dotted directories.
 - **Verify a Viewer link by loading the page**, not by curling `/__cad/asset`.
   That route serves raw files; a generated entry's render package is served by a
   different route, so probing it returns 404 whether or not anything is wrong.

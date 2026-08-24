@@ -175,11 +175,16 @@ function cadViewerBackendProxyPlugin() {
       if (devPort) {
         env.CADGEN_VIEWER_PUBLIC_URL = `http://127.0.0.1:${devPort}/`;
       }
-      // No --dir: a URL path IS the directory. cwd is the backend's only fallback,
-      // used when a request names no directory at all (the bare origin).
+      // --root is passed explicitly rather than left to the child's cwd: a viewer serves
+      // exactly one directory, and dev should serve the same one the URL bar implies.
       child = spawn(
         cadPythonExecutable(repoRoot),
-        ["-m", "cadgen.viewer.server", "--host", "127.0.0.1", "--port", String(backendPort)],
+        [
+          "-m", "cadgen.viewer.server",
+          "--host", "127.0.0.1",
+          "--port", String(backendPort),
+          "--root", directoryRoot,
+        ],
         { cwd: directoryRoot, env, stdio: "inherit" },
       );
       child.on("error", (error) => {

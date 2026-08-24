@@ -9,9 +9,11 @@ Every localhost file-serving tool ships this bug class, repeatedly, in code shap
 * Gradio (CVE-2023-51449): create a subdirectory via the upload endpoint, then `../` out
   of it -- proof that WRITE routes are part of this surface, not just reads.
 
-The viewer deliberately has no served root (the request names the directory), so what is
-under test is narrower but load-bearing: once a request has named a root, nothing may
-escape it. These tests exist so that guarantee cannot regress silently.
+A viewer instance serves ONE root, fixed at startup, so the guarantee is the strong form:
+nothing may escape that root, on any request. It did not always read that way. The root
+used to arrive per-request, which meant a request that named no root was checked against
+nothing at all -- see `RootIsPinnedAtStartup` below, which is the regression test for
+exactly that. These tests exist so the guarantee cannot go quiet again.
 """
 
 from __future__ import annotations
@@ -63,11 +65,22 @@ class _LiveServer:
     """Real handler over the REAL LocalAssetBackend -- the containment logic is the
     subject here, so mocking the backend would test nothing."""
 
+    def __init__(self, root: str = ""):
+        # The served root, as `cadgen viewer --root` fixes it at startup.
+        self._root = str(root or "")
+
     def __enter__(self):
-        self._prev = (server._Ctx.backend, server._Ctx.host, server._Ctx.port, server._Ctx.dist_root)
-        server._Ctx.backend = backend_mod.LocalAssetBackend()
+        self._prev = (
+            server._Ctx.backend,
+            server._Ctx.host,
+            server._Ctx.port,
+            server._Ctx.dist_root,
+            server._Ctx.directory_root,
+        )
+        server._Ctx.backend = backend_mod.LocalAssetBackend(self._root)
         server._Ctx.host = "127.0.0.1"
         server._Ctx.dist_root = ""
+        server._Ctx.directory_root = self._root
         class _QuietServer(ThreadingHTTPServer):
             # Closing a keep-alive connection mid-request is normal here and would
             # otherwise print a traceback per request, drowning real failures.
@@ -85,7 +98,13 @@ class _LiveServer:
         self.httpd.shutdown()
         self.httpd.server_close()
         self._thread.join(timeout=5)
-        server._Ctx.backend, server._Ctx.host, server._Ctx.port, server._Ctx.dist_root = self._prev
+        (
+            server._Ctx.backend,
+            server._Ctx.host,
+            server._Ctx.port,
+            server._Ctx.dist_root,
+            server._Ctx.directory_root,
+        ) = self._prev
         return False
 
     def get(self, path: str):
@@ -127,11 +146,19 @@ class ContainmentPrimitives(unittest.TestCase):
 
 
 class AssetRouteEscapes(unittest.TestCase):
-    """GET /__cad/asset must never return bytes from outside the named root."""
+    """GET /__cad/asset must never return bytes from outside the SERVED root.
+
+    Note what is absent from every request below: a `dir=` param. There used to be one,
+    and containment was computed as `resolved_root or (resolve_root(root_dir) if root_dir
+    else None)` and applied under `if active:` -- so a request that simply omitted it was
+    checked against nothing. Every test here passed while that hole was open, because
+    every test supplied `dir=`. The root is fixed at startup now, so there is no way to
+    ask for a request without one.
+    """
 
     def _assert_denied(self, live, tree, file_ref, why):
         status, body = live.get(
-            f"/__cad/asset?dir={tree.root}&file={file_ref}"
+            f"/__cad/asset?file={file_ref}"
         )
         with self.subTest(file_ref=file_ref):
             self.assertNotEqual(status, 200, why)
@@ -140,13 +167,13 @@ class AssetRouteEscapes(unittest.TestCase):
 
     def test_the_root_itself_still_serves(self):
         # A containment test that denies everything proves nothing.
-        with _Tree() as tree, _LiveServer() as live:
-            status, body = live.get(f"/__cad/asset?dir={tree.root}&file={tree.root / 'ok.step'}")
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
+            status, body = live.get(f"/__cad/asset?file={tree.root / 'ok.step'}")
             self.assertEqual(status, 200)
             self.assertEqual(body, b"public")
 
     def test_traversal_out_of_the_root_is_denied(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             for file_ref, why in [
                 (f"{tree.root}/../outside/secret.step", "raw ../ escape"),
                 (f"{tree.root}%2F..%2Foutside%2Fsecret.step", "percent-encoded ../ escape"),
@@ -157,7 +184,7 @@ class AssetRouteEscapes(unittest.TestCase):
                 self._assert_denied(live, tree, file_ref, why)
 
     def test_sibling_prefix_directory_is_denied(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             self._assert_denied(
                 live, tree, str(tree.base / "root-evil" / "stolen.step"),
                 "sibling sharing the root's name prefix (the jupyter_server CVE shape)",
@@ -165,14 +192,14 @@ class AssetRouteEscapes(unittest.TestCase):
 
     def test_dot_paths_under_the_root_are_never_served(self):
         # Mirrors Jupyter's allow_hidden=False: dotfiles are invisible even inside root.
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             self._assert_denied(live, tree, str(tree.root / ".dotfile.step"), "dotfile under the root")
             self._assert_denied(
                 live, tree, str(tree.root / ".hidden" / "secret.step"), "file in a dot-directory"
             )
 
     def test_malformed_percent_escapes_do_not_leak(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             self._assert_denied(live, tree, "%2e%2e%2foutside%2fsecret.step", "encoded bare ..")
             self._assert_denied(live, tree, "%zz", "malformed escape")
 
@@ -182,10 +209,10 @@ class LegacyRefererRouteEscapes(unittest.TestCase):
     less obvious path surface -- the one most likely to be forgotten."""
 
     def test_traversal_in_the_relative_path_is_denied(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             for rel in ("../outside/secret.step", "..%2Foutside%2Fsecret.step", "../../etc/passwd.step"):
                 with self.subTest(rel=rel):
-                    status, body = live.get(f"/__cad/{rel}?dir={tree.root}")
+                    status, body = live.get(f"/__cad/{rel}")
                     self.assertNotEqual(status, 200)
                     for secret in SECRETS:
                         self.assertNotIn(secret, body)
@@ -200,13 +227,13 @@ class SymlinkPolicy(unittest.TestCase):
     """
 
     def test_symlink_pointing_outside_the_root(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             link = tree.root / "escape.step"
             try:
                 link.symlink_to(tree.base / "outside" / "secret.step")
             except (OSError, NotImplementedError):
                 self.skipTest("symlinks unavailable on this platform")
-            status, body = live.get(f"/__cad/asset?dir={tree.root}&file={link}")
+            status, body = live.get(f"/__cad/asset?file={link}")
             # CURRENT BEHAVIOUR: the link resolves inside the root by name, so it serves.
             # Same posture as Jupyter. Recorded, not endorsed.
             self.assertEqual(status, 200)
@@ -221,12 +248,12 @@ class WriteSideParameters(unittest.TestCase):
     """
 
     def test_export_format_is_not_a_path(self):
-        with _Tree() as tree, _LiveServer() as live:
+        with _Tree() as tree, _LiveServer(root=str(tree.root)) as live:
             conn = http.client.HTTPConnection("127.0.0.1", live.port, timeout=5)
             try:
                 conn.request(
                     "POST",
-                    f"/__cad/export?dir={tree.root}&file={tree.root / 'ok.step'}"
+                    f"/__cad/export?file={tree.root / 'ok.step'}"
                     "&format=../../outside/pwned",
                     headers={server.POST_GUARD_HEADER: "1"},
                 )
@@ -241,3 +268,4 @@ class WriteSideParameters(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

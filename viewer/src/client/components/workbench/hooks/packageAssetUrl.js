@@ -2,7 +2,7 @@
 // component-GLB package, given the package's own asset URL.
 //
 // The local-fs catalog asset URL is the query form:
-//   /__cad/asset?file=<absolute package dir>&dir=<root>&v=<hash>
+//   /__cad/asset?file=<absolute package dir>&v=<hash>
 //
 // The descriptor and components live INSIDE the package directory. The naive
 // `${packageUrl}/assembly.json` would append the sub-path after the query string, leaving
@@ -38,7 +38,7 @@ export function resolvePackageAssetUrl(packageAssetUrl, relPath) {
   if (!base || !ref) {
     return "";
   }
-  // Repoint `file` at the resolved sub-asset path while preserving `dir`/`v`. Appending to the
+  // Repoint `file` at the resolved sub-asset path while preserving `v`. Appending to the
   // query string would leave `file` at the directory.
   const parsed = new URL(base, URL_RESOLUTION_BASE);
   const packageDir = parsed.searchParams.get("file");

@@ -8,8 +8,6 @@ from __future__ import annotations
 import os
 import time
 
-from .paths import filesystem_path_from_url_path
-
 VIEWER_SERVER_APP_ID = "cad-viewer"
 DEFAULT_VIEWER_HOST = "127.0.0.1"
 DEFAULT_VIEWER_PORT = 3245
@@ -23,16 +21,15 @@ def normalize_viewer_port(value, fallback=DEFAULT_VIEWER_PORT) -> int:
     return parsed if 0 < parsed <= 65535 else fallback
 
 
-def _resolve_view_root(root_dir: str) -> dict:
-    """The requested directory, absolute. Empty means the process cwd — the same
-    fallback the backend applies, since a request's URL path IS its directory.
+def _resolve_view_root(root_path: str) -> dict:
+    """The served directory, absolute. Empty means the process cwd.
 
-    Routed through the URL-path reader for the same reason `LocalAssetBackend.resolve_root`
-    is:
-    a Windows directory arrives as `/D:/models`, which abspath alone turns into
-    `C:\\D:\\models`."""
-    resolved = os.path.abspath(filesystem_path_from_url_path(str(root_dir or "").strip()) or os.getcwd())
-    return {"dir": resolved, "rootPath": resolved, "rootName": os.path.basename(resolved)}
+    A viewer serves one root, fixed at startup, so this is a plain abspath. It used
+    to run the value through a URL-path reader, because the directory arrived as a
+    URL path and a Windows one looks like `/D:/models`. Requests no longer carry a
+    directory, so there is no URL form left to decode."""
+    resolved = os.path.abspath(str(root_path or "").strip() or os.getcwd())
+    return {"rootPath": resolved, "rootName": os.path.basename(resolved)}
 
 
 _STARTED_AT = time.time()
@@ -50,7 +47,7 @@ def _package_dir() -> str:
 
 def build_viewer_server_info(
     *,
-    root_dir: str = "",
+    root_path: str = "",
     port: int = DEFAULT_VIEWER_PORT,
     pid: int | None = None,
     host: str = DEFAULT_VIEWER_HOST,
@@ -60,7 +57,7 @@ def build_viewer_server_info(
     server_mode: str = "",
     server_features=None,
 ) -> dict:
-    view_root = _resolve_view_root(root_dir)
+    view_root = _resolve_view_root(root_path)
     normalized_port = normalize_viewer_port(port)
     normalized_mode = str(server_mode or "").strip()
     info = {
@@ -71,7 +68,6 @@ def build_viewer_server_info(
         info["serverMode"] = normalized_mode
     info["serverFeatures"] = [str(f or "").strip() for f in (server_features or []) if str(f or "").strip()]
     info["backend"] = backend
-    info["rootDir"] = view_root["dir"]
     info["rootPath"] = view_root["rootPath"]
     info["rootName"] = view_root["rootName"]
     info["port"] = normalized_port

@@ -89,7 +89,7 @@ class HostHeaderCheck(unittest.TestCase):
 
     def test_non_local_host_is_refused_on_reads(self):
         with _LiveServer() as live:
-            for path in ("/__cad/server", "/__cad/catalog?dir=/tmp"):
+            for path in ("/__cad/server", "/__cad/catalog"):
                 with self.subTest(path=path):
                     status, body = live.request("GET", path, host="evil.example")
                     self.assertEqual(status, 403)
@@ -97,7 +97,7 @@ class HostHeaderCheck(unittest.TestCase):
 
     def test_non_local_host_is_refused_on_post_before_the_header_gate(self):
         with _LiveServer() as live:
-            status, body = live.request("POST", "/__cad/export?dir=/tmp&file=a", host="evil.example", headers=GUARD)
+            status, body = live.request("POST", "/__cad/export?file=a", host="evil.example", headers=GUARD)
             self.assertEqual(status, 403)
             self.assertIn("DNS-rebinding", json.loads(body)["error"])
             live.backend.generate_export.assert_not_called()
@@ -127,7 +127,7 @@ class CrossSitePostGate(unittest.TestCase):
 
     def test_post_without_the_header_is_refused_and_has_no_effect(self):
         with _LiveServer() as live:
-            status, body = live.request("POST", "/__cad/export?dir=/tmp&file=a&format=step")
+            status, body = live.request("POST", "/__cad/export?file=a&format=step")
             self.assertEqual(status, 403)
             self.assertIn(server.POST_GUARD_HEADER, json.loads(body)["error"])
             # The status alone would not prove the export did not run.
@@ -135,13 +135,13 @@ class CrossSitePostGate(unittest.TestCase):
 
     def test_artifact_build_without_the_header_never_runs_the_generator(self):
         with _LiveServer() as live:
-            status, _ = live.request("POST", "/__cad/artifact?dir=/tmp&file=a")
+            status, _ = live.request("POST", "/__cad/artifact?file=a")
             self.assertEqual(status, 403)
             live.backend.resolve_artifact.assert_not_called()
 
     def test_post_with_the_header_reaches_the_route(self):
         with _LiveServer() as live:
-            status, _ = live.request("POST", "/__cad/export?dir=/tmp&file=a&format=step", headers=GUARD)
+            status, _ = live.request("POST", "/__cad/export?file=a&format=step", headers=GUARD)
             self.assertNotEqual(status, 403)
             live.backend.generate_export.assert_called_once()
 
