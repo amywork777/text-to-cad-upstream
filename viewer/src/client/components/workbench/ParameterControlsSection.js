@@ -38,6 +38,44 @@ function formatControlNumber(value) {
   return numericValue.toFixed(2);
 }
 
+// A parameter's own way back to its declared default, beside the control it resets.
+//
+// Outline rather than ghost: it sits in a column of value inputs, dropdowns and colour
+// swatches, and `outline` carries the same border and surface those do, at the h-7
+// every control in the sheet shares.
+//
+// Live even at the default. A control greying out normally means the app is saying
+// something is unavailable, so a reset that dims whenever the value looks right invites
+// the reading that the row is broken rather than that it is already where it started.
+// Resetting to where you already are costs nothing.
+function ParameterResetButton({ label, title, enabled, onReset }) {
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      className={cn(FILE_SHEET_COMPACT_ICON_BUTTON_CLASSES, "shrink-0")}
+      onClick={onReset}
+      disabled={!enabled}
+      aria-label={`Reset ${label} to default`}
+      title={title}
+    >
+      <RotateCcw className="size-3" strokeWidth={2} aria-hidden="true" />
+    </Button>
+  );
+}
+
+// The trailing half of a parameter row: its control, then its reset. Shared so a row
+// that gains a reset does not also have to re-derive the spacing that puts it in line
+// with every other control on the sheet's right edge.
+function ParameterControlWithReset({ children, label, title, enabled, onReset }) {
+  return (
+    <div className="flex min-w-0 items-center gap-1">
+      {children}
+      <ParameterResetButton label={label} title={title} enabled={enabled} onReset={onReset} />
+    </div>
+  );
+}
+
 function formatSeconds(value) {
   const numericValue = Math.max(Number(value) || 0, 0);
   return `${numericValue.toFixed(numericValue >= 10 ? 1 : 2)}s`;
@@ -183,12 +221,23 @@ export default function ParameterControlsSection({
                   key={parameter.id}
                   label={parameter.label}
                   trailing={(
-                    <FileSheetColorPicker
-                      value={String(currentValue || "#ffffff")}
-                      onChange={(nextValue) => runtime?.onParameterChange?.(parameter.id, nextValue)}
-                      disabled={!enabled}
-                      aria-label={parameter.label}
-                    />
+                    // A nudged colour is the value you are least able to get back by
+                    // eye: the swatch shows where you are with no hint of where you
+                    // started, and there is no typing your way home the way a number
+                    // allows.
+                    <ParameterControlWithReset
+                      label={parameter.label}
+                      title={`Reset to ${String(parameter.defaultValue || "#ffffff")}`}
+                      enabled={enabled}
+                      onReset={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
+                    >
+                      <FileSheetColorPicker
+                        value={String(currentValue || "#ffffff")}
+                        onChange={(nextValue) => runtime?.onParameterChange?.(parameter.id, nextValue)}
+                        disabled={!enabled}
+                        aria-label={parameter.label}
+                      />
+                    </ParameterControlWithReset>
                   )}
                 />
               );
@@ -234,7 +283,12 @@ export default function ParameterControlsSection({
                 // Composed rather than left to the field's own value input, because the
                 // reset has to sit beside that input rather than under the slider.
                 trailing={(
-                  <div className="flex min-w-0 items-center gap-1">
+                  <ParameterControlWithReset
+                    label={parameter.label}
+                    title={`Reset to ${formatControlNumber(parameter.defaultValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
+                    enabled={enabled}
+                    onReset={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
+                  >
                     <FileSheetValueInput
                       value={`${formatControlNumber(currentValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
                       onValueCommit={(nextValue) => {
@@ -247,25 +301,7 @@ export default function ParameterControlsSection({
                       disabled={!enabled}
                       ariaLabel={`${parameter.label} slider value`}
                     />
-                    {/* Outline rather than ghost: it sits in a column of value inputs,
-                        dropdowns and colour swatches, and `outline` carries the same
-                        border/surface those do, at the h-7 every control in the sheet
-                        shares. Stays live at the default -- a control that greys out
-                        when the value "looks right" invites the reading that something
-                        is wrong with the row, and resetting to where you already are
-                        costs nothing. */}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className={cn(FILE_SHEET_COMPACT_ICON_BUTTON_CLASSES, "shrink-0")}
-                      onClick={() => runtime?.onParameterChange?.(parameter.id, parameter.defaultValue)}
-                      disabled={!enabled}
-                      aria-label={`Reset ${parameter.label} to default`}
-                      title={`Reset to ${formatControlNumber(parameter.defaultValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
-                    >
-                      <RotateCcw className="size-3" strokeWidth={2} aria-hidden="true" />
-                    </Button>
-                  </div>
+                  </ParameterControlWithReset>
                 )}
               >
                 <Slider
