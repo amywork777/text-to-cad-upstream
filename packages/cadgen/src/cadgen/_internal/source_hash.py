@@ -383,6 +383,12 @@ def record_first_party_execution():
     windows. Combined with :func:`evict_first_party_modules`, every first-party
     dependency is guaranteed to produce an execution event inside the window."""
     global _ACTIVE_EXECUTION_CAPTURE, _AUDIT_HOOK_INSTALLED
+    # Warm the exclusion roots BEFORE any capture window exists: computing
+    # them lazily imports sysconfig data, whose module execution re-fires the
+    # audit hook into the half-initialized classifier (observed as sysconfig's
+    # recursive-init AttributeError when a capture starts in a process that
+    # never classified a file before).
+    _excluded_roots()
     if not _AUDIT_HOOK_INSTALLED:
         sys.addaudithook(_execution_audit_hook)
         _AUDIT_HOOK_INSTALLED = True
