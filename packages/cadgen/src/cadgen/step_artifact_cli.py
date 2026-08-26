@@ -279,7 +279,6 @@ def build_step_artifact(
     force: bool = False,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
-    reset_runtime_closure: bool = False,
     verbose: bool = False,
     logger: CliLogger | None = None,
     lock_timeout_s: float = 0.0,
@@ -293,10 +292,6 @@ def build_step_artifact(
     in-process and only the render package is written — the logical ``step``
     path never needs to exist on disk (STEP is exported on demand elsewhere).
     Without ``source_path``, ``step`` must be an existing imported STEP/STP file.
-
-    ``reset_runtime_closure`` (default-off) is for warm worker processes: it makes
-    the generator's recorded source closure deterministic across repeated in-process
-    builds — see :func:`cadgen.generation.run_script_generator`.
 
     ``lock_timeout_s`` bounds the wait for a peer's generation lock. 0 waits (the CLI
     default: an agent asking for a build wants the build). A caller that must not block —
@@ -419,7 +414,6 @@ def build_step_artifact(
                 "gen_step",
                 logger=logger,
                 force=force,
-                reset_runtime_closure=reset_runtime_closure,
                 progress=progress,
             )
             if scene is None:
@@ -453,15 +447,10 @@ def build_step_artifact(
     return _generated_result_payload(spec, scene, stats if isinstance(stats, dict) else {})
 
 
-def run_cli_payload(
-    argv: list[str] | None = None,
-    *,
-    reset_runtime_closure: bool = False,
-) -> dict[str, object]:
+def run_cli_payload(argv: list[str] | None = None) -> dict[str, object]:
     """Parse CLI ``argv`` and run :func:`build_step_artifact`, RETURNING its payload
     (no printing, no logger.total()). The in-process primitive shared by ``main()``
-    and the CAD Viewer's warm worker — the worker passes ``reset_runtime_closure=True``
-    so repeated warm builds record the same closure a cold CLI does."""
+    and the CAD Viewer's warm worker."""
     args = build_parser().parse_args(argv)
     logger = CliLogger("step-artifact", verbose=bool(args.verbose))
     payload = build_step_artifact(
@@ -472,7 +461,6 @@ def run_cli_payload(
         force=bool(args.force),
         mesh_tolerance=args.mesh_tolerance,
         mesh_angular_tolerance=args.mesh_angular_tolerance,
-        reset_runtime_closure=reset_runtime_closure,
         logger=logger,
         lock_timeout_s=float(args.lock_timeout or 0.0),
     )

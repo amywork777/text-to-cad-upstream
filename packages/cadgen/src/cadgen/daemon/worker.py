@@ -164,12 +164,11 @@ def _invoke(request: dict) -> dict:
             return {"ok": False, "error": f"Unknown cadgen module for worker: {module_name}"}
         if isinstance(repo_root, str) and os.path.isdir(repo_root):
             os.chdir(repo_root)
-        # reset_runtime_closure keeps repeated warm builds recording the same
-        # sourceClosureHash a cold build would. stderr is captured rather than streamed:
-        # the cold path reports a failure's text in the payload, and warm must match.
+        # stderr is captured rather than streamed: the cold path reports a failure's
+        # text in the payload, and warm must match.
         noise = io.StringIO()
         with contextlib.redirect_stdout(noise), contextlib.redirect_stderr(noise):
-            return dict(run(args, reset_runtime_closure=True))
+            return dict(run(args))
     except SystemExit as exc:
         # argparse exits rather than raising. Cold reports the usage text and the code,
         # so warm does too -- otherwise the same bad call reads as "SystemExit: 2" in one

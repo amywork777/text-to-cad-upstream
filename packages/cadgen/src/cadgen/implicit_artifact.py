@@ -185,20 +185,10 @@ def build_implicit_artifact(
         return payload
 
 
-def run_cli_payload(
-    argv: list[str] | None = None,
-    *,
-    reset_runtime_closure: bool = False,
-) -> dict[str, object]:
+def run_cli_payload(argv: list[str] | None = None) -> dict[str, object]:
     """Parse CLI ``argv`` and run :func:`build_implicit_artifact`, RETURNING its payload.
     The in-process primitive shared by ``main()``, the CAD Viewer's warm worker, and any
-    caller that wants the dict rather than the printed line.
-
-    ``reset_runtime_closure`` is accepted for parity with the STEP and DXF entrypoints and
-    is deliberately ignored: those evict the warm interpreter's cached generator MODULES
-    between builds, and an implicit model has none here -- it is a JS module loaded fresh in
-    a Node child that exits with the build, so every run starts cold by construction."""
-    del reset_runtime_closure
+    caller that wants the dict rather than the printed line."""
     args = build_parser().parse_args(argv)
     logger = CliLogger("implicit-artifact", verbose=bool(args.verbose))
     payload = build_implicit_artifact(

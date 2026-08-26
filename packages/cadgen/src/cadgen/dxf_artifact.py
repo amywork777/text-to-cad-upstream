@@ -100,7 +100,6 @@ def build_dxf_artifact(
     source_path: Path,
     export: Path | None = None,
     force: bool = False,
-    reset_runtime_closure: bool = False,
     logger: CliLogger | None = None,
     lock_timeout_s: float = 0.0,
 ) -> dict[str, object]:
@@ -159,7 +158,6 @@ def build_dxf_artifact(
                     "gen_dxf",
                     logger=logger,
                     force=force,
-                    reset_runtime_closure=reset_runtime_closure,
                     progress=run,
                 )
         run.phase(PHASE_FINALIZE)
@@ -176,15 +174,9 @@ def build_dxf_artifact(
         return payload
 
 
-def run_cli_payload(
-    argv: list[str] | None = None,
-    *,
-    reset_runtime_closure: bool = False,
-) -> dict[str, object]:
+def run_cli_payload(argv: list[str] | None = None) -> dict[str, object]:
     """Parse CLI ``argv`` and run :func:`build_dxf_artifact`, RETURNING its payload.
-    The in-process primitive shared by ``main()`` and the CAD Viewer's warm worker —
-    the worker passes ``reset_runtime_closure=True`` so repeated warm builds record
-    the same closure a cold CLI does."""
+    The in-process primitive shared by ``main()`` and the CAD Viewer's warm worker."""
     args = build_parser().parse_args(argv)
     logger = CliLogger("dxf-artifact", verbose=bool(args.verbose))
     payload = build_dxf_artifact(
@@ -192,7 +184,6 @@ def run_cli_payload(
         source_path=Path(args.source_path),
         export=Path(args.export) if args.export else None,
         force=bool(args.force),
-        reset_runtime_closure=reset_runtime_closure,
         logger=logger,
         lock_timeout_s=float(args.lock_timeout or 0.0),
     )

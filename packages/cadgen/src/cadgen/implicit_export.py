@@ -186,20 +186,10 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_cli_payload(
-    argv: list[str] | None = None,
-    *,
-    reset_runtime_closure: bool = False,
-) -> dict[str, object]:
+def run_cli_payload(argv: list[str] | None = None) -> dict[str, object]:
     """Parse CLI ``argv`` and run :func:`export_implicit_model`, RETURNING its payload and
     RAISING on failure -- callers own the error envelope. The in-process primitive shared by
-    ``main()`` and the CAD Viewer's warm worker.
-
-    ``reset_runtime_closure`` is accepted for parity with the STEP and DXF entrypoints and
-    ignored for the same reason :mod:`cadgen.implicit_artifact` ignores it: the model is a JS
-    module loaded in a Node child that exits with the run, so there is no warm Python
-    generator-module state to evict."""
-    del reset_runtime_closure
+    ``main()`` and the CAD Viewer's warm worker."""
     args = build_parser().parse_args(argv)
     del args.repo_root  # payload paths are absolute; kept for CLI parity
     return export_implicit_model(

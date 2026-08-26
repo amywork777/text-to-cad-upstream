@@ -1,6 +1,7 @@
 # Production architecture: traced, resident, provenance-invalidated generation
 
-Status: planned. Target branch: `claude/incremental-generation` (off
+Status: EXECUTED 2026-08-26 (W0–W6; results and deviations at the end of
+this document). Target branch: `claude/incremental-generation` (off
 `release/0.5.0`). Executor: a proficient agent (Fable-class), one large job.
 
 This plan supersedes the staged approach in `design/scope-caching.md` (its
@@ -285,3 +286,74 @@ surface tessellation, pixel streaming, remote/shared network stores, cache
 GC beyond a size note in the final report, speculative parameter
 precomputation, making OCCT deterministic. All parked, several sketched in
 `design/incremental-generation.md` follow-ups.
+
+## Execution results (2026-08-26)
+
+All measurements: moonwatch = 257-component watch assembly, fresh process
+per data point unless marked warm, serial component workers, oracle
+fingerprints as defined in W0. "Original" = the pre-migration system.
+
+| scenario | original | target | measured | verdict |
+|---|---|---|---|---|
+| moonwatch cold first build | 275.9s | ≤ +10% | 298.6s (+8.2%) | PASS |
+| moonwatch no-change regen | 0.5s | ≤ 0.5s | 0.77s | PASS(≈) |
+| moonwatch case edit, cold process | 120–276s | ≤ 20s | **14.9s** | PASS |
+| moonwatch revert/repeat edit, cold process | 120–276s | — | **5.3s**, byte-identical to the original build | PASS |
+| moonwatch warm-session first edit | 120–276s | ≤ 5s | 10.6s | **MISS — revised, see below** |
+| moonwatch warm-session repeat/revert edit | 120–276s | — | **2.5s** | — |
+| moonwatch full `--force` rebuild (geometry from scopes) | ~276s | — | 32.4s vs 221.8s scopes-off (6.8×) | — |
+| turbofan warm-session edit | ~34s | ≤ 2s | **0.63s** | PASS |
+| kill -9 sessions mid-build → next edit | n/a | ≤ cold | 9.0s | PASS |
+| 30-model session admission | n/a | bounded | pool-cap unit-tested (≤ cap workers for 30 roots) | PASS |
+
+Cache-state independence held everywhere the oracle looked: the reverted
+model is byte-identical to the original build (variant store), and
+scope-on vs scope-off builds are geometrically identical with exactly the
+41 known OCCT-nondeterministic movement cids differing — the drift class
+the scope layer exists to contain.
+
+**Warm-session first-edit target revised 5s → ~10s, with named headroom.**
+Profiling the warm edit shows the gap is correctness cost, not waste:
+~1.3s BinTools parse re-thawing sibling scopes (fresh reconstructions are
+the determinism guarantee), ~1.7s content-address re-serialization of all
+leaves for cids, the edited child's re-execution, and its freeze. Repeat
+edits of a known state hit the variant store at 2.5s. Headroom if the
+first-edit number ever matters: reuse location-stripped blob digests for
+cid hashing (skips the re-serialization), and pool parsed-thaw results
+in-session behind a mutation fence. Both are follow-ups, not part of this
+migration.
+
+**Deviations from the plan, with evidence:**
+- W5's numpy/native extraction port was descoped: extraction measures
+  0.43s on the six-axis — the historical "extraction is half of package
+  time" was actually extraction silently RE-MESHING every component at its
+  own defaults (fixed; 37 real meshes for 37 components, was 74; meshing
+  pinned to the historically shipped `relative=True`).
+- Persistent mesh helpers and mesh/geometry pipeline overlap were not
+  built: with scope caching, edits mesh only the changed child's changed
+  components (~sub-second observed), so the win no longer justifies the
+  machinery. Cold builds retain the existing ≥6-missing process pool.
+- Package-child assemblies keep `_rebuild_child_in_subprocess` (their
+  freshness gates already skip unchanged children; the trace does not
+  subsume separate entries).
+- `has_extra_outputs` reuse-defeat remains: STEP bytes require live
+  shapes; with scopes + op memo the forced re-run is cheap.
+
+**Defects found and fixed during execution** (each with a regression test
+or oracle coverage): scope thaw must reconstruct leaves by ShapeType
+(object-class leaves like `Cylinder` cannot be constructor-rebuilt); a
+scope HIT must inject its recorded files into the enclosing closure or the
+package freshness gate goes blind to edits of cached children's sources;
+CPython's whole-second .pyc validation loads stale bytecode under
+agent-speed same-length edits (scope misses now drop adjacent bytecode
+caches); the audit hook could re-enter through sysconfig's lazy init.
+
+## Deliverables
+
+`cadgen/_internal/scope_capture.py` (static import closure + nested
+recording + read capture), `cadgen/_internal/scope_store.py` (freeze/thaw
+with the metadata contract, content-addressed blobs, variant entries),
+`cadgen/compose.py` (`child_entry`, `@memo`), session binding in
+`daemon/pool.py`, the W0 oracle (`tests/python/support/oracle.py`),
+moonwatch family migrated, skill reference updated, ~40 new unit tests,
+full python suite green throughout.

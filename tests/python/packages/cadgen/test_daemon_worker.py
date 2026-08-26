@@ -8,8 +8,6 @@ that were about the CONTRACT rather than the deleted plumbing:
 * a build failure comes back as a payload the caller can render, never as a crash — the
   viewer shows `{ok: false, error}` in a card and must not see an exception instead
 * the module allowlist is real, because `invoke` names a module over a socket
-* `reset_runtime_closure=True` is passed, or repeated warm builds record a different
-  sourceClosureHash than a cold build would
 
 Everything else those tests covered now lives elsewhere: ping and shutdown in
 test_daemon_pool, recycling and respawn in the pool's lifecycle cases, and warm==cold
@@ -39,11 +37,11 @@ class InvokeContract(unittest.TestCase):
         self.addCleanup(os.chdir, original_cwd)
         self.calls: list[tuple] = []
 
-        def echo(args, reset_runtime_closure=False):
-            self.calls.append((tuple(args), reset_runtime_closure))
+        def echo(args):
+            self.calls.append(tuple(args))
             return {"ok": True, "args": list(args)}
 
-        def boom(args, reset_runtime_closure=False):
+        def boom(args):
             raise RuntimeError("kaboom")
 
         patcher = mock.patch.object(
@@ -52,11 +50,10 @@ class InvokeContract(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_a_known_module_is_routed_with_the_closure_reset(self):
+    def test_a_known_module_is_routed(self):
         result = worker._invoke({"module": "cadgen.step_artifact_cli", "args": ["--x", "1"]})
         self.assertEqual(result, {"ok": True, "args": ["--x", "1"]})
-        # Without the reset, a warm build records a different sourceClosureHash.
-        self.assertEqual(self.calls, [(("--x", "1"), True)])
+        self.assertEqual(self.calls, [("--x", "1")])
 
     def test_an_unknown_module_is_a_payload_not_an_import(self):
         result = worker._invoke({"module": "cadgen.nope"})

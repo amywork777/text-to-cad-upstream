@@ -308,7 +308,6 @@ def run_script_generator(
     *,
     logger: CliLogger | None = None,
     force: bool = False,
-    reset_runtime_closure: bool = False,
     progress: object | None = None,
     lock_intent: str = "write",
 ) -> LoadedStepScene | None:
@@ -329,9 +328,6 @@ def run_script_generator(
     (see :func:`repo_local_loaded_modules`); the running runtime (cadgen, the CLI
     launcher) and C extensions / site-packages (numpy, OCP, build123d) are never
     touched — they cannot reload, must stay warm, and are not freshness inputs.
-
-    ``reset_runtime_closure`` is retained for API compatibility (the warm worker
-    passes it) but is now a no-op: the pre-run eviction supersedes it.
     """
     logger = logger or CliLogger("cad")
     if generator_name not in {"gen_step", "gen_dxf"}:
@@ -357,7 +353,6 @@ def run_script_generator(
                 generator_name,
                 logger=logger,
                 force=force,
-                reset_runtime_closure=reset_runtime_closure,
                 progress=active,
             )
 
@@ -385,10 +380,8 @@ def _run_script_generator_inner(
     *,
     logger: CliLogger,
     force: bool = False,
-    reset_runtime_closure: bool = False,
     progress: object | None = None,
 ) -> LoadedStepScene | None:
-    del reset_runtime_closure  # superseded by the pre-run eviction below; kept for API compat
     # Kernel-op memoization (design/incremental-generation.md): installed here so
     # every generator run — cold CLI or warm daemon worker — re-executes the model
     # script against memoized build123d choke points. The cache lives in

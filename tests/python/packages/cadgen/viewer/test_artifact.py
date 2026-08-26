@@ -1215,11 +1215,8 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
         ):
             with self.subTest(module=module):
                 self.assertIn(module, dispatch)
-                # The worker calls run(args, reset_runtime_closure=True) on every one.
-                self.assertIn(
-                    "reset_runtime_closure",
-                    inspect.signature(dispatch[module]).parameters,
-                )
+                # The worker calls run(args) on every one.
+                self.assertIn("argv", inspect.signature(dispatch[module]).parameters)
 
 
 if __name__ == "__main__":
