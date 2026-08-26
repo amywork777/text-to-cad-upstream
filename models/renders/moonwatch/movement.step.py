@@ -3,30 +3,20 @@ motion works + chronograph works, all authored in the shared MOVEMENT local
 frame (see _spec.py), so composition is identity — no re-posing here.
 """
 
-import importlib.util
-from functools import lru_cache
 from pathlib import Path
 
 from build123d import Compound
 
+from cadgen.compose import child_entry
+
 _HERE = Path(__file__).resolve().parent
 
-
-@lru_cache(maxsize=None)
-def _load_entry(name: str):
-    path = _HERE / name
-    spec = importlib.util.spec_from_file_location(path.stem, path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-# Loaded at import time — the CLI restores sys.path after module load, so the
-# children's sibling-helper imports only resolve during this module's import.
-_BASE = _load_entry("movement_base.step.py")
-_KEYLESS = _load_entry("keyless_works.step.py")
+# Composed through cadgen's traced child seam (see moonwatch.step.py): each
+# sub-entry is a cached scope keyed by its own source closure.
+_BASE = child_entry(_HERE / "movement_base.step.py")
+_KEYLESS = child_entry(_HERE / "keyless_works.step.py")
 _CHRONO = (
-    _load_entry("chrono_works.step.py")
+    child_entry(_HERE / "chrono_works.step.py")
     if (_HERE / "chrono_works.step.py").exists()
     else None
 )

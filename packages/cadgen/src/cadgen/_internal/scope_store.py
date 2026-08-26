@@ -97,6 +97,13 @@ def _read_brep(data: bytes):
     return shape
 
 
+# Warm-session read caches: blobs are immutable (content-addressed) so the
+# bytes cache needs no invalidation; entry payloads are keyed by file stat.
+_BLOB_CACHE: dict[str, bytes] = {}
+_BLOB_CACHE_LIMIT_BYTES = 256 * 1024 * 1024
+_blob_cache_size = 0
+
+
 def put_blob(data: bytes) -> str:
     digest = hashlib.sha256(data).hexdigest()
     path = _blobs_dir() / f"{digest}.brep"
@@ -104,11 +111,28 @@ def put_blob(data: bytes) -> str:
         tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
         tmp.write_bytes(data)
         replace_atomic(tmp, path)
+    _blob_cache_put(digest, data)
     return digest
 
 
+def _blob_cache_put(digest: str, data: bytes) -> None:
+    global _blob_cache_size
+    if digest in _BLOB_CACHE:
+        return
+    if _blob_cache_size + len(data) > _BLOB_CACHE_LIMIT_BYTES:
+        _BLOB_CACHE.clear()
+        _blob_cache_size = 0
+    _BLOB_CACHE[digest] = data
+    _blob_cache_size += len(data)
+
+
 def get_blob(digest: str) -> bytes:
-    return (_blobs_dir() / f"{digest}.brep").read_bytes()
+    cached = _BLOB_CACHE.get(digest)
+    if cached is not None:
+        return cached
+    data = (_blobs_dir() / f"{digest}.brep").read_bytes()
+    _blob_cache_put(digest, data)
+    return data
 
 
 # ---------------------------------------------------------------------------

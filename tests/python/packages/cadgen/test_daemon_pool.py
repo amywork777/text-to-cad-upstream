@@ -112,26 +112,57 @@ class DispatchRule(_PoolFixture):
             self.pool.release(worker)
 
 
-class AffinityRouting(_PoolFixture):
-    def test_matching_affinity_wins_among_free_workers(self):
+class SessionBinding(_PoolFixture):
+    def test_bound_worker_serves_its_root(self):
         with self._cap(4):
             a = self.pool.acquire("/models/tom")
             b = self.pool.acquire("/models/gripper")
             self.pool.release(a)
             self.pool.release(b)
             again = self.pool.acquire("/models/gripper")
-            self.assertIs(again, b, "the worker warm for this model must win")
+            self.assertIs(again, b, "the session bound to this model must win")
             self.pool.release(again)
 
-    def test_affinity_never_waits_for_a_busy_worker(self):
+    def test_busy_session_is_waited_for_not_fanned_out(self):
+        import threading
+        import time as _time
+
         with self._cap(4):
-            a = self.pool.acquire("/models/tom")
-            # a stays busy; the same model must still get SOME worker instantly.
-            b = self.pool.acquire("/models/tom")
-            self.assertIsNotNone(b)
-            self.assertIsNot(a, b)
+            session = self.pool.acquire("/models/tom")
+
+            def release_soon():
+                _time.sleep(0.1)
+                self.pool.release(session)
+
+            threading.Thread(target=release_soon, daemon=True).start()
+            second = self.pool.acquire("/models/tom")
+            self.assertIs(second, session,
+                          "per-model requests serialize through the session")
+            self.pool.release(second)
+
+    def test_admission_budget_bounds_resident_sessions(self):
+        with self._cap(4):
+            pids = set()
+            for index in range(30):
+                worker = self.pool.acquire(f"/models/m{index}")
+                self.assertIsNotNone(worker)
+                pids.add(worker.pid)
+                self.pool.release(worker)
+            self.assertLessEqual(len(pids), 4,
+                                 "30 roots must not mean 30 workers")
+
+    def test_new_root_rebinds_least_recently_used(self):
+        with self._cap(2):
+            a = self.pool.acquire("/models/a")
+            b = self.pool.acquire("/models/b")
             self.pool.release(a)
             self.pool.release(b)
+            a2 = self.pool.acquire("/models/a")  # refresh a's last_used
+            self.pool.release(a2)
+            c = self.pool.acquire("/models/c")
+            self.assertIs(c, b, "the LRU free worker rebinds to the new root")
+            self.assertEqual(c.affinity, "/models/c")
+            self.pool.release(c)
 
     def test_no_affinity_behaves_as_before(self):
         with self._cap(4):

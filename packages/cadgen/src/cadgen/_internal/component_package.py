@@ -454,7 +454,21 @@ def build_component_glb_from_shape(
         relative=False,
         parallel=False,
     )
-    bundle = extract_selectors_from_scene(scene, cad_ref=cad_ref)
+    # Extraction must see the SAME mesh signature or it silently re-meshes
+    # every component at its own defaults (relative=True) — which both doubled
+    # the OCCT meshing cost of every build and shipped GLB triangles that
+    # ignored the deflections deliberately passed above.
+    from cadgen._internal.step_scene_types import SelectorOptions
+
+    bundle = extract_selectors_from_scene(
+        scene,
+        cad_ref=cad_ref,
+        options=SelectorOptions(
+            linear_deflection=linear_deflection,
+            angular_deflection=angular_deflection,
+            relative=False,
+        ),
+    )
     for key in COMPONENT_PROVENANCE_KEYS:
         bundle.manifest.pop(key, None)
     # Non-deterministic build timing would defeat content-addressing — drop it; the

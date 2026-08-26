@@ -299,23 +299,51 @@ class Pool:
     def acquire(self, affinity: str = "") -> Worker | None:
         """A worker to run one job on, or None meaning "run this cold".
 
-        ``affinity`` is the job's working directory: among free workers, the
-        one that last served that directory wins, so repeat builds of a model
-        reuse the worker whose in-memory op-memo cache is already warm for it.
-        Never trades warmth for a spawn or a wait — any free worker still
-        beats both."""
+        ``affinity`` is the job's model root, and it BINDS: a root's requests
+        are served by its session worker (whose in-memory caches are warm for
+        that model), and a request that finds its session busy WAITS for it
+        rather than fanning out — per-model serialization is what prevents two
+        builds of one model duplicating each other's work. Roots beyond the
+        worker cap rebind the least-recently-used free worker: the cap is the
+        session admission budget (opening a 30-model catalog must never mean
+        30 resident OCP processes), and rebinding loses nothing durable
+        because every session cache writes through to the shared store."""
         deadline: float | None = None
         with self._cv:
             while True:
                 self._reap_dead_locked()
+                bound = None
+                if affinity:
+                    bound = next(
+                        (w for w in self._workers if w.affinity == affinity), None)
+                if bound is not None:
+                    if not bound.busy:
+                        bound.busy = True
+                        return bound
+                    # The session exists and is busy: wait for IT.
+                    if deadline is None:
+                        budget = wait_seconds() * 4
+                        if budget <= 0:
+                            self.cold_overflows += 1
+                            return None
+                        deadline = time.monotonic() + budget
+                        self.waits += 1
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self.cold_overflows += 1
+                        return None
+                    self._cv.wait(remaining)
+                    continue
+                # No session for this root yet: bind a free worker, preferring
+                # unbound ones, else the least-recently-used bound-elsewhere.
                 chosen = None
                 for worker in self._workers:
                     if worker.busy:
                         continue
-                    if affinity and worker.affinity == affinity:
+                    if not worker.affinity:
                         chosen = worker
                         break
-                    if chosen is None:
+                    if chosen is None or worker.last_used < chosen.last_used:
                         chosen = worker
                 if chosen is not None:
                     chosen.busy = True
