@@ -222,6 +222,16 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     )
     batch_parser.set_defaults(handler=run_worker)
 
+    # Output is ALWAYS JSON; `--json` is accepted on every subcommand so
+    # muscle memory from verbs that need the flag (scripts/gen) doesn't error.
+    for subparser in subparsers.choices.values():
+        subparser.add_argument(
+            "--json",
+            action="store_true",
+            dest="_json_noop",
+            help="Accepted for symmetry with other tools; output is always JSON.",
+        )
+
     return parser
 
 
@@ -760,6 +770,18 @@ def _format_errors(result: dict[str, object]) -> str:
     return "\n".join(messages) if messages else "error"
 
 
+def _split_fused_target(entry_target: str) -> tuple[str, str]:
+    """Split ``model.step.py#o1.2`` into (entry target, selector ref).
+
+    The fused form is what the viewer's "Copy ``model#o1.6``" button hands
+    users, so it must be accepted wherever an entry target is; the tail keeps
+    its ``#`` so it parses like any other selector line."""
+    head, sep, tail = entry_target.partition("#")
+    if sep and head.strip() and tail.strip():
+        return head.strip(), f"#{tail.strip()}"
+    return entry_target, ""
+
+
 def _read_refs_input(args: argparse.Namespace) -> tuple[str, str]:
     inspect = _inspect_api()
     raw_inputs = [str(value) for value in getattr(args, "inputs", ()) if str(value).strip()]
@@ -770,12 +792,14 @@ def _read_refs_input(args: argparse.Namespace) -> tuple[str, str]:
             text = args.input_file.read_text(encoding="utf-8")
         except OSError as exc:
             raise inspect.CadRefError(f"Failed to read input file: {args.input_file}") from exc
-        entry_target = raw_inputs[0]
+        entry_target, fused_ref = _split_fused_target(raw_inputs[0])
+        if fused_ref:
+            text = fused_ref + "\n" + text
     else:
         if not raw_inputs:
             raise inspect.CadRefError("No STEP/CAD entry target provided.")
-        entry_target = raw_inputs[0]
-        text = "\n".join(raw_inputs[1:])
+        entry_target, fused_ref = _split_fused_target(raw_inputs[0])
+        text = "\n".join(([fused_ref] if fused_ref else []) + raw_inputs[1:])
 
     try:
         inspect.entry_target_from_target(entry_target)

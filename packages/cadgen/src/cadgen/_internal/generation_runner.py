@@ -416,11 +416,16 @@ def _run_script_generator_inner(
         envelope = _normalize_step_payload(raw_payload, script_path=spec.script_path)
         if spec.step_path is None:
             raise RuntimeError(f"{spec.source_ref} has no configured STEP output")
-        # Record paths relative to the model folder so the descriptor stays portable.
+        # Record paths relative to the model folder so the descriptor stays
+        # portable. The base is the GENERATOR's folder, never the output's:
+        # with an explicit `--write <path>` the step_path moves to the output
+        # location, and basing the closure there changed every recorded
+        # relpath — the same source hashed differently depending on where its
+        # export was written, defeating every closure-keyed reuse.
         source_closure = capture_runtime_closure(
             modules_before_load,
             spec.script_path,
-            base=spec.step_path.parent,
+            base=spec.script_path.parent,
             executed_files=executed_files,
         )
         generated_scene = _write_shape_step_payload(

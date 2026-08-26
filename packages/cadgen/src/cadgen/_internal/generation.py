@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import time
+
+from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -676,7 +678,113 @@ def _generate_step_outputs(
         # component-GLB package. Without this branch the function fell off the end and silently
         # returned None — no package written — while the CLI still reported success.
         output_kwargs["require_step_file"] = True
-    return _generate_part_outputs(spec, **output_kwargs)
+    result = _generate_part_outputs(spec, **output_kwargs)
+    _record_step_export(spec)
+    return result
+
+
+def _step_export_record_path(spec: EntrySpec) -> Path:
+    return render_package_dir(spec.entry_path) / "step-export.json"
+
+
+def _step_export_key(spec: EntrySpec, target: Path) -> str:
+    """Record key for an export target: model-relative when the target lives
+    inside the model folder (packages must not record their build location —
+    the portability policy), absolute otherwise."""
+    resolved = target.expanduser().resolve()
+    model_dir = spec.entry_path.resolve().parent
+    try:
+        return resolved.relative_to(model_dir).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
+def _step_export_key_path(spec: EntrySpec, key: str) -> Path:
+    path = Path(key)
+    if path.is_absolute():
+        return path
+    return spec.entry_path.resolve().parent / path
+
+
+def _record_step_export(spec: EntrySpec) -> None:
+    """After a successful ``--write``, record (target, sha256, closure) beside
+    the package so a repeat export of unchanged source is a no-op or a copy.
+    Best-effort: a failed record only costs a future re-export."""
+    target = spec.step_export_path
+    if target is None:
+        return
+    try:
+        import hashlib
+
+        from cadgen._internal.component_package import read_package_descriptor
+
+        descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
+        closure = str((descriptor or {}).get("sourceClosureHash") or "").strip()
+        resolved = target.expanduser().resolve()
+        if not closure or not resolved.is_file():
+            return
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        record_path = _step_export_record_path(spec)
+        data: dict = {}
+        if record_path.is_file():
+            data = json.loads(record_path.read_text(encoding="utf-8"))
+        exports = data.setdefault("exports", {})
+        # Variant-shaped, like the scope store: one sha per (path, closure),
+        # so toggling between two source states reuses both exports.
+        key = _step_export_key(spec, resolved)
+        by_closure = exports.setdefault(key, {})
+        if not isinstance(by_closure, dict) or "sha256" in by_closure:
+            by_closure = exports[key] = {}
+        by_closure[closure] = digest
+        tmp = record_path.with_name(f"{record_path.name}{temp_suffix()}")
+        tmp.write_text(json.dumps(data), encoding="utf-8")
+        replace_atomic(tmp, record_path)
+    except Exception:
+        pass
+
+
+def _step_export_current(spec: EntrySpec) -> bool:
+    """Whether the requested ``--write`` output already matches the CURRENT
+    package: the recorded export's closure equals the descriptor's and the
+    file bytes verify. A verified export recorded at a DIFFERENT path is
+    copied to the requested target instead of rebuilding."""
+    target = spec.step_export_path
+    if target is None:
+        return True
+    try:
+        import hashlib
+
+        from cadgen._internal.component_package import read_package_descriptor
+
+        descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
+        closure = str((descriptor or {}).get("sourceClosureHash") or "").strip()
+        record_path = _step_export_record_path(spec)
+        if not closure or not record_path.is_file():
+            return False
+        exports = (json.loads(record_path.read_text(encoding="utf-8")) or {}).get("exports") or {}
+        resolved = target.expanduser().resolve()
+
+        def _verifies(key: str, by_closure: dict) -> bool:
+            expected = by_closure.get(closure) if isinstance(by_closure, dict) else None
+            path = _step_export_key_path(spec, key)
+            return (
+                isinstance(expected, str)
+                and path.is_file()
+                and hashlib.sha256(path.read_bytes()).hexdigest() == expected
+            )
+
+        target_key = _step_export_key(spec, resolved)
+        if _verifies(target_key, exports.get(target_key) or {}):
+            return True
+        for key, by_closure in exports.items():
+            if key != target_key and _verifies(key, by_closure or {}):
+                resolved.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(_step_export_key_path(spec, key), resolved)
+                _record_step_export(spec)
+                return True
+        return False
+    except Exception:
+        return False
 
 
 def _generate_step_outputs_for_cli(
@@ -961,7 +1069,11 @@ def _generated_assembly_glb_closure_current(spec: EntrySpec) -> bool:
     manifest = read_step_topology_manifest_from_glb(artifact_path)
     if not isinstance(manifest, dict):
         return False
-    return _manifest_source_closure_unchanged(manifest, spec.step_path.parent)
+    # Validate against the GENERATOR's folder — the base the closure was
+    # recorded against. step_path moves with an explicit --write output, and
+    # validating there made freshness output-path-dependent.
+    base = spec.script_path.parent if spec.script_path is not None else spec.step_path.parent
+    return _manifest_source_closure_unchanged(manifest, base)
 
 
 def _assembly_glb_package_current(spec: EntrySpec) -> bool:
@@ -1227,22 +1339,27 @@ def generate_step_targets(
     _rebuild_stale_assembly_children(all_specs, selected_specs, force=force, logger=logger)
     # No-op fast path: skip recomposing a generated assembly whose source closure
     # (the generator's Python import reach) is unchanged. Runs after the
-    # child rebuild so a just-rebuilt child correctly invalidates the closure. Only
-    # for plain in-place regeneration (no --force or output overrides).
-    no_output_override = not any(path is not None for path in target_output_paths)
-    if not force and no_output_override:
+    # child rebuild so a just-rebuilt child correctly invalidates the closure.
+    if not force:
         current_specs = [
             spec
             for spec in selected_specs
-            # An explicit STEP export (--write-step) must be written even when the
-            # compose is current, so it keeps the spec in the run.
-            if not _spec_requests_extra_outputs(spec)
+            # An explicit STEP export (--write) keeps the spec in the run
+            # UNLESS the recorded export already matches the current closure —
+            # then it is reused (or copied into place), never rebuilt.
+            if (not _spec_requests_extra_outputs(spec) or _step_export_current(spec))
             and _assembly_is_current(spec)
             and _assembly_glb_package_current(spec)
         ]
         if current_specs:
             for spec in current_specs:
-                logger.info(f"{spec.cad_ref} is current; skipped recompose")
+                if spec.step_export_path is not None:
+                    logger.info(
+                        f"{spec.cad_ref} step export is current; reusing "
+                        f"{_display_path(spec.step_export_path)}"
+                    )
+                else:
+                    logger.info(f"{spec.cad_ref} is current; skipped recompose")
                 _emit(spec, "current")
             current_refs = {spec.source_ref for spec in current_specs}
             selected_specs = [spec for spec in selected_specs if spec.source_ref not in current_refs]
@@ -1256,7 +1373,9 @@ def generate_step_targets(
     # so a run that queued behind a concurrent build of this model no-ops instead of
     # rebuilding it. --force and explicit extra outputs always do the work.
     def _built_by_a_peer(spec: EntrySpec) -> bool:
-        if force or not no_output_override or _spec_requests_extra_outputs(spec):
+        if force:
+            return False
+        if _spec_requests_extra_outputs(spec) and not _step_export_current(spec):
             return False
         return _assembly_is_current(spec) and _assembly_glb_package_current(spec)
 

@@ -7,33 +7,33 @@ entry says so.
 
 ## CLI
 
-1. **`inspect refs` rejects fused entry#ref targets.**
+1. **FIXED — `inspect refs` accepts fused entry#ref targets.**
    `refs planetary_gear_assembly.step.py#o1.2` fails with "Invalid STEP/CAD
    entry target", while `refs planetary_gear_assembly.step.py '#o1.2'`
    works. The fused form is exactly what the viewer's "Copy
    `model#o1.6`" button hands users. Easy win: split on the first `#` in
    the target argument, or error with a hint showing the split form.
 
-2. **`--json` inconsistency across verbs.** `inspect refs` prints JSON by
+2. **FIXED — `--json` accepted (no-op) on every inspect subcommand.** `inspect refs` prints JSON by
    default and has no `--json` flag; `gen` has `--json`. Attempting
    `refs ... --json` errors. Easy win: accept (and ignore) `--json` where
    output is already JSON, or add it uniformly.
 
-3. **`cadgen.cli.step_inspect` is a package without `__main__`,** so
+3. **FIXED — `python -m cadgen.cli.step_inspect` works** (was a package without `__main__`); so
    `python -m cadgen.cli.step_inspect` fails; other verbs are modules.
    Trivial win: add `__main__.py` shims uniformly.
 
-4. **Warm-daemon default disagrees between front doors.** `cadgen <verb>`
+4. **FIXED — warm-by-default everywhere.** All five skill shims now match the `cadgen` front door (`CADGEN_WARM=0` is the single opt-out); daemon docstring unified. Was: `cadgen <verb>`
    is warm-by-default (`CADGEN_WARM=0` opts out) while all five
    `skills/cad/scripts/*` shims are opt-in (`CADGEN_WARM=1`), and
    `daemon/__init__.py`'s docstring says both. One default, one doc.
    (The session manager in the production plan will force this decision.)
 
-5. **Stale flag name in docs**: `generation_spec.py`'s
+5. **FIXED — stale flag name in docs**: `generation_spec.py`'s
    `_spec_requests_extra_outputs` docstring says `--write-step`; the flag
    is `--write`.
 
-6. **No "STEP is current" fast path for `--write`.** Export always re-runs
+6. **FIXED — `--write` now has a closure-keyed reuse fast path.** Repeat exports of unchanged source print "step export is current; reusing" and cost ~0.01s; exporting the same state to a NEW path copies the verified file (~0.02s) instead of rebuilding; records are variant-shaped (per closure) and stored with model-relative keys (package portability). Fixing this also surfaced a real pre-existing defect: the recorded source closure was based on `step_path.parent`, so an explicit `--write <path>` re-based every recorded relpath at the OUTPUT location — the same source hashed differently depending on where its export was written, silently defeating closure-keyed freshness for explicit-output builds. Closure capture and validation now base on the generator's folder. Was: Export always re-runs
    the generator even when the sidecar and package are current (by design —
    STEP bytes need live shapes — and now cheap with the op cache), but the
    CLI could say "step is current; reusing" when the source closure matches

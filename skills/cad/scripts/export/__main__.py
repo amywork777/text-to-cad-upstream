@@ -30,7 +30,7 @@ enforce_requirements_pin(Path(__file__).resolve().parents[2] / "requirements.txt
 # CADGEN_DAEMON_CHILD in the process it serves from, so this cannot recurse.
 import os
 
-if os.environ.get("CADGEN_WARM") == "1" and not os.environ.get("CADGEN_DAEMON_CHILD"):
+if os.environ.get("CADGEN_WARM") != "0" and not os.environ.get("CADGEN_DAEMON_CHILD"):
     try:
         from cadgen.daemon.client import run_via_daemon
     except ModuleNotFoundError:
