@@ -37,6 +37,7 @@ class _FakeWorker:
         self.pid = _FakeWorker._next_pid
         self.busy = False
         self.jobs_served = 0
+        self.affinity = ""
         self.last_used = time.monotonic()
 
     def alive(self) -> bool:

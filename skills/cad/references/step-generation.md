@@ -38,22 +38,33 @@ A **STEP entry generator** — a Python script that defines `gen_step()` and is 
   path. Import sibling helper modules at module top level and only *call* them
   inside `gen_step()`.
 
-  Minimal path-load (cache it with `functools.lru_cache` if a child is composed many times):
+  **Compose children through `cadgen.compose.child_entry`** — the traced,
+  cached seam. Each child's `gen_step()` becomes a SCOPE keyed by its own
+  source closure: an edit that does not reach a child's files skips that
+  child's Python and kernel work entirely (this is what makes big-assembly
+  edits cost seconds instead of minutes). The seam also owns the child's
+  `sys.path` context, so its sibling-helper imports resolve regardless of
+  the working directory:
 
   ```python
-  import importlib.util
   from pathlib import Path
 
-  def load_entry(step_py_path):
-      path = Path(step_py_path)
-      spec = importlib.util.spec_from_file_location(path.stem, path)  # path.stem == "<name>.step"
-      module = importlib.util.module_from_spec(spec)
-      spec.loader.exec_module(module)
-      return module
+  from cadgen.compose import child_entry
 
-  child = load_entry("path/to/widget.step.py")
-  child_shape = child.gen_step()   # compose this into the parent's gen_step()
+  _HERE = Path(__file__).resolve().parent
+  _WIDGET = child_entry(_HERE / "widget.step.py")
+
+  def gen_step():
+      widget = _WIDGET.gen_step()   # cached scope; compose into the parent
+      widget.label = "widget"
+      ...
   ```
+
+  Expensive helper FUNCTIONS inside one entry can opt into the same caching
+  with `@cadgen.compose.memo` (pure functions of their arguments and source
+  closure, returning shapes/compounds). A raw
+  `importlib.util.spec_from_file_location` path-load still works but gets no
+  caching and must manage `sys.path` itself; prefer `child_entry`.
 
 ## Generated Python source
 

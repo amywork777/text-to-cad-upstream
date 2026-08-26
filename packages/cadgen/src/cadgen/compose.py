@@ -142,6 +142,18 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
     from cadgen._internal.source_hash import evict_first_party_modules
 
     evict_first_party_modules()
+    # CPython validates .pyc files by (whole-second mtime, size): two
+    # same-length edits inside one second load STALE BYTECODE on re-import —
+    # exactly the cadence of an agent-driven edit loop. A miss is already a
+    # rebuild, so drop the bytecode caches next to this scope's sources.
+    import shutil
+
+    pycache_parents = {Path(entry_file).resolve().parent}
+    pycache_parents |= {
+        f.parent for f in scope_capture.static_import_closure(Path(entry_file), root)
+    }
+    for parent in pycache_parents:
+        shutil.rmtree(parent / "__pycache__", ignore_errors=True)
     # Belt and braces: the first-party classifier is environment-derived, so
     # also drop by location — any loaded module living under this scope's
     # root is definitionally this model's code and must re-import fresh.

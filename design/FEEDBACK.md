@@ -55,6 +55,25 @@ entry says so.
    Easy win: skip the dist check when launched by the dev proxy
    (`CADGEN_VIEWER_DIST` env is the workaround today).
 
+## Pipeline defects found during the migration (fixed on this branch)
+
+10. **Selector extraction silently re-meshed every component at its own
+    defaults.** `build_component_glb_from_shape` meshed at the requested
+    deflections with `relative=False`, then `extract_selectors_from_scene`
+    (called without options) re-meshed at `relative=True` defaults — doubling
+    OCCT meshing on every build AND shipping GLB triangles that ignored the
+    deflections the caller passed. Fixed by handing extraction the build's
+    exact mesh options (37 real meshes for 37 components, was 74);
+    `STEP_PACKAGE_VERSION` bumped for the byte change. Lesson for interfaces:
+    functions that "ensure meshing" as a side effect of an unrelated default
+    argument make tolerance overrides unverifiable — extraction should have
+    required explicit options from day one.
+
+11. **`record_first_party_execution` audit hook could re-enter through
+    sysconfig's lazy init** and crash with a confusing AttributeError when
+    the first capture in a process happened outside the generation runner.
+    Fixed by pre-warming the exclusion roots before any capture window.
+
 ## Measurement/diagnostics
 
 9. **`--verbose` timing spans are easy to orphan.** The STEP-export spans
