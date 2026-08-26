@@ -321,6 +321,40 @@ Still open for Phase 1 polish: daemon pool entry-path affinity (the cache is
 per-worker), and the ~15-20% unkeyable-call rate on fillet-heavy models
 (generator edge-list arguments) if profiling shows it matters.
 
+## Phase 2 results (implemented 2026-08-25)
+
+Two tiers, both under `~/.cache/cadgen` (`CADGEN_STORE_DIR` override), both
+best-effort caches whose deletion never breaks anything:
+
+- **Op-memo disk tier** (`op_memo.py`, `CADGEN_OP_MEMO_DISK=0` to disable):
+  the canonical bytes ARE the durable representation, so persisting them
+  (`opmemo/v<salt>/<keyhash>.brep`, atomic writes) replaces the planned
+  journal + validated-snapshot design with something simpler and stronger — a
+  cold process re-executes the script and hits the disk per op. Measured:
+  turbofan in a **fresh process: 6.8s vs 37.8s**, all 1112 ops disk-hit,
+  5.6MB stored. This kills the daemon-restart cliff and gives cross-process,
+  cross-worktree, cross-model op-level sharing (keys are content-addressed).
+  It also largely defuses Phase 4: assembly-child subprocesses hit the same
+  disk tier.
+- **Component-GLB store** (`component_store.py`,
+  `CADGEN_COMPONENT_STORE=0` to disable): store key is
+  `<cid>-l<lin>-a<ang>` — the cid hashes geometry only, and GLB bytes also
+  depend on mesh deflections, so deflections must be in the store key.
+  Packages stay self-contained; store entries materialize as hardlinks (copy
+  fallback across volumes) fetched in the packager's missing-component scan
+  and published after builds (force overwrites). Measured: a second
+  directory building the same model: **0.26s vs 3.24s**, byte-identical
+  package, hardlink-verified, and store deletion leaves packages intact.
+
+Test isolation matters: a populated user store legitimately satisfies builds
+that tests expect to run, so `scripts/test/test-python.sh` pins
+`CADGEN_STORE_DIR` to a temp dir for the whole run (and the store-sensitive
+suites isolate in setUp as well).
+
+Deferred from Phase 2: store GC (LRU by link-count/atime). Unbounded growth
+is real but slow (~10-30KB per component, ~5KB per op); revisit when a real
+cache-size complaint exists.
+
 ## Phasing
 
 - **Phase 0 — measure (days).** Instrument the proposed choke points with

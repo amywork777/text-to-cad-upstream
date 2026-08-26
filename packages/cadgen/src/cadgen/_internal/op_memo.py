@@ -47,14 +47,16 @@ import sys
 import threading
 from collections import OrderedDict
 
+from cadgen._internal.atomic_replace import replace_atomic
+
 # Salt: bump _OP_MEMO_VERSION whenever keying or hit semantics change.
 _OP_MEMO_VERSION = 1
 
 _lock = threading.RLock()
 _cache: OrderedDict[tuple, object] = OrderedDict()
 _tshape_bytes_memo: dict[object, str] = {}
-_stats = {"hits": 0, "misses": 0, "unkeyable": 0, "unstorable": 0,
-          "evicted": 0, "errors": 0}
+_stats = {"hits": 0, "misses": 0, "disk_hits": 0, "unkeyable": 0,
+          "unstorable": 0, "evicted": 0, "errors": 0}
 _installed = False
 
 
@@ -204,6 +206,7 @@ def _store(key: tuple, result: object) -> None:
         capacity = _capacity()
         while len(_cache) > capacity:
             _cache.popitem(last=False)
+    _disk_put(key, result)
 
 
 def _lookup(key: tuple):
@@ -211,6 +214,94 @@ def _lookup(key: tuple):
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
+    stored = _disk_get(key)
+    if stored is not None:
+        with _lock:
+            _cache[key] = stored
+            _cache.move_to_end(key)
+        _stats["disk_hits"] += 1
+    return stored
+
+
+# --- persistent tier -------------------------------------------------------
+#
+# The canonical bytes ARE the durable representation, so persisting them gives
+# a cold process (fresh daemon worker, CLI run, worktree, or a different model
+# reusing the same part) the same skip a warm one gets. Keys are pure
+# functions of op + inputs, content-addressed and salted, so the tier is
+# shared safely across processes and checkouts; writes are atomic
+# temp+rename, and any read problem falls back to executing the op.
+
+def _disk_enabled() -> bool:
+    return os.environ.get("CADGEN_OP_MEMO_DISK", "1") != "0"
+
+
+def _disk_dir() -> str:
+    # Resolved per call so tests (and long-lived workers) honor env changes;
+    # the makedirs is a no-op syscall next to any kernel op.
+    import build123d
+
+    base = os.environ.get("CADGEN_OP_MEMO_DISK_DIR")
+    if not base:
+        store_root = os.environ.get("CADGEN_STORE_DIR") or os.path.join(
+            os.path.expanduser("~"), ".cache", "cadgen")
+        base = os.path.join(store_root, "opmemo")
+    salt = f"v{_OP_MEMO_VERSION}-b123d{getattr(build123d, '__version__', 'unknown')}"
+    path = os.path.join(base, salt)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _disk_path(key: tuple) -> str:
+    digest = hashlib.sha256(repr(key).encode("utf-8")).hexdigest()
+    return os.path.join(_disk_dir(), f"{digest}.brep")
+
+
+def _disk_put(key: tuple, stored) -> None:
+    if not _disk_enabled() or not isinstance(stored, _StoredShape):
+        return
+    try:
+        import json
+
+        cls = type(stored.template)
+        header = json.dumps({"cls": f"{cls.__module__}.{cls.__qualname__}"})
+        path = _disk_path(key)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "wb") as fh:
+            fh.write(header.encode("utf-8") + b"\n" + stored.brep)
+        replace_atomic(tmp, path)
+    except Exception:
+        _stats["errors"] += 1
+
+
+def _resolve_shape_class(dotted: str):
+    import importlib
+
+    module_name, _, qualname = dotted.rpartition(".")
+    if not module_name.startswith("build123d"):
+        raise ValueError(f"refusing non-build123d class {dotted}")
+    obj = importlib.import_module(module_name)
+    for part in qualname.split("."):
+        obj = getattr(obj, part)
+    return obj
+
+
+def _disk_get(key: tuple):
+    if not _disk_enabled():
+        return None
+    try:
+        import json
+
+        path = _disk_path(key)
+        if not os.path.exists(path):
+            return None
+        with open(path, "rb") as fh:
+            header, _, brep = fh.read().partition(b"\n")
+        cls = _resolve_shape_class(json.loads(header.decode("utf-8"))["cls"])
+        template = cls(_downcast(_read_brep(brep)))
+        return _StoredShape(template, brep)
+    except Exception:
+        _stats["errors"] += 1
         return None
 
 

@@ -34,13 +34,19 @@ def _build_part():
 
 class OpMemoTest(unittest.TestCase):
     def setUp(self):
+        import tempfile
+
         op_memo.install()
         op_memo.clear()
+        self._tmp = tempfile.TemporaryDirectory()
         os.environ["CADGEN_OP_MEMO"] = "1"
+        os.environ["CADGEN_OP_MEMO_DISK_DIR"] = self._tmp.name
 
     def tearDown(self):
         op_memo.clear()
         os.environ.pop("CADGEN_OP_MEMO", None)
+        os.environ.pop("CADGEN_OP_MEMO_DISK_DIR", None)
+        self._tmp.cleanup()
 
     def test_install_is_idempotent(self):
         from build123d.topology import Face
@@ -107,6 +113,92 @@ class OpMemoTest(unittest.TestCase):
         os.environ["CADGEN_OP_MEMO"] = "1"
         memoized = _build_part()
         self.assertAlmostEqual(plain.volume, memoized.volume, places=9)
+
+    def test_disk_tier_survives_memory_clear(self):
+        first = _build_part()
+        reference = _digest(first)
+        op_memo.clear()  # simulate a fresh process: memory gone, disk kept
+        before = op_memo.stats()["disk_hits"]
+        second = _build_part()
+        after = op_memo.stats()
+        self.assertGreater(after["disk_hits"], before)
+        self.assertEqual(_digest(second), reference)
+
+    def test_disk_tier_kill_switch(self):
+        os.environ["CADGEN_OP_MEMO_DISK"] = "0"
+        try:
+            _build_part()
+            op_memo.clear()
+            before = op_memo.stats()["disk_hits"]
+            _build_part()
+            self.assertEqual(op_memo.stats()["disk_hits"], before)
+        finally:
+            os.environ.pop("CADGEN_OP_MEMO_DISK", None)
+
+
+class ComponentStoreTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["CADGEN_STORE_DIR"] = self._tmp.name
+
+    def tearDown(self):
+        os.environ.pop("CADGEN_STORE_DIR", None)
+        self._tmp.cleanup()
+
+    def test_publish_then_fetch_hardlinks(self):
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        src = Path(self._tmp.name) / "built.glb"
+        src.write_bytes(b"glb-payload")
+        component_store.publish(src, "cid123", 0.1, 0.5)
+        dest = Path(self._tmp.name) / "fetched.glb"
+        self.assertTrue(component_store.fetch("cid123", 0.1, 0.5, dest))
+        self.assertEqual(dest.read_bytes(), b"glb-payload")
+        self.assertEqual(src.stat().st_ino, dest.stat().st_ino)
+
+    def test_tolerances_are_part_of_the_key(self):
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        src = Path(self._tmp.name) / "built.glb"
+        src.write_bytes(b"payload")
+        component_store.publish(src, "cid123", 0.1, 0.5)
+        dest = Path(self._tmp.name) / "fetched.glb"
+        self.assertFalse(component_store.fetch("cid123", 0.2, 0.5, dest))
+
+    def test_store_deletion_leaves_fetched_files_intact(self):
+        import shutil
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        src = Path(self._tmp.name) / "built.glb"
+        src.write_bytes(b"payload")
+        component_store.publish(src, "cid123", 0.1, 0.5)
+        dest = Path(self._tmp.name) / "fetched.glb"
+        component_store.fetch("cid123", 0.1, 0.5, dest)
+        shutil.rmtree(Path(self._tmp.name) / "components")
+        self.assertEqual(dest.read_bytes(), b"payload")
+
+    def test_kill_switch(self):
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        os.environ["CADGEN_COMPONENT_STORE"] = "0"
+        try:
+            src = Path(self._tmp.name) / "built.glb"
+            src.write_bytes(b"payload")
+            component_store.publish(src, "cid123", 0.1, 0.5)
+            dest = Path(self._tmp.name) / "fetched.glb"
+            self.assertFalse(component_store.fetch("cid123", 0.1, 0.5, dest))
+        finally:
+            os.environ.pop("CADGEN_COMPONENT_STORE", None)
 
 
 if __name__ == "__main__":

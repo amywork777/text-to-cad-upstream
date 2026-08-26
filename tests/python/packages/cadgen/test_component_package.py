@@ -51,6 +51,21 @@ def _demo_compound() -> Compound:
 
 
 class ComponentPackageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Isolate the shared component store: these tests assert exact
+        # built/reused counts, which a populated user-level store would
+        # legitimately turn into store fetches.
+        import os
+
+        self._store_tmp = tempfile.TemporaryDirectory()
+        os.environ["CADGEN_STORE_DIR"] = self._store_tmp.name
+
+    def tearDown(self) -> None:
+        import os
+
+        os.environ.pop("CADGEN_STORE_DIR", None)
+        self._store_tmp.cleanup()
+
     def test_build_from_compound_dedups_and_self_describes(self) -> None:
         compound = _demo_compound()
         with tempfile.TemporaryDirectory() as tmp:

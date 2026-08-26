@@ -32,6 +32,14 @@ cd "$REPO_ROOT"
 # user's build fails -- so CI is the only place the contract is actually enforced.
 export CADGEN_STRICT_LOCKS=1
 
+# Isolate the shared caches (component store + op-memo disk tier) from the
+# developer's real ~/.cache/cadgen: tests assert exact built/reused counts and
+# byte-level outputs, and a populated user store would satisfy builds the test
+# expects to run (and test runs would pollute the user's cache in return).
+CADGEN_TEST_CACHE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cadgen-test-store.XXXXXX")"
+trap 'rm -rf "$CADGEN_TEST_CACHE_DIR"' EXIT
+export CADGEN_STORE_DIR="$CADGEN_TEST_CACHE_DIR"
+
 run_suite "cadgen package Python tests" "tests/python/packages/cadgen" "packages/cadgen/src"
 
 while IFS= read -r skill; do

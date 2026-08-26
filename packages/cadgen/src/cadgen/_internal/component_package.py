@@ -675,8 +675,17 @@ def build_package_from_compound(
     built: list[str] = []
     reused: list[str] = []
     missing: list[tuple[str, Any]] = []
+    from cadgen._internal import component_store
+
     for cid, shape in shapes.items():
         if (comp_dir / f"{cid}.glb").exists() and not force:
+            reused.append(cid)
+        elif not force and component_store.fetch(
+            cid, linear_deflection, angular_deflection, comp_dir / f"{cid}.glb"
+        ):
+            # Shared-store tier: another package (or worktree) already built
+            # this exact component at these tolerances; materialized as a
+            # hardlink, skipping mesh + selector extraction entirely.
             reused.append(cid)
         else:
             missing.append((cid, shape))
@@ -751,6 +760,19 @@ def build_package_from_compound(
         if error is not None:
             raise RuntimeError(f"component {cid} build failed: {error}")
         built.append(cid)
+
+    # Publish into the shared store: freshly built components always (force
+    # overwrites, since force means the build code changed), and reused local
+    # components opportunistically so pre-store packages seed it over time.
+    for cid in built:
+        component_store.publish(
+            comp_dir / f"{cid}.glb", cid, linear_deflection, angular_deflection,
+            overwrite=bool(force),
+        )
+    for cid in reused:
+        component_store.publish(
+            comp_dir / f"{cid}.glb", cid, linear_deflection, angular_deflection,
+        )
 
     # The descriptor IS the assembly's index manifest: the provenance block (schema/
     # source/step hashes, mesh, edgeRendering) the freshness gates read, plus the
