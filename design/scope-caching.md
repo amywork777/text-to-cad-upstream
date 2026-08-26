@@ -1,10 +1,13 @@
 # Phase 5: Scope caching — execution plan
 
-Status: planned, not started. Target branch: `claude/incremental-generation`
-(off `release/0.5.0`). Companion doc: `design/incremental-generation.md`
-(read its Phase 1–3 result sections and the moonwatch case study before
-starting — they explain every convention this plan reuses and every dead end
-you must not retry).
+Status: SUPERSEDED by `design/production-architecture.md`, which absorbs this
+plan's S0–S2 machinery as the production system's cold tier (W1–W3) and goes
+straight to provenance invalidation + resident sessions. Do not execute this
+document standalone; it remains as the detailed stage-level reference for the
+capture/freeze-thaw/seam work the production plan builds on. Companion doc:
+`design/incremental-generation.md` (read its Phase 1–3 result sections and
+the moonwatch case study before starting — they explain every convention this
+plan reuses and every dead end you must not retry).
 
 This document is written to be executed stage by stage by an agent with no
 other context. Do the stages in order. Each stage ends with acceptance
