@@ -404,8 +404,22 @@ cache-size complaint exists.
   capture (`generation.py:1018-1096`), bypassing every warm cache. Move child
   rebuilds in-daemon so they share the op cache, verifying per-request closure
   capture. Sequenced last; touches the daemon effort's territory.
+  *Resolution (2026-08-25): covered by the Phase 2 disk tier — child
+  subprocesses hit `~/.cache/cadgen/opmemo` per op and the component store
+  per GLB, so a fresh interpreter no longer implies rebuilt geometry. The
+  residual per-child cost is the OCP import, which is the daemon effort's
+  territory; no in-daemon child-rebuild surgery needed.*
 
-## Expected wins (to be confirmed by Phase 0)
+## Measured end-to-end (2026-08-25)
+
+The scenario the whole design targets — edit one parameter, regenerate, in a
+**completely cold process** (no daemon), `cutaway_turbofan_engine` (206
+components): **~34s → 3.1s**. 1103 of 1112 ops served from the disk tier;
+only the 9 ops downstream of the edited parameter re-ran; only the affected
+components re-meshed. A warm daemon removes the remaining ~2.5s import on
+top.
+
+## Expected wins (original estimates, confirmed by Phase 0)
 
 - Single-parameter edit, mid-to-large model: from full rebuild (~30s on
   `tom`-class assemblies, excluding import) to script re-exec (tens–hundreds of
