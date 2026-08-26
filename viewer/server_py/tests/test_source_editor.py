@@ -31,6 +31,8 @@ class SourceFeatureParserTest(unittest.TestCase):
         self.assertEqual(["extrude", "Hole"], [feature["op"] for feature in result["features"]])
         extrude = result["features"][0]
         self.assertEqual(["Rectangle", "Circle"], [entity["op"] for entity in extrude["sketch"]["entities"]])
+        self.assertEqual("Plane.XY", extrude["sketch"]["plane"]["name"])
+        self.assertEqual([0.0, 0.0, 1.0], extrude["sketch"]["plane"]["normal"])
         amount = extrude["params"][0]
         self.assertEqual("6", SOURCE[amount["span"][0]:amount["span"][1]])
 
@@ -39,6 +41,49 @@ class SourceFeatureParserTest(unittest.TestCase):
         result = parse_source_features(source)
         width = result["features"][0]["sketch"]["entities"][0]["params"][0]
         self.assertEqual("24", source[width["span"][0]:width["span"][1]])
+
+    def test_preserves_authored_plane_outer_location_and_profile_location(self):
+        source = """from build123d import *
+
+def gen_step():
+    with BuildPart() as part:
+        with Locations((10, 20, 30)):
+            with BuildSketch(Plane.XZ):
+                with Locations((2, 3)):
+                    Circle(4)
+            extrude(amount=5)
+    return part.part
+"""
+        result = parse_source_features(source)
+        sketch = result["features"][0]["sketch"]
+        self.assertEqual([10.0, 20.0, 30.0], sketch["plane"]["origin"])
+        self.assertEqual([1.0, 0.0, 0.0], sketch["plane"]["xAxis"])
+        self.assertEqual([0.0, 0.0, 1.0], sketch["plane"]["yAxis"])
+        self.assertEqual([0.0, -1.0, 0.0], sketch["plane"]["normal"])
+        self.assertEqual([2.0, 3.0], sketch["entities"][0]["position"])
+
+    def test_combines_nested_outer_locations_for_sketch_origin(self):
+        source = """from build123d import *
+
+def gen_step():
+    with BuildPart() as part:
+        with Locations((1, 2, 3)):
+            with Locations((4, 5, 6)):
+                with BuildSketch():
+                    Rectangle(24, 16)
+                extrude(amount=5)
+    return part.part
+"""
+        sketch = parse_source_features(source)["features"][0]["sketch"]
+        self.assertEqual([5.0, 7.0, 9.0], sketch["plane"]["origin"])
+
+    def test_supports_static_plane_offsets_and_marks_dynamic_planes_unsupported(self):
+        offset_source = SOURCE.replace("BuildSketch()", "BuildSketch(Plane.XY.offset(8))")
+        offset_plane = parse_source_features(offset_source)["features"][0]["sketch"]["plane"]
+        self.assertEqual([0.0, 0.0, 8.0], offset_plane["origin"])
+        dynamic_source = SOURCE.replace("BuildSketch()", "BuildSketch(part.faces().sort_by(Axis.Z)[-1])")
+        dynamic_plane = parse_source_features(dynamic_source)["features"][0]["sketch"]["plane"]
+        self.assertFalse(dynamic_plane["supported"])
 
 
 class SourceEditorTest(unittest.TestCase):

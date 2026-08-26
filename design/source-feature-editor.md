@@ -80,22 +80,34 @@ region and shows its dimensions on the model.
 
 ### Editing
 
-Double-clicking a feature or one of its dimensions enters an explicit edit
-mode. Edits remain drafts until Apply:
+Selecting a source-backed sketch exposes an `Edit Sketch` action. Entering it
+temporarily reuses the existing 3D viewport rather than opening another panel
+or replacing Geometry:
 
-1. The selected feature stays highlighted and unrelated geometry is ghosted.
-2. The viewer shows the relevant sketch plane or dimension anchors on the
-   model.
-3. Inputs and on-model handles update the same draft state.
-4. Apply validates every proposed source span against the source hash captured
+1. The viewer captures the exact camera, projection, zoom, selection, display,
+   and visibility state of the current 3D view.
+2. It snaps normal to the authored sketch plane, ghosts the accepted solid,
+   and draws the profile, dimension lines, labels, and anchors directly on the
+   model. The existing Geometry tree remains intact.
+3. Dimension inputs update that overlay immediately while the source and
+   canonical artifact remain unchanged.
+4. `Return to 3D` restores the captured view while retaining drafts; `Cancel`
+   or Escape restores it and discards drafts.
+5. Apply validates every proposed source span against the source hash captured
    when editing began.
-5. One guarded source patch is committed atomically.
-6. The viewer requests a forced rebuild through the existing canonical
+6. One guarded source patch is committed atomically.
+7. The viewer requests a forced rebuild through the existing canonical
    artifact route.
-7. On success, the viewer reloads the accepted canonical artifact and clears
+8. On success, the viewer reloads the accepted canonical artifact and clears
    the draft.
-8. On failure or stale source, the current artifact remains visible, the
+9. On failure or stale source, the current artifact remains visible, the
    source patch is rolled back, and the draft is preserved for correction.
+
+Static `Plane.XY`, `Plane.XZ`, `Plane.YZ`, `Plane.ZX`, and `Plane.ZY` sketches,
+plane offsets, custom static planes, and nested `Locations` are projected in
+their authored coordinate systems. Face-derived or otherwise dynamic planes
+remain dimension-editable in the tree, but the viewer disables viewport sketch
+mode rather than pretending it knows the plane.
 
 Only numeric literals or explicitly declared editable parameters should be
 changed surgically. Expressions, shared variables, or ambiguous spans require

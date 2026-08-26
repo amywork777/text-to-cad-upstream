@@ -69,7 +69,7 @@ export function useCadWorkspaceShortcuts({
         }
       }
 
-      if (event.key === "Escape") {
+      if (event.key === "Escape" && !event.defaultPrevented) {
         if (previewMode) {
           const previousUiState = previewUiStateRef.current;
           previewUiStateRef.current = null;

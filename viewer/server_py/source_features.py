@@ -19,6 +19,13 @@ SELECTOR_FIRST = {"fillet": ["radius"], "chamfer": ["length"]}
 RECOGNIZED = set(POSITIONAL_NAMES) | set(SELECTOR_FIRST)
 CONSUMERS = {"extrude": ["amount"], "revolve": []}
 SKETCH_ENTITIES = {"Rectangle": ["width", "height"], "Circle": ["radius"]}
+PLANE_BASIS = {
+    "XY": {"xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 1.0, 0.0], "normal": [0.0, 0.0, 1.0]},
+    "XZ": {"xAxis": [1.0, 0.0, 0.0], "yAxis": [0.0, 0.0, 1.0], "normal": [0.0, -1.0, 0.0]},
+    "YZ": {"xAxis": [0.0, 1.0, 0.0], "yAxis": [0.0, 0.0, 1.0], "normal": [1.0, 0.0, 0.0]},
+    "ZX": {"xAxis": [0.0, 0.0, 1.0], "yAxis": [1.0, 0.0, 0.0], "normal": [0.0, 1.0, 0.0]},
+    "ZY": {"xAxis": [0.0, 0.0, 1.0], "yAxis": [0.0, 1.0, 0.0], "normal": [-1.0, 0.0, 0.0]},
+}
 
 
 def _make_offset(source: str):
@@ -118,6 +125,90 @@ def _position_from_locations(call, off):
     }
 
 
+def _numeric_tuple(node, length=None):
+    if not isinstance(node, (ast.Tuple, ast.List)):
+        return None
+    values = []
+    for element in node.elts:
+        value, _ = _numeric_node(element)
+        if value is None:
+            return None
+        values.append(value)
+    if length is not None and len(values) != length:
+        return None
+    return values
+
+
+def _normalize_vector(values):
+    length = sum(value * value for value in values) ** 0.5
+    if length <= 1e-12:
+        return None
+    return [value / length for value in values]
+
+
+def _cross(left, right):
+    return [
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    ]
+
+
+def _plane_from_node(node):
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "Plane"
+        and node.attr in PLANE_BASIS
+    ):
+        return {"name": f"Plane.{node.attr}", "origin": [0.0, 0.0, 0.0], **PLANE_BASIS[node.attr]}
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "offset":
+        base = _plane_from_node(node.func.value)
+        amount, _ = _numeric_node(node.args[0]) if node.args else (None, None)
+        if base and amount is not None:
+            base["origin"] = [
+                base["origin"][index] + base["normal"][index] * amount
+                for index in range(3)
+            ]
+            base["name"] = f"{base['name']}.offset"
+            return base
+    if not isinstance(node, ast.Call) or _call_name(node) != "Plane":
+        return None
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+    origin = _numeric_tuple(keywords.get("origin"), 3) or [0.0, 0.0, 0.0]
+    x_axis = _normalize_vector(_numeric_tuple(keywords.get("x_dir"), 3) or [1.0, 0.0, 0.0])
+    normal = _normalize_vector(_numeric_tuple(keywords.get("z_dir"), 3) or [0.0, 0.0, 1.0])
+    y_axis = _normalize_vector(_cross(normal, x_axis)) if x_axis and normal else None
+    if not x_axis or not y_axis or not normal:
+        return None
+    return {
+        "name": "Plane",
+        "origin": origin,
+        "xAxis": x_axis,
+        "yAxis": y_axis,
+        "normal": normal,
+    }
+
+
+def _sketch_plane(call, position):
+    requested = call.args[0] if isinstance(call, ast.Call) and call.args else None
+    plane = _plane_from_node(requested) if requested is not None else {
+        "name": "Plane.XY",
+        "origin": [0.0, 0.0, 0.0],
+        **PLANE_BASIS["XY"],
+    }
+    if plane is None:
+        return {
+            "supported": False,
+            "reason": "The sketch plane is dynamic and cannot be positioned safely in the viewer.",
+        }
+    location = list((position or {}).get("value") or [])
+    location = (location + [0.0, 0.0, 0.0])[:3]
+    plane["origin"] = [plane["origin"][index] + location[index] for index in range(3)]
+    plane["supported"] = True
+    return plane
+
+
 def _statement_span(node, off):
     return [off(node.lineno, node.col_offset), off(node.end_lineno, node.end_col_offset)]
 
@@ -146,22 +237,50 @@ def _entity_parameters(op, call, off):
     return params
 
 
-def _parse_sketch_block(statement, off, counters):
-    counters["sketch"] = counters.get("sketch", 0) + 1
-    entities = []
-    for inner in statement.body:
+def _combine_sketch_position(parent, child):
+    parent_values = list((parent or {}).get("value") or [])
+    child_values = list((child or {}).get("value") or [])
+    length = max(len(parent_values), len(child_values), 2)
+    return {
+        "value": [
+            (parent_values[index] if index < len(parent_values) else 0.0)
+            + (child_values[index] if index < len(child_values) else 0.0)
+            for index in range(length)
+        ]
+    }
+
+
+def _collect_sketch_entities(statements, off, entities, position=None):
+    for inner in statements:
+        if isinstance(inner, ast.With):
+            expression = inner.items[0].context_expr if inner.items else None
+            name = _call_name(expression) if isinstance(expression, ast.Call) else None
+            if name == "Locations":
+                child_position = _combine_sketch_position(position, _position_from_locations(expression, off))
+                _collect_sketch_entities(inner.body, off, entities, child_position)
+            continue
         if not isinstance(inner, ast.Expr) or not isinstance(inner.value, ast.Call):
             continue
         op = _call_name(inner.value)
         if op in SKETCH_ENTITIES:
+            values = list((position or {}).get("value") or [])
             entities.append({
                 "op": op,
                 "mode": _mode_of(inner.value),
+                "position": (values + [0.0, 0.0])[:2],
                 "params": _entity_parameters(op, inner.value, off),
             })
+
+
+def _parse_sketch_block(statement, off, counters, position=None):
+    counters["sketch"] = counters.get("sketch", 0) + 1
+    entities = []
+    _collect_sketch_entities(statement.body, off, entities)
+    expression = statement.items[0].context_expr if statement.items else None
     return {
         "id": f"sketch-{counters['sketch']}",
         "entities": entities,
+        "plane": _sketch_plane(expression, position),
         "stmtSpan": _statement_span(statement, off),
     }
 
@@ -200,9 +319,10 @@ def _collect(statements, off, position, output, counters, pending_sketch):
             expression = statement.items[0].context_expr if statement.items else None
             name = _call_name(expression) if isinstance(expression, ast.Call) else None
             if name == "Locations":
-                _collect(statement.body, off, _position_from_locations(expression, off), output, counters, pending_sketch)
+                child_position = _combine_sketch_position(position, _position_from_locations(expression, off))
+                _collect(statement.body, off, child_position, output, counters, pending_sketch)
             elif name == "BuildSketch":
-                pending_sketch[0] = _parse_sketch_block(statement, off, counters)
+                pending_sketch[0] = _parse_sketch_block(statement, off, counters, position)
             continue
         if not isinstance(statement, ast.Expr) or not isinstance(statement.value, ast.Call):
             continue

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Check,
@@ -13,6 +13,7 @@ import {
 
 import { cn } from "@/ui/utils";
 import { featureParameterRows, sourceParamKey } from "@/workbench/sourceFeatureDrafts";
+import { buildSourceSketchViewportModel } from "@/workbench/sourceSketchViewport";
 import { Button } from "../ui/button";
 
 const groupLabelClasses = "px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/45";
@@ -34,10 +35,11 @@ function parameterUnit(parameter) {
   return String(parameter?.name || "") === "revolution_arc" ? "deg" : "mm";
 }
 
-export default function SourceFeatureTree({ editor }) {
+export default function SourceFeatureTree({ editor, viewerRef = null }) {
   const features = Array.isArray(editor?.features) ? editor.features : [];
   const [selectedNodeId, setSelectedNodeId] = useState("");
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [editingSketchId, setEditingSketchId] = useState("");
 
   useEffect(() => {
     const ids = new Set(features.flatMap((feature) => [feature.id, feature.sketch?.id].filter(Boolean)));
@@ -60,6 +62,63 @@ export default function SourceFeatureTree({ editor }) {
     [selectedFeature, selectedNodeId]
   );
   const busy = editor?.status === "saving" || editor?.status === "rebuilding";
+  const selectedSketch = selectedFeature?.sketch?.id === selectedNodeId
+    ? selectedFeature.sketch
+    : null;
+  const sketchViewportModel = useMemo(
+    () => selectedSketch ? buildSourceSketchViewportModel(selectedFeature, editor?.drafts) : null,
+    [editor?.drafts, selectedFeature, selectedSketch]
+  );
+  const sketchEditing = Boolean(editingSketchId && selectedSketch?.id === editingSketchId);
+
+  const exitSketchEdit = useCallback(({ discardDrafts = false } = {}) => {
+    if (discardDrafts) editor?.revert?.();
+    viewerRef?.current?.endSourceSketchEdit?.({ restore: true });
+    setEditingSketchId("");
+  }, [editor, viewerRef]);
+
+  const enterSketchEdit = useCallback(() => {
+    if (!sketchViewportModel?.plane?.supported || !sketchViewportModel.entities.length || busy) return;
+    const entered = viewerRef?.current?.beginSourceSketchEdit?.(sketchViewportModel);
+    if (entered !== false) setEditingSketchId(sketchViewportModel.id);
+  }, [busy, sketchViewportModel, viewerRef]);
+
+  useEffect(() => {
+    if (!sketchEditing || !sketchViewportModel) return;
+    viewerRef?.current?.updateSourceSketchEdit?.(sketchViewportModel);
+  }, [sketchEditing, sketchViewportModel, viewerRef]);
+
+  useEffect(() => {
+    if (!editingSketchId) return;
+    const stillExists = features.some((feature) => feature.sketch?.id === editingSketchId);
+    if (!stillExists) exitSketchEdit();
+  }, [editingSketchId, exitSketchEdit, features]);
+
+  useEffect(() => () => {
+    viewerRef?.current?.endSourceSketchEdit?.({ restore: true });
+  }, [viewerRef]);
+
+  useEffect(() => {
+    if (!sketchEditing || typeof window === "undefined") return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      exitSketchEdit({ discardDrafts: true });
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [exitSketchEdit, sketchEditing]);
+
+  const selectNode = useCallback((nodeId) => {
+    if (editingSketchId && nodeId !== editingSketchId) exitSketchEdit();
+    setSelectedNodeId(nodeId);
+  }, [editingSketchId, exitSketchEdit]);
+
+  const applyDrafts = useCallback(async () => {
+    const applied = await editor?.apply?.();
+    if (applied && editingSketchId) exitSketchEdit();
+  }, [editingSketchId, editor, exitSketchEdit]);
 
   if (editor?.status === "loading") {
     return (
@@ -117,7 +176,7 @@ export default function SourceFeatureTree({ editor }) {
                         ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                         : "text-sidebar-foreground hover:bg-sidebar-accent/60"
                     )}
-                    onClick={() => setSelectedNodeId(feature.id)}
+                    onClick={() => selectNode(feature.id)}
                   >
                     <FeatureIcon feature={feature} />
                     <span className="truncate">{feature.label}</span>
@@ -132,7 +191,8 @@ export default function SourceFeatureTree({ editor }) {
                         ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                         : "text-sidebar-foreground hover:bg-sidebar-accent/60"
                     )}
-                    onClick={() => setSelectedNodeId(feature.sketch.id)}
+                    onClick={() => selectNode(feature.sketch.id)}
+                    onDoubleClick={enterSketchEdit}
                   >
                     <FeatureIcon sketch />
                     <span className="truncate">{feature.sketch.label}</span>
@@ -149,6 +209,19 @@ export default function SourceFeatureTree({ editor }) {
           <div className="border-b border-sidebar-border/60 px-2.5 py-2 text-[11px] font-medium text-sidebar-foreground">
             {selectedNodeId === selectedFeature.sketch?.id ? selectedFeature.sketch.label : selectedFeature.label}
             <span className="ml-1.5 font-normal text-sidebar-foreground/45">Dimensions</span>
+            {selectedSketch ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="float-right -my-1 h-6 px-1.5 text-[10px]"
+                disabled={busy || !sketchViewportModel?.plane?.supported || !sketchViewportModel?.entities?.length}
+                title={sketchViewportModel?.plane?.reason || (sketchEditing ? "Restore the previous 3D view" : "Snap to this sketch plane")}
+                onClick={sketchEditing ? () => exitSketchEdit() : enterSketchEdit}
+              >
+                {sketchEditing ? "Return to 3D" : "Edit Sketch"}
+              </Button>
+            ) : null}
           </div>
           <div className="space-y-2 p-2.5">
             {!parameters.length ? (
@@ -177,6 +250,11 @@ export default function SourceFeatureTree({ editor }) {
               );
             })}
           </div>
+          {selectedSketch && sketchViewportModel?.plane?.supported === false ? (
+            <div className="border-t border-sidebar-border/60 px-2.5 py-2 text-[10px] text-sidebar-foreground/50">
+              {sketchViewportModel.plane.reason}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -188,10 +266,10 @@ export default function SourceFeatureTree({ editor }) {
 
       {editor?.hasDrafts ? (
         <div className="mx-2 mt-2 flex items-center justify-end gap-1.5">
-          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={editor.revert}>
-            <RotateCcw className="mr-1 size-3" /> Revert
+          <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-[11px]" disabled={busy} onClick={sketchEditing ? () => exitSketchEdit({ discardDrafts: true }) : editor.revert}>
+            <RotateCcw className="mr-1 size-3" /> {sketchEditing ? "Cancel" : "Revert"}
           </Button>
-          <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy || !editor.draftsValid} onClick={editor.apply}>
+          <Button type="button" size="sm" className="h-7 px-2 text-[11px]" disabled={busy || !editor.draftsValid} onClick={applyDrafts}>
             {busy ? <LoaderCircle className="mr-1 size-3 animate-spin" /> : <Check className="mr-1 size-3" />}
             {editor.status === "rebuilding" ? "Rebuilding…" : editor.status === "saving" ? "Saving…" : "Apply"}
           </Button>

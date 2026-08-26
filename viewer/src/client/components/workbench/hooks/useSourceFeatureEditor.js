@@ -83,10 +83,10 @@ export default function useSourceFeatureEditor(fileRef) {
   const revert = useCallback(() => setDrafts({}), []);
 
   const apply = useCallback(async () => {
-    if (!model?.supported || !model?.sourceHash || !Object.keys(drafts).length) return;
+    if (!model?.supported || !model?.sourceHash || !Object.keys(drafts).length) return false;
     if (!sourceDraftsValid(drafts)) {
       setState((current) => ({ ...current, status: "error", error: "Enter a valid number for every changed dimension." }));
-      return;
+      return false;
     }
     setState((current) => ({ ...current, status: "saving", error: "" }));
     let written = null;
@@ -104,6 +104,7 @@ export default function useSourceFeatureEditor(fileRef) {
       }
       setDrafts({});
       await load({ quiet: true });
+      return true;
     } catch (error) {
       if (written?.sourceHash) {
         try {
@@ -124,6 +125,7 @@ export default function useSourceFeatureEditor(fileRef) {
         status: "error",
         error: error instanceof Error ? error.message : String(error),
       }));
+      return false;
     }
   }, [drafts, load, model, normalizedFileRef]);
 

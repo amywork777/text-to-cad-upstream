@@ -154,6 +154,10 @@ import {
 import { buildRuntimeInitializationAlert } from "cadjs/lib/viewer/webglSupport";
 import { DRAWING_TOOL } from "@/workbench/constants";
 import {
+  sourceSketchCameraFrame,
+  sourceSketchDimensionDescriptors,
+} from "@/workbench/sourceSketchViewport";
+import {
   hasCapability,
   viewportContentKind,
   VIEWPORT_CONTENT
@@ -1726,6 +1730,252 @@ function updateGridHelper(
   });
 }
 
+function sourceSketchPoint3(THREE, model, point2d, normalOffset = 0) {
+  const plane = model?.plane || {};
+  return new THREE.Vector3(...(plane.origin || [0, 0, 0]))
+    .addScaledVector(new THREE.Vector3(...(plane.xAxis || [1, 0, 0])), Number(point2d?.[0]) || 0)
+    .addScaledVector(new THREE.Vector3(...(plane.yAxis || [0, 1, 0])), Number(point2d?.[1]) || 0)
+    .addScaledVector(new THREE.Vector3(...(plane.normal || [0, 0, 1])), normalOffset);
+}
+
+function pushSourceSketchSegment(target, start, end) {
+  target.push(start.x, start.y, start.z, end.x, end.y, end.z);
+}
+
+function sourceSketchLine(THREE, positions, color, { opacity = 1, renderOrder = 80 } = {}) {
+  if (!positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const line = new THREE.LineSegments(geometry, material);
+  line.renderOrder = renderOrder;
+  line.frustumCulled = false;
+  return line;
+}
+
+function sourceSketchLabelSprite(THREE, text, worldHeight) {
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "rgba(15, 23, 32, 0.9)";
+  context.fillRect(2, 2, 252, 60);
+  context.strokeStyle = "rgba(125, 211, 252, 0.9)";
+  context.lineWidth = 2;
+  context.stroke();
+  context.fillStyle = "#e6f6ff";
+  context.font = "600 25px ui-sans-serif, system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(text || ""), 128, 33);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(worldHeight * 4, worldHeight, 1);
+  sprite.renderOrder = 84;
+  sprite.frustumCulled = false;
+  return sprite;
+}
+
+function disposeSourceSketchObject(object) {
+  const geometries = new Set();
+  const materialsSeen = new Set();
+  const textures = new Set();
+  object?.traverse?.((child) => {
+    if (child.geometry) geometries.add(child.geometry);
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials.filter(Boolean)) {
+      materialsSeen.add(material);
+      if (material.map) textures.add(material.map);
+    }
+  });
+  for (const geometry of geometries) geometry.dispose?.();
+  for (const texture of textures) texture.dispose?.();
+  for (const material of materialsSeen) material.dispose?.();
+}
+
+function createSourceSketchOverlay(runtime, model) {
+  const { THREE, modelGroup } = runtime || {};
+  if (!THREE || !modelGroup || !model?.plane?.supported) return null;
+  const group = new THREE.Group();
+  group.name = "SourceSketchEditOverlay";
+  group.userData.sourceSketchOverlay = true;
+  group.renderOrder = 80;
+  const addPositions = [];
+  const subtractPositions = [];
+  const span = Math.max(model.bounds?.width || 0, model.bounds?.height || 0, 1);
+  const normalOffset = span * 0.0015;
+
+  for (const entity of model.entities || []) {
+    const positions = entity.mode === "subtract" ? subtractPositions : addPositions;
+    if (entity.kind === "rectangle") {
+      const [cx, cy] = entity.center;
+      const points = [
+        [cx - entity.width / 2, cy - entity.height / 2],
+        [cx + entity.width / 2, cy - entity.height / 2],
+        [cx + entity.width / 2, cy + entity.height / 2],
+        [cx - entity.width / 2, cy + entity.height / 2],
+      ].map((point) => sourceSketchPoint3(THREE, model, point, normalOffset));
+      for (let index = 0; index < points.length; index += 1) {
+        pushSourceSketchSegment(positions, points[index], points[(index + 1) % points.length]);
+      }
+    } else if (entity.kind === "circle") {
+      let previous = null;
+      for (let index = 0; index <= 72; index += 1) {
+        const angle = (index / 72) * Math.PI * 2;
+        const point = sourceSketchPoint3(THREE, model, [
+          entity.center[0] + Math.cos(angle) * entity.radius,
+          entity.center[1] + Math.sin(angle) * entity.radius,
+        ], normalOffset);
+        if (previous) pushSourceSketchSegment(positions, previous, point);
+        previous = point;
+      }
+    }
+  }
+  const addLine = sourceSketchLine(THREE, addPositions, 0x38bdf8, { renderOrder: 81 });
+  const subtractLine = sourceSketchLine(THREE, subtractPositions, 0xfb7185, { renderOrder: 82 });
+  if (addLine) group.add(addLine);
+  if (subtractLine) group.add(subtractLine);
+
+  const bounds = model.bounds || { minX: -5, minY: -5, maxX: 5, maxY: 5, width: 10, height: 10 };
+  const axisMargin = span * 0.18;
+  const axisPositions = [];
+  pushSourceSketchSegment(axisPositions,
+    sourceSketchPoint3(THREE, model, [bounds.minX - axisMargin, 0], normalOffset),
+    sourceSketchPoint3(THREE, model, [bounds.maxX + axisMargin, 0], normalOffset));
+  pushSourceSketchSegment(axisPositions,
+    sourceSketchPoint3(THREE, model, [0, bounds.minY - axisMargin], normalOffset),
+    sourceSketchPoint3(THREE, model, [0, bounds.maxY + axisMargin], normalOffset));
+  const axes = sourceSketchLine(THREE, axisPositions, 0x94a3b8, { opacity: 0.5, renderOrder: 80 });
+  if (axes) group.add(axes);
+
+  const dimensionPositions = [];
+  const tickLength = span * 0.018;
+  const handleRadius = Math.max(span * 0.009, 0.08);
+  const handleGeometry = new THREE.SphereGeometry(handleRadius, 12, 8);
+  const handleMaterial = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, depthTest: false, depthWrite: false, toneMapped: false });
+  for (const dimension of sourceSketchDimensionDescriptors(model)) {
+    const start = sourceSketchPoint3(THREE, model, dimension.start, normalOffset * 2);
+    const end = sourceSketchPoint3(THREE, model, dimension.end, normalOffset * 2);
+    pushSourceSketchSegment(dimensionPositions, start, end);
+    const direction = end.clone().sub(start).normalize();
+    const tick = new THREE.Vector3(...(model.plane.normal || [0, 0, 1])).cross(direction).normalize().multiplyScalar(tickLength);
+    pushSourceSketchSegment(dimensionPositions, start.clone().sub(tick), start.clone().add(tick));
+    pushSourceSketchSegment(dimensionPositions, end.clone().sub(tick), end.clone().add(tick));
+    for (const point of [start, end]) {
+      const handle = new THREE.Mesh(handleGeometry, handleMaterial);
+      handle.position.copy(point);
+      handle.renderOrder = 83;
+      group.add(handle);
+    }
+    const label = sourceSketchLabelSprite(THREE, dimension.label, Math.max(span * 0.055, 0.8));
+    if (label) {
+      label.position.copy(start.clone().add(end).multiplyScalar(0.5));
+      group.add(label);
+    }
+  }
+  const dimensions = sourceSketchLine(THREE, dimensionPositions, 0x7dd3fc, { opacity: 0.92, renderOrder: 83 });
+  if (dimensions) group.add(dimensions);
+  modelGroup.add(group);
+  modelGroup.updateMatrixWorld(true);
+  return group;
+}
+
+function ghostSourceSketchModel(runtime) {
+  const materialState = new Map();
+  runtime?.modelGroup?.traverse?.((object) => {
+    if (!object?.isMesh || object.userData?.sourceSketchOverlay) return;
+    for (const material of (Array.isArray(object.material) ? object.material : [object.material]).filter(Boolean)) {
+      if (materialState.has(material)) continue;
+      materialState.set(material, { opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite });
+      material.transparent = true;
+      material.opacity = Math.min(Number(material.opacity) || 1, 0.2);
+      material.depthWrite = false;
+      material.needsUpdate = true;
+    }
+  });
+  const edgesVisible = runtime?.edgesGroup?.visible;
+  if (runtime?.edgesGroup) runtime.edgesGroup.visible = false;
+  return () => {
+    for (const [material, state] of materialState) {
+      material.opacity = state.opacity;
+      material.transparent = state.transparent;
+      material.depthWrite = state.depthWrite;
+      material.needsUpdate = true;
+    }
+    if (runtime?.edgesGroup && typeof edgesVisible === "boolean") runtime.edgesGroup.visible = edgesVisible;
+  };
+}
+
+function captureSourceSketchView(runtime) {
+  if (!runtime?.camera || !runtime?.controls) return null;
+  return {
+    perspective: readPerspectiveSnapshot(runtime),
+    orthographicHalfHeight: Number(runtime.orthographicCamera?.userData?.cadHalfHeight) || null,
+    controls: { enableRotate: runtime.controls.enableRotate, screenSpacePanning: runtime.controls.screenSpacePanning },
+  };
+}
+
+function applySourceSketchView(runtime, model) {
+  if (!runtime?.THREE || !runtime?.camera || !runtime?.controls || !runtime?.modelGroup) return false;
+  runtime.modelGroup.updateMatrixWorld(true);
+  const metrics = getViewportFrameMetrics(runtime, runtime.frameInsetsRef?.current);
+  const currentDistance = runtime.camera.position.distanceTo(runtime.controls.target);
+  const frame = sourceSketchCameraFrame(model, { aspect: metrics.aspect, distance: currentDistance });
+  if (!frame) return false;
+  const target = new runtime.THREE.Vector3(...frame.target).applyMatrix4(runtime.modelGroup.matrixWorld);
+  const position = new runtime.THREE.Vector3(...frame.position).applyMatrix4(runtime.modelGroup.matrixWorld);
+  const up = new runtime.THREE.Vector3(...frame.up).transformDirection(runtime.modelGroup.matrixWorld).normalize();
+  syncRuntimeCameraProjection(runtime, CAMERA_PROJECTION.ORTHOGRAPHIC, { scheduleIdle: false, requestRender: false });
+  setOrthographicCameraHalfHeight(runtime, frame.orthographicHalfHeight, metrics);
+  const applied = applyPerspectiveSnapshot(runtime, {
+    position: position.toArray(), target: target.toArray(), up: up.toArray(), zoom: 1, projection: CAMERA_PROJECTION.ORTHOGRAPHIC,
+  }, { scheduleIdle: false });
+  runtime.controls.enableRotate = false;
+  runtime.controls.screenSpacePanning = true;
+  runtime.onZoomChange?.(runtime);
+  runtime.scheduleIdleQuality?.();
+  runtime.requestRender?.();
+  return applied;
+}
+
+function restoreSourceSketchView(runtime, saved) {
+  if (!runtime || !saved?.perspective) return false;
+  const applied = applyPerspectiveSnapshot(runtime, saved.perspective, { scheduleIdle: false });
+  if (saved.perspective.projection === CAMERA_PROJECTION.ORTHOGRAPHIC && saved.orthographicHalfHeight) {
+    setOrthographicCameraHalfHeight(runtime, saved.orthographicHalfHeight);
+  }
+  if (runtime.controls) {
+    if (typeof saved.controls?.enableRotate === "boolean") {
+      runtime.controls.enableRotate = saved.controls.enableRotate;
+    }
+    if (typeof saved.controls?.screenSpacePanning === "boolean") {
+      runtime.controls.screenSpacePanning = saved.controls.screenSpacePanning;
+    }
+    runtime.controls.update?.();
+  }
+  runtime.onZoomChange?.(runtime);
+  runtime.scheduleIdleQuality?.();
+  runtime.requestRender?.();
+  return applied;
+}
+
 const CadViewer = forwardRef(function CadViewer({
   meshData,
   modelKey,
@@ -1860,6 +2110,7 @@ const CadViewer = forwardRef(function CadViewer({
   const suppressPerspectiveEventsRef = useRef(0);
   const drawingIdRef = useRef(0);
   const runtimeRef = useRef(null);
+  const sourceSketchRestoreRef = useRef(null);
   const explodedViewAnimationRef = useRef({
     rafId: 0,
     progress: 0,
@@ -1890,6 +2141,7 @@ const CadViewer = forwardRef(function CadViewer({
   const [cameraZoomPercent, setCameraZoomPercent] = useState(100);
   const [urdfPosePickerGuidePoint, setUrdfPosePickerGuidePoint] = useState(null);
   const [urdfPosePickerHoverActive, setUrdfPosePickerHoverActive] = useState(false);
+  const [sourceSketchEdit, setSourceSketchEdit] = useState(null);
   // Bumped whenever the exploded view reaches a POSE it will hold: the end of the
   // explode/collapse animation, a slider scrub, or a collapse back to rest. Overlays that bake
   // a record's matrix at build time -- the reference highlight's edge lines and its face fill --
@@ -3523,6 +3775,47 @@ const CadViewer = forwardRef(function CadViewer({
         return transitionCameraToPerspectiveSnapshot(runtimeRef.current, perspective, options);
       }
       return applyPerspectiveSnapshot(runtimeRef.current, perspective);
+    },
+    beginSourceSketchEdit(model) {
+      const runtime = runtimeRef.current;
+      if (!runtime || !model?.plane?.supported || !Array.isArray(model?.entities) || !model.entities.length) {
+        return false;
+      }
+      if (!sourceSketchRestoreRef.current) {
+        sourceSketchRestoreRef.current = captureSourceSketchView(runtime);
+      }
+      const applied = runWithoutPerspectiveEvents(() => applySourceSketchView(runtime, model));
+      if (!applied) {
+        sourceSketchRestoreRef.current = null;
+        return false;
+      }
+      setSourceSketchEdit(model);
+      return true;
+    },
+    updateSourceSketchEdit(model) {
+      if (!sourceSketchRestoreRef.current || !model?.plane?.supported) return false;
+      setSourceSketchEdit(model);
+      return true;
+    },
+    endSourceSketchEdit({ restore = true } = {}) {
+      const runtime = runtimeRef.current;
+      const saved = sourceSketchRestoreRef.current;
+      sourceSketchRestoreRef.current = null;
+      setSourceSketchEdit(null);
+      if (!runtime || !saved) return false;
+      if (restore) {
+        return runWithoutPerspectiveEvents(() => restoreSourceSketchView(runtime, saved));
+      }
+      if (runtime.controls) {
+        if (typeof saved.controls?.enableRotate === "boolean") {
+          runtime.controls.enableRotate = saved.controls.enableRotate;
+        }
+        if (typeof saved.controls?.screenSpacePanning === "boolean") {
+          runtime.controls.screenSpacePanning = saved.controls.screenSpacePanning;
+        }
+      }
+      runtime.requestRender?.();
+      return true;
     },
     resetZoom() {
       return resetZoomAndPan({ animate: true });
@@ -5416,6 +5709,20 @@ const CadViewer = forwardRef(function CadViewer({
     };
   }, [activeSelectorRuntime, explodedViewPoseTick, hoveredReferenceId, pickableReferenceMap, selectedReferenceIds, viewerReadyTick, viewerTheme, displayEdgeSettings, measureModeActive]);
 
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!sourceSketchEdit || !runtime?.THREE || !runtime?.modelGroup) return undefined;
+    const restoreVisuals = ghostSourceSketchModel(runtime);
+    const overlay = createSourceSketchOverlay(runtime, sourceSketchEdit);
+    runtime.requestRender?.();
+    return () => {
+      overlay?.parent?.remove?.(overlay);
+      disposeSourceSketchObject(overlay);
+      restoreVisuals?.();
+      runtime.requestRender?.();
+    };
+  }, [displayRecordsToken, sourceSketchEdit, viewerReadyTick]);
+
   useViewerDrawingOverlay({
     drawingCanvasRef,
     drawingDraftRef,
@@ -5539,8 +5846,16 @@ const CadViewer = forwardRef(function CadViewer({
         }}
         aria-hidden="true"
       />
+      {sourceSketchEdit ? (
+        <div
+          className="pointer-events-none absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg"
+          style={{ background: "rgba(15, 23, 42, 0.92)", borderColor: "rgba(56, 189, 248, 0.36)", color: "#e0f2fe" }}
+        >
+          Editing {sourceSketchEdit.label} · pan or zoom · Esc cancels
+        </div>
+      ) : null}
       <ViewPlaneControl
-        showViewPlane={showViewPlane && !planMode}
+        showViewPlane={showViewPlane && !planMode && !sourceSketchEdit}
         previewMode={previewMode}
         isLoading={isLoading}
         // "Is there anything on screen?" — for an implicit that is the loaded

@@ -8717,6 +8717,7 @@ export default function CadWorkspace({
                 width={activeSheetWidth || tabToolsWidth}
                 onOpenChange={setTabToolsOpen}
                 onStartResize={handleStartFileSheetResize}
+                viewerRef={viewerRef}
                 selectedEntry={selectedEntry}
                 viewerLoading={viewerLoading || assemblySidebarLoading}
                 isAssemblyView={isAssemblyView}

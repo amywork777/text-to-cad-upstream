@@ -491,6 +491,7 @@ export default function StepFileSheet({
   width,
   onOpenChange,
   onStartResize,
+  viewerRef = null,
   selectedEntry,
   viewerLoading,
   isAssemblyView = false,
@@ -774,7 +775,7 @@ export default function StepFileSheet({
                   }
                 }}
               >
-              <SourceFeatureTree editor={sourceFeatureEditor} />
+              <SourceFeatureTree editor={sourceFeatureEditor} viewerRef={viewerRef} />
               {sourceFeatureEditor.supported ? (
                 <div className={treeGroupLabelClasses} role="presentation">
                   Geometry
