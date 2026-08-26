@@ -537,13 +537,13 @@ def build_package_from_compound(
     components: dict[str, dict[str, Any]] = {}
     shapes: dict[str, Any] = {}
     # Memoize the BREP content hash per unique part, keyed on the underlying
-    # ``TShape``. NOTE: build123d 0.10's ``Shape.moved()`` is deepcopy-based
-    # (``BRepBuilderAPI_Copy`` per solid), so instances placed with ``.moved()``
-    # carry DISTINCT TShapes and miss this memo — each instance re-serializes
-    # its leaf BREPs once (content-addressing still dedups them afterwards,
-    # since the copies are byte-identical). The memo still pays off for
-    # occurrences that genuinely share a TShape (raw-OCCT composed assemblies,
-    # ``Location``-composed placements).
+    # ``TShape``. As of build123d 0.11, ``Shape.moved()`` replaces the wrapped
+    # shape with ``TopoDS_Shape.Moved()`` — the returned instance SHARES the
+    # source TShape — so ``.moved()`` placements hit this memo and pay one
+    # serialization per unique part, not per instance. (0.10's deepcopy-based
+    # ``moved()`` produced distinct TShapes; the wasteful internal deepcopy
+    # still runs in 0.11 but its copy is discarded, and heavy instancing
+    # should prefer ``cadgen.instances.compound_from_instances`` regardless.)
     hash_memo: dict[Any, str] = {}
     # The location-stripped BREP bytes per cid, captured from the single
     # serialization that computed the content hash, so a missing component's

@@ -6,7 +6,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Iterator
 
-from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 from cadgen.catalog import source_from_path
 from cadgen.cli_logging import CliLogger
 from cadgen.coordination import (
@@ -277,15 +276,11 @@ def _assembly_topology_artifact(
 
     When the caller does not need selectors (a plain render reads the package's render
     meshes directly), return a cheap descriptor-only artifact. When selectors ARE needed
-    (inspect, selection-based renders), re-mesh + re-extract the full manifest on demand
-    and return the bundle in memory — the build-time win is precisely that this ~29.5s
-    extraction is no longer in the build path. Repeat selector queries read the
-    ``topology.glb`` sidecar cached inside the package (validated against the
-    descriptor's provenance) instead of re-running the generator + extraction."""
-    from cadgen._internal.component_package import (
-        assembly_topology_glb_path,
-        read_package_descriptor,
-    )
+    (inspect, selection-based renders), return a COMPOSED artifact: the component GLBs
+    already carry each part's complete topology and the index merge in
+    ``assembly_lookup`` places them per occurrence, so no whole-model extraction or
+    ``topology.glb`` sidecar is involved at all."""
+    from cadgen._internal.component_package import read_package_descriptor
 
     descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
     if not require_selector:
@@ -303,34 +298,37 @@ def _assembly_topology_artifact(
                 selector_bundle=None,
             )
 
-    topology_glb = assembly_topology_glb_path(spec.entry_path)
-    if (
-        preloaded_scene is None
-        and not force
-        and descriptor is not None
-        and topology_glb.is_file()
-    ):
-        from cadgen._internal.glb_topology import (
-            read_step_topology_bundle_from_glb,
-            read_step_topology_manifest_from_glb,
-        )
+    if descriptor is not None:
+        # COMPOSED selector artifact (design/incremental-generation.md,
+        # Phase 3): every ``components/<cid>.glb`` already embeds that part's
+        # complete topology tables, and both selector consumers (inspect,
+        # snapshot) funnel through
+        # ``assembly_lookup.index_with_assembly_occurrences``, which merges
+        # those tables into the index per occurrence. So the whole-model
+        # ``topology.glb`` sidecar is redundant: return the descriptor as the
+        # bundle manifest — its selector tables are empty, so the base index
+        # is empty — and let composition supply every ref. This removes the
+        # sidecar's entire lifecycle (the unconditional delete on package
+        # rewrite and the lazy whole-model re-extraction, the ~29.5s class
+        # noted above) along with the flat compound namespace (``o1.f19``),
+        # which the instance-tree namespace supersedes. ``preloaded_scene``
+        # is deliberately unused here: composition reads the component GLBs
+        # the build just wrote, so no post-build extraction pass is needed.
+        if debug is not None:
+            debug["cacheHit"] = True
+            debug["selectorReextracted"] = False
+            debug["composed"] = True
+        from cadgen.selector_types import SelectorBundle
 
-        cached_manifest = read_step_topology_manifest_from_glb(topology_glb)
-        if _topology_sidecar_matches_descriptor(cached_manifest, descriptor):
-            bundle = read_step_topology_bundle_from_glb(topology_glb)
-            if bundle is not None:
-                if debug is not None:
-                    debug["cacheHit"] = True
-                    debug["selectorReextracted"] = False
-                return StepTopologyArtifact(
-                    cad_path=spec.cad_ref,
-                    kind="assembly",
-                    source_path=spec.source_path,
-                    step_path=spec.step_path,
-                    artifact_path=render_package_dir(spec.entry_path),
-                    manifest=bundle.manifest,
-                    selector_bundle=bundle,
-                )
+        return StepTopologyArtifact(
+            cad_path=spec.cad_ref,
+            kind="assembly",
+            source_path=spec.source_path,
+            step_path=spec.step_path,
+            artifact_path=render_package_dir(spec.entry_path),
+            manifest=descriptor,
+            selector_bundle=SelectorBundle(manifest=descriptor),
+        )
 
     from cadgen._internal.generation import (
         _effective_step_spec_for_scene,
@@ -342,16 +340,15 @@ def _assembly_topology_artifact(
         mesh_step_scene,
     )
 
-    # Reached whenever selectors must be (re)extracted this call: neither the cached
-    # descriptor (no-selector path) nor the topology.glb sidecar could serve it.
+    # No descriptor: the package is mid-write or vanished between the
+    # is_assembly_package() check and here. Extract selectors from a
+    # regenerated scene in memory — the pre-composition path, kept only for
+    # this race window.
     if debug is not None:
         debug["cacheHit"] = False
         debug["selectorReextracted"] = True
 
     if preloaded_scene is not None:
-        # The caller just ran gen_step for the package build; extracting
-        # selectors from that scene avoids a second full generator run (this
-        # halved cold/stale selector-query latency on generated assemblies).
         scene = preloaded_scene
     else:
         spec, scene = _scene_for_regeneration(spec, logger=logger, force=force)
@@ -370,7 +367,6 @@ def _assembly_topology_artifact(
         options=options,
         color=spec.color,
     )
-    _write_topology_sidecar(spec, scene, options, bundle, logger=logger)
     return StepTopologyArtifact(
         cad_path=spec.cad_ref,
         kind="assembly",
@@ -380,76 +376,6 @@ def _assembly_topology_artifact(
         manifest=bundle.manifest,
         selector_bundle=bundle,
     )
-
-
-def _topology_sidecar_matches_descriptor(
-    manifest: object,
-    descriptor: dict[str, object],
-) -> bool:
-    """Whether a cached topology.glb sidecar's embedded provenance matches the
-    package descriptor it sits beside. The descriptor is the freshness source of
-    truth (its closure gate already ran); the sidecar must carry the SAME source
-    closure / step hash and mesh settings or it predates a rebuild."""
-    if not isinstance(manifest, dict):
-        return False
-    # Provenance-only gate: selector topology (occurrence/face/edge refs) is a
-    # function of the B-rep sources, not of mesh resolution, so the sidecar is
-    # valid whenever it was extracted from the same sources the descriptor
-    # records. Comparing mesh settings here would permanently miss after any
-    # adaptive-resolution tuning until the package itself rebuilds.
-    closure_match = str(descriptor.get("sourceClosureHash") or "").strip() == str(
-        manifest.get("sourceClosureHash") or ""
-    ).strip()
-    step_match = str(descriptor.get("stepHash") or "").strip() == str(
-        manifest.get("stepHash") or ""
-    ).strip()
-    has_any = bool(
-        str(descriptor.get("sourceClosureHash") or "").strip()
-        or str(descriptor.get("stepHash") or "").strip()
-    )
-    return has_any and closure_match and step_match
-
-
-def _write_topology_sidecar(
-    spec: EntrySpec,
-    scene: LoadedStepScene,
-    options: object,
-    bundle: object,
-    *,
-    logger: CliLogger | None,
-) -> None:
-    """Best-effort write-through of the on-demand selector extraction to the
-    package's topology.glb sidecar (atomic rename). A failed cache write must
-    never fail the selector query itself."""
-    import os
-
-    from cadgen._internal.component_package import assembly_topology_glb_path, is_assembly_package
-
-    package_dir = render_package_dir(spec.entry_path)
-    if not is_assembly_package(package_dir):
-        return
-    target = assembly_topology_glb_path(spec.entry_path)
-    temp_path = target.with_name(f"{target.name}{temp_suffix()}")
-    try:
-        from cadgen._internal.glb import export_assembly_glb_from_scene
-
-        export_assembly_glb_from_scene(
-            spec.step_path,
-            scene,
-            target_path=temp_path,
-            linear_deflection=options.linear_deflection,
-            angular_deflection=options.angular_deflection,
-            selector_bundle=bundle,
-        )
-        replace_atomic(temp_path, target)
-    except Exception as exc:  # noqa: BLE001 - cache write is advisory
-        if logger is not None:
-            logger.debug(f"topology.glb cache write skipped for {spec.cad_ref}: {exc}")
-    finally:
-        # The handle that blocks a rename blocks the delete too; letting that escape would
-        # replace the real failure with a cleanup error.
-        with contextlib.suppress(OSError):
-            temp_path.unlink(missing_ok=True)
 
 
 def _scene_for_regeneration(

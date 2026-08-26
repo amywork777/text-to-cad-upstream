@@ -355,6 +355,32 @@ Deferred from Phase 2: store GC (LRU by link-count/atime). Unbounded growth
 is real but slow (~10-30KB per component, ~5KB per op); revisit when a real
 cache-size complaint exists.
 
+## Phase 3 results (implemented 2026-08-25)
+
+- **`topology.glb` removed as an artifact class.** `_assembly_topology_artifact`
+  now returns a composed artifact whenever a descriptor exists: the descriptor
+  is the bundle manifest (empty base index) and
+  `assembly_lookup.index_with_assembly_occurrences` — which both selector
+  consumers already funnel through — supplies every ref from the per-component
+  `STEP_TOPOLOGY` tables, placed per occurrence. Verified: `inspect refs
+  --facts` composes 582 faces/1692 edges in 0.68s on the planetary gear, and
+  occurrence/face refs resolve with full geometry facts; viewer click-to-
+  reference works end-to-end. The sidecar's whole lifecycle is gone (write,
+  provenance gate, unconditional delete, and the lazy whole-model
+  re-extraction of the ~29.5s class). Per the no-compat policy the flat
+  compound namespace (`#o1.f19`) is dropped for assembly packages — the
+  instance-tree namespace supersedes it. The packager still unlinks legacy
+  sidecars on rewrite; the scene-extraction path survives only for the
+  descriptor-missing race window.
+- **`.moved()` serialization fix is obsolete.** build123d 0.11's `moved()`
+  shares the source TShape (its internal deepcopy is discarded), so instances
+  hit the packager's TShape hash memo and pay one serialization per unique
+  part. Comment corrected in `component_package.py`; heavy instancing should
+  still prefer `cadgen.instances.compound_from_instances` to skip the wasted
+  internal copy.
+- **XCAF-once for `--write` dropped**: measured at ~0.04s per export — not
+  worth the churn.
+
 ## Phasing
 
 - **Phase 0 — measure (days).** Instrument the proposed choke points with
