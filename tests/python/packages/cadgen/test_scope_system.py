@@ -27,15 +27,21 @@ from cadgen.coordination.paths import write_lock_path  # noqa: E402
 
 
 def _demo_compound() -> Compound:
+    from build123d import Cylinder
+
     box_a = Pos(0, 0, 0) * Solid.make_box(10, 10, 10)
     box_a.label = "widget_a"
     box_a.cad_material = {"roughness": 0.4, "metalness": 0.9}
+    # An OBJECT-class leaf (constructor takes dimensions, not TopoDS): thaw
+    # must reconstruct by ShapeType, never by the recorded Python class.
+    pin = Pos(0, -30, 0) * Cylinder(4, 12)
+    pin.label = "pin"
     box_b = Pos(40, 0, 0) * Solid.make_box(8, 8, 20)
     box_b.label = "widget_b"
     box_b._color = Color(0.2, 0.3, 0.4, 1.0)
     inner = Compound(children=[box_b], label="subassembly")
     inner.location = Location((0, 25, 0))
-    root = Compound(children=[box_a, inner], label="demo")
+    root = Compound(children=[box_a, pin, inner], label="demo")
     root._color = Color(0.8, 0.1, 0.1, 1.0)
     root.assembly_mates = [{"id": "m1", "type": "revolute",
                             "fixed": "#widget_a.f1", "moving": "#widget_b.f2"}]

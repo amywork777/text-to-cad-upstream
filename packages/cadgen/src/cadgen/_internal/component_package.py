@@ -447,17 +447,19 @@ def build_component_glb_from_shape(
     # this the node bakes the occurrence placement, double-placing it at compose time and giving
     # a shared (deduped) component only its first occurrence's position.
     scene = build_build123d_step_scene(_unlocated_shape(shape), placeholder)
+    # relative=True matches what production has ALWAYS shipped: extraction
+    # used to silently re-mesh at its own relative=True default and its
+    # triangles were what reached the GLB, so absolute deflection here would
+    # change mesh density model-wide (measured: pathological on large smooth
+    # parts). The signature below must match extraction's exactly — otherwise
+    # extraction re-meshes every component, doubling OCCT meshing per build.
     mesh_step_scene(
         scene,
         linear_deflection=linear_deflection,
         angular_deflection=angular_deflection,
-        relative=False,
+        relative=True,
         parallel=False,
     )
-    # Extraction must see the SAME mesh signature or it silently re-meshes
-    # every component at its own defaults (relative=True) — which both doubled
-    # the OCCT meshing cost of every build and shipped GLB triangles that
-    # ignored the deflections deliberately passed above.
     from cadgen._internal.step_scene_types import SelectorOptions
 
     bundle = extract_selectors_from_scene(
@@ -466,7 +468,7 @@ def build_component_glb_from_shape(
         options=SelectorOptions(
             linear_deflection=linear_deflection,
             angular_deflection=angular_deflection,
-            relative=False,
+            relative=True,
         ),
     )
     for key in COMPONENT_PROVENANCE_KEYS:

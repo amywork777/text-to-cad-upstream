@@ -130,6 +130,19 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
             with _lock:
                 _stats["errors"] += 1
         else:
+            # A hit skips executing the scope's files, but they stay freshness
+            # inputs of every ENCLOSING closure (the package gate above this
+            # scope must still see edits to them).
+            from cadgen._internal.source_hash import note_executed_files
+
+            root_path = Path(root)
+            note_executed_files(
+                root_path / rel for rel in entry.get("files") or [])
+            for outer in scope_capture._scope_stack():
+                for rel in entry.get("files") or []:
+                    resolved = (root_path / rel).resolve()
+                    if resolved.suffix != ".py":
+                        outer.reads.add(resolved)
             with _lock:
                 _stats["hits"] += 1
             return value

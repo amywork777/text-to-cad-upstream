@@ -370,6 +370,25 @@ def _execution_audit_hook(event: str, args: tuple) -> None:
         capture.add(path)
 
 
+def note_executed_files(paths) -> None:
+    """Fold files into the active execution capture as if they had executed.
+
+    A cached scope hit SKIPS executing its files, but they remain freshness
+    inputs of every enclosing closure — without this, a package whose child
+    scope hit records a closure missing that child's files, and the package
+    freshness gate goes blind to edits of them."""
+    capture = _ACTIVE_EXECUTION_CAPTURE
+    if capture is None:
+        return
+    for path in paths:
+        try:
+            resolved = Path(path).resolve()
+        except (OSError, ValueError):
+            continue
+        if resolved.is_file() and is_first_party_source_file(resolved):
+            capture.add(resolved)
+
+
 @contextlib.contextmanager
 def record_first_party_execution():
     """Record every first-party ``.py`` file EXECUTED while the context is active.

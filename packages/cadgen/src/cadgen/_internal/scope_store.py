@@ -254,14 +254,35 @@ def _shape_class(name: str):
 
     cls = getattr(build123d, name, None)
     if cls is None or (cls.__module__ or "").partition(".")[0] != "build123d":
-        raise Unfreezable(f"unknown shape class {name!r}")
+        return None
     return cls
 
 
 def _wrap_topo(class_name: str, topo):
-    from build123d.topology import downcast
+    """Wrap restored TopoDS in the ShapeType-matched build123d class.
 
-    return _shape_class(class_name)(downcast(topo))
+    Deliberately NOT the recorded subclass: models keep object classes like
+    ``Cylinder`` as leaves, whose constructors take dimensions, not a TopoDS.
+    The recorded class is irrelevant to every consumer (the packager and STEP
+    export read label/color/material/children/wrapped only, and cids are
+    Python-class independent by design)."""
+    import build123d
+    from build123d.topology import downcast
+    from OCP.TopAbs import TopAbs_ShapeEnum
+
+    shape = downcast(topo)
+    by_type = {
+        TopAbs_ShapeEnum.TopAbs_COMPOUND: build123d.Compound,
+        TopAbs_ShapeEnum.TopAbs_COMPSOLID: build123d.Compound,
+        TopAbs_ShapeEnum.TopAbs_SOLID: build123d.Solid,
+        TopAbs_ShapeEnum.TopAbs_SHELL: build123d.Shell,
+        TopAbs_ShapeEnum.TopAbs_FACE: build123d.Face,
+        TopAbs_ShapeEnum.TopAbs_WIRE: build123d.Wire,
+        TopAbs_ShapeEnum.TopAbs_EDGE: build123d.Edge,
+        TopAbs_ShapeEnum.TopAbs_VERTEX: build123d.Vertex,
+    }
+    cls = by_type.get(shape.ShapeType(), build123d.Compound)
+    return cls(shape)
 
 
 def _thaw_occurrence_tree(node: dict) -> dict:
@@ -303,11 +324,16 @@ def thaw_value(node: dict):
 
         cls = _shape_class(node["class"])
         if not (isinstance(cls, type) and issubclass(cls, Compound)):
-            raise Unfreezable(f"non-Compound parent class {node['class']!r}")
+            cls = Compound
         children = [thaw_value(child) for child in children_nodes]
         # Children carry their own locations already; construction reads each
         # child's wrapped as-is. The parent's OWN location is applied after.
-        shape = cls(children=children, label=node.get("label") or "")
+        try:
+            shape = cls(children=children, label=node.get("label") or "")
+        except TypeError:
+            # Compound SUBCLASSES with bespoke constructors (object classes)
+            # reduce to plain Compound: no consumer reads the Python class.
+            shape = Compound(children=children, label=node.get("label") or "")
         if node.get("location") is not None:
             shape.location = _thaw_location(node["location"])
     else:
