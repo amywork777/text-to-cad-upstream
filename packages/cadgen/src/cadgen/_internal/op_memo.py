@@ -50,25 +50,17 @@ from collections import OrderedDict
 from cadgen._internal.atomic_replace import replace_atomic
 
 # Salt: bump _OP_MEMO_VERSION whenever keying or hit semantics change.
-# v2: op-result key stamping (downstream keys reference the producing op's
-# key instead of a content digest, making chained ops O(1) to key).
 _OP_MEMO_VERSION = 2
 
 _lock = threading.RLock()
 _cache: OrderedDict[tuple, object] = OrderedDict()
 _tshape_bytes_memo: dict[object, str] = {}
-# TShape -> the key digest of the memoized op that produced it. Keying a
-# stamped input costs a dict lookup instead of serializing the whole shape —
-# which matters enormously for chained booleans, where the accumulating
-# result would otherwise be re-serialized at every step (O(chain x size)).
-# Stamps are permanent for the TShape's lifetime (bounded by clear() and a
-# size cap), matching the byte-digest memo's policy: inputs key by their
-# FIRST-ENCOUNTER identity, uniformly on every run, even if an op later
-# mutates them in place (tolerance bumps). What determinism requires is that
-# keying be CONSISTENT across runs, not that it track mutation — re-keying
-# after mutation would split the cache per consumption and make entry
-# identity depend on call order.
-_tshape_op_key: dict[object, str] = {}
+# NOTE: an earlier revision stamped op-result TShapes with their producing
+# key so chained inputs could key without serialization. It destabilized
+# keys on movement-class models (1444 re-misses per warm run vs ~25
+# without): stamps assume a result's content never changes after return,
+# and real pipelines violate that. Digest keying keys the actual
+# first-seen content of every TShape, which is what stays stable.
 _stats = {"hits": 0, "misses": 0, "disk_hits": 0, "unkeyable": 0,
           "unstorable": 0, "evicted": 0, "errors": 0}
 _installed = False
@@ -127,13 +119,6 @@ def _shape_key(shape) -> tuple:
     # The full TopoDS_Shape triple: TShape (content-identified), Location, and
     # Orientation. Orientation must be explicit — a reversed shape shares its
     # TShape with the forward one, and aliasing them flips downstream geometry.
-    # A stamped TShape (an untouched op result) is identified by its producing
-    # op's key digest — a dict lookup — instead of a content serialization.
-    tshape = wrapped.TShape()
-    stamped = _tshape_op_key.get(tshape)
-    if stamped is not None:
-        return ("opres", stamped, _location_key(wrapped),
-                int(wrapped.Orientation()))
     return ("shape", _tshape_digest(wrapped), _location_key(wrapped),
             int(wrapped.Orientation()))
 
@@ -471,44 +456,6 @@ def _trace(op_name: str, mode: str, key, result) -> None:
         fh.write(f"{op_name}\t{mode}\t{key_digest}\t{_result_digest(result)}\n")
 
 
-def _key_digest(key: tuple) -> str:
-    return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()
-
-
-def _stamp_result(result, key_digest: str) -> None:
-    """Record that this shape is the untouched output of a memoized op."""
-    if isinstance(result, (tuple, list)):
-        return  # sequence results are rare; their elements stay digest-keyed
-    wrapped = getattr(result, "wrapped", None)
-    if wrapped is None or not hasattr(wrapped, "TShape"):
-        return
-    if len(_tshape_op_key) > 4 * _capacity():
-        _tshape_op_key.clear()
-    _tshape_op_key[wrapped.TShape()] = key_digest
-
-
-def _deparallelize(args: tuple) -> None:
-    """Force deterministic evaluation for a memoized execution.
-
-    build123d hands ``Shape._bool_op`` a ``BRepAlgoAPI`` builder with
-    ``SetRunParallel(True)``; OCCT's parallel boolean evaluation is
-    run-to-run nondeterministic in its output REPRESENTATION (entity order,
-    tolerance updates), which made bool-heavy models re-key and re-execute
-    their boolean chains every run (29 of the movement's 191 parts
-    byte-drifted between two memo-OFF builds). A memoized execution runs
-    single-threaded instead: the result is computed once, canonically, and
-    every later run is a cache hit — a far better trade than parallel
-    recomputation forever. Baseline (memo-off) execution is untouched."""
-    for arg in args:
-        if type(arg).__name__.startswith("BRepAlgoAPI"):
-            set_parallel = getattr(arg, "SetRunParallel", None)
-            if callable(set_parallel):
-                try:
-                    set_parallel(False)
-                except Exception:
-                    pass
-
-
 def _memoized(op_name: str, fn, *, is_classmethod: bool):
     import functools
 
@@ -540,11 +487,9 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         if cached is not None:
             _stats["hits"] += 1
             clone = _thaw_result(cached)
-            _stamp_result(clone, _key_digest(key))
             _trace(op_name, "hit", key, clone)
             return clone
 
-        _deparallelize(args)
         result = fn(*args, **kwargs)
         _stats["misses"] += 1
         try:
@@ -561,7 +506,6 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         # The caller gets the same canonical reconstruction a future hit
         # would: package output must not depend on cache state.
         canonical = _thaw_result(stored)
-        _stamp_result(canonical, _key_digest(key))
         _trace(op_name, "miss", key, canonical)
         return canonical
 
@@ -646,7 +590,6 @@ def clear() -> None:
     with _lock:
         _cache.clear()
         _tshape_bytes_memo.clear()
-        _tshape_op_key.clear()
 
 
 def _log_stats() -> None:
