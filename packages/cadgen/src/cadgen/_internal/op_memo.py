@@ -50,11 +50,25 @@ from collections import OrderedDict
 from cadgen._internal.atomic_replace import replace_atomic
 
 # Salt: bump _OP_MEMO_VERSION whenever keying or hit semantics change.
-_OP_MEMO_VERSION = 1
+# v2: op-result key stamping (downstream keys reference the producing op's
+# key instead of a content digest, making chained ops O(1) to key).
+_OP_MEMO_VERSION = 2
 
 _lock = threading.RLock()
 _cache: OrderedDict[tuple, object] = OrderedDict()
 _tshape_bytes_memo: dict[object, str] = {}
+# TShape -> the key digest of the memoized op that produced it. Keying a
+# stamped input costs a dict lookup instead of serializing the whole shape —
+# which matters enormously for chained booleans, where the accumulating
+# result would otherwise be re-serialized at every step (O(chain x size)).
+# Stamps are permanent for the TShape's lifetime (bounded by clear() and a
+# size cap), matching the byte-digest memo's policy: inputs key by their
+# FIRST-ENCOUNTER identity, uniformly on every run, even if an op later
+# mutates them in place (tolerance bumps). What determinism requires is that
+# keying be CONSISTENT across runs, not that it track mutation — re-keying
+# after mutation would split the cache per consumption and make entry
+# identity depend on call order.
+_tshape_op_key: dict[object, str] = {}
 _stats = {"hits": 0, "misses": 0, "disk_hits": 0, "unkeyable": 0,
           "unstorable": 0, "evicted": 0, "errors": 0}
 _installed = False
@@ -69,10 +83,14 @@ def _enabled() -> bool:
 
 
 def _capacity() -> int:
+    # Entries are canonical BREP bytes plus a geometry-free wrapper template,
+    # so a large cache is cheap — and a cap below a model's op count makes
+    # every run thrash the disk tier (the moonwatch alone has ~6k keyable
+    # ops, which is how the old 4096 default was caught).
     try:
-        return max(64, int(os.environ.get("CADGEN_OP_MEMO_SIZE", "4096")))
+        return max(64, int(os.environ.get("CADGEN_OP_MEMO_SIZE", "32768")))
     except ValueError:
-        return 4096
+        return 32768
 
 
 def _tshape_digest(wrapped) -> str:
@@ -106,9 +124,16 @@ def _shape_key(shape) -> tuple:
     wrapped = shape.wrapped
     if wrapped is None:
         raise _Unkeyable("shape with no wrapped TopoDS")
-    # The full TopoDS_Shape triple: TShape (content-digested), Location, and
+    # The full TopoDS_Shape triple: TShape (content-identified), Location, and
     # Orientation. Orientation must be explicit — a reversed shape shares its
     # TShape with the forward one, and aliasing them flips downstream geometry.
+    # A stamped TShape (an untouched op result) is identified by its producing
+    # op's key digest — a dict lookup — instead of a content serialization.
+    tshape = wrapped.TShape()
+    stamped = _tshape_op_key.get(tshape)
+    if stamped is not None:
+        return ("opres", stamped, _location_key(wrapped),
+                int(wrapped.Orientation()))
     return ("shape", _tshape_digest(wrapped), _location_key(wrapped),
             int(wrapped.Orientation()))
 
@@ -378,21 +403,32 @@ def _downcast(wrapped):
     return downcast(wrapped)
 
 
+def _clone_wrapper(template):
+    """A plain attribute-level shallow copy of a build123d wrapper.
+
+    Deliberately NOT ``copy.copy``: build123d's ``__copy__`` deep-copies the
+    geometry (``BRepBuilderAPI_Copy``) before sharing the TShape back in, so
+    going through it costs a full geometry copy that the caller immediately
+    replaces — it was the dominant per-hit cost on movement-class models."""
+    clone = object.__new__(type(template))
+    clone.__dict__.update(template.__dict__)
+    return clone
+
+
 def _freeze_result(result):
     """Convert an op result into its stored form, verifying its bytes read
     back. Raises _Unkeyable when the result cannot be cached."""
-    import copy
-
     if isinstance(result, (tuple, list)):
         return ("seq", type(result), tuple(_freeze_result(r) for r in result))
     if hasattr(result, "wrapped") and result.wrapped is not None:
         data = _write_brep(result.wrapped)
-        template = copy.copy(result)
-        # The template's wrapped is never handed out (thaw re-reads), but
-        # pointing it at an isolated reconstruction rather than the live
-        # result avoids pinning the caller's mutable TShape. This read also
-        # proves the bytes are readable before anything is stored.
-        template.wrapped = _downcast(_read_brep(data))
+        # Prove the bytes read back before anything is stored, then DROP the
+        # geometry from the template: it is never read (thaw installs a fresh
+        # reconstruction on every clone), and holding a live shape per entry
+        # made a large cache expensive instead of cheap.
+        _read_brep(data)
+        template = _clone_wrapper(result)
+        template._wrapped = None
         return _StoredShape(template, data)
     if result is None or isinstance(result, (bool, int, float, str, bytes)):
         return result
@@ -401,13 +437,11 @@ def _freeze_result(result):
 
 def _thaw_result(stored):
     """Produce a fresh, independent reconstruction of a stored result."""
-    import copy
-
     if isinstance(stored, tuple) and stored and stored[0] == "seq":
         _, seq_type, items = stored
         return seq_type(_thaw_result(item) for item in items)
     if isinstance(stored, _StoredShape):
-        clone = copy.copy(stored.template)
+        clone = _clone_wrapper(stored.template)
         clone.wrapped = _downcast(_read_brep(stored.brep))
         return clone
     return stored
@@ -435,6 +469,44 @@ def _trace(op_name: str, mode: str, key, result) -> None:
     key_digest = hashlib.sha256(repr(key).encode()).hexdigest()[:12] if key else "-"
     with open(path, "a", encoding="utf-8") as fh:
         fh.write(f"{op_name}\t{mode}\t{key_digest}\t{_result_digest(result)}\n")
+
+
+def _key_digest(key: tuple) -> str:
+    return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()
+
+
+def _stamp_result(result, key_digest: str) -> None:
+    """Record that this shape is the untouched output of a memoized op."""
+    if isinstance(result, (tuple, list)):
+        return  # sequence results are rare; their elements stay digest-keyed
+    wrapped = getattr(result, "wrapped", None)
+    if wrapped is None or not hasattr(wrapped, "TShape"):
+        return
+    if len(_tshape_op_key) > 4 * _capacity():
+        _tshape_op_key.clear()
+    _tshape_op_key[wrapped.TShape()] = key_digest
+
+
+def _deparallelize(args: tuple) -> None:
+    """Force deterministic evaluation for a memoized execution.
+
+    build123d hands ``Shape._bool_op`` a ``BRepAlgoAPI`` builder with
+    ``SetRunParallel(True)``; OCCT's parallel boolean evaluation is
+    run-to-run nondeterministic in its output REPRESENTATION (entity order,
+    tolerance updates), which made bool-heavy models re-key and re-execute
+    their boolean chains every run (29 of the movement's 191 parts
+    byte-drifted between two memo-OFF builds). A memoized execution runs
+    single-threaded instead: the result is computed once, canonically, and
+    every later run is a cache hit — a far better trade than parallel
+    recomputation forever. Baseline (memo-off) execution is untouched."""
+    for arg in args:
+        if type(arg).__name__.startswith("BRepAlgoAPI"):
+            set_parallel = getattr(arg, "SetRunParallel", None)
+            if callable(set_parallel):
+                try:
+                    set_parallel(False)
+                except Exception:
+                    pass
 
 
 def _memoized(op_name: str, fn, *, is_classmethod: bool):
@@ -468,9 +540,11 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         if cached is not None:
             _stats["hits"] += 1
             clone = _thaw_result(cached)
+            _stamp_result(clone, _key_digest(key))
             _trace(op_name, "hit", key, clone)
             return clone
 
+        _deparallelize(args)
         result = fn(*args, **kwargs)
         _stats["misses"] += 1
         try:
@@ -487,6 +561,7 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         # The caller gets the same canonical reconstruction a future hit
         # would: package output must not depend on cache state.
         canonical = _thaw_result(stored)
+        _stamp_result(canonical, _key_digest(key))
         _trace(op_name, "miss", key, canonical)
         return canonical
 
@@ -571,6 +646,7 @@ def clear() -> None:
     with _lock:
         _cache.clear()
         _tshape_bytes_memo.clear()
+        _tshape_op_key.clear()
 
 
 def _log_stats() -> None:
