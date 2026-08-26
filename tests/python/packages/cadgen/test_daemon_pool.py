@@ -38,6 +38,7 @@ class _StubWorker:
         self.jobs_served = 0
         self.last_used = 0.0
         self.killed = False
+        self.affinity = ""
         self._alive = True
 
     def alive(self) -> bool:
@@ -109,6 +110,36 @@ class DispatchRule(_PoolFixture):
         self.assertLessEqual(len(live), 4)
         for worker in live:
             self.pool.release(worker)
+
+
+class AffinityRouting(_PoolFixture):
+    def test_matching_affinity_wins_among_free_workers(self):
+        with self._cap(4):
+            a = self.pool.acquire("/models/tom")
+            b = self.pool.acquire("/models/gripper")
+            self.pool.release(a)
+            self.pool.release(b)
+            again = self.pool.acquire("/models/gripper")
+            self.assertIs(again, b, "the worker warm for this model must win")
+            self.pool.release(again)
+
+    def test_affinity_never_waits_for_a_busy_worker(self):
+        with self._cap(4):
+            a = self.pool.acquire("/models/tom")
+            # a stays busy; the same model must still get SOME worker instantly.
+            b = self.pool.acquire("/models/tom")
+            self.assertIsNotNone(b)
+            self.assertIsNot(a, b)
+            self.pool.release(a)
+            self.pool.release(b)
+
+    def test_no_affinity_behaves_as_before(self):
+        with self._cap(4):
+            a = self.pool.acquire()
+            self.pool.release(a)
+            b = self.pool.acquire()
+            self.assertIs(a, b)
+            self.pool.release(b)
 
 
 class WorkerLifecycle(_PoolFixture):

@@ -317,9 +317,15 @@ the turbofan re-key, geometry identical). Per the no-backwards-compatibility
 policy this is absorbed as a one-time re-key: content addressing rebuilds
 affected components on next generation; no compat shims, no dual formats.
 
-Still open for Phase 1 polish: daemon pool entry-path affinity (the cache is
-per-worker), and the ~15-20% unkeyable-call rate on fillet-heavy models
-(generator edge-list arguments) if profiling shows it matters.
+Phase 1 polish, resolved 2026-08-25: **pool affinity implemented** —
+`Pool.acquire(affinity)` prefers the free worker that last served the job's
+directory (CLI runs key on request cwd, viewer invokes on the first
+path-shaped argument), never trading warmth for a spawn or wait; the disk
+tier makes a mismatch cheap rather than free. The ~15-20% unkeyable rate
+from generator edge-list arguments stays open by design: keying them
+requires materialize-and-pass semantics that measurably changed results for
+some ops, so it needs per-op validation before pursuing — and the models it
+affects are mesh-dominated anyway.
 
 ## Phase 2 results (implemented 2026-08-25)
 

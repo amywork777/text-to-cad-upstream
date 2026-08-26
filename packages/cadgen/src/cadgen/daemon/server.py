@@ -280,7 +280,16 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
     build each paid their own OCP import and neither could reuse the other's.
     """
     module = str(request.get("module") or "")
-    worker = _POOL.acquire()
+    # Affinity: the first path-shaped argument names the model this invoke
+    # targets; its directory routes repeat viewer builds to the worker whose
+    # in-memory op-memo cache is already warm for that model.
+    affinity = ""
+    for arg in request.get("args") or []:
+        text = str(arg)
+        if "/" in text or "\\" in text:
+            affinity = os.path.dirname(os.path.abspath(text))
+            break
+    worker = _POOL.acquire(affinity)
     if worker is None:
         with send_lock:
             _send(conn, {"cold": True})
@@ -347,7 +356,9 @@ def _handle_request(
             _send(conn, {"exit": 1})
         return
 
-    worker = _POOL.acquire()
+    # Affinity: CLI runs execute in the model's directory, so cwd routes
+    # repeat builds of one model to the worker whose op-memo cache is warm.
+    worker = _POOL.acquire(str(request.get("cwd") or ""))
     if worker is None:
         # Capped, and nothing freed up within the wait. acquire() has already spent that
         # budget, so this really is the point where running cold beats waiting longer.

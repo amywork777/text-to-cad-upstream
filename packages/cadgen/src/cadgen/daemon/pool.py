@@ -207,6 +207,12 @@ class Worker:
         self.jobs_served = 0
         self.busy = False
         self.last_used = time.monotonic()
+        # The working directory of the last job this worker served. Dispatch
+        # prefers a free worker whose affinity matches the request, so repeat
+        # builds of one model land on the worker whose in-memory op-memo cache
+        # already holds that model's shapes (the disk tier makes a mismatch
+        # cheap rather than free).
+        self.affinity = ""
         ready = self._read_frame(timeout=_SPAWN_TIMEOUT_SECONDS)
         if not ready or "ready" not in ready:
             self.kill()
@@ -290,16 +296,32 @@ class Pool:
         self.waits = 0
 
     # --- acquisition -------------------------------------------------------------
-    def acquire(self) -> Worker | None:
-        """A worker to run one job on, or None meaning "run this cold"."""
+    def acquire(self, affinity: str = "") -> Worker | None:
+        """A worker to run one job on, or None meaning "run this cold".
+
+        ``affinity`` is the job's working directory: among free workers, the
+        one that last served that directory wins, so repeat builds of a model
+        reuse the worker whose in-memory op-memo cache is already warm for it.
+        Never trades warmth for a spawn or a wait — any free worker still
+        beats both."""
         deadline: float | None = None
         with self._cv:
             while True:
                 self._reap_dead_locked()
+                chosen = None
                 for worker in self._workers:
-                    if not worker.busy:
-                        worker.busy = True
-                        return worker
+                    if worker.busy:
+                        continue
+                    if affinity and worker.affinity == affinity:
+                        chosen = worker
+                        break
+                    if chosen is None:
+                        chosen = worker
+                if chosen is not None:
+                    chosen.busy = True
+                    if affinity:
+                        chosen.affinity = affinity
+                    return chosen
                 if len(self._workers) + self._pending < max_workers():
                     self._pending += 1
                     break
@@ -329,6 +351,8 @@ class Pool:
         with self._cv:
             self._pending -= 1
             worker.busy = True
+            if affinity:
+                worker.affinity = affinity
             self._workers.append(worker)
             return worker
 
