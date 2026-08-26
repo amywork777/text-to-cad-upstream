@@ -114,6 +114,24 @@ class OpMemoTest(unittest.TestCase):
         memoized = _build_part()
         self.assertAlmostEqual(plain.volume, memoized.volume, places=9)
 
+    def test_vector_and_axis_arguments_are_keyable(self):
+        # Vector/Axis carry a `wrapped` (gp_Vec/gp_Ax1); they must normalize as
+        # value types, not fall into the shape branch and become unkeyable —
+        # builder-heavy models pass them to Solid.extrude/revolve constantly.
+        from build123d import Axis, Location, Vector
+        from build123d.topology import Face, Solid, Wire
+
+        face = Face.make_surface(Wire.make_circle(6.0))
+        before = op_memo.stats()["unkeyable"]
+        first = Solid.extrude(face, Vector(0, 0, 4))
+        off_axis = Face.make_surface(Wire.make_circle(2.0)).moved(Location((0, 10, 0)))
+        Solid.revolve(off_axis, 180.0, Axis.X)
+        self.assertEqual(op_memo.stats()["unkeyable"], before)
+        hits_before = op_memo.stats()["hits"]
+        second = Solid.extrude(face, Vector(0, 0, 4))
+        self.assertGreater(op_memo.stats()["hits"], hits_before)
+        self.assertEqual(_digest(first), _digest(second))
+
     def test_disk_tier_survives_memory_clear(self):
         first = _build_part()
         reference = _digest(first)

@@ -134,18 +134,13 @@ def _normalize(value) -> object:
         return ("occ_op", type_name)
 
     # build123d geometry value types, normalized through their float tuples.
+    # Value types come FIRST: Vector/Axis/Location also carry a ``wrapped``
+    # (gp_Vec/gp_Ax1/TopLoc_Location), so testing for ``wrapped`` before the
+    # value normalizers routed them into the shape branch, where the TShape
+    # digest raised and every such call — hundreds per builder-heavy model —
+    # fell through unkeyable.
     module = type(value).__module__ or ""
     if module.startswith("build123d"):
-        if hasattr(value, "wrapped") and getattr(value, "wrapped", None) is not None:
-            try:
-                return _shape_key(value)
-            except _Unkeyable:
-                raise
-            except Exception as exc:  # serialization failure => uncacheable
-                raise _Unkeyable(str(exc)) from exc
-        to_tuple = getattr(value, "to_tuple", None)
-        if callable(to_tuple):
-            return (type_name, _normalize(to_tuple()))
         if type_name == "Axis":
             return (type_name, _normalize(value.position.to_tuple()),
                     _normalize(value.direction.to_tuple()))
@@ -156,6 +151,17 @@ def _normalize(value) -> object:
         if type_name == "Location":
             return (type_name, _normalize(tuple(value.to_tuple()[0])),
                     _normalize(tuple(value.to_tuple()[1])))
+        to_tuple = getattr(value, "to_tuple", None)
+        if callable(to_tuple):
+            return (type_name, _normalize(to_tuple()))
+        wrapped = getattr(value, "wrapped", None)
+        if wrapped is not None and hasattr(wrapped, "TShape"):
+            try:
+                return _shape_key(value)
+            except _Unkeyable:
+                raise
+            except Exception as exc:  # serialization failure => uncacheable
+                raise _Unkeyable(str(exc)) from exc
     if module.startswith("enum") or hasattr(value, "name") and isinstance(getattr(type(value), "__members__", None), dict):
         return ("enum", type_name, value.name)
 
