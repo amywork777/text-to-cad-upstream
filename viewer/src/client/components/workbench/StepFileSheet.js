@@ -28,6 +28,8 @@ import { buildFileStatusTab } from "./FileStatusSection";
 import { buildParameterControlsTab } from "./ParameterControlsSection";
 import { buildStepReferenceTab } from "./StepReferenceSection";
 import StepMeasurementsSection from "./StepMeasurementsSection";
+import SourceFeatureTree from "./SourceFeatureTree";
+import useSourceFeatureEditor from "./hooks/useSourceFeatureEditor";
 import { FILE_SHEET_SECTION_IDS } from "../../workbench/fileSheetSections";
 const treeChevronButtonClasses = "grid h-5 w-5 shrink-0 place-items-center rounded-sm px-0 text-current/60 hover:bg-sidebar-accent/45 hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent/45";
 const treeRowActionButtonClasses = "h-5 w-5 rounded-sm px-0 text-current/60 shadow-none hover:bg-sidebar-accent/45 hover:text-sidebar-accent-foreground focus-visible:bg-sidebar-accent/45 focus-visible:text-sidebar-accent-foreground";
@@ -539,6 +541,7 @@ export default function StepFileSheet({
   openSectionIds = [],
   onOpenSectionIdsChange
 }) {
+  const sourceFeatureEditor = useSourceFeatureEditor(selectedEntry?.file);
   const rowRefs = useRef(new Map());
   const lastActiveTreeNodeScrollKeyRef = useRef("");
   const selectedIds = Array.isArray(selectedPartIds) ? selectedPartIds : [];
@@ -771,6 +774,12 @@ export default function StepFileSheet({
                   }
                 }}
               >
+              <SourceFeatureTree editor={sourceFeatureEditor} />
+              {sourceFeatureEditor.supported ? (
+                <div className={treeGroupLabelClasses} role="presentation">
+                  Geometry
+                </div>
+              ) : null}
               {hasAssemblyTree ? (
                 <div className="flex items-center justify-between gap-2 pr-1">
                   <div className={treeGroupLabelClasses} role="presentation">

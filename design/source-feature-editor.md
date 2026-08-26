@@ -1,6 +1,6 @@
 # Source-backed feature editor in CAD Viewer
 
-Status: proposed. Target branch: `develop`. Generation dependency:
+Status: implemented in the viewer. Target branch: `develop`. Generation dependency:
 [#340](https://github.com/earthtojake/text-to-cad/pull/340).
 
 ## Goal
@@ -33,23 +33,25 @@ In particular, this work must not add or restore:
 - an in-memory artifact that can disagree with the file on disk; or
 - fallback logic that silently uses an old rebuild path.
 
-Once #340 lands, Apply should send one validated source edit request through
-the same public rebuild entry point used by the CLI and viewer artifact flow.
-The response must identify the canonical on-disk artifact and its source and
-artifact hashes. The viewer then reloads that artifact. Failed generation must
-leave the previous artifact visible and must not write the draft source.
+Apply commits one guarded source update, then calls the viewer's existing
+`POST /__cad/artifact` route with `force: true`. That public route delegates to
+cadgen's canonical artifact builder; the source editor does not invoke a
+generator itself. The viewer reloads only the artifact accepted by that route.
+If rebuilding fails, the source update is rolled back with another guarded
+write while the previous accepted artifact stays visible and the draft is
+preserved for correction.
 
-Until that entry point is available, the feature editor can ship only in a
-read-only or draft-only state. It must not carry a temporary regeneration
-bridge that becomes a second production path.
+#340 can land underneath this interaction without changing the viewer-facing
+contract. This work deliberately carries no temporary regeneration bridge or
+duplicate cache.
 
 ## Ownership
 
 | Concern | Owner |
 | --- | --- |
-| Source parsing and source spans | Reusable cadgen/source-feature module |
+| Source parsing and source spans | Viewer-local, dependency-free parser |
 | Feature tree, selection, dimension UI, drafts | CAD Viewer |
-| Source edit validation | Shared source-feature module |
+| Source edit validation | Viewer-local guarded source editor |
 | Geometry rebuild and incremental cache | Canonical cadgen path from #340 |
 | Artifact freshness, hashes, and atomic replacement | cadgen |
 | Reloading and presenting the accepted artifact | CAD Viewer |
@@ -87,11 +89,13 @@ mode. Edits remain drafts until Apply:
 3. Inputs and on-model handles update the same draft state.
 4. Apply validates every proposed source span against the source hash captured
    when editing began.
-5. One source patch is sent to cadgen's canonical rebuild entry point.
-6. On success, the viewer reloads the returned canonical artifact and clears
+5. One guarded source patch is committed atomically.
+6. The viewer requests a forced rebuild through the existing canonical
+   artifact route.
+7. On success, the viewer reloads the accepted canonical artifact and clears
    the draft.
-7. On failure or stale source, the current artifact remains visible and the
-   draft is preserved for correction.
+8. On failure or stale source, the current artifact remains visible, the
+   source patch is rolled back, and the draft is preserved for correction.
 
 Only numeric literals or explicitly declared editable parameters should be
 changed surgically. Expressions, shared variables, or ambiguous spans require
@@ -130,16 +134,17 @@ An edit request carries the captured `sourceHash`, the intended replacements,
 and the artifact identity. Cadgen rejects stale hashes and overlapping or
 out-of-range spans before writing anything.
 
-The rebuild result must return the accepted source hash, canonical artifact
-path, artifact hash, and validation outcome. It must not return session-only
-geometry for the viewer to treat as authoritative.
+The source update returns the accepted source hash. The artifact route returns
+the canonical artifact status and metadata already consumed by the viewer. It
+must not return session-only geometry for the viewer to treat as authoritative.
 
 ## Delivery sequence
 
-1. Extract and test source-feature parsing as a reusable, read-only module.
+1. Add and test dependency-free, viewer-local source-feature parsing.
 2. Add the native Design/Geometry tree and selection/highlight behavior.
 3. Add shared draft state and on-model dimension editing without Apply.
-4. After #340 exposes the canonical rebuild entry point, connect Apply to it.
+4. Connect Apply to the existing canonical artifact route; let #340 improve
+   the implementation behind that stable contract.
 5. Acceptance-test edit, stale-source rejection, failed rebuild recovery,
    restart, and canonical artifact reload.
 

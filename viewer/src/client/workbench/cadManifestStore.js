@@ -294,6 +294,56 @@ export async function requestArtifact(fileRef, { force = false, signal } = {}) {
   return payload;
 }
 
+export async function requestSourceFeatureModel(fileRef, { signal } = {}) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const normalizedFileRef = String(fileRef || "").trim();
+  if (!normalizedFileRef) {
+    throw new Error("Missing file");
+  }
+  const response = await fetch(cadApiUrl("/__cad/source", {
+    params: { file: normalizedFileRef },
+  }), {
+    method: "GET",
+    cache: "no-store",
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(await readJsonError(
+      response,
+      `Failed to read model source: ${response.status} ${response.statusText}`
+    ));
+  }
+  return response.json();
+}
+
+export async function updateSourceFeatureModel(fileRef, payload, { signal } = {}) {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const normalizedFileRef = String(fileRef || "").trim();
+  if (!normalizedFileRef) {
+    throw new Error("Missing file");
+  }
+  const response = await fetch(cadApiUrl("/__cad/source", {
+    params: { file: normalizedFileRef },
+  }), {
+    method: "POST",
+    cache: "no-store",
+    signal,
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!response.ok) {
+    throw new Error(await readJsonError(
+      response,
+      `Failed to update model source: ${response.status} ${response.statusText}`
+    ));
+  }
+  return response.json();
+}
+
 export function getCadManifestSnapshot() {
   return currentSnapshot;
 }

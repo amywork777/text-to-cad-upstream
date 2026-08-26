@@ -25,10 +25,10 @@ from server_py import backend as backend_mod  # noqa: E402
 from server_py import server as server_mod  # noqa: E402
 
 
-def _request(method, port, path, headers=None):
+def _request(method, port, path, headers=None, body=None):
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     try:
-        conn.request(method, path, headers=headers or {})
+        conn.request(method, path, body=body, headers=headers or {})
         response = conn.getresponse()
         body = response.read()
         return response.status, dict(response.getheaders()), body
@@ -142,6 +142,43 @@ class ServerRouteSecurityTest(unittest.TestCase):
                 self.assertTrue(headers.get("content-type", "").startswith("application/json"))
                 if method == "GET":  # HEAD carries headers only, by design
                     self.assertEqual(json.loads(body)["error"], "Not found")
+
+    def test_source_route_reads_and_updates_a_generator_without_building(self):
+        generator = self.root / "part.step.py"
+        generator.write_text(
+            "from build123d import *\n\n"
+            "def gen_step():\n"
+            "    with BuildPart() as part:\n"
+            "        Box(10, 20, 30)\n"
+            "    return part.part\n",
+            encoding="utf-8",
+        )
+        url = f"/__cad/source?file={generator}&dir={self.root}"
+        status, _, body = _request("GET", self.port, url)
+        self.assertEqual(status, 200)
+        model = json.loads(body)
+        self.assertTrue(model["supported"])
+        length = model["features"][0]["params"][0]
+        payload = json.dumps({
+            "expectedHash": model["sourceHash"],
+            "edits": [{
+                "start": length["span"][0],
+                "end": length["span"][1],
+                "expected": "10",
+                "replacement": "12",
+            }],
+        })
+        with mock.patch.object(server_mod._Ctx.backend, "resolve_artifact") as build:
+            status, _, body = _request(
+                "POST",
+                self.port,
+                url,
+                headers={"content-type": "application/json", "content-length": str(len(payload.encode("utf-8")))},
+                body=payload,
+            )
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["features"][0]["params"][0]["value"], 12.0)
+        build.assert_not_called()
 
     def test_legacy_cad_asset_without_directory_is_400(self):
         status, _, body = _request(

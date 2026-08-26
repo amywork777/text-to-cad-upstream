@@ -2,7 +2,8 @@
 
 Serves the /__cad/* contract the client consumes: GET /__cad/server,
 GET /__cad/catalog, GET /__cad/asset, GET /__cad/download, GET /__cad/artifact,
-POST /__cad/artifact (build), POST /__cad/export and POST /__cad/reveal, plus the
+GET/POST /__cad/source, POST /__cad/artifact (build), POST /__cad/export and
+POST /__cad/reveal, plus the
 static dist/SPA and legacy Referer assets.
 
 Run: python -m server_py.server [--port N] [--host H]
@@ -28,6 +29,7 @@ viewer where loopback binding is the trust boundary. Do NOT bind a non-loopback
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import posixpath
 import re
@@ -127,6 +129,22 @@ class Handler(BaseHTTPRequestHandler):
         q = parse_qs(parts.query)
         return parts.path, {k: (v[0] if v else "") for k, v in q.items()}
 
+    def _read_json_body(self, *, max_bytes: int = 2 * 1024 * 1024):
+        raw_length = self.headers.get("content-length") or "0"
+        try:
+            length = int(raw_length)
+        except ValueError as exc:
+            raise ValueError("Invalid content length") from exc
+        if length <= 0 or length > max_bytes:
+            raise ValueError("JSON request body is missing or too large")
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("Invalid JSON request body") from exc
+        if not isinstance(payload, dict):
+            raise ValueError("JSON request body must be an object")
+        return payload
+
     def log_message(self, *args):  # quieter
         pass
 
@@ -144,6 +162,10 @@ class Handler(BaseHTTPRequestHandler):
                 catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
                 resolved = _Ctx.backend.resolve_root(root_dir)
                 self._send_json(200, _Ctx.backend.artifact_status(q.get("file", ""), resolved, catalog))
+            elif path == "/__cad/source":
+                root_dir = q.get("dir", "")
+                resolved = _Ctx.backend.resolve_root(root_dir)
+                self._send_json(200, _Ctx.backend.source_feature_model(q.get("file", ""), resolved))
             elif path == "/__cad/asset":
                 self._serve_asset(q, download=False)
             elif path == "/__cad/download":
@@ -164,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/__cad/artifact":
                 self._artifact_build(q)
+            elif path == "/__cad/source":
+                self._source_update(q)
             elif path == "/__cad/export":
                 self._export(q)
             elif path == "/__cad/reveal":
@@ -371,6 +395,16 @@ class Handler(BaseHTTPRequestHandler):
         next_catalog = _Ctx.backend.read_catalog(root_dir=root_dir, file_ref=q.get("file", ""))
         status = 500 if result.get("ok") is False else 200
         self._send_json(status, {**result, "catalog": next_catalog})
+
+    def _source_update(self, q):
+        root_dir = q.get("dir", "")
+        resolved = _Ctx.backend.resolve_root(root_dir)
+        result = _Ctx.backend.update_source_feature_model(
+            q.get("file", ""),
+            self._read_json_body(),
+            resolved,
+        )
+        self._send_json(200, result)
 
     def _export(self, q):
         root_dir = q.get("dir", "")

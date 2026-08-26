@@ -16,6 +16,7 @@ from . import artifact as artifact_mod
 from . import cadgen_bridge
 from . import paths
 from . import scanner
+from . import source_editor
 from .content_types import content_type_for_path
 from .save_dialog import pick_save_destination
 from .urls import local_asset_url_for_path
@@ -270,6 +271,30 @@ class LocalAssetBackend:
                 return {"stepPath": c, "sourcePath": generator, "skipStepWrite": True}
             return {"stepPath": c, "sourcePath": "", "skipStepWrite": False}
         raise ValueError(f"STEP file not found: {normalized}")
+
+    def source_feature_model(self, file_ref, resolved_root):
+        """Return source-backed construction features when this STEP has a generator.
+
+        Imported STEP topology is intentionally not presented as editable history.
+        """
+        resolved = self.resolve_step_source(file_ref, resolved_root)
+        source_path = str(resolved.get("sourcePath") or "")
+        if not source_path:
+            return {
+                "ok": True,
+                "supported": False,
+                "reason": "This imported STEP has no editable Python construction source.",
+                "features": [],
+            }
+        return source_editor.read_source_model(source_path)
+
+    def update_source_feature_model(self, file_ref, payload, resolved_root):
+        """Commit guarded source edits only; artifact generation remains cadgen-owned."""
+        resolved = self.resolve_step_source(file_ref, resolved_root)
+        source_path = str(resolved.get("sourcePath") or "")
+        if not source_path:
+            raise ValueError("This imported STEP has no editable Python construction source")
+        return source_editor.update_source_model(source_path, payload)
 
     def resolve_dxf_source(self, file_ref, resolved_root):
         # Both DXF inputs resolve here, exactly as both STEP inputs do above: a `.dxf.py`
@@ -641,4 +666,3 @@ class LocalAssetBackend:
         output_file_ref = _to_posix(os.path.relpath(output_path, resolved_root["rootPath"]))
         return {"ok": True, "fallback": True, "path": output_path, "filename": os.path.basename(output_path),
                 "format": format_name, "catalogChanged": True, "outputFileRef": output_file_ref}
-
