@@ -549,6 +549,7 @@ def _generate_part_outputs(
                     text_to_cad_entry_kind=spec.kind,
                     source_path=(str(getattr(scene, "source_path", "") or "") or None),
                     source_hash=(str(getattr(scene, "source_hash", "") or "") or None),
+                    logger=logger,
                 )
             elif spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
                 shutil.copyfile(spec.step_path, target)

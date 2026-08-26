@@ -231,6 +231,43 @@ distinct TShape, misses the hash memo, and re-serializes its leaf BREPs
 (`component_package.py:539-546`). Fix: memoize BREP serialization per source
 TShape; prefer `compound_from_instances` in model guidance.
 
+## Phase 0 results (measured 2026-08-25)
+
+Measured on `release/0.5.0` with an in-process harness patching the choke
+points above plus cadgen's phase functions. CPU-time attribution
+(`time.thread_time`), because the host was under heavy external load; wall
+numbers below are indicative only.
+
+- **Coverage verdict: PASS, with one amendment.** The original choke list
+  (booleans, fillet/chamfer, extrude/revolve/loft/sweep) captured only 2.6% of
+  `cutaway_turbofan_engine`'s 36s generator run. Live-stack sampling found the
+  missing 95%: `Face.make_surface` (OCCT n-sided surface filling), 907 calls,
+  ~29s. **The choke set must include the `Face`/`Solid`/`Wire` factory
+  classmethods**, not just the operations modules. With those added, coverage
+  on the expensive model is **98.9%** of generator-run CPU.
+- Cheap models have lower coverage but tiny absolute residuals:
+  `planetary_gear_assembly` 48% of 0.58s; `six_axis_industrial_robot_arm` 65%
+  of 1.11s. The residual is model-script Python, which re-execution keeps
+  paying by design.
+- **Cost split by model class:** mesh + selector extraction dominates small/mid
+  models (six-axis: 4.6s mesh + 1.9s extract vs 1.1s generator); kernel ops
+  dominate heavy ones (turbofan: 30s generator vs 3.7s package). So Phase 1
+  (op memo) is the win on slow models, and the component cid cache + store
+  already bound the rest.
+- **STEP export is cheap:** `--write` on the turbofan adds 0.40s of
+  translation+write and ~0.04s of XCAF doc build against a 35s generation.
+  The historical "`--write` doubles generation" observation is fully explained
+  by the reuse-gate rebuild, which memoization eliminates. The XCAF-once point
+  fix is deprioritized (harmless, but worth ~1% here).
+- **BREP hashing is negligible** (~0.02s per 206-component package), so
+  input-hash keying costs nothing measurable.
+- **Determinism spike: PASS.** Rebuilding identical geometry fresh (solid via
+  sketch+extrude+fillet, wire, `Face.make_surface` output, boolean output)
+  produces byte-identical location-stripped BinTools BREP in-process, so
+  input-hash keys (opaque-leaf hashing of input shapes) will hit across
+  re-executions. Full Merkle key propagation remains an optimization on top,
+  not a correctness requirement.
+
 ## Phasing
 
 - **Phase 0 — measure (days).** Instrument the proposed choke points with
