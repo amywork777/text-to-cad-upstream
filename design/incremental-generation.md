@@ -419,6 +419,44 @@ only the 9 ops downstream of the edited parameter re-ran; only the affected
 components re-meshed. A warm daemon removes the remaining ~2.5s import on
 top.
 
+## Moonwatch case study (2026-08-26)
+
+The heaviest fixture (full watch: case + dial + bracelet + chronograph
+movement, 257 components, ~6k keyable ops) stress-tested the layer and
+yielded three fixes plus one honest limit:
+
+- **Vector/Axis/Location arguments were unkeyable** (routed into the shape
+  branch via their `wrapped`); builder-heavy models lost ~61% of calls to
+  this. Fixed: value types normalize first.
+- **build123d's `__copy__` deep-copies geometry** before TShape-sharing, so
+  every hit and store paid a discarded `BRepBuilderAPI_Copy`. Fixed:
+  wrapper clones bypass `__copy__`; cached templates carry no geometry.
+- **LRU default raised to 32768** — a cap below a model's op count made
+  warm runs thrash the disk tier.
+- Two speculative optimizations were tried and REMOVED after measurement:
+  op-result key stamping (destabilized keys: results' content changes after
+  return) and memoized-boolean deparallelization (addressed the stamps'
+  instability, not OCCT's, and slowed real misses).
+
+Measured (clean caches, serial component workers):
+
+| scenario | before | after |
+|---|---|---|
+| cold first build | 275.9s | 247.9s |
+| no-change regen | full rebuild | **0.5s** |
+| single-param edit | ~276s | 120–175s |
+
+The residual edit cost is almost entirely the chronograph movement: OCCT's
+parallel-boolean output is nondeterministic in representation (29 of 191
+movement parts byte-drift between two memo-OFF builds), so that subtree's
+keys drift and its boolean chains re-execute per process; the cache absorbs
+drift variants and converges (repeat edits trend down: 175s → 121s), but
+the floor stays ~100s. The structural fix is composition-level, not
+op-level: the moonwatch parent imports children's `gen_step()` in-process,
+bypassing the child-package freshness machinery that would skip an
+unchanged movement outright — converting it to package-child composition
+would drop edits to the seconds range.
+
 ## Expected wins (original estimates, confirmed by Phase 0)
 
 - Single-parameter edit, mid-to-large model: from full rebuild (~30s on
