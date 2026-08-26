@@ -1,0 +1,113 @@
+"""Op-memoization invariants (design/incremental-generation.md, Phase 1).
+
+The contract under test: memoized kernel ops return canonically reconstructed
+shapes whose bytes are independent of cache state (cold or warm, first run or
+tenth), never mutate or consume caller arguments, and fall through untouched
+for anything they cannot key or store.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import io
+import os
+import unittest
+
+from cadgen._internal import op_memo
+
+
+def _digest(shape) -> str:
+    from OCP.BinTools import BinTools, BinTools_FormatVersion
+
+    stream = io.BytesIO()
+    BinTools.Write_s(shape.wrapped, stream, False, False,
+                     BinTools_FormatVersion.BinTools_FormatVersion_CURRENT)
+    return hashlib.sha256(stream.getvalue()).hexdigest()
+
+
+def _build_part():
+    from build123d.topology import Solid
+
+    box = Solid.make_box(20, 20, 8)
+    return box.cut(Solid.make_cylinder(3, 12))
+
+
+class OpMemoTest(unittest.TestCase):
+    def setUp(self):
+        op_memo.install()
+        op_memo.clear()
+        os.environ["CADGEN_OP_MEMO"] = "1"
+
+    def tearDown(self):
+        op_memo.clear()
+        os.environ.pop("CADGEN_OP_MEMO", None)
+
+    def test_install_is_idempotent(self):
+        from build123d.topology import Face
+
+        self.assertFalse(op_memo.install())  # second call is a no-op
+        self.assertTrue(getattr(Face.make_surface.__func__, "__op_memo__", False))
+
+    def test_cache_state_independence(self):
+        first = _build_part()
+        stats_before = op_memo.stats()
+        second = _build_part()
+        stats_after = op_memo.stats()
+        self.assertGreater(stats_after["hits"], stats_before["hits"])
+        self.assertEqual(_digest(first), _digest(second))
+
+    def test_hit_returns_independent_tshape(self):
+        first = _build_part()
+        second = _build_part()
+        self.assertIsNot(first.wrapped.TShape(), second.wrapped.TShape())
+
+    def test_mutating_a_result_does_not_poison_the_cache(self):
+        from OCP.BRepMesh import BRepMesh_IncrementalMesh
+
+        first = _build_part()
+        reference = _digest(first)
+        # Mutate the first result the way the pipeline does (meshing).
+        BRepMesh_IncrementalMesh(first.wrapped, 0.1, False, 0.5, True)
+        BRepMesh_IncrementalMesh(first.wrapped, 0.5, False, 0.8, True)
+        second = _build_part()
+        self.assertEqual(_digest(second), reference)
+
+    def test_orientation_is_part_of_the_key(self):
+        from build123d.topology import Solid
+
+        solid = Solid.make_box(5, 5, 5)
+        forward = solid.wrapped
+        key_fwd = op_memo._shape_key(solid)
+        solid.wrapped = forward.Reversed()
+        key_rev = op_memo._shape_key(solid)
+        self.assertNotEqual(key_fwd, key_rev)
+
+    def test_generator_arguments_pass_through_uncached(self):
+        from build123d.topology import Solid
+
+        box = Solid.make_box(20, 20, 8)
+        edges = (e for e in box.edges()[:2])
+        before = op_memo.stats()["unkeyable"]
+        result = box.fillet(1.0, edges)
+        self.assertEqual(op_memo.stats()["unkeyable"], before + 1)
+        self.assertLess(result.volume, box.volume)
+
+    def test_kill_switch(self):
+        os.environ["CADGEN_OP_MEMO"] = "0"
+        before = dict(op_memo.stats())
+        part = _build_part()
+        after = op_memo.stats()
+        self.assertEqual(after["hits"], before["hits"])
+        self.assertEqual(after["misses"], before["misses"])
+        self.assertGreater(part.volume, 0)
+
+    def test_disabled_and_enabled_geometry_match(self):
+        os.environ["CADGEN_OP_MEMO"] = "0"
+        plain = _build_part()
+        os.environ["CADGEN_OP_MEMO"] = "1"
+        memoized = _build_part()
+        self.assertAlmostEqual(plain.volume, memoized.volume, places=9)
+
+
+if __name__ == "__main__":
+    unittest.main()

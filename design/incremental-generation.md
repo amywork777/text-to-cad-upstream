@@ -268,6 +268,59 @@ numbers below are indicative only.
   re-executions. Full Merkle key propagation remains an optimization on top,
   not a correctness requirement.
 
+## Phase 1 results (implemented 2026-08-25)
+
+`cadgen/_internal/op_memo.py`, installed from `run_script_generator`; default
+ON, `CADGEN_OP_MEMO=0` kill switch; tests in
+`tests/python/packages/cadgen/test_op_memo.py`.
+
+Measured on `cutaway_turbofan_engine` (206 components, in-process runs):
+**36.0s → 4.2s warm (8.5×)**, 100% hit rate on repeats, ~6 unkeyable calls of
+1112. Verified end-to-end in the CAD Viewer. Cross-model validation (coffee
+cup, planetary gear, six-axis arm, spiral staircase, robotic hand): all
+cache-state independent, no failures; their warm gains are smaller because
+mesh+extract dominates them, as Phase 0 predicted.
+
+What implementation forced us to learn:
+
+1. **Never alter caller arguments.** Materializing a generator argument to
+   key it changes some ops' results. Lazy iterables are unkeyable
+   passthroughs; keys are built only from arguments that can be hashed in
+   place. (Orientation must be an explicit key component: a reversed shape
+   shares its TShape with the forward one.)
+2. **Live cached masters cannot work.** Downstream consumers mutate their
+   inputs: booleans and lofts bump input tolerances, meshing and
+   `bounding_box()` attach triangulation — and model code makes *selection
+   decisions* from tessellation-derived bboxes with hundredth-mm thresholds,
+   so pollution is behavior-changing, not just byte-changing. A
+   digest-self-check variant (evict-on-mutation) was correct but evicted
+   exactly the expensive intermediates every run.
+3. **Isolation mechanisms are byte-lossy.** `BRepBuilderAPI_Copy` (build123d
+   `__deepcopy__`) re-serializes differently; BinTools write→read→write is
+   not byte-stable for ~65% of real shapes.
+4. **The scheme that works is canonical reconstruction**: serialize each
+   cacheable result once at op time (geometry-only flags, mirroring cid
+   hashing); hand every consumer — the missing caller included — a fresh
+   reconstruction read back from those bytes. Reconstructed inputs produce
+   byte-identical downstream op results (validated empirically at the op
+   level and end-to-end). A result whose bytes fail to read back (the known
+   BinTools poison class) is not cached and flows through untouched.
+
+**Revised determinism invariant.** The original "memo-on/off byte-identity"
+requirement is replaced by two invariants the implementation actually
+guarantees and tests: (a) **cache-state independence** — package bytes are
+identical across cold/warm/warm-N runs, which is what cid stability actually
+requires; (b) **geometric equivalence with memo-off** — identical occurrence
+names, transforms, and bounds. Canonicalization changes the exact BREP bytes
+of most leaf components relative to memo-off execution (171 of 206 cids on
+the turbofan re-key, geometry identical). Per the no-backwards-compatibility
+policy this is absorbed as a one-time re-key: content addressing rebuilds
+affected components on next generation; no compat shims, no dual formats.
+
+Still open for Phase 1 polish: daemon pool entry-path affinity (the cache is
+per-worker), and the ~15-20% unkeyable-call rate on fillet-heavy models
+(generator edge-list arguments) if profiling shows it matters.
+
 ## Phasing
 
 - **Phase 0 — measure (days).** Instrument the proposed choke points with

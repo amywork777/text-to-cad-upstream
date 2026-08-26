@@ -389,6 +389,14 @@ def _run_script_generator_inner(
     progress: object | None = None,
 ) -> LoadedStepScene | None:
     del reset_runtime_closure  # superseded by the pre-run eviction below; kept for API compat
+    # Kernel-op memoization (design/incremental-generation.md): installed here so
+    # every generator run — cold CLI or warm daemon worker — re-executes the model
+    # script against memoized build123d choke points. The cache lives in
+    # cadgen._internal.op_memo, which module eviction never touches, so a warm
+    # worker keeps it across requests. CADGEN_OP_MEMO=0 disables.
+    from cadgen._internal import op_memo
+
+    op_memo.install()
     generated_scene: LoadedStepScene | None = None
     # Deterministic closure capture (see run_script_generator's docstring): start from a
     # clean first-party module space, then record every first-party file executed while
