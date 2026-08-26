@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  Crosshair,
+  Equal,
   LoaderCircle,
   PencilRuler,
   RotateCcw,
@@ -13,7 +15,11 @@ import {
 
 import { cn } from "@/ui/utils";
 import { featureParameterRows, sourceParamKey } from "@/workbench/sourceFeatureDrafts";
-import { buildSourceSketchViewportModel } from "@/workbench/sourceSketchViewport";
+import {
+  buildSourceSketchViewportModel,
+  sourceSketchConstraintEdits,
+  sourceSketchInferredConstraints,
+} from "@/workbench/sourceSketchViewport";
 import { Button } from "../ui/button";
 
 const groupLabelClasses = "px-2 pb-1 pt-2 text-[10px] font-medium uppercase tracking-wide text-sidebar-foreground/45";
@@ -79,9 +85,11 @@ export default function SourceFeatureTree({ editor, viewerRef = null }) {
 
   const enterSketchEdit = useCallback(() => {
     if (!sketchViewportModel?.plane?.supported || !sketchViewportModel.entities.length || busy) return;
-    const entered = viewerRef?.current?.beginSourceSketchEdit?.(sketchViewportModel);
+    const entered = viewerRef?.current?.beginSourceSketchEdit?.(sketchViewportModel, {
+      onParameterChange: editor?.setParameterDraft,
+    });
     if (entered !== false) setEditingSketchId(sketchViewportModel.id);
-  }, [busy, sketchViewportModel, viewerRef]);
+  }, [busy, editor?.setParameterDraft, sketchViewportModel, viewerRef]);
 
   useEffect(() => {
     if (!sketchEditing || !sketchViewportModel) return;
@@ -119,6 +127,16 @@ export default function SourceFeatureTree({ editor, viewerRef = null }) {
     const applied = await editor?.apply?.();
     if (applied && editingSketchId) exitSketchEdit();
   }, [editingSketchId, editor, exitSketchEdit]);
+
+  const applyConstraint = useCallback((constraint) => {
+    for (const edit of sourceSketchConstraintEdits(sketchViewportModel, constraint)) {
+      editor?.setParameterDraft?.(edit.parameter, String(Number(edit.value.toFixed(4))));
+    }
+  }, [editor, sketchViewportModel]);
+  const inferredConstraints = useMemo(
+    () => sourceSketchInferredConstraints(sketchViewportModel),
+    [sketchViewportModel]
+  );
 
   if (editor?.status === "loading") {
     return (
@@ -253,6 +271,44 @@ export default function SourceFeatureTree({ editor, viewerRef = null }) {
           {selectedSketch && sketchViewportModel?.plane?.supported === false ? (
             <div className="border-t border-sidebar-border/60 px-2.5 py-2 text-[10px] text-sidebar-foreground/50">
               {sketchViewportModel.plane.reason}
+            </div>
+          ) : null}
+          {selectedSketch && sketchViewportModel?.plane?.supported !== false ? (
+            <div className="border-t border-sidebar-border/60 px-2.5 py-2">
+              <div className="flex items-center gap-1">
+                <span className="mr-auto text-[10px] text-sidebar-foreground/45">Constraints</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-1.5 text-[10px]"
+                  disabled={busy || !sourceSketchConstraintEdits(sketchViewportModel, "center").length}
+                  onClick={() => applyConstraint("center")}
+                  title="Set authored profile locations to the sketch origin"
+                >
+                  <Crosshair className="size-3" /> Center
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-1.5 text-[10px]"
+                  disabled={busy || !sourceSketchConstraintEdits(sketchViewportModel, "equal").length}
+                  onClick={() => applyConstraint("equal")}
+                  title="Set rectangle height equal to its width"
+                >
+                  <Equal className="size-3" /> Equal
+                </Button>
+              </div>
+              {inferredConstraints.length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1" title="Constraints already represented by the authored source primitives">
+                  {inferredConstraints.map((constraint) => (
+                    <span key={constraint} className="rounded border border-sidebar-border/70 px-1.5 py-0.5 text-[9px] text-sidebar-foreground/55">
+                      {constraint}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

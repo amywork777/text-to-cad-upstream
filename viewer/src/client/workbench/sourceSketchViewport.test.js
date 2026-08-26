@@ -4,7 +4,11 @@ import test from "node:test";
 import {
   buildSourceSketchViewportModel,
   sourceSketchCameraFrame,
+  sourceSketchCenterDescriptors,
+  sourceSketchConstraintEdits,
   sourceSketchDimensionDescriptors,
+  sourceSketchDragEdits,
+  sourceSketchInferredConstraints,
 } from "./sourceSketchViewport.js";
 
 const FEATURE = {
@@ -25,6 +29,10 @@ const FEATURE = {
         op: "Rectangle",
         mode: "add",
         position: [2, 3],
+        positionParams: [
+          { name: "x", value: 2, offset: 0, span: [30, 31] },
+          { name: "y", value: 3, offset: 0, span: [33, 34] },
+        ],
         params: [
           { name: "width", value: 40, span: [10, 12] },
           { name: "height", value: 24, span: [14, 16] },
@@ -44,12 +52,13 @@ test("buildSourceSketchViewportModel uses authored plane, locations, and live dr
   const model = buildSourceSketchViewportModel(FEATURE, {
     "10:12": { span: [10, 12], value: "50" },
     "20:21": { span: [20, 21], value: "6" },
+    "30:31": { span: [30, 31], value: "5" },
   });
   assert.deepEqual(model.plane.origin, [10, 20, 30]);
-  assert.deepEqual(model.entities.map((entity) => entity.center), [[2, 3], [2, 3]]);
+  assert.deepEqual(model.entities.map((entity) => entity.center), [[5, 3], [2, 3]]);
   assert.equal(model.entities[0].width, 50);
   assert.equal(model.entities[1].radius, 6);
-  assert.deepEqual(model.bounds, { minX: -23, minY: -9, maxX: 27, maxY: 15, width: 50, height: 24 });
+  assert.deepEqual(model.bounds, { minX: -20, minY: -9, maxX: 30, maxY: 15, width: 50, height: 24 });
 });
 
 test("sourceSketchCameraFrame looks normal to the authored plane and fits the profile", () => {
@@ -80,4 +89,31 @@ test("dynamic sketch planes remain editable in source but cannot enter viewport 
   });
   assert.equal(model.plane.supported, false);
   assert.equal(sourceSketchCameraFrame(model), null);
+});
+
+test("sourceSketchDragEdits converts model-space handle motion into source values", () => {
+  const model = buildSourceSketchViewportModel(FEATURE);
+  const [width, height, radius] = sourceSketchDimensionDescriptors(model);
+  assert.equal(sourceSketchDragEdits({ kind: "dimension", dimension: width }, [32, 3])[0].value, 60);
+  assert.equal(sourceSketchDragEdits({ kind: "dimension", dimension: height }, [2, 18])[0].value, 30);
+  assert.equal(sourceSketchDragEdits({ kind: "dimension", dimension: radius }, [5, 7])[0].value, 5);
+  const center = sourceSketchCenterDescriptors(model)[0];
+  assert.deepEqual(sourceSketchDragEdits({ kind: "center", center }, [8, 9]).map((edit) => edit.value), [8, 9]);
+});
+
+test("sourceSketchConstraintEdits supports honest source-backed center and equal actions", () => {
+  const model = buildSourceSketchViewportModel(FEATURE);
+  assert.deepEqual(sourceSketchConstraintEdits(model, "center").map((edit) => edit.value), [0, 0]);
+  assert.deepEqual(sourceSketchConstraintEdits(model, "equal").map((edit) => edit.value), [40]);
+});
+
+test("sourceSketchInferredConstraints reports only constraints represented by source primitives", () => {
+  const model = buildSourceSketchViewportModel(FEATURE);
+  assert.deepEqual(sourceSketchInferredConstraints(model), ["Horizontal", "Vertical", "Fixed by source"]);
+  const constrained = buildSourceSketchViewportModel(FEATURE, {
+    "10:12": { span: [10, 12], value: "24" },
+    "30:31": { span: [30, 31], value: "0" },
+    "33:34": { span: [33, 34], value: "0" },
+  });
+  assert.deepEqual(sourceSketchInferredConstraints(constrained), ["Horizontal", "Vertical", "Fixed by source", "Centered", "Equal"]);
 });

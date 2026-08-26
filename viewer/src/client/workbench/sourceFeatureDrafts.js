@@ -32,12 +32,16 @@ export function sourceParamKey(parameter) {
 export function featureParameterRows(feature, selectedNodeId) {
   if (!feature) return [];
   if (feature.sketch?.id === selectedNodeId) {
-    return (Array.isArray(feature.sketch.entities) ? feature.sketch.entities : []).flatMap((entity, entityIndex) =>
-      (Array.isArray(entity.params) ? entity.params : []).map((param) => ({
-        ...param,
-        group: `${entity.op}${entityIndex + 1}`,
-      }))
-    );
+    return (Array.isArray(feature.sketch.entities) ? feature.sketch.entities : []).flatMap((entity, entityIndex) => {
+      const group = `${entity.op}${entityIndex + 1}`;
+      return [
+        ...(Array.isArray(entity.params) ? entity.params : []),
+        ...(Array.isArray(entity.positionParams) ? entity.positionParams : []).map((parameter) => ({
+          ...parameter,
+          name: `center_${parameter.name}`,
+        })),
+      ].map((param) => ({ ...param, group }));
+    });
   }
   const rows = [...(Array.isArray(feature.params) ? feature.params : [])];
   const values = Array.isArray(feature.position?.value) ? feature.position.value : [];

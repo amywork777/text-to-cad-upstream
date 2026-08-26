@@ -155,7 +155,9 @@ import { buildRuntimeInitializationAlert } from "cadjs/lib/viewer/webglSupport";
 import { DRAWING_TOOL } from "@/workbench/constants";
 import {
   sourceSketchCameraFrame,
+  sourceSketchCenterDescriptors,
   sourceSketchDimensionDescriptors,
+  sourceSketchDragEdits,
 } from "@/workbench/sourceSketchViewport";
 import {
   hasCapability,
@@ -1878,10 +1880,12 @@ function createSourceSketchOverlay(runtime, model) {
     const tick = new THREE.Vector3(...(model.plane.normal || [0, 0, 1])).cross(direction).normalize().multiplyScalar(tickLength);
     pushSourceSketchSegment(dimensionPositions, start.clone().sub(tick), start.clone().add(tick));
     pushSourceSketchSegment(dimensionPositions, end.clone().sub(tick), end.clone().add(tick));
-    for (const point of [start, end]) {
+    const handlePoints = dimension.drag?.kind === "radius" ? [end] : [start, end];
+    for (const point of handlePoints) {
       const handle = new THREE.Mesh(handleGeometry, handleMaterial);
       handle.position.copy(point);
       handle.renderOrder = 83;
+      handle.userData.sourceSketchDragHandle = { kind: "dimension", dimension };
       group.add(handle);
     }
     const label = sourceSketchLabelSprite(THREE, dimension.label, Math.max(span * 0.055, 0.8));
@@ -1892,6 +1896,15 @@ function createSourceSketchOverlay(runtime, model) {
   }
   const dimensions = sourceSketchLine(THREE, dimensionPositions, 0x7dd3fc, { opacity: 0.92, renderOrder: 83 });
   if (dimensions) group.add(dimensions);
+  const centerGeometry = new THREE.SphereGeometry(Math.max(span * 0.014, 0.12), 14, 10);
+  const centerMaterial = new THREE.MeshBasicMaterial({ color: 0xfbbf24, depthTest: false, depthWrite: false, toneMapped: false });
+  for (const center of sourceSketchCenterDescriptors(model)) {
+    const handle = new THREE.Mesh(centerGeometry, centerMaterial);
+    handle.position.copy(sourceSketchPoint3(THREE, model, center.center, normalOffset * 3));
+    handle.renderOrder = 85;
+    handle.userData.sourceSketchDragHandle = { kind: "center", center };
+    group.add(handle);
+  }
   modelGroup.add(group);
   modelGroup.updateMatrixWorld(true);
   return group;
@@ -1974,6 +1987,29 @@ function restoreSourceSketchView(runtime, saved) {
   runtime.scheduleIdleQuality?.();
   runtime.requestRender?.();
   return applied;
+}
+
+function sourceSketchPointerPoint(runtime, model, event, raycaster, pointer) {
+  const canvas = runtime?.renderer?.domElement;
+  if (!canvas || !runtime?.camera || !runtime?.modelGroup || !model?.plane) return null;
+  const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  pointer.set(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(pointer, runtime.camera);
+  const origin = new runtime.THREE.Vector3(...model.plane.origin).applyMatrix4(runtime.modelGroup.matrixWorld);
+  const normal = new runtime.THREE.Vector3(...model.plane.normal).transformDirection(runtime.modelGroup.matrixWorld).normalize();
+  const hit = raycaster.ray.intersectPlane(new runtime.THREE.Plane().setFromNormalAndCoplanarPoint(normal, origin), new runtime.THREE.Vector3());
+  if (!hit) return null;
+  const local = hit.applyMatrix4(runtime.modelGroup.matrixWorld.clone().invert());
+  const localOrigin = new runtime.THREE.Vector3(...model.plane.origin);
+  const delta = local.sub(localOrigin);
+  return [
+    delta.dot(new runtime.THREE.Vector3(...model.plane.xAxis).normalize()),
+    delta.dot(new runtime.THREE.Vector3(...model.plane.yAxis).normalize()),
+  ];
 }
 
 const CadViewer = forwardRef(function CadViewer({
@@ -2111,6 +2147,9 @@ const CadViewer = forwardRef(function CadViewer({
   const drawingIdRef = useRef(0);
   const runtimeRef = useRef(null);
   const sourceSketchRestoreRef = useRef(null);
+  const sourceSketchCallbacksRef = useRef({});
+  const sourceSketchEditRef = useRef(null);
+  const sourceSketchDragRef = useRef(null);
   const explodedViewAnimationRef = useRef({
     rafId: 0,
     progress: 0,
@@ -2142,6 +2181,7 @@ const CadViewer = forwardRef(function CadViewer({
   const [urdfPosePickerGuidePoint, setUrdfPosePickerGuidePoint] = useState(null);
   const [urdfPosePickerHoverActive, setUrdfPosePickerHoverActive] = useState(false);
   const [sourceSketchEdit, setSourceSketchEdit] = useState(null);
+  sourceSketchEditRef.current = sourceSketchEdit;
   // Bumped whenever the exploded view reaches a POSE it will hold: the end of the
   // explode/collapse animation, a slider scrub, or a collapse back to rest. Overlays that bake
   // a record's matrix at build time -- the reference highlight's edge lines and its face fill --
@@ -3776,11 +3816,12 @@ const CadViewer = forwardRef(function CadViewer({
       }
       return applyPerspectiveSnapshot(runtimeRef.current, perspective);
     },
-    beginSourceSketchEdit(model) {
+    beginSourceSketchEdit(model, callbacks = {}) {
       const runtime = runtimeRef.current;
       if (!runtime || !model?.plane?.supported || !Array.isArray(model?.entities) || !model.entities.length) {
         return false;
       }
+      sourceSketchCallbacksRef.current = callbacks && typeof callbacks === "object" ? callbacks : {};
       if (!sourceSketchRestoreRef.current) {
         sourceSketchRestoreRef.current = captureSourceSketchView(runtime);
       }
@@ -3801,6 +3842,13 @@ const CadViewer = forwardRef(function CadViewer({
       const runtime = runtimeRef.current;
       const saved = sourceSketchRestoreRef.current;
       sourceSketchRestoreRef.current = null;
+      sourceSketchCallbacksRef.current = {};
+      const drag = sourceSketchDragRef.current;
+      if (drag && runtime?.controls) runtime.controls.enabled = drag.controlsEnabled;
+      if (drag && runtime?.renderer?.domElement?.hasPointerCapture?.(drag.pointerId)) {
+        runtime.renderer.domElement.releasePointerCapture?.(drag.pointerId);
+      }
+      sourceSketchDragRef.current = null;
       setSourceSketchEdit(null);
       if (!runtime || !saved) return false;
       if (restore) {
@@ -5723,6 +5771,70 @@ const CadViewer = forwardRef(function CadViewer({
     };
   }, [displayRecordsToken, sourceSketchEdit, viewerReadyTick]);
 
+  useEffect(() => {
+    if (!sourceSketchEdit) return undefined;
+    const runtime = runtimeRef.current;
+    const canvas = runtime?.renderer?.domElement;
+    if (!runtime?.THREE || !canvas) return undefined;
+    const raycaster = new runtime.THREE.Raycaster();
+    const pointer = new runtime.THREE.Vector2();
+    const finishDrag = (event) => {
+      const drag = sourceSketchDragRef.current;
+      if (!drag) return;
+      sourceSketchDragRef.current = null;
+      if (runtime.controls) runtime.controls.enabled = drag.controlsEnabled;
+      if (canvas.hasPointerCapture?.(drag.pointerId)) canvas.releasePointerCapture?.(drag.pointerId);
+      canvas.style.cursor = "";
+      event?.preventDefault?.();
+      runtime.requestRender?.();
+    };
+    const onPointerDown = (event) => {
+      const overlay = runtime.modelGroup?.getObjectByName?.("SourceSketchEditOverlay");
+      if (!overlay) return;
+      const rect = canvas.getBoundingClientRect();
+      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(pointer, runtime.camera);
+      const hit = raycaster.intersectObject(overlay, true).find((intersection) => intersection.object?.userData?.sourceSketchDragHandle);
+      if (!hit) return;
+      sourceSketchDragRef.current = {
+        handle: hit.object.userData.sourceSketchDragHandle,
+        pointerId: event.pointerId,
+        controlsEnabled: runtime.controls?.enabled !== false,
+      };
+      if (runtime.controls) runtime.controls.enabled = false;
+      canvas.setPointerCapture?.(event.pointerId);
+      canvas.style.cursor = "grabbing";
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    const onPointerMove = (event) => {
+      const drag = sourceSketchDragRef.current;
+      const model = sourceSketchEditRef.current;
+      if (!drag || !model || drag.pointerId !== event.pointerId) return;
+      const point = sourceSketchPointerPoint(runtime, model, event, raycaster, pointer);
+      if (!point) return;
+      for (const edit of sourceSketchDragEdits(drag.handle, point)) {
+        sourceSketchCallbacksRef.current?.onParameterChange?.(
+          edit.parameter,
+          String(Number(edit.value.toFixed(4)))
+        );
+      }
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    canvas.addEventListener("pointerdown", onPointerDown, true);
+    canvas.addEventListener("pointermove", onPointerMove, true);
+    canvas.addEventListener("pointerup", finishDrag, true);
+    canvas.addEventListener("pointercancel", finishDrag, true);
+    return () => {
+      canvas.removeEventListener("pointerdown", onPointerDown, true);
+      canvas.removeEventListener("pointermove", onPointerMove, true);
+      canvas.removeEventListener("pointerup", finishDrag, true);
+      canvas.removeEventListener("pointercancel", finishDrag, true);
+      finishDrag();
+    };
+  }, [Boolean(sourceSketchEdit), viewerReadyTick]);
+
   useViewerDrawingOverlay({
     drawingCanvasRef,
     drawingDraftRef,
@@ -5851,7 +5963,7 @@ const CadViewer = forwardRef(function CadViewer({
           className="pointer-events-none absolute left-1/2 top-16 z-20 -translate-x-1/2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg"
           style={{ background: "rgba(15, 23, 42, 0.92)", borderColor: "rgba(56, 189, 248, 0.36)", color: "#e0f2fe" }}
         >
-          Editing {sourceSketchEdit.label} · pan or zoom · Esc cancels
+          Editing {sourceSketchEdit.label} · drag cyan dimensions or yellow centers · Esc cancels
         </div>
       ) : null}
       <ViewPlaneControl

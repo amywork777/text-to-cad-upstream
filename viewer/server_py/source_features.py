@@ -241,13 +241,28 @@ def _combine_sketch_position(parent, child):
     parent_values = list((parent or {}).get("value") or [])
     child_values = list((child or {}).get("value") or [])
     length = max(len(parent_values), len(child_values), 2)
-    return {
+    combined = {
         "value": [
             (parent_values[index] if index < len(parent_values) else 0.0)
             + (child_values[index] if index < len(child_values) else 0.0)
             for index in range(length)
         ]
     }
+    child_spans = list((child or {}).get("elementSpans") or [])
+    if child_spans:
+        combined["elementSpans"] = child_spans
+        combined["editableValues"] = child_values
+        combined["editableOffsets"] = [
+            parent_values[index] if index < len(parent_values) else 0.0
+            for index in range(len(child_spans))
+        ]
+    else:
+        parent_spans = list((parent or {}).get("elementSpans") or [])
+        if parent_spans:
+            combined["elementSpans"] = parent_spans
+            combined["editableValues"] = list((parent or {}).get("editableValues") or parent_values)
+            combined["editableOffsets"] = list((parent or {}).get("editableOffsets") or [0.0] * len(parent_spans))
+    return combined
 
 
 def _collect_sketch_entities(statements, off, entities, position=None):
@@ -264,10 +279,24 @@ def _collect_sketch_entities(statements, off, entities, position=None):
         op = _call_name(inner.value)
         if op in SKETCH_ENTITIES:
             values = list((position or {}).get("value") or [])
+            editable_values = list((position or {}).get("editableValues") or [])
+            editable_offsets = list((position or {}).get("editableOffsets") or [])
+            position_spans = list((position or {}).get("elementSpans") or [])
+            position_params = [
+                {
+                    "name": ("x", "y", "z")[index] if index < 3 else f"axis{index + 1}",
+                    "value": editable_values[index],
+                    "offset": editable_offsets[index] if index < len(editable_offsets) else 0.0,
+                    "span": span,
+                }
+                for index, span in enumerate(position_spans[:2])
+                if index < len(editable_values)
+            ]
             entities.append({
                 "op": op,
                 "mode": _mode_of(inner.value),
                 "position": (values + [0.0, 0.0])[:2],
+                "positionParams": position_params,
                 "params": _entity_parameters(op, inner.value, off),
             })
 

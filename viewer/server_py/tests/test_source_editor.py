@@ -33,6 +33,7 @@ class SourceFeatureParserTest(unittest.TestCase):
         self.assertEqual(["Rectangle", "Circle"], [entity["op"] for entity in extrude["sketch"]["entities"]])
         self.assertEqual("Plane.XY", extrude["sketch"]["plane"]["name"])
         self.assertEqual([0.0, 0.0, 1.0], extrude["sketch"]["plane"]["normal"])
+        self.assertEqual([], extrude["sketch"]["entities"][0]["positionParams"])
         amount = extrude["params"][0]
         self.assertEqual("6", SOURCE[amount["span"][0]:amount["span"][1]])
 
@@ -61,6 +62,8 @@ def gen_step():
         self.assertEqual([0.0, 0.0, 1.0], sketch["plane"]["yAxis"])
         self.assertEqual([0.0, -1.0, 0.0], sketch["plane"]["normal"])
         self.assertEqual([2.0, 3.0], sketch["entities"][0]["position"])
+        self.assertEqual([2.0, 3.0], [parameter["value"] for parameter in sketch["entities"][0]["positionParams"]])
+        self.assertEqual([0.0, 0.0], [parameter["offset"] for parameter in sketch["entities"][0]["positionParams"]])
 
     def test_combines_nested_outer_locations_for_sketch_origin(self):
         source = """from build123d import *
@@ -76,6 +79,23 @@ def gen_step():
 """
         sketch = parse_source_features(source)["features"][0]["sketch"]
         self.assertEqual([5.0, 7.0, 9.0], sketch["plane"]["origin"])
+
+    def test_preserves_editable_inner_location_with_outer_offset(self):
+        source = """from build123d import *
+
+def gen_step():
+    with BuildPart() as part:
+        with BuildSketch():
+            with Locations((10, 20)):
+                with Locations((2, 3)):
+                    Circle(4)
+        extrude(amount=5)
+    return part.part
+"""
+        entity = parse_source_features(source)["features"][0]["sketch"]["entities"][0]
+        self.assertEqual([12.0, 23.0], entity["position"])
+        self.assertEqual([2.0, 3.0], [parameter["value"] for parameter in entity["positionParams"]])
+        self.assertEqual([10.0, 20.0], [parameter["offset"] for parameter in entity["positionParams"]])
 
     def test_supports_static_plane_offsets_and_marks_dynamic_planes_unsupported(self):
         offset_source = SOURCE.replace("BuildSketch()", "BuildSketch(Plane.XY.offset(8))")

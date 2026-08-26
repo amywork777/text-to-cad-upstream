@@ -37,7 +37,15 @@ function parameterMap(entity, drafts) {
 
 function normalizeEntity(entity, drafts, index) {
   const parameters = parameterMap(entity, drafts);
+  const positionParameters = (Array.isArray(entity?.positionParams) ? entity.positionParams : []).map((parameter) => ({
+    ...parameter,
+    value: draftParameterValue(parameter, drafts),
+    offset: finiteNumber(parameter?.offset),
+  }));
   const position = vector(entity?.position, [0, 0]);
+  for (let axis = 0; axis < Math.min(positionParameters.length, 2); axis += 1) {
+    position[axis] = positionParameters[axis].offset + positionParameters[axis].value;
+  }
   const op = String(entity?.op || "");
   if (op === "Rectangle") {
     const width = Math.abs(finiteNumber(parameters.get("width")?.value));
@@ -54,6 +62,7 @@ function normalizeEntity(entity, drafts, index) {
         width: parameters.get("width") || null,
         height: parameters.get("height") || null,
       },
+      positionParameters,
     };
   }
   if (op === "Circle") {
@@ -66,6 +75,7 @@ function normalizeEntity(entity, drafts, index) {
       center: position,
       radius,
       parameters: { radius: parameters.get("radius") || null },
+      positionParameters,
     };
   }
   return null;
@@ -175,12 +185,16 @@ export function sourceSketchDimensionDescriptors(model) {
         {
           id: `${entity.id}:width`,
           label: `${formatDimension(entity.width)} mm`,
+          parameter: entity.parameters.width,
+          drag: { kind: "size", axis: 0, center: entity.center },
           start: [cx - entity.width / 2, cy - entity.height / 2 - margin],
           end: [cx + entity.width / 2, cy - entity.height / 2 - margin],
         },
         {
           id: `${entity.id}:height`,
           label: `${formatDimension(entity.height)} mm`,
+          parameter: entity.parameters.height,
+          drag: { kind: "size", axis: 1, center: entity.center },
           start: [cx + entity.width / 2 + margin, cy - entity.height / 2],
           end: [cx + entity.width / 2 + margin, cy + entity.height / 2],
         },
@@ -190,10 +204,81 @@ export function sourceSketchDimensionDescriptors(model) {
       return [{
         id: `${entity.id}:radius`,
         label: `R ${formatDimension(entity.radius)} mm`,
+        parameter: entity.parameters.radius,
+        drag: { kind: "radius", center: entity.center },
         start: [cx, cy],
         end: [cx + entity.radius, cy],
       }];
     }
     return [];
   });
+}
+
+export function sourceSketchCenterDescriptors(model) {
+  return (Array.isArray(model?.entities) ? model.entities : [])
+    .filter((entity) => Array.isArray(entity.positionParameters) && entity.positionParameters.length)
+    .map((entity) => ({
+      id: `${entity.id}:center`,
+      center: [...entity.center],
+      parameters: entity.positionParameters,
+    }));
+}
+
+export function sourceSketchDragEdits(handle, point) {
+  const target = vector(point, [0, 0]);
+  if (handle?.kind === "dimension") {
+    const dimension = handle.dimension;
+    const parameter = dimension?.parameter;
+    if (!sourceParamKey(parameter)) return [];
+    if (dimension?.drag?.kind === "radius") {
+      const center = vector(dimension.drag.center, [0, 0]);
+      return [{ parameter, value: Math.max(Math.hypot(target[0] - center[0], target[1] - center[1]), 0.001) }];
+    }
+    if (dimension?.drag?.kind === "size") {
+      const axis = dimension.drag.axis === 1 ? 1 : 0;
+      const center = vector(dimension.drag.center, [0, 0]);
+      return [{ parameter, value: Math.max(Math.abs(target[axis] - center[axis]) * 2, 0.001) }];
+    }
+  }
+  if (handle?.kind === "center") {
+    return (Array.isArray(handle.center?.parameters) ? handle.center.parameters : []).flatMap((parameter, axis) => {
+      if (axis > 1 || !sourceParamKey(parameter)) return [];
+      return [{ parameter, value: target[axis] - finiteNumber(parameter.offset) }];
+    });
+  }
+  return [];
+}
+
+export function sourceSketchConstraintEdits(model, constraint) {
+  if (constraint === "center") {
+    return sourceSketchCenterDescriptors(model).flatMap((descriptor) => descriptor.parameters.map((parameter) => ({
+      parameter,
+      value: finiteNumber(parameter.offset) === 0 ? 0 : -finiteNumber(parameter.offset),
+    })));
+  }
+  if (constraint === "equal") {
+    return (Array.isArray(model?.entities) ? model.entities : []).flatMap((entity) => {
+      if (entity.kind !== "rectangle" || !sourceParamKey(entity.parameters?.width) || !sourceParamKey(entity.parameters?.height)) return [];
+      return [{ parameter: entity.parameters.height, value: entity.width }];
+    });
+  }
+  return [];
+}
+
+export function sourceSketchInferredConstraints(model) {
+  const entities = Array.isArray(model?.entities) ? model.entities : [];
+  const constraints = [];
+  if (entities.some((entity) => entity.kind === "rectangle")) {
+    constraints.push("Horizontal", "Vertical");
+  }
+  if (entities.some((entity) => Array.isArray(entity.positionParameters) && entity.positionParameters.length)) {
+    constraints.push("Fixed by source");
+  }
+  if (entities.some((entity) => Math.abs(entity.center?.[0] || 0) < 1e-9 && Math.abs(entity.center?.[1] || 0) < 1e-9)) {
+    constraints.push("Centered");
+  }
+  if (entities.some((entity) => entity.kind === "rectangle" && Math.abs(entity.width - entity.height) < 1e-9)) {
+    constraints.push("Equal");
+  }
+  return [...new Set(constraints)];
 }
