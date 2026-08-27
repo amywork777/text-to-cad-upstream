@@ -48,7 +48,7 @@ entry says so.
 
 ## Viewer
 
-8. **Dev server hard-requires a built client to exist somewhere.** `vite
+8. **FIXED — dev-mode backend no longer requires a built client.** The Vite dev proxy already marks its spawn (`VIEWER_AGENT_START_MODE=dev`); the backend now tolerates a missing dist under it (Vite serves the client from source), and the AssetMissing error no longer suggests running the dev server that is failing. Was: `vite
    dev` spawns the Python backend, which fails startup validation when
    `packages/cadgen/src/cadgen/_runtime/viewer` is absent — in a worktree
    the error suggests running the dev server *that is already being run*.
@@ -76,7 +76,7 @@ entry says so.
 
 ## Measurement/diagnostics
 
-9. **`--verbose` timing spans are easy to orphan.** The STEP-export spans
+9. **FIXED — spans can no longer be orphaned at the artifact-job boundary** (`_run_artifact_jobs` supplies a default logger; verbosity alone decides printing), and a regression test asserts the export spans fire under `--verbose`. Also: metadata injection now takes an entity-count hint from the STEP writer's own model, replacing the full-file scan+rewrite — measured 1.23s → 21ms on a 121MB export. Was: The STEP-export spans
    existed but the call site dropped the logger (fixed on this branch);
    nothing guards new spans against the same fate. Easy win: a tests/policy
    check that `logger.timed` call sites are reachable with a logger, or a

@@ -545,7 +545,7 @@ def _generate_part_outputs(
             target.parent.mkdir(parents=True, exist_ok=True)
             source_compound = getattr(scene, "source_compound", None)
             if source_compound is not None:
-                export_build123d_step_file(
+                exported_hash = export_build123d_step_file(
                     source_compound,
                     target,
                     text_to_cad_entry_kind=spec.kind,
@@ -553,6 +553,11 @@ def _generate_part_outputs(
                     source_hash=(str(getattr(scene, "source_hash", "") or "") or None),
                     logger=logger,
                 )
+                # step_file_hash IS sha256; stash it so the export record does
+                # not re-read a possibly huge file just to hash it again.
+                hashes = getattr(scene, "exported_step_sha256", None) or {}
+                hashes[str(target.expanduser().resolve())] = exported_hash
+                scene.exported_step_sha256 = hashes
             elif spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
                 shutil.copyfile(spec.step_path, target)
             return target
@@ -679,7 +684,7 @@ def _generate_step_outputs(
         # returned None — no package written — while the CLI still reported success.
         output_kwargs["require_step_file"] = True
     result = _generate_part_outputs(spec, **output_kwargs)
-    _record_step_export(spec)
+    _record_step_export(spec, scene=preloaded_scene)
     return result
 
 
@@ -706,7 +711,7 @@ def _step_export_key_path(spec: EntrySpec, key: str) -> Path:
     return spec.entry_path.resolve().parent / path
 
 
-def _record_step_export(spec: EntrySpec) -> None:
+def _record_step_export(spec: EntrySpec, scene: object | None = None) -> None:
     """After a successful ``--write``, record (target, sha256, closure) beside
     the package so a repeat export of unchanged source is a no-op or a copy.
     Best-effort: a failed record only costs a future re-export."""
@@ -723,7 +728,9 @@ def _record_step_export(spec: EntrySpec) -> None:
         resolved = target.expanduser().resolve()
         if not closure or not resolved.is_file():
             return
-        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+        digest = (getattr(scene, "exported_step_sha256", None) or {}).get(str(resolved))
+        if not digest:
+            digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
         record_path = _step_export_record_path(spec)
         data: dict = {}
         if record_path.is_file():
@@ -733,7 +740,7 @@ def _record_step_export(spec: EntrySpec) -> None:
         # so toggling between two source states reuses both exports.
         key = _step_export_key(spec, resolved)
         by_closure = exports.setdefault(key, {})
-        if not isinstance(by_closure, dict) or "sha256" in by_closure:
+        if not isinstance(by_closure, dict):
             by_closure = exports[key] = {}
         by_closure[closure] = digest
         tmp = record_path.with_name(f"{record_path.name}{temp_suffix()}")

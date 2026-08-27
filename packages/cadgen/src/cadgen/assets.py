@@ -114,9 +114,9 @@ def viewer_dist_dir(explicit: Path | str | None = None) -> Path:
     raise AssetMissing(
         f"The CAD Viewer's built client is not present at {packaged}.\n"
         "In an installed cadgen this means a broken distribution. In a source checkout it\n"
-        "has simply not been built yet -- either run the dev server:\n"
-        "  npm --prefix viewer run dev -- --host 127.0.0.1\n"
-        "or build the packaged client:\n"
+        "has simply not been built yet -- build the packaged client:\n"
         "  scripts/bundle/bundle.sh\n"
-        "or point CADGEN_VIEWER_DIST / --dist at an existing viewer/dist."
+        "or point CADGEN_VIEWER_DIST / --dist at an existing viewer/dist.\n"
+        "(The dev server, `npm --prefix viewer run dev`, serves the client from\n"
+        "source and does not need this bundle.)"
     )

@@ -341,6 +341,11 @@ def write_xcaf_doc_step_file(
     with (logger.timed(f"transfer XCAF to STEP model {output_path.name}") if logger is not None else nullcontext()):
         writer.Transfer(doc, STEPControl_StepModelType.STEPControl_AsIs)
 
+    # The writer's model knows its own entity count, and Part-21 ids are dense
+    # 1..N — so the metadata injector can be handed a guaranteed collision-free
+    # first id and never needs to SCAN the file for its max id (which was a
+    # full read+rewrite of multi-hundred-MB exports).
+    entity_count = int(writer.Writer().Model().NbEntities())
     with (logger.timed(f"write STEP file {output_path.name}") if logger is not None else nullcontext()):
         if writer.Write(os.fspath(output_path)) != IFSelect_ReturnStatus.IFSelect_RetDone:
             raise RuntimeError(f"Failed to write STEP file: {output_path}")
@@ -353,6 +358,7 @@ def write_xcaf_doc_step_file(
                 entry_kind=text_to_cad_entry_kind,
                 source_path=source_path,
                 source_hash=source_hash,
+                first_id_hint=entity_count + 1,
             )
     return step_file_hash(output_path)
 

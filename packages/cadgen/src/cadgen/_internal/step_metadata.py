@@ -122,7 +122,13 @@ def inject_text_to_cad_step_metadata(
     generator: str = TEXT_TO_CAD_GENERATOR,
     source_path: str | None = None,
     source_hash: str | None = None,
+    first_id_hint: int | None = None,
 ) -> None:
+    """``first_id_hint`` — when the CALLER is the STEP writer it knows its
+    model's entity count, and Part-21 ids are dense 1..N, so count+1 is a
+    guaranteed collision-free first id. With the hint, injection is a bounded
+    head read (for the product refs) plus a tail splice — no full-file scan,
+    regardless of file size."""
     normalized_entry_kind = normalize_text_to_cad_entry_kind(entry_kind)
     if normalized_entry_kind is None:
         raise ValueError(f"Unsupported cadgen STEP entry kind: {entry_kind!r}")
@@ -137,6 +143,7 @@ def inject_text_to_cad_step_metadata(
         generator=generator,
         source_path=normalized_source_path,
         source_hash=source_hash,
+        first_id_hint=first_id_hint,
     ):
         return
 
@@ -180,6 +187,7 @@ def _try_inject_text_to_cad_step_metadata_tail(
     generator: str,
     source_path: str | None,
     source_hash: str | None,
+    first_id_hint: int | None = None,
 ) -> bool:
     tail_payload, offset, is_full_file = _read_step_tail_payload(step_path)
     try:
@@ -200,11 +208,18 @@ def _try_inject_text_to_cad_step_metadata_tail(
     if not is_full_file:
         header_text = _read_step_head_text(step_path)
         scanned = len(tail_payload) + len(header_text)
-        if step_path.expanduser().resolve().stat().st_size > scanned:
+        if first_id_hint is None and step_path.expanduser().resolve().stat().st_size > scanned:
+            # Without a writer-supplied id hint the max entity id must be
+            # observed, and an unscanned middle could hide it — bail to the
+            # whole-file rewrite.
             return False
     product_definition_ref = _root_product_definition_ref(header_text)
     representation_context_ref = _shape_representation_context_ref(header_text)
     max_entity_id = max(_max_entity_id(tail_text), _max_entity_id(header_text))
+    if first_id_hint is not None:
+        # Belt and braces: the hint is >= any file id + 1 by construction, but
+        # take the max with what this path actually observed anyway.
+        max_entity_id = max(max_entity_id, int(first_id_hint) - 1)
     if not product_definition_ref or not representation_context_ref or max_entity_id <= 0:
         return False
 

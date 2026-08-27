@@ -486,8 +486,20 @@ def main(argv=None):
     try:
         _Ctx.dist_root = str(viewer_dist_dir(args.dist_root))
     except AssetMissing as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
+        if os.environ.get("VIEWER_AGENT_START_MODE") == "dev":
+            # The Vite dev proxy serves the client from source; the packaged
+            # dist is irrelevant to this backend's job in dev, so a missing
+            # one must not block startup (it used to fail with an error whose
+            # suggested fix was to run the dev server that was failing).
+            print(
+                "CAD Viewer dev mode: no built client bundle; the dev server "
+                "serves the client from source.",
+                file=sys.stderr,
+            )
+            _Ctx.dist_root = ""
+        else:
+            print(str(exc), file=sys.stderr)
+            return 1
     _Ctx.port = server_info_mod.normalize_viewer_port(args.port)
     _Ctx.host = args.host
     _Ctx.backend = backend_mod.LocalAssetBackend(directory_root)

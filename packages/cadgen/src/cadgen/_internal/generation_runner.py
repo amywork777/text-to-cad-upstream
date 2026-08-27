@@ -531,12 +531,14 @@ def _run_artifact_jobs(
     *,
     logger: CliLogger | None = None,
 ) -> dict[str, object]:
+    # Always supply a logger: `logger.timed` spans below this boundary are
+    # born orphaned whenever a caller drops the logger (the STEP-export spans
+    # were invisible for exactly that reason). A default non-verbose CliLogger
+    # gives every span a sink and lets verbosity alone decide what prints.
+    logger = logger or CliLogger("cad")
     results: dict[str, object] = {}
     for job in jobs:
-        if logger is not None:
-            with logger.timed(f"write {job.name}"):
-                results[job.name] = job.run()
-        else:
+        with logger.timed(f"write {job.name}"):
             results[job.name] = job.run()
     return results
 
