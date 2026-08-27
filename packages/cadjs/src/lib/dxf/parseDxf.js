@@ -847,7 +847,7 @@ function composeTransforms(outer, inner) {
   return { cos, sin, sx: outer.sx * inner.sx, sy: outer.sy * inner.sy, tx: placed[0], ty: placed[1] };
 }
 
-function parseEntities(records, { blocks = new Map(), transform = null, depth = 0 } = {}) {
+function parseEntities(records, { blocks = new Map(), transform = null, depth = 0, apparatus = null } = {}) {
   const lines = [];
   const arcs = [];
   const circles = [];
@@ -883,6 +883,20 @@ function parseEntities(records, { blocks = new Map(), transform = null, depth = 
     while (index < records.length && records[index].code !== 0) {
       entityRecords.push(records[index]);
       index += 1;
+    }
+
+    if (apparatus) {
+      // Dimensioned-drawing evidence (the profile predicate's inputs). Mirrors
+      // cadgen.drawing_checks.document_is_drawing: positive evidence only — a
+      // cut layout has no dimensions, leaders, or paper-space entities.
+      if (entityType === "DIMENSION" || entityType === "ARC_DIMENSION") {
+        apparatus.dimensions += 1;
+      } else if (entityType === "LEADER" || entityType === "MLEADER" || entityType === "MULTILEADER") {
+        apparatus.leaders += 1;
+      }
+      if (entityRecords.some((record) => record.code === 67 && Number(record.value) === 1)) {
+        apparatus.paperspaceEntities += 1;
+      }
     }
 
     if (entityType === "LINE") {
@@ -1111,6 +1125,27 @@ function scaleEntitiesToMm(entities, scale) {
   };
 }
 
+/**
+ * Whether parsed DXF data is a dimensioned DRAWING rather than a cut layout.
+ *
+ * The client twin of cadgen.drawing_checks.document_is_drawing, on the same
+ * positive-evidence rule: dimensions/leaders or paper-space entities make a
+ * document; "nothing closes, so it must be a drawing" would excuse a genuinely
+ * broken cut layout. A document renders as 2D line work; a layout renders as
+ * its 3D flat pattern.
+ */
+export function dxfDataIsDocument(dxfData) {
+  const apparatus = dxfData?.apparatus;
+  if (!apparatus || typeof apparatus !== "object") {
+    return false;
+  }
+  return (
+    Number(apparatus.dimensions) > 0
+    || Number(apparatus.leaders) > 0
+    || Number(apparatus.paperspaceEntities) > 0
+  );
+}
+
 export function parseDxf(dxfText, { fileRef = "", sourceUrl = "" } = {}) {
   // A Git LFS pointer is 3 lines of metadata, not a drawing. Without this check it fails
   // as "group code stream is malformed", which sends people debugging the parser instead
@@ -1126,8 +1161,9 @@ export function parseDxf(dxfText, { fileRef = "", sourceUrl = "" } = {}) {
   const layerTable = parseLayerTable(sections.get("TABLES") || []);
   const blocks = parseBlocks(sections.get("BLOCKS") || []);
   const unitsScaleMm = dxfUnitsScaleMm(header.sourceUnits);
+  const apparatus = { dimensions: 0, leaders: 0, paperspaceEntities: 0 };
   const entities = scaleEntitiesToMm(
-    parseEntities(sections.get("ENTITIES") || [], { blocks }),
+    parseEntities(sections.get("ENTITIES") || [], { blocks, apparatus }),
     unitsScaleMm
   );
 
@@ -1220,6 +1256,7 @@ export function parseDxf(dxfText, { fileRef = "", sourceUrl = "" } = {}) {
       circles: circleRecords.length,
       entities: pathRecords.length + circleRecords.length
     },
+    apparatus,
     layers: [...layerSummary.keys()].sort().map((name) => {
       const summary = layerSummary.get(name);
       const tableEntry = layerTable.get(name);

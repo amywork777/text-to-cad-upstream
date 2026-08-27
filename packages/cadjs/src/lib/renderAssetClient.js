@@ -630,6 +630,72 @@ export async function loadRenderSurfDisplayEdgeBundle(surfUrl, { signal } = {}) 
   return finalizeCached(displayEdgeCache, surfUrl, bundle);
 }
 
+const dxfMeshCache = new Map();
+
+// The renderable mesh for a DXF entry, built CLIENT-SIDE from the file itself
+// (design/standalone-viewer.md Phase A): parse -> flat-pattern mesh at the
+// reference thickness -> STL-shaped meshData. A dimensioned drawing has no cut
+// geometry and yields an EMPTY mesh — the 2D line-work path renders it instead.
+export async function loadRenderDxfMesh(url, { signal } = {}) {
+  const meshData = await loadCached(dxfMeshCache, url, async () => {
+    const [dxfData, three, utils, { buildDxfPreviewMeshData }, { dxfPreviewPositionsMm }, { buildMeshDataFromStlGeometry }] = await Promise.all([
+      loadRenderDxf(url, { signal }),
+      import("three"),
+      import("three/examples/jsm/utils/BufferGeometryUtils.js"),
+      import("./dxf/buildPreviewMesh.js"),
+      import("./dxf/previewGlb.js"),
+      import("./render/stlMeshData.js"),
+    ]);
+    const { DXF_PREVIEW_REFERENCE_THICKNESS_MM } = await import("./dxf/previewGlb.js");
+    const { dxfDataIsDocument } = await import("./dxf/parseDxf.js");
+    let positions = null;
+    // A dimensioned DRAWING renders as 2D line work, never as a prism — even
+    // when it carries cut-classified outlines (a title-blocked part view is
+    // still a document). Same rule the deleted bake applied via its profile.
+    if (!dxfDataIsDocument(dxfData)) {
+      try {
+        const preview = buildDxfPreviewMeshData(dxfData, DXF_PREVIEW_REFERENCE_THICKNESS_MM, null);
+        positions = dxfPreviewPositionsMm(preview);
+      } catch {
+        // No cut geometry: an empty mesh, not an error.
+        positions = null;
+      }
+    }
+    if (!positions || !positions.length) {
+      return {
+        vertices: new Float32Array(0),
+        indices: new Uint32Array(0),
+        normals: new Float32Array(0),
+        colors: new Float32Array(0),
+        edge_indices: new Uint32Array(0),
+        bounds: { min: [0, 0, 0], max: [0, 0, 0] },
+        parts: [],
+        has_source_colors: false,
+        sourceColor: "",
+        sourceFormat: "dxf",
+      };
+    }
+    const geometry = new three.BufferGeometry();
+    geometry.setAttribute("position", new three.BufferAttribute(positions, 3));
+    try {
+      const meshDataFromGeometry = buildMeshDataFromStlGeometry(geometry, {
+        toCreasedNormals: utils.toCreasedNormals,
+      });
+      meshDataFromGeometry.sourceFormat = "dxf";
+      return meshDataFromGeometry;
+    } finally {
+      geometry.dispose?.();
+    }
+  }, { cachePending: !signal });
+  return finalizeCached(dxfMeshCache, url, meshData);
+}
+
+
+export function peekRenderDxfMesh(url) {
+  return peekCached(dxfMeshCache, url);
+}
+
+
 export async function loadRenderDxf(url, { signal } = {}) {
   const payload = await loadCached(dxfCache, url, async () => {
     const dxfText = await loadRenderText(url, { signal });

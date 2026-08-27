@@ -11,6 +11,8 @@ import {
 } from "./workbench/ThemeSettingsPopover";
 import MeshFileSheet from "./workbench/MeshFileSheet";
 import { DXF_PREVIEW_REFERENCE_THICKNESS_MM } from "cadjs/lib/dxf/previewGlb";
+import { dxfDataIsDocument } from "cadjs/lib/dxf/parseDxf";
+import { loadRenderDxf } from "cadjs/lib/renderAssetClient";
 import { extractOrderedDxfBendLines } from "cadjs/lib/dxf/buildPreviewMesh";
 import {
   buildDxfBendsTab,
@@ -145,7 +147,6 @@ import {
   entryHasDxf,
   entryHasImplicitCad,
   entryHasMesh,
-  entryIsDrawingDocument,
   entryHasReferences,
   entryHasUrdf,
   entryMeshAssetSignature,
@@ -1604,8 +1605,11 @@ export default function CadWorkspace({
   const selectedEntryHasDisplayEdges = entryHasDisplayEdges(selectedEntry);
   const selectedEntryHasDxf = entryHasDxf(selectedEntry);
   const selectedEntryHasImplicit = entryHasImplicitCad(selectedEntry);
-  // A dimensioned drawing renders its own 2D geometry: there is no mesh to wait for.
-  const selectedEntryIsDrawingDocument = entryIsDrawingDocument(selectedEntry);
+  // A dimensioned drawing renders its own 2D geometry: there is no mesh to wait
+  // for. Decided from the PARSED data (dimension/leader/paper-space evidence) —
+  // the client twin of cadgen's drawing_checks predicate.
+  const selectedEntryIsDrawingDocument = selectedEntrySourceFormat === RENDER_FORMAT.DXF
+    && dxfDataIsDocument(drawingGeometry);
   // The selected entry's render artifact is (re)building -> show the loading state. Replaces the
   // old !entryHasMesh + buildable-code derivation.
   const selectedStepArtifactRenderPending = selectedArtifactGenerating;
@@ -3020,9 +3024,16 @@ export default function CadWorkspace({
                   : selectedEntry && !selectedEntryHasMesh
                     ? ARTIFACT_GENERATING_LABEL
                     : "Loading CAD...";
-  const selectedDrawingBendAxisCount = Array.isArray(selectedEntry?.bendAxisX)
-    ? selectedEntry.bendAxisX.length
-    : 0;
+  const selectedDrawingBendAxisCount = useMemo(() => {
+    if (!drawingGeometry?.geometry) {
+      return 0;
+    }
+    try {
+      return extractOrderedDxfBendLines(drawingGeometry).length;
+    } catch {
+      return 0;
+    }
+  }, [drawingGeometry]);
   // Gated to drawings HERE, not downstream. The thickness state defaults to 0 mm, and
   // passing its scale unconditionally squashed every STEP/STL/3MF model to a hair the moment
   // the default changed -- a drawing setting must not be able to touch any other format.
@@ -3280,8 +3291,11 @@ export default function CadWorkspace({
     })));
   }, [selectedKey, selectedDrawingBendAxisCount, selectedEntryIsDrawing]);
 
+  // The drawing's geometry is the parsed .dxf ITSELF (design/standalone-viewer.md
+  // Phase A): no package, no geometry.json — loadRenderDxf memoizes the parse and
+  // the mesh loader reuses the same cache, so the file is fetched and parsed once.
   const drawingGeometryUrl = selectedEntryIsDrawing
-    ? String(selectedEntry?.relations?.drawingGeometry?.url || "")
+    ? String(entryAssetUrl(selectedEntry, "dxf") || "")
     : "";
   useEffect(() => {
     if (!drawingGeometryUrl) {
@@ -3294,8 +3308,7 @@ export default function CadWorkspace({
       return undefined;
     }
     let cancelled = false;
-    fetch(drawingGeometryUrl)
-      .then((response) => (response.ok ? response.json() : null))
+    loadRenderDxf(drawingGeometryUrl)
       .then((payload) => {
         if (cancelled) {
           return;
@@ -3303,7 +3316,7 @@ export default function CadWorkspace({
         if (payload) {
           cache.set(drawingGeometryUrl, payload);
         }
-        setDrawingGeometry(payload);
+        setDrawingGeometry(payload || null);
       })
       .catch(() => {
         if (!cancelled) {
@@ -4520,7 +4533,12 @@ export default function CadWorkspace({
       cancelMeshLoad();
       return;
     }
-    if (assetKindForRenderFormat(selectedEntryRenderAssetFormat) !== ASSET_KIND.MESH) {
+    // DRAWING loads through the mesh path too: a DXF's render asset is its own
+    // file, parsed and prism-meshed client-side (design/standalone-viewer.md
+    // Phase A); a dimensioned document simply yields an empty mesh and renders
+    // as 2D line work instead.
+    const selectedRenderAssetKind = assetKindForRenderFormat(selectedEntryRenderAssetFormat);
+    if (selectedRenderAssetKind !== ASSET_KIND.MESH && selectedRenderAssetKind !== ASSET_KIND.DRAWING) {
       cancelMeshLoad();
       return;
     }

@@ -67,19 +67,18 @@ test("meshAssetKeyForEntry chooses native mesh keys and STEP GLB sidecars", () =
   assert.equal(meshAssetKeyForEntry({ kind: "glb" }), "glb");
   assert.equal(meshAssetKeyForEntry({ kind: "part" }), "glb");
   assert.equal(meshAssetKeyForEntry({ kind: "assembly" }), "glb");
-  assert.equal(meshAssetKeyForEntry({ kind: "dxf" }), "glb");
+  assert.equal(meshAssetKeyForEntry({ kind: "dxf" }), "dxf");
   assert.equal(meshAssetKeyForEntry({ kind: "implicit" }), "glb");
 });
 
-test("entryRenderAssetFormat is GLB for every package-baked kind, unconditionally", () => {
-  // It takes ONE argument. The earlier form consulted an artifact record and returned GLB
-  // only when a package already existed; that was a phasing device so the bake could ship
-  // before the client deletions, and it died with them. A missing package is `needs-build`,
-  // never a silent fall back to an in-browser parse.
+test("entryRenderAssetFormat: implicit is package-baked GLB; DXF renders its own file", () => {
+  // It takes ONE argument: a missing implicit package is `needs-build`, never a
+  // silent fallback. A DXF's render asset is the .dxf itself — parsed and
+  // prism-meshed in the client (design/standalone-viewer.md Phase A).
   assert.equal(entryRenderAssetFormat.length, 1);
-  assert.equal(entryRenderAssetFormat({ kind: "dxf" }), RENDER_FORMAT.GLB);
+  assert.equal(entryRenderAssetFormat({ kind: "dxf" }), RENDER_FORMAT.DXF);
   assert.equal(entryRenderAssetFormat({ kind: "implicit" }), RENDER_FORMAT.GLB);
-  assert.equal(entryRenderAssetFormat({ kind: "dxf", url: "" }), RENDER_FORMAT.GLB);
+  assert.equal(entryRenderAssetFormat({ kind: "dxf", url: "" }), RENDER_FORMAT.DXF);
   // The SOURCE format is untouched: it still names the file the user opened, and its
   // icon/status/reset call sites still ask that question.
   assert.equal(entrySourceFormat({ kind: "dxf" }), RENDER_FORMAT.DXF);

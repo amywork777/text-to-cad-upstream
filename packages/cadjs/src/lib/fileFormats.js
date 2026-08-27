@@ -84,10 +84,11 @@ export function entrySourceFormat(entry) {
 }
 
 // The kinds whose renderable geometry is BAKED into a __cadgen__ render package rather
-// than parsed in the browser: a DXF is 2D entities and an implicit model is GLSL, so
-// neither has a mesh of its own. The producer writes one, the scanner publishes it as the
-// entry's `glb` asset, and the viewport loads it through the same path a native .glb takes.
-const PACKAGE_BAKED_RENDER_KINDS = Object.freeze([RENDER_FORMAT.DXF, RENDER_FORMAT.IMPLICIT]);
+// than parsed in the browser. Only implicit models remain: their geometry is GLSL, so the
+// producer bakes a mesh and the scanner publishes it as the entry's `glb` asset. A DXF is
+// parsed and meshed IN the client (design/standalone-viewer.md Phase A) — its render
+// asset is the .dxf file itself.
+const PACKAGE_BAKED_RENDER_KINDS = Object.freeze([RENDER_FORMAT.IMPLICIT]);
 
 /**
  * The format of the asset the viewport actually LOADS for an entry, as opposed to the
@@ -115,7 +116,11 @@ export function isRobotRenderFormat(format) {
 
 export function meshAssetKeyForFormat(format) {
   const normalized = normalizeFormat(format);
-  return isMeshRenderFormat(normalized) ? normalized : RENDER_FORMAT.GLB;
+  // DXF is mesh-loaded too — from its own file, parsed and prism-meshed
+  // client-side — so its key is itself, never a baked GLB relation.
+  return isMeshRenderFormat(normalized) || normalized === RENDER_FORMAT.DXF
+    ? normalized
+    : RENDER_FORMAT.GLB;
 }
 
 export function meshAssetKeyForEntry(entry) {

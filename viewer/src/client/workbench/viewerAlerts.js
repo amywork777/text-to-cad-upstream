@@ -1,5 +1,4 @@
-import { entryIsDrawingDocument } from "cadjs/lib/entryAssets.js";
-import { entrySourceFormat } from "cadjs/lib/fileFormats.js";
+import { RENDER_FORMAT, entrySourceFormat } from "cadjs/lib/fileFormats.js";
 import {
   isArtifactManagedFormat,
   rebuildCommandForEntry,
@@ -98,10 +97,12 @@ export function buildViewerMeshAlert(entry, hasMeshData, loadError, artifact = n
     };
   }
 
-  // A dimensioned DRAWING has no mesh BY DESIGN -- it encloses nothing to extrude, bakes no
-  // preview and renders as lines (issue #246). Reporting that as an error told the user to
-  // rebuild assets that were already complete. A genuine build failure still reports above.
-  if (!hasMeshData && entryIsDrawingDocument(entry)) {
+  // A dimensioned DRAWING has no mesh BY DESIGN -- it encloses nothing to extrude
+  // and renders as lines (issue #246). The profile is decided from the PARSED file
+  // now, which this alert path cannot see, so any meshless DXF stays quiet: a
+  // layout's mesh is built from the same parse, and a genuinely broken file
+  // reports through loadError above.
+  if (!hasMeshData && entrySourceFormat(entry) === RENDER_FORMAT.DXF) {
     return null;
   }
 

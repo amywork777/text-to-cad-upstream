@@ -515,6 +515,16 @@ export function useCadAssets({
       if (requestId !== requestIdRef.current) {
         return;
       }
+      if (meshData?.sourceFormat === "dxf" && !meshData.vertices?.length) {
+        // A dimensioned DRAWING has no prism BY DESIGN: it renders as 2D line
+        // work drawn by the viewer itself. Publishing an empty mesh would make
+        // the scene sync clear the group — wiping the line container — so this
+        // matches the old no-mesh state instead.
+        setMeshState(null);
+        setStatus(ASSET_STATUS.PENDING);
+        setError("");
+        return;
+      }
       setMeshLoadStage("building");
       setMeshState({
         file: entry.file,

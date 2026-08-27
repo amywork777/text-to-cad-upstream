@@ -57,23 +57,21 @@ test("the asset dir is unresolved while the lock dir is resolved", (t) => {
   assert.equal(renderPackageDir(src), fs.realpathSync(assetDir));
 });
 
-test("a generated drawing entry has no static DXF asset and carries its source hash", (t) => {
+test("a generated drawing's asset is its sibling .dxf once gen has written it", (t) => {
   const root = tmpRoot(t);
   write(root, "outline.dxf.py", "def gen_dxf(): ...\n");
-  write(
-    root,
-    path.join("__cadgen__", "models", "outline.dxf.py", "drawing.json"),
-    JSON.stringify({ kind: "drawing-package", sourceHash: "abc123", preview: "preview.glb" }),
-  );
-  write(root, path.join("__cadgen__", "models", "outline.dxf.py", "preview.glb"), "glbdata!");
-  const entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf.py");
+  // Unbuilt: no asset yet — the entry lists and reports needs-build when opened.
+  let entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf.py");
   assert.equal(entry.kind, "dxf");
   assert.equal(entry.sourceKind, "python");
   assert.equal(entry.url, "");
-  assert.equal(entry.hash, "abc123");
-  assert.equal(entry.source.sourceHash, "abc123");
-  assert.ok(entry.relations.glb.url.includes("__cadgen__/models/outline.dxf.py/preview.glb"));
-  assert.equal(entry.relations.glb.bytes, 8);
+  assert.equal(entry.hash, "");
+  // Built: gen always writes the sibling, and THAT file is what the client parses.
+  write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
+  entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf.py");
+  assert.ok(entry.url.includes("outline.dxf?v="));
+  assert.ok(entry.hash.length === 64);
+  assert.equal(entry.relations, undefined);
 });
 
 test("an implicit model publishes its baked mesh as the glb relation", (t) => {

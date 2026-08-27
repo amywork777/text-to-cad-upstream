@@ -1448,8 +1448,14 @@ function disposeSceneObject(object) {
 }
 
 function clearSceneGroup(group) {
-  while (group.children.length) {
-    disposeSceneObject(group.children[0]);
+  // The 2D drawing line-work is an OVERLAY owned by its own effect (it renders a
+  // dimensioned DXF, which has no mesh for this sync to manage). Clearing it here
+  // erased the drawing whenever a meshless sync ran after the lines were added.
+  for (const child of [...group.children]) {
+    if (child.userData?.dxfDrawingLines) {
+      continue;
+    }
+    disposeSceneObject(child);
   }
 }
 

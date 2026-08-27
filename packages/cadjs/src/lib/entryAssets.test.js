@@ -6,7 +6,6 @@ import {
   entryAssetBytes,
   entryAssetUrl,
   entryHasDxf,
-  entryIsDrawingDocument,
   entryHasDisplayEdges,
   entryHasMesh,
   entryHasReferences,
@@ -101,27 +100,21 @@ function packagedEntry(kind, file, glbFile) {
   };
 }
 
-test("a DXF or implicit entry resolves its mesh from the render package", () => {
-  const dxf = packagedEntry("dxf", "plate.dxf", "__cadgen__/models/plate.dxf/preview.glb");
+test("an implicit entry resolves its mesh from the render package", () => {
   const implicit = packagedEntry("implicit", "orb.implicit.js", "__cadgen__/models/orb.implicit.js/model.glb");
-  for (const entry of [dxf, implicit]) {
-    assert.equal(entryMeshAssetUrl(entry), `/assets/${entry.relations.glb.file}`);
-    assert.equal(entryMeshAssetHash(entry), "baked-hash");
-    assert.equal(entryMeshAssetBytes(entry), 2048);
-    assert.equal(entryHasMesh(entry), true);
-  }
-  // The entry's own file stays reachable under its native key — Export and the file
-  // metadata are about the DXF, not about the mesh baked from it.
-  assert.equal(entryAssetUrl(dxf, "dxf"), "/assets/plate.dxf");
-  assert.equal(entryHasDxf(dxf), true);
+  assert.equal(entryMeshAssetUrl(implicit), `/assets/${implicit.relations.glb.file}`);
+  assert.equal(entryMeshAssetHash(implicit), "baked-hash");
+  assert.equal(entryMeshAssetBytes(implicit), 2048);
+  assert.equal(entryHasMesh(implicit), true);
 });
 
-test("an unbuilt package leaves the entry with no mesh at all", () => {
-  // No silent fall back to parsing the source in the browser: with no package the entry has
-  // no mesh, and the artifact state machine reports needs-build.
-  const dxf = { file: "plate.dxf", kind: "dxf", url: "/assets/plate.dxf", hash: "source-hash" };
-  assert.equal(entryMeshAssetUrl(dxf), "");
-  assert.equal(entryHasMesh(dxf), false);
+test("an unbuilt implicit package leaves the entry with no mesh at all", () => {
+  // No silent fall back: with no package the entry has no mesh, and the artifact
+  // state machine reports needs-build. (A DXF is different now — its own file IS
+  // the mesh source, parsed client-side.)
+  const implicit = { file: "orb.implicit.js", kind: "implicit", url: "/assets/orb.implicit.js", hash: "source-hash" };
+  assert.equal(entryMeshAssetUrl(implicit), "");
+  assert.equal(entryHasMesh(implicit), false);
 });
 
 test("robot and reference signatures match persisted session expectations", () => {
@@ -141,16 +134,14 @@ test("robot and reference signatures match persisted session expectations", () =
   }), "sdf-hash");
 });
 
-test("a dimensioned drawing is a document, a cut layout is not", () => {
-  // Both arrive with no glb relation, so the profile is the only thing that tells them apart --
-  // and getting it wrong means waiting forever for a mesh that is never coming (issue #246).
-  const drawing = { file: "plans/panel.dxf.py", kind: "dxf", drawingProfile: "drawing" };
-  const layout = { file: "parts/bracket.dxf.py", kind: "dxf", drawingProfile: "cut" };
-  assert.equal(entryIsDrawingDocument(drawing), true);
-  assert.equal(entryIsDrawingDocument(layout), false);
-  // An unbuilt entry has no profile yet: not a document until the package says so.
-  assert.equal(entryIsDrawingDocument({ file: "parts/bracket.dxf.py", kind: "dxf" }), false);
-  // The profile only means anything for a DXF.
-  assert.equal(entryIsDrawingDocument({ file: "a/b.step", kind: "step", drawingProfile: "drawing" }), false);
-  assert.equal(entryIsDrawingDocument(null), false);
+test("a DXF entry's mesh asset is its own file", () => {
+  // The client parses and meshes the .dxf itself (design/standalone-viewer.md
+  // Phase A): the entry's url IS the render asset, no glb relation exists, and
+  // the document-vs-layout profile is decided from the PARSED data
+  // (parseDxf.dxfDataIsDocument), not from the entry.
+  const dxf = { file: "parts/bracket.dxf", kind: "dxf", url: "/__cad/asset?file=%2Fx%2Fbracket.dxf&v=1", hash: "h1" };
+  assert.equal(entryMeshAssetUrl(dxf), dxf.url);
+  assert.equal(entryMeshAssetHash(dxf), "h1");
+  // An unbuilt generated drawing has no asset yet.
+  assert.equal(entryMeshAssetUrl({ file: "parts/outline.dxf.py", kind: "dxf", url: "" }), "");
 });

@@ -264,14 +264,17 @@ test("an artifact error falls back to a message when the record carries none", (
   assert.ok(alert.message.length > 0);
 });
 
-test("a drawing with no mesh is not an error, but a failed build still is", () => {
-  // A dimensioned drawing encloses nothing to extrude, so it bakes no mesh BY DESIGN. Reporting
-  // "no mesh data is available" told the user to rebuild assets that were already complete.
-  const drawing = { file: "plans/panel.dxf.py", kind: "dxf", drawingProfile: "drawing" };
+test("a meshless DXF is not an error, but a failed build still is", () => {
+  // A dimensioned drawing encloses nothing to extrude, so it has no mesh BY DESIGN — and the
+  // profile is decided from the PARSED file now, which this alert path cannot see, so every
+  // meshless DXF stays quiet: a layout's mesh comes from the same parse, and a genuinely
+  // broken file reports through loadError.
+  const drawing = { file: "plans/panel.dxf.py", kind: "dxf" };
   assert.equal(buildViewerMeshAlert(drawing, false, ""), null);
-  // A cut layout with no mesh is still a real problem.
-  const layout = { file: "parts/bracket.dxf.py", kind: "dxf", drawingProfile: "cut" };
-  assert.equal(buildViewerMeshAlert(layout, false, "")?.summary, "Mesh unavailable");
+  const layout = { file: "parts/bracket.dxf.py", kind: "dxf" };
+  assert.equal(buildViewerMeshAlert(layout, false, ""), null);
+  // A parse/load failure still reports.
+  assert.equal(buildViewerMeshAlert(layout, false, "bad DXF")?.summary, "Mesh load failed");
   // And a drawing whose BUILD failed reports the build failure, which outranks the mesh card.
   const failed = buildViewerMeshAlert(drawing, false, "", { status: "error", error: "bad entity" });
   assert.equal(failed?.summary, "Build failed");

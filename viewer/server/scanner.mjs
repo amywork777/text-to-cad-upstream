@@ -31,8 +31,6 @@ const VIEWER_SKIPPED_DIRECTORIES = new Set([
 // pinned by the scanner fixture test against packages cadgen actually writes.
 export const CADGEN_DIRNAME = "__cadgen__";
 export const CADGEN_MODELS_DIRNAME = "models";
-const DRAWING_DESCRIPTOR_NAME = "drawing.json";
-const DRAWING_PACKAGE_KIND = "drawing-package";
 const IMPLICIT_DESCRIPTOR_NAME = "implicit.json";
 const IMPLICIT_PACKAGE_KIND = "implicit-package";
 
@@ -353,7 +351,6 @@ function pairedUrdfPathForSrdf(sourcePath) {
 // entry-keyed __cadgen__ package and the scanner publishes THAT as the entry's
 // `glb` relation — one render path, fed by one asset key.
 const RENDER_PACKAGE_GLB_PAYLOADS = {
-  dxf: [DRAWING_DESCRIPTOR_NAME, DRAWING_PACKAGE_KIND, "preview"],
   implicit: [IMPLICIT_DESCRIPTOR_NAME, IMPLICIT_PACKAGE_KIND, "glb"],
 };
 
@@ -397,56 +394,6 @@ function renderPackageGlbRelation(repoRoot, rootPath, sourcePath, kind) {
 }
 
 // --- entry builders ---
-function readDrawingCatalogMetadata(packageDir) {
-  return readPackageDescriptor(packageDir, DRAWING_DESCRIPTOR_NAME, DRAWING_PACKAGE_KIND);
-}
-
-function applyDrawingPreviewStats(entry, packageDir) {
-  // Imported and generated drawings bake the identical package, and the viewer
-  // folds from these facts — one helper for BOTH kinds.
-  const descriptor = readDrawingCatalogMetadata(packageDir);
-  const previewStats = descriptor.previewStats;
-  if (!previewStats || typeof previewStats !== "object") {
-    return;
-  }
-  const bendLineCount = previewStats.bendLineCount;
-  if (typeof bendLineCount === "number" && Number.isFinite(bendLineCount)) {
-    entry.bendLineCount = Math.trunc(bendLineCount);
-  }
-  const axes = previewStats.bendAxisX;
-  if (Array.isArray(axes) && axes.length) {
-    entry.bendAxisX = axes.map((v) => Number(v));
-  }
-}
-
-function applyDrawingProfile(entry, packageDir) {
-  // Distinguishes "a dimensioned document, with nothing to bake" from "a cut
-  // layout whose flat pattern has not been built yet" (issue #246).
-  const profile = String(readDrawingCatalogMetadata(packageDir).profile || "").trim();
-  if (profile) {
-    entry.drawingProfile = profile;
-  }
-}
-
-function applyDrawingGeometryRelation(entry, repoRoot, packageDir) {
-  const descriptor = readDrawingCatalogMetadata(packageDir);
-  const geometryRef = String(descriptor.geometry || "").trim();
-  const geometryPath = geometryRef ? path.join(packageDir, geometryRef) : "";
-  const stats = geometryPath ? fileStats(geometryPath) : null;
-  if (!stats) {
-    return;
-  }
-  const version = fileVersion(stats);
-  const baseUrl = assetUrlForPath(repoRoot, geometryPath);
-  const separator = baseUrl.includes("?") ? "&" : "?";
-  entry.relations = entry.relations || {};
-  entry.relations.drawingGeometry = {
-    file: geometryPath,
-    url: `${baseUrl}${separator}v=${encodeURIComponent(version)}`,
-    bytes: Number(stats.size),
-  };
-}
-
 function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
   const kind = sourceFormatForPath(sourcePath, extension);
   const asset = assetForPath(repoRoot, sourcePath);
@@ -462,12 +409,6 @@ function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
     entry.relations = entry.relations || {};
     entry.relations.glb = glbRelation;
   }
-  if (kind === "dxf") {
-    const packageDir = renderPackageAssetDir(sourcePath);
-    applyDrawingPreviewStats(entry, packageDir);
-    applyDrawingProfile(entry, packageDir);
-    applyDrawingGeometryRelation(entry, repoRoot, packageDir);
-  }
   if (kind === "srdf") {
     const pairedUrdf = pairedUrdfPathForSrdf(sourcePath);
     if (pairedUrdf) {
@@ -481,35 +422,25 @@ function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
 }
 
 function createGeneratedDxfEntry(repoRoot, rootPath, sourcePath) {
-  // A generated drawing has NO static DXF asset — nothing is committed and the
-  // package caches only what it renders. Its identity is its source hash.
-  const packageDir = renderPackageAssetDir(sourcePath);
-  const descriptor = readDrawingCatalogMetadata(packageDir);
+  // A `.dxf.py` generator's product is its sibling `.dxf` (gen always writes
+  // it — design/standalone-viewer.md Phase A), and the viewer parses that file
+  // directly. An unbuilt entry has no asset yet and reports `needs-build`
+  // through /__cad/artifact when opened.
+  const sibling = sourcePath.slice(0, -3);
+  const asset = assetForPath(repoRoot, sibling);
   const entryRef = repoRelativePath(rootPath, sourcePath);
-  const contentHash = String(descriptor.sourceHash || "").trim();
   const entry = {
     file: entryRef,
     kind: "dxf",
-    url: "",
-    hash: contentHash,
-    bytes: 0,
+    url: (asset && asset.url) || "",
+    hash: (asset && asset.hash) || "",
+    bytes: (asset && asset.bytes) || 0,
     sourceKind: "python",
   };
-  applyDrawingPreviewStats(entry, packageDir);
-  applyDrawingProfile(entry, packageDir);
-  applyDrawingGeometryRelation(entry, repoRoot, packageDir);
-  const glbRelation = renderPackageGlbRelation(repoRoot, rootPath, sourcePath, "dxf");
-  if (glbRelation) {
-    entry.relations = entry.relations || {};
-    entry.relations.glb = glbRelation;
-  }
-  const source = { file: entryRef, sourcePath: entryRef };
-  if (contentHash) {
-    source.sourceHash = contentHash;
-  }
-  entry.source = source;
+  entry.source = { file: entryRef, sourcePath: entryRef };
   return entry;
 }
+
 
 export function stepKindFromTopology(topology) {
   if (!topology) {

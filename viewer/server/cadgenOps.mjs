@@ -12,7 +12,9 @@ import path from "node:path";
 import { renderPackageDir } from "./scanner.mjs";
 
 const STEP_ENTRY_RE = /\.(step|stp)(\.py)?$/i;
-const DXF_ENTRY_RE = /\.dxf(\.py)?$/i;
+// Generated drawings only: an imported .dxf renders natively (the client
+// parses the file itself), so it needs no build and is not owned.
+const DXF_ENTRY_RE = /\.dxf\.py$/i;
 const IMPLICIT_SUFFIXES = [".implicit.js", ".implicit.mjs"];
 
 export function ownsArtifactPath(filePath) {
@@ -143,10 +145,17 @@ const CADGEN_UNAVAILABLE_HINT =
 function degradedStatus(fileRef, rootDir) {
   const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
   try {
+    // A generated drawing's product is its sibling .dxf; when it exists the
+    // viewer parses it directly, cadgen or no cadgen.
+    if (/\.dxf\.py$/i.test(candidate)) {
+      if (fs.existsSync(candidate.slice(0, -3))) {
+        return { state: "ready", degraded: true };
+      }
+      return { state: "error", error: CADGEN_UNAVAILABLE_HINT };
+    }
     const packageDir = renderPackageDir(candidate);
     const hasDescriptor =
       fs.existsSync(path.join(packageDir, "assembly.json")) ||
-      fs.existsSync(path.join(packageDir, "drawing.json")) ||
       fs.existsSync(path.join(packageDir, "implicit.json"));
     if (hasDescriptor) {
       return { state: "ready", degraded: true };

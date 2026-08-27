@@ -59,10 +59,10 @@ export function entryAsset(entry, key) {
   ) {
     return primaryAsset(entry);
   }
-  // A DXF or implicit entry's own file is not renderable geometry, so its `url` stays the
-  // source/exchange artifact and the scanner publishes the package's baked mesh as a `glb`
-  // relation. Resolving it here is what lets entryMeshAssetUrl and the mesh loaders treat
-  // those entries as ordinary GLB with no per-format branch.
+  // An implicit entry's own file is not renderable geometry (it is GLSL), so its
+  // `url` stays the source artifact and the scanner publishes the package's baked
+  // mesh as a `glb` relation. A DXF never reaches here: its mesh key IS "dxf" and
+  // the client parses + meshes the file itself.
   if (assetKey === RENDER_FORMAT.GLB) {
     return relationAsset(entry, RENDER_FORMAT.GLB);
   }
@@ -163,19 +163,6 @@ export function entryHasDisplayEdges(entry) {
 
 export function entryHasDxf(entry) {
   return Boolean(entryAssetUrl(entry, "dxf") && entryAssetHash(entry, "dxf"));
-}
-
-/** A dimensioned DRAWING rather than a cut layout: a document with nothing to bake.
- *
- * Both arrive with no `glb` relation, so without asking this the viewer cannot tell a drawing
- * from a cut layout whose flat pattern has not been built yet -- and it waits forever for a mesh
- * that is never coming (issue #246). The server reads the profile from the package descriptor.
- */
-export function entryIsDrawingDocument(entry) {
-  return Boolean(
-    entrySourceFormat(entry) === RENDER_FORMAT.DXF &&
-    normalizeString(entry?.drawingProfile) === "drawing"
-  );
 }
 
 export function entryHasImplicitCad(entry) {
