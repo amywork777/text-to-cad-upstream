@@ -6,6 +6,7 @@
 // Without a working cadgen the viewer still serves: status degrades to a pure
 // filesystem check and builds/exports answer with an install hint.
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -128,9 +129,13 @@ function runRenderOps(rootDir, args, { timeoutMs = 0 } = {}) {
         }
       }
       const message = (stderr || stdout || `cadgen.render_ops exited with code ${code}`).trim();
-      // `No module named cadgen` and friends mean "no CAD runtime here", which is
-      // a supported degraded mode, not a request failure.
-      const unavailable = /No module named|ModuleNotFoundError|could not run/.test(message);
+      // "No CAD runtime here" is a supported degraded mode, not a request
+      // failure. That includes an interpreter that produced NO stdout at all:
+      // a real render_ops run always prints one JSON line, so silence means
+      // the interpreter never reached Python (missing binary, shim, sandbox).
+      const unavailable =
+        /No module named|ModuleNotFoundError|could not run/.test(message) ||
+        !stdout.trim();
       resolve({ ok: false, unavailable, error: message });
     });
   });
@@ -154,11 +159,39 @@ function degradedStatus(fileRef, rootDir) {
       return { state: "error", error: CADGEN_UNAVAILABLE_HINT };
     }
     const packageDir = renderPackageDir(candidate);
-    const hasDescriptor =
-      fs.existsSync(path.join(packageDir, "assembly.json")) ||
-      fs.existsSync(path.join(packageDir, "implicit.json"));
-    if (hasDescriptor) {
+    const assemblyPath = path.join(packageDir, "assembly.json");
+    if (fs.existsSync(assemblyPath)) {
+      // Honest staleness for an imported STEP: the descriptor records the hash
+      // of the file it was built from — pure hashing, no Python needed. The
+      // package still renders (a possibly-stale render beats nothing when
+      // nothing could rebuild it), but the client can say so.
+      const status = { state: "ready", degraded: true };
+      try {
+        const descriptor = JSON.parse(fs.readFileSync(assemblyPath, "utf8"));
+        const recorded = String(descriptor?.stepHash || "");
+        if (recorded && /\.(step|stp)$/i.test(candidate) && fs.existsSync(candidate)) {
+          const digest = crypto.createHash("sha256").update(fs.readFileSync(candidate)).digest("hex");
+          if (digest !== recorded) {
+            status.stale = true;
+            status.staleReason = "the STEP file changed after this package was imported";
+          }
+        }
+      } catch {
+        // Descriptor unreadable enough to hash-check: render as-is.
+      }
+      return status;
+    }
+    if (fs.existsSync(path.join(packageDir, "implicit.json"))) {
       return { state: "ready", degraded: true };
+    }
+    if (/\.(step|stp)$/i.test(candidate)) {
+      return {
+        state: "error",
+        error:
+          "This STEP file has not been imported yet. Importing needs the cadgen "
+          + "Python package (pip install cadgen); once imported, it renders here "
+          + "with no Python required.",
+      };
     }
   } catch {
     // fall through to the error below

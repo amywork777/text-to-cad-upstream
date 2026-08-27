@@ -12,6 +12,7 @@ import {
 import MeshFileSheet from "./workbench/MeshFileSheet";
 import { DXF_PREVIEW_REFERENCE_THICKNESS_MM } from "cadjs/lib/dxf/previewGlb";
 import { dxfDataIsDocument } from "cadjs/lib/dxf/parseDxf";
+import { clientMeshExportSupported, exportEntryMeshClientSide } from "@/workbench/clientMeshExport";
 import { loadRenderDxf } from "cadjs/lib/renderAssetClient";
 import { extractOrderedDxfBendLines } from "cadjs/lib/dxf/buildPreviewMesh";
 import {
@@ -7529,6 +7530,16 @@ export default function CadWorkspace({
     };
     try {
       setCopyStatus(`Exporting ${exportLabel}...`);
+      // No CAD runtime on the server: mesh formats serialize in the BROWSER from
+      // the same geometry the viewport renders (design/standalone-viewer.md
+      // Phase B). Triangles are at render tessellation — the honest trade for
+      // an export that needs no install.
+      if (!stepArtifactGenerationAvailable && clientMeshExportSupported(entry, exportFormat)) {
+        const { filename } = await exportEntryMeshClientSide(entry, exportFormat);
+        stopExportProgress();
+        setCopyStatus(`Exported ${filename} (browser download)`);
+        return;
+      }
       progressTimer = window.setTimeout(pollExportProgress, ARTIFACT_PROGRESS_POLL_MS);
       const payload = await requestModelExport({ file: fileRef, format: exportFormat });
       stopExportProgress();
@@ -7553,7 +7564,7 @@ export default function CadWorkspace({
       stopExportProgress();
       setFileAccessBusyKey((current) => (current === busyKey ? "" : current));
     }
-  }, []);
+  }, [stepArtifactGenerationAvailable]);
 
   const handleDrawingStrokesChange = useCallback((nextStrokes) => {
     const normalized = cloneDrawingStrokes(nextStrokes);

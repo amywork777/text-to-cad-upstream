@@ -111,3 +111,9 @@ entry says so.
     so exporting the same drawing to two locations produces different bytes
     (sibling writes are byte-deterministic; renamed outputs differ only in the
     identity comment). Expected, but worth remembering when comparing exports.
+
+17. **Degraded-mode advisory flags (`stale`, `busy`) have no client UI slot.**
+    The artifact status API now reports honest staleness in no-cadgen mode
+    (`stale` + `staleReason` on ready responses), matching the long-standing
+    `busy` flag — but neither renders anywhere. A small badge in the file
+    sheet's status section would surface both.

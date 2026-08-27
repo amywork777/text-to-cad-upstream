@@ -116,3 +116,12 @@ For raw STEP files that never met the pipeline, on Python-less machines:
   Verified: e2e sweep 7/7 with DXF coverage equal to the pre-migration
   baseline; cold needs-build auto-generates through the viewer; document +
   cut-layout + imported paths all render.
+- Phase B shipped: client-side STL/GLB/3MF export (viewer/src/client/workbench/
+  clientMeshExport.js — package surf geometry composed with baked occurrence
+  transforms, mirroring-safe winding; used automatically when generation is
+  unavailable); honest staleness in degraded mode (stepHash vs file bytes, pure
+  JS); a specific "has not been imported yet" state for packageless foreign
+  STEPs; silent-interpreter runs now classify as unavailable (no stdout = no
+  runtime). Pinned end to end by viewer/server/standaloneMode.test.mjs against
+  a live server with a broken Python: degraded ready, stale badge, import
+  explanation, and a real STL serialized in JS from the sun-gear surf fixture.
