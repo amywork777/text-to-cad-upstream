@@ -199,7 +199,9 @@ class PackagePortabilityTest(unittest.TestCase):
 
     def test_every_package_kind_was_actually_built(self) -> None:
         # Guards the tests below from passing vacuously on an empty tree.
-        expected = {"widget.step.py", "rig.step.py", "imported.step"}
+        # STEP models key by the STEP FILE: a generator entry and its output
+        # are one document (design/step-document-architecture.md).
+        expected = {"widget.step", "rig.step", "imported.step"}
         if HAS_NODE:
             expected |= {"sheet.dxf.py", "orb.implicit.js"}
         self.assertEqual(
@@ -383,7 +385,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
         finally:
             os.chdir(previous)
         descriptor = json.loads(
-            (package / "models" / "widget.step.py" / "assembly.json").read_text()
+            (package / "models" / "widget.step" / "assembly.json").read_text()
         )
         # The build timestamp is the one field that is allowed to differ.
         descriptor.pop("generatedAt", None)

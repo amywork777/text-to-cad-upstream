@@ -75,6 +75,18 @@ def is_render_package_path(file_path: str) -> bool:
     )
 
 
+def _package_key_name(name: str) -> str:
+    # STEP models key by the STEP FILE: a generator entry (<name>.step.py)
+    # and the file it outputs share ONE package
+    # (design/step-document-architecture.md). Mirrors
+    # cadgen.catalog.render_package_dir.
+    lowered = name.lower()
+    for suffix in (".step.py", ".stp.py"):
+        if lowered.endswith(suffix):
+            return name[: -len(".py")]
+    return name
+
+
 def render_package_dir(entry_path: str) -> str:
     """The render package directory for an entry file.
 
@@ -87,7 +99,10 @@ def render_package_dir(entry_path: str) -> str:
     base = os.path.realpath(entry_path)
     return os.path.realpath(
         os.path.join(
-            os.path.dirname(base), CADGEN_DIRNAME, CADGEN_MODELS_DIRNAME, os.path.basename(base)
+            os.path.dirname(base),
+            CADGEN_DIRNAME,
+            CADGEN_MODELS_DIRNAME,
+            _package_key_name(os.path.basename(base)),
         )
     )
 
@@ -104,7 +119,10 @@ def render_package_asset_dir(entry_path: str) -> str:
     identically, because the OS follows the symlink; only the URL cares."""
     base = os.path.abspath(entry_path)
     return os.path.join(
-        os.path.dirname(base), CADGEN_DIRNAME, CADGEN_MODELS_DIRNAME, os.path.basename(base)
+        os.path.dirname(base),
+        CADGEN_DIRNAME,
+        CADGEN_MODELS_DIRNAME,
+        _package_key_name(os.path.basename(base)),
     )
 
 

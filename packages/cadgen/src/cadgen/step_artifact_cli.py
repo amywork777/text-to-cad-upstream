@@ -418,7 +418,15 @@ def build_step_artifact(
             )
             if scene is None:
                 raise RuntimeError(f"Python generator did not produce a STEP scene: {existing_spec.source_ref}")
+            # The generation pipeline's contract: a generated model's build
+            # ALWAYS produces its STEP file (assembled from the package —
+            # design/step-document-architecture.md), no matter which front
+            # door asked (scripts/gen, the viewer's Update, inspect).
+            import dataclasses
+
             spec = existing_spec
+            if spec.step_export_path is None and spec.step_path is not None:
+                spec = dataclasses.replace(spec, step_export_path=spec.step_path)
         else:
             # _generate_part_outputs reports this phase itself when it does the loading;
             # here the scene is preloaded, so the parse would otherwise go unreported.

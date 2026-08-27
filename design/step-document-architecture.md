@@ -69,3 +69,27 @@ An edit touches: changed scopes (gen) -> changed components' brep+surf
 writes (~ms each) -> STEP reassembly (size-linear, the only whole-model
 cost; ~6-8 s at moonwatch's 115 MB, sub-second for typical models) ->
 viewer re-fetches only new cids. Nothing else in the system re-derives.
+
+## Execution log
+
+- Packages persist the document pair per component: `<cid>.brep` (exact
+  BinTools bytes — the SAME payload that computed the cid, so emission is
+  a write) + `<cid>.surf`. Store carries both, bare-cid keyed.
+- `cadgen/_internal/step_assemble.py`: STEP assembly from blobs +
+  descriptor (occurrence transforms, labels, per-component colors, nested
+  assembly tree, mates) → existing XCAF writer. Verified: exact volume
+  round trip; no generator execution.
+- `scripts/gen` is source-in/STEP-out: every run writes the sibling
+  `<name>.step` (`-o` renames, single target); `--write` DELETED.
+  Unchanged sources remain a ~0.7s no-op through the export record.
+- Packages RE-KEYED to the STEP file: `__cadgen__/models/<name>.step/` is
+  shared by the generator entry and the file it outputs — one document,
+  both viewer entries render it, zero imports of generated files. The
+  scanner mirrors the keying; legacy `.step.py`-keyed dirs are cleaned at
+  the next build. The assembled file's hash is STAMPED on the descriptor
+  (stepHash/stepPath) so the render-side gate validates the `.step` entry
+  without importing it.
+- Viewer builds (Update / parameter edits) delegate to the generation
+  pipeline via step_artifact_cli, which now also emits the STEP — the
+  render pipeline never executes Python; its only build path is importing
+  a foreign/hand-edited STEP (hash mismatch demotes to that path).

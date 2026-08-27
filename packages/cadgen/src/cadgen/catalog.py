@@ -265,14 +265,20 @@ def normalize_cad_ref(raw_ref: str) -> str | None:
 
 def render_package_dir(entry_path: Path) -> Path:
     # The render-artifact package directory for a CAD entry file. Every package lives
-    # INSIDE the per-folder __cadgen__ directory, keyed by the ENTRY filename (the on-disk
-    # file the viewer lists: `<name>.step`, `<name>.step.py`, `<name>.dxf.py`, ...), so
-    # distinct entry files always get distinct packages and model folders hold only source.
-    # A STEP entry's package is a self-contained component-GLB directory (assembly.json
-    # descriptor + components/<hash>.glb); a `.dxf.py` entry's package is a drawing
-    # directory (drawing.json descriptor + drawing.dxf).
+    # INSIDE the per-folder __cadgen__ directory. STEP models key by the STEP FILE
+    # (`<name>.step`): a generator entry (`<name>.step.py`) and the file it outputs are
+    # ONE document, so both resolve to one package — the generation pipeline produces it,
+    # the render pipeline consumes it, and opening either entry renders the same thing
+    # (design/step-document-architecture.md). Non-STEP `.py` entries (`.dxf.py`,
+    # implicit) keep keying by the entry filename.
     base = entry_path.resolve()
-    return (base.parent / CADGEN_DIRNAME / CADGEN_MODELS_DIRNAME / base.name).resolve()
+    name = base.name
+    lowered = name.lower()
+    for suffix in (".step.py", ".stp.py"):
+        if lowered.endswith(suffix):
+            name = name[: -len(".py")]
+            break
+    return (base.parent / CADGEN_DIRNAME / CADGEN_MODELS_DIRNAME / name).resolve()
 
 
 def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:

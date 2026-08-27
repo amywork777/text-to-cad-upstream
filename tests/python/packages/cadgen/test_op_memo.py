@@ -170,16 +170,30 @@ class ComponentStoreTest(unittest.TestCase):
 
         from cadgen._internal import component_store
 
-        # The component artifact is the exact-surface .surf, keyed by bare
-        # cid (no mesh tolerances exist any more).
+        # The component document pair (.surf render view + .brep exact
+        # shape), keyed by bare cid (no mesh tolerances exist any more).
         src = Path(self._tmp.name) / "cid123.surf"
         src.write_bytes(b"surf-payload")
+        src.with_name("cid123.brep").write_bytes(b"brep-payload")
         component_store.publish(src, "cid123")
         dest = Path(self._tmp.name) / "out" / "fetched.surf"
         dest.parent.mkdir()
         self.assertTrue(component_store.fetch("cid123", dest))
         self.assertEqual(dest.read_bytes(), b"surf-payload")
         self.assertEqual(src.stat().st_ino, dest.stat().st_ino)
+        self.assertEqual(
+            dest.with_name("cid123.brep").read_bytes(), b"brep-payload")
+
+    def test_fetch_requires_the_brep_half(self):
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        src = Path(self._tmp.name) / "cidsurfonly.surf"
+        src.write_bytes(b"surf-payload")
+        component_store.publish(src, "cidsurfonly")
+        dest = Path(self._tmp.name) / "fetched.surf"
+        self.assertFalse(component_store.fetch("cidsurfonly", dest))
 
     def test_fetch_misses_unknown_cid(self):
         from pathlib import Path
@@ -197,6 +211,7 @@ class ComponentStoreTest(unittest.TestCase):
 
         src = Path(self._tmp.name) / "cid123.surf"
         src.write_bytes(b"payload")
+        src.with_name("cid123.brep").write_bytes(b"brep")
         component_store.publish(src, "cid123")
         dest = Path(self._tmp.name) / "fetched.surf"
         component_store.fetch("cid123", dest)

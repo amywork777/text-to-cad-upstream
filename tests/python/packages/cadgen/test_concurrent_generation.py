@@ -80,7 +80,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
 
     def test_package_is_intact_after_concurrent_builds(self):
         self._run_contenders(3)
-        package = self.root / "__cadgen__" / "models" / "widget.step.py"
+        package = self.root / "__cadgen__" / "models" / "widget.step"
         descriptor = package / "assembly.json"
         self.assertTrue(descriptor.is_file(), "no descriptor after concurrent builds")
         # The viewer's freshness gate must accept the package the race produced. It is
@@ -98,7 +98,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
         self.assertIn("is current; skipped recompose", outputs[0])
 
     def _package_dir(self):
-        return self.root / "__cadgen__" / "models" / "widget.step.py"
+        return self.root / "__cadgen__" / "models" / "widget.step"
 
     def _run_gen_cli(self, *extra):
         """The skill CLI itself, not the library call the other tests use: the flag under

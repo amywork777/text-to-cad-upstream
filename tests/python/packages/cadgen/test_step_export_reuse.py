@@ -1,6 +1,7 @@
-"""--write behavior: closure-keyed reuse, new-path copy, metadata injection
-via the writer's entity-count hint, and the verbose export spans (which were
-once silently orphaned — design/FEEDBACK.md item 9)."""
+"""STEP output behavior (scripts/gen ALWAYS writes the STEP file, assembled
+from the package's exact-shape blobs — design/step-document-architecture.md):
+closure-keyed reuse, new-path copy via -o, metadata injection, and the
+verbose export spans (once silently orphaned — design/FEEDBACK.md item 9)."""
 
 from __future__ import annotations
 
@@ -64,34 +65,34 @@ class StepExportReuseTest(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_repeat_write_reuses_and_edit_invalidates(self) -> None:
-        first = _run(self.entry, ["--write"], self.store)
+        first = _run(self.entry, [], self.store)
         self.assertEqual(first.returncode, 0, first.stderr[-1500:])
         step = self.entry.parent / "block.step"
         self.assertTrue(step.is_file())
         original = hashlib.sha256(step.read_bytes()).hexdigest()
 
-        repeat = _run(self.entry, ["--write"], self.store)
+        repeat = _run(self.entry, [], self.store)
         self.assertEqual(repeat.returncode, 0, repeat.stderr[-1500:])
         self.assertIn("step export is current; reusing", repeat.stderr)
         self.assertEqual(hashlib.sha256(step.read_bytes()).hexdigest(), original)
 
         self.entry.write_text(self.entry.read_text().replace("SIZE = 6.0", "SIZE = 7.0"))
-        edited = _run(self.entry, ["--write"], self.store)
+        edited = _run(self.entry, [], self.store)
         self.assertEqual(edited.returncode, 0, edited.stderr[-1500:])
         self.assertNotIn("step export is current", edited.stderr)
         self.assertNotEqual(hashlib.sha256(step.read_bytes()).hexdigest(), original)
 
     def test_new_path_export_copies_verified_bytes(self) -> None:
-        _run(self.entry, ["--write"], self.store)
+        _run(self.entry, [], self.store)
         step = self.entry.parent / "block.step"
         copy_target = self.entry.parent / "elsewhere" / "block_copy.step"
-        copied = _run(self.entry, ["--write", str(copy_target)], self.store)
+        copied = _run(self.entry, ["-o", str(copy_target)], self.store)
         self.assertEqual(copied.returncode, 0, copied.stderr[-1500:])
         self.assertIn("step export is current; reusing", copied.stderr)
         self.assertEqual(step.read_bytes(), copy_target.read_bytes())
 
     def test_verbose_export_spans_fire_and_metadata_reads_back(self) -> None:
-        run = _run(self.entry, ["--write", "--verbose"], self.store)
+        run = _run(self.entry, ["--verbose"], self.store)
         self.assertEqual(run.returncode, 0, run.stderr[-1500:])
         for span in ("transfer XCAF to STEP model", "write STEP file",
                      "inject STEP metadata"):

@@ -8,8 +8,7 @@ from cadgen._internal.cli_locking import add_lock_timeout_argument
 from cadgen.catalog import StepImportOptions
 from cadgen.metadata import normalize_mesh_numeric
 
-# Sentinel for --write without a path: write each target's sibling <name>.step.
-DEFAULT_STEP_OUTPUT = "__default_sibling_step__"
+
 
 
 def generate_step_targets(*args, **kwargs):
@@ -39,15 +38,14 @@ def _add_gen_arguments(parser: argparse.ArgumentParser) -> None:
         help="Explicit gen_step() Python generator source(s) to build.",
     )
     parser.add_argument(
-        "--write",
-        nargs="?",
-        const=DEFAULT_STEP_OUTPUT,
+        "-o",
+        "--output",
         metavar="OUTPUT",
         help=(
-            "Also write the .step file during generation. Without a path, each target "
-            "writes its sibling <name>.step; an explicit path requires exactly one target "
-            "and resolves from the command cwd. This is the only way to write a .step "
-            "file; scripts/export writes mesh formats only."
+            "Where to write the STEP file (single target only; resolves from the "
+            "command cwd). Default: each target's sibling <name>.step. scripts/gen "
+            "ALWAYS writes the STEP file — it is the model's output artifact "
+            "(assembled from the package's exact-shape blobs, not re-generated)."
         ),
     )
     parser.add_argument(
@@ -90,8 +88,8 @@ def _validate_python_targets(targets: Sequence[str], *, parser: argparse.Argumen
         target_text = str(target)
         if "=" in target_text:
             parser.error(
-                "SOURCE=OUTPUT pairs are no longer supported. Use --write to also "
-                "write the .step file, or scripts/export for STL/3MF/GLB files."
+                "SOURCE=OUTPUT pairs are no longer supported. Use -o/--output to "
+                "name the STEP file, or scripts/export for STL/3MF/GLB files."
             )
         suffix = Path(target_text).suffix.lower()
         if suffix in {".step", ".stp"}:
@@ -117,19 +115,18 @@ def _sibling_step_output(target: str) -> str:
 
 def _targets_with_step_outputs(
     targets: Sequence[str],
-    write_step: str | None,
+    output: str | None,
     *,
     parser: argparse.ArgumentParser,
 ) -> list[str]:
-    """Translate --write into the SOURCE=OUTPUT pair targets that
+    """Pair every target with its STEP output (the CLI's contract: Python
+    source in, STEP file out) as the SOURCE=OUTPUT targets that
     cadgen.generation already resolves per target."""
-    if write_step is None:
-        return list(targets)
-    if write_step == DEFAULT_STEP_OUTPUT:
+    if output is None:
         return [f"{target}={_sibling_step_output(target)}" for target in targets]
     if len(targets) != 1:
-        parser.error("--write with an explicit path requires exactly one target")
-    return [f"{targets[0]}={write_step}"]
+        parser.error("-o/--output requires exactly one target")
+    return [f"{targets[0]}={output}"]
 
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
@@ -141,9 +138,10 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Build CAD Viewer render packages (GLB/topology) for explicit gen_step() "
-            "Python targets. Writes a .step file only with --write; use "
-            "scripts/export for STL/3MF/GLB files."
+            "Generate STEP files from gen_step() Python sources. Each run keeps "
+            "the model's render package (the document of record) current and "
+            "assembles the .step output from it; unchanged sources are a no-op. "
+            "Use scripts/export for STL/3MF/GLB files."
         ),
     )
     _add_gen_arguments(parser)
@@ -168,7 +166,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     )
     try:
         return generate_step_targets(
-            _targets_with_step_outputs(args.targets, args.write, parser=parser),
+            _targets_with_step_outputs(args.targets, args.output, parser=parser),
             step_options=step_options,
             force=bool(args.force),
             verbose=bool(args.verbose),

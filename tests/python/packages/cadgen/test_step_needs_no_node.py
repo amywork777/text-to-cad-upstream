@@ -89,7 +89,7 @@ class StepBuildsWithoutNodeTests(unittest.TestCase):
             payload = json.loads(proc.stdout.strip().splitlines()[-1])
             self.assertTrue(payload.get("ok"))
 
-            packages = list(root.rglob("__cadgen__/models/block.step.py"))
+            packages = list(root.rglob("__cadgen__/models/block.step"))
             self.assertTrue(packages, f"No render package was written under {root}")
 
 

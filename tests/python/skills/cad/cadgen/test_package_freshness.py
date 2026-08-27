@@ -35,7 +35,7 @@ class DirAwareManifestReaderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             descriptor = {"kind": PACKAGE_KIND, "sourceKind": "python", "schemaVersion": 2}
-            package_dir = _write_package(root, "part.step.py", descriptor)
+            package_dir = _write_package(root, "part.step", descriptor)
             manifest = read_step_topology_manifest_from_glb(package_dir)
             self.assertIsInstance(manifest, dict)
             self.assertEqual(manifest.get("kind"), PACKAGE_KIND)
@@ -61,20 +61,25 @@ class PackageFreshnessGateTests(unittest.TestCase):
         )
 
     def test_assembly_glb_package_current_keys_by_entry_filename(self) -> None:
-        # The package lives at __cadgen__/models/part.step.py (entry filename);
-        # keying by the logical step path (part.step) must not be required.
+        # The package lives at __cadgen__/models/part.step: STEP models key
+        # by the STEP FILE, shared by the generator entry and its output
+        # (design/step-document-architecture.md).
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             spec = self._generated_spec(root)
             package_dir = _write_package(
                 root,
-                "part.step.py",
+                "part.step",
                 {
                     "kind": PACKAGE_KIND,
-                    "components": {"abc": {"surf": "components/abc.surf"}},
+                    "components": {"abc": {
+                        "surf": "components/abc.surf",
+                        "brep": "components/abc.brep",
+                    }},
                 },
             )
             (package_dir / "components" / "abc.surf").write_bytes(b"SURF-fake")
+            (package_dir / "components" / "abc.brep").write_bytes(b"BREP-fake")
             self.assertTrue(generation._assembly_glb_package_current(spec))
 
     def test_assembly_glb_package_current_false_when_component_missing(self) -> None:
@@ -83,7 +88,7 @@ class PackageFreshnessGateTests(unittest.TestCase):
             spec = self._generated_spec(root)
             _write_package(
                 root,
-                "part.step.py",
+                "part.step",
                 {
                     "kind": PACKAGE_KIND,
                     "components": {"abc": {"glb": "components/abc.glb"}},
@@ -138,7 +143,7 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             spec = self._spec(root)
-            _write_package(root, "part.step.py", descriptor)
+            _write_package(root, "part.step", descriptor)
             return generation._package_descriptor_matches_spec(spec, self.options)
 
     def setUp(self) -> None:

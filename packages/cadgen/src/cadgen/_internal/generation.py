@@ -534,36 +534,6 @@ def _generate_part_outputs(
 
     artifact_results: dict[str, object] = {}
 
-    if spec.step_export_path is not None:
-        def step_export_job() -> Path:
-            # On-demand text STEP (--step). gen_step never writes a STEP, so serialize the
-            # in-memory compound the generator produced; for an imported source the .step
-            # already exists, so copy it to the requested path.
-            from cadgen.step_export import export_build123d_step_file
-
-            target = spec.step_export_path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            source_compound = getattr(scene, "source_compound", None)
-            if source_compound is not None:
-                exported_hash = export_build123d_step_file(
-                    source_compound,
-                    target,
-                    text_to_cad_entry_kind=spec.kind,
-                    source_path=(str(getattr(scene, "source_path", "") or "") or None),
-                    source_hash=(str(getattr(scene, "source_hash", "") or "") or None),
-                    logger=logger,
-                )
-                # step_file_hash IS sha256; stash it so the export record does
-                # not re-read a possibly huge file just to hash it again.
-                hashes = getattr(scene, "exported_step_sha256", None) or {}
-                hashes[str(target.expanduser().resolve())] = exported_hash
-                scene.exported_step_sha256 = hashes
-            elif spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
-                shutil.copyfile(spec.step_path, target)
-            return target
-
-        jobs.append(_ArtifactJob("STEP", step_export_job))
-
     # UNIFIED render artifact: every model — part or assembly, generated or imported — is
     # a component-GLB PACKAGE (a directory at __cadgen__/models/<entry>: assembly.json
     # descriptor + content-addressed components). An assembly introspects its
@@ -619,6 +589,38 @@ def _generate_part_outputs(
         )
 
     jobs.append(_ArtifactJob("GLB package", component_package_job))
+
+    if spec.step_export_path is not None:
+        def step_export_job() -> Path:
+            # The STEP file is ASSEMBLED from the package's exact-shape blobs
+            # (design/step-document-architecture.md) — a save, not a
+            # recompute — so this job runs after the package job. Imported
+            # sources already have the file; copy when a different path was
+            # requested.
+            target = spec.step_export_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if spec.source == "generated":
+                from cadgen._internal.step_assemble import assemble_step_from_package
+
+                package_dir = render_package_dir(spec.entry_path)
+                exported_hash = assemble_step_from_package(
+                    package_dir, target, logger=logger)
+                # step_file_hash IS sha256; stash it so the export record does
+                # not re-read a possibly huge file just to hash it again.
+                hashes = getattr(scene, "exported_step_sha256", None) or {}
+                hashes[str(target.expanduser().resolve())] = exported_hash
+                scene.exported_step_sha256 = hashes
+                # Stamp the file identity on the descriptor: the render
+                # pipeline's gate for the .step ENTRY is "descriptor.stepHash
+                # matches the file", which lets the viewer render the
+                # generated file without ever importing it.
+                _stamp_descriptor_step_identity(
+                    package_dir, target, exported_hash, entry_dir=spec.entry_path.parent)
+            elif spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
+                shutil.copyfile(spec.step_path, target)
+            return target
+
+        jobs.append(_ArtifactJob("STEP", step_export_job))
 
     artifact_results.update(_run_artifact_jobs(jobs, logger=logger))
     # The render artifact is the component-GLB package; whole-model selector topology is
@@ -686,6 +688,36 @@ def _generate_step_outputs(
     result = _generate_part_outputs(spec, **output_kwargs)
     _record_step_export(spec, scene=preloaded_scene)
     return result
+
+
+def _stamp_descriptor_step_identity(
+    package_dir: Path, step_path: Path, step_hash: str, *, entry_dir: Path
+) -> None:
+    """Record the assembled STEP's hash/path on the descriptor (atomic
+    rewrite, under the same generation lock as the package write)."""
+    try:
+        from cadgen._internal.component_package import read_package_descriptor
+
+        descriptor = read_package_descriptor(package_dir)
+        if descriptor is None:
+            return
+        resolved = step_path.expanduser().resolve()
+        try:
+            rel = resolved.relative_to(entry_dir.resolve()).as_posix()
+        except ValueError:
+            rel = resolved.name
+        if descriptor.get("stepHash") == step_hash and descriptor.get("stepPath") == rel:
+            return
+        descriptor["stepHash"] = step_hash
+        descriptor["stepPath"] = rel
+        descriptor_path = package_dir / "assembly.json"
+        tmp = descriptor_path.with_name(f"{descriptor_path.name}{temp_suffix()}")
+        tmp.write_text(json.dumps(descriptor), encoding="utf-8")
+        replace_atomic(tmp, descriptor_path)
+    except Exception:
+        # Best-effort: a missing stamp costs one import-path rebuild, never
+        # correctness.
+        pass
 
 
 def _step_export_record_path(spec: EntrySpec) -> Path:

@@ -4,9 +4,10 @@ Packages stay fully self-contained: every package's ``components/<cid>.surf``
 is a real file (hardlinked from the store where possible). The store is a
 best-effort cache — losing it costs a re-extraction, never correctness.
 
-Layout: ``$CADGEN_STORE_DIR (default ~/.cache/cadgen)/components/<cid>.surf``.
-The key is the BARE cid: a ``.surf`` is exact geometry with no mesh
-tolerances (design/surface-rendering.md), and the cid is already salted by
+Layout: ``$CADGEN_STORE_DIR (default ~/.cache/cadgen)/components/<cid>.surf``
+plus ``<cid>.brep`` (the exact-shape blob — design/
+step-document-architecture.md). The key is the BARE cid: both artifacts are
+exact geometry with no mesh tolerances, and the cid is already salted by
 ``STEP_PACKAGE_VERSION`` so extractor changes re-key the store wholesale.
 
 ``CADGEN_COMPONENT_STORE=0`` disables both directions.
@@ -33,8 +34,8 @@ def _store_dir() -> Path:
     return path
 
 
-def _store_path(cid: str) -> Path:
-    return _store_dir() / f"{cid}.surf"
+def _store_path(cid: str, suffix: str = "surf") -> Path:
+    return _store_dir() / f"{cid}.{suffix}"
 
 
 def _link_or_copy(source: Path, dest: Path) -> None:
@@ -48,29 +49,37 @@ def _link_or_copy(source: Path, dest: Path) -> None:
 
 
 def fetch(cid: str, dest: Path) -> bool:
-    """Materialize a stored component ``.surf`` at ``dest``. True on success."""
+    """Materialize a stored component pair (``.surf`` + ``.brep``) at
+    ``dest``'s directory. An entry missing either half is treated as absent
+    so the caller rebuilds both. True on success."""
     if not _enabled():
         return False
     try:
-        source = _store_path(cid)
-        if not source.exists():
+        surf_source = _store_path(cid, "surf")
+        brep_source = _store_path(cid, "brep")
+        if not surf_source.exists() or not brep_source.exists():
             return False
-        _link_or_copy(source, dest)
+        _link_or_copy(brep_source, dest.with_name(f"{cid}.brep"))
+        _link_or_copy(surf_source, dest)
         return True
     except Exception:
         return False
 
 
 def publish(src: Path, cid: str, *, overwrite: bool = False) -> None:
-    """Record a locally extracted component in the store. Best-effort."""
+    """Record a locally built component pair in the store. Best-effort."""
     if not _enabled():
         return
     try:
-        target = _store_path(cid)
-        if target.exists():
-            if not overwrite:
-                return
-            target.unlink()
-        _link_or_copy(src, target)
+        pairs = [(src, _store_path(cid, "surf"))]
+        brep_src = src.with_name(f"{cid}.brep")
+        if brep_src.exists():
+            pairs.append((brep_src, _store_path(cid, "brep")))
+        for source, target in pairs:
+            if target.exists():
+                if not overwrite:
+                    continue
+                target.unlink()
+            _link_or_copy(source, target)
     except Exception:
         pass

@@ -115,6 +115,7 @@ def assembly_package_current(step_path: Path) -> bool:
         return False
     return all(
         (package_dir / str(entry.get("surf", ""))).is_file()
+        and (package_dir / str(entry.get("brep", ""))).is_file()
         for entry in components.values()
     )
 
@@ -343,7 +344,8 @@ def _build_component_surf_worker(
             shape = _build123d_shape_from_brep_bytes(payload)
         except Exception as exc:  # noqa: BLE001 - marker for the parent retry
             return (cid, f"{PAYLOAD_UNREADABLE}: {type(exc).__name__}: {exc}")
-        _write_component_surf_atomic(shape, Path(out_surf), cad_ref=cid)
+        _write_component_artifacts_atomic(
+            shape, Path(out_surf), cad_ref=cid, brep_bytes=payload)
         return (cid, None)
     except Exception as exc:  # noqa: BLE001 - crossing a process boundary
         return (cid, f"{type(exc).__name__}: {exc}")
@@ -367,18 +369,34 @@ def _component_build_worker_count(missing_count: int) -> int:
     return max(1, min((os.cpu_count() or 2) - 2, missing_count, 8))
 
 
-def _write_component_surf_atomic(
+def _write_atomic(path: Path, data: bytes) -> None:
+    """Write to a sibling temp file and rename into place, so a killed build
+    never leaves a truncated artifact that a later run would trust as a
+    valid content-addressed cache hit."""
+    temp_path = path.with_name(f"{path.name}{temp_suffix()}")
+    try:
+        temp_path.write_bytes(data)
+        replace_atomic(temp_path, path)
+    finally:
+        # The handle that blocks a rename blocks the delete too; letting that
+        # escape would replace the real failure with a cleanup error.
+        with contextlib.suppress(OSError):
+            temp_path.unlink(missing_ok=True)
+
+
+def _write_component_artifacts_atomic(
     shape: Any,
     out_surf: Path,
     *,
     cad_ref: str,
+    brep_bytes: bytes | None = None,
 ) -> Path:
-    """Extract the exact-surface component artifact to a sibling temp file
-    and rename into place, so a killed build never leaves a truncated
-    ``<cid>.surf`` that a later run would trust as a valid content-addressed
-    cache hit. This is surface READING — the display mesh cost this replaced
-    (BRepMesh + selector extraction + GLB encode) lives client-side now
-    (design/surface-rendering.md R5)."""
+    """Persist one component's DOCUMENT pair (design/
+    step-document-architecture.md): ``<cid>.brep`` — the exact shape, the
+    same location-stripped BinTools bytes that computed the cid — and
+    ``<cid>.surf`` — the render view. Surface extraction is READING; the
+    blob is a plain write when the hashing payload is already in hand.
+    The surf goes in place LAST so its existence signals a complete set."""
     from cadgen._internal.surface_extract import extract_surface_component
 
     out_surf.parent.mkdir(parents=True, exist_ok=True)
@@ -390,16 +408,12 @@ def _write_component_surf_atomic(
             part_color = tuple(color.to_tuple())
         except Exception:
             part_color = None
-    temp_path = out_surf.with_name(f"{out_surf.name}{temp_suffix()}")
-    try:
-        temp_path.write_bytes(
-            extract_surface_component(local.wrapped, part_color=part_color))
-        replace_atomic(temp_path, out_surf)
-    finally:
-        # The handle that blocks a rename blocks the delete too; letting that
-        # escape would replace the real failure with a cleanup error.
-        with contextlib.suppress(OSError):
-            temp_path.unlink(missing_ok=True)
+    _write_atomic(
+        out_surf.with_name(f"{cad_ref}.brep"),
+        brep_bytes if brep_bytes is not None else _shape_brep_bytes(shape),
+    )
+    _write_atomic(
+        out_surf, extract_surface_component(local.wrapped, part_color=part_color))
     return out_surf
 
 
@@ -484,7 +498,9 @@ def build_package_from_compound(
     def _retain_payload_brep(content_hash: str, brep: bytes) -> None:
         cid = _component_id(content_hash)
         if cid not in brep_bytes_by_cid and (
-            force or not (comp_dir / f"{cid}.surf").exists()
+            force
+            or not (comp_dir / f"{cid}.surf").exists()
+            or not (comp_dir / f"{cid}.brep").exists()
         ):
             brep_bytes_by_cid[cid] = brep
 
@@ -501,10 +517,18 @@ def build_package_from_compound(
             _retain_payload_brep(content_hash, brep)
         cid = _component_id(content_hash)
         shapes.setdefault(cid, node)
-        components.setdefault(cid, {
+        entry_meta: dict[str, Any] = {
             "surf": _component_ref(cid, suffix="surf"),
+            "brep": _component_ref(cid, suffix="brep"),
             "contentHash": content_hash,
-        })
+        }
+        node_color = getattr(node, "color", None)
+        if node_color is not None:
+            try:
+                entry_meta["color"] = [float(c) for c in node_color.to_tuple()]
+            except Exception:
+                pass
+        components.setdefault(cid, entry_meta)
         if name is None:
             name = str(getattr(node, "label", "") or f"part_{occ_id}")
         occurrence: dict[str, Any] = {
@@ -611,7 +635,11 @@ def build_package_from_compound(
     from cadgen._internal import component_store
 
     for cid, shape in shapes.items():
-        if (comp_dir / f"{cid}.surf").exists() and not force:
+        if (
+            (comp_dir / f"{cid}.surf").exists()
+            and (comp_dir / f"{cid}.brep").exists()
+            and not force
+        ):
             reused.append(cid)
         elif not force and component_store.fetch(cid, comp_dir / f"{cid}.surf"):
             # Shared-store tier: another package (or worktree) already
@@ -676,7 +704,7 @@ def build_package_from_compound(
             # BinTools write/read asymmetry: build from the original in-process
             # shape (the pre-payload path); such components simply cannot be
             # parallelized or byte-normalized.
-            _write_component_surf_atomic(
+            _write_component_artifacts_atomic(
                 shapes_by_cid[cid],
                 comp_dir / f"{cid}.surf",
                 cad_ref=cid,
@@ -746,9 +774,21 @@ def build_package_from_compound(
     # an earlier geometry revision and accumulates without bound if kept. Writers
     # are serialized by the generation lock; readers re-resolve components from
     # the descriptor they load.
-    referenced = {f"{cid}.surf" for cid in components}
+    # Pre-rekey packages: STEP models now key by the STEP FILE, so a legacy
+    # sibling keyed by the generator entry (<name>.step.py) is dead weight
+    # from before the migration and can only shadow disk space.
+    if package_dir.name.lower().endswith((".step", ".stp")):
+        import shutil as _shutil
+
+        legacy = package_dir.with_name(f"{package_dir.name}.py")
+        if legacy.is_dir():
+            _shutil.rmtree(legacy, ignore_errors=True)
+
+    referenced = {f"{cid}.surf" for cid in components} | {
+        f"{cid}.brep" for cid in components
+    }
     pruned = 0
-    for pattern in ("*.surf", "*.glb"):
+    for pattern in ("*.surf", "*.brep", "*.glb"):
         for stale in comp_dir.glob(pattern):
             if stale.name not in referenced:
                 stale.unlink(missing_ok=True)

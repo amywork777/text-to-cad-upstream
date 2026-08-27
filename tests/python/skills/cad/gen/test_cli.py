@@ -23,7 +23,13 @@ class GenCliTests(unittest.TestCase):
             self.assertEqual(0, cli.main(["parts/second.step.py", "parts/first.step.py"]))
 
         generate.assert_called_once()
-        self.assertEqual(["parts/second.step.py", "parts/first.step.py"], generate.call_args.args[0])
+        self.assertEqual(
+            [
+                "parts/second.step.py=parts/second.step",
+                "parts/first.step.py=parts/first.step",
+            ],
+            generate.call_args.args[0],
+        )
         self.assertFalse(generate.call_args.kwargs["step_options"].has_metadata)
         self.assertFalse(generate.call_args.kwargs["force"])
         self.assertFalse(generate.call_args.kwargs["verbose"])
@@ -98,10 +104,12 @@ class GenCliTests(unittest.TestCase):
         self.assertEqual(0.2, options.mesh_tolerance)
         self.assertEqual(0.25, options.mesh_angular_tolerance)
 
-    def test_write_defaults_to_sibling_outputs_per_target(self) -> None:
+    def test_every_target_pairs_with_its_sibling_step_output(self) -> None:
+        # scripts/gen is source-in, STEP-out: every run writes the STEP
+        # (design/step-document-architecture.md); there is no opt-in flag.
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
             self.assertEqual(
-                0, cli.main(["parts/first.step.py", "parts/second.py", "--write"])
+                0, cli.main(["parts/first.step.py", "parts/second.py"])
             )
 
         self.assertEqual(
@@ -109,20 +117,25 @@ class GenCliTests(unittest.TestCase):
             generate.call_args.args[0],
         )
 
-    def test_write_with_explicit_path_single_target(self) -> None:
+    def test_output_flag_names_the_step_file(self) -> None:
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
             self.assertEqual(
-                0, cli.main(["parts/sample.step.py", "--write", "out/custom.step"])
+                0, cli.main(["parts/sample.step.py", "-o", "out/custom.step"])
             )
 
         self.assertEqual(["parts/sample.step.py=out/custom.step"], generate.call_args.args[0])
 
-    def test_write_with_explicit_path_rejects_multiple_targets(self) -> None:
+    def test_output_flag_rejects_multiple_targets(self) -> None:
         stream = io.StringIO()
         with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(stream):
-            cli.main(["parts/first.step.py", "parts/second.step.py", "--write", "out/custom.step"])
+            cli.main(["parts/first.step.py", "parts/second.step.py", "-o", "out/custom.step"])
         self.assertEqual(2, cm.exception.code)
         self.assertIn("exactly one target", stream.getvalue())
+
+    def test_write_flag_is_gone(self) -> None:
+        with self.assertRaises(SystemExit) as cm:
+            cli.main(["parts/sample.step.py", "--write"])
+        self.assertEqual(2, cm.exception.code)
 
     def test_rejects_direct_step_target(self) -> None:
         stream = io.StringIO()
@@ -154,8 +167,6 @@ class GenCliTests(unittest.TestCase):
             ["--3mf", "out/sample.3mf"],
             ["--glb", "out/sample.glb"],
             ["--step", "out/sample.step"],
-            ["-o", "out/sample.step"],
-            ["--output", "out/sample.step"],
             ["--kind", "part"],
         ):
             with self.subTest(flag=flag_args[0]), self.assertRaises(SystemExit) as cm:
@@ -174,7 +185,8 @@ class GenCliTests(unittest.TestCase):
         self.assertEqual(0, cm.exception.code)
         help_text = stream.getvalue()
         self.assertIn("--force", help_text)
-        self.assertIn("--write", help_text)
+        self.assertIn("--output", help_text)
+        self.assertNotIn("--write", help_text)
         self.assertIn("--mesh-tolerance", help_text)
         self.assertIn("--mesh-angular-tolerance", help_text)
         self.assertIn("--verbose", help_text)
@@ -182,7 +194,7 @@ class GenCliTests(unittest.TestCase):
         self.assertNotIn("--stl", help_text)
         self.assertNotIn("--3mf", help_text)
         self.assertNotIn("--glb", help_text)
-        self.assertNotIn("--output", help_text)
+    
 
     def test_cli_does_not_reserve_common_module_name(self) -> None:
         skill_root = repo_path("skills/cad")

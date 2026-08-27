@@ -13,7 +13,7 @@ python scripts/export target [flags]      # write STL/3MF/GLB mesh files (see su
 
 `scripts/gen` accepts gen_step() Python generator sources only. Use explicit target paths only; target paths resolve from the command cwd unless absolute. Do not rely on directory-wide generation.
 
-Building a generator writes its hidden render package (GLB/topology artifacts) beside the source; it writes no `.step` file by default. Write the `.step` file in the same generation run with `scripts/gen <name>.step.py --write` — bare `--write` writes each target's sibling `<name>.step`; an explicit path requires exactly one target and resolves from the command cwd. This is the only way to write a `.step` file; `scripts/export` writes mesh formats only. Do not put output paths in the `gen_step()` return value; the CLI flags own output paths.
+`scripts/gen` is source-in, STEP-out: every run keeps the model's render package (the document of record: exact-shape `.brep` blobs + `.surf` render views + descriptor) current and ALWAYS writes the `.step` output, assembled from that package rather than re-generated. The default output is each target's sibling `<name>.step`; `-o PATH` renames it (single target, resolved from the command cwd). Unchanged sources are a no-op. `scripts/export` writes mesh formats only. Do not put output paths in the `gen_step()` return value; the CLI flags own output paths.
 
 ## Generated vs imported STEP
 
