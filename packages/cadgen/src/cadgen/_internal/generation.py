@@ -946,13 +946,9 @@ def _generated_python_glb_summary(spec: EntrySpec) -> str:
 
 
 def _generated_dxf_summary(spec: EntrySpec) -> str:
-    if spec.dxf_export_path is not None:
-        return f"generated DXF: {_display_path(spec.dxf_export_path)}"
-    if spec.script_path is not None:
-        return (
-            "generated DXF drawing package: "
-            f"{_display_path(render_package_dir(spec.script_path))}"
-        )
+    output = spec.dxf_export_path if spec.dxf_export_path is not None else spec.dxf_path
+    if output is not None:
+        return f"generated DXF: {_display_path(output)}"
     return f"processed: {spec.source_ref}"
 
 
@@ -1461,11 +1457,10 @@ def generate_dxf_targets(
     targets: Sequence[str],
     *,
     output: str | Path | None = None,
-    write_dxf: bool = False,
     force: bool = False,
     verbose: bool = False,
 ) -> int:
-    from cadgen._internal.drawing_package import drawing_package_current
+    from cadgen._internal.dxf_output import dxf_output_current
 
     tool_name = "dxf"
     logger = CliLogger("scripts/gen", verbose=verbose)
@@ -1492,52 +1487,35 @@ def generate_dxf_targets(
         all_specs=all_specs,
         tool_name=tool_name,
     )
-    if write_dxf:
-        # The sibling `<name>.dxf` is written on demand only (mirror of `--step`); the
-        # default build product is the drawing package under __cadgen__/models/.
-        selected_specs = [
-            spec if spec.dxf_export_path is not None else replace(spec, dxf_export_path=spec.dxf_path)
-            for spec in selected_specs
-        ]
-    # No-op fast path: skip regenerating a drawing whose source closure is unchanged.
-    # An export request on a current package is satisfied from the cache (copy +
-    # identity re-point) instead of re-running the generator.
+    # The .dxf IS the product (design/standalone-viewer.md Phase A): every target
+    # writes its sibling `<name>.dxf` unless `-o`/SOURCE=OUTPUT renamed it. The
+    # viewer parses that file directly; there is no drawing package.
+    def _effective_output(spec: EntrySpec) -> Path | None:
+        return spec.dxf_export_path if spec.dxf_export_path is not None else spec.dxf_path
+
+    # No-op fast path: skip regenerating a drawing whose source closure is
+    # unchanged and whose recorded output still verifies byte-for-byte.
     if not force:
         current_specs = [
             spec
             for spec in selected_specs
-            if spec.script_path is not None and drawing_package_current(spec.script_path)
+            if spec.script_path is not None
+            and dxf_output_current(spec.script_path, _effective_output(spec))
         ]
-        if current_specs:
-            from cadgen._internal.drawing_package import export_drawing_dxf
-
-            for spec in current_specs:
-                if spec.dxf_export_path is not None:
-                    export_drawing_dxf(spec.script_path, spec.dxf_export_path)
-                    logger.info(
-                        f"{spec.cad_ref} is current; exported cached DXF: "
-                        f"{_display_path(spec.dxf_export_path)}"
-                    )
-                else:
-                    logger.info(f"{spec.cad_ref} is current; skipped regeneration")
-            current_refs = {spec.source_ref for spec in current_specs}
-            selected_specs = [spec for spec in selected_specs if spec.source_ref not in current_refs]
+        for spec in current_specs:
+            logger.info(f"{spec.cad_ref} is current; skipped regeneration")
+        current_refs = {spec.source_ref for spec in current_specs}
+        selected_specs = [spec for spec in selected_specs if spec.source_ref not in current_refs]
     if selected_specs:
         # Re-checked under the lock, like the STEP path: a run that queued behind a
-        # concurrent build of this drawing must not regenerate it. An export request
-        # still has to write its file, so it never skips.
+        # concurrent build of this drawing must not regenerate it.
         def _built_by_a_peer(spec: EntrySpec) -> bool:
-            if force or spec.dxf_export_path is not None or spec.script_path is None:
+            if force or spec.script_path is None:
                 return False
-            return drawing_package_current(spec.script_path)
+            return dxf_output_current(spec.script_path, _effective_output(spec))
 
         _run_selected_specs(
             selected_specs,
-            # A drawing build DOES have countable stages -- DRAWING_PACKAGE declares
-            # parse/mesh/write, reported by the Node child while this process holds the
-            # lock -- so the sink is threaded through rather than dropped. It was dropped
-            # on the belief that a drawing is "one opaque generator run", which was true
-            # only of the Python half.
             action=lambda spec, progress_sink=None: _run_with_spec_generation_status(
                 spec,
                 "gen_dxf",

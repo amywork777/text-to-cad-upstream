@@ -275,6 +275,57 @@ def _mark_scene_python_backed(
     return scene
 
 
+@contextlib.contextmanager
+def deterministic_dxf_output(document: object):
+    """Make ezdxf output a pure function of the drawing content while saving.
+
+    ezdxf stamps volatile metadata into every file (julian-date headers, random
+    fingerprint/version GUIDs, created/written-by markers with timestamps), which
+    would churn the output record's dxfHash on every rebuild. The generated .dxf
+    is a content-addressed product — provenance lives in the identity metadata
+    comment — so it is saved with ezdxf's fixed-metadata mode plus a pinned ezdxf marker string
+    (the written-by marker is stamped unconditionally on export and is not
+    covered by the fixed-metadata option): identical geometry produces identical
+    bytes."""
+    try:
+        import ezdxf
+        from ezdxf import document as ezdxf_document
+    except ImportError:
+        yield
+        return
+    options = ezdxf.options
+    previous_fixed = bool(getattr(options, "write_fixed_meta_data_for_testing", False))
+    # Tolerate ezdxf API drift: if the marker hook disappears, output degrades to
+    # "written-by marker not pinned" instead of every build crashing.
+    previous_marker = getattr(ezdxf_document, "ezdxf_marker_string", None)
+    fixed_marker = f"{ezdxf.__version__} @ 2000-01-01T00:00:00+00:00"
+    previous_created: str | None = None
+    metadata = None
+    options.write_fixed_meta_data_for_testing = True
+    try:
+        if previous_marker is not None:
+            ezdxf_document.ezdxf_marker_string = lambda: fixed_marker
+        metadata_reader = getattr(document, "ezdxf_metadata", None)
+        if callable(metadata_reader):
+            metadata = metadata_reader()
+            # The created-by marker was stamped when the generator constructed the
+            # document (before this save path had any control); pin it for the
+            # cached package write and RESTORE it afterwards so later saves of the
+            # same document (e.g. a --dxf export) keep real provenance.
+            try:
+                previous_created = metadata[ezdxf_document.CREATED_BY_EZDXF]
+            except Exception:  # noqa: BLE001 - ezdxf metadata API drift; a missing created-by marker degrades gracefully
+                previous_created = None
+            metadata[ezdxf_document.CREATED_BY_EZDXF] = fixed_marker
+        yield
+    finally:
+        options.write_fixed_meta_data_for_testing = previous_fixed
+        if previous_marker is not None:
+            ezdxf_document.ezdxf_marker_string = previous_marker
+        if metadata is not None and previous_created is not None:
+            metadata[ezdxf_document.CREATED_BY_EZDXF] = previous_created
+
+
 def _write_dxf_payload(
     envelope: dict[str, object],
     *,
@@ -290,7 +341,10 @@ def _write_dxf_payload(
             f"got {type(document).__name__}"
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    saveas(str(output_path))
+    # Deterministic bytes: identical drawing content must produce an identical
+    # file — the output record hashes it, and warm/cold builds must agree.
+    with deterministic_dxf_output(document):
+        saveas(str(output_path))
     source_identity = python_source_hash(script_path)
     write_dxf_text_to_cad_metadata(
         output_path,
@@ -436,15 +490,15 @@ def _run_script_generator_inner(
             entry_kind=_shape_payload_entry_kind(envelope.get("shape"), fallback=spec.kind),
         )
     elif generator_name == "gen_dxf":
-        from cadgen._internal.drawing_package import write_drawing_package
+        from cadgen._internal.dxf_output import record_dxf_output
         from cadgen.drawing_checks import raise_on_error_findings, validate_drawing_document
 
         envelope = _normalize_dxf_payload(raw_payload, script_path=spec.script_path)
         if spec.dxf_path is None:
             raise RuntimeError(f"{spec.source_ref} has no configured DXF output")
         # Validation happens IN generation: the in-memory document is checked once,
-        # gating the drawing package and every export alike. Fail closed — anything
-        # that is not a real drawing document is rejected rather than skipped.
+        # gating every written DXF alike. Fail closed — anything that is not a real
+        # drawing document is rejected rather than skipped.
         document = envelope.get("document")
         if not (hasattr(document, "modelspace") and hasattr(document, "header")):
             raise TypeError(
@@ -457,47 +511,34 @@ def _run_script_generator_inner(
                 logger.info(f"{spec.source_ref} {finding.render()}")
         raise_on_error_findings(findings, label=_display_path(spec.script_path))
         # Mirror gen_step: capture the generator's closure (relative to the model
-        # folder) so the drawing package records the freshness inputs the viewer's
-        # staleness gate reads. Code reuse is the freshness link: a drawing that
-        # path-loads its .step.py records it (and its imports) here. Non-Python inputs
-        # (e.g. an imported vendor .step) are intentionally NOT tracked — like a
-        # gen_step that composes imported STEPs, the drawing does not rebuild when
-        # they change. Then the default build product is the drawing package; the
-        # sibling/exported .dxf is written on demand only.
+        # folder) — the freshness input both the CLI's no-op gate and the viewer's
+        # staleness gate read through the output record. Code reuse is the
+        # freshness link: a drawing that path-loads its .step.py records it (and
+        # its imports) here. Non-Python inputs are intentionally NOT tracked.
         source_closure = capture_runtime_closure(
             modules_before_load,
             spec.script_path,
             base=spec.script_path.parent,
             executed_files=executed_files,
         )
-        # `progress` is the BuildRun holding this package's lock. It is threaded down here
-        # because writing the package now includes baking preview.glb in a Node child, and
-        # that child reports its phases -- and proves its run id against the lock sentinel --
-        # through the very run that is holding the lock (design §4.3, §7.4.2).
-        write_drawing_package(
-            envelope.get("document"),
-            script_path=spec.script_path,
-            source_closure=source_closure,
-            run=progress,
+        # The product IS the .dxf (design/standalone-viewer.md Phase A): gen always
+        # writes it — the sibling by default, `-o` renames — and the viewer parses
+        # that file directly. No drawing package exists any more; the output record
+        # beside the lock sentinel is what makes an unchanged source a no-op.
+        output_path = spec.dxf_export_path if spec.dxf_export_path is not None else spec.dxf_path
+        _write_dxf_payload(
+            envelope, output_path=output_path, script_path=spec.script_path, logger=logger
         )
-        logger.debug(
-            f"wrote drawing package: {_display_path(render_package_dir(spec.script_path))}"
-        )
-        if spec.dxf_export_path is not None:
-            _write_dxf_payload(
-                envelope, output_path=spec.dxf_export_path, script_path=spec.script_path, logger=logger
-            )
+        record_dxf_output(spec.script_path, output_path, source_closure=source_closure)
     if generated_scene is not None and source_closure is not None:
         generated_scene.source_closure_hash = source_closure.closure_hash
         generated_scene.source_closure_files = source_closure.files
-    if (
-        generator_name == "gen_dxf"
-        and spec.dxf_export_path is not None
-        and not spec.dxf_export_path.exists()
-    ):
-        raise RuntimeError(
-            f"{_display_path(spec.script_path)} did not write {_display_path(spec.dxf_export_path)}"
-        )
+    if generator_name == "gen_dxf":
+        written = spec.dxf_export_path if spec.dxf_export_path is not None else spec.dxf_path
+        if written is not None and not written.exists():
+            raise RuntimeError(
+                f"{_display_path(spec.script_path)} did not write {_display_path(written)}"
+            )
     return generated_scene if generator_name == "gen_step" else None
 
 

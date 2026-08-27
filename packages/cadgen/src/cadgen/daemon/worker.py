@@ -126,7 +126,7 @@ def _module_dispatch() -> dict:
     Imported lazily so the OCP cost lands in this process, never in the supervisor.
     """
     from cadgen import (
-        dxf_artifact,
+        dxf_export_target,
         implicit_artifact,
         implicit_export,
         step_artifact_cli,
@@ -134,7 +134,7 @@ def _module_dispatch() -> dict:
     )
 
     return {
-        "cadgen.dxf_artifact": dxf_artifact.run_cli_payload,
+        "cadgen.dxf_export_target": dxf_export_target.run_cli_payload,
         "cadgen.implicit_artifact": implicit_artifact.run_cli_payload,
         "cadgen.implicit_export": implicit_export.run_cli_payload,
         "cadgen.step_artifact_cli": step_artifact_cli.run_cli_payload,

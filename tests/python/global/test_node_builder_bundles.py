@@ -29,7 +29,7 @@ RUNTIME_DIR = REPO_ROOT / "packages" / "cadgen" / "src" / "cadgen" / "_runtime" 
 # Builder file name -> the cadgen module constant that names it, so a rename in either
 # place has to be a rename in both.
 BUILDER_CONSTANTS = {
-    "dxf-artifact.mjs": ("cadgen/_internal/drawing_package.py", "DRAWING_PREVIEW_BUILDER"),
+    "dxf-mesh.mjs": ("cadgen/snapshot_cli.py", "DXF_MESH_BUILDER"),
     "implicit-artifact.mjs": ("cadgen/_internal/implicit_package.py", "IMPLICIT_BUILDER"),
     "implicit-export.mjs": ("cadgen/implicit_export.py", "IMPLICIT_EXPORT_BUILDER"),
 }
@@ -39,7 +39,7 @@ BUILDER_CONSTANTS = {
 # `new Worker(new URL("./meshWorkerEntry.js", ...))`), so esbuild cannot inline them and the
 # builder dies at run time without them.
 REQUIRED_BUILDERS = (
-    "dxf-artifact.mjs",
+    "dxf-mesh.mjs",
     "implicit-artifact.mjs",
     "implicit-export.mjs",
     "implicitClosureHooks.mjs",

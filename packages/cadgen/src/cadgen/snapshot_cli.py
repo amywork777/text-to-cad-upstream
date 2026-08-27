@@ -1316,12 +1316,14 @@ def resolve_drawing_render_job(
 ) -> dict[str, object]:
     """Resolve a drawing input (`.dxf` or a `gen_dxf()` generator).
 
-    A drawing has no geometry of its own to render: what the viewport shows is the 3D flat
-    pattern baked into its package as ``preview.glb``. So this makes the package current
-    through the SAME locked build the viewer and `scripts/artifact` use --
-    ``artifact_build(DRAWING_PACKAGE, ...)`` inside ``build_dxf_artifact`` -- and then hands
-    the baked mesh to the ordinary mesh path. Drawings carry no CAD topology, so the
-    STEP-only options are rejected the way they are for every other non-STEP kind.
+    A drawing has no geometry of its own to render: what the viewport shows is
+    the 3D flat pattern. There is no drawing package any more (design/
+    standalone-viewer.md Phase A) — a generator's product is its `.dxf` sibling
+    (made current through the ordinary gen no-op gate) and the mesh is produced
+    on demand by the bundled Node one-shot (bin/dxf-mesh.mjs: parseDxf ->
+    buildDxfPreviewMeshData -> writeGlb) into a temp GLB the ordinary mesh path
+    renders. Drawings carry no CAD topology, so the STEP-only options are
+    rejected the way they are for every other non-STEP kind.
     """
     if selection_filter_values(job):
         raise SnapshotError(
@@ -1356,9 +1358,9 @@ def resolve_drawing_render_job(
             "exploded view requires STEP assembly occurrence structure; drawings cannot be exploded"
         )
 
-    preview = drawing_preview_path(input_path, force=bool(job.get("force")))
-    # The preview lives inside the hidden package, which is never under the caller's cwd in
-    # any useful sense, so serve it from its own directory when it falls outside.
+    preview = drawing_mesh_path(input_path, force=bool(job.get("force")))
+    # The mesh is a temp artifact beside nothing the caller serves, so serve it
+    # from its own directory when it falls outside the cwd.
     serve_root = resolved_cwd if path_is_inside_or_equal(preview, resolved_cwd) else preview.parent
     return resolve_mesh_render_job(
         job,
@@ -1370,41 +1372,70 @@ def resolve_drawing_render_job(
     )
 
 
-def build_dxf_artifact(*args, **kwargs):
-    """Module-level indirection over the drawing builder.
+# The snapshot mesher: DXF text on stdin -> one GLB. Bundled into _runtime/node
+# by bundle-cadgen-runtime.sh; the name is pinned by test_node_builder_bundles.
+DXF_MESH_BUILDER = "dxf-mesh.mjs"
 
-    Deferred so importing this CLI does not drag ezdxf in for a skill that never renders a
-    drawing, and module-level (rather than an import inside the caller) so it is one
-    patchable seam rather than a hidden one.
+
+def generate_dxf_for_snapshot(source: Path, *, force: bool = False) -> Path:
+    """Module-level indirection over the drawing generator.
+
+    Deferred so importing this CLI does not drag ezdxf in for a skill that never
+    renders a drawing, and module-level so it is one patchable seam. Returns the
+    generated sibling `.dxf` path."""
+    from cadgen._internal.generation import generate_dxf_targets
+
+    generate_dxf_targets([str(source)], force=force)
+    sibling = source.with_name(source.name[: -len(".py")])
+    if not sibling.is_file():
+        raise SnapshotError(f"gen did not write {sibling}")
+    return sibling
+
+
+def drawing_mesh_path(source: Path, *, force: bool = False) -> Path:
+    """Mesh the drawing on demand and return a GLB path for the mesh renderer.
+
+    A `.dxf.py` generator is made current first (the ordinary gen no-op gate);
+    an imported `.dxf` is meshed as-is. The mesh is produced by the bundled
+    dxf-mesh.mjs one-shot into the snapshot's temp space — nothing is cached,
+    matching the viewer, which parses and meshes the `.dxf` client-side.
     """
-    from cadgen.dxf_artifact import build_dxf_artifact as build
+    import subprocess
+    import tempfile
 
-    return build(*args, **kwargs)
+    from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
 
-
-def drawing_preview_path(source: Path, *, force: bool = False) -> Path:
-    """Build/refresh the drawing package and return the preview.glb inside it.
-
-    The build is `artifact_build(DRAWING_PACKAGE, ...)` inside build_dxf_artifact -- the
-    same locked path `scripts/artifact` and the CAD Viewer take, so a snapshot that has to
-    make a package current cannot race one of them.
-    """
     if not source.name.lower().endswith((".dxf", ".py")):
         raise SnapshotError(
             f"snapshot input must be a .dxf file or a gen_dxf() Python source: {source}"
         )
     if not source.is_file():
         raise SnapshotError(f"snapshot input does not exist: {source}")
-    payload = build_dxf_artifact(repo_root=Path.cwd(), source_path=source, force=force)
-    preview = str(payload.get("previewPath") or "").strip()
-    if not preview:
-        # The builder always bakes a preview; a payload without one means the package is
-        # older than preview.glb existed, and rendering the stale package would be worse
-        # than saying so.
-        raise SnapshotError(
-            f"drawing package for {source} has no preview.glb; rebuild it with --force"
-        )
-    return Path(preview).resolve()
+    dxf_path = source
+    if source.name.lower().endswith(".py"):
+        dxf_path = generate_dxf_for_snapshot(source, force=force)
+    out_dir = Path(tempfile.mkdtemp(prefix="cadgen-dxf-snapshot-"))
+    out_path = out_dir / f"{dxf_path.stem}.glb"
+    proc = subprocess.run(
+        [str(cad_node_executable()), str(node_builder_script(DXF_MESH_BUILDER)),
+         "--out", str(out_path), "--name", dxf_path.stem],
+        input=dxf_path.read_text(encoding="utf-8", errors="replace"),
+        capture_output=True,
+        text=True,
+    )
+    payload = {}
+    for line in reversed(proc.stdout.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+            except ValueError:
+                pass
+            break
+    if not payload.get("ok") or not out_path.is_file():
+        detail = str(payload.get("error") or proc.stderr or f"exit {proc.returncode}").strip()
+        raise SnapshotError(f"could not mesh {dxf_path.name}: {detail}")
+    return out_path.resolve()
 
 
 # Kind dispatch for render-job resolution. Every resolver takes the same

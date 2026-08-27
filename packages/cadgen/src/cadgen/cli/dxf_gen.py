@@ -53,8 +53,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Build drawing-package render artifacts (and on-demand DXF exports) from "
-            "Python gen_dxf() sources."
+            "Generate DXF drawings from Python gen_dxf() sources. Every target "
+            "writes its sibling <name>.dxf; -o renames the output for a single "
+            "target."
         ),
     )
     parser.add_argument(
@@ -69,14 +70,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         help="Export the generated DXF file to this path. Valid only with one plain generated Python target.",
     )
     parser.add_argument(
-        "--write",
-        action="store_true",
-        help="Also write the sibling <name>.dxf export (the drawing package is always built).",
-    )
-    parser.add_argument(
         "--force",
         action="store_true",
-        help="Regenerate even when the cached drawing package is current.",
+        help="Regenerate even when the recorded output is current.",
     )
     parser.add_argument(
         "--validate",
@@ -95,7 +91,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     parser = build_parser(prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
     if args.validate:
-        if args.output is not None or args.write or args.force:
+        if args.output is not None or args.force:
             parser.error("--validate cannot be combined with generation flags")
         return validate_dxf_files(args.targets)
     if args.output is not None:
@@ -107,7 +103,6 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
         return generate_dxf_targets(
             args.targets,
             output=args.output,
-            write_dxf=bool(args.write),
             force=bool(args.force),
             verbose=bool(args.verbose),
         )

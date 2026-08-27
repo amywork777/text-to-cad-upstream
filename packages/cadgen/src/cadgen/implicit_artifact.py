@@ -1,6 +1,6 @@
 """Build the CAD Viewer render package for one implicit CAD model.
 
-The implicit analogue of :mod:`cadgen.dxf_artifact`, and the SINGLE producer behind both
+The implicit analogue of the STEP artifact CLI, and the SINGLE producer behind both
 entrypoints that build an implicit package -- ``skills/implicit-cad/scripts/gen`` and the
 viewer's ``POST /__cad/artifact``. A second producer that assembled the lock, the status
 record and the currency gate by hand is exactly how the defects the coordination refactor
@@ -119,7 +119,7 @@ def build_implicit_artifact(
     lock_timeout_s: float = 0.0,
 ) -> dict[str, object]:
     """Build the implicit package for one model and RETURN the result payload (the exact
-    dict the CLI prints). Mirrors :func:`cadgen.dxf_artifact.build_dxf_artifact`.
+    dict the CLI prints).
 
     ``write_glb`` also leaves an export-preset GLB at that path. A requested sibling that is
     not on disk makes the build NOT current -- the mesh is what produces both files, and

@@ -26,7 +26,7 @@ payload it names, so a failed build leaves a package with no descriptor (``needs
 rather than one claiming a mesh that is missing or half-written.
 
 stdlib only: the viewer's long-lived server imports this for its freshness gate, exactly as it
-imports ``_internal.drawing_package``, and must never load a CAD runtime to answer a GET.
+and must never load a CAD runtime to answer a GET.
 """
 
 from __future__ import annotations

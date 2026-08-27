@@ -41,7 +41,7 @@ CHECK_DIR="${CADGEN_RUNTIME_CHECK_DIR:-$REPO_ROOT/tmp/cadgen-runtime-check}"
 SNAPSHOT_BUILD_DEPS_DIR="${CADGEN_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/cadgen-snapshot-build}"
 
 BUILDER_ENTRIES=(
-  "$REPO_ROOT/packages/cadjs/bin/dxf-artifact.mjs"
+  "$REPO_ROOT/packages/cadjs/bin/dxf-mesh.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicit-artifact.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicit-export.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"

@@ -34,14 +34,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cadgen._internal.drawing_package import (
-    DRAWING_DESCRIPTOR_NAME,
-    DRAWING_PACKAGE_KIND,
-    DXF_PACKAGE_SCHEMA_VERSION,
-    descriptor_is_drawing,
-    drawing_payload_keys,
-    drawing_preview_bake_settings,
-)
+from cadgen._internal.dxf_output import dxf_output_current
 from cadgen._internal.implicit_package import (
     IMPLICIT_DESCRIPTOR_NAME,
     IMPLICIT_PACKAGE_KIND,
@@ -71,8 +64,9 @@ BUILDABLE_ARTIFACT_CODES = frozenset([
     "missing_surface_edge_attributes", "missing_selector_topology",
     "missing_source_path", "missing_step_hash", "stale_step_artifact",
     "unsupported_step_topology",
-    # Drawing package codes (same buildable semantics).
-    "missing_dxf_artifact", "stale_dxf_artifact", "unsupported_dxf_artifact",
+    # Generated-drawing output codes (same buildable semantics): the .dxf IS the
+    # product now, so freshness is the output record, not a package.
+    "missing_dxf_output", "stale_dxf_output",
     # Implicit render package codes.
     "missing_implicit_artifact", "stale_implicit_artifact", "unsupported_implicit_artifact",
 ])
@@ -81,7 +75,10 @@ DXF_GENERATOR_SUFFIX = ".dxf.py"
 IMPLICIT_CAD_EXTENSIONS = tuple(IMPLICIT_SUFFIXES)
 
 _STEP_ENTRY_RE = re.compile(r"\.(step|stp)(\.py)?$", re.IGNORECASE)
-_DXF_ENTRY_RE = re.compile(r"\.dxf(\.py)?$", re.IGNORECASE)
+# Generated drawings only: an imported .dxf renders natively (the client parses
+# the file itself — design/standalone-viewer.md Phase A), so it needs no build
+# and is deliberately NOT owned.
+_DXF_ENTRY_RE = re.compile(r"\.dxf\.py$", re.IGNORECASE)
 
 _STEP_EXPORT_FORMAT_SUFFIX = {"step": "step", "stl": "stl", "3mf": "3mf", "glb": "glb"}
 _IMPLICIT_EXPORT_FORMATS = ("stl", "glb", "3mf")
@@ -216,23 +213,6 @@ _STEP_PACKAGE = {
     "unsupported": "unsupported_step_topology",
     "stale": "stale_step_artifact",
 }
-_DRAWING_PACKAGE = {
-    "descriptor": DRAWING_DESCRIPTOR_NAME,
-    "package_kind": DRAWING_PACKAGE_KIND,
-    "schema_version": DXF_PACKAGE_SCHEMA_VERSION,
-    "source_digest_field": "sourceDigest",
-    # A package that cannot be shown to be current IS stale; stale_dxf_artifact is
-    # already buildable and already has client copy.
-    "missing_digest": "stale_dxf_artifact",
-    # The drawing package bakes settings (preview.glb froze a thickness, a bend state
-    # and the mesher's geometry contract). The producer's own callable, so the two
-    # authorities cannot drift apart by an edit.
-    "bake_settings": drawing_preview_bake_settings,
-    "missing": "missing_dxf_artifact",
-    "unreadable": "missing_dxf_artifact",
-    "unsupported": "unsupported_dxf_artifact",
-    "stale": "stale_dxf_artifact",
-}
 _IMPLICIT_PACKAGE = {
     "descriptor": IMPLICIT_DESCRIPTOR_NAME,
     "package_kind": IMPLICIT_PACKAGE_KIND,
@@ -254,24 +234,6 @@ def _step_payload_refs(descriptor):
     ``.surf`` — design/surface-rendering.md R5)."""
     components = descriptor.get("components") if isinstance(descriptor.get("components"), dict) else {}
     return [str((component or {}).get("surf") or "").strip() for component in components.values()]
-
-
-def descriptor_declares_no_bake(descriptor):
-    """Whether this descriptor legitimately records no bake at all.
-
-    A drawing has no flat pattern, so it bakes nothing and records nothing -- but a drawing
-    descriptor that DOES carry a bakeHash is not exempt: it is claiming a payload it never
-    wrote, which is exactly what the gate is for."""
-    if not descriptor_is_drawing(descriptor):
-        return False
-    return not str(descriptor.get("bakeHash") or "").strip()
-
-
-def _drawing_payload_refs(descriptor):
-    """The drawing package's one payload: the render GLB. The payload list comes from
-    cadgen so this side cannot drift into demanding a preview from a dimensioned drawing
-    and reporting it stale forever (issue #246)."""
-    return [str(descriptor.get(key) or "").strip() for key in drawing_payload_keys(descriptor)]
 
 
 def _implicit_payload_refs(descriptor):
@@ -315,15 +277,12 @@ def _validate_render_package(spec, source_path, payload_refs, model_folder):
         if not ref or not os.path.isfile(os.path.join(package_dir, ref)):
             return (False, spec["missing"])
     bake_settings = spec["bake_settings"]
-    # Two different "no bake" cases, and only one of them is legitimate: a kind that
-    # bakes NOTHING (STEP) must still be checked — a descriptor that records a bakeHash
-    # anyway is stale — while a DRAWING profile genuinely has no flat pattern to bake,
-    # so demanding a bakeHash from it would report it stale on every poll.
-    if not descriptor_declares_no_bake(descriptor):
-        if not bake_hash_matches(
-            descriptor, canonical_bake_hash(bake_settings() if bake_settings else None)
-        ):
-            return (False, spec["stale"])
+    # A kind that bakes NOTHING (STEP) must still be checked: a descriptor that
+    # records a bakeHash anyway is claiming a payload it never wrote.
+    if not bake_hash_matches(
+        descriptor, canonical_bake_hash(bake_settings() if bake_settings else None)
+    ):
+        return (False, spec["stale"])
     if str(descriptor.get("sourceKind", "step")).strip().lower() == "python":
         if not os.path.isfile(source_path):
             return (False, "missing_source_path")
@@ -357,12 +316,20 @@ def validate_step_freshness(repo_root, source_path):
 
 
 def validate_dxf_freshness(repo_root, source_path):
-    """ok=True (fresh/ready) or (False, code). source_path is the `.dxf.py` generator for
-    a generated drawing or the `.dxf` itself for an imported one."""
+    """ok=True (fresh/ready) or (False, code). source_path is the `.dxf.py`
+    generator; its product is the sibling `.dxf` the viewer parses directly.
+    Freshness is the output record — the SAME gate the CLI's no-op path uses
+    (cadgen._internal.dxf_output), so the two authorities cannot disagree."""
     del repo_root
-    return _validate_render_package(
-        _DRAWING_PACKAGE, source_path, _drawing_payload_refs, os.path.dirname(os.path.abspath(source_path))
-    )
+    source_path = Path(source_path)
+    if not os.path.isfile(source_path):
+        return (False, "missing_source_path")
+    sibling = source_path.with_name(source_path.name[: -len(".py")])
+    if not sibling.is_file():
+        return (False, "missing_dxf_output")
+    if not dxf_output_current(source_path, sibling):
+        return (False, "stale_dxf_output")
+    return (True, None)
 
 
 def validate_implicit_freshness(repo_root, source_path):
@@ -444,9 +411,10 @@ def resolve_dxf_source(file_ref, root_path):
     if not normalized:
         raise ValueError("Missing DXF file")
     for c in candidates:
-        if not is_dxf_generator_path(c) and os.path.splitext(c)[1].lower() != ".dxf":
+        if not is_dxf_generator_path(c):
             raise ValueError(
-                "Only .dxf drawings and .dxf.py drawing generators can generate DXF drawing artifacts"
+                "Only .dxf.py drawing generators are artifact-managed; an imported "
+                ".dxf renders directly and needs no build"
             )
         return {"sourcePath": c}
     raise ValueError(f"DXF source not found: {normalized}")
@@ -669,9 +637,11 @@ def _build_step_artifact(file_ref, force, root_path):
 def _build_dxf_artifact(file_ref, force, root_path):
     resolved = resolve_dxf_source(file_ref, root_path)
     source_path = resolved["sourcePath"]
+    sibling = source_path[: -len(".py")]
+    args = ["--source-path", source_path, "--out", sibling]
     result = _run_artifact_build(
-        "cadgen.dxf_artifact", ["--source-path", source_path], root_path,
-        force=force, error_label="DXF render artifact build failed",
+        "cadgen.dxf_export_target", args, root_path,
+        force=force, error_label="DXF generation failed",
     )
     return {**result, "sourcePath": source_path}
 
@@ -733,8 +703,8 @@ def generate_export(file_ref: str, root_path: str, fmt: str, out_path: str) -> d
         if normalized_format != "dxf":
             raise ValueError(f"Unsupported export format for a DXF drawing: {fmt}")
         resolved = resolve_dxf_source(file_ref, root_path)
-        args = ["--repo-root", root_path, "--source-path", resolved["sourcePath"], "--export", out_path]
-        result = run_cadgen("cadgen.dxf_artifact", args, root_path)
+        args = ["--repo-root", root_path, "--source-path", resolved["sourcePath"], "--out", out_path]
+        result = run_cadgen("cadgen.dxf_export_target", args, root_path)
     elif path_is_implicit_cad_source(normalized_ref):
         if normalized_format not in _IMPLICIT_EXPORT_FORMATS:
             raise ValueError(f"Unsupported implicit CAD export format: {fmt or '(missing)'}")

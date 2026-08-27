@@ -36,7 +36,6 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
     # DXF
     "dxf gen": ("cadgen.cli.dxf_gen", "build DXF targets from .dxf.py generators"),
-    "dxf artifact": ("cadgen.cli.dxf_artifact", "build a DXF's drawing package"),
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Implicit
     "implicit gen": ("cadgen.cli.implicit_gen", "build implicit CAD targets"),
@@ -121,13 +120,12 @@ _DAEMON_TOOLS = {
     # Warm workers carry PYTHONHASHSEED=0, so a served dxf build is deterministic
     # without paying the re-run below.
     "dxf gen": "dxf-gen",
-    "dxf artifact": "dxf-artifact",
 }
 
 # Drawing packages are content-addressed and ezdxf's object ordering depends on hash
 # randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read at
 # interpreter start, so the only way to guarantee it is to re-exec once.
-_HASH_SEED_COMMANDS = {"dxf gen", "dxf artifact"}
+_HASH_SEED_COMMANDS = {"dxf gen"}
 
 
 # subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows

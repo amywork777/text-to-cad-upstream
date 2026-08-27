@@ -71,7 +71,6 @@ _TOOL_IMPORTS = {
     # That is strictly better than dispatch's re-run: same determinism, no interpreter
     # restart on the warm path.
     "dxf-gen": "cadgen.cli.dxf_gen",
-    "dxf-artifact": "cadgen.cli.dxf_artifact",
 }
 _TOOL_MAINS: dict[str, object] = {}
 

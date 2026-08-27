@@ -70,7 +70,7 @@ REQUIRED=(
   "cadgen/step_topology_artifact.py"
   "cadgen/_internal/node_resolve_register.mjs"
   "cadgen/_internal/node_resolve_hooks.mjs"
-  "cadgen/_runtime/node/dxf-artifact.mjs"
+  "cadgen/_runtime/node/dxf-mesh.mjs"
   "cadgen/_runtime/node/implicit-artifact.mjs"
   "cadgen/_runtime/node/implicit-export.mjs"
   "cadgen/_runtime/node/implicitClosureHooks.mjs"
