@@ -57,3 +57,38 @@ renderer. Mesh survives only in scripts/export (STL/3MF/GLB as export
 formats) and on-demand inspect facts. All store/artifact conventions from
 the production architecture apply (content addressing, atomic writes,
 kill switches, version salts).
+
+## Execution log
+
+- R0 DONE: golden harness (`scripts/render/golden.py`, capture + shift-
+  tolerant perceptual compare), 24 themed baselines of the GLB viewer under
+  `tmp/render-goldens/baseline`; headless WebGPU proven (Apple Metal-3).
+- R1 DONE: `cadgen._internal.surface_extract` emits `<cid>.surf` beside
+  every component GLB (packages, shared store keyed by bare cid,
+  descriptor `surf` refs, freshness gates). OCCT-rebuild fidelity suite in
+  `tests/python/packages/cadgen/test_surface_extract.py`.
+  Hard-won invariants, all pinned by tests:
+  - parametrization is part of the contract: revolution/extrusion
+    serialize as axis + profile (NURBS conversion reparametrizes), native
+    B-spline/Bezier convert exactly, exotic kinds approximate.
+  - every curve/surface ships CLAMPED (client evaluators are
+    clamped-only); a payload's range must sit inside its knot domain
+    (trimming periodic pcurves near the period normalizes parameters).
+  - swept faces can cross a closed profile's period: profiles carry
+    `period` and the client wraps.
+  - clamping operates on COPIES (the adaptor hands back the model's own
+    curve handle).
+- R2 DONE (CPU tier): `packages/cadjs/src/lib/surf/` — container parser,
+  WGSL-portable evaluators, grid+clip tessellator (curvature-driven cells,
+  boundary-exact trims, conforming refinement w/ chord + normal-spread +
+  facet-alignment criteria; volume within 0.5% and per-face area within
+  1% of OCCT). GPU compute tessellation remains as an optimization tier.
+- VIEWER + SNAPSHOT swapped to `.surf` for STEP display: `loadRenderSurf`
+  produces the GLB meshData contract (barycentric edge overlay synthesized
+  from model-edge ordinals). Planetary golden diff 1.56% (<2% gate);
+  turbofan visually identical (sub-percent auto-fit zoom difference from
+  honest bbox deltas — accepted, new baseline captured from the surf
+  renderer). three upgraded to 0.185.1 in cadjs.
+- REMAINING: selector/topology bundles still load from GLB (R3), WebGPU
+  renderer swap + TSL port of the edge overlay (R2 tail/R4), GLB display
+  pipeline deletion (R5).

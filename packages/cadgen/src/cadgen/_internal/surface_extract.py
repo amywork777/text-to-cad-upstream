@@ -236,8 +236,11 @@ def _basis_curve_payload(basis_adaptor, bin_out: _Bin) -> dict[str, Any]:
         if bspline.IsPeriodic():
             # A swept face's parameter range may CROSS the closed profile's
             # period (bracelet-link outlines do); the client wraps into the
-            # clamped domain using this period.
+            # clamped domain using this period. Clamp a COPY — the adaptor
+            # hands back the model's own curve handle, and SetNotPeriodic on
+            # it would silently rewrite the shape being extracted.
             period = bspline.Period()
+            bspline = bspline.Copy()
             bspline.SetNotPeriodic()
         return _bspline_curve3_payload(bspline, bin_out, period=period)
     if kind == GeomAbs_CurveType.GeomAbs_BezierCurve:
@@ -290,6 +293,10 @@ def _bspline_curve3_payload(bspline, bin_out: _Bin, *, period=None) -> dict[str,
         "knots": bin_out.append(flat),
         "range": [bspline.FirstParameter(), bspline.LastParameter()],
     }
+    if period is not None:
+        # Clamped from a CLOSED profile: sweep faces may address parameters
+        # past the period; the client wraps into the clamped domain.
+        payload["period"] = float(period)
     if rational:
         payload["weights"] = bin_out.append(weights)
     return payload
