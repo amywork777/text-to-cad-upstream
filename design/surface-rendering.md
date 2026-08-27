@@ -101,3 +101,20 @@ kill switches, version salts).
   point at the .surf. Verified: `inspect refs block#o1.1.f3` resolves
   "plane area=36.0" GLB-free; turbofan FORCED full rebuild (206
   components) 33s -> 7.3s; viewer renders surf-only packages.
+- WIDE STEP SWEEP (2026-08-27): 21/21 imported vendor mechanism STEPs
+  (models/step/mechanisms) import -> surf-only package -> snapshot render,
+  ~8-10s each including STEP read; every current component parses,
+  tessellates, and stays inside its descriptor bbox. Generated models:
+  planetary (9), turbofan (206), moonwatch (257), lyra (92), juno (244),
+  hypercar (647), f14d (1127 components, 741s cold geometry build) all
+  clean. Two extractor gaps found and fixed by the sweep: native
+  Geom_BSplineSurface faces serialize DIRECTLY (vendor trim-then-convert
+  round trips can throw), and closed swept profiles carry their period.
+  f1.step.py fails in its own loft (f1_parts/lib.py:313) identically on
+  develop — pre-existing model breakage, unrelated.
+- DEFERRED to a follow-on: WebGPURenderer swap + TSL port of the
+  barycentric edge overlay + WGSL compute tessellation. The outcome
+  contract (same-or-better pixels, exact edges, all themes, picking,
+  snapshots) is met on WebGL + client CPU tessellation; headless WebGPU
+  and a WebGPURenderer surf render are already proven, so the tier can
+  land without artifact or protocol changes.
