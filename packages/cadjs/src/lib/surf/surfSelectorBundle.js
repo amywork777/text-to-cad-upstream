@@ -162,6 +162,13 @@ export function buildSelectorBundleFromSurf(index, floats, options = {}) {
     const stats = range
       ? faceStatistics(component, range)
       : { area: 0, center: [0, 0, 0], normal: null, bounds: finiteBounds(emptyBounds()) };
+    // Prefer the EXACT metrics the extractor stored (GProps) over the
+    // mesh-derived estimates; the mesh keeps supplying the normal.
+    if (Number.isFinite(face.area)) stats.area = face.area;
+    if (Array.isArray(face.center)) stats.center = face.center;
+    if (Array.isArray(face.bbox) && face.bbox.length === 6) {
+      stats.bounds = { min: face.bbox.slice(0, 3), max: face.bbox.slice(3, 6) };
+    }
     statsByOrd.set(face.ord, stats);
     totalArea += stats.area;
     mergeBounds(overallBounds, stats.bounds);
@@ -197,12 +204,17 @@ export function buildSelectorBundleFromSurf(index, floats, options = {}) {
         );
       }
     }
-    totalLength += length;
+    const exactLength = Number.isFinite(edge.length) ? edge.length : length;
+    totalLength += exactLength;
     edgeGeometry.set(edge.ord, {
       polyline,
-      length,
-      center: pointCount ? center.map((value) => value / pointCount) : [0, 0, 0],
-      bounds: finiteBounds(bounds),
+      length: exactLength,
+      center: Array.isArray(edge.center)
+        ? edge.center
+        : pointCount ? center.map((value) => value / pointCount) : [0, 0, 0],
+      bounds: Array.isArray(edge.bbox) && edge.bbox.length === 6
+        ? { min: edge.bbox.slice(0, 3), max: edge.bbox.slice(3, 6) }
+        : finiteBounds(bounds),
     });
   }
   totalLength = Math.max(totalLength, 1e-12);

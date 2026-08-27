@@ -29,10 +29,23 @@ export function findSpan(flatKnots, degree, poleCount, t) {
   return mid;
 }
 
+// Scratch pools: these run millions of times per large assembly and the
+// per-call Float64Array allocations dominated GC time. JS realms are
+// single-threaded (each worker has its own module instance), so shared
+// module scratch is safe.
+const scratchBySize = new Map();
+function scratch(slot, size) {
+  let bySlot = scratchBySize.get(size);
+  if (!bySlot) scratchBySize.set(size, (bySlot = []));
+  let array = bySlot[slot];
+  if (!array) bySlot[slot] = array = new Float64Array(size);
+  return array;
+}
+
 export function basisFunctions(flatKnots, degree, span, t, out) {
-  // out must hold degree+1 values; left/right are stack temporaries.
-  const left = new Float64Array(degree + 1);
-  const right = new Float64Array(degree + 1);
+  // out must hold degree+1 values; left/right are shared scratch.
+  const left = scratch(0, degree + 1);
+  const right = scratch(1, degree + 1);
   out[0] = 1.0;
   for (let j = 1; j <= degree; j += 1) {
     left[j] = t - flatKnots[span + 1 - j];
@@ -66,7 +79,7 @@ export function evaluateBSplineCurve(payload, floats, t, dim) {
     }
   }
   const span = findSpan(knots, degree, payload.n, t);
-  const basis = basisFunctions(knots, degree, span, t, new Float64Array(degree + 1));
+  const basis = basisFunctions(knots, degree, span, t, scratch(2, degree + 1));
   const point = [0, 0, 0];
   let w = 0.0;
   for (let i = 0; i <= degree; i += 1) {
@@ -127,8 +140,8 @@ function evaluateNurbsSurface(payload, floats, u, v) {
   const weights = payload.weights ? floatSpan(floats, payload.weights) : null;
   const spanU = findSpan(knotsU, degU, nu, u);
   const spanV = findSpan(knotsV, degV, nv, v);
-  const basisU = basisFunctions(knotsU, degU, spanU, u, new Float64Array(degU + 1));
-  const basisV = basisFunctions(knotsV, degV, spanV, v, new Float64Array(degV + 1));
+  const basisU = basisFunctions(knotsU, degU, spanU, u, scratch(2, degU + 1));
+  const basisV = basisFunctions(knotsV, degV, spanV, v, scratch(3, degV + 1));
   let x = 0;
   let y = 0;
   let z = 0;

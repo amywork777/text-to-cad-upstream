@@ -278,18 +278,12 @@ export function peekRenderGlb(url) {
 }
 
 export async function loadRenderSurf(url, { signal } = {}) {
-  // Exact-surface component artifact (design/surface-rendering.md): fetch
-  // the .surf and tessellate client-side into the same meshData contract a
-  // component GLB produced. Parse + tessellation are shared with the
-  // topology bundle loaders through loadSurfComponent's cache.
+  // Exact-surface component artifact (design/surface-rendering.md): the
+  // .surf is fetched + tessellated in the worker pool into the same
+  // meshData contract a component GLB produced; the selector bundle rides
+  // the same request through loadSurfPayload's cache.
   const meshData = await loadCached(glbCache, url, async () => {
-    const [{ buildMeshDataFromSurf }, entry] = await Promise.all([
-      import("./surf/surfMeshData.js"),
-      loadSurfComponent(url, { signal }),
-    ]);
-    return buildMeshDataFromSurf(entry.index, entry.floats, {
-      component: entry.component,
-    });
+    return (await loadSurfPayload(url, { signal })).meshData;
   }, { cachePending: !signal });
   return finalizeCached(glbCache, url, meshData);
 }
@@ -559,35 +553,61 @@ export function peekRenderDisplayEdgeBundle(glbUrl) {
 
 // --- Exact-surface topology (design/surface-rendering.md R3) ---------------
 //
-// The .surf carries the same topology the GLB's STEP_TOPOLOGY tables did;
-// the bundle is synthesized client-side from one shared parse+tessellation
-// per URL (the display meshData path reuses the same cache entry).
+// The .surf carries the same topology the GLB's STEP_TOPOLOGY tables did.
+// One request per component URL produces BOTH consumers' payloads — the
+// render meshData and the selector bundle — from a single tessellation,
+// which runs in the surf WORKER POOL: tessellation is the cost this
+// migration moved from the build to the client, and doing it inline froze
+// the main thread for the whole load of a large assembly. The inline path
+// remains as the no-Worker fallback (node, tests).
 
-const surfComponentCache = new Map();
+const surfPayloadCache = new Map();
 
-async function loadSurfComponent(url, { signal } = {}) {
-  const entry = await loadCached(surfComponentCache, url, async () => {
-    const [{ parseSurf }, { tessellateComponent }, buffer] = await Promise.all([
-      import("./surf/container.js"),
-      import("./surf/tessellate.js"),
-      loadRenderArrayBuffer(url, { signal }),
-    ]);
-    assertNotGitLfsPointer(buffer, url, "SURF render asset");
-    const { index, floats } = parseSurf(buffer);
-    return { index, floats, component: tessellateComponent(index, floats) };
+async function loadSurfPayloadInline(url, { signal } = {}) {
+  const [
+    { parseSurf },
+    { tessellateComponent },
+    { buildMeshDataFromSurf },
+    { buildSelectorBundleFromSurf },
+    buffer,
+  ] = await Promise.all([
+    import("./surf/container.js"),
+    import("./surf/tessellate.js"),
+    import("./surf/surfMeshData.js"),
+    import("./surf/surfSelectorBundle.js"),
+    loadRenderArrayBuffer(url, { signal }),
+  ]);
+  assertNotGitLfsPointer(buffer, url, "SURF render asset");
+  const { index, floats } = parseSurf(buffer);
+  const component = tessellateComponent(index, floats);
+  return {
+    meshData: buildMeshDataFromSurf(index, floats, { component }),
+    bundle: buildSelectorBundleFromSurf(index, floats, { component }),
+  };
+}
+
+async function loadSurfPayload(url, { signal } = {}) {
+  const payload = await loadCached(surfPayloadCache, url, async () => {
+    const { loadSurfComponentInWorker } = await import("./surf/surfWorkerClient.js");
+    const workerPayload = loadSurfComponentInWorker(url, { signal });
+    if (workerPayload) {
+      try {
+        return await workerPayload;
+      } catch (error) {
+        if (signal?.aborted || isAbortError(error)) {
+          throw error;
+        }
+        // Worker failure degrades to inline tessellation, never to no model.
+      }
+    }
+    return loadSurfPayloadInline(url, { signal });
   }, { cachePending: !signal });
-  return finalizeCached(surfComponentCache, url, entry);
+  return finalizeCached(surfPayloadCache, url, payload);
 }
 
 export async function loadRenderSurfSelectorBundle(surfUrl, { signal } = {}) {
   const bundle = await loadCached(selectorCache, surfUrl, async () => {
-    const [{ buildSelectorBundleFromSurf }, entry] = await Promise.all([
-      import("./surf/surfSelectorBundle.js"),
-      loadSurfComponent(surfUrl, { signal }),
-    ]);
-    return buildSelectorBundleFromSurf(entry.index, entry.floats, {
-      component: entry.component,
-    });
+    return (await loadSurfPayload(surfUrl, { signal })).bundle;
   }, { cachePending: !signal });
   return finalizeCached(selectorCache, surfUrl, bundle);
 }
