@@ -1,7 +1,9 @@
-import { RENDER_FORMAT, entrySourceFormat } from "cadjs/lib/fileFormats.js";
+import { entrySourceFormat } from "cadjs/lib/fileFormats.js";
 import {
+  ASSET_KIND,
   isArtifactManagedFormat,
   rebuildCommandForEntry,
+  renderCapabilities,
   renderFormatLabel
 } from "cadjs/lib/renderCapabilities.js";
 import {
@@ -102,7 +104,7 @@ export function buildViewerMeshAlert(entry, hasMeshData, loadError, artifact = n
   // now, which this alert path cannot see, so any meshless DXF stays quiet: a
   // layout's mesh is built from the same parse, and a genuinely broken file
   // reports through loadError above.
-  if (!hasMeshData && entrySourceFormat(entry) === RENDER_FORMAT.DXF) {
+  if (!hasMeshData && renderCapabilities(entrySourceFormat(entry)).assetKind === ASSET_KIND.DRAWING) {
     return null;
   }
 

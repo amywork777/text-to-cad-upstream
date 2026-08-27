@@ -117,3 +117,41 @@ entry says so.
     (`stale` + `staleReason` on ready responses), matching the long-standing
     `busy` flag — but neither renders anywhere. A small badge in the file
     sheet's status section would surface both.
+
+## WASM import follow-ups (2026-08-27)
+
+18. **`XCAFDoc_ColorTool.GetInstanceColor` is unbound in the prebuilt
+    opencascade.js**, so the import twin's shape-color fallback tries
+    `GetColor(shape, type)` only (`stepImport.mjs`, `colorFromShape`). The
+    label route covers instance colors on every corpus/parity fixture so far;
+    if a vendor STEP surfaces wrong per-instance colors under WASM import,
+    look here first (fix = custom ocjs build).
+
+19. **Label names under WASM import ride an XmlXCAF save.** `TDataStd_Name.Get`
+    is also unbound, so `stepImport.mjs` saves the XCAF doc to MEMFS as
+    XmlXCAF once per import and regex-indexes `<TDataStd_Name>` by label
+    entry. Correct on everything tested, but it serializes the whole document
+    — avoidable cost on very large vendor files; a custom ocjs build exposing
+    `Get` would delete the workaround.
+
+20. **WASM import progress has no denominator surface.** The child process
+    reports phase lines on stderr, but the status poll returns no `progress`
+    for WASM imports, so the client shows an indeterminate spinner for what
+    can be minutes on 100MB-class files. Wiring importCli's stderr phases into
+    a progress record (the shape render_ops writes) would light up the
+    existing bar.
+
+21. **Python `round()` vs JS rounding at exact half-thousandths.** The
+    adaptive-resolution twin rounds hints (and the >500mm scale-floor
+    tolerance) with `Math.round(v*1000)/1000` where Python banker's-rounds; a
+    value landing exactly on a .0005 boundary could differ by 0.001 and, for
+    the scale floor only, flip a freshness comparison once. Vanishingly
+    unlikely on real geometry; noted so a one-off "Python rebuilds a
+    JS-imported package once" report has a suspect.
+
+22. **Concurrent WASM imports are serialized in-process only.** `cadgenOps`
+    keys in-flight imports by package dir, which covers one server; two viewer
+    instances importing the same STEP concurrently rely on atomic per-file
+    writes rather than the native generation lock. Both results are
+    equivalent, so the race is benign — but it is not lock-coordinated with
+    native builds.

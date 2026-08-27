@@ -77,10 +77,11 @@ class CompactStdoutTests(unittest.TestCase):
     STDOUT_JSON_SOURCES = (
         "packages/cadgen/src/cadgen/snapshot_core.py",
         "packages/cadgen/src/cadgen/step_artifact_cli.py",
-        "packages/cadgen/src/cadgen/dxf_artifact.py",
+        # dxf_artifact (both module and cli shim) was deleted by the standalone-viewer
+        # DXF migration; its replacement emits one compact JSON line and is checked here.
+        "packages/cadgen/src/cadgen/dxf_export_target.py",
         "packages/cadgen/src/cadgen/cli/step_inspect/cli.py",
         "packages/cadgen/src/cadgen/cli/step_artifact.py",
-        "packages/cadgen/src/cadgen/cli/dxf_artifact.py",
         "packages/cadgen/src/cadgen/cli/step_gen.py",
         "packages/cadgen/src/cadgen/cli/step_export.py",
         "packages/cadgen/src/cadgen/cli/urdf_validate.py",

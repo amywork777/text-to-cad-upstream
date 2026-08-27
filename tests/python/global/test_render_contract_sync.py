@@ -41,6 +41,45 @@ class RenderContractSyncTest(unittest.TestCase):
             "them; a .surf the client cannot parse renders nothing).",
         )
 
+    def test_wasm_import_twin_constants_match_python(self) -> None:
+        # The WASM STEP import (viewer/server/import/stepImport.mjs) writes the
+        # SAME package format cadgen does, so every mirrored constant must move
+        # in lockstep: a one-sided bump ships a JS-built package the Python
+        # freshness gates call stale forever (or vice versa).
+        twin = ROOT / "viewer/server/import/stepImport.mjs"
+        self.assertEqual(
+            _extract(
+                r"^STEP_PACKAGE_VERSION = (\d+)$",
+                ROOT / "packages/cadgen/src/cadgen/_internal/package_freshness.py",
+            ),
+            _extract(r"^export const STEP_PACKAGE_VERSION = (\d+);", twin),
+            "STEP_PACKAGE_VERSION diverged between cadgen and the WASM import twin",
+        )
+        self.assertEqual(
+            _extract(
+                r"^STEP_TOPOLOGY_SCHEMA_VERSION = (\d+)$",
+                ROOT / "packages/cadgen/src/cadgen/_internal/glb_topology.py",
+            ),
+            _extract(r"^export const STEP_TOPOLOGY_SCHEMA_VERSION = (\d+);", twin),
+            "STEP_TOPOLOGY_SCHEMA_VERSION diverged between cadgen and the WASM import twin",
+        )
+        glb_topology = ROOT / "packages/cadgen/src/cadgen/_internal/glb_topology.py"
+        for python_pattern, js_pattern, label in (
+            (r'^STEP_TOPOLOGY_EDGE_CLASSIFICATION_ALGORITHM = "([^"]+)"',
+             r'^const EDGE_CLASSIFICATION_ALGORITHM = "([^"]+)";', "edge classification algorithm"),
+            (r'^STEP_TOPOLOGY_SURFACE_EDGE_ALGORITHM = "([^"]+)"',
+             r'^const SURFACE_EDGE_ALGORITHM = "([^"]+)";', "surface edge algorithm"),
+            (r"^STEP_TOPOLOGY_EDGE_ANGULAR_TOLERANCE_DEG = (\d+)",
+             r"^const EDGE_ANGULAR_TOLERANCE_DEG = (\d+);", "edge angular tolerance"),
+            (r"^STEP_TOPOLOGY_EDGE_SAMPLE_COUNT = (\d+)",
+             r"^const EDGE_SAMPLE_COUNT = (\d+);", "edge sample count"),
+        ):
+            self.assertEqual(
+                _extract(python_pattern, glb_topology),
+                _extract(js_pattern, twin),
+                f"{label} diverged between cadgen and the WASM import twin",
+            )
+
     def test_component_blob_format_is_pinned_not_current(self) -> None:
         # The standalone viewer's WASM OCCT trails OCP's version. A floating
         # BinTools_FormatVersion_CURRENT would let an OCP upgrade silently emit
@@ -55,6 +94,14 @@ class RenderContractSyncTest(unittest.TestCase):
             "component blobs must be written with a PINNED BinTools format "
             "version (see _shape_brep_bytes), never _CURRENT",
         )
+        # The JS producer writes blobs too (WASM import); the same pin applies,
+        # and both write sites must name the SAME version.
+        twin_source = (ROOT / "viewer/server/import/stepImport.mjs").read_text()
+        self.assertNotIn("BinTools_FormatVersion_CURRENT", twin_source)
+        python_pin = re.search(r"BinTools_FormatVersion\.(BinTools_FormatVersion_VERSION_\d+)", source)
+        twin_pin = re.search(r"BinTools_FormatVersion\.(BinTools_FormatVersion_VERSION_\d+)", twin_source)
+        assert python_pin and twin_pin, "a blob write site lost its explicit format pin"
+        self.assertEqual(python_pin.group(1), twin_pin.group(1))
 
 
 if __name__ == "__main__":

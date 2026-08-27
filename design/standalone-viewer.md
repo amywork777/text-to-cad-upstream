@@ -125,3 +125,31 @@ For raw STEP files that never met the pipeline, on Python-less machines:
   runtime). Pinned end to end by viewer/server/standaloneMode.test.mjs against
   a live server with a broken Python: degraded ready, stale badge, import
   explanation, and a real STL serialized in JS from the sun-gear surf fixture.
+- Phase C shipped (da8da8d2 extractor twin, f19a6ce5 import twin, + wiring):
+  - Extractor twin (viewer/server/import/surfExtractTwin.mjs) conformant with
+    the native extractor over the full 11-blob corpus at <=1e-14 mm (incl.
+    both periodic-crossing v14 traps and both gear involutes); harness =
+    extractCli.mjs + compareSurf.mjs, wrapped as
+    tests/python/packages/cadgen/test_surf_extractor_conformance.py.
+  - Import twin (stepImport.mjs): XCAF walk, embedded-entryKind metadata read,
+    adaptive mesh-resolution twin, package glue (salted cids, occurrence walk,
+    descriptor). Verified DESCRIPTOR-IDENTICAL to a native import of the same
+    STEP (ids, names, transforms, colors, tree, mesh block incl. hints, bbox,
+    stats, key set) with every occurrence-paired component conformant; cids
+    diverge by design. Pinned by test_wasm_import_parity.py; shared constants
+    pinned by test_render_contract_sync.py (now covers the JS producer's blob
+    pin too). Interop proven both ways: OCP reads WASM-written V4 blobs;
+    inspect refs/measure (occurrence + face selectors, lazy topology build)
+    work against a JS-built package.
+  - Wiring (cadgenOps.mjs): raw STEPs route to the WASM import when render_ops
+    is unavailable (VIEWER_WASM_IMPORT=1 forces, =0 disables); import runs as
+    a child process (an emscripten abort must not kill the server), in-flight
+    imports dedup by package dir and report `generating`; unimported STEPs
+    report `needs-build` instead of an install hint, stale imports rebuild.
+    E2E-pinned by standaloneMode.test.mjs: broken-Python server imports a raw
+    vendor STEP end to end and renders/exports it.
+  - Binding deviations from the plan, on record: worker THREAD became a child
+    PROCESS (aborts observed taking the whole node process down);
+    TDataStd_Name.Get and GetInstanceColor are unbound in the prebuilt kernel
+    (workarounds + follow-ups in design/FEEDBACK.md #18-19); Quantity_Color is
+    linear-RGB in WASM and converted to sRGB to match build123d output.

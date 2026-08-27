@@ -6,7 +6,8 @@
 // holds every triangle it drew, so "Export STL" must not require an install.
 // The one honest difference from the native path: triangles are at RENDER
 // tessellation rather than OCCT's export-tolerance meshing.
-import { RENDER_FORMAT, entrySourceFormat } from "cadjs/lib/fileFormats.js";
+import { entrySourceFormat } from "cadjs/lib/fileFormats.js";
+import { renderCapabilities } from "cadjs/lib/renderCapabilities.js";
 import { entryAssetUrl, entryMeshAssetUrl } from "cadjs/lib/entryAssets.js";
 import { loadRenderJson, loadRenderSurf } from "cadjs/lib/renderAssetClient.js";
 import { loadRenderMeshByUrl } from "cadjs/lib/render/meshLoaders.js";
@@ -131,13 +132,7 @@ export function clientMeshExportSupported(entry, format) {
   if (!CLIENT_MESH_EXPORT_FORMATS.includes(String(format || "").toLowerCase())) {
     return false;
   }
-  const sourceFormat = entrySourceFormat(entry);
-  return (
-    sourceFormat === RENDER_FORMAT.STEP ||
-    sourceFormat === RENDER_FORMAT.STL ||
-    sourceFormat === RENDER_FORMAT.THREE_MF ||
-    sourceFormat === RENDER_FORMAT.GLB
-  );
+  return renderCapabilities(entrySourceFormat(entry)).clientMeshExport != null;
 }
 
 // The serialization half, runtime-agnostic (node-testable): geometry in,
@@ -150,7 +145,7 @@ export async function buildEntryMeshExport(entry, format) {
     .replace(/\.(step|stp)(\.py)?$/i, "")
     .replace(/\.(stl|3mf|glb)$/i, "");
   let chunks;
-  if (entrySourceFormat(entry) === RENDER_FORMAT.STEP) {
+  if (renderCapabilities(entrySourceFormat(entry)).clientMeshExport === "package") {
     chunks = await collectStepPackageSoup(entry);
   } else {
     const meshData = await loadRenderMeshByUrl(entryMeshAssetUrl(entry));

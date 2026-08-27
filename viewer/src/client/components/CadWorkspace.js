@@ -1609,7 +1609,8 @@ export default function CadWorkspace({
   // A dimensioned drawing renders its own 2D geometry: there is no mesh to wait
   // for. Decided from the PARSED data (dimension/leader/paper-space evidence) —
   // the client twin of cadgen's drawing_checks predicate.
-  const selectedEntryIsDrawingDocument = selectedEntrySourceFormat === RENDER_FORMAT.DXF
+  const selectedEntryIsDrawingDocument =
+    assetKindForRenderFormat(selectedEntrySourceFormat) === ASSET_KIND.DRAWING
     && dxfDataIsDocument(drawingGeometry);
   // The selected entry's render artifact is (re)building -> show the loading state. Replaces the
   // old !entryHasMesh + buildable-code derivation.

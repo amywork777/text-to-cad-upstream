@@ -56,6 +56,11 @@ async function startBrokenPythonApp(t, { root }) {
 }
 
 test("standalone mode: built packages render, edits show stale, unimported explains", async (t) => {
+  // The WASM import is covered by its own test below; here it is disabled so
+  // the kernel-less degraded contract (honest staleness, install hints) stays
+  // testable on a checkout that has the kernel installed.
+  process.env.VIEWER_WASM_IMPORT = "0";
+  t.after(() => delete process.env.VIEWER_WASM_IMPORT);
   // realpath'd: macOS tmpdirs are symlinks (/var -> /private/var), and package
   // asset URLs are repo-relative — a root on one side of the symlink with
   // packages resolved on the other mangles them (the documented reason
@@ -126,3 +131,74 @@ test("standalone mode: built packages render, edits show stale, unimported expla
   const body = Buffer.from(result.body);
   assert.equal(body.readUInt32LE(80), result.triangleCount);
 });
+
+// The full Python-less import flow against a REAL vendor-style STEP: status
+// offers the build, the build runs the WASM import (parse -> XCAF walk ->
+// extractor twin -> package), and the resulting package renders and exports
+// through the same client modules the browser uses. Slow by nature (~15s:
+// one-time kernel init + import); it IS the standalone e2e.
+const IMPORT_FIXTURE = path.resolve(VIEWER_ROOT, "..", "models", "step", "parts", "cam_follower_roller.step");
+const wasmKernelPresent = fs.existsSync(
+  path.join(VIEWER_ROOT, "node_modules", "opencascade.js", "dist", "opencascade.full.wasm"),
+);
+
+test(
+  "standalone mode: a raw STEP imports through the WASM kernel and renders",
+  { skip: !wasmKernelPresent || !fs.existsSync(IMPORT_FIXTURE) },
+  async (t) => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const step = write(root, "roller.step", fs.readFileSync(IMPORT_FIXTURE));
+
+    const base = await startBrokenPythonApp(t, { root });
+
+    // Unimported + importable: the server offers a build instead of an excuse.
+    let status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
+    assert.equal(status.state, "needs-build");
+    assert.equal(status.wasmImport, true);
+
+    // POST the build: the WASM import runs in a child process and the entry
+    // settles ready with a real package on disk.
+    const build = await (
+      await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`, {
+        method: "POST",
+        headers: { "x-cadgen-viewer": "1" },
+      })
+    ).json();
+    assert.equal(build.ok, true, `build failed: ${build.error || ""}`);
+    assert.equal(build.state, "ready");
+    assert.equal(build.wasmImport, true);
+    const descriptorPath = path.join(root, "__cadgen__", "models", "roller.step", "assembly.json");
+    const descriptor = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
+    assert.equal(descriptor.kind, "assembly-package");
+    assert.equal(descriptor.sourceKind, "step");
+    assert.ok(Object.keys(descriptor.components).length >= 1);
+    assert.equal(
+      descriptor.stepHash,
+      sha256(fs.readFileSync(step)),
+      "descriptor records the imported file's hash",
+    );
+
+    // The imported package now reports plain ready...
+    status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
+    assert.equal(status.state, "ready");
+    assert.equal(status.stale, undefined);
+
+    // ...and renders/export-serializes through the standard client path.
+    const { buildEntryMeshExport } = await import(
+      path.join(VIEWER_ROOT, "src/client/workbench/clientMeshExport.js")
+    );
+    const catalog = await (await fetch(`${base}/__cad/catalog`)).json();
+    const entry = catalog.entries.find((e) => e.file.endsWith("roller.step"));
+    assert.ok(entry, "catalog lists the imported step");
+    const rawFetch = globalThis.fetch;
+    globalThis.fetch = (input, init) =>
+      rawFetch(typeof input === "string" && input.startsWith("/") ? `${base}${input}` : input, init);
+    t.after(() => {
+      globalThis.fetch = rawFetch;
+    });
+    const exported = await buildEntryMeshExport(entry, "stl");
+    assert.ok(exported.triangleCount >= 100, `triangles: ${exported.triangleCount}`);
+    assert.equal(Buffer.from(exported.body).readUInt32LE(80), exported.triangleCount);
+  },
+);

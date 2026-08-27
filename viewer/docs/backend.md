@@ -11,7 +11,8 @@ it does not host is the CAD runtime: anything that needs cadgen (artifact freshn
 owned entries, builds, exports) is delegated to a stdlib-only Python one-shot,
 `python -m cadgen.render_ops`, spawned per request. OCP never loads into the server
 process, and Python is not required to START the viewer at all — without cadgen the
-viewer serves packaged models read-only and builds answer with an install hint.
+viewer serves packaged models read-only, imports raw STEP files through its own WASM
+kernel (below), and other builds answer with an install hint.
 
 ## Where it runs
 
@@ -77,6 +78,26 @@ authorities cannot drift.
 
 Startup never blocks on Python: availability is probed lazily and reported through
 `stepArtifactGenerationAvailable` in `/__cad/server`.
+
+## WASM STEP import (no Python)
+
+A raw `.step`/`.stp` with no render package is still importable on a machine with no
+cadgen: `server/import/` holds a WASM OCCT pipeline (opencascade.js, a viewer npm
+dependency — never part of the cadgen wheel) that parses the STEP, walks its XCAF
+assembly, extracts each component with the surf-extractor twin, and writes the SAME
+package format cadgen writes. `cadgenOps` routes to it only when `render_ops` is
+unavailable (or always, with `VIEWER_WASM_IMPORT=1`; `=0` disables it), and runs it as
+a child process (`import/importCli.mjs`) so a kernel abort can never take the server
+down. Status for an unimported STEP then reports `needs-build` instead of an install
+hint, and the client's normal build POST performs the import.
+
+Both extractors and both package producers are deliberately duplicated code fenced by
+tests: `tests/python/packages/cadgen/test_surf_extractor_conformance.py` (geometry,
+per corpus blob), `test_wasm_import_parity.py` (descriptor + component parity against
+a native import of the same file), and `tests/python/global/test_render_contract_sync.py`
+(shared constants). Known limits: imports run at WASM speed (seconds for small files,
+minutes for 100MB-class ones, once per file), and the kernel (OCCT ~7.6) trails OCP —
+the BinTools blob format is pinned to V4 on both sides for that reason.
 
 ## Routes
 

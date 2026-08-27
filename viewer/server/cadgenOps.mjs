@@ -4,11 +4,14 @@
 // heavy work to the shared warm daemon pool); this process never hosts Python.
 //
 // Without a working cadgen the viewer still serves: status degrades to a pure
-// filesystem check and builds/exports answer with an install hint.
+// filesystem check and builds/exports answer with an install hint — except for
+// raw STEP files, which the WASM import (server/import/) converts into a
+// standard render package with no Python at all.
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { renderPackageDir } from "./scanner.mjs";
 
@@ -144,6 +147,93 @@ function runRenderOps(rootDir, args, { timeoutMs = 0 } = {}) {
 const CADGEN_UNAVAILABLE_HINT =
   "CAD generation requires the cadgen Python package (pip install cadgen); the viewer is serving read-only.";
 
+// --- WASM STEP import (Python-less fallback) ---------------------------------
+const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
+const IMPORT_CLI_PATH = path.join(SERVER_DIR, "import", "importCli.mjs");
+const RAW_STEP_RE = /\.(step|stp)$/i;
+
+// VIEWER_WASM_IMPORT=1 forces the WASM path even when cadgen answers (tests,
+// side-by-side comparison); =0 disables it outright (and lets tests exercise
+// the kernel-less degraded messages on a checkout that has the kernel).
+// Read per call, not at module load, so tests can flip it.
+function wasmImportForced() {
+  return String(process.env.VIEWER_WASM_IMPORT || "").trim() === "1";
+}
+
+export function wasmImportAvailable() {
+  if (String(process.env.VIEWER_WASM_IMPORT || "").trim() === "0") {
+    return false;
+  }
+  try {
+    // The kernel is a viewer npm dependency; resolve it the way the import
+    // worker will, so "available" and "will actually load" agree.
+    const kernelPath = path.join(
+      SERVER_DIR, "..", "node_modules", "opencascade.js", "dist", "opencascade.full.wasm",
+    );
+    return fs.existsSync(IMPORT_CLI_PATH) && fs.existsSync(kernelPath);
+  } catch {
+    return false;
+  }
+}
+
+function isRawStepFile(candidate) {
+  return RAW_STEP_RE.test(candidate) && fs.existsSync(candidate);
+}
+
+// One import per package dir at a time: the WASM import runs as a child process
+// (an emscripten abort must never take the server down with it), and concurrent
+// requests for the same entry attach to the in-flight run instead of racing it.
+const wasmImportsInFlight = new Map();
+
+function runWasmImport(candidate, { force = false } = {}) {
+  const packageDir = renderPackageDir(candidate);
+  const inFlight = wasmImportsInFlight.get(packageDir);
+  if (inFlight) {
+    return inFlight;
+  }
+  const promise = new Promise((resolve) => {
+    const args = [IMPORT_CLI_PATH, "--step", candidate, "--package-dir", packageDir];
+    if (force) {
+      args.push("--force");
+    }
+    const child = spawn(process.execPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", (error) => {
+      resolve({ ok: false, error: `could not run the WASM STEP import: ${error.message}` });
+    });
+    child.on("close", (code) => {
+      for (const line of stdout.split("\n").reverse()) {
+        const stripped = line.trim();
+        if (stripped.startsWith("{")) {
+          try {
+            resolve(JSON.parse(stripped));
+            return;
+          } catch {
+            break;
+          }
+        }
+      }
+      resolve({
+        ok: false,
+        error: (stderr || stdout || `WASM STEP import exited with code ${code}`).trim().slice(-500),
+      });
+    });
+  }).finally(() => {
+    wasmImportsInFlight.delete(packageDir);
+  });
+  wasmImportsInFlight.set(packageDir, promise);
+  return promise;
+}
+
 // Degraded status when no Python runtime is reachable: a package whose descriptor
 // exists renders as-is (a possibly-stale render beats nothing when nothing could
 // rebuild it anyway); anything else is an error naming the install.
@@ -172,6 +262,17 @@ function degradedStatus(fileRef, rootDir) {
         if (recorded && /\.(step|stp)$/i.test(candidate) && fs.existsSync(candidate)) {
           const digest = crypto.createHash("sha256").update(fs.readFileSync(candidate)).digest("hex");
           if (digest !== recorded) {
+            // With the WASM import on hand a stale import is rebuildable, so
+            // report it the way the native pipeline would (the client POSTs a
+            // build); without it, render as-is but say so.
+            if (isRawStepFile(candidate) && wasmImportAvailable()) {
+              return {
+                state: "needs-build",
+                degraded: true,
+                wasmImport: true,
+                staleReason: "the STEP file changed after this package was imported",
+              };
+            }
             status.stale = true;
             status.staleReason = "the STEP file changed after this package was imported";
           }
@@ -185,6 +286,14 @@ function degradedStatus(fileRef, rootDir) {
       return { state: "ready", degraded: true };
     }
     if (/\.(step|stp)$/i.test(candidate)) {
+      if (wasmImportsInFlight.has(packageDir)) {
+        return { state: "generating", degraded: true, wasmImport: true };
+      }
+      if (isRawStepFile(candidate) && wasmImportAvailable()) {
+        // Not imported yet, but importable right here: the client's next build
+        // POST runs the WASM import and the entry renders with no Python.
+        return { state: "needs-build", degraded: true, wasmImport: true };
+      }
       return {
         state: "error",
         error:
@@ -231,12 +340,33 @@ export function createCadgenOps(rootDir) {
       if (!ownsArtifactPath(fileRef)) {
         return { ok: true, state: "ready" };
       }
+      const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
+      const wasmEligible = isRawStepFile(candidate) && wasmImportAvailable();
+      const importViaWasm = async () => {
+        const imported = await runWasmImport(candidate, { force });
+        if (imported.ok) {
+          return { ok: true, state: "ready", degraded: true, wasmImport: true, ...imported };
+        }
+        return {
+          ok: false,
+          state: "error",
+          error: `WASM STEP import failed: ${imported.error || "unknown error"}`,
+        };
+      };
+      if (wasmEligible && wasmImportForced()) {
+        return importViaWasm();
+      }
       const args = ["build", "--file", fileRef, "--root", rootDir];
       if (force) {
         args.push("--force");
       }
       const result = await runRenderOps(rootDir, args);
       if (result.unavailable) {
+        // No Python here. A raw STEP still imports — at WASM speed, once —
+        // through the bundled kernel; everything else needs cadgen.
+        if (wasmEligible) {
+          return importViaWasm();
+        }
         return { ok: false, state: "error", error: CADGEN_UNAVAILABLE_HINT };
       }
       return result;
