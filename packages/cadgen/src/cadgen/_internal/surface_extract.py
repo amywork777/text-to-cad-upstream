@@ -657,6 +657,9 @@ def extract_surface_component(
             "surface": _surface_payload(face, bin_out),
             "loops": [],
         }
+        if entry["surface"].get("kind") == "plane":
+            sign = -1.0 if entry["reversed"] else 1.0
+            entry["normal"] = [sign * c for c in entry["surface"]["zdir"]]
         params = _selector_surface_params(adaptor)
         if params:
             entry["params"] = params

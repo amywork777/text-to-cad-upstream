@@ -237,7 +237,7 @@ class CadGenerationTests(unittest.TestCase):
         components = descriptor["components"]
         self.assertTrue(components, "the package must reference at least one component")
         for entry in components.values():
-            ref = str(entry["glb"])
+            ref = str(entry["surf"])
             # Self-contained, flat refs into the package's own components/ dir.
             self.assertTrue(ref.startswith("components/"), ref)
             self.assertNotIn("..", ref)

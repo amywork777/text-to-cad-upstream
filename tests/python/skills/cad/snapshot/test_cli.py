@@ -29,7 +29,7 @@ def write_package(step_path, *, entry_kind="part", source_kind="step"):
     pkg_dir.mkdir(parents=True, exist_ok=True)
     comp_dir.mkdir(parents=True, exist_ok=True)
     cid = hashlib.sha256(str(step_path).encode()).hexdigest()[:16]
-    (comp_dir / f"{cid}.glb").write_bytes(b"component-glb")
+    (comp_dir / f"{cid}.surf").write_bytes(b"component-surf")
     (pkg_dir / "assembly.json").write_text(
         json.dumps(
             {
@@ -42,7 +42,7 @@ def write_package(step_path, *, entry_kind="part", source_kind="step"):
                 "stepPath": step_path.name,
                 "bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
                 "stats": {"occurrenceCount": 1, "shapeCount": 1},
-                "components": {cid: {"glb": f"components/{cid}.glb", "contentHash": cid}},
+                "components": {cid: {"surf": f"components/{cid}.surf", "contentHash": cid}},
                 "occurrences": [
                     {
                         "id": "o1.1",

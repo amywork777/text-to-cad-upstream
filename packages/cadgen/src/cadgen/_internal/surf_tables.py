@@ -177,7 +177,7 @@ def selector_bundle_from_surf_index(index: Mapping[str, Any]) -> SurfTopologyBun
             str(face.get("surfaceType") or ""),
             area,
             face.get("center") or [0, 0, 0],
-            None,
+            face.get("normal"),
             _box_dict(face.get("bbox")) or {"min": [0, 0, 0], "max": [0, 0, 0]},
             start,
             count,

@@ -20,51 +20,36 @@ def _build_package_cp(compound, **kwargs):
 
 
 class ComponentWorkerDeterminismTests(unittest.TestCase):
-    @staticmethod
-    def _glb_json(path: Path) -> dict:
-        import struct
-
-        data = path.read_bytes()
-        length = struct.unpack_from("<I", data, 12)[0]
-        return json.loads(data[20 : 20 + length])
-
-    def test_component_structure_is_class_independent(self) -> None:
+    def test_component_artifact_is_class_independent(self) -> None:
         # Both build paths normalize through the BREP payload, so a parametric
-        # Box and a plain Solid wrapping the same geometry emit structurally
-        # identical components: XCAF auto-labels (e.g. "=>[0:1:1:2]") must not
-        # leak into node/mesh names. Byte equality is NOT asserted: the
-        # mesh/extract stage is not byte-reproducible run-to-run (pre-existing;
-        # cids hash geometry, not bytes, so correctness is unaffected).
+        # Box and a plain Solid wrapping the same geometry emit BYTE-IDENTICAL
+        # .surf artifacts (surface extraction is deterministic — no meshing).
         box = build123d.Box(20.0, 12.0, 6.0).moved(build123d.Location((100, 50, 25)))
         solid = build123d.Solid(box.wrapped)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            gltfs = []
-            for name, shape in (("box.glb", box), ("solid.glb", solid)):
+            payloads = []
+            for name, shape in (("box.surf", box), ("solid.surf", solid)):
                 out = root / name
-                cid, error = cp._build_component_glb_worker(
-                    (cp._shape_brep_bytes(shape), "cid-test", str(out), 0.5, 0.3)
+                cid, error = cp._build_component_surf_worker(
+                    (cp._shape_brep_bytes(shape), "cid-test", str(out))
                 )
                 self.assertIsNone(error)
                 self.assertEqual("cid-test", cid)
-                gltfs.append(self._glb_json(out))
-            names_a = [node.get("name") for node in gltfs[0].get("nodes", [])]
-            names_b = [node.get("name") for node in gltfs[1].get("nodes", [])]
-            self.assertEqual(names_a, names_b)
-            extras_a = [node.get("extras") for node in gltfs[0].get("nodes", [])]
-            extras_b = [node.get("extras") for node in gltfs[1].get("nodes", [])]
-            self.assertEqual(extras_a, extras_b)
-            self.assertEqual(
-                [m.get("name") for m in gltfs[0].get("meshes", [])],
-                [m.get("name") for m in gltfs[1].get("meshes", [])],
-            )
-            for gltf in gltfs:
-                self.assertEqual(1, len(gltf.get("meshes", [])))
-                self.assertNotIn("=>", json.dumps(gltf.get("nodes", [])))
+                payloads.append(out.read_bytes())
+            self.assertEqual(payloads[0], payloads[1])
+            from cadgen._internal.surface_extract import read_surf
+
+            index, _ = read_surf(payloads[0])
+            self.assertEqual(index["counts"]["faces"], 6)
+            # Local frame: the location must NOT bake into the artifact.
+            for face in index["faces"]:
+                for value in face["bbox"]:
+                    self.assertLessEqual(abs(value), 21)
 
     def test_worker_reports_error_instead_of_raising(self) -> None:
-        cid, error = cp._build_component_glb_worker(
-            (b"not a brep", "cid-bad", "/nonexistent/out.glb", 0.5, 0.3)
+        cid, error = cp._build_component_surf_worker(
+            (b"not a brep", "cid-bad", "/nonexistent/out.surf")
         )
         self.assertEqual("cid-bad", cid)
         self.assertIsNotNone(error)
@@ -115,7 +100,7 @@ class OrphanComponentPruningTests(unittest.TestCase):
             self.assertEqual(1, stats["components_pruned"])
             descriptor = json.loads((package_dir / "assembly.json").read_text())
             for entry in descriptor["components"].values():
-                self.assertTrue((package_dir / entry["glb"]).is_file())
+                self.assertTrue((package_dir / entry["surf"]).is_file())
 
 
 class PayloadUnreadableFallbackTests(unittest.TestCase):
@@ -151,7 +136,7 @@ class PayloadUnreadableFallbackTests(unittest.TestCase):
 
             descriptor = json.loads((package_dir / "assembly.json").read_text())
             (cid_entry,) = descriptor["components"].values()
-            self.assertTrue((package_dir / cid_entry["glb"]).is_file())
+            self.assertTrue((package_dir / cid_entry["surf"]).is_file())
 
 
 class SingleSerializationTests(unittest.TestCase):

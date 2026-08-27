@@ -172,9 +172,10 @@ _IMPLICIT_PACKAGE = {
 
 
 def _step_payload_refs(descriptor):
-    """Every component GLB the assembly descriptor claims."""
+    """Every component artifact the assembly descriptor claims (the
+    exact-surface ``.surf`` — design/surface-rendering.md R5)."""
     components = descriptor.get("components") if isinstance(descriptor.get("components"), dict) else {}
-    return [str((component or {}).get("glb") or "").strip() for component in components.values()]
+    return [str((component or {}).get("surf") or "").strip() for component in components.values()]
 
 
 def descriptor_declares_no_bake(descriptor):
