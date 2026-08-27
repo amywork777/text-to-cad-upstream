@@ -253,8 +253,23 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
         raise Unextractable("face with no surface")
     if kind in (GeomAbs_SurfaceType.GeomAbs_BSplineSurface,
                 GeomAbs_SurfaceType.GeomAbs_BezierSurface):
-        # Native NURBS: conversion is exact AND parametrization-preserving;
-        # clamping periodic directions preserves both too.
+        # Native NURBS: serialize DIRECTLY when the underlying surface is
+        # already a B-spline (a COPY, clamped if periodic — exact and
+        # parametrization-preserving). Vendor STEPs carry B-splines whose
+        # trim-then-convert round trip can throw (NCollection range errors);
+        # there is nothing to convert in the first place.
+        from OCP.Geom import Geom_BSplineSurface, Geom_RectangularTrimmedSurface as _Trim
+
+        native = surface
+        if isinstance(native, _Trim):
+            native = native.BasisSurface()
+        if isinstance(native, Geom_BSplineSurface):
+            nurbs = native.Copy()
+            if nurbs.IsUPeriodic():
+                nurbs.SetUNotPeriodic()
+            if nurbs.IsVPeriodic():
+                nurbs.SetVNotPeriodic()
+            return _nurbs_surface_payload(nurbs, bin_out)
         try:
             u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
             bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
