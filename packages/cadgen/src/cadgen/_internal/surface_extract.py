@@ -230,10 +230,35 @@ def _basis_curve_payload(basis_adaptor, bin_out: _Bin) -> dict[str, Any]:
         return {"kind": "ellipse", "majorRadius": ellipse.MajorRadius(),
                 "minorRadius": ellipse.MinorRadius(),
                 **_frame(ellipse.Position()), "range": [first, last]}
-    try:
+    if kind == GeomAbs_CurveType.GeomAbs_BSplineCurve:
         bspline = basis_adaptor.BSpline()
         if bspline.IsPeriodic():
             bspline.SetNotPeriodic()
+        return _bspline_curve3_payload(bspline, bin_out)
+    if kind == GeomAbs_CurveType.GeomAbs_BezierCurve:
+        # Exact and parametrization-preserving.
+        try:
+            bspline = GeomConvert.CurveToBSplineCurve_s(basis_adaptor.Bezier())
+        except Exception as exc:
+            raise Unextractable(f"basis bezier conversion failed: {exc}") from exc
+        return _bspline_curve3_payload(bspline, bin_out)
+    # Anything else (offset curves, ...): parametrization-preserving
+    # approximation of the adaptor's underlying curve.
+    try:
+        from OCP.GeomAbs import GeomAbs_C1
+        from OCP.Geom import Geom_TrimmedCurve
+        from OCP.GeomConvert import GeomConvert_ApproxCurve
+
+        curve = basis_adaptor.Curve()
+        approx = GeomConvert_ApproxCurve(
+            Geom_TrimmedCurve(curve, first, last), 1e-5, GeomAbs_C1, 32, 14)
+        if not approx.IsDone():
+            raise Unextractable("basis curve approximation did not converge")
+        bspline = approx.Curve()
+        if bspline.IsPeriodic():
+            bspline.SetNotPeriodic()
+    except Unextractable:
+        raise
     except Exception as exc:
         raise Unextractable(f"basis curve conversion failed: {exc}") from exc
     return _bspline_curve3_payload(bspline, bin_out)

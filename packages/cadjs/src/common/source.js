@@ -2,6 +2,7 @@ import {
   buildComposedPackageMeshData
 } from "../lib/assembly/meshData.js";
 import { buildMeshDataFromGlbBuffer } from "../lib/render/glbMeshData.js";
+import { buildMeshDataFromSurfBuffer } from "../lib/surf/surfMeshData.js";
 import { buildMeshDataFromStlBuffer } from "../lib/render/stlMeshData.js";
 import { buildMeshDataFrom3MfBuffer } from "../lib/render/threeMfMeshData.js";
 import {
@@ -187,8 +188,11 @@ async function loadPackageMeshData(packageInfo) {
     if (!url) {
       throw new Error(`Assembly package component ${cid} has no resolved URL`);
     }
-    componentMeshDataByCid[cid] = await buildMeshDataFromGlbBuffer(
-      await fetchComponentGlbBuffer(url, cid)
+    // Exact-surface artifact (design/surface-rendering.md): the resolved URL
+    // points at the component GLB; its .surf sibling shares the stem.
+    const surfUrl = url.replace(/\.glb(?=$|[?#])/, ".surf");
+    componentMeshDataByCid[cid] = buildMeshDataFromSurfBuffer(
+      await fetchComponentGlbBuffer(surfUrl, cid)
     );
   }
   return buildComposedPackageMeshData(descriptor, componentMeshDataByCid);

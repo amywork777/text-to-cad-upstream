@@ -170,13 +170,30 @@ class ComponentStoreTest(unittest.TestCase):
 
         from cadgen._internal import component_store
 
+        # A component is a GLB + exact-surface .surf PAIR; the store
+        # publishes and fetches both, and treats a missing half as absent.
         src = Path(self._tmp.name) / "built.glb"
         src.write_bytes(b"glb-payload")
+        src.with_name("cid123.surf").write_bytes(b"surf-payload")
         component_store.publish(src, "cid123", 0.1, 0.5)
-        dest = Path(self._tmp.name) / "fetched.glb"
+        dest = Path(self._tmp.name) / "out" / "fetched.glb"
+        dest.parent.mkdir()
         self.assertTrue(component_store.fetch("cid123", 0.1, 0.5, dest))
         self.assertEqual(dest.read_bytes(), b"glb-payload")
         self.assertEqual(src.stat().st_ino, dest.stat().st_ino)
+        surf_dest = dest.with_name("cid123.surf")
+        self.assertEqual(surf_dest.read_bytes(), b"surf-payload")
+
+    def test_fetch_requires_the_surf_half(self):
+        from pathlib import Path
+
+        from cadgen._internal import component_store
+
+        src = Path(self._tmp.name) / "built.glb"
+        src.write_bytes(b"glb-payload")
+        component_store.publish(src, "cidglbonly", 0.1, 0.5)
+        dest = Path(self._tmp.name) / "fetched.glb"
+        self.assertFalse(component_store.fetch("cidglbonly", 0.1, 0.5, dest))
 
     def test_tolerances_are_part_of_the_key(self):
         from pathlib import Path
@@ -185,6 +202,7 @@ class ComponentStoreTest(unittest.TestCase):
 
         src = Path(self._tmp.name) / "built.glb"
         src.write_bytes(b"payload")
+        src.with_name("cid123.surf").write_bytes(b"surf")
         component_store.publish(src, "cid123", 0.1, 0.5)
         dest = Path(self._tmp.name) / "fetched.glb"
         self.assertFalse(component_store.fetch("cid123", 0.2, 0.5, dest))
@@ -197,6 +215,7 @@ class ComponentStoreTest(unittest.TestCase):
 
         src = Path(self._tmp.name) / "built.glb"
         src.write_bytes(b"payload")
+        src.with_name("cid123.surf").write_bytes(b"surf")
         component_store.publish(src, "cid123", 0.1, 0.5)
         dest = Path(self._tmp.name) / "fetched.glb"
         component_store.fetch("cid123", 0.1, 0.5, dest)
