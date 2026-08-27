@@ -299,28 +299,29 @@ class DegradedLockTest(CoordinationTestCase):
     def test_the_degradation_reaches_the_node_child(self):
         # The producers are the only things that can tell the child, so the flag has to
         # survive the argv construction -- assert on the argv itself, not on the intent.
-        from cadgen._internal import drawing_package
+        # The implicit bake is the remaining producer that spawns a lock-checking Node
+        # child (the drawing bake died with the drawing package — the viewer parses
+        # the .dxf itself now).
+        from cadgen._internal import implicit_package
 
         seen = {}
 
-        def fake_builder(script, args, *, run, stdin_text=None, **kwargs):
+        def fake_builder(script, args, *, run, **kwargs):
             seen["args"] = list(args)
             # Stands in for the Node child. The producer checks what the payload CLAIMS
             # against what is on disk, so the fake has to leave the file behind too.
             self.out.mkdir(parents=True, exist_ok=True)
-            (self.out / "geometry.json").write_text("{}", encoding="utf-8")
-            return {
-                "ok": True,
-                "runId": run.run_id,
-                "geometryFile": "geometry.json",
-                "profile": "drawing",
-            }
+            (self.out / "model.glb").write_bytes(b"glTF")
+            return {"ok": True, "runId": run.run_id}
 
-        with mock.patch.object(drawing_package, "run_node_builder", fake_builder):
+        source = self.out.parent / "orb.implicit.js"
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("// model", encoding="utf-8")
+        with mock.patch.object(implicit_package, "run_node_builder", fake_builder):
             with self._no_locks():
                 with artifact_build(STEP_PACKAGE, self.out, is_current=lambda: False) as run:
-                    drawing_package.build_drawing_preview(
-                        self.out, dxf_text="0\nSECTION\n", run=run
+                    implicit_package.build_implicit_mesh(
+                        self.out, source, run=run, resolution=64
                     )
             self.assertIn("--lock-degraded", seen["args"])
 
@@ -328,7 +329,7 @@ class DegradedLockTest(CoordinationTestCase):
             # would be permanently open and the boundary would check nothing.
             seen.clear()
             with artifact_build(STEP_PACKAGE, self.out, is_current=lambda: False) as run:
-                drawing_package.build_drawing_preview(self.out, dxf_text="0\nSECTION\n", run=run)
+                implicit_package.build_implicit_mesh(self.out, source, run=run, resolution=64)
             self.assertNotIn("--lock-degraded", seen["args"])
 
 

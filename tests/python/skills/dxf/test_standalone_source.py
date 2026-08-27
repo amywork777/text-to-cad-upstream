@@ -74,52 +74,55 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             self.assertEqual("dxf", sources[0].kind)
             self.assertEqual(script_path, sources[0].script_path)
 
-    def test_generate_dxf_targets_builds_drawing_package(self) -> None:
+    def test_generate_dxf_targets_always_writes_the_sibling(self) -> None:
+        # The .dxf IS the product (design/standalone-viewer.md Phase A): every run
+        # writes it, no package exists, and only the output record remains under
+        # __cadgen__ to make an unchanged source a no-op.
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = _write_standalone_source(Path(root))
 
             self.assertEqual(0, cad_generation.generate_dxf_targets([str(script_path)]))
 
-            package_dir = Path(root) / "__cadgen__" / "models" / script_path.name
-            self.assertTrue((package_dir / "drawing.json").exists())
-            preview_path = package_dir / "preview.glb"
-            self.assertTrue(preview_path.exists())
-            self.assertGreater(preview_path.stat().st_size, 0)
-            # The package caches the render artifact and nothing else -- no DXF, because a
-            # generated drawing's DXF is reproducible from its generator on demand.
-            self.assertFalse((package_dir / "drawing.dxf").exists())
-            # No sibling export unless requested.
-            self.assertFalse(script_path.with_suffix(".dxf").exists())
-
-    def test_generate_dxf_targets_writes_sibling_output_on_demand(self) -> None:
-        with temporary_directory(prefix="dxf-skill") as root:
-            script_path = _write_standalone_source(Path(root))
-
-            self.assertEqual(0, cad_generation.generate_dxf_targets([str(script_path)], write_dxf=True))
-
             output_path = script_path.with_suffix(".dxf")
             self.assertTrue(output_path.exists())
             self.assertGreater(output_path.stat().st_size, 0)
+            package_dir = Path(root) / "__cadgen__" / "models" / script_path.name
+            self.assertTrue((package_dir / "dxf-export.json").exists())
+            self.assertFalse((package_dir / "drawing.json").exists())
+            self.assertFalse((package_dir / "preview.glb").exists())
 
-    def test_rebuild_leaves_sibling_export_untouched(self) -> None:
-        # An exported <name>.dxf is a point-in-time deliverable, totally detached from
-        # its generator: rebuilds never delete, rewrite, or staleness-track it. Only an
-        # explicit re-export refreshes it.
+    def test_unchanged_source_is_a_no_op_and_output_is_deterministic(self) -> None:
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = _write_standalone_source(Path(root))
             sibling = script_path.with_suffix(".dxf")
 
-            cad_generation.generate_dxf_targets([str(script_path)], write_dxf=True)
-            self.assertTrue(sibling.exists())
-            exported_bytes = sibling.read_bytes()
+            cad_generation.generate_dxf_targets([str(script_path)])
+            first = sibling.read_bytes()
+            first_mtime = sibling.stat().st_mtime_ns
 
-            # Source edit -> rebuild -> export untouched, byte for byte.
+            # Unchanged source: the recorded output verifies, nothing is rewritten.
+            cad_generation.generate_dxf_targets([str(script_path)])
+            self.assertEqual(first_mtime, sibling.stat().st_mtime_ns)
+
+            # Forced rebuild of identical content produces identical bytes.
+            cad_generation.generate_dxf_targets([str(script_path)], force=True)
+            self.assertEqual(first, sibling.read_bytes())
+
+    def test_source_edit_regenerates_the_sibling(self) -> None:
+        # The sibling is the PRODUCT now, not a detached export: an edited source
+        # regenerates it on the next run (the viewer renders this file).
+        with temporary_directory(prefix="dxf-skill") as root:
+            script_path = _write_standalone_source(Path(root))
+            sibling = script_path.with_suffix(".dxf")
+
+            cad_generation.generate_dxf_targets([str(script_path)])
+            before = sibling.read_bytes()
+
             script_path.write_text(
-                script_path.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8"
+                STANDALONE_DXF_SOURCE.replace("(40, 0)", "(50, 0)").replace("(40, 20)", "(50, 20)") + "\n"
             )
             cad_generation.generate_dxf_targets([str(script_path)])
-            self.assertTrue(sibling.exists())
-            self.assertEqual(exported_bytes, sibling.read_bytes())
+            self.assertNotEqual(before, sibling.read_bytes())
 
     def test_generate_dxf_targets_rejects_non_document_payload(self) -> None:
         # Fail closed: an object that only implements saveas is not a drawing and
@@ -143,18 +146,23 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(TypeError, "must return an ezdxf document"):
                 cad_generation.generate_dxf_targets([str(script_path)])
 
-    def test_generate_dxf_targets_bakes_the_3d_preview(self) -> None:
-        # What replaced the SVG snapshot this test used to assert: visual review of a
-        # drawing is the 3D flat pattern now, and preview.glb is the package member that
-        # carries it — for both the viewer and scripts/snapshot.
+    def test_output_record_gates_freshness_for_both_authorities(self) -> None:
+        # The CLI's no-op gate and the render-side validator read the SAME record
+        # (cadgen._internal.dxf_output), so they can never disagree.
+        from cadgen._internal.dxf_output import dxf_output_current
+        from cadgen.render_ops import validate_dxf_freshness
+
         with temporary_directory(prefix="dxf-skill") as root:
-            script_path = _write_standalone_source(Path(root))
+            script_path = _write_standalone_source(Path(root), stem="outline.dxf")
+            cad_generation.generate_dxf_targets([str(script_path)])
+            self.assertTrue(dxf_output_current(script_path))
+            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
 
-            self.assertEqual(0, cad_generation.generate_dxf_targets([str(script_path)]))
-
-            package_dir = Path(root) / "__cadgen__" / "models" / script_path.name
-            self.assertTrue((package_dir / "preview.glb").is_file())
-            self.assertFalse((package_dir / "drawing.svg").exists())
+            script_path.write_text(STANDALONE_DXF_SOURCE.replace("(40, 0)", "(60, 0)") + "\n")
+            self.assertFalse(dxf_output_current(script_path))
+            self.assertEqual(
+                (False, "stale_dxf_output"), validate_dxf_freshness(root, script_path)
+            )
 
 
 if __name__ == "__main__":

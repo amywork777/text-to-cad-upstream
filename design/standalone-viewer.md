@@ -99,3 +99,20 @@ For raw STEP files that never met the pipeline, on Python-less machines:
 ## Execution log
 
 - Branch `claude/standalone-viewer` off `claude/incremental-generation`.
+- Phase 0 shipped (adb07db5): pinned BinTools_FormatVersion_VERSION_4 blob
+  writes, SURF_VERSION/blob-format tripwire test, 11-blob conformance corpus
+  under models/conformance (LFS).
+- Phase A shipped (python a7322620, client 52b9ac8c + test/doc reconciliation):
+  gen always writes the .dxf sibling (byte-deterministic; ezdxf volatile-
+  metadata pin moved into the sibling write); freshness = the output record
+  (cadgen/_internal/dxf_output.py), read by BOTH the CLI no-op gate and
+  render_ops.validate_dxf_freshness; the drawing package, its Node bake, the
+  dxf_artifact CLIs and the skills/dxf artifact command are deleted; exports go
+  through cadgen.dxf_export_target; snapshots mesh on demand via
+  bin/dxf-mesh.mjs (same reference-thickness Z-up GLB contract). Client: DXF is
+  a mesh-loadable format parsed+meshed from the file itself; dxfDataIsDocument
+  (apparatus counters in parseDxf) is the profile predicate; documents render
+  as 2D line work (the overlay is exempt from the scene sync's clear).
+  Verified: e2e sweep 7/7 with DXF coverage equal to the pre-migration
+  baseline; cold needs-build auto-generates through the viewer; document +
+  cut-layout + imported paths all render.

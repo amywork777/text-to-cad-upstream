@@ -31,8 +31,10 @@ _FAKE_DOC_PRELUDE = [
 
 
 def _closure(root: Path, name: str) -> list[str]:
-    descriptor_path = root / "__cadgen__" / "models" / f"{name}.dxf.py" / "drawing.json"
-    return sorted(json.loads(descriptor_path.read_text(encoding="utf-8"))["sourceClosureFiles"])
+    # The closure is recorded in the drawing's OUTPUT RECORD now — the drawing
+    # package died with design/standalone-viewer.md Phase A.
+    record_path = root / "__cadgen__" / "models" / f"{name}.dxf.py" / "dxf-export.json"
+    return sorted(json.loads(record_path.read_text(encoding="utf-8"))["sourceClosureFiles"])
 
 
 class ClosureCaptureTests(unittest.TestCase):

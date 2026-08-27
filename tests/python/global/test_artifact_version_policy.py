@@ -69,9 +69,11 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # large STEP assembly is tens of seconds, so a DXF change must not re-mesh every
         # STEP model on next open.
         source = (ROOT / "packages/cadgen/src/cadgen/render_ops.py").read_text()
+        # DXF is absent by design: a generated drawing's freshness is its output
+        # record (closure + output digest), not a package schema — there is no
+        # cached render payload left to invalidate.
         for constant in (
             "STEP_PACKAGE_VERSION",
-            "DXF_PACKAGE_SCHEMA_VERSION",
             "IMPLICIT_PACKAGE_SCHEMA_VERSION",
         ):
             self.assertIn(

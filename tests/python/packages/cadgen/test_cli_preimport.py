@@ -43,7 +43,7 @@ class DaemonHandoff(unittest.TestCase):
         self.assertEqual(
             set(cli._DAEMON_TOOLS),
             {"step gen", "step export", "step artifact", "step inspect", "step snapshot",
-             "dxf gen", "dxf artifact"},
+             "dxf gen"},
         )
 
     def test_a_step_command_hands_off_and_never_imports_the_module(self):
@@ -162,7 +162,7 @@ class HashSeedRerun(unittest.TestCase):
                 mock.patch("subprocess.run", side_effect=capture), \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
-            cli.main(["dxf", "artifact", "x"])
+            cli.main(["dxf", "gen", "x"])
         # The child inherits the environment, so it must be set before the spawn.
         self.assertEqual(recorded.get("seed"), "0")
 

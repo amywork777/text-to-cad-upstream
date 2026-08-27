@@ -81,3 +81,33 @@ entry says so.
    nothing guards new spans against the same fate. Easy win: a tests/policy
    check that `logger.timed` call sites are reachable with a logger, or a
    default logger at the artifact-job boundary.
+
+## Standalone-viewer / DXF migration follow-ups (2026-08-27)
+
+12. **Stale imported-DXF package directories linger.** Pre-migration, imported
+    `.dxf` files got `__cadgen__/models/<name>.dxf/` drawing packages; nothing
+    reads them now and nothing deletes them (only `.dxf.py` record writes clear
+    legacy payloads in their own dir). Harmless clutter — a cleanup pass or a
+    scanner-side GC note would tidy old checkouts.
+
+13. **`skills/dxf` lost its `scripts/artifact` command by design** (an imported
+    `.dxf` needs no build), and `cadgen dxf artifact` is gone from the CLI
+    registry. Any external docs/automation invoking them must move to
+    `scripts/gen` / direct rendering. Flagged here because the skill surface
+    changed, not just internals.
+
+14. **Dimensioned-drawing snapshots are now possible but not implemented.** The
+    old pipeline could not snapshot a document profile at all (no preview.glb);
+    the new one refuses with "no cut geometry". The client renders documents as
+    2D line work — teaching `dxf-mesh.mjs`/snapshot a 2D line-render mode would
+    close the gap the package era left.
+
+15. **DXF sibling outputs are now repo-visible for generated drawings** (gen
+    always writes `<name>.dxf`). Like the generated `.step` siblings, they are
+    untracked build outputs today; decide whether fixtures should commit them
+    (LFS) or a `.gitignore` convention should hide generated siblings.
+
+16. **The `-o` export identity metadata embeds a path relative to the output**,
+    so exporting the same drawing to two locations produces different bytes
+    (sibling writes are byte-deterministic; renamed outputs differ only in the
+    identity comment). Expected, but worth remembering when comparing exports.

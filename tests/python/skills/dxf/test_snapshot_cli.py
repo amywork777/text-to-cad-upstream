@@ -30,45 +30,75 @@ _dxf_entry_spec.loader.exec_module(dxf_snapshot_entry)
 
 
 class DxfSnapshotCliTests(unittest.TestCase):
-    """A drawing snapshot is a package build followed by a mesh render.
+    """A drawing snapshot is an on-demand mesh of the .dxf, then a mesh render.
 
-    The render half is cadgen.snapshot_core, shared with the CAD skill, so these tests
-    cover only what is specific here: that the input is resolved to the package's
-    preview.glb, and that drawing-shaped inputs are the ones accepted.
+    The render half is shared with the CAD skill; what is DXF-specific — meshing
+    the drawing through the bundled dxf-mesh.mjs one-shot (no package, matching
+    the viewer's client-side parse) — is what these tests cover.
     """
 
-    def test_renders_the_packages_preview_glb(self) -> None:
-        payload = {"previewPath": "models/drawings/dxf/__cadgen__/models/x.dxf/preview.glb"}
-        with mock.patch.object(snapshot, "build_dxf_artifact", return_value=payload) as build:
-            with mock.patch.object(Path, "is_file", return_value=True):
-                resolved = snapshot.drawing_preview_path(Path("/models/x.dxf"), force=False)
+    def test_meshes_the_dxf_on_demand(self) -> None:
+        import tempfile
 
-        self.assertTrue(str(resolved).endswith("preview.glb"))
-        self.assertFalse(build.call_args.kwargs["force"])
+        with tempfile.TemporaryDirectory() as tmp:
+            dxf = Path(tmp) / "x.dxf"
+            dxf.write_text("0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n")
 
-    def test_force_reaches_the_package_build(self) -> None:
-        payload = {"previewPath": "p/preview.glb"}
-        with mock.patch.object(snapshot, "build_dxf_artifact", return_value=payload) as build:
-            with mock.patch.object(Path, "is_file", return_value=True):
-                snapshot.drawing_preview_path(Path("/models/x.dxf"), force=True)
+            def fake_run(cmd, **kwargs):
+                out = Path(cmd[cmd.index("--out") + 1])
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(b"glTF")
+                return mock.Mock(returncode=0, stdout='{"ok": true, "path": "%s"}' % out, stderr="")
 
-        self.assertTrue(build.call_args.kwargs["force"])
+            with mock.patch("subprocess.run", side_effect=fake_run):
+                resolved = snapshot.drawing_mesh_path(dxf, force=False)
+            self.assertTrue(str(resolved).endswith(".glb"))
+            self.assertTrue(resolved.is_file())
 
-    def test_a_package_without_a_preview_is_an_error(self) -> None:
-        # Rendering a package that predates preview.glb would silently show nothing;
-        # saying so is better than a blank image.
-        with mock.patch.object(snapshot, "build_dxf_artifact", return_value={"ok": True}):
-            with mock.patch.object(Path, "is_file", return_value=True):
-                with self.assertRaises(snapshot.SnapshotError):
-                    snapshot.drawing_preview_path(Path("/models/x.dxf"), force=False)
+    def test_a_generator_is_made_current_first_and_force_reaches_gen(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            py = Path(tmp) / "x.dxf.py"
+            py.write_text("def gen_dxf():\n    raise NotImplementedError\n")
+            sibling = Path(tmp) / "x.dxf"
+
+            def fake_gen(source, *, force=False):
+                fake_gen.forced = force
+                sibling.write_text("0\nEOF\n")
+                return sibling
+
+            def fake_run(cmd, **kwargs):
+                out = Path(cmd[cmd.index("--out") + 1])
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(b"glTF")
+                return mock.Mock(returncode=0, stdout='{"ok": true}', stderr="")
+
+            with mock.patch.object(snapshot, "generate_dxf_for_snapshot", side_effect=fake_gen) as gen:
+                with mock.patch("subprocess.run", side_effect=fake_run):
+                    snapshot.drawing_mesh_path(py, force=True)
+            self.assertTrue(gen.call_args.kwargs["force"])
+
+    def test_a_mesh_failure_is_an_error_not_a_blank_image(self) -> None:
+        # A dimensioned drawing has no flat pattern; the one-shot says so and the
+        # snapshot reports it instead of rendering nothing.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            dxf = Path(tmp) / "x.dxf"
+            dxf.write_text("0\nEOF\n")
+            failed = mock.Mock(returncode=1, stdout='{"ok": false, "error": "no cut geometry"}', stderr="")
+            with mock.patch("subprocess.run", return_value=failed):
+                with self.assertRaisesRegex(snapshot.SnapshotError, "no cut geometry"):
+                    snapshot.drawing_mesh_path(dxf, force=False)
 
     def test_rejects_a_non_drawing_input(self) -> None:
         with self.assertRaises(snapshot.SnapshotError):
-            snapshot.drawing_preview_path(Path("/models/part.step"), force=False)
+            snapshot.drawing_mesh_path(Path("/models/part.step"), force=False)
 
     def test_reports_a_missing_input(self) -> None:
         with self.assertRaises(snapshot.SnapshotError):
-            snapshot.drawing_preview_path(Path("/models/definitely-absent.dxf"), force=False)
+            snapshot.drawing_mesh_path(Path("/models/definitely-absent.dxf"), force=False)
 
     def test_section_mode_is_rejected_for_a_drawing(self) -> None:
         # Drawings have no CAD topology, so section has nothing to work with. The shared

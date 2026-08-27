@@ -45,7 +45,7 @@ class InvokeContract(unittest.TestCase):
             raise RuntimeError("kaboom")
 
         patcher = mock.patch.object(
-            worker, "_DISPATCH", {"cadgen.step_artifact_cli": echo, "cadgen.dxf_artifact": boom}
+            worker, "_DISPATCH", {"cadgen.step_artifact_cli": echo, "cadgen.dxf_export_target": boom}
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -63,7 +63,7 @@ class InvokeContract(unittest.TestCase):
     def test_a_failing_build_comes_back_as_a_payload(self):
         # The viewer renders this in a card; an exception escaping here would instead
         # kill the worker and surface as a transport fault with no useful text.
-        result = worker._invoke({"module": "cadgen.dxf_artifact"})
+        result = worker._invoke({"module": "cadgen.dxf_export_target"})
         self.assertFalse(result["ok"])
         self.assertIn("kaboom", result["error"])
 
@@ -74,7 +74,7 @@ class Allowlist(unittest.TestCase):
         self.assertEqual(
             set(dispatch),
             {
-                "cadgen.dxf_artifact",
+                "cadgen.dxf_export_target",
                 "cadgen.implicit_artifact",
                 "cadgen.implicit_export",
                 "cadgen.step_artifact_cli",

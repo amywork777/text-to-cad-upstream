@@ -26,11 +26,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 from cadgen.coordination import lock as lock_mod  # noqa: E402
 from cadgen import render_ops as artifact  # noqa: E402
 
-from cadgen._internal import drawing_package as _drawing_package  # noqa: E402
-from cadgen._internal.drawing_package import (  # noqa: E402
-    DXF_PACKAGE_SCHEMA_VERSION,
-    drawing_preview_bake_settings,
-)
+from cadgen._internal.dxf_output import record_dxf_output  # noqa: E402
 from cadgen._internal import implicit_package as _implicit_package  # noqa: E402
 from cadgen._internal.implicit_package import (  # noqa: E402
     IMPLICIT_PACKAGE_SCHEMA_VERSION,
@@ -51,7 +47,6 @@ def _dump(path, payload):
 def _closure_for(source, base):
     return closure_for_files(pathlib.Path(source), [pathlib.Path(source)], base=pathlib.Path(base))
 
-_DXF_SCHEMA_VERSION = DXF_PACKAGE_SCHEMA_VERSION
 _IMPLICIT_SCHEMA_VERSION = IMPLICIT_PACKAGE_SCHEMA_VERSION
 
 # Sentinel for "write no such key at all", distinct from "write an empty one".
@@ -168,8 +163,8 @@ class ImportedDigestFailsClosed(unittest.TestCase):
         # `stepHash` is load-bearing at a dozen cadgen sites beyond the render descriptor,
         # so it is not renamed and not aliased -- the spec table names the field per format.
         self.assertEqual(artifact._STEP_PACKAGE["source_digest_field"], "stepHash")
-        self.assertEqual(artifact._DRAWING_PACKAGE["source_digest_field"], "sourceDigest")
-        for spec in (artifact._STEP_PACKAGE, artifact._DRAWING_PACKAGE):
+        self.assertEqual(artifact._IMPLICIT_PACKAGE["source_digest_field"], "sourceDigest")
+        for spec in (artifact._STEP_PACKAGE, artifact._IMPLICIT_PACKAGE):
             self.assertIn(spec["missing_digest"], artifact.BUILDABLE_ARTIFACT_CODES)
 
     def test_generated_entry_is_unaffected_by_the_digest_gate(self):
@@ -213,24 +208,10 @@ class SchemaVersionGate(unittest.TestCase):
                 artifact.validate_step_freshness(root, py), (False, "unsupported_step_topology")
             )
 
-    def test_drawing_descriptor_without_a_schema_version_is_unsupported(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", schema_version=None)
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, py), (False, "unsupported_dxf_artifact")
-            )
-
-    def test_drawing_descriptor_with_a_newer_schema_version_is_unsupported(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(
-                root, "outline.dxf.py", schema_version=_DXF_SCHEMA_VERSION + 1
-            )
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, py), (False, "unsupported_dxf_artifact")
-            )
-
     def test_every_spec_row_gates_on_an_int_version(self):
-        for spec in (artifact._STEP_PACKAGE, artifact._DRAWING_PACKAGE):
+        # A generated drawing has no descriptor any more (its freshness is the
+        # output record), so the table is STEP + implicit.
+        for spec in (artifact._STEP_PACKAGE, artifact._IMPLICIT_PACKAGE):
             self.assertIsInstance(spec["schema_version"], int)
             self.assertIn(spec["unsupported"], artifact.BUILDABLE_ARTIFACT_CODES)
 
@@ -268,13 +249,6 @@ class BakeHashGate(unittest.TestCase):
             py, _ = _write_generated_package(root, "widget.step.py", bake_hash="deadbeef")
             self.assertEqual(
                 artifact.validate_step_freshness(root, py), (False, "stale_step_artifact")
-            )
-
-    def test_drawing_package_with_a_recorded_bake_is_stale(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", bake_hash="deadbeef")
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, py), (False, "stale_dxf_artifact")
             )
 
     def test_a_settings_change_invalidates_every_package_of_that_format(self):
@@ -578,238 +552,118 @@ class GeneratedStepFreshness(unittest.TestCase):
             self.assertEqual(code, "stale_step_artifact")
 
 
-def _write_drawing_package(
-    root,
-    py_name,
-    *,
-    closure_extra=None,
-    with_package=True,
-    kind="drawing-package",
-    closure_hash=True,
-    schema_version=_DXF_SCHEMA_VERSION,
-    bake_hash=_OMIT,
-    preview=True,
-):
-    """A gen_dxf generator + optionally its drawing package, keyed by the
-    .dxf.py name like cadgen writes it. The package carries its ONE payload: the baked
-    preview.glb the viewport renders."""
+class _FakeClosure:
+    def __init__(self, closure_hash, files):
+        self.closure_hash = closure_hash
+        self.files = files
+
+
+def _write_generated_drawing(root, py_name, *, with_output=True, closure_extra=None, record=True):
+    """A gen_dxf generator + (optionally) its sibling .dxf and output record —
+    the ONLY artifacts a generated drawing has (design/standalone-viewer.md
+    Phase A). The record uses the real writer so its shape can never drift."""
     py_path = os.path.join(root, py_name)
     with open(py_path, "w") as h:
         h.write("def gen_dxf():\n    return None\n")
     for rel in (closure_extra or []):
         with open(os.path.join(root, rel), "w") as h:
             h.write("# closure dep\n")
-    if not with_package:
+    if not with_output:
         return py_path, None
-    pkg = os.path.join(root, "__cadgen__", "models", py_name)
-    os.makedirs(pkg, exist_ok=True)
-    with open(os.path.join(pkg, "preview.glb"), "wb") as h:
-        h.write(b"glTF\x02\x00\x00\x00")
-    with open(os.path.join(pkg, "geometry.json"), "w") as h:
-        h.write("{}")
-    closure_files = [py_name] + list(closure_extra or [])
-    descriptor = {
-        "kind": kind,
-        "sourceKind": "python",
-        "sourcePath": py_name,
-        "sourceHash": "abc123",
-        "geometry": "geometry.json",
-        "sourceClosureFiles": closure_files,
-    }
-    if preview:
-        descriptor["preview"] = "preview.glb"
-    if schema_version is not None:
-        descriptor["packageSchemaVersion"] = schema_version
-    descriptor["bakeHash"] = (
-        canonical_bake_hash(drawing_preview_bake_settings()) if bake_hash is _OMIT else bake_hash
-    )
-    if descriptor["bakeHash"] is None:
-        del descriptor["bakeHash"]
-    if closure_hash:
-        descriptor["sourceClosureHash"] = _reference_closure_hash(root, closure_files)
-    with open(os.path.join(pkg, "drawing.json"), "w") as h:
-        json.dump(descriptor, h)
-    return py_path, pkg
-
-
-def _write_imported_drawing_package(root, dxf_name, *, source_digest=True, preview=True):
-    """An imported .dxf + its package. Same payloads, imported provenance -- a plain content
-    digest of the file rather than a source closure, exactly like an imported .step."""
-    dxf_path = os.path.join(root, dxf_name)
-    with open(dxf_path, "w") as h:
-        h.write("0\nSECTION\n0\nEOF\n")
-    with open(dxf_path, "rb") as h:
-        digest = hashlib.sha256(h.read()).hexdigest()
-    pkg = os.path.join(root, "__cadgen__", "models", dxf_name)
-    os.makedirs(pkg, exist_ok=True)
-    with open(os.path.join(pkg, "preview.glb"), "wb") as h:
-        h.write(b"glTF\x02\x00\x00\x00")
-    with open(os.path.join(pkg, "geometry.json"), "w") as h:
-        h.write("{}")
-    descriptor = {
-        "kind": "drawing-package",
-        "packageSchemaVersion": _DXF_SCHEMA_VERSION,
-        "sourceKind": "dxf",
-        "sourcePath": dxf_name,
-        "dxf": "drawing.dxf",
-        "dxfHash": digest,
-        "geometry": "geometry.json",
-        "bakeHash": canonical_bake_hash(drawing_preview_bake_settings()),
-    }
-    if preview:
-        descriptor["preview"] = "preview.glb"
-    if source_digest:
-        descriptor["sourceDigest"] = digest
-    with open(os.path.join(pkg, "drawing.json"), "w") as h:
-        json.dump(descriptor, h)
-    return dxf_path, pkg
+    sibling = os.path.join(root, py_name[: -len(".py")])
+    with open(sibling, "w") as h:
+        h.write("0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n")
+    if record:
+        closure_files = [py_name] + list(closure_extra or [])
+        closure = closure_for_files(
+            pathlib.Path(py_path), [pathlib.Path(root) / rel for rel in closure_files],
+            base=pathlib.Path(root),
+        )
+        record_dxf_output(pathlib.Path(py_path), pathlib.Path(sibling), source_closure=closure)
+    return py_path, sibling
 
 
 class OwnsDxfEntry(unittest.TestCase):
-    def test_both_dxf_inputs_are_owned(self):
+    def test_only_generators_are_owned(self):
         self.assertTrue(artifact.owns_entry({"file": "/x/outline.dxf.py"}))
         self.assertTrue(artifact.owns_dxf_entry({"file": "/x/outline.DXF.PY"}))
-        # An imported .dxf is artifact-managed too: the package's preview.glb is the only
-        # 3D DXF renderer there is, so it needs a build for the same reason an imported
-        # .step does (design §0.1, §5.5).
-        self.assertTrue(artifact.owns_entry({"file": "/x/outline.dxf"}))
-        self.assertTrue(artifact.owns_dxf_entry({"file": "/x/OUTLINE.DXF"}))
+        # An imported .dxf renders natively — the client parses the file itself —
+        # so it needs no build and is deliberately NOT owned.
+        self.assertFalse(artifact.owns_entry({"file": "/x/outline.dxf"}))
+        self.assertFalse(artifact.owns_dxf_entry({"file": "/x/OUTLINE.DXF"}))
         self.assertFalse(artifact.owns_dxf_entry({"file": "/x/a.step.py"}))
         self.assertFalse(artifact.owns_dxf_entry({"file": "/x/notes.dxf.txt"}))
         self.assertFalse(artifact.owns_dxf_entry(None))
 
 
 class GeneratedDxfFreshness(unittest.TestCase):
+    """The .dxf sibling is the product; the output record is BOTH freshness
+    authorities (the CLI's no-op gate and this validator read the same
+    cadgen._internal.dxf_output gate)."""
+
     def test_built_drawing_is_ready(self):
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", closure_extra=["lib.py"])
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertTrue(ok, code)
+            py, _ = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
+            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
 
     def test_unbuilt_drawing_is_needs_build(self):
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", with_package=False)
+            py, _ = _write_generated_drawing(root, "outline.dxf.py", with_output=False)
             ok, code = artifact.validate_dxf_freshness(root, py)
             self.assertFalse(ok)
-            self.assertEqual(code, "missing_dxf_artifact")
+            self.assertEqual(code, "missing_dxf_output")
             self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
 
-    def test_missing_preview_glb_is_buildable(self):
-        # The package's ONE payload. A missing GLB has to read as needs-build here, or the
-        # request settles `ready` and the viewer renders nothing with no explanation
-        # (design §4.7).
+    def test_output_without_a_record_is_stale(self):
+        # A sibling nothing recorded cannot be shown to be current.
         with tempfile.TemporaryDirectory() as root:
-            py, pkg = _write_drawing_package(root, "outline.dxf.py")
-            os.remove(os.path.join(pkg, "preview.glb"))
+            py, _ = _write_generated_drawing(root, "outline.dxf.py", record=False)
             ok, code = artifact.validate_dxf_freshness(root, py)
             self.assertFalse(ok)
-            self.assertEqual(code, "missing_dxf_artifact")
+            self.assertEqual(code, "stale_dxf_output")
             self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
 
-    def test_descriptor_that_names_no_preview_is_buildable(self):
+    def test_source_edit_is_stale_and_touch_is_not(self):
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", preview=False)
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "missing_dxf_artifact")
-
-    def test_drawing_payload_refs_names_the_render_artifacts(self):
-        # The GLB and the parsed contours the curved-bend remesh reads. A cached
-        # `drawing.dxf` is still not a payload: an imported drawing's DXF is the user's own
-        # file, and a generated one is exported on demand.
-        self.assertEqual(
-            ["preview.glb", "geometry.json"],
-            artifact._drawing_payload_refs({
-                "dxf": "drawing.dxf",
-                "preview": "preview.glb",
-                "geometry": "geometry.json",
-            }),
-        )
-
-    def test_a_changed_bake_format_makes_every_drawing_stale(self):
-        # The other half of cadgen's own package-freshness pin:
-        # the SAME callable owns the bake on both sides, so an edit to the producer's
-        # settings invalidates packages here too instead of rendering an old bake silently.
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py")
-            self.assertEqual(artifact.validate_dxf_freshness(root, py), (True, None))
-            with mock.patch.object(
-                _drawing_package, "DRAWING_PREVIEW_BAKE_FORMAT", "dxf-preview-glb-vNEXT"
-            ):
-                self.assertEqual(
-                    artifact.validate_dxf_freshness(root, py), (False, "stale_dxf_artifact")
-                )
-
-    def test_the_two_authorities_agree_on_the_same_package(self):
-        # A check one side makes and the other does not is a SILENT failure: the producer
-        # reports skipped, the request settles ready, and the stale package renders.
-        with tempfile.TemporaryDirectory() as root:
-            py, pkg = _write_drawing_package(root, "outline.dxf.py")
-            self.assertEqual(artifact.validate_dxf_freshness(root, py), (True, None))
-            self.assertTrue(_drawing_package.drawing_package_current(pathlib.Path(py)))
-            os.remove(os.path.join(pkg, "preview.glb"))
-            self.assertFalse(artifact.validate_dxf_freshness(root, py)[0])
-            self.assertFalse(_drawing_package.drawing_package_current(pathlib.Path(py)))
-
-    def test_unsupported_descriptor(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", kind="something-else")
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "unsupported_dxf_artifact")
-
-    def test_stale_when_closure_dep_content_changes(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", closure_extra=["lib.py"])
+            py, _ = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
+            time.sleep(0.01)
+            os.utime(py, None)
+            self.assertTrue(artifact.validate_dxf_freshness(root, py)[0])
             with open(os.path.join(root, "lib.py"), "w") as h:
                 h.write("VALUE = 2\n")
             ok, code = artifact.validate_dxf_freshness(root, py)
             self.assertFalse(ok)
-            self.assertEqual(code, "stale_dxf_artifact")
+            self.assertEqual(code, "stale_dxf_output")
 
-    def test_stale_when_source_content_changes(self):
+    def test_edited_output_bytes_are_stale(self):
+        # The record hashes the OUTPUT too: a hand-edited .dxf must not be
+        # reported as the generator's current product.
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py")
-            with open(py, "w") as h:
-                h.write("def gen_dxf():\n    return 'changed'\n")
+            py, sibling = _write_generated_drawing(root, "outline.dxf.py")
+            with open(sibling, "a") as h:
+                h.write("999\n")
             ok, code = artifact.validate_dxf_freshness(root, py)
             self.assertFalse(ok)
-            self.assertEqual(code, "stale_dxf_artifact")
+            self.assertEqual(code, "stale_dxf_output")
 
-    def test_touch_alone_does_not_invalidate(self):
+    def test_deleted_generator_is_missing_source_path(self):
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", closure_extra=["lib.py"])
-            time.sleep(0.01)
-            os.utime(os.path.join(root, "lib.py"), None)
-            os.utime(py, None)
-            self.assertEqual(artifact.validate_dxf_freshness(root, py), (True, None))
-
-    def test_comment_only_edit_stays_fresh(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py")
-            with open(py, "w") as h:
-                h.write("# new comment\ndef gen_dxf():\n    return None\n")
-            self.assertEqual(artifact.validate_dxf_freshness(root, py), (True, None))
+            py, _ = _write_generated_drawing(root, "outline.dxf.py")
+            os.remove(py)
+            self.assertEqual(
+                (False, "missing_source_path"), artifact.validate_dxf_freshness(root, py)
+            )
 
 
 class GeneratedPackageParity(unittest.TestCase):
-    """The two formats must answer identically-shaped questions identically. The
-    no-closure case used to disagree: STEP returned fresh, DXF returned stale."""
-
-    def test_descriptor_without_closure_hash_is_stale_for_both(self):
-        with tempfile.TemporaryDirectory() as root:
-            step_py, _ = _write_generated_package(root, "widget.step.py", closure_hash=False)
-            dxf_py, _ = _write_drawing_package(root, "outline.dxf.py", closure_hash=False)
-            step_ok, step_code = artifact.validate_step_freshness(root, step_py)
-            dxf_ok, dxf_code = artifact.validate_dxf_freshness(root, dxf_py)
-            self.assertEqual((step_ok, dxf_ok), (False, False))
-            self.assertEqual(step_code, "stale_step_artifact")
-            self.assertEqual(dxf_code, "stale_dxf_artifact")
+    """The two generated formats must answer identically-shaped questions
+    identically, even though STEP freshness reads a package descriptor and DXF
+    freshness reads an output record."""
 
     def test_touch_is_fresh_for_both_and_content_change_is_stale_for_both(self):
         with tempfile.TemporaryDirectory() as root:
             step_py, _ = _write_generated_package(root, "widget.step.py")
-            dxf_py, _ = _write_drawing_package(root, "outline.dxf.py")
+            dxf_py, _ = _write_generated_drawing(root, "outline.dxf.py")
             time.sleep(0.01)
             os.utime(step_py, None)
             os.utime(dxf_py, None)
@@ -825,67 +679,11 @@ class GeneratedPackageParity(unittest.TestCase):
     def test_deleted_generator_is_missing_source_path_for_both(self):
         with tempfile.TemporaryDirectory() as root:
             step_py, _ = _write_generated_package(root, "widget.step.py")
-            dxf_py, _ = _write_drawing_package(root, "outline.dxf.py")
+            dxf_py, _ = _write_generated_drawing(root, "outline.dxf.py")
             os.remove(step_py)
             os.remove(dxf_py)
             self.assertEqual(artifact.validate_step_freshness(root, step_py), (False, "missing_source_path"))
             self.assertEqual(artifact.validate_dxf_freshness(root, dxf_py), (False, "missing_source_path"))
-
-
-class ImportedDxfFreshness(unittest.TestCase):
-    """An imported .dxf is artifact-managed exactly like an imported .step: same package,
-    same validator, imported provenance."""
-
-    def test_built_imported_drawing_is_ready(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf, _ = _write_imported_drawing_package(root, "vendor.dxf")
-            self.assertEqual(artifact.validate_dxf_freshness(root, dxf), (True, None))
-
-    def test_unbuilt_imported_drawing_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf = os.path.join(root, "vendor.dxf")
-            with open(dxf, "w") as h:
-                h.write("0\nEOF\n")
-            ok, code = artifact.validate_dxf_freshness(root, dxf)
-            self.assertFalse(ok)
-            self.assertEqual(code, "missing_dxf_artifact")
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_edited_imported_drawing_is_stale(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf, _ = _write_imported_drawing_package(root, "vendor.dxf")
-            with open(dxf, "a") as h:
-                h.write("999\nchanged\n")
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, dxf), (False, "stale_dxf_artifact")
-            )
-
-    def test_descriptor_with_no_digest_fails_closed(self):
-        # The imported branch must never answer `ready` on a descriptor that cannot be
-        # shown to match the file sitting right there.
-        with tempfile.TemporaryDirectory() as root:
-            dxf, _ = _write_imported_drawing_package(root, "vendor.dxf", source_digest=False)
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, dxf), (False, "stale_dxf_artifact")
-            )
-
-    def test_missing_preview_glb_is_buildable_for_an_import_too(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf, pkg = _write_imported_drawing_package(root, "vendor.dxf")
-            os.remove(os.path.join(pkg, "preview.glb"))
-            self.assertEqual(
-                artifact.validate_dxf_freshness(root, dxf), (False, "missing_dxf_artifact")
-            )
-
-    def test_both_authorities_agree_about_an_import(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf, _ = _write_imported_drawing_package(root, "vendor.dxf")
-            self.assertTrue(artifact.validate_dxf_freshness(root, dxf)[0])
-            self.assertTrue(_drawing_package.drawing_package_current(pathlib.Path(dxf)))
-            with open(dxf, "a") as h:
-                h.write("999\nchanged\n")
-            self.assertFalse(artifact.validate_dxf_freshness(root, dxf)[0])
-            self.assertFalse(_drawing_package.drawing_package_current(pathlib.Path(dxf)))
 
 
 def _write_implicit_package(
@@ -1064,7 +862,6 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
     def test_each_owned_kind_selects_its_own_producer(self):
         cases = {
             "/x/outline.dxf.py": ("validate_dxf_freshness", "_build_dxf_artifact"),
-            "/x/vendor.dxf": ("validate_dxf_freshness", "_build_dxf_artifact"),
             "/x/gyroid.implicit.js": ("validate_implicit_freshness", "_build_implicit_artifact"),
             "/x/part.step": ("validate_step_freshness", "_build_step_artifact"),
             "/x/part.step.py": ("validate_step_freshness", "_build_step_artifact"),
@@ -1076,7 +873,7 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
                 self.assertEqual(fmt["build"].__name__, build_name)
 
     def test_an_unowned_entry_raises_instead_of_answering_as_step(self):
-        for entry in ({"file": "/x/mesh.stl"}, {"file": "/x/toolpath.gcode"}, None):
+        for entry in ({"file": "/x/mesh.stl"}, {"file": "/x/toolpath.gcode"}, {"file": "/x/vendor.dxf"}, None):
             with self.subTest(entry=entry):
                 self.assertFalse(artifact.owns_entry(entry))
                 with self.assertRaises(ValueError):
@@ -1092,7 +889,7 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
         dispatch = worker._module_dispatch()
         for module in (
             "cadgen.step_artifact_cli",
-            "cadgen.dxf_artifact",
+            "cadgen.dxf_export_target",
             "cadgen.implicit_artifact",
             "cadgen.step_export_target",
             "cadgen.implicit_export",
@@ -1101,60 +898,6 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
                 self.assertIn(module, dispatch)
                 # The worker calls run(args) on every one.
                 self.assertIn("argv", inspect.signature(dispatch[module]).parameters)
-
-
-class DrawingProfileGate(unittest.TestCase):
-    """A dimensioned drawing bakes no prism, and must not be chased for one (issue #246)."""
-
-    def test_a_drawing_package_without_a_bake_is_ready(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            source = os.path.join(directory, "workshop.dxf.py")
-            with open(source, "w", encoding="utf-8") as handle:
-                handle.write("def gen_dxf():\n    raise NotImplementedError\n")
-            package = os.path.join(directory, "__cadgen__", "models", "workshop.dxf.py")
-            os.makedirs(package, exist_ok=True)
-            with open(os.path.join(package, "geometry.json"), "w", encoding="utf-8") as handle:
-                handle.write("{}")
-            closure = _closure_for(source, directory)
-            _dump(os.path.join(package, "drawing.json"), {
-                "kind": "drawing-package",
-                "packageSchemaVersion": DXF_PACKAGE_SCHEMA_VERSION,
-                "profile": "drawing",
-                "sourceKind": "python",
-                "sourcePath": "workshop.dxf.py",
-                "geometry": "geometry.json",
-                "sourceClosureHash": closure.closure_hash,
-                "sourceClosureFiles": list(closure.files),
-            })
-            self.assertEqual((True, None), artifact.validate_dxf_freshness(directory, source))
-
-    def test_a_drawing_package_that_claims_a_bake_is_still_stale(self) -> None:
-        # The exemption is "records no bake", not "drawings skip the gate": a bakeHash on a
-        # package that baked nothing is a claim about a payload that does not exist.
-        with tempfile.TemporaryDirectory() as directory:
-            source = os.path.join(directory, "workshop.dxf.py")
-            with open(source, "w", encoding="utf-8") as handle:
-                handle.write("def gen_dxf():\n    raise NotImplementedError\n")
-            package = os.path.join(directory, "__cadgen__", "models", "workshop.dxf.py")
-            os.makedirs(package, exist_ok=True)
-            with open(os.path.join(package, "geometry.json"), "w", encoding="utf-8") as handle:
-                handle.write("{}")
-            closure = _closure_for(source, directory)
-            _dump(os.path.join(package, "drawing.json"), {
-                "kind": "drawing-package",
-                "packageSchemaVersion": DXF_PACKAGE_SCHEMA_VERSION,
-                "profile": "drawing",
-                "sourceKind": "python",
-                "sourcePath": "workshop.dxf.py",
-                "geometry": "geometry.json",
-                "bakeHash": "deadbeef",
-                "sourceClosureHash": closure.closure_hash,
-                "sourceClosureFiles": list(closure.files),
-            })
-            self.assertEqual(
-                (False, "stale_dxf_artifact"),
-                artifact.validate_dxf_freshness(directory, source),
-            )
 
 
 if __name__ == "__main__":

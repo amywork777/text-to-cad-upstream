@@ -671,8 +671,7 @@ class CadGenerationTests(unittest.TestCase):
 
     def test_bare_dxf_document_return_is_supported(self) -> None:
         # The CLI stays naming-agnostic: a plain `.py` defining only gen_dxf() is a
-        # valid EXPLICIT target. The default build product is the drawing package;
-        # no sibling .dxf is written.
+        # valid EXPLICIT target. The product is the sibling .dxf, always written.
         script_path = self.temp_root / "bare_dxf.py"
         script_path.write_text(
             "\n".join(
@@ -693,22 +692,22 @@ class CadGenerationTests(unittest.TestCase):
 
         cad_generation.generate_dxf_targets([str(script_path)])
 
-        package_dir = self.temp_root / "__cadgen__" / "models" / "bare_dxf.py"
-        # The package caches only what was computed. A generated drawing's DXF is
-        # reproducible from its generator, so it is exported on demand, never cached.
-        self.assertTrue((package_dir / "preview.glb").exists())
-        self.assertFalse((package_dir / "drawing.dxf").exists())
-        self.assertTrue((package_dir / "drawing.json").exists())
-        self.assertFalse((self.temp_root / "bare_dxf.dxf").exists())
+        record_dir = self.temp_root / "__cadgen__" / "models" / "bare_dxf.py"
+        # No drawing package exists any more: the .dxf beside the source is the
+        # product, and only the output record remains under __cadgen__.
+        self.assertTrue((self.temp_root / "bare_dxf.dxf").exists())
+        self.assertTrue((record_dir / "dxf-export.json").exists())
+        self.assertFalse((record_dir / "preview.glb").exists())
+        self.assertFalse((record_dir / "drawing.json").exists())
 
-    def test_dxf_generation_writes_sibling_export_on_demand(self) -> None:
+    def test_dxf_generation_always_writes_the_sibling(self) -> None:
         script_path = self._dxf_generator_script("flat")
 
-        cad_generation.generate_dxf_targets([str(script_path)], write_dxf=True)
+        cad_generation.generate_dxf_targets([str(script_path)])
 
         self.assertTrue((self.temp_root / "flat.dxf").exists())
-        package_dir = self.temp_root / "__cadgen__" / "models" / "flat.dxf.py"
-        self.assertTrue((package_dir / "drawing.json").exists())
+        record_dir = self.temp_root / "__cadgen__" / "models" / "flat.dxf.py"
+        self.assertTrue((record_dir / "dxf-export.json").exists())
 
     def test_dxf_generation_skips_current_drawing_package(self) -> None:
         script_path = self._dxf_generator_script("flat")
@@ -1030,13 +1029,9 @@ class CadGenerationTests(unittest.TestCase):
 
         cad_generation.generate_dxf_targets([str(first_path), f"{second_path}={second_output}"])
 
-        # The plain target builds its drawing package (no sibling export by default).
-        package_dir = self.temp_root / "__cadgen__" / "models" / "first.dxf.py"
-        # The package caches only what was computed. A generated drawing's DXF is
-        # reproducible from its generator, so it is exported on demand, never cached.
-        self.assertTrue((package_dir / "preview.glb").exists())
-        self.assertFalse((package_dir / "drawing.dxf").exists())
-        self.assertFalse((self.temp_root / "first.dxf").exists())
+        # The plain target writes its sibling; the paired target writes its named
+        # output instead of a sibling.
+        self.assertTrue((self.temp_root / "first.dxf").exists())
         self.assertTrue(second_output.exists())
         self.assertFalse((self.temp_root / "second.dxf").exists())
 

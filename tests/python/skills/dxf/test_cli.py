@@ -22,7 +22,7 @@ class DxfGenCliTests(unittest.TestCase):
 
         generate.assert_called_once_with(
             ["drawings/second.py", "drawings/first.py"],
-            output=None, write_dxf=False, force=False, verbose=False,
+            output=None, force=False, verbose=False,
         )
 
     def test_passes_verbose_flag(self) -> None:
@@ -30,7 +30,7 @@ class DxfGenCliTests(unittest.TestCase):
             self.assertEqual(0, gen.main(["drawings/part.py", "--verbose"]))
 
         generate.assert_called_once_with(
-            ["drawings/part.py"], output=None, write_dxf=False, force=False, verbose=True
+            ["drawings/part.py"], output=None, force=False, verbose=True
         )
 
     def test_passes_output_flag(self) -> None:
@@ -38,16 +38,20 @@ class DxfGenCliTests(unittest.TestCase):
             self.assertEqual(0, gen.main(["drawings/part.py", "-o", "DXF/part.dxf"]))
 
         generate.assert_called_once_with(
-            ["drawings/part.py"], output="DXF/part.dxf", write_dxf=False, force=False, verbose=False
+            ["drawings/part.py"], output="DXF/part.dxf", force=False, verbose=False
         )
 
-    def test_passes_write_and_force_flags(self) -> None:
+    def test_passes_force_flag_and_write_is_gone(self) -> None:
+        # gen ALWAYS writes the sibling .dxf now (design/standalone-viewer.md Phase A);
+        # the old --write flag must be a hard error, not a silent no-op.
         with mock.patch.object(gen, "generate_dxf_targets", return_value=0) as generate:
-            self.assertEqual(0, gen.main(["drawings/part.py", "--write", "--force"]))
-
+            self.assertEqual(0, gen.main(["drawings/part.py", "--force"]))
         generate.assert_called_once_with(
-            ["drawings/part.py"], output=None, write_dxf=True, force=True, verbose=False
+            ["drawings/part.py"], output=None, force=True, verbose=False
         )
+        with self.assertRaises(SystemExit) as cm:
+            gen.main(["drawings/part.py", "--write"])
+        self.assertEqual(2, cm.exception.code)
 
     def test_output_flag_rejects_multiple_targets(self) -> None:
         with self.assertRaises(SystemExit) as cm:

@@ -18,28 +18,22 @@ carries the Python build runtime and the JavaScript it executes. Install it once
 python -m pip install -r requirements.txt
 ```
 
-Building also needs **Node 20 or newer on `PATH`**. cadgen ships the builder
-scripts themselves, but not an interpreter to run them; it resolves `node` at the
-moment it builds, so a missing one is reported then rather than at import.
+Generation is pure Python (ezdxf). Only `scripts/snapshot` additionally needs
+**Node 20 or newer on `PATH`** — it meshes the flat pattern on demand through a
+bundled Node one-shot; a missing `node` is reported at render time.
 
 ## Purpose
 
 Create or modify 2D DXF drawings from natural-language requirements or from CAD geometry, generate validated drawing artifacts, and return checked outputs. A DXF drawing's source of truth is a dedicated Python generator file named `<name>.dxf.py` defining `gen_dxf()`; the CLI owns output paths.
 
-The default build product is the **drawing package** — a render artifact the CAD Viewer serves and auto-regenerates:
-
-```
-<model-folder>/__cadgen__/models/<name>.dxf.py/
-  drawing.json    # provenance + freshness descriptor
-  drawing.dxf     # the built DXF (the exchange artifact)
-  preview.glb     # the baked 3D flat pattern (what the viewer renders)
-```
-
-`preview.glb` is baked from `drawing.dxf` by a Node child of the build, inside the same
-generation lock, so a build produces both payloads or neither. It needs `node` on PATH (or
-`CADGEN_NODE`).
-
-The sibling `<name>.dxf` file is written **on demand only** (`--write`, `-o`, or a `SOURCE=OUTPUT` pair) for deliverables handed to cutting services or other tools. An exported `.dxf` is a point-in-time deliverable, totally detached from its generator: rebuilds never delete, rewrite, or staleness-track it (same as an exported STEP file) — re-export when you want it refreshed. Do not commit generated `.dxf` outputs; the package cache is gitignored and rebuilt on demand.
+The build product IS the `.dxf` file: **every run writes the sibling `<name>.dxf`**
+(the same contract `scripts/gen` has for STEP: source in, exchange file out; `-o`
+or a `SOURCE=OUTPUT` pair renames it). There is no drawing package any more — the
+CAD Viewer parses and meshes the `.dxf` itself, so the file you hand a cutting
+service and the file the viewer renders are one and the same. The only thing kept
+under `__cadgen__/models/<name>.dxf.py/` is a small output record that makes an
+unchanged source a no-op. An unchanged source closure skips regeneration; `--force`
+overrides.
 
 ## The three DXF workflows
 
@@ -85,14 +79,13 @@ Use these defaults unless the user specifies otherwise:
 
 ## Tool
 
-The skill has two launchers, split on who the source is — the same split the CAD
-skill uses between `scripts/gen` and `scripts/artifact`:
-
 ```bash
-python scripts/gen targets... [flags]        # gen_dxf() Python generators
-python scripts/artifact target [flags]       # one drawing, INCLUDING an imported .dxf
+python scripts/gen targets... [flags]        # gen_dxf() Python generators -> sibling .dxf
 python scripts/snapshot --input <drawing> --output <file.png>   # render it
 ```
+
+An imported `.dxf` needs no build step at all — the CAD Viewer renders it
+directly — so there is no `scripts/artifact` here.
 
 Use the active project Python interpreter; treat `python` as an interpreter placeholder, and use `--help` for the full interface. Target paths resolve from the command's current working directory; run from the workspace that owns the artifacts with cwd-relative target paths. Keep a drawing generator in the same directory as the geometry it derives from, named `<name>.dxf.py`.
 
@@ -104,29 +97,15 @@ def gen_dxf():
     return {"document": document}  # or a bare ezdxf document
 ```
 
-Every run builds/refreshes the drawing package. Flags:
+Every run writes the target's sibling `<name>.dxf` (byte-deterministic: an
+unchanged drawing produces an identical file). Flags:
 
-- `--write` — also write the sibling `<name>.dxf` export.
-- `-o`/`--output PATH` — export to a custom path; only with one plain generated Python target.
-- `SOURCE.dxf.py=OUTPUT.dxf` positional pairs — per-target custom export paths.
-- `--force` — rebuild even when the cached drawing package is current (an unchanged source closure is otherwise skipped).
+- `-o`/`--output PATH` — write to a custom path instead; only with one plain generated Python target.
+- `SOURCE.dxf.py=OUTPUT.dxf` positional pairs — per-target custom output paths.
+- `--force` — regenerate even when the recorded output is current (an unchanged source closure is otherwise skipped).
 - `--validate` — validate existing `.dxf` FILES with the generation-time drawing checks instead of generating.
 
 Do not put output paths in the `gen_dxf()` return value.
-
-`scripts/gen` runs generators only. An imported `.dxf` has no generator to run, so it
-goes through `scripts/artifact` instead:
-
-```bash
-python scripts/artifact path/to/imported.dxf
-python scripts/artifact path/to/source.dxf.py --force
-```
-
-That builds the same hidden `__cadgen__` drawing package the CAD Viewer builds on
-demand — the drawing DXF plus the 3D `preview.glb` the viewport renders — and accepts
-either source kind, so it is also how you debug a generated drawing's package build.
-Flags: `--write PATH` (also write the package's drawing DXF there), `--force`,
-`--verbose`.
 
 `scripts/snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:
 
@@ -135,13 +114,12 @@ python scripts/snapshot --input path/to/imported.dxf --output review.png
 python scripts/snapshot --input path/to/source.dxf.py --output turntable.gif --mode orbit
 ```
 
-It builds/refreshes the drawing package first, then renders that package's `preview.glb`
-through the shared snapshot CLI (`cadgen.snapshot_cli`) and the same headless browser
-runtime every rendering skill uses — so geometry and materials render identically to the CAD
-Viewer; the default `snapshot` theme differs from the viewport only by dropping the grid,
-origin axis and shadows. The
-package build is the same locked `artifact_build(DRAWING_PACKAGE)` that `scripts/artifact`
-and the viewer run, so a snapshot cannot race one of them.
+For a generator it makes the sibling `.dxf` current first (the ordinary gen no-op
+gate), then meshes the flat pattern on demand through the bundled Node one-shot and
+renders it through the shared snapshot CLI (`cadgen.snapshot_cli`) and the same
+headless browser runtime every rendering skill uses — so geometry and materials
+render identically to the CAD Viewer; the default `snapshot` theme differs from the
+viewport only by dropping the grid, origin axis and shadows.
 
 Flags: `--mode view|orbit|list`, `--camera`, `--theme`, `--size-profile`,
 `--width`/`--height`, `--job`, `--force`, `--json`. Theme settings live under one
@@ -162,7 +140,6 @@ and `--validate` for the drawing checks; review geometry visually with `$cad-vie
 
 ```bash
 python scripts/gen path/to/source.dxf.py
-python scripts/gen path/to/source.dxf.py --write
 python scripts/gen path/to/source.dxf.py -o path/to/output.dxf
 python scripts/gen path/to/a.dxf.py=out/a.dxf path/to/b.dxf.py=out/b.dxf
 ```
@@ -171,7 +148,7 @@ python scripts/gen path/to/a.dxf.py=out/a.dxf path/to/b.dxf.py=out/b.dxf
 
 ## Viewer integration
 
-`<name>.dxf.py` files are CAD Viewer catalog entries, listed whether or not their drawing package has been built. Opening one triggers the unified render-artifact flow: a missing or stale package (any source-closure file — the generator, its path-loaded `.step.py` sources, and helper modules — newer than the descriptor) rebuilds automatically. The viewer's export dropdown offers "Download DXF" on generated drawings (it refreshes the package first, so the export is never stale). An imported `.dxf` is artifact-managed too — the viewer builds its drawing package on demand, exactly as it does for an imported `.step` — but it is never a `dxf` CLI target: the CLI builds `.dxf.py` generators only.
+`<name>.dxf.py` files are CAD Viewer catalog entries, listed whether or not their sibling `.dxf` has been written. Opening one triggers the unified render-artifact flow: a missing or stale output (any source-closure file — the generator, its path-loaded `.step.py` sources, and helper modules — changed since the record) regenerates automatically. The viewer parses and meshes the `.dxf` itself — 2D line work for dimensioned drawings, a fold-able 3D flat pattern for cut layouts. The export dropdown offers "Download DXF" on generated drawings (it regenerates first, so the export is never stale). An imported `.dxf` renders directly with no build step and no artifact management.
 
 ## Validation
 
@@ -183,12 +160,12 @@ The same checks run post-hoc on any existing `.dxf` file:
 python scripts/gen --validate path/to/file.dxf
 ```
 
-Beyond the built-in checks, verify requested dimensions with targeted `ezdxf` reads (entity counts by layer, drawing extents, every dimension the user specified) against the built DXF in the drawing package (or the exported path when one was requested), and review geometry visually in the CAD Viewer:
+Beyond the built-in checks, verify requested dimensions with targeted `ezdxf` reads (entity counts by layer, drawing extents, every dimension the user specified) against the generated sibling `.dxf` (or the custom output path when one was requested), and review geometry visually in the CAD Viewer:
 
 ```python
 import ezdxf
 
-doc = ezdxf.readfile("path/to/__cadgen__/models/source.dxf.py/drawing.dxf")
+doc = ezdxf.readfile("path/to/source.dxf")
 msp = doc.modelspace()
 profiles = [e for e in msp.query("LWPOLYLINE") if e.closed]
 holes = msp.query('CIRCLE[layer=="0"]')
