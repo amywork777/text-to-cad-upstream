@@ -79,10 +79,10 @@ def _write_package(
     os.makedirs(comp_dir, exist_ok=True)
     comps = {}
     for cid in (components if components is not None else ["c0"]):
-        rel = f"components/{cid}.glb"
+        rel = f"components/{cid}.surf"
         with open(os.path.join(pkg, rel), "wb") as h:
             h.write(b"glTF\x02\x00\x00\x00")
-        comps[cid] = {"glb": rel}
+        comps[cid] = {"surf": rel}
     descriptor = {
         "kind": "assembly-package",
         "sourceKind": source_kind,
@@ -126,7 +126,7 @@ class ImportedStepFreshness(unittest.TestCase):
     def test_missing_component_glb(self):
         with tempfile.TemporaryDirectory() as d:
             step, pkg = _write_package(d, "imp.step")
-            os.remove(os.path.join(pkg, "components", "c0.glb"))
+            os.remove(os.path.join(pkg, "components", "c0.surf"))
             self.assertEqual(artifact.validate_step_freshness(d, step), (False, "missing_glb"))
 
     def test_unsupported_descriptor(self):
@@ -499,7 +499,7 @@ def _write_generated_package(
         return py_path, None
     pkg = os.path.join(root, "__cadgen__", "models", py_name)
     os.makedirs(os.path.join(pkg, "components"), exist_ok=True)
-    with open(os.path.join(pkg, "components", "c0.glb"), "wb") as h:
+    with open(os.path.join(pkg, "components", "c0.surf"), "wb") as h:
         h.write(b"glTF\x02\x00\x00\x00")
     closure_files = [py_name] + list(closure_extra or [])
     descriptor = {
@@ -507,7 +507,7 @@ def _write_generated_package(
         "sourceKind": "python",
         "sourcePath": py_name,
         "sourceClosureFiles": closure_files,
-        "components": {"c0": {"glb": "components/c0.glb"}},
+        "components": {"c0": {"surf": "components/c0.surf"}},
     }
     if schema_version is not None:
         descriptor["packageSchemaVersion"] = schema_version
