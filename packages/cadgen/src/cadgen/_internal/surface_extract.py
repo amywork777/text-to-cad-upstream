@@ -135,6 +135,28 @@ class Unextractable(Exception):
     """This shape cannot be represented as a .surf (caller falls through)."""
 
 
+def _assert_surface_covers_face(payload, u0, u1, v0, v1, bin_out) -> None:
+    """A serialized NURBS payload must COVER the face's UV range: evaluating
+    a clamped B-spline outside its knots EXTRAPOLATES, which renders as
+    flying geometry (the silent failure mode this guard makes loud).
+    Analytic/swept kinds evaluate everywhere by construction."""
+    if payload.get("kind") != "nurbs":
+        return
+    knots_u = bin_out.values
+    ku_off, ku_len = payload["knotsU"]
+    kv_off, kv_len = payload["knotsV"]
+    first_u, last_u = knots_u[ku_off], knots_u[ku_off + ku_len - 1]
+    first_v, last_v = knots_u[kv_off], knots_u[kv_off + kv_len - 1]
+    eps_u = max(abs(u1 - u0), 1.0) * 1e-6
+    eps_v = max(abs(v1 - v0), 1.0) * 1e-6
+    if (u0 < first_u - eps_u or u1 > last_u + eps_u
+            or v0 < first_v - eps_v or v1 > last_v + eps_v):
+        raise Unextractable(
+            f"surface domain [{first_u}, {last_u}]x[{first_v}, {last_v}] does "
+            f"not cover face UV [{u0}, {u1}]x[{v0}, {v1}] — evaluation would "
+            "extrapolate")
+
+
 class _Bin:
     """The single f32 buffer; append() returns [offset, count] refs."""
 
@@ -269,7 +291,23 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
                 nurbs.SetUNotPeriodic()
             if nurbs.IsVPeriodic():
                 nurbs.SetVNotPeriodic()
-            return _nurbs_surface_payload(nurbs, bin_out)
+            # Direct copy is valid only when the face addresses parameters
+            # inside the (clamped) domain. A PERIODIC surface whose face
+            # crosses the period (u range past one turn) must go through
+            # the trimmed conversion below instead — segmenting a B-spline
+            # preserves parametrization, so nothing is lost, while a
+            # clamped copy would EXTRAPOLATE outside its knots (moonwatch
+            # bezel: face u in [28.5, 66.1] over a ~41-period surface).
+            u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+            eps_u = max(abs(u1 - u0), 1.0) * 1e-9
+            eps_v = max(abs(v1 - v0), 1.0) * 1e-9
+            if (
+                u0 >= nurbs.UKnot(1) - eps_u
+                and u1 <= nurbs.UKnot(nurbs.NbUKnots()) + eps_u
+                and v0 >= nurbs.VKnot(1) - eps_v
+                and v1 <= nurbs.VKnot(nurbs.NbVKnots()) + eps_v
+            ):
+                return _nurbs_surface_payload(nurbs, bin_out)
         try:
             u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
             bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
@@ -672,6 +710,7 @@ def extract_surface_component(
             "surface": _surface_payload(face, bin_out),
             "loops": [],
         }
+        _assert_surface_covers_face(entry["surface"], u0, u1, v0, v1, bin_out)
         if entry["surface"].get("kind") == "plane":
             sign = -1.0 if entry["reversed"] else 1.0
             entry["normal"] = [sign * c for c in entry["surface"]["zdir"]]

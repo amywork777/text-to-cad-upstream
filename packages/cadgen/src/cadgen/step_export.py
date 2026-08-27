@@ -286,6 +286,22 @@ def export_xcaf_doc_step_scene(
         )
 
 
+def _renumber_nauo_ids(model: Any) -> None:
+    from OCP.StepRepr import StepRepr_NextAssemblyUsageOccurrence
+    from OCP.TCollection import TCollection_HAsciiString
+
+    # SelectType filters C++-side; a Python isinstance scan over every entity
+    # costs ~1s on multi-million-entity models.
+    iterator = model.Entities()
+    iterator.SelectType(StepRepr_NextAssemblyUsageOccurrence.get_type_descriptor_s(), True)
+    count = 0
+    iterator.Start()
+    while iterator.More():
+        count += 1
+        iterator.Value().SetId(TCollection_HAsciiString(str(count)))
+        iterator.Next()
+
+
 def write_xcaf_doc_step_file(
     doc: Any,
     output_path: Path,
@@ -326,13 +342,6 @@ def write_xcaf_doc_step_file(
     writer.SetLayerMode(True)
     writer.SetNameMode(True)
 
-    header = APIHeaderSection_MakeHeader(writer.Writer().Model())
-    if label:
-        header.SetName(TCollection_HAsciiString(label))
-    header.SetOriginatingSystem(
-        TCollection_HAsciiString(TEXT_TO_CAD_GENERATOR if text_to_cad_entry_kind else originating_system)
-    )
-
     STEPCAFControl_Controller.Init_s()
     STEPControl_Controller.Init_s()
     IGESControl_Controller.Init_s()
@@ -340,6 +349,27 @@ def write_xcaf_doc_step_file(
     Interface_Static.SetIVal_s("write.precision.mode", PrecisionMode.AVERAGE.value)
     with (logger.timed(f"transfer XCAF to STEP model {output_path.name}") if logger is not None else nullcontext()):
         writer.Transfer(doc, STEPControl_StepModelType.STEPControl_AsIs)
+
+    # NAUO instance ids come from a process-global OCCT counter, so a warm
+    # process that has exported before writes different ids than a cold one
+    # for the same model. Renumber them 1..N in model-entity order (which is
+    # deterministic transfer order) so identical models write identical bytes.
+    _renumber_nauo_ids(writer.Writer().Model())
+
+    # The header must be edited AFTER Transfer: Transfer rebuilds the writer's
+    # model, discarding anything set on the pre-transfer header.
+    header = APIHeaderSection_MakeHeader(writer.Writer().Model())
+    if label:
+        header.SetName(TCollection_HAsciiString(label))
+    header.SetOriginatingSystem(
+        TCollection_HAsciiString(TEXT_TO_CAD_GENERATOR if text_to_cad_entry_kind else originating_system)
+    )
+    # Byte-determinism: the only nondeterministic bytes in a written STEP are
+    # FILE_NAME's wall-clock time_stamp. Exports are content-addressed
+    # end-to-end (export records verify by sha256, identical models must
+    # produce identical files), so the stamp is pinned. The real generation
+    # time lives in the package descriptor, not the interchange file.
+    header.SetTimeStamp(TCollection_HAsciiString("2000-01-01T00:00:00"))
 
     # The writer's model knows its own entity count, and Part-21 ids are dense
     # 1..N — so the metadata injector can be handed a guaranteed collision-free

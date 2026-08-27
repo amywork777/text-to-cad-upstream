@@ -487,8 +487,9 @@ def _write_generated_package(
     schema_version=_STEP_SCHEMA_VERSION,
     bake_hash=None,
 ):
-    """A gen_step generator + optionally its generated component-GLB package
-    (sourceKind=python), keyed by the .step.py name like cadgen writes it."""
+    """A gen_step generator + optionally its generated package
+    (sourceKind=python), keyed by the STEP name like cadgen writes it
+    (widget.step.py -> __cadgen__/models/widget.step)."""
     py_path = os.path.join(root, py_name)
     with open(py_path, "w") as h:
         h.write("def gen_step():\n    return None\n")
@@ -497,7 +498,8 @@ def _write_generated_package(
             h.write("# closure dep\n")
     if not with_package:
         return py_path, None
-    pkg = os.path.join(root, "__cadgen__", "models", py_name)
+    package_key = py_name[:-3] if py_name.endswith((".step.py", ".stp.py")) else py_name
+    pkg = os.path.join(root, "__cadgen__", "models", package_key)
     os.makedirs(os.path.join(pkg, "components"), exist_ok=True)
     with open(os.path.join(pkg, "components", "c0.surf"), "wb") as h:
         h.write(b"glTF\x02\x00\x00\x00")

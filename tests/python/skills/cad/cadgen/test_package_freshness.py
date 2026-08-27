@@ -72,6 +72,7 @@ class PackageFreshnessGateTests(unittest.TestCase):
                 "part.step",
                 {
                     "kind": PACKAGE_KIND,
+                    "packageSchemaVersion": STEP_PACKAGE_VERSION,
                     "components": {"abc": {
                         "surf": "components/abc.surf",
                         "brep": "components/abc.brep",

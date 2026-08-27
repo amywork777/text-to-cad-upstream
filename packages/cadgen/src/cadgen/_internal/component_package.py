@@ -110,6 +110,12 @@ def assembly_package_current(step_path: Path) -> bool:
     descriptor = read_package_descriptor(package_dir)
     if descriptor is None or descriptor.get("kind") != PACKAGE_KIND:
         return False
+    # BOTH freshness authorities must gate on the schema version: the viewer
+    # validator always did, but the CLI fast path only checked existence, so
+    # a version bump (extractor change) left CLI builds serving stale
+    # artifacts until something else forced a rebuild.
+    if descriptor.get("packageSchemaVersion") != PACKAGE_SCHEMA_VERSION:
+        return False
     components = descriptor.get("components") or {}
     if not components:
         return False

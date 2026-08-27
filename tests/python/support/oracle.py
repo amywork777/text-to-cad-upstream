@@ -70,7 +70,14 @@ def build_entry(
 
 def package_dir(entry_path: Path) -> Path:
     entry_path = Path(entry_path).resolve()
-    return entry_path.parent / "__cadgen__" / "models" / entry_path.name
+    name = entry_path.name
+    # Generated entries are keyed by the STEP file they produce, mirroring
+    # cadgen.catalog.render_package_dir: foo.step.py -> foo.step.
+    for suffix in (".step.py", ".stp.py"):
+        if name.endswith(suffix):
+            name = name[: -len(".py")]
+            break
+    return entry_path.parent / "__cadgen__" / "models" / name
 
 
 def fingerprint(entry_path: Path) -> dict:
@@ -88,7 +95,8 @@ def fingerprint(entry_path: Path) -> dict:
 
     components = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted((pkg / "components").glob("*.glb"))
+        for pattern in ("*.surf", "*.brep")
+        for path in sorted((pkg / "components").glob(pattern))
     }
 
     return {

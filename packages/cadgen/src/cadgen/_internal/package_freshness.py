@@ -38,7 +38,7 @@ from typing import Any, Mapping
 #    collision between the numerically overlapping GeomAbs_* enum families (see
 #    _internal.step_scene._enum_name), so every package built before that fix records
 #    surface names on its edges.
-STEP_PACKAGE_VERSION = 13
+STEP_PACKAGE_VERSION = 14
 
 SCHEMA_VERSION_FIELD = "packageSchemaVersion"
 BAKE_HASH_FIELD = "bakeHash"

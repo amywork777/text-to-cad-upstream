@@ -216,11 +216,12 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
             self.assertTrue(debug["cacheHit"])
             self.assertFalse(debug["selectorReextracted"])
 
-    def test_assembly_descriptor_lookup_uses_entry_path_not_step_path(self) -> None:
-        # Regression: a generated model's package is keyed by entry_path (<name>.step.py),
-        # which differs from step_path (<name>.step). Looking the descriptor up by
-        # step_path always misses, forcing a full selector re-extraction/regeneration
-        # on every call even when a fresh package already exists.
+    def test_assembly_descriptor_lookup_hits_for_both_entry_forms(self) -> None:
+        # A generated model's package is keyed by the STEP file it produces, so
+        # entry_path (<name>.step.py) and step_path (<name>.step) resolve to the
+        # SAME package dir — a descriptor lookup by either form always hits.
+        # (Before the re-key these were two namespaces and step_path lookups
+        # missed, forcing a full selector re-extraction on every call.)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             step_path = root / "part.step"
@@ -241,7 +242,7 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
             descriptor = {"kind": "component-glb-package"}
             entry_package_dir = step_artifacts.render_package_dir(spec.entry_path)
             step_package_dir = step_artifacts.render_package_dir(spec.step_path)
-            self.assertNotEqual(entry_package_dir, step_package_dir)
+            self.assertEqual(entry_package_dir, step_package_dir)
 
             def fake_read_package_descriptor(path: Path) -> dict[str, object] | None:
                 return descriptor if path == entry_package_dir else None

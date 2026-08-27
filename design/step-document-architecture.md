@@ -93,3 +93,18 @@ viewer re-fetches only new cids. Nothing else in the system re-derives.
   pipeline via step_artifact_cli, which now also emits the STEP — the
   render pipeline never executes Python; its only build path is importing
   a foreign/hand-edited STEP (hash mismatch demotes to that path).
+- Assembled STEP files are BYTE-DETERMINISTIC: identical documents write
+  identical files, cold or warm. Two nondeterminism sources fixed in
+  `step_export.write_xcaf_doc_step_file`: (1) the FILE_NAME wall-clock
+  time_stamp is pinned (header must be edited AFTER `Transfer` — it
+  rebuilds the model, which is why the label/originating-system fields
+  never applied before); (2) NAUO instance ids come from a process-global
+  OCCT counter, so a warm process wrote different ids than a cold one —
+  they are renumbered 1..N in model-entity order between Transfer and
+  Write (typed `Interface_EntityIterator.SelectType` filter: 88ms on
+  moonwatch's 1.8M entities vs ~1.1s for a Python isinstance scan).
+  This is what makes stepHash stamps and export records stable across
+  cold/warm builds (test_warm_output_equivalence).
+- CLI freshness gate (`assembly_package_current`) now also checks
+  `packageSchemaVersion`, matching the viewer validator — a version bump
+  previously left CLI builds serving stale packages.
