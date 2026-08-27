@@ -168,7 +168,41 @@ export function evaluateSurface(payload, floats, u, v) {
   const direct = SURFACE_EVALUATORS[payload.kind];
   if (direct) return direct(payload, u, v);
   if (payload.kind === "nurbs") return evaluateNurbsSurface(payload, floats, u, v);
+  if (payload.kind === "revolution") {
+    // Value(u, v) = profile(v) rotated by u around the axis (OCCT
+    // convention) — exact and parametrization-preserving, which a NURBS
+    // conversion of a revolved surface is NOT.
+    const point = evaluateCurve3(payload.profile, floats, v);
+    return rotateAroundAxis(point, payload.origin, payload.dir, u);
+  }
+  if (payload.kind === "extrusion") {
+    const point = evaluateCurve3(payload.profile, floats, u);
+    return [
+      point[0] + v * payload.dir[0],
+      point[1] + v * payload.dir[1],
+      point[2] + v * payload.dir[2],
+    ];
+  }
   throw new Error(`unknown surface kind ${payload.kind}`);
+}
+
+function rotateAroundAxis(point, origin, axis, angle) {
+  // Rodrigues rotation of (point - origin) around unit axis.
+  const px = point[0] - origin[0];
+  const py = point[1] - origin[1];
+  const pz = point[2] - origin[2];
+  const [ax, ay, az] = axis;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dot = ax * px + ay * py + az * pz;
+  const crossX = ay * pz - az * py;
+  const crossY = az * px - ax * pz;
+  const crossZ = ax * py - ay * px;
+  return [
+    origin[0] + px * cos + crossX * sin + ax * dot * (1 - cos),
+    origin[1] + py * cos + crossY * sin + ay * dot * (1 - cos),
+    origin[2] + pz * cos + crossZ * sin + az * dot * (1 - cos),
+  ];
 }
 
 // Central-difference normal; the WGSL kernel mirrors this (exact partials

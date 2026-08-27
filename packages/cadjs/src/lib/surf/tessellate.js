@@ -252,12 +252,19 @@ function gridTriangulate(face, floats, loops, chordLimit) {
 
   const triangles = [];
   const degenerateLimit = Math.abs((maxU - minU) * (maxV - minV)) * 1e-12 || 1e-30;
+  // Canonical grid-line coordinates: adjacent cells MUST address their shared
+  // border with bitwise-identical floats, or vertex dedup misses and every
+  // cell border becomes an unmerged crack (visible as hairline banding).
+  const gridU = [];
+  const gridV = [];
+  for (let iu = 0; iu <= stepsU; iu += 1) gridU.push(iu === stepsU ? maxU : minU + iu * du);
+  for (let iv = 0; iv <= stepsV; iv += 1) gridV.push(iv === stepsV ? maxV : minV + iv * dv);
   for (let iu = 0; iu < stepsU; iu += 1) {
     for (let iv = 0; iv < stepsV; iv += 1) {
-      const cu0 = minU + iu * du;
-      const cu1 = iu === stepsU - 1 ? maxU : cu0 + du;
-      const cv0 = minV + iv * dv;
-      const cv1 = iv === stepsV - 1 ? maxV : cv0 + dv;
+      const cu0 = gridU[iu];
+      const cu1 = gridU[iu + 1];
+      const cv0 = gridV[iv];
+      const cv1 = gridV[iv + 1];
       if (!crossed.has(iu * stepsV + iv)) {
         // Uncrossed cell: uniformly inside or outside; test the center.
         if (!pointInLoopsEvenOdd(loops, (cu0 + cu1) / 2, (cv0 + cv1) / 2)) continue;

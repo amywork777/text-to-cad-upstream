@@ -67,8 +67,17 @@ def capture(url_base: str, out_dir: Path, themes: list[str]) -> int:
     return failures
 
 
+def _diff_fraction(a, b) -> float:
+    from PIL import ImageChops
+
+    histogram = ImageChops.difference(a, b).convert("L").histogram()
+    total = sum(histogram)
+    # a pixel "differs" when its max channel delta exceeds 12/255
+    return sum(histogram[13:]) / max(total, 1)
+
+
 def compare(golden: Path, candidate: Path, threshold: float) -> int:
-    from PIL import Image, ImageChops
+    from PIL import Image
 
     failures = 0
     goldens = sorted(golden.glob("*.png"))
@@ -85,16 +94,28 @@ def compare(golden: Path, candidate: Path, threshold: float) -> int:
         b = Image.open(cand_path).convert("RGB")
         if a.size != b.size:
             b = b.resize(a.size)
-        diff = ImageChops.difference(a, b)
-        histogram = diff.convert("L").histogram()
-        total = sum(histogram)
-        # a pixel "differs" when its max channel delta exceeds 12/255
-        differing = sum(histogram[13:])
-        fraction = differing / max(total, 1)
-        status = "OK " if fraction <= threshold else "DIFF"
-        if fraction > threshold:
+        # Shift-tolerant: camera auto-fit reacts to honest sub-pixel bbox
+        # differences between renderers, shifting the whole model 1-2px and
+        # moireing on striped geometry. Take the min over small offsets —
+        # content changes still diff at every offset.
+        best = 1.0
+        for dx in (0, -1, 1, -2, 2):
+            for dy in (0, -1, 1, -2, 2):
+                if dx or dy:
+                    from PIL import ImageChops
+
+                    shifted = ImageChops.offset(b, dx, dy)
+                else:
+                    shifted = b
+                best = min(best, _diff_fraction(a, shifted))
+                if best <= threshold / 4:
+                    break
+            if best <= threshold / 4:
+                break
+        status = "OK " if best <= threshold else "DIFF"
+        if best > threshold:
             failures += 1
-        print(f"{status} {gold_path.name}: {fraction*100:.2f}% pixels differ")
+        print(f"{status} {gold_path.name}: {best*100:.2f}% pixels differ (best shift)")
     return failures
 
 

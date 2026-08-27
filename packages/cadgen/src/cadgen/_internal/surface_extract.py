@@ -143,18 +143,126 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
         torus = adaptor.Torus()
         return {"kind": "torus", "majorRadius": torus.MajorRadius(),
                 "minorRadius": torus.MinorRadius(), **_frame(torus.Position())}
-    # Everything else — BSpline, Bezier, revolution, extrusion, offset —
-    # converts to a bounded NURBS patch over the face's UV range.
+    # PARAMETRIZATION IS PART OF THE CONTRACT: pcurves live in the original
+    # surface's (u, v), so any serialization must evaluate identically at the
+    # same parameters — SurfaceToBSplineSurface does NOT (a rational-quadratic
+    # circle cannot carry angle parametrization, so revolved/extruded-arc
+    # surfaces come back reparametrized and every trim lands wrong).
+    if kind == GeomAbs_SurfaceType.GeomAbs_SurfaceOfRevolution:
+        # Value(u, v) = basis(v) rotated by u around the axis.
+        axis = adaptor.AxeOfRevolution()
+        basis = _basis_curve_payload(adaptor.BasisCurve(), bin_out)
+        return {
+            "kind": "revolution",
+            "origin": _xyz(axis.Location()),
+            "dir": _xyz(axis.Direction()),
+            "profile": basis,
+        }
+    if kind == GeomAbs_SurfaceType.GeomAbs_SurfaceOfExtrusion:
+        # Value(u, v) = basis(u) + v * direction.
+        basis = _basis_curve_payload(adaptor.BasisCurve(), bin_out)
+        return {
+            "kind": "extrusion",
+            "dir": _xyz(adaptor.Direction()),
+            "profile": basis,
+        }
     surface = BRep_Tool.Surface_s(face)
     if surface is None:
         raise Unextractable("face with no surface")
-    u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+    if kind in (GeomAbs_SurfaceType.GeomAbs_BSplineSurface,
+                GeomAbs_SurfaceType.GeomAbs_BezierSurface):
+        # Native NURBS: conversion is exact AND parametrization-preserving;
+        # clamping periodic directions preserves both too.
+        try:
+            u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+            bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
+            nurbs = GeomConvert.SurfaceToBSplineSurface_s(bounded)
+            if nurbs.IsUPeriodic():
+                nurbs.SetUNotPeriodic()
+            if nurbs.IsVPeriodic():
+                nurbs.SetVNotPeriodic()
+        except Exception as exc:
+            raise Unextractable(f"NURBS conversion failed: {exc}") from exc
+        return _nurbs_surface_payload(nurbs, bin_out)
+    # Exotic kinds (offset surfaces, ...): parametrization-preserving
+    # least-squares approximation.
     try:
+        from OCP.GeomAbs import GeomAbs_C1
+        from OCP.GeomConvert import GeomConvert_ApproxSurface
+
+        u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
         bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
-        nurbs = GeomConvert.SurfaceToBSplineSurface_s(bounded)
+        approx = GeomConvert_ApproxSurface(
+            bounded, 1e-4, GeomAbs_C1, GeomAbs_C1, 14, 14, 100, 0)
+        if not approx.IsDone():
+            raise Unextractable("surface approximation did not converge")
+        nurbs = approx.Surface()
+        if nurbs.IsUPeriodic():
+            nurbs.SetUNotPeriodic()
+        if nurbs.IsVPeriodic():
+            nurbs.SetVNotPeriodic()
+    except Unextractable:
+        raise
     except Exception as exc:
-        raise Unextractable(f"NURBS conversion failed: {exc}") from exc
+        raise Unextractable(f"surface approximation failed: {exc}") from exc
     return _nurbs_surface_payload(nurbs, bin_out)
+
+
+def _basis_curve_payload(basis_adaptor, bin_out: _Bin) -> dict[str, Any]:
+    """Serialize a swept surface's basis curve in the edge-curve schema
+    (line/circle/ellipse/bspline), preserving its parametrization: analytic
+    kinds carry it inherently; general curves convert through
+    CurveToBSplineCurve which keeps parameters for non-periodic input and is
+    clamped (parametrization-preserving) otherwise."""
+    kind = basis_adaptor.GetType()
+    first = basis_adaptor.FirstParameter()
+    last = basis_adaptor.LastParameter()
+    if kind == GeomAbs_CurveType.GeomAbs_Line:
+        line = basis_adaptor.Line()
+        return {"kind": "line", "origin": _xyz(line.Location()),
+                "dir": _xyz(line.Direction()), "range": [first, last]}
+    if kind == GeomAbs_CurveType.GeomAbs_Circle:
+        circle = basis_adaptor.Circle()
+        return {"kind": "circle", "radius": circle.Radius(),
+                **_frame(circle.Position()), "range": [first, last]}
+    if kind == GeomAbs_CurveType.GeomAbs_Ellipse:
+        ellipse = basis_adaptor.Ellipse()
+        return {"kind": "ellipse", "majorRadius": ellipse.MajorRadius(),
+                "minorRadius": ellipse.MinorRadius(),
+                **_frame(ellipse.Position()), "range": [first, last]}
+    try:
+        bspline = basis_adaptor.BSpline()
+        if bspline.IsPeriodic():
+            bspline.SetNotPeriodic()
+    except Exception as exc:
+        raise Unextractable(f"basis curve conversion failed: {exc}") from exc
+    return _bspline_curve3_payload(bspline, bin_out)
+
+
+def _bspline_curve3_payload(bspline, bin_out: _Bin) -> dict[str, Any]:
+    poles: list[float] = []
+    weights: list[float] = []
+    rational = bspline.IsRational()
+    for i in range(1, bspline.NbPoles() + 1):
+        pole = bspline.Pole(i)
+        poles.extend((pole.X(), pole.Y(), pole.Z()))
+        if rational:
+            weights.append(bspline.Weight(i))
+    flat: list[float] = []
+    for k in range(1, bspline.NbKnots() + 1):
+        flat.extend([bspline.Knot(k)] * bspline.Multiplicity(k))
+    payload = {
+        "kind": "bspline",
+        "deg": bspline.Degree(),
+        "n": bspline.NbPoles(),
+        "periodic": bool(bspline.IsPeriodic()),
+        "poles": bin_out.append(poles),
+        "knots": bin_out.append(flat),
+        "range": [bspline.FirstParameter(), bspline.LastParameter()],
+    }
+    if rational:
+        payload["weights"] = bin_out.append(weights)
+    return payload
 
 
 def _curve2d_payload(edge, face, bin_out: _Bin) -> dict[str, Any]:
@@ -170,6 +278,8 @@ def _curve2d_payload(edge, face, bin_out: _Bin) -> dict[str, Any]:
 
         bspline = Geom2dConvert.CurveToBSplineCurve_s(
             Geom2d_TrimmedCurve(curve, first, last))
+        if bspline.IsPeriodic():
+            bspline.SetNotPeriodic()
     except Exception as exc:
         raise Unextractable(f"pcurve conversion failed: {exc}") from exc
     poles: list[float] = []
@@ -224,6 +334,8 @@ def _curve3d_payload(edge, bin_out: _Bin) -> dict[str, Any] | None:
 
         bspline = GeomConvert.CurveToBSplineCurve_s(
             Geom_TrimmedCurve(curve, first, last))
+        if bspline.IsPeriodic():
+            bspline.SetNotPeriodic()
     except Exception:
         return None
     poles: list[float] = []

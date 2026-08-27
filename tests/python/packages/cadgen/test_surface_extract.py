@@ -71,6 +71,41 @@ def _rebuild_bspline_surface(payload, binbuf):
         payload["periodicU"], payload["periodicV"])
 
 
+def _rebuild_bspline_curve3(payload, binbuf):
+    from OCP.Geom import Geom_BSplineCurve
+    from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
+    from OCP.TColgp import TColgp_Array1OfPnt
+    from OCP.gp import gp_Pnt
+
+    n = payload["n"]
+    raw = _floats(binbuf, payload["poles"])
+    poles = TColgp_Array1OfPnt(1, n)
+    for i in range(n):
+        poles.SetValue(i + 1, gp_Pnt(*raw[i * 3:i * 3 + 3]))
+    flat = _floats(binbuf, payload["knots"])
+    knots, mults = [], []
+    for value in flat:
+        if knots and math.isclose(value, knots[-1], rel_tol=0, abs_tol=1e-9):
+            mults[-1] += 1
+        else:
+            knots.append(value)
+            mults.append(1)
+    k_arr = TColStd_Array1OfReal(1, len(knots))
+    m_arr = TColStd_Array1OfInteger(1, len(knots))
+    for idx, (k, m) in enumerate(zip(knots, mults), start=1):
+        k_arr.SetValue(idx, k)
+        m_arr.SetValue(idx, m)
+    if "weights" in payload:
+        wraw = _floats(binbuf, payload["weights"])
+        weights = TColStd_Array1OfReal(1, n)
+        for i in range(n):
+            weights.SetValue(i + 1, wraw[i])
+        return Geom_BSplineCurve(poles, weights, k_arr, m_arr,
+                                 payload["deg"], payload["periodic"])
+    return Geom_BSplineCurve(poles, k_arr, m_arr, payload["deg"],
+                             payload["periodic"])
+
+
 def _rebuild_bspline_curve2d(payload, binbuf):
     from OCP.Geom2d import Geom2d_BSplineCurve
     from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal
@@ -151,7 +186,19 @@ def _build_fixture():
         with bd.BuildSketch(bd.Plane.XY.offset(52)):
             bd.Circle(3)
         bd.loft(ruled=False)
-    return bd.Compound(children=[fused, torus, lofted.part])
+    # Full revolve of a spline profile: periodic NURBS surface + periodic
+    # pcurves, which the extractor must CLAMP (SetNotPeriodic) because the
+    # client evaluator is clamped-only. Un-clamped periodic payloads render
+    # as flying geometry (moonwatch regression).
+    with bd.BuildPart() as revolved:
+        with bd.BuildSketch(bd.Plane.XZ):
+            with bd.BuildLine() as profile:
+                bd.Spline((8, -2), (10.5, 0), (8, 2))
+                bd.Line((8, 2), (8, -2))
+            bd.make_face()
+        bd.revolve(axis=bd.Axis.Z)
+    revolved_part = revolved.part.moved(bd.Location((0, 0, 60)))
+    return bd.Compound(children=[fused, torus, lofted.part, revolved_part])
 
 
 class SurfaceExtractTest(unittest.TestCase):
@@ -185,12 +232,64 @@ class SurfaceExtractTest(unittest.TestCase):
         kinds = {f["surface"]["kind"] for f in self.index["faces"]}
         self.assertLessEqual({"plane", "cylinder", "torus", "nurbs"}, kinds)
 
+    def test_swept_surfaces_match_occt(self) -> None:
+        """Revolution/extrusion serialize as axis + profile so the ORIGINAL
+        parametrization survives (a NURBS conversion reparametrizes and every
+        trim lands wrong). Evaluate the payload independently vs OCCT."""
+        import numpy as np
+        from OCP.BRep import BRep_Tool
+        from OCP.TopoDS import TopoDS
+
+        def profile_point(profile, t):
+            kind = profile["kind"]
+            if kind == "bspline":
+                curve = _rebuild_bspline_curve3(profile, self.binbuf)
+                p = curve.Value(t)
+                return np.array([p.X(), p.Y(), p.Z()])
+            if kind == "line":
+                o, d = np.array(profile["origin"]), np.array(profile["dir"])
+                return o + t * d
+            frame = {k: np.array(profile[k]) for k in ("origin", "xdir", "ydir")}
+            if kind == "circle":
+                r = profile["radius"]
+                return (frame["origin"] + r * math.cos(t) * frame["xdir"]
+                        + r * math.sin(t) * frame["ydir"])
+            raise AssertionError(kind)
+
+        checked = 0
+        for entry in self.index["faces"]:
+            payload = entry["surface"]
+            if payload["kind"] not in ("revolution", "extrusion"):
+                continue
+            face = TopoDS.Face_s(self.face_map.FindKey(entry["ord"]))
+            geom = BRep_Tool.Surface_s(face)
+            u0, u1, v0, v1 = entry["uv"]
+            for s, t in ((0.1, 0.2), (0.5, 0.5), (0.9, 0.8)):
+                u = u0 + s * (u1 - u0)
+                v = v0 + t * (v1 - v0)
+                truth = geom.Value(u, v)
+                if payload["kind"] == "revolution":
+                    p = profile_point(payload["profile"], v)
+                    o = np.array(payload["origin"])
+                    d = np.array(payload["dir"])
+                    rel = p - o
+                    mine = (o + rel * math.cos(u)
+                            + np.cross(d, rel) * math.sin(u)
+                            + d * np.dot(d, rel) * (1 - math.cos(u)))
+                else:
+                    p = profile_point(payload["profile"], u)
+                    mine = p + v * np.array(payload["dir"])
+                distance = math.dist((truth.X(), truth.Y(), truth.Z()), tuple(mine))
+                self.assertLess(distance, 1e-3, msg=f"face {entry['ord']}")
+                checked += 1
+        self.assertGreater(checked, 0, "fixture has no swept faces")
+
     def test_analytic_surfaces_match_occt(self) -> None:
         from OCP.BRep import BRep_Tool
         from OCP.TopoDS import TopoDS
 
         for entry in self.index["faces"]:
-            if entry["surface"]["kind"] == "nurbs":
+            if entry["surface"]["kind"] in ("nurbs", "revolution", "extrusion"):
                 continue
             face = TopoDS.Face_s(self.face_map.FindKey(entry["ord"]))
             geom = BRep_Tool.Surface_s(face)
