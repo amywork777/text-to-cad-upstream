@@ -274,8 +274,16 @@ def _edge_visibility_class(edge, faces: list, face_of_edge_count: int) -> str:
         return C["UNKNOWN"]
 
 
-def extract_surface_component(shape, *, face_colors: dict | None = None) -> bytes:
-    """Serialize one (unlocated) component shape as a .surf container."""
+def extract_surface_component(
+    shape,
+    *,
+    face_colors: dict | None = None,
+    part_color: tuple | list | None = None,
+) -> bytes:
+    """Serialize one (unlocated) component shape as a .surf container.
+    ``part_color`` is the part-level RGBA the component GLB used to bake into
+    its material; the descriptor's occurrences carry no colour, so it ships
+    on the component."""
     bin_out = _Bin()
 
     face_map = TopTools_IndexedMapOfShape()
@@ -353,6 +361,8 @@ def extract_surface_component(shape, *, face_colors: dict | None = None) -> byte
         "edges": edges,
         "counts": {"faces": face_map.Extent(), "edges": edge_map.Extent()},
     }
+    if part_color is not None:
+        index["partColor"] = [float(c) for c in part_color]
     json_bytes = json.dumps(index, separators=(",", ":")).encode("utf-8")
     payload = bin_out.payload()
     return (

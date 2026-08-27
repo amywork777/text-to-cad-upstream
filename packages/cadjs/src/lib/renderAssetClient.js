@@ -277,6 +277,21 @@ export function peekRenderGlb(url) {
   return peekCached(glbCache, url);
 }
 
+export async function loadRenderSurf(url, { signal } = {}) {
+  // Exact-surface component artifact (design/surface-rendering.md): fetch
+  // the .surf and tessellate client-side into the same meshData contract a
+  // component GLB produced. Shares the GLB cache keyspace (URLs differ).
+  const meshData = await loadCached(glbCache, url, async () => {
+    const [{ buildMeshDataFromSurfBuffer }, buffer] = await Promise.all([
+      import("./surf/surfMeshData.js"),
+      loadRenderArrayBuffer(url, { signal }),
+    ]);
+    assertNotGitLfsPointer(buffer, url, "SURF render asset");
+    return buildMeshDataFromSurfBuffer(buffer);
+  }, { cachePending: !signal });
+  return finalizeCached(glbCache, url, meshData);
+}
+
 export async function loadRenderStl(url, { signal } = {}) {
   const meshData = await loadCached(stlCache, url, async () => {
     const workerMeshData = loadStlMeshDataInWorker(url, { signal });

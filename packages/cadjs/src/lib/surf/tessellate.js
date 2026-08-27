@@ -42,17 +42,20 @@ function length3(a) {
 // --- Loop sampling -----------------------------------------------------------
 
 function sampleLoopPolygon(face, loop, floats, tolerance) {
+  // points[i] -> points[i+1] lies on the model edge segmentOrds[i].
   const points = [];
+  const segmentOrds = [];
   for (const pcurve of loop) {
-    const [t0, t1] = pcurve.range;
     const forward = !pcurve.reversed;
     const segment = samplePCurveAdaptive(face, pcurve, floats, tolerance);
     if (!forward) segment.reverse();
     // Drop each segment's last point; the next pcurve supplies it.
-    for (let i = 0; i < segment.length - 1; i += 1) points.push(segment[i]);
-    void t0;
-    void t1;
+    for (let i = 0; i < segment.length - 1; i += 1) {
+      points.push(segment[i]);
+      segmentOrds.push(pcurve.edgeOrd || 0);
+    }
   }
+  points.segmentOrds = segmentOrds;
   return points;
 }
 
@@ -203,20 +206,33 @@ function gridTriangulate(face, floats, loops, chordLimit) {
   const du = (maxU - minU) / stepsU;
   const dv = (maxV - minV) / stepsV;
 
-  // Bucket loop segments by the cells their bounding boxes touch.
+  // Bucket loop segments by the cells their bounding boxes touch. The same
+  // buckets serve two consumers: boundary-cell detection here, and model-
+  // edge attribution of region-boundary mesh edges afterwards.
   const cellOf = (u, v) => [
     Math.min(stepsU - 1, Math.max(0, Math.floor((u - minU) / du))),
     Math.min(stepsV - 1, Math.max(0, Math.floor((v - minV) / dv))),
   ];
   const crossed = new Set();
+  const segments = [];
+  const segmentsByCell = new Map();
   for (const points of loops) {
+    const ords = points.segmentOrds || [];
     for (let i = 0; i < points.length; i += 1) {
       const [x0, y0] = points[i];
       const [x1, y1] = points[(i + 1) % points.length];
+      const segIndex = segments.length;
+      segments.push([x0, y0, x1, y1, ords[i] || 0]);
       const [ca0, cb0] = cellOf(Math.min(x0, x1), Math.min(y0, y1));
       const [ca1, cb1] = cellOf(Math.max(x0, x1), Math.max(y0, y1));
       for (let cu = ca0; cu <= ca1; cu += 1) {
-        for (let cv = cb0; cv <= cb1; cv += 1) crossed.add(cu * stepsV + cv);
+        for (let cv = cb0; cv <= cb1; cv += 1) {
+          const key = cu * stepsV + cv;
+          crossed.add(key);
+          let list = segmentsByCell.get(key);
+          if (!list) segmentsByCell.set(key, (list = []));
+          list.push(segIndex);
+        }
       }
     }
   }
@@ -290,7 +306,76 @@ function gridTriangulate(face, floats, loops, chordLimit) {
       }
     }
   }
-  return { uvVerts, triangles };
+  return {
+    uvVerts,
+    triangles,
+    segmentIndex: { segments, segmentsByCell, cellOf, stepsV },
+  };
+}
+
+function pointToSegmentDistanceSq(px, py, x0, y0, x1, y1) {
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const lengthSq = dx * dx + dy * dy;
+  let t = lengthSq > 0 ? ((px - x0) * dx + (py - y0) * dy) / lengthSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const qx = x0 + t * dx;
+  const qy = y0 + t * dy;
+  return (px - qx) * (px - qx) + (py - qy) * (py - qy);
+}
+
+// Per-triangle model-edge ordinals for the barycentric edge overlay, in the
+// GLB half-edge convention: side 0 = (v1,v2), side 1 = (v2,v0),
+// side 2 = (v0,v1). A mesh edge belongs to a model edge when it appears in
+// exactly one triangle (region boundary — interior edges are shared by two)
+// and both endpoints lie on one sampled trim segment, whose ordinal it
+// inherits. Clip intersections and refinement midpoints stay on their
+// segment, so containment is exact up to float noise.
+function attributeBoundaryEdges(triangles, uvVerts, segmentIndex, epsilon) {
+  const counts = new Map();
+  const keyOf = (a, b) => (a < b ? a * 0x100000000 + b : b * 0x100000000 + a);
+  for (let t = 0; t < triangles.length; t += 3) {
+    const [a, b, c] = [triangles[t], triangles[t + 1], triangles[t + 2]];
+    for (const [p, q] of [[a, b], [b, c], [c, a]]) {
+      const key = keyOf(p, q);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  const { segments, segmentsByCell, cellOf, stepsV } = segmentIndex;
+  const epsilonSq = epsilon * epsilon;
+  const ordCache = new Map();
+  const ordOfMeshEdge = (p, q) => {
+    const key = keyOf(p, q);
+    if (counts.get(key) !== 1) return 0;
+    let ord = ordCache.get(key);
+    if (ord !== undefined) return ord;
+    ord = 0;
+    const [pu, pv] = uvVerts[p];
+    const [qu, qv] = uvVerts[q];
+    const [cu, cv] = cellOf((pu + qu) / 2, (pv + qv) / 2);
+    const candidates = segmentsByCell.get(cu * stepsV + cv) || [];
+    for (const segIdx of candidates) {
+      const [x0, y0, x1, y1, segOrd] = segments[segIdx];
+      if (!segOrd) continue;
+      if (
+        pointToSegmentDistanceSq(pu, pv, x0, y0, x1, y1) < epsilonSq &&
+        pointToSegmentDistanceSq(qu, qv, x0, y0, x1, y1) < epsilonSq
+      ) {
+        ord = segOrd;
+        break;
+      }
+    }
+    ordCache.set(key, ord);
+    return ord;
+  };
+  const sideOrds = new Uint32Array(triangles.length);
+  for (let t = 0; t < triangles.length; t += 3) {
+    const [a, b, c] = [triangles[t], triangles[t + 1], triangles[t + 2]];
+    sideOrds[t] = ordOfMeshEdge(b, c);
+    sideOrds[t + 1] = ordOfMeshEdge(c, a);
+    sideOrds[t + 2] = ordOfMeshEdge(a, b);
+  }
+  return sideOrds;
 }
 
 export function tessellateFace(face, floats, scale, options = {}) {
@@ -353,7 +438,7 @@ export function tessellateFace(face, floats, scale, options = {}) {
   // made global earcut meshes fat on curved faces (Schwarz-lantern effect).
   const built = gridTriangulate(face, floats, loops, chordLimit);
   if (!built) return null;
-  const { uvVerts, triangles: baseTriangles } = built;
+  const { uvVerts, triangles: baseTriangles, segmentIndex } = built;
   let triangles = baseTriangles;
   if (!triangles.length) return null;
 
@@ -508,10 +593,24 @@ export function tessellateFace(face, floats, scale, options = {}) {
     normals[i * 3 + 1] = nrm[i][1] * sign;
     normals[i * 3 + 2] = nrm[i][2] * sign;
   }
+  const indices = face.reversed ? flipWinding(triangles) : Uint32Array.from(triangles);
+  let spanU = 0;
+  let spanV = 0;
+  for (const [u, v] of uvVerts) {
+    spanU = Math.max(spanU, Math.abs(u));
+    spanV = Math.max(spanV, Math.abs(v));
+  }
+  const sideOrds = attributeBoundaryEdges(
+    indices,
+    uvVerts,
+    segmentIndex,
+    Math.max(spanU, spanV, 1) * 1e-7,
+  );
   return {
     positions,
     normals,
-    indices: face.reversed ? flipWinding(triangles) : Uint32Array.from(triangles),
+    indices,
+    sideOrds,
     uv: uvVerts,
   };
 }
@@ -607,6 +706,7 @@ export function tessellateComponent(index, floats, options = {}) {
   const normals = new Float32Array(vertexTotal * 3);
   const faceOrds = new Float32Array(vertexTotal);
   const indices = new Uint32Array(indexTotal);
+  const sideOrds = new Uint32Array(indexTotal);
   const faceRanges = [];
   let vertexOffset = 0;
   let indexOffset = 0;
@@ -617,9 +717,23 @@ export function tessellateComponent(index, floats, options = {}) {
     for (let i = 0; i < mesh.indices.length; i += 1) {
       indices[indexOffset + i] = mesh.indices[i] + vertexOffset;
     }
+    if (mesh.sideOrds) sideOrds.set(mesh.sideOrds, indexOffset);
     faceRanges.push({ ord, color, indexStart: indexOffset, indexCount: mesh.indices.length });
     vertexOffset += mesh.positions.length / 3;
     indexOffset += mesh.indices.length;
+  }
+
+  // Bounds from the FINAL tessellated positions: the loop-sample estimate
+  // above seeds tolerances but can clip extreme points, and camera auto-fit
+  // is sensitive to the difference.
+  min = [Infinity, Infinity, Infinity];
+  max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < positions.length; i += 3) {
+    for (let d = 0; d < 3; d += 1) {
+      const value = positions[i + d];
+      if (value < min[d]) min[d] = value;
+      if (value > max[d]) max[d] = value;
+    }
   }
 
   const edges = [];
@@ -632,5 +746,15 @@ export function tessellateComponent(index, floats, options = {}) {
     });
   }
 
-  return { positions, normals, faceOrds, indices, faceRanges, edges, bounds: { min, max }, scale };
+  return {
+    positions,
+    normals,
+    faceOrds,
+    indices,
+    sideOrds,
+    faceRanges,
+    edges,
+    bounds: { min, max },
+    scale,
+  };
 }

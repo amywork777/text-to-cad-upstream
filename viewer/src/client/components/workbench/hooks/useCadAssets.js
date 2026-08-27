@@ -3,6 +3,7 @@ import {
   isAbortError,
   loadRenderDisplayEdgeBundle,
   loadRenderGlb,
+  loadRenderSurf,
   loadRenderJson,
   loadRenderSelectorBundle,
   loadRenderSdf,
@@ -480,11 +481,11 @@ export function useCadAssets({
           const componentEntries = Object.entries(packageDescriptor.components || {});
           const componentMeshDataByCid = {};
           await mapWithConcurrency(componentEntries, packageComponentLoadConcurrency(), async ([cid, component]) => {
-            componentMeshDataByCid[cid] = await loadRenderGlb(resolvePackageAssetUrl(meshUrl, component.glb), {
-              // Parse component GLBs in the worker so the main thread stays free to
-              // paint the loading UI while 100+ components fetch+parse in parallel.
-              signal: controller.signal,
-              preferWorker: true
+            // Exact-surface artifact: tessellated client-side from the .surf
+            // (design/surface-rendering.md). Same meshData contract as the
+            // component GLB this replaced.
+            componentMeshDataByCid[cid] = await loadRenderSurf(resolvePackageAssetUrl(meshUrl, component.surf), {
+              signal: controller.signal
             });
           });
           if (requestId !== requestIdRef.current) {

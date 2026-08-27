@@ -413,11 +413,19 @@ def _write_component_glb_atomic(
             temp_path.unlink(missing_ok=True)
     from cadgen._internal.surface_extract import extract_surface_component
 
+    local = _unlocated_shape(shape)
+    color = getattr(local, "color", None)
+    part_color = None
+    if color is not None:
+        try:
+            part_color = tuple(color.to_tuple())
+        except Exception:
+            part_color = None
     out_surf = out_glb.with_name(f"{cad_ref}.surf")
     surf_temp = out_surf.with_name(f"{out_surf.name}{temp_suffix()}")
     try:
         surf_temp.write_bytes(
-            extract_surface_component(_unlocated_shape(shape).wrapped))
+            extract_surface_component(local.wrapped, part_color=part_color))
         replace_atomic(surf_temp, out_surf)
     finally:
         with contextlib.suppress(OSError):
