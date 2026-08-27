@@ -92,3 +92,12 @@ kill switches, version salts).
 - REMAINING: selector/topology bundles still load from GLB (R3), WebGPU
   renderer swap + TSL port of the edge overlay (R2 tail/R4), GLB display
   pipeline deletion (R5).
+- R5a DONE: packages are SURF-ONLY. The component build no longer meshes,
+  selector-extracts, or encodes GLB at all — `_write_component_surf_atomic`
+  is a pure surface read. The shared store keys by bare cid. Python-side
+  topology consumers (inspect refs/facts via `assembly_lookup`) read
+  selector tables synthesized from the .surf (`_internal/surf_tables.py`,
+  exact GProp metrics stored in the artifact). snapshot componentUrls
+  point at the .surf. Verified: `inspect refs block#o1.1.f3` resolves
+  "plane area=36.0" GLB-free; turbofan FORCED full rebuild (206
+  components) 33s -> 7.3s; viewer renders surf-only packages.

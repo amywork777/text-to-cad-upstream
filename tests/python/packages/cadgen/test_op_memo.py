@@ -170,42 +170,24 @@ class ComponentStoreTest(unittest.TestCase):
 
         from cadgen._internal import component_store
 
-        # A component is a GLB + exact-surface .surf PAIR; the store
-        # publishes and fetches both, and treats a missing half as absent.
-        src = Path(self._tmp.name) / "built.glb"
-        src.write_bytes(b"glb-payload")
-        src.with_name("cid123.surf").write_bytes(b"surf-payload")
-        component_store.publish(src, "cid123", 0.1, 0.5)
-        dest = Path(self._tmp.name) / "out" / "fetched.glb"
+        # The component artifact is the exact-surface .surf, keyed by bare
+        # cid (no mesh tolerances exist any more).
+        src = Path(self._tmp.name) / "cid123.surf"
+        src.write_bytes(b"surf-payload")
+        component_store.publish(src, "cid123")
+        dest = Path(self._tmp.name) / "out" / "fetched.surf"
         dest.parent.mkdir()
-        self.assertTrue(component_store.fetch("cid123", 0.1, 0.5, dest))
-        self.assertEqual(dest.read_bytes(), b"glb-payload")
+        self.assertTrue(component_store.fetch("cid123", dest))
+        self.assertEqual(dest.read_bytes(), b"surf-payload")
         self.assertEqual(src.stat().st_ino, dest.stat().st_ino)
-        surf_dest = dest.with_name("cid123.surf")
-        self.assertEqual(surf_dest.read_bytes(), b"surf-payload")
 
-    def test_fetch_requires_the_surf_half(self):
+    def test_fetch_misses_unknown_cid(self):
         from pathlib import Path
 
         from cadgen._internal import component_store
 
-        src = Path(self._tmp.name) / "built.glb"
-        src.write_bytes(b"glb-payload")
-        component_store.publish(src, "cidglbonly", 0.1, 0.5)
-        dest = Path(self._tmp.name) / "fetched.glb"
-        self.assertFalse(component_store.fetch("cidglbonly", 0.1, 0.5, dest))
-
-    def test_tolerances_are_part_of_the_key(self):
-        from pathlib import Path
-
-        from cadgen._internal import component_store
-
-        src = Path(self._tmp.name) / "built.glb"
-        src.write_bytes(b"payload")
-        src.with_name("cid123.surf").write_bytes(b"surf")
-        component_store.publish(src, "cid123", 0.1, 0.5)
-        dest = Path(self._tmp.name) / "fetched.glb"
-        self.assertFalse(component_store.fetch("cid123", 0.2, 0.5, dest))
+        dest = Path(self._tmp.name) / "fetched.surf"
+        self.assertFalse(component_store.fetch("nope", dest))
 
     def test_store_deletion_leaves_fetched_files_intact(self):
         import shutil
@@ -213,12 +195,11 @@ class ComponentStoreTest(unittest.TestCase):
 
         from cadgen._internal import component_store
 
-        src = Path(self._tmp.name) / "built.glb"
+        src = Path(self._tmp.name) / "cid123.surf"
         src.write_bytes(b"payload")
-        src.with_name("cid123.surf").write_bytes(b"surf")
-        component_store.publish(src, "cid123", 0.1, 0.5)
-        dest = Path(self._tmp.name) / "fetched.glb"
-        component_store.fetch("cid123", 0.1, 0.5, dest)
+        component_store.publish(src, "cid123")
+        dest = Path(self._tmp.name) / "fetched.surf"
+        component_store.fetch("cid123", dest)
         shutil.rmtree(Path(self._tmp.name) / "components")
         self.assertEqual(dest.read_bytes(), b"payload")
 
@@ -229,11 +210,11 @@ class ComponentStoreTest(unittest.TestCase):
 
         os.environ["CADGEN_COMPONENT_STORE"] = "0"
         try:
-            src = Path(self._tmp.name) / "built.glb"
+            src = Path(self._tmp.name) / "cid123.surf"
             src.write_bytes(b"payload")
-            component_store.publish(src, "cid123", 0.1, 0.5)
-            dest = Path(self._tmp.name) / "fetched.glb"
-            self.assertFalse(component_store.fetch("cid123", 0.1, 0.5, dest))
+            component_store.publish(src, "cid123")
+            dest = Path(self._tmp.name) / "fetched.surf"
+            self.assertFalse(component_store.fetch("cid123", dest))
         finally:
             os.environ.pop("CADGEN_COMPONENT_STORE", None)
 

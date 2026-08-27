@@ -187,12 +187,23 @@ def _place_entity_row(matrix: list[float], row: Mapping[str, Any]) -> dict[str, 
     return placed
 
 
-def _component_bundle_reader():
-    """Imported lazily: cadgen._internal.glb pulls in the GLB machinery, and a part entry
-    never reaches this module."""
-    from cadgen._internal.glb import read_step_topology_bundle_from_glb
+def _read_component_bundle(package_dir: Path, component: str):
+    """A component's topology bundle, from its exact-surface artifact
+    (design/surface-rendering.md R5). The legacy GLB read stays as a
+    fallback only until the last pre-surf packages regenerate."""
+    surf_path = package_dir / COMPONENTS_DIRNAME / f"{component}.surf"
+    if surf_path.is_file():
+        from cadgen._internal.surf_tables import read_component_topology_bundle
 
-    return read_step_topology_bundle_from_glb
+        bundle = read_component_topology_bundle(surf_path)
+        if bundle is not None:
+            return bundle
+    glb_path = package_dir / COMPONENTS_DIRNAME / f"{component}.glb"
+    if glb_path.is_file():
+        from cadgen._internal.glb import read_step_topology_bundle_from_glb
+
+        return read_step_topology_bundle_from_glb(glb_path)
+    return None
 
 
 def _component_occurrence_bbox(bundle: object) -> object:
@@ -224,7 +235,6 @@ def assembly_occurrence_rows(
     rows = descriptor.get("occurrences")
     if not isinstance(rows, list):
         return []
-    read_bundle = None
     bbox_by_component: dict[str, object] = {}
     materialized: list[dict[str, Any]] = []
     for entry in rows:
@@ -240,10 +250,7 @@ def assembly_occurrence_rows(
             if component not in bbox_by_component:
                 # Deduped by content hash: tom_v2 has 160 occurrences over 65 components, and
                 # the whole set reads in well under a second.
-                if read_bundle is None:
-                    read_bundle = _component_bundle_reader()
-                path = package_dir / COMPONENTS_DIRNAME / f"{component}.glb"
-                bundle = read_bundle(path) if path.is_file() else None
+                bundle = _read_component_bundle(package_dir, component)
                 bbox_by_component[component] = _component_occurrence_bbox(bundle)
             local_bbox = bbox_by_component[component]
         materialized.append(
@@ -278,9 +285,7 @@ def _component_index(package_dir: Path, component: str, cache: dict[str, Any]) -
         return cache[component]
     from cadgen.lookup import build_selector_index
 
-    read_bundle = _component_bundle_reader()
-    path = package_dir / COMPONENTS_DIRNAME / f"{component}.glb"
-    bundle = read_bundle(path) if path.is_file() else None
+    bundle = _read_component_bundle(package_dir, component)
     manifest = getattr(bundle, "manifest", None)
     built = None
     if isinstance(manifest, Mapping):

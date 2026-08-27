@@ -71,13 +71,9 @@ class PackageFreshnessGateTests(unittest.TestCase):
                 "part.step.py",
                 {
                     "kind": PACKAGE_KIND,
-                    "components": {"abc": {
-                        "glb": "components/abc.glb",
-                        "surf": "components/abc.surf",
-                    }},
+                    "components": {"abc": {"surf": "components/abc.surf"}},
                 },
             )
-            (package_dir / "components" / "abc.glb").write_bytes(b"glTF-fake")
             (package_dir / "components" / "abc.surf").write_bytes(b"SURF-fake")
             self.assertTrue(generation._assembly_glb_package_current(spec))
 

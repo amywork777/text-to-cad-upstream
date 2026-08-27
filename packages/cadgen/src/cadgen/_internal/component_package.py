@@ -26,7 +26,6 @@ from cadgen._internal.generation import (
     DEFAULT_MESH_ANGULAR_TOLERANCE,
     DEFAULT_MESH_TOLERANCE,
 )
-from cadgen._internal.glb import export_assembly_glb_from_scene
 from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
 from cadgen.coordination import (
     PHASE_COMPONENTS,
@@ -35,12 +34,6 @@ from cadgen.coordination import (
     require_write_lock,
     resolve as resolve_progress,
 )
-from cadgen.step_export import build_build123d_step_scene
-from cadgen._internal.step_scene import (
-    extract_selectors_from_scene,
-    mesh_step_scene,
-)
-
 PACKAGE_KIND = "assembly-package"
 # The single version for a STEP package: descriptor layout plus the bytes inside the
 # component GLBs it references. Defined in the stdlib-only _internal.package_freshness so
@@ -121,8 +114,7 @@ def assembly_package_current(step_path: Path) -> bool:
     if not components:
         return False
     return all(
-        (package_dir / str(entry.get("glb", ""))).is_file()
-        and (package_dir / str(entry.get("surf", ""))).is_file()
+        (package_dir / str(entry.get("surf", ""))).is_file()
         for entry in components.values()
     )
 
@@ -336,28 +328,22 @@ def _build123d_shape_from_brep_bytes(payload: bytes) -> Any:
 PAYLOAD_UNREADABLE = "__payload-unreadable__"
 
 
-def _build_component_glb_worker(
-    args: tuple[bytes, str, str, float, float],
+def _build_component_surf_worker(
+    args: tuple[bytes, str, str],
 ) -> tuple[str, str | None]:
-    """Process-pool entry: build one component GLB from a BREP payload.
+    """Process-pool entry: extract one component .surf from a BREP payload.
 
     Returns ``(cid, None)`` on success or ``(cid, error message)`` — exceptions
     are flattened so one failed component reports cleanly instead of poisoning
     the pool. A payload the worker cannot deserialize reports the
     ``PAYLOAD_UNREADABLE`` marker so the parent retries in-process."""
-    payload, cid, out_glb, linear_deflection, angular_deflection = args
+    payload, cid, out_surf = args
     try:
         try:
             shape = _build123d_shape_from_brep_bytes(payload)
         except Exception as exc:  # noqa: BLE001 - marker for the parent retry
             return (cid, f"{PAYLOAD_UNREADABLE}: {type(exc).__name__}: {exc}")
-        _write_component_glb_atomic(
-            shape,
-            Path(out_glb),
-            cad_ref=cid,
-            linear_deflection=linear_deflection,
-            angular_deflection=angular_deflection,
-        )
+        _write_component_surf_atomic(shape, Path(out_surf), cad_ref=cid)
         return (cid, None)
     except Exception as exc:  # noqa: BLE001 - crossing a process boundary
         return (cid, f"{type(exc).__name__}: {exc}")
@@ -381,38 +367,21 @@ def _component_build_worker_count(missing_count: int) -> int:
     return max(1, min((os.cpu_count() or 2) - 2, missing_count, 8))
 
 
-def _write_component_glb_atomic(
+def _write_component_surf_atomic(
     shape: Any,
-    out_glb: Path,
+    out_surf: Path,
     *,
     cad_ref: str,
-    linear_deflection: float,
-    angular_deflection: float,
 ) -> Path:
-    """Build to a sibling temp file and rename into place, so a killed build
-    never leaves a truncated ``<cid>.glb`` that a later run would trust as a
-    valid content-addressed cache hit. The exact-surface sibling
-    ``<cid>.surf`` (surface READING, no meshing — design/surface-rendering.md)
-    goes in place the same way, and LAST, so its existence signals a
-    complete pair."""
-    temp_path = out_glb.with_name(f"{out_glb.name}{temp_suffix()}")
-    try:
-        build_component_glb_from_shape(
-            shape,
-            temp_path,
-            cad_ref=cad_ref,
-            linear_deflection=linear_deflection,
-            angular_deflection=angular_deflection,
-            identity_path=out_glb,
-        )
-        replace_atomic(temp_path, out_glb)
-    finally:
-        # The handle that blocks a rename blocks the delete too; letting that escape would
-        # replace the real failure with a cleanup error.
-        with contextlib.suppress(OSError):
-            temp_path.unlink(missing_ok=True)
+    """Extract the exact-surface component artifact to a sibling temp file
+    and rename into place, so a killed build never leaves a truncated
+    ``<cid>.surf`` that a later run would trust as a valid content-addressed
+    cache hit. This is surface READING — the display mesh cost this replaced
+    (BRepMesh + selector extraction + GLB encode) lives client-side now
+    (design/surface-rendering.md R5)."""
     from cadgen._internal.surface_extract import extract_surface_component
 
+    out_surf.parent.mkdir(parents=True, exist_ok=True)
     local = _unlocated_shape(shape)
     color = getattr(local, "color", None)
     part_color = None
@@ -421,98 +390,17 @@ def _write_component_glb_atomic(
             part_color = tuple(color.to_tuple())
         except Exception:
             part_color = None
-    out_surf = out_glb.with_name(f"{cad_ref}.surf")
-    surf_temp = out_surf.with_name(f"{out_surf.name}{temp_suffix()}")
+    temp_path = out_surf.with_name(f"{out_surf.name}{temp_suffix()}")
     try:
-        surf_temp.write_bytes(
+        temp_path.write_bytes(
             extract_surface_component(local.wrapped, part_color=part_color))
-        replace_atomic(surf_temp, out_surf)
+        replace_atomic(temp_path, out_surf)
     finally:
+        # The handle that blocks a rename blocks the delete too; letting that
+        # escape would replace the real failure with a cleanup error.
         with contextlib.suppress(OSError):
-            surf_temp.unlink(missing_ok=True)
-    return out_glb
-
-
-def build_component_glb_from_shape(
-    shape: Any,
-    out_glb: Path,
-    *,
-    cad_ref: str,
-    linear_deflection: float,
-    angular_deflection: float,
-    identity_path: Path | None = None,
-) -> Path:
-    """Mesh an in-memory part shape (in its local frame) to a *clean* component GLB.
-
-    The part geometry comes straight off the assembly compound (no source STEP on
-    disk), so it is meshed and selector-extracted directly from the shape. The embedded
-    STEP_TOPOLOGY is stripped of all source provenance (see ``COMPONENT_PROVENANCE_KEYS``)
-    so the component is a pure function of geometry + mesh tolerances — byte-deterministic
-    and content-addressable. Provenance lives on the per-model descriptor, not the leaf.
-
-    ``identity_path`` is the path the artifact will have once it is in place, for callers
-    that write through a staging file. The synthetic STEP name derived below reaches the
-    embedded manifest as ``faceProxy.source``, so naming the staging file instead would
-    put that name in the payload and make the bytes depend on where a build staged them
-    rather than on the geometry."""
-    out_glb.parent.mkdir(parents=True, exist_ok=True)
-    # Appended to the name rather than substituted into it, which keeps the placeholder
-    # byte-identical to the one a sibling temp file used to reduce to: `<cid>.glb.tmp<pid>`
-    # has `.tmp<pid>` as its last suffix, so with_suffix() yielded `<cid>.glb.step`.
-    # Substituting reads better but would rewrite every component GLB and invalidate the
-    # content-addressed caches keyed on them, which is a separate change.
-    identity = identity_path or out_glb
-    placeholder = identity.with_name(f"{identity.name}.step")
-    # The shape arrives LOCATED (the occurrence is ``part.moved(transform)``). Strip the location
-    # so the GLB is emitted in the part's LOCAL frame with an identity node: world placement is
-    # supplied solely by the descriptor occurrence transform, and content-addressed dedup needs
-    # byte-identical geometry for every repeat of a part regardless of where it sits. Without
-    # this the node bakes the occurrence placement, double-placing it at compose time and giving
-    # a shared (deduped) component only its first occurrence's position.
-    scene = build_build123d_step_scene(_unlocated_shape(shape), placeholder)
-    # relative=True matches what production has ALWAYS shipped: extraction
-    # used to silently re-mesh at its own relative=True default and its
-    # triangles were what reached the GLB, so absolute deflection here would
-    # change mesh density model-wide (measured: pathological on large smooth
-    # parts). The signature below must match extraction's exactly — otherwise
-    # extraction re-meshes every component, doubling OCCT meshing per build.
-    mesh_step_scene(
-        scene,
-        linear_deflection=linear_deflection,
-        angular_deflection=angular_deflection,
-        relative=True,
-        parallel=False,
-    )
-    from cadgen._internal.step_scene_types import SelectorOptions
-
-    bundle = extract_selectors_from_scene(
-        scene,
-        cad_ref=cad_ref,
-        options=SelectorOptions(
-            linear_deflection=linear_deflection,
-            angular_deflection=angular_deflection,
-            relative=True,
-        ),
-    )
-    for key in COMPONENT_PROVENANCE_KEYS:
-        bundle.manifest.pop(key, None)
-    # Non-deterministic build timing would defeat content-addressing — drop it; the
-    # geometry counts in stats are deterministic and kept.
-    stats = bundle.manifest.get("stats")
-    if isinstance(stats, dict):
-        stats.pop("timingMs", None)
-    # Write the leaf GLB straight to ``out_glb`` (inside the package's components/ dir). Passing
-    # an explicit target avoids deriving a render_package_dir() from the placeholder, which would
-    # otherwise scaffold a stray __cadgen__/models/ tree next to the component.
-    export_assembly_glb_from_scene(
-        placeholder,
-        scene,
-        target_path=out_glb,
-        linear_deflection=linear_deflection,
-        angular_deflection=angular_deflection,
-        selector_bundle=bundle,
-    )
-    return out_glb
+            temp_path.unlink(missing_ok=True)
+    return out_surf
 
 
 def build_package_from_compound(
@@ -569,7 +457,7 @@ def build_package_from_compound(
 
     from build123d import Location
 
-    def _component_ref(cid: str, suffix: str = "glb") -> str:
+    def _component_ref(cid: str, suffix: str = "surf") -> str:
         return os.path.relpath(comp_dir / f"{cid}.{suffix}", package_dir).replace(os.sep, "/")
 
     occurrences: list[dict[str, Any]] = []
@@ -596,9 +484,7 @@ def build_package_from_compound(
     def _retain_payload_brep(content_hash: str, brep: bytes) -> None:
         cid = _component_id(content_hash)
         if cid not in brep_bytes_by_cid and (
-            force
-            or not (comp_dir / f"{cid}.glb").exists()
-            or not (comp_dir / f"{cid}.surf").exists()
+            force or not (comp_dir / f"{cid}.surf").exists()
         ):
             brep_bytes_by_cid[cid] = brep
 
@@ -616,7 +502,6 @@ def build_package_from_compound(
         cid = _component_id(content_hash)
         shapes.setdefault(cid, node)
         components.setdefault(cid, {
-            "glb": _component_ref(cid),
             "surf": _component_ref(cid, suffix="surf"),
             "contentHash": content_hash,
         })
@@ -716,45 +601,37 @@ def build_package_from_compound(
     if not occurrences:
         raise RuntimeError(f"model {root_name!r} has no geometry to package")
 
-    # Content-addressed component cache: a present <cid>.glb is valid (cid IS the
-    # local-geometry content hash), so editing one part only rebuilds that component.
-    # ``force`` bypasses the cache (mesh/selector code changed, not the geometry).
+    # Content-addressed component cache: a present <cid>.surf is valid (cid IS
+    # the local-geometry content hash), so editing one part only rebuilds that
+    # component. ``force`` bypasses the cache (extractor code changed, not the
+    # geometry).
     built: list[str] = []
     reused: list[str] = []
     missing: list[tuple[str, Any]] = []
     from cadgen._internal import component_store
 
     for cid, shape in shapes.items():
-        if (
-            (comp_dir / f"{cid}.glb").exists()
-            and (comp_dir / f"{cid}.surf").exists()
-            and not force
-        ):
+        if (comp_dir / f"{cid}.surf").exists() and not force:
             reused.append(cid)
-        elif not force and component_store.fetch(
-            cid, linear_deflection, angular_deflection, comp_dir / f"{cid}.glb"
-        ):
-            # Shared-store tier: another package (or worktree) already built
-            # this exact component at these tolerances; materialized as a
-            # hardlink, skipping mesh + selector extraction entirely.
+        elif not force and component_store.fetch(cid, comp_dir / f"{cid}.surf"):
+            # Shared-store tier: another package (or worktree) already
+            # extracted this exact component; materialized as a hardlink.
             reused.append(cid)
         else:
             missing.append((cid, shape))
     # Every missing component builds from its location-stripped BREP payload —
     # the same bytes whether built in-process or in a worker — so the emitted
-    # GLB is independent of worker count AND of the caller's Python class for
-    # the shape (a parametric Box and an imported Solid with identical geometry
-    # emit identical components; XCAF auto-labels no longer leak in).
+    # artifact is independent of worker count AND of the caller's Python class
+    # for the shape (a parametric Box and an imported Solid with identical
+    # geometry emit identical components; XCAF auto-labels no longer leak in).
     payloads = [
         (
             # Reuse the BREP bytes captured when this cid was content-hashed;
-            # re-serialize only when the GLB present at capture time vanished
-            # before the missing-scan above (so the bytes were not retained).
+            # re-serialize only when the artifact present at capture time
+            # vanished before the missing-scan above.
             brep_bytes_by_cid.get(cid) or _shape_brep_bytes(shape),
             cid,
-            str(comp_dir / f"{cid}.glb"),
-            linear_deflection,
-            angular_deflection,
+            str(comp_dir / f"{cid}.surf"),
         )
         for cid, shape in missing
     ]
@@ -765,10 +642,10 @@ def build_package_from_compound(
     # assembly is honestly 1/1, not 1/300.
     progress.phase(PHASE_COMPONENTS, total=len(payloads))
     if workers > 1:
-        # Each missing component is meshed + selector-extracted independently
-        # (the extraction is Python-heavy and GIL-bound, so threads don't
-        # help). Workers write their own <cid>.glb atomically, so nothing
-        # heavy pickles back.
+        # Each missing component is surface-extracted independently (the
+        # extraction is Python-heavy and GIL-bound, so threads don't help).
+        # Workers write their own <cid>.surf atomically, so nothing heavy
+        # pickles back.
         import multiprocessing
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -781,7 +658,7 @@ def build_package_from_compound(
             # component early in the list would pin the bar while the rest complete
             # behind it. Results are collected by cid and re-ordered below, so the
             # value this function computes is identical either way.
-            futures = {pool.submit(_build_component_glb_worker, args): args[1] for args in payloads}
+            futures = {pool.submit(_build_component_surf_worker, args): args[1] for args in payloads}
             errors_by_cid: dict[str, str | None] = {}
             for future in as_completed(futures):
                 built_cid, error = future.result()
@@ -791,7 +668,7 @@ def build_package_from_compound(
     else:
         results = []
         for args in payloads:
-            results.append(_build_component_glb_worker(args))
+            results.append(_build_component_surf_worker(args))
             progress.advance(detail=args[1])
     shapes_by_cid = dict(missing)
     for cid, error in results:
@@ -799,12 +676,10 @@ def build_package_from_compound(
             # BinTools write/read asymmetry: build from the original in-process
             # shape (the pre-payload path); such components simply cannot be
             # parallelized or byte-normalized.
-            _write_component_glb_atomic(
+            _write_component_surf_atomic(
                 shapes_by_cid[cid],
-                comp_dir / f"{cid}.glb",
+                comp_dir / f"{cid}.surf",
                 cad_ref=cid,
-                linear_deflection=linear_deflection,
-                angular_deflection=angular_deflection,
             )
             built.append(cid)
             continue
@@ -816,14 +691,9 @@ def build_package_from_compound(
     # overwrites, since force means the build code changed), and reused local
     # components opportunistically so pre-store packages seed it over time.
     for cid in built:
-        component_store.publish(
-            comp_dir / f"{cid}.glb", cid, linear_deflection, angular_deflection,
-            overwrite=bool(force),
-        )
+        component_store.publish(comp_dir / f"{cid}.surf", cid, overwrite=bool(force))
     for cid in reused:
-        component_store.publish(
-            comp_dir / f"{cid}.glb", cid, linear_deflection, angular_deflection,
-        )
+        component_store.publish(comp_dir / f"{cid}.surf", cid)
 
     # The descriptor IS the assembly's index manifest: the provenance block (schema/
     # source/step hashes, mesh, edgeRendering) the freshness gates read, plus the
@@ -876,12 +746,13 @@ def build_package_from_compound(
     # an earlier geometry revision and accumulates without bound if kept. Writers
     # are serialized by the generation lock; readers re-resolve components from
     # the descriptor they load.
-    referenced = {f"{cid}.glb" for cid in components}
+    referenced = {f"{cid}.surf" for cid in components}
     pruned = 0
-    for stale in comp_dir.glob("*.glb"):
-        if stale.name not in referenced:
-            stale.unlink(missing_ok=True)
-            pruned += 1
+    for pattern in ("*.surf", "*.glb"):
+        for stale in comp_dir.glob(pattern):
+            if stale.name not in referenced:
+                stale.unlink(missing_ok=True)
+                pruned += 1
     return {
         "occurrences": len(occurrences),
         "unique_components": len(components),

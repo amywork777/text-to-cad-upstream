@@ -1286,7 +1286,7 @@ def resolve_step_render_job(
     # fetches and composes them in world space.
     descriptor = json.loads((package_dir / "assembly.json").read_text())
     component_urls = {
-        cid: asset_url_for_path(package_dir / str(entry.get("glb", "")), root_path)
+        cid: asset_url_for_path(package_dir / str(entry.get("surf", "")), root_path)
         for cid, entry in (descriptor.get("components") or {}).items()
     }
     resolved["package"] = {"descriptor": descriptor, "componentUrls": component_urls}

@@ -103,12 +103,16 @@ class ComponentPackageTests(unittest.TestCase):
             self.assertEqual(comp_by_occ["box_a_1"], comp_by_occ["box_a_2"])
             self.assertNotEqual(comp_by_occ["box_a_1"], comp_by_occ["box_b"])
 
-            # Component GLBs exist and embed local STEP topology (self-describing).
+            # Component .surf artifacts exist and parse (self-describing:
+            # exact geometry + selector metadata; design/surface-rendering.md).
+            from cadgen._internal.surface_extract import read_surf
+
             for cid, entry in descriptor["components"].items():
-                glb_path = package_dir / entry["glb"]
-                self.assertTrue(glb_path.is_file(), f"missing component GLB {cid}")
-                extensions = _glb_json_chunk(glb_path).get("extensions") or {}
-                self.assertIn("STEP_topology", extensions, f"{cid} GLB lacks embedded topology")
+                surf_path = package_dir / entry["surf"]
+                self.assertTrue(surf_path.is_file(), f"missing component surf {cid}")
+                index, _ = read_surf(surf_path.read_bytes())
+                self.assertGreater(index["counts"]["faces"], 0, cid)
+                self.assertTrue(all("surfaceType" in f for f in index["faces"]))
 
     def test_rebuild_reuses_content_addressed_components(self) -> None:
         compound = _demo_compound()
@@ -153,14 +157,14 @@ class ComponentPackageTests(unittest.TestCase):
             )
             self.assertTrue(component_package.assembly_package_current(step_path))
 
-            # Deleting a referenced component GLB invalidates the package.
+            # Deleting a referenced component artifact invalidates the package.
             descriptor = json.loads((package_dir / "assembly.json").read_text())
             first = next(iter(descriptor["components"].values()))
-            (package_dir / first["glb"]).unlink()
+            (package_dir / first["surf"]).unlink()
             self.assertFalse(component_package.assembly_package_current(step_path))
 
     def test_components_are_clean_and_byte_deterministic(self) -> None:
-        from cadgen._internal.glb import read_step_topology_manifest_from_glb
+        from cadgen._internal.surface_extract import read_surf
 
         compound = _demo_compound()
         with tempfile.TemporaryDirectory() as tmp_a, tempfile.TemporaryDirectory() as tmp_b:
@@ -176,16 +180,16 @@ class ComponentPackageTests(unittest.TestCase):
 
             descriptor_a = json.loads((pkg_a / "assembly.json").read_text())
             cid, entry = next(iter(descriptor_a["components"].items()))
-            glb = (pkg_a / entry["glb"]).resolve()
-            # No source provenance leaks into the embedded component topology.
-            manifest = read_step_topology_manifest_from_glb(glb) or {}
+            surf = (pkg_a / entry["surf"]).resolve()
+            # No source provenance leaks into a clean component artifact.
+            index, _ = read_surf(surf.read_bytes())
             for key in component_package.COMPONENT_PROVENANCE_KEYS:
-                self.assertNotIn(key, manifest, f"{key} leaked into a clean component")
-            self.assertNotIn("timingMs", manifest.get("stats", {}))
+                self.assertNotIn(key, index, f"{key} leaked into a clean component")
 
-            # Same geometry -> byte-identical component GLB (content-addressable by file).
-            glb_b = (pkg_b / json.loads((pkg_b / "assembly.json").read_text())["components"][cid]["glb"]).resolve()
-            self.assertEqual(glb.read_bytes(), glb_b.read_bytes())
+            # Same geometry -> byte-identical component artifact
+            # (content-addressable by file).
+            surf_b = (pkg_b / json.loads((pkg_b / "assembly.json").read_text())["components"][cid]["surf"]).resolve()
+            self.assertEqual(surf.read_bytes(), surf_b.read_bytes())
 
             # The model-level provenance lives on the descriptor instead.
             descriptor = json.loads((pkg_a / "assembly.json").read_text())
@@ -194,11 +198,14 @@ class ComponentPackageTests(unittest.TestCase):
 
 
     def test_components_are_emitted_in_local_frame(self) -> None:
-        """Every component GLB must be in its LOCAL frame (identity glTF node): world placement
-        comes solely from the descriptor occurrence transform. If the node baked the placement,
-        the renderer would double-place it, and a shared (deduped) component could only ever sit
-        at its first occurrence's position. The two identical boxes here share one component but
-        sit at different x, so that component MUST be local."""
+        """Every component .surf must be in its LOCAL frame: world placement
+        comes solely from the descriptor occurrence transform. If the surf
+        baked the placement, the renderer would double-place it, and a shared
+        (deduped) component could only ever sit at its first occurrence's
+        position. The two identical boxes here share one component but sit at
+        different x, so that component MUST be local."""
+        from cadgen._internal.surface_extract import read_surf
+
         compound = _demo_compound()
         with tempfile.TemporaryDirectory() as tmp:
             package_dir = Path(tmp) / "__cadgen__" / "models" / "demo.step"
@@ -208,18 +215,14 @@ class ComponentPackageTests(unittest.TestCase):
             descriptor = json.loads((package_dir / "assembly.json").read_text())
 
             for cid, entry in descriptor["components"].items():
-                data = (package_dir / entry["glb"]).read_bytes()
-                json_len = struct.unpack("<I", data[12:16])[0]
-                gltf = json.loads(data[20 : 20 + json_len])
-                for node in gltf.get("nodes", []):
-                    matrix = node.get("matrix")
-                    if matrix:
-                        self.assertAlmostEqual(0.0, matrix[12], places=6, msg=f"{cid} node x-placed")
-                        self.assertAlmostEqual(0.0, matrix[13], places=6, msg=f"{cid} node y-placed")
-                        self.assertAlmostEqual(0.0, matrix[14], places=6, msg=f"{cid} node z-placed")
-                    translation = node.get("translation")
-                    if translation:
-                        self.assertEqual([0.0, 0.0, 0.0], [float(v) for v in translation])
+                index, _ = read_surf((package_dir / entry["surf"]).read_bytes())
+                # Local frame: every face bbox sits inside the unmoved box
+                # extents (largest demo box is 20 x 10 x 10 at the origin).
+                for face in index["faces"]:
+                    box = face.get("bbox")
+                    self.assertIsNotNone(box, cid)
+                    for value in box:
+                        self.assertLessEqual(abs(value), 25, f"{cid} face placed: {box}")
 
             # The two box_a occurrences share one component yet carry distinct placements: dedup
             # only works because the component is local and each occurrence transform places it.

@@ -78,6 +78,59 @@ def _selector_curve_params(adaptor) -> dict[str, Any]:
         return {}
 
 
+def _bnd_box(topo) -> list[float] | None:
+    try:
+        from OCP.Bnd import Bnd_Box
+        from OCP.BRepBndLib import BRepBndLib
+
+        box = Bnd_Box()
+        BRepBndLib.Add_s(topo, box, False)
+        if box.IsVoid():
+            return None
+        xmin, ymin, zmin, xmax, ymax, zmax = box.Get()
+        return [xmin, ymin, zmin, xmax, ymax, zmax]
+    except Exception:
+        return None
+
+
+def _face_metrics(face) -> dict[str, Any]:
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    metrics: dict[str, Any] = {}
+    try:
+        props = GProp_GProps()
+        BRepGProp.SurfaceProperties_s(face, props)
+        metrics["area"] = float(props.Mass())
+        center = props.CentreOfMass()
+        metrics["center"] = [center.X(), center.Y(), center.Z()]
+    except Exception:
+        pass
+    box = _bnd_box(face)
+    if box is not None:
+        metrics["bbox"] = box
+    return metrics
+
+
+def _edge_metrics(edge) -> dict[str, Any]:
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    metrics: dict[str, Any] = {}
+    try:
+        props = GProp_GProps()
+        BRepGProp.LinearProperties_s(edge, props)
+        metrics["length"] = float(props.Mass())
+        center = props.CentreOfMass()
+        metrics["center"] = [center.X(), center.Y(), center.Z()]
+    except Exception:
+        pass
+    box = _bnd_box(edge)
+    if box is not None:
+        metrics["bbox"] = box
+    return metrics
+
+
 class Unextractable(Exception):
     """This shape cannot be represented as a .surf (caller falls through)."""
 
@@ -597,8 +650,10 @@ def extract_surface_component(
             "reversed": face.Orientation() == TopAbs_Orientation.TopAbs_REVERSED,
             "uv": [u0, u1, v0, v1],
             # Selector-table columns (surfaceType/params in the exact
-            # spelling the STEP_TOPOLOGY manifest has always used).
+            # spelling the STEP_TOPOLOGY manifest has always used), with
+            # EXACT metrics from GProps/BndLib — reading, not meshing.
             "surfaceType": _enum_name_geomabs(adaptor.GetType()),
+            **_face_metrics(face),
             "surface": _surface_payload(face, bin_out),
             "loops": [],
         }
@@ -677,6 +732,7 @@ def extract_surface_component(
             "adjacentFaceCount": len(unique_faces),
             "curveType": _enum_name_geomabs(curve_adaptor.GetType()),
             "faceOrds": deduped_ords,
+            **_edge_metrics(edge),
             "curve": _curve3d_payload(edge, bin_out),
         }
         params = _selector_curve_params(curve_adaptor)
