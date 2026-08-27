@@ -122,6 +122,7 @@ def assembly_package_current(step_path: Path) -> bool:
         return False
     return all(
         (package_dir / str(entry.get("glb", ""))).is_file()
+        and (package_dir / str(entry.get("surf", ""))).is_file()
         for entry in components.values()
     )
 
@@ -390,7 +391,10 @@ def _write_component_glb_atomic(
 ) -> Path:
     """Build to a sibling temp file and rename into place, so a killed build
     never leaves a truncated ``<cid>.glb`` that a later run would trust as a
-    valid content-addressed cache hit."""
+    valid content-addressed cache hit. The exact-surface sibling
+    ``<cid>.surf`` (surface READING, no meshing — design/surface-rendering.md)
+    goes in place the same way, and LAST, so its existence signals a
+    complete pair."""
     temp_path = out_glb.with_name(f"{out_glb.name}{temp_suffix()}")
     try:
         build_component_glb_from_shape(
@@ -407,6 +411,17 @@ def _write_component_glb_atomic(
         # replace the real failure with a cleanup error.
         with contextlib.suppress(OSError):
             temp_path.unlink(missing_ok=True)
+    from cadgen._internal.surface_extract import extract_surface_component
+
+    out_surf = out_glb.with_name(f"{cad_ref}.surf")
+    surf_temp = out_surf.with_name(f"{out_surf.name}{temp_suffix()}")
+    try:
+        surf_temp.write_bytes(
+            extract_surface_component(_unlocated_shape(shape).wrapped))
+        replace_atomic(surf_temp, out_surf)
+    finally:
+        with contextlib.suppress(OSError):
+            surf_temp.unlink(missing_ok=True)
     return out_glb
 
 
@@ -546,8 +561,8 @@ def build_package_from_compound(
 
     from build123d import Location
 
-    def _component_ref(cid: str) -> str:
-        return os.path.relpath(comp_dir / f"{cid}.glb", package_dir).replace(os.sep, "/")
+    def _component_ref(cid: str, suffix: str = "glb") -> str:
+        return os.path.relpath(comp_dir / f"{cid}.{suffix}", package_dir).replace(os.sep, "/")
 
     occurrences: list[dict[str, Any]] = []
     components: dict[str, dict[str, Any]] = {}
@@ -572,7 +587,11 @@ def build_package_from_compound(
 
     def _retain_payload_brep(content_hash: str, brep: bytes) -> None:
         cid = _component_id(content_hash)
-        if cid not in brep_bytes_by_cid and (force or not (comp_dir / f"{cid}.glb").exists()):
+        if cid not in brep_bytes_by_cid and (
+            force
+            or not (comp_dir / f"{cid}.glb").exists()
+            or not (comp_dir / f"{cid}.surf").exists()
+        ):
             brep_bytes_by_cid[cid] = brep
 
     def _add_leaf(node: Any, world_loc: Any, occ_id: str, name: str | None = None) -> dict[str, Any]:
@@ -588,7 +607,11 @@ def build_package_from_compound(
             _retain_payload_brep(content_hash, brep)
         cid = _component_id(content_hash)
         shapes.setdefault(cid, node)
-        components.setdefault(cid, {"glb": _component_ref(cid), "contentHash": content_hash})
+        components.setdefault(cid, {
+            "glb": _component_ref(cid),
+            "surf": _component_ref(cid, suffix="surf"),
+            "contentHash": content_hash,
+        })
         if name is None:
             name = str(getattr(node, "label", "") or f"part_{occ_id}")
         occurrence: dict[str, Any] = {
@@ -694,7 +717,11 @@ def build_package_from_compound(
     from cadgen._internal import component_store
 
     for cid, shape in shapes.items():
-        if (comp_dir / f"{cid}.glb").exists() and not force:
+        if (
+            (comp_dir / f"{cid}.glb").exists()
+            and (comp_dir / f"{cid}.surf").exists()
+            and not force
+        ):
             reused.append(cid)
         elif not force and component_store.fetch(
             cid, linear_deflection, angular_deflection, comp_dir / f"{cid}.glb"
