@@ -23,7 +23,7 @@
   "dependencies": {
     "gifenc": "^1.0.3",
     "meshoptimizer": "^1.2.0",
-    "three": "0.161.0",
+    "three": "0.185.1",
     "three-mesh-bvh": "0.8.0"
   },
   "devDependencies": {
