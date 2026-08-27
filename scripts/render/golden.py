@@ -54,8 +54,18 @@ def capture(url_base: str, out_dir: Path, themes: list[str]) -> int:
                 try:
                     page.goto(url, timeout=60000)
                     page.wait_for_selector("canvas", timeout=60000)
-                    time.sleep(8)  # model fetch + first render settle
+                    # Settle detection: big assemblies tessellate client-side
+                    # for many seconds; capture once two consecutive frames
+                    # (2s apart) are identical, with a hard cap.
                     canvas = page.query_selector("canvas")
+                    previous = None
+                    deadline = time.monotonic() + 90
+                    while time.monotonic() < deadline:
+                        time.sleep(2)
+                        current = canvas.screenshot()
+                        if previous is not None and current == previous:
+                            break
+                        previous = current
                     canvas.screenshot(path=str(out_dir / f"{name}.png"))
                     print(f"captured {name}", flush=True)
                 except Exception as exc:
