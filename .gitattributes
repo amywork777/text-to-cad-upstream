@@ -18,3 +18,4 @@ docs/public/hero/**/*.glb !filter !diff !merge -text
 **/.*.step/**/*.glb filter=lfs diff=lfs merge=lfs -text
 **/.*.step/topology.bin filter=lfs diff=lfs merge=lfs -text
 **/.*.step/topology.json filter=lfs diff=lfs merge=lfs -text
+models/conformance/*.brep filter=lfs diff=lfs merge=lfs -text

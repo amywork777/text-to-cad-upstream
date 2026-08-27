@@ -1,0 +1,110 @@
+{
+  "purpose": "Cross-implementation extractor conformance corpus (design/standalone-viewer.md). Location-stripped BinTools v4 component blobs covering every surface kind plus the known extractor traps.",
+  "components": [
+    {
+      "file": "plane_cylinder_basic.brep",
+      "bytes": 1751,
+      "sourceModel": "moonwatch.step/components/fc6836ace2194818.brep",
+      "sourceCid": "fc6836ace2194818",
+      "traits": [
+        "plane",
+        "cylinder"
+      ]
+    },
+    {
+      "file": "cone_part.brep",
+      "bytes": 3414,
+      "sourceModel": "moonwatch.step/components/5c78eed47dd4104d.brep",
+      "sourceCid": "5c78eed47dd4104d",
+      "traits": [
+        "cone"
+      ]
+    },
+    {
+      "file": "sphere_part.brep",
+      "bytes": 2787,
+      "sourceModel": "moonwatch.step/components/be4dce2d3241c308.brep",
+      "sourceCid": "be4dce2d3241c308",
+      "traits": [
+        "sphere"
+      ]
+    },
+    {
+      "file": "torus_part.brep",
+      "bytes": 1087,
+      "sourceModel": "moonwatch.step/components/ad1ecb005d4763a6.brep",
+      "sourceCid": "ad1ecb005d4763a6",
+      "traits": [
+        "torus"
+      ]
+    },
+    {
+      "file": "extrusion_part.brep",
+      "bytes": 4442,
+      "sourceModel": "moonwatch.step/components/6413ea7fc7d1f6c5.brep",
+      "sourceCid": "6413ea7fc7d1f6c5",
+      "traits": [
+        "extrusion"
+      ]
+    },
+    {
+      "file": "revolution_part.brep",
+      "bytes": 8377,
+      "sourceModel": "moonwatch.step/components/fa3c442588217d54.brep",
+      "sourceCid": "fa3c442588217d54",
+      "traits": [
+        "revolution"
+      ]
+    },
+    {
+      "file": "nurbs_small.brep",
+      "bytes": 5528,
+      "sourceModel": "cutaway_turbofan_engine.step/components/e75a76231237131d.brep",
+      "sourceCid": "e75a76231237131d",
+      "traits": [
+        "nurbs"
+      ]
+    },
+    {
+      "file": "periodic_crossing_dense.brep",
+      "bytes": 1066994,
+      "sourceModel": "moonwatch.step/components/379aa2464d3c4795.brep",
+      "sourceCid": "379aa2464d3c4795",
+      "traits": [
+        "nurbs",
+        "period-crossing (145 faces, the v14 trap class)"
+      ]
+    },
+    {
+      "file": "periodic_crossing_moderate.brep",
+      "bytes": 29752,
+      "sourceModel": "moonwatch.step/components/9cbecf9cfb5ef615.brep",
+      "sourceCid": "9cbecf9cfb5ef615",
+      "traits": [
+        "period-crossing (26 faces)"
+      ]
+    },
+    {
+      "file": "gear_ring_involute.brep",
+      "bytes": 219872,
+      "sourceModel": "planetary_gear_assembly.step/components/595ad0430ec1acbc.brep",
+      "sourceCid": "595ad0430ec1acbc",
+      "traits": [
+        "nurbs involutes",
+        "plane",
+        "cylinder",
+        "243 faces"
+      ]
+    },
+    {
+      "file": "gear_sun_involute.brep",
+      "bytes": 53750,
+      "sourceModel": "planetary_gear_assembly.step/components/2ddf8a9b5f2f2d74.brep",
+      "sourceCid": "2ddf8a9b5f2f2d74",
+      "traits": [
+        "nurbs involutes",
+        "99 faces"
+      ]
+    }
+  ]
+}
