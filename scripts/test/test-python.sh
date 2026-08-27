@@ -53,11 +53,6 @@ while IFS= read -r skill; do
   fi
 done < <("$LIST_SKILLS_SCRIPT")
 
-# The CAD Viewer backend is cadgen.viewer now, so its tests sit with the rest of the
-# cadgen suite. It owns the only cross-process coverage of the generation lock
-# (test_artifact.py drives a real second process and SIGKILLs it), which is why it must
-# run in CI, and it pins the property that the long-lived server imports without OCP.
-run_suite "CAD Viewer backend Python tests" "tests/python/packages/cadgen/viewer" "packages/cadgen/src"
 
 if [ "${#failed_suites[@]}" -gt 0 ]; then
   printf '\n==> FAILING SUITES (%d)\n' "${#failed_suites[@]}"

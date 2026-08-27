@@ -234,7 +234,7 @@ class DrawingPackageCurrencyGateTests(unittest.TestCase):
     def test_a_changed_bake_format_is_not_current(self) -> None:
         # Drive it through the real setting rather than a hand-written hash: an edit to the
         # producer's bake must invalidate packages built under the old one, in this
-        # authority AND in the viewer's (cadgen/viewer/tests/test_artifact.py pins the
+        # authority AND in the viewer's (tests/python/packages/cadgen/test_render_ops_freshness.py pins the
         # other half).
         #
         # The format is now the ONLY thing in the bake block. Thickness used to sit here as a

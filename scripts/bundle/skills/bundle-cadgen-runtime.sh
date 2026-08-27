@@ -176,6 +176,16 @@ build_viewer_dist() {
   rsync -a --delete "$VIEWER_SRC/dist/" "$target/"
 }
 
+# The viewer's JS server (viewer/server/*.mjs, dependency-free Node) ships beside the
+# SPA so `cadgen viewer` can start it from an installed wheel. Copied verbatim: it is
+# plain source, not a build output.
+bundle_viewer_server() {
+  local target="$1"
+  rm -rf "$target"
+  mkdir -p "$target"
+  rsync -a --delete --exclude "*.test.mjs" "$VIEWER_SRC/server/" "$target/"
+}
+
 # --- third-party notices --------------------------------------------------------------
 # The builders and the browser bundle inline three, meshoptimizer and gifenc. Shipping
 # them inside a wheel is redistribution, and all three are MIT: the licence text has to
@@ -233,7 +243,8 @@ build_all() {
   if [ "$STAGE_VIEWER" -eq 1 ]; then
     build_viewer_dist "$root/viewer"
     write_third_party_notices "$root/viewer"
-    echo "Bundled ${root#"$REPO_ROOT"/}/viewer"
+    bundle_viewer_server "$root/viewer_server"
+    echo "Bundled ${root#"$REPO_ROOT"/}/viewer (+viewer_server)"
   fi
 }
 

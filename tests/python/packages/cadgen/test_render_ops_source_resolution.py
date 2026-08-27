@@ -14,7 +14,7 @@ import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
-from cadgen.viewer.backend import LocalAssetBackend  # noqa: E402
+from cadgen import render_ops  # noqa: E402
 
 GENERATOR = """from pathlib import Path
 
@@ -34,10 +34,6 @@ class StepSourceResolutionTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = os.path.realpath(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        self.backend = LocalAssetBackend()
-
-    def _resolved_root(self):
-        return {"rootPath": self.root}
 
     def _write(self, name, text=""):
         path = os.path.join(self.root, name)
@@ -47,7 +43,7 @@ class StepSourceResolutionTest(unittest.TestCase):
 
     def test_imported_step_without_a_generator_resolves_to_itself(self):
         step = self._write("widget.step", "ISO-10303-21;\n")
-        resolved = self.backend.resolve_step_source("widget.step", self._resolved_root())
+        resolved = render_ops.resolve_step_source("widget.step", self.root)
         self.assertEqual(resolved["stepPath"], step)
         self.assertEqual(resolved["sourcePath"], "")
         self.assertFalse(resolved["skipStepWrite"])
@@ -56,26 +52,26 @@ class StepSourceResolutionTest(unittest.TestCase):
         step = self._write("widget.step", "ISO-10303-21;\n")
         generator = self._write("widget.step.py", GENERATOR)
         # Reached by the .step ref (how the catalog lists an imported model)...
-        resolved = self.backend.resolve_step_source("widget.step", self._resolved_root())
+        resolved = render_ops.resolve_step_source("widget.step", self.root)
         self.assertEqual(resolved["stepPath"], step)
         self.assertEqual(resolved["sourcePath"], generator)
         self.assertTrue(resolved["skipStepWrite"])
         # ...and by the generator ref, which must agree so the freshness check
         # and the build never key on different sources.
-        via_py = self.backend.resolve_step_source("widget.step.py", self._resolved_root())
+        via_py = render_ops.resolve_step_source("widget.step.py", self.root)
         self.assertEqual(via_py["stepPath"], step)
         self.assertEqual(via_py["sourcePath"], generator)
 
     def test_a_sibling_python_file_without_gen_step_is_not_a_generator(self):
         self._write("widget.step", "ISO-10303-21;\n")
         self._write("widget.step.py", "value = 1\n")
-        resolved = self.backend.resolve_step_source("widget.step", self._resolved_root())
+        resolved = render_ops.resolve_step_source("widget.step", self.root)
         self.assertEqual(resolved["sourcePath"], "")
         self.assertFalse(resolved["skipStepWrite"])
 
     def test_generator_with_no_export_on_disk_still_resolves(self):
         generator = self._write("widget.step.py", GENERATOR)
-        resolved = self.backend.resolve_step_source("widget.step.py", self._resolved_root())
+        resolved = render_ops.resolve_step_source("widget.step.py", self.root)
         self.assertEqual(resolved["stepPath"], os.path.join(self.root, "widget.step"))
         self.assertEqual(resolved["sourcePath"], generator)
         self.assertTrue(resolved["skipStepWrite"])

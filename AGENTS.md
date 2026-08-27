@@ -100,11 +100,14 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   Code preserves them, and Codex `plugin add` drops them with no error, shipping
   a skill with missing files. `scripts/github-workflows/check-builds.sh` enforces
   this; do not relax it.
-- `viewer/` is the CAD Viewer's CLIENT source only. Its backend is
-  `cadgen.viewer` and its built bundle ships in the cadgen wheel
-  (`cadgen/_runtime/viewer`), so the app is distributed by `pip install cadgen`
-  and started with `cadgen viewer` — there is no second copy of it anywhere.
-  Keep repo-level tooling in `scripts/`, not under `viewer/`.
+- `viewer/` is the whole CAD Viewer app: the React client (`src/`) AND its
+  pure-JS backend (`server/`, dependency-free Node). The built client and the
+  server ship in the cadgen wheel (`cadgen/_runtime/viewer{,_server}`), so the
+  app is distributed by `pip install cadgen` and started with `cadgen viewer` —
+  there is no second copy of it anywhere. The backend hosts no CAD runtime: it
+  spawns `python -m cadgen.render_ops` for freshness/build/export and works
+  read-only without Python. Keep repo-level tooling in `scripts/`, not under
+  `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
   belong in `viewer/`. It holds the shared CAD render/runtime code AND the implicit
   CAD runtime.
@@ -116,8 +119,8 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   alias table in the docs build — while quietly hosting a forked copy of the theme
   system. One package, one copy of each shared primitive.
 - `packages/cadgen` is the whole distribution, not just the Python: artifact
-  generation, the CLI parsers behind every skill command (`cadgen/cli`), the CAD
-  Viewer backend (`cadgen/viewer`), the warm build daemon (`cadgen/daemon`), and
+  generation, the CLI parsers behind every skill command (`cadgen/cli`), the viewer's
+  render-ops gate (`cadgen/render_ops.py`), the warm build daemon (`cadgen/daemon`), and
   the JS/SPA assets it executes (`cadgen/_runtime`, built by
   `scripts/bundle/skills/bundle-cadgen-runtime.sh`). Skills consume it as an
   installed distribution.
@@ -246,18 +249,19 @@ wrapper unless you are debugging a lower-level script.
 
 ### Starting the Viewer from a lightweight worktree
 
-The backend is `cadgen.viewer`, so a worktree only needs an interpreter with cadgen
-importable — the repo venv from the primary checkout does:
+The backend is pure JS (`viewer/server`), so a worktree needs only Node — plus a
+cadgen-importable interpreter for builds, handed down via env:
 
 ```bash
-PYTHONPATH=<worktree>/packages/cadgen/src <main>/.venv/bin/python -m cadgen.viewer \
+VIEWER_CAD_PYTHON=<main>/.venv/bin/python \
+VIEWER_CAD_PYTHONPATH=<worktree>/packages/cadgen/src \
+node <worktree>/viewer/server/main.mjs \
   --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --port <n>
 ```
 
-`--dist` is the only worktree-specific part: without it the server serves the client
-baked into the installed cadgen, which is not the one you are editing. `--root` names
-the directory this instance serves, so point it at the worktree rather than relying on
-the shell's cwd. Building that
+`--dist` points at the client you are editing; `--root` names the directory this
+instance serves, so point it at the worktree rather than relying on the shell's
+cwd. Building that
 client needs the worktree's `node_modules`, which worktrees deliberately do not carry —
 link them from the primary checkout first:
 

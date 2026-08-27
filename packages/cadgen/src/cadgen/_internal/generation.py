@@ -260,7 +260,7 @@ def _package_descriptor_matches_spec(
     the full-scene mesh; validate against the package descriptor instead.
 
     The schema-version and bake gates below mirror the viewer's validator
-    (``cadgen/viewer/artifact.py``) exactly. A check on only one side is worse than
+    (``cadgen/render_ops.py``) exactly. A check on only one side is worse than
     no check at all: the viewer would report stale, this predicate would report current,
     the build would no-op, and the request would settle ``ready`` on the stale package.
     The imported-STEP digest gate is already fail-closed here

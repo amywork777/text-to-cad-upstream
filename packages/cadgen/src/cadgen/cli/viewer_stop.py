@@ -15,7 +15,7 @@ import sys
 import time
 from collections.abc import Sequence
 
-from cadgen.viewer import registry
+from cadgen.cli import viewer_registry as registry
 
 DEFAULT_PROG = "cadgen viewer stop"
 _EXIT_WAIT_S = 3.0

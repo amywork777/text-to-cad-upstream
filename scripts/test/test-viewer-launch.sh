@@ -20,12 +20,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${VIEWER_LAUNCH_PORT:-3299}"
 HOST="127.0.0.1"
 
-# SKILL.md documents `cadgen viewer`, and `python -m cadgen.viewer` for when cadgen is not on
-# PATH. Prefer the console script so this also proves the entry point is wired up.
+# SKILL.md documents `cadgen viewer`, and `python -m cadgen.cli viewer` for when cadgen is
+# not on PATH. Prefer the console script so this also proves the entry point is wired up.
 if command -v cadgen >/dev/null 2>&1; then
   VIEWER_CMD=(cadgen viewer)
 else
-  VIEWER_CMD=("$PYTHON_BIN" -m cadgen.viewer)
+  VIEWER_CMD=("$PYTHON_BIN" -m cadgen.cli viewer)
 fi
 
 echo "==> CAD Viewer launch smoke test (${VIEWER_CMD[*]})"
@@ -53,9 +53,9 @@ disown "$launcher_pid" 2>/dev/null || true
 cleanup() {
   kill "$launcher_pid" 2>/dev/null || true
   pkill -P "$launcher_pid" 2>/dev/null || true
-  # `cadgen viewer` spawns the backend as a child (cadgen.viewer.server), so killing the
+  # `cadgen viewer` spawns the JS server as a child (node .../main.mjs), so killing the
   # launcher alone can leave the port held and fail the next run for an unrelated reason.
-  pkill -f "cadgen\.viewer\.server.*--port $PORT" 2>/dev/null || true
+  pkill -f "main\.mjs.*--port $PORT" 2>/dev/null || true
 }
 trap cleanup EXIT
 

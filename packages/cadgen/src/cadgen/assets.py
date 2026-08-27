@@ -95,6 +95,29 @@ def browser_runtime_dir(explicit: Path | str | None = None) -> Path:
     return _RUNTIME / "browser"
 
 
+def viewer_server_entry() -> Path:
+    """The CAD Viewer's JS server entry (``main.mjs``).
+
+    An installed cadgen carries it at ``_runtime/viewer_server``; a source checkout
+    that has never bundled falls back to the repo's ``viewer/server`` so
+    ``cadgen viewer`` works straight from an editable install.
+    """
+    override = _env_dir("CADGEN_VIEWER_SERVER")
+    if override and (override / "main.mjs").is_file():
+        return override / "main.mjs"
+    packaged = _RUNTIME / "viewer_server" / "main.mjs"
+    if packaged.is_file():
+        return packaged
+    checkout = Path(__file__).resolve().parents[3].parent / "viewer" / "server" / "main.mjs"
+    if checkout.is_file():
+        return checkout
+    raise AssetMissing(
+        f"The CAD Viewer's JS server is not present at {packaged}.\n"
+        "In an installed cadgen this means a broken distribution. In a source checkout,\n"
+        "run from the repo (viewer/server/main.mjs) or bundle with scripts/bundle/bundle.sh."
+    )
+
+
 def viewer_dist_dir(explicit: Path | str | None = None) -> Path:
     """Directory holding the built CAD Viewer SPA (``index.html`` + ``assets/``).
 

@@ -2,7 +2,7 @@
 
 Every subcommand is also reachable as ``python -m cadgen.<module>``; this is the friendly
 front door, not a second implementation. A subcommand's parser lives in its own module and
-owns its arguments, so ``cadgen viewer --port 3245`` and ``python -m cadgen.viewer --port
+owns its arguments, so ``cadgen viewer --port 3245`` and ``cadgen viewer --port
 3245`` take the same flags and print the same output.
 
 **Dispatch is lazy on purpose.** Importing a CAD subcommand pulls in OCP/build123d, which
@@ -48,7 +48,7 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
-    "viewer": ("cadgen.viewer.start_viewer", "start the CAD Viewer on a local directory"),
+    "viewer": ("cadgen.cli.viewer_start", "start the CAD Viewer on a local directory"),
     # Two-word entries are required, not cosmetic: dispatch matches argv[0:2] first, so
     # without these `cadgen viewer list` falls through to one-word `viewer` and the
     # launcher treats "list" as a stray argument.

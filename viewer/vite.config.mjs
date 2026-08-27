@@ -1,13 +1,10 @@
 import fs from "node:fs";
-import http from "node:http";
-import net from "node:net";
 import path from "node:path";
-import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-import { cadPythonExecutable, cadPythonEnv } from "./scripts/cad-python.mjs";
+import { createCadApp } from "./server/httpApp.mjs";
 import { resolveDirectoryRoot as resolveViewerDirectoryRoot } from "./scripts/directoryRoot.mjs";
 import { resolveServerFsAllow } from "./scripts/serverFsAllow.mjs";
 import { assertNoDeprecatedLocalRootEnv } from "./scripts/viewerEnv.mjs";
@@ -24,7 +21,6 @@ const cadJsPackageRoot = resolveCadJsPackageRoot();
 const viewerNodeModulesRoot = path.join(viewerAppRoot, "node_modules");
 const defaultDirectoryRoot = path.resolve(viewerAppRoot, "..");
 const directoryRoot = resolveDirectoryRoot();
-const repoRoot = directoryRoot;
 const viewerAllowedHosts = normalizeViewerAllowedHosts(process.env.VIEWER_ALLOWED_HOSTS ?? "");
 const viewerServerLifetimeMs = normalizeServerLifetimeMs(process.env.VIEWER_SERVER_LIFETIME_MS);
 assertNoDeprecatedLocalRootEnv(process.env);
@@ -90,143 +86,35 @@ function resolveDirectoryRoot() {
   });
 }
 
-function findFreePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.on("error", reject);
-    probe.listen(0, "127.0.0.1", () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-}
-
-function waitForPythonBackend(port, { timeoutMs = 20000, child = null } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve) => {
-    let settled = false;
-    let retryTimer = null;
-    const finish = (ready) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (retryTimer) {
-        clearTimeout(retryTimer);
-      }
-      child?.off("exit", handleChildExit);
-      resolve(ready);
-    };
-    const handleChildExit = () => finish(false);
-    child?.once("exit", handleChildExit);
-    const retry = () => {
-      if (settled) {
-        return;
-      }
-      if (Date.now() >= deadline) {
-        finish(false);
-        return;
-      }
-      retryTimer = setTimeout(attempt, 250);
-    };
-    const attempt = () => {
-      if (settled) {
-        return;
-      }
-      const req = http.get({ host: "127.0.0.1", port, path: "/__cad/server", timeout: 500 }, (res) => {
-        res.resume();
-        if (res.statusCode === 200) {
-          finish(true);
-        } else {
-          retry();
-        }
-      });
-      req.on("error", retry);
-      req.on("timeout", () => {
-        req.destroy();
-      });
-    };
-    if (child && child.exitCode !== null) {
-      finish(false);
-      return;
-    }
-    attempt();
-  });
-}
-
-// Dev mode runs the SAME Python backend as production: Vite serves the client
-// (with HMR) and proxies /__cad/* to a Python server it spawns. The Python
-// backend owns all CAD logic; Vite is purely the frontend dev tool.
-function cadViewerBackendProxyPlugin() {
-  let child = null;
-  let backendPort = 0;
+// Dev mode runs the SAME JS backend as production, in-process: Vite serves the
+// client (with HMR) and this middleware answers /__cad/* directly. No second
+// process, no proxy, no Python at startup — cadgen is spawned per build/export
+// by the backend itself, only when a request needs it.
+function cadViewerBackendPlugin() {
   return {
-    name: "cad-viewer-python-backend",
-    async configureServer(server) {
-      backendPort = await findFreePort();
-      // No PYTHONPATH juggling: the backend is cadgen.viewer, imported from whichever
-      // cadgen the chosen interpreter has (the repo's editable install, in dev).
-      const env = cadPythonEnv();
-      env.VIEWER_AGENT_START_MODE = env.VIEWER_AGENT_START_MODE || "dev";
-      // The backend registers itself for `cadgen viewer list`, but in dev the URL a human
-      // opens is vite's, not the backend's ephemeral port -- so hand it down rather than
-      // let the registry guess from host:port and advertise an unusable URL.
+    name: "cad-viewer-backend",
+    configureServer(server) {
       const devPort = server.config.server?.port;
-      if (devPort) {
-        env.CADGEN_VIEWER_PUBLIC_URL = `http://127.0.0.1:${devPort}/`;
-      }
-      // --root is passed explicitly rather than left to the child's cwd: a viewer serves
-      // exactly one directory, and dev should serve the same one the URL bar implies.
-      child = spawn(
-        cadPythonExecutable(repoRoot),
-        [
-          "-m", "cadgen.viewer.server",
-          "--host", "127.0.0.1",
-          "--port", String(backendPort),
-          "--root", directoryRoot,
-        ],
-        { cwd: directoryRoot, env, stdio: "inherit" },
-      );
-      child.on("error", (error) => {
-        console.error(`Failed to start Python CAD Viewer backend: ${error.message}`);
+      const app = createCadApp({
+        root: directoryRoot,
+        host: "127.0.0.1",
+        port: devPort || DEFAULT_VIEWER_PORT,
       });
-      const ready = await waitForPythonBackend(backendPort, { child });
-      if (!ready) {
-        if (child && child.exitCode === null) {
-          child.kill();
-        }
-        child = null;
-        throw new Error("Python CAD Viewer backend failed startup validation or did not become ready.");
-      }
-      // Forward every /__cad/* request (method + headers + body + streamed response) to Python.
       server.middlewares.use((req, res, next) => {
-        if (!req.url || !req.url.startsWith("/__cad/")) {
-          next();
-          return;
-        }
-        const proxyReq = http.request(
-          { host: "127.0.0.1", port: backendPort, path: req.url, method: req.method, headers: req.headers },
-          (proxyRes) => {
-            res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
-            proxyRes.pipe(res);
+        app.handle(req, res).then(
+          (handled) => {
+            if (!handled) {
+              next();
+            }
+          },
+          (error) => {
+            if (!res.headersSent) {
+              res.statusCode = 500;
+            }
+            res.end(`CAD Viewer backend error: ${error?.message || error}`);
           },
         );
-        proxyReq.on("error", () => {
-          if (!res.headersSent) {
-            res.statusCode = 502;
-          }
-          res.end("CAD Viewer backend proxy error");
-        });
-        req.pipe(proxyReq);
       });
-      const stop = () => {
-        if (child) {
-          child.kill();
-          child = null;
-        }
-      };
-      server.httpServer?.once("close", stop);
-      process.once("exit", stop);
     },
   };
 }
@@ -265,7 +153,7 @@ export default defineConfig(({ command }) => ({
   envPrefix: "VIEWER_",
   plugins: [
     react(),
-    cadViewerBackendProxyPlugin(),
+    cadViewerBackendPlugin(),
     serverLifetimePlugin(),
   ],
   resolve: {

@@ -179,7 +179,7 @@ class PackagePortabilityTest(unittest.TestCase):
             build_implicit_artifact(repo_root=root, source_path=root / "orb.implicit.js")
 
     def _validators(self, root: Path):
-        from cadgen.viewer.artifact import (
+        from cadgen.render_ops import (
             validate_dxf_freshness,
             validate_implicit_freshness,
             validate_step_freshness,

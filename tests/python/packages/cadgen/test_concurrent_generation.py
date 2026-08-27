@@ -84,8 +84,8 @@ class ConcurrentGenerationTest(unittest.TestCase):
         descriptor = package / "assembly.json"
         self.assertTrue(descriptor.is_file(), "no descriptor after concurrent builds")
         # The viewer's freshness gate must accept the package the race produced. It is
-        # cadgen.viewer now, so no path juggling: this is an ordinary intra-package import.
-        from cadgen.viewer.artifact import validate_step_freshness
+        # cadgen.render_ops now, so no path juggling: this is an ordinary intra-package import.
+        from cadgen.render_ops import validate_step_freshness
 
         self.assertEqual(
             (True, None), validate_step_freshness(str(self.root), str(self.generator))

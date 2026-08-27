@@ -57,7 +57,7 @@ from cadgen.render import relative_to_file, sha256_file
 
 DRAWING_PACKAGE_KIND = "drawing-package"
 # Bumped from 1 when the package gained ``preview.glb``. This is the stack's single
-# invalidation channel (cadgen/viewer/artifact.py, package_freshness): every drawing
+# invalidation channel (cadgen/render_ops.py, package_freshness): every drawing
 # package written before the preview reports unsupported and rebuilds once, lazily.
 # v4: previewStats gained bendAxisX, which the viewer's fold needs. A package without it is
 # not merely old -- its Bends tab can never fold -- so every v3 package must rebuild.
@@ -508,7 +508,7 @@ def drawing_package_current(source_path: Path) -> bool:
     itself for an imported one; the descriptor's ``sourceKind`` decides which provenance
     question is asked, exactly as the viewer's validator does.
 
-    Every gate here mirrors the viewer's validator (``cadgen/viewer/artifact.py``) check
+    Every gate here mirrors the viewer's validator (``cadgen/render_ops.py``) check
     for check. They have to: this predicate is what decides a build no-ops, so a check the
     viewer makes and this one does not turns a stale package into a silent ``ready`` rather
     than a rebuild — and a check this one makes and the viewer does not rebuilds forever.

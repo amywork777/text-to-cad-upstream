@@ -8,6 +8,7 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const defaultTestRoots = [
   path.join(packageRoot, "src"),
   path.join(packageRoot, "scripts"),
+  path.join(packageRoot, "server"),
 ];
 
 function collectTests(dir, tests = []) {

@@ -142,7 +142,7 @@ is gone. cadgen now carries the JavaScript it executes as well as the Python.
 Canonical source directories are:
 
 - `skills/*` for skill instructions, references, and the thin entrypoints.
-- `viewer/` for the CAD Viewer client app. Its backend is `cadgen.viewer`, and its
+- `viewer/` for the CAD Viewer app (client + JS server). Its
   built client ships inside the cadgen wheel.
 - `packages/*` for the shared runtimes. `packages/cadgen` is the published
   distribution; `packages/cadjs` is its JS build input.
@@ -199,7 +199,8 @@ Nothing is lost, because each of those has a consumer that reads **source**
 rather than the published tree:
 
 - `viewer/` — the client source. Its built bundle ships inside the cadgen wheel
-  (`cadgen/_runtime/viewer`) and is served by `cadgen viewer`.
+  (`cadgen/_runtime/viewer`, server at `cadgen/_runtime/viewer_server`) and is
+  served by `cadgen viewer`.
 - `docs/` and `packages/` — `Deploy Docs` builds and deploys from the release
   source commit. `packages/` has no other published consumer: the cadgen wheel is
   built and uploaded to PyPI BEFORE this trim, and published skills resolve cadgen

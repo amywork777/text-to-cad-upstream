@@ -17,8 +17,8 @@ robot-description, or DXF files in CAD Viewer and hand back live review links. T
 
 ## Setup
 
-The Viewer ships inside the `cadgen` distribution — client bundle, backend and all.
-Install it once:
+The Viewer ships inside the `cadgen` distribution — client bundle and its JS server.
+The server runs on Node.js (>= 22), which must be on `PATH`. Install cadgen once:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -41,9 +41,9 @@ directory — usually wherever the skill happens to be installed, not the model
 directory — so a relative one resolves against the wrong place. `--root` defaults to
 the current directory, which is rarely what you want here.
 
-Equivalently `python -m cadgen.viewer --root ... --host 127.0.0.1`, which is what to
-use when `cadgen` is not on `PATH`. Both print the review URL and, with `--json`, the
-`{"url", "port", "action": "start"}` line.
+Equivalently `python -m cadgen.cli viewer --root ... --host 127.0.0.1`, which is what
+to use when `cadgen` is not on `PATH`. Both print the review URL and, with `--json`,
+the `{"url", "port", "action": "start"}` line.
 
 ## URL shape
 

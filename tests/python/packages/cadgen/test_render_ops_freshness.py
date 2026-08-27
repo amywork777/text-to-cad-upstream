@@ -24,7 +24,7 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from cadgen.coordination import lock as lock_mod  # noqa: E402
-from cadgen.viewer import artifact, scanner  # noqa: E402
+from cadgen import render_ops as artifact  # noqa: E402
 
 from cadgen._internal import drawing_package as _drawing_package  # noqa: E402
 from cadgen._internal.drawing_package import (  # noqa: E402
@@ -451,7 +451,7 @@ class GenerationLock(unittest.TestCase):
 def _reference_closure_hash(root, relative_files):
     """Independent re-derivation of the closure digest cadgen records.
 
-    Deliberately NOT calling cadgen.viewer.source_hash: a fixture built by the module
+    Deliberately NOT calling cadgen source_hash helpers: a fixture built by the module
     under test could not catch a bug in that module's digest construction. Parity
     with the real cadgen implementation is pinned separately in
     tests/python/global/test_viewer_cadgen_mirror.py.
@@ -576,23 +576,6 @@ class GeneratedStepFreshness(unittest.TestCase):
             ok, code = artifact.validate_step_freshness(root, py)
             self.assertFalse(ok)
             self.assertEqual(code, "stale_step_artifact")
-
-
-class ScannerListsGenerated(unittest.TestCase):
-    def test_unbuilt_step_py_is_collected(self):
-        with tempfile.TemporaryDirectory() as root:
-            py = os.path.join(root, "widget.step.py")
-            with open(py, "w") as h:
-                h.write("def gen_step():\n    return None\n")
-            # No __cadgen__ at all — it must still be listed (built on demand).
-            self.assertIn(py, scanner._collect_cad_source_files(root, []))
-
-    def test_unbuilt_dxf_py_is_collected(self):
-        with tempfile.TemporaryDirectory() as root:
-            py = os.path.join(root, "outline.dxf.py")
-            with open(py, "w") as h:
-                h.write("def gen_dxf():\n    return None\n")
-            self.assertIn(py, scanner._collect_cad_source_files(root, []))
 
 
 def _write_drawing_package(
@@ -849,44 +832,6 @@ class GeneratedPackageParity(unittest.TestCase):
             self.assertEqual(artifact.validate_dxf_freshness(root, dxf_py), (False, "missing_source_path"))
 
 
-class ScannerDxfEntry(unittest.TestCase):
-    def test_built_drawing_entry_has_no_static_dxf_asset(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, pkg = _write_drawing_package(root, "outline.dxf.py")
-            entry = scanner.create_generated_dxf_entry(root, root, py)
-            self.assertEqual(entry["kind"], "dxf")
-            self.assertEqual(entry["file"], "outline.dxf.py")
-            self.assertEqual(entry["sourceKind"], "python")
-            # No static asset: the cache holds no DXF, so a download regenerates through the
-            # export route rather than linking a file.
-            self.assertEqual("", entry["url"])
-            self.assertEqual("abc123", entry["hash"])
-            self.assertEqual(entry["source"]["sourceHash"], "abc123")
-
-    def test_unbuilt_drawing_entry_has_no_asset(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py", with_package=False)
-            entry = scanner.create_generated_dxf_entry(root, root, py)
-            self.assertEqual(entry["kind"], "dxf")
-            self.assertEqual(entry["url"], "")
-            self.assertEqual(entry["hash"], "")
-
-    def test_scan_directory_lists_generated_and_raw_dxf(self):
-        with tempfile.TemporaryDirectory() as root:
-            _write_drawing_package(root, "outline.dxf.py")
-            with open(os.path.join(root, "imported.dxf"), "w") as h:
-                h.write("0\nEOF\n")
-            catalog = scanner.scan_cad_directory(root, include_artifact_status=False)
-            by_file = {entry["file"]: entry for entry in catalog["entries"]}
-            self.assertIn("outline.dxf.py", by_file)
-            self.assertIn("imported.dxf", by_file)
-            self.assertEqual(by_file["outline.dxf.py"]["kind"], "dxf")
-            self.assertEqual(by_file["outline.dxf.py"].get("sourceKind"), "python")
-            self.assertEqual(by_file["imported.dxf"]["kind"], "dxf")
-            self.assertNotIn("sourceKind", by_file["imported.dxf"])
-
-
-
 class ImportedDxfFreshness(unittest.TestCase):
     """An imported .dxf is artifact-managed exactly like an imported .step: same package,
     same validator, imported provenance."""
@@ -1111,85 +1056,22 @@ class ImplicitFreshness(unittest.TestCase):
         self.assertEqual(artifact._implicit_payload_refs({"glb": "model.glb"}), ["model.glb"])
 
 
-class ScannerPublishesPackageGlb(unittest.TestCase):
-    """An entry with no renderable geometry of its own publishes its package's baked GLB as
-    a `glb` relation, so the client resolves it through the ordinary mesh-asset path."""
-
-    def test_implicit_entry_publishes_the_baked_mesh(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js")
-            entry = scanner.create_single_asset_entry(root, root, src, ".js")
-            self.assertEqual(entry["kind"], "implicit")
-            relation = entry["relations"]["glb"]
-            self.assertIn("__cadgen__/models/gyroid.implicit.js/model.glb", relation["url"])
-            self.assertEqual(relation["file"], "__cadgen__/models/gyroid.implicit.js/model.glb")
-            self.assertTrue(relation["hash"])
-            self.assertEqual(relation["bytes"], 8)
-
-    def test_unbuilt_implicit_entry_publishes_no_mesh(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", with_package=False)
-            entry = scanner.create_single_asset_entry(root, root, src, ".js")
-            self.assertNotIn("relations", entry)
-
-    def test_generated_drawing_entry_publishes_its_preview(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_drawing_package(root, "outline.dxf.py")
-            entry = scanner.create_generated_dxf_entry(root, root, py)
-            relation = entry["relations"]["glb"]
-            self.assertIn("__cadgen__/models/outline.dxf.py/preview.glb", relation["url"])
-
-    def test_imported_drawing_entry_publishes_its_preview(self):
-        with tempfile.TemporaryDirectory() as root:
-            dxf, _ = _write_imported_drawing_package(root, "vendor.dxf")
-            entry = scanner.create_single_asset_entry(root, root, dxf, ".dxf")
-            relation = entry["relations"]["glb"]
-            self.assertIn("__cadgen__/models/vendor.dxf/preview.glb", relation["url"])
-
-    def test_the_asset_dir_is_unresolved_while_the_lock_dir_is_resolved(self):
-        # Two derivations of one directory, deliberately (design §8). The lock sentinel
-        # must be realpath'd so two paths reaching one package exclude each other; an asset
-        # URL must NOT be, because a realpath that leaves the scan root yields a URL that
-        # escapes it. macOS's /var -> /private/var makes this reachable from a tmpdir.
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js")
-            asset_dir = scanner.render_package_asset_dir(src)
-            self.assertTrue(asset_dir.startswith(os.path.abspath(root) + os.sep))
-            self.assertEqual(
-                scanner.render_package_dir(src), os.path.realpath(asset_dir)
-            )
-
-    def test_scan_directory_lists_an_implicit_model_with_its_mesh(self):
-        with tempfile.TemporaryDirectory() as root:
-            _write_implicit_package(root, "gyroid.implicit.js")
-            catalog = scanner.scan_cad_directory(root, include_artifact_status=False)
-            by_file = {entry["file"]: entry for entry in catalog["entries"]}
-            self.assertIn("gyroid.implicit.js", by_file)
-            self.assertEqual(by_file["gyroid.implicit.js"]["kind"], "implicit")
-            self.assertIn("glb", by_file["gyroid.implicit.js"]["relations"])
-
-
 class ArtifactFormatDispatchIsTotal(unittest.TestCase):
     """`_artifact_format` must be a total predicate->record table, not an if/else that falls
     through to STEP. A half-wired format answering as STEP would validate an assembly.json
     that does not exist, report `ready` for the missing-source code, and never build."""
 
-    def setUp(self):
-        from cadgen.viewer import backend as backend_mod
-
-        self.backend = backend_mod.LocalAssetBackend()
-
     def test_each_owned_kind_selects_its_own_producer(self):
         cases = {
-            "/x/outline.dxf.py": ("validate_dxf_freshness", "generate_dxf_artifact"),
-            "/x/vendor.dxf": ("validate_dxf_freshness", "generate_dxf_artifact"),
-            "/x/gyroid.implicit.js": ("validate_implicit_freshness", "generate_implicit_artifact"),
-            "/x/part.step": ("validate_step_freshness", "generate_step_artifact"),
-            "/x/part.step.py": ("validate_step_freshness", "generate_step_artifact"),
+            "/x/outline.dxf.py": ("validate_dxf_freshness", "_build_dxf_artifact"),
+            "/x/vendor.dxf": ("validate_dxf_freshness", "_build_dxf_artifact"),
+            "/x/gyroid.implicit.js": ("validate_implicit_freshness", "_build_implicit_artifact"),
+            "/x/part.step": ("validate_step_freshness", "_build_step_artifact"),
+            "/x/part.step.py": ("validate_step_freshness", "_build_step_artifact"),
         }
         for file_ref, (validate_name, build_name) in cases.items():
             with self.subTest(file=file_ref):
-                fmt = self.backend._artifact_format({"file": file_ref})
+                fmt = artifact._artifact_format(file_ref)
                 self.assertIs(fmt["validate"], getattr(artifact, validate_name))
                 self.assertEqual(fmt["build"].__name__, build_name)
 
@@ -1198,7 +1080,7 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
             with self.subTest(entry=entry):
                 self.assertFalse(artifact.owns_entry(entry))
                 with self.assertRaises(ValueError):
-                    self.backend._artifact_format(entry)
+                    artifact._artifact_format(str((entry or {}).get("file") or ""))
 
     def test_every_producer_the_backend_shells_out_to_is_worker_dispatchable(self):
         # The warm worker keeps its own module allowlist; a producer missing from it fails at
@@ -1219,10 +1101,6 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
                 self.assertIn(module, dispatch)
                 # The worker calls run(args) on every one.
                 self.assertIn("argv", inspect.signature(dispatch[module]).parameters)
-
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 class DrawingProfileGate(unittest.TestCase):
@@ -1277,3 +1155,7 @@ class DrawingProfileGate(unittest.TestCase):
                 (False, "stale_dxf_artifact"),
                 artifact.validate_dxf_freshness(directory, source),
             )
+
+
+if __name__ == "__main__":
+    unittest.main()

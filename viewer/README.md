@@ -49,17 +49,18 @@ The bare origin names no directory and falls back to the server's cwd. One Viewe
 serves any folder — change the path, no restart.
 
 Use `npm run dev` for iterating on the client/backend (HMR), and `npm run start`
-to serve the built `dist/` bundle via the Python backend (the production path the
+to serve the built `dist/` bundle via the JS server (the production path the
 `cad-viewer` skill uses). Both listen on `--port`, defaulting to `3245`, and both
 exit with an error when that port is taken rather than reusing a running Viewer or
 rolling onto another port. Local dev and production servers stay running unless
 `VIEWER_SERVER_LIFETIME_MS` is set or production `serve` is started with
 `--shutdown-after <duration>`.
 
-The backend lives in `cadgen.viewer`, so the Python side comes from cadgen. In this
-repo that is the editable install from `requirements-dev.txt`; anywhere else it is
-`pip install cadgen`, which also carries a built client and can serve it directly with
-`cadgen viewer` — no clone required.
+The backend is `server/` — dependency-free Node, no Python required to serve. CAD
+builds and exports spawn `python -m cadgen.render_ops` on demand; in this repo that
+cadgen is the editable install from `requirements-dev.txt`, anywhere else
+`pip install cadgen`, which also carries the built client + server and starts them
+with `cadgen viewer` — no clone required.
 
 Agent handoff links from the cad-viewer skill must use an absolute directory as
 the URL path, with `?file=` relative to it. The URL is the only source of truth —
@@ -75,9 +76,10 @@ there is no stored fallback, so the same URL always shows the same thing.
 - `src/client/ui/`: viewer-owned browser utilities such as clipboard, color
   scheme, class merging, and DOM helpers.
 - `src/shared/`: config helpers shared by the client and the launchers.
-- (backend) `cadgen.viewer` — the local filesystem CAD API (`/__cad/*`), artifact
-  generation, and the static server for `dist/`. It lives in `packages/cadgen`, not
-  here, because it shares cadgen's coordination, locks and freshness internals.
+- `server/`: the backend — the local filesystem CAD API (`/__cad/*`), catalog
+  scanner, static server for `dist/`, save/reveal dialogs, and the instance
+  registry. Zero dependencies; CAD freshness/build/export delegate to
+  `python -m cadgen.render_ops` (cadgen owns locks and freshness internals).
 - `scripts/`: developer and runtime launchers, the test runner, and the
   end-to-end sweeps.
 - `docs/`: workflow reference docs for backend storage, browser persistence,
@@ -95,24 +97,20 @@ client is built against those sources and its bundle ships inside the cadgen whe
 ```bash
 npm run dev          # Vite dev server (HMR) + local CAD API middleware — use for iteration
 npm run build        # Production frontend build (writes dist/)
-npm run start        # Prod launcher: serve the built dist/ + CAD API on 3245 (or --port)
-npm run serve        # Low-level raw Python backend (what `start` spawns)
+npm run start        # Prod: serve the built dist/ + CAD API on 3245 (or --port)
 npm run test         # Discover and run all JS tests
 ```
 
 `npm run test` uses `scripts/run-tests.mjs`, which discovers
-`*.test.js` and `*.test.mjs` under `src/` and `scripts/`. To run specific tests:
+`*.test.js` and `*.test.mjs` under `src/`, `scripts/`, and `server/`. To run specific tests:
 
 ```bash
 node scripts/run-tests.mjs src/client/workbench/sidebar.test.js
 node scripts/run-tests.mjs src/shared/viewerConfig.test.mjs
 ```
 
-Python backend tests run separately:
-
-```bash
-python -m unittest discover -s ../tests/python/packages/cadgen/viewer -t ..
-```
+The render-ops gate the server spawns is tested with cadgen's Python suite
+(`tests/python/packages/cadgen/test_render_ops_*.py`).
 
 ## Runtime Configuration
 
