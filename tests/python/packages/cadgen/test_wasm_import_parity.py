@@ -159,6 +159,27 @@ class WasmImportParityTest(unittest.TestCase):
                     BinTools.Read_s(shape, io.BytesIO(payload))
                     self.assertFalse(shape.IsNull(), "OCP could not read the WASM-written blob")
 
+            # The inspect CLI resolves selector refs against the JS-built
+            # package — including a FACE ref, which forces the lazy topology
+            # build to run on WASM-written blobs. Target resolution is
+            # cwd-relative, exactly as the CLI runs it.
+            import os
+
+            from cadgen.cli.step_inspect.inspect import inspect_cad_refs
+
+            first_occurrence = wasm["occurrences"][0]["id"]
+            previous_cwd = os.getcwd()
+            os.chdir(wasm_root)
+            try:
+                resolved = inspect_cad_refs(
+                    FIXTURE.name, f"#{first_occurrence}.f1", detail=True)
+            finally:
+                os.chdir(previous_cwd)
+            self.assertFalse(resolved.get("errors"), f"inspect refs failed: {resolved.get('errors')}")
+            selections = resolved["tokens"][0]["selections"]
+            self.assertEqual(selections[0]["status"], "resolved")
+            self.assertEqual(selections[0]["selectorType"], "face")
+
 
 if __name__ == "__main__":
     unittest.main()
