@@ -242,6 +242,9 @@ class SurfaceExtractTest(unittest.TestCase):
 
         def profile_point(profile, t):
             kind = profile["kind"]
+            period = profile.get("period")
+            if period and not (profile["range"][0] <= t <= profile["range"][1]):
+                t = profile["range"][0] + (t - profile["range"][0]) % period
             if kind == "bspline":
                 curve = _rebuild_bspline_curve3(profile, self.binbuf)
                 p = curve.Value(t)

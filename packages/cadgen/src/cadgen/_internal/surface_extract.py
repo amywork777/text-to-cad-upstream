@@ -232,9 +232,14 @@ def _basis_curve_payload(basis_adaptor, bin_out: _Bin) -> dict[str, Any]:
                 **_frame(ellipse.Position()), "range": [first, last]}
     if kind == GeomAbs_CurveType.GeomAbs_BSplineCurve:
         bspline = basis_adaptor.BSpline()
+        period = None
         if bspline.IsPeriodic():
+            # A swept face's parameter range may CROSS the closed profile's
+            # period (bracelet-link outlines do); the client wraps into the
+            # clamped domain using this period.
+            period = bspline.Period()
             bspline.SetNotPeriodic()
-        return _bspline_curve3_payload(bspline, bin_out)
+        return _bspline_curve3_payload(bspline, bin_out, period=period)
     if kind == GeomAbs_CurveType.GeomAbs_BezierCurve:
         # Exact and parametrization-preserving.
         try:
@@ -264,7 +269,7 @@ def _basis_curve_payload(basis_adaptor, bin_out: _Bin) -> dict[str, Any]:
     return _bspline_curve3_payload(bspline, bin_out)
 
 
-def _bspline_curve3_payload(bspline, bin_out: _Bin) -> dict[str, Any]:
+def _bspline_curve3_payload(bspline, bin_out: _Bin, *, period=None) -> dict[str, Any]:
     poles: list[float] = []
     weights: list[float] = []
     rational = bspline.IsRational()
@@ -324,10 +329,20 @@ def _curve2d_payload(edge, face, bin_out: _Bin) -> dict[str, Any]:
         "periodic": bool(bspline.IsPeriodic()),
         "poles": bin_out.append(poles),
         "knots": bin_out.append(flat),
-        "range": [first, last],
+        # The CONVERTED curve's own domain, not the edge range: trimming a
+        # periodic pcurve near/past the period normalizes the parameter into
+        # the principal interval, and evaluating the stored knots at the
+        # original edge parameters extrapolates wildly off the trim.
+        "range": [bspline.FirstParameter(), bspline.LastParameter()],
     }
     if rational:
         payload["weights"] = bin_out.append(weights)
+    span = flat[-1] - flat[0] or 1.0
+    if (payload["range"][0] < flat[0] - 1e-6 * span
+            or payload["range"][1] > flat[-1] + 1e-6 * span):
+        raise Unextractable(
+            f"pcurve range {payload['range']} escapes knot domain "
+            f"[{flat[0]}, {flat[-1]}] — evaluation would extrapolate")
     return payload
 
 

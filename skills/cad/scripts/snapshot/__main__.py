@@ -25,12 +25,18 @@ except ModuleNotFoundError:
 
 enforce_requirements_pin(Path(__file__).resolve().parents[2] / "requirements.txt")
 
-# Warm-daemon handoff, BEFORE the cadgen import below -- that import is the multi-second
+# Warm-daemon handoff (script executions only — an IMPORT of this module,
+# e.g. from tests, must never dispatch argv to the daemon), BEFORE the
+# cadgen import below -- that import is the multi-second
 # OCP/build123d cost the daemon exists to avoid paying per invocation. The daemon sets
 # CADGEN_DAEMON_CHILD in the process it serves from, so this cannot recurse.
 import os
 
-if os.environ.get("CADGEN_WARM") != "0" and not os.environ.get("CADGEN_DAEMON_CHILD"):
+if (
+    __name__ == "__main__"
+    and os.environ.get("CADGEN_WARM") != "0"
+    and not os.environ.get("CADGEN_DAEMON_CHILD")
+):
     try:
         from cadgen.daemon.client import run_via_daemon
     except ModuleNotFoundError:
