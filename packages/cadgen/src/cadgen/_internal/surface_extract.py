@@ -46,7 +46,36 @@ from OCP.TopTools import (
 from OCP.TopoDS import TopoDS
 
 SURF_MAGIC = b"SURF"
-SURF_VERSION = 1
+# 2: shape membership, selector-table metadata (surfaceType/curveType/
+#    params/continuity/dihedral/flags), edge faceOrds.
+SURF_VERSION = 2
+
+
+def _enum_name_geomabs(value) -> str:
+    # Same spelling the STEP_TOPOLOGY manifest has always used
+    # (step_scene_loader._enum_name with the GeomAbs_ prefix stripped,
+    # lowercased): "plane", "cylinder", "bsplinesurface", "line", ...
+    from cadgen._internal.step_scene_types import _enum_name
+
+    return _enum_name(value, "GeomAbs_")
+
+
+def _selector_surface_params(adaptor) -> dict[str, Any]:
+    from cadgen._internal.step_scene_geometry import _surface_params
+
+    try:
+        return _surface_params(adaptor, None)
+    except Exception:
+        return {}
+
+
+def _selector_curve_params(adaptor) -> dict[str, Any]:
+    from cadgen._internal.step_scene_geometry import _curve_params
+
+    try:
+        return _curve_params(adaptor, None)
+    except Exception:
+        return {}
 
 
 class Unextractable(Exception):
@@ -410,27 +439,76 @@ def _curve3d_payload(edge, bin_out: _Bin) -> dict[str, Any] | None:
     return payload
 
 
-def _edge_visibility_class(edge, faces: list, face_of_edge_count: int) -> str:
-    from cadgen._internal.glb_topology import STEP_EDGE_VISIBILITY_CLASSES as C
+def _classify_surf_edge(edge, faces: list) -> dict[str, Any]:
+    """Visibility class plus the classification columns the selector tables
+    carry (continuity, dihedralDeg, flags, adjacentFaceCount) — mirrors
+    step_scene_geometry._classify_edge minus its mesh dependencies."""
+    from cadgen._internal.glb_topology import (
+        STEP_EDGE_FLAGS as F,
+        STEP_EDGE_VISIBILITY_CLASSES as C,
+    )
+    from cadgen._internal.glb_topology import (
+        STEP_TOPOLOGY_EDGE_ANGULAR_TOLERANCE_DEG,
+    )
+    from cadgen._internal.step_scene_geometry import (
+        _edge_continuity_name,
+        _is_smooth_continuity,
+        _sampled_edge_dihedral_deg,
+    )
 
+    count = len(faces)
+    result: dict[str, Any] = {
+        "adjacentFaceCount": count,
+        "dihedralDeg": None,
+    }
+    typed_faces = [TopoDS.Face_s(f) for f in faces]
     if BRep_Tool.Degenerated_s(edge):
-        return C["DEGENERATE"]
-    if face_of_edge_count > 2:
-        return C["NON_MANIFOLD"]
-    if face_of_edge_count == 1:
-        if faces and BRep_Tool.IsClosed_s(edge, TopoDS.Face_s(faces[0])):
-            return C["SEAM"]
-        return C["BOUNDARY"]
-    if any(BRep_Tool.IsClosed_s(edge, TopoDS.Face_s(f)) for f in faces):
-        return C["SEAM"]
+        result.update(cls=C["DEGENERATE"], continuity="degenerate",
+                      flags=F["DEGENERATE"])
+        return result
+    seam = any(BRep_Tool.IsClosed_s(edge, f) for f in typed_faces)
+    if seam or (count == 1 and typed_faces
+                and BRep_Tool.IsClosed_s(edge, typed_faces[0])):
+        result.update(cls=C["SEAM"], continuity="seam", flags=F["SEAM"])
+        return result
+    if count == 0:
+        result.update(cls=C["FEATURE"], continuity="unknown",
+                      flags=F["NOT_REFERENCEABLE"] | F["UNKNOWN_CONTINUITY"])
+        return result
+    if count == 1:
+        result.update(cls=C["BOUNDARY"], continuity="boundary",
+                      flags=F["BOUNDARY"])
+        return result
+    if count > 2:
+        result.update(cls=C["NON_MANIFOLD"], continuity="non_manifold",
+                      flags=F["NON_MANIFOLD"])
+        return result
     try:
-        continuity = BRep_Tool.Continuity_s(
-            edge, TopoDS.Face_s(faces[0]), TopoDS.Face_s(faces[1]))
-        if continuity == GeomAbs_C0:
-            return C["FEATURE"]
-        return C["TANGENT"]
+        continuity = _edge_continuity_name(edge, typed_faces)
     except Exception:
-        return C["UNKNOWN"]
+        continuity = ""
+    if continuity == "c0":
+        dihedral = _sampled_edge_dihedral_deg(edge, typed_faces, [None, None])
+        result.update(cls=C["FEATURE"], continuity="c0", flags=F["HARD"],
+                      dihedralDeg=dihedral)
+        return result
+    if _is_smooth_continuity(continuity):
+        dihedral = _sampled_edge_dihedral_deg(edge, typed_faces, [None, None])
+        result.update(cls=C["TANGENT"], continuity=continuity,
+                      flags=F["TANGENT"], dihedralDeg=dihedral)
+        return result
+    dihedral = _sampled_edge_dihedral_deg(edge, typed_faces, [None, None])
+    if dihedral is not None:
+        if dihedral > STEP_TOPOLOGY_EDGE_ANGULAR_TOLERANCE_DEG:
+            result.update(cls=C["FEATURE"], continuity="sampled_hard",
+                          flags=F["HARD"], dihedralDeg=dihedral)
+        else:
+            result.update(cls=C["TANGENT"], continuity="sampled_tangent",
+                          flags=F["TANGENT"], dihedralDeg=dihedral)
+        return result
+    result.update(cls=C["UNKNOWN"], continuity="unknown",
+                  flags=F["UNKNOWN_CONTINUITY"])
+    return result
 
 
 def extract_surface_component(
@@ -457,17 +535,76 @@ def extract_surface_component(
         for i in range(1, edge_map.Extent() + 1)
     }
 
+    # Shape (solid/shell) membership: the selector tables group faces/edges
+    # by solid; record each solid's ordinal + volume and every face/edge's
+    # owning solid. Mirrors the prototype extraction's decomposition.
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+    from OCP.TopAbs import TopAbs_SHELL, TopAbs_SOLID
+
+    shapes_meta: list[dict[str, Any]] = []
+    shape_by_face: dict[int, int] = {}
+    shape_by_edge: dict[int, int] = {}
+    face_ord_by_hash = {
+        _shape_hash(face_map.FindKey(i)): i
+        for i in range(1, face_map.Extent() + 1)
+    }
+
+    def _record_shape(sub, kind: str) -> None:
+        ordinal = len(shapes_meta) + 1
+        volume = None
+        if kind == "solid":
+            try:
+                props = GProp_GProps()
+                BRepGProp.VolumeProperties_s(sub, props)
+                volume = float(props.Mass())
+            except Exception:
+                volume = None
+        shapes_meta.append({"ord": ordinal, "kind": kind, "volume": volume})
+        sub_faces = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(sub, TopAbs_FACE, sub_faces)
+        for i in range(1, sub_faces.Extent() + 1):
+            face_ord = face_ord_by_hash.get(_shape_hash(sub_faces.FindKey(i)))
+            if face_ord is not None:
+                shape_by_face.setdefault(face_ord, ordinal)
+        sub_edges = TopTools_IndexedMapOfShape()
+        TopExp.MapShapes_s(sub, TopAbs_EDGE, sub_edges)
+        for i in range(1, sub_edges.Extent() + 1):
+            edge_ord = edge_ord_by_hash.get(_shape_hash(sub_edges.FindKey(i)))
+            if edge_ord is not None:
+                shape_by_edge.setdefault(edge_ord, ordinal)
+
+    solid_explorer = TopExp_Explorer(shape, TopAbs_SOLID)
+    while solid_explorer.More():
+        _record_shape(solid_explorer.Current(), "solid")
+        solid_explorer.Next()
+    if not shapes_meta:
+        shell_explorer = TopExp_Explorer(shape, TopAbs_SHELL)
+        while shell_explorer.More():
+            _record_shape(shell_explorer.Current(), "shell")
+            shell_explorer.Next()
+    if not shapes_meta:
+        shapes_meta.append({"ord": 1, "kind": "shape", "volume": None})
+
     faces: list[dict[str, Any]] = []
     for ordinal in range(1, face_map.Extent() + 1):
         face = TopoDS.Face_s(face_map.FindKey(ordinal))
         u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+        adaptor = BRepAdaptor_Surface(face)
         entry: dict[str, Any] = {
             "ord": ordinal,
+            "shape": shape_by_face.get(ordinal, 1),
             "reversed": face.Orientation() == TopAbs_Orientation.TopAbs_REVERSED,
             "uv": [u0, u1, v0, v1],
+            # Selector-table columns (surfaceType/params in the exact
+            # spelling the STEP_TOPOLOGY manifest has always used).
+            "surfaceType": _enum_name_geomabs(adaptor.GetType()),
             "surface": _surface_payload(face, bin_out),
             "loops": [],
         }
+        params = _selector_surface_params(adaptor)
+        if params:
+            entry["params"] = params
         if face_colors:
             color = face_colors.get(ordinal)
             if color is not None:
@@ -507,15 +644,49 @@ def extract_surface_component(
             elif extent > 2:
                 # Rare (non-manifold); the slow generic path is fine here.
                 adjacent = list(face_list)
+        # A seam edge appears under its single face TWICE in the ancestor
+        # map; adjacency and faceOrds carry DEDUPED faces (matching the
+        # selector tables), and a duplicate implies seam classification.
+        unique_faces = []
+        deduped_ords = []
+        seen_face_ords = set()
+        for f in adjacent:
+            face_ord = face_ord_by_hash.get(_shape_hash(f), 0)
+            if face_ord not in seen_face_ords:
+                seen_face_ords.add(face_ord)
+                unique_faces.append(f)
+                deduped_ords.append(face_ord)
+        classification = _classify_surf_edge(edge, unique_faces)
+        if len(unique_faces) != len(adjacent):
+            from cadgen._internal.glb_topology import (
+                STEP_EDGE_FLAGS,
+                STEP_EDGE_VISIBILITY_CLASSES,
+            )
+
+            classification["cls"] = STEP_EDGE_VISIBILITY_CLASSES["SEAM"]
+            classification["continuity"] = "seam"
+            classification["flags"] = STEP_EDGE_FLAGS["SEAM"]
+        curve_adaptor = BRepAdaptor_Curve(edge)
         entry = {
             "ord": ordinal,
-            "class": _edge_visibility_class(edge, adjacent, len(adjacent)),
+            "shape": shape_by_edge.get(ordinal, 1),
+            "class": classification["cls"],
+            "continuity": classification["continuity"],
+            "dihedralDeg": classification["dihedralDeg"],
+            "flags": int(classification["flags"]),
+            "adjacentFaceCount": len(unique_faces),
+            "curveType": _enum_name_geomabs(curve_adaptor.GetType()),
+            "faceOrds": deduped_ords,
             "curve": _curve3d_payload(edge, bin_out),
         }
+        params = _selector_curve_params(curve_adaptor)
+        if params:
+            entry["params"] = params
         edges.append(entry)
 
     index = {
         "version": SURF_VERSION,
+        "shapes": shapes_meta,
         "faces": faces,
         "edges": edges,
         "counts": {"faces": face_map.Extent(), "edges": edge_map.Extent()},

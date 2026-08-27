@@ -6,6 +6,7 @@ import {
   loadRenderSurf,
   loadRenderJson,
   loadRenderSelectorBundle,
+  loadRenderSurfSelectorBundle,
   loadRenderSdf,
   loadRenderSrdf,
   loadRenderUrdf,
@@ -607,8 +608,10 @@ export function useCadAssets({
             if (!component) {
               return;
             }
-            componentBundleByCid[cid] = await loadRenderSelectorBundle(
-              resolvePackageAssetUrl(glbUrl, component.glb),
+            // Exact-surface topology (design/surface-rendering.md R3): the
+            // selector bundle is synthesized client-side from the .surf.
+            componentBundleByCid[cid] = await loadRenderSurfSelectorBundle(
+              resolvePackageAssetUrl(glbUrl, component.surf),
               { signal: controller.signal }
             ).catch(() => null);
           }

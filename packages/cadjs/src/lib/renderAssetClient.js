@@ -280,14 +280,16 @@ export function peekRenderGlb(url) {
 export async function loadRenderSurf(url, { signal } = {}) {
   // Exact-surface component artifact (design/surface-rendering.md): fetch
   // the .surf and tessellate client-side into the same meshData contract a
-  // component GLB produced. Shares the GLB cache keyspace (URLs differ).
+  // component GLB produced. Parse + tessellation are shared with the
+  // topology bundle loaders through loadSurfComponent's cache.
   const meshData = await loadCached(glbCache, url, async () => {
-    const [{ buildMeshDataFromSurfBuffer }, buffer] = await Promise.all([
+    const [{ buildMeshDataFromSurf }, entry] = await Promise.all([
       import("./surf/surfMeshData.js"),
-      loadRenderArrayBuffer(url, { signal }),
+      loadSurfComponent(url, { signal }),
     ]);
-    assertNotGitLfsPointer(buffer, url, "SURF render asset");
-    return buildMeshDataFromSurfBuffer(buffer);
+    return buildMeshDataFromSurf(entry.index, entry.floats, {
+      component: entry.component,
+    });
   }, { cachePending: !signal });
   return finalizeCached(glbCache, url, meshData);
 }
@@ -553,6 +555,59 @@ export async function loadRenderDisplayEdgeBundle(glbUrl, { signal } = {}) {
 
 export function peekRenderDisplayEdgeBundle(glbUrl) {
   return peekCached(displayEdgeCache, glbUrl);
+}
+
+// --- Exact-surface topology (design/surface-rendering.md R3) ---------------
+//
+// The .surf carries the same topology the GLB's STEP_TOPOLOGY tables did;
+// the bundle is synthesized client-side from one shared parse+tessellation
+// per URL (the display meshData path reuses the same cache entry).
+
+const surfComponentCache = new Map();
+
+async function loadSurfComponent(url, { signal } = {}) {
+  const entry = await loadCached(surfComponentCache, url, async () => {
+    const [{ parseSurf }, { tessellateComponent }, buffer] = await Promise.all([
+      import("./surf/container.js"),
+      import("./surf/tessellate.js"),
+      loadRenderArrayBuffer(url, { signal }),
+    ]);
+    assertNotGitLfsPointer(buffer, url, "SURF render asset");
+    const { index, floats } = parseSurf(buffer);
+    return { index, floats, component: tessellateComponent(index, floats) };
+  }, { cachePending: !signal });
+  return finalizeCached(surfComponentCache, url, entry);
+}
+
+export async function loadRenderSurfSelectorBundle(surfUrl, { signal } = {}) {
+  const bundle = await loadCached(selectorCache, surfUrl, async () => {
+    const [{ buildSelectorBundleFromSurf }, entry] = await Promise.all([
+      import("./surf/surfSelectorBundle.js"),
+      loadSurfComponent(surfUrl, { signal }),
+    ]);
+    return buildSelectorBundleFromSurf(entry.index, entry.floats, {
+      component: entry.component,
+    });
+  }, { cachePending: !signal });
+  return finalizeCached(selectorCache, surfUrl, bundle);
+}
+
+export async function loadRenderSurfDisplayEdgeBundle(surfUrl, { signal } = {}) {
+  // The barycentric overlay IS the edge rendering; the display-edge bundle
+  // for surface-edge components is metadata only (profile "surface-edges").
+  const bundle = await loadCached(displayEdgeCache, surfUrl, async () => {
+    const selector = await loadRenderSurfSelectorBundle(surfUrl, { signal });
+    return {
+      manifest: {
+        schemaVersion: selector.manifest.schemaVersion,
+        profile: "surface-edges",
+        edgeRendering: selector.manifest.edgeRendering,
+        bbox: selector.manifest.bbox,
+      },
+      buffers: {},
+    };
+  }, { cachePending: !signal });
+  return finalizeCached(displayEdgeCache, surfUrl, bundle);
 }
 
 export async function loadRenderDxf(url, { signal } = {}) {

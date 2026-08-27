@@ -57,6 +57,14 @@ export function evaluateBSplineCurve(payload, floats, t, dim) {
   const poles = floatSpan(floats, payload.poles);
   const knots = floatSpan(floats, payload.knots);
   const weights = payload.weights ? floatSpan(floats, payload.weights) : null;
+  if (payload.period) {
+    // Clamped from a CLOSED curve: sweep faces may address parameters past
+    // the period (a face crossing the profile seam); wrap into the domain.
+    const [first, last] = payload.range;
+    if (t > last || t < first) {
+      t = first + ((((t - first) % payload.period) + payload.period) % payload.period);
+    }
+  }
   const span = findSpan(knots, degree, payload.n, t);
   const basis = basisFunctions(knots, degree, span, t, new Float64Array(degree + 1));
   const point = [0, 0, 0];

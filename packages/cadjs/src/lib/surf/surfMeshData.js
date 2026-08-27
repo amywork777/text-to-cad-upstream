@@ -33,7 +33,7 @@ function colorHex(rgb) {
 }
 
 export function buildMeshDataFromSurf(index, floats, options = {}) {
-  const component = tessellateComponent(index, floats, options);
+  const component = options.component || tessellateComponent(index, floats, options);
   const triangleCount = component.indices.length / 3;
   const vertexCount = triangleCount * 3;
 

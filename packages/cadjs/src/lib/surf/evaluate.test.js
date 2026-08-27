@@ -35,7 +35,7 @@ function distance(a, b) {
 
 test("containers parse with expected shape counts", () => {
   for (const { index } of FIXTURES) {
-    assert.equal(index.version, 1);
+    assert.equal(index.version, 2);
     assert.equal(index.faces.length, index.counts.faces);
     assert.equal(index.edges.length, index.counts.edges);
   }

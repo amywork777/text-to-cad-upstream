@@ -371,7 +371,7 @@ class SurfaceExtractTest(unittest.TestCase):
         from cadgen._internal.surface_extract import read_surf
 
         index, _ = read_surf(bytes(self.data))
-        self.assertEqual(index["version"], 1)
+        self.assertEqual(index["version"], 2)
         with self.assertRaises(ValueError):
             read_surf(b"GLBX" + bytes(self.data[4:]))
 

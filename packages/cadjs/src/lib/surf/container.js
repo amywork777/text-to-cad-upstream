@@ -6,7 +6,9 @@
 // as `[offsetInFloats, count]` pairs.
 
 export const SURF_MAGIC = 0x46525553; // "SURF" little-endian
-export const SURF_VERSION = 1;
+// version 2: shape membership, selector-table metadata (surfaceType/
+// curveType/params/classification columns), edge faceOrds.
+export const SURF_VERSION = 2;
 
 export function parseSurf(arrayBuffer) {
   const header = new DataView(arrayBuffer, 0, 12);
