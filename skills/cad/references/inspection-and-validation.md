@@ -11,7 +11,7 @@ Deterministic geometry checks decide pass/fail; mandatory snapshot review (see `
 The launcher lives in the CAD skill directory:
 
 ```bash
-python scripts/inspect {refs|diff|frame|measure|align|worker|batch} ...
+python scripts/inspect {refs|diff|frame|measure|align} ...
 ```
 
 Inspection targets resolve from the command cwd; prefer cwd-relative target paths. Absolute paths are accepted when they point under the command cwd (they are relativized); an absolute path outside the cwd fails with an explicit error — run the command from the workspace that owns the artifact. Common data-output flags: `--format json|text` (default is machine-readable), `--quiet`, `--verbose`.

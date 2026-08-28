@@ -4,7 +4,6 @@ import argparse
 import contextlib
 import io
 import json
-import shlex
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -204,23 +203,6 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     )
     _add_output_arguments(validate_parser)
     validate_parser.set_defaults(handler=run_validate)
-
-    worker_parser = subparsers.add_parser(
-        "worker",
-        help="Run a persistent JSONL inspect worker.",
-        description=(
-            "Read JSONL requests from stdin and write one JSONL response per request. "
-            "Each request is an object with argv: [<inspect-subcommand>, ...] and optional id."
-        ),
-    )
-    worker_parser.set_defaults(handler=run_worker)
-
-    batch_parser = subparsers.add_parser(
-        "batch",
-        help="Run JSONL inspect requests from stdin in one process.",
-        description=worker_parser.description,
-    )
-    batch_parser.set_defaults(handler=run_worker)
 
     # Output is ALWAYS JSON; `--json` is accepted on every subcommand so
     # muscle memory from verbs that need the flag (scripts/gen) doesn't error.
@@ -443,59 +425,10 @@ def run_align(args: argparse.Namespace) -> int:
     return 0 if bool(result.get("ok")) else 2
 
 
-def run_worker(args: argparse.Namespace) -> int:
-    _ = args
-    for raw_line in sys.stdin:
-        line = raw_line.strip()
-        if not line:
-            continue
-        response = _worker_response(line)
-        print(json.dumps(response, separators=(",", ":")), flush=True)
-    return 0
-
-
-def _worker_response(line: str) -> dict[str, object]:
-    request_id: object = None
-    try:
-        request = json.loads(line)
-        argv = _worker_request_argv(request)
-        if isinstance(request, dict):
-            request_id = request.get("id")
-        exit_code, result = inspect_command_result(argv)
-    except Exception as exc:
-        exit_code = 2
-        result = {
-            "ok": False,
-            "errors": [_exception_error_payload(exc)],
-        }
-    response: dict[str, object] = {
-        "ok": exit_code == 0,
-        "exitCode": exit_code,
-        "result": result,
-    }
-    if request_id is not None:
-        response["id"] = request_id
-    return response
-
-
-def _worker_request_argv(request: object) -> list[str]:
-    if isinstance(request, dict):
-        raw_argv = request.get("argv")
-    else:
-        raw_argv = request
-    if isinstance(raw_argv, str):
-        return shlex.split(raw_argv)
-    if isinstance(raw_argv, list) and all(isinstance(item, (str, int, float)) for item in raw_argv):
-        return [str(item) for item in raw_argv]
-    raise ValueError("Worker request must be a JSON object with argv, a JSON argv array, or a shell-style argv string.")
-
-
 def inspect_command_result(argv: Sequence[str]) -> tuple[int, dict[str, object]]:
     command_argv = [str(item) for item in argv]
     if not command_argv:
         return 2, {"ok": False, "errors": [{"message": "empty inspect command"}]}
-    if command_argv[0] in {"worker", "batch"}:
-        return 2, {"ok": False, "errors": [{"message": f"Unsupported worker command: {command_argv[0]}"}]}
     stderr = io.StringIO()
     try:
         parser = build_parser()

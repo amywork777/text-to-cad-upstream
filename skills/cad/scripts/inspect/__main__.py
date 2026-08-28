@@ -36,9 +36,6 @@ if (
     __name__ == "__main__"
     and os.environ.get("CADGEN_WARM") != "0"
     and not os.environ.get("CADGEN_DAEMON_CHILD")
-    # `worker` IS a resident stdin/stdout protocol of its own; dispatching it
-    # through the daemon strands its jsonl stdin and the process hangs.
-    and (sys.argv[1:2] or [""])[0] != "worker"
 ):
     try:
         from cadgen.daemon.client import run_via_daemon

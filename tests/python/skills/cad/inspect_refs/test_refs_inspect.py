@@ -804,9 +804,6 @@ class InspectRefsTests(unittest.TestCase):
             parser.parse_args(["render", "list", "part.step", "--format", "text"])
         self.assertEqual(2, render_exit.exception.code)
 
-        worker_args = parser.parse_args(["worker"])
-        self.assertEqual("worker", worker_args.command)
-
         top_level_verbose_args = parser.parse_args(["--verbose", "refs", "entry.step", "#f1"])
         self.assertTrue(top_level_verbose_args.verbose)
 
@@ -814,13 +811,14 @@ class InspectRefsTests(unittest.TestCase):
             parser.parse_args(["--verbose", "render", "view", "part.step", "--output", "part.png"])
         self.assertEqual(2, verbose_render_exit.exception.code)
 
-    def test_worker_response_wraps_inspect_result(self) -> None:
-        response = inspect_cli._worker_response('{"id":"missing-input","argv":["refs"]}')
+    def test_command_result_wraps_inspect_errors(self) -> None:
+        # The in-process runner (what the daemon dispatch relies on) must wrap
+        # failures into a payload rather than raising through the worker pool.
+        exit_code, result = inspect_cli.inspect_command_result(["refs"])
 
-        self.assertFalse(response["ok"])
-        self.assertEqual("missing-input", response["id"])
-        self.assertEqual(2, response["exitCode"])
-        self.assertIn("No STEP/CAD entry target provided", response["result"]["errors"][0]["message"])
+        self.assertEqual(2, exit_code)
+        self.assertFalse(result["ok"])
+        self.assertIn("No STEP/CAD entry target provided", result["errors"][0]["message"])
 
     def test_frame_command_returns_occurrence_axes(self) -> None:
         with self._mock_glb_topology(_refs_manifest(self.cad_ref)):

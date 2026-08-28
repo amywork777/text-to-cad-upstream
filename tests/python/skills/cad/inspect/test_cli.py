@@ -56,22 +56,6 @@ class InspectCliWrapperTests(unittest.TestCase):
         self.assertEqual(2, result.returncode)
         self.assertIn("invalid choice", result.stderr)
 
-    def test_scripts_inspect_worker_reads_jsonl(self) -> None:
-        skill_root = repo_path("skills/cad")
-        result = subprocess.run(
-            [sys.executable, "scripts/inspect", "worker"],
-            cwd=skill_root,
-            input='{"id":"bad","argv":["refs"]}\n',
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        self.assertEqual("", result.stderr)
-        self.assertEqual(0, result.returncode)
-        self.assertIn('"id":"bad"', result.stdout)
-        self.assertIn('"exitCode":2', result.stdout)
-
 
 if __name__ == "__main__":
     unittest.main()
