@@ -90,22 +90,26 @@ function resolveDistDir(explicit) {
   return "";
 }
 
-// True only when nothing is listening on host:port (connection refused). A live
-// listener — or an ambiguous socket — counts as occupied, so we never race a
-// bind against another process.
+// True when this process can BIND host:port — the same operation the server is
+// about to perform, so the probe cannot disagree with reality (ports 3236a5c9
+// from develop). This used to probe by CONNECTING, with only ECONNREFUSED
+// counting as free; on Windows a connect to a closed port routinely fails some
+// other way (Hyper-V/WSL port exclusions, loopback filtering, refusals arriving
+// as timeouts), so free ports read as occupied and the launcher refused to
+// start with a false "already in use". A definite EADDRINUSE (or EACCES,
+// Windows's answer for its excluded ranges) keeps the friendly rerun-with-
+// --port message; any OTHER failure counts as free, because this probe exists
+// only for that message — the server's own bind stays authoritative and
+// reports anything genuinely wrong.
 function portIsFree(host, port) {
   return new Promise((resolve) => {
-    const socket = net.connect({ host, port, timeout: 350 });
-    socket.once("connect", () => {
-      socket.destroy();
-      resolve(false);
+    const probe = net.createServer();
+    probe.unref();
+    probe.once("error", (error) => {
+      resolve(!(error.code === "EADDRINUSE" || error.code === "EACCES"));
     });
-    socket.once("timeout", () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.once("error", (error) => {
-      resolve(error.code === "ECONNREFUSED");
+    probe.listen({ host, port, exclusive: true }, () => {
+      probe.close(() => resolve(true));
     });
   });
 }

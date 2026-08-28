@@ -125,7 +125,19 @@ export function repoRelativePath(repoRoot, filePath) {
 }
 
 export function pathIsInside(filePath, rootPath) {
-  return relativePathStaysInsideRoot(path.relative(path.resolve(rootPath), path.resolve(filePath)));
+  // Real paths exist here for ALIAS EQUALITY, never refusal (ports the settled
+  // semantics of develop's 9bc6bd44 + b0f59af3): macOS's /var -> /private/var
+  // and symlinked served roots must compare as inside, so a path is contained
+  // when EITHER its lexical or its resolved location stays inside the root.
+  // Symlinked model directories are a feature — this repo's own dev layout is
+  // symlinks, and pointing a link at a shared parts library outside the folder
+  // is a normal way to bring external content in. A link out of the served
+  // directory grants no reach the URL did not already grant: the viewer serves
+  // any absolute directory named at startup.
+  if (relativePathStaysInsideRoot(path.relative(path.resolve(rootPath), path.resolve(filePath)))) {
+    return true;
+  }
+  return relativePathStaysInsideRoot(path.relative(realpathOr(path.resolve(rootPath)), realpathOr(path.resolve(filePath))));
 }
 
 export function pathIsImplicitCadSource(value = "") {
@@ -223,7 +235,35 @@ function shouldSkipDirectory(name) {
   return VIEWER_SKIPPED_DIRECTORIES.has(name) || isHiddenName(name);
 }
 
-function collectCadSourceFiles(rootPath, result) {
+// Depth cap: far beyond what a real layout reaches, and enough to stop a
+// symlink-loop crash even if the visited-real-path tracking ever fails to see
+// one (mirrors develop's scanner guard).
+const SCAN_MAX_DEPTH = 64;
+
+function collectCadSourceFiles(rootPath, result, visited = null, depth = 0) {
+  // Directory symlinks are followed ON PURPOSE (ports b0f59af3 + 9bc6bd44's
+  // scanner semantics from develop): a symlinked model folder — this repo's
+  // own dev layout, or a link to a shared parts library — must catalog like a
+  // real directory. Dirent.isDirectory() is false for links, so resolve link
+  // targets with stat. Visited REAL directory paths terminate loops (`ln -s .
+  // loop`) and aliases; the depth cap is the outer guard. Walk order stays
+  // deterministic (sorted).
+  if (depth > SCAN_MAX_DEPTH) {
+    return result;
+  }
+  let realRoot;
+  try {
+    realRoot = fs.realpathSync(rootPath);
+  } catch {
+    return result;
+  }
+  if (visited === null) {
+    visited = new Set();
+  }
+  if (visited.has(realRoot)) {
+    return result;
+  }
+  visited.add(realRoot);
   let entries;
   try {
     entries = fs.readdirSync(rootPath, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
@@ -232,13 +272,24 @@ function collectCadSourceFiles(rootPath, result) {
   }
   for (const entry of entries) {
     const entryPath = path.join(rootPath, entry.name);
-    if (entry.isDirectory()) {
+    let isDirectory = entry.isDirectory();
+    let isFile = entry.isFile();
+    if (entry.isSymbolicLink()) {
+      try {
+        const stat = fs.statSync(entryPath);
+        isDirectory = stat.isDirectory();
+        isFile = stat.isFile();
+      } catch {
+        continue; // broken link
+      }
+    }
+    if (isDirectory) {
       if (!shouldSkipDirectory(entry.name)) {
-        collectCadSourceFiles(entryPath, result);
+        collectCadSourceFiles(entryPath, result, visited, depth + 1);
       }
       continue;
     }
-    if (!entry.isFile()) {
+    if (!isFile) {
       continue;
     }
     if (isHiddenName(entry.name)) {
