@@ -48,6 +48,8 @@ class ClosureCaptureTests(unittest.TestCase):
                         "import sys",
                         "import geom_helper",
                         *_FAKE_DOC_PRELUDE,
+                        "from cadgen import dxf",
+                        "@dxf",
                         "def drawing():",
                         "    size = geom_helper.SIZE_MM",
                         "    sys.modules.pop('geom_helper', None)",
@@ -72,6 +74,8 @@ class ClosureCaptureTests(unittest.TestCase):
                         [
                             "import geom_helper",
                             *_FAKE_DOC_PRELUDE,
+                            "from cadgen import dxf",
+                            "@dxf",
                             "def drawing():",
                             "    assert geom_helper.SIZE_MM > 0",
                             "    return {'document': _make_doc()}",
@@ -99,6 +103,8 @@ class ClosureCaptureTests(unittest.TestCase):
                 [
                     "import geom_helper",
                     *_FAKE_DOC_PRELUDE,
+                    "from cadgen import dxf",
+                    "@dxf",
                     "def drawing():",
                     "    if geom_helper.SIZE_MM > 0:",
                     "        raise RuntimeError('boom')",
@@ -110,6 +116,8 @@ class ClosureCaptureTests(unittest.TestCase):
                 [
                     "import geom_helper",
                     *_FAKE_DOC_PRELUDE,
+                    "from cadgen import dxf",
+                    "@dxf",
                     "def drawing():",
                     "    assert geom_helper.SIZE_MM > 0",
                     "    return {'document': _make_doc()}",
@@ -134,13 +142,15 @@ class ClosureCaptureTests(unittest.TestCase):
                 "WIDTH_MM = 12.0\n\ndef model():\n    return {'shape': object()}\n",
                 encoding="utf-8",
             )
-            (root / "part.py").write_text(
+            (root / "part_drawing.py").write_text(
                 "\n".join(
                     [
                         "from pathlib import Path",
                         "from cadgen.sources import load_source_module",
                         "_step = load_source_module(Path(__file__).with_name('part.py'))",
                         "import ezdxf",
+                        "from cadgen import dxf",
+                        "@dxf",
                         "def drawing():",
                         "    assert _step.WIDTH_MM > 0",
                         "    doc = ezdxf.new('R2010')",
@@ -155,9 +165,9 @@ class ClosureCaptureTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cad_generation.generate_dxf_targets([str(root / "part.py")])
+            cad_generation.generate_dxf_targets([str(root / "part_drawing.py")])
 
-            closure = _closure(root, "part")
+            closure = _closure(root, "part_drawing")
             self.assertIn("part.py", closure)
             for entry in closure:
                 resolved = (root / entry).resolve()

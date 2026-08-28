@@ -11,12 +11,12 @@ from tests.python.support.paths import add_repo_path, repo_path
 
 add_repo_path("skills/cad/scripts")
 
-from cadgen.cli import step_artifact as cli
+from cadgen.cli import step_import as cli
 
 _OK_PAYLOAD = {"ok": True, "packagePath": "/abs/__cadgen__/models/sample.step"}
 
 
-class ArtifactCliTests(unittest.TestCase):
+class ImportCliTests(unittest.TestCase):
     def test_requires_explicit_target(self) -> None:
         with self.assertRaises(SystemExit) as cm:
             cli.main([])
@@ -39,21 +39,14 @@ class ArtifactCliTests(unittest.TestCase):
 
         self.assertEqual(Path("imports/sample_part.stp"), build.call_args.kwargs["step"])
 
-    def test_generator_target_selects_generator_mode(self) -> None:
-        with mock.patch.object(cli, "build_step_artifact", return_value=_OK_PAYLOAD) as build:
-            self.assertEqual(0, cli.main(["parts/sample.py"]))
-
-        kwargs = build.call_args.kwargs
-        self.assertEqual(Path("parts/sample.step"), kwargs["step"])
-        self.assertEqual(Path("parts/sample.py"), kwargs["source_path"])
-
-    def test_plain_python_target_maps_to_sibling_step(self) -> None:
-        with mock.patch.object(cli, "build_step_artifact", return_value=_OK_PAYLOAD) as build:
-            self.assertEqual(0, cli.main(["parts/sample.py"]))
-
-        kwargs = build.call_args.kwargs
-        self.assertEqual(Path("parts/sample.step"), kwargs["step"])
-        self.assertEqual(Path("parts/sample.py"), kwargs["source_path"])
+    def test_model_scripts_are_refused_with_the_run_hint(self) -> None:
+        # A generated model needs no import: run its script. scripts/import is
+        # for foreign STEP/STP files only.
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as cm:
+            cli.main(["parts/sample.py"])
+        self.assertEqual(2, cm.exception.code)
+        self.assertIn("run it directly", stderr.getvalue())
 
     def test_passes_kind_force_and_mesh_flags(self) -> None:
         with mock.patch.object(cli, "build_step_artifact", return_value=_OK_PAYLOAD) as build:
@@ -101,7 +94,7 @@ class ArtifactCliTests(unittest.TestCase):
     def test_cli_does_not_reserve_common_module_name(self) -> None:
         skill_root = repo_path("skills/cad")
         code = (
-            "import sys; import cadgen.cli.step_artifact; "
+            "import sys; import cadgen.cli.step_import; "
             "print('common' in sys.modules); "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"

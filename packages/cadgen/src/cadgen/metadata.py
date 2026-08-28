@@ -222,8 +222,10 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
     if not decorated:
         return None
     if len(decorated) > 1:
+        from cadgen._internal.legacy_generators import InvalidModelScriptError
+
         joined = ", ".join(f"{fn.name}()" for fn, _, _ in decorated)
-        raise ValueError(
+        raise InvalidModelScriptError(
             f"{_display_path(script_path)} defines more than one CAD model ({joined}); "
             "a model file defines exactly one @step or @dxf entry"
         )

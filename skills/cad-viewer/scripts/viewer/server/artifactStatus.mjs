@@ -112,45 +112,44 @@ function validateStep(stepPath) {
   if (descriptor === null) {
     return { ok: false, code: "missing_step_topology", packageDir };
   }
+  // Generated-vs-imported is DESCRIPTOR PROVENANCE (sourceKind), never a
+  // sibling-filename check: the package records what produced it.
+  const generated = String(descriptor.sourceKind || "").trim().toLowerCase() === "python";
   if (descriptor.kind !== STEP_PACKAGE_KIND || !schemaVersionMatches(descriptor, STEP_PACKAGE_VERSION)) {
-    return { ok: false, code: "unsupported_step_topology", packageDir, descriptor };
+    return { ok: false, code: "unsupported_step_topology", packageDir, descriptor, generated };
   }
   const components = descriptor.components && typeof descriptor.components === "object"
     ? Object.values(descriptor.components)
     : [];
   if (!components.length) {
-    return { ok: false, code: "missing_glb", packageDir, descriptor };
+    return { ok: false, code: "missing_glb", packageDir, descriptor, generated };
   }
   for (const component of components) {
     const surf = String(component?.surf || "");
     if (!surf || !fs.existsSync(path.join(packageDir, surf))) {
-      return { ok: false, code: "missing_glb", packageDir, descriptor };
+      return { ok: false, code: "missing_glb", packageDir, descriptor, generated };
     }
   }
   // STEP bakes no settings; a descriptor claiming one came from another producer.
   if (!bakeHashMatches(descriptor, null)) {
-    return { ok: false, code: "stale_step_artifact", packageDir, descriptor };
+    return { ok: false, code: "stale_step_artifact", packageDir, descriptor, generated };
   }
-  // Generated-vs-imported is DESCRIPTOR PROVENANCE (sourceKind), never a
-  // sibling-filename check: the package records what produced it.
-  const generated = String(descriptor.sourceKind || "").trim().toLowerCase() === "python";
   if (generated) {
-    // Detached outputs: no source checks. A dangling entry cannot happen (the
-    // catalog lists generated entries by their source file).
-    return { ok: true, packageDir, descriptor };
+    // Detached outputs: no source checks, ever.
+    return { ok: true, packageDir, descriptor, generated };
   }
   // Imported file: the render is DERIVED from these bytes. Fails closed.
   const recorded = String(descriptor.stepHash || "").trim();
   if (fs.existsSync(stepPath)) {
     if (!recorded) {
-      return { ok: false, code: "missing_step_hash", packageDir, descriptor };
+      return { ok: false, code: "missing_step_hash", packageDir, descriptor, generated };
     }
     const current = sha256File(stepPath);
     if (current && recorded !== current) {
-      return { ok: false, code: "stale_step_artifact", digestMismatch: true, packageDir, descriptor };
+      return { ok: false, code: "stale_step_artifact", digestMismatch: true, packageDir, descriptor, generated };
     }
   }
-  return { ok: true, packageDir, descriptor };
+  return { ok: true, packageDir, descriptor, generated };
 }
 
 // --- the state machine --------------------------------------------------------

@@ -40,9 +40,24 @@ def run(skill: str, tool: str, *args: str) -> subprocess.CompletedProcess:
     )
 
 
+def run_model(*args: str) -> subprocess.CompletedProcess:
+    # Library-first: the model script IS the entrypoint; same stream contract
+    # as every CLI. Cold keeps the child self-contained.
+    env = dict(os.environ)
+    own_cadgen = str(REPO / "packages" / "cadgen" / "src")
+    env["PYTHONPATH"] = os.pathsep.join(
+        [own_cadgen, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
+    )
+    env["CADGEN_WARM"] = "0"
+    return subprocess.run(
+        [sys.executable, str(REPO / PART), *args],
+        cwd=REPO, capture_output=True, text=True, check=False, env=env,
+    )
+
+
 class StdoutIsTheResultTests(unittest.TestCase):
     def test_gen_answers_on_stdout(self):
-        result = run("cad", "gen", PART)
+        result = run_model()
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(
             result.stdout.strip(),
@@ -54,7 +69,7 @@ class StdoutIsTheResultTests(unittest.TestCase):
         self.assertTrue(path.strip())
 
     def test_gen_json_is_one_compact_line_per_target(self):
-        result = run("cad", "gen", "--json", PART)
+        result = run_model("--json")
         self.assertEqual(0, result.returncode, result.stderr)
         lines = [line for line in result.stdout.splitlines() if line.strip()]
         self.assertEqual(1, len(lines))
@@ -76,7 +91,7 @@ class StderrIsEverythingElseTests(unittest.TestCase):
                 self.assertNotIn("[scripts/", result.stdout)
 
     def test_a_result_survives_discarding_stderr(self):
-        result = run("cad", "gen", "--json", PART)
+        result = run_model("--json")
         import json
 
         payload = json.loads(result.stdout.strip())

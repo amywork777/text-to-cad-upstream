@@ -84,7 +84,7 @@ require_command() {
 # otherwise be bundled against a different tree. An explicit
 # CAD_VIEWER_PACKAGE_MANAGER still wins.
 resolve_viewer_package_manager() {
-  if [ -n "$VIEWER_PACKAGE_MANAGER" ]; then
+  if [ -n "${VIEWER_PACKAGE_MANAGER:-}" ]; then
     echo "$VIEWER_PACKAGE_MANAGER"
     return
   fi

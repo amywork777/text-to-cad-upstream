@@ -498,7 +498,10 @@ class InspectRefsTests(unittest.TestCase):
     def test_python_backed_glb_only_entry_inspects_without_step_file(self) -> None:
         self.step_path.unlink()
         script_path = self.step_path.with_suffix(".py")
-        script_path.write_text("def model():\n    return object()\n", encoding="utf-8")
+        script_path.write_text(
+            "from cadgen import step\n@step\ndef model():\n    return {'shape': object()}\n",
+            encoding="utf-8",
+        )
         source_identity = python_source_hash(script_path)
         manifest = {
             **_summary_manifest(self.cad_ref),
@@ -653,7 +656,7 @@ class InspectRefsTests(unittest.TestCase):
         self.assertIn("\nRegenerate STEP artifacts with the following command using the CAD skill:", error["message"])
         self.assertNotIn("scripts.gen", error["message"])
         self.assertIn("regenerateCommand", error)
-        self.assertEqual("python scripts/gen", error["regenerateCommand"])
+        self.assertEqual("python", error["regenerateCommand"])
 
     def test_legacy_cad_ref_mismatch_is_accepted_when_hash_matches(self) -> None:
         with self._mock_glb_topology({**_refs_manifest("other/ref"), "stepHash": "step-hash-123"}):
@@ -679,6 +682,8 @@ class InspectRefsTests(unittest.TestCase):
         assembly_step_path = self.temp_root / "sample-assembly.step"
         assembly_path.write_text(
             "from build123d import Box, Compound\n"
+            "from cadgen import step\n"
+            "@step\n"
             "def model():\n"
             "    return Compound(children=[Box(1, 1, 1), Box(1, 1, 1)], label='sample')\n",
             encoding="utf-8",

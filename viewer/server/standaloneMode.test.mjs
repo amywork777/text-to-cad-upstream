@@ -80,7 +80,7 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
     }),
   );
   write(root, "never-imported.step", "ISO-10303-21;\nEND-ISO-10303-21;\n");
-  write(root, "unbuilt.step.py", "def gen_step():\n    return None\n");
+  write(root, "unbuilt.py", "from cadgen import step\n@step\ndef model():\n    return None\n");
 
   const base = await startApp(t, { root });
 
@@ -108,20 +108,29 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   assert.equal(status.state, "error");
   assert.match(String(status.error || ""), /has not been imported yet/);
 
-  // An unbuilt generated entry is not the viewer's to build: it names the CLI,
-  // and a build POST refuses the same way.
-  const generatorRef = path.join(root, "unbuilt.step.py");
+  // A model script is not the viewer's business at all (artifacts-only
+  // catalog): status and build both answer as a no-op — nothing to manage.
+  const generatorRef = path.join(root, "unbuilt.py");
   status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(generatorRef)}`)).json();
-  assert.equal(status.state, "error");
-  assert.match(String(status.error || ""), /scripts\/gen/);
-  const refused = await (
+  assert.equal(status.state, "ready");
+  const scriptPost = await (
     await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(generatorRef)}`, {
       method: "POST",
       headers: { "x-cadgen-viewer": "1" },
     })
   ).json();
+  assert.equal(scriptPost.ok, true);
+
+  // A build POST on an artifact the viewer cannot build refuses with the
+  // run-the-script hint (the WASM kernel is disabled above).
+  const refused = await (
+    await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(path.join(root, "never-imported.step"))}`, {
+      method: "POST",
+      headers: { "x-cadgen-viewer": "1" },
+    })
+  ).json();
   assert.equal(refused.ok, false);
-  assert.match(String(refused.error || ""), /scripts\/gen/);
+  assert.match(String(refused.error || ""), /python <source>/);
 
   // The render data itself serves: catalog lists the entry and its component
   // surf streams — everything the viewport needs, no Python anywhere.

@@ -41,12 +41,31 @@ class DirAwareManifestReaderTests(unittest.TestCase):
 
 class PackageFreshnessGateTests(unittest.TestCase):
     def _generated_spec(self, model_dir: Path) -> generation.EntrySpec:
+        from cadgen.metadata import GeneratorMetadata
+
         script = model_dir / "part.py"
-        script.write_text("def model():\n    return None\n", encoding="utf-8")
+        script.write_text(
+            "from cadgen import step\n@step\ndef model():\n    return None\n",
+            encoding="utf-8",
+        )
+        metadata = GeneratorMetadata(
+            script_path=script,
+            kind="assembly",
+            display_name=None,
+            generator_names=("model",),
+            has_gen_step=True,
+            has_gen_dxf=False,
+            mesh_tolerance=None,
+            mesh_angular_tolerance=None,
+            entry_function="model",
+            write_target=None,
+            is_decorated=True,
+        )
         return generation.EntrySpec(
             source_ref="part.py",
             cad_ref="part",
             kind="assembly",
+            generator_metadata=metadata,
             source_path=script,
             display_name="part",
             source="generated",
@@ -106,12 +125,31 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
     forever. These pin the schema-version and bake gates on this side."""
 
     def _spec(self, model_dir: Path) -> generation.EntrySpec:
+        from cadgen.metadata import GeneratorMetadata
+
         script = model_dir / "part.py"
-        script.write_text("def model():\n    return None\n", encoding="utf-8")
+        script.write_text(
+            "from cadgen import step\n@step\ndef model():\n    return None\n",
+            encoding="utf-8",
+        )
+        metadata = GeneratorMetadata(
+            script_path=script,
+            kind="assembly",
+            display_name=None,
+            generator_names=("model",),
+            has_gen_step=True,
+            has_gen_dxf=False,
+            mesh_tolerance=None,
+            mesh_angular_tolerance=None,
+            entry_function="model",
+            write_target=None,
+            is_decorated=True,
+        )
         return generation.EntrySpec(
             source_ref="part.py",
             cad_ref="part",
             kind="assembly",
+            generator_metadata=metadata,
             source_path=script,
             display_name="part",
             source="generated",

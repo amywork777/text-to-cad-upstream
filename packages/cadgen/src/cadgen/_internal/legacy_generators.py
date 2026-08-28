@@ -18,6 +18,14 @@ class LegacyGeneratorError(ValueError):
     retired .step.py/.dxf.py naming."""
 
 
+class InvalidModelScriptError(ValueError):
+    """A script whose model DECLARATION is malformed in a way directory
+    discovery should skip-with-a-note rather than abort on (e.g. two models in
+    one file). Contract violations inside a single model (bad envelope fields,
+    bad decorator arguments) stay plain ValueErrors and DO abort, because an
+    explicitly-targeted build must fail loudly."""
+
+
 def _display(script_path: Path) -> str:
     resolved = Path(script_path).resolve()
     try:

@@ -25,7 +25,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 VIEWER_DIR = REPO_ROOT / "viewer"
-VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cadgen-runtime.sh"
+# The resolver moved with viewer bundling when the viewer left the cadgen
+# wheel (cadgen/viewer split): the cad-viewer skill bundler owns it now.
+VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cad-viewer.sh"
 IMPLICITJS_RUNNER = REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs"
 NODE_MODULE_SUPPORT = (
     REPO_ROOT / "packages" / "cadjs" / "src" / "lib" / "implicitCad" / "nodeModuleSupport.js"
@@ -70,9 +72,10 @@ def resolved_viewer_package_manager(*lockfiles: str, override: str = "") -> str:
         env.update(
             {
                 "PATH": f"{bin_dir}:{env.get('PATH', '')}",
-                # The resolver reads the viewer SOURCE dir; in bundle-cadgen-runtime.sh
-                # VIEWER_DIR is the packaged output, so the source is VIEWER_SRC.
+                # The resolver reads the viewer SOURCE dir; the two bundlers have
+                # spelled that variable differently over time, so set both.
                 "VIEWER_SRC": str(viewer_dir),
+                "VIEWER_DIR": str(viewer_dir),
                 "VIEWER_PACKAGE_MANAGER": override,
             }
         )

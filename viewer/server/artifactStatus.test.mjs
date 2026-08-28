@@ -91,21 +91,21 @@ test("imported STEP: digest gate fails closed (stale, blank, and absent hashes)"
 
 test("generated entries are detached: no source checks, ever", (t) => {
   const root = tempRoot(t, "status-");
-  // A .step.py entry keyed to its sibling package; no stepHash recorded, no
-  // closure recorded, source edited after the build — all still READY.
-  writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: null });
-  const generator = write(root, "widget.step.py", "def gen_step():\n    return 1\n");
-  assert.deepEqual(artifactStatus(generator, root), { state: ARTIFACT_STATE.READY });
-  fs.writeFileSync(generator, "def gen_step():\n    return 999  # edited\n");
-  assert.deepEqual(artifactStatus(generator, root), { state: ARTIFACT_STATE.READY });
+  // Python-backedness is descriptor PROVENANCE (sourceKind), never a sibling
+  // filename: no stepHash recorded, source edited after the build — all READY.
+  const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: null });
+  const generator = write(root, "widget.py", "from cadgen import step\n@step\ndef model():\n    return 1\n");
+  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
+  fs.writeFileSync(generator, "from cadgen import step\n@step\ndef model():\n    return 999\n");
+  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });
 
-test("a same-stem generator owns the exported .step (digest gate does not apply)", (t) => {
+test("provenance owns the digest gate: a python-backed .step skips it", (t) => {
   const root = tempRoot(t, "status-");
   const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: "recorded-at-export" });
-  write(root, "widget.step.py", "def gen_step():\n    return 1\n");
-  // The exported file's bytes do not match the recorded hash, but the entry is
-  // generated (same-stem gen_step generator) -> detached -> ready.
+  // The exported file's bytes do not match the recorded hash, but the
+  // DESCRIPTOR says python-backed -> detached -> ready. No sibling script is
+  // consulted (none exists here).
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });
 
@@ -132,16 +132,14 @@ test("STEP bakes nothing, so a recorded bake is stale; missing payloads and pack
   assert.equal(status.reason, "missing_glb");
 });
 
-test("generated DXF: only the sibling's absence needs a build", (t) => {
+test("drawing scripts are not status subjects (artifacts-only)", (t) => {
   const root = tempRoot(t, "status-");
-  const generator = write(root, "outline.dxf.py", "def gen_dxf():\n    return None\n");
-  assert.equal(artifactStatus(generator, root).reason, "missing_dxf_output");
-  write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
-  assert.deepEqual(artifactStatus(generator, root), { state: ARTIFACT_STATE.READY });
-  // Edited source, hand-edited output: still ready (detached outputs).
-  fs.writeFileSync(generator, "def gen_dxf():\n    return 2\n");
-  fs.appendFileSync(path.join(root, "outline.dxf"), "999\n");
-  assert.deepEqual(artifactStatus(generator, root), { state: ARTIFACT_STATE.READY });
+  // Scripts are never catalog entries; a .dxf renders directly with no
+  // artifact to manage, so status owns neither form.
+  const generator = write(root, "outline.py", "from cadgen import dxf\n@dxf\ndef drawing():\n    return None\n");
+  assert.equal(artifactStatus(generator, root).state, ARTIFACT_STATE.ERROR);
+  const drawing = write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
+  assert.equal(artifactStatus(drawing, root).state, ARTIFACT_STATE.ERROR);
 });
 
 test("the lock snapshot decides generating/busy/blocked; freshness decides the rest", (t) => {

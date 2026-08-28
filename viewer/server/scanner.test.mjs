@@ -27,13 +27,18 @@ function write(root, rel, content = "") {
   return p;
 }
 
-test("unbuilt generated entries are listed (built on demand)", (t) => {
+test("the catalog is artifacts-only: scripts never list", (t) => {
+  // Library-first: a model with no artifact does not appear until its script
+  // has been run; artifact->source is descriptor provenance, not filenames.
   const root = tmpRoot(t);
-  write(root, "widget.step.py", "def gen_step():\n    return None\n");
-  write(root, "outline.dxf.py", "def gen_dxf():\n    return None\n");
+  write(root, "widget.py", "from cadgen import step\n@step\ndef model():\n    return None\n");
+  write(root, "outline.py", "from cadgen import dxf\n@dxf\ndef drawing():\n    return None\n");
   const files = scanCadDirectory(root).entries.map((e) => e.file);
-  assert.ok(files.includes("widget.step.py"));
-  assert.ok(files.includes("outline.dxf.py"));
+  assert.deepEqual(files, []);
+  // Once artifacts exist, THEY are the entries.
+  write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
+  const built = scanCadDirectory(root).entries.map((e) => e.file);
+  assert.deepEqual(built, ["outline.dxf"]);
 });
 
 test("a generated model keys its package by the STEP file it outputs", (t) => {
@@ -57,18 +62,12 @@ test("the asset dir is unresolved while the lock dir is resolved", (t) => {
   assert.equal(renderPackageDir(src), fs.realpathSync(assetDir));
 });
 
-test("a generated drawing's asset is its sibling .dxf once gen has written it", (t) => {
+test("a written drawing lists as its own .dxf entry", (t) => {
   const root = tmpRoot(t);
-  write(root, "outline.dxf.py", "def gen_dxf(): ...\n");
-  // Unbuilt: no asset yet — the entry lists and reports needs-build when opened.
-  let entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf.py");
-  assert.equal(entry.kind, "dxf");
-  assert.equal(entry.sourceKind, "python");
-  assert.equal(entry.url, "");
-  assert.equal(entry.hash, "");
-  // Built: gen always writes the sibling, and THAT file is what the client parses.
+  write(root, "outline.py", "from cadgen import dxf\n@dxf\ndef drawing(): ...\n");
+  // The script never lists; the .dxf the run writes is the entry the client parses.
   write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
-  entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf.py");
+  const entry = scanCadDirectory(root).entries.find((e) => e.file === "outline.dxf");
   assert.ok(entry.url.includes("outline.dxf?v="));
   assert.ok(entry.hash.length === 64);
   assert.equal(entry.relations, undefined);

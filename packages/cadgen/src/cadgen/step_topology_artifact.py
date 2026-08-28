@@ -401,11 +401,26 @@ def _python_source_for_target(target: ResolvedStepTarget) -> Path | None:
         return None
     if source_is_generator:
         return target.source_path
-    # The generator for `<name>.step` is `<name>.step.py` (append `.py` to the
-    # full filename) under the entry convention.
-    candidate = target.step_path.with_name(target.step_path.name + ".py")
+    # Artifact->source is descriptor PROVENANCE first (library-first: filenames
+    # carry no linkage); the sibling `<stem>.py` is accepted only when it
+    # statically declares a model, as the regenerate hint for a missing artifact.
+    from cadgen.catalog import render_package_dir, source_from_path
+    from cadgen._internal.component_package import read_package_descriptor
+
+    descriptor = read_package_descriptor(render_package_dir(target.step_path))
+    recorded = str((descriptor or {}).get("sourcePath") or "").strip()
+    if recorded:
+        candidate = (target.step_path.parent / recorded).resolve()
+        if candidate.is_file():
+            return candidate
+    candidate = target.step_path.with_suffix(".py")
     if candidate.is_file():
-        return candidate
+        try:
+            source = source_from_path(candidate)
+        except Exception:  # noqa: BLE001 - a broken sibling is not a generator
+            return None
+        if source is not None and source.step_path is not None:
+            return candidate
     return None
 
 

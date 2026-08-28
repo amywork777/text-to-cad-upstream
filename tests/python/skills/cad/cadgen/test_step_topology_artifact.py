@@ -70,7 +70,10 @@ class StepArtifactsTests(unittest.TestCase):
             root = Path(temporary_directory)
             step_path = root / "part.step"
             generator_path = root / "part.py"
-            generator_path.write_text("def model():\n    return None\n", encoding="utf-8")
+            generator_path.write_text(
+                "from cadgen import step\n@step\ndef model():\n    return {'shape': object()}\n",
+                encoding="utf-8",
+            )
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -78,6 +81,8 @@ class StepArtifactsTests(unittest.TestCase):
                 source_path=step_path,
                 step_path=step_path,
             )
+            # The sibling is accepted only because it DECLARES a model; a plain
+            # .py beside a missing artifact stays a non-source.
             self.assertEqual(step_artifacts._python_source_for_target(target), generator_path)
 
     def test_existing_step_spec_can_reuse_python_backed_glb_when_step_hash_matches(self) -> None:
@@ -208,6 +213,8 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
             root = Path(temp)
             step_path = root / "part.step"
             script_path = root / "part.py"
+            from cadgen.metadata import GeneratorMetadata
+
             spec = generation.EntrySpec(
                 source_ref="part.py",
                 cad_ref="part",
@@ -217,6 +224,19 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
                 source="generated",
                 step_path=step_path,
                 script_path=script_path,
+                generator_metadata=GeneratorMetadata(
+                    script_path=script_path,
+                    kind="assembly",
+                    display_name=None,
+                    generator_names=("model",),
+                    has_gen_step=True,
+                    has_gen_dxf=False,
+                    mesh_tolerance=None,
+                    mesh_angular_tolerance=None,
+                    entry_function="model",
+                    write_target=None,
+                    is_decorated=True,
+                ),
             )
             target = ResolvedStepTarget(
                 cad_path="part", kind="assembly", source_path=script_path, step_path=step_path

@@ -60,16 +60,12 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             self.assertIsNone(source.step_path)
             self.assertEqual(script_path.with_suffix(".dxf"), source.dxf_path)
 
-    def test_directory_catalog_skips_plain_py_dxf_only_source(self) -> None:
-        # Plain `<name>.py` drawing sources stay explicit-target-only; catalog
-        # entries require the `.py` naming.
+    def test_directory_catalog_lists_any_decorated_dxf_source(self) -> None:
+        # Library-first: any plain .py declaring a @dxf model is a first-class
+        # drawing entry — the retired .dxf.py naming carried no meaning worth
+        # keeping once the decorator is the declaration.
         with temporary_directory(prefix="dxf-skill") as root:
-            _write_standalone_source(Path(root))
-            self.assertEqual((), cad_catalog.iter_cad_sources(Path(root)))
-
-    def test_directory_catalog_lists_dxf_generator_entry(self) -> None:
-        with temporary_directory(prefix="dxf-skill") as root:
-            script_path = _write_standalone_source(Path(root), stem="outline.dxf")
+            script_path = _write_standalone_source(Path(root))
             sources = cad_catalog.iter_cad_sources(Path(root))
 
             self.assertEqual(1, len(sources))
@@ -137,6 +133,8 @@ class StandaloneDxfSourceTests(unittest.TestCase):
                         "class _FakeDxf:",
                         "    def saveas(self, output_path):",
                         "        pass",
+                        "from cadgen import dxf",
+                        "@dxf",
                         "def drawing():",
                         "    return {'document': _FakeDxf()}",
                         "",
@@ -150,28 +148,28 @@ class StandaloneDxfSourceTests(unittest.TestCase):
 
     def test_the_two_authorities_answer_different_questions_by_design(self) -> None:
         # The CLI's no-op gate (cadgen._internal.dxf_output) reads the output
-        # record to decide whether an EXPLICIT gen run can skip work. The
-        # render-side validator deliberately does NOT: generated outputs are
-        # detached from their code, so a source edit flips the CLI gate while
-        # the viewer keeps rendering the existing .dxf as ready.
+        # record to decide whether an EXPLICIT run can skip work. The viewer has
+        # no gate at all any more: scripts are not catalog entries, the .dxf
+        # renders directly, and detached outputs mean a source edit flips the
+        # CLI gate while the drawing on disk keeps rendering untouched.
         from cadgen._internal.dxf_output import dxf_output_current
-        from tests.python.support.js_status import js_artifact_status
 
         with temporary_directory(prefix="dxf-skill") as root:
-            script_path = _write_standalone_source(Path(root), stem="outline.dxf")
+            script_path = _write_standalone_source(Path(root))
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertTrue(dxf_output_current(script_path))
-            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
+            sibling = script_path.with_suffix(".dxf")
+            rendered = sibling.read_bytes()
 
             script_path.write_text(STANDALONE_DXF_SOURCE.replace("(40, 0)", "(60, 0)") + "\n")
             self.assertFalse(dxf_output_current(script_path))
-            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
+            self.assertEqual(rendered, sibling.read_bytes(), "a source edit must not touch the drawing")
 
-            # An explicit gen run regenerates (the CLI gate is why it is not a
-            # no-op), after which both are current again.
+            # An explicit run regenerates (the CLI gate is why it is not a
+            # no-op), after which the gate is current again.
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertTrue(dxf_output_current(script_path))
-            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
+            self.assertNotEqual(rendered, sibling.read_bytes())
 
 
 if __name__ == "__main__":

@@ -285,7 +285,11 @@ def render_package_dir(entry_path: Path) -> Path:
 
 
 def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:
-    from cadgen._internal.legacy_generators import MIGRATION_DOC, LegacyGeneratorError
+    from cadgen._internal.legacy_generators import (
+        MIGRATION_DOC,
+        InvalidModelScriptError,
+        LegacyGeneratorError,
+    )
 
     sources: list[CadSource] = []
     legacy_count = 0
@@ -300,10 +304,12 @@ def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:
             # EXPLICIT targeting still raises the full teaching error.
             legacy_count += 1
             continue
-        except CadSourceError as exc:
-            # Directory discovery is resilient: one invalid generator must not
-            # abort catalog-wide operations on unrelated targets. Explicitly
-            # targeting the file (source_from_path) still raises the pointed error.
+        except (CadSourceError, InvalidModelScriptError, RuntimeError) as exc:
+            # Directory discovery is resilient: an unparseable script or a
+            # malformed model DECLARATION must not abort catalog-wide operations
+            # on unrelated targets. A single model's contract violations (bad
+            # envelope fields, bad decorator args) still raise: an explicitly
+            # authored model that cannot build must fail loudly everywhere.
             print(f"[cadgen] skipping invalid CAD source: {exc}", file=sys.stderr)
             continue
         if source is not None:

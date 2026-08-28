@@ -19,7 +19,6 @@ from cadgen.daemon import client as daemon_client
 from cadgen.daemon import transport
 
 DAEMON_DIR = REPO_ROOT / "packages" / "cadgen" / "src" / "cadgen" / "daemon"
-GEN_LAUNCHER = REPO_ROOT / "skills" / "cad" / "scripts" / "gen"
 SPAWN_WAIT_SECONDS = 90.0  # daemon startup pays the full OCP import once
 
 BOX_SOURCE = """\
@@ -82,8 +81,9 @@ class CadgenDaemonTests(unittest.TestCase):
 
         # Build inline (cold) first so the daemon request is a warm current-skip.
         build_env = {k: v for k, v in os.environ.items() if k != "CADGEN_WARM"}
+        build_env["CADGEN_WARM"] = "0"  # inline: the daemon under test starts below
         build = subprocess.run(
-            [sys.executable, str(GEN_LAUNCHER), "box.py"],
+            [sys.executable, "box.py"],
             cwd=cls.model_dir,
             env=build_env,
             capture_output=True,
@@ -144,7 +144,7 @@ class CadgenDaemonTests(unittest.TestCase):
         with mock.patch.dict(os.environ, env):
             os.environ.pop("CADGEN_DAEMON_CHILD", None)
             with redirect_stdout(out), redirect_stderr(err):
-                exit_code = daemon_client.run_via_daemon("gen", argv, cwd=str(self.model_dir))
+                exit_code = daemon_client.run_via_daemon("run", argv, cwd=str(self.model_dir))
         return exit_code, out.getvalue() + err.getvalue()
 
     def test_a_warm_gen_request_skips_current_model(self) -> None:
@@ -163,7 +163,7 @@ class CadgenDaemonTests(unittest.TestCase):
     def test_c_version_token_mismatch_triggers_restart(self) -> None:
         frames = _raw_request(
             self.address,
-            {"tool": "gen", "argv": ["box.py"], "cwd": str(self.model_dir), "token": -1},
+            {"tool": "run", "argv": ["box.py"], "cwd": str(self.model_dir), "token": -1},
         )
         self.assertEqual([{"restart": True}], frames)
         # The server clears its address BEFORE replying, then exits cleanly. Only POSIX
@@ -199,7 +199,7 @@ class CadgenDaemonTests(unittest.TestCase):
         channel = transport.connect(str(self.address), _authkey())
         try:
             channel.send(json.dumps({
-                "tool": "gen",
+                "tool": "run",
                 "argv": ["box_orphan.py"],
                 "cwd": str(self.model_dir),
                 "token": daemon_client.compute_version_token(),
@@ -232,7 +232,7 @@ class CadgenDaemonTests(unittest.TestCase):
             {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)},
         ):
             exit_code = daemon_client.run_via_daemon(
-                "gen", ["box_orphan.py"], str(self.model_dir)
+                "run", ["box_orphan.py"], str(self.model_dir)
             )
         self.assertEqual(exit_code, 0, self.log_path.read_text())
 
