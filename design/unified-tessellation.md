@@ -112,4 +112,26 @@ quality ceiling this architecture exists to reach.
 
 ## Execution log
 
-(append as phases land)
+- Phase 0 measured (2026-08-28). At production settings, per-triangle the JS
+  tessellator is ~3.5x FASTER than BRepMesh (207k vs 58k tris/s on moonwatch);
+  wall-clock gaps were entirely density (a flat 8-segment-per-pcurve floor).
+  Baseline (pre-change): planetary 163ms/24.8k tris, turbofan 1.22s/170k,
+  moonwatch 29.5s/6.11M, with a large sliver population. OCCT at descriptor
+  deflections: 95ms/4.2k, 0.30s/23.9k, 3.85s/223k.
+- Phase 1 shipped (same session): shared per-edge polylines (exact 3D curves,
+  arc-fraction addressed, corner/seam-welded), face boundaries mapped through
+  arclength correspondence with a loop-tolerance decimation of the chord-fine
+  polyline (display overlays reuse the fine polyline, so drawn edges coincide
+  with mesh boundaries), boundary vertices pinned through ONE evaluator
+  (edgePointAt: exact-curve evaluation at interpolated parameters), a
+  cross-face conformity pass that fan-splits to the union of boundary
+  fractions (seam-side-aware mint cache, uv-guarded welds so periodic seam
+  pairs never merge), and a post-conformity interior refinement of the minted
+  fans. The 8-segment loop floor is adaptive (closed pcurves keep it).
+  Gates in packages/cadjs/src/lib/surf/tessellateWatertight.test.js:
+  bit-identical shared boundary vertices, every boundary segment covered by
+  exactly two faces, boundary vertices on the exact curves. Volume/area
+  invariants pass (mixed needed angleTolerance 0.45 -> 0.35).
+  AFTER: planetary 167ms/6.4k tris (3.9x fewer, same speed), turbofan
+  1.69s/146k, moonwatch 18.2s/2.2M — 38% faster than pre-change with 2.8x
+  fewer triangles, watertight. cadjs 1009 + viewer 388 green.
