@@ -182,3 +182,19 @@ entry says so.
     if a future cleanup wants it gone, check test_generation_lock_state.py
     first.
 
+## Unified-tessellation follow-ups (2026-08-28)
+
+27. **Phase 5 (viewport LOD) is designed but not built.** Phases 0-4 of
+    `design/unified-tessellation.md` shipped (one tessellator for render and
+    export, OCCT meshes nothing); Phase 5 — zooming a component
+    re-tessellates it at finer tolerance from its exact surfaces — was
+    deliberately scoped out. The groundwork is in place: the component mesh
+    cache is already keyed the way LOD needs
+    (`~/.cache/cadgen/meshes/<cid>-l<chord>-a<angle>.tess`), though the
+    viewer does not read it yet (only `bin/mesh-export.mjs` does). The open
+    design questions are the re-tessellation trigger (zoom thresholds vs
+    per-component screen-space error, plus debounce so orbiting does not
+    thrash), cancellable/prioritized worker re-tessellation, and a swap-in
+    path that does not drop frames on 2M-triangle models. This is the
+    render-quality ceiling the unified architecture exists to reach.
+
