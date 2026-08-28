@@ -1,10 +1,9 @@
-"""``cadgen.coordination`` must stay importable by the CAD Viewer's long-lived server.
+"""``cadgen.coordination`` must stay stdlib-only and instant to import.
 
-This replaces the real job of tests/python/global/test_viewer_cadgen_mirror.py. That test
-pinned two hand-written copies of the coordination protocol against each other by comparing
-path STRINGS; the property it was actually protecting is this one -- the viewer's server
-process must never drag OCP/build123d/ezdxf into itself. Testing the invariant directly is
-strictly stronger than testing a proxy for it, and it is what makes deleting the copy safe.
+Every CLI front door imports it (locks, status records) before deciding whether a
+daemon can serve the request, so dragging OCP/build123d/ezdxf into it would put a
+multi-second import in front of every command -- including the no-op ones the
+coordination layer exists to make cheap.
 
 Runs in a FRESH interpreter: asserting on sys.modules inside the existing one would pass
 trivially or fail spuriously depending on what the rest of the suite imported first.

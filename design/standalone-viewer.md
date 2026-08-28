@@ -175,6 +175,20 @@ For raw STEP files that never met the pipeline, on Python-less machines:
      The freshness test suite lives with the authority
      (viewer/server/artifactStatus.test.mjs); Python suites that need a
      verdict ask through tests/python/support/js_status.py.
+- Amendment (2026-08-28, user decision): the viewer is a STATIC VISUALIZATION
+  TOOL and runs no Python, ever. Removed: the render_ops module and every
+  viewer spawn of it (build, export, probe, the lock-snapshot primitive), the
+  export routes/UI (server /__cad/export, StepExportDropdown, modelExport,
+  clientMeshExport, the exportFormats/clientMeshExport capabilities — the
+  CLIs own ALL exporting, implicits included), and viewer builds of generated
+  entries (.step.py/.dxf.py without artifacts report "run scripts/gen", never
+  needs-build — consistent with detached outputs). A CLI build in flight shows
+  a generating badge ADVISORILY from its status record (fresh + non-terminal);
+  the viewer never contends for the generation lock, so the lock.py
+  no-liveness-inference rules are not violated — nothing acts on the badge.
+  The WASM import of raw foreign STEPs remains the viewer's only build
+  (VIEWER_WASM_IMPORT=0 disables). cadgen.coordination.snapshot() stays as
+  the producer-side kernel read (contended builds, tests).
 - Policy amendment (2026-08-28, user decision): generated outputs are DETACHED
   from their source code. The render-side validators (render_ops
   validate_step/dxf/implicit_freshness) no longer read source closures or the

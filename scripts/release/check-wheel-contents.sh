@@ -50,10 +50,8 @@ REQUIRED=(
   "cadgen/urdf_source.py"
   "cadgen/srdf_validation.py"
   "cadgen/findings.py"
-  # The render-ops CLI is the viewer's one Python touchpoint; the two registry CLIs
-  # (`cadgen viewer list`/`stop`) are the only way to find or stop a running viewer,
-  # so a packaging regression that dropped them
-  "cadgen/render_ops.py"
+  # The registry CLIs (`cadgen viewer list`/`stop`) are the only way to find or
+  # stop a running viewer, so a packaging regression that dropped them
   "cadgen/cli/viewer_start.py"
   "cadgen/cli/viewer_registry.py"
   "cadgen/cli/viewer_list.py"

@@ -65,7 +65,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.calls = self.root / "gen_calls.log"
 
     def _build(self, *extra):
-        """Run the module exactly as cadgen/render_ops.py does."""
+        """Run the module exactly as the warm daemon dispatch does."""
         proc = subprocess.run(
             [
                 sys.executable, "-m", "cadgen.step_artifact_cli",

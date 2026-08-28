@@ -259,8 +259,8 @@ def _package_descriptor_matches_spec(
     the monolith validator always failed and every build re-ran gen_step plus
     the full-scene mesh; validate against the package descriptor instead.
 
-    The schema-version and bake gates below mirror the viewer's validator
-    (``cadgen/render_ops.py``) exactly. A check made only by the VIEWER is worse than
+    The schema-version and bake gates below mirror the viewer's JS status
+    authority (``viewer/server/artifactStatus.mjs``) exactly. A check made only by the VIEWER is worse than
     no check at all: it would report stale, this predicate would report current,
     the build would no-op, and the request would settle ``ready`` on the stale package.
     The imported-STEP digest gate is already fail-closed here

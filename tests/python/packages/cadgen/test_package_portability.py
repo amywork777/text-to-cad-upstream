@@ -179,9 +179,13 @@ class PackagePortabilityTest(unittest.TestCase):
             build_implicit_artifact(repo_root=root, source_path=root / "orb.implicit.js")
 
     def _validators(self, root: Path):
+        # Implicit entries are deliberately absent: the viewer renders them live
+        # from their source and does not artifact-manage them, so portability of
+        # their baked package is the producer gate's business
+        # (implicit_package_current, exercised by the no-op pass above).
         checks = ["widget.step.py", "rig.step.py", "imported.step"]
         if HAS_NODE:
-            checks += ["sheet.dxf.py", "orb.implicit.js"]
+            checks += ["sheet.dxf.py"]
         return [(name, str(root), str(root / name)) for name in checks]
 
     def test_every_package_kind_was_actually_built(self) -> None:

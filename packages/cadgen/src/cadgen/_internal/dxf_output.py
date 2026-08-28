@@ -15,7 +15,7 @@ is this one small record, which is what makes an unchanged source a no-op:
     }
 
 ``dxf_output_current`` is BOTH freshness authorities: the CLI's no-op gate and
-the render-side validator (cadgen.render_ops) call it, so the two can never
+the retired render-side validator called it, so the two could never
 disagree about staleness. Everything here is stdlib-only — the render side
 imports this module into a process that must never load ezdxf/OCP.
 """

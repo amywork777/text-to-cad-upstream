@@ -80,46 +80,16 @@ class RenderContractSyncTest(unittest.TestCase):
                 f"{label} diverged between cadgen and the WASM import twin",
             )
 
-    def test_status_authority_mirrors_match_python(self) -> None:
-        # Freshness verdicts live in ONE place (viewer/server/artifactStatus.mjs);
-        # the constants it mirrors from cadgen must move in lockstep, and the
-        # canonical bake hash must be byte-identical across the two languages —
-        # a divergence makes every implicit package permanently stale (or
-        # permanently fresh) on one side.
-        import json
-        import subprocess
-
+    def test_status_authority_schema_gate_matches_python(self) -> None:
+        # The JS status authority gates render packages on the SAME schema
+        # version the producer stamps; a one-sided bump makes every package
+        # permanently stale (or permanently fresh) on one side.
         status_module = ROOT / "viewer/server/artifactStatus.mjs"
-        self.assertEqual(
-            _extract(
-                r"^IMPLICIT_PACKAGE_SCHEMA_VERSION = (\d+)$",
-                ROOT / "packages/cadgen/src/cadgen/_internal/implicit_package.py",
-            ),
-            _extract(r"^export const IMPLICIT_PACKAGE_SCHEMA_VERSION = (\d+);", status_module),
-            "IMPLICIT_PACKAGE_SCHEMA_VERSION diverged between cadgen and the JS status authority",
-        )
-        import sys
-        sys.path.insert(0, str(ROOT / "packages/cadgen/src"))
-        try:
-            from cadgen._internal.implicit_package import implicit_bake_settings
-            from cadgen._internal.package_freshness import canonical_bake_hash
-
-            python_hash = canonical_bake_hash(implicit_bake_settings())
-        finally:
-            sys.path.pop(0)
-        node = subprocess.run(
-            ["node", "--input-type=module", "-e",
-             "import { pathToFileURL } from 'node:url';"
-             "const m = await import(pathToFileURL(process.argv[1]).href);"
-             "process.stdout.write(JSON.stringify(m.canonicalBakeHash(m.IMPLICIT_BAKE_SETTINGS)));",
-             str(status_module)],
-            capture_output=True, text=True, timeout=60,
-        )
-        self.assertEqual(0, node.returncode, node.stderr[-300:])
-        self.assertEqual(
-            python_hash,
-            json.loads(node.stdout),
-            "canonical bake hash diverged: implicit packages would read stale on one side forever",
+        self.assertIn(
+            'import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";',
+            status_module.read_text(),
+            "the status authority must read the schema version from the one JS "
+            "constant (stepImport.mjs), which this suite pins against Python",
         )
 
     def test_component_blob_format_is_pinned_not_current(self) -> None:

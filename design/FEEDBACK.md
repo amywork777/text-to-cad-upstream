@@ -155,3 +155,30 @@ entry says so.
     writes rather than the native generation lock. Both results are
     equivalent, so the race is benign — but it is not lock-coordinated with
     native builds.
+
+## Static-viewer follow-ups (2026-08-28)
+
+23. **The viewer lost every export affordance by design** (toolbar dropdown,
+    context-menu export items, client-side STL/GLB/3MF serialization): the
+    CLIs are the only exporters now. If users miss one-click "save an STL of
+    what I'm looking at", the clean re-entry point is a CLI-parity export
+    (see the tessellator-unification discussion) — not a viewer-side code
+    path.
+
+24. **Generated entries no longer auto-build on open.** A `.step.py`/`.dxf.py`
+    with no artifact shows "run `python scripts/gen <source>`" instead of
+    silently generating. Docs/skills that describe open-to-build behavior
+    should be swept when next touched.
+
+25. **The `generating` badge is now advisory** (status-record freshness window,
+    20s): a SIGKILLed CLI build can show a lingering badge for up to that
+    window, and a build phase silent for longer than it drops the badge until
+    the next progress event. Cosmetic by construction — the viewer takes no
+    action on the state.
+
+26. **`cadgen.coordination.snapshot()` has no production caller** (the viewer
+    no longer reads the lock; producers use their own paths). Kept as the
+    kernel-truth read for contended-build reporting and the lock-state suite;
+    if a future cleanup wants it gone, check test_generation_lock_state.py
+    first.
+

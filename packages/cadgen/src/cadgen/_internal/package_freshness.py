@@ -1,9 +1,10 @@
 """Descriptor-level freshness primitives shared by BOTH freshness authorities.
 
-A render package's currency is decided twice, by design: the viewer's validator
-(``cadgen/render_ops.py``) decides what a status GET answers, and the producer's
-per-kind ``is_current`` callable — re-evaluated under the generation lock — decides
-whether a build no-ops. When the two disagree the failure is SILENT rather than loud: the
+A render package's currency is decided twice, by design: the viewer's JS status
+authority (``viewer/server/artifactStatus.mjs``, constants mirrored from here and
+pinned by the render-contract sync test) decides what a status GET answers, and
+the producer's per-kind ``is_current`` callable — re-evaluated under the
+generation lock — decides whether a build no-ops. When the two disagree the failure is SILENT rather than loud: the
 producer reports ``skipped``, the request settles ``ready``, and the stale package
 renders. So a check added to one side must be added to the other.
 

@@ -81,9 +81,13 @@ class Allowlist(unittest.TestCase):
                 "cadgen.step_export_target",
             },
         )
+        import inspect
+
         for name, entry in dispatch.items():
             with self.subTest(module=name):
                 self.assertTrue(callable(entry))
+                # The worker calls run(argv) on every one.
+                self.assertIn("argv", inspect.signature(entry).parameters)
 
 
 if __name__ == "__main__":

@@ -273,11 +273,10 @@ def write_implicit_package(
     descriptor: dict[str, object] = {
         "kind": IMPLICIT_PACKAGE_KIND,
         "packageSchemaVersion": IMPLICIT_PACKAGE_SCHEMA_VERSION,
-        # The validator's generated-vs-imported discriminator, not a claim about the
-        # language: "python" selects the branch that re-hashes a recorded SOURCE CLOSURE
-        # (cadgen/render_ops.py), which is what a script-generated package of any
-        # language needs. An implicit model IS generated -- by a JS module -- so it takes
-        # that branch. `sourceLanguage` records what it actually is.
+        # The generated-vs-imported discriminator, not a claim about the language:
+        # "python" marks a script-generated package (whose CLI no-op gate re-hashes
+        # the recorded SOURCE CLOSURE), for any source language. An implicit model
+        # IS generated -- by a JS module. `sourceLanguage` records what it actually is.
         "sourceKind": "python",
         "sourceLanguage": "javascript",
         # Relative to the MODEL folder, like every other package's provenance.

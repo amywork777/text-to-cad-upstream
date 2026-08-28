@@ -1,9 +1,10 @@
 """Cross-process coordination for file-artifact generation.
 
-ONE implementation, imported by both sides. The producer (cadgen, from a CLI or the CAD
-Viewer's warm worker) holds a lock while it mutates an artifact's output directory and
-publishes its progress; the reader (the viewer's server) takes a non-blocking snapshot of
-that state. Before this package the reader half was a hand-written COPY of the producer
+ONE implementation, imported by both sides. The producer (cadgen, from a CLI or the
+warm daemon pool) holds a lock while it mutates an artifact's output directory and
+publishes its progress; :func:`snapshot` is the non-blocking kernel-truth read of that
+state (contended-build reporting, tests). The viewer, which never builds, reads only
+the ADVISORY status record for its progress badge and does not touch the lock. Before this package the reader half was a hand-written COPY of the producer
 half in ``cadgen/render_ops.py``, kept in sync only by a test that compared path
 strings -- and the two had drifted into implementing different protocols from one
 primitive: the producer took a blocking exclusive lock to DO something, the reader took a

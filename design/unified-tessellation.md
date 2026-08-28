@@ -1,0 +1,115 @@
+# Unified tessellation: one triangle producer for render and export
+
+## End state
+
+The cadjs surf tessellator is the ONLY thing in the product that turns exact
+geometry into triangles. Every consumer — viewport, snapshots, CLI STL/GLB/3MF
+exports — derives its mesh from the package's exact surfaces and curves at an
+explicit tolerance, through one code path, with results shared via a
+content-addressed mesh cache. OCCT meshes nothing: its remaining jobs are
+generation itself and `.step` assembly (which never meshes).
+
+Exports become strictly better than the OCCT meshes they replace:
+**topologically watertight with boundary vertices lying exactly on the STEP
+edge curves** — closer to the model than OCCT's own polygonization, not an
+approximation of it. Byte-determinism falls out (one deterministic code path),
+so any two producers of the same export agree byte-for-byte.
+
+Fits the standing architecture decisions: exact geometry is the artifact and
+polygons are regenerable views (design/surface-rendering.md); the viewer is a
+static visualization tool and the CLIs own export (2026-08-28); duplicated
+implementations are acceptable only when contract-fenced — this plan DELETES a
+duplicated implementation (the OCCT export mesher) rather than fencing it.
+
+## Why now and not earlier
+
+Before the surf migration the client held baked triangles; exact geometry
+existed only inside OCP, so exports had to mesh there. The prerequisites —
+surf (exact surfaces in a JS-readable container), the client tessellator, the
+cross-kernel conformance fences, CLI-owned exports — all landed in 2026. This
+is the next rung of that ladder.
+
+## Phase 0 — measure (speed gate only)
+
+Benchmark the cadjs tessellator against OCCT `BRepMesh` at export-grade
+deflections on the perf corpus (planetary, turbofan, moonwatch): wall time per
+component and whole-model, triangle counts, aspect-ratio histograms. Record
+results here. Quality needs no gate (Phase 1 makes boundaries better than
+BRepMesh by construction); speed is go/no-go only if the JS path is
+egregiously slower on moonwatch-class assemblies *after* accounting for the
+Phase 3 cache (repeat exports are cache hits; the first export of a
+just-rendered model at render tolerance is free).
+
+## Phase 1 — watertight tessellation (shared-edge sampling)
+
+Today each face samples its trim boundary from its own pcurve, so adjacent
+faces agree only within `loopTolerance` (~0.5µm) — geometrically tight,
+topologically unstitched. The surf already stores ONE exact 3D curve per edge
+with both faces' ordinals attached, so:
+
+- Sample each edge's exact 3D curve once per (edge, tolerance); both adjacent
+  faces conform their trim loops to those shared points (matched through the
+  pcurve's edge ordinal).
+- Seams and degenerate edges keep their existing special handling.
+
+Gates added to the conformance/tessellation suites:
+
+- watertightness: within a solid, every boundary segment is shared by exactly
+  two faces with identical vertices;
+- boundary vertices lie on the exact edge curve (evaluate and compare);
+- aspect-ratio histogram does not regress against the Phase 0 baseline.
+
+The viewport inherits this automatically (its micro-cracks disappear).
+
+## Phase 2 — colored JS exporters
+
+Port per-face and per-occurrence materials into the cadjs GLB and 3MF writers
+(today they are single-color; the retiring native GLB writer has per-face
+material primitives). Migrate the color-fidelity tests currently pointed at
+`export_native_glb_from_scene` to the JS writers as the new reference. STL is
+colorless and unaffected.
+
+## Phase 3 — packageMeshExport + the mesh cache
+
+- `packages/cadjs/src/lib/export/packageMeshExport.js`: descriptor + component
+  surfs in → tessellate at parameter tolerance → occurrence-transform-baked,
+  mirroring-safe, colored mesh → STL/GLB/3MF bytes. (Absorbs what remains of
+  the deleted viewer clientMeshExport logic.)
+- Mesh cache tier, component-store pattern: `~/.cache/cadgen/meshes/`
+  keyed `<cid>-l<lin>-a<ang>`, best-effort, `CADGEN_MESH_CACHE=0` to disable.
+  Consumers: exports and snapshots now; the viewer later (Phase 5).
+- Tolerance policy: exports default to the deflections recorded in the
+  descriptor's mesh block (the export matches what renders showed, and is a
+  cache hit); `--mesh-tolerance/--mesh-angular-tolerance` override for finer,
+  paying tessellation only for uncached components.
+
+## Phase 4 — CLI cutover and deletion
+
+- `packages/cadjs/bin/mesh-export.mjs`, bundled like `dxf-mesh.mjs`;
+  `step_export_target`'s STL/3MF/GLB arms dispatch to it (implicit exports are
+  already JS; `.step` stays native blob assembly).
+- Determinism test: exporting the same entry twice (and via snapshot's path)
+  yields identical bytes.
+- DELETE the OCCT meshing/export path: `export_native_glb_from_scene`,
+  `_HierarchicalGlbWriter` and what remains of `glb.py`, `glb_mesh_payload.py`
+  (numpy vectorization included), the 3MF mesh path. Their tests either moved
+  in Phase 2 or die with the dead code.
+
+## Phase 5 — later, unlocked: viewport LOD
+
+Render tolerance stops being a build-time constant: zooming a component
+retessellates it at finer tolerance from its exact surface, backed by the same
+mesh cache. Out of scope for this plan; recorded because it is the render-
+quality ceiling this architecture exists to reach.
+
+## Decisions taken
+
+- Shared-edge sampling is a committed work item, not a risk gate (user
+  preference: exports as close to the STEP curves as possible).
+- Export tolerance defaults to the descriptor's recorded deflections.
+- The JS writers become the color-fidelity reference; the native exporter's
+  byte-level output is not preserved.
+
+## Execution log
+
+(append as phases land)

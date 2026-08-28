@@ -6,9 +6,9 @@ without knowing where the runtime lives. It resolves the server entry and the bu
 client, then execs ``node`` with the caller's arguments passed through — the stdout
 contract (the ``CAD Viewer URL:`` line, ``--json``) is printed by the server itself.
 
-Python is handed DOWN, not required up: the child gets ``VIEWER_CAD_PYTHON`` pointing at
-this interpreter, so viewer builds/exports spawn ``cadgen.render_ops`` from exactly the
-cadgen that launched it. Node >= 22 is the one hard requirement.
+The viewer is a static visualization tool: it runs no Python of its own (status,
+rendering and the WASM STEP import are all JS), so nothing is handed down to the
+child beyond the arguments. Node >= 22 is the one hard requirement.
 """
 
 from __future__ import annotations
@@ -50,8 +50,6 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
 
     env = dict(os.environ)
     # The interpreter that ran `cadgen viewer` is by definition one that can import
-    # cadgen — hand it to the server for its render_ops spawns.
-    env.setdefault("VIEWER_CAD_PYTHON", sys.executable)
 
     cmd = [node, str(server_entry), *args]
     if "--dist" not in args:
