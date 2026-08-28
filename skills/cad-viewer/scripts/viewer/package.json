@@ -1,0 +1,9 @@
+{
+  "name": "cad-viewer-runtime",
+  "private": true,
+  "type": "module",
+  "version": "0.4.25",
+  "scripts": {
+    "start": "node server/main.mjs"
+  }
+}

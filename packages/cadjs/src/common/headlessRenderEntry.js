@@ -19,6 +19,9 @@ import {
   stepParameterFrameRuntime
 } from "./source.js";
 import {
+  setTessellationCacheProvider
+} from "../lib/surf/tessellationCache.js";
+import {
   orbitFrameOutputs
 } from "./headlessOrbitFrames.js";
 import {
@@ -61,9 +64,17 @@ function shouldEncodeTransparentGif(job = {}) {
   return Boolean(job.render?.transparent) || backgroundType === "transparent";
 }
 
+// Coarse per-stage wall times for the last view-mode job, attached to its
+// result so the driver can print where a slow snapshot actually went (load =
+// fetch + tessellate/cache-hit + meshData; build = scene composition; render
+// = GL draw; capture = readback + encode).
+const headlessStageTimings = {};
+
 async function capturePreparedSource(source, job) {
+  const buildStarted = performance.now();
   const context = renderJobContext(source.meshData, job);
   const model = buildModel(THREE, source, modelOptionsForRenderJob(context, job));
+  headlessStageTimings.buildModelMs = Math.round(performance.now() - buildStarted);
   if (context.mode === "list" || context.mode === "section") {
     try {
       return await captureModel({ model, context }, { job });
@@ -71,9 +82,17 @@ async function capturePreparedSource(source, job) {
       model.dispose();
     }
   }
+  const renderStarted = performance.now();
   const viewport = renderModel(THREE, model, { job, context });
+  headlessStageTimings.renderMs = Math.round(performance.now() - renderStarted);
   try {
-    return await captureModel(viewport, { job });
+    const captureStarted = performance.now();
+    const captured = await captureModel(viewport, { job });
+    headlessStageTimings.captureMs = Math.round(performance.now() - captureStarted);
+    if (captured && typeof captured === "object" && !Array.isArray(captured)) {
+      captured.stageTimings = { ...headlessStageTimings };
+    }
+    return captured;
   } finally {
     viewport.dispose();
   }
@@ -189,7 +208,9 @@ export async function runHeadlessRenderJob(job) {
   if (resolveHeadlessJobKind(job) === "implicit") {
     return runImplicitCadHeadlessRenderJob(job);
   }
+  const loadStarted = performance.now();
   const source = await loadSource(job);
+  headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);
   const stepParameterSource = source.stepParameterSource;
   const explicitParams = hasStepParameterRenderValues(job.stepParameters);
   const renderJob = {
@@ -217,4 +238,29 @@ export async function runHeadlessRenderJob(job) {
 
 if (typeof window !== "undefined") {
   window.__snapshotRender = runHeadlessRenderJob;
+  // The snapshot host (cadgen's snapshot driver) serves the shared component-
+  // tessellation cache (~/.cache/cadgen/meshes) on /__tess_cache/ through its
+  // Playwright route, so repeat snapshots — and any component an export
+  // already tessellated — skip tessellation entirely, and a snapshot miss
+  // warms the cache for later exports. Both directions are best-effort: a
+  // host without the route (404) or a disabled cache degrades to plain
+  // in-page tessellation.
+  setTessellationCacheProvider({
+    async get(key) {
+      try {
+        const response = await fetch(`/__tess_cache/${encodeURIComponent(key)}.tess`, { cache: "no-store" });
+        if (!response.ok) return null;
+        return new Uint8Array(await response.arrayBuffer());
+      } catch {
+        return null;
+      }
+    },
+    async put(key, bytes) {
+      try {
+        await fetch(`/__tess_cache/${encodeURIComponent(key)}.tess`, { method: "POST", body: bytes });
+      } catch {
+        // best-effort write-back
+      }
+    },
+  });
 }

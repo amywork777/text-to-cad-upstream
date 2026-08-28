@@ -719,6 +719,181 @@ def route_file(pathname: str, prefix: str, root: Path) -> Path:
     if not path_is_inside_or_equal(file_path, root):
         raise RouteFileError(f"forbidden route path: {pathname}", status=403)
     return file_path
+# --- shared component-tessellation cache (design/unified-tessellation.md) ----
+#
+# The snapshot page resolves component tessellations through the SAME disk
+# cache the mesh-export CLI uses (~/.cache/cadgen/meshes/<key>.tess; codec and
+# key scheme in packages/cadjs/src/lib/surf/tessellationCache.js). The page
+# cannot touch the filesystem, so the host serves the cache: GET
+# /__tess_cache/<key>.tess is a read, POST is a best-effort write-back after
+# an in-page tessellation miss. CADGEN_MESH_CACHE=0 turns both directions
+# off. Entries are opaque bytes here: Python never decodes them, it only
+# stores and serves what the one JS codec produced.
+#
+# TRANSPORT: bulk bytes must NOT go through Playwright's route.fulfill. CDP
+# serializes every fulfilled body as base64 over the devtools pipe at
+# ~20 MB/s, which made a warm moonwatch snapshot spend ~8s moving ~180 MB of
+# surfs + cache entries. So the renderer runs a loopback HTTP server and the
+# intercepted snapshot.local routes for /__render_asset/ and /__tess_cache/
+# answer with a 307 to it — the tiny redirect crosses CDP, the payload rides
+# Chromium's native network stack. The page's origin stays snapshot.local, so
+# the loopback responses carry CORS headers for that origin (and answer the
+# preflight the redirected POST triggers).
+
+TESS_CACHE_ROUTE_PREFIX = "/__tess_cache/"
+# <cid>-l<chord>-a<angle>.tess with exponential-notation tolerances; anything
+# else (path separators, dots-runs, empty) is refused before touching disk.
+TESS_CACHE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]*\.tess$")
+
+
+def tessellation_cache_enabled() -> bool:
+    return os.environ.get("CADGEN_MESH_CACHE") != "0"
+
+
+def tessellation_cache_dir() -> Path:
+    return Path.home() / ".cache" / "cadgen" / "meshes"
+
+
+def tessellation_cache_file(pathname: str) -> Path | None:
+    """Validated cache path for a /__tess_cache/ route, or None to refuse."""
+    name = unquote(pathname[len(TESS_CACHE_ROUTE_PREFIX):])
+    if not TESS_CACHE_NAME_PATTERN.fullmatch(name) or ".." in name:
+        return None
+    return tessellation_cache_dir() / name
+
+
+def read_tessellation_cache_entry(pathname: str) -> bytes | None:
+    if not tessellation_cache_enabled():
+        return None
+    target = tessellation_cache_file(pathname)
+    if target is None:
+        return None
+    try:
+        return target.read_bytes()
+    except OSError:
+        return None
+
+
+def write_tessellation_cache_entry(pathname: str, body: bytes | None) -> bool:
+    """Best-effort atomic write; False only for an invalid name (a 403)."""
+    target = tessellation_cache_file(pathname)
+    if target is None:
+        return False
+    if not tessellation_cache_enabled() or not body:
+        return True  # accepted and dropped: the page must never fail on this
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
+        temp.write_bytes(body)
+        temp.replace(target)
+    except OSError:
+        pass  # best-effort: a full disk must never fail a snapshot
+    return True
+
+
+RENDER_ASSET_ROUTE_PREFIX = "/__render_asset/"
+
+
+class SnapshotAssetServer:
+    """Loopback HTTP server for the snapshot page's BULK bytes.
+
+    Serves exactly two path families — ``/__render_asset/`` (files under the
+    active render root, same containment rule as the CDP route) and
+    ``/__tess_cache/`` (the shared tessellation cache) — to whatever origin
+    the snapshot page runs as (CORS ``*``; the socket is loopback-only and
+    carries the same files the CDP route already served). ``root_provider``
+    is read per request so one server follows the renderer across jobs.
+    """
+
+    def __init__(self, root_provider) -> None:
+        import http.server
+
+        server = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *_args) -> None:  # noqa: D102 - quiet by design
+                return
+
+            def _headers(self, status: int, content_type: str, length: int) -> None:
+                self.send_response(status)
+                self.send_header("access-control-allow-origin", "*")
+                self.send_header("cache-control", "no-store")
+                self.send_header("content-type", content_type)
+                self.send_header("content-length", str(length))
+                self.end_headers()
+
+            def _send(self, status: int, body: bytes = b"", content_type: str = "application/octet-stream") -> None:
+                self._headers(status, content_type, len(body))
+                if body:
+                    self.wfile.write(body)
+
+            def do_OPTIONS(self) -> None:  # noqa: N802 - http.server naming
+                self.send_response(204)
+                self.send_header("access-control-allow-origin", "*")
+                self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+                self.send_header("access-control-allow-headers", "content-type")
+                self.send_header("content-length", "0")
+                self.end_headers()
+
+            def do_GET(self) -> None:  # noqa: N802 - http.server naming
+                pathname = urlparse(self.path).path
+                if pathname.startswith(TESS_CACHE_ROUTE_PREFIX):
+                    body = read_tessellation_cache_entry(pathname)
+                    if body is None:
+                        self._send(404, b"miss", "text/plain; charset=utf-8")
+                        return
+                    self._send(200, body)
+                    return
+                if pathname.startswith(RENDER_ASSET_ROUTE_PREFIX):
+                    root = server.root_provider()
+                    if root is None:
+                        self._send(404, b"no active render root", "text/plain; charset=utf-8")
+                        return
+                    try:
+                        file_path = route_file(pathname, RENDER_ASSET_ROUTE_PREFIX, root)
+                    except RouteFileError as exc:
+                        self._send(exc.status, str(exc).encode(), "text/plain; charset=utf-8")
+                        return
+                    if not file_path.is_file():
+                        self._send(404, b"not found", "text/plain; charset=utf-8")
+                        return
+                    self._send(200, file_path.read_bytes(), content_type_for_path(file_path))
+                    return
+                self._send(404, b"not found", "text/plain; charset=utf-8")
+
+            def do_POST(self) -> None:  # noqa: N802 - http.server naming
+                pathname = urlparse(self.path).path
+                if not pathname.startswith(TESS_CACHE_ROUTE_PREFIX):
+                    self._send(404, b"not found", "text/plain; charset=utf-8")
+                    return
+                length = int(self.headers.get("content-length") or 0)
+                body = self.rfile.read(length) if length > 0 else b""
+                accepted = write_tessellation_cache_entry(pathname, body)
+                self._send(204 if accepted else 403)
+
+        self.root_provider = root_provider
+        self._httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._httpd.daemon_threads = True
+        self.port = self._httpd.server_address[1]
+        import threading
+
+        self._thread = threading.Thread(target=self._httpd.serve_forever, name="snapshot-assets", daemon=True)
+        self._thread.start()
+
+    @property
+    def base_url(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    def close(self) -> None:
+        try:
+            self._httpd.shutdown()
+            self._httpd.server_close()
+        except OSError:
+            pass
+
+
 def resolve_snapshot_route_file(
     raw_url: str,
     *,
@@ -761,12 +936,19 @@ class BatchSnapshotRenderer:
         self.context = None
         self.page = None
         self.active_root_path: Path | None = None
+        self.asset_server: SnapshotAssetServer | None = None
         self.started = False
 
     async def start(self) -> None:
         if self.started:
             return
         try:
+            try:
+                self.asset_server = SnapshotAssetServer(lambda: self.active_root_path)
+            except OSError:
+                # No loopback socket (sandboxed run): bulk bytes fall back to
+                # the CDP route below — slower, never wrong.
+                self.asset_server = None
             try:
                 from playwright.async_api import async_playwright
             except ImportError as exc:
@@ -778,6 +960,31 @@ class BatchSnapshotRenderer:
             self.browser = await self.playwright.chromium.launch(
                 headless=True,
                 timeout=RENDER_BROWSER_STARTUP_TIMEOUT_MS,
+                # The page origin is the intercepted (insecure) snapshot.local,
+                # and its bulk assets 307 to the loopback server. Chromium's
+                # Private Network Access blocks insecure-public -> loopback
+                # subresources, which would silently force every byte back
+                # through the ~20 MB/s CDP fulfill path. This renderer loads
+                # no web content — only our own runtime and files.
+                # Feature names cover the PNA generations: Chromium ~94-130
+                # shipped BlockInsecurePrivateNetworkRequests + the two
+                # preflight flags; newer builds renamed the check to
+                # PrivateNetworkAccessChecks / LocalNetworkAccessChecks (the
+                # one this bundled build enforces — verified by repro).
+                args=[
+                    "--disable-features=BlockInsecurePrivateNetworkRequests,"
+                    "PrivateNetworkAccessSendPreflights,"
+                    "PrivateNetworkAccessRespectPreflightResults,"
+                    "PrivateNetworkAccessChecks,"
+                    "LocalNetworkAccessChecks",
+                    # Headless Chromium defaults to SOFTWARE WebGL
+                    # (SwiftShader); on a moonwatch-class model that software
+                    # rasterization dominated the whole warm snapshot (~4.6s
+                    # of a ~6.8s render loop, measured via stageTimings).
+                    # Metal ANGLE uses the real GPU on macOS; elsewhere the
+                    # platform default stands.
+                    *(["--use-angle=metal"] if sys.platform == "darwin" else []),
+                ],
             )
             self.context = await self.browser.new_context(
                 viewport={"width": SIMPLE_RENDER_WIDTH, "height": SIMPLE_RENDER_HEIGHT},
@@ -797,6 +1004,21 @@ class BatchSnapshotRenderer:
 
     async def handle_route(self, route: Any) -> None:
         request = route.request
+        parsed = urlparse(request.url)
+        bulk = parsed.path.startswith(TESS_CACHE_ROUTE_PREFIX) or parsed.path.startswith(RENDER_ASSET_ROUTE_PREFIX)
+        if bulk and self.asset_server is not None and request.url.startswith(SNAPSHOT_ORIGIN):
+            # 307 preserves method and body, so the cache write-back POST
+            # redirects too; the payload then rides the loopback socket
+            # instead of the CDP pipe (see the transport note above).
+            await route.fulfill(
+                status=307,
+                headers={"location": f"{self.asset_server.base_url}{parsed.path}"},
+                body="",
+            )
+            return
+        if parsed.path.startswith(TESS_CACHE_ROUTE_PREFIX):
+            await self.handle_tess_cache_route(route, request, parsed.path)
+            return
         if request.method != "GET":
             await route.fulfill(status=405, content_type="text/plain; charset=utf-8", body="method not allowed")
             return
@@ -822,6 +1044,30 @@ class BatchSnapshotRenderer:
             body=file_path.read_bytes(),
         )
 
+    async def handle_tess_cache_route(self, route: Any, request: Any, pathname: str) -> None:
+        # Same origin gate the file routes get; the cache lives outside any
+        # model root, so it must never be reachable through a bad name.
+        if not request.url.startswith(SNAPSHOT_ORIGIN):
+            await route.fulfill(status=403, content_type="text/plain; charset=utf-8", body="forbidden")
+            return
+        if request.method == "GET":
+            body = read_tessellation_cache_entry(pathname)
+            if body is None:
+                await route.fulfill(status=404, content_type="text/plain; charset=utf-8", body="miss")
+                return
+            await route.fulfill(
+                status=200,
+                content_type="application/octet-stream",
+                headers={"cache-control": "no-store"},
+                body=body,
+            )
+            return
+        if request.method == "POST":
+            accepted = write_tessellation_cache_entry(pathname, request.post_data_buffer)
+            await route.fulfill(status=204 if accepted else 403, content_type="text/plain; charset=utf-8", body="")
+            return
+        await route.fulfill(status=405, content_type="text/plain; charset=utf-8", body="method not allowed")
+
     async def render(self, job: Mapping[str, object]) -> dict[str, object]:
         await self.start()
         resolved = job.get("resolved") if is_plain_object(job.get("resolved")) else {}
@@ -839,6 +1085,12 @@ class BatchSnapshotRenderer:
         return result
 
     async def close(self) -> None:
+        if self.asset_server is not None:
+            try:
+                self.asset_server.close()
+            except Exception:  # noqa: BLE001 - best-effort teardown
+                pass
+            self.asset_server = None
         if self.context is not None:
             try:
                 await self.context.close()

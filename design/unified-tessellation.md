@@ -250,3 +250,28 @@ until the next camera sample.
   (test_glb, test_glb_materials, test_glb_topology,
   test_glb_mesh_payload_vectorized, test_threemf). Python byte-determinism
   gate: test_step_export_target.test_mesh_exports_are_byte_deterministic.
+- Snapshots joined the mesh cache (2026-08-28), closing the Phase 3 gap
+  ("exports and snapshots" — only exports had been wired). The codec + key
+  scheme moved out of bin/mesh-export.mjs into the shared, browser-pure
+  `packages/cadjs/src/lib/surf/tessellationCache.js` (entry format v2: the
+  FULL tessellateComponent result — faceOrds, sideOrds, display-edge
+  polylines, bounds, scale — so render consumers can reuse entries; the fs
+  half is `tessellationCacheFs.mjs`). Consumers resolve through a pluggable
+  async provider (`tessellateComponentCached`): the snapshot page registers
+  one in headlessRenderEntry.js that round-trips `~/.cache/cadgen/meshes`
+  over a `/__tess_cache/` route served by the snapshot host
+  (snapshot_core.py: GET = read, POST = atomic best-effort write-back,
+  CADGEN_MESH_CACHE=0 disables, names strictly validated). A snapshot miss
+  warms the cache for exports and vice versa; debug tessellation options
+  bypass the cache. The viewer registers no provider yet — that is Phase 5,
+  which now needs only a store route plus this same provider.
+- Two snapshot-host bottlenecks found while proving the cache (2026-08-28),
+  both fixed in snapshot_core: (1) bulk bytes crossed Playwright's
+  route.fulfill, which base64s bodies over the CDP pipe at ~20 MB/s — the
+  host now runs a loopback HTTP server and the intercepted /__render_asset/
+  + /__tess_cache/ routes answer 307 to it (Chromium's PNA feature
+  generations are disabled at launch so the insecure snapshot.local origin
+  may fetch loopback); (2) headless Chromium rendered on SOFTWARE WebGL —
+  --use-angle=metal on darwin moved a moonwatch-class capture from ~4.6s to
+  ~0.24s. Warm-path stage timings ride the render result as `stageTimings`
+  (loadSource / buildModel / render / capture).

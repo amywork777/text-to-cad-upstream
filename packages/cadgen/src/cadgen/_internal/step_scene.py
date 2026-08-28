@@ -20,7 +20,6 @@ from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Curve2d, BRepAdaptor_
 from OCP.BRepBndLib import BRepBndLib
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepLProp import BRepLProp_SLProps
-from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.GCPnts import GCPnts_QuasiUniformDeflection
 from OCP.GProp import GProp_GProps
 from OCP.IFSelect import IFSelect_RetDone

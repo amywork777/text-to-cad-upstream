@@ -2,7 +2,9 @@ import {
   buildComposedPackageMeshData
 } from "../lib/assembly/meshData.js";
 import { buildMeshDataFromGlbBuffer } from "../lib/render/glbMeshData.js";
-import { buildMeshDataFromSurfBuffer } from "../lib/surf/surfMeshData.js";
+import { buildMeshDataFromSurf } from "../lib/surf/surfMeshData.js";
+import { parseSurf } from "../lib/surf/container.js";
+import { tessellateComponentCached } from "../lib/surf/tessellationCache.js";
 import { buildMeshDataFromStlBuffer } from "../lib/render/stlMeshData.js";
 import { buildMeshDataFrom3MfBuffer } from "../lib/render/threeMfMeshData.js";
 import {
@@ -183,7 +185,14 @@ async function loadPackageMeshData(packageInfo) {
   const componentUrls = isObject(packageInfo.componentUrls) ? packageInfo.componentUrls : {};
   const components = isObject(descriptor.components) ? descriptor.components : {};
   const componentMeshDataByCid = {};
-  for (const cid of Object.keys(components)) {
+  // Components load through a small worker pool: tessellation is CPU-bound
+  // and single-threaded either way, but a many-component assembly otherwise
+  // pays its per-request latency (surf fetch + cache round-trips) serially —
+  // measured as the dominant cost on a 563-component model. The pool overlaps
+  // the network waits with the CPU work; 6 matches the browser's per-host
+  // connection budget.
+  const cids = Object.keys(components);
+  const loadComponent = async (cid) => {
     const url = String(componentUrls[cid] || "").trim();
     if (!url) {
       throw new Error(`Assembly package component ${cid} has no resolved URL`);
@@ -191,10 +200,25 @@ async function loadPackageMeshData(packageInfo) {
     // Exact-surface artifact (design/surface-rendering.md): the resolved URL
     // points at the component GLB; its .surf sibling shares the stem.
     const surfUrl = url.replace(/\.glb(?=$|[?#])/, ".surf");
-    componentMeshDataByCid[cid] = buildMeshDataFromSurfBuffer(
-      await fetchComponentGlbBuffer(surfUrl, cid)
-    );
-  }
+    const { index, floats } = parseSurf(await fetchComponentGlbBuffer(surfUrl, cid));
+    // Tessellation resolves through the shared component cache when the host
+    // registered a provider (the snapshot runtime does — headlessRenderEntry
+    // round-trips ~/.cache/cadgen/meshes over its /__tess_cache/ route). No
+    // provider — the default — tessellates exactly as before.
+    const component = await tessellateComponentCached(index, floats, { cid });
+    componentMeshDataByCid[cid] = buildMeshDataFromSurf(index, floats, { component });
+  };
+  const POOL = 6;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(POOL, cids.length) }, async () => {
+      while (next < cids.length) {
+        const cid = cids[next];
+        next += 1;
+        await loadComponent(cid);
+      }
+    }),
+  );
   return buildComposedPackageMeshData(descriptor, componentMeshDataByCid);
 }
 
