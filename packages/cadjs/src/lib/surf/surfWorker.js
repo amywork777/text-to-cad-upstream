@@ -49,7 +49,9 @@ self.addEventListener("message", async (event) => {
   try {
     const buffer = await loadArrayBuffer(message.url, controller.signal);
     const { index, floats } = parseSurf(buffer);
-    const component = tessellateComponent(index, floats);
+    // Optional tolerance override (viewport LOD re-tessellates a component at
+    // a finer chord level from the same exact surfaces).
+    const component = tessellateComponent(index, floats, message.tessellation || {});
     const meshData = buildMeshDataFromSurf(index, floats, { component });
     const bundle = buildSelectorBundleFromSurf(index, floats, { component });
     if (controller.signal.aborted) {

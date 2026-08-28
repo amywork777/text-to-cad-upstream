@@ -195,17 +195,20 @@ entry says so.
 
 ## Unified-tessellation follow-ups (2026-08-28)
 
-27. **Phase 5 (viewport LOD) is designed but not built.** Phases 0-4 of
-    `design/unified-tessellation.md` shipped (one tessellator for render and
-    export, OCCT meshes nothing); Phase 5 — zooming a component
-    re-tessellates it at finer tolerance from its exact surfaces — was
-    deliberately scoped out. The groundwork is in place: the component mesh
-    cache is already keyed the way LOD needs
-    (`~/.cache/cadgen/meshes/<cid>-l<chord>-a<angle>.tess`), though the
-    viewer does not read it yet (only `bin/mesh-export.mjs` does). The open
-    design questions are the re-tessellation trigger (zoom thresholds vs
-    per-component screen-space error, plus debounce so orbiting does not
-    thrash), cancellable/prioritized worker re-tessellation, and a swap-in
-    path that does not drop frames on 2M-triangle models. This is the
-    render-quality ceiling the unified architecture exists to reach.
+27. **FIXED — Phase 5 (viewport LOD) shipped 2026-08-28.** Zooming
+    re-tessellates the worst-projecting components at finer chord tolerance
+    from their exact surfaces: a 3-level ladder (1.5e-3/5e-4/1.5e-4 relative),
+    per-component projected-chord-error trigger with an enter/exit hysteresis
+    band, 200ms camera-settle debounce, one cancellable worker
+    re-tessellation at a time (worst error first), level-keyed payloads
+    (meshData + selector bundle from ONE tessellation, so picking never
+    disagrees with the mesh) in an LRU-bounded cache, and swaps through
+    re-composition with level-suffixed sourceMeshKeys (old buffers draw until
+    the new state commits). Kill switch: `window.__CAD_VIEWER_LOD__ = false`;
+    swaps emit a `cad:lod-level` event for verification. The remaining
+    follow-up is wiring the DISK tessellation cache
+    (`~/.cache/cadgen/meshes/<cid>-l<chord>-a<angle>`) into
+    `loadRenderSurfPayloadAtLevel` once the shared codec lands — the seam is
+    marked in `renderAssetClient.js`. See the Phase 5 design + execution
+    sections in `design/unified-tessellation.md`.
 

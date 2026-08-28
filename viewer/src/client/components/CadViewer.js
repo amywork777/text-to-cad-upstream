@@ -3319,6 +3319,35 @@ const CadViewer = forwardRef(function CadViewer({
       const blob = await blobPromise;
       return triggerBlobDownload(blob, { filename });
     },
+    // Viewport LOD sampler (design/unified-tessellation.md Phase 5): projection
+    // parameters + live distances from the camera to model-space points. CAD
+    // scenes render in model units, so distances and component diagonals share
+    // a unit; the model group transform (floor placement) is applied.
+    sampleLodCamera() {
+      const runtime = runtimeRef.current;
+      const canvas = runtime?.renderer?.domElement;
+      const camera = runtime?.camera;
+      if (!runtime || !camera || !canvas) {
+        return null;
+      }
+      const cameraSpec = camera.isOrthographicCamera
+        ? {
+          kind: "orthographic",
+          visibleWorldHeight: (camera.top - camera.bottom) / (camera.zoom || 1)
+        }
+        : { kind: "perspective", fovYDeg: camera.fov };
+      runtime.modelGroup?.updateMatrixWorld?.(true);
+      const point = new THREE.Vector3();
+      return {
+        camera: cameraSpec,
+        viewportHeightPx: canvas.clientHeight || canvas.height || 0,
+        distanceToModelPoint: (x, y, z) => {
+          point.set(x, y, z);
+          runtime.modelGroup?.localToWorld?.(point);
+          return camera.position.distanceTo(point);
+        }
+      };
+    },
     // Exposed so a toolbar can drive the camera the same way the view-plane widget does.
     // The DXF 2D/3D toggle is exactly "look straight down" vs "the default three-quarter
     // view", and reusing these keeps one camera authority rather than a second one that

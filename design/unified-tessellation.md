@@ -95,12 +95,96 @@ colorless and unaffected.
   (numpy vectorization included), the 3MF mesh path. Their tests either moved
   in Phase 2 or die with the dead code.
 
-## Phase 5 — later, unlocked: viewport LOD
+## Phase 5 — viewport LOD
 
 Render tolerance stops being a build-time constant: zooming a component
 retessellates it at finer tolerance from its exact surface, backed by the same
-mesh cache. Out of scope for this plan; recorded because it is the render-
-quality ceiling this architecture exists to reach.
+mesh cache. This is the render-quality ceiling this architecture exists to
+reach.
+
+### Phase 5 design (2026-08-28, executed)
+
+**Ladder, not a dial.** Three chord-tolerance levels — L0 `1.5e-3` (the
+tessellator default; what every component loads at), L1 `5e-4`, L2 `1.5e-4`,
+all relative to the component diagonal; `angleTolerance` stays `0.35`
+everywhere (angular error is scale-free — zoom starves the chord criterion,
+not the normal-spread one). Bounded levels keep the cache keyed exactly like
+the disk tier (`<cid>-l<chord>-a<angle>`) and make hysteresis meaningful.
+
+**Trigger: projected chord error, not zoom thresholds.** For a component with
+bounding diagonal `D` (its tolerance unit) at distance `d` from the camera,
+the worst on-screen silhouette error of level `l` is
+`errorPx = l · D · pxPerUnit(d)` where `pxPerUnit` is
+`viewportHeightPx / (2 · d · tan(fovY/2))` (perspective) or
+`viewportHeightPx / visibleWorldHeight` (ortho). `d` is camera→bbox-center
+minus the bounding radius, floored — zooming INSIDE a part demands its finest
+level. Desired level = coarsest level with `errorPx ≤ 1.0`; upgrade only when
+the current level's error exceeds `1.25 px`, downgrade only when the coarser
+level would still sit under `0.6 px` — an enter/exit band so orbiting through
+a boundary never thrashes.
+
+**Scheduling.** Camera samples debounce 200 ms; then components are ranked by
+projected error (worst first — nearest/largest on screen win) and ONE
+retessellation runs at a time in the existing surf worker pool, cancellable
+via AbortController when a newer camera sample changes the plan. Levels only
+matter per unique component (cid), so an assembly of 200 occurrences of one
+bolt pays one retessellation.
+
+**Swap without hitches or picking drift.** A level's payload is the SAME
+worker product the initial load produces — meshData AND selector bundle from
+one tessellation — so selection ranges, faceRanges and edge overlays stay
+mutually consistent by construction (face/edge ords are stable per surf; only
+triangle counts change). The swap recomposes the package meshData (reference
+composition, no baking) with a level-suffixed `sourceMeshKey`, so the scene
+uploads the new component geometry, flips every occurrence of that cid at
+once, and keeps drawing the old buffers until the new state commits.
+
+**Memory.** Non-default-level payloads live in an LRU (default 8 entries)
+beside the URL-keyed L0 cache; the displayed level is pinned, eviction falls
+back to re-tessellating on demand. L0 payloads keep their existing lifetime
+(they are the load path's cache).
+
+**Seams.** `loadRenderSurfMeshData(url, { tessellation })` is the one place a
+persistent tessellation cache (the `<cid>-l<chord>-a<angle>` disk tier the
+snapshot pipeline shares) plugs in later; the implicit render path and
+non-package meshes (STL/3MF) have no exact geometry and are out of scope.
+
+**Placement.** Pure policy math and the level-keyed load layer live in cadjs
+(`lib/surf/lodPolicy.js`, `lib/renderAssetClient.js`); the camera-driven
+scheduler and React wiring live in the viewer
+(`viewer/src/client/render/lodScheduler.js`, `useViewportLod`), keeping cadjs
+non-React.
+
+### Phase 5 execution log (2026-08-28, shipped)
+
+Implemented exactly as designed above. Wiring: CadViewer exposes a
+`sampleLodCamera()` imperative sampler (projection params, viewport height,
+live distances to model-space points through the model group transform);
+`onPerspectiveChange` — which already fires on every controls change — feeds
+the scheduler; swaps re-compose through `useCadAssets`'
+`applyComponentLodPayload` and announce themselves with a `cad:lod-level`
+window event. Kill switch `window.__CAD_VIEWER_LOD__ = false`.
+
+Measured on the cutaway turbofan (dev server, headless Chromium, 1400x1000):
+
+- Time-to-first-render untouched: LOD does no work until a camera sample +
+  200ms settle, and pre-zoom screenshots with LOD on/off are byte-identical.
+- A hard zoom onto the nacelle produced 66 level swaps (every unique
+  component to L1, the worst offenders on to L2) with LOD on and ZERO with
+  the kill switch — the `cad:lod-level` trace is the functional evidence.
+- Re-tessellation latency per component (node, inline path): the
+  curved 6.6k-tri component is 89ms at L0, 154ms to L1 (12.2k tris),
+  180ms to L2 (25.1k tris); NURBS-heavy components whose default
+  tessellation is angle-bound barely densify (their chord criterion was
+  never the binding one) and cost 33–84ms — exactly the selective
+  densification the projected-error trigger is for.
+- Suites: cadjs 1034 pass, viewer 401 pass (6 new policy tests, 3
+  level-cache tests, 5 scheduler tests among them).
+
+One scheduler defect was caught by its own test and fixed before landing: a
+persistently failing level load would have busy-looped the drain
+(fail -> finally -> re-plan -> same item); failures now park the (cid, level)
+until the next camera sample.
 
 ## Decisions taken
 

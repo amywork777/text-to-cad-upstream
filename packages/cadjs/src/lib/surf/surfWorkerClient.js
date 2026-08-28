@@ -80,7 +80,7 @@ function ensurePool() {
   return pool;
 }
 
-export function loadSurfComponentInWorker(url, { signal } = {}) {
+export function loadSurfComponentInWorker(url, { signal, tessellation } = {}) {
   const workers = ensurePool();
   if (!workers) {
     return null;
@@ -104,6 +104,11 @@ export function loadSurfComponentInWorker(url, { signal } = {}) {
     };
     pendingRequests.set(id, { resolve, reject, cleanup });
     signal?.addEventListener?.("abort", abort, { once: true });
-    worker.postMessage({ type: "loadSurf", id, url });
+    worker.postMessage({
+      type: "loadSurf",
+      id,
+      url,
+      ...(tessellation ? { tessellation } : {}),
+    });
   });
 }

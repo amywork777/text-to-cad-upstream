@@ -563,7 +563,42 @@ export function peekRenderDisplayEdgeBundle(glbUrl) {
 
 const surfPayloadCache = new Map();
 
-async function loadSurfPayloadInline(url, { signal } = {}) {
+// Non-default tessellation levels (viewport LOD) live under level-suffixed
+// keys in the SAME cache but on a bounded LRU leash: a zoom tour of a large
+// assembly must not accumulate a finest-level copy of every component. The
+// default-level entries keep their load-path lifetime. This keying —
+// url + l<chord>-a<angle> — deliberately mirrors the on-disk tessellation
+// cache tier (`<cid>-l<chord>-a<angle>`); when that shared codec lands, this
+// function is the seam where it plugs in.
+const SURF_LOD_CACHE_LIMIT = 8;
+const surfLodKeys = [];
+
+export function surfTessellationCacheKey(url, tessellation) {
+  if (!tessellation || typeof tessellation !== "object") {
+    return url;
+  }
+  const chord = Number(tessellation.chordTolerance);
+  const angle = Number(tessellation.angleTolerance);
+  if (!Number.isFinite(chord) && !Number.isFinite(angle)) {
+    return url;
+  }
+  const num = (value, fallback) =>
+    (Number.isFinite(value) ? value : fallback).toExponential(6);
+  return `${url}#l${num(chord, NaN)}-a${num(angle, NaN)}`;
+}
+
+function retainSurfLodEntry(cacheKey) {
+  const existing = surfLodKeys.indexOf(cacheKey);
+  if (existing !== -1) {
+    surfLodKeys.splice(existing, 1);
+  }
+  surfLodKeys.push(cacheKey);
+  while (surfLodKeys.length > SURF_LOD_CACHE_LIMIT) {
+    surfPayloadCache.delete(surfLodKeys.shift());
+  }
+}
+
+async function loadSurfPayloadInline(url, { signal, tessellation } = {}) {
   const [
     { parseSurf },
     { tessellateComponent },
@@ -579,17 +614,18 @@ async function loadSurfPayloadInline(url, { signal } = {}) {
   ]);
   assertNotGitLfsPointer(buffer, url, "SURF render asset");
   const { index, floats } = parseSurf(buffer);
-  const component = tessellateComponent(index, floats);
+  const component = tessellateComponent(index, floats, tessellation || {});
   return {
     meshData: buildMeshDataFromSurf(index, floats, { component }),
     bundle: buildSelectorBundleFromSurf(index, floats, { component }),
   };
 }
 
-async function loadSurfPayload(url, { signal } = {}) {
-  const payload = await loadCached(surfPayloadCache, url, async () => {
+async function loadSurfPayload(url, { signal, tessellation } = {}) {
+  const cacheKey = surfTessellationCacheKey(url, tessellation);
+  const payload = await loadCached(surfPayloadCache, cacheKey, async () => {
     const { loadSurfComponentInWorker } = await import("./surf/surfWorkerClient.js");
-    const workerPayload = loadSurfComponentInWorker(url, { signal });
+    const workerPayload = loadSurfComponentInWorker(url, { signal, tessellation });
     if (workerPayload) {
       try {
         return await workerPayload;
@@ -600,9 +636,22 @@ async function loadSurfPayload(url, { signal } = {}) {
         // Worker failure degrades to inline tessellation, never to no model.
       }
     }
-    return loadSurfPayloadInline(url, { signal });
+    return loadSurfPayloadInline(url, { signal, tessellation });
   }, { cachePending: !signal });
-  return finalizeCached(surfPayloadCache, url, payload);
+  if (cacheKey !== url) {
+    retainSurfLodEntry(cacheKey);
+  }
+  return finalizeCached(surfPayloadCache, cacheKey, payload);
+}
+
+/**
+ * Both consumers' payloads — render meshData + selector bundle — for one surf
+ * component at an explicit tessellation level. The viewport LOD scheduler's
+ * entrypoint: one tessellation feeds rendering, picking, and edges, so a level
+ * swap can never leave them disagreeing.
+ */
+export async function loadRenderSurfPayloadAtLevel(url, { signal, tessellation } = {}) {
+  return loadSurfPayload(url, { signal, tessellation });
 }
 
 export async function loadRenderSurfSelectorBundle(surfUrl, { signal } = {}) {

@@ -558,9 +558,13 @@ export function buildComposedPackageMeshData(descriptor, componentMeshDataByCid)
       opacity: overrideOpacity !== null ? overrideOpacity : undefined,
       hasSourceColors: useComponentVertexColors,
       // Shared component geometry: cadScene caches one BufferGeometry per sourceMeshKey and
-      // reuses it across every occurrence of this cid (+ colour mode).
+      // reuses it across every occurrence of this cid (+ colour mode). A viewport-LOD level
+      // swap re-tessellates the component, so the level is part of the identity — a new key
+      // uploads fresh buffers and flips every occurrence of the cid at once.
       sourceMesh: componentMeshData,
-      sourceMeshKey: `${cid}:${useComponentVertexColors ? "src" : "flat"}`,
+      sourceMeshKey: `${cid}:${useComponentVertexColors ? "src" : "flat"}${
+        componentMeshData?.lodLevel ? `:l${componentMeshData.lodLevel}` : ""
+      }`,
       vertexCount: Math.floor(sourceVertices.length / 3),
       triangleCount: Math.floor((componentMeshData?.indices?.length || 0) / 3),
       sourcePartRanges,

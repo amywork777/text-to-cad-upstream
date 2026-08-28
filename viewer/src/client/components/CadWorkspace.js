@@ -4,6 +4,7 @@ import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useR
 import { ArrowLeftRight, ArrowRight, Circle, Eraser, Minus, PaintBucket, PenTool, Square } from "lucide-react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import CadRenderPane from "./workbench/CadRenderPane";
+import { useViewportLod } from "../render/useViewportLod";
 import FileViewerSidebar from "./workbench/FileViewerSidebar";
 import {
   ThemeEditorPanel,
@@ -1370,6 +1371,8 @@ export default function CadWorkspace({
   const {
     meshState,
     setMeshState,
+    lodPackage,
+    applyComponentLodPayload,
     meshLoadInProgress,
     meshLoadTargetFile,
     meshLoadStage,
@@ -3122,6 +3125,13 @@ export default function CadWorkspace({
   const drawingUndoStackRef = useRef(drawingUndoStack);
   const drawingRedoStackRef = useRef(drawingRedoStack);
   const viewerRef = useRef(null);
+  // Viewport LOD (design/unified-tessellation.md Phase 5): camera-settle
+  // driven re-tessellation of the components that project the worst error.
+  const { onCameraMoved: onLodCameraMoved } = useViewportLod({
+    viewerRef,
+    lodPackage,
+    applyComponentLodPayload
+  });
   const previewUiStateRef = useRef(null);
   const panelResizeStateRef = useRef(null);
   const fileSessionSaveTimerRef = useRef(0);
@@ -7534,6 +7544,8 @@ export default function CadWorkspace({
       activePerspectiveRef.current = normalizedPerspective;
       scheduleActiveFileSessionSave();
     }
+    // Camera moved: give the LOD scheduler a sample (it debounces internally).
+    onLodCameraMoved();
     const hasPerspectiveDependentDrawings =
       drawingStrokesRef.current.length > 0 ||
       drawingUndoStackRef.current.some((strokes) => strokes.length > 0) ||
@@ -7547,7 +7559,7 @@ export default function CadWorkspace({
     setDrawingStrokes([]);
     setDrawingUndoStack([]);
     setDrawingRedoStack([]);
-  }, [scheduleActiveFileSessionSave]);
+  }, [scheduleActiveFileSessionSave, onLodCameraMoved]);
 
   useCadWorkspaceShortcuts({
     copyStatus,

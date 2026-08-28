@@ -258,6 +258,83 @@ export function useCadAssets({
     return entryMeshAssetSignature(entry);
   }, []);
 
+  // --- viewport LOD (design/unified-tessellation.md Phase 5) -----------------
+  // The composed package's ingredients, kept so a level swap can re-compose ONE
+  // component at a finer tessellation without reloading anything else. Ref +
+  // state pair: the ref is the mutable working set, the state is the reactive
+  // summary the LOD hook consumes (component diagonals, occurrence centers in
+  // model coordinates, and each component's surf URL).
+  const lodPackageRef = useRef(null);
+  const [lodPackage, setLodPackage] = useState(null);
+
+  const buildLodPackageSummary = useCallback((entry, meshUrl, descriptor, componentMeshDataByCid) => {
+    const transformPoint = (m, p) => (Array.isArray(m) && m.length >= 12
+      ? [
+        m[0] * p[0] + m[1] * p[1] + m[2] * p[2] + m[3],
+        m[4] * p[0] + m[5] * p[1] + m[6] * p[2] + m[7],
+        m[8] * p[0] + m[9] * p[1] + m[10] * p[2] + m[11]
+      ]
+      : p);
+    const transformsByCid = new Map();
+    for (const occurrence of descriptor.occurrences || []) {
+      const cid = String(occurrence?.component || "").trim();
+      if (!transformsByCid.has(cid)) {
+        transformsByCid.set(cid, []);
+      }
+      transformsByCid.get(cid).push(occurrence?.transform || null);
+    }
+    const components = Object.entries(descriptor.components || {})
+      .map(([cid, component]) => {
+        const bounds = componentMeshDataByCid[cid]?.bounds;
+        if (!bounds?.min || !bounds?.max || !component?.surf) {
+          return null;
+        }
+        const center = [
+          (bounds.min[0] + bounds.max[0]) / 2,
+          (bounds.min[1] + bounds.max[1]) / 2,
+          (bounds.min[2] + bounds.max[2]) / 2
+        ];
+        const diagonal = Math.hypot(
+          bounds.max[0] - bounds.min[0],
+          bounds.max[1] - bounds.min[1],
+          bounds.max[2] - bounds.min[2]
+        );
+        const centers = (transformsByCid.get(cid) || []).map((m) => transformPoint(m, center));
+        if (!centers.length || !(diagonal > 0)) {
+          return null;
+        }
+        return { cid, diagonal, centers, surfUrl: resolvePackageAssetUrl(meshUrl, component.surf) };
+      })
+      .filter(Boolean);
+    return { file: entry.file, components };
+  }, []);
+
+  // Swap one component to a re-tessellated level: tag the payload's meshData
+  // with the level (part of the geometry identity — see sourceMeshKey in
+  // buildComposedPackageMeshData), re-compose (reference composition, cheap),
+  // and publish. The old state keeps rendering until this one commits, and a
+  // stale apply (entry changed underneath) is a no-op.
+  const applyComponentLodPayload = useCallback((cid, level, payload) => {
+    const ctx = lodPackageRef.current;
+    const meshData = payload?.meshData;
+    if (!ctx || !meshData) {
+      return false;
+    }
+    meshData.lodLevel = level;
+    ctx.componentMeshDataByCid = { ...ctx.componentMeshDataByCid, [cid]: meshData };
+    const composed = buildComposedPackageMeshData(ctx.descriptor, ctx.componentMeshDataByCid);
+    const nextState = buildComposedPackageMeshStateRef.current(ctx.entry, ctx.descriptor, composed);
+    let applied = false;
+    setMeshState((current) => {
+      if (!current || current.file !== ctx.file) {
+        return current;
+      }
+      applied = true;
+      return nextState;
+    });
+    return applied;
+  }, []);
+
   const buildComposedPackageMeshState = useCallback((entry, descriptor, meshData) => {
     return {
       file: entry.file,
@@ -272,6 +349,9 @@ export function useCadAssets({
       assemblyBackgroundError: ""
     };
   }, [getAssemblyMeshHash]);
+  // Defined after applyComponentLodPayload, consumed by it through a ref.
+  const buildComposedPackageMeshStateRef = useRef(buildComposedPackageMeshState);
+  buildComposedPackageMeshStateRef.current = buildComposedPackageMeshState;
 
   const buildAssemblyPreviewMeshState = useCallback((entry, meshData, topologyManifest = null) => {
     const previewMeshData = createAssemblyPreviewMeshData(meshData, topologyManifest);
@@ -455,6 +535,9 @@ export function useCadAssets({
     setMeshLoadInProgress(true);
     setMeshLoadTargetFile(String(entry?.file || "").trim());
     setMeshLoadStage(entry?.kind === "assembly" ? "loading assembly mesh" : "loading mesh");
+    // Any new load invalidates the previous entry's LOD working set.
+    lodPackageRef.current = null;
+    setLodPackage(null);
     const keepRenderedAssemblyVisible = entry?.kind === "assembly" && !!cachedMeshState;
     let assemblyPreviewVisible = keepRenderedAssemblyVisible;
     if (!keepRenderedAssemblyVisible) {
@@ -495,6 +578,13 @@ export function useCadAssets({
           setMeshLoadStage("building assembly");
           const composed = buildComposedPackageMeshData(packageDescriptor, componentMeshDataByCid);
           setMeshState(buildComposedPackageMeshState(entry, packageDescriptor, composed));
+          lodPackageRef.current = {
+            entry,
+            file: entry.file,
+            descriptor: packageDescriptor,
+            componentMeshDataByCid: { ...componentMeshDataByCid }
+          };
+          setLodPackage(buildLodPackageSummary(entry, meshUrl, packageDescriptor, componentMeshDataByCid));
           setStatus(ASSET_STATUS.READY);
           setError("");
           return;
@@ -921,6 +1011,8 @@ export function useCadAssets({
   return {
     meshState,
     setMeshState,
+    lodPackage,
+    applyComponentLodPayload,
     meshLoadInProgress,
     meshLoadTargetFile,
     meshLoadStage,
