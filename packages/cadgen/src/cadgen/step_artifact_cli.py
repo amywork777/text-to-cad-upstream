@@ -33,7 +33,6 @@ from cadgen.step_targets import (
     ResolvedStepTarget,
     StepTopologyArtifact,
     StepTopologyArtifactError,
-    validate_step_topology_artifact,
 )
 
 
@@ -230,19 +229,8 @@ def _current_artifact_for_spec(spec: EntrySpec) -> StepTopologyArtifact | None:
             artifact_path=package_dir,
             manifest=manifest,
         )
-    try:
-        return validate_step_topology_artifact(
-            ResolvedStepTarget(
-                cad_path=spec.cad_ref,
-                kind=spec.kind,
-                source_path=spec.source_path,
-                step_path=spec.step_path,
-            ),
-            artifact_path=package_dir,
-            require_selector=True,
-        )
-    except StepTopologyArtifactError:
-        return None
+    # No package directory -> nothing current (the package IS the only artifact form).
+    return None
 
 
 def build_parser() -> argparse.ArgumentParser:

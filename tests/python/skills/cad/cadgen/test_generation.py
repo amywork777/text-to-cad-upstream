@@ -13,7 +13,8 @@ from cadgen._internal import generation as cad_generation
 from cadgen import catalog as cad_catalog
 from cadgen._internal import source_hash as cad_source_hash
 from cadgen.catalog import StepImportOptions
-from cadgen._internal.glb import read_step_topology_manifest_from_glb
+from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
+from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
 from cadgen._internal.step_scene import LoadedStepScene, OccurrenceNode, SelectorBundle
 from cadgen._internal.step_metadata import TEXT_TO_CAD_GENERATOR, read_text_to_cad_step_metadata
@@ -1131,6 +1132,8 @@ class CadGenerationTests(unittest.TestCase):
         spec = next(spec for spec in cad_generation.list_entry_specs() if spec.cad_ref == self._cad_ref("flat"))
         artifact = mock.Mock()
         artifact.manifest = {
+            "kind": "assembly-package",
+            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "sourceKind": "python",
             "sourceHash": "old-python-source-hash",
             "edgeRendering": {
@@ -1164,8 +1167,12 @@ class CadGenerationTests(unittest.TestCase):
 
         with (
             mock.patch(
-                "cadgen.step_targets.validate_step_topology_artifact",
-                return_value=artifact,
+                "cadgen._internal.component_package.is_assembly_package",
+                return_value=True,
+            ),
+            mock.patch(
+                "cadgen._internal.component_package.read_package_descriptor",
+                return_value=artifact.manifest,
             ),
             mock.patch.object(cad_generation, "_assembly_glb_package_current", return_value=True),
             mock.patch.object(cad_generation, "_generated_assembly_glb_closure_current", return_value=True),
@@ -1366,6 +1373,8 @@ class CadGenerationTests(unittest.TestCase):
         scene = self._fake_scene(step_path)
         artifact = mock.Mock()
         artifact.manifest = {
+            "kind": "assembly-package",
+            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1379,8 +1388,11 @@ class CadGenerationTests(unittest.TestCase):
 
         package_patch, package_calls = self._patch_package_build()
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene) as load_scene, mock.patch(
-            "cadgen.step_targets.validate_step_topology_artifact",
-            return_value=artifact,
+            "cadgen._internal.component_package.is_assembly_package",
+            return_value=True,
+        ), mock.patch(
+            "cadgen._internal.component_package.read_package_descriptor",
+            return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
                 spec,
@@ -1404,6 +1416,8 @@ class CadGenerationTests(unittest.TestCase):
         scene = self._fake_scene(step_path)
         artifact = mock.Mock()
         artifact.manifest = {
+            "kind": "assembly-package",
+            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "stepHash": "stale-step-hash",
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1417,8 +1431,11 @@ class CadGenerationTests(unittest.TestCase):
 
         package_patch, package_calls = self._patch_package_build()
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene) as load_scene, mock.patch(
-            "cadgen.step_targets.validate_step_topology_artifact",
-            return_value=artifact,
+            "cadgen._internal.component_package.is_assembly_package",
+            return_value=True,
+        ), mock.patch(
+            "cadgen._internal.component_package.read_package_descriptor",
+            return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
                 spec,
@@ -1439,6 +1456,8 @@ class CadGenerationTests(unittest.TestCase):
         spec = selected_specs[0]
         artifact = mock.Mock()
         artifact.manifest = {
+            "kind": "assembly-package",
+            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1471,8 +1490,11 @@ class CadGenerationTests(unittest.TestCase):
 
         package_patch, package_calls = self._patch_package_build()
         with mock.patch.object(cad_generation, "load_step_scene_cached") as load_scene, mock.patch(
-            "cadgen.step_targets.validate_step_topology_artifact",
-            return_value=artifact,
+            "cadgen._internal.component_package.is_assembly_package",
+            return_value=True,
+        ), mock.patch(
+            "cadgen._internal.component_package.read_package_descriptor",
+            return_value=artifact.manifest,
         ), package_patch:
             result = cad_generation._generate_part_outputs(
                 spec,
@@ -1494,6 +1516,8 @@ class CadGenerationTests(unittest.TestCase):
         scene = self._fake_scene(step_path)
         artifact = mock.Mock()
         artifact.manifest = {
+            "kind": "assembly-package",
+            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "mesh": {
                 "linearDeflection": 0.3,
@@ -1504,8 +1528,11 @@ class CadGenerationTests(unittest.TestCase):
 
         package_patch, package_calls = self._patch_package_build()
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene), mock.patch(
-            "cadgen.step_targets.validate_step_topology_artifact",
-            return_value=artifact,
+            "cadgen._internal.component_package.is_assembly_package",
+            return_value=True,
+        ), mock.patch(
+            "cadgen._internal.component_package.read_package_descriptor",
+            return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
                 spec,

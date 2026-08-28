@@ -64,18 +64,6 @@ COMPONENT_PROVENANCE_KEYS = (
     "generatedAt",
     "assemblyMates",
 )
-# Lazy full-manifest sidecar inside the package, built on demand by cadgen.cli.step_inspect
-# (faces/edges/selectors) — the build itself never produces it (that is the win).
-TOPOLOGY_GLB_NAME = "topology.glb"
-
-
-def assembly_topology_glb_path(entry_path: Path) -> Path:
-    """Path to the lazy full-manifest single GLB inside an assembly package. inspect's
-    selector queries build + cache it here on first use; renders never need it.
-    Keyed by the ENTRY file (the same key as the package itself)."""
-    return render_package_dir(entry_path) / TOPOLOGY_GLB_NAME
-
-
 def is_assembly_package(path: Path) -> bool:
     """True when ``path`` is a component-package directory (has assembly.json)."""
     return path.is_dir() and (path / DESCRIPTOR_NAME).is_file()
@@ -774,10 +762,9 @@ def build_package_from_compound(
     _descriptor_tmp = package_dir / f".{DESCRIPTOR_NAME}{temp_suffix()}"
     _descriptor_tmp.write_text(json.dumps(descriptor))
     replace_atomic(_descriptor_tmp, package_dir / DESCRIPTOR_NAME)
-    # The lazy whole-assembly topology sidecar was extracted against the
-    # previous descriptor's provenance; a rewritten package makes it stale by
-    # definition, so drop it and let the next selector query rebuild it.
-    (package_dir / TOPOLOGY_GLB_NAME).unlink(missing_ok=True)
+    # Sweep the retired topology.glb sidecar if an older build left one; nothing
+    # produces or reads it any more (selector topology comes from the .surf files).
+    (package_dir / "topology.glb").unlink(missing_ok=True)
 
     # Prune orphans: each package's components/ dir belongs to exactly ONE entry
     # (packages are self-contained; cross-model sharing was given up on purpose),

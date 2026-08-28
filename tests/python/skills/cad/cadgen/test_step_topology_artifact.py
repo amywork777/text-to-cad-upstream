@@ -133,30 +133,9 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
             manifest={},
         )
 
-    def test_part_cache_hit_reports_no_regeneration(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            step_path = Path(temp) / "part.step"
-            spec = self._spec(source="generated", step_path=step_path)
-            fake_artifact = self._fake_artifact(step_path)
-            target = ResolvedStepTarget(cad_path="part", kind="part", source_path=step_path, step_path=step_path)
-
-            with (
-                mock.patch.object(step_artifacts, "_entry_spec_for_target", return_value=spec),
-                mock.patch("cadgen._internal.component_package.is_assembly_package", return_value=False),
-                mock.patch.object(step_artifacts, "_current_artifact_for_spec", return_value=fake_artifact),
-            ):
-                debug: dict[str, object] = {}
-                artifact = step_artifacts.ensure_step_topology_artifact(target, debug=debug)
-
-            self.assertIs(artifact, fake_artifact)
-            self.assertEqual(debug["source"], "generated")
-            self.assertFalse(debug["assembly"])
-            self.assertTrue(debug["cacheHit"])
-            self.assertNotIn("selectorReextracted", debug)
-            self.assertIsInstance(debug["tookMs"], float)
-            self.assertGreaterEqual(debug["tookMs"], 0)
-
-    def test_part_cache_miss_triggers_regeneration_and_reports_it(self) -> None:
+    def test_part_without_package_regenerates_and_reports_it(self) -> None:
+        # No render package -> nothing to cache-hit (the package IS the only
+        # artifact form): the entry regenerates and the debug record says so.
         with tempfile.TemporaryDirectory() as temp:
             step_path = Path(temp) / "part.step"
             spec = self._spec(source="imported", step_path=step_path)
@@ -165,11 +144,14 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
 
             with (
                 mock.patch.object(step_artifacts, "_entry_spec_for_target", return_value=spec),
-                mock.patch("cadgen._internal.component_package.is_assembly_package", return_value=False),
-                mock.patch.object(step_artifacts, "_current_artifact_for_spec", return_value=None),
+                # First check (fast path): no package yet; second (post-build): built.
+                mock.patch(
+                    "cadgen._internal.component_package.is_assembly_package",
+                    side_effect=[False, True],
+                ),
                 mock.patch.object(step_artifacts, "_scene_for_regeneration", return_value=(spec, mock.Mock())),
                 mock.patch.object(step_artifacts, "_generate_part_outputs"),
-                mock.patch.object(step_artifacts, "validate_step_topology_artifact", return_value=fake_artifact),
+                mock.patch.object(step_artifacts, "_assembly_topology_artifact", return_value=fake_artifact),
             ):
                 debug: dict[str, object] = {}
                 artifact = step_artifacts.ensure_step_topology_artifact(target, debug=debug)
@@ -189,8 +171,8 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
 
             with (
                 mock.patch.object(step_artifacts, "_entry_spec_for_target", return_value=spec),
-                mock.patch("cadgen._internal.component_package.is_assembly_package", return_value=False),
-                mock.patch.object(step_artifacts, "_current_artifact_for_spec", return_value=fake_artifact),
+                mock.patch("cadgen._internal.component_package.is_assembly_package", return_value=True),
+                mock.patch.object(step_artifacts, "_assembly_topology_artifact", return_value=fake_artifact),
             ):
                 artifact = step_artifacts.ensure_step_topology_artifact(target)
 

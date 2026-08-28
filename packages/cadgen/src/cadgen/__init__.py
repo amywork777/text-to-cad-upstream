@@ -20,19 +20,14 @@ __all__ = [
     "report",
     "target",
     "track",
-    "validate_step_topology_artifact",
 ]
 
 
 def __getattr__(name: str):
-    if name in {"ensure_step_topology_artifact", "validate_step_topology_artifact"}:
-        from cadgen.step_targets import validate_step_topology_artifact
+    if name == "ensure_step_topology_artifact":
         from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
-        return {
-            "ensure_step_topology_artifact": ensure_step_topology_artifact,
-            "validate_step_topology_artifact": validate_step_topology_artifact,
-        }[name]
+        return ensure_step_topology_artifact
     if name in {"AssemblyHelper", "MateRelation", "MateTarget", "label_shape", "label_text", "target"}:
         from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
 
@@ -93,7 +88,6 @@ if TYPE_CHECKING:
         occurrence_selector_id,
         scene_occurrence_shape,
     )
-    from cadgen.step_targets import validate_step_topology_artifact
     from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
 

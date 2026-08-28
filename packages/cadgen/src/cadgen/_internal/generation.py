@@ -39,7 +39,7 @@ from cadgen._internal.package_freshness import (
     schema_version_matches,
 )
 from cadgen._internal.glb import build_step_topology_index_manifest
-from cadgen._internal.glb import read_step_topology_manifest_from_glb
+from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.glb_topology import (
     STEP_EDGE_VISIBILITY_CLASSES,
     normalize_step_edge_render_visibility_classes,
@@ -308,97 +308,24 @@ def _package_descriptor_matches_spec(
     )
 
 
-def _existing_topology_artifact_matches_spec_without_scene(
-    spec: EntrySpec,
-    *,
-    require_selector: bool = True,
-) -> bool:
+def _existing_topology_artifact_matches_spec_without_scene(spec: EntrySpec) -> bool:
+    """True when the entry's render package is current (no scene needed).
+
+    The package descriptor is the ONLY artifact form, so this is a thin guard
+    around :func:`_package_descriptor_matches_spec` (None -> no package -> not
+    current). The pre-package monolith-GLB fallback that used to live here was
+    unreachable — its validator gated on ``.is_file()`` and every artifact is a
+    directory — and is deleted."""
     if spec.step_path is None or spec.kind not in {"part", "assembly"}:
         return False
-    package_match = _package_descriptor_matches_spec(spec)
-    if package_match is not None:
-        return package_match
-    from cadgen.step_targets import (
-        ResolvedStepTarget,
-        StepTopologyArtifactError,
-        validate_step_topology_artifact,
-    )
-
-    try:
-        artifact = validate_step_topology_artifact(
-            ResolvedStepTarget(
-                cad_path=spec.cad_ref,
-                kind=spec.kind,
-                source_path=spec.source_path,
-                step_path=spec.step_path,
-            ),
-            artifact_path=render_package_dir(spec.entry_path),
-            require_selector=require_selector,
-        )
-    except StepTopologyArtifactError:
-        return False
-    if not _artifact_source_kind_matches_spec(spec, artifact.manifest):
-        return False
-    if not _artifact_step_hash_matches_spec(spec, artifact.manifest):
-        return False
-    mesh = artifact.manifest.get("mesh")
-    if not isinstance(mesh, Mapping):
-        return False
-    selector_options = _selector_options_from_topology_manifest(spec, artifact.manifest)
-    if selector_options is None:
-        return False
-    return (
-        _mesh_values_match(
-            mesh,
-            linear_deflection=selector_options.linear_deflection,
-            angular_deflection=selector_options.angular_deflection,
-            relative=selector_options.relative,
-        )
-        and _edge_visibility_classes_match_manifest(artifact.manifest, selector_options)
-    )
+    return bool(_package_descriptor_matches_spec(spec))
 
 
 def _existing_topology_artifact_matches_options(spec: EntrySpec, selector_options: SelectorOptions) -> bool:
+    """As above, but against explicitly supplied selector options."""
     if spec.step_path is None or spec.kind not in {"part", "assembly"}:
         return False
-    package_match = _package_descriptor_matches_spec(spec, selector_options)
-    if package_match is not None:
-        return package_match
-    from cadgen.step_targets import (
-        ResolvedStepTarget,
-        StepTopologyArtifactError,
-        validate_step_topology_artifact,
-    )
-
-    try:
-        artifact = validate_step_topology_artifact(
-            ResolvedStepTarget(
-                cad_path=spec.cad_ref,
-                kind=spec.kind,
-                source_path=spec.source_path,
-                step_path=spec.step_path,
-            ),
-            artifact_path=render_package_dir(spec.entry_path),
-            require_selector=False,
-        )
-    except StepTopologyArtifactError:
-        return False
-    if not _artifact_source_kind_matches_spec(spec, artifact.manifest):
-        return False
-    if not _artifact_step_hash_matches_spec(spec, artifact.manifest):
-        return False
-    mesh = artifact.manifest.get("mesh")
-    if not isinstance(mesh, Mapping):
-        return False
-    return (
-        _mesh_values_match(
-            mesh,
-            linear_deflection=selector_options.linear_deflection,
-            angular_deflection=selector_options.angular_deflection,
-            relative=selector_options.relative,
-        )
-        and _edge_visibility_classes_match_manifest(artifact.manifest, selector_options)
-    )
+    return bool(_package_descriptor_matches_spec(spec, selector_options))
 
 
 def _assembly_provenance_manifest(

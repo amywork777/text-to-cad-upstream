@@ -7,9 +7,10 @@ they disagreed about what an occurrence is:
   ``tom_v2``, ids ``o1.1.1``/``o1.12``/``o1.11.7.1.1.1.2``, each naming a component and carrying
   its placement. This is what ``snapshot --mode list`` enumerates and what the CAD Viewer hands
   the user when they click a part.
-* ``topology.glb`` -- the whole-assembly selector sidecar, extracted from the COMPOSED compound.
-  A compound has no instance tree, so it flattens to ONE occurrence (``o1``) holding every solid:
-  162 shapes, 13866 faces, in a single namespace ``o1.s1``/``o1.f19``.
+* the flat selector index -- historically a ``topology.glb`` sidecar extracted from the COMPOSED
+  compound (now synthesized from the per-component ``.surf`` files). A compound has no instance
+  tree, so it flattens to ONE occurrence (``o1``) holding every solid: 162 shapes, 13866 faces,
+  in a single namespace ``o1.s1``/``o1.f19``.
 
 ``lookup.build_selector_index`` reads the second. So every ref the first hands out -- every ref a
 user can actually pick -- resolved to an error, and ``inspect refs --facts`` reported
@@ -17,7 +18,7 @@ user can actually pick -- resolved to an error, and ``inspect refs --facts`` rep
 workaround was to re-identify each face by area and position in the owning part's own namespace,
 which is guesswork whenever a part appears at more than one occurrence.
 
-The fix needs no new data. Each occurrence names a component, and each ``components/<hash>.glb``
+The fix needs no new data. Each occurrence names a component, and each ``components/<cid>.surf``
 already carries that part's own complete topology -- the yoke's component has its 66 faces sitting
 there unused. So this module ADDS the instance-tree occurrences to the flat index rather than
 replacing it: ``#o1.f19`` keeps resolving exactly as before, and ``#o1.12`` starts resolving.
@@ -189,21 +190,14 @@ def _place_entity_row(matrix: list[float], row: Mapping[str, Any]) -> dict[str, 
 
 def _read_component_bundle(package_dir: Path, component: str):
     """A component's topology bundle, from its exact-surface artifact
-    (design/surface-rendering.md R5). The legacy GLB read stays as a
-    fallback only until the last pre-surf packages regenerate."""
+    (design/surface-rendering.md R5). Pre-surf packages fail the schema
+    gate and rebuild before ever reaching here, so .surf is the only form."""
     surf_path = package_dir / COMPONENTS_DIRNAME / f"{component}.surf"
-    if surf_path.is_file():
-        from cadgen._internal.surf_tables import read_component_topology_bundle
+    if not surf_path.is_file():
+        return None
+    from cadgen._internal.surf_tables import read_component_topology_bundle
 
-        bundle = read_component_topology_bundle(surf_path)
-        if bundle is not None:
-            return bundle
-    glb_path = package_dir / COMPONENTS_DIRNAME / f"{component}.glb"
-    if glb_path.is_file():
-        from cadgen._internal.glb import read_step_topology_bundle_from_glb
-
-        return read_step_topology_bundle_from_glb(glb_path)
-    return None
+    return read_component_topology_bundle(surf_path)
 
 
 def _component_occurrence_bbox(bundle: object) -> object:

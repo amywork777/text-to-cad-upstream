@@ -33,7 +33,6 @@ from cadgen.step_targets import (
     ResolvedStepTarget,
     StepTopologyArtifact,
     StepTopologyArtifactError,
-    validate_step_topology_artifact,
 )
 
 
@@ -156,13 +155,6 @@ def _ensure_step_topology_artifact(
                 ),
             ) from exc
 
-    if not force:
-        artifact = _current_artifact_for_spec(spec, artifact_path=resolved_artifact_path, require_selector=require_selector)
-        if artifact is not None:
-            if debug is not None:
-                debug["cacheHit"] = True
-            return artifact
-
     if debug is not None:
         debug["cacheHit"] = False
 
@@ -202,28 +194,28 @@ def _ensure_step_topology_artifact(
                 f"{REGENERATE_STEP_PROMPT}"
             ),
         ) from exc
-    # The build just produced a component-GLB package directory. Return its topology the
-    # same way the fast path above does (cheap descriptor for renders, on-demand selector
-    # extraction otherwise) rather than the monolith file-validator, which requires a GLB
-    # *file* and would report the package directory as missing.
-    if artifact_path is None and is_assembly_package(resolved_artifact_path):
-        return _assembly_topology_artifact(
-            spec,
-            require_selector=require_selector,
-            logger=logger,
-            force=False,
-            preloaded_scene=scene,
-            debug=debug,
-        )
-    return validate_step_topology_artifact(
-        ResolvedStepTarget(
+    # The build just produced the render package (the ONLY artifact form); return its
+    # topology the same way the fast path above does — cheap descriptor for renders,
+    # on-demand selector extraction otherwise.
+    if not is_assembly_package(resolved_artifact_path):
+        raise StepTopologyArtifactError(
+            code="missing_glb",
             cad_path=spec.cad_ref,
-            kind=spec.kind,
-            source_path=spec.source_path,
             step_path=spec.step_path,
-        ),
-        artifact_path=resolved_artifact_path,
+            artifact_path=resolved_artifact_path,
+            regenerate_command=REGENERATE_STEP_COMMAND,
+            message=(
+                f"Build finished but no render package exists for {spec.cad_ref}.\n"
+                f"{REGENERATE_STEP_PROMPT}"
+            ),
+        )
+    return _assembly_topology_artifact(
+        spec,
         require_selector=require_selector,
+        logger=logger,
+        force=False,
+        preloaded_scene=scene,
+        debug=debug,
     )
 
 
@@ -408,29 +400,6 @@ def _scene_for_regeneration(
     if inferred_kind != spec.kind:
         spec = replace(spec, kind=inferred_kind)
     return spec, scene
-
-
-def _current_artifact_for_spec(
-    spec: EntrySpec,
-    *,
-    artifact_path: Path,
-    require_selector: bool,
-) -> StepTopologyArtifact | None:
-    if not _existing_topology_artifact_matches_spec_without_scene(spec, require_selector=require_selector):
-        return None
-    try:
-        return validate_step_topology_artifact(
-            ResolvedStepTarget(
-                cad_path=spec.cad_ref,
-                kind=spec.kind,
-                source_path=spec.source_path,
-                step_path=spec.step_path,
-            ),
-            artifact_path=artifact_path,
-            require_selector=require_selector,
-        )
-    except StepTopologyArtifactError:
-        return None
 
 
 def _python_source_for_target(target: ResolvedStepTarget) -> Path | None:
