@@ -206,17 +206,26 @@ prior-friendliest form and stays in reserve.
    teaching errors for legacy name/naming; migration doc + codemod.
 4. **Skills** — `cad` skill rewritten for decorator usage; new `cad-project`
    skill (structure, commit policy, scaffold); docs sweep.
-5. **Corpus migration — DEFERRED, separately gated.** `models/` adopts the
-   cad-project standard and the codemod runs corpus-wide (hash-verified),
-   landing the layout policy test in the repo's test tree. Does not block
-   phases 1–4; until then, existing `.step.py` models keep working untouched
-   on the old path… which ceases to exist at phase 3 — so phase 3 and the
-   corpus migration land together or phase 3 waits. Sequencing decision at
-   phase 2 exit.
+5. **Pilot migration (decided 2026-08-29): a SMALL representative subset, not
+   the corpus.** Phase 3's hard deprecation proceeds with only the pilot
+   migrated. Pick ~3–5 projects covering the contract surface — a single
+   part, a multi-occurrence assembly, a DXF drawing, a params-sidecar model,
+   and (if feasible) a composed/imported-child model — migrate them to the
+   decorator + cad-project structure, hash-verify their packages pre/post,
+   and use them as the living examples the skills reference. Inline test
+   fixtures (BOX_GENERATOR-style strings) migrate with phase 3.
+
+   Consequence, accepted deliberately: the REST of `models/` becomes
+   regeneration-blocked (its `.step.py` scripts hit the teaching error) while
+   its committed artifacts/packages keep rendering everywhere — artifacts are
+   the truth; only re-running old generators is gated on migration. The
+   corpus-wide codemod + layout policy test are a LATER, separately-scheduled
+   job.
 
 ## Open decisions
 
 - Marker-file hook (b) vs pure convention (a) for cad-project output routing.
 - Exact rename for the imported-STEP build command (`scripts/import`?).
 - Whether the from-import proxy tier ever ships (only on observed friction).
-- Phase 3 / corpus-migration sequencing (see phase 5 note).
+- ~~Phase 3 / corpus-migration sequencing~~ — decided: phase 3 lands with the
+  pilot subset only; full corpus migration is deferred work.
