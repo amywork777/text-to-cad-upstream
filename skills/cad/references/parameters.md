@@ -32,7 +32,7 @@ Use snake_case semantic names that describe intent, matching the build123d Pytho
 
 ### Declaring and discovering the sidecar
 
-A generated model declares its JS sidecar from `gen_step()`, and the file can
+A generated model declares its JS sidecar from the `@step` model function, and the file can
 have any name; `<name>.params.js` is the convention. An imported `.step` has no
 generator, so it uses the `<name>.step.js` filename convention below instead.
 
@@ -51,12 +51,13 @@ export function solveLinkage(t) { /* ... */ }   // testable under node
 export default { manifest: { /* ... */ }, update({ params, effects }) { /* ... */ } };
 ```
 
-- A generated model declares the sidecar through the `gen_step()` envelope by
+- A generated model declares the sidecar through the the `@step` model function envelope by
   returning a `params` filepath alongside its `shape`. The path is relative to
   the generator file:
 
   ```python
-  def gen_step():
+  @step
+  def model():
       return {"shape": build_model(), "params": "<name>.params.js"}
   ```
 
@@ -66,7 +67,7 @@ export default { manifest: { /* ... */ }, update({ params, effects }) { /* ... *
   descriptor-gated: only a file a descriptor declares is served, never arbitrary
   workspace JS.
 
-- An imported `.step` model has no `gen_step()` to declare anything, so the CAD
+- An imported `.step` model has no the `@step` model function to declare anything, so the CAD
   Viewer falls back to a filename convention for that case alone: a sidecar
   named after the STEP file plus `.js`, in the same directory.
 
@@ -81,7 +82,7 @@ export default { manifest: { /* ... */ }, update({ params, effects }) { /* ... *
   it is named after actually exists beside it (`is_step_sidecar_path` in
   `viewer/server/scanner.mjs`). `scripts/snapshot` renders the same file, but
   you must name it explicitly with `--params-path` (see Validation below); it
-  never guesses by filename. Do not add a wrapper `<name>.step.py` that only
+  never guesses by filename. Do not add a wrapper `<name>.py` that only
   re-imports the `.step` to declare `params`; it makes the imported file look
   generated and buys nothing.
 
@@ -190,7 +191,7 @@ Use CAD `scripts/snapshot` review for visual semantics, following `snapshot-revi
   An imported `.step`/`.stp` declares nothing, so name its sidecar with
   `--params-path` (job field `stepParametersPath`) — `--params` alone is
   rejected there, and `--params-path` is rejected on a generated model, whose
-  sidecar belongs in its `gen_step()`. The path must sit inside the model
+  sidecar belongs in its the `@step` model function. The path must sit inside the model
   folder, since the renderer serves assets relative to it.
 
   ```bash

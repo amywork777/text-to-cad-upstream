@@ -1,6 +1,6 @@
 ---
 name: dxf
-description: Generate, regenerate, and validate 2D DXF drawings from Python ezdxf sources. Use for DXF files, `.dxf.py` generators, gen_dxf() sources, 2D profiles, outlines, templates, gaskets, panels, flat patterns, laser/plasma/waterjet cut layouts, and 2D drawing exports of CAD geometry.
+description: Generate, regenerate, and validate 2D DXF drawings from Python ezdxf sources. Use for DXF files, `.py` generators, @dxf model scripts, 2D profiles, outlines, templates, gaskets, panels, flat patterns, laser/plasma/waterjet cut layouts, and 2D drawing exports of CAD geometry.
 ---
 
 # DXF generation and validation
@@ -24,14 +24,14 @@ bundled Node one-shot; a missing `node` is reported at render time.
 
 ## Purpose
 
-Create or modify 2D DXF drawings from natural-language requirements or from CAD geometry, generate validated drawing artifacts, and return checked outputs. A DXF drawing's source of truth is a dedicated Python generator file named `<name>.dxf.py` defining `gen_dxf()`; the CLI owns output paths.
+Create or modify 2D DXF drawings from natural-language requirements or from CAD geometry, generate validated drawing artifacts, and return checked outputs. A DXF drawing's source of truth is a dedicated Python generator file named `<name>.py` defining the `@dxf` model function; the CLI owns output paths.
 
 The build product IS the `.dxf` file: **every run writes the sibling `<name>.dxf`**
-(the same contract `scripts/gen` has for STEP: source in, exchange file out; `-o`
+(the same contract the model script has for STEP: source in, exchange file out; `-o`
 or a `SOURCE=OUTPUT` pair renames it). There is no drawing package any more — the
 CAD Viewer parses and meshes the `.dxf` itself, so the file you hand a cutting
 service and the file the viewer renders are one and the same. The only thing kept
-under `__cadgen__/models/<name>.dxf.py/` is a small output record that makes an
+under `__cadgen__/models/<name>.py/` is a small output record that makes an
 unchanged source a no-op. An unchanged source closure skips regeneration; `--force`
 overrides.
 
@@ -39,25 +39,28 @@ overrides.
 
 Copy the full generator template for the applicable workflow from `references/generator-templates.md` when creating a new drawing.
 
-1. **DXF generated from scratch** (standalone drafting — gaskets, panels, templates, cut layouts with no 3D model behind them): a `<name>.dxf.py` that builds an `ezdxf` document directly.
+1. **DXF generated from scratch** (standalone drafting — gaskets, panels, templates, cut layouts with no 3D model behind them): a `<name>.py` that builds an `ezdxf` document directly.
 
-2. **DXF derived from a generated STEP part** (flat patterns / profiles of a `$cad` model): a `<name>.dxf.py` beside the `<name>.step.py` it projects. Generator entry files use dotted extensions and cannot be imported by module name, so reuse the STEP source's geometry by path-loading it:
+2. **DXF derived from a generated STEP part** (flat patterns / profiles of a `$cad` model): a drawing script beside the model script it projects, with its OWN stem (one model per file — `bracket_drawing.py` beside `bracket.py`). Model scripts are plain importable modules now; path-loading also works and records the closure the same way:
 
    ```python
    from pathlib import Path
+
+   from cadgen import dxf
    from cadgen.sources import load_source_module
 
-   _step = load_source_module(Path(__file__).with_name("bracket.step.py"))
+   _step = load_source_module(Path(__file__).with_name("bracket.py"))
 
-   def gen_dxf():
+   @dxf
+   def drawing():
        return {"document": _step.build_dxf()}
    ```
 
-   Keep the shared drawing logic (e.g. a `build_dxf()` helper that unfolds the part via `cadgen.flatten`) in the `.step.py` or a plain helper module; the `.dxf.py` is the drawing entry point. The loaded `.step.py` and its imports are recorded in the drawing's source closure, so editing the 3D part automatically invalidates the cached drawing.
+   Keep the shared drawing logic (e.g. a `build_dxf()` helper that unfolds the part via `cadgen.flatten`) in the model script or a plain helper module; the drawing script is the entry point. The loaded model script and its imports are recorded in the drawing's source closure, so editing the 3D part automatically invalidates the cached drawing.
 
-3. **DXF derived from an imported STEP** (a `.step`/`.stp` file with no Python source): a `<name>.dxf.py` that reads the STEP (e.g. `build123d.import_step`) and projects it with `cadgen.flatten`. Only Python sources are freshness inputs — like a `gen_step()` that composes imported STEPs, the drawing does not auto-rebuild when the imported file changes; rerun with `--force` after replacing it.
+3. **DXF derived from an imported STEP** (a `.step`/`.stp` file with no Python source): a `<name>.py` that reads the STEP (e.g. `build123d.import_step`) and projects it with `cadgen.flatten`. Only Python sources are freshness inputs — like a `@step`-decorated model function that composes imported STEPs, the drawing does not auto-rebuild when the imported file changes; rerun with `--force` after replacing it.
 
-`gen_dxf()` must live in a dedicated `.dxf.py` file: a source defining both `gen_step()` and `gen_dxf()` is rejected. A plain `<name>.py` defining only `gen_dxf()` is still accepted as an explicit CLI target (the CLI is naming-agnostic), but only `.dxf.py` files are catalog entries the CAD Viewer lists and rebuilds.
+One model per file: a source declaring both a `@step` and a `@dxf` model is rejected — a drawing gets its own script. The viewer catalog is artifacts-only: scripts never list; the `.dxf` the run writes is the entry the viewer renders.
 
 ## Use this skill when
 
@@ -80,19 +83,20 @@ Use these defaults unless the user specifies otherwise:
 ## Tool
 
 ```bash
-python scripts/gen targets... [flags]        # gen_dxf() Python generators -> sibling .dxf
+python <drawing>.py [flags]      # a @dxf model script writes its sibling .dxf
 python scripts/snapshot --input <drawing> --output <file.png>   # render it
 ```
 
 An imported `.dxf` needs no build step at all — the CAD Viewer renders it
 directly — so there is no `scripts/artifact` here.
 
-Use the active project Python interpreter; treat `python` as an interpreter placeholder, and use `--help` for the full interface. Target paths resolve from the command's current working directory; run from the workspace that owns the artifacts with cwd-relative target paths. Keep a drawing generator in the same directory as the geometry it derives from, named `<name>.dxf.py`.
+Use the active project Python interpreter; treat `python` as an interpreter placeholder, and use `--help` for the full interface. Target paths resolve from the command's current working directory; run from the workspace that owns the artifacts with cwd-relative target paths. Keep a drawing generator in the same directory as the geometry it derives from, named `<name>.py`.
 
 A DXF target is a Python source defining:
 
 ```python
-def gen_dxf():
+@dxf
+def drawing():
     ...
     return {"document": document}  # or a bare ezdxf document
 ```
@@ -101,17 +105,17 @@ Every run writes the target's sibling `<name>.dxf` (byte-deterministic: an
 unchanged drawing produces an identical file). Flags:
 
 - `-o`/`--output PATH` — write to a custom path instead; only with one plain generated Python target.
-- `SOURCE.dxf.py=OUTPUT.dxf` positional pairs — per-target custom output paths.
+- `SOURCE.py=OUTPUT.dxf` positional pairs — per-target custom output paths.
 - `--force` — regenerate even when the recorded output is current (an unchanged source closure is otherwise skipped).
 - `--validate` — validate existing `.dxf` FILES with the generation-time drawing checks instead of generating.
 
-Do not put output paths in the `gen_dxf()` return value.
+Do not put output paths in the the `@dxf` model function return value.
 
 `scripts/snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:
 
 ```bash
 python scripts/snapshot --input path/to/imported.dxf --output review.png
-python scripts/snapshot --input path/to/source.dxf.py --output turntable.gif --mode orbit
+python scripts/snapshot --input path/to/source.py --output turntable.gif --mode orbit
 ```
 
 For a generator it makes the sibling `.dxf` current first (the ordinary gen no-op
@@ -135,29 +139,29 @@ and `--validate` for the drawing checks; review geometry visually with `$cad-vie
 
 1. Convert the request into a short brief: outline dimensions, holes and slots, layers, units, output path, and validation targets.
 2. Pick the workflow: standalone drafting, projection of a generated STEP (create and validate the STEP geometry with `$cad` first), or projection of an imported STEP (declare it in `sources`).
-3. Write or edit the `<name>.dxf.py` source with meaningful dimensions as named parameters, reusing the STEP source's geometry helpers instead of duplicating formulas.
-4. Run `scripts/gen` on explicit Python source targets only; do not run directory-wide generation.
+3. Write or edit the `<name>.py` source with meaningful dimensions as named parameters, reusing the STEP source's geometry helpers instead of duplicating formulas.
+4. Run each drawing script directly (`python <drawing>.py`); do not sweep directories.
 
 ```bash
-python scripts/gen path/to/source.dxf.py
-python scripts/gen path/to/source.dxf.py -o path/to/output.dxf
-python scripts/gen path/to/a.dxf.py=out/a.dxf path/to/b.dxf.py=out/b.dxf
+python path/to/source.py
+python path/to/source.py -o path/to/output.dxf
+python path/to/a.py=out/a.dxf path/to/b.py=out/b.dxf
 ```
 
 5. Validate the generated DXF deterministically, then hand off and report.
 
 ## Viewer integration
 
-`<name>.dxf.py` files are CAD Viewer catalog entries, listed whether or not their sibling `.dxf` has been written. The viewer is a static visualization tool: it renders the `.dxf` that exists on disk (parsing and meshing it itself — 2D line work for dimensioned drawings, a fold-able 3D flat pattern for cut layouts) and never runs the generator. A `.dxf.py` with no sibling `.dxf` reports an error naming the command to run (`python scripts/gen <source>`); regenerating after edits is likewise this CLI's job. Exports are CLI-only too (`scripts/gen` writes the `.dxf`; there is no in-viewer export). An imported `.dxf` renders directly with no artifact management.
+The CAD Viewer catalogs `.dxf` files only (artifacts, never scripts) and is a static visualization tool: it renders the `.dxf` that exists on disk (parsing and meshing it itself — 2D line work for dimensioned drawings, a fold-able 3D flat pattern for cut layouts) and never runs a script. A drawing with no `.dxf` yet simply does not appear until its script has been run; regenerating after edits is likewise the script's job. There is no in-viewer export. An imported `.dxf` renders directly with no artifact management.
 
 ## Validation
 
-Validation happens IN generation, not after: every `gen_dxf()` build runs the drawing checks on the in-memory document before the package or any export is written, and a build with error findings fails. The checks: cut-layer profiles must close (polylines, circles, or chained line/arc loops), zero-length/degenerate entities are rejected, exact duplicate geometry (double-cut risk) is rejected, explicitly unitless documents are rejected, and an empty modelspace is rejected. Open geometry is allowed only on bend/engrave/reference-intent layers (matched by name).
+Validation happens IN generation, not after: every the `@dxf` model function build runs the drawing checks on the in-memory document before the package or any export is written, and a build with error findings fails. The checks: cut-layer profiles must close (polylines, circles, or chained line/arc loops), zero-length/degenerate entities are rejected, exact duplicate geometry (double-cut risk) is rejected, explicitly unitless documents are rejected, and an empty modelspace is rejected. Open geometry is allowed only on bend/engrave/reference-intent layers (matched by name).
 
 The same checks run post-hoc on any existing `.dxf` file:
 
 ```bash
-python scripts/gen --validate path/to/file.dxf
+python --validate path/to/file.dxf
 ```
 
 Beyond the built-in checks, verify requested dimensions with targeted `ezdxf` reads (entity counts by layer, drawing extents, every dimension the user specified) against the generated sibling `.dxf` (or the custom output path when one was requested), and review geometry visually in the CAD Viewer:
@@ -175,6 +179,6 @@ Report only checks that actually ran.
 
 ## Handoff
 
-After creating or modifying DXF drawings, you must ALWAYS hand the explicit `.dxf.py` file path(s) to `$cad-viewer` when that skill is installed and include its live viewer link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report that and rely on `ezdxf` checks instead of silently omitting the handoff.
+After creating or modifying DXF drawings, you must ALWAYS hand the explicit `.py` file path(s) to `$cad-viewer` when that skill is installed and include its live viewer link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report that and rely on `ezdxf` checks instead of silently omitting the handoff.
 
 Final responses should include generated files, returned viewer links, validation actually run, and assumptions.

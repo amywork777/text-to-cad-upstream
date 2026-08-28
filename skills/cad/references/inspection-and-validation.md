@@ -21,10 +21,10 @@ Accepted target forms:
 ```text
 path/to/entry
 path/to/entry.step
-path/to/entry.step.py
+path/to/entry.py
 ```
 
-A `<name>.step.py` generator target resolves to the same entry as its logical `<name>.step`, and keeps resolving to the generator entry even when a same-stem exported `.step` file exists beside it.
+A `<name>.py` generator target resolves to the same entry as its logical `<name>.step`, and keeps resolving to the generator entry even when a same-stem exported `.step` file exists beside it.
 
 Selector-backed queries (`refs --facts`, planes, measures) on generated assemblies resolve from the render package's per-component `.surf` files on demand; there is no separate topology sidecar to build or invalidate.
 
@@ -44,7 +44,7 @@ A ref copied from the CAD Viewer carries the file it came from, so it stays mean
 prompt that spans several files:
 
 ```text
-bracket#o1.2.f1               the generator models/step/parts/bracket.step.py
+bracket#o1.2.f1               the generator models/step/parts/bracket.py
 imported_housing.step#o1.3    a raw STEP, models/step/imports/imported_housing.step
 mounting_plate.stl#           a whole mesh file
 ```
@@ -53,12 +53,12 @@ The prefix is the **shortest path suffix that names exactly one file**, plus as 
 directories as it takes to be unique. A prefix with no selectors after the `#` names the whole
 file.
 
-A `.step.py` generator shows as a bare stem, because generators are what you normally work in
+A `.py` generator shows as a bare stem, because generators are what you normally work in
 and the common case deserves the shortest name. Everything else keeps its suffix:
 
 | File | Prefix |
 | --- | --- |
-| `bracket.step.py` | `bracket` |
+| `bracket.py` | `bracket` |
 | `bracket.step`, `bracket.stp` | `bracket.step`, `bracket.stp` |
 | `plate.stl`, `plate.3mf`, `plate.glb`, `outline.dxf` | unchanged |
 
@@ -70,7 +70,7 @@ distinct from `bracket.step` (its export) and from `bracket.stl` (a mesh of it).
 1. Split it at the first `#`. The left side is the file prefix; the right side is the ref.
 2. Resolve the prefix to a real path. A bare stem is **not** a literal path suffix, so expand
    it before searching:
-   - `<name>` with no extension → look for `<name>.step.py`, then `<name>.stp.py`
+   - `<name>` with no extension → look for `<name>.py`, then `<name>.stp.py`
    - anything carrying a suffix (`.step`, `.stp`, `.stl`, `.3mf`, `.glb`, `.dxf`) → use as-is
 
    Match on **segment boundaries**, so `plate.stl` names `models/mesh/stl/plate.stl` and never
@@ -80,8 +80,8 @@ distinct from `bracket.step` (its export) and from `bracket.stl` (a mesh of it).
 
 ```bash
 # received: bracket#o1.2.f1   ->  expand the bare stem, then search
-git ls-files '*/bracket.step.py' '*/bracket.stp.py'
-python scripts/inspect refs models/step/parts/bracket.step.py '#o1.2.f1'
+git ls-files '*/bracket.py' '*/bracket.stp.py'
+python scripts/inspect refs models/step/parts/bracket.py '#o1.2.f1'
 ```
 
 If the search returns more than one file the prefix was ambiguous — ask rather than guess; the
@@ -89,7 +89,7 @@ Viewer only emits prefixes that were unique when it copied them.
 
 Passing the prefixed ref through unsplit also works **when the prefix names the file the
 command already targets** — the CLI strips it, and it accepts every spelling of that file
-(`bracket`, `bracket.step.py`, `bracket.step`). A prefix naming a *different* file is a hard
+(`bracket`, `bracket.py`, `bracket.step`). A prefix naming a *different* file is a hard
 error, never ignored: silently inspecting the file the command was pointed at would produce a
 confident answer about geometry nobody asked about.
 
@@ -122,7 +122,7 @@ When several parts share a label -- two wheels, one `cast_rim:5spoke` -- each ge
 ref in tree order and the bare label refuses to resolve rather than guessing:
 
 ```text
-$ snapshot -i motorbike.step.py --focus='#cast_rim:5spoke'
+$ snapshot -i motorbike.py --focus='#cast_rim:5spoke'
 selection.focus label 'cast_rim:5spoke' matches 2 occurrences;
 use one of: #cast_rim:5spoke_1 (o1.7.2), #cast_rim:5spoke_2 (o1.14.2)
 ```
@@ -146,9 +146,9 @@ which renders as a hole in the world — reports `"ok": true` as well.
 Use `validate` for that question:
 
 ```bash
-python scripts/inspect validate models/part/part.step.py
-python scripts/inspect validate models/part/part.step.py --refs o1.2      # one subassembly
-python scripts/inspect validate models/panel/panel.step.py --allow-open   # surfaces intended
+python scripts/inspect validate models/part/part.py
+python scripts/inspect validate models/part/part.py --refs o1.2      # one subassembly
+python scripts/inspect validate models/panel/panel.py --allow-open   # surfaces intended
 ```
 
 It reports, per occurrence, any of `invalidTopology`, `openShell`,

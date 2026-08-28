@@ -60,29 +60,57 @@ Ask one focused clarification question only when missing information makes the m
 From the CAD skill directory, the launcher shape is:
 
 ```bash
-python scripts/gen ...       # render GLB/topology packages from gen_step() Python sources
-python scripts/export ...    # STL/3MF/GLB mesh files from Python sources or imported STEP
+python <model>.py            # a model script BUILDS ITSELF (the @step/@dxf decorator)
+python scripts/export ...    # STL/3MF/GLB mesh files from model scripts or imported STEP
 python scripts/inspect ...   # refs, measure, align, frame, diff
 python scripts/snapshot ...  # PNG/GIF visual review packets
-python scripts/artifact ...  # debug one on-demand render-package build (imported STEP)
+python scripts/import ...    # build the render package for an imported STEP/STP file
 ```
+
+Generation has NO CLI. A model is a plain Python script:
+
+```python
+from cadgen import build123d as bd
+from cadgen import step
+
+@step()                       # or @dxf() for drawings; write= relocates the artifact
+def bracket(width: float = 10.0):
+    return bd.Box(width, 10, 10)
+```
+
+Running `python bracket.py` builds `bracket.step` and its render package beside
+the script; a repeat run of an unchanged model is a fast no-op. The
+`from cadgen import build123d as bd` idiom is the canonical import: it is a
+lazy, transparent re-export of build123d (same names, same behavior), so the
+freshness gate and warm-daemon handoff run before any kernel import is paid.
+Raw `import build123d` still works but costs ~2.5s per re-run. Per-run flags
+ride the script's argv: `--force`, `--json`, `--verbose`, `-o PATH`,
+`--mesh-tolerance`, `--mesh-angular-tolerance`, `--lock-timeout SECONDS`.
+
+Rules the decorator enforces: importing a model module never builds (composition
+imports the module and calls the function to get the shape); one `@step`/`@dxf`
+model per file; everything the model needs is defined above the decorated
+function; parameters must all have defaults. Legacy `gen_step()`/`gen_dxf()`
+sources and `.step.py`/`.dxf.py` naming fail with a pointer to
+`references/migrating-generators.md`.
 
 Use the active project Python interpreter; treat `python` in examples as an interpreter placeholder. Use `python scripts/<tool> --help` for the complete current command interface; reference docs show recommended workflows, not every flag.
 
-**Snapshot inputs.** This skill's snapshot renders `.step`/`.step.py`, `.stp`, `.3mf`, `.glb` and `.stl`. Implicit models and robot descriptions are rendered by the `implicit-cad` and `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
+**Snapshot inputs.** This skill's snapshot renders `.step`/`.stp`, model scripts (`.py` declaring `@step`), `.3mf`, `.glb` and `.stl`. Implicit models and robot descriptions are rendered by the `implicit-cad` and `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
 
 **Theme and display.** Theme settings live under one `--theme`, display settings under one `--display` — the viewer's two tabs, one option each. The default theme is `snapshot`: Workbench Light with the ground grid and origin axis removed, because in a still image those read as geometry rather than as orientation. Pass `--theme workbench-light` for the viewer's own look. Projection is a theme trait honoured by every format, so a snapshot frames the same way the viewport does.
 
-**Streams.** stdout carries the result; stderr carries progress, timing, and failures. Every tool answers on stdout — `gen` prints `<outcome> <package path>` per target — so `2>/dev/null` leaves something parseable and `>/dev/null` leaves a readable log. JSON on stdout is always compact; pipe through `jq .` to read it. The two never interleave, so `2>/dev/null` leaves a clean parseable result and `>/dev/null` leaves a readable log. For machine-readable output: `gen`, `export`, and `snapshot` take `--json`; `inspect` already emits JSON and takes `--format text` for prose. `--verbose` adds stage timing (and full tracebacks) on stderr. Output volume does not grow with model size — a 600-occurrence assembly logs the same dozen lines a single part does.
+**Streams.** stdout carries the result; stderr carries progress, timing, and failures. Every tool answers on stdout — a model run prints `<outcome> <package path>` — so `2>/dev/null` leaves something parseable and `>/dev/null` leaves a readable log. JSON on stdout is always compact; pipe through `jq .` to read it. The two never interleave, so `2>/dev/null` leaves a clean parseable result and `>/dev/null` leaves a readable log. For machine-readable output: model runs, `export`, and `snapshot` take `--json`; `inspect` already emits JSON and takes `--format text` for prose. `--verbose` adds stage timing (and full tracebacks) on stderr. Output volume does not grow with model size — a 600-occurrence assembly logs the same dozen lines a single part does.
 
-**Reporting progress from a generator.** A long build spends most of its wall time inside
-`gen_step()`, which takes no arguments and so cannot be handed the run. Import the reporter
-instead — it binds to whichever build is running, and does nothing when there is none:
+**Reporting progress from a model.** A long build spends most of its wall time inside
+the decorated function, which the pipeline calls with no arguments. Import the reporter
+— it binds to whichever build is running, and does nothing when there is none:
 
 ```python
-from cadgen import report, track
+from cadgen import report, track, step
 
-def gen_step():
+@step()
+def housing():
     report("bearing housing")                              # name the current phase
     for rib in track(ribs, label=lambda r: r.name):        # count through a work list
         ...
@@ -102,15 +130,15 @@ Silent generators are unaffected.
 **Failures** print the exception and the frames *in your own generator*, not the runtime's:
 
 ```text
-[scripts/gen] FAILED: ValueError: bad radius
-[scripts/gen]   models/step/parts/widget.step.py:9 in gen_step
-[scripts/gen]       return _profile(radius)
-[scripts/gen] re-run with --verbose for the full traceback
+[cadgen] FAILED: ValueError: bad radius
+[cadgen]   models/step/parts/widget.py:9 in bracket
+[cadgen]       return _profile(radius)
+[cadgen] re-run with --verbose for the full traceback
 ```
 
 **A build waits for a concurrent build of the same model** rather than racing it, and says so on stderr (`waiting for another run to finish building ...`), repeating while it waits. Pass `--lock-timeout SECONDS` to give up instead and report `{"ok":true,"contended":true}`. With `--json`, each target's `outcome` is `built`, `current`, `skipped-peer` (the peer finished and its package is current), or `contended` (the peer is still building and this run declined to wait).
 
-Target paths resolve from the command's current working directory, not from the skill directory. Run commands from the workspace that owns the artifacts and pass cwd-relative target paths so project CAD files never resolve accidentally under the skill directory. Keep a STEP output and its Python generator in the same directory with the same basename unless the user explicitly requests otherwise.
+Target paths resolve from the command's current working directory, not from the skill directory. Run commands from the workspace that owns the artifacts and pass cwd-relative target paths so project CAD files never resolve accidentally under the skill directory. By default a model's STEP is its sibling with the same stem; the artifact→source link is recorded in the render package (descriptor provenance), so relocating outputs with `write=` is safe.
 
 CAD references are `#...` selector tokens local to a target, for example `#o1.2` or `#o1.2.f1`. Pass the STEP/CAD file as a separate target argument when using CAD CLIs.
 
@@ -123,8 +151,8 @@ Scale depth to the task: a simple part needs a short brief and few spec-driven c
 3. **Write a natural-language CAD brief.** Extract dimensions, units, coordinate convention, feature intent, output paths, assumptions, and validation targets from all provided inputs — prose, reference images, technical drawings. Use `references/cad-brief.md`.
 4. **Check named purchasable components.** When an assembly includes named off-the-shelf actuators, servos, motors, electronics boards, connectors, or other purchasable components, search `$step-parts` before creating simplified placeholder geometry. If no exact match is found, record the miss and then use a documented envelope.
 5. **Plan before coding.** Define parameters, intent labels, source paths, expected bounding boxes, and any mating/positioning datums before editing.
-6. **Edit source, not generated artifacts.** Author build123d Python with `gen_step()`, naming a buildable entry generator `<name>.step.py` (helper/library modules stay `<name>.py`; see `references/step-generation.md`). When a Python generator exists, run `scripts/gen` on the generator, never on its exported STEP. Imported STEP/STP files (no generator) need no build step: inspect, snapshot, and the CAD Viewer generate their render artifacts on demand, and `scripts/export` accepts them directly.
-7. **Generate explicit targets.** Run `scripts/gen` on explicit generator targets only; do not run directory-wide generation. Every run writes the target's `.step` file (its sibling `<name>.step` by default, `-o PATH` to rename); use `scripts/export` when the user needs STL/3MF/GLB mesh files.
+6. **Edit source, not generated artifacts.** Author a plain `.py` model script with one `@step`-decorated function (underscore-prefixed helper modules carry shared code; see `references/step-generation.md`). When a model script exists, run IT, never hand-edit its exported STEP. Imported STEP/STP files (no script) build their render package via `scripts/import`, and `scripts/export` accepts them directly.
+7. **Generate explicit targets.** Run each model script directly (`python <model>.py`); do not sweep directories. Every run writes the model's `.step` (sibling `<stem>.step` by default; `write=` in the decorator or `-o PATH` to relocate); use `scripts/export` when the user needs STL/3MF/GLB mesh files. For multi-model project structure, see the `$cad-project` skill.
 8. **Validate geometrically.** Run `scripts/inspect refs <step-or-cad-target> --facts --planes --positioning` as the baseline, then verify the dimensions and relationships the user's spec calls out with targeted `measure`, `align`, `frame`, or `diff` checks. Run `scripts/inspect validate <step-or-cad-target>` for geometry soundness: `refs --facts` reports counts and bounds, and its `ok` field covers ref resolution only — an open shell and an inverted solid both pass it.
 9. **Snapshot the primary STEP — snapshot validation is mandatory.** After creating or visibly updating a primary STEP/STP part or assembly, ALWAYS run CAD `scripts/snapshot` against it and review the output; deterministic checks passing is not a reason to skip. The only skip cases are documented in `references/snapshot-review.md` (no visible geometry changed, or no valid artifact exists); report the reason when skipping.
 10. **Repair and rerun.** If a check fails, change the smallest responsible source section, regenerate, and rerun the failed validation.
@@ -153,8 +181,9 @@ Load these files only when their trigger applies:
 - `references/inspection-and-validation.md` — validation sequence, selector refs, facts, planes, measurements, alignment, diff, frame, and validation reporting.
 - `references/snapshot-review.md` — mandatory snapshot policy, packet sizing, targeted views, and converting visual findings into geometry checks.
 - `references/positioning.md` — part-local datums and origins, assembly transforms, build123d joints, CLI alignment validation, and positioning reports.
-- `references/parameters.md` — parameterizing or animating a STEP model: source parameters, JS parameter/animation sidecars declared via gen_step params, viewer controls, and animation design.
+- `references/parameters.md` — parameterizing or animating a STEP model: source parameters, JS parameter/animation sidecars declared via the model's envelope params, viewer controls, and animation design.
 - `references/supported-exports.md` — STL/3MF/native GLB mesh export workflows via `scripts/export`.
 - `references/repair-loop.md` — diagnosis and repair procedures.
+- `references/migrating-generators.md` — migrating legacy gen_step()/gen_dxf() sources and .step.py/.dxf.py naming to @step/@dxf model scripts (codemod: `python -m cadgen.migrate`).
 
 Final responses should include generated files, returned `$cad-viewer` viewer links, verification snapshots, validation actually run, assumptions, and caveats. Use `references/inspection-and-validation.md` for report structure.

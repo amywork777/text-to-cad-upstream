@@ -1,8 +1,8 @@
 # DXF generator templates
 
-Read this file when creating a new `<name>.dxf.py` drawing generator. Copy the
+Read this file when creating a new `<name>.py` drawing generator. Copy the
 template for the workflow that applies and replace the TODO markers. Every
-template follows the same contract: `gen_dxf()` takes no arguments and returns
+template follows the same contract: the `@dxf` model function takes no arguments and returns
 `{"document": <ezdxf document>}` (or the bare document); the CLI owns output
 paths; validation runs during generation, so cut layers must hold closed
 profiles and open geometry belongs on bend/engrave/reference-named layers.
@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import ezdxf
 
+from cadgen import dxf
+
 # TODO: named dimension parameters
 WIDTH_MM = 40.0
 HEIGHT_MM = 20.0
 
 
-def gen_dxf():
+@dxf
+def drawing():
     document = ezdxf.new("R2010")
     document.units = ezdxf.units.MM
     modelspace = document.modelspace()
@@ -37,40 +40,36 @@ def gen_dxf():
     )
     return {"document": document}
 
-
-if __name__ == "__main__":
-    gen_dxf()
 ```
 
 ## 2. Projection of a generated STEP part
 
-For flat patterns / profiles of a `$cad` model. The `.dxf.py` sits beside the
-`<name>.step.py` it projects and path-loads it (dotted-extension files cannot
+For flat patterns / profiles of a `$cad` model. The `.py` sits beside the
+`<name>.py` it projects and path-loads it (dotted-extension files cannot
 be imported by module name). Keep the drawing logic — typically a `build_dxf()`
-helper built on `cadgen.flatten` — in the `.step.py` or a plain helper module;
-the `.dxf.py` is the drawing entry point. The loaded `.step.py` and its imports
+helper built on `cadgen.flatten` — in the `.py` or a plain helper module;
+the `.py` is the drawing entry point. The loaded `.py` and its imports
 are recorded as freshness inputs automatically.
 
 ```python
-"""Flat-pattern DXF drawing for <name>; geometry reused from <name>.step.py."""
+"""Flat-pattern DXF drawing for <name>; geometry reused from <name>.py."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from cadgen import dxf
 from cadgen.sources import load_source_module
 
-_step = load_source_module(Path(__file__).with_name("<name>.step.py"))
+_step = load_source_module(Path(__file__).with_name("<name>.py"))
 
 
-def gen_dxf():
+@dxf
+def drawing():
     return {
         "document": _step.build_dxf(),
     }
 
-
-if __name__ == "__main__":
-    gen_dxf()
 ```
 
 ## 3. Projection of an imported STEP
@@ -92,12 +91,13 @@ from pathlib import Path
 
 import build123d
 import ezdxf
-from cadgen import flatten
+from cadgen import dxf, flatten
 
 _STEP_PATH = Path(__file__).with_name("<name>.step")
 
 
-def gen_dxf():
+@dxf
+def drawing():
     shape = build123d.import_step(str(_STEP_PATH))
     document = ezdxf.new("R2010")
     document.units = ezdxf.units.MM
@@ -115,9 +115,6 @@ def gen_dxf():
     flatten.add_shapely_geometry(modelspace, geometry, layer="CUT")
     return {"document": document}
 
-
-if __name__ == "__main__":
-    gen_dxf()
 ```
 
 ## Common additions
