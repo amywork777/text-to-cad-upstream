@@ -53,7 +53,7 @@ include = ["cadgen*"]
 # builders and the headless browser bundle the snapshot CLI drives. It is data, not a
 # subpackage (no __init__), and it is found at call time by cadgen.assets.
 # Verified by scripts/release/check-wheel-contents.sh.
-cadgen = ["py.typed", "_runtime/**/*"]
+cadgen = ["py.typed", "*.pyi", "_runtime/**/*"]
 # The Node builder bridge (cadgen/_internal/node_runtime.py) spawns node with
 # `--import node_resolve_register.mjs`; both .mjs files must ship with the package.
 "cadgen._internal" = ["*.mjs"]
