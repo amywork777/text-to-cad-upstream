@@ -140,12 +140,18 @@ entry says so.
     in the build response (`instanceColorWarnings`, tested). The full fix is
     still a custom ocjs build exposing the binding.
 
-19. **Label names under WASM import ride an XmlXCAF save.** `TDataStd_Name.Get`
-    is also unbound, so `stepImport.mjs` saves the XCAF doc to MEMFS as
-    XmlXCAF once per import and regex-indexes `<TDataStd_Name>` by label
-    entry. Correct on everything tested, but it serializes the whole document
-    — avoidable cost on very large vendor files; a custom ocjs build exposing
-    `Get` would delete the workaround.
+19. **CLOSED (measured, not worth fixing without the custom build) — the
+    XmlXCAF label-name save is ~3-4% of import time.** Measured 2026-08-28 on
+    the two largest local STEPs: sts3215.step (21.9 MB) pays 0.82 s save +
+    0.08 s index against 20.3 s parse+transfer; waveshare_bus_servo_adapter_a
+    (26.6 MB) pays 0.94 s against 29.9 s — the save scales with the DOCUMENT,
+    the parse with the file, so the fraction shrinks as files grow. The index
+    is already built once per import and cached. Bound alternatives were
+    probed at runtime and none exists: `TDataStd_Name` has no instance `Get`,
+    and every dump route (`TDF_Attribute.DumpJson`, `EntryDump`,
+    `TDF_Tool.DeepDump`) fails on the unbound `std::ostream` type. A custom
+    ocjs build exposing `Get` (tier 3, with #18) remains the only deletion
+    path for the workaround.
 
 20. **FIXED — WASM import progress now has a denominator surface.** The import
     child emits `[import-progress] {json}` lines (phase/detail/done/total);

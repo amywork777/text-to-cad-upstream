@@ -117,6 +117,14 @@ a native import of the same file), and `tests/python/global/test_render_contract
 minutes for 100MB-class ones, once per file), and the kernel (OCCT ~7.6) trails OCP —
 the BinTools blob format is pinned to V4 on both sides for that reason.
 
+One workaround is measured rather than guessed at: label names ride a whole-document
+XmlXCAF save into MEMFS (once per import, indexed and cached) because
+`TDataStd_Name.Get` is unbound and every bound dump route needs the equally unbound
+`std::ostream`. On 22–27 MB vendor STEPs the save costs 0.8–0.9 s against 20–30 s of
+STEP parse+transfer — ~3–4% of the import, shrinking as files grow (the save scales
+with the document, the parse with the file). Not worth optimizing short of the custom
+kernel build below.
+
 One limit is surfaced rather than silent: `GetInstanceColor` is unbound in this
 opencascade.js build, so an instance whose color attachment only native OCCT's
 instance resolution would find falls through to its prototype's color. The import
