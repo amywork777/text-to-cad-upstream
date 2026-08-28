@@ -201,3 +201,18 @@ For raw STEP files that never met the pipeline, on Python-less machines:
   mechanism, not source currency). The CLI's no-op gates keep reading the
   recorded closures (skip-work direction only); the deliberate asymmetry is
   documented in render_ops, generation.py and viewer/docs/backend.md.
+- Phase B reversal (2026-08-28, user decision): the viewer no longer ships in
+  the cadgen wheel. Phase B moved the built client + JS server into
+  `cadgen/_runtime/viewer{,_server}` and added `cadgen viewer`; with the
+  original cadgen<->viewer interdependency gone (pure-JS backend, zero Python),
+  cadgen is exclusively the programmatic generation/snapshot toolchain and the
+  viewer is a standalone app again. Distribution reverted to the develop
+  pattern: the cad-viewer skill bundles the built client + server at
+  skills/cad-viewer/scripts/viewer (bundle-cad-viewer.sh; dev symlink
+  otherwise), started with `node scripts/viewer/server/main.mjs` — no npm, no
+  Python, no opencascade.js (the bundled skill has no WASM import; raw STEPs
+  go through `python scripts/gen`). `viewer list`/`stop` moved into the server
+  entrypoint itself (main.mjs subcommands; the Python registry readers are
+  deleted). The Sync CAD Viewer Repo workflow is restored: each release mirrors
+  viewer/ (symlinks dereferenced) to earthtojake/cad-viewer from the release
+  source commit.

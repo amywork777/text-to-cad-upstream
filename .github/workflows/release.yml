@@ -396,8 +396,6 @@ jobs:
 
       - name: Check cadgen wheel contents
         if: steps.gate.outputs.should_publish == 'true'
-        env:
-          CADGEN_REQUIRE_VIEWER_DIST: "1"
         run: |
           python -m pip install build
           scripts/release/check-wheel-contents.sh
@@ -419,9 +417,10 @@ jobs:
       # target branch is copied into every install. None of these is part of what
       # installs:
       #   models/            fixture data
-      #   viewer/            the client SOURCE. Its built output ships inside the
-      #                      cadgen wheel (cadgen/_runtime/viewer) and is served by
-      #                      `cadgen viewer`; nothing on main reads viewer/.
+      #   viewer/            the client SOURCE. What installs is the bundled runtime
+      #                      under skills/cad-viewer/scripts/viewer, and the standalone
+      #                      cad-viewer mirror syncs from the release SOURCE commit
+      #                      rather than from here (.github/workflows/sync-cad-viewer.yml).
       #   tests/             source-only; nothing under skills/ or docs/ reads it,
       #                      and test.yml runs on develop, never here
       #   requirements-dev.txt  a source-checkout dev environment whose editable
@@ -451,10 +450,11 @@ jobs:
               exit 1
             fi
           done
-          # No CAD Viewer guard here any more: the Viewer ships inside the cadgen wheel,
-          # not beside the skill, and "Check cadgen wheel contents" above already refuses
-          # a wheel without it (CADGEN_REQUIRE_VIEWER_DIST=1). That check runs before this
-          # trim, while packages/ still exists — the only point where it can be verified.
+          if [ ! -f skills/cad-viewer/scripts/viewer/package.json ]; then
+            echo "Refusing to publish without the bundled CAD Viewer runtime:" >&2
+            echo "  skills/cad-viewer/scripts/viewer/package.json is missing." >&2
+            exit 1
+          fi
           # Every skill vendors what it needs, so no skill SOURCE may reach
           # repo-root packages/ -- one that does would break silently on install
           # rather than here. Generated artifacts are exempt: a bundled dist/ is
@@ -601,11 +601,25 @@ jobs:
       ref: ${{ needs.release-pr.outputs.source_sha }}
     secrets: inherit
 
+  # Mirrors from the release SOURCE commit, not the publish commit: the publish
+  # tree deliberately drops viewer/, and the mirror is a source repo.
+  sync-cad-viewer:
+    name: Sync CAD Viewer Repo
+    needs:
+      - release-pr
+      - publish
+    if: ${{ needs.publish.outputs.published == 'true' && inputs.target_branch == 'main' }}
+    uses: ./.github/workflows/sync-cad-viewer.yml
+    with:
+      ref: ${{ needs.release-pr.outputs.source_sha }}
+    secrets: inherit
+
   tag-release:
     name: Tag and GitHub Release
     needs:
       - publish
       - deploy-docs
+      - sync-cad-viewer
     if: ${{ needs.publish.outputs.published == 'true' && inputs.target_branch == 'main' }}
     runs-on: ubuntu-latest
 

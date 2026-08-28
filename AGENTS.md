@@ -34,10 +34,13 @@ how you resume a failed publish; it is never a release setting.
 The standalone `Deploy Docs` workflow redeploys the docs site without running a
 release. It deploys a source ref (defaulting to `develop`), never `main`: the
 publish tree drops `docs/` and `packages/`, which the docs app builds against.
-The CAD Viewer is a local-filesystem app with no hosted deployment: it ships
-inside the `cadgen` distribution (client bundle and backend both) and is started
-with `cadgen viewer`. `Deploy Docs` reads the release SOURCE commit, because
-`main` carries only what installs.
+The CAD Viewer is a local-filesystem app with no hosted deployment: the
+cad-viewer skill bundles the built client + JS server, and each release mirrors
+`viewer/` into the standalone `earthtojake/cad-viewer` repo through the
+`Sync CAD Viewer Repo` workflow (which `Release` calls after publishing and which
+can also be dispatched on its own; it reads the release SOURCE commit, because
+`main` carries only what installs). `Deploy Docs` also reads the release SOURCE
+commit.
 `main` is publish-only; pushing `develop` runs tests but
 never publishes. See the Releases section in `CONTRIBUTING.md` for the full
 flow, CI/CD-testing and resume options, and local/manual fallbacks.
@@ -101,13 +104,12 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   a skill with missing files. `scripts/github-workflows/check-builds.sh` enforces
   this; do not relax it.
 - `viewer/` is the whole CAD Viewer app: the React client (`src/`) AND its
-  pure-JS backend (`server/`, dependency-free Node). The built client and the
-  server ship in the cadgen wheel (`cadgen/_runtime/viewer{,_server}`), so the
-  app is distributed by `pip install cadgen` and started with `cadgen viewer` —
-  there is no second copy of it anywhere. The backend hosts no CAD runtime: it
-  spawns `python -m cadgen.render_ops` for freshness/build/export and works
-  read-only without Python. Keep repo-level tooling in `scripts/`, not under
-  `viewer/`.
+  pure-JS backend (`server/`, dependency-free Node). It is a standalone app,
+  separate from cadgen: the cad-viewer skill bundles the built client + server
+  at `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
+  `bundle-cad-viewer.sh` for publish), and each release mirrors `viewer/` to the
+  standalone `earthtojake/cad-viewer` repo. The backend runs no Python, ever.
+  Keep repo-level tooling in `scripts/`, not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
   belong in `viewer/`. It holds the shared CAD render/runtime code AND the implicit
   CAD runtime.
@@ -196,12 +198,13 @@ http://127.0.0.1:3245/?file=path/relative/to/the/served/root
 Start it against a directory with `--root`, which defaults to the current one:
 
 ```bash
-cadgen viewer --root <absolute dir> --host 127.0.0.1
+node viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1
 ```
 
-To review a second directory, start a second Viewer on another port. `cadgen viewer
-list` shows every running instance with the root it serves and the checkout its code
-came from, and `cadgen viewer stop --port <n>` ends one. A Viewer from another
+To review a second directory, start a second Viewer on another port.
+`node viewer/server/main.mjs list` shows every running instance with the root it
+serves and the checkout its code came from, and `... stop --port <n>` ends one. A
+Viewer from another
 checkout holding the port you wanted is this repo's recurring confusion; the
 collision message names its pid, version and package directory rather than silently
 reusing it.

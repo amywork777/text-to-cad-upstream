@@ -198,9 +198,11 @@ package as it can be.
 Nothing is lost, because each of those has a consumer that reads **source**
 rather than the published tree:
 
-- `viewer/` — the client source. Its built bundle ships inside the cadgen wheel
-  (`cadgen/_runtime/viewer`, server at `cadgen/_runtime/viewer_server`) and is
-  served by `cadgen viewer`.
+- `viewer/` — the app source. Its built bundle + JS server ship inside the
+  cad-viewer skill (`skills/cad-viewer/scripts/viewer`, materialized by the
+  bundle before publish), and the `Sync CAD Viewer Repo` workflow mirrors the
+  source into the standalone `earthtojake/cad-viewer` repo from the release
+  source commit.
 - `docs/` and `packages/` — `Deploy Docs` builds and deploys from the release
   source commit. `packages/` has no other published consumer: the cadgen wheel is
   built and uploaded to PyPI BEFORE this trim, and published skills resolve cadgen

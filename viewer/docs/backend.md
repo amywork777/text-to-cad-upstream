@@ -21,8 +21,9 @@ them is a bug:
 - **Dev** (`npm run dev`) — Vite serves the client from source with HMR and mounts the
   handler as middleware in the same process. No child process, no proxy.
 - **Production** (`npm run build && npm run start`) — `node server/main.mjs` serves the
-  built `dist/` and the API from one process. An installed cadgen ships the same files
-  at `cadgen/_runtime/viewer_server` and starts them via `cadgen viewer`.
+  built `dist/` and the API from one process. The cad-viewer skill ships the same files
+  (built dist + this server) under its own `scripts/viewer/` and starts them the same
+  way; cadgen ships no viewer at all.
 
 ## One root per instance
 
@@ -30,8 +31,8 @@ An instance serves ONE directory, given by `--root` at startup and defaulting to
 invoking directory. Requests never name a directory: there is no `?dir=` param, and
 `?file=` is always resolved inside the served root. Anything resolving outside that
 root is refused, unconditionally. Serving a second directory means starting a second
-Viewer on another port; `cadgen viewer list` reports which root each running instance
-holds.
+Viewer on another port; `node server/main.mjs list` reports which root each running
+instance holds (and `stop --port <n>` ends one).
 
 The root is resolved and checked once, in `LocalAssetBackend`'s constructor
 (`server/backend.mjs`), so every later request is measured against a directory

@@ -59,9 +59,10 @@ rolling onto another port. Local dev and production servers stay running unless
 The backend is `server/` — dependency-free Node, and the viewer runs no Python at
 all: it is a static visualization tool. It renders existing artifacts (render
 packages, sibling `.dxf` files, live implicit sources) and imports raw STEP files
-through its bundled WASM kernel; generation and export are the CAD CLIs' job. An
-installed cadgen (`pip install cadgen`) carries the built client + server and
-starts them with `cadgen viewer` — no clone required.
+through its bundled WASM kernel; generation and export are the CAD CLIs' job. The
+cad-viewer skill bundles the built client + this server (without the WASM kernel)
+and starts them with `node scripts/viewer/server/main.mjs` — no clone, no npm
+install, no Python required.
 
 Agent handoff links from the cad-viewer skill must use an absolute directory as
 the URL path, with `?file=` relative to it. The URL is the only source of truth —
