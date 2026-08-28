@@ -155,17 +155,49 @@ export function createCadApp({ root, host, port, distDir = "" }) {
     });
   }
 
+  // Stream a file to the response in 64 KiB chunks (ports 3ebe8e30 from
+  // develop). Buffering whole files held every byte of a 100MB-class STEP or
+  // GLB in memory per request — and concurrent component fetches multiplied
+  // it. The stat answers existence and Content-Length up front, so the status
+  // line is always correct; a mid-stream read error can only truncate the
+  // body, which the client sees as a length mismatch, and destroying the
+  // socket makes that unambiguous.
+  const STREAM_CHUNK_BYTES = 64 * 1024;
+  function streamFile(req, res, filePath, stat, contentType, { disposition = null } = {}) {
+    const headers = { "cache-control": "no-store", "content-length": stat.size };
+    if (contentType) {
+      headers["content-type"] = contentType;
+    }
+    if (disposition) {
+      headers["content-disposition"] = disposition;
+    }
+    res.writeHead(200, headers);
+    if (req.method === "HEAD") {
+      res.end();
+      return;
+    }
+    const stream = fs.createReadStream(filePath, { highWaterMark: STREAM_CHUNK_BYTES });
+    stream.on("error", () => {
+      // Headers are gone; a clean end() would present a truncated body as a
+      // complete response. Kill the socket so the client sees a hard failure.
+      stream.destroy();
+      res.destroy();
+    });
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
+  }
+
   function serveFile(req, res, filePath, contentType) {
-    let data;
+    let stat;
     try {
-      if (!fs.statSync(filePath).isFile()) {
+      stat = fs.statSync(filePath);
+      if (!stat.isFile()) {
         return false;
       }
-      data = fs.readFileSync(filePath);
     } catch {
       return false;
     }
-    sendBytes(req, res, 200, data, contentType || "");
+    streamFile(req, res, filePath, stat, contentType || "");
     return true;
   }
 
@@ -192,14 +224,19 @@ export function createCadApp({ root, host, port, distDir = "" }) {
 
   function serveAsset(req, res, query, { download }) {
     const candidate = backend.assetPathForFileRef(query.get("file") || "");
-    if (!candidate || !fs.existsSync(candidate) || !fs.statSync(candidate).isFile()) {
+    let stat = null;
+    try {
+      stat = candidate ? fs.statSync(candidate) : null;
+    } catch {
+      stat = null;
+    }
+    if (!candidate || !stat || !stat.isFile()) {
       sendJson(req, res, 404, { error: "Not found" });
       return;
     }
-    const data = fs.readFileSync(candidate);
     const contentType = backend.contentTypeForPath(candidate) || "application/octet-stream";
     const disposition = download ? attachmentContentDisposition(path.basename(candidate)) : null;
-    sendBytes(req, res, 200, data, contentType, { disposition });
+    streamFile(req, res, candidate, stat, contentType, { disposition });
   }
 
   function refererFileRef(req) {

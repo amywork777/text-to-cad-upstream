@@ -9,6 +9,7 @@ import {
   isStepSidecarPath,
   renderPackageAssetDir,
   renderPackageDir,
+  pathIsInside,
   scanCadDirectory,
   sortCatalogEntries,
   stepSidecarPath,
@@ -131,4 +132,47 @@ test("srdf pairs with the same-directory urdf whose robot name matches", (t) => 
   write(root, "other.urdf", '<robot name="other"><link name="b"/></robot>\n');
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "arm.srdf");
   assert.equal(entry.relations.urdf.file, "arm.urdf");
+});
+
+// --- develop ports: symlink-following walk + alias-equality containment ---
+
+test("the scan follows directory symlinks on purpose (ports b0f59af3)", (t) => {
+  const root = tmpRoot(t);
+  const outside = tmpRoot(t);
+  write(outside, "shared/part.step", "ISO-10303-21;");
+  fs.symlinkSync(path.join(outside, "shared"), path.join(root, "library"), "dir");
+  const files = scanCadDirectory(root).entries.map((e) => e.file);
+  assert.ok(
+    files.some((f) => f.endsWith(path.join("library", "part.step"))),
+    `symlinked model folder must catalog: ${JSON.stringify(files)}`,
+  );
+});
+
+test("a symlink loop terminates instead of crashing the scan (ports 9bc6bd44)", (t) => {
+  const root = tmpRoot(t);
+  write(root, "model.step", "ISO-10303-21;");
+  fs.symlinkSync(root, path.join(root, "loop"), "dir");
+  const files = scanCadDirectory(root).entries.map((e) => e.file);
+  assert.equal(files.filter((f) => f.endsWith("model.step")).length, 1);
+});
+
+test("broken symlinks are skipped, not fatal", (t) => {
+  const root = tmpRoot(t);
+  write(root, "model.step", "ISO-10303-21;");
+  fs.symlinkSync(path.join(root, "does-not-exist"), path.join(root, "dangling"));
+  assert.equal(scanCadDirectory(root).entries.length >= 1, true);
+});
+
+test("pathIsInside treats realpath as alias equality, never refusal", (t) => {
+  const root = tmpRoot(t);
+  write(root, "sub/part.step", "ISO-10303-21;");
+  const alias = path.join(tmpRoot(t), "alias-root");
+  fs.symlinkSync(root, alias, "dir");
+  // Lexical containment under the symlinked root alias.
+  assert.equal(pathIsInside(path.join(alias, "sub/part.step"), alias), true);
+  // Alias equality: the RESOLVED file against the symlinked root, and vice versa.
+  assert.equal(pathIsInside(path.join(root, "sub/part.step"), alias), true);
+  assert.equal(pathIsInside(path.join(alias, "sub/part.step"), root), true);
+  // Still refuses genuinely-outside paths both ways.
+  assert.equal(pathIsInside(path.join(path.dirname(root), "elsewhere.step"), alias), false);
 });
