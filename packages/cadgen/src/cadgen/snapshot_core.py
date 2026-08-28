@@ -33,6 +33,7 @@ from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 from cadgen.coordination import PHASE_RENDER, resolve as resolve_progress
+from cadgen._internal.atomic_replace import replace_atomic
 
 
 SNAPSHOT_ORIGIN = "http://snapshot.local"
@@ -785,7 +786,7 @@ def write_tessellation_cache_entry(pathname: str, body: bytes | None) -> bool:
         target.parent.mkdir(parents=True, exist_ok=True)
         temp = target.with_name(f"{target.name}.{os.getpid()}.tmp")
         temp.write_bytes(body)
-        temp.replace(target)
+        replace_atomic(temp, target)
     except OSError:
         pass  # best-effort: a full disk must never fail a snapshot
     return True
