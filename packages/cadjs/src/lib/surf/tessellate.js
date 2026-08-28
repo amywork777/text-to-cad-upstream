@@ -27,6 +27,15 @@ import { ShapeUtils, Vector2 } from "three";
 
 import { evaluateCurve3, evaluatePCurve, evaluateSurface, evaluateSurfaceNormal } from "./evaluate.js";
 
+// Bump on ANY change that alters output triangles/normals/edge polylines for
+// the same input at the same tolerances — algorithm tweaks included, not just
+// entry-format changes (the codec version in tessellationCache.js only covers
+// those). This salts every shared tessellation-cache key (-t<version>-), so
+// meshes produced by the previous algorithm become unreachable instead of
+// being served stale; `cadgen cache gc` collects the orphans. Mirrored as
+// MESH_TESSELLATION_VERSION in cadgen/_internal/cache_paths.py (sync-tested).
+export const TESSELLATION_VERSION = 1;
+
 export const DEFAULT_OPTIONS = {
   // Max 3D distance between the surface and a triangle edge midpoint,
   // relative to the component diagonal.

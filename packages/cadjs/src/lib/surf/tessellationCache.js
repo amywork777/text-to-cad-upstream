@@ -18,7 +18,7 @@
 // Every section is 4-byte-sized, so decode returns zero-copy views over the
 // source buffer.
 
-import { DEFAULT_OPTIONS, tessellateComponent } from "./tessellate.js";
+import { DEFAULT_OPTIONS, TESSELLATION_VERSION, tessellateComponent } from "./tessellate.js";
 
 export const TESS_CACHE_MAGIC = 0x53534554; // "TESS" little-endian
 // v3: header carries edgeClasses (every surf edge's ord -> class string) and
@@ -28,12 +28,15 @@ export const TESS_CACHE_MAGIC = 0x53534554; // "TESS" little-endian
 // stored the export subset only. Older versions are ordinary misses.
 export const TESS_CACHE_VERSION = 3;
 
-// Tolerances are part of the key; format them canonically so 0.0015 and
-// 1.5e-3 hit the same entry.
+// The key covers the WHOLE function from surf to triangles: component
+// geometry (cid), tessellator algorithm (-t<TESSELLATION_VERSION>-), and the
+// tolerances, formatted canonically so 0.0015 and 1.5e-3 hit the same entry.
+// Dropping the version salt would serve stale triangles across algorithm
+// changes — a policy test pins its presence.
 export function tessellationCacheKey(cid, options = {}) {
   const effective = { ...DEFAULT_OPTIONS, ...options };
   const num = (value) => Number(value).toExponential(6);
-  return `${cid}-l${num(effective.chordTolerance)}-a${num(effective.angleTolerance)}`;
+  return `${cid}-t${TESSELLATION_VERSION}-l${num(effective.chordTolerance)}-a${num(effective.angleTolerance)}`;
 }
 
 // Debug toggles change the geometry or bloat the result; those runs must

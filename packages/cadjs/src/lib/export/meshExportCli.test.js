@@ -36,7 +36,9 @@ function makePackage(t) {
 function runCli(cliArgs, env = {}) {
   return spawnSync(process.execPath, [CLI, ...cliArgs], {
     encoding: "utf-8",
-    env: { ...process.env, ...env },
+    // Blank the cache-root overrides so a sandboxed HOME really contains the
+    // store (the root resolves CADGEN_STORE_DIR and XDG_CACHE_HOME first).
+    env: { ...process.env, CADGEN_STORE_DIR: "", XDG_CACHE_HOME: "", ...env },
   });
 }
 
@@ -66,7 +68,7 @@ test("exports every format from one package, byte-deterministically", (t) => {
   }
   const cacheEntries = fs.readdirSync(path.join(root, ".cache", "cadgen", "meshes"));
   assert.equal(cacheEntries.length, 1, "one unique component, one cache entry");
-  assert.match(cacheEntries[0], /^c0-l[0-9.e+-]+-a[0-9.e+-]+\.tess$/);
+  assert.match(cacheEntries[0], /^c0-t\d+-l[0-9.e+-]+-a[0-9.e+-]+\.tess$/);
 });
 
 test("both occurrences land in the mesh: distinct transforms, distinct colors", (t) => {
