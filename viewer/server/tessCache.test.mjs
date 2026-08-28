@@ -25,14 +25,25 @@ import {
   writeCachedTessellationBytes as cadjsWrite,
 } from "../packages/cadjs/src/lib/surf/tessellationCacheFs.mjs";
 
-const KEY = "c0ffee-l1.500000e-3-a3.500000e-1";
+const KEY = "c0ffee-t1-l1.500000e-3-a3.500000e-1";
 
 function sandboxHome(t) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tess-home-")));
-  const previous = process.env.HOME;
+  // The cache root resolves CADGEN_STORE_DIR and XDG_CACHE_HOME before HOME;
+  // clear both so the sandbox actually contains the store.
+  const previous = {
+    HOME: process.env.HOME,
+    CADGEN_STORE_DIR: process.env.CADGEN_STORE_DIR,
+    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
+  };
   process.env.HOME = home;
+  delete process.env.CADGEN_STORE_DIR;
+  delete process.env.XDG_CACHE_HOME;
   t.after(() => {
-    process.env.HOME = previous;
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     fs.rmSync(home, { recursive: true, force: true });
   });
   return home;

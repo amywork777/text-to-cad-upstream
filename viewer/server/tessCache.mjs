@@ -20,8 +20,24 @@ function tessellationCacheEnabled() {
   return process.env.CADGEN_MESH_CACHE !== "0";
 }
 
+// Inline mirror of cadgenCacheRootDir in the cadjs fs module (same resolution
+// rule as Python's cadgen/_internal/cache_paths.py): CADGEN_STORE_DIR, else
+// the platform cache convention, else ~/.cache/cadgen.
+function cadgenCacheRootDir(env = process.env) {
+  const override = (env.CADGEN_STORE_DIR || "").trim();
+  if (override) return override;
+  if (process.platform === "win32") {
+    const localAppData = (env.LOCALAPPDATA || "").trim();
+    if (localAppData) return path.join(localAppData, "cadgen");
+  } else {
+    const xdgCacheHome = (env.XDG_CACHE_HOME || "").trim();
+    if (xdgCacheHome) return path.join(xdgCacheHome, "cadgen");
+  }
+  return path.join(os.homedir(), ".cache", "cadgen");
+}
+
 export function tessellationCacheDir() {
-  return path.join(os.homedir(), ".cache", "cadgen", "meshes");
+  return path.join(cadgenCacheRootDir(), "meshes");
 }
 
 function readCachedTessellationBytes(key) {

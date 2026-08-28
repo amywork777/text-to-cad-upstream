@@ -35,6 +35,7 @@ from urllib.parse import quote, unquote, urlparse
 
 from cadgen.coordination import PHASE_RENDER, resolve as resolve_progress
 from cadgen._internal.atomic_replace import replace_atomic
+from cadgen._internal.cache_paths import meshes_dir
 
 
 SNAPSHOT_ORIGIN = "http://snapshot.local"
@@ -743,8 +744,9 @@ def route_file(pathname: str, prefix: str, root: Path) -> Path:
 # preflight the redirected POST triggers).
 
 TESS_CACHE_ROUTE_PREFIX = "/__tess_cache/"
-# <cid>-l<chord>-a<angle>.tess with exponential-notation tolerances; anything
-# else (path separators, dots-runs, empty) is refused before touching disk.
+# <cid>-t<tessellator-version>-l<chord>-a<angle>.tess with exponential-notation
+# tolerances (the key scheme's home is tessellationCache.js); anything else
+# (path separators, dots-runs, empty) is refused before touching disk.
 TESS_CACHE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]*\.tess$")
 
 
@@ -753,7 +755,10 @@ def tessellation_cache_enabled() -> bool:
 
 
 def tessellation_cache_dir() -> Path:
-    return Path.home() / ".cache" / "cadgen" / "meshes"
+    # One root for every user-level cache (CADGEN_STORE_DIR / platform cache
+    # dir): cadgen._internal.cache_paths is the Python authority, mirrored by
+    # cadgenCacheRootDir in the JS store modules.
+    return meshes_dir()
 
 
 def tessellation_cache_file(pathname: str) -> Path | None:

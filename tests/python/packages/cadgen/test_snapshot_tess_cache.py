@@ -60,7 +60,7 @@ class TessellationCacheRouteTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="tess-cache-")
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
-        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home), "CADGEN_STORE_DIR": "", "XDG_CACHE_HOME": ""})
         patcher.start()
         self.addCleanup(patcher.stop)
         # Path.home() reads HOME on POSIX; guard the assumption this suite rests on.
@@ -153,7 +153,7 @@ class SnapshotAssetServerTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="asset-server-")
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
-        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home), "CADGEN_STORE_DIR": "", "XDG_CACHE_HOME": ""})
         patcher.start()
         self.addCleanup(patcher.stop)
         self.root = self.home / "modelroot"
