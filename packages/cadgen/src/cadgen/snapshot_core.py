@@ -23,6 +23,7 @@ import json
 import mimetypes
 import os
 import re
+import struct
 import sys
 import time
 from collections.abc import Mapping
@@ -791,6 +792,47 @@ def write_tessellation_cache_entry(pathname: str, body: bytes | None) -> bool:
     return True
 
 
+# POST /__tess_cache/batch: one round trip for N entries — a many-component
+# assembly otherwise pays ~2 requests per component. Request body is JSON
+# {"names": ["<key>.tess", ...]}; the response is the TESB container defined
+# in packages/cadjs/src/lib/surf/tessellationCache.js (that file is the
+# format's single home; Python only frames the opaque entry bytes): "TESB"
+# u32, version u32, count u32, then per entry u32 byteLength (0 = miss) +
+# bytes padded to a 4-byte boundary.
+TESS_CACHE_BATCH_PATH = "/__tess_cache/batch"
+TESS_CACHE_BATCH_MAGIC = 0x42534554  # "TESB" little-endian
+TESS_CACHE_BATCH_VERSION = 1
+TESS_CACHE_BATCH_MAX_NAMES = 4096
+
+
+def read_tessellation_cache_batch(body: bytes | None) -> bytes | None:
+    """The TESB response for a batch request body, or None for a malformed
+    request (the route answers 400). Invalid names and read failures are
+    per-entry MISSES, never errors — the page's fallback is per-key gets."""
+    try:
+        names = json.loads((body or b"").decode("utf-8")).get("names")
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return None
+    if not isinstance(names, list) or len(names) > TESS_CACHE_BATCH_MAX_NAMES:
+        return None
+    entries: list[bytes] = []
+    for name in names:
+        entry = b""
+        if isinstance(name, str):
+            data = read_tessellation_cache_entry(f"{TESS_CACHE_ROUTE_PREFIX}{name}")
+            if data is not None:
+                entry = data
+        entries.append(entry)
+    parts = [struct.pack("<III", TESS_CACHE_BATCH_MAGIC, TESS_CACHE_BATCH_VERSION, len(entries))]
+    for entry in entries:
+        parts.append(struct.pack("<I", len(entry)))
+        parts.append(entry)
+        padding = (-len(entry)) % 4
+        if padding:
+            parts.append(b"\x00" * padding)
+    return b"".join(parts)
+
+
 RENDER_ASSET_ROUTE_PREFIX = "/__render_asset/"
 
 
@@ -870,6 +912,13 @@ class SnapshotAssetServer:
                     return
                 length = int(self.headers.get("content-length") or 0)
                 body = self.rfile.read(length) if length > 0 else b""
+                if pathname == TESS_CACHE_BATCH_PATH:
+                    batch = read_tessellation_cache_batch(body)
+                    if batch is None:
+                        self._send(400, b"bad batch request", "text/plain; charset=utf-8")
+                        return
+                    self._send(200, batch)
+                    return
                 accepted = write_tessellation_cache_entry(pathname, body)
                 self._send(204 if accepted else 403)
 
@@ -1063,6 +1112,21 @@ class BatchSnapshotRenderer:
             )
             return
         if request.method == "POST":
+            if pathname == TESS_CACHE_BATCH_PATH:
+                # CDP fallback for the batch route (no loopback server). The
+                # container crosses the slow fulfill path, but it is still one
+                # round trip instead of N.
+                batch = read_tessellation_cache_batch(request.post_data_buffer)
+                if batch is None:
+                    await route.fulfill(status=400, content_type="text/plain; charset=utf-8", body="bad batch request")
+                    return
+                await route.fulfill(
+                    status=200,
+                    content_type="application/octet-stream",
+                    headers={"cache-control": "no-store"},
+                    body=batch,
+                )
+                return
             accepted = write_tessellation_cache_entry(pathname, request.post_data_buffer)
             await route.fulfill(status=204 if accepted else 403, content_type="text/plain; charset=utf-8", body="")
             return

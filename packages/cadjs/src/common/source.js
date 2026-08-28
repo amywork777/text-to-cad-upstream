@@ -4,7 +4,12 @@ import {
 import { buildMeshDataFromGlbBuffer } from "../lib/render/glbMeshData.js";
 import { buildMeshDataFromSurf } from "../lib/surf/surfMeshData.js";
 import { parseSurf } from "../lib/surf/container.js";
-import { tessellateComponentCached } from "../lib/surf/tessellationCache.js";
+import { tessellateComponent } from "../lib/surf/tessellate.js";
+import {
+  getCachedComponentEntries,
+  surfIndexFromCacheEntry,
+  writeBackComponentEntry,
+} from "../lib/surf/tessellationCache.js";
 import { buildMeshDataFromStlBuffer } from "../lib/render/stlMeshData.js";
 import { buildMeshDataFrom3MfBuffer } from "../lib/render/threeMfMeshData.js";
 import {
@@ -185,13 +190,32 @@ async function loadPackageMeshData(packageInfo) {
   const componentUrls = isObject(packageInfo.componentUrls) ? packageInfo.componentUrls : {};
   const components = isObject(descriptor.components) ? descriptor.components : {};
   const componentMeshDataByCid = {};
-  // Components load through a small worker pool: tessellation is CPU-bound
-  // and single-threaded either way, but a many-component assembly otherwise
-  // pays its per-request latency (surf fetch + cache round-trips) serially —
-  // measured as the dominant cost on a 563-component model. The pool overlaps
-  // the network waits with the CPU work; 6 matches the browser's per-host
-  // connection budget.
   const cids = Object.keys(components);
+  // ONE batched round trip resolves the whole hit set against the shared
+  // component cache (provider getMany -> POST /__tess_cache/batch). A v3
+  // entry carries the surf index fields render meshData needs, so a hit
+  // skips the .surf fetch entirely — on a 563-component warm model this
+  // replaces ~2 requests per component with one request total. No provider,
+  // batch-less host, or older entries degrade to the miss path below.
+  const cachedEntries = await getCachedComponentEntries(cids);
+  const misses = [];
+  for (const cid of cids) {
+    const decoded = cachedEntries.get(cid);
+    const surrogateIndex = decoded ? surfIndexFromCacheEntry(decoded) : null;
+    if (decoded && surrogateIndex) {
+      componentMeshDataByCid[cid] = buildMeshDataFromSurf(surrogateIndex, null, {
+        component: decoded.component,
+      });
+    } else {
+      misses.push(cid);
+    }
+  }
+  // Misses load through a small pool: tessellation is CPU-bound and
+  // single-threaded either way, but a many-component assembly otherwise pays
+  // its per-request latency (surf fetch + write-back) serially — measured as
+  // the dominant cost on a 563-component model. The pool overlaps the network
+  // waits with the CPU work; 6 matches the browser's per-host connection
+  // budget.
   const loadComponent = async (cid) => {
     const url = String(componentUrls[cid] || "").trim();
     if (!url) {
@@ -201,19 +225,27 @@ async function loadPackageMeshData(packageInfo) {
     // points at the component GLB; its .surf sibling shares the stem.
     const surfUrl = url.replace(/\.glb(?=$|[?#])/, ".surf");
     const { index, floats } = parseSurf(await fetchComponentGlbBuffer(surfUrl, cid));
-    // Tessellation resolves through the shared component cache when the host
-    // registered a provider (the snapshot runtime does — headlessRenderEntry
-    // round-trips ~/.cache/cadgen/meshes over its /__tess_cache/ route). No
-    // provider — the default — tessellates exactly as before.
-    const component = await tessellateComponentCached(index, floats, { cid });
+    // A decoded entry without the surf-index header (a writer that had no
+    // index in hand) still spares the tessellation; a true miss tessellates
+    // and writes back — the batch above already answered for every cid, so
+    // re-asking the provider per key would only repeat the lookup that
+    // just missed.
+    const decoded = cachedEntries.get(cid) || null;
+    let component;
+    if (decoded) {
+      component = decoded.component;
+    } else {
+      component = tessellateComponent(index, floats, {});
+      await writeBackComponentEntry(cid, {}, component, index);
+    }
     componentMeshDataByCid[cid] = buildMeshDataFromSurf(index, floats, { component });
   };
   const POOL = 6;
   let next = 0;
   await Promise.all(
-    Array.from({ length: Math.min(POOL, cids.length) }, async () => {
-      while (next < cids.length) {
-        const cid = cids[next];
+    Array.from({ length: Math.min(POOL, misses.length) }, async () => {
+      while (next < misses.length) {
+        const cid = misses[next];
         next += 1;
         await loadComponent(cid);
       }
