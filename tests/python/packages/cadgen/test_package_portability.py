@@ -179,23 +179,10 @@ class PackagePortabilityTest(unittest.TestCase):
             build_implicit_artifact(repo_root=root, source_path=root / "orb.implicit.js")
 
     def _validators(self, root: Path):
-        from cadgen.render_ops import (
-            validate_dxf_freshness,
-            validate_implicit_freshness,
-            validate_step_freshness,
-        )
-
-        checks = [
-            ("widget.step.py", validate_step_freshness),
-            ("rig.step.py", validate_step_freshness),
-            ("imported.step", validate_step_freshness),
-        ]
+        checks = ["widget.step.py", "rig.step.py", "imported.step"]
         if HAS_NODE:
-            checks += [
-                ("sheet.dxf.py", validate_dxf_freshness),
-                ("orb.implicit.js", validate_implicit_freshness),
-            ]
-        return [(name, validate, str(root), str(root / name)) for name, validate in checks]
+            checks += ["sheet.dxf.py", "orb.implicit.js"]
+        return [(name, str(root), str(root / name)) for name in checks]
 
     def test_every_package_kind_was_actually_built(self) -> None:
         # Guards the tests below from passing vacuously on an empty tree.
@@ -288,9 +275,11 @@ class PackagePortabilityTest(unittest.TestCase):
         self._noop_pass(moved)
         self.assertEqual(before, mtimes(moved), "moving the project rebuilt its packages")
 
-        for name, validate, root_arg, source_arg in self._validators(moved):
+        from tests.python.support.js_status import js_artifact_status
+
+        for name, root_arg, source_arg in self._validators(moved):
             with self.subTest(entry=name):
-                self.assertEqual((True, None), validate(root_arg, source_arg))
+                self.assertEqual("ready", js_artifact_status(source_arg, root_arg)["state"])
 
     def test_renaming_the_project_folder_rebuilds_nothing(self) -> None:
         # The folder name is part of every path a descriptor could have recorded, so this is

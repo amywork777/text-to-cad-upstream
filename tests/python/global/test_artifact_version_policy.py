@@ -68,7 +68,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # Deliberately NOT one shared number: a drawing rebuild is milliseconds and a
         # large STEP assembly is tens of seconds, so a DXF change must not re-mesh every
         # STEP model on next open.
-        source = (ROOT / "packages/cadgen/src/cadgen/render_ops.py").read_text()
+        source = (ROOT / "viewer/server/artifactStatus.mjs").read_text()
         # DXF is absent by design: a generated drawing's render IS the sibling
         # .dxf the client parses (render-side freshness is just its existence;
         # the output record gates only the CLI's no-op path) — there is no

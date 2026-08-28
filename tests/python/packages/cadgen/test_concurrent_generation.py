@@ -83,12 +83,13 @@ class ConcurrentGenerationTest(unittest.TestCase):
         package = self.root / "__cadgen__" / "models" / "widget.step"
         descriptor = package / "assembly.json"
         self.assertTrue(descriptor.is_file(), "no descriptor after concurrent builds")
-        # The viewer's freshness gate must accept the package the race produced. It is
-        # cadgen.render_ops now, so no path juggling: this is an ordinary intra-package import.
-        from cadgen.render_ops import validate_step_freshness
+        # The viewer's freshness gate must accept the package the race produced.
+        # The one authority is JS (viewer/server/artifactStatus.mjs), asked
+        # through the node shim.
+        from tests.python.support.js_status import js_artifact_status
 
         self.assertEqual(
-            (True, None), validate_step_freshness(str(self.root), str(self.generator))
+            "ready", js_artifact_status(self.generator, self.root)["state"]
         )
 
     def test_second_run_after_completion_is_a_plain_no_op(self):

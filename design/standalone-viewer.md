@@ -153,6 +153,28 @@ For raw STEP files that never met the pipeline, on Python-less machines:
     TDataStd_Name.Get and GetInstanceColor are unbound in the prebuilt kernel
     (workarounds + follow-ups in design/FEEDBACK.md #18-19); Quantity_Color is
     linear-RGB in WASM and converted to sRGB to match build123d output.
+- Simplification pass (2026-08-28, user-directed), on top of the detached-
+  outputs amendment:
+  1. The unreachable monolith-GLB stratum is deleted (~950 lines): the file-
+     gated validator, its manifest helpers, glb.py's duplicated readers, the
+     dead part/assembly exporters, the topology.glb remnants, and the
+     freshness-wrapper fallbacks.
+  2. The OCP selector extractor (step_scene_selectors.py, 1,021 lines) is
+     deleted; its one caller (the mid-write descriptor race window) is a
+     bounded retry-read. Selector relevance now has exactly two
+     implementations — the Python surf reader and its JS twin.
+  3. The render package IS the scene cache: step_scene_cache.py is deleted,
+     load_step_scene_cached reconstructs scenes from the package (brep blobs +
+     descriptor + surf face colors), per-face colors ride the component build
+     (STEP_PACKAGE_VERSION 15), and the imported-STEP build no longer parses
+     the text STEP twice.
+  4. Artifact status has ONE authority: viewer/server/artifactStatus.mjs (pure
+     JS file reads). Python's render_ops keeps build/export plus one status
+     primitive — `snapshot`, the flock view (idle|writing|busy) that Node
+     cannot probe and that must never be re-inferred from pids/heartbeats.
+     The freshness test suite lives with the authority
+     (viewer/server/artifactStatus.test.mjs); Python suites that need a
+     verdict ask through tests/python/support/js_status.py.
 - Policy amendment (2026-08-28, user decision): generated outputs are DETACHED
   from their source code. The render-side validators (render_ops
   validate_step/dxf/implicit_freshness) no longer read source closures or the

@@ -1,8 +1,10 @@
-"""Deterministic unit tests for the /__cad/artifact freshness logic.
+"""render_ops: ownership, format dispatch, and the kernel lock snapshot.
 
-Builds a synthetic imported-.step component-GLB package (no cadgen/OCP) and
-checks the state machine: ready / stale_step_artifact / missing_glb /
-unsupported, the owns_entry gate, and the generation-lock reader.
+Freshness VERDICTS moved to the single JS authority
+(viewer/server/artifactStatus.mjs, tested in artifactStatus.test.mjs); what
+remains here is what Python still owns: which entries are artifact-managed,
+which producer builds each format, and the flock-backed generation snapshot
+(idle/writing/busy) that no other runtime can probe.
 """
 
 import ast
@@ -105,183 +107,6 @@ class OwnsEntry(unittest.TestCase):
         self.assertFalse(artifact.owns_entry({"file": "/x/a.stl"}))
         self.assertFalse(artifact.owns_entry({"file": "/x/lib.py"}))  # plain .py is not a model
         self.assertFalse(artifact.owns_entry(None))
-
-
-class ImportedStepFreshness(unittest.TestCase):
-    def test_fresh_package_is_ready(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step")
-            self.assertEqual(artifact.validate_step_freshness(d, step), (True, None))
-
-    def test_stale_step_hash(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", step_hash="deadbeef")
-            self.assertEqual(artifact.validate_step_freshness(d, step), (False, "stale_step_artifact"))
-
-    def test_missing_component_glb(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, pkg = _write_package(d, "imp.step")
-            os.remove(os.path.join(pkg, "components", "c0.surf"))
-            self.assertEqual(artifact.validate_step_freshness(d, step), (False, "missing_glb"))
-
-    def test_unsupported_descriptor(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, pkg = _write_package(d, "imp.step")
-            with open(os.path.join(pkg, "assembly.json"), "w") as h:
-                json.dump({"kind": "something-else"}, h)
-            self.assertEqual(artifact.validate_step_freshness(d, step), (False, "unsupported_step_topology"))
-
-    def test_missing_package_is_buildable(self):
-        with tempfile.TemporaryDirectory() as d:
-            step = os.path.join(d, "imp.step")
-            open(step, "wb").close()
-            self.assertEqual(artifact.validate_step_freshness(d, step), (False, "missing_glb"))
-
-
-class ImportedDigestFailsClosed(unittest.TestCase):
-    """A descriptor that records no digest for a source file that exists cannot be shown
-    to be current, and must report needs-build rather than ready. This was the validator's
-    last fail-OPEN path; cadgen's producer gate has always compared the file's real hash
-    against whatever was recorded, so a blank one never satisfied it either."""
-
-    def test_absent_step_hash_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", step_hash=_OMIT)
-            ok, code = artifact.validate_step_freshness(d, step)
-            self.assertFalse(ok)
-            self.assertEqual(code, "missing_step_hash")
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_blank_step_hash_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", step_hash="   ")
-            self.assertEqual(
-                artifact.validate_step_freshness(d, step), (False, "missing_step_hash")
-            )
-
-    def test_digest_field_is_named_per_format_not_aliased(self):
-        # `stepHash` is load-bearing at a dozen cadgen sites beyond the render descriptor,
-        # so it is not renamed and not aliased -- the spec table names the field per format.
-        self.assertEqual(artifact._STEP_PACKAGE["source_digest_field"], "stepHash")
-        self.assertEqual(artifact._IMPLICIT_PACKAGE["source_digest_field"], "sourceDigest")
-        for spec in (artifact._STEP_PACKAGE, artifact._IMPLICIT_PACKAGE):
-            self.assertIn(spec["missing_digest"], artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_generated_entry_is_unaffected_by_the_digest_gate(self):
-        # sourceKind=python returns on the closure branch; a python descriptor carries no
-        # stepHash by design and must stay ready.
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py")
-            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
-
-
-class SchemaVersionGate(unittest.TestCase):
-    """packageSchemaVersion is the stack's single invalidation channel: strict equality,
-    no tolerant reader. A descriptor that does not record exactly the current version is
-    unsupported (and unsupported is buildable, so it rebuilds lazily on reopen)."""
-
-    def test_step_descriptor_without_a_schema_version_is_unsupported(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", schema_version=None)
-            self.assertEqual(
-                artifact.validate_step_freshness(d, step), (False, "unsupported_step_topology")
-            )
-
-    def test_step_descriptor_with_an_older_schema_version_is_unsupported(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", schema_version=_STEP_SCHEMA_VERSION - 1)
-            self.assertEqual(
-                artifact.validate_step_freshness(d, step), (False, "unsupported_step_topology")
-            )
-
-    def test_a_stringified_schema_version_does_not_pass(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", schema_version=str(_STEP_SCHEMA_VERSION))
-            self.assertEqual(
-                artifact.validate_step_freshness(d, step), (False, "unsupported_step_topology")
-            )
-
-    def test_generated_step_descriptor_is_gated_too(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", schema_version=None)
-            self.assertEqual(
-                artifact.validate_step_freshness(root, py), (False, "unsupported_step_topology")
-            )
-
-    def test_every_spec_row_gates_on_an_int_version(self):
-        # A generated drawing has no descriptor any more (its freshness is the
-        # output record), so the table is STEP + implicit.
-        for spec in (artifact._STEP_PACKAGE, artifact._IMPLICIT_PACKAGE):
-            self.assertIsInstance(spec["schema_version"], int)
-            self.assertIn(spec["unsupported"], artifact.BUILDABLE_ARTIFACT_CODES)
-
-
-class BakeHashGate(unittest.TestCase):
-    """The bake block is the format settings a build froze into its payload. No other
-    freshness signal can see a settings change -- source unchanged, payload present,
-    closure matching -- so without this gate a stale bake renders silently."""
-
-    def test_canonical_hash_ignores_key_order_but_not_values(self):
-        self.assertEqual(
-            canonical_bake_hash({"a": 1, "b": {"c": 2, "d": 3}}),
-            canonical_bake_hash({"b": {"d": 3, "c": 2}, "a": 1}),
-        )
-        self.assertNotEqual(
-            canonical_bake_hash({"widthMm": 0.42}), canonical_bake_hash({"widthMm": 0.43})
-        )
-        # Array order is content.
-        self.assertNotEqual(canonical_bake_hash({"a": [1, 2]}), canonical_bake_hash({"a": [2, 1]}))
-
-    def test_no_bake_settings_hashes_to_none(self):
-        self.assertIsNone(canonical_bake_hash(None))
-
-    def test_step_package_bakes_nothing_so_a_recorded_bake_is_stale(self):
-        # STEP passes None (design §5.3): a descriptor carrying a bakeHash did not come
-        # from this producer, and cannot be shown to match settings it no longer has.
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", bake_hash=canonical_bake_hash({"x": 1}))
-            self.assertEqual(
-                artifact.validate_step_freshness(d, step), (False, "stale_step_artifact")
-            )
-
-    def test_generated_step_package_with_a_recorded_bake_is_stale(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", bake_hash="deadbeef")
-            self.assertEqual(
-                artifact.validate_step_freshness(root, py), (False, "stale_step_artifact")
-            )
-
-    def test_a_settings_change_invalidates_every_package_of_that_format(self):
-        # Drive the mechanism through the real validator by giving the STEP row a bake
-        # owner, exactly as toolpath/implicit will: the SAME descriptor is ready under the
-        # settings it recorded and stale under changed ones. Without this, a settings edit
-        # would leave every already-built package rendering its old bake.
-        settings = {"detailMode": "full", "widthMm": 0.42}
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step", bake_hash=canonical_bake_hash(settings))
-            spec = dict(artifact._STEP_PACKAGE)
-            spec["bake_settings"] = lambda: settings
-            self.assertEqual(
-                artifact._validate_render_package(
-                    spec, step, artifact._step_payload_refs, generated=False
-                ),
-                (True, None),
-            )
-            spec["bake_settings"] = lambda: {**settings, "widthMm": 0.43}
-            self.assertEqual(
-                artifact._validate_render_package(spec, step, artifact._step_payload_refs, generated=False),
-                (False, "stale_step_artifact"),
-            )
-
-    def test_a_baking_format_with_no_recorded_bake_fails_closed(self):
-        with tempfile.TemporaryDirectory() as d:
-            step, _ = _write_package(d, "imp.step")
-            spec = dict(artifact._STEP_PACKAGE)
-            spec["bake_settings"] = lambda: {"widthMm": 0.42}
-            self.assertEqual(
-                artifact._validate_render_package(spec, step, artifact._step_payload_refs, generated=False),
-                (False, "stale_step_artifact"),
-            )
 
 
 @unittest.skipUnless(
@@ -496,76 +321,6 @@ def _write_generated_package(
     return py_path, pkg
 
 
-class GeneratedStepFreshness(unittest.TestCase):
-    def test_built_generated_is_ready(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
-            ok, code = artifact.validate_step_freshness(root, py)
-            self.assertTrue(ok, code)
-
-    def test_unbuilt_generated_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", with_package=False)
-            ok, code = artifact.validate_step_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_source_edits_never_invalidate(self):
-        # Generated outputs are DETACHED from their code: the viewer renders the
-        # last-built package and regeneration is the agent's explicit act. Only
-        # the CLI's no-op gate reads the recorded closure (to SKIP work).
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
-            with open(os.path.join(root, "lib.py"), "w") as h:
-                h.write("VALUE = 2\n")
-            with open(py, "w") as h:
-                h.write("def gen_step():\n    return 999\n")
-            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
-
-    def test_missing_closure_records_do_not_matter(self):
-        # No recorded closure, and a closure dep deleted outright: both packages
-        # still render, so both are ready. (Before outputs were detached, either
-        # of these reported stale and forced a rebuild on open.)
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_hash=False)
-            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
-            os.remove(os.path.join(root, "lib.py"))
-            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
-
-
-class _FakeClosure:
-    def __init__(self, closure_hash, files):
-        self.closure_hash = closure_hash
-        self.files = files
-
-
-def _write_generated_drawing(root, py_name, *, with_output=True, closure_extra=None, record=True):
-    """A gen_dxf generator + (optionally) its sibling .dxf and output record —
-    the ONLY artifacts a generated drawing has (design/standalone-viewer.md
-    Phase A). The record uses the real writer so its shape can never drift."""
-    py_path = os.path.join(root, py_name)
-    with open(py_path, "w") as h:
-        h.write("def gen_dxf():\n    return None\n")
-    for rel in (closure_extra or []):
-        with open(os.path.join(root, rel), "w") as h:
-            h.write("# closure dep\n")
-    if not with_output:
-        return py_path, None
-    sibling = os.path.join(root, py_name[: -len(".py")])
-    with open(sibling, "w") as h:
-        h.write("0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n")
-    if record:
-        closure_files = [py_name] + list(closure_extra or [])
-        closure = closure_for_files(
-            pathlib.Path(py_path), [pathlib.Path(root) / rel for rel in closure_files],
-            base=pathlib.Path(root),
-        )
-        record_dxf_output(pathlib.Path(py_path), pathlib.Path(sibling), source_closure=closure)
-    return py_path, sibling
-
-
 class OwnsDxfEntry(unittest.TestCase):
     def test_only_generators_are_owned(self):
         self.assertTrue(artifact.owns_entry({"file": "/x/outline.dxf.py"}))
@@ -577,135 +332,6 @@ class OwnsDxfEntry(unittest.TestCase):
         self.assertFalse(artifact.owns_dxf_entry({"file": "/x/a.step.py"}))
         self.assertFalse(artifact.owns_dxf_entry({"file": "/x/notes.dxf.txt"}))
         self.assertFalse(artifact.owns_dxf_entry(None))
-
-
-class GeneratedDxfFreshness(unittest.TestCase):
-    """The .dxf sibling is the product; the output record is BOTH freshness
-    authorities (the CLI's no-op gate and this validator read the same
-    cadgen._internal.dxf_output gate)."""
-
-    def test_built_drawing_is_ready(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
-            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
-
-    def test_unbuilt_drawing_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_drawing(root, "outline.dxf.py", with_output=False)
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "missing_dxf_output")
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_only_absence_needs_a_build(self):
-        # The .dxf IS what the viewer parses, so the render always matches the
-        # file; no record, an edited source, or hand-edited output bytes are all
-        # still READY. The output record exists solely for the CLI no-op gate.
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_drawing(root, "outline.dxf.py", record=False)
-            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
-        with tempfile.TemporaryDirectory() as root:
-            py, sibling = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
-            with open(os.path.join(root, "lib.py"), "w") as h:
-                h.write("VALUE = 2\n")
-            with open(sibling, "a") as h:
-                h.write("999\n")
-            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
-
-    def test_deleted_generator_is_missing_source_path(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_drawing(root, "outline.dxf.py")
-            os.remove(py)
-            self.assertEqual(
-                (False, "missing_source_path"), artifact.validate_dxf_freshness(root, py)
-            )
-
-
-class GeneratedPackageParity(unittest.TestCase):
-    """The two generated formats must answer identically-shaped questions
-    identically, even though STEP freshness reads a package descriptor and DXF
-    freshness reads an output record."""
-
-    def test_source_changes_are_fresh_for_both(self):
-        # Detached outputs, uniformly: neither generated format treats a source
-        # edit (nor a touch) as a render-side rebuild trigger.
-        with tempfile.TemporaryDirectory() as root:
-            step_py, _ = _write_generated_package(root, "widget.step.py")
-            dxf_py, _ = _write_generated_drawing(root, "outline.dxf.py")
-            time.sleep(0.01)
-            os.utime(step_py, None)
-            os.utime(dxf_py, None)
-            self.assertTrue(artifact.validate_step_freshness(root, step_py)[0])
-            self.assertTrue(artifact.validate_dxf_freshness(root, dxf_py)[0])
-            for path, body in ((step_py, "def gen_step():\n    return 1\n"),
-                               (dxf_py, "def gen_dxf():\n    return 1\n")):
-                with open(path, "w") as h:
-                    h.write(body)
-            self.assertTrue(artifact.validate_step_freshness(root, step_py)[0])
-            self.assertTrue(artifact.validate_dxf_freshness(root, dxf_py)[0])
-
-    def test_deleted_generator_is_missing_source_path_for_both(self):
-        with tempfile.TemporaryDirectory() as root:
-            step_py, _ = _write_generated_package(root, "widget.step.py")
-            dxf_py, _ = _write_generated_drawing(root, "outline.dxf.py")
-            os.remove(step_py)
-            os.remove(dxf_py)
-            self.assertEqual(artifact.validate_step_freshness(root, step_py), (False, "missing_source_path"))
-            self.assertEqual(artifact.validate_dxf_freshness(root, dxf_py), (False, "missing_source_path"))
-
-
-def _write_implicit_package(
-    root,
-    source_name,
-    *,
-    with_package=True,
-    kind="implicit-package",
-    schema_version=_IMPLICIT_SCHEMA_VERSION,
-    bake_hash=_OMIT,
-    glb=True,
-    closure_hash=True,
-    closure_extra=None,
-):
-    """An `.implicit.js` model + optionally its baked render package.
-
-    An implicit model is a GENERATED entry whose generator happens to be JavaScript: the
-    descriptor records sourceKind "python" (the validator's generated-vs-imported
-    discriminator, not a claim about the language) and a source closure over the `.js`
-    files the model actually loaded."""
-    source_path = os.path.join(root, source_name)
-    with open(source_path, "w") as h:
-        h.write("export const model = { sdf: 'return length(p) - 1.0;' };\n")
-    for rel in (closure_extra or []):
-        with open(os.path.join(root, rel), "w") as h:
-            h.write("// closure dep\n")
-    if not with_package:
-        return source_path, None
-    pkg = os.path.join(root, "__cadgen__", "models", source_name)
-    os.makedirs(pkg, exist_ok=True)
-    with open(os.path.join(pkg, "model.glb"), "wb") as h:
-        h.write(b"glTF\x02\x00\x00\x00")
-    closure_files = [source_name] + list(closure_extra or [])
-    descriptor = {
-        "kind": kind,
-        "sourceKind": "python",
-        "sourceLanguage": "javascript",
-        "sourcePath": source_name,
-        "sourceClosureFiles": closure_files,
-    }
-    if glb:
-        descriptor["glb"] = "model.glb"
-    if schema_version is not None:
-        descriptor["packageSchemaVersion"] = schema_version
-    descriptor["bakeHash"] = (
-        canonical_bake_hash(implicit_bake_settings()) if bake_hash is _OMIT else bake_hash
-    )
-    if descriptor["bakeHash"] is None:
-        del descriptor["bakeHash"]
-    if closure_hash:
-        descriptor["sourceClosureHash"] = _reference_closure_hash(root, closure_files)
-    with open(os.path.join(pkg, "implicit.json"), "w") as h:
-        json.dump(descriptor, h)
-    return source_path, pkg
 
 
 class OwnsImplicitEntry(unittest.TestCase):
@@ -723,105 +349,6 @@ class OwnsImplicitEntry(unittest.TestCase):
         self.assertEqual(artifact.IMPLICIT_SUFFIXES, _implicit_package.IMPLICIT_SUFFIXES)
 
 
-class ImplicitFreshness(unittest.TestCase):
-    def test_built_package_is_ready(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", closure_extra=["lib.js"])
-            ok, code = artifact.validate_implicit_freshness(root, src)
-            self.assertTrue(ok, code)
-
-    def test_unbuilt_package_is_needs_build(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", with_package=False)
-            ok, code = artifact.validate_implicit_freshness(root, src)
-            self.assertFalse(ok)
-            self.assertEqual(code, "missing_implicit_artifact")
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_missing_model_glb_is_buildable(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, pkg = _write_implicit_package(root, "gyroid.implicit.js")
-            os.remove(os.path.join(pkg, "model.glb"))
-            self.assertEqual(
-                artifact.validate_implicit_freshness(root, src),
-                (False, "missing_implicit_artifact"),
-            )
-
-    def test_descriptor_that_names_no_glb_is_buildable(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", glb=False)
-            self.assertEqual(
-                artifact.validate_implicit_freshness(root, src),
-                (False, "missing_implicit_artifact"),
-            )
-
-    def test_unsupported_descriptor(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", kind="something-else")
-            self.assertEqual(
-                artifact.validate_implicit_freshness(root, src),
-                (False, "unsupported_implicit_artifact"),
-            )
-
-    def test_schema_version_is_gated_strictly(self):
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", schema_version=None)
-            self.assertEqual(
-                artifact.validate_implicit_freshness(root, src),
-                (False, "unsupported_implicit_artifact"),
-            )
-
-    def test_a_changed_bake_resolution_makes_every_package_stale(self):
-        # The bake IS the artifact: a resolution change is invisible to every other
-        # freshness signal, so without this gate a stale mesh renders silently.
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js")
-            self.assertTrue(artifact.validate_implicit_freshness(root, src)[0])
-            with mock.patch.object(
-                _implicit_package, "DEFAULT_BAKE_RESOLUTION", 128, create=False
-            ):
-                self.assertEqual(
-                    artifact.validate_implicit_freshness(root, src),
-                    (False, "stale_implicit_artifact"),
-                )
-
-    def test_source_changes_never_invalidate_the_bake(self):
-        # An implicit renders LIVE from its own GLSL anyway; the baked package
-        # is a detached export/snapshot product. Source edits are not a
-        # render-side rebuild trigger for it either.
-        with tempfile.TemporaryDirectory() as root:
-            src, _ = _write_implicit_package(root, "gyroid.implicit.js", closure_extra=["lib.js"])
-            with open(os.path.join(root, "lib.js"), "w") as h:
-                h.write("// different\nexport const k = 2;\n")
-            self.assertEqual(artifact.validate_implicit_freshness(root, src), (True, None))
-
-    def test_the_two_authorities_agree_on_the_same_package(self):
-        # The viewer's validator and the producer's currency gate must reach the same
-        # verdict, or a stale package either renders silently or rebuilds forever.
-        with tempfile.TemporaryDirectory() as root:
-            src, pkg = _write_implicit_package(root, "gyroid.implicit.js")
-            self.assertTrue(artifact.validate_implicit_freshness(root, src)[0])
-            self.assertTrue(_implicit_package.implicit_package_current(pathlib.Path(src)))
-            os.remove(os.path.join(pkg, "model.glb"))
-            self.assertFalse(artifact.validate_implicit_freshness(root, src)[0])
-            self.assertFalse(_implicit_package.implicit_package_current(pathlib.Path(src)))
-
-    def test_spec_row_matches_the_producer(self):
-        spec = artifact._IMPLICIT_PACKAGE
-        self.assertEqual(spec["descriptor"], _implicit_package.IMPLICIT_DESCRIPTOR_NAME)
-        self.assertEqual(spec["package_kind"], _implicit_package.IMPLICIT_PACKAGE_KIND)
-        self.assertEqual(
-            spec["schema_version"], _implicit_package.IMPLICIT_PACKAGE_SCHEMA_VERSION
-        )
-        self.assertIs(spec["bake_settings"], _implicit_package.implicit_bake_settings)
-        self.assertIsInstance(spec["schema_version"], int)
-        for code in (spec["missing"], spec["unsupported"], spec["stale"], spec["missing_digest"]):
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_payload_refs_names_the_baked_mesh(self):
-        self.assertEqual(artifact._implicit_payload_refs({"glb": "model.glb"}), ["model.glb"])
-
-
 class ArtifactFormatDispatchIsTotal(unittest.TestCase):
     """`_artifact_format` must be a total predicate->record table, not an if/else that falls
     through to STEP. A half-wired format answering as STEP would validate an assembly.json
@@ -829,15 +356,14 @@ class ArtifactFormatDispatchIsTotal(unittest.TestCase):
 
     def test_each_owned_kind_selects_its_own_producer(self):
         cases = {
-            "/x/outline.dxf.py": ("validate_dxf_freshness", "_build_dxf_artifact"),
-            "/x/gyroid.implicit.js": ("validate_implicit_freshness", "_build_implicit_artifact"),
-            "/x/part.step": ("validate_step_freshness", "_build_step_artifact"),
-            "/x/part.step.py": ("validate_step_freshness", "_build_step_artifact"),
+            "/x/outline.dxf.py": "_build_dxf_artifact",
+            "/x/gyroid.implicit.js": "_build_implicit_artifact",
+            "/x/part.step": "_build_step_artifact",
+            "/x/part.step.py": "_build_step_artifact",
         }
-        for file_ref, (validate_name, build_name) in cases.items():
+        for file_ref, build_name in cases.items():
             with self.subTest(file=file_ref):
                 fmt = artifact._artifact_format(file_ref)
-                self.assertIs(fmt["validate"], getattr(artifact, validate_name))
                 self.assertEqual(fmt["build"].__name__, build_name)
 
     def test_an_unowned_entry_raises_instead_of_answering_as_step(self):

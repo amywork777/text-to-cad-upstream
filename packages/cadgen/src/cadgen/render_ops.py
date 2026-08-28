@@ -3,29 +3,24 @@
 The viewer is a pure-JS app (``viewer/server``). Everything it cannot answer
 from the filesystem alone funnels through this stdlib-only CLI:
 
-    python -m cadgen.render_ops status --file <ref> --root <dir>
-    python -m cadgen.render_ops build  --file <ref> --root <dir> [--force]
+    python -m cadgen.render_ops snapshot --file <ref> --root <dir>
+    python -m cadgen.render_ops build    --file <ref> --root <dir> [--force]
     python -m cadgen.render_ops export --file <ref> --root <dir> --format <f> --out <path>
     python -m cadgen.render_ops probe
 
-Each prints ONE JSON line on stdout. ``status`` answers the artifact state
-machine (ready | needs-build | generating | error) — the freshness validators
-here are the render-side authority and share their digests, schema versions,
-bake hashes and lock protocol with the PRODUCER's own gates — on the checks
-both sides make, they can never disagree; source currency is deliberately
-producer-only (below). ``build``/``export`` dispatch the heavy
-OCP work to the shared warm daemon pool when available, else a cold
-subprocess; OCP is never imported into this process.
-
-Freshness is a PURE descriptor read (descriptor + payload existence + schema
-version + bake hash; an imported entry also compares the digest its format's
-spec-table row names) — no OCP. Generated outputs are deliberately DETACHED
-from their source code: whether the generator changed since the artifact was
-built is the agent's business, so no validator here reads source closures and
-the viewer never rebuilds a generated entry behind the user's back (the CLI's
-no-op gates still read the recorded closures — that is the other direction:
-skipping work, not triggering it). Importing this module pulls in only
-stdlib-only cadgen internals (``cadgen.coordination``), pinned by
+Each prints ONE JSON line on stdout. ``snapshot`` reports the kernel lock view
+of one entry's package dir (idle | writing | busy, plus runId/progress) — the
+ONE status primitive Python still owns, because flock is not probeable from
+Node and liveness must never be re-inferred from pids/heartbeats/age windows
+(cadgen/coordination/lock.py). Every freshness VERDICT — schema gates, payload
+existence, bake hashes, imported-file digests, and the detached-outputs policy
+(generated artifacts never go stale because their source changed) — lives in
+the viewer's single JS authority, viewer/server/artifactStatus.mjs, with the
+mirrored constants pinned by tests/python/global/test_render_contract_sync.py.
+``build``/``export`` dispatch the heavy OCP work to the shared warm daemon pool
+when available, else a cold subprocess; OCP is never imported into this
+process. Importing this module pulls in only stdlib-only cadgen internals
+(``cadgen.coordination``), pinned by
 tests/python/packages/cadgen/test_coordination_is_stdlib_only.py.
 """
 
@@ -59,20 +54,6 @@ ARTIFACT_STATE_NEEDS_BUILD = "needs-build"
 ARTIFACT_STATE_GENERATING = "generating"
 ARTIFACT_STATE_ERROR = "error"
 
-# Every freshness code a build can fix. Not STEP-specific: one set spanning every
-# artifact-managed format, because the client asks one question ("can this be
-# built?") of one state machine.
-BUILDABLE_ARTIFACT_CODES = frozenset([
-    "missing_glb", "missing_step_topology", "missing_edge_topology",
-    "missing_surface_edge_attributes", "missing_selector_topology",
-    "missing_source_path", "missing_step_hash", "stale_step_artifact",
-    "unsupported_step_topology",
-    # Generated-drawing output code (same buildable semantics): the .dxf IS the
-    # product, so the only build-worthy state is its absence.
-    "missing_dxf_output",
-    # Implicit render package codes.
-    "missing_implicit_artifact", "stale_implicit_artifact", "unsupported_implicit_artifact",
-])
 
 DXF_GENERATOR_SUFFIX = ".dxf.py"
 IMPLICIT_CAD_EXTENSIONS = tuple(IMPLICIT_SUFFIXES)
@@ -195,156 +176,6 @@ def owns_entry(entry) -> bool:
     return owns_step_entry(entry) or owns_dxf_entry(entry) or owns_implicit_entry(entry)
 
 
-# --- pure freshness validation (shared by every package format) ----------------------
-# Per-format descriptor names, package kinds, payload refs, schema versions, digest field
-# names, bake ownership, and error codes. The validation ALGORITHM is identical for all;
-# only this table differs. Anything format-specific belongs HERE, not in a branch inside
-# the validator and not as a field alias: `stepHash` is load-bearing at a dozen cadgen
-# sites beyond the render descriptor, so newer formats name their digest `sourceDigest`
-# and the table says which.
-_STEP_PACKAGE = {
-    "descriptor": "assembly.json",
-    "package_kind": "assembly-package",
-    "schema_version": STEP_PACKAGE_VERSION,
-    "source_digest_field": "stepHash",
-    "missing_digest": "missing_step_hash",
-    # STEP bakes no settings: components are exact geometry; the producer compares
-    # mesh tolerances separately.
-    "bake_settings": None,
-    "missing": "missing_glb",
-    "unreadable": "missing_step_topology",
-    "unsupported": "unsupported_step_topology",
-    "stale": "stale_step_artifact",
-}
-_IMPLICIT_PACKAGE = {
-    "descriptor": IMPLICIT_DESCRIPTOR_NAME,
-    "package_kind": IMPLICIT_PACKAGE_KIND,
-    "schema_version": IMPLICIT_PACKAGE_SCHEMA_VERSION,
-    "source_digest_field": "sourceDigest",
-    "missing_digest": "stale_implicit_artifact",
-    # The bake IS the artifact: model.glb froze one resolution, one cell cap and the
-    # mesher's geometry contract at the model's default parameter values.
-    "bake_settings": implicit_bake_settings,
-    "missing": "missing_implicit_artifact",
-    "unreadable": "missing_implicit_artifact",
-    "unsupported": "unsupported_implicit_artifact",
-    "stale": "stale_implicit_artifact",
-}
-
-
-def _step_payload_refs(descriptor):
-    """Every component artifact the assembly descriptor claims (the exact-surface
-    ``.surf`` — design/surface-rendering.md R5)."""
-    components = descriptor.get("components") if isinstance(descriptor.get("components"), dict) else {}
-    return [str((component or {}).get("surf") or "").strip() for component in components.values()]
-
-
-def _implicit_payload_refs(descriptor):
-    """The one payload an implicit package has: the baked mesh."""
-    return [str(descriptor.get("glb") or "").strip()]
-
-
-def _validate_render_package(spec, source_path, payload_refs, *, generated):
-    """Return (ok, code) — ok=True when fresh, else (False, <error_code>).
-
-    One algorithm for every format: the package dir and descriptor must exist, declare
-    the expected kind and EXACTLY the current ``packageSchemaVersion``, every payload
-    file the descriptor names must be on disk, and its ``bakeHash`` must match the
-    format's current bake settings. Then:
-
-    * ``generated`` entries (a generator file — `.step.py`, `.implicit.js`): DONE. The
-      artifact is a detached output of the code; whether the code changed since it was
-      built is the agent's business, never a render-side rebuild trigger. The CLI's
-      explicit-build no-op gates still read the recorded source closure — that is the
-      opposite direction (skipping work), and the two authorities deliberately answer
-      different questions.
-    * imported files: the on-disk file must still hash to the digest the spec table
-      names (``stepHash`` for STEP) — the render is DERIVED from those bytes, so this
-      is coherence, not source currency. It FAILS CLOSED: a descriptor recording no
-      digest for a source file that exists reports needs-build, matching cadgen's
-      producer gate.
-    """
-    package_dir = render_package_dir(source_path)
-    if not os.path.isdir(package_dir):
-        return (False, spec["missing"])
-    descriptor_path = os.path.join(package_dir, spec["descriptor"])
-    try:
-        with open(descriptor_path, "r", encoding="utf-8") as handle:
-            descriptor = json.load(handle)
-    except (OSError, ValueError):
-        return (False, spec["unreadable"])
-    if not isinstance(descriptor, dict) or descriptor.get("kind") != spec["package_kind"]:
-        return (False, spec["unsupported"])
-    # Strict equality, no tolerant reader: the schema version is this stack's single
-    # invalidation channel (bump it and every package of that kind rebuilds, lazily,
-    # on reopen) in place of per-field compatibility branches.
-    if not schema_version_matches(descriptor, spec["schema_version"]):
-        return (False, spec["unsupported"])
-    for ref in payload_refs(descriptor):
-        if not ref or not os.path.isfile(os.path.join(package_dir, ref)):
-            return (False, spec["missing"])
-    bake_settings = spec["bake_settings"]
-    # A kind that bakes NOTHING (STEP) must still be checked: a descriptor that
-    # records a bakeHash anyway is claiming a payload it never wrote.
-    if not bake_hash_matches(
-        descriptor, canonical_bake_hash(bake_settings() if bake_settings else None)
-    ):
-        return (False, spec["stale"])
-    if generated:
-        # Dead in practice (the catalog lists generated entries BY their source
-        # file), but kept so both generated formats answer the same question the
-        # same way and a dangling package cannot masquerade as a live entry.
-        if not os.path.isfile(source_path):
-            return (False, "missing_source_path")
-        return (True, None)
-    recorded_digest = str(descriptor.get(spec["source_digest_field"], "")).strip()
-    if _file_stats(source_path):
-        # Fail closed. A descriptor with no digest for a source file that is right there
-        # cannot be shown to be current.
-        if not recorded_digest:
-            return (False, spec["missing_digest"])
-        current = _sha256_file(source_path)
-        if current and recorded_digest != current:
-            return (False, spec["stale"])
-    return (True, None)
-
-
-def validate_step_freshness(repo_root, source_path):
-    """ok=True (fresh/ready) or (False, code). source_path is the entry's step path
-    (the `.step.py` for a generated model, the `.step` for an imported one). The
-    generated/imported split rides on the ENTRY file, not the descriptor's sourceKind:
-    a real `.step` on disk gets the digest gate even when its package was built by a
-    generator (the file's bytes are what the viewer claims to render)."""
-    del repo_root
-    return _validate_render_package(
-        _STEP_PACKAGE, source_path, _step_payload_refs,
-        generated=str(source_path).lower().endswith(".py"),
-    )
-
-
-def validate_dxf_freshness(repo_root, source_path):
-    """ok=True (fresh/ready) or (False, code). source_path is the `.dxf.py`
-    generator; its product is the sibling `.dxf` the viewer parses directly —
-    the render always matches the file by construction, so the only
-    build-worthy state is the sibling's ABSENCE. Source edits and output-record
-    state are the CLI no-op gate's business (cadgen._internal.dxf_output),
-    read only by explicit gen runs."""
-    del repo_root
-    source_path = Path(source_path)
-    if not os.path.isfile(source_path):
-        return (False, "missing_source_path")
-    if not source_path.with_name(source_path.name[: -len(".py")]).is_file():
-        return (False, "missing_dxf_output")
-    return (True, None)
-
-
-def validate_implicit_freshness(repo_root, source_path):
-    """ok=True (fresh/ready) or (False, code). source_path is the `.implicit.js` model."""
-    del repo_root
-    # The .implicit.js IS a generator: its baked package is a detached output.
-    return _validate_render_package(
-        _IMPLICIT_PACKAGE, source_path, _implicit_payload_refs, generated=True
-    )
 
 
 # --- generation state (ONE implementation, shared with the producer) -----------------
@@ -528,17 +359,14 @@ def run_cadgen_cold(module: str, args, repo_root: str) -> dict:
 def _artifact_format(file_path: str):
     formats = (
         (owns_dxf_path, {
-            "validate": validate_dxf_freshness,
             "resolve_source": lambda file_ref, root: resolve_dxf_source(file_ref, root)["sourcePath"],
             "build": _build_dxf_artifact,
         }),
         (owns_implicit_path, {
-            "validate": validate_implicit_freshness,
             "resolve_source": lambda file_ref, root: resolve_implicit_source(file_ref, root)["sourcePath"],
             "build": _build_implicit_artifact,
         }),
         (owns_step_path, {
-            "validate": validate_step_freshness,
             "resolve_source": lambda file_ref, root: (
                 (lambda r: r.get("sourcePath") or r["stepPath"])(resolve_step_source(file_ref, root))
             ),
@@ -552,51 +380,27 @@ def _artifact_format(file_path: str):
 
 
 # --- status ---------------------------------------------------------------------------
-def artifact_status(file_ref: str, root_path: str) -> dict:
-    """The /__cad/artifact GET state machine, minus catalog concerns (the JS server
-    owns the catalog and attaches the entry's asset ref itself)."""
+def artifact_snapshot(file_ref: str, root_path: str) -> dict:
+    """The kernel lock view of one entry's package dir: idle | writing | busy.
+
+    This is the ONE status primitive Python still owns — flock is not probeable
+    from Node, and liveness must never be re-inferred from pids, heartbeats or
+    age windows (cadgen/coordination/lock.py). Every freshness VERDICT lives in
+    the viewer's JS authority (viewer/server/artifactStatus.mjs)."""
     normalized = normalized_file_ref(file_ref)
     if not owns_path(normalized):
-        return {"state": ARTIFACT_STATE_READY}
+        return {"ok": True, "state": "idle"}
     fmt = _artifact_format(normalized)
-    try:
-        artifact_source = fmt["resolve_source"](file_ref, root_path)
-    except ValueError as exc:
-        return {"state": ARTIFACT_STATE_ERROR, "error": str(exc)}
+    artifact_source = fmt["resolve_source"](file_ref, root_path)
     snap = generation_snapshot(render_package_dir(artifact_source))
-    if snap.writing:
-        # The LOCK decides the state; the record only says how far along it is. runId
-        # lets the client tell one run from the next, so its bar resets on a handoff
-        # instead of jumping backwards.
-        status = {"state": ARTIFACT_STATE_GENERATING}
-        if snap.run_id:
-            status["runId"] = snap.run_id
-        if snap.progress is not None:
-            status["progress"] = snap.progress
-        return status
-    ok, code = fmt["validate"](root_path, artifact_source)
-    if ok:
-        # A busy GENERATOR (an export running this model's gen_step) does not hide a
-        # renderable model — nothing is rewriting the package, so what is on disk is
-        # still valid. Annotated so the client can say why a build is unavailable.
-        status = {"state": ARTIFACT_STATE_READY}
-        if snap.busy:
-            status["busy"] = True
-            if snap.run_id:
-                status["runId"] = snap.run_id
-            if snap.progress is not None:
-                status["progress"] = snap.progress
-        return status
-    if code in BUILDABLE_ARTIFACT_CODES:
-        status = {"state": ARTIFACT_STATE_NEEDS_BUILD, "reason": code}
-        if snap.busy:
-            # Stale AND the generator is occupied. A build would not block on it — the
-            # two take different sentinels — it would run the same generator a second
-            # time, concurrently, for nothing. Telling the client to wait is an
-            # efficiency call, not deadlock avoidance.
-            status["blocked"] = True
-        return status
-    return {"state": ARTIFACT_STATE_ERROR, "reason": code, "error": code}
+    payload = {"ok": True, "state": snap.state}
+    if snap.run_id:
+        payload["runId"] = snap.run_id
+    if snap.progress is not None:
+        payload["progress"] = snap.progress
+    if snap.degraded:
+        payload["degraded"] = True
+    return payload
 
 
 # --- build ----------------------------------------------------------------------------
@@ -757,7 +561,7 @@ def main(argv=None) -> int:
         description="Render-artifact status/build/export ops for the CAD Viewer's JS server",
     )
     sub = parser.add_subparsers(dest="op", required=True)
-    for name in ("status", "build", "export"):
+    for name in ("snapshot", "build", "export"):
         p = sub.add_parser(name)
         p.add_argument("--file", required=True)
         p.add_argument("--root", required=True)
@@ -775,8 +579,8 @@ def main(argv=None) -> int:
     if not os.path.isdir(root_path):
         return _emit({"ok": False, "state": ARTIFACT_STATE_ERROR, "error": f"root is not a directory: {root_path}"})
     try:
-        if args.op == "status":
-            return _emit(artifact_status(args.file, root_path))
+        if args.op == "snapshot":
+            return _emit(artifact_snapshot(args.file, root_path))
         if args.op == "build":
             return _emit(resolve_artifact(args.file, root_path, force=bool(args.force)))
         return _emit(generate_export(args.file, root_path, args.format, args.out))

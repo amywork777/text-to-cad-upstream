@@ -14,6 +14,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { renderPackageDir } from "./scanner.mjs";
+import {
+  ARTIFACT_STATE,
+  artifactStatus as computeArtifactStatus,
+  resolveArtifactVerdict,
+} from "./artifactStatus.mjs";
 
 const STEP_ENTRY_RE = /\.(step|stp)(\.py)?$/i;
 // Generated drawings only: an imported .dxf renders natively (the client
@@ -234,80 +239,6 @@ function runWasmImport(candidate, { force = false } = {}) {
   return promise;
 }
 
-// Degraded status when no Python runtime is reachable: a package whose descriptor
-// exists renders as-is (a possibly-stale render beats nothing when nothing could
-// rebuild it anyway); anything else is an error naming the install.
-function degradedStatus(fileRef, rootDir) {
-  const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
-  try {
-    // A generated drawing's product is its sibling .dxf; when it exists the
-    // viewer parses it directly, cadgen or no cadgen.
-    if (/\.dxf\.py$/i.test(candidate)) {
-      if (fs.existsSync(candidate.slice(0, -3))) {
-        return { state: "ready", degraded: true };
-      }
-      return { state: "error", error: CADGEN_UNAVAILABLE_HINT };
-    }
-    const packageDir = renderPackageDir(candidate);
-    const assemblyPath = path.join(packageDir, "assembly.json");
-    if (fs.existsSync(assemblyPath)) {
-      // Honest staleness for an imported STEP: the descriptor records the hash
-      // of the file it was built from — pure hashing, no Python needed. The
-      // package still renders (a possibly-stale render beats nothing when
-      // nothing could rebuild it), but the client can say so.
-      const status = { state: "ready", degraded: true };
-      try {
-        const descriptor = JSON.parse(fs.readFileSync(assemblyPath, "utf8"));
-        const recorded = String(descriptor?.stepHash || "");
-        if (recorded && /\.(step|stp)$/i.test(candidate) && fs.existsSync(candidate)) {
-          const digest = crypto.createHash("sha256").update(fs.readFileSync(candidate)).digest("hex");
-          if (digest !== recorded) {
-            // With the WASM import on hand a stale import is rebuildable, so
-            // report it the way the native pipeline would (the client POSTs a
-            // build); without it, render as-is but say so.
-            if (isRawStepFile(candidate) && wasmImportAvailable()) {
-              return {
-                state: "needs-build",
-                degraded: true,
-                wasmImport: true,
-                staleReason: "the STEP file changed after this package was imported",
-              };
-            }
-            status.stale = true;
-            status.staleReason = "the STEP file changed after this package was imported";
-          }
-        }
-      } catch {
-        // Descriptor unreadable enough to hash-check: render as-is.
-      }
-      return status;
-    }
-    if (fs.existsSync(path.join(packageDir, "implicit.json"))) {
-      return { state: "ready", degraded: true };
-    }
-    if (/\.(step|stp)$/i.test(candidate)) {
-      if (wasmImportsInFlight.has(packageDir)) {
-        return { state: "generating", degraded: true, wasmImport: true };
-      }
-      if (isRawStepFile(candidate) && wasmImportAvailable()) {
-        // Not imported yet, but importable right here: the client's next build
-        // POST runs the WASM import and the entry renders with no Python.
-        return { state: "needs-build", degraded: true, wasmImport: true };
-      }
-      return {
-        state: "error",
-        error:
-          "This STEP file has not been imported yet. Importing needs the cadgen "
-          + "Python package (pip install cadgen); once imported, it renders here "
-          + "with no Python required.",
-      };
-    }
-  } catch {
-    // fall through to the error below
-  }
-  return { state: "error", error: CADGEN_UNAVAILABLE_HINT };
-}
-
 export function createCadgenOps(rootDir) {
   let probePromise = null;
   return {
@@ -329,11 +260,65 @@ export function createCadgenOps(rootDir) {
       if (!ownsArtifactPath(fileRef)) {
         return { state: "ready" };
       }
-      const result = await runRenderOps(rootDir, ["status", "--file", fileRef, "--root", rootDir]);
-      if (result.unavailable) {
-        return degradedStatus(fileRef, rootDir);
+      // Freshness is decided HERE (viewer/server/artifactStatus.mjs) — the one
+      // authority. Python contributes only the kernel lock snapshot (flock is
+      // not probeable from Node, and liveness must never be re-inferred from
+      // pids or heartbeats — see cadgen/coordination/lock.py).
+      const snapshotResult = await runRenderOps(
+        rootDir, ["snapshot", "--file", fileRef, "--root", rootDir], { timeoutMs: 30_000 });
+      const pythonAvailable = !snapshotResult.unavailable;
+      let snapshot = null;
+      if (pythonAvailable && snapshotResult.ok !== false) {
+        snapshot = {
+          writing: snapshotResult.state === "writing",
+          busy: snapshotResult.state === "busy",
+          runId: snapshotResult.runId || null,
+          progress: snapshotResult.progress ?? null,
+        };
       }
-      return result;
+      const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
+      if (!pythonAvailable && wasmImportsInFlight.has(renderPackageDir(candidate))) {
+        snapshot = { writing: true, busy: false, runId: null, progress: null };
+      }
+      const status = computeArtifactStatus(fileRef, rootDir, { snapshot });
+      if (!pythonAvailable && status.state === ARTIFACT_STATE.READY) {
+        // Nothing here can rebuild; the client can say the render is served as-is.
+        status.degraded = true;
+      }
+      if (pythonAvailable || status.state !== ARTIFACT_STATE.NEEDS_BUILD) {
+        return status;
+      }
+      // No Python: a buildable verdict must degrade honestly. A raw STEP still
+      // imports through the WASM kernel; anything else renders what exists or
+      // names the install.
+      const verdict = resolveArtifactVerdict(fileRef, rootDir);
+      if (verdict.rawStep && wasmImportAvailable()) {
+        const degraded = { state: "needs-build", reason: status.reason, degraded: true, wasmImport: true };
+        if (verdict.digestMismatch) {
+          degraded.staleReason = "the STEP file changed after this package was imported";
+        }
+        return degraded;
+      }
+      if (verdict.descriptor || (verdict.format === "dxf" && verdict.code !== "missing_dxf_output" && verdict.code !== "missing_source_path")) {
+        // A renderable package exists and nothing here can rebuild it: render
+        // as-is, honestly badged when the source file's digest disagrees.
+        const degraded = { state: "ready", degraded: true };
+        if (verdict.digestMismatch) {
+          degraded.stale = true;
+          degraded.staleReason = "the STEP file changed after this package was imported";
+        }
+        return degraded;
+      }
+      if (verdict.rawStep) {
+        return {
+          state: "error",
+          error:
+            "This STEP file has not been imported yet. Importing needs the cadgen "
+            + "Python package (pip install cadgen); once imported, it renders here "
+            + "with no Python required.",
+        };
+      }
+      return { state: "error", error: CADGEN_UNAVAILABLE_HINT };
     },
 
     async buildArtifact(fileRef, { force = false } = {}) {

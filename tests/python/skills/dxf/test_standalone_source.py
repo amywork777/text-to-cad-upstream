@@ -153,23 +153,23 @@ class StandaloneDxfSourceTests(unittest.TestCase):
         # detached from their code, so a source edit flips the CLI gate while
         # the viewer keeps rendering the existing .dxf as ready.
         from cadgen._internal.dxf_output import dxf_output_current
-        from cadgen.render_ops import validate_dxf_freshness
+        from tests.python.support.js_status import js_artifact_status
 
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = _write_standalone_source(Path(root), stem="outline.dxf")
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertTrue(dxf_output_current(script_path))
-            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
+            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
 
             script_path.write_text(STANDALONE_DXF_SOURCE.replace("(40, 0)", "(60, 0)") + "\n")
             self.assertFalse(dxf_output_current(script_path))
-            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
+            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
 
             # An explicit gen run regenerates (the CLI gate is why it is not a
             # no-op), after which both are current again.
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertTrue(dxf_output_current(script_path))
-            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
+            self.assertEqual("ready", js_artifact_status(script_path, root)["state"])
 
 
 if __name__ == "__main__":

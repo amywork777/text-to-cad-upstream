@@ -50,7 +50,7 @@ backend.readCatalog()                     // scan -> schema v4 entries
 backend.assetPathForFileRef(fileRef)      // guarded path for bytes we will send
 backend.containedPathForFileRef(fileRef)  // guarded path for bytes we will not
 backend.catalogEntryForFileRef(catalog, fileRef)
-ops.artifactStatus(fileRef)               // python render_ops status (or degraded)
+ops.artifactStatus(fileRef)               // JS freshness verdict + python lock snapshot
 ops.buildArtifact(fileRef, { force })     // python render_ops build
 ops.generateExport(fileRef, format, out)  // python render_ops export
 ```
@@ -67,19 +67,25 @@ root and hidden-path rules WITHOUT that filter, for callers that transfer no byt
 
 ## The CAD runtime
 
-STEP/DXF/implicit freshness, builds, and exports go through
-`python -m cadgen.render_ops <status|build|export>` — one JSON line per call, ~60 ms.
-The op itself dispatches heavy work to cadgen's shared warm daemon pool, so a viewer
-build and a terminal build reuse the same warm processes. The interpreter is
+Builds and exports go through `python -m cadgen.render_ops <build|export>` — one JSON
+line per call. The op dispatches heavy work to cadgen's shared warm daemon pool, so a
+viewer build and a terminal build reuse the same warm processes. The interpreter is
 `VIEWER_CAD_PYTHON` when set (`cadgen viewer` sets it to the interpreter that launched
-it), else the nearest `.venv/bin/python`, else `python3`. Freshness validators live in
-cadgen (`cadgen/render_ops.py`) beside the producer's own gates, sharing their
-digests, schema versions and bake hashes, so on the checks both sides make they
-cannot drift. One asymmetry is deliberate: generated outputs are DETACHED from
-their source code. The viewer never treats "the generator changed since this
-artifact was built" as a reason to rebuild — it renders what exists, and
-regeneration is the agent's explicit act (whose CLI no-op gates still read the
-recorded source closures, to skip unchanged work).
+it), else the nearest `.venv/bin/python`, else `python3`.
+
+Artifact STATUS has exactly one authority: `server/artifactStatus.mjs`, pure file
+reads in this process — package existence, schema version, payload files, bake
+hashes, and the imported-file digest gate. Generated outputs are DETACHED from their
+source code: the viewer never treats "the generator changed since this artifact was
+built" as a reason to rebuild — it renders what exists, and regeneration is the
+agent's explicit act (whose CLI no-op gates still read the recorded source closures,
+to skip unchanged work). The one question JS cannot answer is "is a build in flight":
+that is kernel flock state, deliberately never re-inferred from pids or heartbeats
+(see cadgen/coordination/lock.py), so status calls one remaining Python primitive —
+`render_ops snapshot`, which returns idle | writing | busy plus run id and progress —
+and composes the state machine from the two. Constants the JS authority mirrors from
+cadgen (package schema versions, implicit bake settings, the canonical bake hash) are
+pinned cross-language by `tests/python/global/test_render_contract_sync.py`.
 
 Startup never blocks on Python: availability is probed lazily and reported through
 `stepArtifactGenerationAvailable` in `/__cad/server`.

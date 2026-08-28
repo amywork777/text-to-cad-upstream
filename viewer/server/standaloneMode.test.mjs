@@ -12,6 +12,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createCadApp } from "./httpApp.mjs";
+import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VIEWER_ROOT = path.resolve(SERVER_DIR, "..");
@@ -76,6 +77,7 @@ test("standalone mode: built packages render, edits show stale, unimported expla
     path.join("__cadgen__", "models", "widget.step", "assembly.json"),
     JSON.stringify({
       kind: "assembly-package",
+      packageSchemaVersion: STEP_PACKAGE_VERSION,
       stepHash: sha256(Buffer.from(stepBytes)),
       components: { c0: { surf: "components/c0.surf" } },
       occurrences: [
