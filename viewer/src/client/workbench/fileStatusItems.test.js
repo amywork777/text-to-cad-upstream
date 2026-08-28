@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   FILE_STATUS_LEVELS,
+  artifactAdvisoryStatusItems,
   buildFileStatusItems,
+  fileStatusAdvisoryInfoItems,
   fileStatusWarningOrErrorItems,
   fileStatusHasWarningsOrErrors,
   formatFileStatusItemForAgent,
@@ -398,4 +400,38 @@ test("formatFileStatusItemForAgent copies status items with details", () => {
     "- Artifact hash: old-hash",
     "- Current hash: new-hash"
   ].join("\n"));
+});
+
+test("artifact advisories: stale is a warning, busy is a quiet info chip", () => {
+  const entry = { file: "step/parts/part.step", kind: "part" };
+  const both = artifactAdvisoryStatusItems({
+    stale: true,
+    staleReason: "the STEP file changed after this package was imported",
+    busy: true,
+    runId: "run-42"
+  }, { entry, viewerServerInfo });
+  assert.equal(both.length, 2);
+  const [stale, busy] = both;
+  assert.equal(stale.level, FILE_STATUS_LEVELS.WARNING);
+  assert.equal(stale.code, "stale_render_package");
+  assert.match(stale.message, /the STEP file changed after this package was imported/);
+  assert.match(stale.message, /rebuild with the CAD CLI/i);
+  assert.equal(busy.level, FILE_STATUS_LEVELS.INFO);
+  assert.equal(busy.code, "generator_busy");
+  assert.ok(busy.details.some((d) => d.label === "Run" && d.value === "run-42"));
+
+  // Only the WARNING counts as an issue; the INFO renders as an advisory chip.
+  assert.equal(fileStatusWarningOrErrorItems(both).length, 1);
+  assert.equal(fileStatusAdvisoryInfoItems(both).length, 1);
+  assert.equal(artifactAdvisoryStatusItems(null, { entry }).length, 0);
+});
+
+test("buildFileStatusItems threads the artifact advisory for every kind", () => {
+  const items = buildFileStatusItems({
+    entry: { file: "drawings/plate.dxf", kind: "drawing" },
+    fileSheetKind: "dxf",
+    artifactAdvisory: { stale: true, staleReason: "", busy: false, runId: "" },
+    viewerServerInfo
+  });
+  assert.equal(items.some((item) => item.code === "stale_render_package"), true);
 });

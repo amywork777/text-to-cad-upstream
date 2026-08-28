@@ -11,6 +11,7 @@ import {
   ARTIFACT_ACTION_ERROR,
   ARTIFACT_ACTION_READY,
   artifactActionFor,
+  artifactAdvisoryFor,
   reconcileArtifactRun
 } from "../../../workbench/artifactResolution.js";
 
@@ -39,7 +40,7 @@ import {
 // reported ratio is monotonic only within a single run and carrying it across a handoff is what
 // made the bar jump backwards.
 
-const READY = { status: "ready", error: "", progress: null };
+const READY = { status: "ready", error: "", progress: null, advisory: null };
 
 function isAbortError(error) {
   return error?.name === "AbortError" || /abort/i.test(String(error?.message || ""));
@@ -144,7 +145,9 @@ export function useArtifact(fileRef, { enabled = true, freshnessKey = "" } = {})
         }
         const action = artifactActionFor(status);
         if (action === ARTIFACT_ACTION_READY) {
-          settle(READY);
+          // Ready may carry advisory flags (stale package rendered as-is, generator
+          // busy elsewhere); keep them for the file sheet's status section.
+          settle({ ...READY, advisory: artifactAdvisoryFor(status) });
           return;
         }
         if (action === ARTIFACT_ACTION_ERROR) {
@@ -179,7 +182,7 @@ export function useArtifact(fileRef, { enabled = true, freshnessKey = "" } = {})
           return;
         }
         settle(result?.ok && result.state === "ready"
-          ? READY
+          ? { ...READY, advisory: artifactAdvisoryFor(result) }
           : { status: "error", error: String(result?.error || "Failed to generate the render artifact.") });
       } catch (error) {
         stopPolling();
@@ -199,6 +202,11 @@ export function useArtifact(fileRef, { enabled = true, freshnessKey = "" } = {})
 
   // Optimistic-ready until this exact key has settled, so a fresh selection renders without a flash.
   return state.key === key
-    ? { status: state.status, error: state.error, progress: state.progress }
+    ? {
+      status: state.status,
+      error: state.error,
+      progress: state.progress,
+      advisory: state.advisory || null
+    }
     : READY;
 }

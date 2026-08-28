@@ -146,6 +146,13 @@ export function fileStatusHasWarningsOrErrors(items) {
   return fileStatusWarningOrErrorItems(items).length > 0;
 }
 
+// INFO-level advisories render below the warnings/errors in the status section —
+// quiet chips, never counted as issues and never lighting the sheet's level dot.
+export function fileStatusAdvisoryInfoItems(items) {
+  return normalizeFileStatusItems(items)
+    .filter((item) => item.level === FILE_STATUS_LEVELS.INFO);
+}
+
 export function mostIntenseFileStatusLevel(items) {
   return normalizeFileStatusItems(items).reduce((currentLevel, item) => (
     fileStatusLevelRank(item.level) > fileStatusLevelRank(currentLevel)
@@ -378,6 +385,49 @@ export function sdfFileStatusItems(sdfInfo = null) {
   })));
 }
 
+// Advisory flags a `ready` artifact status may carry (FEEDBACK #17). Neither blocks
+// rendering: `stale` says a degraded-mode package renders as-is although its source
+// file changed (WARNING — the picture on screen is honest but old), `busy` says
+// another process currently holds the model's generator (INFO — purely transient).
+export function artifactAdvisoryStatusItems(advisory = null, {
+  entry = null,
+  viewerServerInfo = {},
+} = {}) {
+  if (!advisory || typeof advisory !== "object") {
+    return [];
+  }
+  const items = [];
+  if (advisory.stale === true) {
+    items.push({
+      id: "artifact-advisory-stale",
+      level: FILE_STATUS_LEVELS.WARNING,
+      source: "artifact-status",
+      code: "stale_render_package",
+      title: "Rendering an older import",
+      message: `${cleanText(advisory.staleReason) || "The source file changed after this render package was built."} `
+        + "The view shows the previous package; rebuild with the CAD CLI (or re-import) to refresh.",
+      details: [
+        pathDetail("File", entry?.file, viewerServerInfo, entry?.file)
+      ].filter(Boolean)
+    });
+  }
+  if (advisory.busy === true) {
+    items.push({
+      id: "artifact-advisory-busy",
+      level: FILE_STATUS_LEVELS.INFO,
+      source: "artifact-status",
+      code: "generator_busy",
+      title: "Generator busy elsewhere",
+      message: "Another process is holding this model's generator right now; the current render is unaffected.",
+      details: [
+        pathDetail("File", entry?.file, viewerServerInfo, entry?.file),
+        detail("Run", advisory.runId, { mono: true })
+      ].filter(Boolean)
+    });
+  }
+  return normalizeFileStatusItems(items);
+}
+
 export function viewerAlertFileStatusItem(viewerAlert = null) {
   if (!viewerAlert || typeof viewerAlert !== "object") {
     return null;
@@ -408,6 +458,7 @@ export function buildFileStatusItems({
   urdfData = null,
   viewerAlert = null,
   viewerServerInfo = null,
+  artifactAdvisory = null,
 } = {}) {
   if (!entry) {
     return [];
@@ -416,6 +467,8 @@ export function buildFileStatusItems({
   const kind = cleanText(fileSheetKind).toLowerCase();
   const items = [];
   items.push(...generatedSourceStatusItems(entry, { viewerServerInfo }));
+  // Advisory badges apply to every artifact-managed kind, not just STEP.
+  items.push(...artifactAdvisoryStatusItems(artifactAdvisory, { entry, viewerServerInfo }));
   if (kind === "step") {
     items.push(...stepFileStatusItems({
       entry,

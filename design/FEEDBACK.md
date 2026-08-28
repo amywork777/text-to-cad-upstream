@@ -114,11 +114,14 @@ entry says so.
     (sibling writes are byte-deterministic; renamed outputs differ only in the
     identity comment). Expected, but worth remembering when comparing exports.
 
-17. **Degraded-mode advisory flags (`stale`, `busy`) have no client UI slot.**
-    The artifact status API now reports honest staleness in no-cadgen mode
-    (`stale` + `staleReason` on ready responses), matching the long-standing
-    `busy` flag — but neither renders anywhere. A small badge in the file
-    sheet's status section would surface both.
+17. **FIXED — degraded-mode advisory flags (`stale`, `busy`) render in the file
+    sheet.** `useArtifact` keeps the advisory flags a ready status carries and
+    the status section shows them: `stale` as a WARNING issue row (the view is
+    honest but older than the source file), `busy` as a quiet INFO chip that
+    never inflates the issue count or lights the level dot. Was: the artifact
+    status API reported both (`stale` + `staleReason` on ready responses in
+    no-cadgen mode, the long-standing `busy` flag) but neither rendered
+    anywhere.
 
 ## WASM import follow-ups (2026-08-27)
 

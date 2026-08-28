@@ -7,6 +7,7 @@ import { cn } from "@/ui/utils";
 import {
   FILE_STATUS_LEVELS,
   formatFileStatusItemForAgent,
+  fileStatusAdvisoryInfoItems,
   fileStatusLevelLabel,
   fileStatusWarningOrErrorItems,
   mostIntenseFileStatusLevel
@@ -38,7 +39,12 @@ function renderMetaForLevel(level) {
 function FileStatusTabContent({ items = [] }) {
   const [expandedItemIds, setExpandedItemIds] = useState(() => new Set());
   const [copiedItemId, setCopiedItemId] = useState("");
-  const statusItems = fileStatusWarningOrErrorItems(items);
+  // Warnings/errors first, then INFO advisories (stale/busy badges) as quiet
+  // trailing chips — same row rendering, muted border, no count contribution.
+  const statusItems = [
+    ...fileStatusWarningOrErrorItems(items),
+    ...fileStatusAdvisoryInfoItems(items)
+  ];
 
   useEffect(() => {
     if (!copiedItemId) {
@@ -188,19 +194,24 @@ function FileStatusTabContent({ items = [] }) {
   );
 }
 
-// Build the "Issues" tab descriptor, or null when there are no warnings/errors.
+// Build the "Issues" tab descriptor, or null when there is nothing to show.
+// INFO advisories (stale/busy) make the tab exist but never inflate its count
+// badge — only warnings/errors are alarming enough to number.
 export function buildFileStatusTab(items = []) {
-  const statusItems = fileStatusWarningOrErrorItems(items);
-  if (!statusItems.length) {
+  const warningOrErrorItems = fileStatusWarningOrErrorItems(items);
+  const advisoryItems = fileStatusAdvisoryInfoItems(items);
+  if (!warningOrErrorItems.length && !advisoryItems.length) {
     return null;
   }
-  const headerMeta = renderMetaForLevel(mostIntenseFileStatusLevel(statusItems));
+  const headerMeta = renderMetaForLevel(mostIntenseFileStatusLevel(warningOrErrorItems));
   return {
     id: FILE_SHEET_SECTION_IDS.FILE_STATUS,
     title: (
       <span className="flex min-w-0 items-center gap-1.5">
         <span>Issues</span>
-        <Badge variant={headerMeta.badgeVariant} className={STATUS_COUNT_BADGE_CLASSES}>{statusItems.length}</Badge>
+        {warningOrErrorItems.length ? (
+          <Badge variant={headerMeta.badgeVariant} className={STATUS_COUNT_BADGE_CLASSES}>{warningOrErrorItems.length}</Badge>
+        ) : null}
       </span>
     ),
     content: <FileStatusTabContent items={items} />

@@ -35,6 +35,28 @@ export function artifactActionFor(status) {
 }
 
 /**
+ * The advisory flags a `ready` status may carry: `stale` (+`staleReason`) when a
+ * degraded-mode package renders as-is although its source file changed, `busy` when
+ * another process currently holds the model's generator. Neither changes what the
+ * client DOES — the model renders — they are honest badges for the file sheet.
+ * Returns null when there is nothing to surface, so `advisory` is falsy in the
+ * overwhelmingly common case.
+ */
+export function artifactAdvisoryFor(status) {
+  const stale = status?.stale === true;
+  const busy = status?.busy === true;
+  if (!stale && !busy) {
+    return null;
+  }
+  return {
+    stale,
+    staleReason: String(status?.staleReason || "").trim(),
+    busy,
+    runId: status?.runId ? String(status.runId) : "",
+  };
+}
+
+/**
  * Reconcile a freshly polled status against the run whose bar is currently on screen.
  *
  * Returns `{ runId, progress, handedOff }`. The server's ratio is monotonic only WITHIN a

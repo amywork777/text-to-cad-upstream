@@ -3613,12 +3613,14 @@ export default function CadWorkspace({
         viewerAlert,
         stepArtifactGenerationAvailable,
         activeGenerationFiles: activeStepArtifactGenerationFiles,
-        viewerServerInfo
+        viewerServerInfo,
+        artifactAdvisory: selectedArtifact.advisory
       })
   ), [
     activeStepArtifactGenerationFiles,
     selectedEntry,
     selectedFileSheetKind,
+    selectedArtifact.advisory,
     selectedArtifactGenerating,
     stepArtifactGenerationAvailable,
     selectedStepSourceStatus,
