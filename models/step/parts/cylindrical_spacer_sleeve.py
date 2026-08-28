@@ -1,3 +1,4 @@
+from __future__ import annotations
 from cadgen import step
 # Prompt: Cylindrical spacer sleeve with a central through-bore and rounded rim edges.
 

@@ -149,7 +149,25 @@ def migrate_source(text: str, *, model_name: str) -> str:
     body = "".join(lines)
     body = body.replace(f"{generator.name}()", f"{model_name}()")
 
-    # Imports for the decorator, after __future__ if present.
+    # The future import is REQUIRED output: without it, module-level
+    # annotations like `-> bd.Color` evaluate eagerly and defeat the lazy
+    # kernel import (the whole point of the bd. idiom).
+    out = body.splitlines(keepends=True)
+    if not any(row.startswith("from __future__ import annotations") for row in out):
+        insert_at = 0
+        stripped0 = out[0].lstrip() if out else ""
+        for quote in ('"""', "'''"):
+            if stripped0.startswith(quote):
+                if out[0].rstrip().endswith(quote) and len(out[0].strip()) > 5:
+                    insert_at = 1
+                else:
+                    for index in range(1, len(out)):
+                        if quote in out[index]:
+                            insert_at = index + 1
+                            break
+                break
+        out.insert(insert_at, "from __future__ import annotations\n")
+    body = "".join(out)
     import_line = f"from cadgen import {decorator}\n"
     if import_line not in body:
         out = body.splitlines(keepends=True)
