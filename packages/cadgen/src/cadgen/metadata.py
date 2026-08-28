@@ -26,6 +26,11 @@ class GeneratorMetadata:
     has_gen_dxf: bool
     mesh_tolerance: float | None
     mesh_angular_tolerance: float | None
+    # Library-first fields (design/library-first-generation.md): the @step/@dxf
+    # decorated entry function and its statically-declared output target.
+    entry_function: str | None = None
+    write_target: str | None = None
+    is_decorated: bool = False
 
 
 STEP_ENVELOPE_FIELDS = {
@@ -85,6 +90,80 @@ def resolve_mesh_settings(
     )
 
 
+def _cadgen_decorator_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
+    """Local names bound to cadgen's ``step``/``dxf`` decorators, and local
+    names bound to the cadgen module itself (for ``@cadgen.step(...)``)."""
+    names: dict[str, str] = {}
+    module_aliases: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.module in {"cadgen", "cadgen.authoring"}:
+            for alias in node.names:
+                if alias.name in {"step", "dxf"}:
+                    names[alias.asname or alias.name] = alias.name
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "cadgen":
+                    module_aliases.add(alias.asname or "cadgen")
+    return names, module_aliases
+
+
+def _match_model_decorator(
+    function: ast.FunctionDef,
+    names: dict[str, str],
+    module_aliases: set[str],
+) -> tuple[str, dict[str, ast.expr]] | None:
+    """(fmt, decorator kwargs) when the function carries a cadgen @step/@dxf."""
+    for decorator in function.decorator_list:
+        call_kwargs: dict[str, ast.expr] = {}
+        target = decorator
+        if isinstance(decorator, ast.Call):
+            target = decorator.func
+            for keyword in decorator.keywords:
+                if keyword.arg is not None:
+                    call_kwargs[keyword.arg] = keyword.value
+        fmt: str | None = None
+        if isinstance(target, ast.Name):
+            fmt = names.get(target.id)
+        elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            if target.value.id in module_aliases and target.attr in {"step", "dxf"}:
+                fmt = target.attr
+        if fmt is not None:
+            return fmt, call_kwargs
+    return None
+
+
+def _decorator_string_kwarg(
+    kwargs: dict[str, ast.expr], key: str, *, script_path: Path
+) -> str | None:
+    node = kwargs.get(key)
+    if node is None:
+        return None
+    if not isinstance(node, ast.Constant) or not isinstance(node.value, str) or not node.value.strip():
+        raise ValueError(
+            f"{_display_path(script_path)} @step/@dxf {key}= must be a non-empty string literal"
+        )
+    if "\\" in node.value:
+        raise ValueError(
+            f"{_display_path(script_path)} @step/@dxf {key}= must use POSIX '/' separators"
+        )
+    return node.value.strip()
+
+
+def _decorator_numeric_kwarg(
+    kwargs: dict[str, ast.expr], key: str, *, script_path: Path
+) -> float | None:
+    node = kwargs.get(key)
+    if node is None:
+        return None
+    try:
+        value = ast.literal_eval(node)
+    except (ValueError, SyntaxError) as exc:
+        raise ValueError(
+            f"{_display_path(script_path)} @step {key}= must be a numeric literal"
+        ) from exc
+    return normalize_mesh_numeric(value, field_name=key)
+
+
 def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
     try:
         tree = ast.parse(script_path.read_text(), filename=str(script_path))
@@ -92,10 +171,6 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
         raise RuntimeError(f"Failed to parse {_display_path(script_path)}") from exc
 
     display_name: str | None = None
-    kind: str | None = None
-    has_gen_step = False
-    has_gen_dxf = False
-    generator_names: list[str] = []
     for node in tree.body:
         target: ast.expr | None = None
         value: ast.AST | None = None
@@ -109,50 +184,82 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             if target.id == "DISPLAY_NAME" and isinstance(value, ast.Constant) and isinstance(value.value, str):
                 display_name = value.value.strip()
 
-        if not isinstance(node, ast.FunctionDef) or node.name not in {"gen_step", "gen_dxf"}:
+    decorator_names, module_aliases = _cadgen_decorator_aliases(tree)
+    decorated: list[tuple[ast.FunctionDef, str, dict[str, ast.expr]]] = []
+    legacy_names: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.FunctionDef):
             continue
-        generator_names.append(node.name)
+        match = _match_model_decorator(node, decorator_names, module_aliases)
+        if match is not None:
+            decorated.append((node, match[0], match[1]))
+        elif node.name in {"gen_step", "gen_dxf"}:
+            legacy_names.append(node.name)
 
-        if node.args.args or node.args.posonlyargs or node.args.kwonlyargs:
-            raise ValueError(
-                f"{_display_path(script_path)} {node.name}() must not require arguments"
-            )
-        if node.args.vararg or node.args.kwarg:
-            raise ValueError(
-                f"{_display_path(script_path)} {node.name}() must not accept variadic arguments"
-            )
+    if legacy_names:
+        # No backwards compatibility: the magic-name contract fails hard with
+        # the migration pointer (design/library-first-generation.md).
+        from cadgen._internal.legacy_generators import (
+            LegacyGeneratorError,
+            legacy_generator_message,
+        )
 
-        if node.decorator_list:
-            raise ValueError(
-                f"{_display_path(script_path)} {node.name}() must not use CAD generator decorators; "
-                "return the generated content directly instead"
-            )
+        raise LegacyGeneratorError(legacy_generator_message(script_path, tuple(legacy_names)))
 
-        if node.name == "gen_step":
-            kind = _parse_step_return_metadata(
-                script_path=script_path,
-                function=node,
-            )
-            has_gen_step = True
-        else:
-            _parse_dxf_envelope_metadata(
-                script_path=script_path,
-                function=node,
-            )
-            has_gen_dxf = True
-
-    if not has_gen_step and not has_gen_dxf:
+    if not decorated:
         return None
+    if len(decorated) > 1:
+        joined = ", ".join(f"{fn.name}()" for fn, _, _ in decorated)
+        raise ValueError(
+            f"{_display_path(script_path)} defines more than one CAD model ({joined}); "
+            "a model file defines exactly one @step or @dxf entry"
+        )
+
+    function, fmt, call_kwargs = decorated[0]
+    if function.args.vararg or function.args.kwarg:
+        raise ValueError(
+            f"{_display_path(script_path)} {function.name}() must not accept variadic arguments"
+        )
+    positional = [*function.args.posonlyargs, *function.args.args]
+    if len(function.args.defaults) < len(positional) or any(
+        default is None for default in function.args.kw_defaults
+    ):
+        raise ValueError(
+            f"{_display_path(script_path)} {function.name}() parameters must all have "
+            "defaults — the pipeline calls it with no arguments"
+        )
+
+    write_target = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
+    kind: str | None = None
+    if fmt == "step":
+        kind = _decorator_string_kwarg(call_kwargs, "kind", script_path=script_path)
+        if kind is not None and kind not in {"part", "assembly"}:
+            raise ValueError(
+                f"{_display_path(script_path)} @step kind= must be 'part' or 'assembly'"
+            )
+        if kind is None:
+            try:
+                kind = _parse_step_return_metadata(script_path=script_path, function=function)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{_display_path(script_path)} {function.name}() kind could not be "
+                    "inferred from its return; declare it explicitly: @step(kind=...)"
+                ) from exc
 
     return GeneratorMetadata(
         script_path=script_path.resolve(),
         kind=kind,
         display_name=display_name,
-        generator_names=tuple(generator_names),
-        has_gen_step=has_gen_step,
-        has_gen_dxf=has_gen_dxf,
-        mesh_tolerance=None,
-        mesh_angular_tolerance=None,
+        generator_names=(function.name,),
+        has_gen_step=fmt == "step",
+        has_gen_dxf=fmt == "dxf",
+        mesh_tolerance=_decorator_numeric_kwarg(call_kwargs, "mesh_tolerance", script_path=script_path),
+        mesh_angular_tolerance=_decorator_numeric_kwarg(
+            call_kwargs, "mesh_angular_tolerance", script_path=script_path
+        ),
+        entry_function=function.name,
+        write_target=write_target,
+        is_decorated=True,
     )
 
 

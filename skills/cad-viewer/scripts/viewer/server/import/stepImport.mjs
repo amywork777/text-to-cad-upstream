@@ -1097,7 +1097,7 @@ export function instanceColorWarnings(roots) {
         + `their own color but ${fellThrough} resolved to the shared part color — the WASM `
         + "kernel cannot read instance-color attachments native OCCT resolves via "
         + "GetInstanceColor. Verify against the source CAD, or import with the CAD skill "
-        + "(python scripts/gen).",
+        + "(run its model script: python <source>).",
       );
     }
   }

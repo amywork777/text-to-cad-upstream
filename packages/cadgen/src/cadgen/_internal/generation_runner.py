@@ -454,9 +454,18 @@ def _run_script_generator_inner(
     with record_first_party_execution() as executed_files:
         with logger.timed(f"load generator {spec.source_ref}"):
             module = _load_generator_module(spec.script_path)
-        generator = getattr(module, generator_name, None)
+        # `generator_name` stays the DISPATCH kind ("gen_step"/"gen_dxf" decides
+        # which payload contract applies below); the attribute looked up is the
+        # decorated entry function — the module is imported under a loader name,
+        # never __main__, so decoration only registered and this call is the one
+        # execution (the documented double-import semantics).
+        entry_name = generator_name
+        metadata = spec.generator_metadata
+        if metadata is not None and getattr(metadata, "entry_function", None):
+            entry_name = metadata.entry_function
+        generator = getattr(module, entry_name, None)
         if not callable(generator):
-            raise RuntimeError(f"{_display_path(spec.script_path)} does not define callable {generator_name}()")
+            raise RuntimeError(f"{_display_path(spec.script_path)} does not define callable {entry_name}()")
         # Bind the lock holder as the ambient reporter for the generator's own code. This is
         # the in-process twin of `run_node_builder`, which lets a Node child describe its
         # work over a pipe: gen_step() takes no arguments and so cannot be handed the run,

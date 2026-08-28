@@ -36,7 +36,10 @@ IGNORED_DISCOVERY_DIR_NAMES = {
     "site-packages",
     "venv",
 }
-GENERATOR_NAME_MARKERS = (b"gen_step", b"gen_dxf")
+# Cheap byte sniff before the AST parse: decorated model scripts import cadgen;
+# the legacy magic names stay listed so unmigrated sources still reach the
+# teaching error instead of silently vanishing from discovery.
+GENERATOR_NAME_MARKERS = (b"cadgen", b"gen_step", b"gen_dxf")
 DXF_GENERATOR_SUFFIX = ".dxf.py"
 
 
@@ -282,21 +285,35 @@ def render_package_dir(entry_path: Path) -> Path:
 
 
 def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:
+    from cadgen._internal.legacy_generators import MIGRATION_DOC, LegacyGeneratorError
+
     sources: list[CadSource] = []
+    legacy_count = 0
     for script_path in _iter_paths(root, "*.py"):
         if not _looks_like_generator_script(script_path):
             continue
         try:
             source = _read_python_source(script_path)
+        except LegacyGeneratorError:
+            # Unmigrated legacy generators are expected in bulk until the corpus
+            # migrates; discovery skips them quietly (one summary line below) while
+            # EXPLICIT targeting still raises the full teaching error.
+            legacy_count += 1
+            continue
         except CadSourceError as exc:
-            # Directory discovery is resilient: one invalid generator (e.g. an
-            # unmigrated gen_dxf() beside gen_step()) must not abort catalog-wide
-            # operations on unrelated targets. Explicitly targeting the file
-            # (source_from_path) still raises the pointed error.
+            # Directory discovery is resilient: one invalid generator must not
+            # abort catalog-wide operations on unrelated targets. Explicitly
+            # targeting the file (source_from_path) still raises the pointed error.
             print(f"[cadgen] skipping invalid CAD source: {exc}", file=sys.stderr)
             continue
         if source is not None:
             sources.append(source)
+    if legacy_count:
+        print(
+            f"[cadgen] skipped {legacy_count} legacy generator(s) under {root} — "
+            f"see {MIGRATION_DOC}",
+            file=sys.stderr,
+        )
     return tuple(sources)
 
 
@@ -328,7 +345,11 @@ def _generator_sibling(script_path: Path, suffix: str) -> Path:
 
 
 def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadata) -> CadSource:
-    dxf_path = _generator_sibling(resolved_script_path, ".dxf")
+    from cadgen.project_marker import resolve_output_path
+
+    dxf_path = resolve_output_path(
+        resolved_script_path, fmt="dxf", explicit_write=metadata.write_target
+    )
     return CadSource(
         source_ref=source_ref_from_path(resolved_script_path),
         cad_ref=cad_ref_from_dxf_path(dxf_path),
@@ -347,39 +368,33 @@ def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadat
 
 def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> CadSource | None:
     resolved_script_path = script_path.resolve()
+    lowered = resolved_script_path.name.lower()
+    if lowered.endswith((".step.py", ".stp.py", DXF_GENERATOR_SUFFIX)):
+        # Retired naming (design/library-first-generation.md): model scripts are
+        # plain .py files. Sniff first so an unrelated legacy-suffixed file that
+        # defines no generator at all stays a non-source rather than an error.
+        if _looks_like_generator_script(resolved_script_path):
+            from cadgen._internal.legacy_generators import (
+                LegacyGeneratorError,
+                legacy_naming_message,
+            )
+
+            raise LegacyGeneratorError(legacy_naming_message(resolved_script_path))
+        return None
     metadata = parse_generator_metadata(resolved_script_path)
     if metadata is None:
         return None
-    if is_dxf_generator_path(resolved_script_path):
-        # `<name>.dxf.py` is a first-class drawing entry (mirror of `<name>.step.py`).
-        if metadata.has_gen_step:
-            raise CadSourceError(
-                f"{_display_path(resolved_script_path)} is a .dxf.py drawing generator and must "
-                "not define gen_step(); keep gen_step() in a .step.py entry"
-            )
-        if not metadata.has_gen_dxf:
-            raise CadSourceError(
-                f"{_display_path(resolved_script_path)} is a .dxf.py drawing generator and must "
-                "define gen_dxf()"
-            )
-        return _dxf_generator_source(resolved_script_path, metadata)
-    if metadata.has_gen_step and metadata.has_gen_dxf:
-        raise CadSourceError(
-            f"{_display_path(resolved_script_path)} defines both gen_step() and gen_dxf(); "
-            "move gen_dxf() into a dedicated <name>.dxf.py drawing generator"
-        )
-    if not metadata.has_gen_step:
-        # Plain `<name>.py` defining only gen_dxf(): the CLI stays naming-agnostic, so it is
-        # still valid as an EXPLICIT gen_dxf target, but only `.dxf.py` sources are catalog
-        # entries — directory catalogs skip it.
-        if not allow_dxf_only:
-            return None
+    if metadata.has_gen_dxf:
         return _dxf_generator_source(resolved_script_path, metadata)
     if metadata.kind not in {"part", "assembly"}:
         raise CadSourceError(
-            f"{_display_path(resolved_script_path)} must define a part or assembly gen_step() entry"
+            f"{_display_path(resolved_script_path)} must declare a part or assembly @step model"
         )
-    step_path = _generator_sibling(resolved_script_path, ".step")
+    from cadgen.project_marker import resolve_output_path
+
+    step_path = resolve_output_path(
+        resolved_script_path, fmt="step", explicit_write=metadata.write_target
+    )
     return CadSource(
         source_ref=source_ref_from_path(resolved_script_path),
         cad_ref=cad_ref_from_step_path(step_path),
@@ -391,8 +406,8 @@ def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> C
         generator_metadata=metadata,
         step_path=step_path,
         dxf_path=None,
-        mesh_tolerance=None,
-        mesh_angular_tolerance=None,
+        mesh_tolerance=metadata.mesh_tolerance,
+        mesh_angular_tolerance=metadata.mesh_angular_tolerance,
     )
 
 

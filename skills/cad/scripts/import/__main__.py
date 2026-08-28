@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build a STEP's GLB/topology artifact.
+"""Build the render package for an imported STEP/STP file.
 
 A shim over the `cadgen` distribution named in this skill's requirements.txt. The parser,
-the behaviour and the output contract all live in ``cadgen.cli.step_artifact``; this file exists so the
-skill keeps a stable `scripts/artifact` entrypoint, and so a missing install fails with an
+the behaviour and the output contract all live in ``cadgen.cli.step_import``; this file exists so the
+skill keeps a stable `scripts/import` entrypoint, and so a missing install fails with an
 instruction instead of a traceback.
 """
 
@@ -42,11 +42,11 @@ if (
     except ModuleNotFoundError:
         pass
     else:
-        _warm_exit = run_via_daemon("artifact", sys.argv[1:], os.getcwd())
+        _warm_exit = run_via_daemon("import", sys.argv[1:], os.getcwd())
         if _warm_exit is not None:
             raise SystemExit(_warm_exit)
 
-from cadgen.cli import step_artifact as _cli
+from cadgen.cli import step_import as _cli
 
 
 if __name__ == "__main__":

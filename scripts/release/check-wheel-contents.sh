@@ -40,7 +40,9 @@ REQUIRED=(
   "cadgen/__init__.py"
   "cadgen/assets.py"
   "cadgen/cli/__init__.py"
-  "cadgen/cli/step_gen.py"
+  "cadgen/cli/step_import.py"
+  "cadgen/authoring.py"
+  "cadgen/build123d.py"
   # The robot validators moved out of skills/{sdf,srdf,urdf}/scripts into cadgen, so a
   # packaging regression here would ship skills whose `scripts/validate` cannot import.
   "cadgen/cli/urdf_validate.py"

@@ -2,7 +2,7 @@
 //
 // The viewer runs NO Python, ever. It renders what exists: render packages,
 // sibling .dxf files, live implicit sources. Generation and export belong to
-// the CLIs (scripts/gen, scripts/export) — the viewer neither runs generators
+// running model scripts and the CLIs — the viewer neither runs generators
 // nor writes new artifact bytes. The one build-shaped thing it still does is
 // Python-free by construction: importing a raw foreign STEP through the WASM
 // kernel (server/import/), which is how a .step becomes viewable at all on a
@@ -33,7 +33,7 @@ const RAW_STEP_RE = /\.(step|stp)$/i;
 
 const CLI_BUILD_HINT =
   "The viewer is a static visualization tool and does not run generators. "
-  + "Build this model with the CAD skill: python scripts/gen <source>.";
+  + "Build this model by running its script: python <source>.";
 
 // The viewer owns status for the entries whose render artifact it reads from
 // disk. Implicit models render LIVE from their own source, so they are not

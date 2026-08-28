@@ -1,15 +1,15 @@
 """Warm-process daemon server for the CAD skill CLIs.
 
 One long-lived process imports cadgen / OCP / build123d ONCE and then services
-``scripts/gen`` / ``scripts/export`` / ``scripts/artifact`` / ``scripts/inspect``
-/ ``scripts/snapshot`` invocations over a per-worktree unix socket, so opted-in
-sessions skip the multi-second interpreter+OCP startup on
-every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
+directly-run @step/@dxf model scripts ("run") plus ``scripts/export`` /
+``scripts/import`` / ``scripts/inspect`` / ``scripts/snapshot`` invocations over
+a per-worktree unix socket, so sessions skip the multi-second interpreter+OCP
+startup on every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
 never recurses into it.
 
 Protocol — one JSON request per connection, JSON-lines response:
 
-  request : {"tool": "gen"|"export"|"artifact"|"inspect"|"snapshot",
+  request : {"tool": "run"|"export"|"import"|"inspect"|"snapshot",
              "argv": [...], "cwd": "...",
              "token": <client version token>}
   response: {"stream": "stdout"|"stderr", "data": "..."} chunks, then
@@ -62,15 +62,15 @@ CLIENT_LIVENESS_INTERVAL_SECONDS = 0.5
 # back here. They are ordinary cadgen modules now, so this no longer depends on a skill's
 # sys.path being set up first.
 _TOOL_IMPORTS = {
-    "gen": "cadgen.cli.step_gen",
+    # "run" is the @step/@dxf decorator's warm-dispatch target (a directly
+    # executed model script hands its argv here) — internal, not a user CLI.
+    # DXF models are safe to serve warm because every worker is spawned with
+    # PYTHONHASHSEED=0.
+    "run": "cadgen.cli._run_model",
     "export": "cadgen.cli.step_export",
-    "artifact": "cadgen.cli.step_artifact",
+    "import": "cadgen.cli.step_import",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
-    # DXF is safe to serve warm because every worker is spawned with PYTHONHASHSEED=0.
-    # That is strictly better than dispatch's re-run: same determinism, no interpreter
-    # restart on the warm path.
-    "dxf-gen": "cadgen.cli.dxf_gen",
 }
 _TOOL_MAINS: dict[str, object] = {}
 

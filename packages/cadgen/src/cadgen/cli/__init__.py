@@ -2,7 +2,7 @@
 
 Every subcommand is also reachable as ``python -m cadgen.<module>``; this is the friendly
 front door, not a second implementation. A subcommand's parser lives in its own module and
-owns its arguments, so ``cadgen step gen`` and ``python -m cadgen.cli.step_gen`` take the
+owns its arguments, so ``cadgen import`` and ``python -m cadgen.cli.step_import`` take the
 same flags and print the same output.
 
 **Dispatch is lazy on purpose.** Importing a CAD subcommand pulls in OCP/build123d, which
@@ -27,19 +27,19 @@ import sys
 # exit code. Keep this list grouped as below and the help text under ~60 chars so
 # ``cadgen --help`` stays a single readable column.
 #
-# Two-word names are intentional: `step gen` and `dxf gen` are different commands with
-# different parsers, and flattening them to one `gen` would force a --kind flag that
-# neither parser wants. Dispatch joins argv[0:2] before argv[0], so the two-word form wins
-# where it exists and one-word commands like `daemon` still work.
+# Two-word names are intentional where a noun has several verbs. Dispatch joins
+# argv[0:2] before argv[0], so the two-word form wins where it exists and one-word
+# commands like `daemon` still work.
+#
+# Generation has NO CLI (design/library-first-generation.md): a model script runs
+# itself — `python <model>.py` through the @step/@dxf decorators.
 _COMMANDS: dict[str, tuple[str, str]] = {
     # STEP
-    "step gen": ("cadgen.cli.step_gen", "build STEP targets from .step.py generators"),
-    "step artifact": ("cadgen.cli.step_artifact", "build a STEP's GLB/topology artifact"),
+    "import": ("cadgen.cli.step_import", "build the render package for an imported STEP/STP"),
     "step export": ("cadgen.cli.step_export", "export a built STEP package to a file"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
     # DXF
-    "dxf gen": ("cadgen.cli.dxf_gen", "build DXF targets from .dxf.py generators"),
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Implicit
     "implicit gen": ("cadgen.cli.implicit_gen", "build implicit CAD targets"),
@@ -112,20 +112,19 @@ def enforce_requirements_pin(requirements_path) -> None:
 # rather than inside each command. It served only the skill launchers until now, so
 # `cadgen step gen` was an order of magnitude slower than `scripts/gen` for no reason.
 _DAEMON_TOOLS = {
-    "step gen": "gen",
     "step export": "export",
-    "step artifact": "artifact",
+    "import": "import",
     "step inspect": "inspect",
     "step snapshot": "snapshot",
-    # Warm workers carry PYTHONHASHSEED=0, so a served dxf build is deterministic
-    # without paying the re-run below.
-    "dxf gen": "dxf-gen",
 }
 
 # Drawing packages are content-addressed and ezdxf's object ordering depends on hash
-# randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read at
-# interpreter start, so the only way to guarantee it is to re-exec once.
-_HASH_SEED_COMMANDS = {"dxf gen"}
+# randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read
+# at interpreter start; warm daemon workers always carry PYTHONHASHSEED=0, and a
+# directly-run @dxf model that lands in-process re-execs through the decorator's
+# daemon handoff or accepts the seed of the invoking interpreter (the runner pins
+# ordering-sensitive writes itself).
+_HASH_SEED_COMMANDS: set[str] = set()
 
 
 # subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows

@@ -34,9 +34,10 @@ import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
 
-const STEP_ENTRY_RE = /\.(step|stp)(\.py)?$/i;
+// Artifacts only (design/library-first-generation.md): model scripts are not
+// status subjects — python-backedness is descriptor provenance, not naming.
+const STEP_ENTRY_RE = /\.(step|stp)$/i;
 const RAW_STEP_RE = /\.(step|stp)$/i;
-const DXF_GENERATOR_RE = /\.dxf\.py$/i;
 
 export const ARTIFACT_STATE = Object.freeze({
   READY: "ready",
@@ -84,8 +85,10 @@ export function ownsStepPath(filePath) {
   return STEP_ENTRY_RE.test(String(filePath || ""));
 }
 
-export function ownsDxfPath(filePath) {
-  return DXF_GENERATOR_RE.test(String(filePath || ""));
+export function ownsDxfPath() {
+  // Generated-DXF entries were `.dxf.py` scripts; scripts are no longer
+  // entries, and a plain `.dxf` renders directly with no artifact to manage.
+  return false;
 }
 
 function resolveCandidate(fileRef, rootDir) {
@@ -99,33 +102,8 @@ function resolveCandidate(fileRef, rootDir) {
   return fs.existsSync(candidate) ? candidate : null;
 }
 
-function fileHasPythonGenerator(filePath, generatorName) {
-  try {
-    return new RegExp(`\\b${generatorName}\\s*\\(`).test(fs.readFileSync(filePath, "utf8"));
-  } catch {
-    return false;
-  }
-}
-
-// resolve_step_source twin: the entry's package is keyed by the STEP path, and
-// a same-stem `<name>.step.py` generator owns the entry even when the exported
-// `<name>.step` sits beside it.
-export function resolveStepSource(candidate) {
-  if (candidate.toLowerCase().endsWith(".py")) {
-    const stem = path.basename(candidate).slice(0, -".py".length);
-    const stepBase = /\.(step|stp)$/i.test(stem) ? stem : `${stem}.step`;
-    return { stepPath: path.join(path.dirname(candidate), stepBase), generated: true };
-  }
-  const generator = `${candidate}.py`;
-  if (fs.existsSync(generator) && fileHasPythonGenerator(generator, "gen_step")) {
-    return { stepPath: candidate, generated: true };
-  }
-  return { stepPath: candidate, generated: false };
-}
-
 // --- freshness verdicts ------------------------------------------------------
-function validateStep(candidate) {
-  const { stepPath, generated } = resolveStepSource(candidate);
+function validateStep(stepPath) {
   const packageDir = renderPackageDir(stepPath);
   if (!fs.existsSync(packageDir) || !fs.statSync(packageDir).isDirectory()) {
     return { ok: false, code: "missing_glb", packageDir };
@@ -153,6 +131,9 @@ function validateStep(candidate) {
   if (!bakeHashMatches(descriptor, null)) {
     return { ok: false, code: "stale_step_artifact", packageDir, descriptor };
   }
+  // Generated-vs-imported is DESCRIPTOR PROVENANCE (sourceKind), never a
+  // sibling-filename check: the package records what produced it.
+  const generated = String(descriptor.sourceKind || "").trim().toLowerCase() === "python";
   if (generated) {
     // Detached outputs: no source checks. A dangling entry cannot happen (the
     // catalog lists generated entries by their source file).
@@ -172,28 +153,11 @@ function validateStep(candidate) {
   return { ok: true, packageDir, descriptor };
 }
 
-function validateDxf(candidate) {
-  const packageDir = renderPackageDir(candidate);
-  if (!fs.existsSync(candidate)) {
-    return { ok: false, code: "missing_source_path", packageDir };
-  }
-  // The sibling .dxf IS what the client parses: its absence is the only
-  // build-worthy state (source edits are the CLI no-op gate's business).
-  const sibling = candidate.slice(0, -".py".length);
-  if (!fs.existsSync(sibling)) {
-    return { ok: false, code: "missing_dxf_output", packageDir };
-  }
-  return { ok: true, packageDir };
-}
-
 // --- the state machine --------------------------------------------------------
 export function resolveArtifactVerdict(fileRef, rootDir) {
   const candidate = resolveCandidate(fileRef, rootDir);
   if (candidate === null) {
     return { error: `Artifact source not found: ${fileRef}` };
-  }
-  if (ownsDxfPath(candidate)) {
-    return { format: "dxf", candidate, ...validateDxf(candidate) };
   }
   if (ownsStepPath(candidate)) {
     const verdict = validateStep(candidate);

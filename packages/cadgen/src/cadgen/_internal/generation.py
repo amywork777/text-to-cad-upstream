@@ -1242,8 +1242,8 @@ def generate_step_targets(
     which is what an agent that asked for a build wants; a positive value reports the peer
     as ``contended`` and moves on.
     """
-    tool_name = "scripts/gen"
-    logger = CliLogger("scripts/gen", verbose=verbose)
+    tool_name = "cadgen"
+    logger = CliLogger("cadgen", verbose=verbose)
     reported: list[dict[str, object]] = []
 
     def _emit(spec: EntrySpec, outcome: str) -> None:
@@ -1395,7 +1395,7 @@ def generate_dxf_targets(
     from cadgen._internal.dxf_output import dxf_output_current
 
     tool_name = "dxf"
-    logger = CliLogger("scripts/gen", verbose=verbose)
+    logger = CliLogger("cadgen", verbose=verbose)
     if output is not None and targets_include_output_pairs(targets):
         raise ValueError(f"{tool_name} --output cannot be combined with SOURCE=OUTPUT targets")
     output_path = _resolve_cli_output_path(output, expected_suffixes=(".dxf",), tool_name=tool_name)

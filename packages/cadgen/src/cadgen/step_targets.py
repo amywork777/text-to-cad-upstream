@@ -10,7 +10,7 @@ from cadgen.selector_types import SelectorBundle
 
 
 STEP_SUFFIXES = (".step", ".stp")
-REGENERATE_STEP_COMMAND = "python scripts/gen"
+REGENERATE_STEP_COMMAND = "python"
 REGENERATE_STEP_PROMPT = "Regenerate STEP artifacts with the following command using the CAD skill:"
 
 

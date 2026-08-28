@@ -25,10 +25,7 @@ def _normalize_cli_numeric(value: object, *, field_name: str, parser: argparse.A
 def _add_artifact_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "target",
-        help=(
-            "Model to build the render package for: an imported STEP/STP file or a "
-            "gen_step() Python source."
-        ),
+        help="Imported STEP/STP file to build the render package for.",
     )
     parser.add_argument(
         "--kind",
@@ -57,30 +54,18 @@ def _add_artifact_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _sibling_step_path(target: str) -> str:
-    # foo.step.py -> foo.step; plain foo.py -> foo.step (the generator's logical STEP).
-    if target.lower().endswith(".step.py"):
-        return target[: -len(".py")]
-    # as_posix() for the same reason as step_gen's _sibling_step_output: this is a logical
-    # path, and str() on a Path renders the NATIVE separator, so on Windows the two branches
-    # disagree -- the slice above keeps "parts/second.step" while this one would produce
-    # "parts\second.step" from the same shape of input. Windows accepts forward slashes.
-    return Path(target).with_suffix(".step").as_posix()
-
-
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
 # `cadgen <command>` passes its own name instead, so each front door names itself.
-DEFAULT_PROG = "scripts/artifact"
+DEFAULT_PROG = "scripts/import"
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Build the hidden __cadgen__ render package (GLB/topology) for one model — "
-            "the same on-demand build inspect, snapshot, and the CAD Viewer run. Meant "
-            "for debugging that flow, especially for imported STEP/STP files; generated "
-            "sources normally go through scripts/gen."
+            "Build the __cadgen__ render package for an IMPORTED STEP/STP file — the "
+            "native twin of the CAD Viewer's WASM import. A generated model needs no "
+            "import: run its @step model script directly (python <model>.py)."
         ),
     )
     _add_artifact_arguments(parser)
@@ -98,16 +83,15 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
     target = str(args.target)
     suffix = Path(target).suffix.lower()
-    if suffix in {".step", ".stp"}:
-        step = target
-        source_path = None
-    elif suffix == ".py":
-        step = _sibling_step_path(target)
-        source_path = target
-    else:
+    if suffix == ".py":
         parser.error(
-            f"scripts/artifact target must be a STEP/STP file or a gen_step() Python source: {target}"
+            f"{target} is a model script, not an import: run it directly "
+            "(python <model>.py) to build its render package"
         )
+    if suffix not in {".step", ".stp"}:
+        parser.error(f"scripts/import target must be an imported STEP/STP file: {target}")
+    step = target
+    source_path = None
     mesh_tolerance = _normalize_cli_numeric(
         args.mesh_tolerance,
         field_name="mesh_tolerance",
@@ -132,7 +116,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     except ValueError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
-        return report_cli_error(exc, tool="scripts/artifact", verbose=bool(args.verbose))
+        return report_cli_error(exc, tool="scripts/import", verbose=bool(args.verbose))
     print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
     return 0
 

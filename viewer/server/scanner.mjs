@@ -244,15 +244,11 @@ function collectCadSourceFiles(rootPath, result) {
     if (isHiddenName(entry.name)) {
       continue;
     }
-    const lowerName = entry.name.toLowerCase();
     const extension = path.extname(entry.name).toLowerCase();
-    if (lowerName.endsWith(".step.py") || lowerName.endsWith(DXF_GENERATOR_SUFFIX)) {
-      // List generated models/drawings whether or not their render artifact has been
-      // built: an unbuilt one reports `needs-build` via /__cad/artifact and is built
-      // on demand when opened, so a fresh checkout shows ALL generated entries.
-      result.push(entryPath);
-      continue;
-    }
+    // ARTIFACTS-ONLY (design/library-first-generation.md): model scripts are
+    // never catalog entries. A model with no artifact simply does not appear
+    // until its script has been run; artifact→source linkage is descriptor
+    // provenance, not filenames.
     if (SOURCE_EXTENSIONS.has(extension) || pathIsImplicitCadSource(entryPath)) {
       result.push(entryPath);
     }
@@ -421,27 +417,6 @@ function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
   return entry;
 }
 
-function createGeneratedDxfEntry(repoRoot, rootPath, sourcePath) {
-  // A `.dxf.py` generator's product is its sibling `.dxf` (gen always writes
-  // it — design/standalone-viewer.md Phase A), and the viewer parses that file
-  // directly. An unbuilt entry has no asset yet and reports `needs-build`
-  // through /__cad/artifact when opened.
-  const sibling = sourcePath.slice(0, -3);
-  const asset = assetForPath(repoRoot, sibling);
-  const entryRef = repoRelativePath(rootPath, sourcePath);
-  const entry = {
-    file: entryRef,
-    kind: "dxf",
-    url: (asset && asset.url) || "",
-    hash: (asset && asset.hash) || "",
-    bytes: (asset && asset.bytes) || 0,
-    sourceKind: "python",
-  };
-  entry.source = { file: entryRef, sourcePath: entryRef };
-  return entry;
-}
-
-
 export function stepKindFromTopology(topology) {
   if (!topology) {
     return "part";
@@ -480,13 +455,16 @@ export function readStepCatalogMetadata(packageDir) {
       hasDisplayEdges: false,
     },
     sourceKind,
+    sourcePath: String(descriptor.sourcePath ?? ""),
     sourceHash: String(descriptor.sourceHash ?? ""),
     stepHash: String(descriptor.stepHash ?? ""),
   };
 }
 
 function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
-  const entryIsPython = sourcePath.toLowerCase().endsWith(".py");
+  // Catalog entries are ARTIFACTS (the .step/.stp file); whether the model is
+  // python-backed comes from the package descriptor's provenance, never from
+  // sibling filenames (design/library-first-generation.md).
   const packageDir = renderPackageDir(sourcePath);
   const metadata = readStepCatalogMetadata(packageDir);
   const topology = metadata.topology;
@@ -498,22 +476,33 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
     : null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
   const sourceHash = String(metadata.sourceHash || "").trim();
+  const generated = metadata.sourceKind === "python";
   const entry = {
     file: entryRef,
     kind: stepKindFromTopology(topology),
     url: (packageAsset && packageAsset.url) || assetUrlForPath(repoRoot, packageDir),
     hash: (packageAsset && packageAsset.hash) || "",
     bytes: (packageAsset && packageAsset.bytes) || 0,
-    sourceKind: entryIsPython ? "python" : "step",
+    sourceKind: generated ? "python" : "step",
   };
-  if (entryIsPython) {
-    const source = { file: entryRef, sourcePath: entryRef };
-    if (sourceHash) {
-      source.sourceHash = sourceHash;
+  if (generated) {
+    // sourcePath is recorded relative to the STEP file by generation.
+    const sourcePathRel = String(metadata.sourcePath || "").trim();
+    const resolvedSource = sourcePathRel
+      ? path.resolve(path.dirname(sourcePath), sourcePathRel)
+      : null;
+    if (resolvedSource && fileStats(resolvedSource)) {
+      const source = {
+        file: repoRelativePath(rootPath, resolvedSource),
+        sourcePath: repoRelativePath(rootPath, resolvedSource),
+      };
+      if (sourceHash) {
+        source.sourceHash = sourceHash;
+      }
+      entry.source = source;
     }
-    entry.source = source;
   }
-  if (!entryIsPython && !stepModuleAsset) {
+  if (!generated && !stepModuleAsset) {
     // Imported STEP: no descriptor to declare a module, so look beside it.
     const sidecarPath = stepSidecarPath(sourcePath);
     if (fileStats(sidecarPath)) {
@@ -620,9 +609,7 @@ export function scanCadDirectory(repoRoot) {
   for (const sourcePath of sourceFiles) {
     const logical = isRenderPackagePath(sourcePath) ? entryPathForRenderPackage(sourcePath) : sourcePath;
     const extension = path.extname(logical).toLowerCase();
-    if (isDxfGeneratorPath(logical)) {
-      entries.push(createGeneratedDxfEntry(repoRoot, rootPath, logical));
-    } else if (extension === ".step" || extension === ".stp" || logical.toLowerCase().endsWith(".step.py")) {
+    if (extension === ".step" || extension === ".stp") {
       entries.push(createStepEntry(repoRoot, rootPath, logical, extension));
     } else {
       entries.push(createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension));

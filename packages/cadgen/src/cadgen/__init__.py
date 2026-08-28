@@ -5,6 +5,9 @@ from typing import TYPE_CHECKING
 __all__ = [
     "__version__",
     "AssemblyHelper",
+    "step",
+    "dxf",
+    "build123d",
     "srgb",
     "MateRelation",
     "MateTarget",
@@ -24,6 +27,18 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    if name in {"step", "dxf"}:
+        # The library-first authoring decorators (design/library-first-generation.md).
+        from cadgen.authoring import dxf, step
+
+        return {"step": step, "dxf": dxf}[name]
+    if name == "build123d":
+        # `from cadgen import build123d as bd` — the lazy transparent re-export.
+        # Importing the submodule is cheap; the real build123d import happens on
+        # first attribute touch inside cadgen.build123d.
+        import cadgen.build123d as _bd
+
+        return _bd
     if name == "ensure_step_topology_artifact":
         from cadgen.step_topology_artifact import ensure_step_topology_artifact
 
@@ -77,7 +92,9 @@ if TYPE_CHECKING:
     # without importing OCP. Every name here must have a branch there. develop's version of
     # this block pulled two names from the api alias module, which this branch deletes --
     # they come from their real modules now.
+    from cadgen import build123d
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
+    from cadgen.authoring import dxf, step
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
     from cadgen.instances import compound_from_instances
     from cadgen.progress import report, track
