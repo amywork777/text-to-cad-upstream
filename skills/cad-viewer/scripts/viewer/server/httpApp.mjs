@@ -29,6 +29,13 @@ import { contentTypeForStaticAsset } from "./contentTypes.mjs";
 import { attachmentContentDisposition } from "./encoding.mjs";
 import { pathIsInside } from "./scanner.mjs";
 import { revealPath } from "./reveal.mjs";
+import {
+  TESS_CACHE_BATCH_PATH,
+  TESS_CACHE_ROUTE_PREFIX,
+  readTessCacheBatch,
+  readTessCacheEntry,
+  writeTessCacheEntry,
+} from "./tessCache.mjs";
 
 export const POST_GUARD_HEADER = "x-cadgen-viewer";
 export const LOCAL_SERVER_FEATURES = ["path-directory"];
@@ -123,6 +130,29 @@ export function createCadApp({ root, host, port, distDir = "" }) {
     }
     res.writeHead(status, headers);
     res.end(req.method === "HEAD" ? undefined : data);
+  }
+
+  // Collected request body for the tess-cache POSTs (the only body-carrying
+  // routes; everything else rides the query string). Bounded: a runaway body
+  // aborts rather than buffering without limit — the largest legitimate
+  // payload is one component's tessellation entry.
+  const MAX_REQUEST_BODY_BYTES = 256 * 1024 * 1024;
+  function readRequestBody(req) {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      let total = 0;
+      req.on("data", (chunk) => {
+        total += chunk.length;
+        if (total > MAX_REQUEST_BODY_BYTES) {
+          reject(new Error("request body too large"));
+          req.destroy();
+          return;
+        }
+        chunks.push(chunk);
+      });
+      req.on("end", () => resolve(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
   }
 
   function serveFile(req, res, filePath, contentType) {
@@ -346,6 +376,19 @@ export function createCadApp({ root, host, port, distDir = "" }) {
       if (rejectedByHostCheck(req, res)) {
         return true;
       }
+      if (pathname.startsWith(TESS_CACHE_ROUTE_PREFIX)) {
+        // Shared component-tessellation cache: opaque bytes from
+        // ~/.cache/cadgen/meshes (see tessCache.mjs). Before the dist
+        // fallthrough — this is an API family, not a page asset.
+        const { status, body } = readTessCacheEntry(pathname);
+        if (status !== 200) {
+          res.writeHead(status, { "content-length": 0 });
+          res.end();
+        } else {
+          sendBytes(req, res, 200, Buffer.from(body.buffer, body.byteOffset, body.byteLength), "application/octet-stream");
+        }
+        return true;
+      }
       if (!pathname.startsWith("/__cad/")) {
         if (!distDir) {
           return false;
@@ -391,6 +434,18 @@ export function createCadApp({ root, host, port, distDir = "" }) {
           await handleArtifactBuild(req, res, query);
         } else if (pathname === "/__cad/reveal") {
           handleReveal(req, res, query);
+        } else if (pathname === TESS_CACHE_BATCH_PATH) {
+          const batch = readTessCacheBatch(await readRequestBody(req));
+          if (batch === null) {
+            sendJson(req, res, 400, { error: "bad batch request" });
+          } else {
+            sendBytes(req, res, 200, batch, "application/octet-stream");
+          }
+        } else if (pathname.startsWith(TESS_CACHE_ROUTE_PREFIX)) {
+          // Best-effort write-back after an in-page tessellation miss.
+          const status = writeTessCacheEntry(pathname, await readRequestBody(req));
+          res.writeHead(status, { "content-length": 0 });
+          res.end();
         } else {
           res.writeHead(405, { allow: "POST", "content-length": 0 });
           res.end();

@@ -31,6 +31,7 @@ import { parseSurf } from "../src/lib/surf/container.js";
 import { DEFAULT_OPTIONS, tessellateComponent } from "../src/lib/surf/tessellate.js";
 import {
   decodeComponentTessellation,
+  edgeClassesFromSurfIndex,
   encodeComponentTessellation,
   tessellationCacheKey,
 } from "../src/lib/surf/tessellationCache.js";
@@ -79,7 +80,13 @@ function tessellationForComponent(packageDir, cid, entry, options) {
   );
   const component = tessellateComponent(index, floats, options);
   const partColor = Array.isArray(index.partColor) ? index.partColor : null;
-  writeCachedTessellationBytes(key, encodeComponentTessellation(component, { partColor }));
+  writeCachedTessellationBytes(
+    key,
+    encodeComponentTessellation(component, {
+      partColor,
+      edgeClasses: edgeClassesFromSurfIndex(index),
+    }),
+  );
   return { ...component, partColor };
 }
 

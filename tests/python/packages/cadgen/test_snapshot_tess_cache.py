@@ -20,13 +20,37 @@ from tests.python.support.paths import add_repo_path
 add_repo_path("packages/cadgen/src")
 
 from cadgen.snapshot_core import (  # noqa: E402
+    TESS_CACHE_BATCH_MAGIC,
+    TESS_CACHE_BATCH_PATH,
+    TESS_CACHE_BATCH_VERSION,
     TESS_CACHE_ROUTE_PREFIX,
     SnapshotAssetServer,
+    read_tessellation_cache_batch,
     read_tessellation_cache_entry,
     tessellation_cache_dir,
     tessellation_cache_file,
     write_tessellation_cache_entry,
 )
+
+
+def decode_batch(body: bytes) -> list[bytes | None]:
+    """Reference decoder for the TESB container (the JS codec is authoritative;
+    this mirrors it so the Python framing is pinned from both sides)."""
+    import struct
+
+    magic, version, count = struct.unpack_from("<III", body, 0)
+    assert magic == TESS_CACHE_BATCH_MAGIC and version == TESS_CACHE_BATCH_VERSION
+    entries: list[bytes | None] = []
+    offset = 12
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", body, offset)
+        offset += 4
+        if length == 0:
+            entries.append(None)
+            continue
+        entries.append(body[offset:offset + length])
+        offset += length + ((-length) % 4)
+    return entries
 
 
 class TessellationCacheRouteTests(unittest.TestCase):
@@ -83,6 +107,40 @@ class TessellationCacheRouteTests(unittest.TestCase):
         self.assertTrue(write_tessellation_cache_entry(pathname, None))
         self.assertTrue(write_tessellation_cache_entry(pathname, b""))
         self.assertIsNone(read_tessellation_cache_entry(pathname))
+
+    def test_batch_mixes_hits_misses_and_refused_names_as_misses(self) -> None:
+        import json
+
+        write_tessellation_cache_entry(self.route("hit1-l1.000000e-3-a3.500000e-1.tess"), b"AAA")
+        write_tessellation_cache_entry(self.route("hit2-l1.000000e-3-a3.500000e-1.tess"), b"BBBBB")
+        body = json.dumps({
+            "names": [
+                "hit1-l1.000000e-3-a3.500000e-1.tess",
+                "missing-l1.000000e-3-a3.500000e-1.tess",
+                "../escape.tess",  # refused name = miss, never an error
+                "hit2-l1.000000e-3-a3.500000e-1.tess",
+                42,  # non-string = miss
+            ],
+        }).encode()
+        entries = decode_batch(read_tessellation_cache_batch(body))
+        self.assertEqual(entries, [b"AAA", None, None, b"BBBBB", None])
+
+    def test_batch_rejects_malformed_requests(self) -> None:
+        self.assertIsNone(read_tessellation_cache_batch(b"not json"))
+        self.assertIsNone(read_tessellation_cache_batch(b"{}"))
+        self.assertIsNone(read_tessellation_cache_batch(b'{"names": "x"}'))
+        import json
+
+        too_many = json.dumps({"names": ["a.tess"] * 5000}).encode()
+        self.assertIsNone(read_tessellation_cache_batch(too_many))
+
+    def test_batch_with_cache_disabled_is_all_misses(self) -> None:
+        write_tessellation_cache_entry(self.route("c0-l1.000000e-3-a3.500000e-1.tess"), b"X")
+        with mock.patch.dict(os.environ, {"CADGEN_MESH_CACHE": "0"}):
+            entries = decode_batch(read_tessellation_cache_batch(
+                b'{"names": ["c0-l1.000000e-3-a3.500000e-1.tess"]}',
+            ))
+        self.assertEqual(entries, [None])
 
 
 class SnapshotAssetServerTests(unittest.TestCase):
@@ -146,6 +204,19 @@ class SnapshotAssetServerTests(unittest.TestCase):
         for method, path in (("GET", "/anything"), ("POST", "/__render_asset/inside.step")):
             status, _, _ = self.request(method, path)
             self.assertEqual(status, 404, f"{method} {path}")
+
+    def test_batch_route_round_trip(self) -> None:
+        import json
+
+        name = "beef01-l1.500000e-3-a3.500000e-1.tess"
+        status, _, _ = self.request("POST", f"{TESS_CACHE_ROUTE_PREFIX}{name}", b"ENTRY")
+        self.assertEqual(status, 204)
+        body = json.dumps({"names": [name, "missing.tess"]}).encode()
+        status, response, _ = self.request("POST", TESS_CACHE_BATCH_PATH, body)
+        self.assertEqual(status, 200)
+        self.assertEqual(decode_batch(response), [b"ENTRY", None])
+        status, _, _ = self.request("POST", TESS_CACHE_BATCH_PATH, b"not json")
+        self.assertEqual(status, 400)
 
 
 if __name__ == "__main__":

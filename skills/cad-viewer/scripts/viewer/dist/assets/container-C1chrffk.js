@@ -1,2 +1,0 @@
-const S=1179800915,a=2;function U(t){const n=new DataView(t,0,12);if(n.getUint32(0,!0)!==1179800915)throw new Error("not a SURF container");const e=n.getUint32(4,!0);if(e!==2)throw new Error(`unsupported SURF version ${e}`);const o=n.getUint32(8,!0),s=new Uint8Array(t,12,o),c=JSON.parse(new TextDecoder().decode(s)),r=12+o,i=new Float32Array(t.slice(r,r+(t.byteLength-r>>2<<2)));return{index:c,floats:i}}function u(t,n){const[e,o]=n;return t.subarray(e,e+o)}export{S as SURF_MAGIC,a as SURF_VERSION,u as floatSpan,U as parseSurf};
-//# sourceMappingURL=container-C1chrffk.js.map

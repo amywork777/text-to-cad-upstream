@@ -19,6 +19,7 @@ import {
   stepParameterFrameRuntime
 } from "./source.js";
 import {
+  createHttpTessellationCacheProvider,
   setTessellationCacheProvider
 } from "../lib/surf/tessellationCache.js";
 import {
@@ -245,22 +246,7 @@ if (typeof window !== "undefined") {
   // warms the cache for later exports. Both directions are best-effort: a
   // host without the route (404) or a disabled cache degrades to plain
   // in-page tessellation.
-  setTessellationCacheProvider({
-    async get(key) {
-      try {
-        const response = await fetch(`/__tess_cache/${encodeURIComponent(key)}.tess`, { cache: "no-store" });
-        if (!response.ok) return null;
-        return new Uint8Array(await response.arrayBuffer());
-      } catch {
-        return null;
-      }
-    },
-    async put(key, bytes) {
-      try {
-        await fetch(`/__tess_cache/${encodeURIComponent(key)}.tess`, { method: "POST", body: bytes });
-      } catch {
-        // best-effort write-back
-      }
-    },
-  });
+  // The shared fetch-backed provider: single-entry GET/POST plus the batched
+  // POST /__tess_cache/batch — one round trip for a whole assembly's hit set.
+  setTessellationCacheProvider(createHttpTessellationCacheProvider());
 }

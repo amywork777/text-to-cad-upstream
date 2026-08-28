@@ -21,9 +21,12 @@
 import { DEFAULT_OPTIONS, tessellateComponent } from "./tessellate.js";
 
 export const TESS_CACHE_MAGIC = 0x53534554; // "TESS" little-endian
-// v2: full component payload (faceOrds, sideOrds, edges, bounds, scale) so
-// render consumers can reuse entries; v1 stored the export subset only.
-export const TESS_CACHE_VERSION = 2;
+// v3: header carries edgeClasses (every surf edge's ord -> class string) and
+// partColor, so a HIT rebuilds render meshData without fetching the .surf at
+// all (surfMeshData needs exactly those two index fields). v2 carried the
+// full component payload but still required the surf for edge classes; v1
+// stored the export subset only. Older versions are ordinary misses.
+export const TESS_CACHE_VERSION = 3;
 
 // Tolerances are part of the key; format them canonically so 0.0015 and
 // 1.5e-3 hit the same entry.
@@ -43,10 +46,18 @@ function align4(value) {
   return (value + 3) & ~3;
 }
 
-export function encodeComponentTessellation(component, { partColor = null } = {}) {
+// `index.edges` -> the compact [ord, class] pairs the header stores. Callers
+// that hold the parsed surf index pass this so a later hit can skip the surf.
+export function edgeClassesFromSurfIndex(index) {
+  const edges = Array.isArray(index?.edges) ? index.edges : [];
+  return edges.map((edge) => [edge.ord, String(edge.class ?? "none")]);
+}
+
+export function encodeComponentTessellation(component, { partColor = null, edgeClasses = null } = {}) {
   const edges = Array.isArray(component.edges) ? component.edges : [];
   const headerJson = JSON.stringify({
     partColor: partColor ?? null,
+    edgeClasses: Array.isArray(edgeClasses) ? edgeClasses : null,
     faceRanges: component.faceRanges,
     bounds: { min: [...component.bounds.min], max: [...component.bounds.max] },
     scale: component.scale,
@@ -145,9 +156,82 @@ export function decodeComponentTessellation(bytes) {
         scale: header.scale,
       },
       partColor: header.partColor ?? null,
+      edgeClasses: Array.isArray(header.edgeClasses) ? header.edgeClasses : null,
     };
   } catch {
     return null; // a corrupt entry is a miss, never an error
+  }
+}
+
+// The minimal stand-in for a parsed surf index that render consumers
+// (buildMeshDataFromSurf) read on a cache hit: per-edge classes and the part
+// color. Null when the entry predates edgeClasses — the caller then needs the
+// real surf.
+export function surfIndexFromCacheEntry(decoded) {
+  if (!decoded || !Array.isArray(decoded.edgeClasses)) return null;
+  return {
+    edges: decoded.edgeClasses.map(([ord, cls]) => ({ ord, class: cls })),
+    partColor: decoded.partColor ?? null,
+  };
+}
+
+// --- batch container ---------------------------------------------------------
+//
+// One round trip for N entries: "TESB" u32, version u32, count u32, then per
+// entry u32 byteLength (0 = miss) + bytes padded to a 4-byte boundary so each
+// entry decodes zero-copy. Served by both cache hosts (the snapshot loopback
+// server and the viewer server) on POST <prefix>/batch with a JSON body of
+// entry file names; this module is the format's single home.
+
+export const TESS_CACHE_BATCH_MAGIC = 0x42534554; // "TESB" little-endian
+export const TESS_CACHE_BATCH_VERSION = 1;
+
+export function encodeTessellationCacheBatch(entries) {
+  let total = 12;
+  for (const entry of entries) {
+    total += 4 + align4(entry ? entry.length : 0);
+  }
+  const bytes = new Uint8Array(total);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, TESS_CACHE_BATCH_MAGIC, true);
+  view.setUint32(4, TESS_CACHE_BATCH_VERSION, true);
+  view.setUint32(8, entries.length, true);
+  let offset = 12;
+  for (const entry of entries) {
+    view.setUint32(offset, entry ? entry.length : 0, true);
+    offset += 4;
+    if (entry && entry.length) {
+      bytes.set(entry, offset);
+      offset += align4(entry.length);
+    }
+  }
+  return bytes;
+}
+
+export function decodeTessellationCacheBatch(bytes) {
+  try {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 12) return null;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0, true) !== TESS_CACHE_BATCH_MAGIC) return null;
+    if (view.getUint32(4, true) !== TESS_CACHE_BATCH_VERSION) return null;
+    const count = view.getUint32(8, true);
+    const entries = [];
+    let offset = 12;
+    for (let i = 0; i < count; i += 1) {
+      if (offset + 4 > bytes.length) return null;
+      const length = view.getUint32(offset, true);
+      offset += 4;
+      if (length === 0) {
+        entries.push(null);
+        continue;
+      }
+      if (offset + length > bytes.length) return null;
+      entries.push(bytes.subarray(offset, offset + length));
+      offset += align4(length);
+    }
+    return entries;
+  } catch {
+    return null;
   }
 }
 
@@ -164,30 +248,152 @@ export function setTessellationCacheProvider(provider) {
   cacheProvider = provider && typeof provider.get === "function" ? provider : null;
 }
 
-export async function tessellateComponentCached(index, floats, { cid = "", options = {} } = {}) {
+export function tessellationCacheProviderRegistered() {
+  return cacheProvider !== null;
+}
+
+// Decoded entry for one component, from the registered provider alone — the
+// caller can skip fetching the surf entirely when this answers (v3 entries
+// carry the index fields render meshData needs). Null on miss/any failure.
+export async function getCachedComponentEntry(cid, options = {}) {
   const provider = cacheProvider;
-  if (!provider || !cid || !tessellationOptionsCacheable(options)) {
-    return tessellateComponent(index, floats, options);
-  }
-  const key = tessellationCacheKey(cid, options);
+  if (!provider || !cid || !tessellationOptionsCacheable(options)) return null;
   try {
-    const cached = decodeComponentTessellation(await provider.get(key));
-    if (cached) return cached.component;
+    return decodeComponentTessellation(await provider.get(tessellationCacheKey(cid, options)));
   } catch {
-    // miss
+    return null;
   }
-  const component = tessellateComponent(index, floats, options);
-  if (typeof provider.put === "function") {
+}
+
+// Batch form: Map(cid -> decoded entry) containing HITS only. One round trip
+// when the provider supports getMany; falls back to per-key gets otherwise.
+export async function getCachedComponentEntries(cids, options = {}) {
+  const hits = new Map();
+  const provider = cacheProvider;
+  if (!provider || !cids.length || !tessellationOptionsCacheable(options)) return hits;
+  const keys = cids.map((cid) => tessellationCacheKey(cid, options));
+  let raw = null;
+  if (typeof provider.getMany === "function") {
     try {
-      await provider.put(
-        key,
-        encodeComponentTessellation(component, {
-          partColor: Array.isArray(index.partColor) ? index.partColor : null,
-        }),
-      );
+      raw = await provider.getMany(keys);
     } catch {
-      // best-effort write-back
+      raw = null;
     }
   }
+  if (!Array.isArray(raw) || raw.length !== keys.length) {
+    raw = await Promise.all(keys.map(async (key) => {
+      try {
+        return await provider.get(key);
+      } catch {
+        return null;
+      }
+    }));
+  }
+  for (let i = 0; i < cids.length; i += 1) {
+    const decoded = decodeComponentTessellation(raw[i]);
+    if (decoded) hits.set(cids[i], decoded);
+  }
+  return hits;
+}
+
+// Raw entry bytes for one component — for callers that hand the entry to a
+// worker (transfer) instead of decoding on this thread. Null on miss/failure.
+export async function getCachedEntryBytes(cid, options = {}) {
+  const provider = cacheProvider;
+  if (!provider || !cid || !tessellationOptionsCacheable(options)) return null;
+  try {
+    const bytes = await provider.get(tessellationCacheKey(cid, options));
+    return bytes instanceof Uint8Array ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+// Raw write-back for entry bytes a worker already encoded.
+export async function writeBackEntryBytes(cid, options, bytes) {
+  const provider = cacheProvider;
+  if (!provider || typeof provider.put !== "function" || !cid) return;
+  if (!tessellationOptionsCacheable(options) || !(bytes instanceof Uint8Array)) return;
+  try {
+    await provider.put(tessellationCacheKey(cid, options), bytes);
+  } catch {
+    // best-effort write-back
+  }
+}
+
+// Best-effort write-back of a fresh tessellation; `index` supplies the header
+// fields (partColor, edge classes) a later hit needs to skip the surf.
+export async function writeBackComponentEntry(cid, options, component, index) {
+  const provider = cacheProvider;
+  if (!provider || typeof provider.put !== "function" || !cid) return;
+  if (!tessellationOptionsCacheable(options)) return;
+  try {
+    await provider.put(
+      tessellationCacheKey(cid, options),
+      encodeComponentTessellation(component, {
+        partColor: Array.isArray(index?.partColor) ? index.partColor : null,
+        edgeClasses: edgeClassesFromSurfIndex(index),
+      }),
+    );
+  } catch {
+    // best-effort write-back
+  }
+}
+
+export async function tessellateComponentCached(index, floats, { cid = "", options = {} } = {}) {
+  const cached = await getCachedComponentEntry(cid, options);
+  if (cached) return cached.component;
+  const component = tessellateComponent(index, floats, options);
+  if (cacheProvider && cid && tessellationOptionsCacheable(options)) {
+    await writeBackComponentEntry(cid, options, component, index);
+  }
   return component;
+}
+
+// The fetch-backed provider both browser hosts use. `entryUrl(key)` resolves a
+// single entry, `batchUrl` the POST endpoint speaking the batch container
+// above; `headers` ride every request (the viewer adds its cross-site POST
+// guard header). A host without the batch route (404/405) demotes getMany to
+// per-key gets permanently for this provider instance.
+export function createHttpTessellationCacheProvider({
+  entryUrl = (key) => `/__tess_cache/${encodeURIComponent(key)}.tess`,
+  batchUrl = "/__tess_cache/batch",
+  headers = {},
+} = {}) {
+  let batchSupported = Boolean(batchUrl);
+  return {
+    async get(key) {
+      try {
+        const response = await fetch(entryUrl(key), { cache: "no-store", headers });
+        if (!response.ok) return null;
+        return new Uint8Array(await response.arrayBuffer());
+      } catch {
+        return null;
+      }
+    },
+    async put(key, bytes) {
+      try {
+        await fetch(entryUrl(key), { method: "POST", body: bytes, headers });
+      } catch {
+        // best-effort write-back
+      }
+    },
+    async getMany(keys) {
+      if (!batchSupported) return null; // caller falls back to per-key gets
+      try {
+        const response = await fetch(batchUrl, {
+          method: "POST",
+          headers: { ...headers, "content-type": "application/json" },
+          body: JSON.stringify({ names: keys.map((key) => `${key}.tess`) }),
+        });
+        if (!response.ok) {
+          batchSupported = false;
+          return null;
+        }
+        return decodeTessellationCacheBatch(new Uint8Array(await response.arrayBuffer()));
+      } catch {
+        return null;
+      }
+    },
+  };
 }

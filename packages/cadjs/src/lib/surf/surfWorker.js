@@ -13,6 +13,11 @@ import { tessellateComponent } from "./tessellate.js";
 import { buildMeshDataFromSurf } from "./surfMeshData.js";
 import { buildSelectorBundleFromSurf } from "./surfSelectorBundle.js";
 import { meshDataTransferList } from "../render/meshTransfer.js";
+import {
+  decodeComponentTessellation,
+  edgeClassesFromSurfIndex,
+  encodeComponentTessellation,
+} from "./tessellationCache.js";
 
 const activeControllers = new Map();
 
@@ -49,17 +54,37 @@ self.addEventListener("message", async (event) => {
   try {
     const buffer = await loadArrayBuffer(message.url, controller.signal);
     const { index, floats } = parseSurf(buffer);
+    // A cached entry (bytes handed in by the client thread, which owns the
+    // shared-cache provider) skips the tessellation — the dominant cost —
+    // while the surf just fetched still feeds the selector bundle. A corrupt
+    // or version-drifted entry decodes to null and falls through.
+    const cached = message.cachedEntry ? decodeComponentTessellation(message.cachedEntry) : null;
     // Optional tolerance override (viewport LOD re-tessellates a component at
     // a finer chord level from the same exact surfaces).
-    const component = tessellateComponent(index, floats, message.tessellation || {});
+    const component = cached
+      ? cached.component
+      : tessellateComponent(index, floats, message.tessellation || {});
     const meshData = buildMeshDataFromSurf(index, floats, { component });
     const bundle = buildSelectorBundleFromSurf(index, floats, { component });
+    // On a miss the client asked for the encoded entry back so it can write
+    // it into the shared cache. Encoded BEFORE the arrays transfer out below
+    // (transfer detaches their buffers).
+    const entryBytes = !cached && message.wantEntry
+      ? encodeComponentTessellation(component, {
+        partColor: Array.isArray(index.partColor) ? index.partColor : null,
+        edgeClasses: edgeClassesFromSurfIndex(index),
+      })
+      : null;
     if (controller.signal.aborted) {
       return;
     }
     self.postMessage(
-      { id, ok: true, meshData, bundle },
-      [...new Set([...meshDataTransferList(meshData), ...bundleTransferList(bundle)])],
+      { id, ok: true, meshData, bundle, ...(entryBytes ? { entryBytes } : {}) },
+      [...new Set([
+        ...meshDataTransferList(meshData),
+        ...bundleTransferList(bundle),
+        ...(entryBytes ? [entryBytes.buffer] : []),
+      ])],
     );
   } catch (error) {
     if (!controller.signal.aborted) {

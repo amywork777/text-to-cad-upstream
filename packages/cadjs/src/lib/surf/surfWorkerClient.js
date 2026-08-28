@@ -7,10 +7,30 @@
 // from loadSurfComponentInWorker when Workers are unavailable (node, old
 // browsers) so callers can fall back to inline tessellation.
 
+import {
+  getCachedEntryBytes,
+  tessellationCacheProviderRegistered,
+  tessellationOptionsCacheable,
+  writeBackEntryBytes,
+} from "./tessellationCache.js";
+
 let pool = null;
 let nextWorkerIndex = 0;
 let nextRequestId = 1;
 const pendingRequests = new Map();
+
+// A component surf under a package's components/ dir is CONTENT-ADDRESSED —
+// its stem is the cid the shared tessellation cache keys on. Anything else
+// (arbitrary .surf paths) has no stable identity and must not be cached.
+export function cidFromSurfUrl(url) {
+  const pathnamePart = String(url || "").split(/[?#]/, 1)[0];
+  const segments = pathnamePart.split("/").filter(Boolean);
+  if (segments.length < 2 || segments[segments.length - 2] !== "components") {
+    return "";
+  }
+  const name = segments[segments.length - 1];
+  return name.toLowerCase().endsWith(".surf") ? decodeURIComponent(name.slice(0, -5)) : "";
+}
 
 function makeAbortError() {
   if (typeof DOMException === "function") {
@@ -57,6 +77,9 @@ function ensurePool() {
         pendingRequests.delete(message.id);
         request.cleanup();
         if (message.ok) {
+          if (message.entryBytes && request.writeBack) {
+            request.writeBack(message.entryBytes); // fire-and-forget
+          }
           request.resolve({ meshData: message.meshData, bundle: message.bundle });
           return;
         }
@@ -92,6 +115,16 @@ export function loadSurfComponentInWorker(url, { signal, tessellation } = {}) {
   nextRequestId += 1;
   const worker = workers[nextWorkerIndex % workers.length];
   nextWorkerIndex += 1;
+  // The shared tessellation cache lives on THIS thread's provider (a fetch
+  // against the host's /__tess_cache/ routes); the worker cannot reach it, so
+  // the entry bytes ride the request in (transferred, hit = tessellation
+  // skipped) and a miss rides back out as freshly encoded bytes to write
+  // back. Everything is best-effort: no provider, no cid (a non-package
+  // surf), or debug options mean the message carries nothing extra.
+  const cid = cidFromSurfUrl(url);
+  const cacheable = Boolean(cid)
+    && tessellationCacheProviderRegistered()
+    && tessellationOptionsCacheable(tessellation || {});
   return new Promise((resolve, reject) => {
     const cleanup = () => {
       signal?.removeEventListener?.("abort", abort);
@@ -102,13 +135,35 @@ export function loadSurfComponentInWorker(url, { signal, tessellation } = {}) {
       worker.postMessage({ type: "cancel", id });
       reject(makeAbortError());
     };
-    pendingRequests.set(id, { resolve, reject, cleanup });
-    signal?.addEventListener?.("abort", abort, { once: true });
-    worker.postMessage({
-      type: "loadSurf",
-      id,
-      url,
-      ...(tessellation ? { tessellation } : {}),
+    pendingRequests.set(id, {
+      resolve,
+      reject,
+      cleanup,
+      writeBack: cacheable
+        ? (entryBytes) => { writeBackEntryBytes(cid, tessellation || {}, entryBytes); }
+        : null,
     });
+    signal?.addEventListener?.("abort", abort, { once: true });
+    const post = (cachedEntry) => {
+      if (!pendingRequests.has(id)) {
+        return; // aborted while the cache lookup was in flight
+      }
+      worker.postMessage(
+        {
+          type: "loadSurf",
+          id,
+          url,
+          ...(tessellation ? { tessellation } : {}),
+          ...(cachedEntry ? { cachedEntry } : {}),
+          ...(cacheable ? { wantEntry: !cachedEntry } : {}),
+        },
+        cachedEntry && cachedEntry.buffer.byteLength === cachedEntry.byteLength ? [cachedEntry.buffer] : [],
+      );
+    };
+    if (cacheable) {
+      getCachedEntryBytes(cid, tessellation || {}).then(post, () => post(null));
+    } else {
+      post(null);
+    }
   });
 }

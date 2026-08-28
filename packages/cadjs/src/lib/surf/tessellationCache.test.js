@@ -12,8 +12,13 @@ import { parseSurf } from "./container.js";
 import { DEFAULT_OPTIONS, tessellateComponent } from "./tessellate.js";
 import {
   decodeComponentTessellation,
+  decodeTessellationCacheBatch,
+  edgeClassesFromSurfIndex,
   encodeComponentTessellation,
+  encodeTessellationCacheBatch,
+  getCachedComponentEntries,
   setTessellationCacheProvider,
+  surfIndexFromCacheEntry,
   tessellateComponentCached,
   tessellationCacheKey,
   tessellationOptionsCacheable,
@@ -46,6 +51,83 @@ test("codec round-trips a full component tessellation losslessly", () => {
     assert.equal(round.edges[i].visibilityClass, component.edges[i].visibilityClass);
     assert.deepEqual([...round.edges[i].polyline], [...component.edges[i].polyline]);
   }
+});
+
+test("v3: edgeClasses round-trip and rebuild the render-facing surf index", () => {
+  const { index, floats } = loadFixture("sun_gear");
+  const component = tessellateComponent(index, floats);
+  const edgeClasses = edgeClassesFromSurfIndex(index);
+  assert.equal(edgeClasses.length, index.edges.length);
+  const decoded = decodeComponentTessellation(
+    encodeComponentTessellation(component, { partColor: [1, 0, 0, 1], edgeClasses }),
+  );
+  assert.deepEqual(decoded.edgeClasses, edgeClasses);
+  const surrogate = surfIndexFromCacheEntry(decoded);
+  assert.ok(surrogate, "v3 entries yield a surrogate index");
+  assert.equal(surrogate.edges.length, index.edges.length);
+  for (let i = 0; i < index.edges.length; i += 1) {
+    assert.equal(surrogate.edges[i].ord, index.edges[i].ord);
+    assert.equal(surrogate.edges[i].class, String(index.edges[i].class ?? "none"));
+  }
+  assert.deepEqual(surrogate.partColor, [1, 0, 0, 1]);
+  // An entry encoded WITHOUT edgeClasses still decodes but yields no surrogate.
+  const bare = decodeComponentTessellation(encodeComponentTessellation(component));
+  assert.ok(bare);
+  assert.equal(surfIndexFromCacheEntry(bare), null);
+});
+
+test("batch container round-trips hits and misses, rejects garbage", () => {
+  const { index, floats } = loadFixture("sun_gear");
+  const entry = encodeComponentTessellation(tessellateComponent(index, floats));
+  const small = new Uint8Array([1, 2, 3]); // odd length exercises padding
+  const batch = encodeTessellationCacheBatch([entry, null, small]);
+  const decoded = decodeTessellationCacheBatch(batch);
+  assert.equal(decoded.length, 3);
+  assert.deepEqual([...decoded[0]], [...entry]);
+  assert.equal(decoded[1], null);
+  assert.deepEqual([...decoded[2]], [1, 2, 3]);
+  // A decoded hit is itself a decodable entry (alignment survived the container).
+  assert.ok(decodeComponentTessellation(decoded[0]));
+  assert.equal(decodeTessellationCacheBatch(new Uint8Array(4)), null);
+  assert.equal(decodeTessellationCacheBatch(batch.subarray(0, 14)), null);
+});
+
+test("getCachedComponentEntries prefers getMany and falls back to per-key gets", async (t) => {
+  t.after(() => setTessellationCacheProvider(null));
+  const { index, floats } = loadFixture("sun_gear");
+  const entry = encodeComponentTessellation(tessellateComponent(index, floats), {
+    edgeClasses: edgeClassesFromSurfIndex(index),
+  });
+  const calls = { getMany: 0, get: 0 };
+  setTessellationCacheProvider({
+    async get(key) {
+      calls.get += 1;
+      return key.startsWith("hit-") ? entry : null;
+    },
+    async getMany(keys) {
+      calls.getMany += 1;
+      return keys.map((key) => (key.startsWith("hit-") ? entry : null));
+    },
+  });
+  const hits = await getCachedComponentEntries(["hit-a", "miss-b", "hit-c"]);
+  assert.equal(calls.getMany, 1);
+  assert.equal(calls.get, 0);
+  assert.deepEqual([...hits.keys()].sort(), ["hit-a", "hit-c"]);
+  assert.ok(surfIndexFromCacheEntry(hits.get("hit-a")));
+
+  // getMany returning null (batch unsupported) demotes to per-key gets.
+  setTessellationCacheProvider({
+    async get(key) {
+      calls.get += 1;
+      return key.startsWith("hit-") ? entry : null;
+    },
+    async getMany() {
+      return null;
+    },
+  });
+  const fallback = await getCachedComponentEntries(["hit-a", "miss-b"]);
+  assert.equal(calls.get, 2);
+  assert.equal(fallback.size, 1);
 });
 
 test("decode rejects garbage, truncation, and version drift as misses", () => {
