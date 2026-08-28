@@ -11,16 +11,21 @@ from the filesystem alone funnels through this stdlib-only CLI:
 Each prints ONE JSON line on stdout. ``status`` answers the artifact state
 machine (ready | needs-build | generating | error) — the freshness validators
 here are the render-side authority and share their digests, schema versions,
-bake hashes and lock protocol with the PRODUCER's own gates, so the two can
-never disagree about staleness. ``build``/``export`` dispatch the heavy
+bake hashes and lock protocol with the PRODUCER's own gates — on the checks
+both sides make, they can never disagree; source currency is deliberately
+producer-only (below). ``build``/``export`` dispatch the heavy
 OCP work to the shared warm daemon pool when available, else a cold
 subprocess; OCP is never imported into this process.
 
 Freshness is a PURE descriptor read (descriptor + payload existence + schema
-version + bake hash; a generated entry re-hashes its recorded source closure,
-an imported entry compares the digest its format's spec-table row names) — no
-OCP. Importing this module pulls in only stdlib-only cadgen internals
-(``cadgen.coordination``, ``cadgen._internal.source_hash``), pinned by
+version + bake hash; an imported entry also compares the digest its format's
+spec-table row names) — no OCP. Generated outputs are deliberately DETACHED
+from their source code: whether the generator changed since the artifact was
+built is the agent's business, so no validator here reads source closures and
+the viewer never rebuilds a generated entry behind the user's back (the CLI's
+no-op gates still read the recorded closures — that is the other direction:
+skipping work, not triggering it). Importing this module pulls in only
+stdlib-only cadgen internals (``cadgen.coordination``), pinned by
 tests/python/packages/cadgen/test_coordination_is_stdlib_only.py.
 """
 
@@ -34,7 +39,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cadgen._internal.dxf_output import dxf_output_current
 from cadgen._internal.implicit_package import (
     IMPLICIT_DESCRIPTOR_NAME,
     IMPLICIT_PACKAGE_KIND,
@@ -48,7 +52,6 @@ from cadgen._internal.package_freshness import (
     canonical_bake_hash,
     schema_version_matches,
 )
-from cadgen._internal.source_hash import closure_hash_matches
 from cadgen.catalog import render_package_dir as _catalog_render_package_dir
 
 ARTIFACT_STATE_READY = "ready"
@@ -64,9 +67,9 @@ BUILDABLE_ARTIFACT_CODES = frozenset([
     "missing_surface_edge_attributes", "missing_selector_topology",
     "missing_source_path", "missing_step_hash", "stale_step_artifact",
     "unsupported_step_topology",
-    # Generated-drawing output codes (same buildable semantics): the .dxf IS the
-    # product now, so freshness is the output record, not a package.
-    "missing_dxf_output", "stale_dxf_output",
+    # Generated-drawing output code (same buildable semantics): the .dxf IS the
+    # product, so the only build-worthy state is its absence.
+    "missing_dxf_output",
     # Implicit render package codes.
     "missing_implicit_artifact", "stale_implicit_artifact", "unsupported_implicit_artifact",
 ])
@@ -241,21 +244,25 @@ def _implicit_payload_refs(descriptor):
     return [str(descriptor.get("glb") or "").strip()]
 
 
-def _validate_render_package(spec, source_path, payload_refs, model_folder):
+def _validate_render_package(spec, source_path, payload_refs, *, generated):
     """Return (ok, code) — ok=True when fresh, else (False, <error_code>).
 
     One algorithm for every format: the package dir and descriptor must exist, declare
     the expected kind and EXACTLY the current ``packageSchemaVersion``, every payload
-    file the descriptor names must be on disk, its ``bakeHash`` must match the format's
-    current bake settings, and then freshness is decided by provenance —
+    file the descriptor names must be on disk, and its ``bakeHash`` must match the
+    format's current bake settings. Then:
 
-    * generated (``sourceKind: python``): the recorded source closure must still hash
-      unchanged (the SAME content digest cadgen's CLI gate uses, so the two never
-      disagree). A descriptor recording no usable closure is STALE: it cannot be shown
-      to be current, and a rebuild is cheap and self-correcting.
-    * imported: the on-disk file must still hash to the digest the spec table names
-      (``stepHash`` for STEP). This FAILS CLOSED — a descriptor recording no digest for
-      a source file that exists reports needs-build, matching cadgen's producer gate.
+    * ``generated`` entries (a generator file — `.step.py`, `.implicit.js`): DONE. The
+      artifact is a detached output of the code; whether the code changed since it was
+      built is the agent's business, never a render-side rebuild trigger. The CLI's
+      explicit-build no-op gates still read the recorded source closure — that is the
+      opposite direction (skipping work), and the two authorities deliberately answer
+      different questions.
+    * imported files: the on-disk file must still hash to the digest the spec table
+      names (``stepHash`` for STEP) — the render is DERIVED from those bytes, so this
+      is coherence, not source currency. It FAILS CLOSED: a descriptor recording no
+      digest for a source file that exists reports needs-build, matching cadgen's
+      producer gate.
     """
     package_dir = render_package_dir(source_path)
     if not os.path.isdir(package_dir):
@@ -283,16 +290,12 @@ def _validate_render_package(spec, source_path, payload_refs, model_folder):
         descriptor, canonical_bake_hash(bake_settings() if bake_settings else None)
     ):
         return (False, spec["stale"])
-    if str(descriptor.get("sourceKind", "step")).strip().lower() == "python":
+    if generated:
+        # Dead in practice (the catalog lists generated entries BY their source
+        # file), but kept so both generated formats answer the same question the
+        # same way and a dangling package cannot masquerade as a live entry.
         if not os.path.isfile(source_path):
             return (False, "missing_source_path")
-        closure = descriptor.get("sourceClosureFiles")
-        if not isinstance(closure, list) or not closure:
-            return (False, spec["stale"])
-        if not closure_hash_matches(
-            descriptor.get("sourceClosureHash"), closure, base=Path(model_folder)
-        ):
-            return (False, spec["stale"])
         return (True, None)
     recorded_digest = str(descriptor.get(spec["source_digest_field"], "")).strip()
     if _file_stats(source_path):
@@ -308,35 +311,39 @@ def _validate_render_package(spec, source_path, payload_refs, model_folder):
 
 def validate_step_freshness(repo_root, source_path):
     """ok=True (fresh/ready) or (False, code). source_path is the entry's step path
-    (the `.step.py` for a generated model, the `.step` for an imported one)."""
-    del repo_root  # closure paths resolve against the model folder, not the repo root
+    (the `.step.py` for a generated model, the `.step` for an imported one). The
+    generated/imported split rides on the ENTRY file, not the descriptor's sourceKind:
+    a real `.step` on disk gets the digest gate even when its package was built by a
+    generator (the file's bytes are what the viewer claims to render)."""
+    del repo_root
     return _validate_render_package(
-        _STEP_PACKAGE, source_path, _step_payload_refs, os.path.dirname(os.path.abspath(source_path))
+        _STEP_PACKAGE, source_path, _step_payload_refs,
+        generated=str(source_path).lower().endswith(".py"),
     )
 
 
 def validate_dxf_freshness(repo_root, source_path):
     """ok=True (fresh/ready) or (False, code). source_path is the `.dxf.py`
-    generator; its product is the sibling `.dxf` the viewer parses directly.
-    Freshness is the output record — the SAME gate the CLI's no-op path uses
-    (cadgen._internal.dxf_output), so the two authorities cannot disagree."""
+    generator; its product is the sibling `.dxf` the viewer parses directly —
+    the render always matches the file by construction, so the only
+    build-worthy state is the sibling's ABSENCE. Source edits and output-record
+    state are the CLI no-op gate's business (cadgen._internal.dxf_output),
+    read only by explicit gen runs."""
     del repo_root
     source_path = Path(source_path)
     if not os.path.isfile(source_path):
         return (False, "missing_source_path")
-    sibling = source_path.with_name(source_path.name[: -len(".py")])
-    if not sibling.is_file():
+    if not source_path.with_name(source_path.name[: -len(".py")]).is_file():
         return (False, "missing_dxf_output")
-    if not dxf_output_current(source_path, sibling):
-        return (False, "stale_dxf_output")
     return (True, None)
 
 
 def validate_implicit_freshness(repo_root, source_path):
     """ok=True (fresh/ready) or (False, code). source_path is the `.implicit.js` model."""
     del repo_root
+    # The .implicit.js IS a generator: its baked package is a detached output.
     return _validate_render_package(
-        _IMPLICIT_PACKAGE, source_path, _implicit_payload_refs, os.path.dirname(os.path.abspath(source_path))
+        _IMPLICIT_PACKAGE, source_path, _implicit_payload_refs, generated=True
     )
 
 

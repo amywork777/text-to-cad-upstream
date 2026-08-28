@@ -153,3 +153,15 @@ For raw STEP files that never met the pipeline, on Python-less machines:
     TDataStd_Name.Get and GetInstanceColor are unbound in the prebuilt kernel
     (workarounds + follow-ups in design/FEEDBACK.md #18-19); Quantity_Color is
     linear-RGB in WASM and converted to sRGB to match build123d output.
+- Policy amendment (2026-08-28, user decision): generated outputs are DETACHED
+  from their source code. The render-side validators (render_ops
+  validate_step/dxf/implicit_freshness) no longer read source closures or the
+  DXF output record — the viewer renders what exists and never rebuilds a
+  generated entry because its code changed; regeneration is the agent's
+  explicit act. Removed, not demoted: no advisory flag. Still checked
+  render-side: package/sibling EXISTENCE, packageSchemaVersion, bakeHash, and
+  the imported-file digest gate (a real .step on disk gets the stepHash gate
+  even when its package was generator-built — file->render coherence is
+  mechanism, not source currency). The CLI's no-op gates keep reading the
+  recorded closures (skip-work direction only); the deliberate asymmetry is
+  documented in render_ops, generation.py and viewer/docs/backend.md.

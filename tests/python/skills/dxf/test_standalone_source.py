@@ -146,9 +146,12 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             with self.assertRaisesRegex(TypeError, "must return an ezdxf document"):
                 cad_generation.generate_dxf_targets([str(script_path)])
 
-    def test_output_record_gates_freshness_for_both_authorities(self) -> None:
-        # The CLI's no-op gate and the render-side validator read the SAME record
-        # (cadgen._internal.dxf_output), so they can never disagree.
+    def test_the_two_authorities_answer_different_questions_by_design(self) -> None:
+        # The CLI's no-op gate (cadgen._internal.dxf_output) reads the output
+        # record to decide whether an EXPLICIT gen run can skip work. The
+        # render-side validator deliberately does NOT: generated outputs are
+        # detached from their code, so a source edit flips the CLI gate while
+        # the viewer keeps rendering the existing .dxf as ready.
         from cadgen._internal.dxf_output import dxf_output_current
         from cadgen.render_ops import validate_dxf_freshness
 
@@ -160,9 +163,13 @@ class StandaloneDxfSourceTests(unittest.TestCase):
 
             script_path.write_text(STANDALONE_DXF_SOURCE.replace("(40, 0)", "(60, 0)") + "\n")
             self.assertFalse(dxf_output_current(script_path))
-            self.assertEqual(
-                (False, "stale_dxf_output"), validate_dxf_freshness(root, script_path)
-            )
+            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
+
+            # An explicit gen run regenerates (the CLI gate is why it is not a
+            # no-op), after which both are current again.
+            cad_generation.generate_dxf_targets([str(script_path)])
+            self.assertTrue(dxf_output_current(script_path))
+            self.assertEqual((True, None), validate_dxf_freshness(root, script_path))
 
 
 if __name__ == "__main__":

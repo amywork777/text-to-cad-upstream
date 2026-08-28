@@ -260,12 +260,16 @@ def _package_descriptor_matches_spec(
     the full-scene mesh; validate against the package descriptor instead.
 
     The schema-version and bake gates below mirror the viewer's validator
-    (``cadgen/render_ops.py``) exactly. A check on only one side is worse than
-    no check at all: the viewer would report stale, this predicate would report current,
+    (``cadgen/render_ops.py``) exactly. A check made only by the VIEWER is worse than
+    no check at all: it would report stale, this predicate would report current,
     the build would no-op, and the request would settle ``ready`` on the stale package.
     The imported-STEP digest gate is already fail-closed here
     (``_artifact_step_hash_matches_spec``: a descriptor recording no ``stepHash`` cannot
-    equal the file's real hash), which is the behaviour the viewer now matches.
+    equal the file's real hash), which is the behaviour the viewer matches. The
+    source-closure gate is the sanctioned asymmetry in the SAFE direction: generated
+    outputs are detached from their code, so the viewer never checks source currency —
+    here it survives purely as the explicit-build no-op gate, where being stricter can
+    only make a requested build do real work, never trigger a needless one.
     """
     from cadgen._internal.component_package import is_assembly_package, read_package_descriptor
 

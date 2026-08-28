@@ -73,8 +73,13 @@ The op itself dispatches heavy work to cadgen's shared warm daemon pool, so a vi
 build and a terminal build reuse the same warm processes. The interpreter is
 `VIEWER_CAD_PYTHON` when set (`cadgen viewer` sets it to the interpreter that launched
 it), else the nearest `.venv/bin/python`, else `python3`. Freshness validators live in
-cadgen (`cadgen/render_ops.py`) beside the producer's own gates, so the two
-authorities cannot drift.
+cadgen (`cadgen/render_ops.py`) beside the producer's own gates, sharing their
+digests, schema versions and bake hashes, so on the checks both sides make they
+cannot drift. One asymmetry is deliberate: generated outputs are DETACHED from
+their source code. The viewer never treats "the generator changed since this
+artifact was built" as a reason to rebuild — it renders what exists, and
+regeneration is the agent's explicit act (whose CLI no-op gates still read the
+recorded source closures, to skip unchanged work).
 
 Startup never blocks on Python: availability is probed lazily and reported through
 `stepArtifactGenerationAvailable` in `/__cad/server`.

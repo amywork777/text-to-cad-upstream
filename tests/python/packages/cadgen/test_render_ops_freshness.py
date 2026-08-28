@@ -263,13 +263,13 @@ class BakeHashGate(unittest.TestCase):
             spec["bake_settings"] = lambda: settings
             self.assertEqual(
                 artifact._validate_render_package(
-                    spec, step, artifact._step_payload_refs, d
+                    spec, step, artifact._step_payload_refs, generated=False
                 ),
                 (True, None),
             )
             spec["bake_settings"] = lambda: {**settings, "widthMm": 0.43}
             self.assertEqual(
-                artifact._validate_render_package(spec, step, artifact._step_payload_refs, d),
+                artifact._validate_render_package(spec, step, artifact._step_payload_refs, generated=False),
                 (False, "stale_step_artifact"),
             )
 
@@ -279,7 +279,7 @@ class BakeHashGate(unittest.TestCase):
             spec = dict(artifact._STEP_PACKAGE)
             spec["bake_settings"] = lambda: {"widthMm": 0.42}
             self.assertEqual(
-                artifact._validate_render_package(spec, step, artifact._step_payload_refs, d),
+                artifact._validate_render_package(spec, step, artifact._step_payload_refs, generated=False),
                 (False, "stale_step_artifact"),
             )
 
@@ -510,46 +510,29 @@ class GeneratedStepFreshness(unittest.TestCase):
             self.assertFalse(ok)
             self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
 
-    def test_stale_when_closure_dep_content_changes(self):
+    def test_source_edits_never_invalidate(self):
+        # Generated outputs are DETACHED from their code: the viewer renders the
+        # last-built package and regeneration is the agent's explicit act. Only
+        # the CLI's no-op gate reads the recorded closure (to SKIP work).
         with tempfile.TemporaryDirectory() as root:
             py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
             with open(os.path.join(root, "lib.py"), "w") as h:
                 h.write("VALUE = 2\n")
-            ok, code = artifact.validate_step_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_step_artifact")
-
-    def test_touch_alone_does_not_invalidate(self):
-        """The old mtime trigger fired here and forced a rebuild the CLI then
-        skipped as current. Content is unchanged, so both sides say fresh."""
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
-            time.sleep(0.01)
-            os.utime(os.path.join(root, "lib.py"), None)
-            os.utime(py, None)
-            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
-
-    def test_comment_only_edit_stays_fresh(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py")
             with open(py, "w") as h:
-                h.write("# a new comment\ndef gen_step():\n    return None  # trailing\n")
+                h.write("def gen_step():\n    return 999\n")
             self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
 
-    def test_missing_closure_file_is_stale(self):
+    def test_missing_closure_records_do_not_matter(self):
+        # No recorded closure, and a closure dep deleted outright: both packages
+        # still render, so both are ready. (Before outputs were detached, either
+        # of these reported stale and forced a rebuild on open.)
+        with tempfile.TemporaryDirectory() as root:
+            py, _ = _write_generated_package(root, "widget.step.py", closure_hash=False)
+            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
         with tempfile.TemporaryDirectory() as root:
             py, _ = _write_generated_package(root, "widget.step.py", closure_extra=["lib.py"])
             os.remove(os.path.join(root, "lib.py"))
-            ok, code = artifact.validate_step_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_step_artifact")
-
-    def test_descriptor_without_closure_hash_is_stale(self):
-        with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_package(root, "widget.step.py", closure_hash=False)
-            ok, code = artifact.validate_step_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_step_artifact")
+            self.assertEqual(artifact.validate_step_freshness(root, py), (True, None))
 
 
 class _FakeClosure:
@@ -614,37 +597,20 @@ class GeneratedDxfFreshness(unittest.TestCase):
             self.assertEqual(code, "missing_dxf_output")
             self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
 
-    def test_output_without_a_record_is_stale(self):
-        # A sibling nothing recorded cannot be shown to be current.
+    def test_only_absence_needs_a_build(self):
+        # The .dxf IS what the viewer parses, so the render always matches the
+        # file; no record, an edited source, or hand-edited output bytes are all
+        # still READY. The output record exists solely for the CLI no-op gate.
         with tempfile.TemporaryDirectory() as root:
             py, _ = _write_generated_drawing(root, "outline.dxf.py", record=False)
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_dxf_output")
-            self.assertIn(code, artifact.BUILDABLE_ARTIFACT_CODES)
-
-    def test_source_edit_is_stale_and_touch_is_not(self):
+            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
         with tempfile.TemporaryDirectory() as root:
-            py, _ = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
-            time.sleep(0.01)
-            os.utime(py, None)
-            self.assertTrue(artifact.validate_dxf_freshness(root, py)[0])
+            py, sibling = _write_generated_drawing(root, "outline.dxf.py", closure_extra=["lib.py"])
             with open(os.path.join(root, "lib.py"), "w") as h:
                 h.write("VALUE = 2\n")
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_dxf_output")
-
-    def test_edited_output_bytes_are_stale(self):
-        # The record hashes the OUTPUT too: a hand-edited .dxf must not be
-        # reported as the generator's current product.
-        with tempfile.TemporaryDirectory() as root:
-            py, sibling = _write_generated_drawing(root, "outline.dxf.py")
             with open(sibling, "a") as h:
                 h.write("999\n")
-            ok, code = artifact.validate_dxf_freshness(root, py)
-            self.assertFalse(ok)
-            self.assertEqual(code, "stale_dxf_output")
+            self.assertEqual((True, None), artifact.validate_dxf_freshness(root, py))
 
     def test_deleted_generator_is_missing_source_path(self):
         with tempfile.TemporaryDirectory() as root:
@@ -660,7 +626,9 @@ class GeneratedPackageParity(unittest.TestCase):
     identically, even though STEP freshness reads a package descriptor and DXF
     freshness reads an output record."""
 
-    def test_touch_is_fresh_for_both_and_content_change_is_stale_for_both(self):
+    def test_source_changes_are_fresh_for_both(self):
+        # Detached outputs, uniformly: neither generated format treats a source
+        # edit (nor a touch) as a render-side rebuild trigger.
         with tempfile.TemporaryDirectory() as root:
             step_py, _ = _write_generated_package(root, "widget.step.py")
             dxf_py, _ = _write_generated_drawing(root, "outline.dxf.py")
@@ -673,8 +641,8 @@ class GeneratedPackageParity(unittest.TestCase):
                                (dxf_py, "def gen_dxf():\n    return 1\n")):
                 with open(path, "w") as h:
                     h.write(body)
-            self.assertFalse(artifact.validate_step_freshness(root, step_py)[0])
-            self.assertFalse(artifact.validate_dxf_freshness(root, dxf_py)[0])
+            self.assertTrue(artifact.validate_step_freshness(root, step_py)[0])
+            self.assertTrue(artifact.validate_dxf_freshness(root, dxf_py)[0])
 
     def test_deleted_generator_is_missing_source_path_for_both(self):
         with tempfile.TemporaryDirectory() as root:
@@ -817,15 +785,15 @@ class ImplicitFreshness(unittest.TestCase):
                     (False, "stale_implicit_artifact"),
                 )
 
-    def test_stale_when_closure_dep_content_changes(self):
+    def test_source_changes_never_invalidate_the_bake(self):
+        # An implicit renders LIVE from its own GLSL anyway; the baked package
+        # is a detached export/snapshot product. Source edits are not a
+        # render-side rebuild trigger for it either.
         with tempfile.TemporaryDirectory() as root:
             src, _ = _write_implicit_package(root, "gyroid.implicit.js", closure_extra=["lib.js"])
             with open(os.path.join(root, "lib.js"), "w") as h:
                 h.write("// different\nexport const k = 2;\n")
-            self.assertEqual(
-                artifact.validate_implicit_freshness(root, src),
-                (False, "stale_implicit_artifact"),
-            )
+            self.assertEqual(artifact.validate_implicit_freshness(root, src), (True, None))
 
     def test_the_two_authorities_agree_on_the_same_package(self):
         # The viewer's validator and the producer's currency gate must reach the same
