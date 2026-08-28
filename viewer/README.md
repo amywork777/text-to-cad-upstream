@@ -42,7 +42,7 @@ Open the URL printed by Vite. A Viewer instance serves one directory, fixed when
 starts, and `?file=` selects one artifact inside it:
 
 ```text
-http://127.0.0.1:3245/?file=assemblies/robot-arm/robot-arm.step
+http://127.0.0.1:5173/?file=assemblies/robot-arm/robot-arm.step
 ```
 
 The bare origin names no directory and falls back to the server's cwd. One Viewer
@@ -50,11 +50,18 @@ serves any folder — change the path, no restart.
 
 Use `npm run dev` for iterating on the client/backend (HMR), and `npm run start`
 to serve the built `dist/` bundle via the JS server (the production path the
-`cad-viewer` skill uses). Both listen on `--port`, defaulting to `3245`, and both
-exit with an error when that port is taken rather than reusing a running Viewer or
-rolling onto another port. Local dev and production servers stay running unless
-`VIEWER_SERVER_LIFETIME_MS` is set or production `serve` is started with
-`--shutdown-after <duration>`.
+`cad-viewer` skill uses). The two launch differently on purpose:
+
+- **dev** lives on Vite's port (5173), is strict about it (taken → pick another with
+  `--port`), and never enters the instance registry — a hand-managed foreground
+  process you restart yourself to test server changes.
+- **start** is unconditional: it reuses a running instance already serving the same
+  root at the same version (identity-probed), else binds the first free port from
+  `3245` upward, and prints the real URL (`--json` adds
+  `{url,port,action:"started"|"reused"}`). `--new` forces a fresh instance; an
+  explicit `--port` is strict.
+
+The dev server stays running unless `VIEWER_SERVER_LIFETIME_MS` is set.
 
 The backend is `server/` — dependency-free Node, and the viewer runs no Python at
 all: it is a static visualization tool. It renders existing artifacts (render

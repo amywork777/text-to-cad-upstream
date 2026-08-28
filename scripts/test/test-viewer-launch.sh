@@ -8,15 +8,16 @@
 # skill documents.
 #
 # The command below is that command. Keep it identical to the one in
-# skills/cad-viewer/SKILL.md; if the doc changes, this changes with it. It requires the
-# bundled runtime (a real directory, not the dev symlink) — run scripts/bundle/bundle.sh
-# first, exactly as test.yml does.
+# skills/cad-viewer/SKILL.md; if the doc changes, this changes with it. Launching is
+# unconditional (the server rolls to a free port and prints the real URL/port), so this
+# script chooses no port: it reads the port from the --json line, exactly as an agent
+# does. It requires the bundled runtime (a real directory, not the dev symlink) — run
+# scripts/bundle/bundle.sh first, exactly as test.yml does.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-PORT="${VIEWER_LAUNCH_PORT:-3299}"
 HOST="127.0.0.1"
 RUNTIME="$REPO_ROOT/skills/cad-viewer/scripts/viewer"
 
@@ -41,7 +42,7 @@ fi
 
 log="$(mktemp)"
 serve_root="$(mktemp -d)"
-node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --port "$PORT" > "$log" 2>&1 &
+node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
 server_pid=$!
 disown "$server_pid" 2>/dev/null || true
 
@@ -51,18 +52,30 @@ cleanup() {
 }
 trap cleanup EXIT
 
-status=""
+# The port is an OUTPUT of launch: read it from the {url,port,action} JSON line.
+PORT=""
 for _ in $(seq 1 30); do
-  status="$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://$HOST:$PORT/" || true)"
-  [ "$status" = "200" ] && break
+  PORT="$(sed -n 's/^{.*"port":\([0-9]*\).*}$/\1/p' "$log" | tail -1)"
+  [ -n "$PORT" ] && break
   if ! kill -0 "$server_pid" 2>/dev/null; then
-    echo "FAIL: the server exited before serving" >&2
+    echo "FAIL: the server exited before printing its contract" >&2
     sed 's/^/    /' "$log" >&2
     exit 1
   fi
   sleep 1
 done
+if [ -z "$PORT" ]; then
+  echo "FAIL: no {url,port,action} JSON line appeared" >&2
+  sed 's/^/    /' "$log" >&2
+  exit 1
+fi
 
+status=""
+for _ in $(seq 1 30); do
+  status="$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://$HOST:$PORT/" || true)"
+  [ "$status" = "200" ] && break
+  sleep 1
+done
 if [ "$status" != "200" ]; then
   echo "FAIL: no 200 from http://$HOST:$PORT/ (last status: ${status:-none})" >&2
   sed 's/^/    /' "$log" >&2
@@ -78,6 +91,18 @@ if [ "$api" != "200" ]; then
   exit 1
 fi
 
+# Launch idempotence: relaunching the same root at the same version must REUSE the
+# running viewer (same port, action:"reused"), not spawn a second instance.
+reuse_json="$(node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json | grep '^{' | tail -1)"
+if ! printf '%s' "$reuse_json" | grep -q '"action":"reused"'; then
+  echo "FAIL: relaunching the same root did not reuse the running viewer: $reuse_json" >&2
+  exit 1
+fi
+if ! printf '%s' "$reuse_json" | grep -q "\"port\":$PORT"; then
+  echo "FAIL: reuse reported a different port than the running viewer: $reuse_json" >&2
+  exit 1
+fi
+
 # The instance-manager side of the same entrypoint: list must show this server,
 # stop must end it.
 if ! node "$RUNTIME/server/main.mjs" list | grep -q "port $PORT"; then
@@ -89,5 +114,5 @@ if ! node "$RUNTIME/server/main.mjs" stop --port "$PORT" | grep -q "Stopped CAD 
   exit 1
 fi
 
-echo "    served / and /__cad/server on port $PORT; list/stop OK"
+echo "    served / and /__cad/server on rolled port $PORT; reuse/list/stop OK"
 echo "==> CAD Viewer launch smoke test passed"
