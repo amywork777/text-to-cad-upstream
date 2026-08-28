@@ -19,20 +19,49 @@ Both modes run the same `createCadApp` handler, so a behaviour difference betwee
 them is a bug:
 
 - **Dev** (`npm run dev`) — Vite serves the client from source with HMR and mounts the
-  handler as middleware in the same process. No child process, no proxy.
+  handler as middleware in the same process. No child process, no proxy. Dev lives on
+  Vite's canonical port (5173), is strict about it (taken port → pick another with
+  `--port`), and never enters the instance registry: it is a hand-managed foreground
+  process, so launch reuse must never hand it back, and restarting it to test server
+  changes stays entirely in your hands.
 - **Production** (`npm run build && npm run start`) — `node server/main.mjs` serves the
   built `dist/` and the API from one process. The cad-viewer skill ships the same files
   (built dist + this server) under its own `scripts/viewer/` and starts them the same
   way; cadgen ships no viewer at all.
+
+## Launching (unconditional, Jupyter-style)
+
+`main.mjs --root <dir>` always ends with the URL of a live, correct Viewer for that
+directory. Order of operations:
+
+1. **Reuse**: unless `--new` (or an explicit `--port`) is given, the launcher looks for
+   a registry entry whose `realpath(root)` and viewer version match, identity-probed
+   (`/__cad/server` must answer as the recorded pid). On a match it prints that URL
+   with `action:"reused"` and exits 0. The key is never the port or the pid — keying
+   reuse on the port was the old source-blind-reuse bug.
+2. **Roll**: otherwise it binds the first free port from 3245 upward (binding IS the
+   probe; a lost race just moves to the next candidate) and prints `action:"started"`.
+3. **Strict `--port`**: an explicit port is a demand — taken means exit 1, naming the
+   holder when the registry knows it. No reuse, no rolling.
+
+The printed URL (and `--json`'s `{url,port,action}` line) is the whole contract; the
+port is an output of launch. Iterating on server code from a checkout? `--new` is the
+escape from reuse — a running instance keeps executing the code it started with.
+
+Deliberately NOT adopted from the Jupyter model it parallels: **no auth token** (this
+server executes nothing and serves read-only inside one root; the Host-header
+rebinding guard and the preflight-forcing POST header cover the actual threat model),
+and **no HTTP shutdown route** (`stop`'s identity-probed signal can never kill a
+port-squatter, which is stronger than an authenticated endpoint).
 
 ## One root per instance
 
 An instance serves ONE directory, given by `--root` at startup and defaulting to the
 invoking directory. Requests never name a directory: there is no `?dir=` param, and
 `?file=` is always resolved inside the served root. Anything resolving outside that
-root is refused, unconditionally. Serving a second directory means starting a second
-Viewer on another port; `node server/main.mjs list` reports which root each running
-instance holds (and `stop --port <n>` ends one).
+root is refused, unconditionally. Serving a second directory means launching again
+with that root (reuse-or-start makes it idempotent); `node server/main.mjs list`
+reports which root each running instance holds (and `stop --port <n>` ends one).
 
 The root is resolved and checked once, in `LocalAssetBackend`'s constructor
 (`server/backend.mjs`), so every later request is measured against a directory

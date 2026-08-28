@@ -25,14 +25,18 @@ install.
 
 ## Start Viewer
 
-Start one local CAD Viewer with the bundled server. It serves the Viewer client
-plus the CAD API on a single fixed port (`3245`). Each instance serves ONE
-directory, given by `--root` and fixed for the life of the process.
+Launching is unconditional: the command below always ends with the URL of a
+live Viewer for the given root. If one is already running for that directory at
+this Viewer version, its URL is returned (`"action": "reused"`); otherwise a
+new server starts on the first free port from `3245` upward
+(`"action": "started"`). Never pick or reason about ports — read the URL the
+command prints. Each instance serves ONE directory, given by `--root` and fixed
+for the life of the process.
 
-> The default port `3245` is `0xCAD` — "CAD" in hexadecimal.
+> The base port `3245` is `0xCAD` — "CAD" in hexadecimal.
 
 ```bash
-node scripts/viewer/server/main.mjs --root /absolute/project/models --host 127.0.0.1
+node scripts/viewer/server/main.mjs --root /absolute/project/models --host 127.0.0.1 --json
 ```
 
 (Relative to this skill directory; use the absolute path to `main.mjs` when
@@ -44,8 +48,12 @@ directory — usually wherever the skill happens to be installed, not the model
 directory — so a relative one resolves against the wrong place. `--root` defaults to
 the current directory, which is rarely what you want here.
 
-The server prints the review URL and, with `--json`, the
-`{"url", "port", "action": "start"}` line.
+Flags: `--json` prints the machine-readable last stdout line
+(`{"url", "port", "action": "started"|"reused"}`) — always pass it and take the
+URL from there. `--new` forces a fresh instance instead of reusing. `--open`
+opens the URL in the platform browser (for humans; leave it off in agent
+flows). An explicit `--port <n>` is strict — "this port or fail" — and disables
+both reuse and rolling.
 
 ## URL shape
 
@@ -68,18 +76,15 @@ path in `file=`. Rooting at the artifact's own deep folder
 (`--root .../models/step/mechanisms`, `?file=lift_table.step.py`) opens the same model
 but hides the rest of the project, which is almost never what the user wants.
 
-If port `3245` is already in use, the server exits with an error rather than
-rolling to another port; rerun with an explicit free port, `--port <n>`, and use
-the URL it prints. In sandboxed agent environments, local binding failures such
-as `EPERM`/`EACCES` can be expected; rerun with the needed permission/escalation.
-
-Add `--json` to also print a machine-readable result as the last stdout line
-beginning with `{` (`{"url": ..., "port": ..., "action": "start"}`).
+Port collisions are not your problem: the launcher rolls to a free port and the
+URL it prints is the truth. In sandboxed agent environments, local binding
+failures such as `EPERM`/`EACCES` can still occur; rerun with the needed
+permission/escalation.
 
 `node scripts/viewer/server/main.mjs list` shows every running instance with the
 root it serves; `node scripts/viewer/server/main.mjs stop --port <n>` ends one.
-To review a directory outside the current root, start a second Viewer on another
-port rather than trying to redirect the first.
+To review a directory outside the current root, just launch again with that
+root — reuse-or-start makes the second launch cheap and correct.
 
 ## Generation and imports are the CAD skill's job
 
@@ -103,8 +108,9 @@ skill builds both generated models and imported STEPs — then return the link.
 - Return one Viewer URL per requested file.
 - Start the Viewer once and pick one workspace root for the session. Every link is
   the same origin plus `?file=<path relative to that root>`, so all of them share one
-  browsable catalog. An artifact outside that root needs a second Viewer on another
-  port; a link alone cannot reach it.
+  browsable catalog. An artifact outside that root needs its own Viewer — launch
+  again with that root (reuse-or-start makes this idempotent); a link alone cannot
+  reach it.
 - For directory-only review links, return the origin without `?file=`.
 - Do not stop an existing Viewer server unless the user asks.
 - If Viewer startup fails, report the failure and continue with the owning skill's non-GUI validation or artifacts.

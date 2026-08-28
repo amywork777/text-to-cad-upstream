@@ -22,7 +22,6 @@ test("register writes a complete entry and unregister removes it", (t) => {
   assert.equal(entry.version, "1.2.3");
   assert.equal(entry.root, "/tmp/models");
   assert.equal(typeof entry.startedAt, "number");
-  assert.ok("publicUrl" in entry);
   assert.ok(entry.packageDir);
   // No temp file left beside it.
   assert.ok(!fs.existsSync(`${target}.${process.pid}.tmp`));

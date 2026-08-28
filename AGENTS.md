@@ -195,19 +195,21 @@ bare origin and `?file=` selects an artifact inside that root:
 http://127.0.0.1:3245/?file=path/relative/to/the/served/root
 ```
 
-Start it against a directory with `--root`, which defaults to the current one:
+Launch it against a directory with `--root` (defaults to the current one) and read
+the URL it prints — launching is unconditional:
 
 ```bash
-node viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1
+node viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
 ```
 
-To review a second directory, start a second Viewer on another port.
-`node viewer/server/main.mjs list` shows every running instance with the root it
-serves and the checkout its code came from, and `... stop --port <n>` ends one. A
-Viewer from another
-checkout holding the port you wanted is this repo's recurring confusion; the
-collision message names its pid, version and package directory rather than silently
-reusing it.
+A live instance already serving that realpath at this version is REUSED
+(`action:"reused"`); otherwise the server binds the first free port from `3245`
+upward (`action:"started"`). `--new` forces a fresh instance (use it when testing
+server-code changes from a checkout — a reused instance runs the code it started
+with); an explicit `--port` is strict and exits 1 when taken. To review a second
+directory, just launch again with that root. `node viewer/server/main.mjs list`
+shows every running instance with the root it serves and the checkout its code came
+from; `... stop --port <n>` ends one.
 
 When reviewing repo fixtures, start the Viewer with the repo `models/` directory as
 its root and keep permanent or generated CAD/robot-description files there so the
@@ -226,25 +228,25 @@ Iterate with the **dev** server — Vite serves the client from source with HMR,
 your `viewer/` and `packages/cadjs` edits show up live:
 
 ```bash
-npm --prefix viewer run dev -- --host 127.0.0.1 --port <n>
-# then open http://127.0.0.1:<port>/?file=<path relative to the served root>
+npm --prefix viewer run dev -- --host 127.0.0.1
+# then open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
 Use the **prod** path only for end-to-end tests against the shipped bundle, or
-when explicitly asked to test prod. It serves the built `dist/` via the Python
-backend (the `cad-viewer` skill's `start` command), so build first:
+when explicitly asked to test prod. It serves the built `dist/` via the JS server
+(the `cad-viewer` skill's launch command), so build first:
 
 ```bash
 npm --prefix viewer run build
-npm --prefix viewer run start -- --host 127.0.0.1 --port <n>
-# then open http://127.0.0.1:<port>/?file=<path relative to the served root>
+npm --prefix viewer run start -- --host 127.0.0.1 --json
+# then open the URL from the printed {url,port,action} line
 ```
 
 ### Ports
 
-Both `dev` and `start` listen on `--port`, defaulting to `3245`. Neither rolls to
-another port: if the port is taken they exit with an error, so a Viewer is always
-on the port you asked for. Pass `--port <n>` to run more than one at a time.
+Dev lives on Vite's port (`5173`), is strict (taken → pick another with `--port`),
+and never enters the instance registry. The bundled launcher (`start` /
+`main.mjs`) needs no port at all: it reuses or rolls and prints the real URL.
 
 Packaged Viewer runtime and handoff details live in the `cad-viewer` skill.
 Treat packaged Viewer checks as generated-output checks via the master bundle
@@ -259,7 +261,7 @@ cadgen-importable interpreter for builds, handed down via env:
 VIEWER_CAD_PYTHON=<main>/.venv/bin/python \
 VIEWER_CAD_PYTHONPATH=<worktree>/packages/cadgen/src \
 node <worktree>/viewer/server/main.mjs \
-  --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --port <n>
+  --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --json
 ```
 
 `--dist` points at the client you are editing; `--root` names the directory this
@@ -276,9 +278,9 @@ ln -s <main>/docs/node_modules/meshoptimizer          packages/cadjs/node_module
 npm --prefix viewer run build
 ```
 
-Use an explicit free `--port`: a Viewer already running from another checkout serves
-ITS root, not this worktree, and starting a second one on the same port is refused
-rather than silently reused.
+No port juggling is needed: reuse keys on realpath(root) × version, so a Viewer
+from another checkout (different root) can never be handed back for this worktree —
+the launcher just rolls to a free port and prints the real URL.
 
 Two behaviours worth knowing before you conclude a model is broken:
 

@@ -1,20 +1,25 @@
 #!/usr/bin/env node
 // Single-port CAD Viewer server (pure JS, zero dependencies).
 //
-// Serves the built SPA from --dist plus the /__cad API on one port (default
-// 3245). If the port is free it starts; if the port is already in use it exits 1
-// with a `--port <n>` hint — it does NOT probe-and-reuse a running Viewer or
-// roll onto another port. Prints the load-bearing stdout contract (the CAD
-// Viewer URL line + optional --json {url,port,action}).
+// Launching is UNCONDITIONAL, Jupyter-style: `main.mjs --root <dir>` always
+// ends with the URL of a live, correct Viewer for that directory. If an
+// identity-probed instance already serves realpath(root) at this viewer
+// version, its URL is printed with action:"reused" and nothing is spawned
+// (--new skips the lookup); otherwise the server binds the first free port
+// from 3245 upward and prints action:"started". An EXPLICIT --port stays
+// strict — it exits 1 when taken — because then the port was the ask.
+// The printed URL (and the --json {url,port,action} line) is the contract;
+// the port is an output of launch, never something the caller reasons about.
 //
 // Also the instance manager: `main.mjs list [--json]` shows every running
 // Viewer (identity-probed, stale entries reaped) and `main.mjs stop --port <n>`
 // / `--pid <n>` terminates one. These live here rather than in a separate tool
-// because the registry the server writes is the only source of truth.
+// because the registry the server writes is the only source of truth. Dev
+// (`vite dev`) never registers: the registry is bundled instances only.
 //
 // A Viewer serves ONE directory, given by --root and defaulting to the invoking
 // directory. The page is always the bare origin; `?file=` selects a file inside
-// that root. To serve a second directory, start a second Viewer on another port.
+// that root. To serve a second directory, just launch again with that root.
 //
 // Python/cadgen is NOT required to start: without it the viewer serves packaged
 // models read-only and builds/exports answer with an install hint.
@@ -24,29 +29,47 @@ import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createCadApp } from "./httpApp.mjs";
+import { createCadApp, readViewerVersion } from "./httpApp.mjs";
 import * as registry from "./registry.mjs";
 
 export const DEFAULT_VIEWER_HOST = "127.0.0.1";
 export const DEFAULT_VIEWER_PORT = 3245;
+// How far past the default the launcher will roll looking for a free port
+// before giving up. Far beyond any plausible number of live Viewers.
+const PORT_ROLL_LIMIT = 100;
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VIEWER_ROOT = path.resolve(SERVER_DIR, "..");
 
 function parseArgs(argv) {
-  const args = { host: DEFAULT_VIEWER_HOST, port: DEFAULT_VIEWER_PORT, root: "", dist: "", json: false, open: false };
+  const args = {
+    host: DEFAULT_VIEWER_HOST,
+    port: DEFAULT_VIEWER_PORT,
+    // Explicit --port means "this port or fail"; the default means "any free
+    // port from the base" and enables the reuse lookup + roll.
+    portExplicit: false,
+    root: "",
+    dist: "",
+    json: false,
+    open: false,
+    fresh: false,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === "--host") args.host = argv[++i] || args.host;
-    else if (arg === "--port") args.port = Number(argv[++i]) || args.port;
-    else if (arg === "--root") args.root = argv[++i] || "";
+    else if (arg === "--port") {
+      args.port = Number(argv[++i]) || args.port;
+      args.portExplicit = true;
+    } else if (arg === "--root") args.root = argv[++i] || "";
     else if (arg === "--dist") args.dist = argv[++i] || "";
     else if (arg === "--json") args.json = true;
     else if (arg === "--open") args.open = true;
+    else if (arg === "--new") args.fresh = true;
     // Unknown args tolerated, matching the old launcher.
   }
   if (!(args.port > 0 && args.port <= 65535)) {
     args.port = DEFAULT_VIEWER_PORT;
+    args.portExplicit = false;
   }
   return args;
 }
@@ -141,6 +164,28 @@ async function openWhenReady(url, host, port, timeoutMs = 2000) {
   }
 }
 
+function realpathOr(candidate) {
+  try {
+    return fs.realpathSync(String(candidate || ""));
+  } catch {
+    return String(candidate || "");
+  }
+}
+
+// The reuse key: realpath(root) × viewer version, over identity-probed entries
+// only. Never port, never pid — keying on the port was the old source-blind
+// reuse bug, and pid-liveness is the probe's job. Dev instances never register,
+// so nothing here can hand back a Vite process.
+async function findReusable(directory, viewerVersion) {
+  const rootReal = realpathOr(directory);
+  const live = await registry.liveEntries(); // probes pids, reaps stale files
+  return (
+    live.find(
+      (entry) => realpathOr(entry.root) === rootReal && String(entry.version || "") === String(viewerVersion || ""),
+    ) || null
+  );
+}
+
 function formatAge(startedAt) {
   if (!startedAt) {
     return "";
@@ -153,7 +198,7 @@ function formatAge(startedAt) {
 }
 
 function formatEntry(entry) {
-  const url = entry.publicUrl || `http://${entry.host || "127.0.0.1"}:${entry.port}/`;
+  const url = `http://${entry.host || "127.0.0.1"}:${entry.port}/`;
   return (
     `  port ${entry.port}  pid ${entry.pid}  viewer ${entry.version || "?"}${formatAge(entry.startedAt)}\n` +
     `    ${url}\n` +
@@ -242,6 +287,25 @@ export async function main(argv = process.argv.slice(2)) {
     process.stderr.write(`CAD Viewer root is not a directory: ${directory}\n`);
     return 1;
   }
+  // Reuse before spawn: a live, identity-probed instance already serving this
+  // realpath(root) at this viewer version IS the requested viewer. Explicit
+  // --port opts out (you asked for a port, not a viewer), --new forces fresh.
+  if (!args.fresh && !args.portExplicit) {
+    const held = await findReusable(directory, readViewerVersion());
+    if (held) {
+      const url = `http://${held.host || DEFAULT_VIEWER_HOST}:${held.port}/`;
+      process.stdout.write(`Reusing CAD Viewer at ${url} (serving ${held.root}, pid ${held.pid})\n`);
+      process.stdout.write(`CAD Viewer URL: ${url}\n`);
+      if (args.json) {
+        process.stdout.write(`${JSON.stringify({ url, port: held.port, action: "reused" })}\n`);
+      }
+      if (args.open) {
+        await openWhenReady(url, held.host || DEFAULT_VIEWER_HOST, held.port);
+      }
+      return 0;
+    }
+  }
+
   const distDir = resolveDistDir(args.dist);
   if (!distDir) {
     process.stderr.write(
@@ -250,26 +314,59 @@ export async function main(argv = process.argv.slice(2)) {
     );
     return 1;
   }
-  const { host, port } = args;
-  if (!(await portIsFree(host, port))) {
-    // Deliberately NOT reuse (source-blind reuse of whatever held the port was a
-    // real bug): say who has it so the collision is diagnosable, then refuse.
-    const holder = registry.findByPort(port);
-    if (holder) {
-      process.stderr.write(
-        `Port ${port} on ${host} is already serving a CAD Viewer: pid ${holder.pid}, ` +
-          `viewer ${holder.version || "?"}, from ${holder.packageDir || "?"}.\n` +
-          `Stop it with \`node ${process.argv[1] || "server/main.mjs"} stop --port ${port}\`, ` +
-          `or rerun with --port <n>.\n`,
-      );
-    } else {
-      process.stderr.write(`Port ${port} on ${host} is already in use. Rerun with --port <n> to use a different port.\n`);
+  const { host } = args;
+  let port = args.port;
+  if (args.portExplicit) {
+    // An explicit port is a demand, not a preference: refuse when taken, and
+    // say who has it so the collision is diagnosable.
+    if (!(await portIsFree(host, port))) {
+      const holder = registry.findByPort(port);
+      if (holder) {
+        process.stderr.write(
+          `Port ${port} on ${host} is already serving a CAD Viewer: pid ${holder.pid}, ` +
+            `viewer ${holder.version || "?"}, from ${holder.packageDir || "?"}.\n` +
+            `Stop it with \`node ${process.argv[1] || "server/main.mjs"} stop --port ${port}\`, ` +
+            `or rerun without --port to take any free port.\n`,
+        );
+      } else {
+        process.stderr.write(`Port ${port} on ${host} is already in use. Rerun without --port to take any free port.\n`);
+      }
+      return 1;
     }
-    return 1;
   }
 
+  // Bind BEFORE building the app, so the app (whose serverInfo reports the
+  // port) always names the port actually taken. Rolling is done by BINDING,
+  // not pre-probing: the bind is the only check that cannot disagree with
+  // reality, and a lost race just moves to the next candidate. Explicit
+  // --port gets a single attempt.
+  const server = http.createServer();
+  const lastCandidate = args.portExplicit ? port : port + PORT_ROLL_LIMIT;
+  for (;;) {
+    try {
+      await new Promise((resolve, reject) => {
+        const onError = (error) => reject(error);
+        server.once("error", onError);
+        server.listen({ port, host, exclusive: true }, () => {
+          server.removeListener("error", onError);
+          resolve(undefined);
+        });
+      });
+      break;
+    } catch (error) {
+      const taken = error && (error.code === "EADDRINUSE" || error.code === "EACCES");
+      if (!taken || args.portExplicit || port >= lastCandidate) {
+        throw error;
+      }
+      port += 1;
+    }
+  }
+
+  // Attach the handler in the same tick as the successful bind: no event-loop
+  // turn runs between listen resolving and this line, so no request can be
+  // dropped in the gap.
   const app = createCadApp({ root: directory, host, port, distDir });
-  const server = http.createServer((req, res) => {
+  server.on("request", (req, res) => {
     app.handle(req, res).catch((error) => {
       if (!res.headersSent) {
         res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
@@ -279,15 +376,10 @@ export async function main(argv = process.argv.slice(2)) {
   });
 
   const url = `http://${host}:${port}/`;
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, resolve);
-  });
-
   process.stdout.write(`Starting CAD Viewer at ${url} (serving ${directory})\n`);
   process.stdout.write(`CAD Viewer URL: ${url}\n`);
   if (args.json) {
-    process.stdout.write(`${JSON.stringify({ url, port, action: "start" })}\n`);
+    process.stdout.write(`${JSON.stringify({ url, port, action: "started" })}\n`);
   }
 
   // Announce this instance so `main.mjs list` can find it — after the bind,
