@@ -13,7 +13,12 @@ import {
   scheduleProcessShutdown,
 } from "./scripts/serverLifetime.mjs";
 
-const DEFAULT_VIEWER_PORT = 3245;
+// Dev deliberately lives on Vite's own canonical port, NOT the bundled
+// launcher's 3245: dev is a hand-managed foreground process that never enters
+// the instance registry and never participates in launch reuse, so it must not
+// look like (or collide with) a launched Viewer. Taken port → pick another
+// with --port; nothing rolls or reuses here.
+const DEFAULT_DEV_PORT = 5173;
 
 const viewerAppRoot = path.dirname(fileURLToPath(import.meta.url));
 const viewerClientRoot = path.join(viewerAppRoot, "src", "client");
@@ -98,7 +103,7 @@ function cadViewerBackendPlugin() {
       const app = createCadApp({
         root: directoryRoot,
         host: "127.0.0.1",
-        port: devPort || DEFAULT_VIEWER_PORT,
+        port: devPort || DEFAULT_DEV_PORT,
       });
       server.middlewares.use((req, res, next) => {
         app.handle(req, res).then(
@@ -209,9 +214,10 @@ export default defineConfig(({ command }) => ({
   },
   server: {
     host: "127.0.0.1",
-    port: DEFAULT_VIEWER_PORT,
-    // Fail on a taken port instead of silently rolling to the next one, so dev
-    // matches `npm run start`: a Viewer is always on the port you asked for.
+    port: DEFAULT_DEV_PORT,
+    // Fail on a taken port instead of silently rolling: dev is hand-managed,
+    // so the agent picks another port explicitly. (The bundled launcher is the
+    // one that rolls/reuses; dev stays out of that machinery entirely.)
     strictPort: true,
     allowedHosts: viewerAllowedHosts,
     fs: {

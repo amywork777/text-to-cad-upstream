@@ -71,7 +71,9 @@ export function hostIsAllowed(hostHeader, boundHost) {
   return LOOPBACK_NAMES.has(hostnameOnly(hostHeader));
 }
 
-function readViewerVersion() {
+// Exported for the launcher's reuse key (realpath(root) × version): both sides
+// of the comparison must read the version the same way.
+export function readViewerVersion() {
   try {
     const packageJson = JSON.parse(
       fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),

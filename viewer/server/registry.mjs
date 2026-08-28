@@ -48,9 +48,6 @@ export function register({ host, port, root = "", viewerVersion = "" }) {
     version: String(viewerVersion || ""),
     root: String(root || ""),
     packageDir: path.dirname(new URL(import.meta.url).pathname),
-    // The URL a human should open. In dev that is vite's port, not this server's,
-    // so the spawning process passes it down rather than us guessing.
-    publicUrl: process.env.CADGEN_VIEWER_PUBLIC_URL || "",
     startedAt: Date.now() / 1000,
   };
   const target = entryPath(pid);
