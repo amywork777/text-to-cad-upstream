@@ -29,8 +29,11 @@ class Registry(unittest.TestCase):
                 )
                 self.assertTrue(help_text.strip(), f"{name} needs help text")
 
-    def test_viewer_is_registered(self):
-        self.assertIn("viewer", cli._COMMANDS)
+    def test_viewer_is_not_registered(self):
+        # The CAD Viewer left cadgen with the cadgen/viewer split (2026-08-28):
+        # it starts via `node viewer/server/main.mjs` (or the cad-viewer skill's
+        # bundled copy), never through this dispatcher.
+        self.assertNotIn("viewer", cli._COMMANDS)
 
 
 class Dispatch(unittest.TestCase):
@@ -44,7 +47,7 @@ class Dispatch(unittest.TestCase):
         code, out, _ = self._run([])
         self.assertEqual(code, 0)
         self.assertIn("usage: cadgen", out)
-        self.assertIn("viewer", out)
+        self.assertIn("snapshot", out)
 
     def test_help_flags_print_usage(self):
         for flag in ("-h", "--help", "help"):
@@ -79,7 +82,7 @@ class Dispatch(unittest.TestCase):
         original = cli.importlib.import_module
         cli.importlib.import_module = lambda name: FakeModule
         self.addCleanup(setattr, cli.importlib, "import_module", original)
-        code, _, _ = self._run(["viewer", "--port", "3245", "--", "-x"])
+        code, _, _ = self._run(["snapshot", "--port", "3245", "--", "-x"])
         self.assertEqual(code, 7)
         self.assertEqual(seen["argv"], ["--port", "3245", "--", "-x"])
 

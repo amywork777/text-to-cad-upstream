@@ -80,8 +80,9 @@ class DxfSnapshotCliTests(unittest.TestCase):
             self.assertTrue(gen.call_args.kwargs["force"])
 
     def test_a_mesh_failure_is_an_error_not_a_blank_image(self) -> None:
-        # A dimensioned drawing has no flat pattern; the one-shot says so and the
-        # snapshot reports it instead of rendering nothing.
+        # The one-shot's error (a drawing with nothing renderable at all —
+        # dimensioned drawings render as line work since FEEDBACK 14) is relayed
+        # verbatim instead of rendering nothing.
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
