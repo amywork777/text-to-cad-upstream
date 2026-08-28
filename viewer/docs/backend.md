@@ -151,9 +151,9 @@ real fix is a custom opencascade.js build exposing the binding.
   the same containment check as `/__cad/asset`.
 - `GET /__tess_cache/<key>.tess`, `POST /__tess_cache/<key>.tess`,
   `POST /__tess_cache/batch` — the shared component-tessellation cache
-  (`~/.cache/cadgen/meshes`, the same store the export CLI and the snapshot host
-  use; the entry codec and the TESB batch format live in cadjs
-  `lib/surf/tessellationCache.js`). The client registers a provider at
+  (`<cache root>/meshes`, the same store the export CLI and the snapshot host
+  use; the entry codec, the key scheme — `<cid>-t<tessellator-version>-l<chord>-a<angle>` —
+  and the TESB batch format live in cadjs `lib/surf/tessellationCache.js`). The client registers a provider at
   bootstrap, so component loads and viewport-LOD level re-tessellations are
   cache hits whenever ANY consumer — a snapshot, an export, a previous viewer
   session — tessellated the component before, and misses write back. Entries
@@ -162,6 +162,20 @@ real fix is a custom opencascade.js build exposing the binding.
   `tessellationCacheFs`, drift-fenced by test, because the bundled skill
   runtime ships no cadjs tree). `CADGEN_MESH_CACHE=0` disables both directions,
   and every cache failure degrades to plain in-page tessellation.
+
+### Storage tiers, in one rule
+
+`~/.cache/cadgen` (or `$CADGEN_STORE_DIR`, or the platform cache dir —
+`$XDG_CACHE_HOME`/`%LOCALAPPDATA%`; one resolution rule in cadgen's
+`_internal/cache_paths.py`, mirrored by `cadgenCacheRootDir` in the JS store
+modules and sync-tested) holds everything CONTENT-ADDRESSED and DISPOSABLE:
+the component store, the kernel-op memo, and this mesh cache. Deleting any of
+it costs a rebuild, never correctness. The model's own folder holds everything
+LOCATION-PAIRED and meaningful: the artifact and its `__cadgen__` package
+(hardlinked into the store where possible, so the heavy bytes exist once).
+Version bumps orphan whole cache generations by design; `cadgen cache info` /
+`cadgen cache gc` are the only sweepers — nothing collects garbage
+automatically.
 
 `download` streams asset bytes. It serves OUTPUTS only — the artifacts the viewer may
 have to regenerate — and never source code: a `.step.py` is not in the served-asset
