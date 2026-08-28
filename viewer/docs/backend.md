@@ -149,6 +149,19 @@ real fix is a custom opencascade.js build exposing the binding.
   mesh refs and a package's `../components/<hash>.surf` load, since those are written
   relative to the model rather than to the root. It is a second path surface and gets
   the same containment check as `/__cad/asset`.
+- `GET /__tess_cache/<key>.tess`, `POST /__tess_cache/<key>.tess`,
+  `POST /__tess_cache/batch` — the shared component-tessellation cache
+  (`~/.cache/cadgen/meshes`, the same store the export CLI and the snapshot host
+  use; the entry codec and the TESB batch format live in cadjs
+  `lib/surf/tessellationCache.js`). The client registers a provider at
+  bootstrap, so component loads and viewport-LOD level re-tessellations are
+  cache hits whenever ANY consumer — a snapshot, an export, a previous viewer
+  session — tessellated the component before, and misses write back. Entries
+  are opaque bytes living OUTSIDE every served root, so names are strictly
+  validated (`server/tessCache.mjs`; its store I/O is an inline copy of cadjs's
+  `tessellationCacheFs`, drift-fenced by test, because the bundled skill
+  runtime ships no cadjs tree). `CADGEN_MESH_CACHE=0` disables both directions,
+  and every cache failure degrades to plain in-page tessellation.
 
 `download` streams asset bytes. It serves OUTPUTS only — the artifacts the viewer may
 have to regenerate — and never source code: a `.step.py` is not in the served-asset

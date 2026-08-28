@@ -275,3 +275,27 @@ until the next camera sample.
   --use-angle=metal on darwin moved a moonwatch-class capture from ~4.6s to
   ~0.24s. Warm-path stage timings ride the render result as `stageTimings`
   (loadSource / buildModel / render / capture).
+- Cache v3 + batch + viewer adoption (2026-08-28): the entry header now
+  carries `edgeClasses` and partColor, so a HIT rebuilds render meshData with
+  NO surf fetch (`surfIndexFromCacheEntry`); v2 entries are version-checked
+  misses. `POST /__tess_cache/batch` (TESB container, format home:
+  tessellationCache.js) turns a many-component load into ONE round trip —
+  served by the snapshot host on both transports and by viewer/server. The
+  VIEWER is now a cache consumer (Phase 5 seam closed): the client registers
+  the shared HTTP provider at bootstrap, the surf worker path hands entry
+  bytes in (hit = tessellation skipped) and encoded misses back out for
+  write-back, and the inline fallback goes through the same provider — so
+  initial component loads and LOD level re-tessellations persist across
+  sessions and are shared with snapshots and exports. Only content-addressed
+  `components/<cid>.surf` urls key the cache. viewer/server's store I/O is an
+  inline drift-fenced copy of tessellationCacheFs (the bundled skill ships no
+  cadjs tree). Measured (turbofan, 206 components, viewer load path): default
+  level 2.03s cold -> 33ms warm; LOD L1 3.06s cold -> 35ms warm; moonwatch
+  (257 components, 2.2M tris) 40.5s cold -> 0.52s warm. A viewer-warmed cache
+  served a turbofan mesh-export with zero new entries.
+  Snapshot A/B (same machine, contended by a concurrent test-audit agent —
+  relative deltas meaningful, absolutes noisy; f14d BEFORE-cold especially):
+  warm repeats went planetary 1.65->1.64s, turbofan 2.25->1.72s, moonwatch
+  2.77->2.34s, f14d 7.8->4.5s (563 components; the remaining gap to the ~2s
+  floor is meshData composition + page setup, no longer transport). All four
+  models' PNGs are byte-identical before-vs-after and run-to-run.
