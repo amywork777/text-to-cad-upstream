@@ -14,12 +14,16 @@
 // sync test):
 // - packages must exist, parse, declare the exact schema version, and have
 //   every payload file on disk;
-// - a format that bakes settings must record the CURRENT bake hash (implicit);
-//   a format that bakes nothing must record none (STEP);
+// - STEP bakes no settings, so a descriptor recording a bakeHash came from
+//   another producer and is stale;
 // - an IMPORTED file's digest must match the descriptor (file->render
 //   coherence);
 // - generated outputs are DETACHED from their source code: no source checks,
 //   ever (the CLI's no-op gates own that direction).
+//
+// Implicit models are NOT validated here: they render live from their own
+// source in the client, so the viewer has no implicit artifact to be stale.
+// Their baked packages exist for the CLI export/snapshot path only.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,23 +31,12 @@ import path from "node:path";
 import { renderPackageDir } from "./scanner.mjs";
 import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
 
-// cadgen/_internal/implicit_package.py mirrors (contract-tested).
-export const IMPLICIT_PACKAGE_SCHEMA_VERSION = 1;
-const IMPLICIT_PACKAGE_KIND = "implicit-package";
-const IMPLICIT_DESCRIPTOR_NAME = "implicit.json";
-export const IMPLICIT_BAKE_SETTINGS = Object.freeze({
-  format: "implicit-render-glb-v1",
-  resolution: 144,
-  maxCells: 2500000,
-});
-
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
 
 const STEP_ENTRY_RE = /\.(step|stp)(\.py)?$/i;
 const RAW_STEP_RE = /\.(step|stp)$/i;
 const DXF_GENERATOR_RE = /\.dxf\.py$/i;
-const IMPLICIT_SUFFIXES = [".implicit.js", ".implicit.mjs"];
 
 export const ARTIFACT_STATE = Object.freeze({
   READY: "ready",
@@ -57,30 +50,7 @@ const BUILDABLE_CODES = new Set([
   "missing_glb", "missing_step_topology", "unsupported_step_topology",
   "missing_step_hash", "stale_step_artifact", "missing_source_path",
   "missing_dxf_output",
-  "missing_implicit_artifact", "stale_implicit_artifact", "unsupported_implicit_artifact",
 ]);
-
-// package_freshness.canonical_bake_hash twin: sha256 over recursively
-// key-sorted JSON with no insignificant whitespace.
-export function canonicalBakeHash(bake) {
-  if (bake == null) {
-    return null;
-  }
-  const canonical = (value) => {
-    if (Array.isArray(value)) {
-      return value.map(canonical);
-    }
-    if (value !== null && typeof value === "object") {
-      const sorted = {};
-      for (const key of Object.keys(value).sort()) {
-        sorted[key] = canonical(value[key]);
-      }
-      return sorted;
-    }
-    return value;
-  };
-  return crypto.createHash("sha256").update(JSON.stringify(canonical(bake)), "utf8").digest("hex");
-}
 
 function sha256File(filePath) {
   try {
@@ -116,11 +86,6 @@ export function ownsStepPath(filePath) {
 
 export function ownsDxfPath(filePath) {
   return DXF_GENERATOR_RE.test(String(filePath || ""));
-}
-
-export function ownsImplicitPath(filePath) {
-  const lowered = String(filePath || "").toLowerCase();
-  return IMPLICIT_SUFFIXES.some((suffix) => lowered.endsWith(suffix));
 }
 
 function resolveCandidate(fileRef, rootDir) {
@@ -221,30 +186,6 @@ function validateDxf(candidate) {
   return { ok: true, packageDir };
 }
 
-function validateImplicit(candidate) {
-  const packageDir = renderPackageDir(candidate);
-  if (!fs.existsSync(packageDir) || !fs.statSync(packageDir).isDirectory()) {
-    return { ok: false, code: "missing_implicit_artifact", packageDir };
-  }
-  const descriptor = readJson(path.join(packageDir, IMPLICIT_DESCRIPTOR_NAME));
-  if (descriptor === null) {
-    return { ok: false, code: "missing_implicit_artifact", packageDir };
-  }
-  if (descriptor.kind !== IMPLICIT_PACKAGE_KIND || !schemaVersionMatches(descriptor, IMPLICIT_PACKAGE_SCHEMA_VERSION)) {
-    return { ok: false, code: "unsupported_implicit_artifact", packageDir, descriptor };
-  }
-  const glb = String(descriptor.glb || "");
-  if (!glb || !fs.existsSync(path.join(packageDir, glb))) {
-    return { ok: false, code: "missing_implicit_artifact", packageDir, descriptor };
-  }
-  // The bake IS the artifact: settings changes must invalidate it.
-  if (!bakeHashMatches(descriptor, canonicalBakeHash(IMPLICIT_BAKE_SETTINGS))) {
-    return { ok: false, code: "stale_implicit_artifact", packageDir, descriptor };
-  }
-  // Generated (the .implicit.js is the generator): detached, no source checks.
-  return { ok: true, packageDir, descriptor };
-}
-
 // --- the state machine --------------------------------------------------------
 export function resolveArtifactVerdict(fileRef, rootDir) {
   const candidate = resolveCandidate(fileRef, rootDir);
@@ -253,9 +194,6 @@ export function resolveArtifactVerdict(fileRef, rootDir) {
   }
   if (ownsDxfPath(candidate)) {
     return { format: "dxf", candidate, ...validateDxf(candidate) };
-  }
-  if (ownsImplicitPath(candidate)) {
-    return { format: "implicit", candidate, ...validateImplicit(candidate) };
   }
   if (ownsStepPath(candidate)) {
     const verdict = validateStep(candidate);

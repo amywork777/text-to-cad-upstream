@@ -12,7 +12,6 @@ import {
 import MeshFileSheet from "./workbench/MeshFileSheet";
 import { DXF_PREVIEW_REFERENCE_THICKNESS_MM } from "cadjs/lib/dxf/previewGlb";
 import { dxfDataIsDocument } from "cadjs/lib/dxf/parseDxf";
-import { clientMeshExportSupported, exportEntryMeshClientSide } from "@/workbench/clientMeshExport";
 import { loadRenderDxf } from "cadjs/lib/renderAssetClient";
 import { extractOrderedDxfBendLines } from "cadjs/lib/dxf/buildPreviewMesh";
 import {
@@ -315,10 +314,6 @@ import {
   downloadUrlForFileAsset,
   openUrlForFileAsset
 } from "@/workbench/fileAccessAssets";
-import {
-  requestModelExport,
-  exportFormatLabel
-} from "@/workbench/modelExport";
 
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
 // The source formats whose renderable geometry lives in a `__cadgen__` render package, and
@@ -7484,89 +7479,6 @@ export default function CadWorkspace({
     }
   }, [fileRevealAvailable]);
 
-  // One export handler for every exportable entry — STEP/assembly, DXF drawing, implicit
-  // model. The server picks the producer from the source file, so the only thing that varies
-  // here is the format the menu offered.
-  const handleExportModelFile = useCallback(async (entry, format) => {
-    const fileRef = entry ? fileKey(entry) : "";
-    const exportFormat = String(format || "").trim().toLowerCase();
-    if (!fileRef || !exportFormat || typeof window === "undefined") {
-      return;
-    }
-    const busyKey = `${fileRef}:export:${exportFormat}`;
-    setCopyStatus("");
-    setScreenshotStatus("");
-    setFileAccessBusyKey(busyKey);
-    // An export re-runs the model's generator, which on a large assembly is minutes — the
-    // same work a build does, and now reported the same way. The export request itself is
-    // one long-lived call, so the position comes from polling the status route beside it:
-    // the generator holds its own lock, so the model stays readable and reports `busy`.
-    const exportLabel = exportFormatLabel(exportFormat);
-    let progressTimer = 0;
-    // Checked before every write. A poll can be mid-flight when the export resolves, and
-    // without this its late answer lands ON TOP of the "Exported ..." result.
-    let progressStopped = false;
-    const stopExportProgress = () => {
-      progressStopped = true;
-      if (progressTimer) {
-        window.clearTimeout(progressTimer);
-        progressTimer = 0;
-      }
-    };
-    const pollExportProgress = async () => {
-      try {
-        const status = await requestArtifactStatus(fileRef);
-        const frame = formatArtifactProgress(normalizeArtifactProgress(status?.progress));
-        if (frame && !progressStopped) {
-          const detail = frame.detail ? ` · ${frame.detail}` : "";
-          const counts = frame.counts ? ` ${frame.counts}` : "";
-          setCopyStatus(`Exporting ${exportLabel} — ${frame.label}${detail}${counts}`);
-        }
-      } catch {
-        // Decoration only: a failed poll must never disturb the export itself.
-      }
-      if (!progressStopped) {
-        progressTimer = window.setTimeout(pollExportProgress, ARTIFACT_PROGRESS_POLL_MS);
-      }
-    };
-    try {
-      setCopyStatus(`Exporting ${exportLabel}...`);
-      // No CAD runtime on the server: mesh formats serialize in the BROWSER from
-      // the same geometry the viewport renders (design/standalone-viewer.md
-      // Phase B). Triangles are at render tessellation — the honest trade for
-      // an export that needs no install.
-      if (!stepArtifactGenerationAvailable && clientMeshExportSupported(entry, exportFormat)) {
-        const { filename } = await exportEntryMeshClientSide(entry, exportFormat);
-        stopExportProgress();
-        setCopyStatus(`Exported ${filename} (browser download)`);
-        return;
-      }
-      progressTimer = window.setTimeout(pollExportProgress, ARTIFACT_PROGRESS_POLL_MS);
-      const payload = await requestModelExport({ file: fileRef, format: exportFormat });
-      stopExportProgress();
-      if (payload?.cancelled) {
-        // User dismissed the native save dialog — clear the in-progress status, no error.
-        setCopyStatus("");
-        return;
-      }
-      const filename = String(payload?.filename || "").trim();
-      const downloadUrl = String(payload?.downloadUrl || "").trim();
-      if (downloadUrl) {
-        const result = triggerUrlDownload(downloadUrl, { filename });
-        setCopyStatus(result.message);
-      } else {
-        const savedPath = String(payload?.path || "").trim();
-        const label = filename || exportFormatLabel(exportFormat);
-        setCopyStatus(savedPath ? `Exported ${label} to ${savedPath}` : `Exported ${label}`);
-      }
-    } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "Export failed");
-    } finally {
-      stopExportProgress();
-      setFileAccessBusyKey((current) => (current === busyKey ? "" : current));
-    }
-  }, [stepArtifactGenerationAvailable]);
-
   const handleDrawingStrokesChange = useCallback((nextStrokes) => {
     const normalized = cloneDrawingStrokes(nextStrokes);
     const current = drawingStrokesRef.current;
@@ -7977,7 +7889,6 @@ export default function CadWorkspace({
           canCopyFileAssetPaths={filePathCopyAvailable}
           fileAccessBusyKey={fileAccessBusyKey}
           onDownloadFileAsset={handleDownloadFileAsset}
-          onExportModelFile={handleExportModelFile}
           onRevealFileAsset={handleRevealFileAsset}
           onRevealInExplorerView={handleRevealEntryInExplorerView}
           onCopyFileAssetReference={handleCopyFileAssetReference}
@@ -8013,7 +7924,6 @@ export default function CadWorkspace({
               canCopyFileAssetPaths={filePathCopyAvailable}
               fileAccessBusyKey={fileAccessBusyKey}
               onDownloadFileAsset={handleDownloadFileAsset}
-              onExportModelFile={handleExportModelFile}
               onRevealFileAsset={handleRevealFileAsset}
               onRevealInExplorerView={handleRevealEntryInExplorerView}
               onCopyFileAssetReference={handleCopyFileAssetReference}
@@ -8065,7 +7975,6 @@ export default function CadWorkspace({
                 handleEnterPreviewMode={handleEnterPreviewMode}
                 handleExitPreviewMode={handleExitPreviewMode}
                 handleScreenshotCopy={handleScreenshotCopy}
-                onExportModelFile={handleExportModelFile}
                 fileAccessBusyKey={fileAccessBusyKey}
               />
 

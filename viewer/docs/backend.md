@@ -5,14 +5,13 @@ The CAD Viewer client never reads filesystem paths. It talks to HTTP routes unde
 files. The viewer is a local-filesystem app, so there is exactly one backend.
 
 That backend is **pure JS**: `viewer/server/`, dependency-free Node (>= 22). It owns
-everything filesystem- and HTTP-shaped — the catalog scan, path containment, asset
-serving, the SPA, the native save/reveal dialogs, the instance registry. The one thing
-it does not host is the CAD runtime: anything that needs cadgen (artifact freshness of
-owned entries, builds, exports) is delegated to a stdlib-only Python one-shot,
-`python -m cadgen.render_ops`, spawned per request. OCP never loads into the server
-process, and Python is not required to START the viewer at all — without cadgen the
-viewer serves packaged models read-only, imports raw STEP files through its own WASM
-kernel (below), and other builds answer with an install hint.
+everything the viewer does — the catalog scan, path containment, asset serving, the
+SPA, artifact status, the WASM STEP import, the native reveal dialog, the instance
+registry. The viewer is a STATIC VISUALIZATION TOOL: it runs no Python, ever. It
+renders artifacts that exist — render packages, sibling `.dxf` files, live implicit
+sources — and the CAD CLIs (`scripts/gen`, `scripts/export`) own generation and
+export. The one build-shaped thing it does is Python-free by construction: importing
+a raw foreign STEP through its bundled WASM kernel (below).
 
 ## Where it runs
 
@@ -50,9 +49,8 @@ backend.readCatalog()                     // scan -> schema v4 entries
 backend.assetPathForFileRef(fileRef)      // guarded path for bytes we will send
 backend.containedPathForFileRef(fileRef)  // guarded path for bytes we will not
 backend.catalogEntryForFileRef(catalog, fileRef)
-ops.artifactStatus(fileRef)               // JS freshness verdict + python lock snapshot
-ops.buildArtifact(fileRef, { force })     // python render_ops build
-ops.generateExport(fileRef, format, out)  // python render_ops export
+ops.artifactStatus(fileRef)               // JS freshness verdict + advisory progress
+ops.buildArtifact(fileRef, { force })     // WASM import of a raw STEP; else a CLI hint
 ```
 
 `readCatalog()` scans the served root and returns schema v4 entries whose `file`
@@ -65,42 +63,40 @@ filter, which excludes a `.step.py` generator. `containedPathForFileRef` applies
 root and hidden-path rules WITHOUT that filter, for callers that transfer no bytes —
 `reveal` is the one that matters. Both throw on anything outside the root.
 
-## The CAD runtime
-
-Builds and exports go through `python -m cadgen.render_ops <build|export>` — one JSON
-line per call. The op dispatches heavy work to cadgen's shared warm daemon pool, so a
-viewer build and a terminal build reuse the same warm processes. The interpreter is
-`VIEWER_CAD_PYTHON` when set (`cadgen viewer` sets it to the interpreter that launched
-it), else the nearest `.venv/bin/python`, else `python3`.
+## Artifact status (JS-only), and where builds live
 
 Artifact STATUS has exactly one authority: `server/artifactStatus.mjs`, pure file
-reads in this process — package existence, schema version, payload files, bake
-hashes, and the imported-file digest gate. Generated outputs are DETACHED from their
-source code: the viewer never treats "the generator changed since this artifact was
-built" as a reason to rebuild — it renders what exists, and regeneration is the
-agent's explicit act (whose CLI no-op gates still read the recorded source closures,
-to skip unchanged work). The one question JS cannot answer is "is a build in flight":
-that is kernel flock state, deliberately never re-inferred from pids or heartbeats
-(see cadgen/coordination/lock.py), so status calls one remaining Python primitive —
-`render_ops snapshot`, which returns idle | writing | busy plus run id and progress —
-and composes the state machine from the two. Constants the JS authority mirrors from
-cadgen (package schema versions, implicit bake settings, the canonical bake hash) are
+reads in this process — package existence, schema version, payload files, the
+no-bake gate, and the imported-file digest gate. Generated outputs are DETACHED
+from their source code: the viewer never treats "the generator changed since this
+artifact was built" as a reason to rebuild, and it does not rebuild generated
+entries at all — a `.step.py` or `.dxf.py` with no artifact reports an error that
+names the CLI (`python scripts/gen <source>`), not a build offer. Implicit models
+render live from their own source and are not artifact-managed here.
+
+A CLI build in flight is shown ADVISORILY: the build's status record
+(`.<name>.generation.progress.json`, written by cadgen's coordination layer) is
+read for a `generating` badge with progress when it is fresh and non-terminal.
+The viewer takes no action on that state — it never contends for the generation
+lock — so the kernel-lock rules in `cadgen/coordination/lock.py` are not being
+re-inferred here; a killed build's badge simply ages out within seconds.
+
+Constants the JS authority mirrors from cadgen (the package schema version) are
 pinned cross-language by `tests/python/global/test_render_contract_sync.py`.
 
-Startup never blocks on Python: availability is probed lazily and reported through
-`stepArtifactGenerationAvailable` in `/__cad/server`.
+`/__cad/server` reports `stepArtifactGenerationAvailable: false`, always: the
+capability does not exist in the viewer by design.
 
 ## WASM STEP import (no Python)
 
-A raw `.step`/`.stp` with no render package is still importable on a machine with no
-cadgen: `server/import/` holds a WASM OCCT pipeline (opencascade.js, a viewer npm
-dependency — never part of the cadgen wheel) that parses the STEP, walks its XCAF
-assembly, extracts each component with the surf-extractor twin, and writes the SAME
-package format cadgen writes. `cadgenOps` routes to it only when `render_ops` is
-unavailable (or always, with `VIEWER_WASM_IMPORT=1`; `=0` disables it), and runs it as
-a child process (`import/importCli.mjs`) so a kernel abort can never take the server
-down. Status for an unimported STEP then reports `needs-build` instead of an install
-hint, and the client's normal build POST performs the import.
+A raw `.step`/`.stp` with no render package (or a stale one — the file changed after
+import) is importable right here: `server/import/` holds a WASM OCCT pipeline
+(opencascade.js, a viewer npm dependency — never part of the cadgen wheel) that parses
+the STEP, walks its XCAF assembly, extracts each component with the surf-extractor
+twin, and writes the SAME package format cadgen writes. This is the viewer's ONLY
+build. It runs as a child process (`import/importCli.mjs`) so a kernel abort can never
+take the server down; `VIEWER_WASM_IMPORT=0` disables it. Status for an importable
+STEP reports `needs-build` and the client's normal build POST performs the import.
 
 Both extractors and both package producers are deliberately duplicated code fenced by
 tests: `tests/python/packages/cadgen/test_surf_extractor_conformance.py` (geometry,
@@ -118,7 +114,6 @@ the BinTools blob format is pinned to V4 on both sides for that reason.
 - `GET /__cad/download?file=...&asset=output|source`
 - `GET /__cad/artifact?file=...` (status)
 - `POST /__cad/artifact?file=...` (build; `&force=1` to rebuild)
-- `POST /__cad/export?file=...&format=...`
 - `POST /__cad/reveal?file=...&asset=output|source`
 - `GET /__cad/<relative path>` — a sibling-of-Referer asset, resolved against the
   directory of the `file=` in the requesting page's Referer. This is how a URDF's

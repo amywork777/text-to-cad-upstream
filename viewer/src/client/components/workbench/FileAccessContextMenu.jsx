@@ -6,11 +6,6 @@ import {
   ContextMenuTrigger
 } from "@/components/ui/context-menu";
 import { fileAccessAssetsForEntry } from "@/workbench/fileAccessAssets";
-import {
-  exportFormatsForEntry,
-  isImportedStepEntry,
-  exportItemLabel
-} from "@/workbench/modelExport";
 
 function ExplorerViewSection({
   entry,
@@ -110,39 +105,6 @@ function FileAccessSection({
   );
 }
 
-function ModelExportSection({
-  entry,
-  busyKey = "",
-  onExportModelFile
-}) {
-  const exportFormats = exportFormatsForEntry(entry);
-  if (typeof onExportModelFile !== "function" || !exportFormats.length) {
-    return null;
-  }
-  const fileRef = String(entry?.file || entry?.id || "").trim();
-  const imported = isImportedStepEntry(entry);
-  return (
-    <>
-      <ContextMenuSeparator />
-      {exportFormats.map((format) => {
-        const key = `${fileRef}:export:${format}`;
-        return (
-          <ContextMenuItem
-            key={format}
-            className="text-xs"
-            disabled={busyKey === key}
-            onSelect={() => {
-              onExportModelFile(entry, format);
-            }}
-          >
-            <span className="min-w-0 truncate">{exportItemLabel(format, { imported })}</span>
-          </ContextMenuItem>
-        );
-      })}
-    </>
-  );
-}
-
 export default function FileAccessContextMenu({
   entry,
   canRevealFileAssets = false,
@@ -150,7 +112,6 @@ export default function FileAccessContextMenu({
   canCopyFileAssetPaths = false,
   busyKey = "",
   onDownloadFileAsset,
-  onExportModelFile,
   onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
@@ -158,15 +119,12 @@ export default function FileAccessContextMenu({
 }) {
   const revealInExplorerViewAvailable = entry && typeof onRevealInExplorerView === "function";
   const assetActionsAvailable = entry && typeof onDownloadFileAsset === "function";
-  const modelExportAvailable = entry &&
-    typeof onExportModelFile === "function" &&
-    exportFormatsForEntry(entry).length > 0;
-  if (!revealInExplorerViewAvailable && !assetActionsAvailable && !modelExportAvailable) {
+  if (!revealInExplorerViewAvailable && !assetActionsAvailable) {
     return children;
   }
 
   const assets = fileAccessAssetsForEntry(entry);
-  if (!revealInExplorerViewAvailable && !assets.output && !modelExportAvailable) {
+  if (!revealInExplorerViewAvailable && !assets.output) {
     return children;
   }
 
@@ -195,11 +153,6 @@ export default function FileAccessContextMenu({
             onCopyFileAssetReference={onCopyFileAssetReference}
           />
         ) : null}
-        <ModelExportSection
-          entry={entry}
-          busyKey={busyKey}
-          onExportModelFile={onExportModelFile}
-        />
       </ContextMenuContent>
     </ContextMenu>
   );

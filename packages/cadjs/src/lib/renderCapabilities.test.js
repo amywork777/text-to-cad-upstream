@@ -6,7 +6,6 @@ import {
   PARAMETER_SOURCE,
   RENDER_CAPABILITIES,
   VIEWPORT_CONTENT,
-  exportFormatsForRenderFormat,
   hasCapability,
   isArtifactManagedFormat,
   renderCapabilities,
@@ -115,7 +114,6 @@ test("implicit renders live: parameters from its module, never artifact-managed"
   assert.equal(implicit.params, PARAMETER_SOURCE.MODULE);
   assert.equal(implicit.animations, true);
   assert.equal(implicit.artifactManaged, false);
-  assert.deepEqual([...implicit.exportFormats], ["stl", "glb", "3mf"]);
 });
 
 test("artifact-managed formats are exactly STEP and DXF", () => {
@@ -152,10 +150,12 @@ test("projection is a theme trait for every format", () => {
   }
 });
 
-test("export formats match the routes the server implements", () => {
-  assert.deepEqual([...exportFormatsForRenderFormat(RENDER_FORMAT.STEP)], ["step", "3mf", "stl", "glb"]);
-  assert.deepEqual([...exportFormatsForRenderFormat(RENDER_FORMAT.DXF)], ["dxf"]);
-  assert.deepEqual([...exportFormatsForRenderFormat(RENDER_FORMAT.STL)], []);
+test("no format advertises export capabilities: the CLIs own exporting", () => {
+  for (const format of Object.values(RENDER_FORMAT)) {
+    const row = renderCapabilities(format);
+    assert.equal("exportFormats" in row, false, `${format} still advertises exportFormats`);
+    assert.equal("clientMeshExport" in row, false, `${format} still advertises clientMeshExport`);
+  }
 });
 
 test("labels are present for the formats that surface one", () => {

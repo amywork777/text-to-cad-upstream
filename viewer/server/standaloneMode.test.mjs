@@ -1,7 +1,7 @@
-// The no-cadgen (standalone) contract, end to end against a live server whose
-// Python is deliberately broken: built packages render (with honest staleness),
-// unimported STEPs explain themselves, and mesh exports serialize in JS from
-// the same surf geometry the viewport draws.
+// The static-viewer contract, end to end against a live server. The viewer
+// runs no Python at all: built packages render (with honest staleness),
+// generated entries without artifacts name the CLI, and a raw foreign STEP
+// imports through the WASM kernel — the viewer's only build.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -20,11 +20,7 @@ const VIEWER_ROOT = path.resolve(SERVER_DIR, "..");
 function write(root, rel, content) {
   const p = path.join(root, rel);
   fs.mkdirSync(path.dirname(p), { recursive: true });
-  if (typeof content === "string") {
-    fs.writeFileSync(p, content);
-  } else {
-    fs.writeFileSync(p, content);
-  }
+  fs.writeFileSync(p, content);
   return p;
 }
 
@@ -33,15 +29,13 @@ function sha256(buffer) {
 }
 
 // A REAL surf component: the cadjs sun-gear fixture (written by the actual
-// Python extractor), so this test exercises the same parse+tessellate path the
-// viewport uses rather than a hand-rolled container.
+// Python extractor), so this test exercises the same asset path the viewport
+// loads rather than a hand-rolled container.
 const SUN_GEAR_SURF = fs.readFileSync(
   path.join(VIEWER_ROOT, "packages/cadjs/src/lib/surf/fixtures/sun_gear.surf"),
 );
 
-async function startBrokenPythonApp(t, { root }) {
-  process.env.VIEWER_CAD_PYTHON = "/usr/bin/false";
-  t.after(() => delete process.env.VIEWER_CAD_PYTHON);
+async function startApp(t, { root }) {
   const app = createCadApp({ root, host: "127.0.0.1", port: 0 });
   const server = http.createServer((req, res) => {
     app.handle(req, res).then((handled) => {
@@ -56,10 +50,9 @@ async function startBrokenPythonApp(t, { root }) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test("standalone mode: built packages render, edits show stale, unimported explains", async (t) => {
-  // The WASM import is covered by its own test below; here it is disabled so
-  // the kernel-less degraded contract (honest staleness, install hints) stays
-  // testable on a checkout that has the kernel installed.
+test("static viewer: packages render, edits badge stale, generators name the CLI", async (t) => {
+  // The WASM import is covered by its own test below; disabled here so the
+  // kernel-less contract stays testable on a checkout that has the kernel.
   process.env.VIEWER_WASM_IMPORT = "0";
   t.after(() => delete process.env.VIEWER_WASM_IMPORT);
   // realpath'd: macOS tmpdirs are symlinks (/var -> /private/var), and package
@@ -87,16 +80,21 @@ test("standalone mode: built packages render, edits show stale, unimported expla
     }),
   );
   write(root, "never-imported.step", "ISO-10303-21;\nEND-ISO-10303-21;\n");
+  write(root, "unbuilt.step.py", "def gen_step():\n    return None\n");
 
-  const base = await startBrokenPythonApp(t, { root });
+  const base = await startApp(t, { root });
 
-  // Built package: renders, degraded, not stale.
+  // The server never claims a generation capability.
+  const info = await (await fetch(`${base}/__cad/server`)).json();
+  assert.equal(info.stepArtifactGenerationAvailable, false);
+
+  // Built package: renders, not stale.
   let status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
   assert.equal(status.state, "ready");
-  assert.equal(status.degraded, true);
   assert.equal(status.stale, undefined);
 
-  // Edit the STEP: still renders, but honestly badged stale.
+  // Edit the STEP: still renders, but honestly badged stale (nothing here can
+  // re-import it with the kernel disabled).
   fs.appendFileSync(step, "\n");
   status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
   assert.equal(status.state, "ready");
@@ -110,49 +108,53 @@ test("standalone mode: built packages render, edits show stale, unimported expla
   assert.equal(status.state, "error");
   assert.match(String(status.error || ""), /has not been imported yet/);
 
-  // Client-side mesh export: serialize an STL in pure JS from the package's
-  // surf geometry, through the same module the browser uses.
-  const { buildEntryMeshExport } = await import(
-    path.join(VIEWER_ROOT, "src/client/workbench/clientMeshExport.js")
-  );
+  // An unbuilt generated entry is not the viewer's to build: it names the CLI,
+  // and a build POST refuses the same way.
+  const generatorRef = path.join(root, "unbuilt.step.py");
+  status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(generatorRef)}`)).json();
+  assert.equal(status.state, "error");
+  assert.match(String(status.error || ""), /scripts\/gen/);
+  const refused = await (
+    await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(generatorRef)}`, {
+      method: "POST",
+      headers: { "x-cadgen-viewer": "1" },
+    })
+  ).json();
+  assert.equal(refused.ok, false);
+  assert.match(String(refused.error || ""), /scripts\/gen/);
+
+  // The render data itself serves: catalog lists the entry and its component
+  // surf streams — everything the viewport needs, no Python anywhere.
   const catalog = await (await fetch(`${base}/__cad/catalog`)).json();
   const entry = catalog.entries.find((e) => e.file.endsWith("widget.step"));
   assert.ok(entry, "catalog lists the packaged step");
-  // The catalog's URLs are origin-relative (the browser resolves them against
-  // the page); give node's fetch the same base.
-  const rawFetch = globalThis.fetch;
-  globalThis.fetch = (input, init) =>
-    rawFetch(typeof input === "string" && input.startsWith("/") ? `${base}${input}` : input, init);
-  t.after(() => {
-    globalThis.fetch = rawFetch;
-  });
-  const result = await buildEntryMeshExport(entry, "stl");
-  assert.equal(result.filename, "widget.stl");
-  // Two sun-gear occurrences -> thousands of triangles; binary STL header + count.
-  assert.ok(result.triangleCount >= 1000, `triangles: ${result.triangleCount}`);
-  const body = Buffer.from(result.body);
-  assert.equal(body.readUInt32LE(80), result.triangleCount);
+  const surfUrl = `${base}/__cad/asset?file=${encodeURIComponent(
+    path.join(root, "__cadgen__", "models", "widget.step", "components", "c0.surf"),
+  )}`;
+  const surf = await fetch(surfUrl);
+  assert.equal(surf.status, 200);
+  const payload = Buffer.from(await surf.arrayBuffer());
+  assert.equal(payload.subarray(0, 4).toString("utf8"), "SURF");
 });
 
 // The full Python-less import flow against a REAL vendor-style STEP: status
 // offers the build, the build runs the WASM import (parse -> XCAF walk ->
-// extractor twin -> package), and the resulting package renders and exports
-// through the same client modules the browser uses. Slow by nature (~15s:
-// one-time kernel init + import); it IS the standalone e2e.
+// extractor twin -> package), and the resulting package renders. Slow by
+// nature (~5s: one-time kernel init + import); it IS the standalone e2e.
 const IMPORT_FIXTURE = path.resolve(VIEWER_ROOT, "..", "models", "step", "parts", "cam_follower_roller.step");
 const wasmKernelPresent = fs.existsSync(
   path.join(VIEWER_ROOT, "node_modules", "opencascade.js", "dist", "opencascade.full.wasm"),
 );
 
 test(
-  "standalone mode: a raw STEP imports through the WASM kernel and renders",
+  "static viewer: a raw STEP imports through the WASM kernel and renders",
   { skip: !wasmKernelPresent || !fs.existsSync(IMPORT_FIXTURE) },
   async (t) => {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const step = write(root, "roller.step", fs.readFileSync(IMPORT_FIXTURE));
 
-    const base = await startBrokenPythonApp(t, { root });
+    const base = await startApp(t, { root });
 
     // Unimported + importable: the server offers a build instead of an excuse.
     let status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
@@ -181,26 +183,15 @@ test(
       "descriptor records the imported file's hash",
     );
 
-    // The imported package now reports plain ready...
+    // The imported package now reports plain ready, and its render data serves.
     status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
     assert.equal(status.state, "ready");
     assert.equal(status.stale, undefined);
-
-    // ...and renders/export-serializes through the standard client path.
-    const { buildEntryMeshExport } = await import(
-      path.join(VIEWER_ROOT, "src/client/workbench/clientMeshExport.js")
-    );
-    const catalog = await (await fetch(`${base}/__cad/catalog`)).json();
-    const entry = catalog.entries.find((e) => e.file.endsWith("roller.step"));
-    assert.ok(entry, "catalog lists the imported step");
-    const rawFetch = globalThis.fetch;
-    globalThis.fetch = (input, init) =>
-      rawFetch(typeof input === "string" && input.startsWith("/") ? `${base}${input}` : input, init);
-    t.after(() => {
-      globalThis.fetch = rawFetch;
-    });
-    const exported = await buildEntryMeshExport(entry, "stl");
-    assert.ok(exported.triangleCount >= 100, `triangles: ${exported.triangleCount}`);
-    assert.equal(Buffer.from(exported.body).readUInt32LE(80), exported.triangleCount);
+    const surfRel = String(Object.values(descriptor.components)[0].surf);
+    const surf = await fetch(`${base}/__cad/asset?file=${encodeURIComponent(
+      path.join(root, "__cadgen__", "models", "roller.step", surfRel),
+    )}`);
+    assert.equal(surf.status, 200);
+    assert.equal(Buffer.from(await surf.arrayBuffer()).subarray(0, 4).toString("utf8"), "SURF");
   },
 );

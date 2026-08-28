@@ -21,7 +21,6 @@ import DrawingToolbar from "./DrawingToolbar";
 import { ToolbarButton } from "./ToolbarButton";
 import { ZoomControl } from "../viewer/ZoomControl";
 import { CAD_WORKSPACE_TOOLBAR_DESKTOP_WIDTH_CLASS } from "./ToolbarShell";
-import { StepExportDropdown } from "./StepExportDropdown";
 
 const FLOATING_TOOL_BAR_SURFACE_CLASS =
   "cad-glass-surface border border-sidebar-border text-sidebar-foreground shadow-sm";
@@ -139,7 +138,6 @@ function DesktopFloatingToolBar({
   handleEnterPreviewMode,
   handleScreenshotCopy,
   selectedEntry,
-  onExportModelFile,
   fileAccessBusyKey = ""
 }) {
   // What this format can do, from the one capability table — never re-derived from
@@ -323,17 +321,6 @@ function DesktopFloatingToolBar({
               </ToolbarButton>
 
               {screenshotButton}
-
-              <StepExportDropdown
-                selectedEntry={selectedEntry}
-                onExportModelFile={onExportModelFile}
-                fileAccessBusyKey={fileAccessBusyKey}
-                triggerClassName={FLOATING_TOOL_BAR_BUTTON_CLASSES}
-                iconClassName="size-3"
-                contentAlign="end"
-                contentSide="bottom"
-                contentSideOffset={6}
-              />
             </>
           )}
         </div>

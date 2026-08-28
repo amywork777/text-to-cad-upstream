@@ -23,20 +23,17 @@
 import fs from "node:fs";
 import path from "node:path";
 
-import { LocalAssetBackend, ForbiddenAssetError, normalizedFileRef } from "./backend.mjs";
+import { LocalAssetBackend, ForbiddenAssetError } from "./backend.mjs";
 import { createCadgenOps } from "./cadgenOps.mjs";
 import { contentTypeForStaticAsset } from "./contentTypes.mjs";
 import { attachmentContentDisposition } from "./encoding.mjs";
-import { pathIsInside, isDxfGeneratorPath, pathIsImplicitCadSource } from "./scanner.mjs";
-import { pickSaveDestination } from "./saveDialog.mjs";
+import { pathIsInside } from "./scanner.mjs";
 import { revealPath } from "./reveal.mjs";
 
 export const POST_GUARD_HEADER = "x-cadgen-viewer";
 export const LOCAL_SERVER_FEATURES = ["path-directory"];
 const LOOPBACK_NAMES = new Set(["127.0.0.1", "localhost", "::1"]);
 
-const STEP_EXPORT_FORMATS = new Set(["step", "stl", "3mf", "glb"]);
-const IMPLICIT_EXPORT_FORMATS = new Set(["stl", "glb", "3mf"]);
 
 export function hostnameOnly(hostHeader) {
   const value = String(hostHeader || "").trim();
@@ -85,13 +82,6 @@ export function createCadApp({ root, host, port, distDir = "" }) {
   const viewerVersion = readViewerVersion();
   const startedAt = Date.now() / 1000;
 
-  // Lazily resolved, never blocking startup: until the probe lands the server
-  // reports generation as available (the client's gate is `!== false`), then the
-  // truth once known.
-  let generationAvailable = true;
-  ops.probe().then((result) => {
-    generationAvailable = Boolean(result.ok);
-  });
 
   function serverInfo() {
     return {
@@ -104,7 +94,9 @@ export function createCadApp({ root, host, port, distDir = "" }) {
       rootName: backend.resolveRoot().rootName,
       port,
       pid: process.pid,
-      stepArtifactGenerationAvailable: generationAvailable !== false,
+      // The viewer is a static visualization tool: it never runs generators or
+      // exports. The CLIs own those; this stays false by design.
+      stepArtifactGenerationAvailable: false,
       packageDir: path.dirname(new URL(import.meta.url).pathname),
       startedAt,
       url: `http://${host}:${port}`,
@@ -266,91 +258,6 @@ export function createCadApp({ root, host, port, distDir = "" }) {
     sendJson(req, res, status, { ...result, ref, catalog: nextCatalog });
   }
 
-  // Export destination naming, per format. The Python op re-validates format and
-  // containment; this only derives names for the dialog and the fallback path.
-  function exportNaming(fileRef, format) {
-    const normalized = normalizedFileRef(fileRef);
-    const abs = path.isAbsolute(normalized) ? normalized : path.resolve(rootPath, normalized);
-    if (isDxfGeneratorPath(abs)) {
-      if (format !== "dxf") {
-        throw new Error(`Unsupported export format for a DXF drawing: ${format}`);
-      }
-      const base = path.basename(abs).slice(0, -".dxf.py".length);
-      return { baseName: base, suggestedName: `${base}.dxf`, defaultDir: path.dirname(abs) };
-    }
-    if (pathIsImplicitCadSource(abs)) {
-      if (!IMPLICIT_EXPORT_FORMATS.has(format)) {
-        throw new Error(`Unsupported implicit CAD export format: ${format || "(missing)"}`);
-      }
-      const base = path.basename(abs).replace(/\.implicit\.(mjs|js)$/i, "");
-      return { baseName: base, suggestedName: `${base}.${format}`, defaultDir: path.dirname(abs) };
-    }
-    if (!STEP_EXPORT_FORMATS.has(format)) {
-      throw new Error(`Unsupported export format: ${format}`);
-    }
-    // A `.step.py` generator exports through its logical STEP sibling's name.
-    const stepPath = abs.toLowerCase().endsWith(".py") ? abs.slice(0, -3) : abs;
-    const base = path.basename(stepPath).replace(/\.(step|stp)$/i, "");
-    return { baseName: base, suggestedName: `${base}.${format}`, defaultDir: path.dirname(stepPath) };
-  }
-
-  async function handleExport(req, res, query) {
-    const fileRef = query.get("file") || "";
-    const format = String(query.get("format") || "step").trim().toLowerCase();
-    const naming = exportNaming(fileRef, format);
-    const destination = pickSaveDestination({
-      suggestedName: naming.suggestedName,
-      defaultDir: naming.defaultDir,
-      prompt: `Export ${naming.baseName} as ${format.toUpperCase()}`,
-    });
-    if (destination.cancelled) {
-      sendJson(req, res, 200, { ok: false, cancelled: true });
-      return;
-    }
-    if (destination.path) {
-      const result = await ops.generateExport(fileRef, format, path.resolve(destination.path));
-      if (!result.ok) {
-        sendJson(req, res, 400, { ok: false, error: String(result.error || "Export failed") });
-        return;
-      }
-      const outPath = path.resolve(result.path || destination.path);
-      const inside = outPath === rootPath || pathIsInside(outPath, rootPath);
-      const payload = {
-        ok: true,
-        path: outPath,
-        filename: result.filename || path.basename(outPath),
-        format,
-      };
-      if (inside) {
-        payload.catalogChanged = true;
-      }
-      sendJson(req, res, 200, payload);
-      return;
-    }
-    // Headless fallback: write beside the source, hand to the browser via
-    // /__cad/download.
-    const outputPath = path.join(naming.defaultDir, naming.suggestedName);
-    if (!(outputPath === rootPath || pathIsInside(outputPath, rootPath))) {
-      throw new Error("Requested file is outside the active CAD Viewer root");
-    }
-    const result = await ops.generateExport(fileRef, format, outputPath);
-    if (!result.ok) {
-      sendJson(req, res, 400, { ok: false, error: String(result.error || "Export failed") });
-      return;
-    }
-    const outputFileRef = path.relative(rootPath, outputPath).split(path.sep).join("/");
-    const params = new URLSearchParams([["file", outputFileRef], ["asset", "output"]]);
-    sendJson(req, res, 200, {
-      ok: true,
-      fallback: true,
-      path: outputPath,
-      filename: path.basename(outputPath),
-      format,
-      catalogChanged: true,
-      downloadUrl: `/__cad/download?${params.toString()}`,
-    });
-  }
-
   function handleReveal(req, res, query) {
     // Resolves through the same containment as every other asset route; being a
     // POST it sits behind the cross-site header gate — which matters more here
@@ -482,8 +389,6 @@ export function createCadApp({ root, host, port, distDir = "" }) {
       try {
         if (pathname === "/__cad/artifact") {
           await handleArtifactBuild(req, res, query);
-        } else if (pathname === "/__cad/export") {
-          await handleExport(req, res, query);
         } else if (pathname === "/__cad/reveal") {
           handleReveal(req, res, query);
         } else {

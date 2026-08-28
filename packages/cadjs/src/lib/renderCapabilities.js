@@ -97,8 +97,6 @@ const MESH_CAPABILITIES = Object.freeze({
   params: null,
   animations: false,
   artifactManaged: false,
-  clientMeshExport: "mesh",
-  exportFormats: Object.freeze([])
 });
 
 const ROBOT_CAPABILITIES = Object.freeze({
@@ -125,7 +123,6 @@ const ROBOT_CAPABILITIES = Object.freeze({
   params: null,
   animations: false,
   artifactManaged: false,
-  exportFormats: Object.freeze([])
 });
 
 const DEFAULT_CAPABILITIES = Object.freeze({
@@ -162,12 +159,6 @@ const DEFAULT_CAPABILITIES = Object.freeze({
   // Empty for everything the viewer can rebuild itself or that IS its own asset — which is
   // every format but an imported STEP. Eight identity checks used to say that.
   rebuildCommand: "",
-  // HOW the client serializes this entry's mesh in the browser (the no-Python export
-  // path): "package" composes the render package's surf components with their occurrence
-  // transforms; "mesh" reserializes the already-loaded mesh; null means client-side
-  // export is unavailable and the entry needs the server.
-  clientMeshExport: null,
-  exportFormats: Object.freeze([])
 });
 
 export const RENDER_CAPABILITIES = Object.freeze({
@@ -186,8 +177,6 @@ export const RENDER_CAPABILITIES = Object.freeze({
     animations: true,
     artifactManaged: true,
     rebuildCommand: "python -m cadgen.step_artifact_cli --repo-root . --step",
-    clientMeshExport: "package",
-    exportFormats: Object.freeze(["step", "3mf", "stl", "glb"])
   }),
   [RENDER_FORMAT.STL]: Object.freeze({ ...DEFAULT_CAPABILITIES, ...MESH_CAPABILITIES, label: "STL" }),
   [RENDER_FORMAT.THREE_MF]: Object.freeze({
@@ -210,7 +199,6 @@ export const RENDER_CAPABILITIES = Object.freeze({
     label: "DXF",
     planView: true,
     artifactManaged: true,
-    exportFormats: Object.freeze(["dxf"])
   }),
   [RENDER_FORMAT.IMPLICIT]: Object.freeze({
     ...DEFAULT_CAPABILITIES,
@@ -224,7 +212,6 @@ export const RENDER_CAPABILITIES = Object.freeze({
     // Rendered live from its own GLSL: there is no baked artifact to be stale, so an
     // implicit never blocks on a build and never shows a generating state.
     artifactManaged: false,
-    exportFormats: Object.freeze(["stl", "glb", "3mf"])
   }),
   [RENDER_FORMAT.URDF]: Object.freeze({ ...DEFAULT_CAPABILITIES, ...ROBOT_CAPABILITIES, label: "URDF" }),
   [RENDER_FORMAT.SRDF]: Object.freeze({
@@ -284,10 +271,6 @@ export function parameterSourceKind(renderFormat) {
 
 export function renderFormatLabel(renderFormat) {
   return renderCapabilities(renderFormat).label;
-}
-
-export function exportFormatsForRenderFormat(renderFormat) {
-  return renderCapabilities(renderFormat).exportFormats;
 }
 
 export function isArtifactManagedFormat(renderFormat) {

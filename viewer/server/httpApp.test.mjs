@@ -89,7 +89,9 @@ test("server info carries the fields the client reads", async (t) => {
   assert.equal(info.backend, "local-fs");
   assert.equal(info.rootPath, fs.realpathSync.native ? path.resolve(root) : root);
   assert.equal(info.pid, process.pid);
-  assert.notEqual(info.stepArtifactGenerationAvailable, false);
+  // Constant by design: the viewer is a static visualization tool and never
+  // runs generators or exports.
+  assert.equal(info.stepArtifactGenerationAvailable, false);
   assert.deepEqual(info.serverFeatures, ["path-directory"]);
 });
 
@@ -160,23 +162,15 @@ test("reveal: disabled platform answers 501, a missing entry 404", async (t) => 
   assert.equal(missing.status, 404);
 });
 
-test("export honors the forced-cancel hook and refuses unknown formats", async (t) => {
+test("the export route does not exist: the viewer is a static visualization tool", async (t) => {
   const { base, root } = await startApp(t);
   const inside = write(root, "part.step", "ISO-10303-21;\n");
   const headers = { "x-cadgen-viewer": "1" };
-  process.env.VIEWER_SAVE_DIALOG_FORCE_PATH = "__cancel__";
-  t.after(() => delete process.env.VIEWER_SAVE_DIALOG_FORCE_PATH);
-  const cancelled = await fetch(`${base}/__cad/export?file=${encodeURIComponent(inside)}&format=stl`, {
+  const gone = await fetch(`${base}/__cad/export?file=${encodeURIComponent(inside)}&format=stl`, {
     method: "POST",
     headers,
   });
-  assert.deepEqual(await cancelled.json(), { ok: false, cancelled: true });
-  const bad = await fetch(`${base}/__cad/export?file=${encodeURIComponent(inside)}&format=exe`, {
-    method: "POST",
-    headers,
-  });
-  assert.equal(bad.status, 400);
-  assert.match((await bad.json()).error, /Unsupported export format/);
+  assert.equal(gone.status, 405);
 });
 
 test("static dist serves the SPA with fallback, and 404s missing hashed assets", async (t) => {

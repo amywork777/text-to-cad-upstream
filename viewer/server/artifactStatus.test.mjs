@@ -12,10 +12,7 @@ import test from "node:test";
 
 import {
   ARTIFACT_STATE,
-  IMPLICIT_BAKE_SETTINGS,
-  IMPLICIT_PACKAGE_SCHEMA_VERSION,
   artifactStatus,
-  canonicalBakeHash,
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
 import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
@@ -125,7 +122,7 @@ test("schema gate: strict equality, missing/old/stringified all unsupported (and
 
 test("STEP bakes nothing, so a recorded bake is stale; missing payloads and package are buildable", (t) => {
   const root = tempRoot(t, "status-");
-  const baked = writeStepPackage(root, "baked.step", { bakeHash: canonicalBakeHash({ widthMm: 0.42 }) });
+  const baked = writeStepPackage(root, "baked.step", { bakeHash: "any-recorded-bake" });
   assert.equal(artifactStatus(baked, root).reason, "stale_step_artifact");
   const missingSurf = writeStepPackage(root, "gone.step", { withSurf: false });
   assert.equal(artifactStatus(missingSurf, root).reason, "missing_glb");
@@ -145,43 +142,6 @@ test("generated DXF: only the sibling's absence needs a build", (t) => {
   fs.writeFileSync(generator, "def gen_dxf():\n    return 2\n");
   fs.appendFileSync(path.join(root, "outline.dxf"), "999\n");
   assert.deepEqual(artifactStatus(generator, root), { state: ARTIFACT_STATE.READY });
-});
-
-test("implicit package: bake and schema gates, detached from its source", (t) => {
-  const root = tempRoot(t, "status-");
-  const source = write(root, "gyroid.implicit.js", "export const model = 1;\n");
-  const packageRel = path.join("__cadgen__", "models", "gyroid.implicit.js");
-  write(root, path.join(packageRel, "model.glb"), Buffer.from("glTF"));
-  const descriptor = {
-    kind: "implicit-package",
-    packageSchemaVersion: IMPLICIT_PACKAGE_SCHEMA_VERSION,
-    glb: "model.glb",
-    bakeHash: canonicalBakeHash(IMPLICIT_BAKE_SETTINGS),
-  };
-  write(root, path.join(packageRel, "implicit.json"), JSON.stringify(descriptor));
-  assert.deepEqual(artifactStatus(source, root), { state: ARTIFACT_STATE.READY });
-  // Source edit: detached, still ready.
-  fs.appendFileSync(source, "// edited\n");
-  assert.deepEqual(artifactStatus(source, root), { state: ARTIFACT_STATE.READY });
-  // A bake-settings change invalidates every package of the format.
-  write(root, path.join(packageRel, "implicit.json"), JSON.stringify({
-    ...descriptor,
-    bakeHash: canonicalBakeHash({ ...IMPLICIT_BAKE_SETTINGS, resolution: 128 }),
-  }));
-  assert.equal(artifactStatus(source, root).reason, "stale_implicit_artifact");
-  // No recorded bake for a format that bakes: fails closed.
-  const { bakeHash: _dropped, ...noBake } = descriptor;
-  write(root, path.join(packageRel, "implicit.json"), JSON.stringify(noBake));
-  assert.equal(artifactStatus(source, root).reason, "stale_implicit_artifact");
-});
-
-test("canonical bake hash ignores key order but not values", () => {
-  assert.equal(
-    canonicalBakeHash({ a: 1, b: { d: 2, c: 3 } }),
-    canonicalBakeHash({ b: { c: 3, d: 2 }, a: 1 }),
-  );
-  assert.notEqual(canonicalBakeHash({ a: 1 }), canonicalBakeHash({ a: 2 }));
-  assert.equal(canonicalBakeHash(null), null);
 });
 
 test("the lock snapshot decides generating/busy/blocked; freshness decides the rest", (t) => {
