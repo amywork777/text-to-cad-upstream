@@ -16,12 +16,7 @@ from cadgen._internal.glb import export_native_glb_from_scene
 from cadgen._internal.step_scene import (
     LoadedStepScene,
     OccurrenceNode,
-    SelectorBundle,
-    SelectorOptions,
-    SelectorProfile,
     _shape_hash,
-    extract_selectors_from_scene,
-    load_step_scene,
 )
 from tests.python.support.tmp_root import temporary_directory
 

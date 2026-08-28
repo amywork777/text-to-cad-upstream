@@ -138,7 +138,7 @@ def _ensure_step_topology_artifact(
     if is_assembly:
         try:
             return _assembly_topology_artifact(
-                spec, require_selector=require_selector, logger=logger, force=force, debug=debug
+                spec, require_selector=require_selector, debug=debug
             )
         except StepTopologyArtifactError:
             raise
@@ -212,11 +212,8 @@ def _ensure_step_topology_artifact(
     return _assembly_topology_artifact(
         spec,
         require_selector=require_selector,
-        logger=logger,
-        force=False,
-        preloaded_scene=scene,
         debug=debug,
-    )
+        )
 
 
 def _entry_spec_for_target(
@@ -258,9 +255,6 @@ def _assembly_topology_artifact(
     spec: EntrySpec,
     *,
     require_selector: bool,
-    logger: CliLogger | None,
-    force: bool,
-    preloaded_scene: LoadedStepScene | None = None,
     debug: dict[str, object] | None = None,
 ) -> StepTopologyArtifact:
     """The topology artifact for a component-GLB package, which carries no embedded
@@ -322,51 +316,42 @@ def _assembly_topology_artifact(
             selector_bundle=SelectorBundle(manifest=descriptor),
         )
 
-    from cadgen._internal.generation import (
-        _effective_step_spec_for_scene,
-        _selector_options_for_part,
-    )
-    from cadgen._internal.step_scene import (
-        SelectorProfile,
-        extract_selectors_from_scene,
-        mesh_step_scene,
-    )
-
-    # No descriptor: the package is mid-write or vanished between the
-    # is_assembly_package() check and here. Extract selectors from a
-    # regenerated scene in memory — the pre-composition path, kept only for
-    # this race window.
+    # No descriptor: the package is mid-write (the writer swaps assembly.json
+    # atomically under the generation lock) or vanished between the
+    # is_assembly_package() check and here. Wait for the writer instead of
+    # re-extracting a whole-model selector bundle in memory — deleting that
+    # pre-composition path removed the last caller of the OCP selector
+    # extractor, leaving exactly two selector implementations (the Python surf
+    # reader and its JS twin), fenced by their shared fixtures.
     if debug is not None:
         debug["cacheHit"] = False
-        debug["selectorReextracted"] = True
+        debug["descriptorRetried"] = True
+    deadline = time.monotonic() + 5.0
+    while descriptor is None and time.monotonic() < deadline:
+        time.sleep(0.05)
+        descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
+    if descriptor is None:
+        raise StepTopologyArtifactError(
+            code="missing_glb",
+            cad_path=spec.cad_ref,
+            step_path=spec.step_path,
+            artifact_path=render_package_dir(spec.entry_path),
+            regenerate_command=REGENERATE_STEP_COMMAND,
+            message=(
+                f"Render package descriptor for {spec.cad_ref} did not appear "
+                f"(package deleted mid-read?).\n{REGENERATE_STEP_PROMPT}"
+            ),
+        )
+    from cadgen.selector_types import SelectorBundle
 
-    if preloaded_scene is not None:
-        scene = preloaded_scene
-    else:
-        spec, scene = _scene_for_regeneration(spec, logger=logger, force=force)
-    spec = _effective_step_spec_for_scene(spec, scene)
-    options = _selector_options_for_part(spec, scene=scene)
-    mesh_step_scene(
-        scene,
-        linear_deflection=options.linear_deflection,
-        angular_deflection=options.angular_deflection,
-        relative=options.relative,
-    )
-    bundle = extract_selectors_from_scene(
-        scene,
-        cad_ref=spec.cad_ref,
-        profile=SelectorProfile.ARTIFACT,
-        options=options,
-        color=spec.color,
-    )
     return StepTopologyArtifact(
         cad_path=spec.cad_ref,
         kind="assembly",
         source_path=spec.source_path,
         step_path=spec.step_path,
         artifact_path=render_package_dir(spec.entry_path),
-        manifest=bundle.manifest,
-        selector_bundle=bundle,
+        manifest=descriptor,
+        selector_bundle=SelectorBundle(manifest=descriptor) if require_selector else None,
     )
 
 

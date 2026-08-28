@@ -389,12 +389,6 @@ class InspectRefsTests(unittest.TestCase):
         self.addCleanup(self._tempdir.cleanup)
         self.addCleanup(lambda: shutil.rmtree(self.temp_root, ignore_errors=True))
 
-    def _touch_glb(self, step_path: Path | None = None) -> Path:
-        glb_path = render_package_dir(step_path or self.step_path)
-        glb_path.parent.mkdir(parents=True, exist_ok=True)
-        glb_path.write_bytes(b"glb")
-        return glb_path
-
     @contextlib.contextmanager
     def _mock_glb_topology(
         self,
@@ -403,10 +397,16 @@ class InspectRefsTests(unittest.TestCase):
         step_path: Path | None = None,
         buffers: dict[str, array] | None = None,
         include_selector: bool = True,
-        include_index: bool = True,
-        current_hash: str | None = None,
         strip_selector_keys: tuple[str, ...] = (),
     ):
+        """Serve `manifest` as the entry's topology artifact.
+
+        Mocks at the one live boundary — ``ensure_step_topology_artifact`` —
+        which in production returns the render-package descriptor with a
+        descriptor-backed selector bundle (selector rows composed on demand
+        from the per-component .surf files). Everything below that boundary
+        (grammar, lookup, measure, align, mates) runs for real.
+        """
         resolved_step_path = step_path or self.step_path
         edge_rendering = {
             "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -437,69 +437,33 @@ class InspectRefsTests(unittest.TestCase):
         topology_manifest.setdefault("stepPath", self._manifest_path(resolved_step_path))
         topology_manifest.setdefault("edgeRendering", edge_rendering)
         topology_manifest.setdefault("mesh", mesh)
-        edge_manifest = {
-            "schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION,
-            "profile": "surface-edges",
-            "edgeRendering": edge_rendering,
-            "primitiveAttributes": {
-                "barycentric": "_CAD_EDGE_BARYCENTRIC",
-                "class": "_CAD_EDGE_CLASS",
-            },
-            "buffers": {"views": {"surfaceHalfEdges": {}}},
+        selector_topology_manifest = {
+            key: value for key, value in topology_manifest.items() if key not in strip_selector_keys
         }
-        if source_kind == "python":
-            edge_manifest["sourceKind"] = "python"
-            edge_manifest["sourcePath"] = topology_manifest.get("sourcePath")
-            edge_manifest["sourceHash"] = topology_manifest.get("sourceHash")
-            if topology_manifest.get("stepHash"):
-                edge_manifest["stepHash"] = topology_manifest.get("stepHash")
-        else:
-            edge_manifest["sourceKind"] = "step"
-            edge_manifest["sourcePath"] = topology_manifest.get("sourcePath")
-            edge_manifest["stepHash"] = topology_manifest.get("stepHash")
-        # The render package is keyed by the ENTRY filename. Depending on how the entry
-        # resolves, production reads render_package_dir(spec.entry_path) at either the .py
-        # generator key (a python-backed entry with no STEP) or the .step key (resolved as
-        # imported). Touch the mock GLB at both candidate keys so the lookup succeeds
-        # regardless of which one this scenario resolves to.
-        self._touch_glb(resolved_step_path)
-        if source_path != resolved_step_path:
-            self._touch_glb(source_path)
+
+        from cadgen.step_targets import StepTopologyArtifact
+
+        def fake_ensure(target, *, require_selector=True, **_kwargs):
+            bundle = (
+                SelectorBundle(manifest=selector_topology_manifest, buffers=buffers or {})
+                if include_selector and require_selector
+                else None
+            )
+            return StepTopologyArtifact(
+                cad_path=target.cad_path,
+                kind=target.kind,
+                source_path=target.source_path,
+                step_path=target.step_path,
+                artifact_path=resolved_step_path.parent / "__cadgen__" / "models" / resolved_step_path.name,
+                manifest=topology_manifest,
+                selector_bundle=bundle,
+            )
+
         stack = contextlib.ExitStack()
         with stack:
             stack.enter_context(mock.patch.object(step_targets, "find_step_path", return_value=resolved_step_path))
-            expected_step_hash = str(topology_manifest.get("stepHash") or "") if current_hash is None else current_hash
-            stack.enter_context(mock.patch.object(step_targets, "step_file_hash", return_value=expected_step_hash))
-            stack.enter_context(mock.patch.object(cad_generation, "step_file_hash", return_value=expected_step_hash))
             stack.enter_context(
-                mock.patch.object(
-                    step_targets,
-                    "read_step_topology_manifest_from_glb",
-                    return_value=topology_manifest if include_index else None,
-                )
-            )
-            stack.enter_context(
-                mock.patch.object(
-                    step_targets,
-                    "read_step_display_edge_manifest_from_glb",
-                    return_value=edge_manifest,
-                )
-            )
-            stack.enter_context(mock.patch.object(step_targets, "glb_primitives_have_surface_edge_attributes", return_value=True))
-            stack.enter_context(mock.patch.object(step_targets, "glb_surface_edge_class_has_nonzero_values", return_value=True))
-            selector_topology_manifest = {
-                key: value for key, value in topology_manifest.items() if key not in strip_selector_keys
-            }
-            stack.enter_context(
-                mock.patch.object(
-                    step_targets,
-                    "read_step_topology_bundle_from_glb",
-                    return_value=(
-                        SelectorBundle(manifest=selector_topology_manifest, buffers=buffers or {})
-                        if include_selector
-                        else None
-                    ),
-                )
+                mock.patch("cadgen.step_topology_artifact.ensure_step_topology_artifact", side_effect=fake_ensure)
             )
             yield
 
@@ -690,49 +654,6 @@ class InspectRefsTests(unittest.TestCase):
         self.assertNotIn("scripts.gen", error["message"])
         self.assertIn("regenerateCommand", error)
         self.assertEqual("python scripts/gen", error["regenerateCommand"])
-
-    def test_missing_selector_topology_is_an_inspect_error(self) -> None:
-        with self._mock_glb_topology(_refs_manifest(self.cad_ref), include_selector=False):
-            result = refs_inspect.inspect_cad_refs(self.cad_ref, "#f1")
-
-        self.assertFalse(result["ok"])
-        error = result["errors"][0]
-        self.assertEqual("glb_regeneration_failed", error["code"])
-        self.assertIn("\nRegenerate STEP artifacts with the following command using the CAD skill:", error["message"])
-
-    def test_missing_step_topology_is_an_inspect_error(self) -> None:
-        with self._mock_glb_topology(_summary_manifest(self.cad_ref), include_index=False):
-            result = refs_inspect.inspect_cad_refs(self.cad_ref)
-
-        self.assertFalse(result["ok"])
-        error = result["errors"][0]
-        self.assertEqual("glb_regeneration_failed", error["code"])
-        self.assertIn("\nRegenerate STEP artifacts with the following command using the CAD skill:", error["message"])
-
-    def test_unsupported_step_topology_is_an_inspect_error(self) -> None:
-        self._touch_glb()
-        manifest = {**_summary_manifest(self.cad_ref), "schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION + 1}
-
-        with mock.patch.object(step_targets, "find_step_path", return_value=self.step_path), mock.patch.object(
-            step_targets,
-            "read_step_topology_manifest_from_glb",
-            return_value=manifest,
-        ):
-            result = refs_inspect.inspect_cad_refs(self.cad_ref)
-
-        self.assertFalse(result["ok"])
-        error = result["errors"][0]
-        self.assertEqual("glb_regeneration_failed", error["code"])
-        self.assertIn("\nRegenerate STEP artifacts with the following command using the CAD skill:", error["message"])
-
-    def test_stale_glb_topology_is_an_inspect_error(self) -> None:
-        with self._mock_glb_topology(_refs_manifest(self.cad_ref), current_hash="new-step-hash"):
-            result = refs_inspect.inspect_cad_refs(self.cad_ref)
-
-        self.assertFalse(result["ok"])
-        error = result["errors"][0]
-        self.assertEqual("glb_regeneration_failed", error["code"])
-        self.assertIn("\nRegenerate STEP artifacts with the following command using the CAD skill:", error["message"])
 
     def test_legacy_cad_ref_mismatch_is_accepted_when_hash_matches(self) -> None:
         with self._mock_glb_topology({**_refs_manifest("other/ref"), "stepHash": "step-hash-123"}):

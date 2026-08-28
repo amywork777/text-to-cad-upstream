@@ -825,7 +825,7 @@ def read_surf(data: bytes) -> tuple[dict, memoryview]:
 
 
 def _shape_hash(shape) -> int:
-    # Same identity the selector extraction uses for ordinal joins.
-    from cadgen._internal.step_scene_selectors import _shape_hash as impl
+    # Same identity the scene loader uses for ordinal joins.
+    from cadgen._internal.step_scene_loader import _shape_hash as impl
 
     return impl(shape)

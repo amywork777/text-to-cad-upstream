@@ -15,10 +15,7 @@ from cadgen._internal import step_scene_cache, step_scene_mesh
 from cadgen._internal.step_scene import (
     LoadedStepScene,
     OccurrenceNode,
-    SelectorOptions,
-    SelectorProfile,
     adaptive_mesh_resolution_for_scene,
-    extract_selectors_from_scene,
     load_step_scene,
     scene_occurrence_shape,
 )
@@ -102,68 +99,6 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             x_min, _y_min, _z_min, x_max, _y_max, _z_max = bounds.Get()
             self.assertGreater(x_min, 4.0)
             self.assertGreater(x_max, 5.0)
-
-    def test_artifact_topology_uses_glb_face_runs_without_duplicate_face_buffers(self) -> None:
-        with temporary_directory(prefix="cad-topology-v2-") as temp_dir:
-            step_path = Path(temp_dir) / "box.step"
-            build123d.export_step(build123d.Box(1, 1, 1), step_path)
-            scene = load_step_scene(step_path)
-
-            bundle = extract_selectors_from_scene(
-                scene,
-                cad_ref="fixtures/box",
-                profile=SelectorProfile.ARTIFACT,
-                options=SelectorOptions(linear_deflection=0.1, angular_deflection=0.1),
-            )
-
-            self.assertEqual(STEP_TOPOLOGY_SCHEMA_VERSION, bundle.manifest["schemaVersion"])
-            self.assertTrue(bundle.manifest["capabilities"]["surfaceEdgeRendering"])
-            self.assertEqual(".box.step.glb", bundle.manifest["faceProxy"]["source"])
-            self.assertIn("faceRuns", bundle.buffers)
-            self.assertIn("surfaceHalfEdges", bundle.buffers)
-            self.assertTrue(scene.glb_mesh_payloads)
-            self.assertNotIn("facePositions", bundle.buffers)
-            self.assertNotIn("faceIndices", bundle.buffers)
-            self.assertNotIn("faceIds", bundle.buffers)
-            face_columns = bundle.manifest["tables"]["faceColumns"]
-            triangle_count_column = face_columns.index("triangleCount")
-            row_triangle_count = sum(int(row[triangle_count_column]) for row in bundle.manifest["faces"])
-            run_triangle_count = sum(int(bundle.buffers["faceRuns"][index + 3]) for index in range(0, len(bundle.buffers["faceRuns"]), 5))
-            self.assertEqual(row_triangle_count, run_triangle_count)
-
-    def test_shape_rows_include_occurrence_and_prototype_names(self) -> None:
-        transform = (
-            1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        )
-        scene = LoadedStepScene(
-            step_path=Path("labeled.step"),
-            roots=[
-                OccurrenceNode(
-                    path=(1,),
-                    name="base:front_left",
-                    source_name="base",
-                    transform=transform,
-                    prototype_key=7,
-                )
-            ],
-            prototype_shapes={7: build123d.Box(1, 1, 1).wrapped},
-            prototype_names={7: "base"},
-        )
-
-        bundle = extract_selectors_from_scene(
-            scene,
-            cad_ref="fixtures/labeled",
-            profile=SelectorProfile.REFS,
-            options=SelectorOptions(linear_deflection=0.1, angular_deflection=0.1),
-        )
-
-        shape_columns = bundle.manifest["tables"]["shapeColumns"]
-        shape = dict(zip(shape_columns, bundle.manifest["shapes"][0]))
-        self.assertEqual("base:front_left", shape["name"])
-        self.assertEqual("base", shape["sourceName"])
 
     def test_adaptive_mesh_resolution_prefers_finer_defaults_for_small_simple_parts(self) -> None:
         with temporary_directory(prefix="cad-adaptive-mesh-") as temp_dir:

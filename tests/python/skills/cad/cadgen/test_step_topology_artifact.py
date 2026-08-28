@@ -244,29 +244,34 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
             self.assertTrue(debug["cacheHit"])
             self.assertFalse(debug["selectorReextracted"])
 
-    def test_assembly_selector_request_is_reported_as_reextraction(self) -> None:
+    def test_assembly_mid_write_descriptor_is_retried_not_reextracted(self) -> None:
+        # A descriptor that is momentarily absent (the writer swaps
+        # assembly.json atomically) is RE-READ, never re-extracted: the OCP
+        # whole-model selector extractor is gone, so waiting for the writer is
+        # the only pre-composition behaviour left.
         with tempfile.TemporaryDirectory() as temp:
             step_path = Path(temp) / "asm.step"
             spec = self._spec(source="generated", step_path=step_path)
             target = ResolvedStepTarget(cad_path="asm", kind="assembly", source_path=step_path, step_path=step_path)
-            fake_bundle = mock.Mock(manifest={"selectors": True})
+            descriptor = {"kind": "assembly-package", "components": {"c0": {}}}
 
             with (
                 mock.patch.object(step_artifacts, "_entry_spec_for_target", return_value=spec),
                 mock.patch("cadgen._internal.component_package.is_assembly_package", return_value=True),
-                mock.patch.object(step_artifacts, "_scene_for_regeneration", return_value=(spec, mock.Mock())),
-                mock.patch("cadgen._internal.generation._effective_step_spec_for_scene", return_value=spec),
-                mock.patch("cadgen._internal.generation._selector_options_for_part", return_value=mock.Mock()),
-                mock.patch("cadgen._internal.step_scene.mesh_step_scene"),
-                mock.patch("cadgen._internal.step_scene.extract_selectors_from_scene", return_value=fake_bundle),
+                mock.patch(
+                    "cadgen._internal.component_package.read_package_descriptor",
+                    side_effect=[None, None, descriptor],
+                ),
             ):
                 debug: dict[str, object] = {}
                 artifact = step_artifacts.ensure_step_topology_artifact(target, require_selector=True, debug=debug)
 
-            self.assertEqual(artifact.manifest, fake_bundle.manifest)
+            self.assertEqual(artifact.manifest, descriptor)
+            self.assertIsNotNone(artifact.selector_bundle)
+            self.assertEqual(artifact.selector_bundle.manifest, descriptor)
             self.assertTrue(debug["assembly"])
             self.assertFalse(debug["cacheHit"])
-            self.assertTrue(debug["selectorReextracted"])
+            self.assertTrue(debug["descriptorRetried"])
 
 
 if __name__ == "__main__":

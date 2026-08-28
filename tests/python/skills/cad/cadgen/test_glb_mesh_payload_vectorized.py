@@ -5,7 +5,7 @@ from unittest import mock
 import build123d
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 
-from cadgen._internal import glb_mesh_payload, step_scene
+from cadgen._internal import glb_mesh_payload
 from cadgen._internal.glb_mesh_payload import (
     ShapeGlbMeshPayload,
     prototype_glb_mesh_payload,
@@ -21,21 +21,6 @@ def _meshed_fixture_shape() -> Any:
     shape = part.wrapped
     BRepMesh_IncrementalMesh(shape, 0.1, True, 0.1, True).Perform()
     return shape
-
-
-def _meshed_sphere_shape() -> Any:
-    shape = build123d.Sphere(radius=8).wrapped
-    BRepMesh_IncrementalMesh(shape, 0.1, True, 0.1, True).Perform()
-    return shape
-
-
-def _refs_prototype(shape: Any, **option_overrides: Any) -> dict[str, Any]:
-    return step_scene._extract_refs_prototype(
-        shape,
-        step_scene.SelectorOptions(**option_overrides),
-        include_buffers=True,
-        already_meshed=True,
-    )
 
 
 def _synthetic_prototype() -> dict[str, Any]:
@@ -88,13 +73,6 @@ class GlbMeshPayloadVectorizedTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.fixture_shape = _meshed_fixture_shape()
-        cls.fixture_prototype = _refs_prototype(cls.fixture_shape)
-        # Disabling every visibility class yields matched triangle sides whose
-        # surface class code is 0, i.e. real faces without classified edges.
-        cls.sphere_prototype = _refs_prototype(
-            _meshed_sphere_shape(),
-            edge_visibility_classes=(),
-        )
 
     def assert_payloads_byte_identical(
         self,
@@ -143,47 +121,6 @@ class GlbMeshPayloadVectorizedTests(unittest.TestCase):
 
     def test_numpy_runtime_is_available(self) -> None:
         self.assertIsNotNone(glb_mesh_payload.numpy)
-
-    def test_real_prototype_with_surface_edges_matches_python(self) -> None:
-        # Color one face so the payload spans multiple primitives.
-        colored_hash = int(self.fixture_prototype["faces"][0]["shapeHash"])
-        vectorized, fallback = self._prototype_payload_pair(
-            self.fixture_prototype,
-            face_colors={colored_hash: (1.0, 0.2, 0.1, 1.0)},
-            include_surface_edges=True,
-        )
-        self.assertGreater(len(vectorized.positions), 0)
-        self.assertGreater(len(vectorized.primitives), 1)
-        self.assertTrue(vectorized.surface_half_edges_by_face_ordinal)
-        self.assertTrue(any(vectorized.edge_classes))
-        self.assert_payloads_byte_identical(vectorized, fallback)
-
-    def test_real_prototype_plain_matches_python(self) -> None:
-        vectorized, fallback = self._prototype_payload_pair(
-            self.fixture_prototype,
-            face_colors={},
-            include_surface_edges=False,
-        )
-        self.assertGreater(len(vectorized.positions), 0)
-        self.assertEqual(len(vectorized.barycentrics), 0)
-        self.assertEqual(len(vectorized.edge_classes), 0)
-        self.assertEqual(vectorized.surface_half_edges_by_face_ordinal, {})
-        self.assert_payloads_byte_identical(vectorized, fallback)
-
-    def test_sphere_prototype_has_no_classified_edges_and_matches_python(self) -> None:
-        vectorized, fallback = self._prototype_payload_pair(
-            self.sphere_prototype,
-            face_colors={},
-            include_surface_edges=True,
-        )
-        self.assertGreater(len(vectorized.positions), 0)
-        # Matched sides exist, but every class code is 0.
-        self.assertTrue(
-            any(face.get("edgeSideOrdinals") for face in self.sphere_prototype["faces"])
-        )
-        self.assertEqual(vectorized.surface_half_edges_by_face_ordinal, {})
-        self.assertFalse(any(vectorized.edge_classes))
-        self.assert_payloads_byte_identical(vectorized, fallback)
 
     def test_synthetic_prototype_matches_python(self) -> None:
         prototype = _synthetic_prototype()
