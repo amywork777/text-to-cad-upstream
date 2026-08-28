@@ -71,3 +71,6 @@ packages/cadgen/build/
 # the runtime as a real directory.
 !skills/cad-viewer/scripts/viewer/dist/
 !skills/cad-viewer/scripts/viewer/dist/**
+
+# Design notes are local working files, never committed (user policy 2026-08-29).
+design/
