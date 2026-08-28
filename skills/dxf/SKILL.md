@@ -148,7 +148,7 @@ python scripts/gen path/to/a.dxf.py=out/a.dxf path/to/b.dxf.py=out/b.dxf
 
 ## Viewer integration
 
-`<name>.dxf.py` files are CAD Viewer catalog entries, listed whether or not their sibling `.dxf` has been written. Opening one triggers the unified render-artifact flow: a missing or stale output (any source-closure file — the generator, its path-loaded `.step.py` sources, and helper modules — changed since the record) regenerates automatically. The viewer parses and meshes the `.dxf` itself — 2D line work for dimensioned drawings, a fold-able 3D flat pattern for cut layouts. The export dropdown offers "Download DXF" on generated drawings (it regenerates first, so the export is never stale). An imported `.dxf` renders directly with no build step and no artifact management.
+`<name>.dxf.py` files are CAD Viewer catalog entries, listed whether or not their sibling `.dxf` has been written. The viewer is a static visualization tool: it renders the `.dxf` that exists on disk (parsing and meshing it itself — 2D line work for dimensioned drawings, a fold-able 3D flat pattern for cut layouts) and never runs the generator. A `.dxf.py` with no sibling `.dxf` reports an error naming the command to run (`python scripts/gen <source>`); regenerating after edits is likewise this CLI's job. Exports are CLI-only too (`scripts/gen` writes the `.dxf`; there is no in-viewer export). An imported `.dxf` renders directly with no artifact management.
 
 ## Validation
 

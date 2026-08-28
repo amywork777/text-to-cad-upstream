@@ -1,6 +1,10 @@
 # One root directory per Viewer instance
 
-Status: planned, not started. Target branch: `release/0.5.0`.
+Status: SHIPPED on `release/0.5.0`. Historical note: the launcher named below as
+`cadgen viewer` moved out of cadgen in the 2026-08-28 cadgen/viewer split — the
+contract is unchanged but the entrypoint is now the viewer server itself
+(`node viewer/server/main.mjs [--root <dir>] ...`, with `list`/`stop`
+subcommands on the same entrypoint).
 
 ## The invariant
 

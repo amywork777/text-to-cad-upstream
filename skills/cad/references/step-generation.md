@@ -88,7 +88,7 @@ Passing a generated assembly's exported `.step` to a tool treats it as imported 
 
 ## Imported STEP/STP files
 
-An imported STEP/STP file (downloaded or authored elsewhere, no generator) needs no build command. Its GLB/topology render artifacts are generated on demand from the STEP file itself by the tools that consume them — `scripts/inspect`, `scripts/snapshot`, and the CAD Viewer — and its part/assembly kind is inferred from embedded metadata or the STEP product hierarchy.
+An imported STEP/STP file (downloaded or authored elsewhere, no generator) needs no build command. Its render artifacts are generated on demand from the STEP file itself by the CLI tools that consume them — `scripts/inspect` and `scripts/snapshot` — and its part/assembly kind is inferred from embedded metadata or the STEP product hierarchy. (The CAD Viewer can also import a raw STEP through its own WASM kernel where that kernel is installed — a repo checkout or the standalone viewer app — but the bundled skill viewer ships without it and reports the CLI command to run instead.)
 
 To produce STL/3MF/native GLB files from an imported STEP, pass it directly to `scripts/export`; read `supported-exports.md`.
 
@@ -158,8 +158,9 @@ CADGEN_WARM=0 python scripts/gen part.step.py   # force a cold in-process run
   own OCP process, so the pool bounded nothing.
 - `cadgen daemon status` reports `waits` and `coldOverflows`. Overflows climbing during
   normal work means the machine is genuinely saturated, not that the cap is too small.
-- Both front doors use it — `scripts/gen` and `cadgen step gen` alike — and so does the
-  CAD Viewer, so a terminal build and a viewer build share the same warm processes.
+- Both front doors use it — `scripts/gen` and `cadgen step gen` alike — so concurrent
+  terminal builds share the same warm processes. (The CAD Viewer runs no Python and
+  never builds; it only reflects CLI builds via their progress records.)
 - **It runs on Windows too.** The channel is a Unix socket on macOS and Linux and a named
   pipe on Windows, both through `multiprocessing.connection`, so warm builds are not a
   POSIX-only feature. A named pipe is ACL'd to its creator exactly as a Unix socket takes

@@ -90,11 +90,13 @@ entry says so.
     legacy payloads in their own dir). Harmless clutter — a cleanup pass or a
     scanner-side GC note would tidy old checkouts.
 
-13. **`skills/dxf` lost its `scripts/artifact` command by design** (an imported
-    `.dxf` needs no build), and `cadgen dxf artifact` is gone from the CLI
-    registry. Any external docs/automation invoking them must move to
-    `scripts/gen` / direct rendering. Flagged here because the skill surface
-    changed, not just internals.
+13. **FIXED — `skills/dxf` lost its `scripts/artifact` command by design** (an
+    imported `.dxf` needs no build), and `cadgen dxf artifact` is gone from the
+    CLI registry. Docs swept 2026-08-28: no doc or skill references either
+    command any more (the cad skill's `scripts/artifact` for STEP render
+    packages is a different, still-live command). Was: any external
+    docs/automation invoking them must move to `scripts/gen` / direct
+    rendering.
 
 14. **Dimensioned-drawing snapshots are now possible but not implemented.** The
     old pipeline could not snapshot a document profile at all (no preview.glb);
@@ -165,10 +167,13 @@ entry says so.
     (see the tessellator-unification discussion) — not a viewer-side code
     path.
 
-24. **Generated entries no longer auto-build on open.** A `.step.py`/`.dxf.py`
-    with no artifact shows "run `python scripts/gen <source>`" instead of
-    silently generating. Docs/skills that describe open-to-build behavior
-    should be swept when next touched.
+24. **FIXED — Generated entries no longer auto-build on open.** A
+    `.step.py`/`.dxf.py` with no artifact shows "run `python scripts/gen
+    <source>`" instead of silently generating. Docs swept 2026-08-28: the dxf
+    skill's viewer-integration section, the cad skill's progress-bar and
+    warm-daemon notes, and the imported-STEP build-on-demand paragraph now
+    describe the static viewer (CLI builds, advisory badge, WASM import only
+    where the kernel is installed).
 
 25. **The `generating` badge is now advisory** (status-record freshness window,
     20s): a SIGKILLed CLI build can show a lingering badge for up to that

@@ -93,7 +93,8 @@ reader sees "3 finished, now on engines". Without this a multi-minute assembly s
 during its longest phase.
 
 It surfaces in two places, and neither is ordinary stderr output: a **live inline line** on a
-terminal, and the **CAD Viewer's progress bar** during an on-demand build. The inline line is
+terminal, and the **CAD Viewer's advisory progress badge** while a CLI build is in flight
+(the viewer never builds; it reads the build's progress record). The inline line is
 deliberately silent when stderr is not a tty, so a redirected log keeps the lines rather than
 the repainting — do not conclude the calls are doing nothing because `2>file` shows no labels.
 Silent generators are unaffected.
