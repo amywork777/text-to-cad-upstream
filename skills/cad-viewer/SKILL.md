@@ -8,42 +8,44 @@ description: Start CAD Viewer and return review links for explicit CAD, implicit
 Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad).
 Use the installed local skill files as the runtime source of truth; the
 repository link is only for provenance and release review. If the user asks to
-modify, debug, or iterate on CAD Viewer source itself, clone that repository and
-work there — this installed skill runtime runs the Viewer, it is not where you
-edit it.
+modify, debug, or iterate on CAD Viewer source itself, clone the standalone
+[earthtojake/cad-viewer](https://github.com/earthtojake/cad-viewer) repository
+and work there — this installed skill runtime runs the Viewer, it is not where
+you edit it.
 
 Use this skill to open existing or newly generated CAD, implicit CAD,
 robot-description, or DXF files in CAD Viewer and hand back live review links. The expected input is one or more explicit file paths.
 
 ## Setup
 
-The Viewer ships inside the `cadgen` distribution — client bundle and its JS server.
-The server runs on Node.js (>= 22), which must be on `PATH`. Install cadgen once:
-
-```bash
-python -m pip install -r requirements.txt
-```
+The Viewer ships INSIDE THIS SKILL, under `scripts/viewer/` — the prebuilt
+client bundle plus its dependency-free JS server. There is nothing to install:
+the one requirement is Node.js (>= 22) on `PATH`. No Python, no pip, no npm
+install.
 
 ## Start Viewer
 
-Start one local CAD Viewer with `cadgen viewer`. It serves the bundled Viewer client
-plus the CAD API on a single fixed port (`3245`). Each instance serves ONE directory,
-given by `--root` and fixed for the life of the process.
+Start one local CAD Viewer with the bundled server. It serves the Viewer client
+plus the CAD API on a single fixed port (`3245`). Each instance serves ONE
+directory, given by `--root` and fixed for the life of the process.
 
 > The default port `3245` is `0xCAD` — "CAD" in hexadecimal.
 
 ```bash
-cadgen viewer --root /absolute/project/models --host 127.0.0.1
+node scripts/viewer/server/main.mjs --root /absolute/project/models --host 127.0.0.1
 ```
+
+(Relative to this skill directory; use the absolute path to `main.mjs` when
+running from elsewhere. `npm --prefix scripts/viewer run start -- --root ...`
+is equivalent, but npm is not required.)
 
 **Always pass an absolute `--root`.** The Viewer runs from an arbitrary working
 directory — usually wherever the skill happens to be installed, not the model
 directory — so a relative one resolves against the wrong place. `--root` defaults to
 the current directory, which is rarely what you want here.
 
-Equivalently `python -m cadgen.cli viewer --root ... --host 127.0.0.1`, which is what
-to use when `cadgen` is not on `PATH`. Both print the review URL and, with `--json`,
-the `{"url", "port", "action": "start"}` line.
+The server prints the review URL and, with `--json`, the
+`{"url", "port", "action": "start"}` line.
 
 ## URL shape
 
@@ -66,7 +68,7 @@ path in `file=`. Rooting at the artifact's own deep folder
 (`--root .../models/step/mechanisms`, `?file=lift_table.step.py`) opens the same model
 but hides the rest of the project, which is almost never what the user wants.
 
-If port `3245` is already in use, the launcher exits with an error rather than
+If port `3245` is already in use, the server exits with an error rather than
 rolling to another port; rerun with an explicit free port, `--port <n>`, and use
 the URL it prints. In sandboxed agent environments, local binding failures such
 as `EPERM`/`EACCES` can be expected; rerun with the needed permission/escalation.
@@ -74,16 +76,26 @@ as `EPERM`/`EACCES` can be expected; rerun with the needed permission/escalation
 Add `--json` to also print a machine-readable result as the last stdout line
 beginning with `{` (`{"url": ..., "port": ..., "action": "start"}`).
 
-`cadgen viewer list` shows every running instance with the root it serves;
-`cadgen viewer stop --port <n>` ends one. To review a directory outside the current
-root, start a second Viewer on another port rather than trying to redirect the first.
+`node scripts/viewer/server/main.mjs list` shows every running instance with the
+root it serves; `node scripts/viewer/server/main.mjs stop --port <n>` ends one.
+To review a directory outside the current root, start a second Viewer on another
+port rather than trying to redirect the first.
+
+## Generation and imports are the CAD skill's job
+
+The Viewer is a static visualization tool: it renders artifacts that already
+exist and never runs Python. This bundled runtime also ships without the WASM
+STEP-import kernel, so a raw `.step`/`.stp` with no render package reports
+`needs-build` with no in-Viewer build. Produce the artifacts first with the
+owning skill's CLI — `python scripts/gen <source or .step file>` from the CAD
+skill builds both generated models and imported STEPs — then return the link.
 
 ## Links
 
 - Before returning any link, resolve `<directory>/<file>` and confirm it
   exists. For a **generated** model pass the generator source (`<name>.step.py`)
-  — that is what the catalog itself lists, the backend resolves it directly and
-  builds the render artifacts on demand, and no `.step` file needs to exist. It
+  — that is what the catalog itself lists. Its render artifacts must already be
+  built (`python scripts/gen`); the Viewer will not build them on open. It
   is also the only form that carries a `params` sidecar, because a same-stem
   `<name>.step.py` shadows `<name>.step` anyway. For an **imported** STEP with no
   generator, pass the `.step`/`.stp` itself. If the resolved path is missing, do

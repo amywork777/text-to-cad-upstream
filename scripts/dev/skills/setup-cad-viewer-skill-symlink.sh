@@ -41,21 +41,21 @@ done
 # shellcheck source=scripts/dev/symlink-utils.sh
 source "$UTILS_SCRIPT"
 
-check_no_tracked_viewer_dist() {
-  # The built client belongs in cadgen's packaged runtime, which ships in the wheel. A
-  # tracked copy would be a second, silently divergent one -- and a 16 MB Vite output
-  # re-committed on every client change.
+check_no_tracked_runtime_dist() {
+  # The bundled skill runtime's dist is committed only on the PUBLISH tree. On
+  # develop, scripts/viewer stays a symlink and a tracked dist would be a 16 MB
+  # Vite output re-committed on every client change.
   local tracked_dist
   tracked_dist="$(
     git ls-files \
-      "packages/cadgen/src/cadgen/_runtime/viewer" \
-      "packages/cadgen/src/cadgen/_runtime/viewer/**" \
+      "skills/cad-viewer/scripts/viewer/dist" \
+      "skills/cad-viewer/scripts/viewer/dist/**" \
       2>/dev/null || true
   )"
 
   if [ -n "$tracked_dist" ]; then
-    echo "packages/cadgen/src/cadgen/_runtime/viewer must not be tracked: it is a build" >&2
-    echo "output that CI and the publish job regenerate before building the wheel." >&2
+    echo "skills/cad-viewer/scripts/viewer/dist must not be tracked on develop." >&2
+    echo "Run scripts/dev/setup-symlinks.sh to restore the cad-viewer runtime symlink." >&2
     echo "$tracked_dist" | sed 's/^/- /' >&2
     return 1
   fi
@@ -63,6 +63,7 @@ check_no_tracked_viewer_dist() {
 
 cd "$REPO_ROOT"
 setup_link "$MODE" "viewer/packages/cadjs" "../../packages/cadjs"
+setup_link "$MODE" "skills/cad-viewer/scripts/viewer" "../../../viewer"
 if [ "$MODE" = "check" ]; then
-  check_no_tracked_viewer_dist
+  check_no_tracked_runtime_dist
 fi
