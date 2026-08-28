@@ -1,26 +1,8 @@
-export const MAX_SERVER_LIFETIME_MS = 2_147_483_647;
-
-export function parseServerLifetimeMs(value, flag = "--shutdown-after") {
-  const rawValue = String(value ?? "").trim().toLowerCase();
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/.exec(rawValue);
-  if (!match) {
-    throw new Error(`${flag} must be a positive duration such as 30m, 2h, or 43200000.`);
-  }
-
-  const amount = Number.parseFloat(match[1]);
-  const unit = match[2] || "ms";
-  const multiplier = {
-    ms: 1,
-    s: 1000,
-    m: 60 * 1000,
-    h: 60 * 60 * 1000,
-  }[unit];
-  const parsed = Math.round(amount * multiplier);
-  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > MAX_SERVER_LIFETIME_MS) {
-    throw new Error(`${flag} must be between 1ms and ${MAX_SERVER_LIFETIME_MS}ms.`);
-  }
-  return parsed;
-}
+// Dev-server lifetime only (VIEWER_SERVER_LIFETIME_MS, consumed by
+// vite.config.mjs). The CLI-flag duration parser and HTTP close helper that
+// used to live here served the deleted Python `serve --shutdown-after` path
+// and had no remaining callers.
+const MAX_SERVER_LIFETIME_MS = 2_147_483_647;
 
 export function normalizeServerLifetimeMs(value, defaultMs = null) {
   const rawValue = String(value ?? "").trim();
@@ -34,7 +16,7 @@ export function normalizeServerLifetimeMs(value, defaultMs = null) {
   return parsed;
 }
 
-export function formatServerLifetime(ms) {
+function formatServerLifetime(ms) {
   if (ms % (60 * 60 * 1000) === 0) {
     return `${ms / (60 * 60 * 1000)}h`;
   }
@@ -47,17 +29,6 @@ export function formatServerLifetime(ms) {
   return `${ms}ms`;
 }
 
-export function closeHttpServer(server) {
-  return new Promise((resolve, reject) => {
-    server.close((error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
-      resolve();
-    });
-  });
-}
 
 export function scheduleProcessShutdown({
   lifetimeMs,
