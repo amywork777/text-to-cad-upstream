@@ -149,3 +149,5 @@ def _summary_line(display: str, srdf_source: SrdfSource, urdf_path: Path) -> str
     )
 
 
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -17,3 +17,7 @@ KINDS = SKILL_KINDS["cad"]
 
 def main(argv: Sequence[str] | None = None, *, prog: str = "scripts/snapshot") -> int:
     return run(argv, kinds=KINDS, prog=prog)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
