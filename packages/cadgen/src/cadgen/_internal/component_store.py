@@ -4,10 +4,11 @@ Packages stay fully self-contained: every package's ``components/<cid>.surf``
 is a real file (hardlinked from the store where possible). The store is a
 best-effort cache — losing it costs a re-extraction, never correctness.
 
-Layout: ``$CADGEN_STORE_DIR (default ~/.cache/cadgen)/components/<cid>.surf``
-plus ``<cid>.brep`` (the exact-shape blob — design/
-step-document-architecture.md). The key is the BARE cid: both artifacts are
-exact geometry with no mesh tolerances, and the cid is already salted by
+Layout: ``<cache root>/components/<cid>.surf`` plus ``<cid>.brep`` (the
+exact-shape blob — design/step-document-architecture.md), with the root
+resolved by :mod:`cadgen._internal.cache_paths` (``CADGEN_STORE_DIR``, then
+the platform cache dir). The key is the BARE cid: both artifacts are exact
+geometry with no mesh tolerances, and the cid is already salted by
 ``STEP_PACKAGE_VERSION`` so extractor changes re-key the store wholesale.
 
 ``CADGEN_COMPONENT_STORE=0`` disables both directions.
@@ -20,6 +21,7 @@ import shutil
 from pathlib import Path
 
 from cadgen._internal.atomic_replace import replace_atomic
+from cadgen._internal.cache_paths import components_dir
 
 
 def _enabled() -> bool:
@@ -27,9 +29,7 @@ def _enabled() -> bool:
 
 
 def _store_dir() -> Path:
-    root = os.environ.get("CADGEN_STORE_DIR", "").strip()
-    base = Path(root) if root else Path.home() / ".cache" / "cadgen"
-    path = base / "components"
+    path = components_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path
 

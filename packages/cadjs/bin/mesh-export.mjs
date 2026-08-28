@@ -16,12 +16,14 @@
  *   or {"ok":false,"error":...}. No locks, no progress protocol — this writes
  *   only the file the caller named (plus best-effort cache entries).
  *
- * Component tessellations are cached under ~/.cache/cadgen/meshes/ keyed
- * <cid>-l<chord>-a<angle> (tolerances in the tessellator's diagonal-relative
- * units), so repeat exports and multi-occurrence assemblies pay tessellation
- * once per unique component. The cache is BEST-EFFORT: read/write failures
- * fall through to tessellation, writes are atomic (tmp + rename), and
- * CADGEN_MESH_CACHE=0 disables it entirely.
+ * Component tessellations are cached under <cache root>/meshes/ (root:
+ * CADGEN_STORE_DIR, else the platform cache dir — see tessellationCacheFs.mjs)
+ * keyed <cid>-t<tessellator-version>-l<chord>-a<angle> (tolerances in the
+ * tessellator's diagonal-relative units), so repeat exports and
+ * multi-occurrence assemblies pay tessellation once per unique component. The
+ * cache is BEST-EFFORT: read/write failures fall through to tessellation,
+ * writes are atomic (tmp + rename), and CADGEN_MESH_CACHE=0 disables it
+ * entirely; `cadgen cache gc` sweeps orphaned generations.
  */
 
 import fs from "node:fs";

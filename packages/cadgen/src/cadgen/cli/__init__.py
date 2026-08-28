@@ -50,6 +50,7 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "sdf validate": ("cadgen.cli.sdf_validate", "validate SDF worlds and models"),
     "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
+    "cache": ("cadgen.cli.cache", "inspect or gc the user-level caches (info/gc)"),
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
     # The two-word entry is required, not cosmetic: dispatch matches argv[0:2] first, so

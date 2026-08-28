@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { parseSurf } from "./container.js";
-import { DEFAULT_OPTIONS, tessellateComponent } from "./tessellate.js";
+import { DEFAULT_OPTIONS, TESSELLATION_VERSION, tessellateComponent } from "./tessellate.js";
 import {
   decodeComponentTessellation,
   decodeTessellationCacheBatch,
@@ -157,6 +157,15 @@ test("cache key is canonical across tolerance spellings and includes both tolera
   );
   assert.ok(!tessellationOptionsCacheable({ collectBoundaryDebug: true }));
   assert.ok(tessellationOptionsCacheable({}));
+});
+
+test("cache key carries the tessellator version salt (policy)", () => {
+  // Dropping the -t<version>- salt would serve stale triangles across
+  // tessellator algorithm changes: the key must cover the WHOLE function
+  // from surf to triangles, not just its tolerance inputs.
+  assert.ok(Number.isInteger(TESSELLATION_VERSION) && TESSELLATION_VERSION >= 1);
+  assert.match(tessellationCacheKey("c0"), /^c0-t\d+-l/);
+  assert.ok(tessellationCacheKey("c0").includes(`-t${TESSELLATION_VERSION}-`));
 });
 
 test("provider: miss tessellates + writes back; hit skips tessellation; unset is a no-op", async (t) => {

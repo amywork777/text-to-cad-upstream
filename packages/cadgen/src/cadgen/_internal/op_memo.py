@@ -254,16 +254,16 @@ def _disk_enabled() -> bool:
 
 def _disk_dir() -> str:
     # Resolved per call so tests (and long-lived workers) honor env changes;
-    # the makedirs is a no-op syscall next to any kernel op.
+    # the makedirs is a no-op syscall next to any kernel op. The base comes
+    # from the shared cache root (cache_paths, which also keeps honoring the
+    # tier-specific CADGEN_OP_MEMO_DISK_DIR override); the salt subdirectory
+    # is this tier's generation scheme, which `cadgen cache gc` reads by name.
     import build123d
 
-    base = os.environ.get("CADGEN_OP_MEMO_DISK_DIR")
-    if not base:
-        store_root = os.environ.get("CADGEN_STORE_DIR") or os.path.join(
-            os.path.expanduser("~"), ".cache", "cadgen")
-        base = os.path.join(store_root, "opmemo")
+    from cadgen._internal.cache_paths import opmemo_base_dir
+
     salt = f"v{_OP_MEMO_VERSION}-b123d{getattr(build123d, '__version__', 'unknown')}"
-    path = os.path.join(base, salt)
+    path = os.path.join(str(opmemo_base_dir()), salt)
     os.makedirs(path, exist_ok=True)
     return path
 
