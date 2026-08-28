@@ -103,6 +103,69 @@ function isRawStepFile(candidate) {
 // requests for the same entry attach to the in-flight run instead of racing it.
 const wasmImportsInFlight = new Map();
 
+// --- live import progress ------------------------------------------------------
+// The import child reports one `[import-progress] {json}` line per event on
+// stderr (importCli.mjs). Parsed here into an in-memory record per in-flight
+// package dir, served by the artifact-status route in the SAME shape a CLI
+// build's progress record takes (phase/label/detail/done/total/determinate,
+// see viewer/src/client/workbench/artifactProgress.js) — so the client's
+// existing generating badge renders a real bar for the components phase, which
+// is minutes on 100MB-class files, instead of an indeterminate spinner.
+const wasmImportProgress = new Map();
+const IMPORT_PROGRESS_PREFIX = "[import-progress] ";
+
+// Phase order gives the badge its "2/5" ordinal; labels match the phase's
+// actual work. `components` is the only phase with a real denominator.
+const IMPORT_PHASES = ["parse", "analyze", "walk", "components", "finalize"];
+const IMPORT_PHASE_LABELS = {
+  parse: "Parse STEP",
+  analyze: "Mesh resolution",
+  walk: "Assembly walk",
+  components: "Extract components",
+  finalize: "Write descriptor",
+};
+
+export function parseImportProgressLine(line) {
+  const stripped = line.trim();
+  if (!stripped.startsWith(IMPORT_PROGRESS_PREFIX)) {
+    return null;
+  }
+  let event;
+  try {
+    event = JSON.parse(stripped.slice(IMPORT_PROGRESS_PREFIX.length));
+  } catch {
+    return null;
+  }
+  const phase = String(event?.phase || "").trim();
+  if (!phase) {
+    return null;
+  }
+  const total = Number.isFinite(event.total) ? Math.max(0, Math.round(event.total)) : null;
+  const done = Number.isFinite(event.done) ? Math.max(0, Math.round(event.done)) : 0;
+  const ordinal = IMPORT_PHASES.indexOf(phase);
+  return {
+    phase,
+    label: IMPORT_PHASE_LABELS[phase] || phase,
+    detail: String(event.detail || "").trim(),
+    index: ordinal >= 0 ? ordinal + 1 : 0,
+    count: IMPORT_PHASES.length,
+    done,
+    total,
+    determinate: total !== null && total > 0,
+    updatedAt: Date.now(),
+  };
+}
+
+// Test seams: let suites read (or stage) live import state without racing a
+// real kernel run. Both return the internal maps on purpose.
+export function wasmImportProgressState() {
+  return wasmImportProgress;
+}
+
+export function wasmImportsInFlightState() {
+  return wasmImportsInFlight;
+}
+
 function runWasmImport(candidate, { force = false } = {}) {
   const packageDir = renderPackageDir(candidate);
   const inFlight = wasmImportsInFlight.get(packageDir);
@@ -117,18 +180,39 @@ function runWasmImport(candidate, { force = false } = {}) {
     const child = spawn(process.execPath, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
+    wasmImportProgress.set(packageDir, {
+      runId: `wasm-import-${child.pid ?? "spawn"}-${Date.now()}`,
+      record: null,
+    });
     let stdout = "";
     let stderr = "";
+    let stderrTail = "";
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
     child.stderr.on("data", (chunk) => {
-      stderr += chunk;
+      stderrTail += chunk;
+      const lines = stderrTail.split("\n");
+      stderrTail = lines.pop() ?? "";
+      for (const line of lines) {
+        const record = parseImportProgressLine(line);
+        if (record) {
+          const entry = wasmImportProgress.get(packageDir);
+          if (entry) {
+            entry.record = record;
+          }
+        } else {
+          stderr += `${line}\n`;
+        }
+      }
     });
     child.on("error", (error) => {
       resolve({ ok: false, error: `could not run the WASM STEP import: ${error.message}` });
     });
     child.on("close", (code) => {
+      if (stderrTail && !parseImportProgressLine(stderrTail)) {
+        stderr += `${stderrTail}\n`;
+      }
       for (const line of stdout.split("\n").reverse()) {
         const stripped = line.trim();
         if (stripped.startsWith("{")) {
@@ -147,6 +231,7 @@ function runWasmImport(candidate, { force = false } = {}) {
     });
   }).finally(() => {
     wasmImportsInFlight.delete(packageDir);
+    wasmImportProgress.delete(packageDir);
   });
   wasmImportsInFlight.set(packageDir, promise);
   return promise;
@@ -162,7 +247,13 @@ export function createCadgenOps(rootDir) {
       const packageDir = renderPackageDir(candidate);
       let snapshot = advisoryBuildProgress(packageDir);
       if (!snapshot && wasmImportsInFlight.has(packageDir)) {
-        snapshot = { writing: true, busy: false, runId: null, progress: null };
+        const live = wasmImportProgress.get(packageDir);
+        snapshot = {
+          writing: true,
+          busy: false,
+          runId: live?.runId ?? null,
+          progress: live?.record ?? null,
+        };
       }
       const status = computeArtifactStatus(fileRef, rootDir, { snapshot });
       if (status.state !== ARTIFACT_STATE.NEEDS_BUILD) {

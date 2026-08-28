@@ -92,12 +92,22 @@ capability does not exist in the viewer by design.
 
 A raw `.step`/`.stp` with no render package (or a stale one — the file changed after
 import) is importable right here: `server/import/` holds a WASM OCCT pipeline
-(opencascade.js, a viewer npm dependency — never part of the cadgen wheel) that parses
-the STEP, walks its XCAF assembly, extracts each component with the surf-extractor
-twin, and writes the SAME package format cadgen writes. This is the viewer's ONLY
-build. It runs as a child process (`import/importCli.mjs`) so a kernel abort can never
-take the server down; `VIEWER_WASM_IMPORT=0` disables it. Status for an importable
-STEP reports `needs-build` and the client's normal build POST performs the import.
+(opencascade.js, a viewer npm dependency — absent from the bundled cad-viewer skill,
+which routes raw STEPs to the CLI instead) that parses the STEP, walks its XCAF
+assembly, extracts each component with the surf-extractor twin, and writes the SAME
+package format cadgen writes. This is the viewer's ONLY build. It runs as a child
+process (`import/importCli.mjs`) so a kernel abort can never take the server down;
+`VIEWER_WASM_IMPORT=0` disables it. Status for an importable STEP reports
+`needs-build` and the client's normal build POST performs the import.
+
+While an import runs, the child reports one `[import-progress] {json}` line per
+phase on stderr; the server parses those into an in-memory record per in-flight
+package dir and the status route serves it as the `generating` payload — the same
+shape a CLI build's progress record takes, so the client's existing badge renders
+it with no client changes. The `components` phase carries a real `done/total`
+denominator (a bar); the other phases are honest indeterminate frames. The record
+lives only as long as the child: no file is written, and a crashed import leaves
+nothing to age out.
 
 Both extractors and both package producers are deliberately duplicated code fenced by
 tests: `tests/python/packages/cadgen/test_surf_extractor_conformance.py` (geometry,

@@ -37,8 +37,13 @@ try {
   const oc = await loadKernel();
   const result = buildPackageFromStep(oc, args.step, args["package-dir"], {
     force: Boolean(args.force),
-    onProgress: ({ phase, detail }) => {
-      process.stderr.write(`[import] ${phase}: ${detail ?? ""}\n`);
+    // One machine-readable line per event (the spawning server turns these
+    // into the artifact-status progress payload); still greppable by hand.
+    onProgress: ({ phase, detail, done, total }) => {
+      const event = { phase, detail: detail ?? "" };
+      if (Number.isFinite(done)) event.done = done;
+      if (Number.isFinite(total)) event.total = total;
+      process.stderr.write(`[import-progress] ${JSON.stringify(event)}\n`);
     },
   });
   process.stdout.write(`${JSON.stringify({ ok: true, ...result })}\n`);

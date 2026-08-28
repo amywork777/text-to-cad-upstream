@@ -136,12 +136,15 @@ entry says so.
     — avoidable cost on very large vendor files; a custom ocjs build exposing
     `Get` would delete the workaround.
 
-20. **WASM import progress has no denominator surface.** The child process
-    reports phase lines on stderr, but the status poll returns no `progress`
-    for WASM imports, so the client shows an indeterminate spinner for what
-    can be minutes on 100MB-class files. Wiring importCli's stderr phases into
-    a progress record (the shape render_ops writes) would light up the
-    existing bar.
+20. **FIXED — WASM import progress now has a denominator surface.** The import
+    child emits `[import-progress] {json}` lines (phase/detail/done/total);
+    the server parses them into an in-memory record per in-flight package dir
+    and the artifact-status route serves it as the `generating` payload in the
+    badge's existing shape — the components phase renders a real bar. In-memory
+    only (no file, nothing to age out); `viewer/server/importProgress.test.mjs`
+    pins the parsing and the route attachment. Was: the status poll returned no
+    `progress` for WASM imports, so the client showed an indeterminate spinner
+    for what can be minutes on 100MB-class files.
 
 21. **Python `round()` vs JS rounding at exact half-thousandths.** The
     adaptive-resolution twin rounds hints (and the >500mm scale-floor
