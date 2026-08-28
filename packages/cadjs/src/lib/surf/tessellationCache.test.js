@@ -1,0 +1,133 @@
+// The shared tessellation cache is a cross-consumer contract: the codec must
+// round-trip a FULL component losslessly (exports read a subset, render reads
+// everything), the key must be canonical across tolerance spellings, and the
+// provider hook must be invisible when unset and lossless when set.
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import { parseSurf } from "./container.js";
+import { DEFAULT_OPTIONS, tessellateComponent } from "./tessellate.js";
+import {
+  decodeComponentTessellation,
+  encodeComponentTessellation,
+  setTessellationCacheProvider,
+  tessellateComponentCached,
+  tessellationCacheKey,
+  tessellationOptionsCacheable,
+} from "./tessellationCache.js";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+
+function loadFixture(name) {
+  const buffer = fs.readFileSync(path.join(HERE, "fixtures", `${name}.surf`));
+  return parseSurf(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+}
+
+test("codec round-trips a full component tessellation losslessly", () => {
+  const { index, floats } = loadFixture("sun_gear");
+  const component = tessellateComponent(index, floats);
+  const bytes = encodeComponentTessellation(component, { partColor: [0.5, 0.25, 1, 1] });
+  const decoded = decodeComponentTessellation(bytes);
+  assert.ok(decoded, "entry decodes");
+  assert.deepEqual(decoded.partColor, [0.5, 0.25, 1, 1]);
+  const round = decoded.component;
+  for (const field of ["positions", "normals", "faceOrds", "indices", "sideOrds"]) {
+    assert.deepEqual([...round[field]], [...component[field]], field);
+  }
+  assert.deepEqual(round.faceRanges, component.faceRanges);
+  assert.deepEqual(round.bounds, { min: [...component.bounds.min], max: [...component.bounds.max] });
+  assert.equal(round.scale, component.scale);
+  assert.equal(round.edges.length, component.edges.length);
+  for (let i = 0; i < component.edges.length; i += 1) {
+    assert.equal(round.edges[i].ord, component.edges[i].ord);
+    assert.equal(round.edges[i].visibilityClass, component.edges[i].visibilityClass);
+    assert.deepEqual([...round.edges[i].polyline], [...component.edges[i].polyline]);
+  }
+});
+
+test("decode rejects garbage, truncation, and version drift as misses", () => {
+  const { index, floats } = loadFixture("sun_gear");
+  const bytes = encodeComponentTessellation(tessellateComponent(index, floats));
+  assert.equal(decodeComponentTessellation(null), null);
+  assert.equal(decodeComponentTessellation(new Uint8Array(4)), null);
+  assert.equal(decodeComponentTessellation(bytes.subarray(0, bytes.length - 8)), null);
+  const wrongVersion = bytes.slice();
+  new DataView(wrongVersion.buffer).setUint32(4, 999, true);
+  assert.equal(decodeComponentTessellation(wrongVersion), null);
+});
+
+test("cache key is canonical across tolerance spellings and includes both tolerances", () => {
+  assert.equal(
+    tessellationCacheKey("c0", { chordTolerance: 0.0015, angleTolerance: 0.35 }),
+    tessellationCacheKey("c0", { chordTolerance: 1.5e-3, angleTolerance: 3.5e-1 }),
+  );
+  assert.equal(tessellationCacheKey("c0"), tessellationCacheKey("c0", { ...DEFAULT_OPTIONS }));
+  assert.notEqual(
+    tessellationCacheKey("c0", { chordTolerance: 1e-3 }),
+    tessellationCacheKey("c0", { chordTolerance: 2e-3 }),
+  );
+  assert.notEqual(
+    tessellationCacheKey("c0", { angleTolerance: 0.3 }),
+    tessellationCacheKey("c0", { angleTolerance: 0.4 }),
+  );
+  assert.ok(!tessellationOptionsCacheable({ collectBoundaryDebug: true }));
+  assert.ok(tessellationOptionsCacheable({}));
+});
+
+test("provider: miss tessellates + writes back; hit skips tessellation; unset is a no-op", async (t) => {
+  t.after(() => setTessellationCacheProvider(null));
+  const { index, floats } = loadFixture("sun_gear");
+  const store = new Map();
+  const calls = { get: 0, put: 0 };
+  setTessellationCacheProvider({
+    async get(key) {
+      calls.get += 1;
+      return store.get(key) ?? null;
+    },
+    async put(key, bytes) {
+      calls.put += 1;
+      store.set(key, bytes);
+    },
+  });
+
+  const first = await tessellateComponentCached(index, floats, { cid: "c0" });
+  assert.equal(calls.get, 1);
+  assert.equal(calls.put, 1);
+  assert.equal(store.size, 1);
+  assert.ok(store.has(tessellationCacheKey("c0")));
+
+  const second = await tessellateComponentCached(index, floats, { cid: "c0" });
+  assert.equal(calls.get, 2);
+  assert.equal(calls.put, 1, "hit must not write back");
+  assert.deepEqual([...second.positions], [...first.positions]);
+  assert.deepEqual([...second.indices], [...first.indices]);
+  assert.deepEqual(second.faceRanges, first.faceRanges);
+
+  // Debug options bypass the provider entirely.
+  await tessellateComponentCached(index, floats, { cid: "c0", options: { collectBoundaryDebug: true } });
+  assert.equal(calls.get, 2);
+  assert.equal(calls.put, 1);
+
+  // No cid — nothing to key on — bypasses too.
+  await tessellateComponentCached(index, floats, {});
+  assert.equal(calls.get, 2);
+
+  setTessellationCacheProvider(null);
+  const plain = await tessellateComponentCached(index, floats, { cid: "c0" });
+  assert.equal(calls.get, 2, "unset provider is a plain tessellation");
+  assert.deepEqual([...plain.positions], [...first.positions]);
+});
+
+test("a provider that throws degrades to plain tessellation", async (t) => {
+  t.after(() => setTessellationCacheProvider(null));
+  const { index, floats } = loadFixture("sun_gear");
+  setTessellationCacheProvider({
+    async get() { throw new Error("store down"); },
+    async put() { throw new Error("store down"); },
+  });
+  const component = await tessellateComponentCached(index, floats, { cid: "c0" });
+  assert.ok(component.positions.length > 0);
+});
