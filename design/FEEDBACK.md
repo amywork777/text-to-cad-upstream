@@ -98,11 +98,16 @@ entry says so.
     docs/automation invoking them must move to `scripts/gen` / direct
     rendering.
 
-14. **Dimensioned-drawing snapshots are now possible but not implemented.** The
-    old pipeline could not snapshot a document profile at all (no preview.glb);
-    the new one refuses with "no cut geometry". The client renders documents as
-    2D line work — teaching `dxf-mesh.mjs`/snapshot a 2D line-render mode would
-    close the gap the package era left.
+14. **FIXED (line work; text glyphs excluded) — dimensioned-drawing snapshots
+    render.** `dxf-mesh.mjs` falls back to a 2D line-render mode when the
+    drawing has no cut contours: the SAME layer line groups the viewer draws
+    (`buildDrawingLines.js`) become hairline ribbon quads in the sheet plane
+    (`drawingLineMesh.js`), so the snapshot chain (writeGlb, browser renderer,
+    theming) needed no new primitive support and cut-layout output stays
+    byte-identical. Cut line: text markings are not rasterized — a dimensioned
+    drawing snapshots as its dimension/extension/geometry lines without glyph
+    outlines, matching what the parser stores. Was: the new pipeline refused
+    with "no cut geometry".
 
 15. **DXF sibling outputs are now repo-visible for generated drawings** (gen
     always writes `<name>.dxf`). Like the generated `.step` siblings, they are

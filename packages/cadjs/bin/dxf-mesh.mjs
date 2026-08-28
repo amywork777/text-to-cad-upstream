@@ -25,6 +25,7 @@ import path from "node:path";
 
 import { parseDxf } from "../src/lib/dxf/parseDxf.js";
 import { buildDxfPreviewMeshData } from "../src/lib/dxf/buildPreviewMesh.js";
+import { drawingLinesToRibbonPositions } from "../src/lib/dxf/drawingLineMesh.js";
 import {
   dxfPreviewPositions,
   DXF_PREVIEW_REFERENCE_THICKNESS_MM,
@@ -70,11 +71,32 @@ try {
   const dxfData = parseDxf(dxfText, { fileRef: name });
   // Same geometry contract the deleted bake used: reference-thickness prism,
   // Y-up -> CAD Z-up soup in glTF metres — so snapshots look identical.
-  const meshData = buildDxfPreviewMeshData(dxfData, DXF_PREVIEW_REFERENCE_THICKNESS_MM, null);
-  const positions = dxfPreviewPositions(meshData);
+  let positions = new Float32Array(0);
+  let renderMode = "prism";
+  let prismError = null;
+  try {
+    const meshData = buildDxfPreviewMeshData(dxfData, DXF_PREVIEW_REFERENCE_THICKNESS_MM, null);
+    positions = dxfPreviewPositions(meshData);
+  } catch (error) {
+    // "could not resolve any closed cut contours" is how a DOCUMENT profile
+    // (dimensions, sections, a title block) arrives here; kept to rethrow when
+    // the fallback below also has nothing to draw.
+    prismError = error;
+  }
+  if (!positions.length) {
+    // A document profile is still a drawing: render its line work as hairline
+    // ribbons in the sheet plane, the mesh twin of the viewer's LineSegments
+    // rendering. Text markings are not drawn (the viewer rasterizes strings
+    // itself), so a dimensioned drawing snapshots as its line graphics.
+    positions = drawingLinesToRibbonPositions(dxfData);
+    renderMode = "lines";
+  }
   const triangleCount = positions.length / 9;
   if (!triangleCount) {
-    fail("the DXF has no cut geometry to mesh (a dimensioned drawing has no flat pattern)");
+    if (prismError) {
+      throw prismError;
+    }
+    fail("the DXF has no renderable geometry (no cut contours and no line work)");
   }
   const glb = writeGlb(
     { primitives: [{ positions, name }], name, units: "mm" },
@@ -85,7 +107,7 @@ try {
   fs.writeFileSync(temporary, glb);
   fs.renameSync(temporary, outPath);
   process.stdout.write(
-    `${JSON.stringify({ ok: true, path: outPath, triangleCount, bytes: glb.length })}\n`,
+    `${JSON.stringify({ ok: true, path: outPath, triangleCount, renderMode, bytes: glb.length })}\n`,
   );
 } catch (error) {
   fail(error && error.stack ? error.stack.split("\n")[0] : error);
