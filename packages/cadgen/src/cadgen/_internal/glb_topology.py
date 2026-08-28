@@ -523,3 +523,53 @@ def glb_surface_edge_class_has_nonzero_values(glb_path: Path) -> bool:
             except (OSError, ValueError):
                 continue
     return False
+
+
+def build_step_topology_index_manifest(
+    manifest: Mapping[str, Any],
+    *,
+    entry_kind: str | None = None,
+) -> dict[str, Any]:
+    resolved_entry_kind = str(entry_kind or "").strip().lower()
+    assembly = manifest.get("assembly")
+    if not resolved_entry_kind:
+        resolved_entry_kind = "assembly" if isinstance(assembly, Mapping) else "part"
+    if resolved_entry_kind not in {"part", "assembly"}:
+        resolved_entry_kind = "part"
+
+    tables = manifest.get("tables") if isinstance(manifest.get("tables"), Mapping) else {}
+    occurrence_columns = tables.get("occurrenceColumns") if isinstance(tables, Mapping) else None
+    index: dict[str, Any] = {
+        "schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION,
+        "profile": "index",
+        "entryKind": resolved_entry_kind,
+    }
+    for key in (
+        "capabilities",
+        "sourceKind",
+        "sourcePath",
+        "paramsPath",
+        "sourceHash",
+        "sourceClosureHash",
+        "sourceClosureFiles",
+        "generatedAt",
+        "stepPath",
+        "stepHash",
+        "bbox",
+        "stats",
+        "edgeRendering",
+        "mesh",
+        "assemblyMates",
+    ):
+        value = manifest.get(key)
+        if value is not None:
+            index[key] = value
+    if isinstance(occurrence_columns, list):
+        index["tables"] = {"occurrenceColumns": occurrence_columns}
+    occurrences = manifest.get("occurrences")
+    if isinstance(occurrences, list):
+        index["occurrences"] = occurrences
+    if isinstance(assembly, Mapping):
+        index["assembly"] = assembly
+        index["entryKind"] = "assembly"
+    return index

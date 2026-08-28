@@ -50,7 +50,7 @@ class GeneratedStepExportGuardTest(unittest.TestCase):
     def test_a_generated_entry_refuses_to_copy_its_own_previous_output(self) -> None:
         spec = _Spec("generated", self.existing)
         with self.assertRaises(RuntimeError) as caught:
-            _export_scene("step", spec, _SceneWithoutGeneratorOutput(), self.out, mock.Mock())
+            _export_scene("step", spec, _SceneWithoutGeneratorOutput(), self.out, logger=mock.Mock())
         message = str(caught.exception)
         self.assertIn("refusing to export a generated model", message)
         # The message has to name the model and say what to do, or it reads as an internal fault.
@@ -62,7 +62,7 @@ class GeneratedStepExportGuardTest(unittest.TestCase):
         # The branch exists for imported sources, whose step_path is the authored input rather
         # than a build product. That path stays exactly as it was.
         spec = _Spec("imported", self.existing)
-        result = _export_scene("step", spec, _SceneWithoutGeneratorOutput(), self.out, mock.Mock())
+        result = _export_scene("step", spec, _SceneWithoutGeneratorOutput(), self.out, logger=mock.Mock())
         self.assertEqual(self.out, result)
         self.assertIn("stale geometry", self.out.read_text())
 

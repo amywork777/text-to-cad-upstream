@@ -135,3 +135,34 @@ quality ceiling this architecture exists to reach.
   AFTER: planetary 167ms/6.4k tris (3.9x fewer, same speed), turbofan
   1.69s/146k, moonwatch 18.2s/2.2M — 38% faster than pre-change with 2.8x
   fewer triangles, watertight. cadjs 1009 + viewer 388 green.
+- Phases 2+3 shipped (2026-08-27): `packages/cadjs/src/lib/export/
+  packageMeshExport.js` — descriptor + component tessellations -> color-grouped
+  primitives (priority: face > occurrence > component > surf partColor >
+  `--default-color` > #d4d4d8), absolute occurrence transforms baked with true
+  inverse-transpose normals (mirroring flips winding only), STL (single
+  binary body), GLB (writeGlb export preset, one primitive+material per color,
+  Y-up, mm->m — the retired native writer's conventions), and a colored 3MF
+  writer (one basematerials group, per-object pid/pindex) on the shared
+  zipStore, which now stamps the fixed DOS epoch so archives are
+  byte-deterministic. `bin/mesh-export.mjs` wraps it with the component mesh
+  cache (`~/.cache/cadgen/meshes/<cid>-l<chord>-a<angle>.tess`, best-effort,
+  atomic, `CADGEN_MESH_CACHE=0` disables). Color-fidelity reference tests live
+  in `packageMeshExport.test.js` + `meshExportCli.test.js` (16 tests: priority
+  chain, per-face splits, mirroring, Y-up scale, format envelopes, cache
+  losslessness, byte determinism).
+- Phase 4 shipped (2026-08-27): `step_export_target`'s STL/3MF/GLB arms write
+  the scene to a temporary render package (surf extraction, no meshing) and
+  dispatch to the bundled `mesh-export.mjs` (registered in
+  bundle-cadgen-runtime.sh); `.step` stays native blob assembly, and the #308
+  generated-entry copy guard is untouched. `--mesh-tolerance` is now the
+  tessellator's RELATIVE chord tolerance and `--mesh-angular-tolerance`
+  radians (docs updated); the descriptor's OCCT-era absolute deflections are
+  no longer consulted (divergence from the Phase 3 plan text, deliberate:
+  render parity beats matching retired deflections). DELETED: `_internal/
+  glb.py` (writer; `build_step_topology_index_manifest` moved to
+  glb_topology.py), `glb_mesh_payload.py` (transform_normal_from_occ inlined
+  into step_scene_geometry.py), `stl.py`, `threemf.py`, `mesh_step_scene`/
+  `scene_export_shape` and the scene mesh-state fields, plus their test files
+  (test_glb, test_glb_materials, test_glb_topology,
+  test_glb_mesh_payload_vectorized, test_threemf). Python byte-determinism
+  gate: test_step_export_target.test_mesh_exports_are_byte_deterministic.

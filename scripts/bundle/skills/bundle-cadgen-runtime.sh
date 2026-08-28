@@ -42,6 +42,7 @@ SNAPSHOT_BUILD_DEPS_DIR="${CADGEN_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/cadgen
 
 BUILDER_ENTRIES=(
   "$REPO_ROOT/packages/cadjs/bin/dxf-mesh.mjs"
+  "$REPO_ROOT/packages/cadjs/bin/mesh-export.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicit-artifact.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicit-export.mjs"
   "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"

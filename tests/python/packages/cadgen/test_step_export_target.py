@@ -142,6 +142,31 @@ class StepExportTargetTests(unittest.TestCase):
         # Mesh exports never leave a .step behind.
         self.assertFalse((self.temp_root / "box.step").exists())
 
+    def test_mesh_exports_are_byte_deterministic(self) -> None:
+        # design/unified-tessellation.md Phase 4: one deterministic code path,
+        # so exporting the same model twice yields identical bytes per format.
+        generator = self._write_box_generator()
+        digests: dict[str, bytes] = {}
+        for round_index in range(2):
+            payload = step_export_target.export_cad_target(
+                generator,
+                [
+                    (fmt, f"round{round_index}.{fmt}")
+                    for fmt in step_export_target.MESH_EXPORT_FORMATS
+                ],
+            )
+            self.assertTrue(payload["ok"])
+            for entry in payload["files"]:
+                data = Path(entry["path"]).read_bytes()
+                if round_index == 0:
+                    digests[entry["format"]] = data
+                else:
+                    self.assertEqual(
+                        digests[entry["format"]],
+                        data,
+                        f"{entry['format']} export must be byte-identical across runs",
+                    )
+
     def test_invalid_format_rejected(self) -> None:
         generator = self._write_box_generator()
         with self.assertRaises(SystemExit):

@@ -17,7 +17,6 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
 
-from cadgen._internal.glb_mesh_payload import transform_normal_from_occ as _transform_normal_from_occ
 from cadgen._internal.glb_topology import STEP_EDGE_FLAGS
 from cadgen._internal.glb_topology import STEP_EDGE_VISIBILITY_CLASSES
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_EDGE_ANGULAR_TOLERANCE_DEG
@@ -158,6 +157,24 @@ def _bbox_from_shape(shape: Any, *, tight: bool = True) -> dict[str, Any]:
 def _transform_point_from_occ(point: Any, location: TopLoc_Location) -> list[float]:
     transformed = point.Transformed(location.Transformation())
     return [transformed.X(), transformed.Y(), transformed.Z()]
+
+
+def _transform_normal_from_occ(
+    normal: Any,
+    location: TopLoc_Location,
+    *,
+    reversed_face: bool,
+) -> tuple[float, float, float]:
+    transformed = normal.Transformed(location.Transformation())
+    x = float(transformed.X())
+    y = float(transformed.Y())
+    z = float(transformed.Z())
+    if reversed_face:
+        x, y, z = -x, -y, -z
+    length = math.sqrt((x * x) + (y * y) + (z * z))
+    if length <= 1e-15 or not math.isfinite(length):
+        return (0.0, 0.0, 1.0)
+    return (x / length, y / length, z / length)
 
 
 def _point_from_occ(point: Any) -> list[float]:

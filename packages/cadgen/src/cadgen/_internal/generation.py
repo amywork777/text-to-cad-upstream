@@ -38,7 +38,7 @@ from cadgen._internal.package_freshness import (
     bake_hash_matches,
     schema_version_matches,
 )
-from cadgen._internal.glb import build_step_topology_index_manifest
+from cadgen._internal.glb_topology import build_step_topology_index_manifest
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.glb_topology import (
     STEP_EDGE_VISIBILITY_CLASSES,

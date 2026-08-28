@@ -6,7 +6,7 @@ Read this file when the user requests STL, 3MF, or native GLB output files from 
 
 STL, 3MF, and native GLB are mesh exports, not substitutes for STEP. Validate the primary CAD geometry first, then export the requested formats. Do not treat exported mesh renders as CAD validation; inspect and snapshot the primary model per the standard workflow.
 
-Native GLB exports are ordinary glTF 2.0 binary files for external tools: Y-up, meter-scaled, and free of the CAD Viewer `STEP_topology` extension. Do not confuse them with the CAD Viewer render artifact — the component-GLB package directory at `<folder>/__cadgen__/models/<name>.step/` (an `assembly.json` descriptor plus a `components/` dir of content-addressed GLBs) — which `scripts/gen` builds and `scripts/export` never writes.
+Native GLB exports are ordinary glTF 2.0 binary files for external tools: Y-up, with one material per distinct part/face color. Do not confuse them with the CAD Viewer render artifact — the render package directory at `<folder>/__cadgen__/models/<name>.step/` (an `assembly.json` descriptor plus a `components/` dir of content-addressed exact-geometry components) — which `scripts/gen` builds and `scripts/export` never writes.
 
 ## Tool
 
@@ -35,16 +35,18 @@ python scripts/export path/to/imported.step --stl --3mf
 
 ## Mesh tolerance
 
-The default mesh density is `0.02` linear deflection and `0.05` angular deflection.
+Mesh exports tessellate each component's exact surfaces with the same watertight tessellator the CAD Viewer renders with, at the same default tolerances — an export matches what renders, boundary vertices lie on the exact STEP edge curves, and repeated exports are byte-identical.
 
 Use these flags when the default mesh density is wrong for the part:
 
 ```bash
---mesh-tolerance FLOAT
---mesh-angular-tolerance FLOAT
+--mesh-tolerance FLOAT           # chord tolerance RELATIVE to each component's
+                                 # bounding diagonal (default 1.5e-3)
+--mesh-angular-tolerance FLOAT   # max normal spread across a triangle edge,
+                                 # radians (default 0.35)
 ```
 
-Use tighter tolerances for small curved parts or visual fidelity. Use looser tolerances for large simple geometry when file size matters.
+Use tighter tolerances for visual fidelity on curved parts; use looser tolerances for large simple geometry when file size matters. The linear tolerance is relative (scale-free), not an absolute deflection in millimetres.
 
 ## Workflow
 
@@ -60,8 +62,8 @@ python scripts/gen models/bracket.step.py
 python scripts/export models/bracket.step.py \
   --stl meshes/bracket.stl \
   --glb meshes/bracket.glb \
-  --mesh-tolerance 0.2 \
-  --mesh-angular-tolerance 0.2
+  --mesh-tolerance 5e-3 \
+  --mesh-angular-tolerance 0.5
 
 python scripts/inspect refs models/bracket.step --facts --planes --positioning
 ```

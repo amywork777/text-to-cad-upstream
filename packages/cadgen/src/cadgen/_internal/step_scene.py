@@ -53,13 +53,6 @@ from OCP.XCAFDoc import (
     XCAFDoc_ShapeTool,
 )
 
-from cadgen._internal.glb_mesh_payload import (
-    DEFAULT_MATERIAL as DEFAULT_TOPOLOGY_MATERIAL,
-    normalize_rgba as _normalize_rgba,
-    occurrence_color_for_id as _occurrence_color_for_id,
-    scene_glb_mesh_payload,
-    transform_normal_from_occ as _transform_normal_from_occ,
-)
 from cadgen._internal.glb_topology import (
     STEP_EDGE_DEFAULT_RENDER_VISIBILITY_CLASSES,
     STEP_EDGE_FLAGS,
@@ -80,6 +73,6 @@ from cadgen._internal.step_hash import step_file_hash
 from cadgen._internal.step_scene_package import load_step_scene_cached, scene_from_render_package
 from cadgen._internal.step_scene_geometry import _angle_between_vectors_deg, _apply_transform_point, _apply_transform_vector, _bbox_from_points, _bbox_from_shape, _classify_edge, _compact_bbox, _cross, _curve_params, _decimate_polyline, _dedupe_consecutive, _distance, _edge_continuity_name, _edge_flags, _edge_points_from_face_polygon, _edge_polygon_node_indices_from_face_mesh, _extract_edge_points_from_curve, _extract_face_geometry, _face_flags, _face_normal_at_edge_fraction, _is_smooth_continuity, _merge_bbox, _normalize, _point_from_occ, _polyline_center, _polyline_length, _round_point, _round_transform, _round_value, _sampled_edge_dihedral_deg, _surface_params, _transform_bbox, _transform_param_dict, _transform_point_from_occ, _triangle_side_key
 from cadgen._internal.step_scene_loader import _color_from_label, _color_from_shape, _color_tuple, _compose_locations, _face_color_map_from_label, _label_name, _load_fallback_occurrence_tree, _load_occurrence_tree, _load_occurrence_tree_from_xcaf_doc, _located_shape, _location_from_transform_matrix, _location_transform_matrix, _normalize_label_name, _relative_path_from_directory, _resolve_referred_label, _scene_step_hash, _selector_id, _shape_hash, _shape_location, _step_hash, _unlocated_shape, _xcaf_children, load_step_scene, load_step_scene_from_xcaf_doc
-from cadgen._internal.step_scene_mesh import _iter_leaf_occurrences, _leaf_shape, _scene_mesh_resolution_hints, adaptive_mesh_resolution_for_scene, adaptive_mesh_resolution_from_hints, import_step, mesh_step_scene, occurrence_selector_id, scene_export_shape, scene_leaf_occurrences, scene_occurrence_prototype_shape, scene_occurrence_shape, scene_to_build123d_compound
+from cadgen._internal.step_scene_mesh import _iter_leaf_occurrences, _leaf_shape, _scene_mesh_resolution_hints, adaptive_mesh_resolution_for_scene, adaptive_mesh_resolution_from_hints, import_step, occurrence_selector_id, scene_leaf_occurrences, scene_occurrence_prototype_shape, scene_occurrence_shape, scene_to_build123d_compound
 from cadgen._internal.step_scene_types import AdaptiveMeshResolution, ColorRGBA, LoadedStepScene, OccurrenceNode, SelectorOptions, _enum_name, _enum_name_cached, _enum_name_from_text, _identity_transform_matrix
 

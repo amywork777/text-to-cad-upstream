@@ -3,16 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from OCP.BRep import BRep_Builder
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAdaptor import BRepAdaptor_Surface
-from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopAbs import TopAbs_FACE
 from OCP.TopExp import TopExp
 from OCP.TopTools import TopTools_IndexedMapOfShape
 from OCP.TopoDS import TopoDS
-from OCP.TopoDS import TopoDS_Compound
 
 from cadgen.metadata import MeshSettings
 
@@ -20,33 +17,6 @@ from cadgen._internal.step_scene_package import load_step_scene_cached
 from cadgen._internal.step_scene_geometry import _bbox_from_points, _bbox_from_shape, _merge_bbox, _transform_bbox
 from cadgen._internal.step_scene_loader import _located_shape, _selector_id
 from cadgen._internal.step_scene_types import AdaptiveMeshResolution, LoadedStepScene, OccurrenceNode, _enum_name
-
-
-def mesh_step_scene(
-    scene: LoadedStepScene,
-    *,
-    linear_deflection: float,
-    angular_deflection: float,
-    relative: bool,
-    parallel: bool = True,
-) -> None:
-    signature = (float(linear_deflection), float(angular_deflection), bool(relative))
-    if scene.mesh_signature == signature:
-        return
-    for shape in scene.prototype_shapes.values():
-        BRepMesh_IncrementalMesh(
-            shape,
-            signature[0],
-            signature[2],
-            signature[1],
-            # OCCT's in-mesh parallelism is nondeterministic (triangle/vertex
-            # ordering varies run to run). Whole-scene sidecar meshing keeps it
-            # for throughput; per-component builds pass parallel=False so a
-            # component GLB is reproducible and process-pool workers do not
-            # oversubscribe cores with nested OCCT threads.
-            parallel,
-        )
-    scene.mesh_signature = signature
 
 
 def _iter_leaf_occurrences(nodes: list[OccurrenceNode]) -> list[OccurrenceNode]:
@@ -211,28 +181,6 @@ def scene_occurrence_prototype_shape(scene: LoadedStepScene, node: OccurrenceNod
     if node.prototype_key is None or node.prototype_key not in scene.prototype_shapes:
         raise RuntimeError(f"Occurrence {occurrence_selector_id(node)} has no prototype shape")
     return scene.prototype_shapes[node.prototype_key]
-
-
-def scene_export_shape(scene: LoadedStepScene) -> Any:
-    if scene.export_shape is not None:
-        return scene.export_shape
-    leaf_shapes = [
-        scene_occurrence_shape(scene, node)
-        for node in _iter_leaf_occurrences(scene.roots)
-        if node.prototype_key is not None and node.prototype_key in scene.prototype_shapes
-    ]
-    if not leaf_shapes:
-        raise RuntimeError(f"No CAD geometry available for STL export: {scene.step_path}")
-    if len(leaf_shapes) == 1:
-        scene.export_shape = leaf_shapes[0]
-        return scene.export_shape
-    builder = BRep_Builder()
-    compound = TopoDS_Compound()
-    builder.MakeCompound(compound)
-    for shape in leaf_shapes:
-        builder.Add(compound, shape)
-    scene.export_shape = compound
-    return scene.export_shape
 
 
 def _scene_mesh_resolution_hints(scene: LoadedStepScene) -> dict[str, Any]:

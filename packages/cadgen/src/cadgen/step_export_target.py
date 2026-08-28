@@ -36,21 +36,15 @@ from cadgen.cli_logging import CliLogger
 from cadgen._internal.generation import (
     EntrySpec,
     _entry_spec_from_source,
-    _selector_options_for_part,
     run_script_generator,
 )
-from cadgen._internal.glb import export_native_glb_from_scene
 from cadgen.metadata import normalize_mesh_numeric
 from cadgen.step_artifact_cli import _build_entry_spec, _cad_ref_for_step, infer_entry_kind
 from cadgen.step_export import export_build123d_step_file
 from cadgen._internal.step_scene import (
     LoadedStepScene,
     load_step_scene,
-    mesh_step_scene,
-    scene_export_shape,
 )
-from cadgen._internal.stl import export_part_stl_from_scene
-from cadgen._internal.threemf import export_part_3mf_from_scene
 
 # Logical format name -> conventional file suffix (informational; the caller owns `--out`).
 FORMAT_SUFFIX = {"step": ".step", "stl": ".stl", "3mf": ".3mf", "glb": ".glb"}
@@ -155,12 +149,109 @@ def _display_name_for(path: Path) -> str:
         return str(path)
 
 
+# The bundled Node mesh exporter (packages/cadjs/bin/mesh-export.mjs).
+MESH_EXPORT_BUILDER = "mesh-export.mjs"
+
+
+def _color_hex(color) -> str | None:
+    """RGBA floats (0..1) -> #rrggbb, or None when there is no usable color."""
+    try:
+        red, green, blue = (max(0, min(255, round(float(c) * 255))) for c in tuple(color)[:3])
+    except (TypeError, ValueError):
+        return None
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+def _export_mesh_from_scene(
+    fmt: str,
+    spec: EntrySpec,
+    scene: LoadedStepScene,
+    out: Path,
+    *,
+    mesh_tolerance: float | None,
+    mesh_angular_tolerance: float | None,
+    logger: CliLogger,
+) -> Path:
+    """STL/3MF/GLB through the ONE tessellation path (design/unified-tessellation.md).
+
+    The scene's exact geometry is written to a TEMPORARY render package (surf
+    extraction only — no OCCT meshing) and the bundled Node exporter tessellates
+    each component's exact surfaces with the same watertight tessellator the
+    viewport uses, then serializes the requested format: boundary vertices lie on
+    the exact STEP edge curves, colors carry per face/occurrence/part, and the
+    bytes are deterministic. Tolerance overrides are the tessellator's units —
+    chord tolerance RELATIVE to each component's bounding diagonal, angular
+    tolerance in radians — not the retired OCCT absolute deflections.
+    """
+    import subprocess
+    import tempfile
+
+    from cadgen.coordination.lock import exclusive
+    from cadgen.coordination.paths import write_lock_path
+    from cadgen._internal.component_package import build_package_from_compound
+    from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
+
+    compound = getattr(scene, "source_compound", None)
+    if compound is None:
+        from cadgen._internal.step_scene_mesh import scene_to_build123d_compound
+
+        compound = scene_to_build123d_compound(scene)
+
+    with tempfile.TemporaryDirectory(prefix="cadgen-mesh-export-") as tmp:
+        package_dir = Path(tmp) / "package"
+        package_dir.mkdir(parents=True)
+        with logger.timed("extract exact geometry"):
+            # The write lock is formally required at the package mutation
+            # boundary; on a private temp dir it is uncontended by construction.
+            with exclusive(write_lock_path(package_dir)):
+                build_package_from_compound(
+                    compound,
+                    package_dir=package_dir,
+                    root_name=spec.step_path.stem,
+                    single_component=spec.kind != "assembly",
+                    force=True,
+                )
+        argv = [
+            str(cad_node_executable()),
+            str(node_builder_script(MESH_EXPORT_BUILDER)),
+            "--package-dir", str(package_dir),
+            "--format", fmt,
+            "--out", str(out),
+            "--name", spec.step_path.stem,
+        ]
+        if mesh_tolerance is not None:
+            argv += ["--chord-tolerance", repr(float(mesh_tolerance))]
+        if mesh_angular_tolerance is not None:
+            argv += ["--angle-tolerance", repr(float(mesh_angular_tolerance))]
+        default_color = _color_hex(spec.color)
+        if default_color is not None:
+            argv += ["--default-color", default_color]
+        with logger.timed(f"tessellate + write {fmt}"):
+            proc = subprocess.run(argv, capture_output=True, text=True)
+    payload: dict = {}
+    for line in reversed(proc.stdout.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("{"):
+            try:
+                payload = json.loads(stripped)
+            except ValueError:
+                pass
+            break
+    if not payload.get("ok") or not out.is_file():
+        detail = str(payload.get("error") or proc.stderr or f"exit {proc.returncode}").strip()
+        raise RuntimeError(f"mesh export failed for {out.name}: {detail}")
+    return out
+
+
 def _export_scene(
     fmt: str,
     spec: EntrySpec,
     scene: LoadedStepScene,
     out: Path,
-    selector_options,
+    *,
+    mesh_tolerance: float | None = None,
+    mesh_angular_tolerance: float | None = None,
+    logger: CliLogger,
 ) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -198,29 +289,18 @@ def _export_scene(
             return out
         raise RuntimeError("No STEP geometry available to export")
 
-    # Mesh once before the single-file mesh exporters (STL/3MF/native GLB), matching the
-    # sidecar-job pipeline in generation.py. Per-occurrence colors ride on the meshed scene.
-    mesh_step_scene(
-        scene,
-        linear_deflection=selector_options.linear_deflection,
-        angular_deflection=selector_options.angular_deflection,
-        relative=selector_options.relative,
-    )
-    scene_export_shape(scene)
-
-    if fmt == "stl":
-        return export_part_stl_from_scene(spec.step_path, scene, target_path=out)
-    if fmt == "3mf":
-        return export_part_3mf_from_scene(spec.step_path, scene, target_path=out, color=spec.color)
-    if fmt == "glb":
-        # User-facing GLB: native Y-up glTF for external tools, not the viewer's Z-up cad GLB.
-        return export_native_glb_from_scene(
-            spec.step_path,
+    if fmt in MESH_EXPORT_FORMATS:
+        # OCCT meshes nothing here: STL/3MF/GLB come from the JS tessellator
+        # via the bundled Node exporter (the GLB is Y-up glTF for external
+        # tools, matching the retired native writer's convention).
+        return _export_mesh_from_scene(
+            fmt,
+            spec,
             scene,
-            target_path=out,
-            linear_deflection=selector_options.linear_deflection,
-            angular_deflection=selector_options.angular_deflection,
-            color=spec.color,
+            out,
+            mesh_tolerance=mesh_tolerance,
+            mesh_angular_tolerance=mesh_angular_tolerance,
+            logger=logger,
         )
     raise ValueError(f"Unsupported export format: {fmt}")
 
@@ -235,8 +315,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--source-path", help="Python gen_step() generator (.step.py) for a generated model.")
     parser.add_argument("--format", required=True, choices=tuple(FORMAT_SUFFIX), help="Output format.")
     parser.add_argument("--out", required=True, help="Destination file path for the exported model.")
-    parser.add_argument("--mesh-tolerance", type=float, help="Override automatic mesh linear deflection.")
-    parser.add_argument("--mesh-angular-tolerance", type=float, help="Override automatic mesh angular deflection.")
+    parser.add_argument(
+        "--mesh-tolerance",
+        type=float,
+        help="Chord tolerance RELATIVE to each component's bounding diagonal (default 1.5e-3).",
+    )
+    parser.add_argument(
+        "--mesh-angular-tolerance",
+        type=float,
+        help="Max normal spread across a triangle edge, radians (default 0.35).",
+    )
     parser.add_argument("--verbose", action="store_true", help="Show detailed timing on stderr.")
     return parser
 
@@ -272,8 +360,15 @@ def export_model_to_path(
         mesh_angular_tolerance=mesh_angular_tolerance,
         logger=logger,
     )
-    selector_options = _selector_options_for_part(spec, scene=scene)
-    written = _export_scene(fmt, spec, scene, out, selector_options)
+    written = _export_scene(
+        fmt,
+        spec,
+        scene,
+        out,
+        mesh_tolerance=mesh_tolerance,
+        mesh_angular_tolerance=mesh_angular_tolerance,
+        logger=logger,
+    )
     return {"ok": True, "path": str(written), "filename": written.name, "format": fmt}
 
 
@@ -365,11 +460,18 @@ def export_cad_target(
         seen[out] = fmt
         resolved.append((fmt, out))
 
-    selector_options = _selector_options_for_part(spec, scene=scene)
     files: list[dict[str, str]] = []
     for fmt, out in resolved:
         with logger.timed(f"export {fmt.upper()} {out.name}"):
-            written = _export_scene(fmt, spec, scene, out, selector_options)
+            written = _export_scene(
+                fmt,
+                spec,
+                scene,
+                out,
+                mesh_tolerance=mesh_tolerance,
+                mesh_angular_tolerance=mesh_angular_tolerance,
+                logger=logger,
+            )
         files.append({"format": fmt, "path": str(written)})
     logger.total()
     return {"ok": True, "files": files}

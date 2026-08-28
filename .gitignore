@@ -64,7 +64,9 @@ models/**/*.mkv
 # `python -m build` scratch space (scripts/release/check-wheel-contents.sh).
 packages/cadgen/build/
 
-# cadgen's packaged CAD Viewer client is a vite build output (~16 MB): built by
-# scripts/bundle, shipped in the wheel, never committed. setuptools does not read
-# .gitignore, so it still lands in the wheel when present on disk.
+# cadgen's packaged CAD Viewer client is a vite build output (~16 MB) and its
+# server is an rsync of viewer/server: both built by scripts/bundle, shipped in
+# the wheel, never committed. setuptools does not read .gitignore, so they still
+# land in the wheel when present on disk.
 packages/cadgen/src/cadgen/_runtime/viewer/
+packages/cadgen/src/cadgen/_runtime/viewer_server/

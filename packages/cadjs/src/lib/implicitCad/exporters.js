@@ -352,7 +352,7 @@ export function meshToAnimatedGlb(mesh, {
   return buildGlb(gltf, [positionBuffer, normalBuffer, ...targetBuffers, timeBuffer, weightBuffer]);
 }
 
-function xmlEscape(value) {
+export function xmlEscape(value) {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -380,18 +380,15 @@ function crc32(buffer) {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function dosDateTime(date = new Date()) {
-  const year = Math.max(date.getFullYear(), 1980);
-  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
-  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
-  return { dosTime, dosDate };
-}
-
-function zipStore(files) {
+export function zipStore(files) {
   const localParts = [];
   const centralParts = [];
   let offset = 0;
-  const { dosTime, dosDate } = dosDateTime();
+  // Fixed timestamp (the DOS epoch, 1980-01-01): archives are
+  // byte-deterministic, so the same mesh produces the same 3MF bytes from any
+  // producer at any time.
+  const dosTime = 0;
+  const dosDate = (1 << 5) | 1;
   for (const file of files) {
     const nameBuffer = bytesFromString(file.name);
     const body = file.body instanceof Uint8Array ? file.body : bytesFromString(String(file.body || ""));

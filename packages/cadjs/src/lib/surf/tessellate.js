@@ -27,7 +27,7 @@ import { ShapeUtils, Vector2 } from "three";
 
 import { evaluateCurve3, evaluatePCurve, evaluateSurface, evaluateSurfaceNormal } from "./evaluate.js";
 
-const DEFAULT_OPTIONS = {
+export const DEFAULT_OPTIONS = {
   // Max 3D distance between the surface and a triangle edge midpoint,
   // relative to the component diagonal.
   chordTolerance: 1.5e-3,
