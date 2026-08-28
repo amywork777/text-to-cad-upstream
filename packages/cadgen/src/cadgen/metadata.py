@@ -90,6 +90,19 @@ def resolve_mesh_settings(
     )
 
 
+def resolve_model_output_path(script_path: Path, *, fmt: str, explicit_write: str | None = None) -> Path:
+    """Where a model's primary artifact goes. cadgen is deliberately
+    UNOPINIONATED about layout (design/library-first-generation.md): an explicit
+    ``write=`` resolves relative to the script's own folder (absolute allowed);
+    otherwise the artifact is the sibling ``<stem>.<fmt>``. Project structure
+    conventions live in the cad-project skill as guidance, not in code."""
+    script = Path(script_path).resolve()
+    if explicit_write:
+        target = Path(explicit_write)
+        return (target if target.is_absolute() else script.parent / target).resolve()
+    return (script.parent / f"{script.stem}.{fmt}").resolve()
+
+
 def _cadgen_decorator_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
     """Local names bound to cadgen's ``step``/``dxf`` decorators, and local
     names bound to the cadgen module itself (for ``@cadgen.step(...)``)."""
@@ -231,6 +244,15 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
 
     write_target = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
     kind: str | None = None
+    if fmt == "dxf":
+        try:
+            single_return = len(
+                [stmt for stmt in function.body if isinstance(stmt, ast.Return)]
+            ) == 1
+        except Exception:  # noqa: BLE001
+            single_return = False
+        if single_return:
+            _parse_dxf_envelope_metadata(script_path=script_path, function=function)
     if fmt == "step":
         kind = _decorator_string_kwarg(call_kwargs, "kind", script_path=script_path)
         if kind is not None and kind not in {"part", "assembly"}:
@@ -241,6 +263,10 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             try:
                 kind = _parse_step_return_metadata(script_path=script_path, function=function)
             except ValueError as exc:
+                # A return shape the inference cannot read needs an explicit kind;
+                # a genuinely invalid envelope keeps its own pointed error.
+                if "must return one value" not in str(exc):
+                    raise
                 raise ValueError(
                     f"{_display_path(script_path)} {function.name}() kind could not be "
                     "inferred from its return; declare it explicitly: @step(kind=...)"

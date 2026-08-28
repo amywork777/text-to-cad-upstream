@@ -498,7 +498,7 @@ class InspectRefsTests(unittest.TestCase):
     def test_python_backed_glb_only_entry_inspects_without_step_file(self) -> None:
         self.step_path.unlink()
         script_path = self.step_path.with_suffix(".py")
-        script_path.write_text("def gen_step():\n    return object()\n", encoding="utf-8")
+        script_path.write_text("def model():\n    return object()\n", encoding="utf-8")
         source_identity = python_source_hash(script_path)
         manifest = {
             **_summary_manifest(self.cad_ref),
@@ -679,7 +679,7 @@ class InspectRefsTests(unittest.TestCase):
         assembly_step_path = self.temp_root / "sample-assembly.step"
         assembly_path.write_text(
             "from build123d import Box, Compound\n"
-            "def gen_step():\n"
+            "def model():\n"
             "    return Compound(children=[Box(1, 1, 1), Box(1, 1, 1)], label='sample')\n",
             encoding="utf-8",
         )

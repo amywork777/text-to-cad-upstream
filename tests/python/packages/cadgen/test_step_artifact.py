@@ -12,11 +12,13 @@ from cadgen import step_artifact_cli  # noqa: E402
 from cadgen import step_export_target  # noqa: E402
 from tests.python.support.cad_test_roots import IsolatedCadRoots  # noqa: E402
 
-# A tiny generated model: gen_step() returns a single labeled solid.
+# A tiny generated model: model() returns a single labeled solid.
 BOX_GENERATOR = """from build123d import Box
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return Box(10.0, 10.0, 10.0)
 """
 
@@ -32,7 +34,7 @@ class BuildStepArtifactTests(unittest.TestCase):
         self._tempdir.cleanup()
 
     def _materialize_imported_step(self) -> Path:
-        generator = self.temp_root / "box.step.py"
+        generator = self.temp_root / "box.py"
         generator.write_text(BOX_GENERATOR)
         imported_step = self.temp_root / "imported.step"
         step_export_target.export_model_to_path(

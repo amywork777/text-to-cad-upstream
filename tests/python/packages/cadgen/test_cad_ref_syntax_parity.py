@@ -178,7 +178,7 @@ class RefFileGuardTest(unittest.TestCase):
     def test_matching_prefixes_pass_in_every_spelling(self) -> None:
         for prefix in (
             "motorcycle_shock_absorber",
-            "motorcycle_shock_absorber.step.py",
+            "motorcycle_shock_absorber.py",
             "motorcycle_shock_absorber.step",
             "assemblies/motorcycle_shock_absorber",
             "models/step/assemblies/motorcycle_shock_absorber",
@@ -197,7 +197,7 @@ class RefFileGuardTest(unittest.TestCase):
         self.assertIn("motorcycle_shock_absorber", message)
 
     def test_matching_is_segment_aligned_not_substring(self) -> None:
-        # `absorber.step.py` is a substring of the target's filename but not a path segment;
+        # `absorber.py` is a substring of the target's filename but not a path segment;
         # accepting it would resolve a ref to a file the user never named.
         with self.assertRaises(ValueError):
             ensure_ref_file_matches("absorber", self.TARGET)

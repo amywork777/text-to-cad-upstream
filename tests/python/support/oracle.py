@@ -51,15 +51,9 @@ def build_entry(
         "PYTHONPATH": str(CADGEN_SRC),
     })
     merged.update(env or {})
-    code = (
-        "import sys\n"
-        "from cadgen.cli import step_gen\n"
-        f"sys.exit(step_gen.main([{str(entry_path.name)!r}"
-        + (", '--force'" if force else "")
-        + "]))\n"
-    )
+    # Library-first: a model script IS the entrypoint; running it builds it.
     return subprocess.run(
-        [VENV_PYTHON, "-c", code],
+        [VENV_PYTHON, entry_path.name, *(["--force"] if force else [])],
         cwd=str(entry_path.parent),
         env=merged,
         capture_output=True,
@@ -70,13 +64,11 @@ def build_entry(
 
 def package_dir(entry_path: Path) -> Path:
     entry_path = Path(entry_path).resolve()
+    # Generated entries are keyed by the STEP artifact they produce (sibling
+    # default: <stem>.step), mirroring EntrySpec.entry_path for decorated models.
     name = entry_path.name
-    # Generated entries are keyed by the STEP file they produce, mirroring
-    # cadgen.catalog.render_package_dir: foo.step.py -> foo.step.
-    for suffix in (".step.py", ".stp.py"):
-        if name.endswith(suffix):
-            name = name[: -len(".py")]
-            break
+    if name.endswith(".py"):
+        name = name[: -len(".py")] + ".step"
     return entry_path.parent / "__cadgen__" / "models" / name
 
 

@@ -41,7 +41,7 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
     def test_step_payload_rejects_assembly_mates_envelope_field(self) -> None:
         # assembly_mates is hard-deprecated as an envelope field. Semantic mates now
         # ride on the returned shape (compound.assembly_mates) and are collected at
-        # export, so a gen_step() envelope must never carry an assembly_mates key.
+        # export, so a model() envelope must never carry an assembly_mates key.
         with self.assertRaisesRegex(TypeError, "unsupported field\\(s\\): assembly_mates"):
             generation._normalize_step_payload(
                 {
@@ -101,19 +101,19 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
 
     def test_metadata_rejects_legacy_output_fields(self) -> None:
         cases = [
-            ("gen_step", "return {'shape': object(), 'step_output': 'legacy.step'}", "step_output"),
-            ("gen_dxf", "return {'document': object(), 'dxf_output': 'legacy.dxf'}", "dxf_output"),
+            ("step", "return {'shape': object(), 'step_output': 'legacy.step'}", "step_output"),
+            ("dxf", "return {'document': object(), 'dxf_output': 'legacy.dxf'}", "dxf_output"),
         ]
-        for function_name, return_line, field_name in cases:
-            with self.subTest(function_name=function_name), tempfile.TemporaryDirectory(prefix="cadgen-output-field-") as tempdir:
+        for decorator, return_line, field_name in cases:
+            with self.subTest(decorator=decorator), tempfile.TemporaryDirectory(prefix="cadgen-output-field-") as tempdir:
                 script_path = Path(tempdir) / "part.py"
                 script_path.write_text(
                     "\n".join(
                         [
-                            "def gen_step():",
-                            "    return {'shape': object()}",
+                            f"from cadgen import {decorator}",
                             "",
-                            f"def {function_name}():",
+                            f"@{decorator}",
+                            "def model():",
                             f"    {return_line}",
                             "",
                         ]
@@ -145,8 +145,10 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
                 "\n".join(
                     [
                         "from build123d import Compound",
+                        "from cadgen import step",
                         "",
-                        "def gen_step():",
+                        "@step",
+                        "def model():",
                         "    parts = []",
                         "    assembly = Compound(",
                         "        obj=parts,",
@@ -172,8 +174,10 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
                 "\n".join(
                     [
                         "from build123d import Box, Compound",
+                        "from cadgen import step",
                         "",
-                        "def gen_step():",
+                        "@step",
+                        "def model():",
                         "    left = Box(1, 1, 1)",
                         "    right = Box(1, 1, 1)",
                         "    return Compound(obj=[left, right], label='compound_arm')",
@@ -325,7 +329,7 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="cadgen-compound-") as tempdir:
             script_path = Path(tempdir) / "robot_arm.py"
-            script_path.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+            script_path.write_text("def model():\n    return None\n", encoding="utf-8")
             output_path = script_path.with_suffix(".step")
             scene = LoadedStepScene(step_path=output_path.resolve(), roots=[], prototype_shapes={})
             left = build123d.Box(1, 1, 1)

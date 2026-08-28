@@ -345,9 +345,9 @@ def _generator_sibling(script_path: Path, suffix: str) -> Path:
 
 
 def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadata) -> CadSource:
-    from cadgen.project_marker import resolve_output_path
+    from cadgen.metadata import resolve_model_output_path
 
-    dxf_path = resolve_output_path(
+    dxf_path = resolve_model_output_path(
         resolved_script_path, fmt="dxf", explicit_write=metadata.write_target
     )
     return CadSource(
@@ -390,9 +390,9 @@ def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> C
         raise CadSourceError(
             f"{_display_path(resolved_script_path)} must declare a part or assembly @step model"
         )
-    from cadgen.project_marker import resolve_output_path
+    from cadgen.metadata import resolve_model_output_path
 
-    step_path = resolve_output_path(
+    step_path = resolve_model_output_path(
         resolved_script_path, fmt="step", explicit_write=metadata.write_target
     )
     return CadSource(

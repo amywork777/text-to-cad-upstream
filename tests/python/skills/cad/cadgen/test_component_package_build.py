@@ -118,7 +118,7 @@ class PayloadUnreadableFallbackTests(unittest.TestCase):
         shape.label = "vendor_part"
         root = build123d.Compound(obj=[shape], children=[shape], label="rig")
         with tempfile.TemporaryDirectory() as tmp:
-            package_dir = Path(tmp) / "__cadgen__" / "models" / "rig.step.py"
+            package_dir = Path(tmp) / "__cadgen__" / "models" / "rig.py"
             with mock.patch.object(
                 cp,
                 "_build123d_shape_from_brep_bytes",

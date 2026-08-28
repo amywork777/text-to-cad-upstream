@@ -41,10 +41,10 @@ class DirAwareManifestReaderTests(unittest.TestCase):
 
 class PackageFreshnessGateTests(unittest.TestCase):
     def _generated_spec(self, model_dir: Path) -> generation.EntrySpec:
-        script = model_dir / "part.step.py"
-        script.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+        script = model_dir / "part.py"
+        script.write_text("def model():\n    return None\n", encoding="utf-8")
         return generation.EntrySpec(
-            source_ref="part.step.py",
+            source_ref="part.py",
             cad_ref="part",
             kind="assembly",
             source_path=script,
@@ -106,10 +106,10 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
     forever. These pin the schema-version and bake gates on this side."""
 
     def _spec(self, model_dir: Path) -> generation.EntrySpec:
-        script = model_dir / "part.step.py"
-        script.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+        script = model_dir / "part.py"
+        script.write_text("def model():\n    return None\n", encoding="utf-8")
         return generation.EntrySpec(
-            source_ref="part.step.py",
+            source_ref="part.py",
             cad_ref="part",
             kind="assembly",
             source_path=script,

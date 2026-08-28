@@ -33,7 +33,7 @@ _FAKE_DOC_PRELUDE = [
 def _closure(root: Path, name: str) -> list[str]:
     # The closure is recorded in the drawing's OUTPUT RECORD now — the drawing
     # package died with design/standalone-viewer.md Phase A.
-    record_path = root / "__cadgen__" / "models" / f"{name}.dxf.py" / "dxf-export.json"
+    record_path = root / "__cadgen__" / "models" / f"{name}.py" / "dxf-export.json"
     return sorted(json.loads(record_path.read_text(encoding="utf-8"))["sourceClosureFiles"])
 
 
@@ -42,13 +42,13 @@ class ClosureCaptureTests(unittest.TestCase):
         with temporary_directory(prefix="closure") as raw_root:
             root = Path(raw_root)
             (root / "geom_helper.py").write_text(_HELPER, encoding="utf-8")
-            (root / "popper.dxf.py").write_text(
+            (root / "popper.py").write_text(
                 "\n".join(
                     [
                         "import sys",
                         "import geom_helper",
                         *_FAKE_DOC_PRELUDE,
-                        "def gen_dxf():",
+                        "def drawing():",
                         "    size = geom_helper.SIZE_MM",
                         "    sys.modules.pop('geom_helper', None)",
                         "    return {'document': _make_doc()}",
@@ -58,7 +58,7 @@ class ClosureCaptureTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cad_generation.generate_dxf_targets([str(root / "popper.dxf.py")])
+            cad_generation.generate_dxf_targets([str(root / "popper.py")])
 
             self.assertIn("geom_helper.py", _closure(root, "popper"))
 
@@ -67,12 +67,12 @@ class ClosureCaptureTests(unittest.TestCase):
             root = Path(raw_root)
             (root / "geom_helper.py").write_text(_HELPER, encoding="utf-8")
             for name in ("first", "second"):
-                (root / f"{name}.dxf.py").write_text(
+                (root / f"{name}.py").write_text(
                     "\n".join(
                         [
                             "import geom_helper",
                             *_FAKE_DOC_PRELUDE,
-                            "def gen_dxf():",
+                            "def drawing():",
                             "    assert geom_helper.SIZE_MM > 0",
                             "    return {'document': _make_doc()}",
                             "",
@@ -82,7 +82,7 @@ class ClosureCaptureTests(unittest.TestCase):
                 )
 
             cad_generation.generate_dxf_targets(
-                [str(root / "first.dxf.py"), str(root / "second.dxf.py")]
+                [str(root / "first.py"), str(root / "second.py")]
             )
 
             self.assertIn("geom_helper.py", _closure(root, "first"))
@@ -94,12 +94,12 @@ class ClosureCaptureTests(unittest.TestCase):
         with temporary_directory(prefix="closure") as raw_root:
             root = Path(raw_root)
             (root / "geom_helper.py").write_text(_HELPER, encoding="utf-8")
-            script = root / "flaky.dxf.py"
+            script = root / "flaky.py"
             failing = "\n".join(
                 [
                     "import geom_helper",
                     *_FAKE_DOC_PRELUDE,
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    if geom_helper.SIZE_MM > 0:",
                     "        raise RuntimeError('boom')",
                     "    return {'document': _make_doc()}",
@@ -110,7 +110,7 @@ class ClosureCaptureTests(unittest.TestCase):
                 [
                     "import geom_helper",
                     *_FAKE_DOC_PRELUDE,
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    assert geom_helper.SIZE_MM > 0",
                     "    return {'document': _make_doc()}",
                     "",
@@ -126,22 +126,22 @@ class ClosureCaptureTests(unittest.TestCase):
             self.assertIn("geom_helper.py", _closure(root, "flaky"))
 
     def test_runtime_files_never_enter_closures(self) -> None:
-        # A drawing that path-loads its sibling .step.py through cadgen.sources must
+        # A drawing that path-loads its sibling .py through cadgen.sources must
         # record the sibling but never the running runtime's own files.
         with temporary_directory(prefix="closure") as raw_root:
             root = Path(raw_root)
-            (root / "part.step.py").write_text(
-                "WIDTH_MM = 12.0\n\ndef gen_step():\n    return {'shape': object()}\n",
+            (root / "part.py").write_text(
+                "WIDTH_MM = 12.0\n\ndef model():\n    return {'shape': object()}\n",
                 encoding="utf-8",
             )
-            (root / "part.dxf.py").write_text(
+            (root / "part.py").write_text(
                 "\n".join(
                     [
                         "from pathlib import Path",
                         "from cadgen.sources import load_source_module",
-                        "_step = load_source_module(Path(__file__).with_name('part.step.py'))",
+                        "_step = load_source_module(Path(__file__).with_name('part.py'))",
                         "import ezdxf",
-                        "def gen_dxf():",
+                        "def drawing():",
                         "    assert _step.WIDTH_MM > 0",
                         "    doc = ezdxf.new('R2010')",
                         "    doc.units = ezdxf.units.MM",
@@ -155,10 +155,10 @@ class ClosureCaptureTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            cad_generation.generate_dxf_targets([str(root / "part.dxf.py")])
+            cad_generation.generate_dxf_targets([str(root / "part.py")])
 
             closure = _closure(root, "part")
-            self.assertIn("part.step.py", closure)
+            self.assertIn("part.py", closure)
             for entry in closure:
                 resolved = (root / entry).resolve()
                 self.assertFalse(

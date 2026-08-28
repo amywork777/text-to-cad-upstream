@@ -10,7 +10,7 @@ refused. Found by the Windows CI job on its first run, in
 
 The identically worded rule in :mod:`cadgen.metadata` is absolute ON PURPOSE and is asserted
 here too, so a later change cannot "consistently" relax both. That one validates a path
-written into a checked-in ``gen_step()`` envelope, which is read on every platform; POSIX
+written into a checked-in ``model()`` envelope, which is read on every platform; POSIX
 separators are the portable form for a file in the repository. These are two different rules
 that happen to share a sentence.
 """
@@ -65,7 +65,7 @@ class CliOutputPathSeparatorTest(unittest.TestCase):
     def test_a_source_output_pair_survives_a_native_output_path(self):
         """The pair splits on the FIRST '=', so a drive letter's colon is not a hazard --
         but the output half still goes through the separator rule, which is where it died."""
-        source = self.root / "widget.step.py"
+        source = self.root / "widget.py"
         output = self.root / "exported.step"
         specs = _parse_cli_target_specs(
             [f"{source}={output}"], expected_suffixes=(".step",), tool_name="cad gen"
@@ -83,7 +83,7 @@ class EnvelopePathRuleStaysAbsoluteTest(unittest.TestCase):
 
         from cadgen.metadata import _parse_path_field
 
-        script = Path("widget.step.py")
+        script = Path("widget.py")
         envelope = {"step": ast.Constant(value=r"models\widget.step")}
         with self.assertRaisesRegex(ValueError, "POSIX"):
             _parse_path_field(

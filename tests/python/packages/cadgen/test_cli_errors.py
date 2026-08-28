@@ -1,6 +1,6 @@
 """A CAD CLI failure has to lead with the failure, and name the caller's own code.
 
-Before this, an uncaught generator exception reached the interpreter: a `gen_step()` that
+Before this, an uncaught generator exception reached the interpreter: a `model()` that
 raised printed a 62-line traceback whose only useful line was last, and one missing its
 return printed 43 lines to say "must return one value". Both are ordinary authoring
 mistakes, so both are what an agent hits most.
@@ -25,7 +25,7 @@ def _raise_from_model(model: Path) -> BaseException:
     code = compile(model.read_text(), str(model), "exec")
     try:
         exec(code, namespace)  # noqa: S102 - the fixture IS a model source
-        namespace["gen_step"]()
+        namespace["model"]()
     except Exception as exc:  # noqa: BLE001
         return exc
     raise AssertionError("fixture did not raise")
@@ -37,13 +37,13 @@ class ReportCliErrorTest(unittest.TestCase):
 
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(__import__("shutil").rmtree, self.root, True)
-        self.model = self.root / "widget.step.py"
+        self.model = self.root / "widget.py"
         self.model.write_text(
             "def _inner():\n"
             "    raise ValueError('bad radius')\n"
             "\n"
             "\n"
-            "def gen_step():\n"
+            "def model():\n"
             "    return _inner()\n"
         )
 
@@ -62,8 +62,8 @@ class ReportCliErrorTest(unittest.TestCase):
 
     def test_it_names_the_models_own_frames(self):
         text = self._report(_raise_from_model(self.model))
-        self.assertIn("widget.step.py:6 in gen_step", text)
-        self.assertIn("widget.step.py:2 in _inner", text)
+        self.assertIn("widget.py:6 in model", text)
+        self.assertIn("widget.py:2 in _inner", text)
 
     def test_it_drops_the_runtime_frames(self):
         # A model that fails INSIDE cadgen: the traceback carries a cadgen frame, and the
@@ -73,11 +73,11 @@ class ReportCliErrorTest(unittest.TestCase):
             "from cadgen.metadata import normalize_mesh_numeric\n"
             "\n"
             "\n"
-            "def gen_step():\n"
+            "def model():\n"
             "    return normalize_mesh_numeric(-1, field_name='mesh_tolerance')\n"
         )
         text = self._report(_raise_from_model(self.model))
-        self.assertIn("widget.step.py:5 in gen_step", text, "the model's frame is kept")
+        self.assertIn("widget.py:5 in model", text, "the model's frame is kept")
         self.assertNotIn("metadata.py", text, "a cadgen frame is runtime, not the model")
         self.assertLess(len(text.splitlines()), 10, "a compact report stays compact")
 
@@ -96,7 +96,7 @@ class ReportCliErrorTest(unittest.TestCase):
         self.addCleanup(lambda: cli_errors.__dict__.__setitem__("_model_frames", original))
         cli_errors._model_frames = lambda exc: []
         try:
-            raise ValueError("widget.step.py gen_step() must return one value")
+            raise ValueError("widget.py model() must return one value")
         except ValueError as exc:
             text = self._report(exc)
         self.assertIn("must return one value", text)

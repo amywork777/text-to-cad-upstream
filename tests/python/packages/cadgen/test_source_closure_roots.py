@@ -53,7 +53,7 @@ class InterpreterRoots(unittest.TestCase):
     def test_ordinary_model_code_is_still_first_party(self):
         """The point of the closure: a generator beside the model must NOT be excluded."""
         self.assertTrue(
-            source_hash.is_first_party_source_file(Path("/tmp/models/widget.step.py").resolve())
+            source_hash.is_first_party_source_file(Path("/tmp/models/widget.py").resolve())
         )
 
     def test_the_running_cadgen_is_never_first_party(self):

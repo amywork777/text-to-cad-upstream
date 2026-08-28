@@ -4,7 +4,7 @@ This is the module the CAD Viewer's build POST runs, and it is a DIFFERENT path 
 ``cadgen.generation`` (covered by test_concurrent_generation.py). Its "already current"
 fast path was dead: ``_current_artifact_for_spec`` routed a component-GLB package
 DIRECTORY through ``validate_step_topology_artifact``, which gates on ``.is_file()`` and
-therefore always raised ``missing_glb``. Every viewer-triggered build re-ran ``gen_step()``.
+therefore always raised ``missing_glb``. Every viewer-triggered build re-ran ``model()``.
 
 The generator counts its own invocations by appending to a file, so "was the generator
 re-run?" is measured rather than inferred from timing.
@@ -43,13 +43,15 @@ def _child_env() -> dict[str, str]:
     env["PYTHONPATH"] = _CADGEN_SRC
     return env
 
-# Appends one line per gen_step() call, so the test can count real generator runs.
+# Appends one line per model() call, so the test can count real generator runs.
 COUNTING_GENERATOR = """from pathlib import Path
 
 from build123d import Box
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     Path(__file__).with_name("gen_calls.log").open("a").write("call\\n")
     return Box(12.0, 8.0, 4.0)
 """
@@ -60,7 +62,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="cadskip-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.generator = self.root / "widget.step.py"
+        self.generator = self.root / "widget.py"
         self.generator.write_text(COUNTING_GENERATOR)
         self.calls = self.root / "gen_calls.log"
 
@@ -99,7 +101,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.assertEqual(
             1,
             self._generator_runs(),
-            "gen_step() re-ran on an unchanged package -- the fast path is dead again",
+            "model() re-ran on an unchanged package -- the fast path is dead again",
         )
 
     def test_force_rebuilds_and_reruns_the_generator(self):
@@ -116,7 +118,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.assertEqual(2, self._generator_runs())
 
     def test_a_queued_producer_finds_the_package_current_and_skips(self):
-        """Two contenders on a COLD package must run gen_step() exactly once between them.
+        """Two contenders on a COLD package must run model() exactly once between them.
 
         This is the concurrent case the pre-lock fast path structurally cannot cover: it
         runs before the peer's build exists, so the loser used to wait for the lock and
@@ -144,7 +146,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.assertEqual(
             1,
             self._generator_runs(),
-            f"gen_step() ran {self._generator_runs()}x across two contenders; the loser "
+            f"model() ran {self._generator_runs()}x across two contenders; the loser "
             f"redid the winner's work:\n{outs}",
         )
         payloads = [json.loads(out.strip().splitlines()[-1]) for out in outs]

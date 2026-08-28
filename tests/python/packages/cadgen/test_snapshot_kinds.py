@@ -42,9 +42,10 @@ class InputKindTests(unittest.TestCase):
     def test_compound_suffixes_are_not_read_as_their_last_one(self):
         # Path.suffix sees only `.js` and `.py`; both of these would be misread by it.
         self.assertEqual("implicit", input_kind(Path("orb.implicit.js")))
-        self.assertEqual("dxf", input_kind(Path("panel.dxf.py")))
+        # Suffix retirement: a plain .py classifies as python; dxf-ness comes from metadata.
+        self.assertEqual("python", input_kind(Path("panel.py")))
         # A plain `.py` IS a STEP generator, which is why the two need telling apart.
-        self.assertEqual("python", input_kind(Path("bracket.step.py")))
+        self.assertEqual("python", input_kind(Path("bracket.py")))
 
     def test_every_kind_it_names_has_a_resolver_or_is_a_generator(self):
         for sample in ("a.step", "a.stp", "a.glb", "a.stl", "a.3mf", "a.implicit.js",
@@ -56,7 +57,7 @@ class InputKindTests(unittest.TestCase):
 
 class EnabledKindsTests(unittest.TestCase):
     def test_enabling_step_enables_its_generator(self):
-        # `.step.py` resolves as `python` before it collapses to `step`, so a skill that
+        # `.py` resolves as `python` before it collapses to `step`, so a skill that
         # named only "step" would reject its own generators.
         self.assertIn("python", enabled_kinds(("step",)))
 
@@ -112,10 +113,10 @@ class KindGateTests(unittest.TestCase):
         self.assertIn(".stl", message)
 
     def test_a_step_generator_is_gated_as_step_not_as_python(self):
-        # `.step.py` is rewritten to its logical `.step` path. Gating after that rewrite
+        # `.py` is rewritten to its logical `.step` path. Gating after that rewrite
         # would report a path the caller never named.
-        message = self._reject("implicit-cad", "bracket.step.py", body="def gen_step(): ...")
-        self.assertIn("bracket.step.py", message)
+        message = self._reject("implicit-cad", "bracket.py", body="def model(): ...")
+        self.assertIn("bracket.py", message)
 
 
 class GeneratedHelpTests(unittest.TestCase):

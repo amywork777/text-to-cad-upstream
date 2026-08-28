@@ -66,7 +66,7 @@ class PhaseShapeTest(unittest.TestCase):
 class GeneratorApiTest(unittest.TestCase):
     def test_track_outside_a_build_is_a_transparent_pass_through(self):
         # The same generator runs under the CLI, the viewer's worker, a test, and a plain
-        # `python model.step.py`. Instrumentation must never need guarding.
+        # `python model.py`. Instrumentation must never need guarding.
         self.assertIsNone(current_build())
         self.assertEqual([1, 2, 3], list(track([1, 2, 3])))
 

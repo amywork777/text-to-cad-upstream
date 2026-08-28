@@ -20,13 +20,13 @@ class GenCliTests(unittest.TestCase):
 
     def test_passes_targets_in_order(self) -> None:
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            self.assertEqual(0, cli.main(["parts/second.step.py", "parts/first.step.py"]))
+            self.assertEqual(0, cli.main(["parts/second.py", "parts/first.py"]))
 
         generate.assert_called_once()
         self.assertEqual(
             [
-                "parts/second.step.py=parts/second.step",
-                "parts/first.step.py=parts/first.step",
+                "parts/second.py=parts/second.step",
+                "parts/first.py=parts/first.step",
             ],
             generate.call_args.args[0],
         )
@@ -36,11 +36,11 @@ class GenCliTests(unittest.TestCase):
 
     def test_json_is_off_by_default_and_forwarded_when_asked(self) -> None:
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            cli.main(["parts/sample.step.py"])
+            cli.main(["parts/sample.py"])
         self.assertFalse(generate.call_args.kwargs["json_output"])
 
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            cli.main(["parts/sample.step.py", "--json"])
+            cli.main(["parts/sample.py", "--json"])
         self.assertTrue(generate.call_args.kwargs["json_output"])
 
     def test_lock_timeout_parses_and_defaults_to_waiting(self) -> None:
@@ -49,11 +49,11 @@ class GenCliTests(unittest.TestCase):
         The default must stay 0 (wait for the peer): an agent that asked for a build wants
         the build, and giving up by default would leave it with no artifact."""
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            self.assertEqual(0, cli.main(["parts/sample.step.py"]))
+            self.assertEqual(0, cli.main(["parts/sample.py"]))
         self.assertEqual(0.0, generate.call_args.kwargs["lock_timeout_s"])
 
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            self.assertEqual(0, cli.main(["parts/sample.step.py", "--lock-timeout", "5"]))
+            self.assertEqual(0, cli.main(["parts/sample.py", "--lock-timeout", "5"]))
         self.assertEqual(5.0, generate.call_args.kwargs["lock_timeout_s"])
 
     def test_lock_timeout_is_listed_in_help(self) -> None:
@@ -67,7 +67,7 @@ class GenCliTests(unittest.TestCase):
         stderr = io.StringIO()
         with mock.patch.object(cli, "generate_step_targets", side_effect=boom):
             with contextlib.redirect_stderr(stderr):
-                self.assertEqual(1, cli.main(["parts/sample.step.py"]))
+                self.assertEqual(1, cli.main(["parts/sample.py"]))
         self.assertIn("FAILED: ValueError: bad radius", stderr.getvalue())
         self.assertNotIn("Traceback", stderr.getvalue())
 
@@ -75,12 +75,12 @@ class GenCliTests(unittest.TestCase):
         stderr = io.StringIO()
         with mock.patch.object(cli, "generate_step_targets", side_effect=ValueError("bad radius")):
             with contextlib.redirect_stderr(stderr):
-                self.assertEqual(1, cli.main(["parts/sample.step.py", "--verbose"]))
+                self.assertEqual(1, cli.main(["parts/sample.py", "--verbose"]))
         self.assertIn("Traceback", stderr.getvalue())
 
     def test_passes_force_and_verbose_flags(self) -> None:
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
-            self.assertEqual(0, cli.main(["parts/sample.step.py", "--force", "--verbose"]))
+            self.assertEqual(0, cli.main(["parts/sample.py", "--force", "--verbose"]))
 
         self.assertTrue(generate.call_args.kwargs["force"])
         self.assertTrue(generate.call_args.kwargs["verbose"])
@@ -91,7 +91,7 @@ class GenCliTests(unittest.TestCase):
                 0,
                 cli.main(
                     [
-                        "parts/sample.step.py",
+                        "parts/sample.py",
                         "--mesh-tolerance",
                         "0.2",
                         "--mesh-angular-tolerance",
@@ -109,32 +109,32 @@ class GenCliTests(unittest.TestCase):
         # (design/step-document-architecture.md); there is no opt-in flag.
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
             self.assertEqual(
-                0, cli.main(["parts/first.step.py", "parts/second.py"])
+                0, cli.main(["parts/first.py", "parts/second.py"])
             )
 
         self.assertEqual(
-            ["parts/first.step.py=parts/first.step", "parts/second.py=parts/second.step"],
+            ["parts/first.py=parts/first.step", "parts/second.py=parts/second.step"],
             generate.call_args.args[0],
         )
 
     def test_output_flag_names_the_step_file(self) -> None:
         with mock.patch.object(cli, "generate_step_targets", return_value=0) as generate:
             self.assertEqual(
-                0, cli.main(["parts/sample.step.py", "-o", "out/custom.step"])
+                0, cli.main(["parts/sample.py", "-o", "out/custom.step"])
             )
 
-        self.assertEqual(["parts/sample.step.py=out/custom.step"], generate.call_args.args[0])
+        self.assertEqual(["parts/sample.py=out/custom.step"], generate.call_args.args[0])
 
     def test_output_flag_rejects_multiple_targets(self) -> None:
         stream = io.StringIO()
         with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(stream):
-            cli.main(["parts/first.step.py", "parts/second.step.py", "-o", "out/custom.step"])
+            cli.main(["parts/first.py", "parts/second.py", "-o", "out/custom.step"])
         self.assertEqual(2, cm.exception.code)
         self.assertIn("exactly one target", stream.getvalue())
 
     def test_write_flag_is_gone(self) -> None:
         with self.assertRaises(SystemExit) as cm:
-            cli.main(["parts/sample.step.py", "--write"])
+            cli.main(["parts/sample.py", "--write"])
         self.assertEqual(2, cm.exception.code)
 
     def test_rejects_direct_step_target(self) -> None:
@@ -152,7 +152,7 @@ class GenCliTests(unittest.TestCase):
     def test_rejects_source_output_pairs(self) -> None:
         stream = io.StringIO()
         with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(stream):
-            cli.main(["parts/sample.step.py=out/sample.step"])
+            cli.main(["parts/sample.py=out/sample.step"])
         self.assertEqual(2, cm.exception.code)
         self.assertIn("scripts/export", stream.getvalue())
 
@@ -170,12 +170,12 @@ class GenCliTests(unittest.TestCase):
             ["--kind", "part"],
         ):
             with self.subTest(flag=flag_args[0]), self.assertRaises(SystemExit) as cm:
-                cli.main(["parts/sample.step.py", *flag_args])
+                cli.main(["parts/sample.py", *flag_args])
             self.assertEqual(2, cm.exception.code)
 
     def test_rejects_invalid_numeric_flag(self) -> None:
         with self.assertRaises(SystemExit) as cm:
-            cli.main(["parts/sample.step.py", "--mesh-tolerance", "nan"])
+            cli.main(["parts/sample.py", "--mesh-tolerance", "nan"])
         self.assertEqual(2, cm.exception.code)
 
     def test_help_has_current_gen_flags_only(self) -> None:

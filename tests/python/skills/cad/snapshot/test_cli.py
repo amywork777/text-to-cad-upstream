@@ -1726,7 +1726,7 @@ class JobDisplayResolutionTests(unittest.TestCase):
 class StepParameterSidecarTests(unittest.TestCase):
     """Where a STEP parameter sidecar may come from, per entry kind.
 
-    A generated model declares its sidecar from ``gen_step()``, so the render
+    A generated model declares its sidecar from ``model()``, so the render
     package descriptor names it and the command line may not. An imported
     ``.step``/``.stp`` declares nothing, so the sidecar has to be named with
     ``--params-path`` -- and stepParameters without one is an error rather than
@@ -1750,9 +1750,9 @@ class StepParameterSidecarTests(unittest.TestCase):
             (self.models / f"{name}.js").write_text(self.SIDECAR, encoding="utf-8")
         return step_path
 
-    def _generated_step(self, name="widget.step.py"):
+    def _generated_step(self, name="widget.py"):
         generator = self.models / name
-        generator.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+        generator.write_text("def model():\n    return None\n", encoding="utf-8")
         write_package(generator, source_kind="python")
         return generator
 
@@ -1813,7 +1813,7 @@ class StepParameterSidecarTests(unittest.TestCase):
         with self.assertRaisesRegex(SnapshotError, "stepParametersPath is for imported"):
             self._resolve(
                 self._job(
-                    name="widget.step.py",
+                    name="widget.py",
                     stepParameters={"stroke": 1},
                     stepParametersPath="models/widget.params.js",
                 )

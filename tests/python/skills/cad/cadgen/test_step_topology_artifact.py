@@ -15,7 +15,7 @@ class StepArtifactsTests(unittest.TestCase):
             step_path = root / "part.step"
             source_path = root / "part.py"
             step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -26,15 +26,15 @@ class StepArtifactsTests(unittest.TestCase):
             self.assertIsNone(step_artifacts._python_source_for_target(target))
 
     def test_explicit_python_target_wins_over_same_stem_step_export(self) -> None:
-        # A `<name>.step.py` generator explicitly targeted by the caller keeps
+        # A `<name>.py` generator explicitly targeted by the caller keeps
         # resolving to the generator even when its same-stem exported
         # `<name>.step` exists beside it (entry-keyed coexistence).
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             step_path = root / "part.step"
-            source_path = root / "part.step.py"
+            source_path = root / "part.py"
             step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -51,9 +51,9 @@ class StepArtifactsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             step_path = root / "part.step"
-            source_path = root / "part.step.py"
+            source_path = root / "part.py"
             step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -64,13 +64,13 @@ class StepArtifactsTests(unittest.TestCase):
             self.assertIsNone(step_artifacts._python_source_for_target(target))
 
     def test_missing_logical_step_finds_step_py_convention_generator(self) -> None:
-        # The generator for `<name>.step` is `<name>.step.py` under the entry
+        # The generator for `<name>.step` is `<name>.py` under the entry
         # convention; the fallback must find it when no .step file exists.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             step_path = root / "part.step"
-            generator_path = root / "part.step.py"
-            generator_path.write_text("def gen_step():\n    return None\n", encoding="utf-8")
+            generator_path = root / "part.py"
+            generator_path.write_text("def model():\n    return None\n", encoding="utf-8")
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -114,7 +114,7 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
 
     def _spec(self, *, source: str, step_path: Path) -> generation.EntrySpec:
         return generation.EntrySpec(
-            source_ref="part.step.py" if source == "generated" else "part.step",
+            source_ref="part.py" if source == "generated" else "part.step",
             cad_ref="part",
             kind="part",
             source_path=step_path,
@@ -200,16 +200,16 @@ class EnsureStepTopologyArtifactDebugTests(unittest.TestCase):
 
     def test_assembly_descriptor_lookup_hits_for_both_entry_forms(self) -> None:
         # A generated model's package is keyed by the STEP file it produces, so
-        # entry_path (<name>.step.py) and step_path (<name>.step) resolve to the
+        # entry_path (<name>.py) and step_path (<name>.step) resolve to the
         # SAME package dir — a descriptor lookup by either form always hits.
         # (Before the re-key these were two namespaces and step_path lookups
         # missed, forcing a full selector re-extraction on every call.)
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             step_path = root / "part.step"
-            script_path = root / "part.step.py"
+            script_path = root / "part.py"
             spec = generation.EntrySpec(
-                source_ref="part.step.py",
+                source_ref="part.py",
                 cad_ref="part",
                 kind="assembly",
                 source_path=script_path,

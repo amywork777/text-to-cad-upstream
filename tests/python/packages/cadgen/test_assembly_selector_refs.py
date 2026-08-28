@@ -65,7 +65,7 @@ class AssemblyOccurrenceRefsTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="assembly-refs-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.package_dir = self.root / "__cadgen__" / "models" / "demo.step.py"
+        self.package_dir = self.root / "__cadgen__" / "models" / "demo.py"
         with exclusive(write_lock_path(self.package_dir)):
             component_package.build_package_from_compound(
                 _demo_compound(), package_dir=self.package_dir, root_name="demo"

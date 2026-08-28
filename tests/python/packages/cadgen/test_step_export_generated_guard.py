@@ -3,7 +3,7 @@
 Regression for #308. `scripts/gen --write` reported ``outcome: built`` and rewrote
 ``<name>.step`` with the geometry of the PREVIOUS build, so an edited generator kept
 producing the old part and `validate`, `snapshot` and the Viewer all inherited it with
-nothing raised. The reporter only caught it by comparing a direct ``gen_step()`` call
+nothing raised. The reporter only caught it by comparing a direct ``model()`` call
 against the exported file by face count.
 
 The export path takes ``scene.source_compound`` when a generator ran, and otherwise copies
@@ -27,7 +27,7 @@ class _Spec:
     def __init__(self, source: str, step_path: Path) -> None:
         self.source = source
         self.kind = "part"
-        self.source_ref = "models/part.step.py"
+        self.source_ref = "models/part.py"
         self.step_path = step_path
         self.color = None
 
@@ -54,7 +54,7 @@ class GeneratedStepExportGuardTest(unittest.TestCase):
         message = str(caught.exception)
         self.assertIn("refusing to export a generated model", message)
         # The message has to name the model and say what to do, or it reads as an internal fault.
-        self.assertIn("models/part.step.py", message)
+        self.assertIn("models/part.py", message)
         self.assertIn("__cadgen__", message)
         self.assertFalse(self.out.exists(), "a refused export must leave no output behind")
 

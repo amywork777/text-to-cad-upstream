@@ -79,8 +79,8 @@ class CompoundFromInstancesTests(unittest.TestCase):
         via_moved = Compound(obj=[deck_b, cluster_b], children=[deck_b, cluster_b], label="rig")
 
         with tempfile.TemporaryDirectory() as tmp:
-            desc_a = self._build(via_instances, Path(tmp), "a.step.py")
-            desc_b = self._build(via_moved, Path(tmp), "b.step.py")
+            desc_a = self._build(via_instances, Path(tmp), "a.py")
+            desc_b = self._build(via_moved, Path(tmp), "b.py")
 
         names_a, cids_a, count_a = _descriptor_summary(desc_a)
         names_b, cids_b, count_b = _descriptor_summary(desc_b)
@@ -109,7 +109,7 @@ class CompoundFromInstancesTests(unittest.TestCase):
             [(proto, Location((0, 0, 0)), "e1"), (proto, Location((15, 0, 0)), "e2")],
         )
         with tempfile.TemporaryDirectory() as tmp:
-            descriptor = self._build(root, Path(tmp), "root.step.py")
+            descriptor = self._build(root, Path(tmp), "root.py")
         names, cids, count = _descriptor_summary(descriptor)
         self.assertEqual(4, count)  # 2 instances x 2 leaf parts
         self.assertEqual(2, len(cids))  # bell + pump geometry, shared across instances

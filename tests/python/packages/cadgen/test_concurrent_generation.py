@@ -9,6 +9,7 @@ full generator+mesh+emit the previous holder had just finished.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -22,12 +23,13 @@ add_repo_path("packages/cadgen/src")
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _CADGEN_SRC = str(_REPO_ROOT / "packages" / "cadgen" / "src")
-_GEN_CLI = _REPO_ROOT / "skills" / "cad" / "scripts" / "gen"
 
 BOX_GENERATOR = """from build123d import Box
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return Box(12.0, 8.0, 4.0)
 """
 
@@ -45,11 +47,11 @@ class ConcurrentGenerationTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="cadconc-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.generator = self.root / "widget.step.py"
+        self.generator = self.root / "widget.py"
         self.generator.write_text(BOX_GENERATOR)
 
     def _run_contenders(self, count):
-        script = _BUILDER.format(src=_CADGEN_SRC, target=str(self.generator))
+        script = _BUILDER.format(src=_CADGEN_SRC, target=f"{self.generator}={self.root / 'widget.step'}")
         procs = [
             subprocess.Popen(
                 [sys.executable, "-c", script],
@@ -89,14 +91,14 @@ class ConcurrentGenerationTest(unittest.TestCase):
         from tests.python.support.js_status import js_artifact_status
 
         self.assertEqual(
-            "ready", js_artifact_status(self.generator, self.root)["state"]
+            "ready", js_artifact_status(self.root / "widget.step", self.root)["state"]
         )
 
     def test_second_run_after_completion_is_a_plain_no_op(self):
         self._run_contenders(1)
         outputs = self._run_contenders(1)
         # Not the concurrent-skip path — the ordinary pre-lock fast path.
-        self.assertIn("is current; skipped recompose", outputs[0])
+        self.assertIn("step export is current; reusing", outputs[0])
 
     def _package_dir(self):
         return self.root / "__cadgen__" / "models" / "widget.step"
@@ -105,8 +107,13 @@ class ConcurrentGenerationTest(unittest.TestCase):
         """The skill CLI itself, not the library call the other tests use: the flag under
         test is an argparse question, and `--lock-timeout` was documented in SKILL.md while
         the parser rejected it."""
+        # Library-first: the model script is its own CLI; run it COLD so the
+        # test's in-process lock is the only peer in play.
+        env = dict(os.environ)
+        env["CADGEN_WARM"] = "0"
         return subprocess.run(
-            [sys.executable, str(_GEN_CLI), str(self.generator), *extra],
+            [sys.executable, str(self.generator), *extra],
+            env=env,
             cwd=str(self.root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

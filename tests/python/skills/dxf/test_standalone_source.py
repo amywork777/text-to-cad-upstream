@@ -14,7 +14,9 @@ STANDALONE_DXF_SOURCE = textwrap.dedent(
     import ezdxf
 
 
-    def gen_dxf():
+    from cadgen import dxf
+    @dxf
+    def drawing():
         doc = ezdxf.new()
         msp = doc.modelspace()
         msp.add_lwpolyline([(0, 0), (40, 0), (40, 20), (0, 20)], close=True)
@@ -60,7 +62,7 @@ class StandaloneDxfSourceTests(unittest.TestCase):
 
     def test_directory_catalog_skips_plain_py_dxf_only_source(self) -> None:
         # Plain `<name>.py` drawing sources stay explicit-target-only; catalog
-        # entries require the `.dxf.py` naming.
+        # entries require the `.py` naming.
         with temporary_directory(prefix="dxf-skill") as root:
             _write_standalone_source(Path(root))
             self.assertEqual((), cad_catalog.iter_cad_sources(Path(root)))
@@ -128,14 +130,14 @@ class StandaloneDxfSourceTests(unittest.TestCase):
         # Fail closed: an object that only implements saveas is not a drawing and
         # must be rejected, not silently written without validation.
         with temporary_directory(prefix="dxf-skill") as root:
-            script_path = Path(root) / "fake.dxf.py"
+            script_path = Path(root) / "fake.py"
             script_path.write_text(
                 "\n".join(
                     [
                         "class _FakeDxf:",
                         "    def saveas(self, output_path):",
                         "        pass",
-                        "def gen_dxf():",
+                        "def drawing():",
                         "    return {'document': _FakeDxf()}",
                         "",
                     ]

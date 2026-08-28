@@ -23,21 +23,21 @@ class ExportCliTests(unittest.TestCase):
     def test_requires_at_least_one_format(self) -> None:
         stream = io.StringIO()
         with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(stream):
-            cli.main(["parts/sample.step.py"])
+            cli.main(["parts/sample.py"])
         self.assertEqual(2, cm.exception.code)
         self.assertIn("at least one export format", stream.getvalue())
 
     def test_rejects_multiple_targets(self) -> None:
         with self.assertRaises(SystemExit) as cm:
-            cli.main(["parts/first.step.py", "parts/second.step.py", "--stl"])
+            cli.main(["parts/first.py", "parts/second.py", "--stl"])
         self.assertEqual(2, cm.exception.code)
 
     def test_bare_format_flags_request_default_sibling_outputs(self) -> None:
         with mock.patch.object(cli, "export_cad_target", return_value=_OK_PAYLOAD) as export:
-            self.assertEqual(0, cli.main(["parts/sample.step.py", "--stl", "--3mf", "--glb"]))
+            self.assertEqual(0, cli.main(["parts/sample.py", "--stl", "--3mf", "--glb"]))
 
         export.assert_called_once()
-        self.assertEqual("parts/sample.step.py", export.call_args.args[0])
+        self.assertEqual("parts/sample.py", export.call_args.args[0])
         self.assertEqual(
             [("stl", None), ("3mf", None), ("glb", None)],
             export.call_args.args[1],
@@ -47,7 +47,7 @@ class ExportCliTests(unittest.TestCase):
     def test_rejects_step_export(self) -> None:
         # A .step file is written by `scripts/gen --write-step`, never by export.
         with self.assertRaises(SystemExit) as cm:
-            cli.main(["parts/sample.step.py", "--step"])
+            cli.main(["parts/sample.py", "--step"])
         self.assertEqual(2, cm.exception.code)
 
     def test_rejects_kind_override(self) -> None:
@@ -87,7 +87,7 @@ class ExportCliTests(unittest.TestCase):
                 0,
                 cli.main(
                     [
-                        "parts/sample.step.py",
+                        "parts/sample.py",
                         "--stl",
                         "--mesh-tolerance",
                         "0.2",
@@ -104,7 +104,7 @@ class ExportCliTests(unittest.TestCase):
 
     def test_rejects_invalid_numeric_flag(self) -> None:
         with self.assertRaises(SystemExit) as cm:
-            cli.main(["parts/sample.step.py", "--stl", "--mesh-tolerance", "nan"])
+            cli.main(["parts/sample.py", "--stl", "--mesh-tolerance", "nan"])
         self.assertEqual(2, cm.exception.code)
 
     def test_value_error_from_export_is_a_usage_error(self) -> None:
@@ -113,7 +113,7 @@ class ExportCliTests(unittest.TestCase):
             cli, "export_cad_target", side_effect=ValueError("--stl output must end with .stl")
         ):
             with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(stream):
-                cli.main(["parts/sample.step.py", "--stl", "meshes/sample.bin"])
+                cli.main(["parts/sample.py", "--stl", "meshes/sample.bin"])
         self.assertEqual(2, cm.exception.code)
         self.assertIn("--stl output must end with .stl", stream.getvalue())
 
@@ -121,7 +121,7 @@ class ExportCliTests(unittest.TestCase):
         stream = io.StringIO()
         with mock.patch.object(cli, "export_cad_target", return_value=_OK_PAYLOAD):
             with contextlib.redirect_stdout(stream):
-                self.assertEqual(0, cli.main(["parts/sample.step.py", "--stl"]))
+                self.assertEqual(0, cli.main(["parts/sample.py", "--stl"]))
         self.assertIn("wrote STL: /abs/sample.stl", stream.getvalue())
 
     def test_help_has_current_export_flags(self) -> None:

@@ -41,11 +41,11 @@ class ArtifactCliTests(unittest.TestCase):
 
     def test_generator_target_selects_generator_mode(self) -> None:
         with mock.patch.object(cli, "build_step_artifact", return_value=_OK_PAYLOAD) as build:
-            self.assertEqual(0, cli.main(["parts/sample.step.py"]))
+            self.assertEqual(0, cli.main(["parts/sample.py"]))
 
         kwargs = build.call_args.kwargs
         self.assertEqual(Path("parts/sample.step"), kwargs["step"])
-        self.assertEqual(Path("parts/sample.step.py"), kwargs["source_path"])
+        self.assertEqual(Path("parts/sample.py"), kwargs["source_path"])
 
     def test_plain_python_target_maps_to_sibling_step(self) -> None:
         with mock.patch.object(cli, "build_step_artifact", return_value=_OK_PAYLOAD) as build:

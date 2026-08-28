@@ -41,18 +41,22 @@ HAS_NODE = shutil.which("node") is not None
 PART = """from build123d import Box
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return Box(20.0, 12.0, 4.0)
 """
 
 CHILD = """from build123d import Cylinder
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return Cylinder(3.0, 20.0)
 """
 
-# Composes the sibling child the documented way: path-load, then call its gen_step().
+# Composes the sibling child the documented way: path-load, then call its model().
 ASSEMBLY = """import importlib.util
 from pathlib import Path
 
@@ -67,13 +71,15 @@ def _load(path):
     return module
 
 
-_child = _load(Path(__file__).resolve().parent / "parts" / "bolt.step.py")
+_child = _load(Path(__file__).resolve().parent / "parts" / "bolt.py")
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     plate = Box(40.0, 40.0, 6.0)
     plate.label = "plate"
-    bolt = Pos(0.0, 0.0, 13.0) * _child.gen_step()
+    bolt = Pos(0.0, 0.0, 13.0) * _child.model()
     bolt.label = "bolt"
     return Compound(children=[plate, bolt])
 """
@@ -82,7 +88,9 @@ DRAWING = """import ezdxf
 from ezdxf.units import MM
 
 
-def gen_dxf():
+from cadgen import dxf
+@dxf
+def drawing():
     doc = ezdxf.new(setup=True)
     doc.units = MM
     msp = doc.modelspace()
@@ -138,10 +146,10 @@ class PackagePortabilityTest(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory(prefix="cadport-")
         cls.root = Path(cls._tmp.name) / "project"
         (cls.root / "parts").mkdir(parents=True)
-        (cls.root / "parts" / "bolt.step.py").write_text(CHILD)
-        (cls.root / "widget.step.py").write_text(PART)
-        (cls.root / "rig.step.py").write_text(ASSEMBLY)
-        (cls.root / "sheet.dxf.py").write_text(DRAWING)
+        (cls.root / "parts" / "bolt.py").write_text(CHILD)
+        (cls.root / "widget.py").write_text(PART)
+        (cls.root / "rig.py").write_text(ASSEMBLY)
+        (cls.root / "sheet.py").write_text(DRAWING)
         (cls.root / "orb.implicit.js").write_text(IMPLICIT)
         cls._build(cls.root)
 
@@ -157,7 +165,7 @@ class PackagePortabilityTest(unittest.TestCase):
         # is the one descriptor whose source is a .step file rather than a generator. Kept out
         # of the no-op pass below because an explicit export ALWAYS writes its file -- that is
         # the documented contract, not a freshness miss.
-        generate_step_targets([f"{root / 'widget.step.py'}={root / 'imported.step'}"])
+        generate_step_targets([f"{root / 'widget.py'}={root / 'imported.step'}"])
         cls._noop_pass(root)
 
     @staticmethod
@@ -166,12 +174,15 @@ class PackagePortabilityTest(unittest.TestCase):
         from cadgen.generation import generate_dxf_targets, generate_step_targets
         from cadgen.step_artifact_cli import build_step_artifact
 
-        generate_step_targets([str(root / "widget.step.py"), str(root / "rig.step.py")])
+        generate_step_targets([
+            f"{root / 'widget.py'}={root / 'widget.step'}",
+            f"{root / 'rig.py'}={root / 'rig.step'}",
+        ])
         build_step_artifact(repo_root=root, step=root / "imported.step")
         if HAS_NODE:
             from cadgen.implicit_artifact import build_implicit_artifact
 
-            generate_dxf_targets([str(root / "sheet.dxf.py")])
+            generate_dxf_targets([str(root / "sheet.py")])
             # The DEFAULT bake resolution on purpose: resolution is part of the bake
             # identity, so a package baked at another one is legitimately stale to the
             # viewer, which asks with the defaults -- and the viewer agreeing is half of
@@ -183,9 +194,10 @@ class PackagePortabilityTest(unittest.TestCase):
         # from their source and does not artifact-manage them, so portability of
         # their baked package is the producer gate's business
         # (implicit_package_current, exercised by the no-op pass above).
-        checks = ["widget.step.py", "rig.step.py", "imported.step"]
-        if HAS_NODE:
-            checks += ["sheet.dxf.py"]
+        # Status subjects are ARTIFACTS (library-first: scripts are not entries).
+        # A plain .dxf renders directly and is not artifact-managed, so it has
+        # no status to assert here (its no-op behavior is the pass above).
+        checks = ["widget.step", "rig.step", "imported.step"]
         return [(name, str(root), str(root / name)) for name in checks]
 
     def test_every_package_kind_was_actually_built(self) -> None:
@@ -194,7 +206,7 @@ class PackagePortabilityTest(unittest.TestCase):
         # are one document (design/step-document-architecture.md).
         expected = {"widget.step", "rig.step", "imported.step"}
         if HAS_NODE:
-            expected |= {"sheet.dxf.py", "orb.implicit.js"}
+            expected |= {"sheet.py", "orb.implicit.js"}
         self.assertEqual(
             expected,
             {path.name for path in (self.root / "__cadgen__" / "models").iterdir() if path.is_dir()},
@@ -320,7 +332,7 @@ class RecordedPathHelpersTest(unittest.TestCase):
             (root / "shared").mkdir()
             base = root / "models"
             self.assertEqual(
-                "parts/bolt.step.py", _relative_to_base(base / "parts" / "bolt.step.py", base)
+                "parts/bolt.py", _relative_to_base(base / "parts" / "bolt.py", base)
             )
             self.assertEqual(
                 "../shared/dims.py", _relative_to_base(root / "shared" / "dims.py", base)
@@ -374,7 +386,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
         previous = Path.cwd()
         os.chdir(cwd)
         try:
-            generate_step_targets([str(project / "widget.step.py")])
+            generate_step_targets([str(project / "widget.py")])
         finally:
             os.chdir(previous)
         descriptor = json.loads(
@@ -389,7 +401,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
             root = Path(temp_dir)
             project = root / "project"
             project.mkdir()
-            (project / "widget.step.py").write_text(PART)
+            (project / "widget.py").write_text(PART)
 
             from_inside = self._descriptor_built_from(project, project)
             from_above = self._descriptor_built_from(root, project)

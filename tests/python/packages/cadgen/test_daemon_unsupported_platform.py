@@ -52,7 +52,7 @@ class EveryEntryPointDegradesToCold(unittest.TestCase):
 
     def test_run_via_daemon_returns_none(self):
         with no_transport():
-            self.assertIsNone(client.run_via_daemon("gen", ["part.step.py"], "/repo"))
+            self.assertIsNone(client.run_via_daemon("gen", ["part.py"], "/repo"))
 
     def test_invoke_returns_none(self):
         with no_transport():
@@ -70,7 +70,7 @@ class EveryEntryPointDegradesToCold(unittest.TestCase):
         with no_transport(), mock.patch.object(
             client, "_connect_or_spawn", side_effect=boom
         ) as connect:
-            self.assertIsNone(client.run_via_daemon("gen", ["part.step.py"], "/repo"))
+            self.assertIsNone(client.run_via_daemon("gen", ["part.py"], "/repo"))
             self.assertIsNone(client.invoke("cadgen.step_artifact_cli", ["x"], "/repo"))
         connect.assert_not_called()
 

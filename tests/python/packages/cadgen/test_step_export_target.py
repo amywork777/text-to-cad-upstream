@@ -15,11 +15,13 @@ from cadgen import render as cad_render  # noqa: E402
 from cadgen import step_export_target  # noqa: E402
 from tests.python.support.cad_test_roots import IsolatedCadRoots  # noqa: E402
 
-# A tiny generated model: gen_step() returns a single labeled solid.
+# A tiny generated model: model() returns a single labeled solid.
 BOX_GENERATOR = """from build123d import Box
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return Box(10.0, 10.0, 10.0)
 """
 
@@ -62,7 +64,7 @@ class StepExportTargetTests(unittest.TestCase):
             self.assertTrue(data.startswith(magic), f"{fmt} wrong magic: {data[:16]!r}")
 
     def _write_box_generator(self) -> Path:
-        generator = self.temp_root / "box.step.py"
+        generator = self.temp_root / "box.py"
         generator.write_text(BOX_GENERATOR)
         return generator
 

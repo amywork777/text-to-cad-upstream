@@ -26,7 +26,9 @@ BOX_SOURCE = """\
 import build123d
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     return build123d.Box(10.0, 8.0, 4.0)
 """
 
@@ -76,12 +78,12 @@ class CadgenDaemonTests(unittest.TestCase):
             cls.address = str(Path(cls.socket_dir.name) / "daemon.sock")
         cls.model_tmp = temporary_directory(prefix="cadgen-daemon-model-")
         cls.model_dir = Path(cls.model_tmp.name)
-        (cls.model_dir / "box.step.py").write_text(BOX_SOURCE, encoding="utf-8")
+        (cls.model_dir / "box.py").write_text(BOX_SOURCE, encoding="utf-8")
 
         # Build inline (cold) first so the daemon request is a warm current-skip.
         build_env = {k: v for k, v in os.environ.items() if k != "CADGEN_WARM"}
         build = subprocess.run(
-            [sys.executable, str(GEN_LAUNCHER), "box.step.py"],
+            [sys.executable, str(GEN_LAUNCHER), "box.py"],
             cwd=cls.model_dir,
             env=build_env,
             capture_output=True,
@@ -146,13 +148,13 @@ class CadgenDaemonTests(unittest.TestCase):
         return exit_code, out.getvalue() + err.getvalue()
 
     def test_a_warm_gen_request_skips_current_model(self) -> None:
-        exit_code, output = self._warm_run(["box.step.py"])
+        exit_code, output = self._warm_run(["box.py"])
         self.assertEqual(0, exit_code, output)
         self.assertIn("is current", output)
 
     def test_b_second_request_is_fast_and_correct(self) -> None:
         started = time.perf_counter()
-        exit_code, output = self._warm_run(["box.step.py"])
+        exit_code, output = self._warm_run(["box.py"])
         elapsed = time.perf_counter() - started
         self.assertEqual(0, exit_code, output)
         self.assertIn("is current", output)
@@ -161,7 +163,7 @@ class CadgenDaemonTests(unittest.TestCase):
     def test_c_version_token_mismatch_triggers_restart(self) -> None:
         frames = _raw_request(
             self.address,
-            {"tool": "gen", "argv": ["box.step.py"], "cwd": str(self.model_dir), "token": -1},
+            {"tool": "gen", "argv": ["box.py"], "cwd": str(self.model_dir), "token": -1},
         )
         self.assertEqual([{"restart": True}], frames)
         # The server clears its address BEFORE replying, then exits cleanly. Only POSIX
@@ -182,7 +184,7 @@ class CadgenDaemonTests(unittest.TestCase):
 
         # A model the daemon has NOT built yet, so the request is a real
         # multi-second build rather than an instant current-skip.
-        (self.model_dir / "box_orphan.step.py").write_text(
+        (self.model_dir / "box_orphan.py").write_text(
             BOX_SOURCE.replace("10.0, 8.0, 4.0", "9.0, 7.0, 3.0"), encoding="utf-8"
         )
 
@@ -198,7 +200,7 @@ class CadgenDaemonTests(unittest.TestCase):
         try:
             channel.send(json.dumps({
                 "tool": "gen",
-                "argv": ["box_orphan.step.py"],
+                "argv": ["box_orphan.py"],
                 "cwd": str(self.model_dir),
                 "token": daemon_client.compute_version_token(),
             }).encode("utf-8"))
@@ -230,7 +232,7 @@ class CadgenDaemonTests(unittest.TestCase):
             {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)},
         ):
             exit_code = daemon_client.run_via_daemon(
-                "gen", ["box_orphan.step.py"], str(self.model_dir)
+                "gen", ["box_orphan.py"], str(self.model_dir)
             )
         self.assertEqual(exit_code, 0, self.log_path.read_text())
 

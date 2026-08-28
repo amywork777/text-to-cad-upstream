@@ -14,7 +14,7 @@ add_repo_path("packages/cadgen/src")
 
 # The CLI is shared (cadgen.snapshot_cli); this skill's entrypoint declares that it accepts
 # drawings and where its runtime lives. What is DXF-specific -- resolving a .dxf or a
-# gen_dxf() source to its built package -- is what these tests cover.
+# drawing() source to its built package -- is what these tests cover.
 import cadgen.snapshot_cli as snapshot
 
 # Loaded BY PATH, not by module name: every skill names its entry package `snapshot`, so
@@ -59,8 +59,8 @@ class DxfSnapshotCliTests(unittest.TestCase):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            py = Path(tmp) / "x.dxf.py"
-            py.write_text("def gen_dxf():\n    raise NotImplementedError\n")
+            py = Path(tmp) / "x.py"
+            py.write_text("def drawing():\n    raise NotImplementedError\n")
             sibling = Path(tmp) / "x.dxf"
 
             def fake_gen(source, *, force=False):

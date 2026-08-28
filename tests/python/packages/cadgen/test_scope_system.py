@@ -131,11 +131,13 @@ class ScopeCaptureTest(StoreIsolatedTest):
         (root / "_spec.py").write_text("SIZE = 5.0\n")
         (root / "_helper.py").write_text(
             "import _spec\n\ndef size():\n    return _spec.SIZE\n")
-        entry = root / "part.step.py"
+        entry = root / "part.py"
         entry.write_text(textwrap.dedent("""\
             import _helper
 
-            def gen_step():
+            from cadgen import step
+            @step
+            def model():
                 from build123d.topology import Solid
                 s = _helper.size()
                 box = Solid.make_box(s, s, s)
@@ -199,11 +201,13 @@ class ComposeSeamTest(StoreIsolatedTest):
         root = self._dir("modelc")
         (root / "_spec.py").write_text("SIZE = 5.0\n")
         (root / "_other.py").write_text("UNRELATED = 1\n")
-        child = root / "child.step.py"
+        child = root / "child.py"
         child.write_text(textwrap.dedent("""\
             import _spec
 
-            def gen_step():
+            from cadgen import step
+            @step
+            def model():
                 from build123d.topology import Solid
                 box = Solid.make_box(_spec.SIZE, _spec.SIZE, _spec.SIZE)
                 box.label = "child"
@@ -223,21 +227,21 @@ class ComposeSeamTest(StoreIsolatedTest):
 
     def test_miss_then_hit_and_canonical_return(self) -> None:
         child = self._write_model()
-        first = compose.child_entry(child).gen_step()
+        first = compose.child_entry(child).model()
         self.assertEqual(compose.stats()["misses"], 1)
-        second = compose.child_entry(child).gen_step()
+        second = compose.child_entry(child).model()
         self.assertEqual(compose.stats()["hits"], 1)
         self.assertEqual(self._digest(first), self._digest(second))
         self.assertEqual(second.label, "child")
 
     def test_closure_edit_misses_unrelated_edit_hits(self) -> None:
         child = self._write_model()
-        compose.child_entry(child).gen_step()
+        compose.child_entry(child).model()
         (child.parent / "_other.py").write_text("UNRELATED = 2\n")
-        compose.child_entry(child).gen_step()
+        compose.child_entry(child).model()
         self.assertEqual(compose.stats()["hits"], 1)
         (child.parent / "_spec.py").write_text("SIZE = 7.0\n")
-        bigger = compose.child_entry(child).gen_step()
+        bigger = compose.child_entry(child).model()
         self.assertEqual(compose.stats()["misses"], 2)
         self.assertAlmostEqual(bigger.volume, 343.0, places=6)
 
@@ -245,8 +249,8 @@ class ComposeSeamTest(StoreIsolatedTest):
         child = self._write_model()
         os.environ["CADGEN_SCOPE_CACHE"] = "0"
         try:
-            compose.child_entry(child).gen_step()
-            compose.child_entry(child).gen_step()
+            compose.child_entry(child).model()
+            compose.child_entry(child).model()
             self.assertEqual(compose.stats()["hits"], 0)
         finally:
             os.environ.pop("CADGEN_SCOPE_CACHE", None)

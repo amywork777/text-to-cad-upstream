@@ -312,14 +312,14 @@ class CadGenerationTests(unittest.TestCase):
             "",
         ]
         step_block = [
-            "def gen_step():",
+            "def model():",
             "    _record('gen_step')",
             "    return {",
             *[f"        {field}," for field in fields],
             "    }",
             "",
         ]
-        del dxf_before_step  # gen_dxf lives in a dedicated <name>.dxf.py sibling now
+        del dxf_before_step  # gen_dxf lives in a dedicated <name>.py sibling now
         blocks = [prologue, step_block]
 
         script_path = self.temp_root / f"{name}.py"
@@ -329,10 +329,10 @@ class CadGenerationTests(unittest.TestCase):
         return script_path
 
     def _dxf_generator_script(self, name: str, *, dxf_output: str | None = None) -> Path:
-        # A dedicated `<name>.dxf.py` drawing generator (the only gen_dxf shape the
+        # A dedicated `<name>.py` drawing generator (the only gen_dxf shape the
         # catalog accepts). Records calls into the SAME `<name>.calls` file as the
         # step generator so cross-generator execution would be visible.
-        dxf_path = self.temp_root / f"{name}.dxf.py"
+        dxf_path = self.temp_root / f"{name}.py"
         dxf_path.write_text(
             "\n".join(
                 [
@@ -349,7 +349,7 @@ class CadGenerationTests(unittest.TestCase):
                     "        [(0, 0), (10, 0), (10, 5), (0, 5)], close=True, dxfattribs={'layer': 'CUT'}",
                     "    )",
                     "    return doc",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    _record('gen_dxf')",
                     "    return {",
                     "        'document': _make_doc(),",
@@ -375,7 +375,7 @@ class CadGenerationTests(unittest.TestCase):
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
     ) -> Path:
-        # gen_step() returns an inline multi-child Compound literal so the static AST
+        # model() returns an inline multi-child Compound literal so the static AST
         # classifier (which looks for Compound(children=...)) sees kind=assembly. The
         # instance list controls the count/names of child boxes — a stand-in for the
         # legacy {'instances': ...} envelope.
@@ -412,7 +412,7 @@ class CadGenerationTests(unittest.TestCase):
             "    def saveas(self, output_path):",
             "        Path(output_path).write_text('0\\nEOF\\n', encoding='utf-8')",
             "",
-            "def gen_step():",
+            "def model():",
             "    _record('gen_step')",
             "    return {",
             *[f"        {field}," for field in fields],
@@ -461,7 +461,7 @@ class CadGenerationTests(unittest.TestCase):
             "\n".join(
                 [
                     "from helper import SIZE",
-                    "def gen_step():",
+                    "def model():",
                     "    import build123d",
                     "    return build123d.Box(SIZE, 1, 1)",
                     "",
@@ -482,7 +482,7 @@ class CadGenerationTests(unittest.TestCase):
     def test_python_source_hash_has_no_manifest_payloads(self) -> None:
         script_path = self.temp_root / "source.py"
         script_path.write_text(
-            "def gen_step():\n"
+            "def model():\n"
             "    return object()\n",
             encoding="utf-8",
         )
@@ -506,7 +506,7 @@ class CadGenerationTests(unittest.TestCase):
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    return {'shape': object()}",
                     "",
                 ]
@@ -557,10 +557,10 @@ class CadGenerationTests(unittest.TestCase):
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    return {'shape': object()}",
                     "",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    return {'document': object()}",
                     "",
                 ]
@@ -568,18 +568,18 @@ class CadGenerationTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(ValueError, "dedicated <name>.dxf.py drawing generator"):
+        with self.assertRaisesRegex(ValueError, "dedicated <name>.py drawing generator"):
             cad_catalog.source_from_path(script_path)
 
     def test_explicit_dxf_generator_target_rejects_gen_step(self) -> None:
-        script_path = self.temp_root / "flat.dxf.py"
+        script_path = self.temp_root / "flat.py"
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    return {'shape': object()}",
                     "",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    return {'document': object()}",
                     "",
                 ]
@@ -597,10 +597,10 @@ class CadGenerationTests(unittest.TestCase):
         invalid_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    return {'shape': object()}",
                     "",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    return {'document': object()}",
                     "",
                 ]
@@ -625,7 +625,7 @@ class CadGenerationTests(unittest.TestCase):
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    return {'shape': object()}",
                     "",
                     "def gen_urdf():",
@@ -648,7 +648,7 @@ class CadGenerationTests(unittest.TestCase):
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_step():",
+                    "def model():",
                     "    import build123d",
                     "    return build123d.Box(1, 1, 1)",
                     "",
@@ -671,14 +671,14 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(cad_generation.python_source_hash(script_path).source_hash, scene.source_hash)
 
     def test_bare_dxf_document_return_is_supported(self) -> None:
-        # The CLI stays naming-agnostic: a plain `.py` defining only gen_dxf() is a
+        # The CLI stays naming-agnostic: a plain `.py` defining only drawing() is a
         # valid EXPLICIT target. The product is the sibling .dxf, always written.
         script_path = self.temp_root / "bare_dxf.py"
         script_path.write_text(
             "\n".join(
                 [
                     "import ezdxf",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    doc = ezdxf.new('R2010')",
                     "    doc.units = ezdxf.units.MM",
                     "    doc.modelspace().add_lwpolyline(",
@@ -707,7 +707,7 @@ class CadGenerationTests(unittest.TestCase):
         cad_generation.generate_dxf_targets([str(script_path)])
 
         self.assertTrue((self.temp_root / "flat.dxf").exists())
-        record_dir = self.temp_root / "__cadgen__" / "models" / "flat.dxf.py"
+        record_dir = self.temp_root / "__cadgen__" / "models" / "flat.py"
         self.assertTrue((record_dir / "dxf-export.json").exists())
 
     def test_dxf_generation_skips_current_drawing_package(self) -> None:
@@ -739,7 +739,7 @@ class CadGenerationTests(unittest.TestCase):
         # The gen_dxf envelope is {"document"} only. Non-Python inputs (e.g. an
         # imported .step the drawing projects) are deliberately not freshness
         # inputs — code reuse is the staleness link, not data files.
-        script_path = self.temp_root / "projection.dxf.py"
+        script_path = self.temp_root / "projection.py"
         script_path.write_text(
             "\n".join(
                 [
@@ -747,7 +747,7 @@ class CadGenerationTests(unittest.TestCase):
                     "class _FakeDxf:",
                     "    def saveas(self, output_path):",
                     "        Path(output_path).write_text('0\\nEOF\\n', encoding='utf-8')",
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    return {",
                     "        'document': _FakeDxf(),",
                     "        'sources': ['imported-part.step'],",
@@ -1213,7 +1213,7 @@ class CadGenerationTests(unittest.TestCase):
             if spec.cad_ref.startswith(f"{self.relative_dir}/")
         }
 
-        # `.dxf.py` drawings are their own catalog entries, keyed with the `.dxf`
+        # `.py` drawings are their own catalog entries, keyed with the `.dxf`
         # suffix so they never collide with the same-stem STEP entry.
         self.assertIn(self._cad_ref("flat"), cad_refs)
         self.assertIn(self._cad_ref("robot"), cad_refs)
@@ -1227,7 +1227,7 @@ class CadGenerationTests(unittest.TestCase):
             cad_generation.generate_step_targets([str(self.temp_root / "broken.step.toml")])
 
     def test_direct_step_targets_are_rejected(self) -> None:
-        # scripts/gen builds gen_step() sources only; an imported STEP gets its render
+        # scripts/gen builds model() sources only; an imported STEP gets its render
         # artifacts on demand (inspect/snapshot/viewer) or via scripts/artifact.
         step_path = self._write_step("source")
 
@@ -1260,7 +1260,7 @@ class CadGenerationTests(unittest.TestCase):
             "\n".join(
                 [
                     'DISPLAY_NAME = "broken"',
-                    "def gen_step():",
+                    "def model():",
                     "    return None",
                 ]
             )
@@ -1275,7 +1275,7 @@ class CadGenerationTests(unittest.TestCase):
         script_path.write_text(
             "\n".join(
                 [
-                    "def gen_dxf():",
+                    "def drawing():",
                     "    return {'document': object()}",
                     "",
                 ]
@@ -1580,7 +1580,7 @@ class CadGenerationTests(unittest.TestCase):
         script = self.temp_root / f"{prefix}.py"
         script.write_text(
             f"import {prefix}_dims as dims\n"
-            "def gen_step():\n"
+            "def model():\n"
             "    import build123d\n"
             "    return {'shape': build123d.Box(dims.WIDTH, 2.0, 1.0)}\n",
             encoding="utf-8",

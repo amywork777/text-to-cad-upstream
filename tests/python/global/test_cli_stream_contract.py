@@ -21,7 +21,7 @@ from pathlib import Path
 from tests.python.support.paths import repo_path
 
 REPO = Path(repo_path("."))
-PART = "models/step/parts/cylindrical_spacer_sleeve.step.py"
+PART = "models/step/parts/cylindrical_spacer_sleeve.py"
 ROBOT = "models/robots/tom/tom.urdf"
 
 
@@ -71,7 +71,7 @@ class StderrIsEverythingElseTests(unittest.TestCase):
         # result have been mixed, and `2>/dev/null` no longer yields something parseable.
         for skill, tool in (("cad", "gen"), ("dxf", "gen")):
             with self.subTest(skill=skill):
-                target = PART if skill == "cad" else "models/drawings/dxf/gasket_plate.dxf.py"
+                target = PART if skill == "cad" else "models/drawings/dxf/gasket_plate.py"
                 result = run(skill, tool, target)
                 self.assertNotIn("[scripts/", result.stdout)
 

@@ -58,7 +58,7 @@ class EntrySpec:
     def entry_path(self) -> Path | None:
         # The on-disk file the render package is keyed by. Library-first models
         # (design/library-first-generation.md) key by the ARTIFACT: the package
-        # must ride beside the .step wherever write=/cadproject.toml routed it,
+        # must ride beside the .step wherever write= routed it,
         # so the viewer (artifacts-only catalog) finds it, and so provenance —
         # not filenames — links artifact to source. Legacy imported entries and
         # DXF drawings keep their existing keying.

@@ -203,7 +203,7 @@ class UserSiteIsNotModelCodeTest(unittest.TestCase):
         import site
 
         user_base = Path(site.getuserbase())
-        model = user_base / "projects" / "widget" / "widget.step.py"
+        model = user_base / "projects" / "widget" / "widget.py"
         self.assertTrue(
             cad_source_hash.is_first_party_source_file(model),
             "a model under the user base must stay first party",
@@ -211,7 +211,7 @@ class UserSiteIsNotModelCodeTest(unittest.TestCase):
 
     def test_a_model_beside_the_repo_is_still_first_party(self) -> None:
         with temporary_directory(prefix="closure-model") as root:
-            model = Path(root) / "widget.step.py"
+            model = Path(root) / "widget.py"
             model.write_text("from build123d import Box\n")
             self.assertTrue(cad_source_hash.is_first_party_source_file(model))
 
@@ -241,7 +241,7 @@ class ExtensionOwningPackagesSurviveEvictionTest(unittest.TestCase):
     def test_a_pure_python_module_is_still_evicted(self) -> None:
         module_name = "cadgen_test_pure_python_module"
         module = type(sys)(module_name)
-        module.__file__ = "/tmp/does-not-matter/widget.step.py"
+        module.__file__ = "/tmp/does-not-matter/widget.py"
         sys.modules[module_name] = module
         self.addCleanup(sys.modules.pop, module_name, None)
 

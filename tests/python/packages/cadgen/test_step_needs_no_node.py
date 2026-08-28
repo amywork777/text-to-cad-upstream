@@ -39,7 +39,9 @@ _MODEL = """\
 from build123d import BuildPart, Box, Cylinder, Mode
 
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     with BuildPart() as part:
         Box(30, 20, 10)
         Cylinder(radius=4, height=10, mode=Mode.SUBTRACT)
@@ -61,7 +63,7 @@ class StepBuildsWithoutNodeTests(unittest.TestCase):
     def test_a_step_package_builds_with_node_unresolvable(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            model = root / "block.step.py"
+            model = root / "block.py"
             model.write_text(_MODEL)
 
             env = dict(os.environ)

@@ -2,6 +2,7 @@
 # center cutout, plus an engraved alignment crosshair.
 
 from __future__ import annotations
+from cadgen import dxf
 
 import math
 
@@ -34,7 +35,8 @@ def _rounded_rect_vertices(width: float, height: float, radius: float):
     ]
 
 
-def gen_dxf():
+@dxf
+def gasket_plate():
     document = ezdxf.new("R2010")
     document.units = ezdxf.units.MM
     modelspace = document.modelspace()
@@ -78,4 +80,4 @@ def gen_dxf():
 
 
 if __name__ == "__main__":
-    gen_dxf()
+    gasket_plate()

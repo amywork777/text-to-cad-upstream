@@ -7,7 +7,7 @@ A CAD model is a plain Python script; the decorator is the entrypoint::
     from cadgen import step
 
     @step()                      # write= defaults to <stem>.step beside the
-    def bracket(width: float = 10.0):    # script, or routes via cadproject.toml
+    def bracket(width: float = 10.0):    # script; pass write="..." to relocate
         return bd.Box(width, 10, 10)
 
 Semantics (settled in the design doc):
@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen.project_marker import resolve_output_path
+from cadgen.metadata import resolve_model_output_path
 
 __all__ = ["step", "dxf", "ModelDef", "registered_model", "registered_models"]
 
@@ -64,7 +64,7 @@ class ModelDef:
 
     @property
     def output_path(self) -> Path:
-        return resolve_output_path(self.script_path, fmt=self.fmt, explicit_write=self.write)
+        return resolve_model_output_path(self.script_path, fmt=self.fmt, explicit_write=self.write)
 
 
 # Keyed by resolved script path. One model per file is a hard rule (see module

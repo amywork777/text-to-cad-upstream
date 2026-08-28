@@ -47,13 +47,6 @@ def run_model_argv(argv: Sequence[str], *, prog: str = "python <model>.py") -> i
 
     from cadgen.catalog import StepImportOptions, source_from_path
 
-    source = source_from_path(script)  # raises the legacy teaching error itself
-    if source is None:
-        parser.error(
-            f"{script.name} declares no CAD model — decorate one function with "
-            "@step or @dxf from cadgen"
-        )
-
     def _numeric(value: object, field_name: str) -> float | None:
         try:
             return normalize_mesh_numeric(value, field_name=field_name)
@@ -61,32 +54,43 @@ def run_model_argv(argv: Sequence[str], *, prog: str = "python <model>.py") -> i
             parser.error(str(exc))
         return None
 
-    if source.dxf_path is not None and source.step_path is None:
-        from cadgen.generation import generate_dxf_targets
+    try:
+        source = source_from_path(script)  # raises the legacy teaching error itself
+        if source is None:
+            raise ValueError(
+                f"{script.name} declares no CAD model — decorate one function with "
+                "@step or @dxf from cadgen"
+            )
+        if source.dxf_path is not None and source.step_path is None:
+            from cadgen.generation import generate_dxf_targets
 
-        return generate_dxf_targets(
-            [str(script)],
-            output=args.output,
+            return generate_dxf_targets(
+                [str(script)],
+                output=args.output,
+                force=bool(args.force),
+                verbose=bool(args.verbose),
+            )
+
+        from cadgen.generation import generate_step_targets
+
+        output = args.output if args.output else source.step_path
+        return generate_step_targets(
+            [f"{script}={Path(output).as_posix()}"],
+            step_options=StepImportOptions(
+                mesh_tolerance=_numeric(args.mesh_tolerance, "mesh_tolerance"),
+                mesh_angular_tolerance=_numeric(
+                    args.mesh_angular_tolerance, "mesh_angular_tolerance"
+                ),
+            ),
             force=bool(args.force),
             verbose=bool(args.verbose),
+            json_output=bool(args.json),
+            lock_timeout_s=float(args.lock_timeout or 0.0),
         )
+    except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
+        from cadgen._internal.cli_errors import report_cli_error
 
-    from cadgen.generation import generate_step_targets
-
-    output = args.output if args.output else source.step_path
-    return generate_step_targets(
-        [f"{script}={Path(output).as_posix()}"],
-        step_options=StepImportOptions(
-            mesh_tolerance=_numeric(args.mesh_tolerance, "mesh_tolerance"),
-            mesh_angular_tolerance=_numeric(
-                args.mesh_angular_tolerance, "mesh_angular_tolerance"
-            ),
-        ),
-        force=bool(args.force),
-        verbose=bool(args.verbose),
-        json_output=bool(args.json),
-        lock_timeout_s=float(args.lock_timeout or 0.0),
-    )
+        return report_cli_error(exc, tool=prog, verbose=bool(args.verbose))
 
 
 def main(argv: Sequence[str] | None = None, *, prog: str = "python <model>.py") -> int:

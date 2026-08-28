@@ -1,19 +1,7 @@
+from cadgen import step
 from math import cos, pi, sin, tau
 
-from build123d import (
-    Align,
-    BuildPart,
-    BuildSketch,
-    Color,
-    Compound,
-    Cylinder,
-    Location,
-    Locations,
-    Mode,
-    Plane,
-    Polygon,
-    extrude,
-)
+from cadgen import build123d as bd
 
 
 # Units: millimeters.
@@ -48,11 +36,11 @@ def _srgb_channel_to_linear(channel: int) -> float:
     return ((value + 0.055) / 1.055) ** 2.4
 
 
-def _srgb_color(hex_color: str) -> Color:
+def _srgb_color(hex_color: str) -> bd.Color:
     value = hex_color.removeprefix("#")
     if len(value) != 6:
         raise ValueError(f"Expected #rrggbb color, got {hex_color!r}")
-    return Color(
+    return bd.Color(
         _srgb_channel_to_linear(int(value[0:2], 16)),
         _srgb_channel_to_linear(int(value[2:4], 16)),
         _srgb_channel_to_linear(int(value[4:6], 16)),
@@ -130,11 +118,11 @@ def _make_external_gear(
     phase: float,
     center: tuple[float, float] = (0.0, 0.0),
     bore_diameter: float | None = None,
-    color: Color | None = None,
+    color: bd.Color | None = None,
 ):
-    with BuildPart() as gear:
-        with BuildSketch(Plane.XY):
-            Polygon(
+    with bd.BuildPart() as gear:
+        with bd.BuildSketch(bd.Plane.XY):
+            bd.Polygon(
                 _trapezoid_tooth_profile(
                     teeth=teeth,
                     root_radius=root_diameter / 2.0,
@@ -145,33 +133,33 @@ def _make_external_gear(
                 ),
                 align=None,
             )
-        extrude(amount=GEAR_THICKNESS)
+        bd.extrude(amount=GEAR_THICKNESS)
 
         if bore_diameter is not None:
-            with Locations(Location((0.0, 0.0, -0.5))):
-                Cylinder(
+            with bd.Locations(bd.Location((0.0, 0.0, -0.5))):
+                bd.Cylinder(
                     radius=bore_diameter / 2.0,
                     height=GEAR_THICKNESS + 1.0,
-                    align=(Align.CENTER, Align.CENTER, Align.MIN),
-                    mode=Mode.SUBTRACT,
+                    align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
+                    mode=bd.Mode.SUBTRACT,
                 )
 
-    part = gear.part.moved(Location((center[0], center[1], GEAR_BOTTOM_Z)))
+    part = gear.part.moved(bd.Location((center[0], center[1], GEAR_BOTTOM_Z)))
     part.label = label
     part.color = color
     return part
 
 
-def _make_internal_ring_gear(*, label: str, phase: float, color: Color | None = None):
-    with BuildPart() as ring:
-        Cylinder(
+def _make_internal_ring_gear(*, label: str, phase: float, color: bd.Color | None = None):
+    with bd.BuildPart() as ring:
+        bd.Cylinder(
             radius=RING_OUTSIDE_DIAMETER / 2.0,
             height=GEAR_THICKNESS,
-            align=(Align.CENTER, Align.CENTER, Align.MIN),
+            align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
         )
 
-        with BuildSketch(Plane.XY):
-            Polygon(
+        with bd.BuildSketch(bd.Plane.XY):
+            bd.Polygon(
                 _trapezoid_tooth_profile(
                     teeth=RING_TEETH,
                     root_radius=RING_INTERNAL_ROOT_DIAMETER / 2.0,
@@ -182,7 +170,7 @@ def _make_internal_ring_gear(*, label: str, phase: float, color: Color | None = 
                 ),
                 align=None,
             )
-        extrude(amount=GEAR_THICKNESS, mode=Mode.SUBTRACT)
+        bd.extrude(amount=GEAR_THICKNESS, mode=bd.Mode.SUBTRACT)
 
     part = ring.part
     part.label = label
@@ -191,21 +179,21 @@ def _make_internal_ring_gear(*, label: str, phase: float, color: Color | None = 
 
 
 def _make_carrier_plate():
-    with BuildPart() as carrier:
-        with Locations(Location((0.0, 0.0, CARRIER_BOTTOM_Z))):
-            Cylinder(
+    with bd.BuildPart() as carrier:
+        with bd.Locations(bd.Location((0.0, 0.0, CARRIER_BOTTOM_Z))):
+            bd.Cylinder(
                 radius=CARRIER_DIAMETER / 2.0,
                 height=CARRIER_THICKNESS,
-                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
             )
         for index in range(PLANET_COUNT):
             center = _polar_point(PLANET_CENTER_RADIUS, tau * index / PLANET_COUNT)
-            with Locations(Location((center[0], center[1], CARRIER_BOTTOM_Z - 0.1))):
-                Cylinder(
+            with bd.Locations(bd.Location((center[0], center[1], CARRIER_BOTTOM_Z - 0.1))):
+                bd.Cylinder(
                     radius=PIN_CARRIER_CLEARANCE_DIAMETER / 2.0,
                     height=CARRIER_THICKNESS + 0.2,
-                    align=(Align.CENTER, Align.CENTER, Align.MIN),
-                    mode=Mode.SUBTRACT,
+                    align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
+                    mode=bd.Mode.SUBTRACT,
                 )
 
     part = carrier.part
@@ -215,12 +203,12 @@ def _make_carrier_plate():
 
 
 def _make_planet_pin(*, label: str, center: tuple[float, float]):
-    with BuildPart() as pin:
-        with Locations(Location((center[0], center[1], PIN_BOTTOM_Z))):
-            Cylinder(
+    with bd.BuildPart() as pin:
+        with bd.Locations(bd.Location((center[0], center[1], PIN_BOTTOM_Z))):
+            bd.Cylinder(
                 radius=PIN_DIAMETER / 2.0,
                 height=PIN_HEIGHT,
-                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
             )
 
     part = pin.part
@@ -234,7 +222,8 @@ def _planet_center(index: int) -> tuple[float, float]:
     return _polar_point(PLANET_CENTER_RADIUS, angle)
 
 
-def gen_step():
+@step
+def planetary_gear_assembly():
     """Return a labeled simplified planetary gear assembly in millimeters."""
     sun_pitch_angle = tau / SUN_TEETH
     ring_pitch_angle = tau / RING_TEETH
@@ -274,7 +263,7 @@ def gen_step():
         )
         parts.append(_make_planet_pin(label=f"planet_pin_{index + 1}", center=center))
 
-    assembly = Compound(
+    assembly = bd.Compound(
         obj=parts,
         children=parts,
         label="simplified_planetary_gear_assembly",

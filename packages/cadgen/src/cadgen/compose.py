@@ -221,22 +221,33 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
 
 
 class ChildEntry:
-    """A composed sibling generator. ``gen_step`` is the cached scope; every
-    other attribute lazily proxies to the loaded module."""
+    """A composed sibling model. The child's @step/@dxf-decorated entry
+    function is the cached scope; every other attribute lazily proxies to the
+    loaded module."""
 
     def __init__(self, entry: Path):
         self._entry = entry
         self._root = entry.parent
 
-    def gen_step(self, *args, **kwargs):
-        scope_id = self._entry.name
-        return _run_scope(
-            scope_id, self._entry, self._root,
-            lambda: _load_module(self._entry).gen_step(*args, **kwargs),
-            args, kwargs,
-        )
+    def _entry_function_name(self) -> str | None:
+        from cadgen.metadata import parse_generator_metadata
+
+        try:
+            metadata = parse_generator_metadata(self._entry)
+        except (RuntimeError, ValueError):
+            return None
+        return getattr(metadata, "entry_function", None) if metadata else None
 
     def __getattr__(self, name: str):
+        if name == self._entry_function_name():
+            def cached_entry(*args, **kwargs):
+                return _run_scope(
+                    self._entry.name, self._entry, self._root,
+                    lambda: getattr(_load_module(self._entry), name)(*args, **kwargs),
+                    args, kwargs,
+                )
+
+            return cached_entry
         return getattr(_load_module(self._entry), name)
 
 

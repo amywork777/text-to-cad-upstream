@@ -52,9 +52,9 @@ _CADGEN_SRC = str(Path(__file__).resolve().parents[4] / "packages" / "cadgen" / 
 
 class GenerationLockPathTest(unittest.TestCase):
     def test_lock_is_a_hidden_sibling_of_the_package_dir(self):
-        package = Path("/models/robot/__cadgen__/models/arm.step.py")
+        package = Path("/models/robot/__cadgen__/models/arm.py")
         self.assertEqual(
-            Path("/models/robot/__cadgen__/models/.arm.step.py.generation.lock"),
+            Path("/models/robot/__cadgen__/models/.arm.py.generation.lock"),
             write_lock_path(package),
         )
 
@@ -66,7 +66,7 @@ class GenerationLockPathTest(unittest.TestCase):
 
         self.assertEqual(".generation.lock", WRITE_LOCK_SUFFIX)
         with tempfile.TemporaryDirectory() as tmp:
-            lock = write_lock_path(Path(tmp) / "__cadgen__" / "models" / "part.step.py")
+            lock = write_lock_path(Path(tmp) / "__cadgen__" / "models" / "part.py")
             with exclusive(lock) as run_id:
                 self.assertTrue(run_id)
                 self.assertEqual(run_id, read_run_id(lock))
@@ -74,7 +74,7 @@ class GenerationLockPathTest(unittest.TestCase):
     def test_distinct_models_get_distinct_locks(self):
         base = Path("/m/__cadgen__/models")
         self.assertNotEqual(
-            write_lock_path(base / "a.step.py"), write_lock_path(base / "b.step.py")
+            write_lock_path(base / "a.py"), write_lock_path(base / "b.py")
         )
 
 
@@ -83,7 +83,7 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.lock = write_lock_path(self.root / "__cadgen__" / "models" / "part.step.py")
+        self.lock = write_lock_path(self.root / "__cadgen__" / "models" / "part.py")
 
     def test_none_lock_path_is_a_noop(self):
         with exclusive(None):
@@ -124,7 +124,7 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         self.assertTrue(done.wait(10), "nested acquire of the same model deadlocked")
 
     def test_different_models_do_not_contend(self):
-        other = write_lock_path(self.root / "__cadgen__" / "models" / "other.step.py")
+        other = write_lock_path(self.root / "__cadgen__" / "models" / "other.py")
         done = threading.Event()
 
         def run():
@@ -268,7 +268,7 @@ class GenerationLockBehaviourTest(unittest.TestCase):
     def test_unwritable_lock_directory_does_not_fail_the_build(self):
         blocked = self.root / "ro"
         blocked.mkdir()
-        lock = blocked / "sub" / ".part.step.py.generation.lock"
+        lock = blocked / "sub" / ".part.py.generation.lock"
         self._deny_new_entries(blocked)
         ran = []
         with exclusive(lock) as recorded:
@@ -322,7 +322,7 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         from cadgen.coordination import STEP_PACKAGE, artifact_build
         from cadgen.coordination.paths import write_lock_path
 
-        package = self.root / "__cadgen__" / "models" / "part.step.py"
+        package = self.root / "__cadgen__" / "models" / "part.py"
         lock_path = write_lock_path(package)
         observed = []
 
@@ -361,7 +361,7 @@ class RealBackendRegressionTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.lock = write_lock_path(self.root / "__cadgen__" / "models" / "part.step.py")
+        self.lock = write_lock_path(self.root / "__cadgen__" / "models" / "part.py")
 
     def test_this_platform_really_has_a_locking_backend(self):
         """#260: before it, Windows had no ``fcntl``, took no lock, and said nothing.
@@ -495,7 +495,7 @@ class DegradationIsAnnouncedTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.lock_path = write_lock_path(Path(self._tmp.name) / "__cadgen__" / "models" / "p.step.py")
+        self.lock_path = write_lock_path(Path(self._tmp.name) / "__cadgen__" / "models" / "p.py")
 
     def test_an_unrecognised_lock_error_warns_and_names_the_errno(self):
         def refuse(handle, path, **kwargs):
@@ -529,7 +529,7 @@ class WindowsLockBackendTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.lock_path = write_lock_path(self.root / "__cadgen__" / "models" / "part.step.py")
+        self.lock_path = write_lock_path(self.root / "__cadgen__" / "models" / "part.py")
         self._fcntl = mock.patch.object(lock, "fcntl", None)
         self._msvcrt = mock.patch.object(lock, "msvcrt", _FakeMsvcrt())
         self._fcntl.start()

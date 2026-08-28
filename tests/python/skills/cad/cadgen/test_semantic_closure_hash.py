@@ -18,12 +18,12 @@ class SemanticClosureHashTests(unittest.TestCase):
     def test_comment_and_whitespace_edits_do_not_change_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            a = self._write(root, "gen.py", "def gen_step():\n    return build(radius=5)\n")
+            a = self._write(root, "gen.py", "def model():\n    return build(radius=5)\n")
             hash_a = _closure(a, root).closure_hash
             # add a comment, blank lines, and reindent-free formatting
             a.write_text(
                 "# a new comment\n\n"
-                "def gen_step():\n"
+                "def model():\n"
                 "    return build(radius=5)   # trailing comment\n\n\n",
                 encoding="utf-8",
             )
@@ -32,17 +32,17 @@ class SemanticClosureHashTests(unittest.TestCase):
     def test_docstring_change_changes_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            a = self._write(root, "gen.py", 'def gen_step():\n    "one"\n    return 1\n')
+            a = self._write(root, "gen.py", 'def model():\n    "one"\n    return 1\n')
             hash_a = _closure(a, root).closure_hash
-            a.write_text('def gen_step():\n    "two"\n    return 1\n', encoding="utf-8")
+            a.write_text('def model():\n    "two"\n    return 1\n', encoding="utf-8")
             self.assertNotEqual(hash_a, _closure(a, root).closure_hash)
 
     def test_real_code_change_changes_hash(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            a = self._write(root, "gen.py", "R = 5\ndef gen_step():\n    return R\n")
+            a = self._write(root, "gen.py", "R = 5\ndef model():\n    return R\n")
             hash_a = _closure(a, root).closure_hash
-            a.write_text("R = 6\ndef gen_step():\n    return R\n", encoding="utf-8")
+            a.write_text("R = 6\ndef model():\n    return R\n", encoding="utf-8")
             self.assertNotEqual(hash_a, _closure(a, root).closure_hash)
 
     def test_syntax_error_falls_back_to_byte_hash(self) -> None:
@@ -64,7 +64,7 @@ class SemanticClosureHashTests(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self._write(root, "gen.py", "def gen_step():\n    return 1\n")
+            self._write(root, "gen.py", "def model():\n    return 1\n")
             legacy = source_hash._recompute_closure_hash(
                 ["gen.py"], base=root, hasher=source_hash._sha256_file
             )
@@ -74,9 +74,9 @@ class SemanticClosureHashTests(unittest.TestCase):
     def test_matches_accepts_semantic_hash_after_comment_edit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            a = self._write(root, "gen.py", "def gen_step():\n    return 1\n")
+            a = self._write(root, "gen.py", "def model():\n    return 1\n")
             semantic = _closure(a, root).closure_hash
-            a.write_text("# comment\ndef gen_step():\n    return 1\n", encoding="utf-8")
+            a.write_text("# comment\ndef model():\n    return 1\n", encoding="utf-8")
             self.assertTrue(source_hash.closure_hash_matches(semantic, ["gen.py"], base=root))
 
     def test_matches_rejects_missing_file(self) -> None:

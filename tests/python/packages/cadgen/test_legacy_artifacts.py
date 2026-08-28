@@ -26,10 +26,10 @@ class LegacyArtifactPathTest(unittest.TestCase):
         self.assertEqual(Path("/models/parts/.bracket.step"), legacy_explorer_dir(entry))
 
     def test_generator_entries_use_the_full_name_not_the_stem(self) -> None:
-        # `.step.py` entries keep both suffixes: the sidecar was `.<name>.glb`, so a
+        # `.py` entries keep both suffixes: the sidecar was `.<name>.glb`, so a
         # stem-based path would miss every generated model.
-        entry = Path("/models/parts/bracket.step.py")
-        self.assertEqual(Path("/models/parts/.bracket.step.py.glb"), legacy_glb_path(entry))
+        entry = Path("/models/parts/bracket.py")
+        self.assertEqual(Path("/models/parts/.bracket.py.glb"), legacy_glb_path(entry))
 
 
 class LegacyArtifactPruneTest(unittest.TestCase):
@@ -90,7 +90,7 @@ class LegacyArtifactPruneTest(unittest.TestCase):
             self.root / ".bracket.step.js",
             self.root / "bracket.step.js",
             self.root / "bracket.params.js",
-            self.root / "bracket.step.py",
+            self.root / "bracket.py",
         ]
         for path in keepers:
             path.write_text("// authored")

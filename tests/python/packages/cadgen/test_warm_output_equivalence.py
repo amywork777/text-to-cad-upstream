@@ -40,7 +40,9 @@ CADGEN_SRC = REPO_ROOT / "packages" / "cadgen" / "src"
 
 PART = """from build123d import Box, BuildPart, Cylinder, Locations, Mode
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     with BuildPart() as part:
         Box(30, 20, 10)
         with Locations((0, 0, 0)):
@@ -50,7 +52,9 @@ def gen_step():
 
 ASSEMBLY = """from build123d import Box, BuildPart, Location, Pos
 
-def gen_step():
+from cadgen import step
+@step
+def model():
     with BuildPart() as base:
         Box(40, 40, 5)
     with BuildPart() as post:
@@ -62,7 +66,9 @@ def gen_step():
 DRAWING = """import ezdxf
 from ezdxf.units import MM
 
-def gen_dxf():
+from cadgen import dxf
+@dxf
+def drawing():
     document = ezdxf.new(setup=True)
     document.units = MM
     msp = document.modelspace()
@@ -83,8 +89,11 @@ def _env(**extra) -> dict:
 
 
 def _run(argv: list[str], cwd: pathlib.Path, **env_extra) -> tuple[int, str]:
+    # Library-first: a model script is its own entrypoint (python <model>.py);
+    # cadgen.cli commands still route the non-generation tools.
+    launcher = [] if argv and argv[0].endswith(".py") else ["-m", "cadgen.cli"]
     proc = subprocess.run(
-        [sys.executable, "-m", "cadgen.cli", *argv],
+        [sys.executable, *launcher, *argv],
         cwd=str(cwd), env=_env(**env_extra), capture_output=True, text=True, timeout=600,
     )
     # The tmp root differs per run and is not part of the contract; everything else is.
@@ -204,16 +213,16 @@ class WarmOutputEquivalence(unittest.TestCase):
 
     def _cold(self, name: str, source: str, argv: list[str]):
         tree = self._tree(name, source)
-        code, output = _run(argv, tree)
+        code, output = _run(argv, tree, CADGEN_WARM="0")
         self.assertEqual(code, 0, output)
         return _manifest(tree), output
 
     def test_a_part_builds_identically_warm(self):
-        argv = ["step", "gen", "widget.step.py"]
-        cold, cold_out = self._cold("widget.step.py", PART, argv)
+        argv = ["widget.py"]
+        cold, cold_out = self._cold("widget.py", PART, argv)
         self.assertTrue(cold, "the cold build produced nothing to compare")
 
-        tree = self._tree("widget.step.py", PART)
+        tree = self._tree("widget.py", PART)
         with _Daemon(tree) as daemon:
             code, warm_out = _run(argv, tree, **daemon.env())
             self.assertEqual(code, 0, warm_out)
@@ -222,9 +231,9 @@ class WarmOutputEquivalence(unittest.TestCase):
         self.assertEqual(warm_out, cold_out)
 
     def test_an_assembly_builds_identically_warm(self):
-        argv = ["step", "gen", "rig.step.py"]
-        cold, _ = self._cold("rig.step.py", ASSEMBLY, argv)
-        tree = self._tree("rig.step.py", ASSEMBLY)
+        argv = ["rig.py"]
+        cold, _ = self._cold("rig.py", ASSEMBLY, argv)
+        tree = self._tree("rig.py", ASSEMBLY)
         with _Daemon(tree) as daemon:
             code, out = _run(argv, tree, **daemon.env())
             self.assertEqual(code, 0, out)
@@ -232,10 +241,10 @@ class WarmOutputEquivalence(unittest.TestCase):
 
     def test_four_parallel_builds_through_one_daemon_all_match_cold(self):
         """The case the pool exists for. Today this serialises; it must still be correct."""
-        argv = ["step", "gen", "widget.step.py"]
-        cold, _ = self._cold("widget.step.py", PART, argv)
+        argv = ["widget.py"]
+        cold, _ = self._cold("widget.py", PART, argv)
 
-        trees = [self._tree("widget.step.py", PART) for _ in range(4)]
+        trees = [self._tree("widget.py", PART) for _ in range(4)]
         shared = pathlib.Path(tempfile.mkdtemp(prefix="tmp-warm-eq-sock-")).resolve()
         self.addCleanup(shutil.rmtree, shared, ignore_errors=True)
         with _Daemon(shared) as daemon:
@@ -251,27 +260,32 @@ class WarmOutputEquivalence(unittest.TestCase):
     def test_a_drawing_package_is_byte_identical_warm(self):
         """DXF is the format with a determinism hazard: ezdxf's ordering follows the
         hash seed, which is why the dxf commands re-run with PYTHONHASHSEED pinned."""
-        argv = ["dxf", "gen", "plate.dxf.py"]
-        cold, _ = self._cold("plate.dxf.py", DRAWING, argv)
+        argv = ["plate.py"]
+        cold, _ = self._cold("plate.py", DRAWING, argv)
         self.assertTrue(cold, "the cold DXF build produced nothing to compare")
-        tree = self._tree("plate.dxf.py", DRAWING)
+        tree = self._tree("plate.py", DRAWING)
         code, out = _run(argv, tree, CADGEN_WARM="1")
         self.assertEqual(code, 0, out)
         self.assertEqual(_manifest(tree), cold)
 
     def test_a_failing_build_fails_the_same_way_warm(self):
         """Exit code and message are contract too, not just successful output."""
-        broken = "def gen_step():\n    raise ValueError('bad radius')\n"
-        tree = self._tree("broken.step.py", broken)
-        cold_code, cold_out = _run(["step", "gen", "broken.step.py"], tree)
+        broken = (
+            "from cadgen import step\n"
+            "@step\n"
+            "def model():\n"
+            "    raise ValueError('bad radius')\n"
+        )
+        tree = self._tree("broken.py", broken)
+        cold_code, cold_out = _run(["broken.py"], tree, CADGEN_WARM="0")
         self.assertNotEqual(cold_code, 0)
 
-        tree2 = self._tree("broken.step.py", broken)
+        tree2 = self._tree("broken.py", broken)
         with _Daemon(tree2) as daemon:
-            warm_code, warm_out = _run(["step", "gen", "broken.step.py"], tree2, **daemon.env())
+            warm_code, warm_out = _run(["broken.py"], tree2, **daemon.env())
         self.assertEqual(warm_code, cold_code)
         # Deliberately not asserting the message TEXT: cadgen masks a raising generator
-        # with "gen_step() must return one value" rather than surfacing the original
+        # with "model() must return one value" rather than surfacing the original
         # error (a pre-existing quirk, not this refactor's business). What matters here is
         # that whatever cold says, warm says exactly the same.
         self.assertEqual(warm_out, cold_out)
