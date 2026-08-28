@@ -62,8 +62,6 @@ jobs:
       # matching produces a wheel that imports fine and fails on a user's machine, so the
       # wheel is built and inspected here rather than trusted.
       - name: Check cadgen wheel contents
-        env:
-          CADGEN_REQUIRE_VIEWER_DIST: "1"
         run: |
           python -m pip install build
           scripts/release/check-wheel-contents.sh

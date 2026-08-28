@@ -1,10 +1,10 @@
 """Where cadgen's non-Python runtime assets live.
 
-cadgen executes three kinds of thing it does not write in Python: Node builders (the DXF
-and implicit render packages are baked by a JS child), a headless browser bundle (the
-snapshot CLI drives it in a page), and the CAD Viewer's built SPA. All three ship inside
-the distribution under ``cadgen/_runtime``; all three can be pointed elsewhere for
-development.
+cadgen executes two kinds of thing it does not write in Python: Node builders (the DXF
+and implicit render packages are baked by a JS child) and a headless browser bundle (the
+snapshot CLI drives it in a page). Both ship inside the distribution under
+``cadgen/_runtime``; both can be pointed elsewhere for development. The CAD Viewer is NOT
+one of them: it is a standalone app, distributed by the ``cad-viewer`` skill.
 
 **Every resolver here is CALL-TIME.** Nothing at import time touches the filesystem or
 looks for ``node``: ``pip install cadgen`` must succeed on a machine with no Node and no
@@ -27,7 +27,6 @@ __all__ = [
     "browser_runtime_dir",
     "node_builders_dir",
     "runtime_root",
-    "viewer_dist_dir",
 ]
 
 # Data-only; deliberately no __init__.py, so this is a path lookup rather than an import.
@@ -95,51 +94,3 @@ def browser_runtime_dir(explicit: Path | str | None = None) -> Path:
     return _RUNTIME / "browser"
 
 
-def viewer_server_entry() -> Path:
-    """The CAD Viewer's JS server entry (``main.mjs``).
-
-    An installed cadgen carries it at ``_runtime/viewer_server``; a source checkout
-    that has never bundled falls back to the repo's ``viewer/server`` so
-    ``cadgen viewer`` works straight from an editable install.
-    """
-    override = _env_dir("CADGEN_VIEWER_SERVER")
-    if override and (override / "main.mjs").is_file():
-        return override / "main.mjs"
-    packaged = _RUNTIME / "viewer_server" / "main.mjs"
-    if packaged.is_file():
-        return packaged
-    checkout = Path(__file__).resolve().parents[3].parent / "viewer" / "server" / "main.mjs"
-    if checkout.is_file():
-        return checkout
-    raise AssetMissing(
-        f"The CAD Viewer's JS server is not present at {packaged}.\n"
-        "In an installed cadgen this means a broken distribution. In a source checkout,\n"
-        "run from the repo (viewer/server/main.mjs) or bundle with scripts/bundle/bundle.sh."
-    )
-
-
-def viewer_dist_dir(explicit: Path | str | None = None) -> Path:
-    """Directory holding the built CAD Viewer SPA (``index.html`` + ``assets/``).
-
-    Unlike the other two this is NOT committed to the repo -- it is a vite build output,
-    produced into ``_runtime/viewer`` by the bundle step and shipped in the wheel. A
-    source checkout that has never bundled has none, which is why the error names the two
-    ways forward rather than just reporting a missing path.
-    """
-    if explicit:
-        return Path(explicit).expanduser().resolve()
-    override = _env_dir("CADGEN_VIEWER_DIST")
-    if override:
-        return override
-    packaged = _RUNTIME / "viewer"
-    if (packaged / "index.html").is_file():
-        return packaged
-    raise AssetMissing(
-        f"The CAD Viewer's built client is not present at {packaged}.\n"
-        "In an installed cadgen this means a broken distribution. In a source checkout it\n"
-        "has simply not been built yet -- build the packaged client:\n"
-        "  scripts/bundle/bundle.sh\n"
-        "or point CADGEN_VIEWER_DIST / --dist at an existing viewer/dist.\n"
-        "(The dev server, `npm --prefix viewer run dev`, serves the client from\n"
-        "source and does not need this bundle.)"
-    )

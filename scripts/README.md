@@ -72,12 +72,11 @@ disagree about symlinks, and Codex `plugin add` drops them silently, publishing 
 skill whose files are simply missing. Plugin manifest and marketplace validation
 lives in `tests/python/global/test_plugin_manifests.py`.
 
-The CAD Viewer client is no longer bundled beside the skill: it is built into
-`packages/cadgen/src/cadgen/_runtime/viewer` and ships inside the cadgen wheel, which
-`cadgen viewer` serves. That path is gitignored — it is a 16 MB Vite output that would
-churn on every client change — and setuptools does not read `.gitignore`, so CI and the
-publish job bundle before building the wheel and `check-wheel-contents.sh` refuses a
-wheel without it.
+The CAD Viewer runtime (built client + JS server) is bundled INTO the cad-viewer
+skill at `skills/cad-viewer/scripts/viewer` by `bundle-cad-viewer.sh`. On develop
+that path stays a development symlink to `viewer/` and the 16 MB Vite output is
+never committed; CI and the publish job bundle first, so the publish tree carries
+the real runtime and the trim step refuses to publish without it.
 
 ## Dev
 

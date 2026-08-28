@@ -49,11 +49,9 @@ where = ["src"]
 include = ["cadgen*"]
 
 [tool.setuptools.package-data]
-# _runtime holds everything cadgen executes that is not Python: the esbuilt Node builders,
-# the headless browser bundle the snapshot CLI drives, the built CAD Viewer client, and a
-# It is data, not a subpackage (no __init__), and it is found
-# at call time by cadgen.assets. The viewer client is gitignored but still ships -- setuptools
-# does not read .gitignore, and CI/publish bundle before building the wheel.
+# _runtime holds everything cadgen executes that is not Python: the esbuilt Node
+# builders and the headless browser bundle the snapshot CLI drives. It is data, not a
+# subpackage (no __init__), and it is found at call time by cadgen.assets.
 # Verified by scripts/release/check-wheel-contents.sh.
 cadgen = ["py.typed", "_runtime/**/*"]
 # The Node builder bridge (cadgen/_internal/node_runtime.py) spawns node with

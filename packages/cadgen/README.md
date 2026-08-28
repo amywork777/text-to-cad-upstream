@@ -2,18 +2,19 @@
 
 The CAD runtime behind [text-to-cad](https://github.com/earthtojake/text-to-cad):
 STEP-first artifact generation on [build123d](https://github.com/gumyr/build123d) and
-OCCT, the command line that drives it, and the CAD Viewer that shows you the result.
+OCCT, and the command line that drives it. (The CAD Viewer is a separate standalone
+app — [earthtojake/cad-viewer](https://github.com/earthtojake/cad-viewer) — bundled
+by the cad-viewer skill, not by this package.)
 
 ```bash
 pip install cadgen
-cadgen viewer                 # browse and inspect CAD in a local directory
 cadgen step gen part.step.py  # build a STEP and its render package
 ```
 
 `cadgen` carries the JavaScript it executes as well as the Python. Mesh and drawing
-builders run under Node, snapshots render in a headless browser, and the Viewer is a
-built SPA — all three ship inside the wheel, so a single `pip install` is the whole
-runtime. Nothing is fetched at build time and nothing is resolved relative to a checkout.
+builders run under Node and snapshots render in a headless browser — both ship inside
+the wheel, so a single `pip install` is the whole runtime. Nothing is fetched at build
+time and nothing is resolved relative to a checkout.
 
 Two things it deliberately does not carry: **Node ≥ 20 on `PATH`** (needed only by the
 DXF and implicit builders, resolved when they run, never at import), and a **browser**
@@ -30,7 +31,6 @@ chromium`). Plain STEP generation needs neither.
 | `dxf gen` / `artifact` / `snapshot` | the same for `.dxf.py` drawing generators |
 | `implicit gen` / `export` / `snapshot` | implicit CAD models |
 | `snapshot` | render any supported input |
-| `viewer` | serve the CAD Viewer over a local directory |
 | `daemon` | opt-in warm process that holds OCP resident between builds |
 
 Dispatch is lazy: `cadgen --help` does not import the CAD stack.

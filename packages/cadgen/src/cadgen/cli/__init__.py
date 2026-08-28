@@ -2,14 +2,18 @@
 
 Every subcommand is also reachable as ``python -m cadgen.<module>``; this is the friendly
 front door, not a second implementation. A subcommand's parser lives in its own module and
-owns its arguments, so ``cadgen viewer --port 3245`` and ``cadgen viewer --port
-3245`` take the same flags and print the same output.
+owns its arguments, so ``cadgen step gen`` and ``python -m cadgen.cli.step_gen`` take the
+same flags and print the same output.
 
 **Dispatch is lazy on purpose.** Importing a CAD subcommand pulls in OCP/build123d, which
-costs seconds and needs the heavy dependency set installed. ``cadgen --help``, an unknown
-command, and ``cadgen viewer`` must not pay for that, so the registry stores dotted module
-names as strings and imports exactly the one being run. Do not hoist these to module-level
-imports when adding commands.
+costs seconds and needs the heavy dependency set installed. ``cadgen --help`` and an
+unknown command must not pay for that, so the registry stores dotted module names as
+strings and imports exactly the one being run. Do not hoist these to module-level imports
+when adding commands.
+
+The CAD Viewer is NOT here: it is a standalone app (the ``cad-viewer`` skill bundles it;
+a checkout runs ``viewer/server/main.mjs`` directly), and cadgen is exclusively the
+programmatic generation/inspection/snapshot toolchain.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ import sys
 # Two-word names are intentional: `step gen` and `dxf gen` are different commands with
 # different parsers, and flattening them to one `gen` would force a --kind flag that
 # neither parser wants. Dispatch joins argv[0:2] before argv[0], so the two-word form wins
-# where it exists and `cadgen viewer` still works as one word.
+# where it exists and one-word commands like `daemon` still work.
 _COMMANDS: dict[str, tuple[str, str]] = {
     # STEP
     "step gen": ("cadgen.cli.step_gen", "build STEP targets from .step.py generators"),
@@ -47,14 +51,10 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
-    "viewer": ("cadgen.cli.viewer_start", "start the CAD Viewer on a local directory"),
-    # Two-word entries are required, not cosmetic: dispatch matches argv[0:2] first, so
-    # without these `cadgen viewer list` falls through to one-word `viewer` and the
-    # launcher treats "list" as a stray argument.
-    "viewer list": ("cadgen.cli.viewer_list", "list running CAD Viewers"),
-    "viewer stop": ("cadgen.cli.viewer_stop", "stop a running CAD Viewer"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
-    # Two-word first, same dispatch trap as `viewer list`.
+    # The two-word entry is required, not cosmetic: dispatch matches argv[0:2] first, so
+    # without it `cadgen daemon status` falls through to one-word `daemon` and the
+    # supervisor treats "status" as a stray argument.
     "daemon status": ("cadgen.cli.daemon_status", "show the warm daemon's workers"),
 }
 
@@ -214,7 +214,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # Tell the parser which front door it was reached through, so `cadgen step gen --help`
     # says "cadgen step gen" and the skill's own `scripts/gen` still says "scripts/gen".
-    # Not every command has a parser to name (the viewer and daemon own their own), hence
+    # Not every command has a parser to name (the daemon owns its own), hence
     # the signature check rather than a blanket keyword.
     import inspect  # only the dispatcher needs it; every skill shim imports this
                     # module just for enforce_requirements_pin and should not pay for it.

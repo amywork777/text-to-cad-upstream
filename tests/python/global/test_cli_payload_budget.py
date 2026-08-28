@@ -87,7 +87,6 @@ class CompactStdoutTests(unittest.TestCase):
         "packages/cadgen/src/cadgen/cli/urdf_validate.py",
         "packages/cadgen/src/cadgen/cli/sdf_validate.py",
         "packages/cadgen/src/cadgen/cli/srdf_validate.py",
-        "packages/cadgen/src/cadgen/cli/viewer_list.py",
         "packages/cadgen/src/cadgen/cli/daemon_status.py",
     )
 

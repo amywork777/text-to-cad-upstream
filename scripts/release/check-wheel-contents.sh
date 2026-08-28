@@ -3,18 +3,15 @@ set -euo pipefail
 
 # Assert the cadgen wheel actually contains its runtime assets.
 #
-# cadgen ships JavaScript it executes (Node builders, the snapshot browser bundle) and,
-# when built, the CAD Viewer client. Those arrive through `[tool.setuptools.package-data]`,
-# which is exactly the kind of declaration that fails QUIETLY: a glob that does not match
-# nested files produces a wheel that imports fine, passes every Python test, and then
-# cannot build a DXF preview on a user's machine. The repo has already been bitten by the
-# same shape of bug in JS bundling (an entry tree-shaken to a 20-byte shebang, exit code 0).
+# cadgen ships JavaScript it executes (Node builders, the snapshot browser bundle).
+# Those arrive through `[tool.setuptools.package-data]`, which is exactly the kind of
+# declaration that fails QUIETLY: a glob that does not match nested files produces a
+# wheel that imports fine, passes every Python test, and then cannot build a DXF preview
+# on a user's machine. The repo has already been bitten by the same shape of bug in JS
+# bundling (an entry tree-shaken to a 20-byte shebang, exit code 0).
 #
-# So: build the wheel, list it, and require the paths to be present.
-#
-# CADGEN_REQUIRE_VIEWER_DIST=1 additionally requires the viewer client. It is gitignored
-# and only exists after `bundle-skill.sh cadgen-runtime --viewer`, so CI and the publish
-# job set it; a plain developer run does not.
+# So: build the wheel, list it, and require the paths to be present. The CAD Viewer is
+# NOT in the wheel: it is a standalone app bundled by the cad-viewer skill.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -35,11 +32,11 @@ fi
 # implicit; the browser bundle is what the snapshot CLI loads in a page.
 REQUIRED=(
   # The Python the wheel must actually contain. Asset globs were the whole list once,
-  # back when cadgen was Python-plus-data; it now also carries the CLI parsers, the CAD
-  # Viewer backend and the warm daemon, and a packages.find regression that dropped any
-  # of them would produce a wheel whose `cadgen` console script dies at import. This is
-  # the ONLY packaging gate the publish job runs -- test-installed.sh covers the same
-  # ground far better but runs in test.yml, not at publish.
+  # back when cadgen was Python-plus-data; it now also carries the CLI parsers and the
+  # warm daemon, and a packages.find regression that dropped any of them would produce a
+  # wheel whose `cadgen` console script dies at import. This is the ONLY packaging gate
+  # the publish job runs -- test-installed.sh covers the same ground far better but runs
+  # in test.yml, not at publish.
   "cadgen/__init__.py"
   "cadgen/assets.py"
   "cadgen/cli/__init__.py"
@@ -50,12 +47,6 @@ REQUIRED=(
   "cadgen/urdf_source.py"
   "cadgen/srdf_validation.py"
   "cadgen/findings.py"
-  # The registry CLIs (`cadgen viewer list`/`stop`) are the only way to find or
-  # stop a running viewer, so a packaging regression that dropped them
-  "cadgen/cli/viewer_start.py"
-  "cadgen/cli/viewer_registry.py"
-  "cadgen/cli/viewer_list.py"
-  "cadgen/cli/viewer_stop.py"
   "cadgen/daemon/__init__.py"
   "cadgen/daemon/server.py"
   # The warm-worker pool. Without these the daemon supervisor starts and then
@@ -78,11 +69,6 @@ REQUIRED=(
   "cadgen/_runtime/browser/snapshot-render.js"
   "cadgen/_runtime/browser/render.html"
 )
-
-if [ "${CADGEN_REQUIRE_VIEWER_DIST:-0}" = "1" ]; then
-  REQUIRED+=("cadgen/_runtime/viewer/index.html")
-  REQUIRED+=("cadgen/_runtime/viewer_server/main.mjs")
-fi
 
 echo "Building cadgen wheel for content check..."
 rm -rf "$OUT_DIR"

@@ -3,7 +3,7 @@
 # directory that is not this repo.
 #
 # Every other check in this repo runs against the source tree, where the repo root is on
-# sys.path, `packages/cadjs/bin` exists, and `viewer/dist` is one directory away. None of
+# sys.path and `packages/cadjs/bin` exists. None of
 # that is true after `pip install cadgen`, so the failures this catches are exactly the
 # ones no other check can: an asset left out of package-data, a module that resolves only
 # because a sibling directory happened to be adjacent, a builder that still imports a bare
@@ -32,8 +32,8 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 && [ ! -x "$PYTHON_BIN" ]; then
 fi
 
 # The wheel is installed with --no-deps and reuses this interpreter's heavy packages, so it
-# must actually have them; otherwise the failure surfaces much later as a viewer that will
-# not bind its port.
+# must actually have them; otherwise the failure surfaces much later in a build that
+# cannot import its kernel.
 if ! "$PYTHON_BIN" -c "import OCP, build123d" >/dev/null 2>&1; then
   echo "$PYTHON_BIN cannot import OCP/build123d; installed-mode checks need the CAD deps." >&2
   exit 1
@@ -53,9 +53,7 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 step() { printf '\n== %s\n' "$*"; }
 
 step "Build the wheel"
-# The viewer client is gitignored, so a wheel built from a tree that was never bundled has
-# no SPA in it. Require it here rather than discovering it after publish.
-CADGEN_REQUIRE_VIEWER_DIST=1 "$REPO_ROOT/scripts/bundle/bundle-skill.sh" cadgen-runtime >/dev/null
+"$REPO_ROOT/scripts/bundle/bundle-skill.sh" cadgen-runtime >/dev/null
 "$PYTHON_BIN" -m build --wheel --outdir "$DIST" "$REPO_ROOT/packages/cadgen" >"$WORK/build.log" 2>&1 \
   || { cat "$WORK/build.log" >&2; fail "wheel build"; }
 WHEEL="$(find "$DIST" -name '*.whl' -type f | head -n 1)"
@@ -90,11 +88,10 @@ PY
 step "Assets resolve to the packaged runtime"
 "$VENV/bin/python" - <<'PY' || exit 1
 import sys
-from cadgen.assets import browser_runtime_dir, node_builders_dir, viewer_dist_dir
+from cadgen.assets import browser_runtime_dir, node_builders_dir
 for label, resolved in (
     ("node builders", node_builders_dir()),
     ("browser runtime", browser_runtime_dir()),
-    ("viewer dist", viewer_dist_dir()),
 ):
     if "site-packages" not in str(resolved):
         sys.exit(f"FAIL: {label} resolved outside the wheel: {resolved}")
@@ -124,7 +121,6 @@ implicit gen
 implicit export
 implicit snapshot
 snapshot
-viewer
 COMMANDS
 
 step "Build a real STEP with no repo in sight"
@@ -144,26 +140,5 @@ PY
 find "$EMPTY/models" -name '*.glb' -o -name '*.step' | head -1 | grep -q . \
   || { cat "$WORK/gen.log" >&2; fail "step gen produced no artifact"; }
 echo "   built a STEP package"
-
-step "Serve the viewer and answer a catalog request"
-PORT="$("$VENV/bin/python" -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')"
-"$VENV/bin/cadgen" viewer --root "$EMPTY/models" --host 127.0.0.1 --port "$PORT" >"$WORK/viewer.log" 2>&1 &
-VIEWER_PID=$!
-# `wait` after the kill so bash reaps the child quietly; without it the shell prints a
-# "Terminated" job notice AFTER the success line, which reads like a failure.
-trap 'kill "$VIEWER_PID" 2>/dev/null || true; wait "$VIEWER_PID" 2>/dev/null || true; cleanup' EXIT
-
-for _ in $(seq 1 60); do
-  curl -fsS -m 2 "http://127.0.0.1:$PORT/__cad/server" >/dev/null 2>&1 && break
-  sleep 0.5
-done
-curl -fsS -m 5 "http://127.0.0.1:$PORT/__cad/server" >/dev/null \
-  || { cat "$WORK/viewer.log" >&2; fail "viewer did not come up"; }
-curl -fsS -m 10 "http://127.0.0.1:$PORT/" | grep -qi '<title>' \
-  || fail "viewer served no SPA (is the client bundled into the wheel?)"
-# No ?dir=: the instance was started with --root, and the catalog is that root.
-curl -fsS -m 20 "http://127.0.0.1:$PORT/__cad/catalog" | grep -q 'probe' \
-  || fail "catalog did not list the generated model"
-echo "   SPA + catalog OK on port $PORT"
 
 printf '\nInstalled-mode checks passed.\n'
