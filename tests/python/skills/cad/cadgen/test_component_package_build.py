@@ -32,7 +32,7 @@ class ComponentWorkerDeterminismTests(unittest.TestCase):
             for name, shape in (("box.surf", box), ("solid.surf", solid)):
                 out = root / name
                 cid, error = cp._build_component_surf_worker(
-                    (cp._shape_brep_bytes(shape), "cid-test", str(out))
+                    (cp._shape_brep_bytes(shape), "cid-test", str(out), None)
                 )
                 self.assertIsNone(error)
                 self.assertEqual("cid-test", cid)
@@ -49,7 +49,7 @@ class ComponentWorkerDeterminismTests(unittest.TestCase):
 
     def test_worker_reports_error_instead_of_raising(self) -> None:
         cid, error = cp._build_component_surf_worker(
-            (b"not a brep", "cid-bad", "/nonexistent/out.surf")
+            (b"not a brep", "cid-bad", "/nonexistent/out.surf", None)
         )
         self.assertEqual("cid-bad", cid)
         self.assertIsNotNone(error)

@@ -13,12 +13,6 @@ from cadgen.metadata import MeshSettings
 
 
 ColorRGBA = tuple[float, float, float, float]
-# v2: per-prototype geometry is cached as binary BREP (BinTools) instead of the
-# slower/larger ASCII BRepTools format.
-STEP_SCENE_CACHE_SCHEMA_VERSION = 2
-# Pinned BinTools format version. Cached geometry is rebuildable, so a future
-# OCCT upgrade that cannot read this version simply misses the cache.
-_STEP_SCENE_CACHE_BINTOOLS_VERSION = 3
 
 
 @dataclass(frozen=True)

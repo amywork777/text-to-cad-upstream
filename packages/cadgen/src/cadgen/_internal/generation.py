@@ -486,11 +486,12 @@ def _generate_part_outputs(
 
         shape = source_compound
         if shape is None:
-            # Imported STEP (no generator compound): package its geometry directly. An
-            # imported assembly re-imports to a compound of placed solids; a part is one.
-            from build123d import import_step
+            # Imported STEP (no generator compound): compose the ALREADY-LOADED scene
+            # into the packaging compound. This used to call build123d.import_step and
+            # pay a second full text-STEP parse right after the scene load above.
+            from cadgen._internal.step_scene_mesh import scene_to_build123d_compound
 
-            shape = import_step(spec.step_path)
+            shape = scene_to_build123d_compound(scene)
         # An in-place 0.3.x -> 0.4.x upgrade leaves that release's artifacts beside the
         # source, where nothing reads them any more. Pruned here rather than on a
         # separate migration pass because this is already the once-per-entry moment

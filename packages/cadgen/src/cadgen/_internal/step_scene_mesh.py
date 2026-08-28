@@ -16,7 +16,7 @@ from OCP.TopoDS import TopoDS_Compound
 
 from cadgen.metadata import MeshSettings
 
-from cadgen._internal.step_scene_cache import load_step_scene_cached
+from cadgen._internal.step_scene_package import load_step_scene_cached
 from cadgen._internal.step_scene_geometry import _bbox_from_points, _bbox_from_shape, _merge_bbox, _transform_bbox
 from cadgen._internal.step_scene_loader import _located_shape, _selector_id
 from cadgen._internal.step_scene_types import AdaptiveMeshResolution, LoadedStepScene, OccurrenceNode, _enum_name
@@ -73,6 +73,24 @@ def scene_occurrence_shape(scene: LoadedStepScene, node: OccurrenceNode) -> Any:
     if node.prototype_key is None or node.prototype_key not in scene.prototype_shapes:
         raise RuntimeError(f"Occurrence {occurrence_selector_id(node)} has no prototype shape")
     return _located_shape(scene.prototype_shapes[node.prototype_key], node.location)
+
+
+def _face_colors_by_ordinal(prototype_shape: Any, face_colors: dict[int, tuple]) -> dict[int, tuple]:
+    """Convert the scene's hash-keyed per-face colors to MapShapes-ordinal keys."""
+    from OCP.TopAbs import TopAbs_ShapeEnum
+    from OCP.TopExp import TopExp
+    from OCP.TopTools import TopTools_IndexedMapOfShape
+
+    from cadgen._internal.step_scene_loader import _shape_hash
+
+    face_map = TopTools_IndexedMapOfShape()
+    TopExp.MapShapes_s(prototype_shape, TopAbs_ShapeEnum.TopAbs_FACE, face_map)
+    by_ordinal: dict[int, tuple] = {}
+    for ordinal in range(1, face_map.Extent() + 1):
+        color = face_colors.get(_shape_hash(face_map.FindKey(ordinal)))
+        if color is not None:
+            by_ordinal[ordinal] = tuple(float(c) for c in color)
+    return by_ordinal
 
 
 def _leaf_shape(obj: Any) -> Any:
@@ -136,6 +154,14 @@ def scene_to_build123d_compound(scene: LoadedStepScene, *, label: str | None = N
         color = node_color(node)
         if color is not None:
             shape.color = color
+        if node.prototype_key is not None:
+            face_colors = scene.prototype_face_colors.get(node.prototype_key)
+            if face_colors:
+                # Ordinal-keyed (TopExp.MapShapes order) so the value survives the
+                # BinTools round-trip to component-build workers and lands in the
+                # component's .surf, which keys face colors by ordinal.
+                shape.cad_face_ordinal_colors = _face_colors_by_ordinal(
+                    scene.prototype_shapes[node.prototype_key], face_colors)
         return shape
 
     roots = [build_node(root) for root in scene.roots]

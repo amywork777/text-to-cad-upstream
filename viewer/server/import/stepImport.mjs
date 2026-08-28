@@ -33,7 +33,7 @@ import { extractSurfaceComponent } from "./surfExtractTwin.mjs";
 
 // --- contract constants (values mirrored from cadgen; the render-contract
 // sync test asserts these stay equal to the Python source of truth) ---
-export const STEP_PACKAGE_VERSION = 14; // package_freshness.STEP_PACKAGE_VERSION
+export const STEP_PACKAGE_VERSION = 15; // package_freshness.STEP_PACKAGE_VERSION
 export const STEP_TOPOLOGY_SCHEMA_VERSION = 2; // glb_topology.STEP_TOPOLOGY_SCHEMA_VERSION
 export const PACKAGE_KIND = "assembly-package"; // component_package.PACKAGE_KIND
 const DESCRIPTOR_NAME = "assembly.json";

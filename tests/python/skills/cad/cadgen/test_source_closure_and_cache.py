@@ -16,7 +16,7 @@ from OCP.TopAbs import TopAbs_FACE
 from OCP.TopExp import TopExp_Explorer
 
 from cadgen._internal import source_hash as cad_source_hash
-from cadgen._internal import step_scene, step_scene_cache
+from cadgen._internal import step_scene
 from cadgen._internal.step_scene import LoadedStepScene, OccurrenceNode
 from tests.python.support.tmp_root import temporary_directory
 
@@ -118,84 +118,32 @@ class SourceClosureTests(unittest.TestCase):
         self.assertNotIn("build123d", captured)      # site-packages: excluded
 
 
-class BinarySceneCacheTests(unittest.TestCase):
-    _IDENTITY = (1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0, 0, 0, 0, 0, 1.0)
-
-    def _scene(self, step_path: Path) -> LoadedStepScene:
-        shape = build123d.Box(3, 2, 1).wrapped
-        node = OccurrenceNode(
-            path=(1,),
-            name="box",
-            source_name="box",
-            transform=self._IDENTITY,
-            local_transform=self._IDENTITY,
-            prototype_key=7,
-        )
-        return LoadedStepScene(
-            step_path=step_path,
-            roots=[node],
-            prototype_shapes={7: shape},
-            prototype_names={7: "box"},
-        )
-
-    def test_cache_round_trip_is_binary_and_preserves_geometry(self) -> None:
-        with temporary_directory(prefix="scene-cache-") as raw_dir:
-            step_path = Path(raw_dir) / "box.step"
-            step_path.write_text("ISO-10303-21;\n", encoding="utf-8")
-            scene = self._scene(step_path)
-            expected_faces = _face_count(scene.prototype_shapes[7])
-
-            step_scene._write_step_scene_cache(scene, step_hash="hash-abc")
-
-            # The cache is written inline beside the STEP in __cadgen__, as binary
-            # BREP (.bin), not ASCII (.brep).
-            cadgen_dir = step_path.parent / "__cadgen__"
-            self.assertTrue(cadgen_dir.is_dir())
-            self.assertEqual(1, len(list(cadgen_dir.rglob("*.bin"))))
-            self.assertEqual([], list(cadgen_dir.rglob("*.brep")))
-
-            cached = step_scene._read_step_scene_cache(step_path, step_hash="hash-abc")
-            self.assertIsNotNone(cached)
-            assert cached is not None
-            self.assertEqual(1, len(cached.prototype_shapes))
-            (restored_shape,) = cached.prototype_shapes.values()
-            self.assertEqual(expected_faces, _face_count(restored_shape))
-
-    def test_cache_misses_on_schema_version_bump(self) -> None:
-        with temporary_directory(prefix="scene-cache-schema-") as raw_dir:
-            step_path = Path(raw_dir) / "box.step"
-            step_path.write_text("ISO-10303-21;\n", encoding="utf-8")
-            step_scene._write_step_scene_cache(self._scene(step_path), step_hash="hash-xyz")
-
-            with mock.patch.object(
-                step_scene_cache,
-                "STEP_SCENE_CACHE_SCHEMA_VERSION",
-                step_scene.STEP_SCENE_CACHE_SCHEMA_VERSION + 1,
-            ):
-                self.assertIsNone(
-                    step_scene._read_step_scene_cache(step_path, step_hash="hash-xyz")
-                )
-
-
 class ImportStepCachedTests(unittest.TestCase):
     """cadgen import_step: build123d shape identical to build123d.import_step, served from cache."""
 
-    def test_matches_import_step_and_reuses_cache(self) -> None:
+    def test_matches_import_step_and_warms_from_the_render_package(self) -> None:
         with temporary_directory(prefix="import-cached-") as raw_dir:
             step_path = Path(raw_dir) / "widget.step"
             build123d.export_step(build123d.Box(4, 3, 2), step_path)
 
             raw = build123d.import_step(step_path)
-            cached = step_scene.import_step(step_path)  # cold: parses + writes cache
+            cold = step_scene.import_step(step_path)  # cold: full text-STEP parse
 
-            self.assertEqual(_face_count(raw.wrapped), _face_count(cached.wrapped))
-            self.assertAlmostEqual(raw.volume, cached.volume, places=4)
-            self.assertTrue((step_path.parent / "__cadgen__").is_dir())
+            self.assertEqual(_face_count(raw.wrapped), _face_count(cold.wrapped))
+            self.assertAlmostEqual(raw.volume, cold.volume, places=4)
 
-            # Second call must hit the inline cache — no re-parse — and still match.
-            with mock.patch.object(step_scene, "load_step_scene", side_effect=AssertionError("cache miss")):
-                cached_warm = step_scene.import_step(step_path)
-            self.assertAlmostEqual(raw.volume, cached_warm.volume, places=4)
+            # Once the entry is built, its render package IS the warm store:
+            # import_step must reconstruct from it without re-parsing the text.
+            from cadgen.step_artifact_cli import build_step_artifact
+
+            build_step_artifact(repo_root=Path(raw_dir), step=step_path)
+            with mock.patch(
+                "cadgen._internal.step_scene_package.load_step_scene",
+                side_effect=AssertionError("package miss"),
+            ):
+                warm = step_scene.import_step(step_path)
+            self.assertEqual(_face_count(raw.wrapped), _face_count(warm.wrapped))
+            self.assertAlmostEqual(raw.volume, warm.volume, places=4)
 
 
 if __name__ == "__main__":

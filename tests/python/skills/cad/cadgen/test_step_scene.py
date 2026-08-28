@@ -11,7 +11,7 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 
 from cadgen._internal import step_scene
-from cadgen._internal import step_scene_cache, step_scene_mesh
+from cadgen._internal import step_scene_mesh
 from cadgen._internal.step_scene import (
     LoadedStepScene,
     OccurrenceNode,
@@ -25,51 +25,49 @@ from tests.python.support.tmp_root import temporary_directory
 
 
 class StepSceneSelectorArtifactTests(unittest.TestCase):
-    def test_load_step_scene_cached_reuses_brep_scene_cache(self) -> None:
-        with temporary_directory(prefix="cad-step-scene-cache-") as temp_dir:
+    def test_load_step_scene_cached_reads_the_render_package(self) -> None:
+        # The render package IS the warm-load store: once an entry is built,
+        # loading its scene must not touch the text-STEP parser again.
+        with temporary_directory(prefix="cad-step-scene-package-") as temp_dir:
             temp_root = Path(temp_dir)
             step_path = temp_root / "box.step"
-            cache_dir = temp_root / "cache"
             build123d.export_step(build123d.Box(1, 1, 1), step_path)
 
-            with mock.patch.dict(os.environ, {"TEXT_TO_CAD_STEP_SCENE_CACHE_DIR": str(cache_dir)}):
-                first = step_scene.load_step_scene_cached(step_path)
-                self.assertEqual(1, len(first.prototype_shapes))
+            first = step_scene.load_step_scene_cached(step_path)
+            self.assertEqual(1, len(first.prototype_shapes))
 
-                with mock.patch.object(step_scene, "load_step_scene", side_effect=AssertionError("cache miss")):
-                    cached = step_scene.load_step_scene_cached(step_path)
+            from cadgen.step_artifact_cli import build_step_artifact
+
+            build_step_artifact(repo_root=temp_root, step=step_path)
+            with mock.patch(
+                "cadgen._internal.step_scene_package.load_step_scene",
+                side_effect=AssertionError("package miss"),
+            ):
+                cached = step_scene.load_step_scene_cached(step_path)
 
             self.assertEqual(first.step_hash, cached.step_hash)
             self.assertEqual(1, len(cached.roots))
             self.assertEqual(1, len(cached.prototype_shapes))
             self.assertFalse(scene_occurrence_shape(cached, cached.roots[0]).IsNull())
 
-    def test_step_scene_cache_restores_locations_and_face_color_hashes(self) -> None:
-        with temporary_directory(prefix="cad-step-scene-cache-private-") as temp_dir:
+    def test_package_roundtrip_restores_locations_and_face_colors(self) -> None:
+        # scene -> compound -> package -> scene: placements and per-face colors
+        # survive (colors ride the component .surf, keyed by face ordinal).
+        with temporary_directory(prefix="cad-step-scene-package-rt-") as temp_dir:
             temp_root = Path(temp_dir)
             shape = build123d.Box(1, 1, 1).wrapped
             explorer = TopExp_Explorer(shape, TopAbs_FACE)
             face_hash = step_scene._shape_hash(TopoDS.Face_s(explorer.Current()))
             transform = (
-                1.0,
-                0.0,
-                0.0,
-                5.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                1.0,
+                1.0, 0.0, 0.0, 5.0,
+                0.0, 1.0, 0.0, 0.0,
+                0.0, 0.0, 1.0, 0.0,
+                0.0, 0.0, 0.0, 1.0,
             )
             step_path = temp_root / "synthetic.step"
-            step_path.write_text("synthetic cache key only", encoding="utf-8")
+            step_path.write_text("synthetic package key only", encoding="utf-8")
+            from cadgen._internal.step_scene_loader import _location_from_transform_matrix
+
             scene = LoadedStepScene(
                 step_path=step_path,
                 roots=[
@@ -80,20 +78,44 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
                         transform=transform,
                         local_transform=transform,
                         prototype_key=7,
+                        location=_location_from_transform_matrix(transform),
                     )
                 ],
                 prototype_shapes={7: shape},
                 prototype_face_colors={7: {face_hash: (1.0, 0.0, 0.0, 1.0)}},
             )
-            step_hash = "a" * 64
 
-            step_scene._write_step_scene_cache(scene, step_hash=step_hash)
-            cached = step_scene._read_step_scene_cache(step_path, step_hash=step_hash)
+            from cadgen._internal.step_hash import step_file_hash
+            from cadgen._internal.component_package import build_package_from_compound
+            from cadgen._internal.step_scene_mesh import scene_to_build123d_compound
+            from cadgen._internal.step_scene_package import scene_from_render_package
+            from cadgen.catalog import render_package_dir
+            from cadgen.coordination import artifact_build
+            from cadgen.coordination.kinds import STEP_PACKAGE
 
-            self.assertIsNotNone(cached)
-            assert cached is not None
-            self.assertEqual(1, sum(len(colors) for colors in cached.prototype_face_colors.values()))
-            located = scene_occurrence_shape(cached, cached.roots[0])
+            compound = scene_to_build123d_compound(scene)
+            package_dir = render_package_dir(step_path)
+            step_hash = step_file_hash(step_path)
+            with artifact_build(STEP_PACKAGE, package_dir):
+                build_package_from_compound(
+                    compound,
+                    package_dir=package_dir,
+                    root_name="synthetic",
+                    single_component=False,
+                    provenance={"stepHash": step_hash, "sourceKind": "step"},
+                )
+
+            restored = scene_from_render_package(step_path, step_hash=step_hash)
+            self.assertIsNotNone(restored)
+            assert restored is not None
+            self.assertEqual(
+                1, sum(len(colors) for colors in restored.prototype_face_colors.values())
+            )
+            self.assertEqual(
+                [(1.0, 0.0, 0.0, 1.0)],
+                [next(iter(colors.values())) for colors in restored.prototype_face_colors.values()],
+            )
+            located = scene_occurrence_shape(restored, restored.roots[0])
             bounds = Bnd_Box()
             BRepBndLib.Add_s(located, bounds)
             x_min, _y_min, _z_min, x_max, _y_max, _z_max = bounds.Get()

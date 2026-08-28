@@ -261,6 +261,9 @@ def _unlocated_shape(shape: Any) -> Any:
     color = getattr(shape, "color", None)
     if color is not None:
         local.color = color
+    face_colors = getattr(shape, "cad_face_ordinal_colors", None)
+    if face_colors:
+        local.cad_face_ordinal_colors = face_colors
     return local
 
 
@@ -329,7 +332,7 @@ PAYLOAD_UNREADABLE = "__payload-unreadable__"
 
 
 def _build_component_surf_worker(
-    args: tuple[bytes, str, str],
+    args: tuple[bytes, str, str, dict | None],
 ) -> tuple[str, str | None]:
     """Process-pool entry: extract one component .surf from a BREP payload.
 
@@ -337,12 +340,16 @@ def _build_component_surf_worker(
     are flattened so one failed component reports cleanly instead of poisoning
     the pool. A payload the worker cannot deserialize reports the
     ``PAYLOAD_UNREADABLE`` marker so the parent retries in-process."""
-    payload, cid, out_surf = args
+    payload, cid, out_surf, face_colors = args
     try:
         try:
             shape = _build123d_shape_from_brep_bytes(payload)
         except Exception as exc:  # noqa: BLE001 - marker for the parent retry
             return (cid, f"{PAYLOAD_UNREADABLE}: {type(exc).__name__}: {exc}")
+        if face_colors:
+            # Ordinal-keyed, so it survives the process boundary: the BinTools
+            # round-trip preserves MapShapes order even though it rebuilds TShapes.
+            shape.cad_face_ordinal_colors = face_colors
         _write_component_artifacts_atomic(
             shape, Path(out_surf), cad_ref=cid, brep_bytes=payload)
         return (cid, None)
@@ -412,7 +419,13 @@ def _write_component_artifacts_atomic(
         brep_bytes if brep_bytes is not None else _shape_brep_bytes(shape),
     )
     _write_atomic(
-        out_surf, extract_surface_component(local.wrapped, part_color=part_color))
+        out_surf,
+        extract_surface_component(
+            local.wrapped,
+            face_colors=getattr(local, "cad_face_ordinal_colors", None),
+            part_color=part_color,
+        ),
+    )
     return out_surf
 
 
@@ -659,6 +672,7 @@ def build_package_from_compound(
             brep_bytes_by_cid.get(cid) or _shape_brep_bytes(shape),
             cid,
             str(comp_dir / f"{cid}.surf"),
+            getattr(shape, "cad_face_ordinal_colors", None),
         )
         for cid, shape in missing
     ]
