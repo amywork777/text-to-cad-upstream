@@ -601,20 +601,28 @@ function retainSurfLodEntry(cacheKey) {
 async function loadSurfPayloadInline(url, { signal, tessellation } = {}) {
   const [
     { parseSurf },
-    { tessellateComponent },
+    { tessellateComponentCached },
+    { cidFromSurfUrl },
     { buildMeshDataFromSurf },
     { buildSelectorBundleFromSurf },
     buffer,
   ] = await Promise.all([
     import("./surf/container.js"),
-    import("./surf/tessellate.js"),
+    import("./surf/tessellationCache.js"),
+    import("./surf/surfWorkerClient.js"),
     import("./surf/surfMeshData.js"),
     import("./surf/surfSelectorBundle.js"),
     loadRenderArrayBuffer(url, { signal }),
   ]);
   assertNotGitLfsPointer(buffer, url, "SURF render asset");
   const { index, floats } = parseSurf(buffer);
-  const component = tessellateComponent(index, floats, tessellation || {});
+  // Same shared-cache behavior as the worker path: a registered provider
+  // turns a content-addressed component into a cache hit (tessellation
+  // skipped) or a write-back; no provider tessellates exactly as before.
+  const component = await tessellateComponentCached(index, floats, {
+    cid: cidFromSurfUrl(url),
+    options: tessellation || {},
+  });
   return {
     meshData: buildMeshDataFromSurf(index, floats, { component }),
     bundle: buildSelectorBundleFromSurf(index, floats, { component }),

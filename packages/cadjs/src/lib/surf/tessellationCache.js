@@ -296,6 +296,31 @@ export async function getCachedComponentEntries(cids, options = {}) {
   return hits;
 }
 
+// Raw entry bytes for one component — for callers that hand the entry to a
+// worker (transfer) instead of decoding on this thread. Null on miss/failure.
+export async function getCachedEntryBytes(cid, options = {}) {
+  const provider = cacheProvider;
+  if (!provider || !cid || !tessellationOptionsCacheable(options)) return null;
+  try {
+    const bytes = await provider.get(tessellationCacheKey(cid, options));
+    return bytes instanceof Uint8Array ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
+// Raw write-back for entry bytes a worker already encoded.
+export async function writeBackEntryBytes(cid, options, bytes) {
+  const provider = cacheProvider;
+  if (!provider || typeof provider.put !== "function" || !cid) return;
+  if (!tessellationOptionsCacheable(options) || !(bytes instanceof Uint8Array)) return;
+  try {
+    await provider.put(tessellationCacheKey(cid, options), bytes);
+  } catch {
+    // best-effort write-back
+  }
+}
+
 // Best-effort write-back of a fresh tessellation; `index` supplies the header
 // fields (partColor, edge classes) a later hit needs to skip the surf.
 export async function writeBackComponentEntry(cid, options, component, index) {
