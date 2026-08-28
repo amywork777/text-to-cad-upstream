@@ -412,10 +412,18 @@ export function readStepScene(oc, stepPath) {
       const children = xcafChildren(oc, label, resolvedLabel);
       const name = labelName(oc, label, nameIndex) || labelName(oc, resolvedLabel, nameIndex);
       const sourceName = labelName(oc, resolvedLabel, nameIndex) || name;
-      const occurrenceColor = colorFromLabel(oc, colorTool, label)
-        || colorFromShape(oc, colorTool, instanceShape)
-        || colorFromLabel(oc, colorTool, resolvedLabel)
-        || colorFromShape(oc, colorTool, resolvedShape);
+      const instanceLevelColor = colorFromLabel(oc, colorTool, label)
+        || colorFromShape(oc, colorTool, instanceShape);
+      const prototypeLevelColor = instanceLevelColor
+        ? null
+        : colorFromLabel(oc, colorTool, resolvedLabel)
+          || colorFromShape(oc, colorTool, resolvedShape);
+      const occurrenceColor = instanceLevelColor || prototypeLevelColor;
+      // Which rung answered matters downstream: GetInstanceColor is unbound in
+      // this build, so an occurrence that FELL THROUGH to prototype level while
+      // sibling instances of the same prototype carry their own color is the
+      // case native OCCT might color differently (see instanceColorWarnings).
+      const colorSource = instanceLevelColor ? "instance" : prototypeLevelColor ? "prototype" : null;
       let prototypeKey = null;
       if (!children.length && !shapeIsNull(resolvedShape)) {
         prototypeKey = labelEntry(oc, resolvedLabel);
@@ -455,6 +463,7 @@ export function readStepScene(oc, stepPath) {
         sourceName: sourceName ?? null,
         prototypeKey,
         color: occurrenceColor ?? null,
+        colorSource,
         location: currentLocation ?? null,
         children: childNodes,
       };
@@ -1031,6 +1040,10 @@ export function buildPackageFromStep(oc, stepPath, packageDir, options = {}) {
     occurrenceCount: occurrences.length,
     shapeCount: occurrences.length,
   };
+  const warnings = instanceColorWarnings(scene.roots);
+  if (warnings.length) {
+    descriptor.importWarnings = warnings;
+  }
   fs.mkdirSync(packageDir, { recursive: true });
   writeAtomic(path.join(packageDir, DESCRIPTOR_NAME), JSON.stringify(descriptor));
   return {
@@ -1040,5 +1053,53 @@ export function buildPackageFromStep(oc, stepPath, packageDir, options = {}) {
     occurrenceCount: occurrences.length,
     built,
     reused,
+    ...(warnings.length ? { warnings } : {}),
   };
+}
+
+// The honest slice of the GetInstanceColor gap (unbound in this opencascade.js
+// build; see the header note): when SOME instances of a prototype carry their
+// own readable instance-level color and OTHERS fell through to the prototype's
+// color (or none), native OCCT's instance-color resolution might have colored
+// the fall-throughs differently — this build cannot know. Uniformly colored
+// assemblies (no instance-level colors, or all instances readable) never
+// trigger. Pure over the scene tree so it is testable without a kernel.
+export function instanceColorWarnings(roots) {
+  const byPrototype = new Map(); // key -> { name, instance: n, fellThrough: n }
+  const walk = (node) => {
+    if (node.children?.length) {
+      node.children.forEach(walk);
+      return;
+    }
+    if (node.prototypeKey == null) {
+      return;
+    }
+    let entry = byPrototype.get(node.prototypeKey);
+    if (!entry) {
+      byPrototype.set(node.prototypeKey, (entry = {
+        name: node.sourceName || node.name || node.prototypeKey,
+        instance: 0,
+        fellThrough: 0,
+      }));
+    }
+    if (node.colorSource === "instance") {
+      entry.instance += 1;
+    } else {
+      entry.fellThrough += 1;
+    }
+  };
+  roots.forEach(walk);
+  const warnings = [];
+  for (const { name, instance, fellThrough } of byPrototype.values()) {
+    if (instance > 0 && fellThrough > 0) {
+      warnings.push(
+        `per-instance colors may be incomplete for "${name}": ${instance} instance(s) carry `
+        + `their own color but ${fellThrough} resolved to the shared part color — the WASM `
+        + "kernel cannot read instance-color attachments native OCCT resolves via "
+        + "GetInstanceColor. Verify against the source CAD, or import with the CAD skill "
+        + "(python scripts/gen).",
+      );
+    }
+  }
+  return warnings;
 }

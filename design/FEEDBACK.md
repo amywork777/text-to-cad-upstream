@@ -122,12 +122,15 @@ entry says so.
 
 ## WASM import follow-ups (2026-08-27)
 
-18. **`XCAFDoc_ColorTool.GetInstanceColor` is unbound in the prebuilt
-    opencascade.js**, so the import twin's shape-color fallback tries
+18. **MITIGATED — `XCAFDoc_ColorTool.GetInstanceColor` is unbound in the
+    prebuilt opencascade.js**, so the import twin's shape-color fallback tries
     `GetColor(shape, type)` only (`stepImport.mjs`, `colorFromShape`). The
-    label route covers instance colors on every corpus/parity fixture so far;
-    if a vendor STEP surfaces wrong per-instance colors under WASM import,
-    look here first (fix = custom ocjs build).
+    label route covers instance colors on every corpus/parity fixture so far.
+    Since 2026-08-28 the risky case is DETECTED instead of silent: a prototype
+    with mixed instance-level/fell-through color resolution records a warning
+    in the descriptor's `importWarnings`, surfaced on every ready status and
+    in the build response (`instanceColorWarnings`, tested). The full fix is
+    still a custom ocjs build exposing the binding.
 
 19. **Label names under WASM import ride an XmlXCAF save.** `TDataStd_Name.Get`
     is also unbound, so `stepImport.mjs` saves the XCAF doc to MEMFS as

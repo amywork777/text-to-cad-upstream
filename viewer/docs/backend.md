@@ -117,6 +117,16 @@ a native import of the same file), and `tests/python/global/test_render_contract
 minutes for 100MB-class ones, once per file), and the kernel (OCCT ~7.6) trails OCP —
 the BinTools blob format is pinned to V4 on both sides for that reason.
 
+One limit is surfaced rather than silent: `GetInstanceColor` is unbound in this
+opencascade.js build, so an instance whose color attachment only native OCCT's
+instance resolution would find falls through to its prototype's color. The import
+cannot know the missed color, but it CAN detect the risky shape of the problem —
+some instances of a prototype resolved instance-level colors while siblings fell
+through — and records a warning (`instanceColorWarnings` in `stepImport.mjs`) into
+the descriptor's `importWarnings`, which the status route returns on every `ready`
+answer and the build response echoes. Uniformly colored assemblies never warn. The
+real fix is a custom opencascade.js build exposing the binding.
+
 ## Routes
 
 - `GET /__cad/server`

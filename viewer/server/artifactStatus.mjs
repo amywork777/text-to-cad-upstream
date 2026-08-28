@@ -228,6 +228,13 @@ export function artifactStatus(fileRef, rootDir, { snapshot = null } = {}) {
   }
   if (verdict.ok) {
     const status = { state: ARTIFACT_STATE.READY };
+    // Import-time caveats ride the descriptor (e.g. the WASM kernel's
+    // GetInstanceColor gap): honest, persistent, and shown on every open —
+    // not just in the one build response the importer happened to see.
+    const importWarnings = verdict.descriptor?.importWarnings;
+    if (Array.isArray(importWarnings) && importWarnings.length) {
+      status.warnings = importWarnings.map(String);
+    }
     if (snapshot?.busy) {
       status.busy = true;
       if (snapshot.runId) {
