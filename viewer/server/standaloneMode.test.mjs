@@ -12,6 +12,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createCadApp } from "./httpApp.mjs";
+import { _setKernelProbeForTests } from "./cadgenOps.mjs";
 import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -51,10 +52,12 @@ async function startApp(t, { root }) {
 }
 
 test("static viewer: packages render, edits badge stale, generators name the CLI", async (t) => {
-  // The WASM import is covered by its own test below; disabled here so the
-  // kernel-less contract stays testable on a checkout that has the kernel.
-  process.env.VIEWER_WASM_IMPORT = "0";
-  t.after(() => delete process.env.VIEWER_WASM_IMPORT);
+  // The WASM import is covered by its own test below; here the kernel probe is
+  // INJECTED as broken so the broken-install contract stays testable on a
+  // checkout where the kernel is installed (there is no config that disables
+  // the import — kernel absence is a broken install, not a mode).
+  _setKernelProbeForTests(() => ({ ok: false, missing: "/broken/install/opencascade.full.wasm" }));
+  t.after(() => _setKernelProbeForTests(null));
   // realpath'd: macOS tmpdirs are symlinks (/var -> /private/var), and package
   // asset URLs are repo-relative — a root on one side of the symlink with
   // packages resolved on the other mangles them (the documented reason
@@ -101,12 +104,16 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   assert.equal(status.stale, true);
   assert.match(String(status.staleReason || ""), /changed after/);
 
-  // Never-imported foreign STEP: a specific explanation, not a generic hint.
+  // Never-imported foreign STEP with a broken kernel install: a specific,
+  // actionable explanation that NAMES the missing file, not a generic hint.
   status = await (
     await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(path.join(root, "never-imported.step"))}`)
   ).json();
   assert.equal(status.state, "error");
   assert.match(String(status.error || ""), /has not been imported yet/);
+  assert.match(String(status.error || ""), /broken install/);
+  assert.match(String(status.error || ""), /\/broken\/install\/opencascade\.full\.wasm/);
+  assert.match(String(status.error || ""), /cadgen import/);
 
   // A model script is not the viewer's business at all (artifacts-only
   // catalog): status and build both answer as a no-op — nothing to manage.
@@ -121,8 +128,8 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   ).json();
   assert.equal(scriptPost.ok, true);
 
-  // A build POST on an artifact the viewer cannot build refuses with the
-  // run-the-script hint (the WASM kernel is disabled above).
+  // A build POST on a raw STEP with a broken kernel install refuses with the
+  // same actionable broken-install error (the probe is injected above).
   const refused = await (
     await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(path.join(root, "never-imported.step"))}`, {
       method: "POST",
@@ -130,7 +137,8 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
     })
   ).json();
   assert.equal(refused.ok, false);
-  assert.match(String(refused.error || ""), /python <source>/);
+  assert.match(String(refused.error || ""), /broken install/);
+  assert.match(String(refused.error || ""), /cadgen import/);
 
   // The render data itself serves: catalog lists the entry and its component
   // surf streams — everything the viewport needs, no Python anywhere.

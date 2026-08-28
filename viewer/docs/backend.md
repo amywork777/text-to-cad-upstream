@@ -121,13 +121,19 @@ capability does not exist in the viewer by design.
 
 A raw `.step`/`.stp` with no render package (or a stale one — the file changed after
 import) is importable right here: `server/import/` holds a WASM OCCT pipeline
-(opencascade.js, a viewer npm dependency — absent from the bundled cad-viewer skill,
-which routes raw STEPs to the CLI instead) that parses the STEP, walks its XCAF
-assembly, extracts each component with the surf-extractor twin, and writes the SAME
-package format cadgen writes. This is the viewer's ONLY build. It runs as a child
-process (`import/importCli.mjs`) so a kernel abort can never take the server down;
-`VIEWER_WASM_IMPORT=0` disables it. Status for an importable STEP reports
-`needs-build` and the client's normal build POST performs the import.
+(opencascade.js — a viewer npm dependency in a checkout, and VENDORED into the
+bundled cad-viewer skill runtime by `bundle-cad-viewer.sh`, so the import works
+in every environment) that parses the STEP, walks its XCAF assembly, extracts
+each component with the surf-extractor twin, and writes the SAME package format
+cadgen writes. This is the viewer's ONLY build, and it is simply a capability
+the viewer has: there is no configuration that disables it, and a missing
+kernel is a broken install — the one failure path is a graceful error naming
+the missing file (agents are routed to `cadgen import` as the alternative,
+which is also the better importer where cadgen exists: native kernel, faster,
+newer OCC, reads per-instance colors). It runs as a child process
+(`import/importCli.mjs`) so a kernel abort can never take the server down.
+Status for an importable STEP reports `needs-build` and the client's normal
+build POST performs the import.
 
 While an import runs, the child reports one `[import-progress] {json}` line per
 phase on stderr; the server parses those into an in-memory record per in-flight
@@ -211,3 +217,10 @@ answers no CORS, so the preflight fails and a hostile page can never reach a rou
 that builds (and therefore executes a generator). A POST without it gets 403. GETs are
 unaffected. A second gate refuses any Host header naming a non-local name
 (DNS-rebinding defense). See the trust-model comment in `server/httpApp.mjs`.
+
+**The viewer never touches the network.** Every byte it serves or reads is local.
+When the bundled skill needed the WASM kernel, the alternative to vendoring it was
+lazy fetch — download a pinned, hash-verified kernel on first import — and it was
+consciously rejected: it would have added the viewer's first outbound request class
+(plus fetch/integrity/untar machinery and an offline degradation path) purely to
+save install bytes. Vendoring keeps the zero-network property absolute.
