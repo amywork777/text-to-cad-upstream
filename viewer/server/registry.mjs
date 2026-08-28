@@ -1,10 +1,8 @@
 // A best-effort registry of running CAD Viewers, so instances can be found and
-// stopped (`cadgen viewer list` / `stop` read this directory). Modelled on
+// stopped (`main.mjs list` / `main.mjs stop` read this directory). Modelled on
 // TensorBoard's .tensorboard-info: each live server drops a small JSON file in
 // the system temp dir naming itself; liveness is an HTTP identity probe against
 // /__cad/server requiring a matching pid, never a signal.
-//
-// The on-disk format is shared with cadgen's Python readers — change it there too.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -79,25 +77,68 @@ export function unregister(pid = process.pid) {
   }
 }
 
-export function findByPort(port) {
+function readEntries() {
   let names;
   try {
-    names = fs.readdirSync(registryDir());
+    names = fs.readdirSync(registryDir()).sort();
   } catch {
-    return null;
+    return [];
   }
+  const entries = [];
   for (const name of names) {
     if (!name.startsWith("viewer-") || !name.endsWith(".json")) {
       continue;
     }
     try {
       const entry = JSON.parse(fs.readFileSync(path.join(registryDir(), name), "utf8"));
-      if (entry && entry.port === Math.trunc(port)) {
-        return entry;
+      if (entry && Number.isInteger(entry.pid) && Number.isInteger(entry.port)) {
+        entries.push(entry);
       }
     } catch {
       // skip corrupt entries
     }
   }
-  return null;
+  return entries;
+}
+
+export function findByPort(port) {
+  return readEntries().find((entry) => entry.port === Math.trunc(port)) || null;
+}
+
+const PROBE_TIMEOUT_MS = 500;
+
+/** True when the recorded port answers /__cad/server AS the recorded pid.
+ *
+ * Never a signal: after a hard kill the port is free for anything else to take,
+ * and acting on a stale file that names a stranger's port would be the worst
+ * thing `stop` could do.
+ */
+export async function probe(entry, timeoutMs = PROBE_TIMEOUT_MS) {
+  const host = String(entry.host || "127.0.0.1");
+  try {
+    const response = await fetch(`http://${host}:${entry.port}/__cad/server`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) {
+      return false;
+    }
+    const payload = await response.json();
+    return Boolean(payload) && payload.pid === entry.pid;
+  } catch {
+    return false;
+  }
+}
+
+/** Every entry whose identity probe succeeds, oldest first. Stale files are deleted. */
+export async function liveEntries({ reap = true } = {}) {
+  const live = [];
+  for (const entry of readEntries()) {
+    if (await probe(entry)) {
+      live.push(entry);
+    } else if (reap) {
+      unregister(entry.pid);
+    }
+  }
+  live.sort((a, b) => (a.startedAt || 0) - (b.startedAt || 0));
+  return live;
 }
