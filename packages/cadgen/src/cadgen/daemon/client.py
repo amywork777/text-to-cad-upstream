@@ -316,9 +316,8 @@ def invoke(module: str, args, repo_root: str) -> dict | None:
     uses this in place of the warm-worker system it used to own, so a terminal build and
     a viewer build now share one set of warm processes.
 
-    Unlike run_via_daemon this does NOT gate on CADGEN_WARM: the viewer has its own
-    switch (VIEWER_CAD_WORKER=0), and a long-lived server is exactly the caller that
-    should always prefer warm.
+    Unlike run_via_daemon this does NOT gate on CADGEN_WARM: a long-lived
+    server is exactly the caller that should always prefer warm.
     """
     if os.environ.get("CADGEN_DAEMON_CHILD"):
         return None

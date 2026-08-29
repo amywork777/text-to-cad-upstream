@@ -124,7 +124,7 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
   assert.equal(status.state, "error");
   assert.match(String(status.error || ""), /has not been imported yet/);
   assert.match(String(status.error || ""), /requires cadgen/);
-  assert.match(String(status.error || ""), /VIEWER_CAD_PYTHON/);
+  assert.match(String(status.error || ""), /CADGEN_PYTHON/);
   assert.match(String(status.error || ""), /Viewing existing models does not need cadgen/);
 
   // A model script is not the viewer's business at all (artifacts-only
@@ -180,10 +180,10 @@ test(
   "static viewer: a raw STEP imports through cadgen and renders",
   { skip: !cadgenPresent || !fs.existsSync(IMPORT_FIXTURE) },
   async (t) => {
-    process.env.VIEWER_CAD_PYTHON = REPO_PYTHON;
+    process.env.CADGEN_PYTHON = REPO_PYTHON;
     process.env.CADGEN_WARM = "0"; // hermetic: no daemon spawned by a test
     t.after(() => {
-      delete process.env.VIEWER_CAD_PYTHON;
+      delete process.env.CADGEN_PYTHON;
       delete process.env.CADGEN_WARM;
     });
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));

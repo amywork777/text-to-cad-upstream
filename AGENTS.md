@@ -253,8 +253,8 @@ The backend is pure JS (`viewer/server`), so a worktree needs only Node — plus
 cadgen-importable interpreter for builds, handed down via env:
 
 ```bash
-VIEWER_CAD_PYTHON=<main>/.venv/bin/python \
-VIEWER_CAD_PYTHONPATH=<worktree>/packages/cadgen/src \
+CADGEN_PYTHON=<main>/.venv/bin/python \
+CADGEN_PYTHONPATH=<worktree>/packages/cadgen/src \
 node <worktree>/viewer/server/main.mjs \
   --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --json
 ```

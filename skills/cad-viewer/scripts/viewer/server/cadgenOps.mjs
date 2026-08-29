@@ -139,10 +139,10 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
       args.push("--force");
     }
     const childEnv = { ...process.env };
-    const pythonPath = String(process.env.VIEWER_CAD_PYTHONPATH || "").trim();
+    const pythonPath = String(process.env.CADGEN_PYTHONPATH || "").trim();
     if (pythonPath) {
       // Worktree flows: the interpreter's installed cadgen may point at a
-      // different checkout; VIEWER_CAD_PYTHONPATH redirects the import to the
+      // different checkout; CADGEN_PYTHONPATH redirects the import to the
       // sources being edited (documented in AGENTS.md).
       childEnv.PYTHONPATH = childEnv.PYTHONPATH
         ? `${pythonPath}${path.delimiter}${childEnv.PYTHONPATH}`

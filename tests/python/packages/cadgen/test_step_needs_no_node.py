@@ -70,8 +70,6 @@ class StepBuildsWithoutNodeTests(unittest.TestCase):
             # Not an executable, so cad_node_executable() raises NodeUnavailable rather than
             # falling back to PATH. Any attempt to reach Node fails loudly.
             env["CADGEN_NODE"] = str(root / "definitely-not-node")
-            env.pop("VIEWER_CAD_NODE", None)
-            env.pop("CAD_NODE", None)
 
             proc = subprocess.run(
                 [sys.executable, "-c", _PROBE.format(src=_CADGEN_SRC, model=str(model), root=str(root))],

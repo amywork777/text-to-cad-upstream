@@ -74,12 +74,11 @@ __all__ = [
 ]
 
 
-# Env overrides, in precedence order. ``CADGEN_NODE`` is cadgen's own knob (a PyPI install
-# with a Node that is not on PATH); the two ``*_CAD_NODE`` names are what the viewer's
-# launchers already set -- ``start-viewer.mjs`` and ``vite.config.mjs`` both assign
-# ``env.VIEWER_CAD_NODE = process.execPath``, so a viewer-started build pins the very
-# interpreter that launched the viewer instead of whatever PATH happens to resolve to.
-NODE_ENV_VARS = ("CADGEN_NODE", "VIEWER_CAD_NODE", "CAD_NODE")
+# The one env override: ``CADGEN_NODE`` names the Node interpreter cadgen's
+# builders run under (a PyPI install with a Node that is not on PATH). The old
+# ``VIEWER_CAD_NODE``/``CAD_NODE`` aliases died with the launchers that set
+# them; one knob, one name.
+NODE_ENV_VARS = ("CADGEN_NODE",)
 
 # How long a builder gets to exit on its own after emitting its ``result`` line before it is
 # killed. The contract says ``result`` is terminal, so a well-behaved builder exits

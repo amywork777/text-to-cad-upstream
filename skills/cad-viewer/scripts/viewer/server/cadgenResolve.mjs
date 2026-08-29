@@ -6,7 +6,7 @@
 // Resolution order, deliberately WITHOUT find-up discovery (the deleted
 // cad-python.mjs documented the trap: find-up `.venv` binds a git worktree to
 // its PARENT checkout's cadgen, importing with the wrong version):
-//   1. $VIEWER_CAD_PYTHON        -> spawn `<it> -m cadgen.cli <verb> ...`
+//   1. $CADGEN_PYTHON        -> spawn `<it> -m cadgen.cli <verb> ...`
 //   2. `cadgen` on PATH          -> pip's console script, the common install
 //   3. <servedRoot>/.venv        -> the project-local environment, if any
 //
@@ -33,9 +33,9 @@ export function _setCadgenProbeForTests(probe) {
 
 function candidateCommands(rootDir) {
   const candidates = [];
-  const override = String(process.env.VIEWER_CAD_PYTHON || "").trim();
+  const override = String(process.env.CADGEN_PYTHON || "").trim();
   if (override) {
-    candidates.push({ command: override, prefixArgs: ["-m", "cadgen.cli"], source: "VIEWER_CAD_PYTHON" });
+    candidates.push({ command: override, prefixArgs: ["-m", "cadgen.cli"], source: "CADGEN_PYTHON" });
   }
   candidates.push({ command: "cadgen", prefixArgs: [], source: "PATH" });
   const venvPython = process.platform === "win32"
@@ -66,7 +66,7 @@ export function cadgenUnavailableMessage() {
   return (
     "importing a STEP file requires cadgen, which the viewer could not find. "
     + "Install it (pip install cadgen, or the cad skill's requirements.txt) "
-    + "or point VIEWER_CAD_PYTHON at a Python with cadgen installed. "
+    + "or point CADGEN_PYTHON at a Python with cadgen installed. "
     + "Viewing existing models does not need cadgen."
   );
 }
