@@ -96,7 +96,7 @@ sources and `.step.py`/`.dxf.py` naming fail with a pointer to
 
 Use the active project Python interpreter; treat `python` in examples as an interpreter placeholder. Every operational verb is a `cadgen` subcommand (warm-by-default; `python -m cadgen.cli <verb>` is the PATH-independent equivalent). Use `cadgen <verb> --help` for the complete current interface; reference docs show recommended workflows, not every flag. Install per `requirements.txt`; `cadgen doctor <skill-dir>` verifies the installed cadgen matches this skill's pin (docs drift silently on a mismatched install).
 
-**Snapshot inputs.** This skill's snapshot renders `.step`/`.stp`, model scripts (`.py` declaring `@step`), `.3mf`, `.glb` and `.stl`. Implicit models and robot descriptions are rendered by the `implicit-cad` and `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
+**Snapshot inputs.** This skill's snapshot renders `.step`/`.stp`, model scripts (`.py` declaring `@step`), `.3mf`, `.glb` and `.stl`. Robot descriptions are rendered by the `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
 
 **Theme and display.** Theme settings live under one `--theme`, display settings under one `--display` — the viewer's two tabs, one option each. The default theme is `snapshot`: Workbench Light with the ground grid and origin axis removed, because in a still image those read as geometry rather than as orientation. Pass `--theme workbench-light` for the viewer's own look. Projection is a theme trait honoured by every format, so a snapshot frames the same way the viewport does.
 
