@@ -34,7 +34,7 @@ def _normalize_cli_numeric(value: object, *, field_name: str, parser: argparse.A
 def _add_export_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "target",
-        help="CAD model to export: a gen_step() Python source or an imported STEP/STP file.",
+        help="CAD model to export: a @step model script or an imported STEP/STP file.",
     )
     parser.add_argument(
         "--stl",
@@ -105,7 +105,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Export one CAD model — a gen_step() Python source or an imported STEP/STP "
+            "Export one CAD model — a @step model script or an imported STEP/STP "
             "file — to STL/3MF/GLB. The model is built once per run, so all requested "
             "formats come from identical geometry. Writes no .step file: use "
             "a model script (python <model>.py) to write a generated model's STEP."

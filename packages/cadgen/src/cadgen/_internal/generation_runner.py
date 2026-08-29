@@ -11,8 +11,6 @@ from typing import Iterator
 from typing import Sequence
 
 from cadgen._internal.cli_locking import lock_wait_notice
-from cadgen._internal.file_metadata import text_to_cad_identity_metadata
-from cadgen._internal.file_metadata import write_dxf_text_to_cad_metadata
 from cadgen._internal.source_hash import PythonSourceClosure
 from cadgen._internal.source_hash import PythonSourceHash
 from cadgen._internal.source_hash import capture_runtime_closure
@@ -50,6 +48,23 @@ def _load_generator_module(script_path: Path) -> object:
     if module_spec is None or module_spec.loader is None:
         raise RuntimeError(f"Failed to load generator module from {_display_path(resolved_script_path)}")
 
+    # Compile from the CURRENT source bytes, never the __pycache__ .pyc:
+    # bytecode is validated by (mtime-second, size), so a same-size edit
+    # rebuilt within the same second — exactly the warm-edit loop — silently
+    # executes STALE code. Model scripts are small; recompiling each load
+    # costs ~ms and makes what runs always be what is on disk.
+    try:
+        source_code = compile(
+            resolved_script_path.read_bytes(),
+            str(resolved_script_path),
+            "exec",
+            dont_inherit=True,
+        )
+    except (OSError, SyntaxError) as error:
+        raise RuntimeError(
+            f"Failed to load generator module from {_display_path(resolved_script_path)}: {error}"
+        ) from error
+
     module = importlib.util.module_from_spec(module_spec)
     original_sys_path = list(sys.path)
     # Seed sys.path so the generator's module-top imports (its sibling/shared packages such as
@@ -71,7 +86,7 @@ def _load_generator_module(script_path: Path) -> object:
 
     try:
         sys.modules[module_name] = module
-        module_spec.loader.exec_module(module)
+        exec(source_code, module.__dict__)
     finally:
         sys.path[:] = original_sys_path
 
@@ -355,14 +370,6 @@ def _write_dxf_payload(
     # file — the output record hashes it, and warm/cold builds must agree.
     with deterministic_dxf_output(document):
         saveas(str(output_path))
-    source_identity = python_source_hash(script_path)
-    write_dxf_text_to_cad_metadata(
-        output_path,
-        text_to_cad_identity_metadata(
-            source_path=relative_to_file(script_path, output_path),
-            source_hash=source_identity.source_hash,
-        ),
-    )
     logger.debug(f"wrote DXF: {_display_path(output_path)}")
 
 

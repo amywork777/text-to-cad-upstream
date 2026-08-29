@@ -17,7 +17,6 @@ from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
 from cadgen._internal.step_scene import LoadedStepScene, OccurrenceNode, SelectorBundle
-from cadgen._internal.step_metadata import TEXT_TO_CAD_GENERATOR, read_text_to_cad_step_metadata
 from tests.python.support.cad_test_roots import IsolatedCadRoots
 
 

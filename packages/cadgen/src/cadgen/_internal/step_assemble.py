@@ -135,19 +135,7 @@ def assemble_step_from_package(
     """Write ``step_path`` from the package. Returns the written file's hash
     (the same value the export record and the render-side freshness gate
     key on)."""
-    from cadgen._internal.source_sidecar import read_source_sidecar
     from cadgen.step_export import export_build123d_step_file
 
-    compound, descriptor = assemble_compound_from_package(package_dir)
-    # The embedded cadgen: identity comes from the SOURCE sidecar (the
-    # descriptor is STEP-pure); an imported package has none, so its assembled
-    # file carries no generated-identity and stays freely re-importable.
-    sidecar = read_source_sidecar(package_dir) or {}
-    return export_build123d_step_file(
-        compound,
-        step_path,
-        text_to_cad_entry_kind=str(descriptor.get("entryKind") or "") or None,
-        source_path=str(sidecar.get("sourcePath") or "") or None,
-        source_hash=str(sidecar.get("sourceHash") or "") or None,
-        logger=logger,
-    )
+    compound, _descriptor = assemble_compound_from_package(package_dir)
+    return export_build123d_step_file(compound, step_path, logger=logger)

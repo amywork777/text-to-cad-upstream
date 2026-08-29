@@ -75,7 +75,6 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
             scene = export_build123d_step_scene(
                 shape,
                 Path(tempdir) / "assembly.step",
-                text_to_cad_entry_kind="assembly",
             )
 
         self.assertEqual(
@@ -234,7 +233,6 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
                 scene = export_build123d_step_scene(
                     shape,
                     Path(tempdir) / "bare_leaf.step",
-                    text_to_cad_entry_kind="part",
                 )
 
         messages = [str(item.message) for item in caught]
@@ -270,7 +268,6 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
             scene = export_build123d_step_scene(
                 shape,
                 Path(tempdir) / "colored_assembly.step",
-                text_to_cad_entry_kind="assembly",
             )
 
         colors = {
@@ -311,7 +308,6 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
             scene = export_build123d_step_scene(
                 root,
                 Path(tempdir) / "arm.step",
-                text_to_cad_entry_kind="assembly",
             )
 
         leaves = scene_leaf_occurrences(scene)

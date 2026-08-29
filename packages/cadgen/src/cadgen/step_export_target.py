@@ -260,13 +260,7 @@ def _export_scene(
         # imported source already has a text STEP on disk, so copy it to the destination.
         source_compound = getattr(scene, "source_compound", None)
         if source_compound is not None:
-            export_build123d_step_file(
-                source_compound,
-                out,
-                text_to_cad_entry_kind=spec.kind,
-                source_path=(str(getattr(scene, "source_path", "") or "") or None),
-                source_hash=(str(getattr(scene, "source_hash", "") or "") or None),
-            )
+            export_build123d_step_file(source_compound, out)
             return out
         if spec.step_path is not None and spec.step_path.is_file():
             # Only an IMPORTED source may be copied. A generated entry's step_path is its own

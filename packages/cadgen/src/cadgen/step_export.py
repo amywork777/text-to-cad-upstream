@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from cadgen._internal.step_scene import LoadedStepScene, load_step_scene_from_xcaf_doc, step_file_hash
-from cadgen._internal.step_metadata import TEXT_TO_CAD_GENERATOR, inject_text_to_cad_step_metadata
 
 
 def _collect_assembly_mates(shape: Any) -> list[dict[str, Any]]:
@@ -262,10 +261,7 @@ def export_xcaf_doc_step_scene(
     output_path: Path,
     *,
     label: str | None = None,
-    originating_system: str = "build123d",
-    text_to_cad_entry_kind: str | None = None,
-    source_path: str | None = None,
-    source_hash: str | None = None,
+    originating_system: str = "cadgen",
     logger: object | None = None,
 ) -> LoadedStepScene:
     step_hash = write_xcaf_doc_step_file(
@@ -273,9 +269,6 @@ def export_xcaf_doc_step_scene(
         output_path,
         label=label,
         originating_system=originating_system,
-        text_to_cad_entry_kind=text_to_cad_entry_kind,
-        source_path=source_path,
-        source_hash=source_hash,
         logger=logger,
     )
     with (logger.timed(f"load scene from XCAF {output_path.name}") if logger is not None else nullcontext()):
@@ -307,10 +300,7 @@ def write_xcaf_doc_step_file(
     output_path: Path,
     *,
     label: str | None = None,
-    originating_system: str = "build123d",
-    text_to_cad_entry_kind: str | None = None,
-    source_path: str | None = None,
-    source_hash: str | None = None,
+    originating_system: str = "cadgen",
     logger: object | None = None,
 ) -> str:
     from build123d.exporters3d import (
@@ -361,9 +351,7 @@ def write_xcaf_doc_step_file(
     header = APIHeaderSection_MakeHeader(writer.Writer().Model())
     if label:
         header.SetName(TCollection_HAsciiString(label))
-    header.SetOriginatingSystem(
-        TCollection_HAsciiString(TEXT_TO_CAD_GENERATOR if text_to_cad_entry_kind else originating_system)
-    )
+    header.SetOriginatingSystem(TCollection_HAsciiString(originating_system))
     # Byte-determinism: the only nondeterministic bytes in a written STEP are
     # FILE_NAME's wall-clock time_stamp. Exports are content-addressed
     # end-to-end (export records verify by sha256, identical models must
@@ -371,44 +359,23 @@ def write_xcaf_doc_step_file(
     # time lives in the package descriptor, not the interchange file.
     header.SetTimeStamp(TCollection_HAsciiString("2000-01-01T00:00:00"))
 
-    # The writer's model knows its own entity count, and Part-21 ids are dense
-    # 1..N — so the metadata injector can be handed a guaranteed collision-free
-    # first id and never needs to SCAN the file for its max id (which was a
-    # full read+rewrite of multi-hundred-MB exports).
-    entity_count = int(writer.Writer().Model().NbEntities())
     with (logger.timed(f"write STEP file {output_path.name}") if logger is not None else nullcontext()):
         if writer.Write(os.fspath(output_path)) != IFSelect_ReturnStatus.IFSelect_RetDone:
             raise RuntimeError(f"Failed to write STEP file: {output_path}")
     if not output_path.exists() or output_path.stat().st_size <= 0:
         raise RuntimeError(f"STEP export did not create {output_path}")
-    if text_to_cad_entry_kind:
-        with (logger.timed(f"inject STEP metadata {output_path.name}") if logger is not None else nullcontext()):
-            inject_text_to_cad_step_metadata(
-                output_path,
-                entry_kind=text_to_cad_entry_kind,
-                source_path=source_path,
-                source_hash=source_hash,
-                first_id_hint=entity_count + 1,
-            )
     return step_file_hash(output_path)
 
 
 def export_build123d_step_scene(
     to_export: Any,
     output_path: Path,
-    *,
-    text_to_cad_entry_kind: str | None = None,
-    source_path: str | None = None,
-    source_hash: str | None = None,
 ) -> LoadedStepScene:
     doc = _create_bin_xcaf_doc(to_export)
     scene = export_xcaf_doc_step_scene(
         doc,
         output_path,
         label=getattr(to_export, "label", None),
-        text_to_cad_entry_kind=text_to_cad_entry_kind,
-        source_path=source_path,
-        source_hash=source_hash,
     )
     return _attach_assembly_mates(scene, to_export)
 
@@ -434,9 +401,6 @@ def export_build123d_step_file(
     to_export: Any,
     output_path: Path,
     *,
-    text_to_cad_entry_kind: str | None = None,
-    source_path: str | None = None,
-    source_hash: str | None = None,
     logger: object | None = None,
 ) -> str:
     """Write a build123d shape to a text STEP file (no scene), returning its hash.
@@ -449,8 +413,5 @@ def export_build123d_step_file(
         doc,
         output_path,
         label=getattr(to_export, "label", None),
-        text_to_cad_entry_kind=text_to_cad_entry_kind,
-        source_path=source_path,
-        source_hash=source_hash,
         logger=logger,
     )

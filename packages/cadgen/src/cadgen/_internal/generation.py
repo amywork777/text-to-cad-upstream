@@ -32,7 +32,6 @@ from cadgen.catalog import (
 )
 from cadgen.cli_logging import CliLogger
 from cadgen._internal.cli_locking import contended_payload, deadline_ms, lock_wait_notice
-from cadgen._internal.file_metadata import text_to_cad_identity_metadata, write_dxf_text_to_cad_metadata
 from cadgen._internal.package_freshness import (
     STEP_PACKAGE_VERSION,
     bake_hash_matches,

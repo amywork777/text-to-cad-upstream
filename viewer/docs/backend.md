@@ -139,9 +139,9 @@ untouched; `/__cad/server` reports the probe as `stepImportAvailable`.
 The child is spawned with `--lock-timeout 5` and cwd set to the STEP's own
 directory. A `contended` answer (a peer process holds the package lock) maps to
 `generating`, which the client already treats as "attach to the running build".
-The generated-STEP guard runs BEFORE any spawn: a file whose embedded metadata
-names a cadgen generator is never imported (`stepIdentity.mjs`) — its real
-builder is `python <source>`, and the guard works with no Python at all.
+A bare `.step` with no package is simply importable, whatever produced it —
+STEP files carry no cadgen metadata of any kind, so there is nothing to read
+from the file beyond its geometry.
 
 Progress needs no protocol of its own: `cadgen import` writes the standard build
 progress record beside the package (phase fields flattened, the exact shape the

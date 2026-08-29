@@ -113,18 +113,17 @@ class StepExportReuseTest(unittest.TestCase):
         self.assertTrue(copy_target.is_file())
         self.assertEqual(_content_hashes(original_pkg), _content_hashes(copy_pkg))
 
-    def test_verbose_export_spans_fire_and_metadata_reads_back(self) -> None:
+    def test_verbose_export_spans_fire_and_no_metadata_is_written(self) -> None:
         run = _run(self.entry, ["--verbose"], self.store)
         self.assertEqual(run.returncode, 0, run.stderr[-1500:])
-        for span in ("transfer XCAF to STEP model", "write STEP file",
-                     "inject STEP metadata"):
+        for span in ("transfer XCAF to STEP model", "write STEP file"):
             self.assertIn(span, run.stderr,
                           f"orphaned --verbose span: {span!r}")
-        from cadgen._internal.step_metadata import read_text_to_cad_step_metadata
-
-        metadata = read_text_to_cad_step_metadata(self.entry.parent / "block.step")
-        self.assertEqual(metadata.get("entryKind"), "part")
-        self.assertEqual(metadata.get("sourcePath"), "block.py")
+        # A written STEP is a plain artifact: no cadgen: properties, no link
+        # back to source code, under any circumstances.
+        step_text = (self.entry.parent / "block.step").read_text(errors="ignore")
+        self.assertNotIn("cadgen:", step_text)
+        self.assertNotIn("block.py", step_text)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,6 @@ import {
   ownsStepPath,
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
-import { cadgenStepIdentity } from "./stepIdentity.mjs";
 import { cadgenUnavailableMessage, createCadgenResolver } from "./cadgenResolve.mjs";
 
 const RAW_STEP_RE = /\.(step|stp)$/i;
@@ -43,18 +42,6 @@ const IMPORT_LOCK_TIMEOUT_SECONDS = 5;
 const CLI_BUILD_HINT =
   "The viewer is a static visualization tool and does not run generators. "
   + "Build this model by running its script: python <source>.";
-
-// The teaching error for a cadgen-GENERATED .step the viewer must never
-// import: the file's embedded metadata names its real builder.
-function generatedStepHint(identity) {
-  return (
-    "This STEP file is cadgen-generated (source: "
-    + `${identity.sourcePath}). Build its render package by running the model `
-    + `script: python ${identity.sourcePath} (from the model's folder). `
-    + "Importing it would drop colors recorded by generation, the params "
-    + "sidecar, and the generated provenance."
-  );
-}
 
 // The viewer owns status for the entries whose render artifact it reads from
 // disk.
@@ -226,21 +213,10 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
       // exists or names the CLI.
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
       if (verdict.rawStep && !verdict.generated) {
-        // The descriptor said "not generated" (or no package exists), but the
-        // FILE may still self-identify as cadgen-generated via its embedded
-        // metadata — packages are gitignored, so on a fresh checkout every
-        // generated .step arrives bare. Importing it would build a derived
-        // package that loses the generated colors, the params-sidecar link,
-        // and the run-the-script regeneration path. Never offer the import.
-        const identity = cadgenStepIdentity(verdict.candidate);
-        if (identity) {
-          if (verdict.descriptor) {
-            // A package exists (e.g. a previous accidental import): render it
-            // as-is, honestly badged with the real remedy.
-            return { state: "ready", degraded: true, stale: true, staleReason: generatedStepHint(identity) };
-          }
-          return { state: "error", error: generatedStepHint(identity) };
-        }
+        // A STEP file carries no cadgen metadata of any kind: a bare .step is
+        // simply importable, whatever produced it. (Generated-ness lives only
+        // in the package's source sidecar; regeneration is the model script's
+        // job and restores pose/mates/provenance whenever it runs.)
         if (resolver.available()) {
           const importable = { state: "needs-build", reason: status.reason, stepImport: true };
           if (verdict.digestMismatch) {
@@ -275,13 +251,6 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
       const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
       if (isRawStepFile(candidate) && !verdict.generated) {
-        // Same guard as status: the viewer never imports a cadgen-generated
-        // file, force included — regeneration belongs to the model script
-        // (the CLI's `cadgen import --force` remains the deliberate override).
-        const identity = cadgenStepIdentity(candidate);
-        if (identity) {
-          return { ok: false, state: "error", error: generatedStepHint(identity) };
-        }
         const imported = await runCadgenImport(resolver, candidate, { force });
         if (imported.ok && imported.contended) {
           // A peer process holds the package lock and is building it. The

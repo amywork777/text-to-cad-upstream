@@ -49,8 +49,8 @@ print(sorted(e["contentHash"] for e in d["components"].values()))
 EOF
 ```
 
-Identical hash lists = identical geometry. A DXF's bytes differ only in its
-identity comment (sourcePath/sourceHash — the rename itself).
+Identical hash lists = identical geometry. (Written DXF bytes are pure
+drawing content — no identity comments — so a rename changes nothing.)
 
 ## What changed underneath
 

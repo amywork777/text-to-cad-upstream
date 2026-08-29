@@ -69,8 +69,11 @@ The link between an artifact and its script is recorded IN the render package
 — generation writes a source sidecar (`<package>/source.json`, carrying
 `sourcePath`, source hashes, pose, and mates) beside the descriptor, and that
 sidecar's existence is what marks a package as generated; imports write none.
-Provenance is never inferred from filenames — so relocated outputs, renamed
-scripts, and shared output folders all stay traceable.
+The written STEP/DXF file itself carries NO cadgen metadata and no link back
+to source code, ever — a bare artifact separated from its package is a plain
+importable file. Provenance is never inferred from filenames either — so
+relocated outputs, renamed scripts, and shared output folders all stay
+traceable through the package alone.
 
 When a generated model builds on another STEP file, that file is a
 **dependency** (see "Child dependencies" in `positioning.md`).
@@ -135,8 +138,8 @@ source-level relationships are preserved before STEP export (see
 
 An imported STEP/STP file needs no model script. Build its render package once
 with `cadgen import`; `cadgen step inspect` and `cadgen step snapshot` also build it
-on demand, and its part/assembly kind is inferred from embedded metadata or the
-STEP product hierarchy. (The CAD Viewer's in-app import spawns this same
+on demand, and its part/assembly kind is inferred from the STEP product
+hierarchy. (The CAD Viewer's in-app import spawns this same
 `cadgen import` under the hood — one producer, one package format.)
 
 ```bash

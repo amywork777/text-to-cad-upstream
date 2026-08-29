@@ -1,16 +1,14 @@
 """The assembled .step is the document: it must carry the model's colors, and
-its embedded identity must protect it from being re-imported as a foreign file.
+it must carry NOTHING else — no cadgen metadata, no link back to source code.
 
-Regression suite for the planetary-pilot loss (2026-08-30): packages are
-gitignored, so on a fresh checkout a generated model arrives as a bare .step.
-Two defects compounded there:
-
-* ``assemble_step_from_package`` read colors only from the COMPONENT entry,
-  while generators author per-OCCURRENCE colors — every such model's .step was
-  written colorless, so any import of it was colorless too;
-* nothing consulted the file's embedded ``cadgen:`` identity metadata, so the
-  bare file classified as importable and the import overwrote the package as
-  an imported one — dropping colors, the pose block, and provenance.
+Regression suite for the planetary-pilot color loss (2026-08-30):
+``assemble_step_from_package`` read colors only from the COMPONENT entry,
+while generators author per-occurrence colors — every such model's .step was
+written colorless, so any import of it was colorless too. Colors are baked
+into the STEP; everything source-derived (pose, mates, provenance) lives in
+the package's source sidecar and is deliberately NOT in the file, so importing
+a bare generated .step yields a plain imported package (renders, no pose) and
+running the model script restores the rest.
 """
 
 from __future__ import annotations
@@ -131,7 +129,6 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         payload = step_artifact_cli.build_step_artifact(
             repo_root=Path.cwd(),
             step=exported,
-            force=True,
         )
         self.assertTrue(payload.get("ok"), payload)
         imported = self._descriptor(exported)
@@ -163,29 +160,25 @@ class GeneratedStepFidelityTests(unittest.TestCase):
             for got, expected in zip(imported["bbox"][axis], generated["bbox"][axis]):
                 self.assertAlmostEqual(got, expected, places=3)
 
-    def test_import_refuses_generated_step_without_force(self) -> None:
+    def test_written_step_carries_no_cadgen_metadata(self) -> None:
+        # The written file is a plain artifact: no cadgen: properties, no
+        # source path, no source hash — under any circumstances.
         _, logical_step = self._build_generated_package()
-        exported_dir = self.temp_root / "elsewhere"
+        exported_dir = self.temp_root / "clean"
         exported_dir.mkdir()
         exported = exported_dir / "colored.step"
         assemble_step_from_package(render_package_dir(logical_step), exported)
+        text = exported.read_text(errors="ignore")
+        self.assertNotIn("cadgen:", text)
+        self.assertNotIn("colored.py", text)
 
-        with self.assertRaises(RuntimeError) as caught:
-            step_artifact_cli.build_step_artifact(
-                repo_root=Path.cwd(),
-                step=exported,
-            )
-        message = str(caught.exception)
-        self.assertIn("cadgen-GENERATED", message)
-        self.assertIn("colored.py", message)
-        self.assertIn("--force", message)
-
-    def test_forced_import_of_generated_step_preserves_colors(self) -> None:
-        # --force stays the deliberate override (e.g. recovering an artifact
-        # whose source drifted) — and thanks to the colored assembly, even that
-        # lossy path keeps the geometry colors.
+    def test_import_of_generated_step_preserves_colors(self) -> None:
+        # A bare generated STEP is simply importable (nothing in the file says
+        # otherwise) — and thanks to the colored assembly, the derived package
+        # keeps the geometry colors. Pose/mates live in the sidecar, so they
+        # are absent until the model script runs again.
         _, logical_step = self._build_generated_package()
-        exported_dir = self.temp_root / "forced"
+        exported_dir = self.temp_root / "imported"
         exported_dir.mkdir()
         exported = exported_dir / "colored.step"
         assemble_step_from_package(render_package_dir(logical_step), exported)
@@ -193,7 +186,6 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         payload = step_artifact_cli.build_step_artifact(
             repo_root=Path.cwd(),
             step=exported,
-            force=True,
         )
         self.assertTrue(payload.get("ok"), payload)
         descriptor = self._descriptor(exported)
@@ -202,14 +194,14 @@ class GeneratedStepFidelityTests(unittest.TestCase):
 
         self.assertFalse(
             package_is_generated(render_package_dir(exported)),
-            "a forced import must not leave a source sidecar behind",
+            "an import must not leave a source sidecar behind",
         )
         occurrences = descriptor.get("occurrences") or []
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(
             len(colored),
             len(occurrences),
-            f"forced re-import must keep the STEP's colors: {occurrences}",
+            f"re-import must keep the STEP's colors: {occurrences}",
         )
 
 

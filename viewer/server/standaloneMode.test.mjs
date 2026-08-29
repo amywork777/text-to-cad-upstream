@@ -179,14 +179,9 @@ test(
     });
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    // The corpus fixture is itself cadgen-GENERATED (embedded identity
-    // metadata), which the generated-step guard refuses to import. This e2e
-    // wants a VENDOR-style file, so neutralize the identity in the copy —
-    // renaming the generator property is enough (the guard requires both
-    // cadgen:generator and cadgen:sourcePath) and keeps the STEP parseable.
-    const vendorBytes = fs.readFileSync(IMPORT_FIXTURE).toString("latin1")
-      .replaceAll("cadgen:generator", "vendor:generator");
-    const step = write(root, "roller.step", Buffer.from(vendorBytes, "latin1"));
+    // A bare STEP is a bare STEP: files carry no cadgen metadata, so any
+    // .step without a package is simply importable, whatever produced it.
+    const step = write(root, "roller.step", fs.readFileSync(IMPORT_FIXTURE));
 
     const base = await startApp(t, { root });
 
