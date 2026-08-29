@@ -254,7 +254,7 @@ cadgen-importable interpreter for builds, handed down via env:
 
 ```bash
 CADGEN_PYTHON=<main>/.venv/bin/python \
-CADGEN_PYTHONPATH=<worktree>/packages/cadgen/src \
+PYTHONPATH=<worktree>/packages/cadgen/src \
 node <worktree>/viewer/server/main.mjs \
   --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --json
 ```

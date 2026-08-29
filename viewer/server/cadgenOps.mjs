@@ -138,22 +138,14 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
     if (force) {
       args.push("--force");
     }
-    const childEnv = { ...process.env };
-    const pythonPath = String(process.env.CADGEN_PYTHONPATH || "").trim();
-    if (pythonPath) {
-      // Worktree flows: the interpreter's installed cadgen may point at a
-      // different checkout; CADGEN_PYTHONPATH redirects the import to the
-      // sources being edited (documented in AGENTS.md).
-      childEnv.PYTHONPATH = childEnv.PYTHONPATH
-        ? `${pythonPath}${path.delimiter}${childEnv.PYTHONPATH}`
-        : pythonPath;
-    }
+    // The child inherits this process's environment verbatim — standard
+    // Python knobs (PYTHONPATH for a worktree's cadgen sources, VIRTUAL_ENV,
+    // etc.) flow through with no custom plumbing.
     const child = spawn(resolved.command, args, {
       // The STEP's own directory, NOT the served root: `cadgen import` scans
       // its cwd for CAD sources to resolve generated siblings, and a large
       // served root would pay a full recursive walk per import.
       cwd: path.dirname(candidate),
-      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";

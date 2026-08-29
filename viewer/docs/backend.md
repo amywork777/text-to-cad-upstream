@@ -131,8 +131,9 @@ writes the standard package. cadgen is a SOFT dependency, resolved at request ti
 by `server/cadgenResolve.mjs`: `$CADGEN_PYTHON` (spawned as
 `<python> -m cadgen.cli import ...`), then a `cadgen` console script on PATH, then
 `<served-root>/.venv` — deliberately no find-up discovery (it bound worktrees to
-the wrong checkout's cadgen once before). `$CADGEN_PYTHONPATH`, when set, is
-prepended to the child's `PYTHONPATH` for worktree flows. Without a resolvable
+the wrong checkout's cadgen once before). The child inherits the server's
+environment verbatim, so standard Python knobs (`PYTHONPATH` for a worktree's
+cadgen sources, an activated venv) flow through unchanged. Without a resolvable
 cadgen, status and build answer with one actionable message and viewing is
 untouched; `/__cad/server` reports the probe as `stepImportAvailable`.
 

@@ -47,13 +47,16 @@ serve_root="$(mktemp -d)"
 # soft-dependency contract), cold (no daemon spawned by a smoke test).
 export CADGEN_PYTHON="$REPO_ROOT/.venv/bin/python"
 export CADGEN_WARM=0
+# Isolated store: content keying would otherwise resolve the fixture against
+# the developer's real cache and skip the import this smoke test exists to run.
+export CADGEN_STORE_DIR="$(mktemp -d)"
 node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
 server_pid=$!
 disown "$server_pid" 2>/dev/null || true
 
 cleanup() {
   kill "$server_pid" 2>/dev/null || true
-  rm -rf "$serve_root"
+  rm -rf "$serve_root" "$CADGEN_STORE_DIR"
 }
 trap cleanup EXIT
 
@@ -136,8 +139,9 @@ if ! printf '%s' "$build_json" | grep -q '"ok":true'; then
   echo "FAIL: cadgen import build did not succeed: $build_json" >&2
   exit 1
 fi
-if [ ! -f "$serve_root/__cadgen__/models/smoke.step/assembly.json" ]; then
-  echo "FAIL: import reported ok but wrote no package descriptor" >&2
+# Store-primary: the package lands in the (isolated) store keyed by content.
+if ! ls "$CADGEN_STORE_DIR"/packages/*/assembly.json > /dev/null 2>&1; then
+  echo "FAIL: import reported ok but wrote no package descriptor in the store" >&2
   exit 1
 fi
 status_json="$(curl -s -m 10 "$step_url")"

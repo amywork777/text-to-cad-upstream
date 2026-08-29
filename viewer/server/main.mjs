@@ -102,7 +102,6 @@ export function resolveDirectoryRoot({ root = "", env = process.env, cwd = proce
 function resolveDistDir(explicit) {
   const candidates = [
     String(explicit || "").trim(),
-    String(process.env.VIEWER_DIST || "").trim(),
     path.join(VIEWER_ROOT, "dist"),
   ].filter(Boolean);
   for (const candidate of candidates) {
@@ -311,7 +310,7 @@ export async function main(argv = process.argv.slice(2)) {
   if (!distDir) {
     process.stderr.write(
       "No built CAD Viewer client found. Build one with `npm --prefix viewer run build` " +
-        "or point --dist / VIEWER_DIST at a dist directory.\n",
+        "or point --dist at a dist directory.\n",
     );
     return 1;
   }
