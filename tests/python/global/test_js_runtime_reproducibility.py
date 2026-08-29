@@ -28,14 +28,19 @@ VIEWER_DIR = REPO_ROOT / "viewer"
 # The resolver moved with viewer bundling when the viewer left the cadgen
 # wheel (cadgen/viewer split): the cad-viewer skill bundler owns it now.
 VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cad-viewer.sh"
-IMPLICITJS_RUNNER = REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs"
-NODE_MODULE_SUPPORT = (
-    REPO_ROOT / "packages" / "cadjs" / "src" / "lib" / "implicitCad" / "nodeModuleSupport.js"
-)
+CADJS_RUNNER = REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs"
 TEST_RUNNERS = (
-    IMPLICITJS_RUNNER,
+    CADJS_RUNNER,
     REPO_ROOT / "viewer" / "scripts" / "run-tests.mjs",
 )
+
+
+def _cadjs_node_floor() -> str:
+    """The single declared Node major the cadjs suite refuses to start below."""
+    floors = set(re.findall(r"nodeMajor < (\d+)", CADJS_RUNNER.read_text(encoding="utf-8")))
+    if len(floors) != 1:
+        raise AssertionError(f"the cadjs runner states {len(floors)} Node floors")
+    return floors.pop()
 
 
 def resolved_viewer_package_manager(*lockfiles: str, override: str = "") -> str:
@@ -136,30 +141,17 @@ class TestRunnersStartOnCurrentNodeTest(unittest.TestCase):
                     f"{runner.relative_to(REPO_ROOT)} passes a flag current Node rejects",
                 )
 
-    def test_the_implicitjs_node_floor_is_one_number(self) -> None:
-        # The runner refuses below the floor and the loader explains the same limit to a
-        # user; a hand-copied second number is how the two drift.
-        declared = re.search(
-            r"IMPLICIT_JS_MIN_NODE_MAJOR = (\d+)",
-            NODE_MODULE_SUPPORT.read_text(encoding="utf-8"),
-        )
-        self.assertIsNotNone(declared, "implicitjs must declare IMPLICIT_JS_MIN_NODE_MAJOR")
-        runner = IMPLICITJS_RUNNER.read_text(encoding="utf-8")
+    def test_the_cadjs_node_floor_is_one_number(self) -> None:
+        # The runner refuses below the floor and prints the same limit to whoever ran it;
+        # a hand-copied second number in the message is how the two drift.
+        runner = CADJS_RUNNER.read_text(encoding="utf-8")
         floors = set(re.findall(r"nodeMajor < (\d+)", runner))
-        self.assertEqual(
-            {declared.group(1)},
-            floors,
-            "the implicitjs runner's Node floor disagrees with IMPLICIT_JS_MIN_NODE_MAJOR",
-        )
-        self.assertIn(f"Node {declared.group(1)} or newer", runner)
+        self.assertEqual(1, len(floors), f"the cadjs runner states {len(floors)} Node floors")
+        declared = floors.pop()
+        self.assertIn(f"Node {declared} or newer", runner)
 
     def test_the_ci_node_version_satisfies_that_floor(self) -> None:
-        declared = int(
-            re.search(
-                r"IMPLICIT_JS_MIN_NODE_MAJOR = (\d+)",
-                NODE_MODULE_SUPPORT.read_text(encoding="utf-8"),
-            ).group(1)
-        )
+        declared = int(_cadjs_node_floor())
         workflow = (REPO_ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
         versions = [int(value) for value in re.findall(r'node-version:\s*"(\d+)"', workflow)]
         self.assertTrue(versions, "test.yml must pin a Node version")
@@ -167,7 +159,7 @@ class TestRunnersStartOnCurrentNodeTest(unittest.TestCase):
             self.assertGreaterEqual(
                 version,
                 declared,
-                "CI runs a Node the implicitjs suite refuses to start on",
+                "CI runs a Node the cadjs suite refuses to start on",
             )
 
     def test_viewer_declares_the_module_type_its_tests_rely_on(self) -> None:

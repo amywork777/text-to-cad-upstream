@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  entryRenderAssetFormat,
   entrySourceFormat,
   fileExtensionFromPath,
   fileSheetKindForEntry,
@@ -22,7 +21,6 @@ test("entrySourceFormat maps manifest kinds to stable render formats", () => {
   assert.equal(entrySourceFormat({ kind: "3mf" }), RENDER_FORMAT.THREE_MF);
   assert.equal(entrySourceFormat({ kind: "glb" }), RENDER_FORMAT.GLB);
   assert.equal(entrySourceFormat({ kind: "gltf" }), RENDER_FORMAT.GLB);
-  assert.equal(entrySourceFormat({ kind: "implicit" }), RENDER_FORMAT.IMPLICIT);
   assert.equal(entrySourceFormat({ kind: "urdf" }), RENDER_FORMAT.URDF);
   assert.equal(entrySourceFormat({ kind: "srdf" }), RENDER_FORMAT.SRDF);
   assert.equal(entrySourceFormat({ kind: "sdf" }), RENDER_FORMAT.SDF);
@@ -38,7 +36,6 @@ test("fileSheetKindForEntry preserves specialized sheet routing", () => {
   assert.equal(fileSheetKindForEntry({ kind: "srdf" }), "srdf");
   assert.equal(fileSheetKindForEntry({ kind: "sdf" }), "sdf");
   assert.equal(fileSheetKindForEntry({ kind: "dxf" }), "dxf");
-  assert.equal(fileSheetKindForEntry({ kind: "implicit" }), "implicit");
 });
 
 test("mesh and robot format predicates stay narrow", () => {
@@ -56,7 +53,6 @@ test("normalizeRenderFormat preserves tab-state format aliases and defaults", ()
   assert.equal(normalizeRenderFormat("gltf"), RENDER_FORMAT.GLB);
   assert.equal(normalizeRenderFormat("srdf"), RENDER_FORMAT.SRDF);
   assert.equal(normalizeRenderFormat("3mf"), RENDER_FORMAT.THREE_MF);
-  assert.equal(normalizeRenderFormat("implicit"), RENDER_FORMAT.IMPLICIT);
   assert.equal(normalizeRenderFormat("unknown"), RENDER_FORMAT.STEP);
   assert.equal(normalizeRenderFormat("unknown", { defaultFormat: RENDER_FORMAT.DXF }), RENDER_FORMAT.DXF);
 });
@@ -68,24 +64,16 @@ test("meshAssetKeyForEntry chooses native mesh keys and STEP GLB sidecars", () =
   assert.equal(meshAssetKeyForEntry({ kind: "part" }), "glb");
   assert.equal(meshAssetKeyForEntry({ kind: "assembly" }), "glb");
   assert.equal(meshAssetKeyForEntry({ kind: "dxf" }), "dxf");
-  assert.equal(meshAssetKeyForEntry({ kind: "implicit" }), "glb");
 });
 
-test("entryRenderAssetFormat: implicit is package-baked GLB; DXF renders its own file", () => {
-  // It takes ONE argument: a missing implicit package is `needs-build`, never a
-  // silent fallback. A DXF's render asset is the .dxf itself — parsed and
-  // prism-meshed in the client (design/standalone-viewer.md Phase A).
-  assert.equal(entryRenderAssetFormat.length, 1);
-  assert.equal(entryRenderAssetFormat({ kind: "dxf" }), RENDER_FORMAT.DXF);
-  assert.equal(entryRenderAssetFormat({ kind: "implicit" }), RENDER_FORMAT.GLB);
-  assert.equal(entryRenderAssetFormat({ kind: "dxf", url: "" }), RENDER_FORMAT.DXF);
-  // The SOURCE format is untouched: it still names the file the user opened, and its
-  // icon/status/reset call sites still ask that question.
+test("every entry renders its own source format; nothing is package-baked", () => {
+  // A DXF's render asset is the .dxf itself — parsed and prism-meshed in the client
+  // (design/standalone-viewer.md Phase A) — and no kind is baked into a package any
+  // more, so the source format IS the asset format everywhere.
   assert.equal(entrySourceFormat({ kind: "dxf" }), RENDER_FORMAT.DXF);
-  assert.equal(entrySourceFormat({ kind: "implicit" }), RENDER_FORMAT.IMPLICIT);
-  assert.equal(entryRenderAssetFormat({ kind: "part" }), RENDER_FORMAT.STEP);
-  assert.equal(entryRenderAssetFormat({ kind: "stl" }), RENDER_FORMAT.STL);
-  assert.equal(entryRenderAssetFormat({ kind: "urdf" }), RENDER_FORMAT.URDF);
+  assert.equal(entrySourceFormat({ kind: "part" }), RENDER_FORMAT.STEP);
+  assert.equal(entrySourceFormat({ kind: "stl" }), RENDER_FORMAT.STL);
+  assert.equal(entrySourceFormat({ kind: "urdf" }), RENDER_FORMAT.URDF);
 });
 
 test("file extension parsing handles URLs, queries, and supported render formats", () => {
@@ -94,7 +82,5 @@ test("file extension parsing handles URLs, queries, and supported render formats
   assert.equal(fileExtensionFromPath("https://example.test/robot.srdf?download=1"), ".srdf");
   assert.equal(renderFormatFromPath("/assets/bracket.stp"), RENDER_FORMAT.STEP);
   assert.equal(renderFormatFromPath("/assets/bracket.gltf"), RENDER_FORMAT.GLB);
-  assert.equal(renderFormatFromPath("/assets/orb.implicit.js?download=1"), RENDER_FORMAT.IMPLICIT);
-  assert.equal(renderFormatFromPath("/assets/orb.implicit.mjs#preview"), RENDER_FORMAT.IMPLICIT);
   assert.equal(renderFormatFromPath("/assets/unknown"), "");
 });

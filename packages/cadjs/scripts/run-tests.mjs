@@ -6,9 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = path.resolve(packageRoot, "..", "..");
-// Both roots: src/ holds the library tests, scripts/ the CLI ones. scripts/ came with the
-// implicit runtime when implicitjs merged in, and a runner that only walked src/ would have
-// silently stopped running its export-CLI test.
+// Both roots: src/ holds the library tests, scripts/ the CLI ones. A runner that only
+// walked src/ would silently stop running any CLI test that lands beside this file.
 const testRoots = [path.join(packageRoot, "src"), path.join(packageRoot, "scripts")];
 
 function collectTests(dir, tests = []) {
@@ -23,21 +22,20 @@ function collectTests(dir, tests = []) {
   return tests;
 }
 
-// The implicit CAD suite writes temporary `.implicit.js` fixtures -- bare .js files whose
-// body is `export default { ... }`, in a temp dir with no package.json -- and imports them,
-// both in-process and through the spawned export CLI. Only Node 22+ reads module syntax out
-// of an ambiguous .js, so the floor is a property of the fixtures, not a preference. It
-// arrived here with the implicit runtime when implicitjs merged into cadjs.
+// Node 22 is this repo's DECLARED runtime floor (PR #234, after Node 24 broke the JS test
+// runners): the packages, the viewer's vite build and CI all assume it, so a suite that
+// started on an older Node would be testing a runtime nothing else supports. Refuse up
+// front rather than failing somewhere deep in a dependency.
 //
 // This used to pass `--experimental-default-type=module` on every Node below 22, which was
 // wrong at both ends: Node 18 has no such flag and died with `bad option: ...` before
 // running a single test, and on Node 20/21 the flag reached only THIS process, so the tests
-// that spawn the CLI failed anyway. Say the version out loud instead of half-fixing it.
+// that spawn a CLI failed anyway. Say the version out loud instead of half-fixing it.
 const nodeMajor = Number(process.versions.node.split(".")[0] || 0);
 if (nodeMajor > 0 && nodeMajor < 22) {
   console.error(
-    `cadjs tests require Node 22 or newer (running ${process.versions.node}): the .implicit.js `
-    + "fixtures are plain .js files with module syntax, which older Node reads as CommonJS."
+    `cadjs tests require Node 22 or newer (running ${process.versions.node}): 22 is this `
+    + "repository's declared runtime floor."
   );
   process.exit(1);
 }

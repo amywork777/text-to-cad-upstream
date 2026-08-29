@@ -6,7 +6,6 @@
   "description": "Reusable CAD render/viewer runtime for docs, CAD Viewer, and generated snapshot browser assets.",
   "exports": {
     ".": "./src/index.js",
-    "./browser": "./src/browser.js",
     "./common/*": "./src/common/*",
     "./glb/*": "./src/lib/glb/*",
     "./lib/*": "./src/lib/*"
@@ -16,9 +15,7 @@
   },
   "sideEffects": [
     "./src/common/headlessRenderEntry.js",
-    "./src/common/implicitHeadlessRenderEntry.js",
-    "./src/common/render.html",
-    "./scripts/implicit-export-cli.mjs"
+    "./src/common/render.html"
   ],
   "dependencies": {
     "gifenc": "^1.0.3",
