@@ -108,14 +108,16 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   separate from cadgen: the cad-viewer skill bundles the built client + server
   at `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
   `bundle-cad-viewer.sh` for publish), and each release mirrors `viewer/` to the
-  standalone `earthtojake/cad-viewer` repo. The backend runs no Python, ever.
-  Keep repo-level tooling in `scripts/`, not under `viewer/`.
+  standalone `earthtojake/cad-viewer` repo. The backend's render path runs no
+  Python; importing a foreign STEP spawns `cadgen import` (a soft dependency —
+  absent cadgen, viewing still works). Keep repo-level tooling in `scripts/`,
+  not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
   belong in `viewer/`. It holds the shared CAD render/runtime code: one package,
   one copy of each shared primitive.
 - `packages/cadgen` is the whole distribution, not just the Python: artifact
-  generation, the CLI parsers behind every skill command (`cadgen/cli`), the viewer's
-  render-ops gate (`cadgen/render_ops.py`), the warm build daemon (`cadgen/daemon`), and
+  generation, the CLI parsers behind every skill command (`cadgen/cli`), the warm
+  build daemon (`cadgen/daemon`), and
   the JS/SPA assets it executes (`cadgen/_runtime`, built by
   `scripts/bundle/skills/bundle-cadgen-runtime.sh`). Skills consume it as an
   installed distribution.

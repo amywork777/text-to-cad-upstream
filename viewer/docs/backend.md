@@ -6,12 +6,12 @@ files. The viewer is a local-filesystem app, so there is exactly one backend.
 
 That backend is **pure JS**: `viewer/server/`, dependency-free Node (>= 22). It owns
 everything the viewer does — the catalog scan, path containment, asset serving, the
-SPA, artifact status, the WASM STEP import, the native reveal dialog, the instance
-registry. The viewer is a STATIC VISUALIZATION TOOL: it runs no Python, ever. It
-renders artifacts that exist — render packages, sibling `.dxf` files — and the CAD
-CLIs (`scripts/gen`, `scripts/export`) own generation and
-export. The one build-shaped thing it does is Python-free by construction: importing
-a raw foreign STEP through its bundled WASM kernel (below).
+SPA, artifact status, the STEP import bridge, the native reveal dialog, the instance
+registry. The viewer is a STATIC VISUALIZATION TOOL: its render path runs no Python.
+It renders artifacts that exist — render packages, sibling `.dxf` files — and the
+CLIs own generation and export. The one build-shaped thing it does is importing a
+raw foreign STEP, which spawns `cadgen import` as a child process (below); cadgen
+is a soft dependency, needed only for that.
 
 ## Where it runs
 
@@ -80,7 +80,7 @@ backend.assetPathForFileRef(fileRef)      // guarded path for bytes we will send
 backend.containedPathForFileRef(fileRef)  // guarded path for bytes we will not
 backend.catalogEntryForFileRef(catalog, fileRef)
 ops.artifactStatus(fileRef)               // JS freshness verdict + advisory progress
-ops.buildArtifact(fileRef, { force })     // WASM import of a raw STEP; else a CLI hint
+ops.buildArtifact(fileRef, { force })     // spawns `cadgen import` for a raw STEP; else a CLI hint
 ```
 
 `readCatalog()` scans the served root and returns schema v4 entries whose `file`
@@ -114,60 +114,36 @@ Constants the JS authority mirrors from cadgen (the package schema version) are
 pinned cross-language by `tests/python/global/test_render_contract_sync.py`.
 
 `/__cad/server` reports `stepArtifactGenerationAvailable: false`, always: the
-capability does not exist in the viewer by design.
+capability does not exist in the viewer by design. `stepImportAvailable` reports
+whether a runnable cadgen was found (see the import section below); viewing is
+unaffected either way.
 
-## WASM STEP import (no Python)
+## STEP import (via cadgen)
 
 A raw `.step`/`.stp` with no render package (or a stale one — the file changed after
-import) is importable right here: `server/import/` holds a WASM OCCT pipeline
-(opencascade.js — a viewer npm dependency in a checkout, and VENDORED into the
-bundled cad-viewer skill runtime by `bundle-cad-viewer.sh`, so the import works
-in every environment) that parses the STEP, walks its XCAF assembly, extracts
-each component with the surf-extractor twin, and writes the SAME package format
-cadgen writes. This is the viewer's ONLY build, and it is simply a capability
-the viewer has: there is no configuration that disables it, and a missing
-kernel is a broken install — the one failure path is a graceful error naming
-the missing file (agents are routed to `cadgen import` as the alternative,
-which is also the better importer where cadgen exists: native kernel, faster,
-newer OCC, reads per-instance colors). It runs as a child process
-(`import/importCli.mjs`) so a kernel abort can never take the server down.
-Status for an importable STEP reports `needs-build` and the client's normal
-build POST performs the import.
+import) is importable right here: the server spawns `cadgen import <file>` — the
+single import producer — as a child process, which parses the STEP natively and
+writes the standard package. cadgen is a SOFT dependency, resolved at request time
+by `server/cadgenResolve.mjs`: `$VIEWER_CAD_PYTHON` (spawned as
+`<python> -m cadgen.cli import ...`), then a `cadgen` console script on PATH, then
+`<served-root>/.venv` — deliberately no find-up discovery (it bound worktrees to
+the wrong checkout's cadgen once before). `$VIEWER_CAD_PYTHONPATH`, when set, is
+prepended to the child's `PYTHONPATH` for worktree flows. Without a resolvable
+cadgen, status and build answer with one actionable message and viewing is
+untouched; `/__cad/server` reports the probe as `stepImportAvailable`.
 
-While an import runs, the child reports one `[import-progress] {json}` line per
-phase on stderr; the server parses those into an in-memory record per in-flight
-package dir and the status route serves it as the `generating` payload — the same
-shape a CLI build's progress record takes, so the client's existing badge renders
-it with no client changes. The `components` phase carries a real `done/total`
-denominator (a bar); the other phases are honest indeterminate frames. The record
-lives only as long as the child: no file is written, and a crashed import leaves
-nothing to age out.
+The child is spawned with `--lock-timeout 5` and cwd set to the STEP's own
+directory. A `contended` answer (a peer process holds the package lock) maps to
+`generating`, which the client already treats as "attach to the running build".
+The generated-STEP guard runs BEFORE any spawn: a file whose embedded metadata
+names a cadgen generator is never imported (`stepIdentity.mjs`) — its real
+builder is `python <source>`, and the guard works with no Python at all.
 
-Both extractors and both package producers are deliberately duplicated code fenced by
-tests: `tests/python/packages/cadgen/test_surf_extractor_conformance.py` (geometry,
-per corpus blob), `test_wasm_import_parity.py` (descriptor + component parity against
-a native import of the same file), and `tests/python/global/test_render_contract_sync.py`
-(shared constants). Known limits: imports run at WASM speed (seconds for small files,
-minutes for 100MB-class ones, once per file), and the kernel (OCCT ~7.6) trails OCP —
-the BinTools blob format is pinned to V4 on both sides for that reason.
-
-One workaround is measured rather than guessed at: label names ride a whole-document
-XmlXCAF save into MEMFS (once per import, indexed and cached) because
-`TDataStd_Name.Get` is unbound and every bound dump route needs the equally unbound
-`std::ostream`. On 22–27 MB vendor STEPs the save costs 0.8–0.9 s against 20–30 s of
-STEP parse+transfer — ~3–4% of the import, shrinking as files grow (the save scales
-with the document, the parse with the file). Not worth optimizing short of the custom
-kernel build below.
-
-One limit is surfaced rather than silent: `GetInstanceColor` is unbound in this
-opencascade.js build, so an instance whose color attachment only native OCCT's
-instance resolution would find falls through to its prototype's color. The import
-cannot know the missed color, but it CAN detect the risky shape of the problem —
-some instances of a prototype resolved instance-level colors while siblings fell
-through — and records a warning (`instanceColorWarnings` in `stepImport.mjs`) into
-the descriptor's `importWarnings`, which the status route returns on every `ready`
-answer and the build response echoes. Uniformly colored assemblies never warn. The
-real fix is a custom opencascade.js build exposing the binding.
+Progress needs no protocol of its own: `cadgen import` writes the standard build
+progress record beside the package (phase fields flattened, the exact shape the
+client badge renders), and the status route serves it through the same reader
+used for CLI builds (`buildProgressSnapshot` in `cadgenOps.mjs`). One reader,
+every producer.
 
 ## Routes
 
@@ -231,9 +207,5 @@ that builds (and therefore executes a generator). A POST without it gets 403. GE
 unaffected. A second gate refuses any Host header naming a non-local name
 (DNS-rebinding defense). See the trust-model comment in `server/httpApp.mjs`.
 
-**The viewer never touches the network.** Every byte it serves or reads is local.
-When the bundled skill needed the WASM kernel, the alternative to vendoring it was
-lazy fetch — download a pinned, hash-verified kernel on first import — and it was
-consciously rejected: it would have added the viewer's first outbound request class
-(plus fetch/integrity/untar machinery and an offline degradation path) purely to
-save install bytes. Vendoring keeps the zero-network property absolute.
+**The viewer never touches the network.** Every byte it serves or reads is local;
+the import spawns a local process, never a fetch.

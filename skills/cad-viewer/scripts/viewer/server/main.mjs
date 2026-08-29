@@ -21,8 +21,9 @@
 // directory. The page is always the bare origin; `?file=` selects a file inside
 // that root. To serve a second directory, just launch again with that root.
 //
-// Python/cadgen is NOT required to start: without it the viewer serves packaged
-// models read-only and builds/exports answer with an install hint.
+// cadgen is NOT required to start: without it the viewer serves packaged
+// models read-only and importing a foreign STEP answers with an install hint
+// (imports spawn `cadgen import`; see cadgenResolve.mjs).
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";

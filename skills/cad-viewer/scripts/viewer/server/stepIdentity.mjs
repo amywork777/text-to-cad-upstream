@@ -5,9 +5,9 @@
 // (cadgen/_internal/step_metadata.py writes them; this is the read side's JS
 // twin, scoped to the two fields the server needs). The point: a GENERATED
 // file separated from its render package — packages are gitignored, .step
-// files travel — must still classify as generated, or the viewer offers a
-// WASM import that silently produces a colorless, provenance-less,
-// params-less package over a model whose real builder is `python <source>`.
+// files travel — must still classify as generated, or the viewer offers an
+// import that silently produces a colorless, provenance-less, params-less
+// package over a model whose real builder is `python <source>`.
 //
 // Reads only the file TAIL (the writer appends metadata just before ENDSEC),
 // so probing a 100 MB vendor STEP costs one bounded read. A vendor file

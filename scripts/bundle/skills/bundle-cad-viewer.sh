@@ -17,12 +17,9 @@ set -euo pipefail
 # survive (installer semantics: Codex silently drops symlinks — see
 # check-builds.sh).
 #
-# The WASM STEP-import kernel (opencascade.js) IS shipped: exactly four files
-# vendored at node_modules/opencascade.js/ inside the runtime — the path
-# server/import/ocKernel.mjs already resolves — so the installed skill imports
-# raw STEPs with no Python and no npm install. The vendored version must match
-# the viewer's committed lockfile pin (the parity suites fence that version);
-# the bundle fails on a mismatch. node_modules is otherwise still not shipped.
+# The runtime ships NO dependencies: dist/ + server/ only. Importing a foreign
+# STEP spawns `cadgen import` (a soft dependency resolved at request time —
+# see server/cadgenResolve.mjs); viewing needs nothing beyond Node.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -155,78 +152,12 @@ EOF
 
 write_runtime_gitignore() {
   local target_dir="$1"
-  # node_modules stays ignored EXCEPT the vendored WASM kernel: the publish flow
-  # is `git add -A`, which honours .gitignore, so anything the skill must ship
-  # has to be tracked. The chain below re-includes only the four vendored files
-  # (gitignore cannot re-include a file under an excluded directory, so each
-  # ancestor directory is re-included and its other contents re-excluded).
   cat > "$target_dir/.gitignore" <<'EOF'
-!node_modules/
-node_modules/*
-!node_modules/opencascade.js/
-node_modules/opencascade.js/*
-!node_modules/opencascade.js/LICENSE
-!node_modules/opencascade.js/package.json
-!node_modules/opencascade.js/dist/
-node_modules/opencascade.js/dist/*
-!node_modules/opencascade.js/dist/opencascade.full.js
-!node_modules/opencascade.js/dist/opencascade.full.wasm
+node_modules
 tmp
 
 !dist
 !dist/**
-EOF
-}
-
-# Vendor the WASM STEP-import kernel (exactly the files ocKernel.mjs loads,
-# plus its license and package.json for provenance) at the path the server
-# resolves: <runtime>/node_modules/opencascade.js/. Real copies, never
-# symlinks (check-builds.sh forbids symlinks in the publish tree).
-vendor_wasm_kernel() {
-  local target_dir="$1"
-  local src_pkg="$VIEWER_DIR/node_modules/opencascade.js"
-  if [ ! -f "$src_pkg/dist/opencascade.full.wasm" ] || [ ! -f "$src_pkg/dist/opencascade.full.js" ]; then
-    echo "Missing opencascade.js kernel under $src_pkg/dist — run npm install in viewer/." >&2
-    exit 1
-  fi
-  # Pin-check: the vendored kernel must be the version the committed lockfile
-  # resolves (the WASM/native parity suites fence exactly that version).
-  local installed locked
-  installed="$(node -p "require('$src_pkg/package.json').version")"
-  locked="$(node -p "require('$VIEWER_DIR/package-lock.json').packages['node_modules/opencascade.js'].version")"
-  if [ "$installed" != "$locked" ]; then
-    echo "opencascade.js version mismatch: installed $installed, lockfile pins $locked." >&2
-    echo "Re-run npm install in viewer/ so the vendored kernel matches the pin." >&2
-    exit 1
-  fi
-  local dest="$target_dir/node_modules/opencascade.js"
-  mkdir -p "$dest/dist"
-  cp "$src_pkg/LICENSE" "$dest/LICENSE"
-  cp "$src_pkg/package.json" "$dest/package.json"
-  cp "$src_pkg/dist/opencascade.full.js" "$dest/dist/opencascade.full.js"
-  cp "$src_pkg/dist/opencascade.full.wasm" "$dest/dist/opencascade.full.wasm"
-  write_third_party_notices "$target_dir" "$installed"
-}
-
-# Human-readable summary beside the vendored copy, following the
-# _runtime/node THIRD_PARTY_LICENSES.txt pattern. The full LGPL-2.1 text ships
-# as the vendored package's own unmodified LICENSE file.
-write_third_party_notices() {
-  local target_dir="$1"
-  local kernel_version="$2"
-  cat > "$target_dir/THIRD_PARTY_LICENSES.txt" <<EOF
-This runtime vendors third-party code:
-
-  opencascade.js $kernel_version (LGPL-2.1)
-    https://github.com/donalffons/opencascade.js
-    A WebAssembly build of Open CASCADE Technology (OCCT),
-    https://dev.opencascade.org (LGPL-2.1 with OCCT exception).
-
-The vendored files (node_modules/opencascade.js/dist/opencascade.full.js and
-opencascade.full.wasm) are UNMODIFIED copies of the published npm package at
-the version above; the full license text ships beside them as
-node_modules/opencascade.js/LICENSE. Source for the wasm build is available
-at the repository above at the same version tag.
 EOF
 }
 
@@ -241,7 +172,6 @@ build_runtime() {
 
   write_runtime_package_json "$target_dir"
   write_runtime_gitignore "$target_dir"
-  vendor_wasm_kernel "$target_dir"
 }
 
 check_runtime() {

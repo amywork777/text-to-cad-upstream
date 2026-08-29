@@ -1,7 +1,9 @@
-// The static-viewer contract, end to end against a live server. The viewer
-// runs no Python at all: built packages render (with honest staleness),
-// generated entries without artifacts name the CLI, and a raw foreign STEP
-// imports through the WASM kernel — the viewer's only build.
+// The static-viewer contract, end to end against a live server. The viewer's
+// render path runs no Python: built packages render (with honest staleness)
+// and generated entries without artifacts name the CLI. Importing a raw
+// foreign STEP — the viewer's only build — spawns `cadgen import`; without a
+// runnable cadgen it degrades to one actionable message and viewing is
+// unaffected.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -12,7 +14,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { createCadApp } from "./httpApp.mjs";
-import { _setKernelProbeForTests } from "./cadgenOps.mjs";
+import { _setCadgenProbeForTests } from "./cadgenResolve.mjs";
 import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -51,13 +53,12 @@ async function startApp(t, { root }) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test("static viewer: packages render, edits badge stale, generators name the CLI", async (t) => {
-  // The WASM import is covered by its own test below; here the kernel probe is
-  // INJECTED as broken so the broken-install contract stays testable on a
-  // checkout where the kernel is installed (there is no config that disables
-  // the import — kernel absence is a broken install, not a mode).
-  _setKernelProbeForTests(() => ({ ok: false, missing: "/broken/install/opencascade.full.wasm" }));
-  t.after(() => _setKernelProbeForTests(null));
+test("static viewer: packages render, edits badge stale, no cadgen degrades cleanly", async (t) => {
+  // The real import is covered by the e2e below; here the resolver is
+  // INJECTED as absent so the no-cadgen contract stays testable on a checkout
+  // where cadgen is installed.
+  _setCadgenProbeForTests(() => null);
+  t.after(() => _setCadgenProbeForTests(null));
   // realpath'd: macOS tmpdirs are symlinks (/var -> /private/var), and package
   // asset URLs are repo-relative — a root on one side of the symlink with
   // packages resolved on the other mangles them (the documented reason
@@ -87,9 +88,11 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
 
   const base = await startApp(t, { root });
 
-  // The server never claims a generation capability.
+  // The server never claims a generation capability, and with no runnable
+  // cadgen it does not claim the import capability either.
   const info = await (await fetch(`${base}/__cad/server`)).json();
   assert.equal(info.stepArtifactGenerationAvailable, false);
+  assert.equal(info.stepImportAvailable, false);
 
   // Built package: renders, not stale.
   let status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
@@ -97,23 +100,23 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   assert.equal(status.stale, undefined);
 
   // Edit the STEP: still renders, but honestly badged stale (nothing here can
-  // re-import it with the kernel disabled).
+  // re-import it without cadgen).
   fs.appendFileSync(step, "\n");
   status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
   assert.equal(status.state, "ready");
   assert.equal(status.stale, true);
   assert.match(String(status.staleReason || ""), /changed after/);
 
-  // Never-imported foreign STEP with a broken kernel install: a specific,
-  // actionable explanation that NAMES the missing file, not a generic hint.
+  // Never-imported foreign STEP with no cadgen: one specific, actionable
+  // explanation that names the fix, not a generic hint.
   status = await (
     await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(path.join(root, "never-imported.step"))}`)
   ).json();
   assert.equal(status.state, "error");
   assert.match(String(status.error || ""), /has not been imported yet/);
-  assert.match(String(status.error || ""), /broken install/);
-  assert.match(String(status.error || ""), /\/broken\/install\/opencascade\.full\.wasm/);
-  assert.match(String(status.error || ""), /cadgen import/);
+  assert.match(String(status.error || ""), /requires cadgen/);
+  assert.match(String(status.error || ""), /VIEWER_CAD_PYTHON/);
+  assert.match(String(status.error || ""), /Viewing existing models does not need cadgen/);
 
   // A model script is not the viewer's business at all (artifacts-only
   // catalog): status and build both answer as a no-op — nothing to manage.
@@ -128,8 +131,8 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   ).json();
   assert.equal(scriptPost.ok, true);
 
-  // A build POST on a raw STEP with a broken kernel install refuses with the
-  // same actionable broken-install error (the probe is injected above).
+  // A build POST on a raw STEP with no cadgen refuses with the same
+  // actionable message (the probe is injected above).
   const refused = await (
     await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(path.join(root, "never-imported.step"))}`, {
       method: "POST",
@@ -137,8 +140,7 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
     })
   ).json();
   assert.equal(refused.ok, false);
-  assert.match(String(refused.error || ""), /broken install/);
-  assert.match(String(refused.error || ""), /cadgen import/);
+  assert.match(String(refused.error || ""), /requires cadgen/);
 
   // The render data itself serves: catalog lists the entry and its component
   // surf streams — everything the viewport needs, no Python anywhere.
@@ -154,19 +156,27 @@ test("static viewer: packages render, edits badge stale, generators name the CLI
   assert.equal(payload.subarray(0, 4).toString("utf8"), "SURF");
 });
 
-// The full Python-less import flow against a REAL vendor-style STEP: status
-// offers the build, the build runs the WASM import (parse -> XCAF walk ->
-// extractor twin -> package), and the resulting package renders. Slow by
-// nature (~5s: one-time kernel init + import); it IS the standalone e2e.
+// The full import flow against a REAL vendor-style STEP: status offers the
+// build, the build spawns `cadgen import` (cold interpreter — the e2e must
+// not depend on a warm daemon), and the resulting package renders. Skips
+// cleanly where no project cadgen exists (the mirrored cad-viewer repo runs
+// this suite standalone).
 const IMPORT_FIXTURE = path.resolve(VIEWER_ROOT, "..", "models", "step", "parts", "cam_follower_roller.step");
-const wasmKernelPresent = fs.existsSync(
-  path.join(VIEWER_ROOT, "node_modules", "opencascade.js", "dist", "opencascade.full.wasm"),
-);
+const REPO_PYTHON = process.platform === "win32"
+  ? path.resolve(VIEWER_ROOT, "..", ".venv", "Scripts", "python.exe")
+  : path.resolve(VIEWER_ROOT, "..", ".venv", "bin", "python");
+const cadgenPresent = fs.existsSync(REPO_PYTHON);
 
 test(
-  "static viewer: a raw STEP imports through the WASM kernel and renders",
-  { skip: !wasmKernelPresent || !fs.existsSync(IMPORT_FIXTURE) },
+  "static viewer: a raw STEP imports through cadgen and renders",
+  { skip: !cadgenPresent || !fs.existsSync(IMPORT_FIXTURE) },
   async (t) => {
+    process.env.VIEWER_CAD_PYTHON = REPO_PYTHON;
+    process.env.CADGEN_WARM = "0"; // hermetic: no daemon spawned by a test
+    t.after(() => {
+      delete process.env.VIEWER_CAD_PYTHON;
+      delete process.env.CADGEN_WARM;
+    });
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     // The corpus fixture is itself cadgen-GENERATED (embedded identity
@@ -180,12 +190,16 @@ test(
 
     const base = await startApp(t, { root });
 
+    // With a resolvable cadgen the server claims the import capability.
+    const info = await (await fetch(`${base}/__cad/server`)).json();
+    assert.equal(info.stepImportAvailable, true);
+
     // Unimported + importable: the server offers a build instead of an excuse.
     let status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
     assert.equal(status.state, "needs-build");
-    assert.equal(status.wasmImport, true);
+    assert.equal(status.stepImport, true);
 
-    // POST the build: the WASM import runs in a child process and the entry
+    // POST the build: `cadgen import` runs in a child process and the entry
     // settles ready with a real package on disk.
     const build = await (
       await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`, {
@@ -195,7 +209,7 @@ test(
     ).json();
     assert.equal(build.ok, true, `build failed: ${build.error || ""}`);
     assert.equal(build.state, "ready");
-    assert.equal(build.wasmImport, true);
+    assert.equal(build.stepImport, true);
     const descriptorPath = path.join(root, "__cadgen__", "models", "roller.step", "assembly.json");
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
     assert.equal(descriptor.kind, "assembly-package");

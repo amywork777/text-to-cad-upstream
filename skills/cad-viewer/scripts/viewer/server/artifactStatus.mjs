@@ -6,9 +6,9 @@
 // that is kernel lock state (fcntl flock), which Node's stdlib cannot probe
 // and which must never be re-inferred from pids, heartbeats, or age windows
 // (see cadgen/coordination/lock.py for the measured failure modes of that
-// design). The caller supplies a snapshot — from the one remaining Python
-// status primitive (`render_ops snapshot`) when a runtime exists, or from the
-// server's own in-flight WASM import map when it does not.
+// design). The caller supplies a snapshot read from the build's progress
+// record beside the package — a CLI run's or the server's own `cadgen
+// import` child's; one reader serves every producer (cadgenOps.mjs).
 //
 // Freshness semantics (mirrored constants are pinned by the render-contract
 // sync test):
@@ -187,13 +187,6 @@ export function artifactStatus(fileRef, rootDir, { snapshot = null } = {}) {
   }
   if (verdict.ok) {
     const status = { state: ARTIFACT_STATE.READY };
-    // Import-time caveats ride the descriptor (e.g. the WASM kernel's
-    // GetInstanceColor gap): honest, persistent, and shown on every open —
-    // not just in the one build response the importer happened to see.
-    const importWarnings = verdict.descriptor?.importWarnings;
-    if (Array.isArray(importWarnings) && importWarnings.length) {
-      status.warnings = importWarnings.map(String);
-    }
     if (snapshot?.busy) {
       status.busy = true;
       if (snapshot.runId) {

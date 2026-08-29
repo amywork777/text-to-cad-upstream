@@ -42,6 +42,11 @@ fi
 
 log="$(mktemp)"
 serve_root="$(mktemp -d)"
+# The import e2e below spawns `cadgen import` from the server. The bundled
+# runtime carries no Python; hand it the repo's interpreter explicitly (the
+# soft-dependency contract), cold (no daemon spawned by a smoke test).
+export VIEWER_CAD_PYTHON="$REPO_ROOT/.venv/bin/python"
+export CADGEN_WARM=0
 node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
 server_pid=$!
 disown "$server_pid" 2>/dev/null || true
@@ -103,19 +108,13 @@ if ! printf '%s' "$reuse_json" | grep -q "\"port\":$PORT"; then
   exit 1
 fi
 
-# The bundled runtime must carry the vendored WASM import kernel: its absence
-# is a broken bundle, and the skill's raw-STEP import capability depends on it.
-if [ ! -f "$RUNTIME/node_modules/opencascade.js/dist/opencascade.full.wasm" ]; then
-  echo "FAIL: the bundled runtime carries no vendored WASM kernel" >&2
-  exit 1
-fi
-
 # End-to-end import FROM THE BUNDLE: a raw STEP in the served root goes
-# needs-build -> POST build (WASM import) -> ready with a real package. This is
-# the capability the vendored kernel exists for; nothing else executes it from
-# the bundled runtime. The fixture is deliberately non-LFS (CI checks out
-# without LFS).
-FIXTURE="$REPO_ROOT/models/fixtures/wasm-import-smoke.step"
+# needs-build -> POST build (spawns `cadgen import`) -> ready with a real
+# package. The bundled runtime has no Python of its own; the smoke run
+# provides the repo venv via VIEWER_CAD_PYTHON (set at server launch above,
+# see the env block) — the same soft-dependency contract users get. The
+# fixture is deliberately non-LFS (CI checks out without LFS).
+FIXTURE="$REPO_ROOT/models/fixtures/import-smoke.step"
 if ! head -1 "$FIXTURE" | grep -q "ISO-10303-21"; then
   echo "FAIL: import fixture is not STEP text (LFS pointer?): $FIXTURE" >&2
   exit 1
@@ -127,14 +126,14 @@ if ! printf '%s' "$status_json" | grep -q '"needs-build"'; then
   echo "FAIL: raw STEP did not report needs-build: $status_json" >&2
   exit 1
 fi
-if ! printf '%s' "$status_json" | grep -q '"wasmImport":true'; then
-  echo "FAIL: raw STEP status did not offer the WASM import: $status_json" >&2
+if ! printf '%s' "$status_json" | grep -q '"stepImport":true'; then
+  echo "FAIL: raw STEP status did not offer the import: $status_json" >&2
   exit 1
 fi
-# The import initializes the ~50MB kernel once; give it a real timeout.
+# The import pays one cold interpreter + OCP start; give it a real timeout.
 build_json="$(curl -s -m 120 -X POST -H 'x-cadgen-viewer: 1' "$step_url")"
 if ! printf '%s' "$build_json" | grep -q '"ok":true'; then
-  echo "FAIL: WASM import build did not succeed: $build_json" >&2
+  echo "FAIL: cadgen import build did not succeed: $build_json" >&2
   exit 1
 fi
 if [ ! -f "$serve_root/__cadgen__/models/smoke.step/assembly.json" ]; then
@@ -144,12 +143,6 @@ fi
 status_json="$(curl -s -m 10 "$step_url")"
 if ! printf '%s' "$status_json" | grep -q '"ready"'; then
   echo "FAIL: imported STEP did not settle ready: $status_json" >&2
-  exit 1
-fi
-# The instance-color warning machinery must ship in the bundle (a uniform
-# fixture warns nothing, so assert the shipped code, not the payload).
-if ! grep -q "instanceColorWarnings" "$RUNTIME/server/import/stepImport.mjs"; then
-  echo "FAIL: bundled import lost the instanceColorWarnings machinery" >&2
   exit 1
 fi
 
@@ -164,5 +157,5 @@ if ! node "$RUNTIME/server/main.mjs" stop --port "$PORT" | grep -q "Stopped CAD 
   exit 1
 fi
 
-echo "    served / and /__cad/server on rolled port $PORT; WASM import e2e OK; reuse/list/stop OK"
+echo "    served / and /__cad/server on rolled port $PORT; cadgen import e2e OK; reuse/list/stop OK"
 echo "==> CAD Viewer launch smoke test passed"

@@ -134,10 +134,8 @@ source-level relationships are preserved before STEP export (see
 An imported STEP/STP file needs no model script. Build its render package once
 with `cadgen import`; `cadgen step inspect` and `cadgen step snapshot` also build it
 on demand, and its part/assembly kind is inferred from embedded metadata or the
-STEP product hierarchy. (The CAD Viewer can also import a raw STEP through its
-own WASM kernel where installed — a repo checkout or the standalone viewer app
-— but the bundled skill viewer ships without it and reports the CLI command to
-run instead.)
+STEP product hierarchy. (The CAD Viewer's in-app import spawns this same
+`cadgen import` under the hood — one producer, one package format.)
 
 ```bash
 cadgen import path/to/imported.step [--kind part|assembly] [--force]

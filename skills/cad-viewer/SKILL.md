@@ -19,9 +19,11 @@ robot-description, or DXF files in CAD Viewer and hand back live review links. T
 ## Setup
 
 The Viewer ships INSIDE THIS SKILL, under `scripts/viewer/` — the prebuilt
-client bundle plus its dependency-free JS server. There is nothing to install:
-the one requirement is Node.js (>= 22) on `PATH`. No Python, no pip, no npm
-install.
+client bundle plus its dependency-free JS server. There is nothing to install
+for VIEWING: the one requirement is Node.js (>= 22) on `PATH`. Importing a raw
+foreign STEP additionally needs cadgen (the CAD skill's requirements install
+it); without cadgen, imports answer with an install hint and viewing is
+unaffected.
 
 ## Start Viewer
 
@@ -86,18 +88,19 @@ root it serves; `node scripts/viewer/server/main.mjs stop --port <n>` ends one.
 To review a directory outside the current root, just launch again with that
 root — reuse-or-start makes the second launch cheap and correct.
 
-## Generation is the CAD skill's job; imports work in both
+## Generation is the CAD skill's job; imports spawn cadgen
 
 The Viewer is a static visualization tool: it renders artifacts that already
-exist and never runs Python. Generated models must be built first by running
-their model script (see the CAD skill); the Viewer will not build them.
+exist. Generated models must be built first by running their model script (see
+the CAD skill); the Viewer will not build them.
 
-Raw `.step`/`.stp` files ARE importable in the Viewer itself: the bundled
-runtime ships the WASM import kernel, so an unimported STEP reports
-`needs-build` and the in-Viewer build converts it to a render package with no
-Python and no install step. When an agent is doing the work, still prefer
-`cadgen import <file>` — the native kernel is faster, tracks a newer OCC, and
-reads per-instance colors the WASM build cannot — then return the link.
+Raw `.step`/`.stp` files ARE importable from the Viewer: an unimported STEP
+reports `needs-build` and the in-Viewer build spawns `cadgen import` — the one
+import producer — writing the standard render package. This needs a runnable
+cadgen (`VIEWER_CAD_PYTHON`, a `cadgen` on PATH, or a `.venv` in the served
+root); absent cadgen the Viewer says exactly that and keeps viewing. When an
+agent is doing the work, running `cadgen import <file>` directly is equivalent
+— same producer, same package — then return the link.
 
 ## Links
 

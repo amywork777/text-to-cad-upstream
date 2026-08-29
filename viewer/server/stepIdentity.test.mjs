@@ -9,7 +9,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { cadgenStepIdentity } from "./stepIdentity.mjs";
-import { createCadgenOps, _setKernelProbeForTests } from "./cadgenOps.mjs";
+import { createCadgenOps } from "./cadgenOps.mjs";
+import { _setCadgenProbeForTests } from "./cadgenResolve.mjs";
 import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 // The same property-graph shape export_build123d_step_file writes (verified
@@ -69,14 +70,14 @@ test("cadgenStepIdentity: parses the generated trailer, null for vendor files", 
 test("bare generated .step: status names the script, build refuses (force included)", async (t) => {
   const root = tempRoot(t);
   write(root, "colored.step", generatedStepText("colored.py"));
-  _setKernelProbeForTests(() => ({ ok: true }));
-  t.after(() => _setKernelProbeForTests(null));
+  _setCadgenProbeForTests(() => ({ ok: true, command: "cadgen", prefixArgs: [] }));
+  t.after(() => _setCadgenProbeForTests(null));
   const ops = createCadgenOps(root);
 
   const status = await ops.artifactStatus("colored.step");
   assert.equal(status.state, "error");
   assert.match(status.error, /python colored\.py/);
-  assert.equal(status.wasmImport, undefined);
+  assert.equal(status.stepImport, undefined);
 
   for (const force of [false, true]) {
     const build = await ops.buildArtifact("colored.step", { force });
@@ -106,8 +107,8 @@ test("generated .step over an accidentally-imported package: renders as-is, badg
   // decides, not ordinary freshness: append a trailing newline to the file.
   fs.appendFileSync(path.join(root, "colored.step"), "\n");
 
-  _setKernelProbeForTests(() => ({ ok: true }));
-  t.after(() => _setKernelProbeForTests(null));
+  _setCadgenProbeForTests(() => ({ ok: true, command: "cadgen", prefixArgs: [] }));
+  t.after(() => _setCadgenProbeForTests(null));
   const ops = createCadgenOps(root);
 
   const status = await ops.artifactStatus("colored.step");
@@ -120,14 +121,14 @@ test("generated .step over an accidentally-imported package: renders as-is, badg
   assert.match(build.error, /python colored\.py/);
 });
 
-test("vendor .step without metadata keeps the WASM import offer", async (t) => {
+test("vendor .step without metadata keeps the import offer", async (t) => {
   const root = tempRoot(t);
   write(root, "vendor.step", VENDOR_STEP_TEXT);
-  _setKernelProbeForTests(() => ({ ok: true }));
-  t.after(() => _setKernelProbeForTests(null));
+  _setCadgenProbeForTests(() => ({ ok: true, command: "cadgen", prefixArgs: [] }));
+  t.after(() => _setCadgenProbeForTests(null));
   const ops = createCadgenOps(root);
 
   const status = await ops.artifactStatus("vendor.step");
   assert.equal(status.state, "needs-build");
-  assert.equal(status.wasmImport, true);
+  assert.equal(status.stepImport, true);
 });
