@@ -97,19 +97,15 @@ def _path_from_occurrence_id(occurrence_id: str) -> tuple[int, ...]:
 
 def scene_from_render_package(step_path: Path, *, step_hash: str) -> LoadedStepScene | None:
     """A LoadedStepScene rebuilt from the entry's render package, or None when
-    the package is absent, stale (stepHash mismatch), from another schema
-    version, or unreadable — every miss falls back to the text-STEP parse."""
+    the package is absent or unreadable — every miss falls back to the
+    text-STEP parse. Content keying answers schema and hash by construction:
+    a package that resolves for these bytes is current-scheme and theirs."""
     from cadgen.catalog import render_package_dir
     from cadgen._internal.component_package import read_package_descriptor
-    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION, schema_version_matches
 
     package_dir = render_package_dir(step_path)
     descriptor = read_package_descriptor(package_dir)
     if not isinstance(descriptor, dict) or descriptor.get("kind") != "assembly-package":
-        return None
-    if not schema_version_matches(descriptor, STEP_PACKAGE_VERSION):
-        return None
-    if str(descriptor.get("stepHash") or "") != step_hash:
         return None
     components = descriptor.get("components")
     occurrences = descriptor.get("occurrences")

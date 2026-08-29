@@ -1,10 +1,13 @@
-// The render-package contract constants the JS status authority validates
-// against, pinned to their Python producers (cadgen). The sync test
-// tests/python/global/test_render_contract_sync.py asserts these literals
-// match cadgen's, so a producer-side bump cannot silently leave the viewer
-// approving stale packages.
-export const STEP_PACKAGE_VERSION = 15; // package_freshness.STEP_PACKAGE_VERSION
-export const STEP_TOPOLOGY_SCHEMA_VERSION = 2; // glb_topology.STEP_TOPOLOGY_SCHEMA_VERSION
+// The render-contract constants the viewer mirrors from cadgen, pinned by
+// tests/python/global/test_render_contract_sync.py so a one-sided bump cannot
+// ship.
+//
+// CACHE_SCHEMA_VERSION is the ONE cache-scheme number (cadgen/_internal/
+// cache_schema.py): it salts every store package key (<hash>-v<N>), so a bump
+// orphans old artifacts BY NAME and everything regenerates on demand. No
+// artifact records a version inside itself — a package that resolves at all
+// is current-scheme by construction.
+export const CACHE_SCHEMA_VERSION = 16; // cache_schema.CACHE_SCHEMA_VERSION
 
 // The source sidecar carries everything SOURCE-derived (provenance, pose with
 // inline escape-hatch source, mates); it sits BESIDE THE MODEL

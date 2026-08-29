@@ -70,7 +70,7 @@ def meshes_dir() -> Path:
 
 
 def packages_dir() -> Path:
-    """Render-package index: ``packages/<stepHash>-v<STEP_PACKAGE_VERSION>/``,
+    """Render-package index: ``packages/<stepHash>-v<CACHE_SCHEMA_VERSION>/``,
     one self-contained package per DOCUMENT (STEP/DXF bytes), whichever
     producer built it. Components inside a package hardlink into
     :func:`components_dir`, so relocation costs no duplication."""

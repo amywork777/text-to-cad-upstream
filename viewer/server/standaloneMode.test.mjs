@@ -15,7 +15,6 @@ import { fileURLToPath } from "node:url";
 
 import { createCadApp } from "./httpApp.mjs";
 import { _setCadgenProbeForTests } from "./cadgenResolve.mjs";
-import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 import { renderPackageDir } from "./storePaths.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +81,6 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
     path.join(packageDir, "assembly.json"),
     JSON.stringify({
       kind: "assembly-package",
-      packageSchemaVersion: STEP_PACKAGE_VERSION,
       stepHash: sha256(Buffer.from(stepBytes)),
       components: { c0: { surf: "components/c0.surf" } },
       occurrences: [

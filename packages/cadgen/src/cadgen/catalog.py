@@ -315,13 +315,13 @@ def seed_artifact_hash(entry_path: Path, digest: str) -> None:
 
 def package_dir_for_hash(step_hash: str) -> Path:
     """The store-primary render-package directory for a document's content
-    hash: ``<cache>/packages/<hash>-v<STEP_PACKAGE_VERSION>``. One package per
+    hash: ``<cache>/packages/<hash>-v<CACHE_SCHEMA_VERSION>``. One package per
     document, whichever producer built it; the version salt retires whole
     generations on schema bumps (``cadgen cache gc`` sweeps the orphans)."""
     from cadgen._internal.cache_paths import packages_dir
-    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+    from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 
-    return packages_dir() / f"{step_hash}-v{STEP_PACKAGE_VERSION}"
+    return packages_dir() / f"{step_hash}-v{CACHE_SCHEMA_VERSION}"
 
 
 def render_package_dir(entry_path: Path) -> Path:

@@ -39,7 +39,6 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
         json.dumps(
             {
                 "kind": "assembly-package",
-                "packageSchemaVersion": 2,
                 "entryKind": entry_kind,
                 "rootName": step_path.stem,
                 "units": "mm",

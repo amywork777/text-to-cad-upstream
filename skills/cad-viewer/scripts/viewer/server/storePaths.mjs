@@ -8,7 +8,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";
 
 // Inline mirror of cadgenCacheRootDir (same resolution rule as Python):
 // CADGEN_STORE_DIR, else the platform cache convention, else ~/.cache/cadgen.
@@ -63,7 +63,7 @@ export function artifactFileHash(filePath) {
 }
 
 export function packageDirForHash(stepHash) {
-  return path.join(storePackagesDir(), `${stepHash}-v${STEP_PACKAGE_VERSION}`);
+  return path.join(storePackagesDir(), `${stepHash}-v${CACHE_SCHEMA_VERSION}`);
 }
 
 /** The store package dir for an artifact file, resolved by CONTENT; a missing

@@ -9,7 +9,7 @@ exact-shape blob — design/step-document-architecture.md), with the root
 resolved by :mod:`cadgen._internal.cache_paths` (``CADGEN_STORE_DIR``, then
 the platform cache dir). The key is the BARE cid: both artifacts are exact
 geometry with no mesh tolerances, and the cid is already salted by
-``STEP_PACKAGE_VERSION`` so extractor changes re-key the store wholesale.
+``CACHE_SCHEMA_VERSION`` so extractor changes re-key the store wholesale.
 
 ``CADGEN_COMPONENT_STORE=0`` disables both directions.
 """

@@ -80,9 +80,10 @@ class ComponentPackageTests(unittest.TestCase):
 
             descriptor = json.loads((package_dir / "assembly.json").read_text())
             self.assertEqual(descriptor["kind"], component_package.PACKAGE_KIND)
-            self.assertEqual(
-                descriptor["packageSchemaVersion"], component_package.PACKAGE_SCHEMA_VERSION
-            )
+            # No version field inside the artifact: the store KEY carries the
+            # cache scheme (cache_schema.CACHE_SCHEMA_VERSION).
+            self.assertNotIn("packageSchemaVersion", descriptor)
+            self.assertNotIn("schemaVersion", descriptor)
             self.assertEqual(len(descriptor["occurrences"]), 3)
             self.assertEqual(len(descriptor["components"]), 2)
 
@@ -289,12 +290,12 @@ class ComponentPackageVersionSaltTest(unittest.TestCase):
     reuses it (see build_package_from_compound's ``force`` handling).
     """
 
-    def test_digest_is_salted_with_the_package_version(self) -> None:
+    def test_digest_is_salted_with_the_cache_schema_version(self) -> None:
         import hashlib
 
         digest, brep = component_package._content_hash_and_bytes(Box(1, 1, 1))
         expected = hashlib.sha256(
-            str(component_package.STEP_PACKAGE_VERSION).encode("utf-8") + b"\x00" + brep
+            str(component_package.CACHE_SCHEMA_VERSION).encode("utf-8") + b"\x00" + brep
         ).hexdigest()
         self.assertEqual(expected, digest)
         self.assertNotEqual(
@@ -303,15 +304,15 @@ class ComponentPackageVersionSaltTest(unittest.TestCase):
             "an unsalted digest would survive an extractor change",
         )
 
-    def test_bumping_the_package_version_changes_every_cid(self) -> None:
+    def test_bumping_the_cache_schema_version_changes_every_cid(self) -> None:
         box = Box(1, 1, 1)
         before = component_package._content_hash_and_bytes(box)[0]
-        original = component_package.STEP_PACKAGE_VERSION
+        original = component_package.CACHE_SCHEMA_VERSION
         try:
-            component_package.STEP_PACKAGE_VERSION = original + 1
+            component_package.CACHE_SCHEMA_VERSION = original + 1
             after = component_package._content_hash_and_bytes(box)[0]
         finally:
-            component_package.STEP_PACKAGE_VERSION = original
+            component_package.CACHE_SCHEMA_VERSION = original
         self.assertNotEqual(before, after)
         self.assertEqual(before, component_package._content_hash_and_bytes(box)[0])
 

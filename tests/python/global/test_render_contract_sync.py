@@ -36,31 +36,22 @@ class RenderContractSyncTest(unittest.TestCase):
             python_version,
             js_version,
             "SURF_VERSION diverged between the Python extractor and the JS "
-            "surf parser — bump both together (and STEP_PACKAGE_VERSION with "
+            "surf parser — bump both together (and CACHE_SCHEMA_VERSION with "
             "them; a .surf the client cannot parse renders nothing).",
         )
 
     def test_package_contract_constants_match_python(self) -> None:
-        # The JS status authority validates packages against the SAME versions
-        # the Python producer stamps (viewer/server/packageContract.mjs); a
-        # one-sided bump makes every package permanently stale (or permanently
-        # fresh) on one side.
+        # Both languages resolve store keys with the SAME cache-scheme number
+        # (viewer/server/packageContract.mjs mirrors cache_schema.py); a
+        # one-sided bump strands one side in the old key generation.
         contract = ROOT / "viewer/server/packageContract.mjs"
         self.assertEqual(
             _extract(
-                r"^STEP_PACKAGE_VERSION = (\d+)$",
-                ROOT / "packages/cadgen/src/cadgen/_internal/package_freshness.py",
+                r"^CACHE_SCHEMA_VERSION = (\d+)$",
+                ROOT / "packages/cadgen/src/cadgen/_internal/cache_schema.py",
             ),
-            _extract(r"^export const STEP_PACKAGE_VERSION = (\d+);", contract),
-            "STEP_PACKAGE_VERSION diverged between cadgen and the viewer's package contract",
-        )
-        self.assertEqual(
-            _extract(
-                r"^STEP_TOPOLOGY_SCHEMA_VERSION = (\d+)$",
-                ROOT / "packages/cadgen/src/cadgen/_internal/glb_topology.py",
-            ),
-            _extract(r"^export const STEP_TOPOLOGY_SCHEMA_VERSION = (\d+);", contract),
-            "STEP_TOPOLOGY_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
+            _extract(r"^export const CACHE_SCHEMA_VERSION = (\d+);", contract),
+            "CACHE_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
         )
         sidecar_module = ROOT / "packages/cadgen/src/cadgen/_internal/source_sidecar.py"
         self.assertEqual(
@@ -77,15 +68,15 @@ class RenderContractSyncTest(unittest.TestCase):
         )
 
     def test_store_key_salt_reads_the_one_js_constant(self) -> None:
-        # Schema gating lives in the package KEY now: storePaths.mjs salts the
+        # Schema gating lives in the package KEY: storePaths.mjs salts the
         # store key with the one JS constant this suite pins against Python.
-        # A package that resolves at all is current-schema by construction.
+        # A package that resolves at all is current-scheme by construction.
         store_module = ROOT / "viewer/server/storePaths.mjs"
         self.assertIn(
-            'import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
+            'import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";',
             store_module.read_text(),
-            "the store key salt must read the schema version from the one JS "
-            "constant (packageContract.mjs), which this suite pins against Python",
+            "the store key salt must read the cache-scheme version from the one "
+            "JS constant (packageContract.mjs), which this suite pins against Python",
         )
 
     def test_component_blob_format_is_pinned_not_current(self) -> None:

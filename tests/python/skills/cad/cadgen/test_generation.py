@@ -14,7 +14,7 @@ from cadgen import catalog as cad_catalog
 from cadgen._internal import source_hash as cad_source_hash
 from cadgen.catalog import StepImportOptions
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
-from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
 from cadgen._internal.step_scene import LoadedStepScene, OccurrenceNode, SelectorBundle
 from tests.python.support.cad_test_roots import IsolatedCadRoots
@@ -1173,7 +1173,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
+            
             "_sourceSidecar": {"sourceKind": "python", "sourceHash": "old-python-source-hash"},
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1422,7 +1422,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
+            
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1466,7 +1466,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
+            
             # Stale by MESH OPTIONS: the recorded deflections disagree with the
             # requested ones. (Hash staleness cannot exist under content
             # keying — an edited file resolves to a different package key.)
@@ -1509,7 +1509,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
+            
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
@@ -1570,7 +1570,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
+            
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
             "mesh": {
                 "linearDeflection": 0.3,

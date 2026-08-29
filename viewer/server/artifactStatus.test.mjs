@@ -15,7 +15,7 @@ import {
   artifactStatus,
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
-import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";
 import { renderPackageDir } from "./storePaths.mjs";
 
 function tempRoot(t, prefix) {
@@ -47,8 +47,6 @@ function sha256(data) {
 function writeStepPackage(root, stepName, {
   generated = false,
   stepHash,
-  schemaVersion = STEP_PACKAGE_VERSION,
-  bakeHash,
   components = ["c0"],
   withSurf = true,
 } = {}) {
@@ -73,14 +71,8 @@ function writeStepPackage(root, stepName, {
     // descriptor is a pure function of the STEP bytes, no provenance at all.
     fs.writeFileSync(`${stepPath}.source.json`, JSON.stringify({ schemaVersion: 2, sourceKind: "python" }));
   }
-  if (schemaVersion !== null) {
-    descriptor.packageSchemaVersion = schemaVersion;
-  }
   if (stepHash !== null) {
     descriptor.stepHash = stepHash === undefined ? sha256(stepBytes) : stepHash;
-  }
-  if (bakeHash !== undefined) {
-    descriptor.bakeHash = bakeHash;
   }
   fs.mkdirSync(packageDir, { recursive: true });
   fs.writeFileSync(path.join(packageDir, "assembly.json"), JSON.stringify(descriptor));
@@ -128,13 +120,13 @@ test("provenance owns the digest gate: a python-backed .step skips it", (t) => {
 
 test("the schema gate lives in the package KEY, not the descriptor", (t) => {
   const root = tempRoot(t, "status-");
-  // A bumped STEP_PACKAGE_VERSION changes the -v<N> key salt, so an
+  // A bumped CACHE_SCHEMA_VERSION changes the -v<N> key salt, so an
   // old-generation package simply stops resolving: no descriptor field is
   // read to decide schema currency.
   const step = writeStepPackage(root, "imp.step");
   assert.equal(artifactStatus(step, root).state, ARTIFACT_STATE.READY);
   const packageDir = renderPackageDir(step);
-  const oldGeneration = `${packageDir.slice(0, packageDir.lastIndexOf("-v"))}-v${STEP_PACKAGE_VERSION - 1}`;
+  const oldGeneration = `${packageDir.slice(0, packageDir.lastIndexOf("-v"))}-v${CACHE_SCHEMA_VERSION - 1}`;
   fs.renameSync(packageDir, oldGeneration);
   const status = artifactStatus(step, root);
   assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD);

@@ -261,8 +261,9 @@ def build_step_topology_index_manifest(
 
     tables = manifest.get("tables") if isinstance(manifest.get("tables"), Mapping) else {}
     occurrence_columns = tables.get("occurrenceColumns") if isinstance(tables, Mapping) else None
+    # No version field: the store KEY (CACHE_SCHEMA_VERSION salt) is the one
+    # regeneration signal, and nothing inside an artifact records a scheme.
     index: dict[str, Any] = {
-        "schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION,
         "profile": "index",
         "entryKind": resolved_entry_kind,
     }

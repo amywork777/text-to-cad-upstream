@@ -143,7 +143,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
             self.assertNotIn(banned, imported)
 
         # Identity fields agree.
-        for key in ("kind", "packageSchemaVersion", "entryKind", "units", "rootName"):
+        for key in ("kind", "entryKind", "units", "rootName"):
             self.assertEqual(generated.get(key), imported.get(key), key)
 
         # Geometric equivalence: same occurrence structure and bounds (cids

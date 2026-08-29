@@ -26,7 +26,7 @@ from tests.python.support.paths import REPO_ROOT, add_repo_path
 add_repo_path("packages/cadgen/src")
 
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
-from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 
 ROOT = REPO_ROOT
 
@@ -45,13 +45,12 @@ class TopologySchemaVersionMirrorTest(unittest.TestCase):
 
 
 class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
-    def test_the_step_cid_salt_is_the_package_version_itself(self) -> None:
+    def test_the_step_cid_salt_is_the_cache_schema_version_itself(self) -> None:
         # Not merely equal to it: the same constant. A separate payload version is the
         # split this rule exists to prevent.
         from cadgen._internal import component_package
 
-        self.assertIs(component_package.STEP_PACKAGE_VERSION, STEP_PACKAGE_VERSION)
-        self.assertEqual(STEP_PACKAGE_VERSION, component_package.PACKAGE_SCHEMA_VERSION)
+        self.assertIs(component_package.CACHE_SCHEMA_VERSION, CACHE_SCHEMA_VERSION)
 
     def test_no_separate_payload_version_has_reappeared(self) -> None:
         source = (
@@ -60,7 +59,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         self.assertNotIn(
             "COMPONENT_PAYLOAD_VERSION",
             source,
-            "the component payload version was folded into STEP_PACKAGE_VERSION; a second "
+            "the component payload version was folded into CACHE_SCHEMA_VERSION; a second "
             "number lets a descriptor bump ship without re-emitting the payloads",
         )
 
@@ -74,7 +73,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # DXF is absent by design: a generated drawing's render IS the sibling
         # .dxf the client parses, so there is no artifact to gate.
         for constant in (
-            "STEP_PACKAGE_VERSION",
+            "CACHE_SCHEMA_VERSION",
         ):
             self.assertIn(
                 constant,

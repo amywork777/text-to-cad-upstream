@@ -7,9 +7,7 @@ from unittest import mock
 from cadgen._internal import generation
 from cadgen._internal.component_package import PACKAGE_KIND
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
-from cadgen._internal.package_freshness import (
-    STEP_PACKAGE_VERSION,
-)
+from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 from cadgen._internal.source_hash import closure_for_files
 
 # Sentinel for "remove this key from the descriptor entirely".
@@ -104,8 +102,7 @@ class PackageFreshnessGateTests(unittest.TestCase):
                 "part.step",
                 {
                     "kind": PACKAGE_KIND,
-                    "packageSchemaVersion": STEP_PACKAGE_VERSION,
-                    "components": {"abc": {
+                            "components": {"abc": {
                         "surf": "components/abc.surf",
                         "brep": "components/abc.brep",
                     }},
@@ -180,7 +177,6 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
     def _descriptor(self, options) -> dict:
         return {
             "kind": PACKAGE_KIND,
-            "packageSchemaVersion": STEP_PACKAGE_VERSION,
             "components": {"abc": {"glb": "components/abc.glb"}},
             "mesh": {
                 "linearDeflection": options.linear_deflection,
@@ -206,13 +202,13 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
         self.assertTrue(self._match(self._descriptor(self.options)))
 
     def test_schema_gating_lives_in_the_package_key(self) -> None:
-        # The store key is <hash>-v<STEP_PACKAGE_VERSION>: a version bump
+        # The store key is <hash>-v<CACHE_SCHEMA_VERSION>: a version bump
         # changes the key, so an old-generation package simply stops
         # resolving. No descriptor field decides schema currency any more.
         from cadgen.catalog import package_dir_for_hash
 
         self.assertTrue(
-            str(package_dir_for_hash("cafe")).endswith(f"cafe-v{STEP_PACKAGE_VERSION}")
+            str(package_dir_for_hash("cafe")).endswith(f"cafe-v{CACHE_SCHEMA_VERSION}")
         )
 
 

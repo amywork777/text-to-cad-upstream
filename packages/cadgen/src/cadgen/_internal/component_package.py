@@ -26,7 +26,7 @@ from cadgen._internal.generation import (
     DEFAULT_MESH_ANGULAR_TOLERANCE,
     DEFAULT_MESH_TOLERANCE,
 )
-from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 from cadgen.coordination import (
     PHASE_COMPONENTS,
     PHASE_FINALIZE,
@@ -35,13 +35,6 @@ from cadgen.coordination import (
     resolve as resolve_progress,
 )
 PACKAGE_KIND = "assembly-package"
-# The single version for a STEP package: descriptor layout plus the bytes inside the
-# component GLBs it references. Defined in the stdlib-only _internal.package_freshness so
-# BOTH freshness authorities gate on one constant -- the viewer's validator cannot import
-# this module (it pulls in the CAD runtime), and a second hand-copied number is how the two
-# drift. It also salts the component cid below, which is what makes a payload change
-# actually re-emit rather than be reused by geometry.
-PACKAGE_SCHEMA_VERSION = STEP_PACKAGE_VERSION
 # Self-contained content-addressed packages: each model's components live INSIDE its own package
 # at <store>/packages/<stepHash>-v<N>/components/<geomHash>.glb, referenced by the
 # descriptor via the flat relative ref components/<geomHash>.glb. Within-model dedup (repeated
@@ -116,7 +109,7 @@ def _component_id(source_hash: str) -> str:
     # The cid is the first 64 bits of the content hash, not an accident of slicing:
     # a package build holds dozens of components, so the birthday bound at 2^32
     # distinct shapes is unreachable by ~9 orders of magnitude, and the hash is
-    # salted by STEP_PACKAGE_VERSION (see _content_hash_and_bytes) so an extractor
+    # salted by CACHE_SCHEMA_VERSION (see _content_hash_and_bytes) so an extractor
     # change re-keys every cid at once. A collision would only merge two dedup
     # entries within one build -- never a cross-package effect.
     return source_hash[:16]
@@ -126,7 +119,7 @@ def _content_hash_and_bytes(shape: Any) -> tuple[str, bytes]:
     """The content hash AND the location-stripped BREP bytes it digests, from a
     single serialization.
 
-    The digest is salted with :data:`STEP_PACKAGE_VERSION` because the cid
+    The digest is salted with :data:`CACHE_SCHEMA_VERSION` because the cid
     addresses a BUILT component GLB, not the geometry alone. Each GLB embeds the
     topology tables the extractor produced, so a change to what the extractor
     emits makes every cached component wrong while its geometry — and therefore
@@ -147,7 +140,7 @@ def _content_hash_and_bytes(shape: Any) -> tuple[str, bytes]:
     component's BREP twice (once to hash, once for the payload)."""
     brep = _shape_brep_bytes(shape)
     digest = hashlib.sha256()
-    digest.update(str(STEP_PACKAGE_VERSION).encode("utf-8"))
+    digest.update(str(CACHE_SCHEMA_VERSION).encode("utf-8"))
     digest.update(b"\x00")
     digest.update(brep)
     return digest.hexdigest(), brep
@@ -744,7 +737,6 @@ def build_package_from_compound(
     descriptor.update(
         {
             "kind": PACKAGE_KIND,
-            "packageSchemaVersion": PACKAGE_SCHEMA_VERSION,
             "rootName": root_name,
             "units": "mm",
             "components": components,

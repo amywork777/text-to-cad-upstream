@@ -10,12 +10,13 @@
 //   2. `cadgen` on PATH          -> pip's console script, the common install
 //   3. <servedRoot>/.venv        -> the project-local environment, if any
 //
-// The probe runs `<candidate> doctor` once and caches the winner: doctor is
-// stdlib-only and exits 0 (healthy) or 3 (pin mismatch) — either proves a
-// runnable cadgen; a mismatch is the CLI's problem to report, not a reason to
-// pretend cadgen is absent. `invalidate()` drops the cache so a spawn-time
-// ENOENT (cadgen uninstalled while the server ran) re-probes on the next
-// request instead of failing forever.
+// The probe runs `<candidate> --help` once and caches the winner — the
+// dumbest possible check: exit 0 proves a runnable cadgen CLI, with no
+// cadgen-specific exit-code lore. Anything deeper (pin mismatches, broken
+// installs) is the spawned import's problem to REPORT, not the probe's to
+// predict. `invalidate()` drops the cache so a spawn-time ENOENT (cadgen
+// uninstalled while the server ran) re-probes on the next request instead of
+// failing forever.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -48,14 +49,14 @@ function candidateCommands(rootDir) {
 
 function probe(candidate) {
   try {
-    const result = spawnSync(candidate.command, [...candidate.prefixArgs, "doctor"], {
+    const result = spawnSync(candidate.command, [...candidate.prefixArgs, "--help"], {
       timeout: PROBE_TIMEOUT_MS,
       stdio: ["ignore", "pipe", "pipe"],
     });
     if (result.error) {
       return false;
     }
-    return result.status === 0 || result.status === 3;
+    return result.status === 0;
   } catch {
     return false;
   }

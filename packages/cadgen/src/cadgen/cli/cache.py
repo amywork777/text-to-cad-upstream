@@ -19,7 +19,7 @@ by construction — every entry is content-addressed and best-effort, so a
 reader racing a deletion simply re-misses and rebuilds, and a producer racing
 one re-publishes. Nothing here takes a lock.
 
-Grows-forever context: every ``STEP_PACKAGE_VERSION`` bump re-keys the
+Grows-forever context: every ``CACHE_SCHEMA_VERSION`` bump re-keys the
 component store wholesale, every op-memo/build123d version bump starts a fresh
 opmemo generation, and every ``TESSELLATION_VERSION`` bump orphans the mesh
 tier's previous keys. Nothing else ever deletes those orphans.
@@ -118,13 +118,13 @@ def _package_generation(name: str) -> str:
 
 
 def _scan() -> list[_TierReport]:
-    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+    from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 
     reports: list[_TierReport] = []
 
     pkg = _TierReport("packages", str(packages_dir()))
     if packages_dir().is_dir():
-        current = f"v{STEP_PACKAGE_VERSION}"
+        current = f"v{CACHE_SCHEMA_VERSION}"
         by_generation: dict[str, dict] = {}
         for child in sorted(packages_dir().iterdir()):
             if not child.is_dir():
@@ -261,7 +261,7 @@ def _sweep_files(directory: Path, cutoff: float, dry_run: bool, stats: dict, *, 
 
 
 def _cmd_gc(max_age_days: float, delete_all: bool, dry_run: bool, as_json: bool) -> int:
-    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+    from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 
     cutoff = time.time() - max_age_days * 24 * 3600
     stats = {"entries": 0, "bytes": 0}
@@ -272,7 +272,7 @@ def _cmd_gc(max_age_days: float, delete_all: bool, dry_run: bool, as_json: bool)
     # (orphans included — the key alone cannot say which document still
     # exists) are age-swept by the package dir's own mtime.
     if packages_dir().is_dir():
-        current = f"v{STEP_PACKAGE_VERSION}"
+        current = f"v{CACHE_SCHEMA_VERSION}"
         for child in packages_dir().iterdir():
             if not child.is_dir():
                 continue
