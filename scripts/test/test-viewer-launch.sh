@@ -103,6 +103,56 @@ if ! printf '%s' "$reuse_json" | grep -q "\"port\":$PORT"; then
   exit 1
 fi
 
+# The bundled runtime must carry the vendored WASM import kernel: its absence
+# is a broken bundle, and the skill's raw-STEP import capability depends on it.
+if [ ! -f "$RUNTIME/node_modules/opencascade.js/dist/opencascade.full.wasm" ]; then
+  echo "FAIL: the bundled runtime carries no vendored WASM kernel" >&2
+  exit 1
+fi
+
+# End-to-end import FROM THE BUNDLE: a raw STEP in the served root goes
+# needs-build -> POST build (WASM import) -> ready with a real package. This is
+# the capability the vendored kernel exists for; nothing else executes it from
+# the bundled runtime. The fixture is deliberately non-LFS (CI checks out
+# without LFS).
+FIXTURE="$REPO_ROOT/models/fixtures/wasm-import-smoke.step"
+if ! head -1 "$FIXTURE" | grep -q "ISO-10303-21"; then
+  echo "FAIL: import fixture is not STEP text (LFS pointer?): $FIXTURE" >&2
+  exit 1
+fi
+cp "$FIXTURE" "$serve_root/smoke.step"
+step_url="http://$HOST:$PORT/__cad/artifact?file=smoke.step"
+status_json="$(curl -s -m 10 "$step_url")"
+if ! printf '%s' "$status_json" | grep -q '"needs-build"'; then
+  echo "FAIL: raw STEP did not report needs-build: $status_json" >&2
+  exit 1
+fi
+if ! printf '%s' "$status_json" | grep -q '"wasmImport":true'; then
+  echo "FAIL: raw STEP status did not offer the WASM import: $status_json" >&2
+  exit 1
+fi
+# The import initializes the ~50MB kernel once; give it a real timeout.
+build_json="$(curl -s -m 120 -X POST -H 'x-cadgen-viewer: 1' "$step_url")"
+if ! printf '%s' "$build_json" | grep -q '"ok":true'; then
+  echo "FAIL: WASM import build did not succeed: $build_json" >&2
+  exit 1
+fi
+if [ ! -f "$serve_root/__cadgen__/models/smoke.step/assembly.json" ]; then
+  echo "FAIL: import reported ok but wrote no package descriptor" >&2
+  exit 1
+fi
+status_json="$(curl -s -m 10 "$step_url")"
+if ! printf '%s' "$status_json" | grep -q '"ready"'; then
+  echo "FAIL: imported STEP did not settle ready: $status_json" >&2
+  exit 1
+fi
+# The instance-color warning machinery must ship in the bundle (a uniform
+# fixture warns nothing, so assert the shipped code, not the payload).
+if ! grep -q "instanceColorWarnings" "$RUNTIME/server/import/stepImport.mjs"; then
+  echo "FAIL: bundled import lost the instanceColorWarnings machinery" >&2
+  exit 1
+fi
+
 # The instance-manager side of the same entrypoint: list must show this server,
 # stop must end it.
 if ! node "$RUNTIME/server/main.mjs" list | grep -q "port $PORT"; then
@@ -114,5 +164,5 @@ if ! node "$RUNTIME/server/main.mjs" stop --port "$PORT" | grep -q "Stopped CAD 
   exit 1
 fi
 
-echo "    served / and /__cad/server on rolled port $PORT; reuse/list/stop OK"
+echo "    served / and /__cad/server on rolled port $PORT; WASM import e2e OK; reuse/list/stop OK"
 echo "==> CAD Viewer launch smoke test passed"

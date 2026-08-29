@@ -1,0 +1,12 @@
+This runtime vendors third-party code:
+
+  opencascade.js 2.0.0-beta.b5ff984 (LGPL-2.1)
+    https://github.com/donalffons/opencascade.js
+    A WebAssembly build of Open CASCADE Technology (OCCT),
+    https://dev.opencascade.org (LGPL-2.1 with OCCT exception).
+
+The vendored files (node_modules/opencascade.js/dist/opencascade.full.js and
+opencascade.full.wasm) are UNMODIFIED copies of the published npm package at
+the version above; the full license text ships beside them as
+node_modules/opencascade.js/LICENSE. Source for the wasm build is available
+at the repository above at the same version tag.

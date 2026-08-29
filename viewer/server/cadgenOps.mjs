@@ -75,23 +75,44 @@ function advisoryBuildProgress(packageDir) {
 }
 
 // --- WASM STEP import ---------------------------------------------------------
-// VIEWER_WASM_IMPORT=0 disables the import (the only "build" the viewer has),
-// which lets tests exercise the kernel-less messages on a checkout that has
-// the kernel installed. Read per call, not at module load, so tests can flip it.
-export function wasmImportAvailable() {
-  if (String(process.env.VIEWER_WASM_IMPORT || "").trim() === "0") {
-    return false;
+// The import is simply a capability the viewer has: the kernel ships with the
+// bundled skill and is an npm dependency everywhere else, so its ABSENCE is a
+// broken install, not a configuration. One graceful failure path names the
+// missing file. Tests exercise that path by injecting a probe (loader
+// injection), not via a shipped env var.
+let kernelProbeForTests = null;
+export function _setKernelProbeForTests(probe) {
+  kernelProbeForTests = probe;
+}
+
+function wasmKernelResolution() {
+  if (kernelProbeForTests) {
+    return kernelProbeForTests();
   }
   try {
-    // The kernel is a viewer npm dependency; resolve it the way the import
-    // worker will, so "available" and "will actually load" agree.
+    // Resolve the kernel the way the import worker will, so "available" and
+    // "will actually load" agree.
     const kernelPath = path.join(
       SERVER_DIR, "..", "node_modules", "opencascade.js", "dist", "opencascade.full.wasm",
     );
-    return fs.existsSync(IMPORT_CLI_PATH) && fs.existsSync(kernelPath);
-  } catch {
-    return false;
+    if (!fs.existsSync(IMPORT_CLI_PATH)) {
+      return { ok: false, missing: IMPORT_CLI_PATH };
+    }
+    if (!fs.existsSync(kernelPath)) {
+      return { ok: false, missing: kernelPath };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, missing: String(error?.message || error) };
   }
+}
+
+function brokenKernelMessage(missing) {
+  return (
+    "the viewer's WASM import kernel is missing (broken install): expected "
+    + `${missing}. Reinstall the cad-viewer skill (or npm install in a viewer `
+    + "checkout), or import it with the CAD skill: cadgen import <file>."
+  );
 }
 
 function isRawStepFile(candidate) {
@@ -262,12 +283,21 @@ export function createCadgenOps(rootDir) {
       // The ONLY buildable state the viewer supports is the WASM import of a
       // raw STEP. Everything else renders what exists or names the CLI.
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
-      if (verdict.rawStep && !verdict.generated && wasmImportAvailable()) {
-        const importable = { state: "needs-build", reason: status.reason, wasmImport: true };
-        if (verdict.digestMismatch) {
-          importable.staleReason = "the STEP file changed after this package was imported";
+      if (verdict.rawStep && !verdict.generated) {
+        const kernel = wasmKernelResolution();
+        if (kernel.ok) {
+          const importable = { state: "needs-build", reason: status.reason, wasmImport: true };
+          if (verdict.digestMismatch) {
+            importable.staleReason = "the STEP file changed after this package was imported";
+          }
+          return importable;
         }
-        return importable;
+        if (!verdict.descriptor) {
+          return {
+            state: "error",
+            error: `This STEP file has not been imported yet, and ${brokenKernelMessage(kernel.missing)}`,
+          };
+        }
       }
       if (verdict.descriptor) {
         // A renderable package exists: render as-is, honestly badged when the
@@ -279,15 +309,6 @@ export function createCadgenOps(rootDir) {
         }
         return asIs;
       }
-      if (verdict.rawStep && !verdict.generated) {
-        return {
-          state: "error",
-          error:
-            "This STEP file has not been imported yet, and the WASM import "
-            + "kernel is unavailable here. Import it with the CAD skill, or "
-            + "install the viewer's dependencies (npm install).",
-        };
-      }
       return { state: "error", error: CLI_BUILD_HINT };
     },
 
@@ -297,7 +318,11 @@ export function createCadgenOps(rootDir) {
       }
       const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
-      if (isRawStepFile(candidate) && !verdict.generated && wasmImportAvailable()) {
+      if (isRawStepFile(candidate) && !verdict.generated) {
+        const kernel = wasmKernelResolution();
+        if (!kernel.ok) {
+          return { ok: false, state: "error", error: `Cannot import: ${brokenKernelMessage(kernel.missing)}` };
+        }
         const imported = await runWasmImport(candidate, { force });
         if (imported.ok) {
           return { ok: true, state: "ready", wasmImport: true, ...imported };

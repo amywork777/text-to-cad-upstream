@@ -86,14 +86,18 @@ root it serves; `node scripts/viewer/server/main.mjs stop --port <n>` ends one.
 To review a directory outside the current root, just launch again with that
 root — reuse-or-start makes the second launch cheap and correct.
 
-## Generation and imports are the CAD skill's job
+## Generation is the CAD skill's job; imports work in both
 
 The Viewer is a static visualization tool: it renders artifacts that already
-exist and never runs Python. This bundled runtime also ships without the WASM
-STEP-import kernel, so a raw `.step`/`.stp` with no render package reports
-`needs-build` with no in-Viewer build. Produce the artifacts first with the
-owning skill's CLI — `python scripts/gen <source or .step file>` from the CAD
-skill builds both generated models and imported STEPs — then return the link.
+exist and never runs Python. Generated models must be built first by running
+their model script (see the CAD skill); the Viewer will not build them.
+
+Raw `.step`/`.stp` files ARE importable in the Viewer itself: the bundled
+runtime ships the WASM import kernel, so an unimported STEP reports
+`needs-build` and the in-Viewer build converts it to a render package with no
+Python and no install step. When an agent is doing the work, still prefer
+`cadgen import <file>` — the native kernel is faster, tracks a newer OCC, and
+reads per-instance colors the WASM build cannot — then return the link.
 
 ## Links
 
