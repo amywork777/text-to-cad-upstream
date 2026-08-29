@@ -62,13 +62,26 @@ class RenderContractSyncTest(unittest.TestCase):
             _extract(r"^export const STEP_TOPOLOGY_SCHEMA_VERSION = (\d+);", contract),
             "STEP_TOPOLOGY_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
         )
+        sidecar_module = ROOT / "packages/cadgen/src/cadgen/_internal/source_sidecar.py"
+        self.assertEqual(
+            _extract(r'^SOURCE_SIDECAR_NAME = "([^"]+)"$', sidecar_module),
+            _extract(r'^export const SOURCE_SIDECAR_NAME = "([^"]+)";', contract),
+            "SOURCE_SIDECAR_NAME diverged between cadgen and the viewer's package "
+            "contract — the sidecar's existence IS the generated-vs-imported marker "
+            "on both freshness authorities",
+        )
+        self.assertEqual(
+            _extract(r"^SOURCE_SIDECAR_SCHEMA_VERSION = (\d+)$", sidecar_module),
+            _extract(r"^export const SOURCE_SIDECAR_SCHEMA_VERSION = (\d+);", contract),
+            "SOURCE_SIDECAR_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
+        )
 
     def test_status_authority_schema_gate_matches_python(self) -> None:
         # The JS status authority gates render packages on the one JS constant
         # this suite pins against Python.
         status_module = ROOT / "viewer/server/artifactStatus.mjs"
         self.assertIn(
-            'import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
+            'import { SOURCE_SIDECAR_NAME, STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
             status_module.read_text(),
             "the status authority must read the schema version from the one JS "
             "constant (packageContract.mjs), which this suite pins against Python",

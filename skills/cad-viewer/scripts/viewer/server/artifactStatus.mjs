@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { renderPackageDir } from "./scanner.mjs";
-import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { SOURCE_SIDECAR_NAME, STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
@@ -108,9 +108,10 @@ function validateStep(stepPath) {
   if (descriptor === null) {
     return { ok: false, code: "missing_step_topology", packageDir };
   }
-  // Generated-vs-imported is DESCRIPTOR PROVENANCE (sourceKind), never a
-  // sibling-filename check: the package records what produced it.
-  const generated = String(descriptor.sourceKind || "").trim().toLowerCase() === "python";
+  // Generated-vs-imported is the SOURCE SIDECAR's existence (generation writes
+  // <pkg>/source.json, import removes it), never a sibling-filename check or a
+  // descriptor field: the descriptor is a pure function of the STEP bytes.
+  const generated = fs.existsSync(path.join(packageDir, SOURCE_SIDECAR_NAME));
   if (descriptor.kind !== STEP_PACKAGE_KIND || !schemaVersionMatches(descriptor, STEP_PACKAGE_VERSION)) {
     return { ok: false, code: "unsupported_step_topology", packageDir, descriptor, generated };
   }

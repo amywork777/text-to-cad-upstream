@@ -12,8 +12,10 @@ There are TWO parameter systems with different lifecycles:
 - **Pose parameters** are declared on the decorator via `pose=cadgen.pose(...)`
   and drive the viewer live — joints, explodes, visibility, styles, and
   animation clips — with no rebuild and no Python at render time. The pose
-  block travels inside the render package descriptor; there are NO loose
-  sidecar files (`.params.js` is retired — see Migration below).
+  block travels inside the render package's generated source sidecar
+  (`<package>/source.json`, written by the build alongside the descriptor);
+  there are NO loose sidecar files (`.params.js` is retired — see Migration
+  below).
 
 ## Principle
 

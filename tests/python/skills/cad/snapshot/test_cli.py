@@ -43,7 +43,6 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
                 "bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
                 "stats": {"occurrenceCount": 1, "shapeCount": 1},
                 "components": {cid: {"surf": f"components/{cid}.surf", "contentHash": cid}},
-                **({"pose": pose} if pose else {}),
                 "occurrences": [
                     {
                         "id": "o1.1",
@@ -55,6 +54,11 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
             }
         )
     )
+    if pose:
+        # Pose (source-derived) rides the source sidecar, never the descriptor.
+        (pkg_dir / "source.json").write_text(
+            json.dumps({"schemaVersion": 1, "sourceKind": "python", "pose": pose})
+        )
     return pkg_dir
 
 add_repo_path("packages/cadgen/src")
@@ -1722,11 +1726,11 @@ class StepPoseParameterTests(unittest.TestCase):
                 ["--input", "models/part.step", "--params-path", "models/part.step.js"]
             )
 
-    def test_pose_parameters_resolve_the_descriptor_url(self) -> None:
+    def test_pose_parameters_resolve_the_sidecar_url(self) -> None:
         self._step()
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("assembly.json", str(resolved["stepParameterUrl"]))
+        self.assertIn("source.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
     def test_pose_hatch_module_gets_an_asset_url(self) -> None:

@@ -59,7 +59,12 @@ def _package(compound: Compound, package_dir: Path) -> dict:
             {k: occ.get(k) for k in ("id", "name", "component", "transform")}
             for occ in descriptor.get("occurrences") or []
         ],
-        "assemblyMates": descriptor.get("assemblyMates"),
+        # Mates ride the source sidecar; the descriptor is STEP-pure.
+        "assemblyMates": (
+            json.loads((package_dir / "source.json").read_text()).get("assemblyMates")
+            if (package_dir / "source.json").is_file()
+            else None
+        ),
         "componentBytes": {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
             for p in sorted((package_dir / "components").glob("*.glb"))

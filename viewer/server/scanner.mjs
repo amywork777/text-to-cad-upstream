@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { fileVersion } from "./encoding.mjs";
+import { SOURCE_SIDECAR_NAME } from "./packageContract.mjs";
 
 export const CAD_CATALOG_SCHEMA_VERSION = 4;
 
@@ -436,7 +437,15 @@ export function readStepCatalogMetadata(packageDir) {
   if (!descriptor || descriptor.kind !== "assembly-package") {
     return {};
   }
-  const sourceKind = String(descriptor.sourceKind ?? "step").trim().toLowerCase() === "python" ? "python" : "step";
+  // Everything SOURCE-derived rides the sidecar (source.json); its existence
+  // is the generated-vs-imported marker. The descriptor is STEP-pure.
+  let sidecar = null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(packageDir, SOURCE_SIDECAR_NAME), "utf8"));
+    sidecar = parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    sidecar = null;
+  }
   return {
     topology: {
       index: descriptor,
@@ -444,10 +453,11 @@ export function readStepCatalogMetadata(packageDir) {
       hasSelector: false,
       hasDisplayEdges: false,
     },
-    sourceKind,
-    sourcePath: String(descriptor.sourcePath ?? ""),
-    sourceHash: String(descriptor.sourceHash ?? ""),
+    sourceKind: sidecar ? "python" : "step",
+    sourcePath: String(sidecar?.sourcePath ?? ""),
+    sourceHash: String(sidecar?.sourceHash ?? ""),
     stepHash: String(descriptor.stepHash ?? ""),
+    pose: sidecar && typeof sidecar.pose === "object" && sidecar.pose ? sidecar.pose : null,
   };
 }
 
@@ -460,9 +470,7 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   const topology = metadata.topology;
   const packageAsset = assetForPath(repoRoot, packageDir);
   const topologyIndex = topology && topology.index && typeof topology.index === "object" ? topology.index : topology;
-  const poseBlock = topologyIndex && typeof topologyIndex.pose === "object" && topologyIndex.pose
-    ? topologyIndex.pose
-    : null;
+  const poseBlock = metadata.pose || null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
   const sourceHash = String(metadata.sourceHash || "").trim();
   const generated = metadata.sourceKind === "python";
@@ -493,9 +501,9 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   }
   if (poseBlock) {
     // Declarative pose (the ONLY pose mechanism): the client fetches the
-    // descriptor itself and compiles the block; the optional escape-hatch
+    // source sidecar and compiles its pose block; the optional escape-hatch
     // module is a content-addressed package asset.
-    entry.poseUrl = assetUrlForPath(repoRoot, path.join(packageDir, "assembly.json"));
+    entry.poseUrl = assetUrlForPath(repoRoot, path.join(packageDir, SOURCE_SIDECAR_NAME));
     const hatchRef = String(poseBlock.module || "").trim();
     if (hatchRef && !hatchRef.includes("..")) {
       entry.poseHatchUrl = assetUrlForPath(repoRoot, path.join(packageDir, hatchRef));

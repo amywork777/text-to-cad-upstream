@@ -174,9 +174,11 @@ def _generated_result_payload(spec: EntrySpec, scene: LoadedStepScene, stats: di
 
 def _existing_result_payload(spec: EntrySpec, artifact: StepTopologyArtifact) -> dict[str, object]:
     entry_kind = str(artifact.manifest.get("entryKind") or spec.kind)
-    source_kind = str(artifact.manifest.get("sourceKind") or "step").strip().lower()
+    sidecar = artifact.manifest.get("_sourceSidecar")
+    sidecar = sidecar if isinstance(sidecar, dict) else {}
+    source_kind = "python" if sidecar else "step"
     step_hash = str(artifact.manifest.get("stepHash") or "")
-    source_hash = str(artifact.manifest.get("sourceHash") or "")
+    source_hash = str(sidecar.get("sourceHash") or "")
     if source_kind != "python" and not step_hash:
         step_hash = step_file_hash(spec.step_path)
     stats = artifact.manifest.get("stats")

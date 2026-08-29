@@ -201,6 +201,28 @@ function loadRenderMeshForEntry(entry, options) {
   });
 }
 
+// The ONE client-side merge point (mirrors cadgen's package-aware manifest
+// reader): the descriptor (assembly.json) is a pure function of the STEP
+// bytes; everything source-derived — assembly mates included — rides the
+// source sidecar (source.json). Attach the sidecar's mates here so every
+// descriptor consumer keeps seeing one shape. A missing sidecar simply means
+// the package was imported, which has no mates.
+async function loadPackageDescriptorWithSource(packageAssetUrl, { signal } = {}) {
+  const descriptor = await loadRenderJson(resolvePackageAssetUrl(packageAssetUrl, "assembly.json"), {
+    signal
+  }).catch(() => null);
+  if (!descriptor || descriptor.kind !== "assembly-package") {
+    return descriptor;
+  }
+  const sidecar = await loadRenderJson(resolvePackageAssetUrl(packageAssetUrl, "source.json"), {
+    signal
+  }).catch(() => null);
+  if (sidecar && Array.isArray(sidecar.assemblyMates) && sidecar.assemblyMates.length) {
+    return { ...descriptor, assemblyMates: sidecar.assemblyMates };
+  }
+  return descriptor;
+}
+
 function createAssemblyPreviewMeshData(meshData, topologyManifest = null) {
   return {
     ...meshData,
@@ -583,9 +605,9 @@ export function useCadAssets({
         // Component-GLB package: the canonical STEP artifact is a directory. Probe for
         // its assembly.json, fetch each unique component GLB once, and compose them in
         // world space. A non-package descriptor is a stale/unbuilt artifact (throws below).
-        const packageDescriptor = await loadRenderJson(resolvePackageAssetUrl(meshUrl, "assembly.json"), {
+        const packageDescriptor = await loadPackageDescriptorWithSource(meshUrl, {
           signal: controller.signal
-        }).catch(() => null);
+        });
         if (packageDescriptor && packageDescriptor.kind === "assembly-package") {
           setMeshLoadStage("loading components");
           const componentEntries = Object.entries(packageDescriptor.components || {});
@@ -711,7 +733,7 @@ export function useCadAssets({
       // by occurrence id) so nested faces/edges become pickable.
       const glbUrl = entryAssetUrl(entry, "glb");
       const packageDescriptor = glbUrl
-        ? await loadRenderJson(resolvePackageAssetUrl(glbUrl, "assembly.json"), { signal: controller.signal }).catch(() => null)
+        ? await loadPackageDescriptorWithSource(glbUrl, { signal: controller.signal })
         : null;
       if (packageDescriptor && packageDescriptor.kind === "assembly-package") {
         // Lazy topology: an assembly loads selector topology only for the occurrences the user has

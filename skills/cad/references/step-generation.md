@@ -66,9 +66,11 @@ These two terms classify a STEP file by what its source is:
   elsewhere. There is nothing upstream to regenerate.
 
 The link between an artifact and its script is recorded IN the render package
-(descriptor provenance: `sourceKind`/`sourcePath`), never inferred from
-filenames — so relocated outputs, renamed scripts, and shared output folders
-all stay traceable.
+— generation writes a source sidecar (`<package>/source.json`, carrying
+`sourcePath`, source hashes, pose, and mates) beside the descriptor, and that
+sidecar's existence is what marks a package as generated; imports write none.
+Provenance is never inferred from filenames — so relocated outputs, renamed
+scripts, and shared output folders all stay traceable.
 
 When a generated model builds on another STEP file, that file is a
 **dependency** (see "Child dependencies" in `positioning.md`).

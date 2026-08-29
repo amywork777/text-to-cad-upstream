@@ -334,6 +334,10 @@ def _selection_summary(selector_type: str, row: dict[str, object]) -> str:
 def _assembly_mate_rows(manifest: dict[str, object]) -> list[dict[str, object]]:
     rows = manifest.get("assemblyMates")
     if not isinstance(rows, list):
+        # Mates moved to the source sidecar (source_sidecar.py); merge them in
+        # for manifests read from a package descriptor.
+        rows = (manifest.get("_sourceSidecar") or {}).get("assemblyMates") if isinstance(manifest.get("_sourceSidecar"), dict) else None
+    if not isinstance(rows, list):
         return []
     return [dict(row) for row in rows if isinstance(row, dict)]
 

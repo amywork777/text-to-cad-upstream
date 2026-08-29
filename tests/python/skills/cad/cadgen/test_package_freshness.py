@@ -17,10 +17,18 @@ from cadgen._internal.source_hash import closure_for_files
 _DROP = object()
 
 
-def _write_package(model_dir: Path, entry_name: str, descriptor: dict) -> Path:
+def _write_package(
+    model_dir: Path, entry_name: str, descriptor: dict, *, generated: bool = False
+) -> Path:
     package_dir = model_dir / "__cadgen__" / "models" / entry_name
     (package_dir / "components").mkdir(parents=True)
     (package_dir / "assembly.json").write_text(json.dumps(descriptor), encoding="utf-8")
+    if generated:
+        # The source sidecar's existence is the generated marker; the
+        # descriptor is STEP-pure and never records provenance.
+        (package_dir / "source.json").write_text(
+            json.dumps({"schemaVersion": 1, "sourceKind": "python"}), encoding="utf-8"
+        )
     return package_dir
 
 
@@ -28,8 +36,8 @@ class DirAwareManifestReaderTests(unittest.TestCase):
     def test_package_directory_returns_descriptor(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            descriptor = {"kind": PACKAGE_KIND, "sourceKind": "python", "schemaVersion": 2}
-            package_dir = _write_package(root, "part.step", descriptor)
+            descriptor = {"kind": PACKAGE_KIND, "schemaVersion": 2}
+            package_dir = _write_package(root, "part.step", descriptor, generated=True)
             manifest = read_step_topology_manifest_from_glb(package_dir)
             self.assertIsInstance(manifest, dict)
             self.assertEqual(manifest.get("kind"), PACKAGE_KIND)
@@ -162,7 +170,6 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
         return {
             "kind": PACKAGE_KIND,
             "packageSchemaVersion": STEP_PACKAGE_VERSION,
-            "sourceKind": "python",
             "components": {"abc": {"glb": "components/abc.glb"}},
             "mesh": {
                 "linearDeflection": options.linear_deflection,
@@ -176,7 +183,7 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             spec = self._spec(root)
-            _write_package(root, "part.step", descriptor)
+            _write_package(root, "part.step", descriptor, generated=True)
             return generation._package_descriptor_matches_spec(spec, self.options)
 
     def setUp(self) -> None:

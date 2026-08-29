@@ -206,12 +206,18 @@ class PoseEmissionTests(unittest.TestCase):
         package = script.parent / "__cadgen__" / "models" / f"{script.stem}.step"
         return json.loads((package / "assembly.json").read_text())
 
-    def test_pose_block_lands_in_the_descriptor(self) -> None:
+    def _sidecar(self, script: Path) -> dict:
+        package = script.parent / "__cadgen__" / "models" / f"{script.stem}.step"
+        return json.loads((package / "source.json").read_text())
+
+    def test_pose_block_lands_in_the_source_sidecar(self) -> None:
         script = self.root / "widget.py"
         script.write_text(POSED_MODEL.replace("{module}", ""), encoding="utf-8")
         self.assertEqual(0, self._build(script))
         descriptor = self._descriptor(script)
-        block = descriptor.get("pose")
+        # The descriptor is STEP-pure: pose (source-derived) rides the sidecar.
+        self.assertNotIn("pose", descriptor)
+        block = self._sidecar(script).get("pose")
         self.assertIsInstance(block, dict)
         self.assertEqual(block["schemaVersion"], 1)
         self.assertIn("lift", block["params"])
@@ -229,8 +235,7 @@ class PoseEmissionTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(0, self._build(script))
-        descriptor = self._descriptor(script)
-        ref = descriptor["pose"]["module"]
+        ref = self._sidecar(script)["pose"]["module"]
         self.assertRegex(ref, r"^components/[0-9a-f]{12}\.pose\.js$")
         copied = script.parent / "__cadgen__" / "models" / f"{script.stem}.step" / ref
         self.assertEqual(copied.read_text(), hatch.read_text())

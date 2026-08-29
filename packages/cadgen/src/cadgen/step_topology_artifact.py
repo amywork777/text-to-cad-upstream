@@ -405,10 +405,10 @@ def _python_source_for_target(target: ResolvedStepTarget) -> Path | None:
     # carry no linkage); the sibling `<stem>.py` is accepted only when it
     # statically declares a model, as the regenerate hint for a missing artifact.
     from cadgen.catalog import render_package_dir, source_from_path
-    from cadgen._internal.component_package import read_package_descriptor
+    from cadgen._internal.source_sidecar import read_source_sidecar
 
-    descriptor = read_package_descriptor(render_package_dir(target.step_path))
-    recorded = str((descriptor or {}).get("sourcePath") or "").strip()
+    sidecar = read_source_sidecar(render_package_dir(target.step_path))
+    recorded = str((sidecar or {}).get("sourcePath") or "").strip()
     if recorded:
         candidate = (target.step_path.parent / recorded).resolve()
         if candidate.is_file():

@@ -91,11 +91,18 @@ def fingerprint(entry_path: Path) -> dict:
         for path in sorted((pkg / "components").glob(pattern))
     }
 
+    # Mates are source-derived, so they ride the source sidecar (source.json);
+    # an imported package has no sidecar and therefore no mates.
+    sidecar_path = pkg / "source.json"
+    mates = None
+    if sidecar_path.is_file():
+        mates = json.loads(sidecar_path.read_text()).get("assemblyMates")
+
     return {
         "cids": sorted((descriptor.get("components") or {}).keys()),
         "occurrences": occurrences,
         "componentBytes": components,
-        "assemblyMates": descriptor.get("assemblyMates"),
+        "assemblyMates": mates,
         "bbox": descriptor.get("bbox"),
     }
 

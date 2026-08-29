@@ -412,7 +412,18 @@ def read_step_topology_index_from_glb(glb_path: Path) -> dict[str, Any] | None:
             manifest = json.loads(descriptor_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        return manifest if isinstance(manifest, dict) else None
+        if not isinstance(manifest, dict):
+            return None
+        # The ONE merge point for the source sidecar: the descriptor is
+        # STEP-pure (source_sidecar.py), so source-derived state — provenance
+        # the freshness gates read, pose, mates — is attached here under an
+        # internal key every manifest consumer shares. Never written to disk.
+        from cadgen._internal.source_sidecar import read_source_sidecar
+
+        sidecar = read_source_sidecar(glb_path)
+        if sidecar is not None:
+            manifest["_sourceSidecar"] = sidecar
+        return manifest
     try:
         gltf, binary_offset, binary_length = _read_glb_json_and_bin_location(glb_path)
     except (OSError, ValueError, json.JSONDecodeError):
@@ -544,22 +555,16 @@ def build_step_topology_index_manifest(
         "profile": "index",
         "entryKind": resolved_entry_kind,
     }
+    # STEP-pure keys only: source-derived state rides the source sidecar
+    # (source_sidecar.py), attached by the package reader as _sourceSidecar.
     for key in (
         "capabilities",
-        "sourceKind",
-        "sourcePath",
-        "pose",
-        "sourceHash",
-        "sourceClosureHash",
-        "sourceClosureFiles",
-        "generatedAt",
         "stepPath",
         "stepHash",
         "bbox",
         "stats",
         "edgeRendering",
         "mesh",
-        "assemblyMates",
     ):
         value = manifest.get(key)
         if value is not None:

@@ -97,11 +97,15 @@ root and hidden-path rules WITHOUT that filter, for callers that transfer no byt
 
 Artifact STATUS has exactly one authority: `server/artifactStatus.mjs`, pure file
 reads in this process — package existence, schema version, payload files, the
-no-bake gate, and the imported-file digest gate. Generated outputs are DETACHED
-from their source code: the viewer never treats "the generator changed since this
-artifact was built" as a reason to rebuild, and it does not rebuild generated
-entries at all — a `.step.py` or `.dxf.py` with no artifact reports an error that
-names the CLI (`python scripts/gen <source>`), not a build offer.
+no-bake gate, and the imported-file digest gate. Generated-vs-imported is decided
+by the source sidecar's EXISTENCE (`<package>/source.json`, written only by
+generation): the descriptor (`assembly.json`) is a pure function of the STEP
+bytes and carries no provenance; everything source-derived — source path/hashes,
+the pose block, assembly mates — rides the sidecar. Generated outputs are
+DETACHED from their source code: the viewer never treats "the generator changed
+since this artifact was built" as a reason to rebuild, and it does not rebuild
+generated entries at all — a generated model with no artifact reports an error
+that names the build (`python <model>.py`), not a build offer.
 
 A CLI build in flight is shown ADVISORILY: the build's status record
 (`.<name>.generation.progress.json`, written by cadgen's coordination layer) is

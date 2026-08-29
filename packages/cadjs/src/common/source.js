@@ -297,8 +297,8 @@ async function loadStepParameters({
     }
     throw new Error("STEP render parameters require resolved.stepParameterUrl");
   }
-  // stepParameterUrl is the package DESCRIPTOR url; the pose block inside it
-  // is the one parameter mechanism (loose sidecars are retired).
+  // stepParameterUrl is the package SOURCE SIDECAR url (source.json); the
+  // pose block inside it is the one parameter mechanism.
   const definition = await loadPoseModuleDefinition(stepParameterUrl, {
     hatchUrl: stepPoseHatchUrl || "",
     cadPath

@@ -99,7 +99,6 @@ test("generated .step over an accidentally-imported package: renders as-is, badg
   write(root, path.join(packageRel, "assembly.json"), JSON.stringify({
     kind: "assembly-package",
     packageSchemaVersion: STEP_PACKAGE_VERSION,
-    sourceKind: "step",
     stepHash,
     components: { c0: { surf: "components/c0.surf" } },
   }));

@@ -104,8 +104,9 @@ def _run(argv: list[str], cwd: pathlib.Path, **env_extra) -> tuple[int, str]:
 
 
 # Fields that record WHEN a build ran rather than WHAT it produced. Two cold builds a
-# second apart differ in these too, so comparing them would test the clock. Verified by
-# diffing a cold and a warm assembly.json: `generatedAt` was the only differing key.
+# second apart differ in these too, so comparing them would test the clock. Lives in the
+# source sidecar (source.json) now — the descriptor is a pure function of the STEP bytes
+# and carries no timestamp at all.
 _VOLATILE_JSON_FIELDS = {"generatedAt"}
 
 

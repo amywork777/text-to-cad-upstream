@@ -230,14 +230,21 @@ def _edge_visibility_classes_match_manifest(
     return tuple(edge_rendering.get("visibilityClasses") or ()) == tuple(selector_options.edge_visibility_classes)
 
 
+def _manifest_source_sidecar(manifest: Mapping[str, object]) -> Mapping[str, object]:
+    sidecar = manifest.get("_sourceSidecar")
+    return sidecar if isinstance(sidecar, Mapping) else {}
+
+
 def _artifact_source_kind_matches_spec(spec: EntrySpec, manifest: Mapping[str, object]) -> bool:
-    source_kind = str(manifest.get("sourceKind") or "step").strip().lower()
+    # The generated-marker is the source sidecar's existence (source_sidecar.py):
+    # the descriptor itself is STEP-pure and carries no sourceKind.
+    generated = bool(_manifest_source_sidecar(manifest))
     if spec.source != "generated" and spec.step_path is not None and spec.step_path.is_file():
-        if source_kind == "python":
+        if generated:
             return bool(str(manifest.get("stepHash") or "").strip())
-        return source_kind == "step"
-    expected = "python" if spec.source == "generated" and spec.script_path is not None else "step"
-    return source_kind == expected
+        return True
+    expected = spec.source == "generated" and spec.script_path is not None
+    return generated == expected
 
 
 def _artifact_step_hash_matches_spec(spec: EntrySpec, manifest: Mapping[str, object]) -> bool:
@@ -271,12 +278,14 @@ def _package_descriptor_matches_spec(
     here it survives purely as the explicit-build no-op gate, where being stricter can
     only make a requested build do real work, never trigger a needless one.
     """
-    from cadgen._internal.component_package import is_assembly_package, read_package_descriptor
+    from cadgen._internal.component_package import is_assembly_package
 
     package_dir = render_package_dir(spec.entry_path)
     if not is_assembly_package(package_dir):
         return None
-    manifest = read_package_descriptor(package_dir)
+    # The dir-aware reader is the ONE merge point that attaches the source
+    # sidecar (_sourceSidecar) — the provenance gate below reads through it.
+    manifest = read_step_topology_manifest_from_glb(package_dir)
     if not isinstance(manifest, dict):
         return False
     if not schema_version_matches(manifest, STEP_PACKAGE_VERSION):
@@ -342,13 +351,9 @@ def _assembly_provenance_manifest(
     exactly as they read the monolithic manifest.
     """
     import os
-    from datetime import datetime, timezone
 
     from cadgen._internal.glb_topology import step_topology_capabilities
 
-    source_kind = str(getattr(scene, "source_kind", "step") or "step").strip().lower()
-    if source_kind not in {"step", "python"}:
-        source_kind = "step"
     mesh: dict[str, object] = {
         "linearDeflection": float(selector_options.linear_deflection),
         "angularDeflection": float(selector_options.angular_deflection),
@@ -356,32 +361,16 @@ def _assembly_provenance_manifest(
     }
     if isinstance(getattr(selector_options, "mesh_resolution", None), dict):
         mesh["resolution"] = selector_options.mesh_resolution
+    # STEP-pure by contract: nothing here may derive from the Python source.
+    # Source-derived state (provenance, pose, mates) rides the source sidecar
+    # (_source_sidecar_payload below) — the descriptor is the cache engine's
+    # world and keys on the STEP bytes alone.
     minimal: dict[str, object] = {
-        "sourceKind": source_kind,
         "capabilities": step_topology_capabilities(selector_options.edge_visibility_classes),
         "edgeRendering": {"visibilityClasses": list(selector_options.edge_visibility_classes)},
         "mesh": mesh,
         "stepPath": os.path.relpath(step_path, step_path.parent),
     }
-    source_path = str(getattr(scene, "source_path", "") or "")
-    if source_path:
-        minimal["sourcePath"] = source_path
-    pose_block = getattr(scene, "pose", None)
-    if isinstance(pose_block, dict) and pose_block:
-        # The declarative pose block (@step(pose=...)) — the ONLY pose
-        # transport. The retired paramsPath sidecar field is no longer
-        # emitted; old descriptors carrying it are simply inert.
-        minimal["pose"] = pose_block
-    if source_kind == "python":
-        source_hash = str(getattr(scene, "source_hash", "") or "").strip()
-        if source_hash:
-            minimal["sourceHash"] = source_hash
-        closure_hash = str(getattr(scene, "source_closure_hash", "") or "").strip()
-        closure_files = getattr(scene, "source_closure_files", ()) or ()
-        if closure_hash and closure_files:
-            minimal["sourceClosureHash"] = closure_hash
-            minimal["sourceClosureFiles"] = list(closure_files)
-        minimal["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     step_hash = (
         step_file_hash(step_path)
         if step_path.is_file()
@@ -390,6 +379,43 @@ def _assembly_provenance_manifest(
     if step_hash:
         minimal["stepHash"] = step_hash
     return build_step_topology_index_manifest(minimal, entry_kind=entry_kind)
+
+
+def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> dict[str, object] | None:
+    """The source.json payload for a GENERATED build, or None for an import.
+
+    Everything source-derived lands here: provenance (the no-op gate's closure),
+    the pose block, assembly mates (authored in Python, unrepresentable in
+    STEP), and the build timestamp — the one volatile field, which moving here
+    keeps the descriptor byte-stable across identical rebuilds.
+    """
+    from datetime import datetime, timezone
+
+    source_kind = str(getattr(scene, "source_kind", "step") or "step").strip().lower()
+    if source_kind != "python":
+        return None
+    payload: dict[str, object] = {"sourceKind": "python"}
+    source_path = str(getattr(scene, "source_path", "") or "")
+    if source_path:
+        payload["sourcePath"] = source_path
+    source_hash = str(getattr(scene, "source_hash", "") or "").strip()
+    if source_hash:
+        payload["sourceHash"] = source_hash
+    closure_hash = str(getattr(scene, "source_closure_hash", "") or "").strip()
+    closure_files = getattr(scene, "source_closure_files", ()) or ()
+    if closure_hash and closure_files:
+        payload["sourceClosureHash"] = closure_hash
+        payload["sourceClosureFiles"] = list(closure_files)
+    pose_block = getattr(scene, "pose", None)
+    if isinstance(pose_block, dict) and pose_block:
+        payload["pose"] = pose_block
+    mates = getattr(compound, "assembly_mates", None) if compound is not None else None
+    if not mates:
+        mates = getattr(scene, "assembly_mates", None)
+    if isinstance(mates, (list, tuple)) and mates:
+        payload["assemblyMates"] = list(mates)
+    payload["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return payload
 
 
 def _copy_pose_module_into_package(scene: LoadedStepScene, package_dir: Path) -> None:
@@ -534,6 +560,17 @@ def _generate_part_outputs(
         for skipped in pruned["skipped"]:
             print(f"Left {skipped.name} in place: unrecognized contents for a 0.3.x artifact")
         package_dir = render_package_dir(spec.entry_path)
+        from cadgen._internal.source_sidecar import remove_source_sidecar, write_source_sidecar
+
+        sidecar_payload = _source_sidecar_payload(scene, shape)
+        if sidecar_payload is not None:
+            # Sidecar BEFORE descriptor: the descriptor's presence is the
+            # package's completeness signal (same rule as component .surf).
+            write_source_sidecar(package_dir, sidecar_payload)
+        else:
+            # An import over a previously generated package must not leave a
+            # stale generated-marker behind.
+            remove_source_sidecar(package_dir)
         stats = build_package_from_compound(
             shape,
             package_dir=package_dir,
@@ -715,10 +752,10 @@ def _record_step_export(spec: EntrySpec, scene: object | None = None) -> None:
     try:
         import hashlib
 
-        from cadgen._internal.component_package import read_package_descriptor
+        from cadgen._internal.source_sidecar import read_source_sidecar
 
-        descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
-        closure = str((descriptor or {}).get("sourceClosureHash") or "").strip()
+        sidecar = read_source_sidecar(render_package_dir(spec.entry_path))
+        closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         resolved = target.expanduser().resolve()
         if not closure or not resolved.is_file():
             return
@@ -755,10 +792,10 @@ def _step_export_current(spec: EntrySpec) -> bool:
     try:
         import hashlib
 
-        from cadgen._internal.component_package import read_package_descriptor
+        from cadgen._internal.source_sidecar import read_source_sidecar
 
-        descriptor = read_package_descriptor(render_package_dir(spec.entry_path))
-        closure = str((descriptor or {}).get("sourceClosureHash") or "").strip()
+        sidecar = read_source_sidecar(render_package_dir(spec.entry_path))
+        closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         record_path = _step_export_record_path(spec)
         if not closure or not record_path.is_file():
             return False
@@ -1026,8 +1063,9 @@ def _manifest_source_closure_unchanged(manifest: Mapping[str, object], base: Pat
     file is data, not a closure input; ``_rebuild_stale_assembly_children`` keeps
     generated children current instead. ``base`` is the model folder the recorded
     closure paths are relative to. Returns False when no usable closure was recorded."""
-    recorded_hash = str(manifest.get("sourceClosureHash") or "").strip()
-    recorded_files = manifest.get("sourceClosureFiles")
+    sidecar = _manifest_source_sidecar(manifest)
+    recorded_hash = str(sidecar.get("sourceClosureHash") or "").strip()
+    recorded_files = sidecar.get("sourceClosureFiles")
     if not recorded_hash or not isinstance(recorded_files, list) or not recorded_files:
         return False
     return closure_hash_matches(recorded_hash, recorded_files, base=base)
@@ -1113,13 +1151,14 @@ def _generated_child_is_stale(child_spec: EntrySpec, *, force: bool) -> bool:
         return True
     manifest = read_step_topology_manifest_from_glb(artifact_path)
     if isinstance(manifest, dict):
-        recorded_hash = str(manifest.get("sourceClosureHash") or "").strip()
-        recorded_files = manifest.get("sourceClosureFiles")
+        sidecar = _manifest_source_sidecar(manifest)
+        recorded_hash = str(sidecar.get("sourceClosureHash") or "").strip()
+        recorded_files = sidecar.get("sourceClosureFiles")
         if recorded_hash and isinstance(recorded_files, list) and recorded_files:
             return not closure_hash_matches(
                 recorded_hash, recorded_files, base=child_spec.step_path.parent
             )
-        recorded_source_hash = str(manifest.get("sourceHash") or "").strip()
+        recorded_source_hash = str(sidecar.get("sourceHash") or "").strip()
         if recorded_source_hash:
             return python_source_hash(child_spec.script_path).source_hash != recorded_source_hash
     return False

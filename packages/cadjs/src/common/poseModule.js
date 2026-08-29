@@ -286,18 +286,18 @@ function animationsFromPose(pose) {
   return animations;
 }
 
-/** Fetch a package descriptor, compile its pose block (and dynamic-import the
- * escape hatch when declared) into a normalized step-module definition. The
- * ONLY pose loading path — loose sidecar URLs are gone. */
+/** Fetch a package source sidecar (source.json), compile its pose block (and
+ * dynamic-import the escape hatch when declared) into a normalized step-module
+ * definition. The ONLY pose loading path. */
 export async function loadPoseModuleDefinition(poseUrl, { hatchUrl = "", cadPath = "" } = {}) {
   const response = await fetch(poseUrl, { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`pose descriptor fetch failed (${response.status}) for ${poseUrl}`);
+    throw new Error(`pose sidecar fetch failed (${response.status}) for ${poseUrl}`);
   }
   const descriptor = await response.json();
   const poseBlock = descriptor && typeof descriptor.pose === "object" ? descriptor.pose : null;
   if (!poseBlock) {
-    throw new Error(`descriptor at ${poseUrl} declares no pose block`);
+    throw new Error(`pose payload at ${poseUrl} declares no pose block`);
   }
   let hatch = null;
   if (poseBlock.module) {

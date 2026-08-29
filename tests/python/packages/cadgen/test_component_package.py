@@ -170,7 +170,7 @@ class ComponentPackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_a, tempfile.TemporaryDirectory() as tmp_b:
             pkg_a = Path(tmp_a) / ".demo.step.glb"
             pkg_b = Path(tmp_b) / ".demo.step.glb"
-            provenance = {"schemaVersion": 2, "sourceKind": "python", "stepHash": "abc"}
+            provenance = {"schemaVersion": 2, "stepHash": "abc"}
             _build_package(
                 compound, package_dir=pkg_a, root_name="demo", provenance=provenance
             )
@@ -191,9 +191,9 @@ class ComponentPackageTests(unittest.TestCase):
             surf_b = (pkg_b / json.loads((pkg_b / "assembly.json").read_text())["components"][cid]["surf"]).resolve()
             self.assertEqual(surf.read_bytes(), surf_b.read_bytes())
 
-            # The model-level provenance lives on the descriptor instead.
+            # The model-level STEP provenance lives on the descriptor instead
+            # (source-derived provenance rides the source sidecar, not here).
             descriptor = json.loads((pkg_a / "assembly.json").read_text())
-            self.assertEqual("python", descriptor.get("sourceKind"))
             self.assertEqual("abc", descriptor.get("stepHash"))
 
 

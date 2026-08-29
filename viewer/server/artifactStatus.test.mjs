@@ -36,7 +36,7 @@ function sha256(data) {
 
 // A package the validator considers current, with knobs for each gate.
 function writeStepPackage(root, stepName, {
-  sourceKind = "step",
+  generated = false,
   stepHash,
   schemaVersion = STEP_PACKAGE_VERSION,
   bakeHash,
@@ -54,7 +54,12 @@ function writeStepPackage(root, stepName, {
     }
     componentMap[cid] = { surf: rel };
   }
-  const descriptor = { kind: "assembly-package", sourceKind, components: componentMap };
+  const descriptor = { kind: "assembly-package", components: componentMap };
+  if (generated) {
+    // The source sidecar's EXISTENCE is the generated marker; the descriptor
+    // itself is a pure function of the STEP bytes and carries no provenance.
+    write(root, path.join(packageRel, "source.json"), JSON.stringify({ schemaVersion: 1, sourceKind: "python" }));
+  }
   if (schemaVersion !== null) {
     descriptor.packageSchemaVersion = schemaVersion;
   }
@@ -91,9 +96,9 @@ test("imported STEP: digest gate fails closed (stale, blank, and absent hashes)"
 
 test("generated entries are detached: no source checks, ever", (t) => {
   const root = tempRoot(t, "status-");
-  // Python-backedness is descriptor PROVENANCE (sourceKind), never a sibling
+  // Python-backedness is the SOURCE SIDECAR's existence, never a sibling
   // filename: no stepHash recorded, source edited after the build — all READY.
-  const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: null });
+  const step = writeStepPackage(root, "widget.step", { generated: true, stepHash: null });
   const generator = write(root, "widget.py", "from cadgen import step\n@step\ndef model():\n    return 1\n");
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
   fs.writeFileSync(generator, "from cadgen import step\n@step\ndef model():\n    return 999\n");
@@ -102,9 +107,9 @@ test("generated entries are detached: no source checks, ever", (t) => {
 
 test("provenance owns the digest gate: a python-backed .step skips it", (t) => {
   const root = tempRoot(t, "status-");
-  const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: "recorded-at-export" });
-  // The exported file's bytes do not match the recorded hash, but the
-  // DESCRIPTOR says python-backed -> detached -> ready. No sibling script is
+  const step = writeStepPackage(root, "widget.step", { generated: true, stepHash: "recorded-at-export" });
+  // The exported file's bytes do not match the recorded hash, but the source
+  // SIDECAR says python-backed -> detached -> ready. No sibling script is
   // consulted (none exists here).
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });

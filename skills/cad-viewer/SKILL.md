@@ -105,13 +105,12 @@ agent is doing the work, running `cadgen import <file>` directly is equivalent
 ## Links
 
 - Before returning any link, resolve `<directory>/<file>` and confirm it
-  exists. For a **generated** model pass the generator source (`<name>.step.py`)
-  — that is what the catalog itself lists. Its render artifacts must already be
-  built (`the model script (`python <model>.py`)`); the Viewer will not build them on open. It
-  is also the only form that carries a `params` sidecar, because a same-stem
-  `<name>.step.py` shadows `<name>.step` anyway. For an **imported** STEP with no
-  generator, pass the `.step`/`.stp` itself. If the resolved path is missing, do
-  not return the link; report the problem and point to the correct path.
+  exists. Pass the `.step`/`.stp` artifact itself — generated and imported
+  alike (the catalog lists artifacts; generated-ness is package provenance,
+  shown as the model script in the UI). A generated model's render artifacts
+  must already be built (run the model script, `python <model>.py`); the
+  Viewer will not build them on open. If the resolved path is missing, do not
+  return the link; report the problem and point to the correct path.
 - Return one Viewer URL per requested file.
 - Start the Viewer once and pick one workspace root for the session. Every link is
   the same origin plus `?file=<path relative to that root>`, so all of them share one

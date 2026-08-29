@@ -1051,12 +1051,15 @@ def resolve_step_render_job(
         for cid, entry in (descriptor.get("components") or {}).items()
     }
     resolved["package"] = {"descriptor": descriptor, "componentUrls": component_urls}
-    pose_block = descriptor.get("pose") if isinstance(descriptor.get("pose"), dict) else None
+    from cadgen._internal.source_sidecar import read_source_sidecar, source_sidecar_path
+
+    sidecar = read_source_sidecar(package_dir) or {}
+    pose_block = sidecar.get("pose") if isinstance(sidecar.get("pose"), dict) else None
     if pose_block:
         # The pose block is the ONE parameter mechanism: the page fetches the
-        # descriptor and compiles it (cadjs poseModule); the optional escape
-        # hatch is a content-addressed package asset.
-        resolved["stepParameterUrl"] = asset_url_for_path(package_dir / "assembly.json", root_path)
+        # source sidecar and compiles it (cadjs poseModule); the optional
+        # escape hatch is a content-addressed package asset.
+        resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(package_dir), root_path)
         hatch_ref = str(pose_block.get("module") or "").strip()
         if hatch_ref and ".." not in hatch_ref:
             resolved["stepPoseHatchUrl"] = asset_url_for_path(package_dir / hatch_ref, root_path)

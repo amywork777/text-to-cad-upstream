@@ -83,16 +83,22 @@ test("a .implicit.js file is not a catalog entry at all", (t) => {
   assert.ok(entries.find((e) => e.file === "outline.dxf"));
 });
 
-test("a descriptor pose block is exposed as poseUrl (+ hatch); sidecars only teach", (t) => {
+test("a source-sidecar pose block is exposed as poseUrl (+ hatch); sidecars only teach", (t) => {
   const root = tmpRoot(t);
   write(root, "gripper.step", "ISO-10303-21;\n");
+  // The descriptor is STEP-pure; pose (and all source-derived state) rides the
+  // source sidecar, whose existence also marks the package as generated.
   write(root, path.join("__cadgen__", "models", "gripper.step", "assembly.json"), JSON.stringify({
-    kind: "assembly-package",
+    kind: "assembly-package"
+  }));
+  write(root, path.join("__cadgen__", "models", "gripper.step", "source.json"), JSON.stringify({
+    schemaVersion: 1,
     sourceKind: "python",
     pose: { schemaVersion: 1, params: { drive: { type: "number" } }, module: "components/ab12.pose.js" }
   }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
-  assert.ok(entry.poseUrl.includes("assembly.json"));
+  assert.equal(entry.sourceKind, "python");
+  assert.ok(entry.poseUrl.includes("source.json"));
   assert.ok(entry.poseHatchUrl.includes("ab12.pose.js"));
   assert.equal(entry.legacyParamsSidecar, undefined);
 

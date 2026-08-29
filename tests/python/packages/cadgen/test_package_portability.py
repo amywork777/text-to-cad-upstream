@@ -372,8 +372,9 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
         descriptor = json.loads(
             (package / "models" / "widget.step" / "assembly.json").read_text()
         )
-        # The build timestamp is the one field that is allowed to differ.
-        descriptor.pop("generatedAt", None)
+        # The descriptor is a pure function of the STEP bytes — no timestamp
+        # to excuse (generatedAt rides the source sidecar now).
+        self.assertNotIn("generatedAt", descriptor)
         return descriptor
 
     def test_the_descriptor_is_the_same_from_any_working_directory(self) -> None:

@@ -213,7 +213,14 @@ test(
     const descriptorPath = path.join(root, "__cadgen__", "models", "roller.step", "assembly.json");
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
     assert.equal(descriptor.kind, "assembly-package");
-    assert.equal(descriptor.sourceKind, "step");
+    // Imports write NO source sidecar — its absence IS the "imported" marker;
+    // the descriptor itself carries no provenance kind at all.
+    assert.equal(descriptor.sourceKind, undefined);
+    assert.equal(
+      fs.existsSync(path.join(root, "__cadgen__", "models", "roller.step", "source.json")),
+      false,
+      "an imported package must not carry a source sidecar",
+    );
     assert.ok(Object.keys(descriptor.components).length >= 1);
     assert.equal(
       descriptor.stepHash,

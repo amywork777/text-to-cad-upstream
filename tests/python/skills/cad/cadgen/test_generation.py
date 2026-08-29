@@ -932,28 +932,32 @@ class CadGenerationTests(unittest.TestCase):
         direct_path = self._write_step("direct_kind")
         _, direct_specs = cad_generation._selected_specs_for_targets([str(direct_path)])
 
+        # Generated-vs-imported rides the merged-in source sidecar
+        # (_sourceSidecar), never a descriptor field.
+        generated_manifest = {"_sourceSidecar": {"sourceKind": "python"}}
+        imported_manifest = {}
         self.assertTrue(
             cad_generation._artifact_source_kind_matches_spec(
                 generated_spec,
-                {"sourceKind": "python"},
+                generated_manifest,
             )
         )
         self.assertFalse(
             cad_generation._artifact_source_kind_matches_spec(
                 generated_spec,
-                {"sourceKind": "step"},
+                imported_manifest,
             )
         )
         self.assertTrue(
             cad_generation._artifact_source_kind_matches_spec(
                 direct_specs[0],
-                {"sourceKind": "step"},
+                imported_manifest,
             )
         )
         self.assertFalse(
             cad_generation._artifact_source_kind_matches_spec(
                 direct_specs[0],
-                {"sourceKind": "python"},
+                generated_manifest,
             )
         )
 
@@ -1165,8 +1169,7 @@ class CadGenerationTests(unittest.TestCase):
         artifact.manifest = {
             "kind": "assembly-package",
             "packageSchemaVersion": STEP_PACKAGE_VERSION,
-            "sourceKind": "python",
-            "sourceHash": "old-python-source-hash",
+            "_sourceSidecar": {"sourceKind": "python", "sourceHash": "old-python-source-hash"},
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
             },
@@ -1201,8 +1204,9 @@ class CadGenerationTests(unittest.TestCase):
                 "cadgen._internal.component_package.is_assembly_package",
                 return_value=True,
             ),
-            mock.patch(
-                "cadgen._internal.component_package.read_package_descriptor",
+            mock.patch.object(
+                cad_generation,
+                "read_step_topology_manifest_from_glb",
                 return_value=artifact.manifest,
             ),
             mock.patch.object(cad_generation, "_assembly_glb_package_current", return_value=True),
@@ -1429,8 +1433,9 @@ class CadGenerationTests(unittest.TestCase):
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene) as load_scene, mock.patch(
             "cadgen._internal.component_package.is_assembly_package",
             return_value=True,
-        ), mock.patch(
-            "cadgen._internal.component_package.read_package_descriptor",
+        ), mock.patch.object(
+            cad_generation,
+            "read_step_topology_manifest_from_glb",
             return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
@@ -1472,8 +1477,9 @@ class CadGenerationTests(unittest.TestCase):
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene) as load_scene, mock.patch(
             "cadgen._internal.component_package.is_assembly_package",
             return_value=True,
-        ), mock.patch(
-            "cadgen._internal.component_package.read_package_descriptor",
+        ), mock.patch.object(
+            cad_generation,
+            "read_step_topology_manifest_from_glb",
             return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
@@ -1531,8 +1537,9 @@ class CadGenerationTests(unittest.TestCase):
         with mock.patch.object(cad_generation, "load_step_scene_cached") as load_scene, mock.patch(
             "cadgen._internal.component_package.is_assembly_package",
             return_value=True,
-        ), mock.patch(
-            "cadgen._internal.component_package.read_package_descriptor",
+        ), mock.patch.object(
+            cad_generation,
+            "read_step_topology_manifest_from_glb",
             return_value=artifact.manifest,
         ), package_patch:
             result = cad_generation._generate_part_outputs(
@@ -1569,8 +1576,9 @@ class CadGenerationTests(unittest.TestCase):
         with mock.patch.object(cad_generation, "load_step_scene_cached", return_value=scene), mock.patch(
             "cadgen._internal.component_package.is_assembly_package",
             return_value=True,
-        ), mock.patch(
-            "cadgen._internal.component_package.read_package_descriptor",
+        ), mock.patch.object(
+            cad_generation,
+            "read_step_topology_manifest_from_glb",
             return_value=artifact.manifest,
         ) as validate_artifact, package_patch:
             result = cad_generation._generate_part_outputs(
@@ -1649,8 +1657,11 @@ class CadGenerationTests(unittest.TestCase):
         )
         self.assertIsNotNone(manifest)
         assert manifest is not None
-        self.assertTrue(manifest.get("sourceClosureHash"))
-        joined = " ".join(manifest.get("sourceClosureFiles") or [])
+        # The closure is source-derived, so it rides the sidecar, which the
+        # dir-aware reader merges in under _sourceSidecar.
+        sidecar = manifest.get("_sourceSidecar") or {}
+        self.assertTrue(sidecar.get("sourceClosureHash"))
+        joined = " ".join(sidecar.get("sourceClosureFiles") or [])
         self.assertIn("record.py", joined)
         self.assertIn("record_dims.py", joined)
 
@@ -1771,8 +1782,10 @@ class CadGenerationTests(unittest.TestCase):
         glb_path = cad_catalog.render_package_dir(spec.entry_path)
         glb_path.mkdir(parents=True, exist_ok=True)
         manifest = {
-            "sourceClosureHash": closure.closure_hash,
-            "sourceClosureFiles": list(closure.files),
+            "_sourceSidecar": {
+                "sourceClosureHash": closure.closure_hash,
+                "sourceClosureFiles": list(closure.files),
+            },
         }
 
         with mock.patch.object(cad_generation, "read_step_topology_manifest_from_glb", return_value=manifest):
@@ -1815,8 +1828,10 @@ class CadGenerationTests(unittest.TestCase):
         glb_path = cad_catalog.render_package_dir(spec.entry_path)
         glb_path.mkdir(parents=True, exist_ok=True)  # package directory
         manifest = {
-            "sourceClosureHash": closure.closure_hash,
-            "sourceClosureFiles": list(closure.files),
+            "_sourceSidecar": {
+                "sourceClosureHash": closure.closure_hash,
+                "sourceClosureFiles": list(closure.files),
+            },
         }
         with mock.patch.object(cad_generation, "read_step_topology_manifest_from_glb", return_value=manifest):
             self.assertTrue(cad_generation._generated_assembly_glb_closure_current(spec))

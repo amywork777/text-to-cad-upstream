@@ -51,7 +51,8 @@ COMPONENT_DIRNAME = "components"
 DESCRIPTOR_NAME = "assembly.json"
 # Source-provenance keys stripped from a component GLB's embedded STEP_TOPOLOGY so the
 # component is a pure function of geometry+tolerances (content-addressable). All of this
-# is model-level and lives on the descriptor (assembly.json), not the reusable leaf.
+# is model-level and lives on the descriptor (assembly.json) or the source sidecar
+# (source.json), not the reusable leaf.
 COMPONENT_PROVENANCE_KEYS = (
     "sourceKind",
     "sourcePath",
@@ -91,8 +92,8 @@ def read_package_descriptor(path: Path) -> dict[str, Any] | None:
 
 def assembly_package_current(step_path: Path) -> bool:
     """True when a package descriptor exists and every referenced component GLB is
-    present. Source-change detection is left to the descriptor's provenance
-    (stepHash/sourceClosure) read through the package-aware manifest reader; this only
+    present. Source-change detection is left to the descriptor's stepHash and the
+    source sidecar's closure, read through the package-aware manifest reader; this only
     guards the package's own existence so a missing/partial package forces a rebuild."""
     package_dir = render_package_dir(step_path)
     descriptor = read_package_descriptor(package_dir)
@@ -751,11 +752,11 @@ def build_package_from_compound(
             "units": "mm",
             "components": components,
             "occurrences": occurrences,
-            "assemblyMates": [
-                dict(mate) for mate in (getattr(compound, "assembly_mates", None) or [])
-            ],
         }
     )
+    # Assembly mates are source-authored (cadgen.assembly) and unrepresentable
+    # in STEP, so they ride the source sidecar (source_sidecar.py), never this
+    # STEP-pure descriptor.
     # The nested assembly hierarchy (subassembly grouping over the leaf occurrences) that the
     # viewer structure tree reads via assemblyRootFromTopology(descriptor.assembly.root).
     if assembly_root is not None:

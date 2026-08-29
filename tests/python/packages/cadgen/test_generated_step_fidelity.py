@@ -9,8 +9,8 @@ Two defects compounded there:
   while generators author per-OCCURRENCE colors — every such model's .step was
   written colorless, so any import of it was colorless too;
 * nothing consulted the file's embedded ``cadgen:`` identity metadata, so the
-  bare file classified as importable and the import overwrote the package with
-  ``sourceKind: "step"`` — dropping colors, the pose block, and provenance.
+  bare file classified as importable and the import overwrote the package as
+  an imported one — dropping colors, the pose block, and provenance.
 """
 
 from __future__ import annotations
@@ -84,11 +84,20 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         self.assertEqual(len(occurrences), 2)
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(len(colored), 2, occurrences)
-        block = descriptor.get("pose")
+        # Source-derived state rides the sidecar, never the descriptor: the
+        # pose block lives in source.json, and the sidecar's existence is the
+        # generated marker (the descriptor carries no sourceKind at all).
+        self.assertNotIn("pose", descriptor)
+        self.assertNotIn("paramsPath", descriptor)
+        self.assertNotIn("sourceKind", descriptor)
+        from cadgen._internal.source_sidecar import read_source_sidecar
+
+        sidecar = read_source_sidecar(render_package_dir(logical_step))
+        self.assertIsInstance(sidecar, dict)
+        block = sidecar.get("pose")
         self.assertIsInstance(block, dict)
         self.assertIn("drive", block["params"])
-        self.assertNotIn("paramsPath", descriptor)
-        self.assertEqual(descriptor.get("sourceKind"), "python")
+        self.assertEqual(sidecar.get("sourceKind"), "python")
 
     def test_assembled_step_carries_occurrence_colors(self) -> None:
         _, logical_step = self._build_generated_package()
@@ -101,6 +110,58 @@ class GeneratedStepFidelityTests(unittest.TestCase):
             text,
             "assembled STEP must carry the occurrence colors the descriptor records",
         )
+
+    def test_generate_and_import_produce_one_descriptor_schema(self) -> None:
+        """The Phase-2 invariant: assembly.json is a pure function of the STEP
+        bytes plus schema versions, whichever producer wrote it. Generating a
+        model and importing its own exported STEP must yield descriptors with
+        the SAME key set, the same identity fields, and equivalent geometry.
+
+        Deliberately NOT byte-identity: the STEP text round-trip is not
+        BREP-byte-preserving (component cids and adaptive-mesh stats may
+        differ), so byte-unification is a Phase-3 decision, not this gate.
+        """
+        _, logical_step = self._build_generated_package()
+        generated = self._descriptor(logical_step)
+
+        exported_dir = self.temp_root / "roundtrip"
+        exported_dir.mkdir()
+        exported = exported_dir / "colored.step"
+        assemble_step_from_package(render_package_dir(logical_step), exported)
+        payload = step_artifact_cli.build_step_artifact(
+            repo_root=Path.cwd(),
+            step=exported,
+            force=True,
+        )
+        self.assertTrue(payload.get("ok"), payload)
+        imported = self._descriptor(exported)
+
+        # Schema purity: one key set, no source-derived keys on either side.
+        self.assertEqual(sorted(generated.keys()), sorted(imported.keys()))
+        for banned in (
+            "sourceKind", "sourcePath", "sourceHash", "sourceClosureHash",
+            "sourceClosureFiles", "pose", "assemblyMates", "generatedAt",
+        ):
+            self.assertNotIn(banned, generated)
+            self.assertNotIn(banned, imported)
+
+        # Identity fields agree.
+        for key in ("kind", "packageSchemaVersion", "entryKind", "units", "rootName"):
+            self.assertEqual(generated.get(key), imported.get(key), key)
+
+        # Geometric equivalence: same occurrence structure and bounds (cids
+        # and mesh stats are allowed to differ across the round trip).
+        self.assertEqual(
+            len(generated.get("occurrences") or []),
+            len(imported.get("occurrences") or []),
+        )
+        self.assertEqual(
+            sorted(o.get("name") for o in generated["occurrences"]),
+            sorted(o.get("name") for o in imported["occurrences"]),
+        )
+        for axis in ("min", "max"):
+            for got, expected in zip(imported["bbox"][axis], generated["bbox"][axis]):
+                self.assertAlmostEqual(got, expected, places=3)
 
     def test_import_refuses_generated_step_without_force(self) -> None:
         _, logical_step = self._build_generated_package()
@@ -136,7 +197,13 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         )
         self.assertTrue(payload.get("ok"), payload)
         descriptor = self._descriptor(exported)
-        self.assertEqual(descriptor.get("sourceKind"), "step")
+        self.assertNotIn("sourceKind", descriptor)
+        from cadgen._internal.source_sidecar import package_is_generated
+
+        self.assertFalse(
+            package_is_generated(render_package_dir(exported)),
+            "a forced import must not leave a source sidecar behind",
+        )
         occurrences = descriptor.get("occurrences") or []
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(
