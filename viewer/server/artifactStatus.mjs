@@ -20,12 +20,10 @@
 //   coherence);
 // - generated outputs are DETACHED from their source code: no source checks,
 //   ever (the CLI's no-op gates own that direction).
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
 import { renderPackageDir, sourceSidecarPath } from "./scanner.mjs";
-import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
@@ -45,17 +43,8 @@ export const ARTIFACT_STATE = Object.freeze({
 // Codes the client may build on (mirror of the retired BUILDABLE_ARTIFACT_CODES).
 const BUILDABLE_CODES = new Set([
   "missing_glb", "missing_step_topology", "unsupported_step_topology",
-  "missing_step_hash", "stale_step_artifact", "missing_source_path",
-  "missing_dxf_output",
+  "missing_source_path", "missing_dxf_output",
 ]);
-
-function sha256File(filePath) {
-  try {
-    return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
-  } catch {
-    return null;
-  }
-}
 
 function readJson(filePath) {
   try {
@@ -64,16 +53,6 @@ function readJson(filePath) {
   } catch {
     return null;
   }
-}
-
-function schemaVersionMatches(descriptor, expected) {
-  const recorded = descriptor.packageSchemaVersion;
-  return typeof recorded === "number" && Number.isInteger(recorded) && recorded === expected;
-}
-
-function bakeHashMatches(descriptor, expected) {
-  const recorded = descriptor.bakeHash ?? null;
-  return (recorded ?? null) === (expected ?? null);
 }
 
 // --- ownership + source resolution (render_ops twins) ------------------------
@@ -112,7 +91,7 @@ function validateStep(stepPath) {
   // <name>.step.source.json beside the model, import removes it), never a
   // descriptor field: the store descriptor is a pure function of the STEP bytes.
   const generated = fs.existsSync(sourceSidecarPath(stepPath));
-  if (descriptor.kind !== STEP_PACKAGE_KIND || !schemaVersionMatches(descriptor, STEP_PACKAGE_VERSION)) {
+  if (descriptor.kind !== STEP_PACKAGE_KIND) {
     return { ok: false, code: "unsupported_step_topology", packageDir, descriptor, generated };
   }
   const components = descriptor.components && typeof descriptor.components === "object"
@@ -127,25 +106,12 @@ function validateStep(stepPath) {
       return { ok: false, code: "missing_glb", packageDir, descriptor, generated };
     }
   }
-  // STEP bakes no settings; a descriptor claiming one came from another producer.
-  if (!bakeHashMatches(descriptor, null)) {
-    return { ok: false, code: "stale_step_artifact", packageDir, descriptor, generated };
-  }
-  if (generated) {
-    // Detached outputs: no source checks, ever.
-    return { ok: true, packageDir, descriptor, generated };
-  }
-  // Imported file: the render is DERIVED from these bytes. Fails closed.
-  const recorded = String(descriptor.stepHash || "").trim();
-  if (fs.existsSync(stepPath)) {
-    if (!recorded) {
-      return { ok: false, code: "missing_step_hash", packageDir, descriptor, generated };
-    }
-    const current = sha256File(stepPath);
-    if (current && recorded !== current) {
-      return { ok: false, code: "stale_step_artifact", digestMismatch: true, packageDir, descriptor, generated };
-    }
-  }
+  // Nothing else to gate: the package KEY is <sha256(document)>-v<schema>, so
+  // a package that resolved at all has the right schema and belongs to exactly
+  // these bytes — the old schema, bake, and per-poll digest gates all
+  // collapsed into content keying (and the digest re-hash was the one
+  // full-file read every status poll used to pay). Generated outputs are
+  // detached: no source checks, ever.
   return { ok: true, packageDir, descriptor, generated };
 }
 

@@ -301,6 +301,18 @@ def artifact_file_hash(entry_path: Path) -> str | None:
     return digest
 
 
+def seed_artifact_hash(entry_path: Path, digest: str) -> None:
+    """Prime the content-hash memo for a file the caller JUST wrote and
+    hashed (generation's export). Saves the full-file re-read the first
+    post-build resolution would otherwise pay — linear in document size."""
+    resolved = Path(entry_path).expanduser().resolve()
+    try:
+        stat = resolved.stat()
+    except OSError:
+        return
+    _ARTIFACT_HASH_MEMO[str(resolved)] = (stat.st_mtime_ns, stat.st_size, digest)
+
+
 def package_dir_for_hash(step_hash: str) -> Path:
     """The store-primary render-package directory for a document's content
     hash: ``<cache>/packages/<hash>-v<STEP_PACKAGE_VERSION>``. One package per

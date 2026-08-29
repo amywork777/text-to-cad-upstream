@@ -87,17 +87,16 @@ test("buildViewerMeshAlert reports STEP artifact errors only when no mesh render
       kind: "part",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
-        message: "STEP artifact is stale."
+        error: "missing_glb",
+        message: "STEP artifact is missing."
       }
     }, false, ""),
     {
       severity: "error",
       compact: true,
-      summary: "STEP artifact stale",
-      title: "STEP artifact stale",
-      message: "Generated GLB doesn't match the hash of the STEP file.",
+      summary: "STEP artifact missing",
+      title: "STEP artifact missing",
+      message: "Generated GLB is missing.",
       command: rebuildCommandForEntry(RENDER_FORMAT.STEP, "fun/stale.step")
     }
   );
@@ -110,18 +109,17 @@ test("buildViewerMeshAlert reports STEP artifact errors only when no mesh render
       hash: "glb-hash",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
-        message: "STEP artifact is stale."
+        error: "missing_glb",
+        message: "STEP artifact is missing."
       }
     }, false, ""),
     {
       severity: "warning",
       blocking: false,
       compact: true,
-      summary: "STEP artifact stale",
-      title: "STEP artifact stale",
-      message: "Generated GLB doesn't match the hash of the STEP file.",
+      summary: "STEP artifact missing",
+      title: "STEP artifact missing",
+      message: "Generated GLB is missing.",
       command: rebuildCommandForEntry(RENDER_FORMAT.STEP, "fun/renderable-stale.step")
     }
   );
@@ -134,9 +132,8 @@ test("buildViewerMeshAlert reports STEP artifact errors only when no mesh render
       hash: "glb-hash",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
-        message: "STEP artifact is stale."
+        error: "missing_glb",
+        message: "STEP artifact is missing."
       }
     }, false, "GLB parser failed"),
     {

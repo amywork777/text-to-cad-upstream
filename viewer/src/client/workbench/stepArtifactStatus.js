@@ -10,8 +10,6 @@ export const BUILDABLE_STEP_ARTIFACT_ERROR_CODES = Object.freeze([
   "missing_surface_edge_attributes",
   "missing_selector_topology",
   "missing_source_path",
-  "missing_step_hash",
-  "stale_step_artifact",
   "unsupported_step_topology"
 ]);
 
@@ -141,17 +139,6 @@ export function failedStepArtifact(entry, sourceFormat) {
   return sourceFormat === RENDER_FORMAT.STEP && entry?.artifact?.ok === false
     ? entry.artifact
     : null;
-}
-
-export function stepArtifactIsStale(entry, sourceFormat) {
-  return (
-    sourceFormat === RENDER_FORMAT.STEP &&
-    entry?.artifact?.ok === false &&
-    (
-      entry.artifact.stale === true ||
-      String(entry.artifact.error || "") === "stale_step_artifact"
-    )
-  );
 }
 
 export function stepArtifactCanGenerate(entry, sourceFormat, { generationAvailable = true } = {}) {

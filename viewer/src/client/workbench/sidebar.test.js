@@ -121,7 +121,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: true,
       artifactGenerating: false,
-      artifactStale: false,
       artifactWarning: false,
       loading: false,
       pending: true,
@@ -140,7 +139,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: true,
       artifactGenerating: true,
-      artifactStale: false,
       artifactWarning: false,
       loading: true,
       pending: true,
@@ -172,7 +170,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: true,
       artifactGenerating: true,
-      artifactStale: false,
       artifactWarning: false,
       loading: true,
       pending: true,
@@ -183,16 +180,15 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
 
   assert.equal(
     entryIconStatus({
-      file: "benchmarks/stale.step",
+      file: "benchmarks/unbuilt.step",
       kind: "part",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true
+        error: "missing_glb"
       }
     }, {
       sourceFormat: "step",
-      entryKey: "benchmarks/stale.step",
+      entryKey: "benchmarks/unbuilt.step",
       hasMesh: false
     }).artifactBuildable,
     true
@@ -205,8 +201,7 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
       sourceKind: "python",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
+        error: "missing_glb",
         sourceKind: "python"
       }
     }, {
@@ -227,7 +222,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: false,
       artifactGenerating: false,
-      artifactStale: false,
       artifactWarning: true,
       loading: false,
       pending: true,
@@ -252,36 +246,9 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: true,
       artifactGenerating: false,
-      artifactStale: false,
       artifactWarning: false,
       loading: false,
       pending: false,
-      sourceFormat: "step",
-      statusLabel: "artifact generates on open"
-    }
-  );
-
-  assert.deepEqual(
-    entryIconStatus({
-      file: "benchmarks/stale.step",
-      kind: "part",
-      artifact: {
-        ok: false,
-        error: "stale_step_artifact",
-        stale: true
-      }
-    }, {
-      sourceFormat: "step",
-      entryKey: "benchmarks/stale.step",
-      hasMesh: false
-    }),
-    {
-      artifactBuildable: true,
-      artifactGenerating: false,
-      artifactStale: true,
-      artifactWarning: false,
-      loading: false,
-      pending: true,
       sourceFormat: "step",
       statusLabel: "artifact generates on open"
     }
@@ -304,7 +271,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     {
       artifactBuildable: true,
       artifactGenerating: false,
-      artifactStale: false,
       artifactWarning: false,
       loading: false,
       pending: true,
@@ -378,8 +344,7 @@ test("entryIconStatus treats active generator runs as loading and suppresses art
     sourceKind: "python",
     artifact: {
       ok: false,
-      error: "stale_step_artifact",
-      stale: true,
+      error: "missing_glb",
       sourceKind: "python"
     }
   };
@@ -393,7 +358,6 @@ test("entryIconStatus treats active generator runs as loading and suppresses art
     {
       artifactBuildable: true,
       artifactGenerating: true,
-      artifactStale: true,
       artifactWarning: false,
       loading: true,
       pending: true,

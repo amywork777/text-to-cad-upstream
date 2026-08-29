@@ -32,11 +32,6 @@ from cadgen.catalog import (
 )
 from cadgen.cli_logging import CliLogger
 from cadgen._internal.cli_locking import contended_payload, deadline_ms, lock_wait_notice
-from cadgen._internal.package_freshness import (
-    STEP_PACKAGE_VERSION,
-    bake_hash_matches,
-    schema_version_matches,
-)
 from cadgen._internal.glb_topology import build_step_topology_index_manifest
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.glb_topology import (
@@ -97,7 +92,6 @@ from cadgen._internal.generation_runner import (
     _effective_step_spec_for_scene,
     _ensure_step_ready,
     _generator_progress_line,
-    _is_git_lfs_pointer,
     _load_generator_module,
     _mark_scene_python_backed,
     _mark_scene_step_payload,
@@ -236,21 +230,14 @@ def _manifest_source_sidecar(manifest: Mapping[str, object]) -> Mapping[str, obj
 
 def _artifact_source_kind_matches_spec(spec: EntrySpec, manifest: Mapping[str, object]) -> bool:
     # The generated-marker is the source sidecar's existence (source_sidecar.py):
-    # the descriptor itself is STEP-pure and carries no sourceKind.
+    # the descriptor itself is STEP-pure and carries no sourceKind. An imported
+    # spec whose bytes resolve to a generated model's package is fine — content
+    # keying already guarantees the package IS these bytes' render.
     generated = bool(_manifest_source_sidecar(manifest))
     if spec.source != "generated" and spec.step_path is not None and spec.step_path.is_file():
-        if generated:
-            return bool(str(manifest.get("stepHash") or "").strip())
         return True
     expected = spec.source == "generated" and spec.script_path is not None
     return generated == expected
-
-
-def _artifact_step_hash_matches_spec(spec: EntrySpec, manifest: Mapping[str, object]) -> bool:
-    if spec.step_path is None or not spec.step_path.is_file():
-        return True
-    expected_hash = step_file_hash(spec.step_path)
-    return str(manifest.get("stepHash") or "").strip() == expected_hash
 
 
 def _package_descriptor_matches_spec(
@@ -265,17 +252,17 @@ def _package_descriptor_matches_spec(
     the monolith validator always failed and every build re-ran gen_step plus
     the full-scene mesh; validate against the package descriptor instead.
 
-    The schema-version and bake gates below mirror the viewer's JS status
-    authority (``viewer/server/artifactStatus.mjs``) exactly. A check made only by the VIEWER is worse than
-    no check at all: it would report stale, this predicate would report current,
-    the build would no-op, and the request would settle ``ready`` on the stale package.
-    The imported-STEP digest gate is already fail-closed here
-    (``_artifact_step_hash_matches_spec``: a descriptor recording no ``stepHash`` cannot
-    equal the file's real hash), which is the behaviour the viewer matches. The
-    source-closure gate is the sanctioned asymmetry in the SAFE direction: generated
-    outputs are detached from their code, so the viewer never checks source currency —
-    here it survives purely as the explicit-build no-op gate, where being stricter can
-    only make a requested build do real work, never trigger a needless one.
+    Content keying does most of the gating BY CONSTRUCTION: the package key is
+    ``<sha256(document)>-v<schemaVersion>``, so a package that resolves at all
+    has the right schema and belongs to exactly these bytes — the old
+    schema-version, bake and stepHash gates all collapsed into the key. What
+    remains is what the key cannot answer: provenance direction (sidecar vs
+    spec), and whether the recorded mesh/edge options match the request. The
+    source-closure gate stays the sanctioned asymmetry in the SAFE direction:
+    generated outputs are detached from their code, so the viewer never checks
+    source currency — here it survives purely as the explicit-build no-op
+    gate, where being stricter can only make a requested build do real work,
+    never trigger a needless one.
     """
     from cadgen._internal.component_package import is_assembly_package
 
@@ -287,16 +274,7 @@ def _package_descriptor_matches_spec(
     manifest = read_step_topology_manifest_from_glb(package_dir, entry_path=spec.entry_path)
     if not isinstance(manifest, dict):
         return False
-    if not schema_version_matches(manifest, STEP_PACKAGE_VERSION):
-        return False
-    # The assembly package bakes no format settings into its payload (components are pure
-    # geometry at recorded mesh tolerances, and those are compared below), so the expected
-    # bake is None -- and a descriptor that records one did not come from this producer.
-    if not bake_hash_matches(manifest, None):
-        return False
     if not _artifact_source_kind_matches_spec(spec, manifest):
-        return False
-    if not _artifact_step_hash_matches_spec(spec, manifest):
         return False
     mesh = manifest.get("mesh")
     if not isinstance(mesh, Mapping):
@@ -567,6 +545,9 @@ def _generate_part_outputs(
 
             spec.step_path.parent.mkdir(parents=True, exist_ok=True)
             exported_hash = assemble_step_from_package(staging, spec.step_path, logger=logger)
+            from cadgen.catalog import seed_artifact_hash
+
+            seed_artifact_hash(spec.step_path, exported_hash)
             hashes = getattr(scene, "exported_step_sha256", None) or {}
             hashes[str(spec.step_path.expanduser().resolve())] = exported_hash
             scene.exported_step_sha256 = hashes
@@ -1153,7 +1134,7 @@ def _generated_child_is_stale(child_spec: EntrySpec, *, force: bool) -> bool:
     # gen_step writes no STEP — the render GLB/package is the artifact, so freshness keys
     # on it. A missing/unhydrated artifact (file GLB or package directory) is stale.
     artifact_path = render_package_dir(child_spec.entry_path)
-    if not artifact_path.exists() or _is_git_lfs_pointer(artifact_path):
+    if not artifact_path.exists():
         return True
     manifest = read_step_topology_manifest_from_glb(artifact_path, entry_path=child_spec.entry_path)
     if isinstance(manifest, dict):

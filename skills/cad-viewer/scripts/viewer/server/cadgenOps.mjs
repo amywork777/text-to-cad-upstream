@@ -221,29 +221,16 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
         // in the package's source sidecar; regeneration is the model script's
         // job and restores pose/mates/provenance whenever it runs.)
         if (resolver.available()) {
-          const importable = { state: "needs-build", reason: status.reason, stepImport: true };
-          if (verdict.digestMismatch) {
-            importable.staleReason = "the STEP file changed after this package was imported";
-          }
-          return importable;
+          return { state: "needs-build", reason: status.reason, stepImport: true };
         }
-        if (!verdict.descriptor) {
-          return {
-            state: "error",
-            error: `This STEP file has not been imported yet, and ${cadgenUnavailableMessage()}`,
-          };
-        }
+        return {
+          state: "error",
+          error: `This STEP file has not been imported yet, and ${cadgenUnavailableMessage()}`,
+        };
       }
-      if (verdict.descriptor) {
-        // A renderable package exists: render as-is, honestly badged when the
-        // source file's digest disagrees.
-        const asIs = { state: "ready", degraded: true };
-        if (verdict.digestMismatch) {
-          asIs.stale = true;
-          asIs.staleReason = "the STEP file changed after this package was imported";
-        }
-        return asIs;
-      }
+      // No stale-render limbo exists under content keying: an edited file
+      // resolves to a different key (needs-build above), and a resolved
+      // package is by construction the render of exactly these bytes.
       return { state: "error", error: CLI_BUILD_HINT };
     },
 

@@ -462,22 +462,8 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
     // source sidecar and compiles its pose block; the optional escape-hatch
     // module rides INLINE in the sidecar (pose.moduleSource).
     entry.poseUrl = entry.sourceUrl || assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));
-  } else if (
-    String((topologyIndex && topologyIndex.paramsPath) || "").trim() ||
-    fileStats(legacyParamsSidecarPath(sourcePath))
-  ) {
-    // Retired mechanism, teaching note: a .params.js sidecar (or an old
-    // descriptor still recording one) is ignored — pose data has exactly one
-    // authoring surface now. The client surfaces this on the params panel.
-    entry.legacyParamsSidecar = true;
   }
   return entry;
-}
-
-// The retired sidecar convention, detected only to TEACH (never loaded).
-export function legacyParamsSidecarPath(stepPath) {
-  const parsed = path.parse(String(stepPath || ""));
-  return path.join(parsed.dir, `${parsed.name}.params.js`);
 }
 
 export function isServedCadAsset(filePath) {

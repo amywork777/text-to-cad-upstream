@@ -175,9 +175,6 @@ export function stepArtifactHasRenderableGlb(entry) {
 
 function artifactStatusTitle(artifact, entry) {
   const code = cleanText(artifact?.error);
-  if (artifact?.stale === true || code === "stale_step_artifact") {
-    return "STEP artifact stale";
-  }
   if (code === "missing_glb") {
     return "STEP artifact missing";
   }
@@ -195,9 +192,6 @@ function artifactStatusLevel(artifact, entry) {
 
 export function stepArtifactStatusMessage(artifact) {
   const code = cleanText(artifact?.error);
-  if (artifact?.stale === true || code === "stale_step_artifact") {
-    return "Generated GLB doesn't match the hash of the STEP file.";
-  }
   if (code === "missing_glb") {
     return "Generated GLB is missing.";
   }
@@ -385,10 +379,9 @@ export function sdfFileStatusItems(sdfInfo = null) {
   })));
 }
 
-// Advisory flags a `ready` artifact status may carry (FEEDBACK #17). Neither blocks
-// rendering: `stale` says a degraded-mode package renders as-is although its source
-// file changed (WARNING — the picture on screen is honest but old), `busy` says
-// another process currently holds the model's generator (INFO — purely transient).
+// The advisory flag a `ready` artifact status may carry (FEEDBACK #17): `busy`
+// says another process currently holds the model's generator (INFO — purely
+// transient). It never blocks rendering.
 export function artifactAdvisoryStatusItems(advisory = null, {
   entry = null,
   viewerServerInfo = {},
@@ -397,20 +390,6 @@ export function artifactAdvisoryStatusItems(advisory = null, {
     return [];
   }
   const items = [];
-  if (advisory.stale === true) {
-    items.push({
-      id: "artifact-advisory-stale",
-      level: FILE_STATUS_LEVELS.WARNING,
-      source: "artifact-status",
-      code: "stale_render_package",
-      title: "Rendering an older import",
-      message: `${cleanText(advisory.staleReason) || "The source file changed after this render package was built."} `
-        + "The view shows the previous package; rebuild with the CAD CLI (or re-import) to refresh.",
-      details: [
-        pathDetail("File", entry?.file, viewerServerInfo, entry?.file)
-      ].filter(Boolean)
-    });
-  }
   if (advisory.busy === true) {
     items.push({
       id: "artifact-advisory-busy",

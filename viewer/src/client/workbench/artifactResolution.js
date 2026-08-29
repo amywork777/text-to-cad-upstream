@@ -35,23 +35,20 @@ export function artifactActionFor(status) {
 }
 
 /**
- * The advisory flags a `ready` status may carry: `stale` (+`staleReason`) when a
- * degraded-mode package renders as-is although its source file changed, `busy` when
- * another process currently holds the model's generator. Neither changes what the
- * client DOES — the model renders — they are honest badges for the file sheet.
- * Returns null when there is nothing to surface, so `advisory` is falsy in the
- * overwhelmingly common case.
+ * The advisory flag a `ready` status may carry: `busy`, when another process
+ * currently holds the model's generator. It changes nothing about what the
+ * client DOES — the model renders — it is an honest badge for the file sheet.
+ * (The old `stale` advisory died with content keying: an edited file resolves
+ * to a different package key, so a stale-but-rendering package cannot exist.)
+ * Returns null when there is nothing to surface, so `advisory` is falsy in
+ * the overwhelmingly common case.
  */
 export function artifactAdvisoryFor(status) {
-  const stale = status?.stale === true;
-  const busy = status?.busy === true;
-  if (!stale && !busy) {
+  if (status?.busy !== true) {
     return null;
   }
   return {
-    stale,
-    staleReason: String(status?.staleReason || "").trim(),
-    busy,
+    busy: true,
     runId: status?.runId ? String(status.runId) : "",
   };
 }

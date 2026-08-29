@@ -76,21 +76,13 @@ test("a server that reports no runId leaves the shown run alone", () => {
   assert.equal(result.runId, "run-1");
 });
 
-test("advisory flags: absent, stale, busy, both", () => {
+test("advisory flag: busy only (the stale advisory died with content keying)", () => {
   assert.equal(artifactAdvisoryFor({ state: "ready" }), null);
   assert.equal(artifactAdvisoryFor(undefined), null);
   assert.deepEqual(
-    artifactAdvisoryFor({ state: "ready", stale: true, staleReason: "the STEP file changed" }),
-    { stale: true, staleReason: "the STEP file changed", busy: false, runId: "" }
-  );
-  assert.deepEqual(
     artifactAdvisoryFor({ state: "ready", busy: true, runId: "run-9" }),
-    { stale: false, staleReason: "", busy: true, runId: "run-9" }
+    { busy: true, runId: "run-9" }
   );
-  assert.deepEqual(
-    artifactAdvisoryFor({ state: "ready", stale: true, busy: true }),
-    { stale: true, staleReason: "", busy: true, runId: "" }
-  );
-  // Truthy non-boolean values do not count: the flags are written as booleans.
-  assert.equal(artifactAdvisoryFor({ state: "ready", stale: "yes" }), null);
+  // Truthy non-boolean values do not count: the flag is written as a boolean.
+  assert.equal(artifactAdvisoryFor({ state: "ready", busy: "yes" }), null);
 });

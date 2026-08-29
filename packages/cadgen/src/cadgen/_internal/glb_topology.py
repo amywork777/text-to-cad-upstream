@@ -108,100 +108,6 @@ def _read_glb_chunks(path: Path) -> tuple[dict[str, Any], bytes]:
         raise ValueError(f"GLB JSON chunk is not an object: {_display_path(path)}")
     return gltf, binary_payload
 
-
-def _read_glb_json_and_bin_location(path: Path) -> tuple[dict[str, Any], int, int]:
-    resolved = path.expanduser().resolve()
-    with resolved.open("rb") as handle:
-        header = handle.read(12)
-        if len(header) != 12:
-            raise ValueError(f"Not a GLB file: {_display_path(path)}")
-        magic, version, length = struct.unpack("<III", header)
-        if magic != GLB_MAGIC or version != GLB_VERSION:
-            raise ValueError(f"Not a GLB v2 file: {_display_path(path)}")
-        file_size = resolved.stat().st_size
-        if length > file_size:
-            raise ValueError(f"Not a GLB v2 file: {_display_path(path)}")
-        offset = 12
-        json_payload: bytes | None = None
-        binary_offset = 0
-        binary_length = 0
-        while offset + 8 <= length:
-            handle.seek(offset)
-            chunk_header = handle.read(8)
-            if len(chunk_header) != 8:
-                break
-            chunk_length, chunk_type = struct.unpack("<I4s", chunk_header)
-            offset += 8
-            if offset + chunk_length > length:
-                raise ValueError(f"Invalid GLB chunk length: {_display_path(path)}")
-            if chunk_type == b"JSON":
-                json_payload = handle.read(chunk_length)
-            elif chunk_type == b"BIN\0":
-                binary_offset = offset
-                binary_length = chunk_length
-                handle.seek(chunk_length, os.SEEK_CUR)
-            else:
-                handle.seek(chunk_length, os.SEEK_CUR)
-            offset += chunk_length
-    if json_payload is None:
-        raise ValueError(f"GLB is missing JSON chunk: {_display_path(path)}")
-    gltf = json.loads(json_payload.decode("utf-8").rstrip(" \t\r\n\0"))
-    if not isinstance(gltf, dict):
-        raise ValueError(f"GLB JSON chunk is not an object: {_display_path(path)}")
-    return gltf, binary_offset, binary_length
-
-
-def _buffer_view_range(gltf: Mapping[str, Any], binary_offset: int, binary_length: int, view_index: object) -> tuple[int, int]:
-    if not isinstance(view_index, int):
-        raise ValueError("GLB bufferView index must be an integer")
-    buffer_views = gltf.get("bufferViews")
-    if not isinstance(buffer_views, list) or not (0 <= view_index < len(buffer_views)):
-        raise ValueError(f"GLB bufferView index is out of range: {view_index}")
-    view = buffer_views[view_index]
-    if not isinstance(view, Mapping):
-        raise ValueError(f"GLB bufferView is not an object: {view_index}")
-    if int(view.get("buffer") or 0) != 0:
-        raise ValueError("STEP topology only supports GLB buffer 0")
-    byte_offset = int(view.get("byteOffset") or 0)
-    byte_length = int(view.get("byteLength") or 0)
-    if byte_offset < 0 or byte_length < 0 or byte_offset + byte_length > binary_length:
-        raise ValueError(f"GLB bufferView range is invalid: {view_index}")
-    return binary_offset + byte_offset, byte_length
-
-
-def _read_file_range(path: Path, byte_offset: int, byte_length: int) -> bytes:
-    with path.expanduser().resolve().open("rb") as handle:
-        handle.seek(byte_offset)
-        payload = handle.read(byte_length)
-    if len(payload) != byte_length:
-        raise ValueError("GLB bufferView range is invalid")
-    return payload
-
-
-def _buffer_view_bytes(gltf: Mapping[str, Any], binary_payload: bytes, view_index: object) -> bytes:
-    byte_offset, byte_length = _buffer_view_range(gltf, 0, len(binary_payload), view_index)
-    return binary_payload[byte_offset : byte_offset + byte_length]
-
-
-def _array_from_view(gltf: Mapping[str, Any], binary_payload: bytes, view: Mapping[str, Any]) -> array:
-    dtype = str(view.get("dtype") or "")
-    typecode = "f" if dtype == "float32" else "I" if dtype == "uint32" else ""
-    if not typecode:
-        raise ValueError(f"Unsupported STEP topology buffer dtype: {dtype}")
-    raw = _buffer_view_bytes(gltf, binary_payload, view.get("bufferView"))
-    byte_offset = int(view.get("byteOffset") or 0)
-    count = int(view.get("count") or 0)
-    item_size = int(view.get("itemSize") or array(typecode).itemsize)
-    byte_length = int(view.get("byteLength") or (count * item_size))
-    if byte_offset < 0 or byte_length < 0 or byte_offset + byte_length > len(raw):
-        raise ValueError("STEP topology buffer view range is invalid")
-    values = array(typecode)
-    values.frombytes(raw[byte_offset : byte_offset + byte_length])
-    if count >= 0 and len(values) > count:
-        del values[count:]
-    return values
-
-
 def _array_from_legacy_binary_view(binary_payload: bytes, view: Mapping[str, Any]) -> array:
     dtype = str(view.get("dtype") or "")
     typecode = "f" if dtype == "float32" else "I" if dtype == "uint32" else ""
@@ -218,17 +124,6 @@ def _array_from_legacy_binary_view(binary_payload: bytes, view: Mapping[str, Any
     if count >= 0 and len(values) > count:
         del values[count:]
     return values
-
-
-def _step_topology_extension(gltf: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    extensions = gltf.get("extensions")
-    extension = extensions.get(STEP_TOPOLOGY_EXTENSION) if isinstance(extensions, Mapping) else None
-    if not isinstance(extension, Mapping):
-        return None
-    if str(extension.get("encoding") or "utf-8").lower() != "utf-8":
-        return None
-    return extension
-
 
 def normalize_step_edge_render_visibility_classes(value: object) -> tuple[str, ...]:
     if value is None:
@@ -317,226 +212,39 @@ def is_displayable_step_edge_surface_class_code(value: object) -> bool:
     return code not in {STEP_EDGE_SURFACE_CLASS_CODES["none"], STEP_EDGE_SURFACE_CLASS_CODES["degenerate"]}
 
 
-def _legacy_topology_manifest_path_for_glb(glb_path: Path) -> Path | None:
-    resolved = glb_path.expanduser().resolve()
-    if resolved.name != "model.glb":
+def read_step_topology_index_from_glb(glb_path: Path, *, entry_path: Path | None = None) -> dict[str, Any] | None:
+    # A render package DIRECTORY carries its topology index as the package
+    # descriptor (assembly.json). The monolith-GLB branch that used to read an
+    # embedded index from a file is gone with the beside-model layout: every
+    # artifact is a store directory.
+    if not glb_path.is_dir():
         return None
-    return resolved.parent / "topology.json"
-
-
-def read_legacy_topology_manifest(glb_path: Path) -> dict[str, Any] | None:
-    manifest_path = _legacy_topology_manifest_path_for_glb(glb_path)
-    if manifest_path is None or not manifest_path.is_file():
+    descriptor_path = glb_path / "assembly.json"
+    if not descriptor_path.is_file():
         return None
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(descriptor_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
-    return manifest if isinstance(manifest, dict) else None
-
-
-def _read_legacy_topology_bundle(glb_path: Path) -> SelectorBundle | None:
-    manifest = read_legacy_topology_manifest(glb_path)
-    if manifest is None:
-        return None
-    buffers: dict[str, array] = {}
-    buffer_spec = manifest.get("buffers")
-    views = buffer_spec.get("views") if isinstance(buffer_spec, Mapping) else None
-    uri = str(buffer_spec.get("uri") or "") if isinstance(buffer_spec, Mapping) else ""
-    if isinstance(views, Mapping) and uri:
-        manifest_path = _legacy_topology_manifest_path_for_glb(glb_path)
-        bin_path = manifest_path.parent / uri if manifest_path is not None else Path(uri)
-        try:
-            binary_payload = bin_path.read_bytes()
-        except OSError:
-            binary_payload = b""
-        if binary_payload:
-            for name, view in views.items():
-                if not isinstance(view, Mapping):
-                    continue
-                try:
-                    buffers[str(name)] = _array_from_legacy_binary_view(binary_payload, view)
-                except ValueError:
-                    continue
-    return SelectorBundle(manifest=manifest, buffers=buffers)
-
-
-def read_step_topology_bundle_from_glb(glb_path: Path) -> SelectorBundle | None:
-    try:
-        gltf, binary_payload = _read_glb_chunks(glb_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return _read_legacy_topology_bundle(glb_path)
-    extension = _step_topology_extension(gltf)
-    if extension is None:
-        return _read_legacy_topology_bundle(glb_path)
-    try:
-        manifest_bytes = _buffer_view_bytes(gltf, binary_payload, extension.get("selectorView"))
-        manifest = json.loads(manifest_bytes.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
-        return _read_legacy_topology_bundle(glb_path)
     if not isinstance(manifest, dict):
         return None
-    buffers: dict[str, array] = {}
-    views = manifest.get("buffers", {}).get("views") if isinstance(manifest.get("buffers"), Mapping) else None
-    if isinstance(views, Mapping):
-        for name, view in views.items():
-            if not isinstance(view, Mapping):
-                continue
-            try:
-                buffers[str(name)] = _array_from_view(gltf, binary_payload, view)
-            except ValueError:
-                continue
-    return SelectorBundle(manifest=manifest, buffers=buffers)
+    # The ONE merge point for the source sidecar: the descriptor is
+    # STEP-pure (source_sidecar.py), so source-derived state — provenance
+    # the freshness gates read, pose, mates — is attached here under an
+    # internal key every manifest consumer shares. Never written to disk.
+    # The sidecar lives BESIDE THE MODEL, so callers that know the entry
+    # file pass it; store packages themselves carry no source state.
+    if entry_path is not None:
+        from cadgen._internal.source_sidecar import read_source_sidecar
 
-
-# Kept as the historical private name alongside the public single home; glb.py
-# imports the public one instead of carrying a byte-identical twin.
-_read_legacy_topology_manifest = read_legacy_topology_manifest
-
-def read_step_topology_index_from_glb(glb_path: Path, *, entry_path: Path | None = None) -> dict[str, Any] | None:
-    # NOT the same function as glb.read_step_topology_index_from_glb, though the file
-    # branches look alike: this one reads RAW assembly.json for a package directory,
-    # while glb.py's returns the VALIDATED package descriptor. Selector/lookup callers
-    # want the plain document; keep the two distinct on purpose.
-    # Dir-aware branch: a render package DIRECTORY carries its topology index
-    # as the package descriptor (assembly.json). The generated-model freshness
-    # gate (_generated_assembly_glb_closure_current) reads the recorded source
-    # closure through this path; without it every generated package re-ran
-    # gen_step and the full-scene mesh on every build. The hidden monolith GLB
-    # that used to embed this index was retired with the legacy artifact layer.
-    if glb_path.is_dir():
-        descriptor_path = glb_path / "assembly.json"
-        if not descriptor_path.is_file():
-            return None
-        try:
-            manifest = json.loads(descriptor_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        if not isinstance(manifest, dict):
-            return None
-        # The ONE merge point for the source sidecar: the descriptor is
-        # STEP-pure (source_sidecar.py), so source-derived state — provenance
-        # the freshness gates read, pose, mates — is attached here under an
-        # internal key every manifest consumer shares. Never written to disk.
-        # The sidecar lives BESIDE THE MODEL, so callers that know the entry
-        # file pass it; store packages themselves carry no source state.
-        if entry_path is not None:
-            from cadgen._internal.source_sidecar import read_source_sidecar
-
-            sidecar = read_source_sidecar(entry_path)
-            if sidecar is not None:
-                manifest["_sourceSidecar"] = sidecar
-        return manifest
-    try:
-        gltf, binary_offset, binary_length = _read_glb_json_and_bin_location(glb_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return read_legacy_topology_manifest(glb_path)
-    extension = _step_topology_extension(gltf)
-    if extension is None:
-        return read_legacy_topology_manifest(glb_path)
-    try:
-        manifest_offset, manifest_length = _buffer_view_range(
-            gltf,
-            binary_offset,
-            binary_length,
-            extension.get("indexView"),
-        )
-        manifest = json.loads(_read_file_range(glb_path, manifest_offset, manifest_length).decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, OSError):
-        return None
-    return manifest if isinstance(manifest, dict) else None
-
-
-def read_step_display_edge_manifest_from_glb(glb_path: Path) -> dict[str, Any] | None:
-    try:
-        gltf, binary_offset, binary_length = _read_glb_json_and_bin_location(glb_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return None
-    extension = _step_topology_extension(gltf)
-    if extension is None:
-        return None
-    try:
-        manifest_offset, manifest_length = _buffer_view_range(
-            gltf,
-            binary_offset,
-            binary_length,
-            extension.get("edgeView", extension.get("displayEdgeView")),
-        )
-        manifest = json.loads(_read_file_range(glb_path, manifest_offset, manifest_length).decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError, OSError):
-        return None
-    return manifest if isinstance(manifest, dict) else None
+        sidecar = read_source_sidecar(entry_path)
+        if sidecar is not None:
+            manifest["_sourceSidecar"] = sidecar
+    return manifest
 
 
 def read_step_topology_manifest_from_glb(glb_path: Path, *, entry_path: Path | None = None) -> dict[str, Any] | None:
     return read_step_topology_index_from_glb(glb_path, entry_path=entry_path)
-
-
-def glb_primitives_have_surface_edge_attributes(glb_path: Path) -> bool:
-    try:
-        gltf, _binary_offset, _binary_length = _read_glb_json_and_bin_location(glb_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return False
-    primitive_count = 0
-    meshes = gltf.get("meshes")
-    if not isinstance(meshes, list):
-        return False
-    for mesh in meshes:
-        primitives = mesh.get("primitives") if isinstance(mesh, Mapping) else None
-        if not isinstance(primitives, list):
-            continue
-        for primitive in primitives:
-            primitive_count += 1
-            attributes = primitive.get("attributes") if isinstance(primitive, Mapping) else None
-            if not isinstance(attributes, Mapping):
-                return False
-            if STEP_EDGE_BARYCENTRIC_ATTRIBUTE not in attributes or STEP_EDGE_CLASS_ATTRIBUTE not in attributes:
-                return False
-    return primitive_count > 0
-
-
-def glb_surface_edge_class_has_nonzero_values(glb_path: Path) -> bool:
-    try:
-        gltf, binary_offset, binary_length = _read_glb_json_and_bin_location(glb_path)
-    except (OSError, ValueError, json.JSONDecodeError):
-        return False
-    meshes = gltf.get("meshes")
-    accessors = gltf.get("accessors")
-    if not isinstance(meshes, list) or not isinstance(accessors, list):
-        return False
-    for mesh in meshes:
-        primitives = mesh.get("primitives") if isinstance(mesh, Mapping) else None
-        if not isinstance(primitives, list):
-            continue
-        for primitive in primitives:
-            attributes = primitive.get("attributes") if isinstance(primitive, Mapping) else None
-            accessor_index = attributes.get(STEP_EDGE_CLASS_ATTRIBUTE) if isinstance(attributes, Mapping) else None
-            if not isinstance(accessor_index, int) or accessor_index < 0 or accessor_index >= len(accessors):
-                continue
-            accessor = accessors[accessor_index]
-            if not isinstance(accessor, Mapping):
-                continue
-            if int(accessor.get("componentType") or 0) != UNSIGNED_BYTE or accessor.get("type") != "VEC3":
-                continue
-            try:
-                view_offset, view_length = _buffer_view_range(
-                    gltf,
-                    binary_offset,
-                    binary_length,
-                    accessor.get("bufferView"),
-                )
-            except ValueError:
-                continue
-            byte_offset = int(accessor.get("byteOffset") or 0)
-            count = int(accessor.get("count") or 0) * 3
-            if byte_offset < 0 or count <= 0 or byte_offset + count > view_length:
-                continue
-            try:
-                if any(_read_file_range(glb_path, view_offset + byte_offset, count)):
-                    return True
-            except (OSError, ValueError):
-                continue
-    return False
 
 
 def build_step_topology_index_manifest(

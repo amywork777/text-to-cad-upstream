@@ -5,7 +5,6 @@ import {
 import {
   stepArtifactCanGenerate,
   stepArtifactGenerationInProgress,
-  stepArtifactIsStale,
   stepArtifactNeedsWarning
 } from "./stepArtifactStatus.js";
 
@@ -58,7 +57,6 @@ export function entryIconStatus(entry, {
   };
   const artifactCanGenerate = stepArtifactCanGenerate(entry, normalizedSourceFormat, options);
   const artifactBuildable = artifactCanGenerate;
-  const artifactStale = stepArtifactIsStale(entry, normalizedSourceFormat);
   const artifactErrorCode = String(entry?.artifact?.error || "").trim();
   const artifactWarning = !artifactGenerationInProgress &&
     stepArtifactNeedsWarning(entry, normalizedSourceFormat, {
@@ -80,7 +78,7 @@ export function entryIconStatus(entry, {
     : assetLoading
       ? "loading"
     : artifactWarning
-      ? (artifactStale ? "artifact stale" : artifactErrorCode === "missing_glb" ? "artifacts missing" : "artifact warning")
+      ? (artifactErrorCode === "missing_glb" ? "artifacts missing" : "artifact warning")
       : artifactBuildable
         ? "artifact generates on open"
         : pending
@@ -90,7 +88,6 @@ export function entryIconStatus(entry, {
   return {
     artifactBuildable,
     artifactGenerating,
-    artifactStale,
     artifactWarning,
     loading,
     pending,

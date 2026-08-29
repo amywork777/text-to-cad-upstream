@@ -9,7 +9,6 @@ from cadgen._internal.component_package import PACKAGE_KIND
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.package_freshness import (
     STEP_PACKAGE_VERSION,
-    canonical_bake_hash,
 )
 from cadgen._internal.source_hash import closure_for_files
 
@@ -206,20 +205,15 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
     def test_a_well_formed_package_descriptor_is_current(self) -> None:
         self.assertTrue(self._match(self._descriptor(self.options)))
 
-    def test_missing_schema_version_is_not_current(self) -> None:
-        descriptor = self._descriptor(self.options)
-        del descriptor["packageSchemaVersion"]
-        self.assertFalse(self._match(descriptor))
+    def test_schema_gating_lives_in_the_package_key(self) -> None:
+        # The store key is <hash>-v<STEP_PACKAGE_VERSION>: a version bump
+        # changes the key, so an old-generation package simply stops
+        # resolving. No descriptor field decides schema currency any more.
+        from cadgen.catalog import package_dir_for_hash
 
-    def test_older_schema_version_is_not_current(self) -> None:
-        descriptor = self._descriptor(self.options)
-        descriptor["packageSchemaVersion"] = STEP_PACKAGE_VERSION - 1
-        self.assertFalse(self._match(descriptor))
-
-    def test_recorded_bake_hash_is_not_current_because_step_bakes_nothing(self) -> None:
-        descriptor = self._descriptor(self.options)
-        descriptor["bakeHash"] = canonical_bake_hash({"detailMode": "full"})
-        self.assertFalse(self._match(descriptor))
+        self.assertTrue(
+            str(package_dir_for_hash("cafe")).endswith(f"cafe-v{STEP_PACKAGE_VERSION}")
+        )
 
 
 if __name__ == "__main__":

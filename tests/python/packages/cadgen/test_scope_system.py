@@ -67,7 +67,7 @@ def _package(compound: Compound, package_dir: Path) -> dict:
         ),
         "componentBytes": {
             p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-            for p in sorted((package_dir / "components").glob("*.glb"))
+            for p in sorted((package_dir / "components").glob("*.surf"))
         },
     }
 

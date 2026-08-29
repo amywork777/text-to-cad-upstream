@@ -270,68 +270,6 @@ export function createCadApp({ root, host, port, distDir = "" }) {
     streamFile(req, res, candidate, stat, contentType, { disposition });
   }
 
-  function refererFileRef(req) {
-    const value = req.headers.referer || req.headers.referrer || "";
-    if (!value) {
-      return "";
-    }
-    try {
-      const url = new URL(value.includes("://") ? value : `http://localhost${value}`);
-      return (url.searchParams.get("file") || "").trim();
-    } catch {
-      return "";
-    }
-  }
-
-  function siblingFileRef(sourceFileRef, relativeFileRef) {
-    const source = String(sourceFileRef || "").replace(/\\/g, "/");
-    const relative = String(relativeFileRef || "").replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!source || !relative) {
-      return "";
-    }
-    if (path.isAbsolute(source)) {
-      return path.normalize(path.join(path.dirname(source), relative));
-    }
-    const sourceDir = path.posix.dirname(source);
-    return path.posix.normalize(path.posix.join(sourceDir === "." ? "" : sourceDir, relative));
-  }
-
-  // GET /__cad/<rel>.<ext>: a sibling-of-Referer asset request (relative package
-  // assets like URDF meshes / ../components). Returns true if it handled the
-  // response (served or 403), false to fall through.
-  function legacyCadAsset(req, res, pathname) {
-    if (!pathname.startsWith("/__cad/") || pathname === "/__cad/asset") {
-      return false;
-    }
-    let relativePath;
-    try {
-      relativePath = decodeURIComponent(pathname.slice("/__cad/".length));
-    } catch {
-      return false;
-    }
-    if (!relativePath || !path.extname(relativePath)) {
-      return false;
-    }
-    const fileRef = siblingFileRef(refererFileRef(req), relativePath);
-    if (!fileRef) {
-      return false;
-    }
-    let candidate;
-    try {
-      candidate = backend.assetPathForFileRef(fileRef);
-    } catch (error) {
-      if (error instanceof ForbiddenAssetError) {
-        sendBytes(req, res, 403, Buffer.from("Forbidden"), "");
-        return true;
-      }
-      throw error;
-    }
-    if (!candidate) {
-      return false;
-    }
-    return serveFile(req, res, candidate, backend.contentTypeForPath(candidate) || "");
-  }
-
   function entryRefForStatus(fileRef) {
     const catalog = backend.readCatalog();
     const entry = backend.catalogEntryForFileRef(catalog, fileRef);
@@ -477,7 +415,7 @@ export function createCadApp({ root, host, port, distDir = "" }) {
           serveAsset(req, res, query, { download: false });
         } else if (pathname === "/__cad/download") {
           serveAsset(req, res, query, { download: true });
-        } else if (!legacyCadAsset(req, res, pathname)) {
+        } else {
           if (!distDir) {
             return false;
           }

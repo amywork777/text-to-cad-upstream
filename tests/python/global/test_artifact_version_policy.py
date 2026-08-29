@@ -67,8 +67,10 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
     def test_each_file_type_keeps_its_own_cache_key(self) -> None:
         # Deliberately NOT one shared number: a drawing rebuild is milliseconds and a
         # large STEP assembly is tens of seconds, so a DXF change must not re-mesh every
-        # STEP model on next open.
-        source = (ROOT / "viewer/server/artifactStatus.mjs").read_text()
+        # STEP model on next open. The gate lives in the store KEY salt now
+        # (storePaths.mjs), not in a descriptor check: a version bump orphans
+        # old packages by key.
+        source = (ROOT / "viewer/server/storePaths.mjs").read_text()
         # DXF is absent by design: a generated drawing's render IS the sibling
         # .dxf the client parses, so there is no artifact to gate.
         for constant in (
@@ -77,7 +79,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
             self.assertIn(
                 constant,
                 source,
-                f"the viewer validator must gate {constant} so that file type invalidates "
+                f"the store key salt must carry {constant} so that file type invalidates "
                 "independently of the others",
             )
 

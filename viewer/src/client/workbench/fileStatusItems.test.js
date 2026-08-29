@@ -123,7 +123,6 @@ test("stepFileStatusItems reads artifact warnings from current-file status", () 
 
 test("stepFileStatusItems keeps renderable STEP artifact issues as warnings", () => {
   const renderableArtifactCases = [
-    ["stale_step_artifact", true, "STEP artifact stale", "Generated GLB doesn't match the hash of the STEP file."],
     ["missing_glb", false, "STEP artifact missing", "Generated GLB is missing."],
     ["missing_step_topology", false, "STEP artifact metadata warning", "Generated GLB is missing STEP topology metadata."],
     ["missing_selector_topology", false, "STEP artifact metadata warning", "Generated GLB is missing selector topology metadata."],
@@ -255,8 +254,7 @@ test("buildFileStatusItems combines producers and exposes the most intense level
       kind: "part",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
+        error: "missing_glb",
         message: "GLB was generated from older source."
       }
     },
@@ -276,7 +274,7 @@ test("buildFileStatusItems combines producers and exposes the most intense level
     FILE_STATUS_LEVELS.ERROR,
     FILE_STATUS_LEVELS.ERROR
   ]);
-  assert.equal(items[0].message, "Generated GLB doesn't match the hash of the STEP file.");
+  assert.equal(items[0].message, "Generated GLB is missing.");
 });
 
 test("stepFileStatusItems hides regenerable STEP artifact issues until three generation failures", () => {
@@ -371,11 +369,10 @@ test("formatFileStatusItemForAgent copies status items with details", () => {
       kind: "part",
       artifact: {
         ok: false,
-        error: "stale_step_artifact",
-        stale: true,
+        error: "missing_glb",
         sourceKind: "step",
         stepPath: "models/step/parts/part.step",
-        packagePath: "models/step/parts/__cadgen__/models/part.step",
+        packagePath: "models/step/parts/pkg/part.step",
         artifactHash: "old-hash",
         currentHash: "new-hash"
       }
@@ -387,42 +384,33 @@ test("formatFileStatusItemForAgent copies status items with details", () => {
   assert.equal(formatFileStatusItemForAgent(item), [
     "CAD Viewer issue",
     "Level: Error",
-    "Title: STEP artifact stale",
-    "Description: Generated GLB doesn't match the hash of the STEP file.",
+    "Title: STEP artifact missing",
+    "Description: Generated GLB is missing.",
     "Source: catalog",
-    "Code: stale_step_artifact",
+    "Code: missing_glb",
     "",
     "Details:",
-    "- Code: stale_step_artifact",
+    "- Code: missing_glb",
     "- STEP file: step/parts/part.step",
-    "- Render package: step/parts/__cadgen__/models/part.step",
+    "- Render package: step/parts/pkg/part.step",
     "- Source kind: step",
     "- Artifact hash: old-hash",
     "- Current hash: new-hash"
   ].join("\n"));
 });
 
-test("artifact advisories: stale is a warning, busy is a quiet info chip", () => {
+test("artifact advisory: busy is a quiet info chip", () => {
   const entry = { file: "step/parts/part.step", kind: "part" };
-  const both = artifactAdvisoryStatusItems({
-    stale: true,
-    staleReason: "the STEP file changed after this package was imported",
-    busy: true,
-    runId: "run-42"
-  }, { entry, viewerServerInfo });
-  assert.equal(both.length, 2);
-  const [stale, busy] = both;
-  assert.equal(stale.level, FILE_STATUS_LEVELS.WARNING);
-  assert.equal(stale.code, "stale_render_package");
-  assert.match(stale.message, /the STEP file changed after this package was imported/);
-  assert.match(stale.message, /rebuild with the CAD CLI/i);
+  const items = artifactAdvisoryStatusItems({ busy: true, runId: "run-42" }, { entry, viewerServerInfo });
+  assert.equal(items.length, 1);
+  const [busy] = items;
   assert.equal(busy.level, FILE_STATUS_LEVELS.INFO);
   assert.equal(busy.code, "generator_busy");
   assert.ok(busy.details.some((d) => d.label === "Run" && d.value === "run-42"));
 
-  // Only the WARNING counts as an issue; the INFO renders as an advisory chip.
-  assert.equal(fileStatusWarningOrErrorItems(both).length, 1);
-  assert.equal(fileStatusAdvisoryInfoItems(both).length, 1);
+  // The INFO renders as an advisory chip, never as an issue.
+  assert.equal(fileStatusWarningOrErrorItems(items).length, 0);
+  assert.equal(fileStatusAdvisoryInfoItems(items).length, 1);
   assert.equal(artifactAdvisoryStatusItems(null, { entry }).length, 0);
 });
 
@@ -430,8 +418,8 @@ test("buildFileStatusItems threads the artifact advisory for every kind", () => 
   const items = buildFileStatusItems({
     entry: { file: "drawings/plate.dxf", kind: "drawing" },
     fileSheetKind: "dxf",
-    artifactAdvisory: { stale: true, staleReason: "", busy: false, runId: "" },
+    artifactAdvisory: { busy: true, runId: "" },
     viewerServerInfo
   });
-  assert.equal(items.some((item) => item.code === "stale_render_package"), true);
+  assert.equal(items.some((item) => item.code === "generator_busy"), true);
 });

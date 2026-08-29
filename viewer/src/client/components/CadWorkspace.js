@@ -144,7 +144,6 @@ import {
   entryHasReferences,
   entryHasUrdf,
   entryMeshAssetSignature,
-  entryHasLegacyParamsSidecar,
   entryPoseUrl,
   entryUrdfAssetHash
 } from "cadjs/lib/entryAssets";
@@ -1499,7 +1498,6 @@ export default function CadWorkspace({
     )
   );
   const selectedStepModuleUrl = supportsSidecarParams ? entryPoseUrl(selectedEntry) : "";
-  const selectedEntryLegacyParamsSidecar = entryHasLegacyParamsSidecar(selectedEntry);
   const selectedStepModuleCadPath = selectedStepModuleUrl ? cadPathForEntry(selectedEntry) : "";
   const selectedStepModuleDefinition = stepModuleLoadState.url === selectedStepModuleUrl
     ? stepModuleLoadState.definition
@@ -7455,7 +7453,6 @@ export default function CadWorkspace({
                 stepModule={{
                   status: selectedStepModuleStatus,
                   error: selectedStepModuleError,
-                  legacyParamsSidecar: selectedEntryLegacyParamsSidecar,
                   definition: selectedStepModuleDefinition,
                   enabled: stepModuleEnabled,
                   parameterValues: stepModuleParameterValues,

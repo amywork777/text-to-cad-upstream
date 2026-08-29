@@ -76,14 +76,15 @@ class RenderContractSyncTest(unittest.TestCase):
             "SOURCE_SIDECAR_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
         )
 
-    def test_status_authority_schema_gate_matches_python(self) -> None:
-        # The JS status authority gates render packages on the one JS constant
-        # this suite pins against Python.
-        status_module = ROOT / "viewer/server/artifactStatus.mjs"
+    def test_store_key_salt_reads_the_one_js_constant(self) -> None:
+        # Schema gating lives in the package KEY now: storePaths.mjs salts the
+        # store key with the one JS constant this suite pins against Python.
+        # A package that resolves at all is current-schema by construction.
+        store_module = ROOT / "viewer/server/storePaths.mjs"
         self.assertIn(
             'import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
-            status_module.read_text(),
-            "the status authority must read the schema version from the one JS "
+            store_module.read_text(),
+            "the store key salt must read the schema version from the one JS "
             "constant (packageContract.mjs), which this suite pins against Python",
         )
 

@@ -1339,9 +1339,7 @@ export default function StepFileSheet({
       runtime: stepModule,
       label: "STEP",
       loadingLabel: "Loading STEP module...",
-      noParametersLabel: stepModule?.legacyParamsSidecar
-        ? "This model\u2019s .params.js sidecar is retired and no longer loads \u2014 declare @step(pose=cadgen.pose(...)) on the model instead (see the cad skill\u2019s pose reference)."
-        : "No module parameters.",
+      noParametersLabel: "No module parameters.",
       showEnableToggle: true,
       enableAriaLabel: "Enable STEP module",
       animationAriaLabel: "STEP animation",

@@ -93,19 +93,17 @@ test("imported STEP: fresh package is ready", (t) => {
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });
 
-test("imported STEP: digest gate fails closed (stale, blank, and absent hashes)", (t) => {
+test("imported STEP: the digest gate IS the content key — an edit unresolves the package", (t) => {
   const root = tempRoot(t, "status-");
-  for (const [stepHash, reason] of [
-    ["deadbeef", "stale_step_artifact"],
-    ["", "missing_step_hash"],
-    [null, "missing_step_hash"],
-  ]) {
-    const sub = fs.mkdtempSync(path.join(root, "case-"));
-    const step = writeStepPackage(sub, "imp.step", { stepHash });
-    const status = artifactStatus(step, sub);
-    assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD, `hash=${stepHash}`);
-    assert.equal(status.reason, reason);
-  }
+  const step = writeStepPackage(root, "imp.step");
+  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
+  // Edit the file: it hashes to a different key, so the package simply does
+  // not resolve any more. No descriptor field is consulted, no re-hash gate
+  // runs per poll — needs-build falls out of resolution itself.
+  fs.appendFileSync(step, "\n");
+  const status = artifactStatus(step, root);
+  assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD);
+  assert.equal(status.reason, "missing_glb");
 });
 
 test("generated entries are detached: no source checks, ever", (t) => {
@@ -128,21 +126,23 @@ test("provenance owns the digest gate: a python-backed .step skips it", (t) => {
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });
 
-test("schema gate: strict equality, missing/old/stringified all unsupported (and buildable)", (t) => {
+test("the schema gate lives in the package KEY, not the descriptor", (t) => {
   const root = tempRoot(t, "status-");
-  for (const schemaVersion of [null, STEP_PACKAGE_VERSION - 1, String(STEP_PACKAGE_VERSION)]) {
-    const sub = fs.mkdtempSync(path.join(root, "case-"));
-    const step = writeStepPackage(sub, "imp.step", { schemaVersion });
-    const status = artifactStatus(step, sub);
-    assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD, `schema=${schemaVersion}`);
-    assert.equal(status.reason, "unsupported_step_topology");
-  }
+  // A bumped STEP_PACKAGE_VERSION changes the -v<N> key salt, so an
+  // old-generation package simply stops resolving: no descriptor field is
+  // read to decide schema currency.
+  const step = writeStepPackage(root, "imp.step");
+  assert.equal(artifactStatus(step, root).state, ARTIFACT_STATE.READY);
+  const packageDir = renderPackageDir(step);
+  const oldGeneration = `${packageDir.slice(0, packageDir.lastIndexOf("-v"))}-v${STEP_PACKAGE_VERSION - 1}`;
+  fs.renameSync(packageDir, oldGeneration);
+  const status = artifactStatus(step, root);
+  assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD);
+  assert.equal(status.reason, "missing_glb");
 });
 
-test("STEP bakes nothing, so a recorded bake is stale; missing payloads and package are buildable", (t) => {
+test("missing payloads and package are buildable", (t) => {
   const root = tempRoot(t, "status-");
-  const baked = writeStepPackage(root, "baked.step", { bakeHash: "any-recorded-bake" });
-  assert.equal(artifactStatus(baked, root).reason, "stale_step_artifact");
   const missingSurf = writeStepPackage(root, "gone.step", { withSurf: false });
   assert.equal(artifactStatus(missingSurf, root).reason, "missing_glb");
   const bare = write(root, "bare.step", "ISO-10303-21;\n");
@@ -172,17 +172,17 @@ test("the lock snapshot decides generating/busy/blocked; freshness decides the r
   assert.deepEqual(artifactStatus(step, root, { snapshot: busy }), {
     state: ARTIFACT_STATE.READY, busy: true, runId: "run-2",
   });
-  const stale = writeStepPackage(root, "stale.step", { stepHash: "deadbeef" });
-  assert.deepEqual(artifactStatus(stale, root, { snapshot: busy }), {
-    state: ARTIFACT_STATE.NEEDS_BUILD, reason: "stale_step_artifact", blocked: true,
+  const unbuilt = write(root, "unbuilt.step", "ISO-10303-21;\nno package\n");
+  assert.deepEqual(artifactStatus(unbuilt, root, { snapshot: busy }), {
+    state: ARTIFACT_STATE.NEEDS_BUILD, reason: "missing_glb", blocked: true,
   });
 });
 
-test("verdicts carry what the degraded path needs", (t) => {
+test("verdicts carry what the import path needs", (t) => {
   const root = tempRoot(t, "status-");
-  const stale = writeStepPackage(root, "stale.step", { stepHash: "deadbeef" });
-  const verdict = resolveArtifactVerdict(stale, root);
+  const bare = write(root, "bare.step", "ISO-10303-21;\nbare\n");
+  const verdict = resolveArtifactVerdict(bare, root);
   assert.equal(verdict.rawStep, true);
-  assert.equal(verdict.digestMismatch, true);
-  assert.ok(verdict.descriptor);
+  assert.equal(verdict.generated, undefined);
+  assert.equal(verdict.descriptor, undefined);
 });

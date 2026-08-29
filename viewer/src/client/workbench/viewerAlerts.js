@@ -67,13 +67,8 @@ export function buildViewerMeshAlert(entry, hasMeshData, loadError, artifact = n
   const stepArtifactError = failedStepArtifact(entry, sourceFormat);
   if (stepArtifactError && !hasMeshData) {
     const code = String(stepArtifactError.error || "").trim();
-    const stale = stepArtifactError.stale === true || code === "stale_step_artifact";
     const missingGlb = code === "missing_glb";
-    const summary = stale
-      ? "STEP artifact stale"
-      : missingGlb
-        ? "STEP artifact missing"
-        : "STEP artifact unavailable";
+    const summary = missingGlb ? "STEP artifact missing" : "STEP artifact unavailable";
     const renderableGlb = stepArtifactHasRenderableGlb(entry);
     if (!renderableGlb || !loadError) {
       return {

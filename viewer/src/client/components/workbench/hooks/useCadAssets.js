@@ -207,18 +207,41 @@ function loadRenderMeshForEntry(entry, options) {
 // MODEL-SIDE sidecar (<name>.step.source.json, entry.sourceUrl). Attach the
 // sidecar's mates here so every descriptor consumer keeps seeing one shape.
 // A missing sidecar simply means the model is imported, which has no mates.
+// One fetch per (descriptor URL, sidecar URL) pair: the mesh path and the
+// selector path both resolve the same descriptor when a model opens, and the
+// URLs carry a ?v= version token, so a keyed cache is naturally invalidated
+// when the underlying files change. Bounded to keep long sessions flat.
+const PACKAGE_DESCRIPTOR_CACHE = new Map();
+const PACKAGE_DESCRIPTOR_CACHE_LIMIT = 32;
+
 async function loadPackageDescriptorWithSource(packageAssetUrl, { signal, sourceUrl = "" } = {}) {
-  const descriptor = await loadRenderJson(resolvePackageAssetUrl(packageAssetUrl, "assembly.json"), {
-    signal
-  }).catch(() => null);
-  if (!descriptor || descriptor.kind !== "assembly-package" || !sourceUrl) {
+  const descriptorUrl = resolvePackageAssetUrl(packageAssetUrl, "assembly.json");
+  const cacheKey = `${descriptorUrl}\u0000${sourceUrl}`;
+  if (PACKAGE_DESCRIPTOR_CACHE.has(cacheKey)) {
+    return PACKAGE_DESCRIPTOR_CACHE.get(cacheKey);
+  }
+  const promise = (async () => {
+    const descriptor = await loadRenderJson(descriptorUrl, { signal }).catch(() => null);
+    if (!descriptor || descriptor.kind !== "assembly-package" || !sourceUrl) {
+      return descriptor;
+    }
+    const sidecar = await loadRenderJson(sourceUrl, { signal }).catch(() => null);
+    if (sidecar && Array.isArray(sidecar.assemblyMates) && sidecar.assemblyMates.length) {
+      return { ...descriptor, assemblyMates: sidecar.assemblyMates };
+    }
     return descriptor;
+  })();
+  if (PACKAGE_DESCRIPTOR_CACHE.size >= PACKAGE_DESCRIPTOR_CACHE_LIMIT) {
+    PACKAGE_DESCRIPTOR_CACHE.clear();
   }
-  const sidecar = await loadRenderJson(sourceUrl, { signal }).catch(() => null);
-  if (sidecar && Array.isArray(sidecar.assemblyMates) && sidecar.assemblyMates.length) {
-    return { ...descriptor, assemblyMates: sidecar.assemblyMates };
-  }
-  return descriptor;
+  PACKAGE_DESCRIPTOR_CACHE.set(cacheKey, promise);
+  promise.then((value) => {
+    // Never cache a failed/aborted resolve: the next caller should retry.
+    if (!value) {
+      PACKAGE_DESCRIPTOR_CACHE.delete(cacheKey);
+    }
+  });
+  return promise;
 }
 
 function createAssemblyPreviewMeshData(meshData, topologyManifest = null) {

@@ -100,21 +100,16 @@ class StepArtifactsTests(unittest.TestCase):
                 source="imported",
                 step_path=step_path,
             )
-            # A generated package is one whose manifest carries the merged-in
-            # source sidecar (_sourceSidecar); the descriptor has no sourceKind.
-            self.assertFalse(
+            # An imported spec accepts ANY resolved package — content keying
+            # already guarantees the package is these bytes' render, so no
+            # stepHash presence check remains.
+            self.assertTrue(
                 generation._artifact_source_kind_matches_spec(
                     spec, {"_sourceSidecar": {"sourceKind": "python"}}
                 )
             )
             self.assertTrue(
-                generation._artifact_source_kind_matches_spec(
-                    spec,
-                    {
-                        "_sourceSidecar": {"sourceKind": "python"},
-                        "stepHash": generation.step_file_hash(step_path),
-                    },
-                )
+                generation._artifact_source_kind_matches_spec(spec, {})
             )
 
 

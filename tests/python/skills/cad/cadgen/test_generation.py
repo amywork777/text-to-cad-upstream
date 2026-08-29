@@ -935,7 +935,10 @@ class CadGenerationTests(unittest.TestCase):
         _, direct_specs = cad_generation._selected_specs_for_targets([str(direct_path)])
 
         # Generated-vs-imported rides the merged-in source sidecar
-        # (_sourceSidecar), never a descriptor field.
+        # (_sourceSidecar), never a descriptor field. A GENERATED spec still
+        # requires its sidecar (a sidecar-less package means the model was
+        # never generated here); an IMPORTED spec accepts any resolved
+        # package — content keying guarantees it is these bytes' render.
         generated_manifest = {"_sourceSidecar": {"sourceKind": "python"}}
         imported_manifest = {}
         self.assertTrue(
@@ -956,7 +959,7 @@ class CadGenerationTests(unittest.TestCase):
                 imported_manifest,
             )
         )
-        self.assertFalse(
+        self.assertTrue(
             cad_generation._artifact_source_kind_matches_spec(
                 direct_specs[0],
                 generated_manifest,
@@ -1464,13 +1467,15 @@ class CadGenerationTests(unittest.TestCase):
         artifact.manifest = {
             "kind": "assembly-package",
             "packageSchemaVersion": STEP_PACKAGE_VERSION,
-            "stepHash": "stale-step-hash",
+            # Stale by MESH OPTIONS: the recorded deflections disagree with the
+            # requested ones. (Hash staleness cannot exist under content
+            # keying — an edited file resolves to a different package key.)
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
             },
             "mesh": {
-                "linearDeflection": 0.3,
-                "angularDeflection": 0.2,
+                "linearDeflection": 0.9,
+                "angularDeflection": 0.9,
                 "relative": True,
             },
         }

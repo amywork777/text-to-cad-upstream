@@ -6,7 +6,6 @@ import test from "node:test";
 
 import {
   isServedCadAsset,
-  legacyParamsSidecarPath,
   renderPackageDir,
   pathIsInside,
   scanCadDirectory,
@@ -111,14 +110,13 @@ test("a source-sidecar pose block is exposed as poseUrl; sidecars only teach", (
   assert.ok(entry.poseUrl.includes("source.json"));
   assert.ok(entry.sourceUrl.includes("source.json"));
   assert.equal(entry.poseHatchUrl, undefined);
-  assert.equal(entry.legacyParamsSidecar, undefined);
 
-  // The retired sidecar convention is detected only to TEACH, never loaded.
+  // A loose .params.js beside a model is inert bytes: never loaded, never
+  // even remarked on (the retired-sidecar teaching path is gone).
   write(root, "legacy.step", "ISO-10303-21;\n");
   write(root, "legacy.params.js", "export default {};\n");
-  assert.equal(legacyParamsSidecarPath(path.join(root, "legacy.step")), path.join(root, "legacy.params.js"));
   const legacy = scanCadDirectory(root).entries.find((e) => e.file === "legacy.step");
-  assert.equal(legacy.legacyParamsSidecar, true);
+  assert.equal(legacy.legacyParamsSidecar, undefined);
   assert.equal(legacy.poseUrl, undefined);
   assert.equal(legacy.moduleUrl, undefined);
 });
