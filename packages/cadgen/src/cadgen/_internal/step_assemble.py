@@ -78,7 +78,12 @@ def assemble_compound_from_package(package_dir: Path):
                 f"package {package_dir} is missing component blob {cid}")
         child = base.moved(_location_from_matrix(occurrence.get("transform")))
         child.label = str(occurrence.get("name") or occurrence.get("id") or "")
-        color = _color_from_entry(components.get(cid) or {})
+        # Occurrence color first: generators author per-occurrence colors and
+        # the descriptor records them there; the component entry's color is the
+        # shared-part fallback. Reading only the component entry silently wrote
+        # colorless STEP files for every model whose colors were per-occurrence
+        # (the planetary pilot), which then imported colorless everywhere.
+        color = _color_from_entry(occurrence) or _color_from_entry(components.get(cid) or {})
         if color is not None:
             child.color = color
         placed_by_id[str(occurrence.get("id") or "")] = child
