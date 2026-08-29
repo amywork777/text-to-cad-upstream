@@ -5,6 +5,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
+from cadgen._internal.cli_locking import add_lock_timeout_argument
 from cadgen.metadata import normalize_mesh_numeric
 
 
@@ -52,6 +53,7 @@ def _add_artifact_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Show detailed progress and timing information.",
     )
+    add_lock_timeout_argument(parser)
 
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
@@ -63,9 +65,10 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
         description=(
-            "Build the __cadgen__ render package for an IMPORTED STEP/STP file — the "
-            "native twin of the CAD Viewer's WASM import. A generated model needs no "
-            "import: run its @step model script directly (python <model>.py)."
+            "Build the render package for an IMPORTED STEP/STP file so viewers and "
+            "CLIs can consume it — the single import producer (the CAD Viewer spawns "
+            "this for foreign STEPs). A generated model needs no import: run its "
+            "@step model script directly (python <model>.py)."
         ),
     )
     _add_artifact_arguments(parser)
@@ -112,6 +115,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
             verbose=bool(args.verbose),
+            lock_timeout_s=float(args.lock_timeout or 0.0),
         )
     except ValueError as exc:
         parser.error(str(exc))
