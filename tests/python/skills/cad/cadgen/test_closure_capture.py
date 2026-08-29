@@ -35,8 +35,16 @@ def _closure(root: Path, name: str) -> list[str]:
     # package died with design/standalone-viewer.md Phase A.
     from cadgen._internal.dxf_output import dxf_export_record_path
 
-    record_path = dxf_export_record_path(root / f"{name}.py")
-    return sorted(json.loads(record_path.read_text(encoding="utf-8"))["sourceClosureFiles"])
+    from cadgen._internal.source_hash import closure_hash_matches
+
+    record_path = dxf_export_record_path(root / f"{name}.dxf")
+    closures = json.loads(record_path.read_text(encoding="utf-8"))["closures"]
+    # Content-keyed records are shared by every source producing these bytes
+    # (other tests included); pick the closure that verifies for THIS root.
+    for closure_hash, files in closures.items():
+        if closure_hash_matches(closure_hash, files, base=root):
+            return sorted(files)
+    raise AssertionError(f"no closure in {record_path} verifies for {root}")
 
 
 class ClosureCaptureTests(unittest.TestCase):

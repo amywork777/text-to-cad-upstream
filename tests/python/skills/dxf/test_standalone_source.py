@@ -86,7 +86,7 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             self.assertGreater(output_path.stat().st_size, 0)
             from cadgen._internal.dxf_output import dxf_export_record_path
 
-            self.assertTrue(dxf_export_record_path(script_path).exists())
+            self.assertTrue(dxf_export_record_path(script_path.with_suffix('.dxf')).exists())
             self.assertFalse((Path(root) / "__cadgen__").exists())
 
     def test_unchanged_source_is_a_no_op_and_output_is_deterministic(self) -> None:

@@ -723,11 +723,11 @@ class CadGenerationTests(unittest.TestCase):
 
         from cadgen._internal.dxf_output import dxf_export_record_path
 
-        record_dir = dxf_export_record_path(self.temp_root / "bare_dxf.py").parent
+        record_dir = dxf_export_record_path(self.temp_root / "bare_dxf.dxf").parent
         # No drawing package exists any more: the .dxf beside the source is the
         # product, and only the output record remains, in the store's records/ tier.
         self.assertTrue((self.temp_root / "bare_dxf.dxf").exists())
-        self.assertTrue(dxf_export_record_path(self.temp_root / "bare_dxf.py").exists())
+        self.assertTrue(dxf_export_record_path(self.temp_root / "bare_dxf.dxf").exists())
         self.assertFalse((record_dir / "preview.glb").exists())
         self.assertFalse((record_dir / "drawing.json").exists())
 
@@ -739,7 +739,7 @@ class CadGenerationTests(unittest.TestCase):
         self.assertTrue((self.temp_root / "flat_drawing.dxf").exists())
         from cadgen._internal.dxf_output import dxf_export_record_path
 
-        self.assertTrue(dxf_export_record_path(self.temp_root / "flat_drawing.py").exists())
+        self.assertTrue(dxf_export_record_path(self.temp_root / "flat_drawing.dxf").exists())
 
     def test_dxf_generation_skips_current_drawing_package(self) -> None:
         script_path = self._dxf_generator_script("flat")
