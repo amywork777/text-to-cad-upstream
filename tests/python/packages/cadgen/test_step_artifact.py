@@ -53,9 +53,13 @@ class BuildStepArtifactTests(unittest.TestCase):
         kind."""
         imported_step = self._materialize_imported_step()
 
+        # force=True: this fixture is deliberately a cadgen-EXPORTED file being
+        # re-imported, which the generated-step guard otherwise refuses
+        # (test_generated_step_fidelity pins that refusal).
         payload = step_artifact_cli.build_step_artifact(
             repo_root=Path.cwd(),
             step=imported_step,
+            force=True,
         )
 
         self.assertTrue(payload.get("ok"), payload)

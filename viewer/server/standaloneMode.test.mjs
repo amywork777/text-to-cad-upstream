@@ -169,7 +169,14 @@ test(
   async (t) => {
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const step = write(root, "roller.step", fs.readFileSync(IMPORT_FIXTURE));
+    // The corpus fixture is itself cadgen-GENERATED (embedded identity
+    // metadata), which the generated-step guard refuses to import. This e2e
+    // wants a VENDOR-style file, so neutralize the identity in the copy —
+    // renaming the generator property is enough (the guard requires both
+    // cadgen:generator and cadgen:sourcePath) and keeps the STEP parseable.
+    const vendorBytes = fs.readFileSync(IMPORT_FIXTURE).toString("latin1")
+      .replaceAll("cadgen:generator", "vendor:generator");
+    const step = write(root, "roller.step", Buffer.from(vendorBytes, "latin1"));
 
     const base = await startApp(t, { root });
 
