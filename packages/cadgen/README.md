@@ -17,7 +17,7 @@ the wheel, so a single `pip install` is the whole runtime. Nothing is fetched at
 time and nothing is resolved relative to a checkout.
 
 Two things it deliberately does not carry: **Node ≥ 20 on `PATH`** (needed only by the
-DXF and implicit builders, resolved when they run, never at import), and a **browser**
+DXF and mesh-export builders, resolved when they run, never at import), and a **browser**
 for snapshots (`pip install 'cadgen[snapshot]'` then `python -m playwright install
 chromium`). Plain STEP generation needs neither.
 
@@ -29,7 +29,6 @@ chromium`). Plain STEP generation needs neither.
 |---|---|
 | `step gen` / `artifact` / `export` / `inspect` / `snapshot` | build STEP targets from `.step.py` generators, build their GLB/topology artifacts, export to exchange files, inspect selector references, render |
 | `dxf gen` / `artifact` / `snapshot` | the same for `.dxf.py` drawing generators |
-| `implicit gen` / `export` / `snapshot` | implicit CAD models |
 | `snapshot` | render any supported input |
 | `daemon` | opt-in warm process that holds OCP resident between builds |
 

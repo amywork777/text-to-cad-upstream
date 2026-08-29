@@ -8,8 +8,8 @@ That backend is **pure JS**: `viewer/server/`, dependency-free Node (>= 22). It 
 everything the viewer does — the catalog scan, path containment, asset serving, the
 SPA, artifact status, the WASM STEP import, the native reveal dialog, the instance
 registry. The viewer is a STATIC VISUALIZATION TOOL: it runs no Python, ever. It
-renders artifacts that exist — render packages, sibling `.dxf` files, live implicit
-sources — and the CAD CLIs (`scripts/gen`, `scripts/export`) own generation and
+renders artifacts that exist — render packages, sibling `.dxf` files — and the CAD
+CLIs (`scripts/gen`, `scripts/export`) own generation and
 export. The one build-shaped thing it does is Python-free by construction: importing
 a raw foreign STEP through its bundled WASM kernel (below).
 
@@ -101,8 +101,7 @@ no-bake gate, and the imported-file digest gate. Generated outputs are DETACHED
 from their source code: the viewer never treats "the generator changed since this
 artifact was built" as a reason to rebuild, and it does not rebuild generated
 entries at all — a `.step.py` or `.dxf.py` with no artifact reports an error that
-names the CLI (`python scripts/gen <source>`), not a build offer. Implicit models
-render live from their own source and are not artifact-managed here.
+names the CLI (`python scripts/gen <source>`), not a build offer.
 
 A CLI build in flight is shown ADVISORILY: the build's status record
 (`.<name>.generation.progress.json`, written by cadgen's coordination layer) is

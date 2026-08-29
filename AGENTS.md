@@ -111,15 +111,8 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   standalone `earthtojake/cad-viewer` repo. The backend runs no Python, ever.
   Keep repo-level tooling in `scripts/`, not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state
-  belong in `viewer/`. It holds the shared CAD render/runtime code AND the implicit
-  CAD runtime.
-- The implicit CAD runtime lives in `packages/cadjs` under `src/lib/implicitCad`
-  (model schema, GLSL raymarch, SDF evaluation, mesh sampling, export), reached by
-  consumers through the `cadjs/implicit/*` export names. It was a separate
-  `implicitjs` package until 2026-08-13; nothing outside cadjs ever imported it, and
-  the split cost a re-export layer, a NODE_PATH/exports-map bridge and a derived
-  alias table in the docs build — while quietly hosting a forked copy of the theme
-  system. One package, one copy of each shared primitive.
+  belong in `viewer/`. It holds the shared CAD render/runtime code: one package,
+  one copy of each shared primitive.
 - `packages/cadgen` is the whole distribution, not just the Python: artifact
   generation, the CLI parsers behind every skill command (`cadgen/cli`), the viewer's
   render-ops gate (`cadgen/render_ops.py`), the warm build daemon (`cadgen/daemon`), and

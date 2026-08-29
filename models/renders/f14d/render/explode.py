@@ -7,10 +7,9 @@ sidecar's ``exploded`` parameter instead:
     python render/explode.py f14d.step.py teardown              # animated GIF
     python render/explode.py f14d.step.py stills --at 0,0.5,1   # still frames
 
-A STEP model has no declared `animate` render mode -- that is for implicit
-models.  It is swept by giving the job an ANIMATED PARAMETER VALUE
-(``stepParameters.animate``) while staying in ``view`` mode, and the output
-extension is what selects GIF over PNG.
+A STEP model has no declared `animate` render mode.  It is swept by giving the
+job an ANIMATED PARAMETER VALUE (``stepParameters.animate``) while staying in
+``view`` mode, and the output extension is what selects GIF over PNG.
 
 Theme and display come from the same two JSON files shot.py uses, so an
 exploded frame and a gauntlet frame are lit and edged identically and can sit
