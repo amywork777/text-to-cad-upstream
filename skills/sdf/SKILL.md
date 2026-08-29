@@ -32,7 +32,7 @@ python -m playwright install chromium
 
 ## Core rules
 
-1. Author `.sdf` XML directly and validate every created or modified file with `scripts/validate` before reporting completion.
+1. Author `.sdf` XML directly and validate every created or modified file with `cadgen sdf validate` before reporting completion.
 2. Identify the target consumer before editing: Gazebo/libsdformat version, another simulator, visualization-only tooling, model package, or world handoff.
 3. Decide document kind: model-level SDF, world-level SDF, or model-in-world. Prefer model-level SDF for reusable robot/object exports.
 4. Use SI units unless the target explicitly requires otherwise: meters, kilograms, seconds, radians.
@@ -59,7 +59,7 @@ After completing SDF work that creates or modifies a `.sdf`, you must ALWAYS han
 2. Read or create the design ledger comment block.
 3. Read `references/frame-semantics.md` before editing any `<pose>`, `<frame>`, joint axis, `relative_to`, `expressed_in`, nested scope, sensor frame, or plugin frame.
 4. Author the XML directly, following the worked examples in `references/examples.md`.
-5. Validate the explicit target with `scripts/validate`; treat bundled validation as a guardrail, not simulator proof.
+5. Validate the explicit target with `cadgen sdf validate`; treat bundled validation as a guardrail, not simulator proof.
 6. Run target-consumer smoke tests when available (`references/smoke-tests.md`).
 7. Hand the file to `$cad-viewer`. Static rendering does not execute SDF plugins or read file-authored motion metadata.
 8. Report checks run, checks skipped, and assumptions.
@@ -69,9 +69,9 @@ After completing SDF work that creates or modifies a `.sdf`, you must ALWAYS han
 Run with the project or workspace Python environment. Treat `python` in examples as an interpreter placeholder; if bare `python` is unavailable, substitute `python3`, a project virtualenv interpreter, or the configured interpreter path. The validator uses only the Python standard library.
 
 ```bash
-python scripts/validate path/to/model.sdf
-python scripts/validate path/to/a.sdf path/to/b.sdf
-python scripts/validate path/to/model.sdf --strict
+cadgen sdf validate path/to/model.sdf
+cadgen sdf validate path/to/a.sdf path/to/b.sdf
+cadgen sdf validate path/to/model.sdf --strict
 ```
 
 The validator checks document shape, name scopes, pose/frame graphs, joints, geometry, mesh URIs, inertials, sensors, and plugins, and prints per-file findings plus a summary. `--strict` treats warnings as failures. It exits nonzero if any target fails.
@@ -79,9 +79,9 @@ The validator checks document shape, name scopes, pose/frame graphs, joints, geo
 Optional external checking:
 
 ```bash
-python scripts/validate path/to/model.sdf --gz-check auto
-python scripts/validate path/to/model.sdf --gz-check required
-python scripts/validate path/to/model.sdf --gz-check never
+cadgen sdf validate path/to/model.sdf --gz-check auto
+cadgen sdf validate path/to/model.sdf --gz-check required
+cadgen sdf validate path/to/model.sdf --gz-check never
 ```
 
 `gz sdf --check` is optional target-consumer validation. It should be reported as skipped when unavailable unless explicitly required.
@@ -106,13 +106,13 @@ Risks:
 
 ## Snapshot Tool
 
-`scripts/snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
+`cadgen snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
-python scripts/snapshot --input path/to/robot.sdf --output review.png
-python scripts/snapshot --input path/to/robot.sdf --output turntable.gif --mode orbit
+cadgen snapshot --input path/to/robot.sdf --output review.png
+cadgen snapshot --input path/to/robot.sdf --output turntable.gif --mode orbit
 ```
 
 It accepts `.sdf` only. Pose the robot with the job field `"jointValues"` (joint name to
@@ -128,7 +128,7 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `python scripts/snapshot --help` for the complete current command interface.
+Use `cadgen snapshot --help` for the complete current command interface.
 
 ## References
 

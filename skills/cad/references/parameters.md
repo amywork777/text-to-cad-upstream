@@ -144,7 +144,7 @@ def vendor_arm():
 - Identify fixed pivots, moving pivots, link lengths, gear ratios, axes, and
   joint limits BEFORE declaring joints; pivot every rotation about its hinge,
   mate, or local frame — never a bounding-box center.
-- Render the animations (`scripts/snapshot <model> --params
+- Render the animations (`cadgen step snapshot <model> --params
   '{"animate": ...}'`) and check for disconnected hinges, drifting pivots,
   collisions, and looping jumps; convert visual concerns into measurements
   before calling them fixed.

@@ -192,7 +192,7 @@ def _apply_step_options_to_spec(spec: EntrySpec, step_options: StepImportOptions
 
 def _spec_requests_extra_outputs(spec: EntrySpec) -> bool:
     """True when the target asks for an on-demand output beyond the render package
-    (`scripts/gen --write`). An explicitly requested output must be produced
+    (an explicit ``write=`` on the model). An explicitly requested output must be produced
     even when the compose is current, so it defeats every no-op and reuse fast
     path."""
     return spec.step_export_path is not None

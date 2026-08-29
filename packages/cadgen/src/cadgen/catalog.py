@@ -51,7 +51,7 @@ class CadSourceError(ValueError):
 class StepImportOptions:
     # Render-package mesh settings only. Standalone STEP/STL/3MF/GLB files are not
     # configured here — they are one-off exports owned by cadgen.step_export_target
-    # (`scripts/export`), which builds and meshes the scene itself.
+    # (`cadgen step export`), which builds and meshes the scene itself.
     mesh_tolerance: float | None = None
     mesh_angular_tolerance: float | None = None
 

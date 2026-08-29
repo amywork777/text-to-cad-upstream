@@ -1,10 +1,10 @@
 # Snapshot review
 
-Read this file when choosing saved CAD `scripts/snapshot` outputs for primary STEP/STP artifacts.
+Read this file when choosing saved CAD `cadgen step snapshot` outputs for primary STEP/STP artifacts.
 
 ## Policy
 
-Snapshot validation is mandatory. Every created or visibly updated primary STEP/STP part or assembly gets at least one reviewed PNG snapshot; deterministic checks passing is not a reason to skip. Use CAD `scripts/snapshot` rather than opening the viewer manually or using Playwright; snapshots are faster, lighter, more precise, and more agent-friendly. Use PNGs for static reviews and GIFs for motion/animation reviews, including STEP-module parameter animation.
+Snapshot validation is mandatory. Every created or visibly updated primary STEP/STP part or assembly gets at least one reviewed PNG snapshot; deterministic checks passing is not a reason to skip. Use CAD `cadgen step snapshot` rather than opening the viewer manually or using Playwright; snapshots are faster, lighter, more precise, and more agent-friendly. Use PNGs for static reviews and GIFs for motion/animation reviews, including STEP-module parameter animation.
 
 Skip saved snapshots only when no visible geometry was created or updated, or no valid artifact exists:
 

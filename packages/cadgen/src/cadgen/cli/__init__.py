@@ -50,6 +50,7 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "sdf validate": ("cadgen.cli.sdf_validate", "validate SDF worlds and models"),
     "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
+    "doctor": ("cadgen.cli.doctor", "print installed cadgen and verify a skill's pin"),
     "cache": ("cadgen.cli.cache", "inspect or gc the user-level caches (info/gc)"),
     "snapshot": ("cadgen.cli.snapshot", "render any supported input to an image"),
     "daemon": ("cadgen.daemon", "run the warm build daemon"),
@@ -65,33 +66,42 @@ _COMMANDS: dict[str, tuple[str, str]] = {
 _PIN_RE = re.compile(r"^cadgen(?:\[[a-z0-9_,.-]+\])?\s*==\s*(?P<pin>[^\s;#]+)")
 
 
-def enforce_requirements_pin(requirements_path) -> None:
-    """Fail fast when a published skill's pinned cadgen is not the installed one.
+def read_requirements_pin(requirements_path) -> str | None:
+    """The exact ``cadgen==<version>`` a requirements.txt pins, or ``None``.
 
-    A skill is published with `cadgen==<release>` in its requirements.txt, but nothing
-    makes pip re-resolve it on a machine that already has some other cadgen. The skill
-    then runs against a runtime it was never tested against and fails somewhere far from
-    the cause. Called by every shim that hands off to installed cadgen, so the mismatch
-    is reported at the entrypoint instead.
-
-    Silent (the common cases) when: the file is absent, names cadgen unpinned -- which is
-    exactly the development checkout, whose editable install has no release version to
-    match -- or pins the version already installed. Exits 3 otherwise, the same code the
-    shims use for "cadgen is not installed", since both mean the same fix.
-
-    Compares the pin as a string rather than through PEP 440. The pins are written
-    mechanically as exact `==`, and shims must stay stdlib-only.
+    ``None`` covers the non-cases uniformly: file absent/unreadable, or cadgen named
+    unpinned — which is exactly the development checkout, whose editable install has no
+    release version to match. Callers decide what a mismatch means (``cadgen doctor``
+    reports it; :func:`enforce_requirements_pin` exits). String comparison rather than
+    PEP 440 on purpose: pins are written mechanically as exact ``==`` by
+    scripts/release/pin-cadgen-requirements.sh.
     """
     try:
         with open(requirements_path, encoding="utf-8") as handle:
             lines = handle.read().splitlines()
     except OSError:
-        return  # No manifest (or unreadable): nothing claims a version.
-
-    pin = next(
+        return None
+    return next(
         (match.group("pin") for match in map(_PIN_RE.match, (line.strip() for line in lines)) if match),
         None,
     )
+
+
+def enforce_requirements_pin(requirements_path) -> None:
+    """Fail fast when a published skill's pinned cadgen is not the installed one.
+
+    A skill is published with `cadgen==<release>` in its requirements.txt, but nothing
+    makes pip re-resolve it on a machine that already has some other cadgen — the skill
+    then runs against a runtime it was never tested against and fails far from the
+    cause. The per-verb skill shims that used to call this on every invocation are
+    gone (skills are instruction-only over the ``cadgen`` front door); ``cadgen
+    doctor`` is the user-facing check now, and this remains the enforcing primitive.
+
+    Silent (the common cases) when :func:`read_requirements_pin` finds nothing to
+    enforce, or the pin matches. Exits 3 otherwise — the same code as "cadgen is not
+    installed", since both mean the same fix.
+    """
+    pin = read_requirements_pin(requirements_path)
     if pin is None:
         return
 
@@ -111,7 +121,7 @@ def enforce_requirements_pin(requirements_path) -> None:
 # avoid paying the multi-second OCP/build123d import per invocation, so the handoff has to
 # happen BEFORE the command's module is imported -- which is why it lives here in dispatch
 # rather than inside each command. It served only the skill launchers until now, so
-# `cadgen step gen` was an order of magnitude slower than `scripts/gen` for no reason.
+# skill-shim launchers were an order of magnitude faster than the front door for no reason.
 _DAEMON_TOOLS = {
     "step export": "export",
     "import": "import",
@@ -213,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     module = importlib.import_module(module_name)
 
     # Tell the parser which front door it was reached through, so `cadgen step gen --help`
-    # says "cadgen step gen" and the skill's own `scripts/gen` still says "scripts/gen".
+    # says "cadgen step gen" — every entrypoint is a cadgen verb now.
     # Not every command has a parser to name (the daemon owns its own), hence
     # the signature check rather than a blanket keyword.
     import inspect  # only the dispatcher needs it; every skill shim imports this

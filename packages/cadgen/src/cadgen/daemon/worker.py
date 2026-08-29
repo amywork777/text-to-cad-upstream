@@ -90,7 +90,7 @@ def _run(request: dict) -> int:
     try:
         if isinstance(cwd, str) and os.path.isdir(cwd):
             os.chdir(cwd)
-        sys.argv = [prog or f"scripts/{tool}", *argv]
+        sys.argv = [prog or f"cadgen {tool}", *argv]
         main = _tool_main(tool)
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             # Pass the caller's name where the parser takes one, so a command reports the

@@ -7,7 +7,7 @@ tooling, not the fixture.
 
 ## Generated sources (`.dxf.py`)
 
-Build them with the DXF skill CLI (`python skills/dxf/scripts/gen <source>`);
+Build them by running the model script (`python <source>.py` — the `@dxf` decorator);
 drawing packages land in the gitignored `__cadgen__/` cache and `.dxf` exports
 are written on demand only, so no generated DXF output is committed. Together
 they cover the skill's standalone-drafting and STEP-projection workflows.
@@ -123,5 +123,5 @@ longer has a committed example of either condition.
 Validate any of them post-hoc with:
 
 ```bash
-python skills/dxf/scripts/gen --validate models/drawings/dxf/<file>.dxf
+python <drawing>.py --validate   # the @dxf model script validates its own output
 ```

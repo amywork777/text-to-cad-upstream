@@ -8,7 +8,6 @@ from unittest import mock
 
 from tests.python.support.paths import add_repo_path
 
-add_repo_path("skills/cad/scripts/inspect")
 
 from cadgen.cli.step_inspect import cli as inspect_cli
 from cadgen.cli.step_inspect import inspect as refs_inspect

@@ -15,7 +15,7 @@ from cadgen.cli.snapshot import SKILL_KINDS, run
 KINDS = SKILL_KINDS["implicit-cad"]
 
 
-def main(argv: Sequence[str] | None = None, *, prog: str = "scripts/snapshot") -> int:
+def main(argv: Sequence[str] | None = None, *, prog: str = "cadgen implicit snapshot") -> int:
     return run(argv, kinds=KINDS, prog=prog)
 
 

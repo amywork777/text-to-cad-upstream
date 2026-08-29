@@ -1,7 +1,7 @@
 """Build the CAD Viewer render package for one implicit CAD model.
 
 The implicit analogue of the STEP artifact CLI, and the SINGLE producer behind both
-entrypoints that build an implicit package -- ``skills/implicit-cad/scripts/gen`` and the
+entrypoints that build an implicit package -- ``cadgen implicit gen`` and the
 viewer's ``POST /__cad/artifact``. A second producer that assembled the lock, the status
 record and the currency gate by hand is exactly how the defects the coordination refactor
 fixed came to exist.

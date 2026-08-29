@@ -98,7 +98,7 @@ def _requested_outputs(args: argparse.Namespace) -> list[tuple[str, str | None]]
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
 # `cadgen <command>` passes its own name instead, so each front door names itself.
-DEFAULT_PROG = "scripts/export"
+DEFAULT_PROG = "cadgen step export"
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
@@ -108,7 +108,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
             "Export one CAD model — a gen_step() Python source or an imported STEP/STP "
             "file — to STL/3MF/GLB. The model is built once per run, so all requested "
             "formats come from identical geometry. Writes no .step file: use "
-            "scripts/gen --write-step to write a generated model's STEP."
+            "a model script (python <model>.py) to write a generated model's STEP."
         ),
     )
     _add_export_arguments(parser)
@@ -142,7 +142,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     except ValueError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
-        return report_cli_error(exc, tool="scripts/export", verbose=bool(args.verbose))
+        return report_cli_error(exc, tool="cadgen step export", verbose=bool(args.verbose))
     if args.json:
         print(json.dumps({"ok": True, **payload}, separators=(",", ":")))
         return 0

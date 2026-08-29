@@ -1,4 +1,3 @@
-import importlib.util
 import subprocess
 import sys
 import unittest
@@ -7,26 +6,16 @@ from cadgen.assets import browser_runtime_dir
 from pathlib import Path
 from unittest import mock
 
-from tests.python.support.paths import add_repo_path, repo_path
+from tests.python.support.paths import add_repo_path
 
-add_repo_path("skills/dxf/scripts")
 add_repo_path("packages/cadgen/src")
 
-# The CLI is shared (cadgen.snapshot_cli); this skill's entrypoint declares that it accepts
-# drawings and where its runtime lives. What is DXF-specific -- resolving a .dxf or a
-# drawing() source to its built package -- is what these tests cover.
+# The CLI is shared (cadgen.snapshot_cli); `cadgen dxf snapshot`
+# (cadgen.cli.dxf_snapshot) is the DXF entrypoint and declares which kinds it accepts.
+# What is DXF-specific -- resolving a .dxf or a drawing() source to its built package --
+# is what these tests cover.
 import cadgen.snapshot_cli as snapshot
-
-# Loaded BY PATH, not by module name: every skill names its entry package `snapshot`, so
-# `import snapshot.__main__` resolves to whichever skill's scripts dir landed on sys.path
-# first. With the CAD snapshot tests in the same process that is CAD's, and this test then
-# silently asserts against the wrong skill's kinds.
-_dxf_entry_spec = importlib.util.spec_from_file_location(
-    "dxf_skill_snapshot_entry",
-    Path(repo_path("skills/dxf/scripts/snapshot/__main__.py")),
-)
-dxf_snapshot_entry = importlib.util.module_from_spec(_dxf_entry_spec)
-_dxf_entry_spec.loader.exec_module(dxf_snapshot_entry)
+import cadgen.cli.dxf_snapshot as dxf_snapshot_entry
 
 
 class DxfSnapshotCliTests(unittest.TestCase):
@@ -117,11 +106,9 @@ class DxfSnapshotCliTests(unittest.TestCase):
                     kinds=snapshot.enabled_kinds(dxf_snapshot_entry.KINDS),
                 )
 
-    def test_scripts_snapshot_directory_invokes_cli(self) -> None:
-        skill_root = repo_path("skills/dxf")
+    def test_cadgen_dxf_snapshot_help_names_drawings(self) -> None:
         result = subprocess.run(
-            [sys.executable, "scripts/snapshot", "--help"],
-            cwd=skill_root,
+            [sys.executable, "-m", "cadgen.cli", "dxf", "snapshot", "--help"],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

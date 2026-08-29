@@ -104,7 +104,7 @@ reads per-instance colors the WASM build cannot — then return the link.
 - Before returning any link, resolve `<directory>/<file>` and confirm it
   exists. For a **generated** model pass the generator source (`<name>.step.py`)
   — that is what the catalog itself lists. Its render artifacts must already be
-  built (`python scripts/gen`); the Viewer will not build them on open. It
+  built (`the model script (`python <model>.py`)`); the Viewer will not build them on open. It
   is also the only form that carries a `params` sidecar, because a same-stem
   `<name>.step.py` shadows `<name>.step` anyway. For an **imported** STEP with no
   generator, pass the `.step`/`.stp` itself. If the resolved path is missing, do

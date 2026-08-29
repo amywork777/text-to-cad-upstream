@@ -1,6 +1,6 @@
 """A generated model must never be exported by copying its own previous output.
 
-Regression for #308. `scripts/gen --write` reported ``outcome: built`` and rewrote
+Regression for #308. A model-script run with an explicit write reported ``outcome: built`` and rewrote
 ``<name>.step`` with the geometry of the PREVIOUS build, so an edited generator kept
 producing the old part and `validate`, `snapshot` and the Viewer all inherited it with
 nothing raised. The reporter only caught it by comparing a direct ``model()`` call

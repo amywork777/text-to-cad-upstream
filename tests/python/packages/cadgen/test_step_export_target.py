@@ -126,7 +126,7 @@ class StepExportTargetTests(unittest.TestCase):
 
     def test_export_cad_target_rejects_step_format(self) -> None:
         # The Viewer's Save-dialog path (main(), tested above) still exports STEP; the CAD
-        # skill's scripts/export path does not — `scripts/gen --write-step` owns .step files.
+        # CAD workflow does not — the model script itself owns .step files.
         generator = self._write_box_generator()
         with self.assertRaises(ValueError) as cm:
             step_export_target.export_cad_target(generator, [("step", None)])

@@ -57,15 +57,14 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
     )
     return pkg_dir
 
-add_repo_path("skills/cad/scripts")
 add_repo_path("packages/cadgen/src")
 
-# The CLI itself is shared (cadgen.snapshot_cli); the CAD skill's entrypoint is the
-# declaration of which kinds it accepts and where its runtime lives. These tests exercise
-# the CAD skill's behaviour, so they drive the shared implementation through that skill's
-# runtime directory.
+# The CLI itself is shared (cadgen.snapshot_cli); `cadgen step snapshot`
+# (cadgen.cli.step_snapshot) is the CAD entrypoint and the declaration of which kinds it
+# accepts. The skill shims are gone; these tests drive the shared implementation through
+# that cadgen verb directly.
 import cadgen.snapshot_cli as snapshot_main
-import snapshot.__main__ as cad_snapshot_entry
+import cadgen.cli.step_snapshot as cad_snapshot_entry
 from cadgen.assets import browser_runtime_dir
 from cadgen.snapshot_cli import (
     SnapshotError,
@@ -106,15 +105,13 @@ def _selector_artifact(*occurrence_ids: str) -> SimpleNamespace:
 
 class SnapshotCliTests(unittest.TestCase):
     def test_cli_import_does_not_import_heavy_cad_modules(self) -> None:
-        skill_root = repo_path("skills/cad")
         code = (
-            "import sys; sys.path.insert(0, 'scripts'); import snapshot.__main__; "
+            "import cadgen.cli.step_snapshot; "
             "print('OCP.OCP' in sys.modules); "
             "print('cadgen._internal.step_scene' in sys.modules)"
         )
         result = subprocess.run(
-            [sys.executable, "-c", code],
-            cwd=skill_root,
+            [sys.executable, "-c", "import sys; " + code],
             check=False,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -1539,7 +1536,6 @@ class SnapshotCliTests(unittest.TestCase):
         would pass every check here and fail for anyone who installed the wheel.
         """
         checked_files = [
-            repo_path("skills/cad/scripts/snapshot") / "__main__.py",
             RUNTIME_DIR / "render.html",
             RUNTIME_DIR / "snapshot-render.js",
         ]

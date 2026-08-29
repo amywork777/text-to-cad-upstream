@@ -34,7 +34,7 @@ python -m playwright install chromium
 4. Do not infer spatial transforms, mesh units, handedness, axes, or joint signs from vague prose. Use CAD transforms, dimensioned drawings, measured values, existing source data, or explicit documented assumptions.
 5. Never freehand numeric values that are the result of computation — inertia tensors, centers of mass, unit conversions across many links, mirrored transforms. Compute them: closed-form formulas for primitives, or a throwaway helper script for mesh-derived values. See `references/inertials.md`.
 6. For physical links, model `inertial`, `visual`, and `collision` separately when the target consumer needs them. Frame-only links may intentionally omit mass and geometry.
-7. Validate every created or modified `.urdf` with `scripts/validate` before reporting completion. See `references/validation.md`.
+7. Validate every created or modified `.urdf` with `cadgen urdf validate` before reporting completion. See `references/validation.md`.
 8. Helper scripts are allowed and encouraged for computation, but they are scaffolding, not the artifact's source of truth. For complex or genuinely parametric models it is reasonable to keep a model-local helper script on disk next to related source code (for example STEP generator sources) and note it in the ledger; this is optional, and the checked-in `.urdf` remains canonical.
 
 ## CAD Viewer Handoff
@@ -48,7 +48,7 @@ After completing URDF work that creates or modifies a `.urdf`, you must ALWAYS h
 3. Prepare mesh assets first when links reference meshes: one mesh per link, exported in that link's frame by the owning CAD/mesh workflow. See `references/meshes.md`.
 4. Author or edit the URDF XML directly, following `references/authoring-contract.md` for structure, ordering, and naming.
 5. Compute — never guess — inertials and other derived numbers. See `references/inertials.md`.
-6. Validate with `scripts/validate`; fix findings and re-validate until clean.
+6. Validate with `cadgen urdf validate`; fix findings and re-validate until clean.
 7. Run the verification recipe in `references/validation.md`: external tools when available (`check_urdf`), then a viewer review sweeping every joint.
 8. Report remaining assumptions, unchecked spatial data, and validation gaps.
 
@@ -59,11 +59,11 @@ Run with the Python environment for the project or workspace. Treat `python` in 
 From this skill directory, the validator shape is:
 
 ```bash
-python scripts/validate path/to/robot.urdf
-python scripts/validate path/to/a.urdf path/to/b.urdf
-python scripts/validate path/to/robot.urdf --strict
-python scripts/validate path/to/robot.urdf --format json
-python scripts/validate path/to/robot.urdf --package robot_description=/path/to/pkg
+cadgen urdf validate path/to/robot.urdf
+cadgen urdf validate path/to/a.urdf path/to/b.urdf
+cadgen urdf validate path/to/robot.urdf --strict
+cadgen urdf validate path/to/robot.urdf --format json
+cadgen urdf validate path/to/robot.urdf --package robot_description=/path/to/pkg
 ```
 
 The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a per-file summary. `--strict` treats warnings as failures; `--format json` emits a machine-readable findings document; `--package NAME=PATH` resolves `package://` mesh URIs. It exits nonzero if any target fails. Relative targets resolve from the current working directory; when running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
@@ -72,13 +72,13 @@ Validation is a guardrail, not spatial proof: a URDF can pass every structural c
 
 ## Snapshot Tool
 
-`scripts/snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
+`cadgen snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
-python scripts/snapshot --input path/to/robot.urdf --output review.png
-python scripts/snapshot --input path/to/robot.urdf --output turntable.gif --mode orbit
+cadgen snapshot --input path/to/robot.urdf --output review.png
+cadgen snapshot --input path/to/robot.urdf --output turntable.gif --mode orbit
 ```
 
 It accepts `.urdf` only. Pose the robot with the job field `"jointValues"` (joint name to
@@ -94,7 +94,7 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `python scripts/snapshot --help` for the complete current command interface.
+Use `cadgen snapshot --help` for the complete current command interface.
 
 ## References
 

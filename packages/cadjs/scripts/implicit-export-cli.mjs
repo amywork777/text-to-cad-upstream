@@ -3,7 +3,7 @@ import { exportImplicitCadFile, IMPLICIT_CAD_EXPORT_FORMATS } from "../src/lib/i
 import path from "node:path";
 
 // Sentinel for a format flag passed without a path: export to the default sibling path
-// (`<name>.<ext>` beside the model), mirroring skills/cad/scripts/export.
+// (`<name>.<ext>` beside the model), mirroring `cadgen step export`.
 const DEFAULT_OUTPUT = "__default_sibling_output__";
 
 // One flag per format, several allowed per run. Derived from the frozen format list so

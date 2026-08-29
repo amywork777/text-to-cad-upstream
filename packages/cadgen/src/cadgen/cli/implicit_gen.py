@@ -1,6 +1,6 @@
-"""`scripts/gen` for implicit CAD: build the render package for .implicit.js models.
+"""`cadgen implicit gen`: build the render package for .implicit.js models.
 
-Mirrors `skills/cad/scripts/gen` point for point -- positional targets, `--force`,
+Mirrors the STEP generation contract point for point -- positional targets, `--force`,
 `--verbose`, one format-specific bake knob (`--resolution`), sequential per-target locks, a
 CliLogger on stderr and one self-erasing progress line -- because there is ONE producer
 (`cadgen.implicit_artifact`) behind both this and the viewer's POST, and the CLI's job is to
@@ -77,7 +77,7 @@ def _validate_targets(targets: Sequence[str], *, parser: argparse.ArgumentParser
     for target in targets:
         if not str(target).lower().endswith(IMPLICIT_SUFFIXES):
             parser.error(
-                f"scripts/gen builds implicit CAD models only: {target}. "
+                f"cadgen implicit gen builds implicit CAD models only: {target}. "
                 "Targets must be <name>.implicit.js sources."
             )
 
@@ -100,7 +100,7 @@ def _output_for_target(
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
 # `cadgen <command>` passes its own name instead, so each front door names itself.
-DEFAULT_PROG = "scripts/gen"
+DEFAULT_PROG = "cadgen implicit gen"
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
@@ -108,7 +108,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         prog=prog,
         description=(
             "Build CAD Viewer render packages for explicit .implicit.js targets. Writes a "
-            "sibling .glb only with --write; use scripts/export for STL/3MF/GLB files."
+            "sibling .glb only with --write; use cadgen implicit export for STL/3MF/GLB files."
         ),
     )
     parser.add_argument(
@@ -160,7 +160,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     parser = build_parser(prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
     _validate_targets(args.targets, parser=parser)
-    logger = CliLogger("scripts/gen", verbose=bool(args.verbose))
+    logger = CliLogger("cadgen implicit gen", verbose=bool(args.verbose))
     exit_code = 0
     for target in args.targets:
         output = _output_for_target(

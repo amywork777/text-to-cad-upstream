@@ -11,7 +11,7 @@ Deterministic geometry checks decide pass/fail; mandatory snapshot review (see `
 The launcher lives in the CAD skill directory:
 
 ```bash
-python scripts/inspect {refs|diff|frame|measure|align} ...
+cadgen step inspect {refs|diff|frame|measure|align} ...
 ```
 
 Inspection targets resolve from the command cwd; prefer cwd-relative target paths. Absolute paths are accepted when they point under the command cwd (they are relativized); an absolute path outside the cwd fails with an explicit error — run the command from the workspace that owns the artifact. Common data-output flags: `--format json|text` (default is machine-readable), `--quiet`, `--verbose`.
@@ -81,7 +81,7 @@ distinct from `bracket.step` (its export) and from `bracket.stl` (a mesh of it).
 ```bash
 # received: bracket#o1.2.f1   ->  expand the bare stem, then search
 git ls-files '*/bracket.py' '*/bracket.stp.py'
-python scripts/inspect refs models/step/parts/bracket.py '#o1.2.f1'
+cadgen step inspect refs models/step/parts/bracket.py '#o1.2.f1'
 ```
 
 If the search returns more than one file the prefix was ambiguous — ask rather than guess; the
@@ -146,9 +146,9 @@ which renders as a hole in the world — reports `"ok": true` as well.
 Use `validate` for that question:
 
 ```bash
-python scripts/inspect validate models/part/part.py
-python scripts/inspect validate models/part/part.py --refs o1.2      # one subassembly
-python scripts/inspect validate models/panel/panel.py --allow-open   # surfaces intended
+cadgen step inspect validate models/part/part.py
+cadgen step inspect validate models/part/part.py --refs o1.2      # one subassembly
+cadgen step inspect validate models/panel/panel.py --allow-open   # surfaces intended
 ```
 
 It reports, per occurrence, any of `invalidTopology`, `openShell`,
@@ -169,21 +169,21 @@ dominates runtime.
 Compact facts and planes:
 
 ```bash
-python scripts/inspect refs path/to/model.step \
+cadgen step inspect refs path/to/model.step \
   --facts --planes --positioning
 ```
 
 Detailed selector inspection:
 
 ```bash
-python scripts/inspect refs path/to/model.step '#selector' \
+cadgen step inspect refs path/to/model.step '#selector' \
   --detail --positioning
 ```
 
 Topology enumeration, only when needed:
 
 ```bash
-python scripts/inspect refs path/to/model.step --topology
+cadgen step inspect refs path/to/model.step --topology
 ```
 
 Plane options:
@@ -201,7 +201,7 @@ Use lower plane limits and compact facts for normal validation. Use topology enu
 Use `measure` for bounding distances, clearances, offsets, part spacing, plate thickness, hole-to-face distances, and alignment verification.
 
 ```bash
-python scripts/inspect measure path/to/model.step \
+cadgen step inspect measure path/to/model.step \
   --from '#selector_a' \
   --to '#selector_b' \
   --axis x
@@ -214,7 +214,7 @@ Axis may be inferred when possible, but specify `x`, `y`, or `z` for determinist
 Use `align` when two exported STEP references should be flush or centered. It returns a translation delta between the selected refs; apply any required correction in the build123d source (see `positioning.md`), regenerate, and re-inspect.
 
 ```bash
-python scripts/inspect align path/to/assembly.step \
+cadgen step inspect align path/to/assembly.step \
   --moving '#moving_selector' \
   --target '#target_selector' \
   --mode flush \
@@ -226,7 +226,7 @@ python scripts/inspect align path/to/assembly.step \
 Use `frame` to validate occurrence transforms and selected-reference world frames:
 
 ```bash
-python scripts/inspect frame path/to/model.step '#selector'
+cadgen step inspect frame path/to/model.step '#selector'
 ```
 
 Frame output is useful for assemblies, part-local-to-world conversion, and placement debugging.
@@ -236,7 +236,7 @@ Frame output is useful for assemblies, part-local-to-world conversion, and place
 For modification tasks, compare before and after artifacts:
 
 ```bash
-python scripts/inspect diff path/to/before.step path/to/after.step --planes
+cadgen step inspect diff path/to/before.step path/to/after.step --planes
 ```
 
 Use diff when a repair, feature addition, or source edit could affect unrelated geometry.
@@ -255,7 +255,7 @@ Validation:
 - Major planes/refs: <summary>
 - Positioning: <frame/measure/align results if relevant>
 - Feature checks: <holes, cutouts, bosses, etc.>
-- Visual review: `$cad-viewer` viewer link returned; CAD `scripts/snapshot` PNG/GIF included or skipped with reason; follow-up geometry checks for any visual findings
+- Visual review: `$cad-viewer` viewer link returned; CAD `cadgen step snapshot` PNG/GIF included or skipped with reason; follow-up geometry checks for any visual findings
 ```
 
 Do not claim:

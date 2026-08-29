@@ -19,7 +19,7 @@ from cadgen.srdf_validation import (
 SRDF_SUFFIX = ".srdf"
 
 
-DEFAULT_PROG = "scripts/validate"
+DEFAULT_PROG = "cadgen srdf validate"
 
 def validate_srdf_targets(
     targets: Sequence[str],

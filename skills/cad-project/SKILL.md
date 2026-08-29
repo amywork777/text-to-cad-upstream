@@ -112,7 +112,7 @@ _ARM = child_entry(Path(__file__).with_name("arm.py"))
 - Never distinguish files by case alone (macOS filesystems are usually
   case-insensitive).
 - Vendor/imported STEPs keep their upstream names and get render packages via
-  `python scripts/import STEP/vendor_servo.step` ($cad).
+  `cadgen import STEP/vendor_servo.step` ($cad).
 
 ## `src/README.md` — the model catalog (required)
 

@@ -1,4 +1,4 @@
-"""STEP output behavior (scripts/gen ALWAYS writes the STEP file, assembled
+"""STEP output behavior (a model-script run ALWAYS writes the STEP file, assembled
 from the package's exact-shape blobs — design/step-document-architecture.md):
 closure-keyed reuse, new-path copy via -o, metadata injection, and the
 verbose export spans (once silently orphaned — design/FEEDBACK.md item 9)."""

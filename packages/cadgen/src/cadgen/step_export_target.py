@@ -6,9 +6,9 @@ Two callers share this module, and they offer different formats:
   destination picked from a native Save dialog, via ``main()``/
   :func:`export_model_to_path`. Offers every :data:`FORMAT_SUFFIX` format, STEP included,
   because "Download STEP" is a Viewer menu item.
-* The CAD skill's ``scripts/export`` CLI — one or more formats per run, via
+* The CAD skill workflow (``cadgen step export``) — one or more formats per run, via
   :func:`export_cad_target`. Mesh formats only (:data:`MESH_EXPORT_FORMATS`); a model's
-  ``.step`` file is written by ``scripts/gen --write-step`` during generation instead.
+  ``.step`` file is written by the model script (``python <model>.py``) instead.
 
 Both accept an imported ``.step``/``.stp`` or a generated ``gen_step()`` Python source;
 both always build from source, so exports can never be stale.
@@ -49,9 +49,9 @@ from cadgen._internal.step_scene import (
 # Logical format name -> conventional file suffix (informational; the caller owns `--out`).
 FORMAT_SUFFIX = {"step": ".step", "stl": ".stl", "3mf": ".3mf", "glb": ".glb"}
 
-# Formats :func:`export_cad_target` (the CAD skill's `scripts/export`) offers. STEP is
+# Formats :func:`export_cad_target` (`cadgen step export`) offers. STEP is
 # deliberately absent: a generated model writes its `.step` through
-# `scripts/gen --write-step` in the generation run, and an imported model's STEP is
+# its model script run, and an imported model's STEP is
 # already the file on disk. The Viewer's Save-dialog export still offers STEP.
 MESH_EXPORT_FORMATS = ("stl", "3mf", "glb")
 
@@ -415,7 +415,7 @@ def export_cad_target(
     Writes no ``.step``, no ``__cadgen__`` render package, and no other beside-source
     artifacts."""
     if logger is None:
-        logger = CliLogger("scripts/export", verbose=verbose)
+        logger = CliLogger("cadgen step export", verbose=verbose)
     if not outputs:
         raise ValueError("No export formats requested")
     for fmt, _ in outputs:

@@ -32,10 +32,10 @@ and scale markings only.
 
 ```bash
 PY=/Users/jakefitzgerald/robots/text-to-cad/.venv/bin/python
-$PY ../../../skills/cad/scripts/gen <entry>.step.py
-$PY ../../../skills/cad/scripts/inspect refs <entry>.step.py --facts
-$PY ../../../skills/cad/scripts/inspect validate <entry>.step.py
-$PY ../../../skills/cad/scripts/snapshot --job <job.json>
+$PY <entry>.py                       # a model script builds itself
+$PY -m cadgen.cli step inspect refs <entry>.step --facts
+$PY -m cadgen.cli step inspect validate <entry>.step
+$PY -m cadgen.cli step snapshot --job <job.json>
 ```
 
 Parallel builders are fine now: the warm daemon runs a pool of worker processes and

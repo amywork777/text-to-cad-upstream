@@ -4,7 +4,10 @@ import unittest
 
 from tests.python.support.paths import repo_path
 
-EXPECTED_SCRIPT_ENTRIES = ("gen", "export.mjs", "snapshot", "lib/implicit-cad.mjs")
+# The skill is instruction-only over the `cadgen` front door; the ONE thing it still
+# ships is the authoring helper library (a tool, not a shim).
+EXPECTED_SCRIPT_ENTRIES = ("lib/implicit-cad.mjs",)
+FORBIDDEN_SCRIPT_ENTRIES = ("gen", "export.mjs", "snapshot")
 
 
 class ImplicitCadSkillStructureTests(unittest.TestCase):
@@ -31,9 +34,12 @@ class ImplicitCadSkillStructureTests(unittest.TestCase):
                     f"scripts/{rel} must exist",
                 )
 
-    def test_gen_package_is_runnable_as_a_module(self) -> None:
-        # The parser and the behaviour live in cadgen now, so the package is just the two
-        # files that make `python scripts/gen` work; there is no local cli.py to carry.
-        gen_dir = self.skill_root / "scripts" / "gen"
-        self.assertTrue((gen_dir / "__init__.py").is_file())
-        self.assertTrue((gen_dir / "__main__.py").is_file())
+    def test_no_shim_entry_points_return(self) -> None:
+        # The per-verb shims were deleted (cadgen implicit gen/export/snapshot are the
+        # invocations); a reappearing shim means the deletion regressed.
+        for rel in FORBIDDEN_SCRIPT_ENTRIES:
+            with self.subTest(entry=rel):
+                self.assertFalse(
+                    (self.skill_root / "scripts" / rel).exists(),
+                    f"scripts/{rel} is a deleted shim and must not return",
+                )
