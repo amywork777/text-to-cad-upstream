@@ -13,7 +13,6 @@ export function entryIconStatus(entry, {
   sourceFormat = "",
   hasMesh = true,
   hasDxf = true,
-  hasImplicit = true,
   hasUrdf = true,
   activeStepArtifactGenerationFile = "",
   activeStepArtifactGenerationFiles = [],
@@ -46,7 +45,6 @@ export function entryIconStatus(entry, {
   const loadedByAssetKind = {
     [ASSET_KIND.MESH]: hasMesh,
     [ASSET_KIND.DRAWING]: hasDxf,
-    [ASSET_KIND.IMPLICIT]: hasImplicit,
     [ASSET_KIND.ROBOT]: hasUrdf
   };
   const pending = loadedByAssetKind[assetKindForRenderFormat(normalizedSourceFormat)] === false;

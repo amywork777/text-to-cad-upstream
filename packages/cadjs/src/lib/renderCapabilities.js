@@ -30,8 +30,7 @@ export const VIEWPORT_CONTENT = Object.freeze({
 
 // How parameters reach the viewer. One consumer surface over the possible stores.
 export const PARAMETER_SOURCE = Object.freeze({
-  SIDECAR: "sidecar",
-  MODULE: "module"
+  SIDECAR: "sidecar"
 });
 
 // WHICH ASSET the viewer loads for this format — not the same question as `content`, which
