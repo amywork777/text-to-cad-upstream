@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
+from cadgen import step  # noqa: E402
 from build123d import *
 from build123d import Shape
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
@@ -19,11 +20,11 @@ DISPLAY_NAME = "Mars rover concept vehicle"
 # - the vehicle is modeled in its display pose: suspension neutral, arm in a
 #   sampling hover, mast head level, solar wings deployed, HGA at 35 deg
 #
-# The viewer-time pose/animation parameters live in the JS sidecar
-# `mars_rover_concept.params.js` (declared through gen_step()'s params path).
-# Sidecar pivot constants mirror the DEFAULT values of the source parameters
+# The viewer-time pose/animation parameters are declared on the @step
+# decorator (POSE below) and travel in the render package descriptor.
+# Pose pivot constants mirror the DEFAULT values of the source parameters
 # below; if you regenerate with different source parameters, update the pivot
-# constants in the sidecar to match.
+# constants in POSE to match.
 
 # ---------------------------------------------------------------------------
 # Source parameters (geometry contract; snake_case names are part of the
@@ -1037,11 +1038,410 @@ def power_rtg() -> Compound:
     return group("power_rtg", parts, "rtg_core")
 
 
+
+
+# ---------------------------------------------------------------------------
+# Viewer pose: parameters, kinematic tree, styles, and animations
+# (declarative; executed by the generic articulation runtime in the viewer —
+# design: pose-framework. Pivots mirror the DEFAULT source parameters above.)
+# ---------------------------------------------------------------------------
+
+from cadgen import pose as _pose  # noqa: E402  (light import; no kernel)
+
+_X, _Y, _Z = [1, 0, 0], [0, 1, 0], [0, 0, 1]
+_BODY_CENTER = [0, 0, 870]
+_ROCKER_PIVOT = {"left": [150, 760, 800], "right": [150, -760, 800]}
+_BOGIE_PIVOT = {"left": [-700, 760, 430], "right": [-700, -760, 430]}
+_DIFF_PIVOT = [430, 0, 1235]
+_MAST_ORIGIN = [780, -380, 1180]
+_HEAD_PIVOT = [780, -380, 2200]
+_ARM = {"azimuth": [1160, 200, 715], "shoulder": [1160, 200, 760],
+        "elbow": [1761.4, 200, 541.1], "wrist": [2268.9, 200, 304.4],
+        "turret": [2343.9, 200, 174.5]}
+_TURRET_AXIS = [0.5, 0, -0.866]
+_HGA_PIVOT = [-520, 420, 1360]
+_SOLAR_HINGE = {"left": [-150, 650, 1186], "right": [-150, -650, 1186]}
+_SOLAR_MODELED = 102.0
+
+# Top-level child order (#o1.N) is the feature contract — see gen_step below.
+_GROUP_REFS = {
+    "terrain": 1, "chassis_frame": 2, "body_core": 3, "body_shell": 4,
+    "deck_lid": 5, "side_panel_left": 6, "access_panels": 7,
+    "thermal_control": 8, "internals_avionics": 9, "internals_power": 10,
+    "science_payloads": 11, "cable_harness": 12, "dust_covers": 13,
+    "dust_layer": 14, "rocker_left": 15, "rocker_right": 16, "bogie_left": 17,
+    "bogie_right": 18, "differential": 19, "steering_front_left": 20,
+    "steering_front_right": 21, "steering_rear_left": 22,
+    "steering_rear_right": 23, "wheel_front_left": 24, "wheel_front_right": 25,
+    "wheel_middle_left": 26, "wheel_middle_right": 27, "wheel_rear_left": 28,
+    "wheel_rear_right": 29, "mast_base": 30, "mast_head": 31,
+    "arm_azimuth": 32, "arm_shoulder": 33, "arm_elbow": 34, "arm_wrist": 35,
+    "arm_turret": 36, "antenna_hga_mast": 37, "antenna_hga_dish": 38,
+    "antenna_uhf": 39, "antenna_whips": 40, "solar_wing_left": 41,
+    "solar_wing_right": 42, "power_rtg": 43,
+}
+_WHEELS = {
+    "wheel_front_left": ([1250, 990, 260], "left", "steering_angle_front_left", False),
+    "wheel_front_right": ([1250, -990, 260], "right", "steering_angle_front_right", False),
+    "wheel_middle_left": ([-150, 990, 260], "left", None, True),
+    "wheel_middle_right": ([-150, -990, 260], "right", None, True),
+    "wheel_rear_left": ([-1250, 990, 260], "left", "steering_angle_rear_left", True),
+    "wheel_rear_right": ([-1250, -990, 260], "right", "steering_angle_rear_right", True),
+}
+_FORKS = {
+    "steering_front_left": ([1250, 990, 260], "left", "steering_angle_front_left", False),
+    "steering_front_right": ([1250, -990, 260], "right", "steering_angle_front_right", False),
+    "steering_rear_left": ([-1250, 990, 260], "left", "steering_angle_rear_left", True),
+    "steering_rear_right": ([-1250, -990, 260], "right", "steering_angle_rear_right", True),
+}
+# Chassis-fixed groups that only ride the body pose (everything articulated
+# has its own feature + joint below).
+_PLAIN_BODY = [
+    "chassis_frame", "body_core", "body_shell", "access_panels",
+    "thermal_control", "internals_avionics", "internals_power",
+    "science_payloads", "cable_harness", "dust_covers", "dust_layer",
+    "mast_base", "antenna_hga_mast", "antenna_uhf", "antenna_whips",
+    "power_rtg",
+]
+_EXPLODE_VECTORS = {
+    "body_core": [0, 0, 0.35], "body_shell": [0, 0, 0.5], "deck_lid": [0, 0, 1.15],
+    "side_panel_left": [0, 0.9, 0.15], "access_panels": [0, -0.8, 0.1],
+    "thermal_control": [0, -0.35, 0.75], "internals_avionics": [0, 0, 0.85],
+    "internals_power": [0.15, -0.2, 0.75], "science_payloads": [-0.2, 0.15, 0.95],
+    "cable_harness": [0, 0, 0.3], "dust_covers": [0, 0, -0.4], "dust_layer": [0, 0, 1.35],
+    "rocker_left": [0, 0.45, 0], "rocker_right": [0, -0.45, 0],
+    "bogie_left": [0, 0.6, 0], "bogie_right": [0, -0.6, 0], "differential": [0, 0, 0.9],
+    "steering_front_left": [0.15, 0.75, 0.1], "steering_front_right": [0.15, -0.75, 0.1],
+    "steering_rear_left": [-0.15, 0.75, 0.1], "steering_rear_right": [-0.15, -0.75, 0.1],
+    "wheel_front_left": [0.15, 1.0, 0], "wheel_front_right": [0.15, -1.0, 0],
+    "wheel_middle_left": [0, 1.0, 0], "wheel_middle_right": [0, -1.0, 0],
+    "wheel_rear_left": [-0.15, 1.0, 0], "wheel_rear_right": [-0.15, -1.0, 0],
+    "mast_base": [0, 0, 0.7], "mast_head": [0, 0, 1.25],
+    "arm_azimuth": [0.5, 0, 0.35], "arm_shoulder": [0.8, 0, 0.5],
+    "arm_elbow": [1.05, 0, 0.6], "arm_wrist": [1.25, 0, 0.68], "arm_turret": [1.45, 0, 0.78],
+    "antenna_hga_mast": [-0.3, 0.5, 0.5], "antenna_hga_dish": [-0.45, 0.75, 0.85],
+    "antenna_uhf": [-0.35, -0.6, 0.6], "antenna_whips": [-0.5, -0.8, 0.45],
+    "solar_wing_left": [0, 0.85, 0.3], "solar_wing_right": [0, -0.85, 0.3],
+    "power_rtg": [-0.95, 0, 0.15],
+}
+_ACCENT_PRIMARY = [
+    "#o1.15.1", "#o1.16.1", "#o1.17.1", "#o1.18.1", "#o1.19.1", "#o1.20.1",
+    "#o1.21.1", "#o1.22.1", "#o1.23.1", "#o1.30.1", "#o1.31.1", "#o1.32.1",
+    "#o1.33.1", "#o1.34.1", "#o1.35.1", "#o1.36.1", "#o1.37.1", "#o1.41.1",
+    "#o1.42.1", "#o1.43.1", "#o1.5.4", "#o1.6.3", "#o1.40.3",
+]
+_ACCENT_HUB = ["#o1.24.1", "#o1.25.1", "#o1.26.1", "#o1.27.1", "#o1.28.1", "#o1.29.1"]
+_ACCENT_PALETTES = {
+    "ember_red": ("#e0401f", "#e8b63c"),
+    "cobalt_blue": ("#2563eb", "#f0b429"),
+    "solar_gold": ("#f0b429", "#e2e8f0"),
+    "stealth_graphite": ("#454b52", "#6b7280"),
+}
+_DUST_EXTRA = ["#o1.5.9", "#o1.1.12", "#o1.1.13"]
+
+
+def _rover_features() -> dict:
+    # One feature per top-level group (visibility/style/explode targets), plus
+    # the merged "body" feature the chassis joints move, plus the accent sets.
+    features = {
+        name: {"ref": f"#o1.{index}", "label": name.replace("_", " ")}
+        for name, index in _GROUP_REFS.items()
+    }
+    features["body"] = {
+        "label": "Body-mounted groups",
+        "selectors": [f"o1.{_GROUP_REFS[name]}" for name in _PLAIN_BODY],
+    }
+    features["accent_primary"] = {"label": "Accent hardware", "selectors": [ref.lstrip("#") for ref in _ACCENT_PRIMARY]}
+    features["accent_hub"] = {"label": "Wheel hubs", "selectors": [ref.lstrip("#") for ref in _ACCENT_HUB]}
+    return features
+
+
+def _rover_joints() -> list:
+    joints = [
+        # Chassis pose (heave -> pitch -> roll); every articulated chain parents "roll".
+        {"id": "heave", "feature": "body", "kind": "translate", "axis": _Z},
+        {"id": "pitch", "feature": "body", "kind": "rotate", "axis": _Y, "origin": _BODY_CENTER, "parent": "heave"},
+        {"id": "roll", "feature": "body", "kind": "rotate", "axis": _X, "origin": _BODY_CENTER, "parent": "pitch"},
+        {"id": "rocker_left", "feature": "rocker_left", "kind": "rotate", "axis": _Y, "origin": _ROCKER_PIVOT["left"], "parent": "roll"},
+        {"id": "rocker_right", "feature": "rocker_right", "kind": "rotate", "axis": _Y, "origin": _ROCKER_PIVOT["right"], "parent": "roll"},
+        {"id": "diff", "feature": "differential", "kind": "rotate", "axis": _Z, "origin": _DIFF_PIVOT, "parent": "roll"},
+        {"id": "lid_lift", "feature": "deck_lid", "kind": "translate", "axis": _Z, "parent": "roll"},
+        {"id": "panel_swing", "feature": "side_panel_left", "kind": "rotate", "axis": _X, "origin": [0, 650, 570], "parent": "roll"},
+        {"id": "mast_yaw", "feature": "mast_head", "kind": "rotate", "axis": _Z, "origin": _MAST_ORIGIN, "parent": "roll"},
+        {"id": "mast_pitch", "feature": "mast_head", "kind": "rotate", "axis": _Y, "origin": _HEAD_PIVOT, "parent": "mast_yaw"},
+        {"id": "arm_azim", "feature": "arm_azimuth", "kind": "rotate", "axis": _Z, "origin": _ARM["azimuth"], "parent": "roll"},
+        {"id": "arm_shldr", "feature": "arm_shoulder", "kind": "rotate", "axis": _Y, "origin": _ARM["shoulder"], "parent": "arm_azim"},
+        {"id": "arm_elbw", "feature": "arm_elbow", "kind": "rotate", "axis": _Y, "origin": _ARM["elbow"], "parent": "arm_shldr"},
+        {"id": "arm_wrst", "feature": "arm_wrist", "kind": "rotate", "axis": _Y, "origin": _ARM["wrist"], "parent": "arm_elbw"},
+        {"id": "arm_trrt", "feature": "arm_turret", "kind": "rotate", "axis": _TURRET_AXIS, "origin": _ARM["turret"], "parent": "arm_wrst"},
+        {"id": "hga_elev", "feature": "antenna_hga_dish", "kind": "rotate", "axis": _Y, "origin": _HGA_PIVOT, "parent": "roll"},
+        {"id": "wing_left", "feature": "solar_wing_left", "kind": "rotate", "axis": _X, "origin": _SOLAR_HINGE["left"], "parent": "roll"},
+        {"id": "wing_right", "feature": "solar_wing_right", "kind": "rotate", "axis": _X, "origin": _SOLAR_HINGE["right"], "parent": "roll"},
+    ]
+    for side in ("left", "right"):
+        joints.append({"id": f"bogie_{side}", "feature": f"bogie_{side}", "kind": "rotate",
+                       "axis": _Y, "origin": _BOGIE_PIVOT[side], "parent": f"rocker_{side}"})
+    for name, (origin, side, _steer, on_bogie) in _FORKS.items():
+        joints.append({"id": f"j_{name}", "feature": name, "kind": "rotate", "axis": _Z,
+                       "origin": origin, "parent": f"bogie_{side}" if on_bogie else f"rocker_{side}"})
+    for name, (center, side, steer, on_bogie) in _WHEELS.items():
+        fork = next((f for f, (o, s, st, b) in _FORKS.items() if st == steer), None) if steer else None
+        parent = f"j_{fork}" if fork else (f"bogie_{side}" if on_bogie else f"rocker_{side}")
+        joints.append({"id": f"j_{name}", "feature": name, "kind": "rotate", "axis": _Y,
+                       "origin": center, "parent": parent})
+    return joints
+
+
+def _rover_drivers() -> list:
+    drivers = [
+        {"kind": "joint", "joint": "heave", "param": "suspension_travel", "scale": -1},
+        {"kind": "joint", "joint": "pitch", "param": "chassis_pitch_angle"},
+        {"kind": "joint", "joint": "roll", "param": "chassis_roll_angle"},
+        {"kind": "joint", "joint": "rocker_left", "param": "rocker_angle"},
+        {"kind": "joint", "joint": "rocker_right", "param": "rocker_angle", "scale": -1},
+        {"kind": "ratio", "joint": "diff", "source": "rocker_left", "ratio": 0.5},
+        {"kind": "joint", "joint": "bogie_left", "param": "bogie_angle"},
+        {"kind": "joint", "joint": "bogie_right", "param": "bogie_angle"},
+        {"kind": "joint", "joint": "lid_lift", "param": "cutaway_fraction", "scale": 420},
+        {"kind": "joint", "joint": "panel_swing", "param": "cutaway_fraction", "scale": -75},
+        {"kind": "joint", "joint": "mast_yaw", "param": "mast_yaw_angle"},
+        {"kind": "joint", "joint": "mast_pitch", "param": "mast_pitch_angle", "scale": -1},
+        {"kind": "joint", "joint": "arm_azim", "param": "robotic_arm_base_angle"},
+        {"kind": "joint", "joint": "arm_shldr", "param": "robotic_arm_shoulder_angle", "scale": -1},
+        {"kind": "joint", "joint": "arm_elbw", "param": "robotic_arm_elbow_angle", "scale": -1},
+        {"kind": "joint", "joint": "arm_wrst", "param": "robotic_arm_wrist_angle", "scale": -1},
+        {"kind": "joint", "joint": "arm_trrt", "param": "instrument_turret_rotation"},
+        {"kind": "joint", "joint": "hga_elev", "param": "antenna_angle"},
+        {"kind": "joint", "joint": "wing_left", "param": "solar_panel_deploy_angle", "offset": -_SOLAR_MODELED},
+        {"kind": "joint", "joint": "wing_right", "param": "solar_panel_deploy_angle", "scale": -1, "offset": _SOLAR_MODELED},
+    ]
+    for name, (center, side, steer, on_bogie) in _FORKS.items():
+        drivers.append({"kind": "joint", "joint": f"j_{name}", "param": steer})
+    for name in _WHEELS:
+        drivers.append({"kind": "joint", "joint": f"j_{name}", "param": "wheel_drive_angle"})
+    for name, vector in _EXPLODE_VECTORS.items():
+        magnitude = sum(component * component for component in vector) ** 0.5
+        drivers.append({
+            "kind": "translate", "feature": f"#o1.{_GROUP_REFS[name]}",
+            "param": "exploded_distance", "direction": vector, "distance": magnitude,
+        })
+    drivers += [
+        {"kind": "visible", "target": "power_rtg", "param": "rtg_module_visibility"},
+        {"kind": "visible", "target": "cable_harness", "param": "cable_harness_visibility"},
+        {"kind": "visible", "target": "dust_covers", "param": "dust_cover_opacity"},
+        {"kind": "style", "target": "dust_covers", "param": "dust_cover_opacity",
+         "style": {"opacity": {"from": 0, "to": 1}}},
+        {"kind": "visible", "targets": ["dust_layer", *_DUST_EXTRA], "param": "dust_accumulation_level"},
+        {"kind": "style", "targets": ["dust_layer", *_DUST_EXTRA], "param": "dust_accumulation_level",
+         "style": {"opacity": {"from": 0, "to": 1}}},
+        # Shell X-ray: the sidecar coupled this to max(shell, 0.35*cutaway);
+        # the cutaway animation drives shell_transparency too, so the coupling
+        # is preserved where it mattered. (Deliberate simplification.)
+        {"kind": "style", "targets": ["body_shell", "side_panel_left", "access_panels"],
+         "param": "shell_transparency",
+         "style": {"opacity": {"from": 1, "to": 0.1}, "edgeOpacity": {"from": 1, "to": 0.15}}},
+        {"kind": "style", "target": "deck_lid", "param": "cutaway_fraction",
+         "style": {"opacity": {"from": 1, "to": 0.25}, "edgeOpacity": {"from": 1, "to": 0.25}}},
+        {"kind": "style", "targets": ["internals_avionics", "internals_power", "science_payloads"],
+         "param": "cutaway_fraction", "window": [0.25, 1],
+         "style": {"emissive": "#b45309", "emissiveIntensity": {"from": 0, "to": 0.16}}},
+        {"kind": "style", "target": "accent_primary", "param": "accent_color_palette",
+         "palettes": {value: {"accent_primary": {"color": primary}} for value, (primary, _hub) in _ACCENT_PALETTES.items()}},
+        {"kind": "style", "target": "accent_hub", "param": "accent_color_palette",
+         "palettes": {value: {"accent_hub": {"color": hub}} for value, (_primary, hub) in _ACCENT_PALETTES.items()}},
+    ]
+    return drivers
+
+
+def _sine_keys(amplitude: float, *, cycles: float = 1.0, phase: float = 0.0,
+               offset: float = 0.0, samples: int = 24, start: float = 0.0,
+               end: float = 1.0) -> list:
+    """Dense-sample amplitude*sin(2*pi*cycles*t + phase) + offset over [start, end]."""
+    keys = []
+    for index in range(samples + 1):
+        t = index / samples
+        value = offset + amplitude * math.sin(math.tau * cycles * t + phase)
+        keys.append({"t": round(start + (end - start) * t, 6), "value": round(value, 4)})
+    return keys
+
+
+def _bump_keys(peak: float, *, start: float, end: float, offset: float = 0.0) -> list:
+    """0 -> peak -> 0 over [start, end] (the grand tour's windowed bump)."""
+    mid = (start + end) / 2
+    return [
+        {"t": round(start, 6), "value": offset},
+        {"t": round(mid, 6), "value": offset + peak, "easing": "sine"},
+        {"t": round(end, 6), "value": offset, "easing": "sine"},
+    ]
+
+
+def _spin_keys(rotations: float) -> list:
+    """A wheel-drive sawtooth: N full turns (360 == 0 visually, so the wrap is invisible)."""
+    keys = [{"t": 0, "value": 0}]
+    turns = max(int(rotations), 1)
+    for turn in range(turns):
+        wrap = (turn + 1) / turns
+        keys.append({"t": round(wrap - 1e-6, 6), "value": 360})
+        if turn + 1 < turns:
+            keys.append({"t": round(wrap, 6), "value": 0})
+    return keys
+
+
+def _rover_animations() -> dict:
+    tour = []
+
+    def track(param, keys):
+        tour.append({"param": param, "keys": keys})
+
+    # Grand tour stages mirror the retired sidecar's seg()/bump() windows.
+    track("wheel_drive_angle", _spin_keys(4))
+    track("rocker_angle", _sine_keys(6, cycles=5, samples=40, end=0.2) + [{"t": 0.21, "value": 0}])
+    track("bogie_angle", _sine_keys(8, cycles=5, phase=1.1, samples=40, end=0.2) + [{"t": 0.21, "value": 0}])
+    track("suspension_travel", _sine_keys(20, cycles=10, samples=60, end=0.2) + [{"t": 0.21, "value": 0}])
+    track("chassis_pitch_angle", _sine_keys(3, cycles=5, phase=0.7, samples=40, end=0.2) + [{"t": 0.21, "value": 0}])
+    track("steering_angle_front_left", _sine_keys(48, start=0.2, end=0.32, samples=12) + [{"t": 0.33, "value": 0}])
+    track("steering_angle_front_right", _sine_keys(38, start=0.2, end=0.32, samples=12) + [{"t": 0.33, "value": 0}])
+    track("steering_angle_rear_left", _sine_keys(-48, start=0.2, end=0.32, samples=12) + [{"t": 0.33, "value": 0}])
+    track("steering_angle_rear_right", _sine_keys(-38, start=0.2, end=0.32, samples=12) + [{"t": 0.33, "value": 0}])
+    track("mast_yaw_angle", _sine_keys(120, start=0.32, end=0.45, samples=12) + [{"t": 0.46, "value": 0}])
+    track("mast_pitch_angle", _bump_keys(40, start=0.32, end=0.45) + [{"t": 0.46, "value": 0}])
+    track("robotic_arm_base_angle", _sine_keys(28, start=0.45, end=0.62, samples=12) + [{"t": 0.63, "value": 0}])
+    track("robotic_arm_shoulder_angle", _bump_keys(22, start=0.45, end=0.62) + [{"t": 0.63, "value": 0}])
+    track("robotic_arm_elbow_angle", _bump_keys(-30, start=0.45, end=0.62) + [{"t": 0.63, "value": 0}])
+    track("robotic_arm_wrist_angle", _sine_keys(28, start=0.45, end=0.62, samples=12) + [{"t": 0.63, "value": 0}])
+    track("instrument_turret_rotation", _sine_keys(180, start=0.45, end=0.62, samples=12) + [{"t": 0.63, "value": 0}])
+    track("antenna_angle", _bump_keys(48, start=0.62, end=0.74) + [{"t": 0.75, "value": 0}])
+    track("solar_panel_deploy_angle",
+          [{"t": 0, "value": 102}, {"t": 0.62, "value": 102}]
+          + [{"t": 0.68, "value": 20, "easing": "sine"}, {"t": 0.74, "value": 102, "easing": "sine"}])
+    track("cutaway_fraction", _bump_keys(1, start=0.74, end=0.88) + [{"t": 0.89, "value": 0}])
+    track("shell_transparency", _bump_keys(0.6, start=0.74, end=0.88) + [{"t": 0.89, "value": 0}])
+    track("exploded_distance", _bump_keys(520, start=0.88, end=1.0))
+
+    return {
+        "terrain_traverse": {
+            "label": "Terrain traverse", "duration": 14, "loop": True,
+            "tracks": [
+                {"param": "wheel_drive_angle", "keys": _spin_keys(2)},
+                {"param": "rocker_angle", "keys": _sine_keys(6)},
+                {"param": "bogie_angle", "keys": _sine_keys(8, phase=1.1)},
+                {"param": "suspension_travel", "keys": _sine_keys(22, cycles=2, phase=0.4, samples=32)},
+                {"param": "chassis_pitch_angle", "keys": _sine_keys(3.2, phase=0.7)},
+                {"param": "chassis_roll_angle", "keys": _sine_keys(2.4, phase=2.2)},
+                {"param": "steering_angle_front_left", "keys": _sine_keys(3, phase=3.0)},
+                {"param": "steering_angle_front_right", "keys": _sine_keys(3, phase=3.0)},
+            ],
+        },
+        "steering_sweep": {
+            "label": "Steering sweep", "duration": 8, "loop": True,
+            "tracks": [
+                {"param": "steering_angle_front_left", "keys": _sine_keys(48)},
+                {"param": "steering_angle_front_right", "keys": _sine_keys(38)},
+                {"param": "steering_angle_rear_left", "keys": _sine_keys(-48)},
+                {"param": "steering_angle_rear_right", "keys": _sine_keys(-38)},
+                {"param": "wheel_drive_angle", "keys": _spin_keys(1)},
+            ],
+        },
+        "suspension_cycle": {
+            "label": "Suspension cycle", "duration": 6, "loop": True,
+            "tracks": [
+                {"param": "suspension_travel", "keys": _sine_keys(70)},
+                {"param": "bogie_angle", "keys": _sine_keys(6)},
+                {"param": "rocker_angle", "keys": _sine_keys(4)},
+                {"param": "chassis_pitch_angle", "keys": _sine_keys(1.5, phase=1.57)},
+            ],
+        },
+        "mast_scan": {
+            "label": "Mast scan", "duration": 10, "loop": True,
+            "tracks": [
+                {"param": "mast_yaw_angle", "keys": _sine_keys(120)},
+                {"param": "mast_pitch_angle", "keys": _sine_keys(-22, cycles=1, phase=math.pi / 2, offset=22)},
+            ],
+        },
+        "arm_deploy": {
+            "label": "Arm deploy", "duration": 12, "loop": True,
+            "tracks": [
+                {"param": "robotic_arm_base_angle", "keys": _sine_keys(28)},
+                {"param": "robotic_arm_shoulder_angle", "keys": _sine_keys(20, phase=0.6)},
+                {"param": "robotic_arm_elbow_angle", "keys": _sine_keys(26, phase=1.1)},
+                {"param": "robotic_arm_wrist_angle", "keys": _sine_keys(24, cycles=2, samples=32)},
+                {"param": "instrument_turret_rotation", "keys": _sine_keys(180)},
+            ],
+        },
+        "antenna_and_solar": {
+            "label": "Antennas + solar deploy", "duration": 10, "loop": True,
+            "tracks": [
+                {"param": "antenna_angle", "keys": _sine_keys(-24, phase=math.pi / 2, offset=24)},
+                {"param": "solar_panel_deploy_angle", "keys": _sine_keys(41, phase=math.pi / 2, offset=61)},
+            ],
+        },
+        "cutaway_reveal": {
+            "label": "Cutaway reveal", "duration": 9, "loop": True,
+            "tracks": [
+                {"param": "cutaway_fraction", "keys": _sine_keys(-0.5, phase=math.pi / 2, offset=0.5)},
+                {"param": "shell_transparency", "keys": _sine_keys(-0.325, phase=math.pi / 2, offset=0.325)},
+                {"param": "dust_cover_opacity", "keys": _sine_keys(0.3, phase=math.pi / 2, offset=0.7)},
+            ],
+        },
+        "exploded_assembly": {
+            "label": "Exploded assembly", "duration": 12, "loop": True,
+            "tracks": [{"param": "exploded_distance", "keys": _sine_keys(-300, phase=math.pi / 2, offset=300)}],
+        },
+        "grand_tour": {"label": "Grand tour", "duration": 32, "loop": True, "tracks": tour},
+    }
+
+
+POSE = _pose(
+    params={
+        "wheel_drive_angle": {"type": "number", "label": "Wheel drive", "default": 0, "min": 0, "max": 360, "step": 1, "unit": "deg"},
+        "steering_angle_front_left": {"type": "number", "label": "Steer FL", "default": 0, "min": -60, "max": 60, "step": 0.5, "unit": "deg"},
+        "steering_angle_front_right": {"type": "number", "label": "Steer FR", "default": 0, "min": -60, "max": 60, "step": 0.5, "unit": "deg"},
+        "steering_angle_rear_left": {"type": "number", "label": "Steer RL", "default": 0, "min": -60, "max": 60, "step": 0.5, "unit": "deg"},
+        "steering_angle_rear_right": {"type": "number", "label": "Steer RR", "default": 0, "min": -60, "max": 60, "step": 0.5, "unit": "deg"},
+        "rocker_angle": {"type": "number", "label": "Rocker split", "default": 0, "min": -12, "max": 12, "step": 0.1, "unit": "deg"},
+        "bogie_angle": {"type": "number", "label": "Bogie pitch", "default": 0, "min": -15, "max": 15, "step": 0.1, "unit": "deg"},
+        "suspension_travel": {"type": "number", "label": "Suspension travel", "default": 0, "min": -80, "max": 80, "step": 1, "unit": "mm"},
+        "chassis_pitch_angle": {"type": "number", "label": "Chassis pitch", "default": 0, "min": -10, "max": 10, "step": 0.1, "unit": "deg"},
+        "chassis_roll_angle": {"type": "number", "label": "Chassis roll", "default": 0, "min": -8, "max": 8, "step": 0.1, "unit": "deg"},
+        "mast_yaw_angle": {"type": "number", "label": "Mast yaw", "default": 0, "min": -170, "max": 170, "step": 1, "unit": "deg"},
+        "mast_pitch_angle": {"type": "number", "label": "Mast pitch", "default": 0, "min": -25, "max": 60, "step": 0.5, "unit": "deg"},
+        "robotic_arm_base_angle": {"type": "number", "label": "Arm azimuth", "default": 0, "min": -45, "max": 45, "step": 0.5, "unit": "deg"},
+        "robotic_arm_shoulder_angle": {"type": "number", "label": "Arm shoulder", "default": 0, "min": -35, "max": 60, "step": 0.5, "unit": "deg"},
+        "robotic_arm_elbow_angle": {"type": "number", "label": "Arm elbow", "default": 0, "min": -45, "max": 75, "step": 0.5, "unit": "deg"},
+        "robotic_arm_wrist_angle": {"type": "number", "label": "Arm wrist", "default": 0, "min": -60, "max": 70, "step": 0.5, "unit": "deg"},
+        "instrument_turret_rotation": {"type": "number", "label": "Turret rotation", "default": 0, "min": -180, "max": 180, "step": 1, "unit": "deg"},
+        "antenna_angle": {"type": "number", "label": "HGA elevation", "default": 0, "min": -15, "max": 55, "step": 0.5, "unit": "deg"},
+        "solar_panel_deploy_angle": {"type": "number", "label": "Solar deploy", "default": 102, "min": 20, "max": 115, "step": 0.5, "unit": "deg"},
+        "rtg_module_visibility": {"type": "boolean", "label": "RTG module", "default": True},
+        "cable_harness_visibility": {"type": "boolean", "label": "Cable harness", "default": True},
+        "dust_cover_opacity": {"type": "number", "label": "Dust covers", "default": 1, "min": 0, "max": 1, "step": 0.01},
+        "dust_accumulation_level": {"type": "number", "label": "Dust buildup", "default": 0.35, "min": 0, "max": 1, "step": 0.01},
+        "shell_transparency": {"type": "number", "label": "Shell X-ray", "default": 0, "min": 0, "max": 1, "step": 0.01},
+        "cutaway_fraction": {"type": "number", "label": "Cutaway reveal", "default": 0, "min": 0, "max": 1, "step": 0.01},
+        "accent_color_palette": {
+            "type": "select", "label": "Accent palette", "default": "jpl_orange",
+            "options": [
+                {"value": "jpl_orange", "label": "JPL orange (source)"},
+                {"value": "ember_red", "label": "Ember red"},
+                {"value": "cobalt_blue", "label": "Cobalt blue"},
+                {"value": "solar_gold", "label": "Solar gold"},
+                {"value": "stealth_graphite", "label": "Stealth graphite"},
+            ],
+        },
+        "exploded_distance": {"type": "number", "label": "Explode", "default": 0, "min": 0, "max": 600, "step": 5, "unit": "mm"},
+    },
+    features=_rover_features(),
+    joints=_rover_joints(),
+    drivers=_rover_drivers(),
+    animations=_rover_animations(),
+)
+
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
 
-def gen_step():
+@step(kind="assembly", pose=POSE)
+def mars_rover_concept():
     # Top-level child order is the sidecar feature contract (#o1.N):
     #  1 terrain            2 chassis_frame     3 body_core        4 body_shell
     #  5 deck_lid           6 side_panel_left   7 access_panels    8 thermal_control
@@ -1100,7 +1500,4 @@ def gen_step():
         solar_wing(-1.0, "right"),
         power_rtg(),
     ]
-    return {
-        "shape": group("mars_rover_concept", children),
-        "params": "mars_rover_concept.params.js",
-    }
+    return group("mars_rover_concept", children)
