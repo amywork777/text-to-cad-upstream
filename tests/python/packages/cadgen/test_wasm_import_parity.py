@@ -72,7 +72,10 @@ class WasmImportParityTest(unittest.TestCase):
                 root.mkdir()
                 (root / FIXTURE.name).write_bytes(FIXTURE.read_bytes())
 
-            build_step_artifact(repo_root=native_root, step=native_root / FIXTURE.name)
+            # force=True: the corpus fixture is itself a cadgen-generated file
+            # (embedded identity metadata), which the generated-step guard
+            # otherwise refuses to import — this test WANTS the import path.
+            build_step_artifact(repo_root=native_root, step=native_root / FIXTURE.name, force=True)
             imported = _run_node("importCli.mjs", [
                 "--step", str(wasm_root / FIXTURE.name),
                 "--package-dir", str(wasm_root / "__cadgen__" / "models" / FIXTURE.name),

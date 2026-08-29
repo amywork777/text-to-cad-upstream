@@ -313,6 +313,7 @@ def build_step_artifact(
     if step_path.suffix.lower() not in {".step", ".stp"}:
         raise ValueError(f"Expected a STEP/STP file: {step_path}")
 
+
     if logger is None:
         logger = CliLogger("step-artifact", verbose=verbose)
     mesh_tolerance = normalize_mesh_numeric(mesh_tolerance, field_name="mesh_tolerance")
@@ -356,6 +357,25 @@ def build_step_artifact(
         existing_artifact = _current_artifact_for_spec(existing_spec)
         if existing_artifact is not None:
             return _existing_result_payload(existing_spec, existing_artifact)
+
+    if not from_generator and not force:
+        # The import is actually going to run (no current package). A
+        # cadgen-generated STEP self-identifies via embedded metadata; importing
+        # it builds a DERIVED package (sourceKind "step") that silently loses
+        # the generated provenance — the params-sidecar link and the
+        # run-the-script regeneration path — so the correct build for this file
+        # is its own generator. Checked only on the build path: a CURRENT
+        # package no-ops above regardless of file kind, and `--force` remains
+        # the deliberate override (e.g. recovering an artifact whose source has
+        # drifted, or test fixtures that WANT an imported-kind package).
+        embedded = read_text_to_cad_step_metadata(step_path)
+        if embedded.get("generator") == "cadgen" and embedded.get("sourcePath"):
+            raise RuntimeError(
+                f"{step_path.name} is a cadgen-GENERATED file (source: {embedded['sourcePath']}). "
+                f"Rebuild it with `python {embedded['sourcePath']}` from the model's folder instead "
+                "of importing it; pass --force to import anyway (the import drops generated "
+                "provenance and the params-sidecar link)."
+            )
 
     # The lock covers the WHOLE build, not just the generator run. run_script_generator
     # takes this same lock internally (re-entrantly, so the nesting is a no-op), but it
