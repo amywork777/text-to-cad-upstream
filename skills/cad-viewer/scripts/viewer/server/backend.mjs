@@ -108,10 +108,11 @@ function absolutizeEntry(entry, { rootPath, scanRepoRoot }) {
     next.url = localAssetUrlForPath(assetPath, queryValue(entry.url, "v"));
     next.assetFile = absoluteFileRef(assetPath);
   }
-  if (entry.moduleUrl) {
-    const modulePath = assetPathFromCatalogUrl(scanRepoRoot, entry.moduleUrl);
-    next.moduleUrl = localAssetUrlForPath(modulePath, queryValue(entry.moduleUrl, "v"));
-    next.moduleFile = absoluteFileRef(modulePath);
+  for (const key of ["poseUrl", "poseHatchUrl"]) {
+    if (entry[key]) {
+      const assetPath = assetPathFromCatalogUrl(scanRepoRoot, entry[key]);
+      next[key] = localAssetUrlForPath(assetPath, queryValue(entry[key], "v"));
+    }
   }
   if (entry.source) {
     next.source = absolutizeKeyed(entry.source, scanRepoRoot, ["file", "path", "sourcePath"]);

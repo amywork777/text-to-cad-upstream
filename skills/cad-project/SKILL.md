@@ -22,7 +22,7 @@ the `$cad` skill; drawings are `$dxf`.
     STEP/                 #   MIRRORED: src/STEP/<stem>.py -> STEP/<stem>.step
       bracket.py          #     one @step model per file
       arm.py
-      arm.params.js       #     params/animation sidecars sit beside their script
+      _pose/              #     pose escape-hatch JS modules (declared via @step(pose=...))
     DXF/                  #   src/DXF/<stem>.py -> DXF/<stem>.dxf
       arm_drawing.py
     lib/                  #   ALL shared code (plain modules — never models)

@@ -17,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from tests.python.support.paths import add_repo_path, repo_path
 
 
-def write_package(step_path, *, entry_kind="part", source_kind="step"):
+def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None):
     """Materialize the canonical render artifact for ``step_path``: a SELF-CONTAINED
     component-GLB PACKAGE directory inside the per-folder cache
     (``__cadgen__/models/<step-filename>/assembly.json``) whose content-addressed component
@@ -43,6 +43,7 @@ def write_package(step_path, *, entry_kind="part", source_kind="step"):
                 "bbox": {"min": [0, 0, 0], "max": [1, 1, 1]},
                 "stats": {"occurrenceCount": 1, "shapeCount": 1},
                 "components": {cid: {"surf": f"components/{cid}.surf", "contentHash": cid}},
+                **({"pose": pose} if pose else {}),
                 "occurrences": [
                     {
                         "id": "o1.1",
@@ -971,7 +972,7 @@ class SnapshotCliTests(unittest.TestCase):
     def test_render_job_rejects_step_parameters_path_for_mesh_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "stepParametersPath requires a STEP model"):
+            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
@@ -1132,13 +1133,11 @@ class SnapshotCliTests(unittest.TestCase):
             models = root / "models"
             models.mkdir()
             (models / "part.step").write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            package_dir = write_package(models / "part.step")
-            # stepParameters require a declared sidecar; point the descriptor at one.
-            descriptor_path = Path(package_dir) / "assembly.json"
-            descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
-            descriptor["paramsPath"] = "part.params.js"
-            descriptor_path.write_text(json.dumps(descriptor), encoding="utf-8")
-            (models / "part.params.js").write_text("export default {};\n", encoding="utf-8")
+            # stepParameters drive the model's declarative pose block.
+            write_package(models / "part.step", pose={
+                "schemaVersion": 1,
+                "params": {"width": {"type": "number", "min": 0, "max": 5, "default": 1}},
+            })
 
             original_ensure = snapshot_main.ensure_step_topology_artifact
             try:
@@ -1723,16 +1722,15 @@ class JobDisplayResolutionTests(unittest.TestCase):
         self.assertEqual(packet["jobs"][0]["display"]["mode"], "wireframe")
 
 
-class StepParameterSidecarTests(unittest.TestCase):
-    """Where a STEP parameter sidecar may come from, per entry kind.
+class StepPoseParameterTests(unittest.TestCase):
+    """stepParameters drive the model's declarative pose block — the ONE
+    parameter transport. The retired sidecar paths (--params-path,
+    stepParametersPath, descriptor paramsPath) are hard teaching errors."""
 
-    A generated model declares its sidecar from ``model()``, so the render
-    package descriptor names it and the command line may not. An imported
-    ``.step``/``.stp`` declares nothing, so the sidecar has to be named with
-    ``--params-path`` -- and stepParameters without one is an error rather than
-    a render that silently ignores them."""
-
-    SIDECAR = "export default { manifest: {}, update() {} };\n"
+    POSE = {
+        "schemaVersion": 1,
+        "params": {"stroke": {"type": "number", "min": 0, "max": 1, "default": 0}},
+    }
 
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -1742,19 +1740,11 @@ class StepParameterSidecarTests(unittest.TestCase):
         self.models.mkdir()
         (self.root / "tmp").mkdir()
 
-    def _imported_step(self, name="part.step", *, sidecar=True):
+    def _step(self, name="part.step", *, pose=True):
         step_path = self.models / name
         step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-        write_package(step_path)
-        if sidecar:
-            (self.models / f"{name}.js").write_text(self.SIDECAR, encoding="utf-8")
+        write_package(step_path, pose=self.POSE if pose else None)
         return step_path
-
-    def _generated_step(self, name="widget.py"):
-        generator = self.models / name
-        generator.write_text("def model():\n    return None\n", encoding="utf-8")
-        write_package(generator, source_kind="python")
-        return generator
 
     def _job(self, **overrides):
         job = {
@@ -1773,84 +1763,38 @@ class StepParameterSidecarTests(unittest.TestCase):
         finally:
             snapshot_main.ensure_step_topology_artifact = original
 
-    def test_params_path_flag_reaches_the_job(self) -> None:
-        options = parse_snapshot_args(
-            [
-                "--input", "models/part.step",
-                "--output", "tmp/part.png",
-                "--params", '{"stroke": 1}',
-                "--params-path", "models/part.step.js",
-            ]
-        )
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=self.root)
-        self.assertEqual(job["stepParameters"], {"stroke": 1})
-        self.assertEqual(job["stepParametersPath"], "models/part.step.js")
+    def test_params_path_flag_is_a_teaching_error(self) -> None:
+        with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+            parse_snapshot_args(
+                ["--input", "models/part.step", "--params-path", "models/part.step.js"]
+            )
 
-    def test_params_path_flag_overrides_a_json_job(self) -> None:
-        options = parse_snapshot_args(["--params-path=models/part.step.js"])
-        overridden = snapshot_main.apply_option_overrides_to_payload(
-            {"input": "models/part.step", "outputs": []}, options, cwd=self.root
-        )
-        self.assertEqual(overridden["stepParametersPath"], "models/part.step.js")
-
-    def test_imported_step_renders_parameters_from_the_named_sidecar(self) -> None:
-        self._imported_step()
-        packet = self._resolve(
-            self._job(stepParameters={"stroke": 1}, stepParametersPath="models/part.step.js")
-        )
+    def test_pose_parameters_resolve_the_descriptor_url(self) -> None:
+        self._step()
+        packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertEqual(resolved["stepParameterPath"], str(self.models / "part.step.js"))
-        self.assertIn("stepParameterUrl", resolved)
+        self.assertIn("assembly.json", str(resolved["stepParameterUrl"]))
+        self.assertNotIn("stepParameterPath", resolved)
 
-    def test_imported_step_rejects_parameters_without_a_named_sidecar(self) -> None:
-        self._imported_step()
-        with self.assertRaisesRegex(SnapshotError, "require --params-path"):
+    def test_pose_hatch_module_gets_an_asset_url(self) -> None:
+        step_path = self._step(pose=False)
+        pkg = step_path.parent / "__cadgen__" / "models" / step_path.name
+        (pkg / "components" / "ab12.pose.js").write_text("export default {};", encoding="utf-8")
+        write_package(step_path, pose={**self.POSE, "module": "components/ab12.pose.js"})
+        packet = self._resolve(self._job(stepParameters={"stroke": 1}))
+        resolved = packet["jobs"][0]["resolved"]
+        self.assertIn("ab12.pose.js", str(resolved["stepPoseHatchUrl"]))
+
+    def test_parameters_without_a_pose_block_teach_the_migration(self) -> None:
+        self._step(pose=False)
+        with self.assertRaisesRegex(SnapshotError, "declares no pose block"):
             self._resolve(self._job(stepParameters={"stroke": 1}))
 
-    def test_generated_model_rejects_a_named_sidecar(self) -> None:
-        self._generated_step()
-        (self.models / "widget.params.js").write_text(self.SIDECAR, encoding="utf-8")
-        with self.assertRaisesRegex(SnapshotError, "stepParametersPath is for imported"):
-            self._resolve(
-                self._job(
-                    name="widget.py",
-                    stepParameters={"stroke": 1},
-                    stepParametersPath="models/widget.params.js",
-                )
-            )
-
-    def test_named_sidecar_requires_parameter_values(self) -> None:
-        self._imported_step()
-        with self.assertRaisesRegex(SnapshotError, "needs stepParameters values"):
-            self._resolve(self._job(stepParametersPath="models/part.step.js"))
-
-    def test_named_sidecar_must_exist_and_be_javascript(self) -> None:
-        self._imported_step(sidecar=False)
-        with self.assertRaisesRegex(SnapshotError, "does not exist"):
-            self._resolve(
-                self._job(stepParameters={"stroke": 1}, stepParametersPath="models/part.step.js")
-            )
-        with self.assertRaisesRegex(SnapshotError, "must be a .js or .mjs"):
-            self._resolve(
-                self._job(stepParameters={"stroke": 1}, stepParametersPath="models/part.step")
-            )
-
-    def test_named_sidecar_must_live_beside_the_step_file(self) -> None:
-        # The renderer serves assets relative to the model folder, so an outside
-        # path has no URL -- reject it here rather than fail mid-render.
-        self._imported_step()
-        outside = self.root / "elsewhere"
-        outside.mkdir()
-        (outside / "part.step.js").write_text(self.SIDECAR, encoding="utf-8")
-        with self.assertRaisesRegex(SnapshotError, "must sit inside the STEP model folder"):
-            self._resolve(
-                self._job(stepParameters={"stroke": 1}, stepParametersPath="elsewhere/part.step.js")
-            )
-
-    def test_job_paramsPath_key_is_rejected_with_the_right_name(self) -> None:
-        self._imported_step()
-        with self.assertRaisesRegex(SnapshotError, "render jobs use stepParametersPath"):
-            self._resolve(self._job(paramsPath="models/part.step.js"))
+    def test_retired_job_keys_are_rejected_by_name(self) -> None:
+        self._step()
+        for key in ("paramsPath", "stepParametersPath"):
+            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+                self._resolve(self._job(**{key: "models/part.step.js"}))
 
 
 if __name__ == "__main__":
