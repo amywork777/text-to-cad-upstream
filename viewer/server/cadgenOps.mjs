@@ -1,7 +1,7 @@
 // Artifact operations for a STATIC visualization tool.
 //
-// The viewer runs NO Python, ever. It renders what exists: render packages,
-// sibling .dxf files, live implicit sources. Generation and export belong to
+// The viewer runs NO Python, ever. It renders what exists: render packages and
+// sibling .dxf files. Generation and export belong to
 // running model scripts and the CLIs — the viewer neither runs generators
 // nor writes new artifact bytes. The one build-shaped thing it still does is
 // Python-free by construction: importing a raw foreign STEP through the WASM
@@ -49,8 +49,7 @@ function generatedStepHint(identity) {
 }
 
 // The viewer owns status for the entries whose render artifact it reads from
-// disk. Implicit models render LIVE from their own source, so they are not
-// artifact-managed here at all (their baked packages exist for CLI exports).
+// disk.
 export function ownsArtifactPath(filePath) {
   return ownsStepPath(filePath) || ownsDxfPath(filePath);
 }

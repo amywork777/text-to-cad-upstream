@@ -90,38 +90,6 @@ test("entry availability helpers preserve existing viewer gates", () => {
   assert.equal(entryHasUrdf({ kind: "sdf", url: "/robot.sdf", hash: "sdf-hash" }), true);
 });
 
-function packagedEntry(kind, file, glbFile) {
-  // What the scanner publishes for a kind whose geometry is baked into a __cadgen__ render
-  // package: the entry keeps its own source/exchange file as `url`, and the package's mesh
-  // arrives as a `glb` relation.
-  return {
-    file,
-    kind,
-    url: `/assets/${file}`,
-    hash: "source-hash",
-    relations: {
-      glb: { file: glbFile, url: `/assets/${glbFile}`, hash: "baked-hash", bytes: 2048 }
-    }
-  };
-}
-
-test("an implicit entry resolves its mesh from the render package", () => {
-  const implicit = packagedEntry("implicit", "orb.implicit.js", "__cadgen__/models/orb.implicit.js/model.glb");
-  assert.equal(entryMeshAssetUrl(implicit), `/assets/${implicit.relations.glb.file}`);
-  assert.equal(entryMeshAssetHash(implicit), "baked-hash");
-  assert.equal(entryMeshAssetBytes(implicit), 2048);
-  assert.equal(entryHasMesh(implicit), true);
-});
-
-test("an unbuilt implicit package leaves the entry with no mesh at all", () => {
-  // No silent fall back: with no package the entry has no mesh, and the artifact
-  // state machine reports needs-build. (A DXF is different now — its own file IS
-  // the mesh source, parsed client-side.)
-  const implicit = { file: "orb.implicit.js", kind: "implicit", url: "/assets/orb.implicit.js", hash: "source-hash" };
-  assert.equal(entryMeshAssetUrl(implicit), "");
-  assert.equal(entryHasMesh(implicit), false);
-});
-
 test("robot and reference signatures match persisted session expectations", () => {
   assert.equal(entryReferenceAssetSignature(stepEntry()), "glb-hash");
   assert.equal(entryUrdfAssetHash({

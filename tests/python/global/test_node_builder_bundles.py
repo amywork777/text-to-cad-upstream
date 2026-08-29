@@ -1,6 +1,6 @@
 """cadgen must ship the Node builders its own producers spawn.
 
-cadgen builds the DXF and implicit render packages by spawning a Node child
+cadgen builds the DXF render package by spawning a Node child
 (``cadgen._internal.node_runtime``), and finds that child through ``cadgen.assets.
 node_builders_dir()`` -- the repo's live ``packages/cadjs/bin`` in a checkout, and the
 packaged ``cadgen/_runtime/node`` in an installed wheel.
@@ -30,20 +30,10 @@ RUNTIME_DIR = REPO_ROOT / "packages" / "cadgen" / "src" / "cadgen" / "_runtime" 
 # place has to be a rename in both.
 BUILDER_CONSTANTS = {
     "dxf-mesh.mjs": ("cadgen/snapshot_cli.py", "DXF_MESH_BUILDER"),
-    "implicit-artifact.mjs": ("cadgen/_internal/implicit_package.py", "IMPLICIT_BUILDER"),
-    "implicit-export.mjs": ("cadgen/implicit_export.py", "IMPLICIT_EXPORT_BUILDER"),
 }
 
-# The extra two implicit entries are not optional decoration: their paths are computed from
-# `import.meta.url` INSIDE the bundle (`register("./implicitClosureHooks.mjs", ...)` and
-# `new Worker(new URL("./meshWorkerEntry.js", ...))`), so esbuild cannot inline them and the
-# builder dies at run time without them.
 REQUIRED_BUILDERS = (
     "dxf-mesh.mjs",
-    "implicit-artifact.mjs",
-    "implicit-export.mjs",
-    "implicitClosureHooks.mjs",
-    "meshWorkerEntry.js",
 )
 
 # A bare specifier in an emitted bundle means a dependency that an installed cadgen -- which
@@ -98,8 +88,8 @@ class NodeBuilderBundleTests(unittest.TestCase):
                 )
 
     def test_emitted_builder_directory_is_marked_as_esm(self) -> None:
-        # meshWorkerEntry.js is spawned by that exact basename, and a bare .js with no `type`
-        # above it parses as CommonJS -- which would reject its `import` statements.
+        # The emitted directory declares ESM, matching packages/cadjs itself, so a builder
+        # emitted as a bare `.js` would still parse as a module rather than as CommonJS.
         manifest = RUNTIME_DIR / "package.json"
         self.assertTrue(manifest.is_file(), f"Missing {manifest.relative_to(REPO_ROOT)}")
         self.assertIn('"type": "module"', manifest.read_text(encoding="utf-8"))

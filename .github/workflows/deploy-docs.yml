@@ -3,9 +3,9 @@ name: Deploy Docs
 # Deploys the docs site from a SOURCE ref, never from main.
 #
 # The docs app is a website, not something anyone installs, and it builds against
-# repo-root packages/: docs/tsconfig.json maps cadjs/* to ../packages/cadjs/src/*,
-# which includes the implicit CAD runtime. Both docs/ and packages/ are
-# therefore trimmed out of the publish tree, so main cannot build this.
+# repo-root packages/: docs/tsconfig.json maps cadjs/* to ../packages/cadjs/src/*.
+# Both docs/ and packages/ are therefore trimmed out of the publish tree, so main
+# cannot build this.
 #
 # Releases pass the release SOURCE commit (release-pr's source_sha), which already
 # carries the bumped VERSION and the stamped docs/package.json that the site header

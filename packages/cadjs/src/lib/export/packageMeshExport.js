@@ -13,7 +13,7 @@
 // tessellations (bin/mesh-export.mjs adds the disk cache; a browser caller
 // could feed worker results). Determinism: same tessellations + descriptor in,
 // identical bytes out.
-import { meshToBinaryStl, xmlEscape, zipStore } from "../implicitCad/exporters.js";
+import { meshToBinaryStl, xmlEscape, zipStore } from "./meshFormats.js";
 import { writeGlb } from "../glb/writeGlb.js";
 
 export const PACKAGE_MESH_EXPORT_FORMATS = ["stl", "glb", "3mf"];

@@ -13,7 +13,7 @@
 //
 // Usage:
 //   node viewer/scripts/e2e-format-sweep.mjs --dir <models-root> [--url http://127.0.0.1:3245]
-//                                            [--all-implicits] [--out <dir>]
+//                                            [--out <dir>]
 //
 // Asserts, per format: the viewport is not blank, no page errors, the whole viewport tool
 // cluster is present and usable, and the right-click viewport menu offers the camera
@@ -29,13 +29,12 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 function parseArgs(argv) {
-  const args = { url: "http://127.0.0.1:3245", dir: "", out: "", allImplicits: false };
+  const args = { url: "http://127.0.0.1:3245", dir: "", out: "" };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--url") args.url = argv[++index] || args.url;
     else if (flag === "--dir") args.dir = argv[++index] || "";
     else if (flag === "--out") args.out = argv[++index] || "";
-    else if (flag === "--all-implicits") args.allImplicits = true;
   }
   return args;
 }
@@ -55,7 +54,6 @@ const FIXTURES = [
   { format: "glb", file: "mesh/glb/miniature_spiral_staircase_highres.glb", parts: false },
   { format: "step", file: "step/parts/cam_follower_roller.step.py", parts: true },
   { format: "dxf", file: "drawings/dxf/alu_extrusion_profile.dxf", parts: false },
-  { format: "implicit", file: "implicits/rounded-orb.implicit.js", parts: false },
   // The robot family had no fixture here at all, which is how it kept missing features
   // nobody was looking at. Needs `git lfs checkout models/robots/so101` first, like the
   // mesh and DXF fixtures.
@@ -186,17 +184,6 @@ async function main() {
 
   assertFixturesExist(modelsRoot);
   const fixtures = [...FIXTURES];
-  if (args.allImplicits) {
-    const implicitDir = path.join(modelsRoot, "implicits");
-    if (fs.existsSync(implicitDir)) {
-      for (const name of fs.readdirSync(implicitDir).filter((f) => f.endsWith(".implicit.js"))) {
-        const file = `implicits/${name}`;
-        if (!fixtures.some((fixture) => fixture.file === file)) {
-          fixtures.push({ format: "implicit", file });
-        }
-      }
-    }
-  }
 
   // --use-angle=metal: the software rasteriser shades differently and hides real GPU
   // failures, so a sweep run under SwiftShader is not evidence.

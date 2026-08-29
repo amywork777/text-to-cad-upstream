@@ -10,8 +10,7 @@ import {
 
 test("file sheet section defaults match current sheet behavior", () => {
   // DXF is status-only: its geometry is baked into a render package by settings the
-  // producer owns, so it has no control tab left to open. (Implicits DO have tabs again --
-  // they raymarch their own GLSL, so params and graphics are live controls.)
+  // producer owns, so it has no control tab left to open.
   assert.deepEqual(defaultOpenFileSheetSectionIds("dxf"), []);
   assert.deepEqual(defaultOpenFileSheetSectionIds("dxf", { hasFileStatus: true }), ["status"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("step"), ["tree"]);
@@ -21,12 +20,6 @@ test("file sheet section defaults match current sheet behavior", () => {
   assert.deepEqual(defaultOpenFileSheetSectionIds("step", { hasStepModulePanel: true }), ["tree"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("mesh"), ["measurements"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("mesh", { hasFileStatus: true }), ["status", "measurements"]);
-  assert.deepEqual(defaultOpenFileSheetSectionIds("implicit", { hasFileStatus: true }), ["status"]);
-  assert.deepEqual(defaultOpenFileSheetSectionIds("implicit"), []);
-  assert.deepEqual(
-    defaultOpenFileSheetSectionIds("implicit", { hasImplicitParameterPanel: true }),
-    ["parameters"]
-  );
   assert.deepEqual(defaultOpenFileSheetSectionIds("srdf"), ["joints"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("srdf", { motionEnabled: true }), ["motion", "joints"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("sdf"), ["sdf", "joints"]);
@@ -67,14 +60,6 @@ test("rendered file sheet sections include closed-by-default sections", () => {
   assert.deepEqual(renderedFileSheetSectionIds("srdf"), ["joints"]);
   assert.deepEqual(renderedFileSheetSectionIds("mesh"), ["measurements"]);
   assert.deepEqual(renderedFileSheetSectionIds("mesh", { hasFileStatus: true }), ["status", "measurements"]);
-  // An implicit is NOT status-only any more: it raymarches its own GLSL, so its graphics
-  // settings (and params, when the model declares any) are live controls again.
-  assert.deepEqual(renderedFileSheetSectionIds("implicit"), ["graphics"]);
-  assert.deepEqual(renderedFileSheetSectionIds("implicit", { hasFileStatus: true }), ["status", "graphics"]);
-  assert.deepEqual(
-    renderedFileSheetSectionIds("implicit", { hasImplicitParameterPanel: true }),
-    ["parameters", "graphics"]
-  );
 });
 
 test("file sheet section helper opens only rendered sections", () => {

@@ -82,9 +82,9 @@ class DaemonHandoff(unittest.TestCase):
         daemon.assert_not_called()
 
     def test_an_unserved_command_is_never_routed_to_the_daemon(self):
-        # implicit and the generic snapshot have no warm tool; routing them would import
-        # the wrong module in the worker.
-        for command in (["implicit", "gen", "x"], ["snapshot", "x"]):
+        # The generic snapshot has no warm tool; routing it would import the wrong module
+        # in the worker.
+        for command in (["snapshot", "x"], ["doctor"]):
             with self.subTest(command=command):
                 with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
                         mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \

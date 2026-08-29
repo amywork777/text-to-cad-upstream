@@ -65,7 +65,7 @@ The dev server stays running unless `VIEWER_SERVER_LIFETIME_MS` is set.
 
 The backend is `server/` — dependency-free Node, and the viewer runs no Python at
 all: it is a static visualization tool. It renders existing artifacts (render
-packages, sibling `.dxf` files, live implicit sources) and imports raw STEP files
+packages, sibling `.dxf` files) and imports raw STEP files
 through its bundled WASM kernel; generation and export are the CAD CLIs' job. The
 cad-viewer skill bundles the built client + this server (without the WASM kernel)
 and starts them with `node scripts/viewer/server/main.mjs` — no clone, no npm
@@ -95,7 +95,7 @@ there is no stored fallback, so the same URL always shows the same thing.
   render types, and settings UI.
 - `packages/cadjs`: the shared client runtime this app
   builds against. Keep reusable parsing, rendering, sidecar,
-  selector, topology, implicit shader, snapshot, and export logic in these
+  selector, topology, snapshot, and export logic in these
   packages rather than in `src/`.
 
 `packages/*` is a symlinked development layout inside the text-to-cad workbench; the

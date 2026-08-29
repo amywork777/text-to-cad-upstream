@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Build cadgen's non-Python runtime INTO THE PACKAGE (packages/cadgen/src/cadgen/_runtime).
 #
-# cadgen executes two things it does not write in Python: Node builders (the DXF and
-# implicit render packages are baked by a JS child) and a headless browser bundle (the
+# cadgen executes two things it does not write in Python: Node builders (the DXF render
+# package and the mesh export are baked by a JS child) and a headless browser bundle (the
 # snapshot CLI drives it in a page). They used to be generated once PER SKILL, beside each
 # vendored copy of cadgen, because cadgen found them by walking up from its own __file__.
 # cadgen.assets resolves them inside the distribution now, so there is one copy and one
@@ -36,10 +36,6 @@ SNAPSHOT_BUILD_DEPS_DIR="${CADGEN_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/cadgen
 BUILDER_ENTRIES=(
   "$REPO_ROOT/packages/cadjs/bin/dxf-mesh.mjs"
   "$REPO_ROOT/packages/cadjs/bin/mesh-export.mjs"
-  "$REPO_ROOT/packages/cadjs/bin/implicit-artifact.mjs"
-  "$REPO_ROOT/packages/cadjs/bin/implicit-export.mjs"
-  "$REPO_ROOT/packages/cadjs/bin/implicitClosureHooks.mjs"
-  "$REPO_ROOT/packages/cadjs/src/lib/implicitCad/meshWorkerEntry.js"
 )
 
 MODE="write"

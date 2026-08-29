@@ -20,10 +20,6 @@
 //   coherence);
 // - generated outputs are DETACHED from their source code: no source checks,
 //   ever (the CLI's no-op gates own that direction).
-//
-// Implicit models are NOT validated here: they render live from their own
-// source in the client, so the viewer has no implicit artifact to be stale.
-// Their baked packages exist for the CLI export/snapshot path only.
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";

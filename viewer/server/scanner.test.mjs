@@ -55,8 +55,8 @@ test("the asset dir is unresolved while the lock dir is resolved", (t) => {
   // realpath'd so two paths reaching one package exclude each other; an asset URL
   // must NOT be, or a macOS /var -> /private/var realpath escapes the scan root.
   const root = tmpRoot(t);
-  const src = write(root, "gyroid.implicit.js", "// model\n");
-  write(root, path.join("__cadgen__", "models", "gyroid.implicit.js", "implicit.json"), "{}");
+  const src = write(root, "gyroid.step", "ISO-10303-21;\n");
+  write(root, path.join("__cadgen__", "models", "gyroid.step", "assembly.json"), "{}");
   const assetDir = renderPackageAssetDir(src);
   assert.ok(assetDir.startsWith(path.resolve(root) + path.sep));
   assert.equal(renderPackageDir(src), fs.realpathSync(assetDir));
@@ -73,26 +73,14 @@ test("a written drawing lists as its own .dxf entry", (t) => {
   assert.equal(entry.relations, undefined);
 });
 
-test("an implicit model publishes its baked mesh as the glb relation", (t) => {
+test("a .implicit.js file is not a catalog entry at all", (t) => {
   const root = tmpRoot(t);
   write(root, "gyroid.implicit.js", "// model\n");
-  write(
-    root,
-    path.join("__cadgen__", "models", "gyroid.implicit.js", "implicit.json"),
-    JSON.stringify({ kind: "implicit-package", glb: "model.glb" }),
-  );
-  write(root, path.join("__cadgen__", "models", "gyroid.implicit.js", "model.glb"), "glbdata!");
-  const entry = scanCadDirectory(root).entries.find((e) => e.file === "gyroid.implicit.js");
-  assert.equal(entry.kind, "implicit");
-  assert.equal(entry.relations.glb.file, "__cadgen__/models/gyroid.implicit.js/model.glb");
-  assert.equal(entry.relations.glb.bytes, 8);
-});
-
-test("an unbuilt implicit model publishes no mesh", (t) => {
-  const root = tmpRoot(t);
-  write(root, "gyroid.implicit.js", "// model\n");
-  const entry = scanCadDirectory(root).entries.find((e) => e.file === "gyroid.implicit.js");
-  assert.equal(entry.relations, undefined);
+  write(root, "outline.dxf", "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n");
+  const entries = scanCadDirectory(root).entries;
+  assert.equal(entries.find((e) => e.file === "gyroid.implicit.js"), undefined);
+  // The scan still works around it rather than stopping at it.
+  assert.ok(entries.find((e) => e.file === "outline.dxf"));
 });
 
 test("a descriptor pose block is exposed as poseUrl (+ hatch); sidecars only teach", (t) => {

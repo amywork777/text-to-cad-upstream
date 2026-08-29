@@ -41,10 +41,6 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
     # DXF
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
-    # Implicit
-    "implicit gen": ("cadgen.cli.implicit_gen", "build implicit CAD targets"),
-    "implicit export": ("cadgen.cli.implicit_export_js", "export an implicit model (via Node)"),
-    "implicit snapshot": ("cadgen.cli.implicit_snapshot", "render an implicit model"),
     # Robot descriptions
     "urdf validate": ("cadgen.cli.urdf_validate", "validate URDF robot descriptions"),
     "sdf validate": ("cadgen.cli.sdf_validate", "validate SDF worlds and models"),

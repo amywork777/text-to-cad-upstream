@@ -25,18 +25,6 @@ import {
 import {
   orbitFrameOutputs
 } from "./headlessOrbitFrames.js";
-import {
-  resolveHeadlessJobKind
-} from "./headlessJobKind.js";
-// The unified snapshot runtime carries both backends: the mesh path below and
-// the implicit raymarch path, which now lives beside this file rather than in a
-// separate implicitjs package, so the whole snapshot bundle exposes a single
-// window.__snapshotRender entry that dispatches by job kind.
-import {
-  runImplicitCadHeadlessRenderJob
-} from "./implicitHeadlessRenderEntry.js";
-// The GIF palette/encoder logic is shared with the implicit entry (single source,
-// same as camera.js) so both backends pick the SAME transparent slot.
 import { encodeGifFrameImageData } from "./gifFrameEncoder.js";
 
 const GIFEncoder = exportedGifEncoder || gifencDefault?.GIFEncoder || gifencDefault;
@@ -206,9 +194,6 @@ async function renderParamAnimation(source, job, stepParameterSource) {
 }
 
 export async function runHeadlessRenderJob(job) {
-  if (resolveHeadlessJobKind(job) === "implicit") {
-    return runImplicitCadHeadlessRenderJob(job);
-  }
   const loadStarted = performance.now();
   const source = await loadSource(job);
   headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);

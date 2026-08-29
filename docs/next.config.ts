@@ -11,16 +11,15 @@ const threeExample = (subpath: string) =>
 
 // Every bare specifier cadjs imports needs an entry here, and each deep subpath needs its
 // OWN entry -- the "three/examples" alias above does not cover paths beneath it, which is
-// why GLTFLoader was already listed individually. cadjs used to reach a second package
-// (implicitjs) through its exports map, which needed ~30 lines of derived aliases; the two
-// merged, so its imports are plain relative paths now and only third-party names remain.
+// why GLTFLoader was already listed individually. cadjs's own imports are plain relative
+// paths, so only third-party names remain.
 //
 // The reason aliases are load-bearing rather than a convenience: these imports live in
 // packages/cadjs/src, outside docs/, so Node resolution walks up from THERE --
 // packages/cadjs/node_modules, packages/node_modules, <repo>/node_modules -- and never
 // reaches docs/node_modules. In a dev checkout packages/cadjs/node_modules exists and the
 // build works by accident; on Vercel only docs/ is installed and it fails. Reproduce that
-// locally by moving packages/{cadjs,implicitjs}/node_modules aside before building.
+// locally by moving packages/cadjs/node_modules aside before building.
 const cadJsBareImports = {
   meshoptimizer: docsMeshoptimizer,
   "three/examples/jsm/loaders/GLTFLoader.js": threeExample(

@@ -187,7 +187,7 @@ function syncTomlTarget(relativePath, version) {
  * happens, so two of them stamping it means the last write wins -- and when the mirror declares
  * FEWER fields than the canonical target, the field only the canonical one knows about is
  * silently reverted. That is how the 0.4.10 release gate came to reject its own bump:
- * `packages/cadjs/package-lock.json` was stamped with the implicitjs version and then
+ * `packages/cadjs/package-lock.json` was stamped with a package version and then
  * overwritten through its own symlink, which did not carry that field.
  */
 export function mergeTargetsByRealPath(targets) {

@@ -32,7 +32,7 @@ from cadgen._internal.node_runtime import (  # noqa: E402
     node_package_root,
     run_node_builder,
 )
-from cadgen.coordination import IMPLICIT_PACKAGE, artifact_build  # noqa: E402
+from cadgen.coordination import DRAWING_PACKAGE, artifact_build  # noqa: E402
 
 _NODE = shutil.which("node")
 
@@ -133,18 +133,18 @@ reportResult({ ok: true });
         )
 
     def test_phase_without_a_total_is_indeterminate(self):
-        script = self.script('reportPhase("weld");\nreportResult({ ok: true });\n')
+        script = self.script('reportPhase("write");\nreportResult({ ok: true });\n')
         run = Recorder()
         run_node_builder(script, run=run)
-        self.assertEqual([("phase", "weld", None, "")], run.events)
+        self.assertEqual([("phase", "write", None, "")], run.events)
 
     def test_result_line_becomes_the_return_value(self):
         script = self.script(
-            'reportResult({ ok: true, packagePath: "a/b.implicit.glb", triangles: 42 });\n'
+            'reportResult({ ok: true, packagePath: "a/b.dxf", triangles: 42 });\n'
         )
         payload = run_node_builder(script, run=Recorder())
         self.assertEqual(
-            {"ok": True, "packagePath": "a/b.implicit.glb", "triangles": 42}, payload
+            {"ok": True, "packagePath": "a/b.dxf", "triangles": 42}, payload
         )
         # `type` is protocol framing, not payload: it must not leak into the CLI's JSON line.
         self.assertNotIn("type", payload)
@@ -327,10 +327,10 @@ class ArtifactBuildIntegrationTest(NodeRuntimeTestCase):
     """The real thing: a real lock, a real status record, a real Node child."""
 
     def test_child_progress_flows_through_a_real_build_run(self):
-        package_dir = self.root / "__cadgen__" / "widget.implicit.glb"
+        package_dir = self.root / "__cadgen__" / "widget.dxf"
         script = self.script(
             """
-reportPhase("sample", 4);
+reportPhase("generate", 4);
 for (let i = 1; i <= 4; i += 1) reportAdvance(1, `slice ${i}/4`);
 reportPhase("write");
 reportResult({ ok: true, packagePath: process.argv[2] });
@@ -339,18 +339,18 @@ reportResult({ ok: true, packagePath: process.argv[2] });
 
         events = []
         with artifact_build(
-            IMPLICIT_PACKAGE, package_dir, is_current=lambda: False, sink=events.append
+            DRAWING_PACKAGE, package_dir, is_current=lambda: False, sink=events.append
         ) as run:
             payload = run_node_builder(script, [str(package_dir)], run=run)
 
         self.assertEqual(str(package_dir), payload["packagePath"])
 
         phases = [event.phase for event in events]
-        self.assertIn("sample", phases)
+        self.assertIn("generate", phases)
         self.assertIn("write", phases)
         self.assertEqual("done", phases[-1])
 
-        sampled = [event for event in events if event.phase == "sample"]
+        sampled = [event for event in events if event.phase == "generate"]
         self.assertTrue(sampled[-1].determinate)
         self.assertEqual(4, sampled[-1].done)
         self.assertEqual(4, sampled[-1].total)
@@ -360,7 +360,7 @@ reportResult({ ok: true, packagePath: process.argv[2] });
         self.assertGreater(sampled[-1].fraction, sampled[0].fraction)
         # And the terminal record carries the phases the CHILD reported, so the run's own
         # timings account for the work it did.
-        self.assertIn("sample", events[-1].stage_ms or {})
+        self.assertIn("generate", events[-1].stage_ms or {})
 
 
 class StdlibOnlyTest(unittest.TestCase):

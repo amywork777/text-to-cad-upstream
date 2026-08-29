@@ -30,9 +30,8 @@ DRY_RUN=0
 MODE="write"
 
 # Packages that must be present under viewer/packages for the mirror to install.
-# The viewer's one in-repo dependency is cadjs ("cadjs": "file:./packages/cadjs");
-# implicitjs folded into cadjs in 0.5.0 and the Python backend is gone, so cadjs
-# is the whole list.
+# The viewer's one in-repo dependency is cadjs ("cadjs": "file:./packages/cadjs"), and
+# the Python backend is gone, so cadjs is the whole list.
 REQUIRED_PACKAGES=(cadjs)
 
 usage() {

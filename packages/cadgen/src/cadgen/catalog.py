@@ -272,8 +272,8 @@ def render_package_dir(entry_path: Path) -> Path:
     # (`<name>.step`): a generator entry (`<name>.step.py`) and the file it outputs are
     # ONE document, so both resolve to one package — the generation pipeline produces it,
     # the render pipeline consumes it, and opening either entry renders the same thing
-    # (design/step-document-architecture.md). Non-STEP `.py` entries (`.dxf.py`,
-    # implicit) keep keying by the entry filename.
+    # (design/step-document-architecture.md). Non-STEP `.py` entries (`.dxf.py`) keep
+    # keying by the entry filename.
     base = entry_path.resolve()
     name = base.name
     lowered = name.lower()

@@ -1,6 +1,4 @@
-// Transparent-GIF palette resolution for the headless snapshot entries, shared by
-// implicitjs and cadjs (cadjs depends on implicitjs; see camera.js for the same
-// arrangement).
+// Transparent-GIF palette resolution for the headless snapshot entries.
 //
 // The bug this owns: transparent frames are quantized with `format: "rgba4444"` +
 // `oneBitAlpha: true`. On a build whose palettes carry RAW 4-bit alpha (0-15), testing

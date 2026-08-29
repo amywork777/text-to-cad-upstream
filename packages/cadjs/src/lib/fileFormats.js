@@ -4,7 +4,6 @@ export const RENDER_FORMAT = Object.freeze({
   THREE_MF: "3mf",
   GLB: "glb",
   DXF: "dxf",
-  IMPLICIT: "implicit",
   URDF: "urdf",
   SRDF: "srdf",
   SDF: "sdf"
@@ -40,7 +39,6 @@ export function normalizeRenderFormat(value, { defaultFormat = RENDER_FORMAT.STE
     normalized === RENDER_FORMAT.THREE_MF ||
     normalized === RENDER_FORMAT.GLB ||
     normalized === RENDER_FORMAT.DXF ||
-    normalized === RENDER_FORMAT.IMPLICIT ||
     normalized === RENDER_FORMAT.URDF ||
     normalized === RENDER_FORMAT.SRDF ||
     normalized === RENDER_FORMAT.SDF
@@ -68,9 +66,6 @@ export function entrySourceFormat(entry) {
   if (kind === RENDER_FORMAT.GLB || kind === "gltf") {
     return RENDER_FORMAT.GLB;
   }
-  if (kind === RENDER_FORMAT.IMPLICIT) {
-    return RENDER_FORMAT.IMPLICIT;
-  }
   if (kind === RENDER_FORMAT.URDF) {
     return RENDER_FORMAT.URDF;
   }
@@ -81,29 +76,6 @@ export function entrySourceFormat(entry) {
     return RENDER_FORMAT.SDF;
   }
   return RENDER_FORMAT.STEP;
-}
-
-// The kinds whose renderable geometry is BAKED into a __cadgen__ render package rather
-// than parsed in the browser. Only implicit models remain: their geometry is GLSL, so the
-// producer bakes a mesh and the scanner publishes it as the entry's `glb` asset. A DXF is
-// parsed and meshed IN the client (design/standalone-viewer.md Phase A) — its render
-// asset is the .dxf file itself.
-const PACKAGE_BAKED_RENDER_KINDS = Object.freeze([RENDER_FORMAT.IMPLICIT]);
-
-/**
- * The format of the asset the viewport actually LOADS for an entry, as opposed to the
- * format of the file the user opened (`entrySourceFormat`).
- *
- * For a baked kind this is GLB unconditionally — it does not consult whether a package has
- * been built. A missing package is not a reason to fall back to an in-browser parse; it is
- * `needs-build`, reported by the artifact state machine and fixed by building. The
- * per-entry "GLB only when a package exists" form this replaced was a phasing device that
- * let the bake ship before the client deletions, and it died with them.
- */
-export function entryRenderAssetFormat(entry) {
-  return PACKAGE_BAKED_RENDER_KINDS.includes(entryKind(entry))
-    ? RENDER_FORMAT.GLB
-    : entrySourceFormat(entry);
 }
 
 export function isMeshRenderFormat(format) {
@@ -124,7 +96,7 @@ export function meshAssetKeyForFormat(format) {
 }
 
 export function meshAssetKeyForEntry(entry) {
-  return meshAssetKeyForFormat(entryRenderAssetFormat(entry));
+  return meshAssetKeyForFormat(entrySourceFormat(entry));
 }
 
 export function fileSheetKindForEntry(entry) {
@@ -143,9 +115,6 @@ export function fileSheetKindForEntry(entry) {
   }
   if (kind === RENDER_FORMAT.SDF) {
     return RENDER_FORMAT.SDF;
-  }
-  if (kind === RENDER_FORMAT.IMPLICIT) {
-    return RENDER_FORMAT.IMPLICIT;
   }
   if (entrySourceFormat(entry) === RENDER_FORMAT.STEP) {
     return RENDER_FORMAT.STEP;
@@ -189,9 +158,6 @@ export function renderFormatFromExtension(extension) {
   if (normalized === "glb" || normalized === "gltf") {
     return RENDER_FORMAT.GLB;
   }
-  if (normalized === "implicit" || normalized === "implicit.js" || normalized === "implicit.mjs") {
-    return RENDER_FORMAT.IMPLICIT;
-  }
   if (normalized === "dxf") {
     return RENDER_FORMAT.DXF;
   }
@@ -208,16 +174,5 @@ export function renderFormatFromExtension(extension) {
 }
 
 export function renderFormatFromPath(value, options = {}) {
-  const rawValue = String(value || "").trim();
-  let pathname = rawValue;
-  try {
-    pathname = new URL(rawValue, options.baseUrl || "http://localhost/").pathname;
-  } catch {
-    pathname = rawValue.split("?")[0].split("#")[0];
-  }
-  const normalizedPath = pathname.toLowerCase();
-  if (normalizedPath.endsWith(".implicit.js") || normalizedPath.endsWith(".implicit.mjs")) {
-    return RENDER_FORMAT.IMPLICIT;
-  }
   return renderFormatFromExtension(fileExtensionFromPath(value, options));
 }

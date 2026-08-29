@@ -59,13 +59,6 @@ export function entryAsset(entry, key) {
   ) {
     return primaryAsset(entry);
   }
-  // An implicit entry's own file is not renderable geometry (it is GLSL), so its
-  // `url` stays the source artifact and the scanner publishes the package's baked
-  // mesh as a `glb` relation. A DXF never reaches here: its mesh key IS "dxf" and
-  // the client parses + meshes the file itself.
-  if (assetKey === RENDER_FORMAT.GLB) {
-    return relationAsset(entry, RENDER_FORMAT.GLB);
-  }
   return null;
 }
 
@@ -163,10 +156,6 @@ export function entryHasDisplayEdges(entry) {
 
 export function entryHasDxf(entry) {
   return Boolean(entryAssetUrl(entry, "dxf") && entryAssetHash(entry, "dxf"));
-}
-
-export function entryHasImplicitCad(entry) {
-  return Boolean(entryAssetUrl(entry, "implicit") && entryAssetHash(entry, "implicit"));
 }
 
 export function entryPoseUrl(entry) {

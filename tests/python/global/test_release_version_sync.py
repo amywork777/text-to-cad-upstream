@@ -6,14 +6,14 @@ before any write happens, so two targets stamping one file means the last write 
 mirror declaring fewer fields than the canonical target silently reverts the field only the
 canonical one knows about.
 
-That is not hypothetical: adding the implicitjs version to `packages/cadjs/package-lock.json`
+That is not hypothetical: adding a package's version to `packages/cadjs/package-lock.json`
 without adding it to that file's two symlinked mirrors made the 0.4.10 release fail its own
 version gate, after the bump and before anything was published.
 
 Both halves of that failure are asserted below -- targets naming one file are merged, and no
 first-party version field in a lockfile is left undeclared. The specific field that broke
-0.4.10 is gone (implicitjs is folded into cadjs), and so are the vendored skill mirrors, so
-the guard is stated as the property rather than as that one package's name.
+0.4.10 is gone, and so are the vendored skill mirrors, so the guard is stated as the
+property rather than as that one package's name.
 """
 
 from __future__ import annotations

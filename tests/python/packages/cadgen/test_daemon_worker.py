@@ -75,8 +75,6 @@ class Allowlist(unittest.TestCase):
             set(dispatch),
             {
                 "cadgen.dxf_export_target",
-                "cadgen.implicit_artifact",
-                "cadgen.implicit_export",
                 "cadgen.step_artifact_cli",
                 "cadgen.step_export_target",
             },

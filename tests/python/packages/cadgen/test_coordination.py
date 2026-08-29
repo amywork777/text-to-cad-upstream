@@ -268,7 +268,7 @@ class DegradedLockTest(CoordinationTestCase):
     Python's policy has always been "a missing lock must never be the reason a user's build
     fails", and `artifact_build` honours it by minting a run id and carrying on. But that id
     is never stamped into the sentinel, because nothing was locked to stamp it under, so the
-    Node builders (DXF, implicit) compared it against an empty sentinel and threw -- reporting
+    Node builders compared it against an empty sentinel and threw -- reporting
     a lock violation for a filesystem that simply cannot lock. The run now carries the fact
     across the boundary so the child can tell the two apart.
     """
@@ -295,42 +295,6 @@ class DegradedLockTest(CoordinationTestCase):
             self.assertFalse(run.degraded)
             stamped = write_lock_path(self.out).read_bytes()[:32].decode("ascii").strip()
             self.assertEqual(run.run_id, stamped)
-
-    def test_the_degradation_reaches_the_node_child(self):
-        # The producers are the only things that can tell the child, so the flag has to
-        # survive the argv construction -- assert on the argv itself, not on the intent.
-        # The implicit bake is the remaining producer that spawns a lock-checking Node
-        # child (the drawing bake died with the drawing package — the viewer parses
-        # the .dxf itself now).
-        from cadgen._internal import implicit_package
-
-        seen = {}
-
-        def fake_builder(script, args, *, run, **kwargs):
-            seen["args"] = list(args)
-            # Stands in for the Node child. The producer checks what the payload CLAIMS
-            # against what is on disk, so the fake has to leave the file behind too.
-            self.out.mkdir(parents=True, exist_ok=True)
-            (self.out / "model.glb").write_bytes(b"glTF")
-            return {"ok": True, "runId": run.run_id}
-
-        source = self.out.parent / "orb.implicit.js"
-        source.parent.mkdir(parents=True, exist_ok=True)
-        source.write_text("// model", encoding="utf-8")
-        with mock.patch.object(implicit_package, "run_node_builder", fake_builder):
-            with self._no_locks():
-                with artifact_build(STEP_PACKAGE, self.out, is_current=lambda: False) as run:
-                    implicit_package.build_implicit_mesh(
-                        self.out, source, run=run, resolution=64
-                    )
-            self.assertIn("--lock-degraded", seen["args"])
-
-            # And a healthy run does NOT claim degradation -- otherwise the escape hatch
-            # would be permanently open and the boundary would check nothing.
-            seen.clear()
-            with artifact_build(STEP_PACKAGE, self.out, is_current=lambda: False) as run:
-                implicit_package.build_implicit_mesh(self.out, source, run=run, resolution=64)
-            self.assertNotIn("--lock-degraded", seen["args"])
 
 
 class ProbeConcurrencyTest(CoordinationTestCase):

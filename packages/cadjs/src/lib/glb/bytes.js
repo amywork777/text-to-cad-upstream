@@ -1,9 +1,9 @@
 /**
  * Byte primitives and the glTF binary container.
  *
- * Extracted from implicitCad/exporters.js so the GLB writer and the exporters share ONE
- * copy. Works on both Node (`Buffer`) and the browser (`Uint8Array`) -- the same module is
- * imported by a build-time Node builder and by client code.
+ * Shared by the GLB writer and the mesh-format exporters so there is ONE copy. Works on
+ * both Node (`Buffer`) and the browser (`Uint8Array`) -- the same module is imported by a
+ * build-time Node builder and by client code.
  */
 
 const NativeBuffer = globalThis.Buffer;
@@ -90,7 +90,7 @@ export function align4Buffer(buffer, fill = 0x20) {
   return padding ? concatBytes([buffer, allocBytes(padding, fill)]) : buffer;
 }
 
-export function sanitizeName(value, fallback = "implicit-cad") {
+export function sanitizeName(value, fallback = "model") {
   return String(value || fallback).trim().replace(/[\x00-\x1f<>:"/\\|?*]+/g, "-") || fallback;
 }
 

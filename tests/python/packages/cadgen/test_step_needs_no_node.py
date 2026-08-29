@@ -1,7 +1,7 @@
 """Building a STEP render package must never require Node.
 
 STEP is the core build path: it is what the CAD skill runs for every generated model, and
-it is pure OCP/build123d. The DXF and implicit packages are the ones that bake their
+it is pure OCP/build123d. The DXF package is the one that bakes its
 preview in a JS builder, and cadgen resolves Node lazily -- ``cad_node_executable()`` is
 called at build time, not import time -- precisely so a STEP-only environment never needs
 it.
