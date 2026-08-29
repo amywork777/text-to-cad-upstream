@@ -1200,17 +1200,30 @@ function currentDisplayRecordTranslationByRecord(THREE, records = []) {
 }
 
 // Aim the controls back at the model centre without touching orientation or
-// distance. The model group is positioned at -center, so the model's centre in
-// world space is the origin — the same target the initial framing uses.
+// distance. The model renders at its authored world coordinates (no bounds
+// re-centering), so the target is the model's world bounds centre — the same
+// target the initial framing uses — not the origin.
 function recenterRuntimeTarget(runtime) {
   const controls = runtime?.controls;
   const camera = runtime?.camera;
   if (!controls?.target || !camera || !runtime?.THREE) {
     return false;
   }
-  const offset = new runtime.THREE.Vector3().copy(camera.position).sub(controls.target);
-  controls.target.set(0, 0, 0);
-  camera.position.copy(offset);
+  const THREE = runtime.THREE;
+  const bounds = runtimeFramingBounds(runtime);
+  const boundsMin = Array.isArray(bounds?.min) ? bounds.min : [0, 0, 0];
+  const boundsMax = Array.isArray(bounds?.max) ? bounds.max : [0, 0, 0];
+  const worldCenter = new THREE.Vector3(
+    (toNumber(boundsMin[0]) + toNumber(boundsMax[0])) / 2,
+    (toNumber(boundsMin[1]) + toNumber(boundsMax[1])) / 2,
+    (toNumber(boundsMin[2]) + toNumber(boundsMax[2])) / 2
+  );
+  if (runtime.modelGroup?.position) {
+    worldCenter.add(runtime.modelGroup.position);
+  }
+  const offset = new THREE.Vector3().copy(camera.position).sub(controls.target);
+  controls.target.copy(worldCenter);
+  camera.position.copy(worldCenter).add(offset);
   camera.lookAt(controls.target);
   controls.update?.();
   return true;
@@ -1985,7 +1998,12 @@ const CadViewer = forwardRef(function CadViewer({
   const resolvedFloorMode = floorModeOverride
     ? normalizeFloorMode(floorModeOverride, defaultFloorMode)
     : defaultFloorMode;
-  const floorFollowsModel = floorSettings.followModel !== false;
+  // Floor-dependent placement is inert without a floor: followModel may only
+  // act when the stage floor is enabled. Grid/axis-only canvases (workbench,
+  // terminal) stay pinned to the true z=0 plane so the model reads against its
+  // authored coordinates. Normalization enforces the same rule; this guard
+  // keeps the invariant local for raw settings.
+  const floorFollowsModel = floorSettings.enabled === true && floorSettings.followModel !== false;
   const updateActiveGridHelper = useCallback((
     runtime,
     activeViewerTheme,
@@ -4088,7 +4106,13 @@ const CadViewer = forwardRef(function CadViewer({
     ) {
       previousTransform.modelKey = modelKey || "";
       previousTransform.sceneScaleMode = normalizedSceneScaleMode;
-      previousTransform.offset = new THREE.Vector3(-center.x, -center.y, -center.z);
+      // The model renders at its AUTHORED world coordinates: geometry is never
+      // re-centered on its bounds (that translation hid any authored offset
+      // from the origin and made the reference panel disagree with the
+      // viewport). Framing moves the CAMERA to the model, never the model to
+      // the camera. The offset vector is kept as plumbing (pick groups, clip
+      // planes, zoom framing all take it) and is now always zero.
+      previousTransform.offset = new THREE.Vector3(0, 0, 0);
       previousTransform.floorZ = resolveRuntimeModelFloorZ(
         displayBounds,
         previousTransform.offset,
@@ -4137,6 +4161,19 @@ const CadViewer = forwardRef(function CadViewer({
     facePickGroup.position.copy(modelOffset);
     edgePickGroup.position.copy(modelOffset);
     vertexPickGroup.position.copy(modelOffset);
+    if (typeof window !== "undefined") {
+      // Read-only debug/test seam (like __CAD_VIEWER_LOD__): the true-pose
+      // contract — model at authored coordinates, grid pinned per the floor
+      // coupling — is asserted by scripts/e2e-model-placement.mjs through this.
+      window.__cadModelPlacement = {
+        modelKey: modelKey || "",
+        position: modelGroup.position.toArray(),
+        boundsMin: [...boundsMin],
+        boundsMax: [...boundsMax],
+        gridFloorZ: Number.isFinite(Number(runtime.gridFloorZ)) ? Number(runtime.gridFloorZ) : null,
+        floorFollowsModel
+      };
+    }
     facePickGroup.updateMatrixWorld(true);
     edgePickGroup.updateMatrixWorld(true);
     vertexPickGroup.updateMatrixWorld(true);
@@ -4191,8 +4228,11 @@ const CadViewer = forwardRef(function CadViewer({
           camera.up.set(...WORLD_UP);
           frameRuntimeCameraForBoundingSphere(runtime, radius, normalizedSceneScaleMode, frameMetrics);
           applyCameraFrameInsets(runtime, viewportFrameInsetsRef.current, { updateProjection: false });
-          camera.position.copy(viewDirection.multiplyScalar(fitDistance));
-          controls.target.set(0, 0, 0);
+          // The model is at its authored coordinates, so the camera frames the
+          // model's WORLD bounds centre — the model is never moved to the camera.
+          const worldCenter = center.clone().add(modelOffset);
+          camera.position.copy(worldCenter).addScaledVector(viewDirection, fitDistance);
+          controls.target.copy(worldCenter);
           camera.lookAt(controls.target);
           controls.update();
           runtime.requestRender();
