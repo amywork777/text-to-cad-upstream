@@ -7,9 +7,9 @@ it installs nothing and fails at first use; one that renders without the `snapsh
 installs fine and then dies inside the headless browser with a playwright ImportError,
 which reads as a rendering bug rather than a missing dependency.
 
-Both stated as criteria rather than lists. implicit-cad shipped for months with no
-manifest at all, and dxf gained a snapshot command without gaining the extra -- neither
-was caught, because nothing derived the expectation from what the skill actually does.
+Both stated as criteria rather than lists. A skill shipped for months with no manifest
+at all, and dxf gained a snapshot command without gaining the extra -- neither was caught,
+because nothing derived the expectation from what the skill actually does.
 
 The skills are instruction-only now (the per-verb shims are gone), so "what the skill
 does" is what its documentation TEACHES: a skill whose docs invoke `cadgen ...` (or
@@ -52,7 +52,7 @@ def _imports_cadgen(skill: Path) -> bool:
 
 
 _CADGEN_INVOCATION = re.compile(r"(?:^|[`\s])cadgen\s+[a-z]", re.M)
-_SNAPSHOT_INVOCATION = re.compile(r"cadgen\s+(?:(?:step|dxf|implicit)\s+)?snapshot\b")
+_SNAPSHOT_INVOCATION = re.compile(r"cadgen\s+(?:(?:step|dxf)\s+)?snapshot\b")
 
 
 def _docs_text(skill: Path) -> str:

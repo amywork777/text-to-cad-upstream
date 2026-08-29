@@ -101,14 +101,6 @@ def drawing():
     return {"document": doc}
 """
 
-IMPLICIT = """export default {
-  schema: "implicit.js/0.1.0",
-  name: "orb",
-  bounds: () => [[-6, -6, -6], [6, 6, 6]],
-  glsl: `float sdf(vec3 p) { return length(p) - 4.0; }`
-};
-"""
-
 
 def package_files(root: Path) -> list[Path]:
     return sorted(path for path in root.rglob("__cadgen__/**/*") if path.is_file())
@@ -139,7 +131,7 @@ def mtimes(root: Path) -> dict[str, int]:
 
 
 class PackagePortabilityTest(unittest.TestCase):
-    """One built project reused by every check: five package kinds in one tree."""
+    """One built project reused by every check: every package kind in one tree."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -150,7 +142,6 @@ class PackagePortabilityTest(unittest.TestCase):
         (cls.root / "widget.py").write_text(PART)
         (cls.root / "rig.py").write_text(ASSEMBLY)
         (cls.root / "sheet.py").write_text(DRAWING)
-        (cls.root / "orb.implicit.js").write_text(IMPLICIT)
         cls._build(cls.root)
 
     @classmethod
@@ -180,20 +171,9 @@ class PackagePortabilityTest(unittest.TestCase):
         ])
         build_step_artifact(repo_root=root, step=root / "imported.step")
         if HAS_NODE:
-            from cadgen.implicit_artifact import build_implicit_artifact
-
             generate_dxf_targets([str(root / "sheet.py")])
-            # The DEFAULT bake resolution on purpose: resolution is part of the bake
-            # identity, so a package baked at another one is legitimately stale to the
-            # viewer, which asks with the defaults -- and the viewer agreeing is half of
-            # what this file is checking.
-            build_implicit_artifact(repo_root=root, source_path=root / "orb.implicit.js")
 
     def _validators(self, root: Path):
-        # Implicit entries are deliberately absent: the viewer renders them live
-        # from their source and does not artifact-manage them, so portability of
-        # their baked package is the producer gate's business
-        # (implicit_package_current, exercised by the no-op pass above).
         # Status subjects are ARTIFACTS (library-first: scripts are not entries).
         # A plain .dxf renders directly and is not artifact-managed, so it has
         # no status to assert here (its no-op behavior is the pass above).
@@ -206,7 +186,7 @@ class PackagePortabilityTest(unittest.TestCase):
         # are one document (design/step-document-architecture.md).
         expected = {"widget.step", "rig.step", "imported.step"}
         if HAS_NODE:
-            expected |= {"sheet.py", "orb.implicit.js"}
+            expected |= {"sheet.py"}
         self.assertEqual(
             expected,
             {path.name for path in (self.root / "__cadgen__" / "models").iterdir() if path.is_dir()},

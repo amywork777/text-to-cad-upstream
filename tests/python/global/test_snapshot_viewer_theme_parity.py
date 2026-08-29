@@ -38,13 +38,11 @@ def _js_source() -> str:
 
 
 def _cadjs_declares_theme_settings() -> bool:
-    # The declarations lived in implicitjs for a while, with cadjs re-exporting them, and
-    # this guard checked that link. implicitjs is folded into cadjs now, so the link is the
-    # absence of one: the module below must declare the presets itself rather than forward
-    # to somewhere else. If they ever move again, this guard moves with them rather than
-    # quietly comparing against a module the viewer no longer loads.
+    # The module below must declare the presets itself rather than forward to somewhere
+    # else. If they ever move, this guard moves with them rather than quietly comparing
+    # against a module the viewer no longer loads.
     source = _js_source()
-    return "export const THEME_PRESETS" in source and "implicitjs" not in source
+    return "export const THEME_PRESETS" in source
 
 
 def _preset_ids() -> set[str]:

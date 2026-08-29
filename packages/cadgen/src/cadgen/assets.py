@@ -1,7 +1,7 @@
 """Where cadgen's non-Python runtime assets live.
 
 cadgen executes two kinds of thing it does not write in Python: Node builders (the DXF
-and implicit render packages are baked by a JS child) and a headless browser bundle (the
+render package is baked by a JS child) and a headless browser bundle (the
 snapshot CLI drives it in a page). Both ship inside the distribution under
 ``cadgen/_runtime``; both can be pointed elsewhere for development. The CAD Viewer is NOT
 one of them: it is a standalone app, distributed by the ``cad-viewer`` skill.

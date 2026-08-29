@@ -22,7 +22,6 @@ from cadgen.snapshot_cli import run_snapshot_cli
 SKILL_KINDS: dict[str, tuple[str, ...]] = {
     "cad": ("step", "stp", "3mf", "glb", "stl"),
     "dxf": ("dxf",),
-    "implicit-cad": ("implicit",),
     "urdf": ("urdf",),
     "srdf": ("srdf",),
     "sdf": ("sdf",),

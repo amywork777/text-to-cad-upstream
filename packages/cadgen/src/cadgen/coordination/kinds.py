@@ -50,9 +50,6 @@ STEP_PACKAGE = ArtifactKind(name="step-package")
 # declare their own here rather than growing the shared PHASE_LABELS dict.
 PHASE_PARSE = "parse"
 PHASE_MESH = "mesh"
-PHASE_SAMPLE = "sample"
-PHASE_POLYGONIZE = "polygonize"
-PHASE_WELD = "weld"
 PHASE_WRITE = "write"
 
 # A generated drawing: the product is the `.dxf` file itself (design/
@@ -64,19 +61,6 @@ DRAWING_PACKAGE = ArtifactKind(
     phases=(PHASE_GENERATE, PHASE_WRITE, PHASE_FINALIZE),
     labels={
         PHASE_WRITE: "Writing DXF",
-    },
-)
-
-# Implicit CAD: sampling an SDF over a grid, polygonizing it, welding, writing.
-
-IMPLICIT_PACKAGE = ArtifactKind(
-    name="implicit-package",
-    phases=(PHASE_SAMPLE, PHASE_POLYGONIZE, PHASE_WELD, PHASE_WRITE),
-    labels={
-        PHASE_SAMPLE: "Sampling field",
-        PHASE_POLYGONIZE: "Building surface",
-        PHASE_WELD: "Welding vertices",
-        PHASE_WRITE: "Writing package",
     },
 )
 

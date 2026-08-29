@@ -70,9 +70,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # STEP model on next open.
         source = (ROOT / "viewer/server/artifactStatus.mjs").read_text()
         # DXF is absent by design: a generated drawing's render IS the sibling
-        # .dxf the client parses. Implicit is absent too: it renders live from
-        # its source, so the viewer has no implicit artifact to gate (its baked
-        # package serves the CLI export path only).
+        # .dxf the client parses, so there is no artifact to gate.
         for constant in (
             "STEP_PACKAGE_VERSION",
         ):
