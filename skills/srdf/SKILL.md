@@ -52,7 +52,7 @@ After completing SRDF work that creates or modifies a `.srdf`, you must ALWAYS h
 8. **Define end effectors after group membership is known.** Avoid overlap between an end-effector group and its parent group. Record the actual target/TCP link.
 9. **Define group states in URDF-native units.** Revolute and continuous values are radians; prismatic values are meters. Do not store degrees in SRDF. Values must lie within URDF limits and must not set fixed or mimic joints.
 10. **Generate disabled collisions from evidence.** Use adjacency derived from the URDF joint table, MoveIt Setup Assistant sampling, or explicit user-provided collision matrices. Do not invent broad disable lists. See `references/disabled-collisions.md`.
-11. **Validate every created or modified `.srdf`** with `scripts/validate`; it cross-validates all names, chains, states, and pairs against the paired URDF. Fix findings and re-validate until clean.
+11. **Validate every created or modified `.srdf`** with `cadgen srdf validate`; it cross-validates all names, chains, states, and pairs against the paired URDF. Fix findings and re-validate until clean.
 12. **Run MoveIt smoke tests when available.** Use MoveIt Setup Assistant or a project MoveIt launch directly.
 13. **Report assumptions and skipped checks.** Include incomplete validation, missing MoveIt environment, manually reasoned collision disables, and inferred target links.
 
@@ -63,10 +63,10 @@ Run with the Python environment for the project or workspace. Treat `python` in 
 From this skill directory, the validator shape is:
 
 ```bash
-python scripts/validate path/to/robot.srdf
-python scripts/validate path/to/a.srdf path/to/b.srdf
-python scripts/validate path/to/robot.srdf --strict
-python scripts/validate path/to/robot.srdf --format json
+cadgen srdf validate path/to/robot.srdf
+cadgen srdf validate path/to/a.srdf path/to/b.srdf
+cadgen srdf validate path/to/robot.srdf --strict
+cadgen srdf validate path/to/robot.srdf --format json
 ```
 
 The validator collects all findings in one pass (severity, code, XML path). It parses the SRDF, resolves the paired URDF (the same-folder `.urdf` whose robot name matches; none or several is an error), and cross-validates: group/joint/link/subgroup name existence, chain path resolvability, subgroup cycles, virtual/passive joints, end-effector topology, group-state membership/limits/completeness, disabled-collision pairs (including Adjacent-reason truthfulness), and misspelled elements. `--strict` treats warnings as failures; `--format json` emits a machine-readable findings document. It exits nonzero if any target fails. Relative targets resolve from the current working directory.
@@ -82,13 +82,13 @@ The validator collects all findings in one pass (severity, code, XML path). It p
 
 ## Snapshot Tool
 
-`scripts/snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
+`cadgen snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
-python scripts/snapshot --input path/to/robot.srdf --output review.png
-python scripts/snapshot --input path/to/robot.srdf --output turntable.gif --mode orbit
+cadgen snapshot --input path/to/robot.srdf --output review.png
+cadgen snapshot --input path/to/robot.srdf --output turntable.gif --mode orbit
 ```
 
 It accepts `.srdf` only. Pose the robot with the job field `"jointValues"` (joint name to
@@ -104,7 +104,7 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `python scripts/snapshot --help` for the complete current command interface.
+Use `cadgen snapshot --help` for the complete current command interface.
 
 ## References
 

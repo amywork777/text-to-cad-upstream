@@ -178,7 +178,7 @@ be at `(812.1, 0.0, 168.4)`. The section slid 68 mm sideways out of its own
 spanwise station and rose nothing.
 
 Nothing downstream catches it. The loft succeeds, the solid is closed,
-watertight and free of self-intersections, and `scripts/inspect refs --facts`
+watertight and free of self-intersections, and `cadgen step inspect refs --facts`
 passes it. Only looking at a render finds it.
 
 Build the frame from explicit direction vectors instead:
@@ -258,7 +258,7 @@ until the next boolean, which then fails with `Null TopoDS_Shape object` from a
 call nowhere near the cause. `ShapeFix_Shape` repairs many of these; gate every
 boolean result rather than trusting the last operation.
 
-`scripts/inspect validate` runs both of these gates plus closure and
+`cadgen step inspect validate` runs both of these gates plus closure and
 self-intersection over every occurrence, so this does not have to be hand-rolled
 per model. Note it measures volume **per solid**: an inverted member inside a
 compound cancels against a sound one, so anything reading a compound's aggregate
@@ -428,7 +428,7 @@ exists.
 `result.volume > 0` and even `BRepCheck_Analyzer.IsValid()` both accept
 chamfer and V-groove-cut results whose skinny faces are BOP-faulty
 (`BOPAlgo_SelfIntersect`, `BOPAlgo_TooSmallEdge`). The failure then surfaces
-only in `scripts/inspect validate` (`selfIntersecting`), with no pointer to
+only in `cadgen step inspect validate` (`selfIntersecting`), with no pointer to
 the causing operation. After tangency-prone cuts and chamfers on wavy
 outlines, gate with the same check validation uses — `BRepAlgoAPI_Check` —
 and step the operation down or skip it when the check fails.

@@ -18,7 +18,7 @@ carries the Python build runtime and the JavaScript it executes. Install it once
 python -m pip install -r requirements.txt
 ```
 
-Generation is pure Python (ezdxf). Only `scripts/snapshot` additionally needs
+Generation is pure Python (ezdxf). Only `cadgen dxf snapshot` additionally needs
 **Node 20 or newer on `PATH`** — it meshes the flat pattern on demand through a
 bundled Node one-shot; a missing `node` is reported at render time.
 
@@ -84,11 +84,11 @@ Use these defaults unless the user specifies otherwise:
 
 ```bash
 python <drawing>.py [flags]      # a @dxf model script writes its sibling .dxf
-python scripts/snapshot --input <drawing> --output <file.png>   # render it
+cadgen dxf snapshot --input <drawing> --output <file.png>   # render it
 ```
 
 An imported `.dxf` needs no build step at all — the CAD Viewer renders it
-directly — so there is no `scripts/artifact` here.
+directly — so there is no build command here.
 
 Use the active project Python interpreter; treat `python` as an interpreter placeholder, and use `--help` for the full interface. Target paths resolve from the command's current working directory; run from the workspace that owns the artifacts with cwd-relative target paths. Keep a drawing generator in the same directory as the geometry it derives from, named `<name>.py`.
 
@@ -111,11 +111,11 @@ unchanged drawing produces an identical file). Flags:
 
 Do not put output paths in the the `@dxf` model function return value.
 
-`scripts/snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:
+`cadgen dxf snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:
 
 ```bash
-python scripts/snapshot --input path/to/imported.dxf --output review.png
-python scripts/snapshot --input path/to/source.py --output turntable.gif --mode orbit
+cadgen dxf snapshot --input path/to/imported.dxf --output review.png
+cadgen dxf snapshot --input path/to/source.py --output turntable.gif --mode orbit
 ```
 
 For a generator it makes the sibling `.dxf` current first (the ordinary gen no-op

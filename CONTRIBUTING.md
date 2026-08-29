@@ -35,18 +35,20 @@ For CAD Viewer development:
 npm --prefix viewer install
 ```
 
-When running a tool manually, use that skill's interpreter:
+When running a tool manually, use an interpreter that can import cadgen (the
+repo `.venv`, or a skill-specific one) and invoke the `cadgen` front door:
 
 ```bash
-.venv/skills/cad/bin/python skills/cad/scripts/gen --help
-./.venv/bin/python skills/urdf/scripts/validate --help
+./.venv/bin/python -m cadgen.cli step inspect --help
+./.venv/bin/python -m cadgen.cli urdf validate --help
 ```
 
-Every skill command is a shim over installed cadgen, so it needs an interpreter
-that can import it — the repo `.venv` above, or a skill-specific one. The robot
-validators used to be the exception, running on bare `python3` while their logic
-lived under `skills/`; that logic is `cadgen.{urdf,sdf,srdf}_*` now, so they need
-cadgen like everything else.
+The skills ship no launcher scripts: every operational verb is a `cadgen`
+subcommand (`cadgen <verb>`, or `python -m cadgen.cli <verb>` when the console
+script is not on PATH), and a model script builds itself (`python <model>.py`).
+The robot validators used to be the exception, running on bare `python3` while
+their logic lived under `skills/`; that logic is `cadgen.{urdf,sdf,srdf}_*` now,
+so they need cadgen like everything else.
 
 ## Link Skills Into Your Agent
 

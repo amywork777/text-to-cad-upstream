@@ -134,5 +134,5 @@ Commit a vendor import or pinned fixture deliberately with a negation pattern
 python src/STEP/plate.py                 # builds STEP/plate.step + its package
 python src/STEP/plate.py                 # "current" — the no-op gate works
 python src/DXF/plate_drawing.py          # builds DXF/plate_drawing.dxf
-python <cad-skill>/scripts/snapshot --input STEP/plate.step --output PNG/plate.png
+cadgen step snapshot --input STEP/plate.step --output PNG/plate.png
 ```

@@ -183,7 +183,7 @@ When only final static placement matters and no meaningful joint datum exists, u
 
 ```bash
 python path/to/assembly.py
-python scripts/inspect refs path/to/assembly.step --facts --planes --positioning
+cadgen step inspect refs path/to/assembly.step --facts --planes --positioning
 ```
 
 ## CLI alignment validation
@@ -191,7 +191,7 @@ python scripts/inspect refs path/to/assembly.step --facts --planes --positioning
 After generation, select moving and target refs from the local selector refs returned by `refs --positioning` and compute deltas:
 
 ```bash
-python scripts/inspect align path/to/assembly.step \
+cadgen step inspect align path/to/assembly.step \
   --moving '#moving_selector' \
   --target '#target_selector' \
   --mode flush \
@@ -205,7 +205,7 @@ Use `--mode flush` for coplanar face alignment. Use `--mode center` for centerli
 Use `frame` to inspect an occurrence or selector's world frame:
 
 ```bash
-python scripts/inspect frame path/to/assembly.step '#selector'
+cadgen step inspect frame path/to/assembly.step '#selector'
 ```
 
 Use this when:
@@ -221,7 +221,7 @@ Use this when:
 Use `measure` for scalar checks:
 
 ```bash
-python scripts/inspect measure path/to/assembly.step \
+cadgen step inspect measure path/to/assembly.step \
   --from '#selector_a' \
   --to '#selector_b' \
   --axis z

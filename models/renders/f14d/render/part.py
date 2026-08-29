@@ -81,7 +81,7 @@ def main():
     entry = d / f"{name}.step.py"
     entry.write_text(TEMPLATE.format(project=str(PROJECT), mods=full))
 
-    r = subprocess.run([PY, str(REPO / "skills/cad/scripts/gen"), str(entry)],
+    r = subprocess.run([PY, str(entry)],  # a model script builds itself
                        cwd=str(REPO), capture_output=True, text=True)
     sys.stderr.write(r.stderr)
     if r.returncode != 0:

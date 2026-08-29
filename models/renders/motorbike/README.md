@@ -39,12 +39,12 @@ raked 27 deg, parameterized by `steer_point(t)`.
 
 ```bash
 PY=../../../.venv/bin/python
-$PY ../../../skills/cad/scripts/gen <entry>.step.py            # render package
-$PY ../../../skills/cad/scripts/gen <entry>.step.py --write    # + .step file
-$PY ../../../skills/cad/scripts/inspect refs <entry>.step.py --facts
-$PY ../../../skills/cad/scripts/inspect validate <entry>.step.py
-$PY ../../../skills/cad/scripts/inspect interfere motorbike.step.py
-$PY ../../../skills/cad/scripts/snapshot --input <entry>.step.py -o out.png
+$PY <entry>.py                       # a model script builds itself
+$PY <entry>.py                       # (the STEP is always written)
+$PY -m cadgen.cli step inspect refs <entry>.step.py --facts
+$PY -m cadgen.cli step inspect validate <entry>.step
+$PY -m cadgen.cli step inspect interfere motorbike.step.py
+$PY -m cadgen.cli step snapshot --input <entry>.step.py -o out.png
 ```
 
 Viewer links select the GENERATED entry — `?file=<name>.step.py`, e.g.

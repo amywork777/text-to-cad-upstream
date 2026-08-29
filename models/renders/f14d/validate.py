@@ -100,7 +100,7 @@ def main():
     ok = True
 
     print("=== build ===")
-    rc, out, err = run([PY, str(REPO / "skills/cad/scripts/gen"), str(ENTRY)])
+    rc, out, err = run([PY, str(ENTRY)])  # a model script builds itself
     print(out or err.splitlines()[-1] if (out or err) else "")
     if rc != 0:
         print(f"FAIL: gen exited {rc}")
@@ -125,7 +125,7 @@ def main():
               f"within {SYM_TOL_MM} mm")
 
     print("\n=== per-solid validity / closure / self-intersection ===")
-    rc, out, err = run([PY, str(REPO / "skills/cad/scripts/inspect"),
+    rc, out, err = run([PY, "-m", "cadgen.cli", "step", "inspect",
                         "validate", str(ENTRY)])
     print(out[:4000] or err[:2000])
     if rc != 0:
@@ -133,7 +133,7 @@ def main():
         print(f"FAIL: inspect validate exited {rc}")
 
     print("\n=== part-vs-part interpenetration ===")
-    rc, out, err = run([PY, str(REPO / "skills/cad/scripts/inspect"),
+    rc, out, err = run([PY, "-m", "cadgen.cli", "step", "inspect",
                         "interfere", str(ENTRY)])
     print(out[:4000] or err[:2000])
     if rc != 0:

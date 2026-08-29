@@ -27,7 +27,7 @@ current and ALWAYS writes the `.step` output, assembled from that package rather
 than re-generated. Unchanged sources are a fast no-op. The default output is the
 sibling `<stem>.step`; relocate it durably with `@step(write="path/to/out.step")`
 (relative to the script) or per-run with `-o PATH` (relative to the command cwd).
-Do not put output paths in the model's return value. `scripts/export` writes
+Do not put output paths in the model's return value. `cadgen step export` writes
 mesh formats only (see `supported-exports.md`).
 
 Rules the decorator enforces:
@@ -132,7 +132,7 @@ source-level relationships are preserved before STEP export (see
 ## Imported STEP/STP files
 
 An imported STEP/STP file needs no model script. Build its render package once
-with `scripts/import`; `scripts/inspect` and `scripts/snapshot` also build it
+with `cadgen import`; `cadgen step inspect` and `cadgen step snapshot` also build it
 on demand, and its part/assembly kind is inferred from embedded metadata or the
 STEP product hierarchy. (The CAD Viewer can also import a raw STEP through its
 own WASM kernel where installed — a repo checkout or the standalone viewer app
@@ -140,11 +140,11 @@ own WASM kernel where installed — a repo checkout or the standalone viewer app
 run instead.)
 
 ```bash
-python scripts/import path/to/imported.step [--kind part|assembly] [--force]
+cadgen import path/to/imported.step [--kind part|assembly] [--force]
 ```
 
 To produce STL/3MF/native GLB files from an imported STEP, pass it directly to
-`scripts/export`; read `supported-exports.md`.
+`cadgen step export`; read `supported-exports.md`.
 
 ## Optional-module generators and the artifact cache
 
@@ -165,9 +165,9 @@ on implicit resolution by `inspect`, `snapshot`, or the Viewer.
 ## Viewer artifacts
 
 Every model run writes the hidden adjacent render package as the build output.
-It powers CAD Viewer review, `$cad-viewer` workflows, and `scripts/inspect`
+It powers CAD Viewer review, `$cad-viewer` workflows, and `cadgen step inspect`
 refs, and is not optional in the STEP workflow. Imported STEP/STP files get the
-same package via `scripts/import` or on demand, per the previous section.
+same package via `cadgen import` or on demand, per the previous section.
 
 ## After generation
 
@@ -176,13 +176,13 @@ same package via `scripts/import` or on demand, per the previous section.
   `inspection-and-validation.md`:
 
 ```bash
-python scripts/inspect refs path/to/model.step --facts --planes --positioning
+cadgen step inspect refs path/to/model.step --facts --planes --positioning
 ```
 
 ## Warm daemon (on by default)
 
-Every model run and `scripts/export` / `scripts/import` / `scripts/inspect` /
-`scripts/snapshot` invocation would otherwise pay a multi-second OCP/build123d
+Every model run and `cadgen step export` / `cadgen import` / `cadgen step inspect` /
+`cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
 import. They are routed through a shared warm daemon **by default** — the
 decorator hands a directly-run script to the daemon before any kernel import —
 and `CADGEN_WARM=0` forces the cold path:

@@ -66,4 +66,4 @@ identity comment (sourcePath/sourceHash — the rename itself).
 - The render package records artifact→source provenance, so nothing depends on
   filenames pairing up any more; the viewer catalogs artifacts only.
 - `scripts/gen` and `cadgen step gen`/`cadgen dxf gen` are gone. Imported
-  foreign STEP/STP files use `scripts/import` (`cadgen import`).
+  foreign STEP/STP files use `cadgen import`.
