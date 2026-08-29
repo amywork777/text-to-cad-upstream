@@ -287,10 +287,9 @@ export function normalizeStepModuleDefinition(rawModule, { url = "", cadPath = "
   };
 }
 
-export async function loadStepModuleDefinition(url, options = {}) {
-  const namespace = await import(/* webpackIgnore: true */ /* @vite-ignore */ url);
-  return normalizeStepModuleDefinition(namespace?.default ?? namespace, { url, ...options });
-}
+// loadStepModuleDefinition (URL-import of a loose .params.js sidecar) is
+// retired: pose definitions come from the package descriptor via
+// poseModule.loadPoseModuleDefinition — the single pose mechanism.
 
 export function normalizeStepModuleParameterValues(definition, values = {}) {
   const parameterMap = definition?.parameterMap || {};

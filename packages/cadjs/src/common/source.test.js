@@ -236,20 +236,30 @@ test("loadSource leaves no source scope behind", async (t) => {
   assert.equal(renderAssetSourceScope(), "");
 });
 
-test("loadSource accepts STEP parameter sidecars for STEP sources", async () => {
-  await withTempModule(async (stepParameterUrl) => {
+test("loadSource accepts descriptor pose blocks for STEP sources", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    kind: "assembly-package",
+    pose: {
+      schemaVersion: 1,
+      params: { drive: { type: "number", min: 0, max: 360, default: 0 } }
+    }
+  }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
     const source = await loadSource({
       kind: "step",
       meshData: meshData(),
       cadPath: "part.step",
-      stepParameterUrl,
+      stepParameterUrl: "/__render_asset/pkg/assembly.json",
       stepParameters: { drive: 90 }
     });
 
     assert.equal(source.kind, "step");
     assert.equal(source.stepParameterSource.renderParameters.values.drive, 90);
     assert.equal(source.stepParameterSource.cadPath, "part.step");
-  });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 function binaryStlTriangle() {

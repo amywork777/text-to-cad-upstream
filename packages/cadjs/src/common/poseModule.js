@@ -21,6 +21,8 @@
 // joint; parent chains compose root-outward. Rotations are degrees,
 // translations millimetres — the units the effects API already speaks.
 
+import { normalizeStepModuleDefinition } from "./stepModule.js";
+
 export const POSE_SCHEMA_VERSION = 1;
 
 const EASINGS = {
@@ -282,6 +284,30 @@ function animationsFromPose(pose) {
     };
   }
   return animations;
+}
+
+/** Fetch a package descriptor, compile its pose block (and dynamic-import the
+ * escape hatch when declared) into a normalized step-module definition. The
+ * ONLY pose loading path — loose sidecar URLs are gone. */
+export async function loadPoseModuleDefinition(poseUrl, { hatchUrl = "", cadPath = "" } = {}) {
+  const response = await fetch(poseUrl, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`pose descriptor fetch failed (${response.status}) for ${poseUrl}`);
+  }
+  const descriptor = await response.json();
+  const poseBlock = descriptor && typeof descriptor.pose === "object" ? descriptor.pose : null;
+  if (!poseBlock) {
+    throw new Error(`descriptor at ${poseUrl} declares no pose block`);
+  }
+  let hatch = null;
+  if (poseBlock.module) {
+    // The scanner hands the viewer an explicit asset URL; path-style servers
+    // (the snapshot loopback) can resolve the package-relative ref directly.
+    const resolvedHatchUrl = hatchUrl || new URL(poseBlock.module, poseUrl).toString();
+    hatch = await import(/* webpackIgnore: true */ /* @vite-ignore */ resolvedHatchUrl);
+  }
+  const raw = stepModuleFromPoseBlock(poseBlock, { hatch });
+  return normalizeStepModuleDefinition(raw, { url: poseUrl, cadPath });
 }
 
 /** Compile a descriptor pose block (+ optional imported hatch namespace) into
