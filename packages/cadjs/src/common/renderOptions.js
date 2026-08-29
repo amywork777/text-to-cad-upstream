@@ -375,7 +375,11 @@ export function addFloor(scene, bounds, themeSettings, sceneScale, settingsBySca
   // grounded. Follow the model only downward, so geometry below z=0 pushes the
   // floor down rather than clipping through it.
   const boundsMinZ = Array.isArray(bounds?.min) ? toFiniteNumber(bounds.min[2]) : 0;
-  const followModel = floor.followModel !== false;
+  // followModel is a floor-dependent trait: it only acts when the stage floor
+  // plane exists (matching normalizeThemeSettings). Grid/axis-only canvases
+  // stay pinned to world z=0, so geometry authored below z=0 visibly extends
+  // below the grid instead of dragging the reference plane with it.
+  const followModel = floorEnabled && floor.followModel !== false;
   const minZ = followModel ? Math.min(0, boundsMinZ) : 0;
   const gridSize = Math.max(radius * 3, settings.minFloorSize);
   if (gridEnabled) {

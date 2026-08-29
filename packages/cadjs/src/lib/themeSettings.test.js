@@ -118,7 +118,9 @@ test("workbench-light preset uses neutral material treatment while preserving so
   assert.equal(cinematic.floor.grid.enabled, true);
   assert.equal(cinematic.floor.grid.opacity, 0.16);
   assert.equal(cinematic.floor.axis.enabled, true);
-  assert.equal(cinematic.floor.followModel, true);
+  // followModel is coupled to the floor: with the workbench stage floor
+  // disabled it normalizes to false, so the grid stays the true z=0 plane.
+  assert.equal(cinematic.floor.followModel, false);
   assert.equal(cinematic.floor.reflectivity, 0.14);
   assert.equal(cinematic.lighting.toneMappingExposure, 1.16);
   assert.equal(cinematic.lighting.ambient.intensity, 0.4);
