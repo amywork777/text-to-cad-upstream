@@ -22,14 +22,44 @@ const pendingRequests = new Map();
 // A component surf under a package's components/ dir is CONTENT-ADDRESSED —
 // its stem is the cid the shared tessellation cache keys on. Anything else
 // (arbitrary .surf paths) has no stable identity and must not be cached.
-export function cidFromSurfUrl(url) {
-  const pathnamePart = String(url || "").split(/[?#]/, 1)[0];
-  const segments = pathnamePart.split("/").filter(Boolean);
+//
+// Two URL shapes carry component surfs: the PATH form the snapshot host and
+// package-relative routes serve (…/components/<cid>.surf) and the QUERY form
+// the viewer's asset route serves (/__cad/asset?file=<abs path ending in
+// components/<cid>.surf>&v=…). The first release of this function parsed only
+// the path form, which silently disabled the entire shared-cache integration
+// in the real viewer client — every component URL there is query-form, so
+// `cacheable` was always false and no cache read or write-back ever ran.
+function cidFromComponentPath(pathLike, { decode = false } = {}) {
+  const segments = String(pathLike || "").split("/").filter(Boolean);
   if (segments.length < 2 || segments[segments.length - 2] !== "components") {
     return "";
   }
-  const name = segments[segments.length - 1];
-  return name.toLowerCase().endsWith(".surf") ? decodeURIComponent(name.slice(0, -5)) : "";
+  let name = segments[segments.length - 1];
+  if (decode) {
+    try {
+      name = decodeURIComponent(name);
+    } catch {
+      // keep the raw name; a malformed escape must not throw picking offline
+    }
+  }
+  return name.toLowerCase().endsWith(".surf") ? name.slice(0, -5) : "";
+}
+
+export function cidFromSurfUrl(url) {
+  const withoutFragment = String(url || "").split("#", 1)[0];
+  const queryIndex = withoutFragment.indexOf("?");
+  const pathnamePart = queryIndex === -1 ? withoutFragment : withoutFragment.slice(0, queryIndex);
+  const fromPath = cidFromComponentPath(pathnamePart, { decode: true });
+  if (fromPath) {
+    return fromPath;
+  }
+  if (queryIndex === -1) {
+    return "";
+  }
+  // URLSearchParams decodes the `file` value, so its segments are plain.
+  const file = new URLSearchParams(withoutFragment.slice(queryIndex + 1)).get("file");
+  return file ? cidFromComponentPath(file) : "";
 }
 
 function makeAbortError() {
