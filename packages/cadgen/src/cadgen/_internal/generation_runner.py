@@ -126,7 +126,7 @@ def _normalize_step_payload(
             joined = ", ".join(extra_fields)
             hint = (
                 " — the .params.js sidecar mechanism was replaced by @step(pose=...); "
-                "see skills/cad/references/pose.md"
+                "see skills/cad/references/parameters.md"
                 if "params" in extra_fields
                 else ""
             )

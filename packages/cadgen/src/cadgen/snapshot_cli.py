@@ -373,7 +373,7 @@ def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
             raise SnapshotError(
                 "--params-path is retired: pose data is declared on the model "
                 "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
-                "see skills/cad/references/pose.md"
+                "see skills/cad/references/parameters.md"
             )
         elif arg == "--focus":
             values, consumed = parse_required_values(argv, index, arg)
@@ -1032,7 +1032,7 @@ def resolve_render_job(
         raise SnapshotError(
             "parameter sidecar paths are retired: pose data is declared on the model "
             "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
-            "see skills/cad/references/pose.md"
+            "see skills/cad/references/parameters.md"
         )
     forbidden_root_fields = [field for field in ("workspaceRoot", "rootDir") if field in job]
     if forbidden_root_fields:
@@ -1193,7 +1193,7 @@ def resolve_step_render_job(
         raise SnapshotError(
             f"{input_path.name} declares no pose block, so stepParameters have nothing to "
             "drive — declare @step(pose=cadgen.pose(...)) on the model "
-            "(the .params.js sidecar mechanism is retired; see skills/cad/references/pose.md)"
+            "(the .params.js sidecar mechanism is retired; see skills/cad/references/parameters.md)"
         )
     if debug_enabled:
         resolved["debug"] = {"stepArtifact": step_artifact_debug}
