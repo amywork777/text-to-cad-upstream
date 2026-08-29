@@ -223,7 +223,111 @@ def _planet_center(index: int) -> tuple[float, float]:
     return _polar_point(PLANET_CENTER_RADIUS, angle)
 
 
-@step
+
+
+# ---------------------------------------------------------------------------
+# Viewer pose (declarative; design: pose-framework). The kinematics are exact
+# fixed-ring planetary ratios expressed as ratio couplings; the orbit-guide
+# overlay and the playback-gated meshing pulse live in the escape hatch
+# (_pose/planetary_orbit_guide.js). 3.5 sun revolutions (1260 deg) returns the
+# carrier to 360 deg and every gear to an equivalent tooth phase.
+# ---------------------------------------------------------------------------
+
+from cadgen import pose as _pose
+
+_CARRIER_RATIO = SUN_TEETH / (SUN_TEETH + RING_TEETH)          # 24/84
+_PLANET_RATIO = -(SUN_TEETH / PLANET_TEETH) * (1 - _CARRIER_RATIO)
+_FULL_MESH_CYCLE_DEG = 1260
+_Z = [0, 0, 1]
+_PLANET_RADIALS = {
+    "planet1": [1.0, 0.0, 0.0],
+    "planet2": [-0.5, 0.8660254, 0.0],
+    "planet3": [-0.5, -0.8660254, 0.0],
+}
+_PIN_RADIALS = {"pin1": _PLANET_RADIALS["planet1"], "pin2": _PLANET_RADIALS["planet2"], "pin3": _PLANET_RADIALS["planet3"]}
+
+
+def _planetary_pose():
+    features = {
+        "carrier": {"ref": "#o1.1.1", "label": "Carrier plate"},
+        "ring": {"ref": "#o1.2.1", "label": "Ring gear"},
+        "sun": {"ref": "#o1.3.1", "label": "Sun gear"},
+        "planet1": {"ref": "#o1.4.1", "label": "Planet gear 1"},
+        "pin1": {"ref": "#o1.5.1", "label": "Planet pin 1"},
+        "planet2": {"ref": "#o1.6.1", "label": "Planet gear 2"},
+        "pin2": {"ref": "#o1.7.1", "label": "Planet pin 2"},
+        "planet3": {"ref": "#o1.8.1", "label": "Planet gear 3"},
+        "pin3": {"ref": "#o1.9.1", "label": "Planet pin 3"},
+    }
+    joints = [
+        {"id": "sun_spin", "feature": "sun", "kind": "rotate", "axis": _Z, "origin": [0, 0, 0]},
+        {"id": "carrier_rot", "feature": "carrier", "kind": "rotate", "axis": _Z, "origin": [0, 0, 0]},
+    ]
+    drivers = [
+        {"kind": "joint", "joint": "sun_spin", "param": "drive"},
+        {"kind": "ratio", "joint": "carrier_rot", "source": "sun_spin", "ratio": _CARRIER_RATIO},
+    ]
+    for index, (planet, radial) in enumerate(_PLANET_RADIALS.items(), start=1):
+        center = [radial[0] * PLANET_CENTER_RADIUS, radial[1] * PLANET_CENTER_RADIUS, 0]
+        joints += [
+            # Chain (leaf last): spin about own center, radial explode, carrier orbit.
+            {"id": f"{planet}_explode", "feature": planet, "kind": "translate", "axis": radial, "parent": "carrier_rot"},
+            {"id": f"{planet}_spin", "feature": planet, "kind": "rotate", "axis": _Z, "origin": center, "parent": f"{planet}_explode"},
+        ]
+        drivers += [
+            {"kind": "joint", "joint": f"{planet}_explode", "param": "explode", "scale": 16},
+            {"kind": "ratio", "joint": f"{planet}_spin", "source": "sun_spin", "ratio": _PLANET_RATIO},
+        ]
+    for pin, radial in _PIN_RADIALS.items():
+        joints.append({"id": f"{pin}_explode", "feature": pin, "kind": "translate", "axis": radial, "parent": "carrier_rot"})
+        drivers.append({"kind": "joint", "joint": f"{pin}_explode", "param": "explode", "scale": 16})
+    drivers += [
+        # Axial separation rides OUTSIDE the joint chains (world-space lifts).
+        {"kind": "translate", "feature": "sun", "param": "explode", "direction": [0, 0, 1], "distance": 7},
+        {"kind": "translate", "features": ["carrier", "pin1", "pin2", "pin3"], "param": "explode", "direction": [0, 0, -1], "distance": 4},
+        {"kind": "visible", "target": "ring", "param": "ringVisible"},
+        {"kind": "style", "target": "ring", "param": "viewMode",
+         "palettes": {"cutaway": {"ring": {"opacity": 0.22, "edgeOpacity": 0.38}}}},
+        {"kind": "style", "target": "carrier", "param": "viewMode",
+         "palettes": {"carrier": {"carrier": {"emissive": "#14532d", "emissiveIntensity": 0.2}}}},
+        {"kind": "style", "targets": ["sun", "planet1", "planet2", "planet3"], "param": "highlightMeshing",
+         "palettes": {"true": {
+             "sun": {"emissive": "#7c2d12", "emissiveIntensity": 0.32},
+             "planet1": {"emissive": "#075985", "emissiveIntensity": 0.22},
+             "planet2": {"emissive": "#075985", "emissiveIntensity": 0.22},
+             "planet3": {"emissive": "#075985", "emissiveIntensity": 0.22},
+         }}},
+    ]
+    return _pose(
+        params={
+            "drive": {"type": "number", "label": "Drive", "description": "Sun gear input angle across one closed mesh cycle.",
+                      "default": 0, "min": 0, "max": _FULL_MESH_CYCLE_DEG, "step": 1, "unit": "deg"},
+            "explode": {"type": "number", "label": "Explode", "default": 0, "min": 0, "max": 1, "step": 0.01},
+            "ringVisible": {"type": "boolean", "label": "Ring gear", "default": True},
+            "orbitGuides": {"type": "boolean", "label": "Orbit guide", "default": False},
+            "highlightMeshing": {"type": "boolean", "label": "Mesh highlight", "default": False},
+            "viewMode": {"type": "select", "label": "View", "default": "mesh",
+                         "options": [{"value": "mesh", "label": "Mesh study"},
+                                     {"value": "cutaway", "label": "Cutaway"},
+                                     {"value": "carrier", "label": "Carrier focus"}]},
+        },
+        features=features,
+        joints=joints,
+        drivers=drivers,
+        animations={
+            "meshCycle": {"label": "Mesh cycle", "duration": 6, "loop": True, "tracks": [
+                {"param": "drive", "keys": [{"t": 0, "value": 0}, {"t": 1, "value": _FULL_MESH_CYCLE_DEG}]},
+            ]},
+            "inspectExplode": {"label": "Explode inspect", "duration": 5, "loop": True, "tracks": [
+                {"param": "drive", "keys": [{"t": 0, "value": 0}, {"t": 1, "value": _FULL_MESH_CYCLE_DEG}]},
+                {"param": "explode", "keys": [{"t": 0, "value": 0}, {"t": 0.5, "value": 1, "easing": "sine"}, {"t": 1, "value": 0, "easing": "sine"}]},
+            ]},
+        },
+        module="_pose/planetary_orbit_guide.js",
+    )
+
+
+@step(kind="assembly", pose=_planetary_pose())
 def planetary_gear_assembly():
     """Return a labeled simplified planetary gear assembly in millimeters."""
     sun_pitch_angle = tau / SUN_TEETH
@@ -269,4 +373,4 @@ def planetary_gear_assembly():
         children=parts,
         label="simplified_planetary_gear_assembly",
     )
-    return {"shape": assembly, "params": "planetary_gear_assembly.params.js"}
+    return assembly

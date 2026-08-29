@@ -521,9 +521,8 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   const topology = metadata.topology;
   const packageAsset = assetForPath(repoRoot, packageDir);
   const topologyIndex = topology && topology.index && typeof topology.index === "object" ? topology.index : topology;
-  const paramsPathRel = String((topologyIndex && topologyIndex.paramsPath) || "").trim();
-  let stepModuleAsset = paramsPathRel
-    ? assetForPath(repoRoot, path.resolve(path.dirname(sourcePath), paramsPathRel))
+  const poseBlock = topologyIndex && typeof topologyIndex.pose === "object" && topologyIndex.pose
+    ? topologyIndex.pose
     : null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
   const sourceHash = String(metadata.sourceHash || "").trim();
@@ -553,70 +552,31 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
       entry.source = source;
     }
   }
-  if (!generated && !stepModuleAsset) {
-    // Imported STEP: no descriptor to declare a module, so look beside it.
-    const sidecarPath = stepSidecarPath(sourcePath);
-    if (fileStats(sidecarPath)) {
-      stepModuleAsset = assetForPath(repoRoot, sidecarPath);
+  if (poseBlock) {
+    // Declarative pose (the ONLY pose mechanism): the client fetches the
+    // descriptor itself and compiles the block; the optional escape-hatch
+    // module is a content-addressed package asset.
+    entry.poseUrl = assetUrlForPath(repoRoot, path.join(packageDir, "assembly.json"));
+    const hatchRef = String(poseBlock.module || "").trim();
+    if (hatchRef && !hatchRef.includes("..")) {
+      entry.poseHatchUrl = assetUrlForPath(repoRoot, path.join(packageDir, hatchRef));
     }
-  }
-  if (stepModuleAsset) {
-    entry.moduleUrl = stepModuleAsset.url;
+  } else if (
+    String((topologyIndex && topologyIndex.paramsPath) || "").trim() ||
+    fileStats(legacyParamsSidecarPath(sourcePath))
+  ) {
+    // Retired mechanism, teaching note: a .params.js sidecar (or an old
+    // descriptor still recording one) is ignored — pose data has exactly one
+    // authoring surface now. The client surfaces this on the params panel.
+    entry.legacyParamsSidecar = true;
   }
   return entry;
 }
 
-// --- viewer-only sidecar for imported STEP files ---
-// An imported `.step`/`.stp` has no generator to declare a parameter/animation
-// module, so the viewer also accepts `<name>.step.js` sitting beside it.
-export const STEP_SIDECAR_SUFFIX = ".js";
-
-export function stepSidecarPath(stepPath) {
-  return `${stepPath}${STEP_SIDECAR_SUFFIX}`;
-}
-
-export function isStepSidecarPath(filePath) {
-  const lowered = String(filePath || "").toLowerCase();
-  if (!(lowered.endsWith(".step.js") || lowered.endsWith(".stp.js"))) {
-    return false;
-  }
-  return Boolean(fileStats(filePath.slice(0, -STEP_SIDECAR_SUFFIX.length)));
-}
-
-// --- served-asset gate (security: which on-disk files /__cad/asset may serve) ---
-function isDeclaredParamsSidecar(filePath) {
-  const modelDir = path.dirname(filePath);
-  const resolved = path.resolve(filePath);
-  const packagesDir = path.join(modelDir, CADGEN_DIRNAME, CADGEN_MODELS_DIRNAME);
-  let names;
-  try {
-    names = fs.readdirSync(packagesDir);
-  } catch {
-    return false;
-  }
-  for (const name of names) {
-    const packageDir = path.join(packagesDir, name);
-    let isDir = false;
-    try {
-      isDir = fs.statSync(packageDir).isDirectory();
-    } catch {
-      continue;
-    }
-    if (!isDir) {
-      continue;
-    }
-    let descriptor;
-    try {
-      descriptor = JSON.parse(fs.readFileSync(path.join(packageDir, "assembly.json"), "utf8"));
-    } catch {
-      continue;
-    }
-    const paramsPath = String((descriptor && descriptor.paramsPath) || "").trim();
-    if (paramsPath && path.resolve(modelDir, paramsPath) === resolved) {
-      return true;
-    }
-  }
-  return false;
+// The retired sidecar convention, detected only to TEACH (never loaded).
+export function legacyParamsSidecarPath(stepPath) {
+  const parsed = path.parse(String(stepPath || ""));
+  return path.join(parsed.dir, `${parsed.name}.params.js`);
 }
 
 export function isServedCadAsset(filePath) {
@@ -629,9 +589,9 @@ export function isServedCadAsset(filePath) {
     return false;
   }
   if (isInsideCadgenDir(filePath)) {
-    return true;
-  }
-  if ((extension === ".js" || extension === ".mjs") && (isDeclaredParamsSidecar(filePath) || isStepSidecarPath(filePath))) {
+    // Includes pose escape-hatch modules (components/<sha>.pose.js): package
+    // contents are served wholesale. Loose .js sidecars beside models are NOT
+    // served any more — the .params.js mechanism is retired.
     return true;
   }
   if (SOURCE_EXTENSIONS.has(extension) || pathIsImplicitCadSource(filePath)) {

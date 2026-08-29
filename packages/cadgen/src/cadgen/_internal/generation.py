@@ -104,7 +104,7 @@ from cadgen._internal.generation_runner import (
     _mark_scene_step_payload,
     _normalize_dxf_payload,
     _normalize_step_payload,
-    _resolve_params_sidecar,
+    _resolve_pose_block,
     _run_artifact_jobs,
     _run_script_generator_inner,
     _scene_entry_kind,
@@ -366,9 +366,12 @@ def _assembly_provenance_manifest(
     source_path = str(getattr(scene, "source_path", "") or "")
     if source_path:
         minimal["sourcePath"] = source_path
-    params_path = str(getattr(scene, "params_path", "") or "")
-    if params_path:
-        minimal["paramsPath"] = params_path
+    pose_block = getattr(scene, "pose", None)
+    if isinstance(pose_block, dict) and pose_block:
+        # The declarative pose block (@step(pose=...)) — the ONLY pose
+        # transport. The retired paramsPath sidecar field is no longer
+        # emitted; old descriptors carrying it are simply inert.
+        minimal["pose"] = pose_block
     if source_kind == "python":
         source_hash = str(getattr(scene, "source_hash", "") or "").strip()
         if source_hash:
@@ -387,6 +390,30 @@ def _assembly_provenance_manifest(
     if step_hash:
         minimal["stepHash"] = step_hash
     return build_step_topology_index_manifest(minimal, entry_kind=entry_kind)
+
+
+def _copy_pose_module_into_package(scene: LoadedStepScene, package_dir: Path) -> None:
+    """Copy the pose escape-hatch module into the package, content-addressed.
+
+    Runs inside the package build job (write lock held). The descriptor already
+    references `components/<sha>.pose.js` (stamped when the pose block was
+    resolved), so the copy is idempotent and atomic like every component write.
+    """
+    pose_block = getattr(scene, "pose", None)
+    source = getattr(scene, "pose_module_source", None)
+    if not isinstance(pose_block, dict) or source is None:
+        return
+    ref = str(pose_block.get("module") or "")
+    if not ref.startswith("components/"):
+        return
+    target = Path(package_dir) / ref
+    payload = Path(source).read_bytes()
+    if target.is_file() and target.read_bytes() == payload:
+        return
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(f"{target.name}.{os.getpid()}{temp_suffix()}")
+    temp.write_bytes(payload)
+    replace_atomic(temp, target)
 
 
 def _generate_part_outputs(
@@ -506,9 +533,10 @@ def _generate_part_outputs(
             )
         for skipped in pruned["skipped"]:
             print(f"Left {skipped.name} in place: unrecognized contents for a 0.3.x artifact")
-        return build_package_from_compound(
+        package_dir = render_package_dir(spec.entry_path)
+        stats = build_package_from_compound(
             shape,
-            package_dir=render_package_dir(spec.entry_path),
+            package_dir=package_dir,
             # The descriptor's rootName is a plain model name, not a repo path (which would leak
             # the arbitrary `models/` root into a bundle meant to be hosted/relocated anywhere).
             root_name=spec.step_path.stem,
@@ -519,6 +547,8 @@ def _generate_part_outputs(
             angular_deflection=selector_options.angular_deflection,
             progress=progress,
         )
+        _copy_pose_module_into_package(scene, package_dir)
+        return stats
 
     jobs.append(_ArtifactJob("GLB package", component_package_job))
 

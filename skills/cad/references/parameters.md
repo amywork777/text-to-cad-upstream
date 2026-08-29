@@ -1,216 +1,175 @@
-# CAD parameters
+# CAD parameters and pose
 
-Read this file when the user asks to parameterize or animate a STEP model, or when designing or reviewing CAD source parameters, JS parameter/animation sidecars, CAD Viewer controls, or animation controls.
+Read this file when the user asks to parameterize or animate a STEP model, or
+when designing or reviewing CAD source parameters, viewer pose controls, or
+animation clips.
+
+There are TWO parameter systems with different lifecycles:
+
+- **Geometry parameters** are the model function's signature
+  (`def bracket(width: float = 10.0)`). Changing one re-runs Python and
+  rebuilds the artifact. They are not live in the viewer.
+- **Pose parameters** are declared on the decorator via `pose=cadgen.pose(...)`
+  and drive the viewer live — joints, explodes, visibility, styles, and
+  animation clips — with no rebuild and no Python at render time. The pose
+  block travels inside the render package descriptor; there are NO loose
+  sidecar files (`.params.js` is retired — see Migration below).
 
 ## Principle
 
-Parameters are part of the model contract. A good parameter makes design intent explicit, maps to named geometry or motion, stays inside a valid range, and gives both users and LLMs enough context to predict what changing it will do.
-
-Prefer parameter logic that preserves the mechanism or part constraints over logic that only looks plausible from one camera angle.
-
-## Parameter Brief
-
-Before coding, write a compact internal parameter brief:
-
-- What geometry or motion each parameter controls.
-- Units, defaults, min/max, step size, and whether the value is dimensionless.
-- Which named features, datums, pivots, axes, faces, or local selector refs each parameter affects.
-- Which values are independent inputs and which are derived from constraints.
-- What validation proves the parameter is correct.
-
-For assemblies and mechanisms, identify fixed pivots, moving pivots, link lengths, gear ratios, axes, joint limits, and branch choices before creating controls.
+Parameters are part of the model contract. A good parameter makes design
+intent explicit, maps to named geometry or motion, stays inside a valid range,
+and gives both users and LLMs enough context to predict what changing it will
+do. Prefer parameter logic that preserves the mechanism's constraints over
+logic that only looks plausible from one camera angle.
 
 ## Naming
 
-Use snake_case semantic names that describe intent, matching the build123d Python source convention:
+Use snake_case semantic names: `wall_thickness`, `hinge_angle_deg`,
+`gear_ratio`, `exploded_distance` — never `offset2` or `slider_a`. Encode
+units in names only when otherwise ambiguous (`_deg`, `_mm`, `_sec`). Keep
+pose parameter ids, feature ids, UI labels, and source constants aligned
+enough that a control can be traced to geometry.
 
-- Prefer `wall_thickness`, `bearing_clearance`, `hinge_angle_deg`, `lid_open`, `gear_ratio`, `link_travel`.
-- Avoid names like `offset2`, `magic_scale`, `fix_angle`, `slider_a`, unless the source model itself uses a meaningful matching term.
-- Encode units in names only when the value could otherwise be ambiguous, such as `_deg`, `_sec`, or `_mm` suffixes.
-- Keep sidecar parameter ids aligned with the Python source parameters they mirror, and keep source constants, manifest feature ids, UI labels, and comments aligned enough that an LLM can trace a control to geometry.
-- Module schema field names such as `schemaVersion`, `manifest.step.path`, and `durationSeconds` are fixed by the step-module schema; the snake_case convention applies to the parameter and feature ids you define.
+## Declaring pose
 
-### Declaring and discovering the sidecar
+```python
+from cadgen import pose, step
+from cadgen import build123d as bd
 
-A generated model declares its JS sidecar from the `@step` model function, and the file can
-have any name; `<name>.params.js` is the convention. An imported `.step` has no
-generator, so it uses the `<name>.step.js` filename convention below instead.
-
-**A sidecar must be ONE self-contained file — it cannot import a sibling
-module.** Only the sidecar itself is served — the exact path a package
-descriptor names as `paramsPath`, or the `<name>.step.js` beside an imported
-STEP (`_is_declared_params_sidecar` / `is_step_sidecar_path` in
-`viewer/server/scanner.mjs`) — so
-`import { solve } from "./my_kinematics.js"` 404s in the browser. It resolves
-fine under node, so the failure appears only in the viewer. Splitting the maths
-out for testability is the natural first move and it does not work; inline it
-and use named exports alongside the default export if you want it node-testable:
-
-```js
-export function solveLinkage(t) { /* ... */ }   // testable under node
-export default { manifest: { /* ... */ }, update({ params, effects }) { /* ... */ } };
+@step(kind="assembly", pose=pose(
+    params={
+        "drive": {"type": "number", "label": "Drive", "default": 0,
+                  "min": 0, "max": 360, "step": 1, "unit": "deg"},
+        "ringVisible": {"type": "boolean", "label": "Ring gear", "default": True},
+    },
+    features={
+        "sun": {"ref": "#o1.3.1", "label": "Sun gear"},
+        "carrier": {"ref": "#o1.1.1", "label": "Carrier"},
+        "ring": {"ref": "#o1.2.1", "label": "Ring gear"},
+    },
+    joints=[
+        {"id": "sun_spin", "feature": "sun", "kind": "rotate",
+         "axis": [0, 0, 1], "origin": [0, 0, 0]},
+        {"id": "carrier_rot", "feature": "carrier", "kind": "rotate",
+         "axis": [0, 0, 1], "origin": [0, 0, 0]},
+    ],
+    drivers=[
+        {"kind": "joint", "joint": "sun_spin", "param": "drive"},
+        {"kind": "ratio", "joint": "carrier_rot", "source": "sun_spin", "ratio": 24 / 84},
+        {"kind": "visible", "target": "ring", "param": "ringVisible"},
+    ],
+    animations={
+        "meshCycle": {"label": "Mesh cycle", "duration": 6, "loop": True,
+                      "tracks": [{"param": "drive",
+                                  "keys": [{"t": 0, "value": 0}, {"t": 1, "value": 360}]}]},
+    },
+))
+def planetary(): ...
 ```
 
-- A generated model declares the sidecar through the the `@step` model function envelope by
-  returning a `params` filepath alongside its `shape`. The path is relative to
-  the generator file:
+The block validates at decoration time — a typo fails the build with an error
+naming the offender, never a silent no-op at render time. Because the pose is
+Python data, BUILD IT WITH CODE: loops over wheel tables, explode-vector
+dicts, and sampled sine keyframes compress what used to be hundreds of
+hand-written sidecar lines (see `models/step/assemblies/mars_rover_concept.py`
+for the full-vocabulary example).
 
-  ```python
-  @step
-  def model():
-      return {"shape": build_model(), "params": "<name>.params.js"}
-  ```
+## The vocabulary (closed)
 
-  cadgen records that path as `paramsPath` in the package descriptor
-  (`assembly.json`, under `__cadgen__`), model-folder-relative. The CAD Viewer
-  reads `paramsPath` from the descriptor to load the sidecar. JS serving is
-  descriptor-gated: only a file a descriptor declares is served, never arbitrary
-  workspace JS.
+- **features** bind names to occurrences: `ref` (a `#o...` token, may carry
+  several comma-joined selectors), `names` (occurrence-label matching —
+  survives renumbering; prefer it where labels exist), `selectors` (a list),
+  plus optional `label`/`axis`/`origin`.
+- **joints** form a tree: `{id, feature, kind: rotate|translate, axis,
+  origin?, parent?}`. A child's parts inherit every ancestor transform.
+  Several joints may share a feature — the last-declared owns the feature's
+  chain; earlier ones are chain links (e.g. chassis heave→pitch→roll).
+  Rotations are degrees, translations millimetres.
+- **drivers** (every scalar obeys `value = offset + scale * f(param)`, where
+  `f` is identity or a `window: [a, b]` normalization + `easing` — one of
+  linear, smoothstep, sine, easeIn, easeOut, easeInOut):
+  - `joint` — drive a joint from a param (`scale`, `offset`, `window`,
+    `easing`). Windowed drivers are how STAGED sequences work: many drivers
+    on one master param, each with its own window.
+  - `ratio` — couple a joint to an earlier-declared joint (`ratio`,
+    `offset`). Gears and differentials.
+  - `translate` — move features along a `direction` vector (or `"radial"`:
+    outward from the origin through each feature's center) by
+    `distance * f(param)`. Explodes. Applied OUTSIDE the joint chains.
+  - `visible` — a boolean/enum param controls target visibility (`value`
+    matches an enum option; `invert` flips).
+  - `style` — either a lerp (`style: {opacity: {from: 1, to: 0.2}, ...}`
+    driven by a param) or `palettes` (enum/boolean param value → per-target
+    style maps). Style props: `opacity`, `edgeOpacity`, `color`, `emissive`,
+    `emissiveIntensity`.
+  - `scale` — uniform scale between `from`/`to` about `origin`.
+- **animations** are keyframe clips: `{label, duration, loop, tracks:
+  [{param, keys: [{t, value, easing?}]}]}` with `t` in [0, 1] of the
+  duration. Numbers lerp (easing belongs to the destination key);
+  booleans/enums step-hold. Sample sinusoids densely from Python rather than
+  approximating with a few keys. Snapshot `--params` sweeps and GIF recipes
+  drive these clips unchanged.
 
-- An imported `.step` model has no the `@step` model function to declare anything, so the CAD
-  Viewer falls back to a filename convention for that case alone: a sidecar
-  named after the STEP file plus `.js`, in the same directory.
+Anything outside this vocabulary is an ERROR by design — computational
+behavior belongs in the escape hatch, not in new driver kinds.
 
-  ```text
-  models/step/mechanisms/gear_rack_gripper.step      # the imported assembly
-  models/step/mechanisms/gear_rack_gripper.step.js   # its sidecar
-  ```
+## The escape hatch
 
-  This applies to `.step` and `.stp`. The *filename convention* is viewer-only —
-  nothing in the CAD pipeline reads it, and no render package records it.
-  Serving stays gated: a `.js` is served under this rule only when the STEP file
-  it is named after actually exists beside it (`is_step_sidecar_path` in
-  `viewer/server/scanner.mjs`). `scripts/snapshot` renders the same file, but
-  you must name it explicitly with `--params-path` (see Validation below); it
-  never guesses by filename. Do not add a wrapper `<name>.py` that only
-  re-imports the `.step` to declare `params`; it makes the imported file look
-  generated and buys nothing.
+`pose(..., module="_pose/my_model_extras.js")` names a JS module beside the
+model source; the build copies it content-addressed into the render package.
+It receives the full runtime contract AFTER the declarative pass each frame:
+`setup({THREE, modelGroup, cleanup})`, `update({params, features, effects,
+time})`, `dispose(ctx)` — including procedural scene overlays and time-gated
+effects. Use it sparingly: solvers, IK, overlays. Worked example:
+`models/step/assemblies/_pose/planetary_orbit_guide.js`.
 
-### `manifest.step.path` link
+Known limitation: editing ONLY the hatch `.js` does not change the Python
+source closure, so a current model will not rebuild — run the model with
+`--force` after hatch-only edits.
 
-Inside the sidecar, strongly prefer an explicit logical-link target in the
-module manifest:
+## Imported STEP files
 
-```js
-export default {
-  manifest: {
-    schemaVersion: 1,
-    step: {
-      path: "models/path/to/model.step"
-    }
-  }
-};
+A foreign `.step` has no pose. To animate one, promote it to an authored
+model: a minimal script that wraps the import and declares the pose —
+
+```python
+@step(pose=pose(...))
+def vendor_arm():
+    return cadgen.import_step("vendor_arm_v3.step")
 ```
-
-`manifest.step.path` is the workspace-relative logical `<name>.step` link used
-for provenance and cad-path derivation. It must be a workspace-relative path,
-never an absolute path, URL, or path with `..` segments. This link is provenance
-for humans and tools, not a freshness contract; do not add hashes or staleness
-checks to STEP parameter modules.
-
-## Defaults And Bounds
-
-Defaults should produce a useful, valid model or pose. Bounds should protect the model from impossible, self-intersecting, or misleading states.
-
-- Use physically valid ranges where possible: joint limits, positive dimensions, manufacturable wall thickness, realistic clearances.
-- Clamp in code even when the UI already declares `min` and `max`.
-- Make `step` match the useful precision of the underlying model, not just the UI.
-- Use booleans for true binary state, selects for discrete modes, colors for style-only values, and numbers only for ordered quantities.
-- Keep debug parameters available when useful, but label them as inspection controls if they do not represent real design degrees of freedom.
-
-## Derive, Do Not Drift
-
-Compute dependent values from the real constraints:
-
-- Use pivots, axes, centers, bounds, and measured link lengths instead of eyeballed translations.
-- Compose assembly transforms around the correct local datum or joint, not around visual centers unless that is the actual design datum.
-- For linkages, solve the kinematics from fixed pivots and link lengths. Do not interpolate through impossible intermediate points.
-- For gears, preserve pitch-circle relationships, tooth counts, and angular ratios instead of tuning rotations by sight.
-- For repeated features, derive positions from count, pitch, radius, and pattern axes.
-
-If a parameter changes a source-level CAD generator, regenerate STEP and validate the exported geometry. If a STEP sidecar changes only viewer-time presentation, say so in labels/descriptions when ambiguity matters.
-
-## Features And Refs
-
-Named features are the bridge between parameters and geometry.
-
-- Label source parts and assembly children explicitly.
-- Expose sidecar `manifest.features` with stable local refs such as `#o1.2`; keep file identity in `manifest.step.path`.
-- Prefer feature ids like `lid`, `hinge_pin`, `input_gear`, `lower_rocker`, not occurrence ids as public names.
-- In code, group constants and transforms by feature role so the logic reads like the mechanism.
-- Resolve and inspect refs when a parameter targets a specific face, edge, part, pivot, or assembly child.
-
-## Animations
-
-Animation parameters should drive the smallest real degrees of freedom and derive everything else.
-
-- Use one normalized travel parameter for a mechanism when possible, then derive all dependent transforms from it.
-- Make loops exact: the final pose must equal the initial pose, or the animation should ping-pong through a periodic function.
-- Do not blend between incompatible kinematic branches. Switch branches only at a physically valid tangent, over-center, or singular pose.
-- Keep hinge centers, mating faces, gear contacts, belt paths, and slider axes coincident throughout the animation.
-- Separate style controls from mechanism controls: colors, visibility, highlights, clip/explode, speed, play/pause, and scrub should not alter the mechanical truth.
-- Preserve source STEP/GLB material colors by default. Only override colors, add color controls, or assign viewer-time color styles when the user explicitly asks for recoloring, presentation styling, or diagnostic color coding.
-- Use comments for non-obvious kinematic choices, especially branch selection, sign conventions, datum origin, and derived ratios.
-
-For STEP sidecars, use JavaScript for live CAD Viewer interaction and Three.js hooks. Use Python/build123d as the source of truth for regenerating geometry. Python may generate `<name>.params.js` modules, but CAD Viewer controls should not imply regeneration unless that workflow exists.
-
-## Controls
-
-Expose controls that make the model understandable, not every constant.
-
-- Numeric dimensions: slider plus number input when the range is bounded and interactive; number input when the range is broad or precision-heavy.
-- Angles and normalized travel: sliders with clear min/max and units.
-- Visibility, enablement, and optional details: switches.
-- Discrete modes: select or segmented control.
-- Colors: color controls only when explicitly requested for viewer styling; otherwise keep imported material colors.
-- Animation: play/pause, scrub, loop, reset, and speed controls.
-
-Use concise labels and descriptions. A good description says what changes and what stays constrained.
 
 ## Validation
 
-Validate parameter behavior at representative values:
+- Identify fixed pivots, moving pivots, link lengths, gear ratios, axes, and
+  joint limits BEFORE declaring joints; pivot every rotation about its hinge,
+  mate, or local frame — never a bounding-box center.
+- Render the animations (`cadgen step snapshot <model> --params
+  '{"animate": ...}'`) and check for disconnected hinges, drifting pivots,
+  collisions, and looping jumps; convert visual concerns into measurements
+  before calling them fixed.
+- Eyeballed keyframes that violate real link lengths, and interpolating
+  between two valid poses through invalid intermediate geometry, are the two
+  classic failures.
 
-- Defaults.
-- Min and max.
-- Mid travel.
-- Boundary or branch-change poses.
-- Values involved in user-reported failures.
+## Migration from `.params.js` sidecars (retired)
 
-Use deterministic checks first:
+Sidecars no longer load anywhere: the viewer ignores them (the params panel
+says so), snapshot `--params-path` is a hard error, and the `gen_step()`
+envelope `params` field is a teaching error. Worked examples:
+`mars_rover_concept.py` (clean map: joints/ratios/windows/palettes/keyframe
+clips), `f14d.py` (staged windows + the style fade), and
+`planetary_gear_assembly.py` (ratio couplings + the escape hatch).
 
-- `scripts/inspect refs --facts --planes --positioning` for scale, labels, frames, and major datums.
-- `scripts/inspect frame`, `measure`, or `align` for pivots, axes, mating faces, and distances.
-- Source-level assertions for derived dimensions or joint limits when practical.
+Remaining corpus-migration work (belongs to the deferred models/ migration
+task):
 
-Use CAD `scripts/snapshot` review for visual semantics, following `snapshot-review.md` for packet sizing and PNG-vs-GIF mode selection:
-
-- Review several parameter poses, with GIFs for motion/animation review.
-- `--params` takes sidecar parameter *values*; the sidecar file itself comes
-  from wherever the model declares it. A generated model needs nothing extra.
-  An imported `.step`/`.stp` declares nothing, so name its sidecar with
-  `--params-path` (job field `stepParametersPath`) — `--params` alone is
-  rejected there, and `--params-path` is rejected on a generated model, whose
-  sidecar belongs in its the `@step` model function. The path must sit inside the model
-  folder, since the renderer serves assets relative to it.
-
-  ```bash
-  python scripts/snapshot --input models/step/mechanisms/gear_rack_gripper.step \
-    --params-path models/step/mechanisms/gear_rack_gripper.step.js \
-    --params '{"animate":{"stroke":{"from":0,"to":1}}}' \
-    --output tmp/gripper.gif
-  ```
-
-- Compare sidecar enabled vs disabled when viewer-time presentation is involved.
-- Check for disconnected hinges, drifting pivots, collisions, impossible branch blends, and looping jumps.
-- Convert visual concerns into measurements or explicit geometric facts before calling them fixed.
-
-## Common Failure Patterns
-
-- Eyeballed keyframes that violate real link lengths or mating constraints.
-- A UI parameter that controls a visual transform but is named like a geometry parameter.
-- Interpolating between two valid poses through invalid intermediate geometry.
-- Transforming a part around its bounding-box center instead of its hinge, mate, or local frame.
-- Letting a debug scale or offset create collisions outside the real design envelope.
-- Using absolute paths, URLs, parent-directory escapes, or stale renamed STEP paths in sidecar `manifest.step.path`.
-- Hiding a geometry issue with color, transparency, camera angle, or exploded spacing.
+- migrate the remaining sidecar models to `pose=` (the corpus audit's mapping
+  table freezes the vocabulary assignments), deleting each `.params.js` with
+  its model;
+- the four heavy-compute models (juno, f1, gd01_mecha, lunar_mass_driver)
+  keep their data cores declarative and move their solvers into hatch
+  modules;
+- delete the scanner's `legacyParamsSidecar` teaching detection once no
+  sidecar remains, and add a corpus policy test that no `.params.js` exists
+  under `models/`.

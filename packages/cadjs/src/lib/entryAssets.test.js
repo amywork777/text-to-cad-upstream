@@ -18,7 +18,9 @@ import {
   entryDisplayEdgeTopologyAssetUrl,
   entrySelectorTopologyAssetUrl,
   entryTopologyAssetUrl,
-  entryStepModuleUrl,
+  entryHasLegacyParamsSidecar,
+  entryPoseHatchUrl,
+  entryPoseUrl,
   entryUrdfAssetHash
 } from "./entryAssets.js";
 
@@ -66,9 +68,12 @@ test("entry topology urls resolve to the primary STEP GLB", () => {
 });
 
 test("STEP module urls are explicit catalog data instead of guessed sidecars", () => {
-  assert.equal(entryStepModuleUrl(stepEntry()), "");
-  assert.equal(entryStepModuleUrl(stepEntry({ moduleUrl: " /assets/.bracket.step.js " })), "/assets/.bracket.step.js");
-  assert.equal(entryStepModuleUrl({ kind: "stl", moduleUrl: "/assets/not-step.js" }), "");
+  assert.equal(entryPoseUrl(stepEntry()), "");
+  assert.equal(entryPoseUrl(stepEntry({ poseUrl: " /assets/pkg/assembly.json " })), "/assets/pkg/assembly.json");
+  assert.equal(entryPoseUrl({ kind: "stl", poseUrl: "/assets/not-step.json" }), "");
+  assert.equal(entryPoseHatchUrl(stepEntry({ poseHatchUrl: "/assets/pkg/components/ab.pose.js" })), "/assets/pkg/components/ab.pose.js");
+  assert.equal(entryHasLegacyParamsSidecar(stepEntry({ legacyParamsSidecar: true })), true);
+  assert.equal(entryHasLegacyParamsSidecar(stepEntry()), false);
 });
 
 test("entry availability helpers preserve existing viewer gates", () => {

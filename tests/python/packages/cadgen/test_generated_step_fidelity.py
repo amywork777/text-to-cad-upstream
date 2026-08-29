@@ -10,7 +10,7 @@ Two defects compounded there:
   written colorless, so any import of it was colorless too;
 * nothing consulted the file's embedded ``cadgen:`` identity metadata, so the
   bare file classified as importable and the import overwrote the package with
-  ``sourceKind: "step"`` — dropping colors, paramsPath, and provenance.
+  ``sourceKind: "step"`` — dropping colors, the pose block, and provenance.
 """
 
 from __future__ import annotations
@@ -29,14 +29,16 @@ from cadgen._internal.step_assemble import assemble_step_from_package  # noqa: E
 from cadgen.catalog import render_package_dir  # noqa: E402
 from tests.python.support.cad_test_roots import IsolatedCadRoots  # noqa: E402
 
-# Two occurrences of DISTINCT parts with per-occurrence colors and a params
-# sidecar — the planetary pilot's shape of metadata, minimized.
+# Two occurrences of DISTINCT parts with per-occurrence colors and a pose
+# block — the planetary pilot's shape of metadata, minimized.
 COLORED_ASSEMBLY_GENERATOR = """from build123d import Box, Color, Compound, Location
 
-from cadgen import step
+from cadgen import pose, step
 
 
-@step(kind="assembly")
+@step(kind="assembly", pose=pose(
+    params={"drive": {"type": "number", "min": 0, "max": 360, "default": 0}},
+))
 def model():
     left = Box(10.0, 10.0, 10.0)
     left.label = "left"
@@ -44,10 +46,7 @@ def model():
     right = Box(6.0, 6.0, 6.0).moved(Location((20.0, 0.0, 0.0)))
     right.label = "right"
     right.color = Color(0.0, 0.0, 1.0, 1.0)
-    return {"shape": Compound(children=[left, right]), "params": "colored.params.js"}
-"""
-
-PARAMS_SIDECAR = """export default { parameters: [] };
+    return Compound(children=[left, right])
 """
 
 
@@ -64,7 +63,6 @@ class GeneratedStepFidelityTests(unittest.TestCase):
     def _build_generated_package(self) -> tuple[Path, Path]:
         generator = self.temp_root / "colored.py"
         generator.write_text(COLORED_ASSEMBLY_GENERATOR)
-        (self.temp_root / "colored.params.js").write_text(PARAMS_SIDECAR)
         logical_step = self.temp_root / "colored.step"
         payload = step_artifact_cli.build_step_artifact(
             repo_root=Path.cwd(),
@@ -79,14 +77,17 @@ class GeneratedStepFidelityTests(unittest.TestCase):
             (render_package_dir(step_path) / "assembly.json").read_text()
         )
 
-    def test_generated_descriptor_records_occurrence_colors_and_params(self) -> None:
+    def test_generated_descriptor_records_occurrence_colors_and_pose(self) -> None:
         _, logical_step = self._build_generated_package()
         descriptor = self._descriptor(logical_step)
         occurrences = descriptor.get("occurrences") or []
         self.assertEqual(len(occurrences), 2)
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(len(colored), 2, occurrences)
-        self.assertEqual(descriptor.get("paramsPath"), "colored.params.js")
+        block = descriptor.get("pose")
+        self.assertIsInstance(block, dict)
+        self.assertIn("drive", block["params"])
+        self.assertNotIn("paramsPath", descriptor)
         self.assertEqual(descriptor.get("sourceKind"), "python")
 
     def test_assembled_step_carries_occurrence_colors(self) -> None:

@@ -6,13 +6,12 @@ import test from "node:test";
 
 import {
   isServedCadAsset,
-  isStepSidecarPath,
+  legacyParamsSidecarPath,
   renderPackageAssetDir,
   renderPackageDir,
   pathIsInside,
   scanCadDirectory,
   sortCatalogEntries,
-  stepSidecarPath,
 } from "./scanner.mjs";
 
 function tmpRoot(t) {
@@ -96,15 +95,27 @@ test("an unbuilt implicit model publishes no mesh", (t) => {
   assert.equal(entry.relations, undefined);
 });
 
-test("a step sidecar is exposed as moduleUrl and recognized only beside its STEP", (t) => {
+test("a descriptor pose block is exposed as poseUrl (+ hatch); sidecars only teach", (t) => {
   const root = tmpRoot(t);
-  const step = write(root, "gripper.step", "ISO-10303-21;\n");
-  write(root, "gripper.step.js", "export default {};\n");
-  assert.equal(stepSidecarPath(step), `${step}.js`);
-  assert.ok(isStepSidecarPath(path.join(root, "gripper.step.js")));
-  assert.ok(!isStepSidecarPath(path.join(root, "orphan.step.js")));
+  write(root, "gripper.step", "ISO-10303-21;\n");
+  write(root, path.join("__cadgen__", "models", "gripper.step", "assembly.json"), JSON.stringify({
+    kind: "assembly-package",
+    sourceKind: "python",
+    pose: { schemaVersion: 1, params: { drive: { type: "number" } }, module: "components/ab12.pose.js" }
+  }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
-  assert.ok(entry.moduleUrl.includes("gripper.step.js"));
+  assert.ok(entry.poseUrl.includes("assembly.json"));
+  assert.ok(entry.poseHatchUrl.includes("ab12.pose.js"));
+  assert.equal(entry.legacyParamsSidecar, undefined);
+
+  // The retired sidecar convention is detected only to TEACH, never loaded.
+  write(root, "legacy.step", "ISO-10303-21;\n");
+  write(root, "legacy.params.js", "export default {};\n");
+  assert.equal(legacyParamsSidecarPath(path.join(root, "legacy.step")), path.join(root, "legacy.params.js"));
+  const legacy = scanCadDirectory(root).entries.find((e) => e.file === "legacy.step");
+  assert.equal(legacy.legacyParamsSidecar, true);
+  assert.equal(legacy.poseUrl, undefined);
+  assert.equal(legacy.moduleUrl, undefined);
 });
 
 test("the served-asset gate: hidden never, __cadgen__ always, stray js never", (t) => {
@@ -117,7 +128,9 @@ test("the served-asset gate: hidden never, __cadgen__ always, stray js never", (
   assert.equal(isServedCadAsset(hidden), false);
   assert.equal(isServedCadAsset(packaged), true);
   assert.equal(isServedCadAsset(stray), false);
-  assert.equal(isServedCadAsset(sidecar), true);
+  // Loose .js beside a model is never served any more (sidecars are retired);
+  // pose escape hatches live INSIDE the package and ride the __cadgen__ rule.
+  assert.equal(isServedCadAsset(sidecar), false);
 });
 
 test("catalog order is natural: numeric runs compare as integers", () => {

@@ -153,8 +153,6 @@ class SnapshotOptions:
     size_profile: str = ""
     params: object = None
     params_specified: bool = False
-    params_path: str = ""
-    params_path_specified: bool = False
     focus: list[str] | None = None
     hide: list[str] | None = None
     view_labels: bool = False
@@ -247,8 +245,7 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapsh
     if has_step:
         lines += [
             "  --focus/--hide REF  selector refs such as #o1.2; repeat the flag or list several refs",
-            "  --params JSON     STEP parameter sidecar values",
-            "  --params-path PATH  the sidecar for an IMPORTED .step (a generated model declares its own)",
+            "  --params JSON     pose parameter values (the model's @step(pose=...) block)",
             "  --view-labels     burn the camera/view label into the image",
             "  --debug           add a debug section to --json reporting how the artifact resolved",
         ]
@@ -372,13 +369,12 @@ def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
         elif arg.startswith("--params="):
             options.params = arg[len("--params=") :]
             options.params_specified = True
-        elif arg == "--params-path":
-            options.params_path = parse_required_value(argv, index, arg)
-            options.params_path_specified = True
-            index += 1
-        elif arg.startswith("--params-path="):
-            options.params_path = arg[len("--params-path=") :]
-            options.params_path_specified = True
+        elif arg == "--params-path" or arg.startswith("--params-path="):
+            raise SnapshotError(
+                "--params-path is retired: pose data is declared on the model "
+                "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
+                "see skills/cad/references/parameters.md"
+            )
         elif arg == "--focus":
             values, consumed = parse_required_values(argv, index, arg)
             options.focus = [*(options.focus or []), *values]
@@ -474,7 +470,6 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.debug,
             options.size_profile,
             options.params_specified,
-            options.params_path_specified,
             options.display_specified,
             options.graphics_specified,
             options.theme_specified,
@@ -491,8 +486,6 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
         next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
     if options.params_specified:
         next_job["stepParameters"] = parse_params_option(options.params)
-    if options.params_path_specified:
-        next_job["stepParametersPath"] = options.params_path
     if options.display_specified:
         next_job["display"] = load_display_option(options.display, cwd=cwd)
     if options.graphics_specified:
@@ -569,8 +562,6 @@ def load_job_from_options(
         job["graphics"] = load_graphics_option(options.graphics, cwd=resolved_cwd)
     if options.params_specified:
         job["stepParameters"] = parse_params_option(options.params)
-    if options.params_path_specified:
-        job["stepParametersPath"] = options.params_path
     if options.debug:
         job["debug"] = True
     merge_focus_hide_options(job, options)
@@ -659,69 +650,6 @@ def resolve_input_path(raw_input: object, *, cwd: Path) -> Path:
             return selected
         raise SnapshotError(f"Render input does not exist: {input_text}")
     return selected
-
-
-
-
-
-
-def resolve_explicit_step_parameter_path(
-    raw_value: object,
-    *,
-    root_path: Path,
-    resolved_cwd: Path,
-) -> Path:
-    """The sidecar named by --params-path / a job's ``stepParametersPath``.
-
-    Only imported STEP/STP inputs may name one: a generated model declares its
-    sidecar from ``gen_step()``, and letting the command line point somewhere
-    else would render parameters the model itself does not claim."""
-    text = str(raw_value or "").strip()
-    if not text:
-        raise SnapshotError("stepParametersPath must name a JS parameter sidecar")
-    candidate = Path(text)
-    resolved = (candidate if candidate.is_absolute() else resolved_cwd / candidate).resolve()
-    if resolved.suffix.lower() not in (".js", ".mjs"):
-        raise SnapshotError(f"stepParametersPath must be a .js or .mjs parameter sidecar: {text}")
-    if not resolved.is_file():
-        raise SnapshotError(f"stepParametersPath does not exist: {text}")
-    # The renderer fetches assets relative to the STEP's own folder, so a sidecar
-    # outside it has no URL to serve -- reject it here rather than fail mid-render.
-    if not path_is_inside_or_equal(resolved, root_path):
-        raise SnapshotError(
-            f"stepParametersPath must sit inside the STEP model folder ({root_path}): {text}"
-        )
-    return resolved
-
-
-def step_parameter_path_for_step_source(package_dir: Path, input_path: Path) -> Path | None:
-    """The hand-authored JS sidecar a model declares via its package descriptor's
-    ``paramsPath`` (model-folder-relative, set from gen_step()'s ``params``). Returns None
-    when the model declares no sidecar — there is no filename convention."""
-    try:
-        descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    params_path = str(descriptor.get("paramsPath") or "").strip()
-    if not params_path:
-        return None
-    return (input_path.parent / params_path).resolve()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -948,11 +876,6 @@ def resolve_implicit_render_job(
             "stepParameters require a STEP model; implicit models are parameterized by their "
             "own descriptor, not STEP sidecars"
         )
-    if job.get("stepParametersPath") is not None:
-        raise SnapshotError(
-            "stepParametersPath requires a STEP model; implicit models are parameterized by their "
-            "own descriptor, not STEP sidecars"
-        )
 
     mode = str(job.get("mode") or "view").strip().lower()
     if mode not in SUPPORTED_RENDER_MODES:
@@ -1027,10 +950,6 @@ def resolve_robot_render_job(
     if has_step_parameter_render_values(job.get("stepParameters")):
         raise SnapshotError(
             f"stepParameters require a STEP model; pose a {label} robot with jointValues"
-        )
-    if job.get("stepParametersPath") is not None:
-        raise SnapshotError(
-            f"stepParametersPath requires a STEP model; pose a {label} robot with jointValues"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()
@@ -1109,9 +1028,11 @@ def resolve_render_job(
     job = copy.deepcopy(raw_job)
     if "params" in job:
         raise SnapshotError("render jobs use stepParameters; params is reserved for shortcut --params parsing")
-    if "paramsPath" in job:
+    if "paramsPath" in job or "stepParametersPath" in job:
         raise SnapshotError(
-            "render jobs use stepParametersPath; paramsPath is the descriptor field a generator writes"
+            "parameter sidecar paths are retired: pose data is declared on the model "
+            "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
+            "see skills/cad/references/parameters.md"
         )
     forbidden_root_fields = [field for field in ("workspaceRoot", "rootDir") if field in job]
     if forbidden_root_fields:
@@ -1202,26 +1123,9 @@ def resolve_step_render_job(
 ) -> dict[str, object]:
     has_param_render = has_step_parameter_render_values(job.get("stepParameters"))
     animated_params = step_parameter_render_values_are_animated(job.get("stepParameters"))
-    # `source_path` is the catalog entry: a `.step.py` generator, or the STEP itself
-    # when the model was imported. Which one it is decides where a sidecar may come
-    # from. Settled before any artifact work so a misuse fails immediately rather
-    # than after a build.
-    entry_is_generated = source_path.suffix.lower() == ".py"
-    explicit_parameter_path: Path | None = None
-    if job.get("stepParametersPath") is not None:
-        if entry_is_generated:
-            raise SnapshotError(
-                "stepParametersPath is for imported STEP/STP files; a generated model declares "
-                f"its sidecar from gen_step() (params: ...) in {source_path.name}"
-            )
-        if not has_param_render:
-            raise SnapshotError("stepParametersPath needs stepParameters values (--params-path needs --params)")
-        explicit_parameter_path = resolve_explicit_step_parameter_path(
-            job["stepParametersPath"],
-            root_path=root_path,
-            resolved_cwd=resolved_cwd,
-        )
-
+    # Parameter values drive the model's declarative pose block (descriptor
+    # `pose`, authored via @step(pose=...)). The retired sidecar-path key is
+    # rejected upfront in job normalization with a teaching error.
     debug_enabled = bool(job.get("debug"))
     step_artifact_debug: dict[str, object] | None = {} if debug_enabled else None
     artifact = ensure_render_job_step_artifact(
@@ -1245,10 +1149,6 @@ def resolve_step_render_job(
     if not package_dir.is_dir():
         raise SnapshotError(f"STEP/STP render input is missing its render package: {package_dir}")
 
-    step_parameter_path = explicit_parameter_path or step_parameter_path_for_step_source(
-        package_dir, input_path
-    )
-
     mode = str(job.get("mode") or "view").strip().lower()
     if mode not in SUPPORTED_RENDER_MODES:
         raise SnapshotError(f"Unsupported render mode: {mode or '(missing)'}")
@@ -1259,16 +1159,6 @@ def resolve_step_render_job(
         )
     if has_param_render and mode != "view":
         raise SnapshotError("stepParameters support only view mode; set display.mode for display-style changes")
-    if has_param_render and (step_parameter_path is None or not step_parameter_path.exists()):
-        if entry_is_generated:
-            raise SnapshotError(
-                "STEP/STP render stepParameters require a parameter sidecar the model declares "
-                f"(gen_step params / descriptor paramsPath): {input_path}"
-            )
-        raise SnapshotError(
-            "imported STEP/STP render stepParameters require --params-path naming the JS parameter "
-            f"sidecar; an imported file declares none: {input_path}"
-        )
 
     outputs = job.get("outputs") if isinstance(job.get("outputs"), list) else []
     if animated_params and len(outputs) != 1:
@@ -1290,9 +1180,21 @@ def resolve_step_render_job(
         for cid, entry in (descriptor.get("components") or {}).items()
     }
     resolved["package"] = {"descriptor": descriptor, "componentUrls": component_urls}
-    if step_parameter_path is not None and step_parameter_path.exists():
-        resolved["stepParameterPath"] = str(step_parameter_path)
-        resolved["stepParameterUrl"] = asset_url_for_path(step_parameter_path, root_path)
+    pose_block = descriptor.get("pose") if isinstance(descriptor.get("pose"), dict) else None
+    if pose_block:
+        # The pose block is the ONE parameter mechanism: the page fetches the
+        # descriptor and compiles it (cadjs poseModule); the optional escape
+        # hatch is a content-addressed package asset.
+        resolved["stepParameterUrl"] = asset_url_for_path(package_dir / "assembly.json", root_path)
+        hatch_ref = str(pose_block.get("module") or "").strip()
+        if hatch_ref and ".." not in hatch_ref:
+            resolved["stepPoseHatchUrl"] = asset_url_for_path(package_dir / hatch_ref, root_path)
+    elif has_param_render:
+        raise SnapshotError(
+            f"{input_path.name} declares no pose block, so stepParameters have nothing to "
+            "drive — declare @step(pose=cadgen.pose(...)) on the model "
+            "(the .params.js sidecar mechanism is retired; see skills/cad/references/parameters.md)"
+        )
     if debug_enabled:
         resolved["debug"] = {"stepArtifact": step_artifact_debug}
 
@@ -1330,7 +1232,7 @@ def resolve_drawing_render_job(
             "selection focus/hide/refs require STEP topology; drawings have no "
             "part/subassembly selectors"
         )
-    if has_step_parameter_render_values(job.get("stepParameters")) or job.get("stepParametersPath") is not None:
+    if has_step_parameter_render_values(job.get("stepParameters")):
         raise SnapshotError(
             "stepParameters require a STEP model; a drawing is parameterized by its gen_dxf() source"
         )

@@ -151,7 +151,9 @@ import {
   entryHasReferences,
   entryHasUrdf,
   entryMeshAssetSignature,
-  entryStepModuleUrl,
+  entryHasLegacyParamsSidecar,
+  entryPoseHatchUrl,
+  entryPoseUrl,
   entryUrdfAssetHash
 } from "cadjs/lib/entryAssets";
 import {
@@ -301,9 +303,9 @@ import {
   stepTreeNodeChildren
 } from "cadjs/lib/step/stepTree";
 import {
-  loadStepModuleDefinition,
   normalizeStepModuleParameterValues
 } from "cadjs/common/stepModule";
+import { loadPoseModuleDefinition } from "cadjs/common/poseModule";
 import {
   normalizeParameterValue,
   normalizeParameterValues
@@ -1585,7 +1587,9 @@ export default function CadWorkspace({
       urdfTrajectoryPlaybackRef.current?.frameId
     )
   );
-  const selectedStepModuleUrl = supportsSidecarParams ? entryStepModuleUrl(selectedEntry) : "";
+  const selectedStepModuleUrl = supportsSidecarParams ? entryPoseUrl(selectedEntry) : "";
+  const selectedStepModuleHatchUrl = selectedStepModuleUrl ? entryPoseHatchUrl(selectedEntry) : "";
+  const selectedEntryLegacyParamsSidecar = entryHasLegacyParamsSidecar(selectedEntry);
   const selectedStepModuleCadPath = selectedStepModuleUrl ? cadPathForEntry(selectedEntry) : "";
   const selectedStepModuleDefinition = stepModuleLoadState.url === selectedStepModuleUrl
     ? stepModuleLoadState.definition
@@ -1788,7 +1792,10 @@ export default function CadWorkspace({
     setStepModuleAnimationState(buildDefaultStepModuleAnimationState(null));
     resetStepAnimationStore();
 
-    loadStepModuleDefinition(selectedStepModuleUrl, { cadPath: selectedStepModuleCadPath }).then((definition) => {
+    loadPoseModuleDefinition(selectedStepModuleUrl, {
+      hatchUrl: selectedStepModuleHatchUrl,
+      cadPath: selectedStepModuleCadPath
+    }).then((definition) => {
       if (cancelled) {
         return;
       }
@@ -1845,7 +1852,7 @@ export default function CadWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [fileSessionNamespace, selectedEntry, selectedStepModuleCadPath, selectedStepModuleUrl]);
+  }, [fileSessionNamespace, selectedEntry, selectedStepModuleCadPath, selectedStepModuleHatchUrl, selectedStepModuleUrl]);
 
   useEffect(() => {
     if (!selectedImplicitDefinition || !selectedEntry || selectedEntrySourceFormat !== RENDER_FORMAT.IMPLICIT) {
@@ -8066,6 +8073,7 @@ export default function CadWorkspace({
                 stepModule={{
                   status: selectedStepModuleStatus,
                   error: selectedStepModuleError,
+                  legacyParamsSidecar: selectedEntryLegacyParamsSidecar,
                   definition: selectedStepModuleDefinition,
                   enabled: stepModuleEnabled,
                   parameterValues: stepModuleParameterValues,
