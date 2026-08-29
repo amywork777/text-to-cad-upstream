@@ -62,7 +62,7 @@ both reuse and rolling.
 The page is the bare origin, and `file=` selects one artifact inside the served root:
 
 ```text
-http://127.0.0.1:3245/?file=mechanisms/lift_table.step.py
+http://127.0.0.1:3245/?file=mechanisms/lift_table.step
 ```
 
 The `file=` value is relative to `--root`. Nothing about the directory appears in the
@@ -75,7 +75,7 @@ switch files without a new link. Pick the directory the user thinks of as their
 model workspace — typically the project's `models/` directory, or the nearest
 common parent of the files you were asked to review — and put the rest of the
 path in `file=`. Rooting at the artifact's own deep folder
-(`--root .../models/step/mechanisms`, `?file=lift_table.step.py`) opens the same model
+(`--root .../models/step/mechanisms`, `?file=lift_table.step`) opens the same model
 but hides the rest of the project, which is almost never what the user wants.
 
 Port collisions are not your problem: the launcher rolls to a free port and the

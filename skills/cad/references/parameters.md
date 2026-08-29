@@ -157,8 +157,7 @@ def vendor_arm():
 ## Migration from `.params.js` sidecars (retired)
 
 Sidecars no longer load anywhere: the viewer ignores them (the params panel
-says so), snapshot `--params-path` is a hard error, and the `gen_step()`
-envelope `params` field is a teaching error. Worked examples:
+says so) and snapshot `--params-path` is a hard error. Worked examples:
 `mars_rover_concept.py` (clean map: joints/ratios/windows/palettes/keyframe
 clips), `f14d.py` (staged windows + the style fade), and
 `planetary_gear_assembly.py` (ratio couplings + the escape hatch).

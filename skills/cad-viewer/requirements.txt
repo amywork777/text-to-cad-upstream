@@ -1,0 +1,4 @@
+# The Viewer itself is pure Node (viewing needs no Python at all); cadgen is
+# the SOFT dependency its import path spawns for foreign STEP files. Installing
+# it here enables that path — absent cadgen, viewing still works.
+cadgen

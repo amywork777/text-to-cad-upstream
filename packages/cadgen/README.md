@@ -8,7 +8,7 @@ by the cad-viewer skill, not by this package.)
 
 ```bash
 pip install cadgen
-cadgen step gen part.step.py  # build a STEP and its render package
+python part.py  # a @step model script builds its STEP and render package
 ```
 
 `cadgen` carries the JavaScript it executes as well as the Python. Mesh and drawing
@@ -23,20 +23,26 @@ chromium`). Plain STEP generation needs neither.
 
 ## Command line
 
-`cadgen <command>`, or the equivalent `python -m cadgen.<module>`:
+Building is library-first: a model script declares one `@step` (or `@dxf`)
+function and `python <model>.py` builds it — there is no `gen` verb. The CLI
+covers everything downstream of a build:
 
 | | |
 |---|---|
-| `step gen` / `artifact` / `export` / `inspect` / `snapshot` | build STEP targets from `.step.py` generators, build their GLB/topology artifacts, export to exchange files, inspect selector references, render |
-| `dxf gen` / `artifact` / `snapshot` | the same for `.dxf.py` drawing generators |
+| `import` | build the render package for an imported (foreign) STEP/STP |
+| `step export` / `inspect` / `snapshot` | export a built package to exchange files, inspect selector references, render |
+| `dxf snapshot` | render a DXF drawing |
 | `snapshot` | render any supported input |
-| `daemon` | opt-in warm process that holds OCP resident between builds |
+| `urdf validate` / `srdf validate` / `sdf validate` | validate robot descriptions |
+| `cache` | inspect or garbage-collect the user-level caches |
+| `daemon` / `daemon status` | opt-in warm process that holds OCP resident between builds |
+| `doctor` | print installed cadgen and verify a skill's pin |
 
 Dispatch is lazy: `cadgen --help` does not import the CAD stack.
 
-The agent skills in text-to-cad are thin entrypoints over these same parsers, which is
-why a skill command and its `cadgen` equivalent take identical arguments and print
-identical output.
+Each command is also available as `python -m <module>`. The agent skills in
+text-to-cad are instruction-only: they teach these same commands rather than
+shipping entrypoints of their own.
 
 ## Python API
 
@@ -49,18 +55,19 @@ The supported surface is the root `cadgen` exports plus the top-level `cadgen.*`
   `load_step_scene`, `located_shape`, `occurrence_selector_id`,
   `scene_occurrence_shape`. Resolved lazily, so `import cadgen` does not pay for OCP.
 - **2D generators**: `cadgen.sources` (`load_source_module`) and `cadgen.flatten`
-  (planar-face projection/unfold, contour emission, kerf offsetting) for `.dxf.py`.
+  (planar-face projection/unfold, contour emission, kerf offsetting) for `@dxf` drawings.
 - **Build and inspection**: `cadgen.generation` (`generate_step_targets`,
   `generate_dxf_targets`, `targets_include_output_pairs`), `cadgen.catalog`,
   `cadgen.metadata`, `cadgen.analysis`, `cadgen.lookup`, `cadgen.cad_ref_syntax`,
   `cadgen.selector_types`, `cadgen.reporting`, `cadgen.cli_logging`, `cadgen.render`,
   `cadgen.step_topology_artifact`, `cadgen.step_targets`, `cadgen.step_export`,
   `cadgen.drawing_checks`, `cadgen.drawing_render`.
-- **Asset resolution**: `cadgen.assets` (`node_builders_dir`, `browser_runtime_dir`,
-  `viewer_dist_dir`) — where the packaged JavaScript lives, resolved at call time.
+- **Asset resolution**: `cadgen.assets` (`node_builders_dir`, `browser_runtime_dir`)
+  — where the packaged JavaScript lives, resolved at call time.
 
-`cadgen.cli` holds the argument parsers, `cadgen.viewer` the Viewer backend, and
-`cadgen.daemon` the warm build process. Everything under `cadgen._internal` is private
+`cadgen.cli` holds the argument parsers and `cadgen.daemon` the warm build
+process (the CAD Viewer's backend is pure Node, in the separate viewer app).
+Everything under `cadgen._internal` is private
 implementation — the STEP scene, generation, GLB/topology and export engines — with no
 import stability between releases. `cadgen.generation` and `cadgen.step_scene` are thin
 facades over those engines that re-export only the supported names.
@@ -81,15 +88,14 @@ From a text-to-cad checkout:
 
 Source edits under `packages/cadgen/src/cadgen` take effect immediately. The packaged
 JavaScript is generated rather than committed in full, so build it once — and again
-after changing anything under `packages/cadjs` or `viewer/`:
+after changing anything under `packages/cadjs`:
 
 ```bash
 scripts/bundle/bundle-skill.sh cadgen-runtime
 ```
 
 `cadgen.assets` prefers a checkout's live `packages/cadjs/bin` over the packaged copy,
-so builder JavaScript stays editable without rebundling. The Viewer client is the
-exception: it is a Vite build, gitignored, and only present once bundled.
+so builder JavaScript stays editable without rebundling.
 
 To check the package the way a user receives it — installed, from a directory that is
 not the repo — run `scripts/test/test-installed.sh`.

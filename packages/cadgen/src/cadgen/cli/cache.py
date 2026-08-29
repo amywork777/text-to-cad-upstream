@@ -171,7 +171,7 @@ def _cmd_info(as_json: bool) -> int:
         print(json.dumps({
             "root": str(cache_root()),
             "tiers": [report.__dict__ for report in reports],
-        }, indent=2))
+        }))
         return 0
     print(f"cache root: {cache_root()}")
     for report in reports:

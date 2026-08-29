@@ -89,7 +89,7 @@ is written to `catalog.json` or any hidden catalog cache.
 
 The two path resolvers differ by one question. `assetPathForFileRef` answers "may the
 server send this file's contents", so it also applies the served-asset extension
-filter, which excludes a `.step.py` generator. `containedPathForFileRef` applies the
+filter, which excludes a model script. `containedPathForFileRef` applies the
 root and hidden-path rules WITHOUT that filter, for callers that transfer no bytes —
 `reveal` is the one that matters. Both throw on anything outside the root.
 
@@ -192,17 +192,17 @@ Version bumps orphan whole cache generations by design; `cadgen cache info` /
 automatically.
 
 `download` streams asset bytes. It serves OUTPUTS only — the artifacts the viewer may
-have to regenerate — and never source code: a `.step.py` is not in the served-asset
+have to regenerate — and never source code: a model script (`.py`) is not in the served-asset
 extension set, so `asset=source` is not offered for download and the UI wires it only
 to `reveal`.
 
 `reveal` opens the asset in the platform file manager (`open -R` / `explorer /select,`
 / `xdg-open` on the containing folder) and answers 501 where no file manager is known
 or when `VIEWER_DISABLE_NATIVE_REVEAL=1`. Because it transfers no bytes it resolves
-through `containedPathForFileRef`, so a `.step.py` generator can be revealed even
+through `containedPathForFileRef`, so a model script can be revealed even
 though it is never streamed. `asset=output` resolves the catalog entry file itself;
-`asset=source` resolves optional source code, such as a same-stem Python generator for
-a Python-backed STEP file.
+`asset=source` resolves optional source code — the model script the source sidecar
+names for a generated STEP file.
 
 **Every POST must send `x-cadgen-viewer: 1`.** The value carries no meaning — a custom
 header is what forces a browser to preflight a cross-origin request, and the backend

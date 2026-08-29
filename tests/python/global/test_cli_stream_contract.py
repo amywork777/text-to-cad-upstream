@@ -25,22 +25,23 @@ PART = "models/step/parts/cylindrical_spacer_sleeve.py"
 ROBOT = "models/robots/tom/tom.urdf"
 
 
-def run(skill: str, tool: str, *args: str) -> subprocess.CompletedProcess:
-    # A skill entry is a shim over the installed cadgen. Point the child at THIS checkout's
-    # source so the contract is tested against the code under review, not against whatever
-    # cadgen the interpreter happens to have (in a worktree, that is another branch's).
+def run(*args: str) -> subprocess.CompletedProcess:
+    # Skills are instruction-only; every verb lives behind the one cadgen front door.
+    # Point the child at THIS checkout's source so the contract is tested against the
+    # code under review, not against whatever cadgen the interpreter happens to have
+    # (in a worktree, that is another branch's).
     env = dict(os.environ)
     own_cadgen = str(REPO / "packages" / "cadgen" / "src")
     env["PYTHONPATH"] = os.pathsep.join(
         [own_cadgen, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
     return subprocess.run(
-        [sys.executable, str(REPO / "skills" / skill / "scripts" / tool), *args],
+        [sys.executable, "-m", "cadgen.cli", *args],
         cwd=REPO, capture_output=True, text=True, check=False, env=env,
     )
 
 
-def run_model(*args: str) -> subprocess.CompletedProcess:
+def run_script(script: str, *args: str) -> subprocess.CompletedProcess:
     # Library-first: the model script IS the entrypoint; same stream contract
     # as every CLI. Cold keeps the child self-contained.
     env = dict(os.environ)
@@ -50,9 +51,13 @@ def run_model(*args: str) -> subprocess.CompletedProcess:
     )
     env["CADGEN_WARM"] = "0"
     return subprocess.run(
-        [sys.executable, str(REPO / PART), *args],
+        [sys.executable, str(REPO / script), *args],
         cwd=REPO, capture_output=True, text=True, check=False, env=env,
     )
+
+
+def run_model(*args: str) -> subprocess.CompletedProcess:
+    return run_script(PART, *args)
 
 
 class StdoutIsTheResultTests(unittest.TestCase):
@@ -77,6 +82,7 @@ class StdoutIsTheResultTests(unittest.TestCase):
 
     def test_validate_answers_on_stdout(self):
         result = run("urdf", "validate", ROBOT)
+        self.assertEqual(0, result.returncode, result.stderr)
         self.assertTrue(result.stdout.strip())
 
 
@@ -84,10 +90,11 @@ class StderrIsEverythingElseTests(unittest.TestCase):
     def test_narration_never_lands_on_stdout(self):
         # The logger prefixes every line it owns. Finding one on stdout means narration and
         # result have been mixed, and `2>/dev/null` no longer yields something parseable.
-        for skill, tool in (("cad", "gen"), ("dxf", "gen")):
-            with self.subTest(skill=skill):
-                target = PART if skill == "cad" else "models/drawings/dxf/gasket_plate.py"
-                result = run(skill, tool, target)
+        # Library-first: the model script is the build entrypoint for STEP and DXF alike.
+        for kind, target in (("step", PART), ("dxf", "models/drawings/dxf/gasket_plate.py")):
+            with self.subTest(kind=kind):
+                result = run_script(target)
+                self.assertNotIn("[cadgen]", result.stdout)
                 self.assertNotIn("[scripts/", result.stdout)
 
     def test_a_result_survives_discarding_stderr(self):

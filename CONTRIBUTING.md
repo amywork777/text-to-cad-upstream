@@ -427,10 +427,10 @@ behavior:
 npm --prefix viewer run dev -- --host 127.0.0.1
 ```
 
-Put the absolute workspace directory in the URL path and the artifact in
-`?file=<path relative to it>` — pick the project's model root, not the file's own
-folder, so the file browser lists the whole project:
-`http://127.0.0.1:<port>/abs/project/models?file=mechanisms/lift_table.step.py`.
+The dev server serves ONE root, fixed at startup (the directory Vite runs
+from); the page is the bare origin and `?file=` names the artifact relative to
+that root:
+`http://127.0.0.1:<port>/?file=models/step/mechanisms/lift_table.step`.
 Do not assume a fixed dev port unless you pass
 Vite's standard `--port` flag. Packaged Viewer runtime checks are
 production-output checks; use `scripts/README.md` when you specifically need

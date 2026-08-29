@@ -4,9 +4,9 @@ Load this only when a task needs Viewer file-support details or UI control guida
 
 ## Supported Files
 
-- `.step`, `.stp`: STEP/STP review through hidden GLB sidecars; supports assembly trees, part hide/show, inspect/focus, face/edge/vertex/part selection, copied `#...` CAD references, display modes, clip planes, and optional STEP module parameters/animations when a sidecar module exists.
+- `.step`, `.stp`: STEP/STP review through their render packages; supports assembly trees, part hide/show, inspect/focus, face/edge/vertex/part selection, copied `#...` CAD references, display modes, clip planes, and live pose parameters/animations when the model declares a pose block.
 - `.stl`, `.3mf`, `.glb`: mesh viewing with orbit/pan/zoom, screenshots, theme controls, and solid/wireframe display where available. Measure snaps to triangle vertices only (two clicks, distance in mm) — not STEP faces/edges.
-- `.dxf`: read-only 3D flat-pattern viewing. The extruded pattern is baked into the drawing's `__cadgen__` render package on first open (thickness and bend state are producer-owned bake settings, not live controls), so both generated `.dxf.py` drawings and imported `.dxf` files render through the same mesh path as everything else.
+- `.dxf`: read-only 3D flat-pattern viewing. The extruded pattern is baked into the drawing's `__cadgen__` render package on first open (thickness and bend state are producer-owned bake settings, not live controls), so generated and imported `.dxf` drawings alike render through the same mesh path as everything else.
 - `.urdf`: robot link/mesh viewing with movable joint sliders, reset pose, and copied joint values.
 - `.srdf`: paired-URDF viewing with planning groups, group-state presets, and joint controls.
 - `.sdf`: SDF model/world viewing with metadata, counts, warnings, and joint controls when available.
@@ -24,7 +24,7 @@ Load this only when a task needs Viewer file-support details or UI control guida
 - Copied references carry their file: the Viewer prefixes every copied ref with the shortest
   path suffix that names that file uniquely (`bracket#o1.2.f1`, or
   `starship/super_heavy#o1.3` where a filename is not unique), so a ref pasted into a prompt
-  still says which model it belongs to. A `.step.py` generator shows as a bare stem — the common
+  still says which model it belongs to. A generated model shows as a bare stem — the common
   case, so it gets the shortest name — while everything else keeps its suffix (`bracket.step`,
   `plate.stl`, `plate.3mf`). That means a bare stem is NOT a literal path suffix, so resolving
   one back to a file means expanding it; the CAD skill's
