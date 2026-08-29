@@ -28,8 +28,8 @@ if [ -z "$PYTHON_BIN" ]; then
   fi
 fi
 
-# Paths every wheel must carry. The Node builders are what cadgen spawns for DXF and
-# implicit; the browser bundle is what the snapshot CLI loads in a page.
+# Paths every wheel must carry. The Node builders are what cadgen spawns for DXF and mesh
+# export; the browser bundle is what the snapshot CLI loads in a page.
 REQUIRED=(
   # The Python the wheel must actually contain. Asset globs were the whole list once,
   # back when cadgen was Python-plus-data; it now also carries the CLI parsers and the
@@ -62,10 +62,7 @@ REQUIRED=(
   "cadgen/_internal/node_resolve_register.mjs"
   "cadgen/_internal/node_resolve_hooks.mjs"
   "cadgen/_runtime/node/dxf-mesh.mjs"
-  "cadgen/_runtime/node/implicit-artifact.mjs"
-  "cadgen/_runtime/node/implicit-export.mjs"
-  "cadgen/_runtime/node/implicitClosureHooks.mjs"
-  "cadgen/_runtime/node/meshWorkerEntry.js"
+  "cadgen/_runtime/node/mesh-export.mjs"
   "cadgen/_runtime/node/package.json"
   "cadgen/_runtime/node/THIRD_PARTY_LICENSES.txt"
   "cadgen/_runtime/browser/snapshot-render.js"

@@ -20,19 +20,16 @@ export const CAD_CATALOG_SCHEMA_VERSION = 4;
 export const SOURCE_EXTENSIONS = new Set([
   ".step", ".stp", ".stl", ".3mf", ".glb", ".dxf", ".urdf", ".srdf", ".sdf",
 ]);
-export const IMPLICIT_CAD_EXTENSIONS = [".implicit.js", ".implicit.mjs"];
 // Dot-prefixed (hidden) directories are skipped generically; this set only
 // needs the non-hidden names.
 const VIEWER_SKIPPED_DIRECTORIES = new Set([
   "__cadgen__", "__pycache__", "build", "coverage", "dist", "node_modules", "viewer",
 ]);
 
-// Mirrors cadgen.catalog / cadgen._internal.{drawing,implicit}_package. Values are
-// pinned by the scanner fixture test against packages cadgen actually writes.
+// Mirrors cadgen.catalog. Values are pinned by the scanner fixture test against
+// packages cadgen actually writes.
 export const CADGEN_DIRNAME = "__cadgen__";
 export const CADGEN_MODELS_DIRNAME = "models";
-const IMPLICIT_DESCRIPTOR_NAME = "implicit.json";
-const IMPLICIT_PACKAGE_KIND = "implicit-package";
 
 export const DXF_GENERATOR_SUFFIX = ".dxf.py";
 
@@ -140,11 +137,6 @@ export function pathIsInside(filePath, rootPath) {
   return relativePathStaysInsideRoot(path.relative(realpathOr(path.resolve(rootPath)), realpathOr(path.resolve(filePath))));
 }
 
-export function pathIsImplicitCadSource(value = "") {
-  const pathname = String(value || "").split(/[?#]/, 1)[0].toLowerCase();
-  return IMPLICIT_CAD_EXTENSIONS.some((ext) => pathname.endsWith(ext));
-}
-
 // --- file stats / hashing / urls ---
 function fileStats(filePath) {
   try {
@@ -223,7 +215,7 @@ function sourceFormatFromExtension(extension) {
 
 export function sourceFormatForPath(sourcePath, extension = null) {
   const ext = extension === null ? path.extname(sourcePath) : extension;
-  return pathIsImplicitCadSource(sourcePath) ? "implicit" : sourceFormatFromExtension(ext);
+  return sourceFormatFromExtension(ext);
 }
 
 // --- directory scan helpers ---
@@ -300,7 +292,7 @@ function collectCadSourceFiles(rootPath, result, visited = null, depth = 0) {
     // never catalog entries. A model with no artifact simply does not appear
     // until its script has been run; artifact→source linkage is descriptor
     // provenance, not filenames.
-    if (SOURCE_EXTENSIONS.has(extension) || pathIsImplicitCadSource(entryPath)) {
+    if (SOURCE_EXTENSIONS.has(extension)) {
       result.push(entryPath);
     }
   }
@@ -392,54 +384,6 @@ function pairedUrdfPathForSrdf(sourcePath) {
   return fileStats(matches[0]) ? matches[0] : null;
 }
 
-// --- render-package payload assets ---
-// Which baked GLB a catalog entry renders from, per kind. A DXF and an implicit
-// model have no renderable geometry of their own, so each bakes a mesh into its
-// entry-keyed __cadgen__ package and the scanner publishes THAT as the entry's
-// `glb` relation — one render path, fed by one asset key.
-const RENDER_PACKAGE_GLB_PAYLOADS = {
-  implicit: [IMPLICIT_DESCRIPTOR_NAME, IMPLICIT_PACKAGE_KIND, "glb"],
-};
-
-function readPackageDescriptor(packageDir, descriptorName, packageKind) {
-  let descriptor;
-  try {
-    descriptor = JSON.parse(fs.readFileSync(path.join(packageDir, descriptorName), "utf8"));
-  } catch {
-    return {};
-  }
-  if (!descriptor || typeof descriptor !== "object" || descriptor.kind !== packageKind) {
-    return {};
-  }
-  return descriptor;
-}
-
-function renderPackageGlbRelation(repoRoot, rootPath, sourcePath, kind) {
-  const payload = RENDER_PACKAGE_GLB_PAYLOADS[kind];
-  if (!payload) {
-    return null;
-  }
-  const [descriptorName, packageKind, payloadField] = payload;
-  const packageDir = renderPackageAssetDir(sourcePath);
-  const descriptor = readPackageDescriptor(packageDir, descriptorName, packageKind);
-  const glbRef = String(descriptor[payloadField] || "").trim();
-  const glbPath = glbRef ? path.join(packageDir, glbRef) : "";
-  const stats = glbPath ? fileStats(glbPath) : null;
-  if (!stats) {
-    return null;
-  }
-  // size+mtime, not sha256: a baked mesh runs to tens of megabytes and neither
-  // descriptor records a digest for it; the token changes on every rebuild, which
-  // is all the client's cache key needs.
-  const version = fileVersion(stats);
-  return {
-    file: repoRelativePath(rootPath, glbPath),
-    url: `${assetUrlForPath(repoRoot, glbPath)}?v=${encodeURIComponent(version)}`,
-    hash: version,
-    bytes: Number(stats.size),
-  };
-}
-
 // --- entry builders ---
 function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
   const kind = sourceFormatForPath(sourcePath, extension);
@@ -451,11 +395,6 @@ function createSingleAssetEntry(repoRoot, rootPath, sourcePath, extension) {
     hash: (asset && asset.hash) || "",
     bytes: (asset && asset.bytes) || 0,
   };
-  const glbRelation = renderPackageGlbRelation(repoRoot, rootPath, sourcePath, kind);
-  if (glbRelation) {
-    entry.relations = entry.relations || {};
-    entry.relations.glb = glbRelation;
-  }
   if (kind === "srdf") {
     const pairedUrdf = pairedUrdfPathForSrdf(sourcePath);
     if (pairedUrdf) {
@@ -594,7 +533,7 @@ export function isServedCadAsset(filePath) {
     // served any more — the .params.js mechanism is retired.
     return true;
   }
-  if (SOURCE_EXTENSIONS.has(extension) || pathIsImplicitCadSource(filePath)) {
+  if (SOURCE_EXTENSIONS.has(extension)) {
     return true;
   }
   return false;

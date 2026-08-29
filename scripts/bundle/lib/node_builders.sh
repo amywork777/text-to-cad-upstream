@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared helpers for shipping cadgen's Node builders inside a skill runtime.
 #
-# cadgen builds the implicit and DXF render packages by spawning a Node child
+# cadgen builds the DXF render package and the mesh exports by spawning a Node child
 # (packages/cadgen/src/cadgen/_internal/node_runtime.py). The builders themselves live in
 # packages/cadjs/bin and import three and meshoptimizer -- a dependency GRAPH,
 # not just a file. A published skill ships no node_modules (design
@@ -27,12 +27,6 @@
 NODE_BUILDER_ESBUILD_VERSION="${NODE_BUILDER_ESBUILD_VERSION:-0.27.7}"
 NODE_BUILDER_BUILD_DEPS_DIR="${NODE_BUILDER_BUILD_DEPS_DIR:-${BUNDLE_REPO_ROOT:?BUNDLE_REPO_ROOT must be set before sourcing node_builders.sh}/tmp/node-builder-build}"
 NODE_BUILDER_LOCKFILE="$BUNDLE_REPO_ROOT/packages/cadjs/package-lock.json"
-
-# Files whose runtime paths are computed from `import.meta.url` inside the bundle, so they
-# cannot be inlined and must be emitted BESIDE it under the same basename:
-#   implicitClosureHooks.mjs  <- register("./implicitClosureHooks.mjs", import.meta.url)
-#   meshWorkerEntry.js        <- new Worker(new URL("./meshWorkerEntry.js", import.meta.url))
-# Every other import in both builder graphs is a plain static import and gets inlined.
 
 node_builder_locked_version() {
   local name="$1"
@@ -98,8 +92,8 @@ bundle_node_builders() {
   local entry basename_out
   rm -rf "$out_dir"
   mkdir -p "$out_dir"
-  # meshWorkerEntry.js is spawned by basename, and a bare .js with no `type` above it parses
-  # as CommonJS. This marks the emitted directory as ESM, matching packages/cadjs itself.
+  # Mark the emitted directory as ESM, matching packages/cadjs itself, so a builder emitted
+  # as a bare `.js` still parses as a module rather than as CommonJS.
   printf '%s\n' '{ "type": "module" }' > "$out_dir/package.json"
   for entry in "$@"; do
     if [ ! -f "$entry" ]; then
@@ -132,8 +126,8 @@ bundle_node_builders() {
 # build succeeds, the file exists, and every other check passes -- the only symptom would be
 # a builder that runs and does nothing.
 #
-# A raw size floor is the wrong test: implicitClosureHooks.mjs is a legitimate 370 bytes.
-# What is never legitimate is emitting no CODE, so strip the shebang and check what is left.
+# A raw size floor is the wrong test: a legitimate builder can be a few hundred bytes. What
+# is never legitimate is emitting no CODE, so strip the shebang and check what is left.
 NODE_BUILDER_MIN_CODE_BYTES="${NODE_BUILDER_MIN_CODE_BYTES:-32}"
 
 node_builder_assert_not_empty() {
