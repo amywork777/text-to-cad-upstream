@@ -192,9 +192,9 @@ class CadGenerationTests(unittest.TestCase):
         the component-GLB package. ``_generate_step_outputs`` previously routed only
         ``source == "generated"`` specs into the build pipeline and fell off the end for an
         imported/committed STEP — silently returning None (no package written) while the
-        caller still reported success. `scripts/gen` no longer accepts direct STEP targets,
+        caller still reported success. Model-script runs no longer accept direct STEP targets,
         so this now drives the live on-demand path (`cadgen.step_artifact_cli`) that inspect,
-        snapshot, the CAD Viewer, and `scripts/artifact` all share.
+        snapshot, the CAD Viewer, and `cadgen import` all share.
         """
         from build123d import Box, Compound, Pos
         from cadgen.step_export import export_build123d_step_scene
@@ -1258,8 +1258,8 @@ class CadGenerationTests(unittest.TestCase):
             cad_generation.generate_step_targets([str(self.temp_root / "broken.step.toml")])
 
     def test_direct_step_targets_are_rejected(self) -> None:
-        # scripts/gen builds model() sources only; an imported STEP gets its render
-        # artifacts on demand (inspect/snapshot/viewer) or via scripts/artifact.
+        # model-script runs build model() sources only; an imported STEP gets its render
+        # artifacts on demand (inspect/snapshot/viewer) or via cadgen import.
         step_path = self._write_step("source")
 
         with self.assertRaisesRegex(ValueError, "builds gen_step\\(\\) Python sources only"):
@@ -1632,7 +1632,7 @@ class CadGenerationTests(unittest.TestCase):
         _all, selected, _outs = cad_generation._selected_specs_for_targets(
             [str(script)],
             expected_output_suffixes=(".step",),
-            tool_name="scripts/gen",
+            tool_name="cadgen import",
             include_output_paths=True,
         )
         return selected[0]

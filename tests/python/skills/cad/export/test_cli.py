@@ -7,7 +7,6 @@ from unittest import mock
 
 from tests.python.support.paths import add_repo_path, repo_path
 
-add_repo_path("skills/cad/scripts")
 
 from cadgen.cli import step_export as cli
 
@@ -45,7 +44,7 @@ class ExportCliTests(unittest.TestCase):
         self.assertFalse(export.call_args.kwargs["verbose"])
 
     def test_rejects_step_export(self) -> None:
-        # A .step file is written by `scripts/gen --write-step`, never by export.
+        # A .step file is written by the model script itself, never by export.
         with self.assertRaises(SystemExit) as cm:
             cli.main(["parts/sample.py", "--step"])
         self.assertEqual(2, cm.exception.code)

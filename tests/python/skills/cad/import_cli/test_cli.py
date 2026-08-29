@@ -9,7 +9,6 @@ from unittest import mock
 
 from tests.python.support.paths import add_repo_path, repo_path
 
-add_repo_path("skills/cad/scripts")
 
 from cadgen.cli import step_import as cli
 
@@ -40,7 +39,7 @@ class ImportCliTests(unittest.TestCase):
         self.assertEqual(Path("imports/sample_part.stp"), build.call_args.kwargs["step"])
 
     def test_model_scripts_are_refused_with_the_run_hint(self) -> None:
-        # A generated model needs no import: run its script. scripts/import is
+        # A generated model needs no import: run its script. cadgen import is
         # for foreign STEP/STP files only.
         stderr = io.StringIO()
         with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit) as cm:

@@ -49,7 +49,7 @@ class ReportCliErrorTest(unittest.TestCase):
 
     def _report(self, exc, **kwargs) -> str:
         stream = io.StringIO()
-        code = report_cli_error(exc, tool="scripts/gen", stream=stream, **kwargs)
+        code = report_cli_error(exc, tool="cadgen import", stream=stream, **kwargs)
         self.assertEqual(1, code, "a reported failure is still a failure")
         return stream.getvalue()
 

@@ -13,7 +13,6 @@ from unittest import mock
 from tests.python.support.paths import REPO_ROOT, add_repo_path
 from tests.python.support.tmp_root import temporary_directory
 
-add_repo_path("skills/cad/scripts")
 
 from cadgen.daemon import client as daemon_client
 from cadgen.daemon import transport
