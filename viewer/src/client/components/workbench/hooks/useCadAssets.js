@@ -47,7 +47,12 @@ import {
 } from "cadjs/lib/render/meshLoaders";
 import { shouldUseGlbMeshWorkerForEntry } from "cadjs/lib/render/meshCost";
 import { RENDER_FORMAT, entrySourceFormat } from "cadjs/lib/fileFormats";
-import { buildDisplayEdgeRuntime, buildSelectorRuntime, composeSelectorRuntimes } from "cadjs/lib/selectors/runtime";
+import { buildDisplayEdgeRuntime, buildSelectorRuntime } from "cadjs/lib/selectors/runtime";
+import {
+  composePackageSelectorRuntime,
+  compositionUsesComponent,
+  swapCompositionBundle
+} from "./packageReferenceComposition.js";
 import { selectRequestedAssemblyComponents } from "../../../workbench/referenceSelection";
 
 // Robot link meshes are STLs, and `loadRenderStl` parses them in the STL worker — the
@@ -266,6 +271,15 @@ export function useCadAssets({
   // model coordinates, and each component's surf URL).
   const lodPackageRef = useRef(null);
   const [lodPackage, setLodPackage] = useState(null);
+  // The composed reference state's ingredients: the lazily-loaded occurrence
+  // subset and the selector bundle each component's topology was built from.
+  // Kept so an LOD level swap can re-compose PICKING from the same
+  // tessellation the display mesh just moved to. Mesh and selector runtime
+  // must always come from ONE tessellation (loadRenderSurfPayloadAtLevel's
+  // contract): faceRuns carry triangle ranges of a specific tessellation, so
+  // a level-N mesh read through level-M runs mislabels triangles — partial
+  // face highlights and picks that resolve through the surface.
+  const referenceCompositionRef = useRef(null);
 
   const buildLodPackageSummary = useCallback((entry, meshUrl, descriptor, componentMeshDataByCid) => {
     const transformPoint = (m, p) => (Array.isArray(m) && m.length >= 12
@@ -322,6 +336,12 @@ export function useCadAssets({
     }
     meshData.lodLevel = level;
     ctx.componentMeshDataByCid = { ...ctx.componentMeshDataByCid, [cid]: meshData };
+    // Remember the level's selector bundle: picking re-composes from it below,
+    // and a topology load that lands AFTER this swap must prefer it over the
+    // level-0 bundle cache (loadReferencesForEntry consults this map).
+    if (payload.bundle) {
+      ctx.componentLodBundleByCid = { ...(ctx.componentLodBundleByCid || {}), [cid]: payload.bundle };
+    }
     const composed = buildComposedPackageMeshData(ctx.descriptor, ctx.componentMeshDataByCid);
     const nextState = buildComposedPackageMeshStateRef.current(ctx.entry, ctx.descriptor, composed);
     let applied = false;
@@ -332,8 +352,45 @@ export function useCadAssets({
       applied = true;
       return nextState;
     });
+    // Re-compose the reference state to the SAME tessellation, in the same
+    // batch as the mesh publish, so a level-N mesh is never read through
+    // level-M faceRuns (stale faceIds = striped highlights + through-picks).
+    // Both publishes carry their own staleness guards, so ordering races with
+    // an entry change collapse to no-ops.
+    if (payload.bundle) {
+      recomposeReferenceStateForLodRef.current?.(ctx, cid, payload.bundle);
+    }
     return applied;
   }, []);
+
+  // Rebuild the composed selector runtime with one component's bundle swapped
+  // to the level the display mesh just moved to. Scoped to the composition's
+  // already-loaded occurrence subset (lazy topology stays lazy).
+  const recomposeReferenceStateForLod = useCallback((ctx, cid, bundle) => {
+    const composition = referenceCompositionRef.current;
+    if (!composition || composition.file !== ctx.file) {
+      return;
+    }
+    if (!compositionUsesComponent(composition, cid)) {
+      return;
+    }
+    const nextComposition = swapCompositionBundle(composition, cid, bundle);
+    referenceCompositionRef.current = nextComposition;
+    const nextReferenceState = buildNormalizedReferenceState(nextComposition.entry, null, {
+      selectorRuntime: composePackageSelectorRuntime(
+        nextComposition.entry,
+        nextComposition.occurrencesToLoad,
+        nextComposition.bundleByCid,
+        { singleComponentPart: nextComposition.isSingleComponentPart }
+      ),
+      loadedTopologyKey: nextComposition.loadedTopologyKey
+    });
+    setReferenceState((current) => (
+      current && current.fileRef === nextReferenceState.fileRef ? nextReferenceState : current
+    ));
+  }, [buildNormalizedReferenceState]);
+  const recomposeReferenceStateForLodRef = useRef(recomposeReferenceStateForLod);
+  recomposeReferenceStateForLodRef.current = recomposeReferenceStateForLod;
 
   const buildComposedPackageMeshState = useCallback((entry, descriptor, meshData) => {
     return {
@@ -538,6 +595,7 @@ export function useCadAssets({
     // Any new load invalidates the previous entry's LOD working set.
     lodPackageRef.current = null;
     setLodPackage(null);
+    referenceCompositionRef.current = null;
     const keepRenderedAssemblyVisible = entry?.kind === "assembly" && !!cachedMeshState;
     let assemblyPreviewVisible = keepRenderedAssemblyVisible;
     if (!keepRenderedAssemblyVisible) {
@@ -658,6 +716,7 @@ export function useCadAssets({
     const requestId = referenceRequestIdRef.current;
 
     if (!entryHasReferences(entry)) {
+      referenceCompositionRef.current = null;
       setReferenceState(null);
       setReferenceStatus(REFERENCE_STATUS.DISABLED);
       setReferenceError("");
@@ -699,6 +758,8 @@ export function useCadAssets({
           requestedOccurrenceIds,
           { singleComponentPart: isSingleComponentPart }
         );
+        const lodCtx = lodPackageRef.current;
+        const lodBundleByCid = (lodCtx && lodCtx.file === entry.file && lodCtx.componentLodBundleByCid) || {};
         const componentBundleByCid = {};
         await mapWithConcurrency(
           neededCids,
@@ -706,6 +767,14 @@ export function useCadAssets({
           async (cid) => {
             const component = (packageDescriptor.components || {})[cid];
             if (!component) {
+              return;
+            }
+            // A component the viewport already swapped to a finer LOD level must
+            // compose picking from THAT level's bundle, not the level-0 cache —
+            // the displayed triangles are the level's, and faceRuns are triangle
+            // ranges of one specific tessellation.
+            if (lodBundleByCid[cid]) {
+              componentBundleByCid[cid] = lodBundleByCid[cid];
               return;
             }
             // Exact-surface topology (design/surface-rendering.md R3): the
@@ -724,27 +793,23 @@ export function useCadAssets({
         // partId (an occurrence-namespaced partId would orphan it). Multi-occurrence assemblies
         // DO namespace by occurrence so each leaf part owns its faces/edges. Both keep
         // remapOccurrenceId so picks align with the composed mesh's sourcePartRanges occurrence.
-        const occurrenceRuntimes = occurrencesToLoad
-          .map((occurrence) => {
-            const bundle = componentBundleByCid[String(occurrence?.component || "").trim()];
-            if (!bundle) {
-              return null;
-            }
-            const occurrenceId = String(occurrence?.id || "").trim();
-            return buildSelectorRuntime(bundle, {
-              // The SUFP, not the full path: a copied ref should be compact.
-              copyCadPath: String(entry?.fileRefPrefix || ""),
-              partId: isSingleComponentPart ? "" : occurrenceId,
-              transform: occurrence?.transform || null,
-              remapOccurrenceId: occurrenceId
-            });
-          })
-          .filter(Boolean);
-        const composedRuntime = composeSelectorRuntimes(occurrenceRuntimes);
+        const composedRuntime = composePackageSelectorRuntime(entry, occurrencesToLoad, componentBundleByCid, {
+          singleComponentPart: isSingleComponentPart
+        });
         const nextReferenceState = buildNormalizedReferenceState(entry, null, {
           selectorRuntime: composedRuntime,
           loadedTopologyKey
         });
+        // Remembered so an LOD swap can re-compose this exact occurrence subset
+        // with one component's bundle replaced (see recomposeReferenceStateForLod).
+        referenceCompositionRef.current = {
+          file: entry.file,
+          entry,
+          occurrencesToLoad,
+          bundleByCid: componentBundleByCid,
+          loadedTopologyKey,
+          isSingleComponentPart
+        };
         setReferenceState(nextReferenceState);
         setReferenceStatus(nextReferenceState.disabledReason ? REFERENCE_STATUS.DISABLED : REFERENCE_STATUS.READY);
         setReferenceError(nextReferenceState.disabledReason || "");
