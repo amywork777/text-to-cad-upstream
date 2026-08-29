@@ -55,7 +55,7 @@ DESCRIPTOR_NAME = "assembly.json"
 COMPONENT_PROVENANCE_KEYS = (
     "sourceKind",
     "sourcePath",
-    "paramsPath",
+    "pose",
     "sourceHash",
     "sourceClosureHash",
     "sourceClosureFiles",

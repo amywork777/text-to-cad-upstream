@@ -70,13 +70,15 @@ class PoseValidationTests(unittest.TestCase):
             drivers=[{"kind": "joint", "joint": "nope", "param": "drive"}],
         )
 
-    def test_one_joint_per_feature_and_ordered_ratio_sources(self) -> None:
-        self._fails(
-            "more than one joint",
+    def test_shared_feature_joints_chain_and_ratio_sources_are_ordered(self) -> None:
+        # Several joints may share a feature (the last-declared owns the chain).
+        shared = pose(
             params=PARAMS,
             features=FEATURES,
-            joints=JOINTS + [{"id": "spin2", "feature": "wheel", "kind": "rotate"}],
-        )
+            joints=JOINTS + [{"id": "spin2", "feature": "wheel", "kind": "rotate", "parent": "spin"}],
+            drivers=[{"kind": "joint", "joint": "spin", "param": "drive"}],
+        ).block
+        self.assertEqual([j["id"] for j in shared["joints"]], ["spin", "spin2"])
         self._fails(
             "must be declared before",
             params=PARAMS,

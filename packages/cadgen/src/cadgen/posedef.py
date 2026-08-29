@@ -30,7 +30,7 @@ _PARAM_TYPES = {"number", "boolean", "enum", "select", "color", "string", "butto
 _PARAM_FIELDS = {
     "type", "label", "description", "unit", "min", "max", "step", "default", "options",
 }
-_FEATURE_FIELDS = {"ref", "names", "label", "description", "axis", "origin", "partIds"}
+_FEATURE_FIELDS = {"ref", "names", "selectors", "label", "description", "axis", "origin", "partIds"}
 _JOINT_FIELDS = {"id", "feature", "kind", "axis", "origin", "parent"}
 _JOINT_KINDS = {"rotate", "translate"}
 _EASINGS = {"linear", "smoothstep", "sine", "easeIn", "easeOut", "easeInOut"}
@@ -130,8 +130,14 @@ def _normalize_features(raw: Any) -> dict[str, dict[str, Any]]:
         names = definition.get("names")
         if isinstance(names, str):
             definition["names"] = [names]
-        if not definition.get("ref") and not definition.get("names"):
-            _fail(f"feature {identifier!r} must declare 'ref' and/or 'names' to bind occurrences")
+        selectors = definition.get("selectors")
+        if isinstance(selectors, str):
+            definition["selectors"] = [selectors]
+        if not definition.get("ref") and not definition.get("names") and not definition.get("selectors"):
+            _fail(
+                f"feature {identifier!r} must declare 'ref', 'names', and/or 'selectors' "
+                "to bind occurrences"
+            )
         if "axis" in definition and definition["axis"] is not None:
             definition["axis"] = _vector3(definition["axis"], f"feature {identifier!r} axis")
         if "origin" in definition and definition["origin"] is not None:
@@ -147,7 +153,6 @@ def _normalize_joints(raw: Any, features: Mapping[str, Any]) -> list[dict[str, A
         _fail("joints must be a list (declaration order is evaluation order)")
     joints: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    joint_features: set[str] = set()
     for index, raw_joint in enumerate(raw):
         what = f"joints[{index}]"
         joint = dict(_require_mapping(raw_joint, what))
@@ -159,9 +164,9 @@ def _normalize_joints(raw: Any, features: Mapping[str, Any]) -> list[dict[str, A
         feature = _identifier(joint.get("feature"), f"joint {joint_id!r} feature")
         if feature not in features:
             _fail(f"joint {joint_id!r} references unknown feature {feature!r}")
-        if feature in joint_features:
-            _fail(f"feature {feature!r} has more than one joint; one joint per feature")
-        joint_features.add(feature)
+        # Several joints may share a feature: the LAST-declared one owns the
+        # feature's transform chain; the earlier ones are chain links (parents)
+        # and ratio anchors. (How a chassis pose composes roll/pitch/heave.)
         kind = str(joint.get("kind", "rotate"))
         if kind not in _JOINT_KINDS:
             _fail(f"joint {joint_id!r} kind {kind!r} is not one of {', '.join(sorted(_JOINT_KINDS))}")
