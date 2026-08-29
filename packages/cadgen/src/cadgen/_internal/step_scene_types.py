@@ -40,7 +40,11 @@ class LoadedStepScene:
     step_hash: str | None = None
     source_kind: str = "step"
     source_path: str | None = None
-    params_path: str | None = None
+    # Declarative pose block from @step(pose=...) (JSON-ready dict; emitted
+    # into the descriptor as `pose`) plus the resolved escape-hatch source file
+    # the package build copies content-addressed into components/.
+    pose: dict[str, Any] | None = None
+    pose_module_source: Path | None = None
     source_hash: str | None = None
     source_closure_hash: str | None = None
     source_closure_files: tuple[str, ...] = ()

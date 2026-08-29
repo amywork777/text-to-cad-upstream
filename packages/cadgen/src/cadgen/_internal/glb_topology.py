@@ -548,7 +548,7 @@ def build_step_topology_index_manifest(
         "capabilities",
         "sourceKind",
         "sourcePath",
-        "paramsPath",
+        "pose",
         "sourceHash",
         "sourceClosureHash",
         "sourceClosureFiles",

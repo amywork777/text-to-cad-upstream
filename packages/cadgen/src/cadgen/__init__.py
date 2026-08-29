@@ -24,6 +24,7 @@ __all__ = [
     "AssemblyHelper",
     "step",
     "dxf",
+    "pose",
     "build123d",
     "srgb",
     "MateRelation",
@@ -49,6 +50,12 @@ def __getattr__(name: str):
         from cadgen.authoring import dxf, step
 
         return {"step": step, "dxf": dxf}[name]
+    if name == "pose":
+        # Declarative view/pose block for @step(pose=...) — the single pose
+        # authoring surface (no loose .params.js sidecars).
+        from cadgen.posedef import pose
+
+        return pose
     if name == "build123d":
         # `from cadgen import build123d as bd` — the lazy transparent re-export.
         # Importing the submodule is cheap; the real build123d import happens on
@@ -113,6 +120,7 @@ if TYPE_CHECKING:
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
     from cadgen.authoring import dxf, step
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
+    from cadgen.posedef import pose
     from cadgen.instances import compound_from_instances
     from cadgen.progress import report, track
     from cadgen.step_scene import (

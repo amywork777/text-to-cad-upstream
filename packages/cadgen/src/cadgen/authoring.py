@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from cadgen.metadata import resolve_model_output_path
+from cadgen.posedef import PoseDef
 
 __all__ = ["step", "dxf", "ModelDef", "registered_model", "registered_models"]
 
@@ -61,6 +62,9 @@ class ModelDef:
     kind: str | None
     mesh_tolerance: float | None
     mesh_angular_tolerance: float | None
+    # Declarative view/pose block (cadgen.pose()); serialized into the render
+    # package descriptor at build time. STEP models only.
+    pose: PoseDef | None = None
 
     @property
     def output_path(self) -> Path:
@@ -123,9 +127,14 @@ def _decorator(
     kind: str | None,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
+    pose: PoseDef | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     if kind is not None and kind not in {"part", "assembly"}:
         raise ValueError(f"@{fmt} kind must be 'part' or 'assembly', got {kind!r}")
+    if pose is not None and not isinstance(pose, PoseDef):
+        raise TypeError(
+            f"@{fmt} pose must be built by cadgen.pose(...), got {type(pose).__name__}"
+        )
 
     def apply(func: Callable[..., Any]) -> Callable[..., Any]:
         _validate_signature(func, fmt=fmt)
@@ -141,6 +150,7 @@ def _decorator(
             kind=kind,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
+            pose=pose,
         )
         _register(defn)
         func.__cadgen_model__ = defn  # type: ignore[attr-defined]
@@ -159,6 +169,7 @@ def step(
     kind: str | None = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
+    pose: PoseDef | None = None,
 ):
     """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``)."""
     decorator = _decorator(
@@ -167,6 +178,7 @@ def step(
         kind=kind,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
+        pose=pose,
     )
     return decorator(func) if func is not None else decorator
 

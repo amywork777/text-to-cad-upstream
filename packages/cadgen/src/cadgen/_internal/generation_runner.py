@@ -78,23 +78,32 @@ def _load_generator_module(script_path: Path) -> object:
     return module
 
 
-def _resolve_params_sidecar(params: object, *, script_path: Path) -> Path:
-    """Resolve the optional gen_step() ``params`` value — a filepath to a hand-authored
-    JS sidecar (the step-module manifest: parameters/features/animations/update) — to an
-    absolute path. A relative path is resolved against the generator file's directory.
-    The sidecar is hand-authored source, so it must already exist on disk."""
-    if not isinstance(params, (str, Path)):
-        raise TypeError(
-            f"{_display_path(script_path)} gen_step() envelope field 'params' must be a "
-            f"filepath string, got {type(params).__name__}"
-        )
-    candidate = Path(params)
+def _resolve_pose_block(defn: object, *, script_path: Path) -> tuple[dict, Path | None]:
+    """The model's declarative pose block plus its resolved escape-hatch source.
+
+    The block comes validated from ``cadgen.pose()`` on the ModelDef; this only
+    resolves the optional hatch module (script-relative, must exist) and stamps
+    the content-addressed package ref the descriptor will carry. Loose
+    ``.params.js`` sidecars are GONE — pose data has exactly one authoring
+    surface (``@step(pose=...)``) and one transport (the descriptor)."""
+    import hashlib
+
+    pose_def = getattr(defn, "pose", None)
+    if pose_def is None:
+        return {}, None
+    block = dict(pose_def.block)
+    module = pose_def.module
+    if not module:
+        return block, None
+    candidate = Path(module)
     resolved = (candidate if candidate.is_absolute() else script_path.parent / candidate).resolve()
     if not resolved.is_file():
         raise FileNotFoundError(
-            f"{_display_path(script_path)} gen_step() params sidecar not found: {params}"
+            f"{_display_path(script_path)} pose module not found: {module}"
         )
-    return resolved
+    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()[:12]
+    block["module"] = f"components/{digest}.pose.js"
+    return block, resolved
 
 
 def _normalize_step_payload(
@@ -109,23 +118,29 @@ def _normalize_step_payload(
     if isinstance(result, dict):
         # stl / 3mf / mesh_tolerance / mesh_angular_tolerance are consumed via the static
         # metadata path (per-generator STL/3MF outputs + mesh tolerances); keep allowing them.
-        allowed_fields = {"shape", "params", "stl", "3mf", "mesh_tolerance", "mesh_angular_tolerance"}
+        # 'params' (the loose .params.js sidecar) is DELETED: pose data is declared on the
+        # decorator (@step(pose=cadgen.pose(...))) and travels in the descriptor.
+        allowed_fields = {"shape", "stl", "3mf", "mesh_tolerance", "mesh_angular_tolerance"}
         extra_fields = sorted(str(key) for key in result if key not in allowed_fields)
         if extra_fields:
             joined = ", ".join(extra_fields)
-            raise TypeError(f"{_display_path(script_path)} gen_step() envelope has unsupported field(s): {joined}")
+            hint = (
+                " — the .params.js sidecar mechanism was replaced by @step(pose=...); "
+                "see skills/cad/references/pose.md"
+                if "params" in extra_fields
+                else ""
+            )
+            raise TypeError(
+                f"{_display_path(script_path)} gen_step() envelope has unsupported field(s): {joined}{hint}"
+            )
         if "shape" not in result:
             raise TypeError(
                 f"{_display_path(script_path)} gen_step() envelope must define 'shape'"
             )
-        envelope: dict[str, object] = {"shape": result["shape"]}
-        params = result.get("params")
-        if params is not None:
-            envelope["params"] = _resolve_params_sidecar(params, script_path=script_path)
-        return envelope
+        return {"shape": result["shape"]}
     raise TypeError(
         f"{_display_path(script_path)} gen_step() must return a build123d Shape "
-        "or a {'shape': ..., 'params': ...} envelope"
+        "or a {'shape': ...} envelope"
     )
 
 
@@ -252,11 +267,6 @@ def _write_shape_step_payload(
     # Stash the pre-bake compound: the component-package emit job introspects its located
     # children (occurrence transforms + dedup), and the STEP export serializes it.
     scene.source_compound = shape
-    params_abs = envelope.get("params")
-    if params_abs is not None:
-        # Record the hand-authored JS sidecar model-folder-relative, like sourcePath, so the
-        # descriptor stays portable. The viewer reads this back from assembly.json.
-        scene.params_path = relative_to_file(Path(params_abs), scene.step_path)
     logger.debug(f"built render scene (no STEP written): {_display_path(output_path)}")
     return scene
 
@@ -498,6 +508,14 @@ def _run_script_generator_inner(
             logger=logger,
             entry_kind=_shape_payload_entry_kind(envelope.get("shape"), fallback=spec.kind),
         )
+        # Declarative pose block (validated at decoration by cadgen.pose());
+        # rides the scene into the descriptor exactly like provenance does.
+        pose_block, pose_module_source = _resolve_pose_block(
+            getattr(generator, "__cadgen_model__", None), script_path=spec.script_path
+        )
+        if pose_block:
+            generated_scene.pose = pose_block
+            generated_scene.pose_module_source = pose_module_source
     elif generator_name == "gen_dxf":
         from cadgen._internal.dxf_output import record_dxf_output
         from cadgen.drawing_checks import raise_on_error_findings, validate_drawing_document
