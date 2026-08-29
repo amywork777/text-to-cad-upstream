@@ -14,7 +14,7 @@ Both accept an imported ``.step``/``.stp`` or a generated ``gen_step()`` Python 
 both always build from source, so exports can never be stale.
 
 It is deliberately distinct from :mod:`cadgen.step_artifact_cli`, which only (re)builds the
-per-folder ``__cadgen__`` viewer GLB/topology package beside the source. This module
+store-primary render package for the viewer. This module
 produces standalone files and writes **no** package or beside-source artifacts. Within a
 run the scene is built once and meshed at most once, so every requested format comes from
 identical geometry.
@@ -275,7 +275,7 @@ def _export_scene(
                     f"{spec.source_ref}: refusing to export a generated model from its own "
                     f"{_display_name_for(spec.step_path)} -- the scene carries no generator "
                     "output to serialize, so the file on disk is the PREVIOUS build. Rerun "
-                    "with a fresh generation (delete the model's __cadgen__ cache if this "
+                    "with a fresh generation (run `cadgen cache gc` if this "
                     "persists) rather than trusting this export."
                 )
             if spec.step_path.resolve() != out.resolve():
@@ -406,7 +406,7 @@ def export_cad_target(
     The scene is built once (the generator runs once for a Python source) and meshed at
     most once, so all requested formats come from identical geometry. ``outputs`` pairs a
     format name with an explicit output path or ``None`` for the default sibling path.
-    Writes no ``.step``, no ``__cadgen__`` render package, and no other beside-source
+    Writes no ``.step``, no render package, and no other beside-source
     artifacts."""
     if logger is None:
         logger = CliLogger("cadgen step export", verbose=verbose)

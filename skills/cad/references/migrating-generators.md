@@ -44,7 +44,8 @@ package's component content hashes against the pre-migration package.
 python path/to/model.py --force
 python - <<'EOF'
 import json, pathlib
-d = json.loads(pathlib.Path("path/to/__cadgen__/models/model.step/assembly.json").read_text())
+from cadgen.catalog import render_package_dir
+d = json.loads((render_package_dir(pathlib.Path("path/to/model.step")) / "assembly.json").read_text())
 print(sorted(e["contentHash"] for e in d["components"].values()))
 EOF
 ```

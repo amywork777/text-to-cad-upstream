@@ -41,8 +41,11 @@ from cadgen._internal.cache_paths import (
     MESH_TESSELLATION_VERSION,
     cache_root,
     components_dir,
+    locks_dir,
     meshes_dir,
     opmemo_base_dir,
+    packages_dir,
+    records_dir,
 )
 
 # Matches the -t<version>- salt in a mesh entry name (key scheme home:
@@ -108,8 +111,40 @@ def _mesh_entry_dead(name: str) -> bool:
     return match is None or int(match.group(1)) != MESH_TESSELLATION_VERSION
 
 
+def _package_generation(name: str) -> str:
+    """The version salt of a package dir name (``<hash>-v<N>`` -> ``v<N>``)."""
+    idx = name.rfind("-v")
+    return name[idx + 1 :] if idx != -1 else "unsalted"
+
+
 def _scan() -> list[_TierReport]:
+    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+
     reports: list[_TierReport] = []
+
+    pkg = _TierReport("packages", str(packages_dir()))
+    if packages_dir().is_dir():
+        current = f"v{STEP_PACKAGE_VERSION}"
+        by_generation: dict[str, dict] = {}
+        for child in sorted(packages_dir().iterdir()):
+            if not child.is_dir():
+                continue
+            entries, size = _dir_stats(child)
+            pkg.entries += entries
+            pkg.bytes += size
+            generation = _package_generation(child.name)
+            bucket = by_generation.setdefault(
+                generation,
+                {"name": generation, "entries": 0, "bytes": 0, "dead": generation != current},
+            )
+            bucket["entries"] += entries
+            bucket["bytes"] += size
+        pkg.generations = list(by_generation.values())
+        pkg.notes = (
+            f"current generation: {current}; a package whose document changed is "
+            "orphaned by key and age-swept; re-import self-heals in seconds"
+        )
+    reports.append(pkg)
 
     comp = _TierReport("components", str(components_dir()))
     if components_dir().is_dir():
@@ -226,8 +261,32 @@ def _sweep_files(directory: Path, cutoff: float, dry_run: bool, stats: dict, *, 
 
 
 def _cmd_gc(max_age_days: float, delete_all: bool, dry_run: bool, as_json: bool) -> int:
+    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+
     cutoff = time.time() - max_age_days * 24 * 3600
     stats = {"entries": 0, "bytes": 0}
+
+    # Packages sweep FIRST (tier ordering: evict packages before components —
+    # a package rebuilds from finer tiers in seconds, so it is the cheapest
+    # loss). Dead-by-salt generations go outright; live-generation packages
+    # (orphans included — the key alone cannot say which document still
+    # exists) are age-swept by the package dir's own mtime.
+    if packages_dir().is_dir():
+        current = f"v{STEP_PACKAGE_VERSION}"
+        for child in packages_dir().iterdir():
+            if not child.is_dir():
+                continue
+            if delete_all or _package_generation(child.name) != current:
+                _remove_tree(child, dry_run, stats)
+                continue
+            try:
+                if child.stat().st_mtime < cutoff:
+                    _remove_tree(child, dry_run, stats)
+            except OSError:
+                continue
+    # Locks/records are tiny bookkeeping; age-sweep keeps the tiers bounded.
+    _sweep_files(locks_dir(), cutoff, dry_run, stats, everything=delete_all)
+    _sweep_files(records_dir(), cutoff, dry_run, stats, everything=delete_all)
 
     # Dead-by-name generations go outright, regardless of age.
     if opmemo_base_dir().is_dir():

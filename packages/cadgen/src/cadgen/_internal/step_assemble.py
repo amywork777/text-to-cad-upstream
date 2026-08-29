@@ -117,12 +117,10 @@ def assemble_compound_from_package(package_dir: Path):
         else:
             compound = Compound(children=children)
     compound.label = str(descriptor.get("rootName") or getattr(compound, "label", "") or "model")
-    from cadgen._internal.source_sidecar import read_source_sidecar
-
-    sidecar = read_source_sidecar(package_dir) or {}
-    mates = sidecar.get("assemblyMates")
-    if isinstance(mates, list) and mates:
-        compound.assembly_mates = [dict(mate) for mate in mates]
+    # No mates here: they are source-derived and live in the model-side
+    # sidecar, which a package (keyed by content, model-blind) cannot name.
+    # Scene loads attach them from the sidecar (step_scene_package); the one
+    # write-path caller assembles STEP bytes, which never carry mates.
     return compound, descriptor
 
 

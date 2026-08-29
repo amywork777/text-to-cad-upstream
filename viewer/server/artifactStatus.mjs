@@ -24,8 +24,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import { renderPackageDir } from "./scanner.mjs";
-import { SOURCE_SIDECAR_NAME, STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { renderPackageDir, sourceSidecarPath } from "./scanner.mjs";
+import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
@@ -109,9 +109,9 @@ function validateStep(stepPath) {
     return { ok: false, code: "missing_step_topology", packageDir };
   }
   // Generated-vs-imported is the SOURCE SIDECAR's existence (generation writes
-  // <pkg>/source.json, import removes it), never a sibling-filename check or a
-  // descriptor field: the descriptor is a pure function of the STEP bytes.
-  const generated = fs.existsSync(path.join(packageDir, SOURCE_SIDECAR_NAME));
+  // <name>.step.source.json beside the model, import removes it), never a
+  // descriptor field: the store descriptor is a pure function of the STEP bytes.
+  const generated = fs.existsSync(sourceSidecarPath(stepPath));
   if (descriptor.kind !== STEP_PACKAGE_KIND || !schemaVersionMatches(descriptor, STEP_PACKAGE_VERSION)) {
     return { ok: false, code: "unsupported_step_topology", packageDir, descriptor, generated };
   }

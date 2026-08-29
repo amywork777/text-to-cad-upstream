@@ -144,3 +144,12 @@ def write_bytes_atomic(target_path: Path, payload: bytes) -> None:
         # letting that escape here would mask the rename failure the caller needs to see.
         with contextlib.suppress(OSError):
             temp_path.unlink(missing_ok=True)
+
+
+def replace_dir_atomic(temp_dir: Path | str, target_dir: Path | str) -> None:
+    """``os.replace`` for a staged DIRECTORY, with the same bounded retry the
+    file path gets. No copy-on-exhaustion fallback — a directory has no single
+    unseen-copy trick — so exhaustion reports the rename failure itself."""
+    blocked = _run_ladder(temp_dir, target_dir)
+    if blocked is not None:
+        raise blocked

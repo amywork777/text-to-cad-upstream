@@ -407,7 +407,7 @@ def _python_source_for_target(target: ResolvedStepTarget) -> Path | None:
     from cadgen.catalog import render_package_dir, source_from_path
     from cadgen._internal.source_sidecar import read_source_sidecar
 
-    sidecar = read_source_sidecar(render_package_dir(target.step_path))
+    sidecar = read_source_sidecar(target.step_path)
     recorded = str((sidecar or {}).get("sourcePath") or "").strip()
     if recorded:
         candidate = (target.step_path.parent / recorded).resolve()

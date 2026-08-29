@@ -9,6 +9,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { createCadApp, hostIsAllowed } from "./httpApp.mjs";
+import { renderPackageDir } from "./storePaths.mjs";
 
 function write(root, rel, content = "") {
   const p = path.join(root, rel);
@@ -19,6 +20,12 @@ function write(root, rel, content = "") {
 
 async function startApp(t, { withDist = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cad-http-"));
+  const previous = process.env.CADGEN_STORE_DIR;
+  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  t.after(() => {
+    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
+    else process.env.CADGEN_STORE_DIR = previous;
+  });
   let distDir = "";
   if (withDist) {
     distDir = fs.mkdtempSync(path.join(os.tmpdir(), "cad-dist-"));
@@ -135,16 +142,22 @@ test("download sets the dual-form attachment disposition", async (t) => {
   );
 });
 
-test("the Referer-relative route serves package siblings and stays contained", async (t) => {
+test("the store route serves package assets and stays contained", async (t) => {
   const { base, root } = await startApp(t);
-  const descriptor = write(root, path.join("__cadgen__", "models", "a.step", "assembly.json"), "{}");
-  write(root, path.join("__cadgen__", "models", "a.step", "components", "c0.surf"), "SURFdata");
-  const referer = `${base}/?file=${encodeURIComponent(descriptor)}`;
-  const sibling = await fetch(`${base}/__cad/components/c0.surf`, { headers: { Referer: referer } });
-  assert.equal(sibling.status, 200);
-  // An escape through the referer's directory is refused, not served.
-  const escape = await fetch(`${base}/__cad/../../../etc/hosts.step`, { headers: { Referer: referer } });
-  assert.ok([403, 404].includes(escape.status));
+  const stepPath = write(root, "a.step", "ISO-10303-21;\nstore-route\n");
+  const packageDir = renderPackageDir(stepPath);
+  fs.mkdirSync(path.join(packageDir, "components"), { recursive: true });
+  fs.writeFileSync(path.join(packageDir, "assembly.json"), "{}");
+  fs.writeFileSync(path.join(packageDir, "components", "c0.surf"), "SURFdata");
+  const key = path.basename(packageDir);
+  const ok = await fetch(`${base}/__cad/store?file=${encodeURIComponent(`${key}/components/c0.surf`)}`);
+  assert.equal(ok.status, 200);
+  assert.equal(await ok.text(), "SURFdata");
+  // Traversal out of the packages tier and hidden names are refused.
+  const escape = await fetch(`${base}/__cad/store?file=${encodeURIComponent("../../etc/hosts")}`);
+  assert.equal(escape.status, 404);
+  const hidden = await fetch(`${base}/__cad/store?file=${encodeURIComponent(".building-x/assembly.json")}`);
+  assert.equal(hidden.status, 404);
 });
 
 test("reveal: disabled platform answers 501, a missing entry 404", async (t) => {

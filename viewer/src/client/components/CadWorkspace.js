@@ -145,7 +145,6 @@ import {
   entryHasUrdf,
   entryMeshAssetSignature,
   entryHasLegacyParamsSidecar,
-  entryPoseHatchUrl,
   entryPoseUrl,
   entryUrdfAssetHash
 } from "cadjs/lib/entryAssets";
@@ -312,7 +311,7 @@ import {
 } from "@/workbench/fileAccessAssets";
 
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
-// The source formats whose renderable geometry lives in a `__cadgen__` render package, and
+// The source formats whose renderable geometry lives in a store render package, and
 // therefore go through the /__cad/artifact state machine before they can render. Mirrors
 // `owns_entry` in cadgen's viewer/artifact.py; an entry listed here and not there (or the
 // reverse) is a format that either never builds or reports ready forever.
@@ -1500,7 +1499,6 @@ export default function CadWorkspace({
     )
   );
   const selectedStepModuleUrl = supportsSidecarParams ? entryPoseUrl(selectedEntry) : "";
-  const selectedStepModuleHatchUrl = selectedStepModuleUrl ? entryPoseHatchUrl(selectedEntry) : "";
   const selectedEntryLegacyParamsSidecar = entryHasLegacyParamsSidecar(selectedEntry);
   const selectedStepModuleCadPath = selectedStepModuleUrl ? cadPathForEntry(selectedEntry) : "";
   const selectedStepModuleDefinition = stepModuleLoadState.url === selectedStepModuleUrl
@@ -1694,7 +1692,6 @@ export default function CadWorkspace({
     resetStepAnimationStore();
 
     loadPoseModuleDefinition(selectedStepModuleUrl, {
-      hatchUrl: selectedStepModuleHatchUrl,
       cadPath: selectedStepModuleCadPath
     }).then((definition) => {
       if (cancelled) {
@@ -1753,7 +1750,7 @@ export default function CadWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [fileSessionNamespace, selectedEntry, selectedStepModuleCadPath, selectedStepModuleHatchUrl, selectedStepModuleUrl]);
+  }, [fileSessionNamespace, selectedEntry, selectedStepModuleCadPath, selectedStepModuleUrl]);
 
   const selectedUrdfMeshGeometryResult = useMemo(() => {
     if (!selectedUrdfData || !selectedUrdfMeshes) {

@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { createCadApp } from "./httpApp.mjs";
 import { _setCadgenProbeForTests } from "./cadgenResolve.mjs";
 import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { renderPackageDir } from "./storePaths.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VIEWER_ROOT = path.resolve(SERVER_DIR, "..");
@@ -65,13 +66,20 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
   // renderPackageAssetDir exists).
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const previousStore = process.env.CADGEN_STORE_DIR;
+  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  t.after(() => {
+    if (previousStore === undefined) delete process.env.CADGEN_STORE_DIR;
+    else process.env.CADGEN_STORE_DIR = previousStore;
+  });
 
   const stepBytes = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n";
   const step = write(root, "widget.step", stepBytes);
-  write(root, path.join("__cadgen__", "models", "widget.step", "components", "c0.surf"), SUN_GEAR_SURF);
-  write(
-    root,
-    path.join("__cadgen__", "models", "widget.step", "assembly.json"),
+  const packageDir = renderPackageDir(step);
+  fs.mkdirSync(path.join(packageDir, "components"), { recursive: true });
+  fs.writeFileSync(path.join(packageDir, "components", "c0.surf"), SUN_GEAR_SURF);
+  fs.writeFileSync(
+    path.join(packageDir, "assembly.json"),
     JSON.stringify({
       kind: "assembly-package",
       packageSchemaVersion: STEP_PACKAGE_VERSION,
@@ -99,13 +107,16 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
   assert.equal(status.state, "ready");
   assert.equal(status.stale, undefined);
 
-  // Edit the STEP: still renders, but honestly badged stale (nothing here can
-  // re-import it without cadgen).
+  // Edit the STEP: the content key changes, so the old package is simply
+  // unreachable — with no cadgen the answer is the actionable import error.
   fs.appendFileSync(step, "\n");
   status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
+  assert.equal(status.state, "error");
+  assert.match(String(status.error || ""), /has not been imported yet/);
+  // Restore the original bytes: the package resolves again, nothing rebuilt.
+  fs.writeFileSync(step, stepBytes);
+  status = await (await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`)).json();
   assert.equal(status.state, "ready");
-  assert.equal(status.stale, true);
-  assert.match(String(status.staleReason || ""), /changed after/);
 
   // Never-imported foreign STEP with no cadgen: one specific, actionable
   // explanation that names the fix, not a generic hint.
@@ -147,8 +158,8 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
   const catalog = await (await fetch(`${base}/__cad/catalog`)).json();
   const entry = catalog.entries.find((e) => e.file.endsWith("widget.step"));
   assert.ok(entry, "catalog lists the packaged step");
-  const surfUrl = `${base}/__cad/asset?file=${encodeURIComponent(
-    path.join(root, "__cadgen__", "models", "widget.step", "components", "c0.surf"),
+  const surfUrl = `${base}/__cad/store?file=${encodeURIComponent(
+    `${path.basename(packageDir)}/components/c0.surf`,
   )}`;
   const surf = await fetch(surfUrl);
   assert.equal(surf.status, 200);
@@ -179,6 +190,12 @@ test(
     });
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const previousStore = process.env.CADGEN_STORE_DIR;
+    process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+    t.after(() => {
+      if (previousStore === undefined) delete process.env.CADGEN_STORE_DIR;
+      else process.env.CADGEN_STORE_DIR = previousStore;
+    });
     // A bare STEP is a bare STEP: files carry no cadgen metadata, so any
     // .step without a package is simply importable, whatever produced it.
     const step = write(root, "roller.step", fs.readFileSync(IMPORT_FIXTURE));
@@ -205,14 +222,14 @@ test(
     assert.equal(build.ok, true, `build failed: ${build.error || ""}`);
     assert.equal(build.state, "ready");
     assert.equal(build.stepImport, true);
-    const descriptorPath = path.join(root, "__cadgen__", "models", "roller.step", "assembly.json");
+    const descriptorPath = path.join(renderPackageDir(step), "assembly.json");
     const descriptor = JSON.parse(fs.readFileSync(descriptorPath, "utf8"));
     assert.equal(descriptor.kind, "assembly-package");
     // Imports write NO source sidecar — its absence IS the "imported" marker;
     // the descriptor itself carries no provenance kind at all.
     assert.equal(descriptor.sourceKind, undefined);
     assert.equal(
-      fs.existsSync(path.join(root, "__cadgen__", "models", "roller.step", "source.json")),
+      fs.existsSync(`${step}.source.json`),
       false,
       "an imported package must not carry a source sidecar",
     );
@@ -228,8 +245,8 @@ test(
     assert.equal(status.state, "ready");
     assert.equal(status.stale, undefined);
     const surfRel = String(Object.values(descriptor.components)[0].surf);
-    const surf = await fetch(`${base}/__cad/asset?file=${encodeURIComponent(
-      path.join(root, "__cadgen__", "models", "roller.step", surfRel),
+    const surf = await fetch(`${base}/__cad/store?file=${encodeURIComponent(
+      `${path.basename(renderPackageDir(step))}/${surfRel}`,
     )}`);
     assert.equal(surf.status, 200);
     assert.equal(Buffer.from(await surf.arrayBuffer()).subarray(0, 4).toString("utf8"), "SURF");

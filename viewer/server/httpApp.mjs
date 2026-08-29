@@ -29,6 +29,7 @@ import { contentTypeForStaticAsset } from "./contentTypes.mjs";
 import { attachmentContentDisposition } from "./encoding.mjs";
 import { pathIsInside } from "./scanner.mjs";
 import { revealPath } from "./reveal.mjs";
+import { storePackagesDir } from "./storePaths.mjs";
 import {
   TESS_CACHE_BATCH_PATH,
   TESS_CACHE_ROUTE_PREFIX,
@@ -225,6 +226,31 @@ export function createCadApp({ root, host, port, distDir = "" }) {
       error: `missing ${POST_GUARD_HEADER} header (cross-site POST blocked); send '${POST_GUARD_HEADER}: 1'`,
     });
     return true;
+  }
+
+  // Store route: render-package assets from the user-level cache, confined to
+  // the store's packages/ tier. `file` is packages-relative; hidden components
+  // (dot-named staging dirs, lock siblings) are never served.
+  function serveStoreAsset(req, res, query) {
+    const rel = String(query.get("file") || "").replace(/\\/g, "/");
+    const base = path.resolve(storePackagesDir());
+    const candidate = path.resolve(base, rel.replace(/^\/+/, ""));
+    const contained = candidate === base || candidate.startsWith(base + path.sep);
+    const hidden = path.relative(base, candidate)
+      .split(path.sep)
+      .some((part) => part && part !== ".." && part.startsWith("."));
+    let stat = null;
+    try {
+      stat = contained && !hidden ? fs.statSync(candidate) : null;
+    } catch {
+      stat = null;
+    }
+    if (!stat || !stat.isFile()) {
+      sendJson(req, res, 404, { error: "Not found" });
+      return;
+    }
+    const contentType = backend.contentTypeForPath(candidate) || "application/octet-stream";
+    streamFile(req, res, candidate, stat, contentType, { disposition: null });
   }
 
   function serveAsset(req, res, query, { download }) {
@@ -445,6 +471,8 @@ export function createCadApp({ root, host, port, distDir = "" }) {
           sendJson(req, res, 200, backend.readCatalog());
         } else if (pathname === "/__cad/artifact") {
           await handleArtifactStatus(req, res, query);
+        } else if (pathname === "/__cad/store") {
+          serveStoreAsset(req, res, query);
         } else if (pathname === "/__cad/asset") {
           serveAsset(req, res, query, { download: false });
         } else if (pathname === "/__cad/download") {

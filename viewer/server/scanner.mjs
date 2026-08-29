@@ -14,7 +14,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { fileVersion } from "./encoding.mjs";
-import { SOURCE_SIDECAR_NAME } from "./packageContract.mjs";
+import { SOURCE_SIDECAR_SUFFIX } from "./packageContract.mjs";
+import { renderPackageDir as storeRenderPackageDir, storePackagesDir } from "./storePaths.mjs";
 
 export const CAD_CATALOG_SCHEMA_VERSION = 4;
 
@@ -27,42 +28,10 @@ const VIEWER_SKIPPED_DIRECTORIES = new Set([
   "__cadgen__", "__pycache__", "build", "coverage", "dist", "node_modules", "viewer",
 ]);
 
-// Mirrors cadgen.catalog. Values are pinned by the scanner fixture test against
-// packages cadgen actually writes.
-export const CADGEN_DIRNAME = "__cadgen__";
-export const CADGEN_MODELS_DIRNAME = "models";
-
 export const DXF_GENERATOR_SUFFIX = ".dxf.py";
 
 export function isDxfGeneratorPath(filePath) {
   return String(filePath || "").toLowerCase().endsWith(DXF_GENERATOR_SUFFIX);
-}
-
-export function isInsideCadgenDir(filePath) {
-  return String(filePath || "").split(path.sep).includes(CADGEN_DIRNAME);
-}
-
-export function isRenderPackagePath(filePath) {
-  const p = String(filePath || "");
-  if (!path.basename(p)) {
-    return false;
-  }
-  return (
-    path.basename(path.dirname(p)) === CADGEN_MODELS_DIRNAME &&
-    path.basename(path.dirname(path.dirname(p))) === CADGEN_DIRNAME
-  );
-}
-
-// STEP models key by the STEP FILE: <name>.step.py -> <name>.step. Mirrors
-// cadgen.catalog.render_package_dir.
-function packageKeyName(name) {
-  const lowered = name.toLowerCase();
-  for (const suffix of [".step.py", ".stp.py"]) {
-    if (lowered.endsWith(suffix)) {
-      return name.slice(0, -3);
-    }
-  }
-  return name;
 }
 
 function realpathOr(value) {
@@ -80,30 +49,12 @@ function realpathOr(value) {
   }
 }
 
-// Resolved, matching cadgen.catalog.render_package_dir exactly: two paths
-// reaching the same package must take the same lock sentinel.
-export function renderPackageDir(entryPath) {
-  const base = realpathOr(path.resolve(entryPath));
-  return realpathOr(
-    path.join(path.dirname(base), CADGEN_DIRNAME, CADGEN_MODELS_DIRNAME, packageKeyName(path.basename(base))),
-  );
-}
+// Store-primary resolution: packages live in the user-level store keyed by
+// the document's content hash (storePaths.mjs mirrors cadgen.catalog).
+export { renderPackageDir } from "./storePaths.mjs";
 
-// The package directory AS THE SCANNER WALKED IT — deliberately NOT resolved.
-// An asset URL is relative to the scan root, so a realpath that leaves that
-// root (a symlinked model folder, macOS /var -> /private/var) yields a URL
-// that escapes the root and 404s.
-export function renderPackageAssetDir(entryPath) {
-  const base = path.resolve(entryPath);
-  return path.join(path.dirname(base), CADGEN_DIRNAME, CADGEN_MODELS_DIRNAME, packageKeyName(path.basename(base)));
-}
-
-export function entryPathForRenderPackage(packagePath) {
-  if (!isRenderPackagePath(packagePath)) {
-    return null;
-  }
-  const folder = path.dirname(path.dirname(path.dirname(packagePath)));
-  return path.join(folder, path.basename(packagePath));
+export function sourceSidecarPath(entryPath) {
+  return `${path.resolve(entryPath)}${SOURCE_SIDECAR_SUFFIX}`;
 }
 
 // --- path / ref helpers ---
@@ -176,6 +127,15 @@ function encodeUrlPath(repoRelative) {
   return `/${repoRelative.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
 }
 
+// Package assets are served by the /__cad/store route, whose `file` param is
+// relative to the store's packages/ tier. The client's resolvePackageAssetUrl
+// rewrites the same param for sub-assets, so the URL shape matches root assets.
+function storeAssetUrl(packageDir, descriptorStats) {
+  const rel = path.relative(storePackagesDir(), packageDir).split(path.sep).join("/");
+  const base = `/__cad/store?file=${encodeURIComponent(rel)}`;
+  return descriptorStats ? `${base}&v=${encodeURIComponent(fileVersion(descriptorStats))}` : base;
+}
+
 function packageDescriptorStats(packageDir) {
   return fileStats(path.join(packageDir, "assembly.json"));
 }
@@ -183,16 +143,6 @@ function packageDescriptorStats(packageDir) {
 export function assetForPath(repoRoot, filePath) {
   const st = fileStats(filePath);
   if (!st) {
-    const descriptor = packageDescriptorStats(filePath);
-    if (descriptor) {
-      const version = fileVersion(descriptor);
-      const repoPath = repoRelativePath(repoRoot, filePath);
-      return {
-        url: `${encodeUrlPath(repoPath)}?v=${encodeURIComponent(version)}`,
-        hash: sha256File(path.join(filePath, "assembly.json"), descriptor),
-        bytes: Number(descriptor.size),
-      };
-    }
     return null;
   }
   const version = fileVersion(st);
@@ -423,7 +373,7 @@ export function stepKindFromTopology(topology) {
   return "part";
 }
 
-export function readStepCatalogMetadata(packageDir) {
+export function readStepCatalogMetadata(packageDir, sourcePath = null) {
   // Component package: assembly.json IS the index manifest.
   if (!packageDescriptorStats(packageDir)) {
     return {};
@@ -437,14 +387,17 @@ export function readStepCatalogMetadata(packageDir) {
   if (!descriptor || descriptor.kind !== "assembly-package") {
     return {};
   }
-  // Everything SOURCE-derived rides the sidecar (source.json); its existence
-  // is the generated-vs-imported marker. The descriptor is STEP-pure.
+  // Everything SOURCE-derived rides the model-side sidecar
+  // (<name>.step.source.json); its existence is the generated-vs-imported
+  // marker. The store descriptor is STEP-pure.
   let sidecar = null;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(packageDir, SOURCE_SIDECAR_NAME), "utf8"));
-    sidecar = parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    sidecar = null;
+  if (sourcePath) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(sourceSidecarPath(sourcePath), "utf8"));
+      sidecar = parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      sidecar = null;
+    }
   }
   return {
     topology: {
@@ -465,10 +418,10 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   // Catalog entries are ARTIFACTS (the .step/.stp file); whether the model is
   // python-backed comes from the package descriptor's provenance, never from
   // sibling filenames (design/library-first-generation.md).
-  const packageDir = renderPackageDir(sourcePath);
-  const metadata = readStepCatalogMetadata(packageDir);
+  const packageDir = storeRenderPackageDir(sourcePath);
+  const metadata = readStepCatalogMetadata(packageDir, sourcePath);
   const topology = metadata.topology;
-  const packageAsset = assetForPath(repoRoot, packageDir);
+  const descriptorStats = packageDescriptorStats(packageDir);
   const topologyIndex = topology && topology.index && typeof topology.index === "object" ? topology.index : topology;
   const poseBlock = metadata.pose || null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
@@ -477,9 +430,9 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   const entry = {
     file: entryRef,
     kind: stepKindFromTopology(topology),
-    url: (packageAsset && packageAsset.url) || assetUrlForPath(repoRoot, packageDir),
-    hash: (packageAsset && packageAsset.hash) || "",
-    bytes: (packageAsset && packageAsset.bytes) || 0,
+    url: storeAssetUrl(packageDir, descriptorStats),
+    hash: descriptorStats ? sha256File(path.join(packageDir, "assembly.json"), descriptorStats) : "",
+    bytes: descriptorStats ? Number(descriptorStats.size) : 0,
     sourceKind: generated ? "python" : "step",
   };
   if (generated) {
@@ -499,15 +452,16 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
       entry.source = source;
     }
   }
+  if (generated) {
+    // The model-side sidecar (served by the ordinary asset route — it lives
+    // in the root) carries mates and pose; the client merge point fetches it.
+    entry.sourceUrl = assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));
+  }
   if (poseBlock) {
     // Declarative pose (the ONLY pose mechanism): the client fetches the
     // source sidecar and compiles its pose block; the optional escape-hatch
-    // module is a content-addressed package asset.
-    entry.poseUrl = assetUrlForPath(repoRoot, path.join(packageDir, SOURCE_SIDECAR_NAME));
-    const hatchRef = String(poseBlock.module || "").trim();
-    if (hatchRef && !hatchRef.includes("..")) {
-      entry.poseHatchUrl = assetUrlForPath(repoRoot, path.join(packageDir, hatchRef));
-    }
+    // module rides INLINE in the sidecar (pose.moduleSource).
+    entry.poseUrl = entry.sourceUrl || assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));
   } else if (
     String((topologyIndex && topologyIndex.paramsPath) || "").trim() ||
     fileStats(legacyParamsSidecarPath(sourcePath))
@@ -535,10 +489,10 @@ export function isServedCadAsset(filePath) {
     // so a model root that itself lives under a hidden path still serves.
     return false;
   }
-  if (isInsideCadgenDir(filePath)) {
-    // Includes pose escape-hatch modules (components/<sha>.pose.js): package
-    // contents are served wholesale. Loose .js sidecars beside models are NOT
-    // served any more — the .params.js mechanism is retired.
+  if (filePath.endsWith(SOURCE_SIDECAR_SUFFIX)) {
+    // The model-side source sidecar (<name>.step.source.json): pose + mates
+    // for the client. Loose .js sidecars beside models are NOT served —
+    // the .params.js mechanism is retired.
     return true;
   }
   if (SOURCE_EXTENSIONS.has(extension)) {
@@ -565,7 +519,7 @@ export function scanCadDirectory(repoRoot) {
   const sourceFiles = collectCadSourceFiles(rootPath, []);
   const entries = [];
   for (const sourcePath of sourceFiles) {
-    const logical = isRenderPackagePath(sourcePath) ? entryPathForRenderPackage(sourcePath) : sourcePath;
+    const logical = sourcePath;
     const extension = path.extname(logical).toLowerCase();
     if (extension === ".step" || extension === ".stp") {
       entries.push(createStepEntry(repoRoot, rootPath, logical, extension));

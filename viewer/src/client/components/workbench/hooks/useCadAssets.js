@@ -202,21 +202,19 @@ function loadRenderMeshForEntry(entry, options) {
 }
 
 // The ONE client-side merge point (mirrors cadgen's package-aware manifest
-// reader): the descriptor (assembly.json) is a pure function of the STEP
-// bytes; everything source-derived — assembly mates included — rides the
-// source sidecar (source.json). Attach the sidecar's mates here so every
-// descriptor consumer keeps seeing one shape. A missing sidecar simply means
-// the package was imported, which has no mates.
-async function loadPackageDescriptorWithSource(packageAssetUrl, { signal } = {}) {
+// reader): the store descriptor (assembly.json) is a pure function of the
+// STEP bytes; everything source-derived — assembly mates included — rides the
+// MODEL-SIDE sidecar (<name>.step.source.json, entry.sourceUrl). Attach the
+// sidecar's mates here so every descriptor consumer keeps seeing one shape.
+// A missing sidecar simply means the model is imported, which has no mates.
+async function loadPackageDescriptorWithSource(packageAssetUrl, { signal, sourceUrl = "" } = {}) {
   const descriptor = await loadRenderJson(resolvePackageAssetUrl(packageAssetUrl, "assembly.json"), {
     signal
   }).catch(() => null);
-  if (!descriptor || descriptor.kind !== "assembly-package") {
+  if (!descriptor || descriptor.kind !== "assembly-package" || !sourceUrl) {
     return descriptor;
   }
-  const sidecar = await loadRenderJson(resolvePackageAssetUrl(packageAssetUrl, "source.json"), {
-    signal
-  }).catch(() => null);
+  const sidecar = await loadRenderJson(sourceUrl, { signal }).catch(() => null);
   if (sidecar && Array.isArray(sidecar.assemblyMates) && sidecar.assemblyMates.length) {
     return { ...descriptor, assemblyMates: sidecar.assemblyMates };
   }
@@ -606,7 +604,8 @@ export function useCadAssets({
         // its assembly.json, fetch each unique component GLB once, and compose them in
         // world space. A non-package descriptor is a stale/unbuilt artifact (throws below).
         const packageDescriptor = await loadPackageDescriptorWithSource(meshUrl, {
-          signal: controller.signal
+          signal: controller.signal,
+          sourceUrl: String(entry?.sourceUrl || "")
         });
         if (packageDescriptor && packageDescriptor.kind === "assembly-package") {
           setMeshLoadStage("loading components");
@@ -733,7 +732,10 @@ export function useCadAssets({
       // by occurrence id) so nested faces/edges become pickable.
       const glbUrl = entryAssetUrl(entry, "glb");
       const packageDescriptor = glbUrl
-        ? await loadPackageDescriptorWithSource(glbUrl, { signal: controller.signal })
+        ? await loadPackageDescriptorWithSource(glbUrl, {
+            signal: controller.signal,
+            sourceUrl: String(entry?.sourceUrl || "")
+          })
         : null;
       if (packageDescriptor && packageDescriptor.kind === "assembly-package") {
         // Lazy topology: an assembly loads selector topology only for the occurrences the user has

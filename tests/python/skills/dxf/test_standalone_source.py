@@ -74,8 +74,8 @@ class StandaloneDxfSourceTests(unittest.TestCase):
 
     def test_generate_dxf_targets_always_writes_the_sibling(self) -> None:
         # The .dxf IS the product (design/standalone-viewer.md Phase A): every run
-        # writes it, no package exists, and only the output record remains under
-        # __cadgen__ to make an unchanged source a no-op.
+        # writes it, no package exists, and only the output record remains — in
+        # the store's records/ tier — to make an unchanged source a no-op.
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = _write_standalone_source(Path(root))
 
@@ -84,10 +84,10 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             output_path = script_path.with_suffix(".dxf")
             self.assertTrue(output_path.exists())
             self.assertGreater(output_path.stat().st_size, 0)
-            package_dir = Path(root) / "__cadgen__" / "models" / script_path.name
-            self.assertTrue((package_dir / "dxf-export.json").exists())
-            self.assertFalse((package_dir / "drawing.json").exists())
-            self.assertFalse((package_dir / "preview.glb").exists())
+            from cadgen._internal.dxf_output import dxf_export_record_path
+
+            self.assertTrue(dxf_export_record_path(script_path).exists())
+            self.assertFalse((Path(root) / "__cadgen__").exists())
 
     def test_unchanged_source_is_a_no_op_and_output_is_deterministic(self) -> None:
         with temporary_directory(prefix="dxf-skill") as root:

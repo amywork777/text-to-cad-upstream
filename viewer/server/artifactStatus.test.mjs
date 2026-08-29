@@ -16,10 +16,19 @@ import {
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
 import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
+import { renderPackageDir } from "./storePaths.mjs";
 
 function tempRoot(t, prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Store-primary: packages resolve into the user-level store; isolate it
+  // per-test exactly the way the Python runner does (CADGEN_STORE_DIR).
+  const previous = process.env.CADGEN_STORE_DIR;
+  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  t.after(() => {
+    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
+    else process.env.CADGEN_STORE_DIR = previous;
+  });
   return root;
 }
 
@@ -43,22 +52,26 @@ function writeStepPackage(root, stepName, {
   components = ["c0"],
   withSurf = true,
 } = {}) {
-  const stepBytes = "ISO-10303-21;\nfake step\n";
+  // Unique per fixture name: content-keying would otherwise collide two
+  // same-bytes fixtures into one store package.
+  const stepBytes = `ISO-10303-21;\nfake step ${stepName}\n`;
   const stepPath = write(root, stepName, stepBytes);
-  const packageRel = path.join("__cadgen__", "models", stepName);
+  // Content-keyed store package for exactly the bytes just written.
+  const packageDir = renderPackageDir(stepPath);
   const componentMap = {};
   for (const cid of components) {
     const rel = `components/${cid}.surf`;
     if (withSurf) {
-      write(root, path.join(packageRel, rel), Buffer.from("SURF...."));
+      fs.mkdirSync(path.join(packageDir, "components"), { recursive: true });
+      fs.writeFileSync(path.join(packageDir, rel), Buffer.from("SURF...."));
     }
     componentMap[cid] = { surf: rel };
   }
   const descriptor = { kind: "assembly-package", components: componentMap };
   if (generated) {
-    // The source sidecar's EXISTENCE is the generated marker; the descriptor
-    // itself is a pure function of the STEP bytes and carries no provenance.
-    write(root, path.join(packageRel, "source.json"), JSON.stringify({ schemaVersion: 1, sourceKind: "python" }));
+    // The MODEL-SIDE sidecar's existence is the generated marker; the store
+    // descriptor is a pure function of the STEP bytes, no provenance at all.
+    fs.writeFileSync(`${stepPath}.source.json`, JSON.stringify({ schemaVersion: 2, sourceKind: "python" }));
   }
   if (schemaVersion !== null) {
     descriptor.packageSchemaVersion = schemaVersion;
@@ -69,7 +82,8 @@ function writeStepPackage(root, stepName, {
   if (bakeHash !== undefined) {
     descriptor.bakeHash = bakeHash;
   }
-  write(root, path.join(packageRel, "assembly.json"), JSON.stringify(descriptor));
+  fs.mkdirSync(packageDir, { recursive: true });
+  fs.writeFileSync(path.join(packageDir, "assembly.json"), JSON.stringify(descriptor));
   return stepPath;
 }
 

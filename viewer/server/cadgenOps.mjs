@@ -23,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { renderPackageDir } from "./scanner.mjs";
+import { coordinationScope } from "./storePaths.mjs";
 import {
   ARTIFACT_STATE,
   artifactStatus as computeArtifactStatus,
@@ -51,17 +52,19 @@ export function ownsArtifactPath(filePath) {
 
 // --- build progress ----------------------------------------------------------
 // Every cadgen build (a CLI run of a model script, a CLI `cadgen import`, or
-// the viewer's own import child) writes `.<name>.generation.progress.json`
-// beside the package. Its phase fields are flattened at the top level in
-// exactly the shape the client's normalizeArtifactProgress reads, so one
-// reader serves every producer. No runId filtering here — the viewer cannot
-// know a child's runId before reading the record — so staleness is gated on
-// outcome + the freshness window instead.
+// the viewer's own import child) writes `.<pathKey>.generation.progress.json`
+// in the store's locks/ tier, keyed by the MODEL path (storePaths.mjs mirrors
+// cadgen.catalog.coordination_scope). Its phase fields are flattened at the
+// top level in exactly the shape the client's normalizeArtifactProgress
+// reads, so one reader serves every producer. No runId filtering here — the
+// viewer cannot know a child's runId before reading the record — so
+// staleness is gated on outcome + the freshness window instead.
 const PROGRESS_FRESHNESS_MS = 20_000;
 
-export function buildProgressSnapshot(packageDir) {
+export function buildProgressSnapshot(entryPath) {
+  const scope = coordinationScope(entryPath);
   const recordPath = path.join(
-    path.dirname(packageDir), `.${path.basename(packageDir)}.generation.progress.json`);
+    path.dirname(scope), `.${path.basename(scope)}.generation.progress.json`);
   let record;
   try {
     record = JSON.parse(fs.readFileSync(recordPath, "utf8"));
@@ -198,7 +201,7 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
       }
       const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
       const packageDir = renderPackageDir(candidate);
-      let snapshot = buildProgressSnapshot(packageDir);
+      let snapshot = buildProgressSnapshot(candidate);
       if (!snapshot && importsInFlight.has(packageDir)) {
         // Our child is starting up but has not published a record yet: show
         // an indeterminate generating badge rather than nothing.

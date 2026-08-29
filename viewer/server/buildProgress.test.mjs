@@ -12,6 +12,7 @@ import test from "node:test";
 
 import { buildProgressSnapshot, createCadgenOps, importsInFlightState } from "./cadgenOps.mjs";
 import { _setCadgenProbeForTests } from "./cadgenResolve.mjs";
+import { coordinationScope } from "./storePaths.mjs";
 import { renderPackageDir } from "./scanner.mjs";
 
 function tmpRoot(t) {
@@ -20,10 +21,10 @@ function tmpRoot(t) {
   return root;
 }
 
-function writeRecord(packageDir, record) {
-  fs.mkdirSync(path.dirname(packageDir), { recursive: true });
+function writeRecord(scopePath, record) {
+  fs.mkdirSync(path.dirname(scopePath), { recursive: true });
   fs.writeFileSync(
-    path.join(path.dirname(packageDir), `.${path.basename(packageDir)}.generation.progress.json`),
+    path.join(path.dirname(scopePath), `.${path.basename(scopePath)}.generation.progress.json`),
     JSON.stringify(record),
   );
 }
@@ -45,9 +46,9 @@ const RUNNING_RECORD = {
 
 test("a fresh in-flight record becomes a generating snapshot in badge shape", (t) => {
   const root = tmpRoot(t);
-  const packageDir = renderPackageDir(path.join(root, "vendor.step"));
-  writeRecord(packageDir, RUNNING_RECORD);
-  const snapshot = buildProgressSnapshot(packageDir);
+  const stepPath = path.join(root, "vendor.step");
+  writeRecord(coordinationScope(stepPath), RUNNING_RECORD);
+  const snapshot = buildProgressSnapshot(stepPath);
   assert.ok(snapshot);
   assert.equal(snapshot.writing, true);
   assert.equal(snapshot.runId, "run-1");
@@ -62,12 +63,12 @@ test("a fresh in-flight record becomes a generating snapshot in badge shape", (t
 
 test("finished and stale records report no progress", (t) => {
   const root = tmpRoot(t);
-  const packageDir = renderPackageDir(path.join(root, "vendor.step"));
-  writeRecord(packageDir, { ...RUNNING_RECORD, outcome: "ok" });
-  assert.equal(buildProgressSnapshot(packageDir), null);
-  writeRecord(packageDir, { ...RUNNING_RECORD, updatedAt: Date.now() - 60_000 });
-  assert.equal(buildProgressSnapshot(packageDir), null);
-  assert.equal(buildProgressSnapshot(renderPackageDir(path.join(root, "absent.step"))), null);
+  const stepPath = path.join(root, "vendor.step");
+  writeRecord(coordinationScope(stepPath), { ...RUNNING_RECORD, outcome: "ok" });
+  assert.equal(buildProgressSnapshot(stepPath), null);
+  writeRecord(coordinationScope(stepPath), { ...RUNNING_RECORD, updatedAt: Date.now() - 60_000 });
+  assert.equal(buildProgressSnapshot(stepPath), null);
+  assert.equal(buildProgressSnapshot(path.join(root, "absent.step")), null);
 });
 
 test("an in-flight import with no record yet still reports generating", async (t) => {

@@ -1,6 +1,6 @@
 """Reconstruct a loaded STEP scene from its render package.
 
-The render package (``__cadgen__/models/<entry>/``) already stores everything a
+The render package (store-primary, content-keyed) already stores everything a
 scene holds: each unique prototype as an exact ``components/<cid>.brep`` blob
 (the same BinTools serialization the old scene cache wrote), the occurrence
 tree with names/transforms/colors in ``assembly.json``, and per-face colors in
@@ -210,7 +210,7 @@ def scene_from_render_package(step_path: Path, *, step_hash: str) -> LoadedStepS
     )
     from cadgen._internal.source_sidecar import read_source_sidecar
 
-    sidecar = read_source_sidecar(package_dir) or {}
+    sidecar = read_source_sidecar(step_path) or {}
     mates = sidecar.get("assemblyMates")
     if isinstance(mates, list):
         scene.assembly_mates = [dict(mate) for mate in mates if isinstance(mate, dict)]

@@ -66,6 +66,7 @@ from cadgen.coordination.lock import (
     read_run_id,
 )
 from cadgen.coordination.paths import (
+    WRITE_LOCK_SUFFIX,
     generator_lock_path,
     generator_status_path,
     status_path,
@@ -430,12 +431,18 @@ def require_write_lock(output_dir: Path | str) -> bool:
 
     if not locking_available():
         return True  # degraded everywhere; nothing to assert
-    # We hold it iff acquiring is re-entrant for this thread+path -- the thread-local set
-    # in lock.py is the only honest record of "this thread already has it".
+    # We hold ours iff acquiring is re-entrant for this thread -- the thread-local set
+    # in lock.py is the only honest record of "this thread already has it". Locks are
+    # model-path-keyed (cadgen.catalog.coordination_scope) while writers are handed the
+    # CONTENT-keyed store package dir, so the assertion is "this thread holds a
+    # generation write lock", not a path match: a thread builds one model at a time,
+    # and the failure this boundary guards is the wholly-uncoordinated producer.
     from cadgen.coordination.lock import _HELD  # noqa: PLC2701 - same package
 
     held = getattr(_HELD, "paths", None) or set()
     if str(write_lock_path(output_dir)) in held:
+        return True
+    if any(name.endswith(WRITE_LOCK_SUFFIX) for name in held):
         return True
     message = (
         f"render package written without holding its generation lock: {output_dir}. "

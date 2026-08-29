@@ -331,12 +331,16 @@ def _selection_summary(selector_type: str, row: dict[str, object]) -> str:
     return f"corner edges={row.get('edgeCount')}"
 
 
-def _assembly_mate_rows(manifest: dict[str, object]) -> list[dict[str, object]]:
+def _assembly_mate_rows(
+    manifest: dict[str, object], step_path: Path | None = None
+) -> list[dict[str, object]]:
     rows = manifest.get("assemblyMates")
-    if not isinstance(rows, list):
-        # Mates moved to the source sidecar (source_sidecar.py); merge them in
-        # for manifests read from a package descriptor.
-        rows = (manifest.get("_sourceSidecar") or {}).get("assemblyMates") if isinstance(manifest.get("_sourceSidecar"), dict) else None
+    if not isinstance(rows, list) and step_path is not None:
+        # Mates are source-derived and live in the model-side sidecar
+        # (source_sidecar.py); the store package descriptor is STEP-pure.
+        from cadgen._internal.source_sidecar import read_source_sidecar
+
+        rows = (read_source_sidecar(step_path) or {}).get("assemblyMates")
     if not isinstance(rows, list):
         return []
     return [dict(row) for row in rows if isinstance(row, dict)]
@@ -346,7 +350,7 @@ def _assembly_mate_by_selector(context: EntryContext, raw_selector: str) -> dict
     normalized_selector = str(raw_selector or "").strip().replace("#", "", 1)
     if not normalized_selector:
         return None
-    for row in _assembly_mate_rows(context.manifest):
+    for row in _assembly_mate_rows(context.manifest, context.step_path):
         if str(row.get("id") or "").strip() == normalized_selector:
             return row
     return None

@@ -31,7 +31,7 @@ The build product IS the `.dxf` file: **every run writes the sibling `<name>.dxf
 or a `SOURCE=OUTPUT` pair renames it). There is no drawing package any more — the
 CAD Viewer parses and meshes the `.dxf` itself, so the file you hand a cutting
 service and the file the viewer renders are one and the same. The only thing kept
-under `__cadgen__/models/<name>.py/` is a small output record that makes an
+in the user-level cache is a small output record that makes an
 unchanged source a no-op. An unchanged source closure skips regeneration; `--force`
 overrides.
 

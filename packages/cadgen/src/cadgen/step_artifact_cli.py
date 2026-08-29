@@ -165,8 +165,9 @@ def _generated_result_payload(spec: EntrySpec, scene: LoadedStepScene, stats: di
 
 def _existing_result_payload(spec: EntrySpec, artifact: StepTopologyArtifact) -> dict[str, object]:
     entry_kind = str(artifact.manifest.get("entryKind") or spec.kind)
-    sidecar = artifact.manifest.get("_sourceSidecar")
-    sidecar = sidecar if isinstance(sidecar, dict) else {}
+    from cadgen._internal.source_sidecar import read_source_sidecar
+
+    sidecar = read_source_sidecar(spec.entry_path) or {}
     source_kind = "python" if sidecar else "step"
     step_hash = str(artifact.manifest.get("stepHash") or "")
     source_hash = str(sidecar.get("sourceHash") or "")

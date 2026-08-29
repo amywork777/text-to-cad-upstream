@@ -22,7 +22,7 @@ python bracket.py --force --json  # per-run flags ride the script's argv
 ```
 
 Every run keeps the model's render package (the document of record: exact-shape
-`.brep` blobs + `.surf` render views + descriptor, under `__cadgen__/models/`)
+`.brep` blobs + `.surf` render views + descriptor, in the user-level store keyed by the document's content hash)
 current and ALWAYS writes the `.step` output, assembled from that package rather
 than re-generated. Unchanged sources are a fast no-op. The default output is the
 sibling `<stem>.step`; relocate it durably with `@step(write="path/to/out.step")`
@@ -65,10 +65,10 @@ These two terms classify a STEP file by what its source is:
 - An **imported STEP file** is its own source: authored or downloaded
   elsewhere. There is nothing upstream to regenerate.
 
-The link between an artifact and its script is recorded IN the render package
-— generation writes a source sidecar (`<package>/source.json`, carrying
-`sourcePath`, source hashes, pose, and mates) beside the descriptor, and that
-sidecar's existence is what marks a package as generated; imports write none.
+The link between an artifact and its script is the source sidecar generation
+writes BESIDE THE MODEL (`<name>.step.source.json`, carrying `sourcePath`,
+source hashes, pose, and mates), and that sidecar's existence is what marks a
+model as generated; imports write none.
 The written STEP/DXF file itself carries NO cadgen metadata and no link back
 to source code, ever — a bare artifact separated from its package is a plain
 importable file. Provenance is never inferred from filenames either — so

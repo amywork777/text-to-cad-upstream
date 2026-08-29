@@ -343,6 +343,28 @@ def path_is_inside_or_equal(child: Path, parent: Path) -> bool:
         return False
 def encode_path_param(value: str) -> str:
     return "/".join(quote(part) for part in value.replace(os.sep, "/").split("/"))
+def asset_url_for_store_path(file_path: Path) -> str:
+    """Asset URL for a file in the render-package store (outside any render
+    root): served by the ``/__store_asset/`` route, confined to the store's
+    ``packages/`` tier. Same mtime/size version key as root assets."""
+    from cadgen._internal.cache_paths import packages_dir
+
+    resolved_path = Path(file_path).resolve()
+    base = packages_dir().resolve()
+    if not path_is_inside_or_equal(resolved_path, base):
+        raise SnapshotError(f"Store asset must be inside the package store: {file_path}")
+    relative_path = resolved_path.relative_to(base).as_posix()
+    base_url = f"{STORE_ASSET_ROUTE_PREFIX}{encode_path_param(relative_path)}"
+    try:
+        file_stat = resolved_path.stat()
+    except FileNotFoundError:
+        return base_url
+    cache_identity = "\0".join(
+        (str(resolved_path), str(file_stat.st_size), str(file_stat.st_mtime_ns))
+    )
+    return f"{base_url}?v={sha256(cache_identity.encode('utf-8')).hexdigest()[:16]}"
+
+
 def asset_url_for_path(file_path: Path, root_path: Path) -> str:
     if not path_is_inside_or_equal(file_path, root_path):
         raise SnapshotError(f"Render asset must be inside the snapshot render root: {file_path}")
@@ -830,6 +852,13 @@ def read_tessellation_cache_batch(body: bytes | None) -> bytes | None:
 
 
 RENDER_ASSET_ROUTE_PREFIX = "/__render_asset/"
+STORE_ASSET_ROUTE_PREFIX = "/__store_asset/"
+
+
+def _store_packages_root() -> Path:
+    from cadgen._internal.cache_paths import packages_dir
+
+    return packages_dir()
 
 
 class SnapshotAssetServer:
@@ -883,6 +912,17 @@ class SnapshotAssetServer:
                         self._send(404, b"miss", "text/plain; charset=utf-8")
                         return
                     self._send(200, body)
+                    return
+                if pathname.startswith(STORE_ASSET_ROUTE_PREFIX):
+                    try:
+                        file_path = route_file(pathname, STORE_ASSET_ROUTE_PREFIX, _store_packages_root())
+                    except RouteFileError as exc:
+                        self._send(exc.status, str(exc).encode(), "text/plain; charset=utf-8")
+                        return
+                    if not file_path.is_file():
+                        self._send(404, b"not found", "text/plain; charset=utf-8")
+                        return
+                    self._send(200, file_path.read_bytes(), content_type_for_path(file_path))
                     return
                 if pathname.startswith(RENDER_ASSET_ROUTE_PREFIX):
                     root = server.root_provider()
@@ -955,6 +995,8 @@ def resolve_snapshot_route_file(
         if active_root_path is None:
             raise RouteFileError("snapshot render asset requested without an active render root")
         return route_file(parsed.path, "/__render_asset/", active_root_path)
+    if parsed.path.startswith(STORE_ASSET_ROUTE_PREFIX):
+        return route_file(parsed.path, STORE_ASSET_ROUTE_PREFIX, _store_packages_root())
     if parsed.path == "/snapshot-render.js":
         return Path(runtime_dir) / "snapshot-render.js"
     raise RouteFileError(f"snapshot route not found: {parsed.path}")
@@ -1051,7 +1093,11 @@ class BatchSnapshotRenderer:
     async def handle_route(self, route: Any) -> None:
         request = route.request
         parsed = urlparse(request.url)
-        bulk = parsed.path.startswith(TESS_CACHE_ROUTE_PREFIX) or parsed.path.startswith(RENDER_ASSET_ROUTE_PREFIX)
+        bulk = (
+            parsed.path.startswith(TESS_CACHE_ROUTE_PREFIX)
+            or parsed.path.startswith(RENDER_ASSET_ROUTE_PREFIX)
+            or parsed.path.startswith(STORE_ASSET_ROUTE_PREFIX)
+        )
         if bulk and self.asset_server is not None and request.url.startswith(SNAPSHOT_ORIGIN):
             # 307 preserves method and body, so the cache write-back POST
             # redirects too; the payload then rides the loopback socket

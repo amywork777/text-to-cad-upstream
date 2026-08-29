@@ -384,7 +384,9 @@ class InspectRefsTests(unittest.TestCase):
         self.lookup_ref = f"{self.relative_dir}/sample"
         self.cad_ref = self.lookup_ref
         self.step_path = self.temp_root / "sample.step"
-        self.step_path.write_text("ISO-10303-21; END-ISO-10303-21;\n")
+        # Unique per test: content keying would otherwise resolve same-bytes
+        # fixtures from earlier tests to one shared store package.
+        self.step_path.write_text(f"ISO-10303-21; /* {self.temp_root} */ END-ISO-10303-21;\n")
         self.addCleanup(self._tempdir.cleanup)
         self.addCleanup(lambda: shutil.rmtree(self.temp_root, ignore_errors=True))
 
@@ -453,7 +455,7 @@ class InspectRefsTests(unittest.TestCase):
                 kind=target.kind,
                 source_path=target.source_path,
                 step_path=target.step_path,
-                artifact_path=resolved_step_path.parent / "__cadgen__" / "models" / resolved_step_path.name,
+                artifact_path=__import__("cadgen.catalog", fromlist=["render_package_dir"]).render_package_dir(resolved_step_path),
                 manifest=topology_manifest,
                 selector_bundle=bundle,
             )

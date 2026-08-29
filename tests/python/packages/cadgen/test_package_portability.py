@@ -1,10 +1,10 @@
-"""A ``__cadgen__`` package must survive being moved.
+"""A project must survive being moved without a rebuild.
 
-The cache lives beside the source it describes, so it travels with the project: folders get
-renamed, copied to another machine, archived, or vendored into another repository. Nothing
-about a package's identity is its location -- currency is content hashes, components are
-content-addressed, and every recorded path is relative to the model folder -- so a move
-should be a no-op and a rebuild should not happen.
+The render packages live in the user-level store keyed by DOCUMENT content, so a
+project move cannot invalidate them by construction: the moved .step hashes to
+the same key. What can still leak is a path — in a store descriptor, a component
+blob, or the model-side sidecar — and a leaked path survives the move and then
+names a directory that only ever existed somewhere else.
 
 That is a design invariant with almost no enforcement. ONE ``relative_to_cwd()`` in a
 descriptor writer, or one ``str(path.resolve())``, would bake the builder's directory into
@@ -102,8 +102,27 @@ def drawing():
 """
 
 
+def _model_artifacts(root: Path) -> list[Path]:
+    return sorted(
+        path for path in root.rglob("*")
+        if path.is_file() and path.suffix in {".step", ".stp"}
+    )
+
+
 def package_files(root: Path) -> list[Path]:
-    return sorted(path for path in root.rglob("__cadgen__/**/*") if path.is_file())
+    """Every persisted build output for the models in ``root``: the store
+    packages their artifacts resolve to, plus the model-side sidecars."""
+    from cadgen.catalog import render_package_dir
+
+    out: list[Path] = []
+    for artifact in _model_artifacts(root):
+        sidecar = Path(f"{artifact}.source.json")
+        if sidecar.is_file():
+            out.append(sidecar)
+        package = render_package_dir(artifact)
+        if package.is_dir():
+            out.extend(path for path in sorted(package.rglob("*")) if path.is_file())
+    return out
 
 
 def is_run_state(path: Path) -> bool:
@@ -121,13 +140,21 @@ def package_content_files(root: Path) -> list[Path]:
 
 
 def mtimes(root: Path) -> dict[str, int]:
-    """Every package file's mtime, keyed root-relative. A rebuild changes these; a move
-    followed by a no-op does not. Stronger than reading a producer's own "current" wording,
-    which is exactly the claim under test."""
-    return {
-        str(path.relative_to(root)): path.stat().st_mtime_ns
-        for path in package_content_files(root)
-    }
+    """Every build-output mtime: model-side files keyed root-relative, store
+    package files keyed store-relative. A rebuild changes these; a move
+    followed by a no-op does not. Stronger than reading a producer's own
+    "current" wording, which is exactly the claim under test."""
+    from cadgen._internal.cache_paths import packages_dir
+
+    out: dict[str, int] = {}
+    store = packages_dir()
+    for path in package_content_files(root):
+        try:
+            key = f"<store>/{path.relative_to(store).as_posix()}"
+        except ValueError:
+            key = str(path.relative_to(root))
+        out[key] = path.stat().st_mtime_ns
+    return out
 
 
 class PackagePortabilityTest(unittest.TestCase):
@@ -181,16 +208,28 @@ class PackagePortabilityTest(unittest.TestCase):
         return [(name, str(root), str(root / name)) for name in checks]
 
     def test_every_package_kind_was_actually_built(self) -> None:
-        # Guards the tests below from passing vacuously on an empty tree.
-        # STEP models key by the STEP FILE: a generator entry and its output
-        # are one document (design/step-document-architecture.md).
-        expected = {"widget.step", "rig.step", "imported.step"}
-        if HAS_NODE:
-            expected |= {"sheet.py"}
-        self.assertEqual(
-            expected,
-            {path.name for path in (self.root / "__cadgen__" / "models").iterdir() if path.is_dir()},
-        )
+        # Guards the tests below from passing vacuously on an empty tree: every
+        # document resolves to a store package by its content hash.
+        from cadgen.catalog import render_package_dir
+
+        for name in ("widget.step", "rig.step", "imported.step"):
+            with self.subTest(entry=name):
+                self.assertTrue(render_package_dir(self.root / name).is_dir())
+
+    def test_the_model_folder_is_pristine(self) -> None:
+        # The store-primary exit gate: a model folder holds sources, documents
+        # and sidecars — no cache directories, no lock or progress files.
+        allowed = {".py", ".pyc", ".step", ".stp", ".dxf", ".json"}
+        for path in sorted(self.root.rglob("*")):
+            if "__pycache__" in path.parts:
+                continue  # interpreter noise, not a cadgen output
+            with self.subTest(path=str(path.relative_to(self.root))):
+                if path.is_dir():
+                    self.assertNotIn(path.name, {"__cadgen__"})
+                    continue
+                self.assertIn(path.suffix, allowed)
+                if path.suffix == ".json":
+                    self.assertTrue(path.name.endswith(".source.json"))
 
     def test_no_package_file_mentions_the_directory_it_was_built_in(self) -> None:
         # Over bytes, not text: the component GLBs carry a JSON chunk with the topology
@@ -223,14 +262,12 @@ class PackagePortabilityTest(unittest.TestCase):
                 self.assertEqual([], offenders, f"a package file records the builder's {label}")
 
     def test_recorded_paths_are_relative_and_stay_inside_the_project(self) -> None:
-        for descriptor_path in sorted(self.root.rglob("__cadgen__/models/*/*.json")):
+        for descriptor_path in [p for p in package_files(self.root) if p.name.endswith(".json")]:
             descriptor = json.loads(descriptor_path.read_text())
             recorded = [
                 *([descriptor["sourcePath"]] if "sourcePath" in descriptor else []),
-                *([descriptor["stepPath"]] if "stepPath" in descriptor else []),
-                *([descriptor["glb"]] if "glb" in descriptor else []),
                 *descriptor.get("sourceClosureFiles", []),
-                *(entry.get("glb", "") for entry in descriptor.get("components", {}).values()),
+                *(entry.get("surf", "") for entry in descriptor.get("components", {}).values()),
             ]
             for value in recorded:
                 with self.subTest(descriptor=descriptor_path.parent.name, value=value):
@@ -248,8 +285,20 @@ class PackagePortabilityTest(unittest.TestCase):
         """The status record names a pid and a host, and that is allowed -- it describes a
         RUN, not the artifact. What is not allowed is any of it reaching the package's own
         content, which is what the rest of this class checks. Pinned so the record cannot
-        quietly grow a path field and become part of the cache."""
-        run_state = [path for path in package_files(self.root) if is_run_state(path)]
+        quietly grow a path field and become part of the cache. Run state lives in the
+        store's locks/ tier now, keyed by model path."""
+        from cadgen.catalog import artifact_path_key
+        from cadgen._internal.cache_paths import locks_dir
+
+        keys = {
+            artifact_path_key(self.root / name)
+            for name in ("widget.step", "rig.step", "imported.step", "sheet.py")
+        }
+        run_state = [
+            path for path in sorted(locks_dir().rglob("*"))
+            if path.is_file() and is_run_state(path)
+            and any(key in path.name for key in keys)
+        ]
         self.assertTrue(run_state, "no lock/status files were written at all")
         for path in run_state:
             if not path.name.endswith(".json"):
@@ -359,10 +408,13 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
     """
 
     def _descriptor_built_from(self, cwd: Path, project: Path) -> dict:
+        from cadgen.catalog import render_package_dir
         from cadgen.generation import generate_step_targets
 
-        package = project / "__cadgen__"
-        shutil.rmtree(package, ignore_errors=True)
+        step = project / "widget.step"
+        if step.exists():
+            shutil.rmtree(render_package_dir(step), ignore_errors=True)
+            step.unlink()
         previous = Path.cwd()
         os.chdir(cwd)
         try:
@@ -370,7 +422,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
         finally:
             os.chdir(previous)
         descriptor = json.loads(
-            (package / "models" / "widget.step" / "assembly.json").read_text()
+            (render_package_dir(step) / "assembly.json").read_text()
         )
         # The descriptor is a pure function of the STEP bytes — no timestamp
         # to excuse (generatedAt rides the source sidecar now).

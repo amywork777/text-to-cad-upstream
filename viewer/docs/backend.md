@@ -185,7 +185,7 @@ every producer.
 modules and sync-tested) holds everything CONTENT-ADDRESSED and DISPOSABLE:
 the component store, the kernel-op memo, and this mesh cache. Deleting any of
 it costs a rebuild, never correctness. The model's own folder holds everything
-LOCATION-PAIRED and meaningful: the artifact and its `__cadgen__` package
+meaningful: the artifact and its store package
 (hardlinked into the store where possible, so the heavy bytes exist once).
 Version bumps orphan whole cache generations by design; `cadgen cache info` /
 `cadgen cache gc` are the only sweepers — nothing collects garbage

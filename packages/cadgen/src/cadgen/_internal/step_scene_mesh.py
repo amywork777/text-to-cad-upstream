@@ -154,7 +154,7 @@ def scene_to_build123d_compound(scene: LoadedStepScene, *, label: str | None = N
 
 
 def import_step(step_path: Path, *, label: str | None = None) -> Any:
-    """``build123d.import_step`` backed by the inline ``__cadgen__`` scene cache.
+    """``build123d.import_step`` backed by the content-keyed render-package store.
 
     Returns a shape topologically identical to ``import_step`` — including the root
     itself, not a wrapper around it — but

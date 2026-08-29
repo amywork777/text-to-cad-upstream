@@ -11,12 +11,7 @@ from .metadata import GeneratorMetadata, normalize_mesh_numeric, parse_generator
 
 
 STEP_SUFFIXES = (".step", ".stp")
-# The per-folder generated-artifact home for cadgen outputs (render packages, scene
-# caches, generation locks), living beside the CAD sources it derives from. Gitignored.
-CADGEN_DIRNAME = "__cadgen__"
-CADGEN_MODELS_DIRNAME = "models"
 IGNORED_DISCOVERY_DIR_NAMES = {
-    CADGEN_DIRNAME,
     "__pycache__",
     ".cache",
     ".eggs",
@@ -95,14 +90,15 @@ class CadSource:
 
     @property
     def generated_paths(self) -> tuple[Path, ...]:
+        # FILE outputs only — the store package dir is deliberately absent:
+        # two same-content documents legally SHARE one content-keyed package,
+        # so it can never be a duplicate-output identity.
         paths: list[Path] = []
         if self.source == "generated":
             if self.step_path is not None:
                 paths.append(self.step_path)
             if self.dxf_path is not None:
                 paths.append(self.dxf_path)
-        if self.render_package_path is not None:
-            paths.append(self.render_package_path)
         return tuple(path.resolve() for path in paths)
 
 
@@ -266,22 +262,78 @@ def normalize_cad_ref(raw_ref: str) -> str | None:
     return normalized
 
 
+def artifact_path_key(entry_path: Path) -> str:
+    """The model-path identity for locks, progress and freshness records:
+    sha256 of the resolved artifact path, truncated. Path-keyed on purpose —
+    a lock must exclude two builds of the same MODEL while the content hash
+    they will produce is still unknown."""
+    import hashlib
+
+    resolved = str(Path(entry_path).expanduser().resolve())
+    return hashlib.sha256(resolved.encode("utf-8")).hexdigest()[:24]
+
+
+# Content-hash memo for artifact files, keyed by (path, mtime_ns, size): a
+# catalog scan or status poll re-asks for the same file's hash constantly,
+# and rereading megabytes each time would turn polling into IO. A stale hit
+# requires an edit that preserves BOTH mtime_ns and size — not a real editor.
+_ARTIFACT_HASH_MEMO: dict[str, tuple[int, int, str]] = {}
+
+
+def artifact_file_hash(entry_path: Path) -> str | None:
+    """sha256 of the artifact file's bytes, memoized; None when unreadable."""
+    import hashlib
+
+    resolved = Path(entry_path).expanduser().resolve()
+    key = str(resolved)
+    try:
+        stat = resolved.stat()
+    except OSError:
+        return None
+    cached = _ARTIFACT_HASH_MEMO.get(key)
+    if cached is not None and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+        return cached[2]
+    try:
+        digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    _ARTIFACT_HASH_MEMO[key] = (stat.st_mtime_ns, stat.st_size, digest)
+    return digest
+
+
+def package_dir_for_hash(step_hash: str) -> Path:
+    """The store-primary render-package directory for a document's content
+    hash: ``<cache>/packages/<hash>-v<STEP_PACKAGE_VERSION>``. One package per
+    document, whichever producer built it; the version salt retires whole
+    generations on schema bumps (``cadgen cache gc`` sweeps the orphans)."""
+    from cadgen._internal.cache_paths import packages_dir
+    from cadgen._internal.package_freshness import STEP_PACKAGE_VERSION
+
+    return packages_dir() / f"{step_hash}-v{STEP_PACKAGE_VERSION}"
+
+
 def render_package_dir(entry_path: Path) -> Path:
-    # The render-artifact package directory for a CAD entry file. Every package lives
-    # INSIDE the per-folder __cadgen__ directory. STEP models key by the STEP FILE
-    # (`<name>.step`): a generator entry (`<name>.step.py`) and the file it outputs are
-    # ONE document, so both resolve to one package — the generation pipeline produces it,
-    # the render pipeline consumes it, and opening either entry renders the same thing
-    # (design/step-document-architecture.md). Non-STEP `.py` entries (`.dxf.py`) keep
-    # keying by the entry filename.
-    base = entry_path.resolve()
-    name = base.name
-    lowered = name.lower()
-    for suffix in (".step.py", ".stp.py"):
-        if lowered.endswith(suffix):
-            name = name[: -len(".py")]
-            break
-    return (base.parent / CADGEN_DIRNAME / CADGEN_MODELS_DIRNAME / name).resolve()
+    """The render package for a CAD artifact file, resolved by CONTENT: the
+    file's bytes are hashed (memoized) and looked up in the store. A missing
+    or unreadable file resolves to a deterministic never-created path, so
+    every existence-checking caller answers "no package" without special
+    cases. Producers never write here blindly — generation and import write
+    through :func:`package_dir_for_hash` with the hash they just produced."""
+    digest = artifact_file_hash(entry_path)
+    if digest is None:
+        from cadgen._internal.cache_paths import packages_dir
+
+        return packages_dir() / f"unbuilt-{artifact_path_key(entry_path)}"
+    return package_dir_for_hash(digest)
+
+
+def coordination_scope(entry_path: Path) -> Path:
+    """The lock/progress scope for builds of this model: a path-keyed name
+    under the cache root's ``locks/`` tier. Never created as a directory —
+    the coordination layer derives dot-named sibling files from it."""
+    from cadgen._internal.cache_paths import locks_dir
+
+    return locks_dir() / artifact_path_key(entry_path)
 
 
 def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:

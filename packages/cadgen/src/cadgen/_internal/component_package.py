@@ -1,7 +1,7 @@
 """Component-GLB package emit.
 
 Every model's render artifact is a package directory under the per-folder
-``__cadgen__`` home, holding one content-addressed component GLB per unique
+store-primary home, holding one content-addressed component per unique
 part (mesh + embedded local topology) plus an ``assembly.json`` descriptor mapping
 occurrences -> component + world transform. Components are keyed by their source
 STEP content hash, so editing one part rebuilds only that component; the rest are
@@ -43,7 +43,7 @@ PACKAGE_KIND = "assembly-package"
 # actually re-emit rather than be reused by geometry.
 PACKAGE_SCHEMA_VERSION = STEP_PACKAGE_VERSION
 # Self-contained content-addressed packages: each model's components live INSIDE its own package
-# at <folder>/__cadgen__/models/<step-filename>/components/<geomHash>.glb, referenced by the
+# at <store>/packages/<stepHash>-v<N>/components/<geomHash>.glb, referenced by the
 # descriptor via the flat relative ref components/<geomHash>.glb. Within-model dedup (repeated
 # parts share one cid) is preserved; components are not shared ACROSS packages, so each
 # package directory is a complete, relocatable unit.
@@ -442,7 +442,7 @@ def build_package_from_compound(
     angular_deflection: float = DEFAULT_MESH_ANGULAR_TOLERANCE,
     progress: Any | None = None,
 ) -> dict[str, Any]:
-    """Emit a render package (``__cadgen__/models/<entry>/``) from a baked ``Compound`` or single shape.
+    """Emit a render package from a baked ``Compound`` or single shape.
 
     Every model — part or assembly — is one representation: a descriptor + content-
     addressed components.
@@ -466,7 +466,7 @@ def build_package_from_compound(
     package_dir = Path(package_dir)
     progress = resolve_progress(progress)
     # Each package is a SELF-CONTAINED unit: the descriptor dir lives at
-    # <folder>/__cadgen__/models/<key>/ and its content-addressed component GLBs live in a
+    # the store package dir and its content-addressed components live in a
     # components/ dir INSIDE that package (<key>/components/<hash>.glb), so the whole model —
     # descriptor plus every GLB it needs — uploads, caches, and deletes as one directory with
     # no cross-model references. The descriptor references them by the flat relative ref

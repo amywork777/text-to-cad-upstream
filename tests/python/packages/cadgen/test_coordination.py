@@ -57,7 +57,7 @@ class CoordinationTestCase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="cadcoord-")
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        self.out = self.root / "__cadgen__" / "models" / "widget.py"
+        self.out = self.root / "locks" / "widget-scope"
 
     def _spawn_holder(self, hold=3.0):
         proc = subprocess.Popen(
@@ -248,11 +248,15 @@ class WriteLockGuardTest(CoordinationTestCase):
         with self.assertRaises(RuntimeError):
             require_write_lock(self.out)
 
-    def test_a_different_artifacts_lock_does_not_satisfy_the_guard(self):
-        other = self.root / "__cadgen__" / "models" / "other.py"
+    def test_any_held_generation_lock_satisfies_the_guard(self):
+        # Locks key by MODEL path while writers are handed the content-keyed
+        # store dir, so the boundary asserts "this thread holds a generation
+        # write lock" — the failure it guards is the wholly-uncoordinated
+        # producer, not a cross-model mixup (a thread builds one model at a
+        # time).
+        other = self.root / "other.py"
         with artifact_build(STEP_PACKAGE, other, is_current=lambda: False):
-            with self.assertRaises(RuntimeError):
-                require_write_lock(self.out)
+            self.assertTrue(require_write_lock(self.out))
 
     def test_production_only_warns(self):
         os.environ.pop("CADGEN_STRICT_LOCKS", None)

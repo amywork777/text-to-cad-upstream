@@ -27,7 +27,7 @@ the `$cad` skill; drawings are `$dxf`.
       arm_drawing.py
     lib/                  #   ALL shared code (plain modules — never models)
       fasteners.py
-  STEP/                   # PRIMARY artifacts + their __cadgen__/ render packages
+  STEP/                   # PRIMARY artifacts (+ their source sidecars)
     bracket.step
     arm.step
     vendor_servo.step     #   imported vendor STEPs can live here too (committed);
@@ -68,10 +68,10 @@ models no-op in ~0.2s. Regenerate a whole project mechanically:
 for f in src/STEP/*.py src/DXF/*.py; do python "$f"; done
 ```
 
-The render package rides beside the artifact
-(`STEP/__cadgen__/models/bracket.step/`), which keeps the CAD Viewer working
-when opened at the project root, and artifact→source provenance is recorded in
-the package, so the split layout stays fully traceable.
+The render package lives in the user-level store keyed by the artifact's
+content hash, so the CAD Viewer resolves it from any project root, and
+artifact→source provenance is recorded in the model-side sidecar
+(`bracket.step.source.json`), never in the STEP file itself.
 
 ## Shared code: `src/lib/`
 

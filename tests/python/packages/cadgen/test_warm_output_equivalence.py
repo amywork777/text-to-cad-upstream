@@ -132,18 +132,27 @@ def _digest(path: pathlib.Path) -> str:
 
 
 def _manifest(root: pathlib.Path) -> dict[str, str]:
-    """Digest of every built file, keyed by path relative to the build root.
+    """Digest of every built file for the models in ``root``: the store
+    packages their artifacts resolve to (content-keyed), plus the model-folder
+    outputs themselves (.step documents and source sidecars).
 
     Lock and progress files are transient scaffolding, not output.
     """
+    from cadgen.catalog import render_package_dir
+
     out: dict[str, str] = {}
-    for path in sorted((root / "__cadgen__").rglob("*")):
-        if not path.is_file():
+    for artifact in sorted(root.rglob("*")):
+        if not artifact.is_file():
             continue
-        name = path.relative_to(root).as_posix()
-        if ".lock" in name or ".progress." in name:
-            continue
-        out[name] = _digest(path)
+        rel = artifact.relative_to(root).as_posix()
+        if artifact.suffix in {".step", ".stp", ".dxf"} or rel.endswith(".source.json"):
+            out[rel] = _digest(artifact)
+        if artifact.suffix in {".step", ".stp"}:
+            package = render_package_dir(artifact)
+            if package.is_dir():
+                for entry in sorted(package.rglob("*")):
+                    if entry.is_file():
+                        out[f"<store>/{entry.relative_to(package.parent).as_posix()}"] = _digest(entry)
     return out
 
 

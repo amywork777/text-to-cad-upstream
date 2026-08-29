@@ -721,11 +721,13 @@ class CadGenerationTests(unittest.TestCase):
 
         cad_generation.generate_dxf_targets([str(script_path)])
 
-        record_dir = self.temp_root / "__cadgen__" / "models" / "bare_dxf.py"
+        from cadgen._internal.dxf_output import dxf_export_record_path
+
+        record_dir = dxf_export_record_path(self.temp_root / "bare_dxf.py").parent
         # No drawing package exists any more: the .dxf beside the source is the
-        # product, and only the output record remains under __cadgen__.
+        # product, and only the output record remains, in the store's records/ tier.
         self.assertTrue((self.temp_root / "bare_dxf.dxf").exists())
-        self.assertTrue((record_dir / "dxf-export.json").exists())
+        self.assertTrue(dxf_export_record_path(self.temp_root / "bare_dxf.py").exists())
         self.assertFalse((record_dir / "preview.glb").exists())
         self.assertFalse((record_dir / "drawing.json").exists())
 
@@ -735,8 +737,9 @@ class CadGenerationTests(unittest.TestCase):
         cad_generation.generate_dxf_targets([str(script_path)])
 
         self.assertTrue((self.temp_root / "flat_drawing.dxf").exists())
-        record_dir = self.temp_root / "__cadgen__" / "models" / "flat_drawing.py"
-        self.assertTrue((record_dir / "dxf-export.json").exists())
+        from cadgen._internal.dxf_output import dxf_export_record_path
+
+        self.assertTrue(dxf_export_record_path(self.temp_root / "flat_drawing.py").exists())
 
     def test_dxf_generation_skips_current_drawing_package(self) -> None:
         script_path = self._dxf_generator_script("flat")
@@ -1649,16 +1652,10 @@ class CadGenerationTests(unittest.TestCase):
         cad_generation.generate_step_targets([str(script)])
         spec = self._part_spec(script)
 
-        # The render package is keyed by the entry filename (the generator), not the
-        # logical .step — read the manifest from the entry-keyed package.
-        manifest = read_step_topology_manifest_from_glb(
-            cad_catalog.render_package_dir(spec.entry_path)
-        )
-        self.assertIsNotNone(manifest)
-        assert manifest is not None
-        # The closure is source-derived, so it rides the sidecar, which the
-        # dir-aware reader merges in under _sourceSidecar.
-        sidecar = manifest.get("_sourceSidecar") or {}
+        # The closure is source-derived, so it rides the MODEL-SIDE sidecar.
+        from cadgen._internal.source_sidecar import read_source_sidecar
+
+        sidecar = read_source_sidecar(spec.entry_path) or {}
         self.assertTrue(sidecar.get("sourceClosureHash"))
         joined = " ".join(sidecar.get("sourceClosureFiles") or [])
         self.assertIn("record.py", joined)

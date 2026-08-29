@@ -1014,8 +1014,8 @@ def resolve_step_render_job(
         selector_index=artifact_selector_index(artifact),
     )
 
-    # The render cache is keyed by the ENTRY filename (`source_path`: the `.step.py` generator for
-    # a generated model, or the `.step`/`.stp` itself), not the logical step path.
+    # The render package is content-keyed in the user-level store: the entry
+    # file's bytes are hashed and looked up (cadgen.catalog.render_package_dir).
     package_dir = render_package_dir(source_path)
     if not package_dir.is_dir():
         raise SnapshotError(f"STEP/STP render input is missing its render package: {package_dir}")
@@ -1046,23 +1046,22 @@ def resolve_step_render_job(
     # the descriptor and pre-resolve one asset URL per unique component GLB so the renderer
     # fetches and composes them in world space.
     descriptor = json.loads((package_dir / "assembly.json").read_text())
+    from cadgen.snapshot_core import asset_url_for_store_path
+
     component_urls = {
-        cid: asset_url_for_path(package_dir / str(entry.get("surf", "")), root_path)
+        cid: asset_url_for_store_path(package_dir / str(entry.get("surf", "")))
         for cid, entry in (descriptor.get("components") or {}).items()
     }
     resolved["package"] = {"descriptor": descriptor, "componentUrls": component_urls}
     from cadgen._internal.source_sidecar import read_source_sidecar, source_sidecar_path
 
-    sidecar = read_source_sidecar(package_dir) or {}
+    sidecar = read_source_sidecar(source_path) or {}
     pose_block = sidecar.get("pose") if isinstance(sidecar.get("pose"), dict) else None
     if pose_block:
         # The pose block is the ONE parameter mechanism: the page fetches the
         # source sidecar and compiles it (cadjs poseModule); the optional
-        # escape hatch is a content-addressed package asset.
-        resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(package_dir), root_path)
-        hatch_ref = str(pose_block.get("module") or "").strip()
-        if hatch_ref and ".." not in hatch_ref:
-            resolved["stepPoseHatchUrl"] = asset_url_for_path(package_dir / hatch_ref, root_path)
+        # escape-hatch module rides inline in the sidecar (pose.moduleSource).
+        resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
     elif has_param_render:
         raise SnapshotError(
             f"{input_path.name} declares no pose block, so stepParameters have nothing to "

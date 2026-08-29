@@ -64,11 +64,11 @@ class RenderContractSyncTest(unittest.TestCase):
         )
         sidecar_module = ROOT / "packages/cadgen/src/cadgen/_internal/source_sidecar.py"
         self.assertEqual(
-            _extract(r'^SOURCE_SIDECAR_NAME = "([^"]+)"$', sidecar_module),
-            _extract(r'^export const SOURCE_SIDECAR_NAME = "([^"]+)";', contract),
-            "SOURCE_SIDECAR_NAME diverged between cadgen and the viewer's package "
-            "contract — the sidecar's existence IS the generated-vs-imported marker "
-            "on both freshness authorities",
+            _extract(r'^SOURCE_SIDECAR_SUFFIX = "([^"]+)"$', sidecar_module),
+            _extract(r'^export const SOURCE_SIDECAR_SUFFIX = "([^"]+)";', contract),
+            "SOURCE_SIDECAR_SUFFIX diverged between cadgen and the viewer's package "
+            "contract — the model-side sidecar's existence IS the "
+            "generated-vs-imported marker on both freshness authorities",
         )
         self.assertEqual(
             _extract(r"^SOURCE_SIDECAR_SCHEMA_VERSION = (\d+)$", sidecar_module),
@@ -81,7 +81,7 @@ class RenderContractSyncTest(unittest.TestCase):
         # this suite pins against Python.
         status_module = ROOT / "viewer/server/artifactStatus.mjs"
         self.assertIn(
-            'import { SOURCE_SIDECAR_NAME, STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
+            'import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
             status_module.read_text(),
             "the status authority must read the schema version from the one JS "
             "constant (packageContract.mjs), which this suite pins against Python",

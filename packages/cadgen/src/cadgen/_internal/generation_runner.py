@@ -18,7 +18,7 @@ from cadgen._internal.source_hash import evict_first_party_modules
 from cadgen._internal.source_hash import python_source_hash
 from cadgen._internal.source_hash import record_first_party_execution
 from cadgen._internal.step_scene import LoadedStepScene
-from cadgen.catalog import render_package_dir
+from cadgen.catalog import coordination_scope, render_package_dir
 from cadgen.cli_logging import CliLogger
 from cadgen.cli_progress import cli_progress_line
 from cadgen.coordination import DRAWING_PACKAGE
@@ -97,16 +97,15 @@ def _resolve_pose_block(defn: object, *, script_path: Path) -> tuple[dict, Path 
     """The model's declarative pose block plus its resolved escape-hatch source.
 
     The block comes validated from ``cadgen.pose()`` on the ModelDef; this only
-    resolves the optional hatch module (script-relative, must exist) and stamps
-    the content-addressed package ref the descriptor will carry. Loose
-    ``.params.js`` sidecars are GONE — pose data has exactly one authoring
-    surface (``@step(pose=...)``) and one transport (the descriptor)."""
-    import hashlib
-
+    resolves the optional hatch module (script-relative, must exist). The
+    module's SOURCE is inlined into the model's sidecar at build time — pose
+    data has exactly one authoring surface (``@step(pose=...)``) and one
+    transport (the source sidecar); no separate module file ships anywhere."""
     pose_def = getattr(defn, "pose", None)
     if pose_def is None:
         return {}, None
     block = dict(pose_def.block)
+    block.pop("module", None)
     module = pose_def.module
     if not module:
         return block, None
@@ -116,8 +115,6 @@ def _resolve_pose_block(defn: object, *, script_path: Path) -> tuple[dict, Path 
         raise FileNotFoundError(
             f"{_display_path(script_path)} pose module not found: {module}"
         )
-    digest = hashlib.sha256(resolved.read_bytes()).hexdigest()[:12]
-    block["module"] = f"components/{digest}.pose.js"
     return block, resolved
 
 
@@ -619,11 +616,16 @@ def _run_artifact_jobs(
 
 
 def _spec_output_dir(spec: EntrySpec, generator_name: str) -> Path | None:
-    """The coordinated output directory for this spec's generator, if it has one."""
+    """The coordination SCOPE for this spec's generator, if it has one.
+
+    Model-path-keyed (cache root ``locks/`` tier), NOT the store package dir:
+    a rebuild changes the content hash — and therefore the package key — so
+    two runs of one model must exclude each other under an identity that is
+    known before any geometry is."""
     if generator_name == "gen_step" and spec.step_path is not None:
-        return render_package_dir(spec.entry_path)
+        return coordination_scope(spec.entry_path)
     if generator_name == "gen_dxf" and spec.script_path is not None:
-        return render_package_dir(spec.script_path)
+        return coordination_scope(spec.script_path)
     return None
 
 

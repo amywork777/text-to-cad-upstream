@@ -393,7 +393,7 @@ def read_step_topology_bundle_from_glb(glb_path: Path) -> SelectorBundle | None:
 # imports the public one instead of carrying a byte-identical twin.
 _read_legacy_topology_manifest = read_legacy_topology_manifest
 
-def read_step_topology_index_from_glb(glb_path: Path) -> dict[str, Any] | None:
+def read_step_topology_index_from_glb(glb_path: Path, *, entry_path: Path | None = None) -> dict[str, Any] | None:
     # NOT the same function as glb.read_step_topology_index_from_glb, though the file
     # branches look alike: this one reads RAW assembly.json for a package directory,
     # while glb.py's returns the VALIDATED package descriptor. Selector/lookup callers
@@ -418,11 +418,14 @@ def read_step_topology_index_from_glb(glb_path: Path) -> dict[str, Any] | None:
         # STEP-pure (source_sidecar.py), so source-derived state — provenance
         # the freshness gates read, pose, mates — is attached here under an
         # internal key every manifest consumer shares. Never written to disk.
-        from cadgen._internal.source_sidecar import read_source_sidecar
+        # The sidecar lives BESIDE THE MODEL, so callers that know the entry
+        # file pass it; store packages themselves carry no source state.
+        if entry_path is not None:
+            from cadgen._internal.source_sidecar import read_source_sidecar
 
-        sidecar = read_source_sidecar(glb_path)
-        if sidecar is not None:
-            manifest["_sourceSidecar"] = sidecar
+            sidecar = read_source_sidecar(entry_path)
+            if sidecar is not None:
+                manifest["_sourceSidecar"] = sidecar
         return manifest
     try:
         gltf, binary_offset, binary_length = _read_glb_json_and_bin_location(glb_path)
@@ -465,8 +468,8 @@ def read_step_display_edge_manifest_from_glb(glb_path: Path) -> dict[str, Any] |
     return manifest if isinstance(manifest, dict) else None
 
 
-def read_step_topology_manifest_from_glb(glb_path: Path) -> dict[str, Any] | None:
-    return read_step_topology_index_from_glb(glb_path)
+def read_step_topology_manifest_from_glb(glb_path: Path, *, entry_path: Path | None = None) -> dict[str, Any] | None:
+    return read_step_topology_index_from_glb(glb_path, entry_path=entry_path)
 
 
 def glb_primitives_have_surface_edge_attributes(glb_path: Path) -> bool:

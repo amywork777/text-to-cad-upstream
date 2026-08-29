@@ -33,7 +33,9 @@ _FAKE_DOC_PRELUDE = [
 def _closure(root: Path, name: str) -> list[str]:
     # The closure is recorded in the drawing's OUTPUT RECORD now — the drawing
     # package died with design/standalone-viewer.md Phase A.
-    record_path = root / "__cadgen__" / "models" / f"{name}.py" / "dxf-export.json"
+    from cadgen._internal.dxf_output import dxf_export_record_path
+
+    record_path = dxf_export_record_path(root / f"{name}.py")
     return sorted(json.loads(record_path.read_text(encoding="utf-8"))["sourceClosureFiles"])
 
 

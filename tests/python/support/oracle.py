@@ -65,11 +65,14 @@ def build_entry(
 def package_dir(entry_path: Path) -> Path:
     entry_path = Path(entry_path).resolve()
     # Generated entries are keyed by the STEP artifact they produce (sibling
-    # default: <stem>.step), mirroring EntrySpec.entry_path for decorated models.
-    name = entry_path.name
-    if name.endswith(".py"):
-        name = name[: -len(".py")] + ".step"
-    return entry_path.parent / "__cadgen__" / "models" / name
+    # default: <stem>.step); the package resolves from the STORE by that
+    # document's content hash (cadgen.catalog.render_package_dir).
+    from cadgen.catalog import render_package_dir
+
+    artifact = entry_path
+    if artifact.name.endswith(".py"):
+        artifact = artifact.with_name(artifact.name[: -len(".py")] + ".step")
+    return render_package_dir(artifact)
 
 
 def fingerprint(entry_path: Path) -> dict:
@@ -91,9 +94,12 @@ def fingerprint(entry_path: Path) -> dict:
         for path in sorted((pkg / "components").glob(pattern))
     }
 
-    # Mates are source-derived, so they ride the source sidecar (source.json);
-    # an imported package has no sidecar and therefore no mates.
-    sidecar_path = pkg / "source.json"
+    # Mates are source-derived, so they ride the MODEL-SIDE sidecar; an
+    # imported model has no sidecar and therefore no mates.
+    artifact = Path(entry_path).resolve()
+    if artifact.name.endswith(".py"):
+        artifact = artifact.with_name(artifact.name[: -len(".py")] + ".step")
+    sidecar_path = Path(f"{artifact}.source.json")
     mates = None
     if sidecar_path.is_file():
         mates = json.loads(sidecar_path.read_text()).get("assemblyMates")

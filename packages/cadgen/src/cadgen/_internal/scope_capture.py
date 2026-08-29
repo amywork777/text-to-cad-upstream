@@ -50,7 +50,6 @@ from cadgen._internal.source_hash import (
 # reading one becomes untrackable rather than slow.
 MAX_TRACKED_READ_BYTES = 32 * 1024 * 1024
 
-_CADGEN_DIRNAME = "__cadgen__"
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +150,7 @@ class ScopeRecording:
             return
         if not _is_within(resolved, self.root):
             return  # outside the model: not this scope's input
-        if _CADGEN_DIRNAME in resolved.parts or "__pycache__" in resolved.parts:
+        if "__pycache__" in resolved.parts:
             return  # derived caches, never freshness inputs
         if resolved.suffix in (".py", ".pyc"):
             return  # python inputs travel through the exec/static channels

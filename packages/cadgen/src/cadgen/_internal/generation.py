@@ -284,7 +284,7 @@ def _package_descriptor_matches_spec(
         return None
     # The dir-aware reader is the ONE merge point that attaches the source
     # sidecar (_sourceSidecar) — the provenance gate below reads through it.
-    manifest = read_step_topology_manifest_from_glb(package_dir)
+    manifest = read_step_topology_manifest_from_glb(package_dir, entry_path=spec.entry_path)
     if not isinstance(manifest, dict):
         return False
     if not schema_version_matches(manifest, STEP_PACKAGE_VERSION):
@@ -368,7 +368,6 @@ def _assembly_provenance_manifest(
         "capabilities": step_topology_capabilities(selector_options.edge_visibility_classes),
         "edgeRendering": {"visibilityClasses": list(selector_options.edge_visibility_classes)},
         "mesh": mesh,
-        "stepPath": os.path.relpath(step_path, step_path.parent),
     }
     step_hash = (
         step_file_hash(step_path)
@@ -407,7 +406,14 @@ def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> 
         payload["sourceClosureFiles"] = list(closure_files)
     pose_block = getattr(scene, "pose", None)
     if isinstance(pose_block, dict) and pose_block:
-        payload["pose"] = pose_block
+        pose_payload = dict(pose_block)
+        module_source = getattr(scene, "pose_module_source", None)
+        if module_source is not None:
+            # The escape-hatch module rides INLINE: the sidecar is the one
+            # durable home for source-derived state, and a separate file
+            # would need its own serving, eviction, and pairing rules.
+            pose_payload["moduleSource"] = Path(module_source).read_text(encoding="utf-8")
+        payload["pose"] = pose_payload
     mates = getattr(compound, "assembly_mates", None) if compound is not None else None
     if not mates:
         mates = getattr(scene, "assembly_mates", None)
@@ -415,30 +421,6 @@ def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> 
         payload["assemblyMates"] = list(mates)
     payload["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return payload
-
-
-def _copy_pose_module_into_package(scene: LoadedStepScene, package_dir: Path) -> None:
-    """Copy the pose escape-hatch module into the package, content-addressed.
-
-    Runs inside the package build job (write lock held). The descriptor already
-    references `components/<sha>.pose.js` (stamped when the pose block was
-    resolved), so the copy is idempotent and atomic like every component write.
-    """
-    pose_block = getattr(scene, "pose", None)
-    source = getattr(scene, "pose_module_source", None)
-    if not isinstance(pose_block, dict) or source is None:
-        return
-    ref = str(pose_block.get("module") or "")
-    if not ref.startswith("components/"):
-        return
-    target = Path(package_dir) / ref
-    payload = Path(source).read_bytes()
-    if target.is_file() and target.read_bytes() == payload:
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_name(f"{target.name}.{os.getpid()}{temp_suffix()}")
-    temp.write_bytes(payload)
-    replace_atomic(temp, target)
 
 
 def _generate_part_outputs(
@@ -518,7 +500,7 @@ def _generate_part_outputs(
     artifact_results: dict[str, object] = {}
 
     # UNIFIED render artifact: every model — part or assembly, generated or imported — is
-    # a component-GLB PACKAGE (a directory at __cadgen__/models/<entry>: assembly.json
+    # a component-GLB PACKAGE (a store directory keyed by content hash: assembly.json
     # descriptor + content-addressed components). An assembly introspects its
     # placed children as occurrences; a part is one occurrence/one component. The
     # part/assembly choice is the *authored* kind (spec.kind, from generator metadata or STEP
@@ -534,7 +516,6 @@ def _generate_part_outputs(
         # Lazy import: component_package imports from this module, so a top-level
         # import would cycle.
         from cadgen._internal.component_package import build_package_from_compound
-        from cadgen._internal.legacy_artifacts import prune_legacy_artifacts
 
         shape = source_compound
         if shape is None:
@@ -544,46 +525,74 @@ def _generate_part_outputs(
             from cadgen._internal.step_scene_mesh import scene_to_build123d_compound
 
             shape = scene_to_build123d_compound(scene)
-        # An in-place 0.3.x -> 0.4.x upgrade leaves that release's artifacts beside the
-        # source, where nothing reads them any more. Pruned here rather than on a
-        # separate migration pass because this is already the once-per-entry moment
-        # under the generation lock, and the schema bump that invalidates 0.3.x-era
-        # packages routes every model through it on first open.
-        pruned = prune_legacy_artifacts(spec.entry_path)
-        if pruned["removed"]:
-            reclaimed_mb = pruned["bytes"] / (1024 * 1024)
-            print(
-                f"Removed {len(pruned['removed'])} legacy 0.3.x artifact(s) "
-                f"beside {spec.entry_path.name} ({reclaimed_mb:.1f} MB)"
-            )
-        for skipped in pruned["skipped"]:
-            print(f"Left {skipped.name} in place: unrecognized contents for a 0.3.x artifact")
-        package_dir = render_package_dir(spec.entry_path)
+        from cadgen.catalog import artifact_path_key, package_dir_for_hash
+        from cadgen._internal.cache_paths import packages_dir
         from cadgen._internal.source_sidecar import remove_source_sidecar, write_source_sidecar
 
         sidecar_payload = _source_sidecar_payload(scene, shape)
-        if sidecar_payload is not None:
-            # Sidecar BEFORE descriptor: the descriptor's presence is the
-            # package's completeness signal (same rule as component .surf).
-            write_source_sidecar(package_dir, sidecar_payload)
-        else:
-            # An import over a previously generated package must not leave a
-            # stale generated-marker behind.
-            remove_source_sidecar(package_dir)
-        stats = build_package_from_compound(
-            shape,
-            package_dir=package_dir,
-            # The descriptor's rootName is a plain model name, not a repo path (which would leak
-            # the arbitrary `models/` root into a bundle meant to be hosted/relocated anywhere).
-            root_name=spec.step_path.stem,
-            single_component=single_component,
-            force=force,
-            provenance=package_provenance,
-            linear_deflection=selector_options.linear_deflection,
-            angular_deflection=selector_options.angular_deflection,
-            progress=progress,
-        )
-        _copy_pose_module_into_package(scene, package_dir)
+        generated = sidecar_payload is not None
+
+        def _build_into(package_dir: Path) -> dict[str, object]:
+            return build_package_from_compound(
+                shape,
+                package_dir=package_dir,
+                # rootName is a plain model name, not a repo path (which would leak
+                # the arbitrary `models/` root into a relocatable package).
+                root_name=spec.step_path.stem,
+                single_component=single_component,
+                force=force,
+                provenance=package_provenance,
+                linear_deflection=selector_options.linear_deflection,
+                angular_deflection=selector_options.angular_deflection,
+                progress=progress,
+            )
+
+        if not generated:
+            # Imported document: the content hash IS the file's — build straight
+            # at the store key, and never leave a stale generated-marker behind.
+            remove_source_sidecar(spec.entry_path)
+            return _build_into(render_package_dir(spec.entry_path))
+
+        # Generated document: the .step is assembled FROM the package, so its
+        # content hash — the store key — does not exist until after the
+        # export. Stage the package in a dot-named temp dir under the store,
+        # write the document, then move the package to its content key.
+        # Sidecar first: a resolvable package must never race a missing one.
+        write_source_sidecar(spec.entry_path, sidecar_payload)
+        staging = packages_dir() / f".building-{artifact_path_key(spec.entry_path)}-{os.getpid()}"
+        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            stats = _build_into(staging)
+            from cadgen._internal.step_assemble import assemble_step_from_package
+
+            spec.step_path.parent.mkdir(parents=True, exist_ok=True)
+            exported_hash = assemble_step_from_package(staging, spec.step_path, logger=logger)
+            hashes = getattr(scene, "exported_step_sha256", None) or {}
+            hashes[str(spec.step_path.expanduser().resolve())] = exported_hash
+            scene.exported_step_sha256 = hashes
+            _stamp_descriptor_step_identity(staging, exported_hash)
+            from cadgen._internal.atomic_replace import replace_dir_atomic
+
+            final_dir = package_dir_for_hash(exported_hash)
+            final_dir.parent.mkdir(parents=True, exist_ok=True)
+            # Two builds of the same content race here (parallel roots, one
+            # document). os.replace onto a non-empty dir fails, so a peer
+            # winning the publish is an ORDINARY outcome: its package is
+            # byte-equivalent by construction, and ours is redundant.
+            for _ in range(4):
+                if (final_dir / "assembly.json").is_file():
+                    break
+                shutil.rmtree(final_dir, ignore_errors=True)
+                try:
+                    replace_dir_atomic(staging, final_dir)
+                    break
+                except OSError:
+                    continue
+            else:
+                if not (final_dir / "assembly.json").is_file():
+                    raise RuntimeError(f"could not publish render package: {final_dir}")
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
         return stats
 
     jobs.append(_ArtifactJob("GLB package", component_package_job))
@@ -597,25 +606,16 @@ def _generate_part_outputs(
             # requested.
             target = spec.step_export_path
             target.parent.mkdir(parents=True, exist_ok=True)
-            if spec.source == "generated":
-                from cadgen._internal.step_assemble import assemble_step_from_package
-
-                package_dir = render_package_dir(spec.entry_path)
-                exported_hash = assemble_step_from_package(
-                    package_dir, target, logger=logger)
-                # step_file_hash IS sha256; stash it so the export record does
-                # not re-read a possibly huge file just to hash it again.
-                hashes = getattr(scene, "exported_step_sha256", None) or {}
-                hashes[str(target.expanduser().resolve())] = exported_hash
-                scene.exported_step_sha256 = hashes
-                # Stamp the file identity on the descriptor: the render
-                # pipeline's gate for the .step ENTRY is "descriptor.stepHash
-                # matches the file", which lets the viewer render the
-                # generated file without ever importing it.
-                _stamp_descriptor_step_identity(
-                    package_dir, target, exported_hash, entry_dir=spec.entry_path.parent)
-            elif spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
+            # The package job already wrote the generated document to
+            # spec.step_path (the store key derives from those bytes); an
+            # explicit target elsewhere is a byte copy of the same document.
+            if spec.step_path is not None and spec.step_path.is_file() and spec.step_path.resolve() != target.resolve():
                 shutil.copyfile(spec.step_path, target)
+                hashes = getattr(scene, "exported_step_sha256", None) or {}
+                recorded = hashes.get(str(spec.step_path.expanduser().resolve()))
+                if recorded:
+                    hashes[str(target.expanduser().resolve())] = recorded
+                    scene.exported_step_sha256 = hashes
             return target
 
         jobs.append(_ArtifactJob("STEP", step_export_job))
@@ -688,26 +688,21 @@ def _generate_step_outputs(
     return result
 
 
-def _stamp_descriptor_step_identity(
-    package_dir: Path, step_path: Path, step_hash: str, *, entry_dir: Path
-) -> None:
-    """Record the assembled STEP's hash/path on the descriptor (atomic
-    rewrite, under the same generation lock as the package write)."""
+def _stamp_descriptor_step_identity(package_dir: Path, step_hash: str) -> None:
+    """Record the assembled document's hash on the descriptor (atomic rewrite,
+    on the staging dir, before the package moves to its content key). Hash
+    only — recording a file NAME would make the descriptor depend on where a
+    copy of the document happens to live, breaking content purity."""
     try:
         from cadgen._internal.component_package import read_package_descriptor
 
         descriptor = read_package_descriptor(package_dir)
         if descriptor is None:
             return
-        resolved = step_path.expanduser().resolve()
-        try:
-            rel = resolved.relative_to(entry_dir.resolve()).as_posix()
-        except ValueError:
-            rel = resolved.name
-        if descriptor.get("stepHash") == step_hash and descriptor.get("stepPath") == rel:
+        if descriptor.get("stepHash") == step_hash and "stepPath" not in descriptor:
             return
         descriptor["stepHash"] = step_hash
-        descriptor["stepPath"] = rel
+        descriptor.pop("stepPath", None)
         descriptor_path = package_dir / "assembly.json"
         tmp = descriptor_path.with_name(f"{descriptor_path.name}{temp_suffix()}")
         tmp.write_text(json.dumps(descriptor), encoding="utf-8")
@@ -719,7 +714,10 @@ def _stamp_descriptor_step_identity(
 
 
 def _step_export_record_path(spec: EntrySpec) -> Path:
-    return render_package_dir(spec.entry_path) / "step-export.json"
+    from cadgen.catalog import artifact_path_key
+    from cadgen._internal.cache_paths import records_dir
+
+    return records_dir() / f"{artifact_path_key(spec.entry_path)}.step-export.json"
 
 
 def _step_export_key(spec: EntrySpec, target: Path) -> str:
@@ -753,7 +751,7 @@ def _record_step_export(spec: EntrySpec, scene: object | None = None) -> None:
 
         from cadgen._internal.source_sidecar import read_source_sidecar
 
-        sidecar = read_source_sidecar(render_package_dir(spec.entry_path))
+        sidecar = read_source_sidecar(spec.entry_path)
         closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         resolved = target.expanduser().resolve()
         if not closure or not resolved.is_file():
@@ -762,6 +760,7 @@ def _record_step_export(spec: EntrySpec, scene: object | None = None) -> None:
         if not digest:
             digest = hashlib.sha256(resolved.read_bytes()).hexdigest()
         record_path = _step_export_record_path(spec)
+        record_path.parent.mkdir(parents=True, exist_ok=True)
         data: dict = {}
         if record_path.is_file():
             data = json.loads(record_path.read_text(encoding="utf-8"))
@@ -793,11 +792,19 @@ def _step_export_current(spec: EntrySpec) -> bool:
 
         from cadgen._internal.source_sidecar import read_source_sidecar
 
-        sidecar = read_source_sidecar(render_package_dir(spec.entry_path))
+        sidecar = read_source_sidecar(spec.entry_path)
         closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         record_path = _step_export_record_path(spec)
-        if not closure or not record_path.is_file():
+        if not closure:
             return False
+        if not record_path.is_file():
+            # No record — the record tier is path-keyed, so a MOVED project
+            # arrives without one. Content keying answers anyway: the target
+            # is current when it exists and its own content-keyed package
+            # does — "same bytes" and "same document" are one fact — and the
+            # surrounding fast path separately verifies the closure.
+            resolved = target.expanduser().resolve()
+            return resolved.is_file() and render_package_dir(resolved).is_dir()
         exports = (json.loads(record_path.read_text(encoding="utf-8")) or {}).get("exports") or {}
         resolved = target.expanduser().resolve()
 
@@ -1100,7 +1107,7 @@ def _generated_assembly_glb_closure_current(spec: EntrySpec) -> bool:
     artifact_path = render_package_dir(spec.entry_path)
     if not artifact_path.exists():
         return False
-    manifest = read_step_topology_manifest_from_glb(artifact_path)
+    manifest = read_step_topology_manifest_from_glb(artifact_path, entry_path=spec.entry_path)
     if not isinstance(manifest, dict):
         return False
     # Validate against the GENERATOR's folder — the base the closure was
@@ -1148,7 +1155,7 @@ def _generated_child_is_stale(child_spec: EntrySpec, *, force: bool) -> bool:
     artifact_path = render_package_dir(child_spec.entry_path)
     if not artifact_path.exists() or _is_git_lfs_pointer(artifact_path):
         return True
-    manifest = read_step_topology_manifest_from_glb(artifact_path)
+    manifest = read_step_topology_manifest_from_glb(artifact_path, entry_path=child_spec.entry_path)
     if isinstance(manifest, dict):
         sidecar = _manifest_source_sidecar(manifest)
         recorded_hash = str(sidecar.get("sourceClosureHash") or "").strip()

@@ -90,7 +90,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         self.assertNotIn("sourceKind", descriptor)
         from cadgen._internal.source_sidecar import read_source_sidecar
 
-        sidecar = read_source_sidecar(render_package_dir(logical_step))
+        sidecar = read_source_sidecar(logical_step)
         self.assertIsInstance(sidecar, dict)
         block = sidecar.get("pose")
         self.assertIsInstance(block, dict)
@@ -190,10 +190,10 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         self.assertTrue(payload.get("ok"), payload)
         descriptor = self._descriptor(exported)
         self.assertNotIn("sourceKind", descriptor)
-        from cadgen._internal.source_sidecar import package_is_generated
+        from cadgen._internal.source_sidecar import model_is_generated
 
         self.assertFalse(
-            package_is_generated(render_package_dir(exported)),
+            model_is_generated(exported),
             "an import must not leave a source sidecar behind",
         )
         occurrences = descriptor.get("occurrences") or []

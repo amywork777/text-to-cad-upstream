@@ -20,7 +20,7 @@ sentinel is for ATTRIBUTING a status record to a run, never for deciding one is 
 Sentinels are never unlinked, and neither is the Windows mutex below. Unlinking races: a
 waiter that already opened the file would hold a descriptor to an unlinked inode and
 "acquire" a lock nobody else can see. They are zero-to-32-byte files under gitignored
-``__cadgen__``.
+the store's ``locks/`` tier.
 
 Readers probe with ``LOCK_SH``, writers take ``LOCK_EX``. That asymmetry matters: ``flock``
 conflicts per open file description, not per process, so two concurrent ``LOCK_EX`` probes
@@ -303,7 +303,7 @@ def exclusive(
     sits in ``flock`` emitting nothing for as long as the peer holds the lock.
 
     ``None`` (a producer with no coordinated output dir) is a no-op, and so is every
-    failure to lock: an unwritable ``__cadgen__``, a filesystem without advisory locks, or
+    failure to lock: an unwritable locks directory, a filesystem without advisory locks, or
     a platform without ``fcntl`` or ``msvcrt`` degrades to "no coordination" and yields
     None. A build must never fail because a lock was unavailable.
     """

@@ -23,8 +23,13 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
     (``__cadgen__/models/<step-filename>/assembly.json``) whose content-addressed component
     GLBs live in the package's own ``components/<hash>.glb`` dir. Returns the package directory
     path, mirroring ``cadgen.catalog.render_package_dir``."""
+    from cadgen.catalog import render_package_dir
+
     step_path = Path(step_path)
-    pkg_dir = step_path.parent / "__cadgen__" / "models" / step_path.name
+    if not step_path.is_file():
+        step_path.parent.mkdir(parents=True, exist_ok=True)
+        step_path.write_text(f"ISO-10303-21;\n{step_path.name}\n")
+    pkg_dir = render_package_dir(step_path)
     comp_dir = pkg_dir / "components"
     pkg_dir.mkdir(parents=True, exist_ok=True)
     comp_dir.mkdir(parents=True, exist_ok=True)
@@ -55,9 +60,9 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
         )
     )
     if pose:
-        # Pose (source-derived) rides the source sidecar, never the descriptor.
-        (pkg_dir / "source.json").write_text(
-            json.dumps({"schemaVersion": 1, "sourceKind": "python", "pose": pose})
+        # Pose (source-derived) rides the MODEL-SIDE sidecar, never the descriptor.
+        Path(f"{step_path}.source.json").write_text(
+            json.dumps({"schemaVersion": 2, "sourceKind": "python", "pose": pose})
         )
     return pkg_dir
 
@@ -470,7 +475,7 @@ class SnapshotCliTests(unittest.TestCase):
             parsed_component_url = urlparse(component_url)
             self.assertTrue(
                 parsed_component_url.path.startswith(
-                    "/__render_asset/__cadgen__/models/part.step/components/"
+                    "/__store_asset/"
                 ),
                 component_url,
             )
@@ -1733,14 +1738,15 @@ class StepPoseParameterTests(unittest.TestCase):
         self.assertIn("source.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
-    def test_pose_hatch_module_gets_an_asset_url(self) -> None:
+    def test_pose_hatch_rides_inline_in_the_sidecar(self) -> None:
+        # The escape hatch is pose.moduleSource, inlined in the sidecar; there
+        # is no module file and no separate hatch URL to resolve.
         step_path = self._step(pose=False)
-        pkg = step_path.parent / "__cadgen__" / "models" / step_path.name
-        (pkg / "components" / "ab12.pose.js").write_text("export default {};", encoding="utf-8")
-        write_package(step_path, pose={**self.POSE, "module": "components/ab12.pose.js"})
+        write_package(step_path, pose={**self.POSE, "moduleSource": "export default {};"})
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("ab12.pose.js", str(resolved["stepPoseHatchUrl"]))
+        self.assertIn("source.json", str(resolved["stepParameterUrl"]))
+        self.assertNotIn("stepPoseHatchUrl", resolved)
 
     def test_parameters_without_a_pose_block_teach_the_migration(self) -> None:
         self._step(pose=False)

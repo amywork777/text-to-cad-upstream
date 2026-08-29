@@ -168,12 +168,6 @@ export function entryPoseUrl(entry) {
     : "";
 }
 
-export function entryPoseHatchUrl(entry) {
-  return entrySourceFormat(entry) === RENDER_FORMAT.STEP
-    ? normalizeString(entry?.poseHatchUrl)
-    : "";
-}
-
 export function entryHasLegacyParamsSidecar(entry) {
   return Boolean(entry?.legacyParamsSidecar);
 }

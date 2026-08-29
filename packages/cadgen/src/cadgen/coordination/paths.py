@@ -7,12 +7,13 @@ and a hand-written copy in ``cadgen/render_ops.py`` -- kept in sync only by a te
 that compared path strings.
 
 All three files are HIDDEN SIBLINGS of the artifact's output directory, so they live under
-the gitignored ``__cadgen__`` tree next to the package they describe. For an output dir
-``<folder>/__cadgen__/models/<name>.step`` the files are::
+the store's ``locks/`` tier as dot-named siblings of the coordination scope
+(``cadgen.catalog.coordination_scope``, model-path-keyed). For a scope
+``<cache>/locks/<pathkey>`` the files are::
 
-    <folder>/__cadgen__/models/.<name>.step.generation.lock           writer sentinel
-    <folder>/__cadgen__/models/.<name>.step.generator.lock            generator sentinel
-    <folder>/__cadgen__/models/.<name>.step.generation.progress.json  status record
+    <cache>/locks/.<pathkey>.generation.lock           writer sentinel
+    <cache>/locks/.<pathkey>.generator.lock            generator sentinel
+    <cache>/locks/.<pathkey>.generation.progress.json  status record
 
 The names are fixed per output dir, which is what lets an arbitrary reader find them
 without being told anything but the directory.

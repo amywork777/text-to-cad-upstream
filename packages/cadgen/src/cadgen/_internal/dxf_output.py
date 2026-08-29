@@ -2,7 +2,7 @@
 
 A drawing generator's product is the `.dxf` file itself (design/
 standalone-viewer.md Phase A) — the viewer parses it directly, so there is no
-drawing package any more. What remains under ``__cadgen__/models/<name>.dxf.py/``
+drawing package any more. What remains, in the store's ``records/`` tier,
 is this one small record, which is what makes an unchanged source a no-op:
 
     dxf-export.json = {
@@ -30,7 +30,7 @@ from pathlib import Path
 
 from cadgen._internal.atomic_replace import replace_atomic
 from cadgen._internal.source_hash import closure_hash_matches
-from cadgen.catalog import render_package_dir
+from cadgen.catalog import artifact_path_key
 
 DXF_EXPORT_RECORD_NAME = "dxf-export.json"
 DXF_EXPORT_RECORD_KIND = "dxf-export-record"
@@ -41,7 +41,9 @@ _LEGACY_PACKAGE_FILES = ("drawing.json", "geometry.json", "preview.glb")
 
 
 def dxf_export_record_path(script_path: Path) -> Path:
-    return Path(render_package_dir(Path(script_path))) / DXF_EXPORT_RECORD_NAME
+    from cadgen._internal.cache_paths import records_dir
+
+    return records_dir() / f"{artifact_path_key(Path(script_path))}.{DXF_EXPORT_RECORD_NAME}"
 
 
 def _sha256_file(path: Path) -> str:

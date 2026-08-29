@@ -33,19 +33,28 @@ class OracleSmokeTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._store.cleanup()
 
+    def _fingerprint(self):
+        # Resolve against the CHILD's store: builds ran with the per-test
+        # CADGEN_STORE_DIR, and the store paths read env at call time.
+        import os
+        import unittest.mock
+
+        with unittest.mock.patch.dict(os.environ, self.env):
+            return fingerprint(PLANETARY)
+
     def test_cache_state_independence_cold_vs_warm(self) -> None:
         cold = build_entry(PLANETARY, env=self.env, force=True)
         self.assertEqual(cold.returncode, 0, cold.stderr[-2000:])
-        fp_cold = fingerprint(PLANETARY)
+        fp_cold = self._fingerprint()
         warm = build_entry(PLANETARY, env=self.env, force=True)
         self.assertEqual(warm.returncode, 0, warm.stderr[-2000:])
-        fp_warm = fingerprint(PLANETARY)
+        fp_warm = self._fingerprint()
         self.assertEqual(diff_fingerprints(fp_cold, fp_warm), [])
 
     def test_diff_reports_differences(self) -> None:
         build = build_entry(PLANETARY, env=self.env)
         self.assertEqual(build.returncode, 0, build.stderr[-2000:])
-        fp = fingerprint(PLANETARY)
+        fp = self._fingerprint()
         mutated = {
             **fp,
             "cids": fp["cids"][:-1],

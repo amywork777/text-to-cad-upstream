@@ -468,13 +468,6 @@ def load_step_scene(step_path: Path) -> LoadedStepScene:
     )
 
 
-# Inline scene-cache home, written beside each STEP like __pycache__ next to a .py.
-# All STEPs in a directory share one __cadgen__ directory. Scene caches live under
-# ``__cadgen__/models/<step-filename>/scene/`` so they sit inside the same per-model
-# home as the component-GLB render package (``__cadgen__/models/<step-filename>/``)
-# and its generation lock, rather than at the __cadgen__ root. Each is namespaced by
-# STEP filename and keyed by schema + content hash; the ``scene`` subdir isolates the
-# content-hash leaves so sibling pruning never touches ``assembly.json``/``components``.
 def _scene_step_hash(scene: LoadedStepScene) -> str:
     if scene.step_hash is None:
         scene.step_hash = _step_hash(scene.step_path)

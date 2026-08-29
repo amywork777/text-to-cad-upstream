@@ -12,6 +12,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from tests.python.support.paths import add_repo_path
@@ -95,10 +96,10 @@ class StepExportReuseTest(unittest.TestCase):
         copy_target = self.entry.parent / "elsewhere" / "block_copy.step"
         copied = _run(self.entry, ["-o", str(copy_target)], self.store)
         self.assertEqual(copied.returncode, 0, copied.stderr[-1500:])
-        # The identity metadata embeds the output stem (FEEDBACK #16) and the
-        # OCC writer re-wraps header lines around it, so byte equality cannot
-        # survive a rename; the geometry identity is the packages' content
-        # hashes, which content addressing makes directly comparable.
+        # OCC's writer bakes the output filename into FILE_NAME, so a renamed
+        # export is a distinct DOCUMENT with its own content key; the geometry
+        # identity is the packages' component content hashes, which content
+        # addressing makes directly comparable.
         import json
 
         def _content_hashes(package: Path) -> set[str]:
@@ -108,9 +109,15 @@ class StepExportReuseTest(unittest.TestCase):
                 for entry in (descriptor.get("components") or {}).values()
             }
 
-        original_pkg = self.entry.parent / "__cadgen__" / "models" / "block.step"
-        copy_pkg = copy_target.parent / "__cadgen__" / "models" / "block_copy.step"
+        from cadgen.catalog import render_package_dir
+
+        # Resolve against the CHILD's store: the subprocess ran with the
+        # per-test CADGEN_STORE_DIR, and cache_root() reads env at call time.
+        with unittest.mock.patch.dict(os.environ, {"CADGEN_STORE_DIR": str(self.store)}):
+            original_pkg = render_package_dir(self.entry.parent / "block.step")
+            copy_pkg = render_package_dir(copy_target)
         self.assertTrue(copy_target.is_file())
+        self.assertNotEqual(original_pkg, copy_pkg)
         self.assertEqual(_content_hashes(original_pkg), _content_hashes(copy_pkg))
 
     def test_verbose_export_spans_fire_and_no_metadata_is_written(self) -> None:

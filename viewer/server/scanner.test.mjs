@@ -7,16 +7,31 @@ import test from "node:test";
 import {
   isServedCadAsset,
   legacyParamsSidecarPath,
-  renderPackageAssetDir,
   renderPackageDir,
   pathIsInside,
   scanCadDirectory,
   sortCatalogEntries,
 } from "./scanner.mjs";
+import { packageDirForHash, storePackagesDir } from "./storePaths.mjs";
 
 function tmpRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cad-scan-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  // Store-primary: isolate the user-level store per test.
+  const previous = process.env.CADGEN_STORE_DIR;
+  process.env.CADGEN_STORE_DIR = path.join(dir, ".store");
+  t.after(() => {
+    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
+    else process.env.CADGEN_STORE_DIR = previous;
+  });
+  return dir;
+}
+
+// A store package for exactly the bytes at stepPath.
+function writeStorePackage(stepPath, descriptor) {
+  const dir = renderPackageDir(stepPath);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "assembly.json"), JSON.stringify(descriptor));
   return dir;
 }
 
@@ -41,25 +56,22 @@ test("the catalog is artifacts-only: scripts never list", (t) => {
   assert.deepEqual(built, ["outline.dxf"]);
 });
 
-test("a generated model keys its package by the STEP file it outputs", (t) => {
+test("a package resolves by the document's CONTENT hash in the store", (t) => {
   const root = tmpRoot(t);
-  const py = write(root, "widget.step.py", "def gen_step(): ...\n");
-  assert.equal(
-    renderPackageDir(py),
-    path.join(fs.realpathSync(root), "__cadgen__", "models", "widget.step"),
-  );
-});
-
-test("the asset dir is unresolved while the lock dir is resolved", (t) => {
-  // Two derivations of one directory, deliberately: the lock sentinel must be
-  // realpath'd so two paths reaching one package exclude each other; an asset URL
-  // must NOT be, or a macOS /var -> /private/var realpath escapes the scan root.
-  const root = tmpRoot(t);
-  const src = write(root, "gyroid.step", "ISO-10303-21;\n");
-  write(root, path.join("__cadgen__", "models", "gyroid.step", "assembly.json"), "{}");
-  const assetDir = renderPackageAssetDir(src);
-  assert.ok(assetDir.startsWith(path.resolve(root) + path.sep));
-  assert.equal(renderPackageDir(src), fs.realpathSync(assetDir));
+  const src = write(root, "gyroid.step", "ISO-10303-21;\ncontent A\n");
+  const dir = renderPackageDir(src);
+  assert.ok(pathIsInside(dir, storePackagesDir()));
+  // Same bytes elsewhere -> the SAME package; different bytes -> a different one.
+  const twin = write(root, "copy.step", "ISO-10303-21;\ncontent A\n");
+  assert.equal(renderPackageDir(twin), dir);
+  const other = write(root, "other.step", "ISO-10303-21;\ncontent B\n");
+  assert.notEqual(renderPackageDir(other), dir);
+  // A missing file resolves to a deterministic never-created path.
+  const unbuilt = renderPackageDir(path.join(root, "nope.step"));
+  assert.ok(pathIsInside(unbuilt, storePackagesDir()));
+  assert.ok(path.basename(unbuilt).startsWith("unbuilt-"));
+  assert.equal(fs.existsSync(unbuilt), false);
+  assert.ok(typeof packageDirForHash === "function");
 });
 
 test("a written drawing lists as its own .dxf entry", (t) => {
@@ -83,23 +95,22 @@ test("a .implicit.js file is not a catalog entry at all", (t) => {
   assert.ok(entries.find((e) => e.file === "outline.dxf"));
 });
 
-test("a source-sidecar pose block is exposed as poseUrl (+ hatch); sidecars only teach", (t) => {
+test("a source-sidecar pose block is exposed as poseUrl; sidecars only teach", (t) => {
   const root = tmpRoot(t);
-  write(root, "gripper.step", "ISO-10303-21;\n");
-  // The descriptor is STEP-pure; pose (and all source-derived state) rides the
-  // source sidecar, whose existence also marks the package as generated.
-  write(root, path.join("__cadgen__", "models", "gripper.step", "assembly.json"), JSON.stringify({
-    kind: "assembly-package"
-  }));
-  write(root, path.join("__cadgen__", "models", "gripper.step", "source.json"), JSON.stringify({
-    schemaVersion: 1,
+  const stepPath = write(root, "gripper.step", "ISO-10303-21;\ngripper\n");
+  // The store descriptor is STEP-pure; pose (and all source-derived state)
+  // rides the MODEL-SIDE sidecar, whose existence marks the model generated.
+  writeStorePackage(stepPath, { kind: "assembly-package" });
+  write(root, "gripper.step.source.json", JSON.stringify({
+    schemaVersion: 2,
     sourceKind: "python",
-    pose: { schemaVersion: 1, params: { drive: { type: "number" } }, module: "components/ab12.pose.js" }
+    pose: { schemaVersion: 1, params: { drive: { type: "number" } }, moduleSource: "export function update() {}\n" }
   }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
   assert.equal(entry.sourceKind, "python");
   assert.ok(entry.poseUrl.includes("source.json"));
-  assert.ok(entry.poseHatchUrl.includes("ab12.pose.js"));
+  assert.ok(entry.sourceUrl.includes("source.json"));
+  assert.equal(entry.poseHatchUrl, undefined);
   assert.equal(entry.legacyParamsSidecar, undefined);
 
   // The retired sidecar convention is detected only to TEACH, never loaded.
@@ -112,18 +123,18 @@ test("a source-sidecar pose block is exposed as poseUrl (+ hatch); sidecars only
   assert.equal(legacy.moduleUrl, undefined);
 });
 
-test("the served-asset gate: hidden never, __cadgen__ always, stray js never", (t) => {
+test("the served-asset gate: hidden never, source sidecars yes, stray js never", (t) => {
   const root = tmpRoot(t);
   const hidden = write(root, ".secret.step", "x");
-  const packaged = write(root, path.join("__cadgen__", "models", "a.step", "assembly.json"), "{}");
+  const sourceSidecar = write(root, "part.step.source.json", "{}");
   const stray = write(root, "random.js", "x");
   const sidecar = write(root, "part.step.js", "x");
   write(root, "part.step", "ISO-10303-21;\n");
   assert.equal(isServedCadAsset(hidden), false);
-  assert.equal(isServedCadAsset(packaged), true);
+  assert.equal(isServedCadAsset(sourceSidecar), true);
   assert.equal(isServedCadAsset(stray), false);
-  // Loose .js beside a model is never served any more (sidecars are retired);
-  // pose escape hatches live INSIDE the package and ride the __cadgen__ rule.
+  // Loose .js beside a model is never served (the .params.js mechanism is
+  // retired); the pose escape hatch rides INLINE in the source sidecar.
   assert.equal(isServedCadAsset(sidecar), false);
 });
 

@@ -103,13 +103,16 @@ function absolutizeEntry(entry, { rootPath, scanRepoRoot }) {
   const next = { ...entry };
   next.file = absoluteFileRef(outputPath);
   next.rootRelativeFile = relativeFileRef(rootPath, outputPath);
-  if (entry.url) {
+  if (entry.url && !String(entry.url).startsWith("/__cad/store")) {
     const assetPath = assetPathFromCatalogUrl(scanRepoRoot, entry.url);
     next.url = localAssetUrlForPath(assetPath, queryValue(entry.url, "v"));
     next.assetFile = absoluteFileRef(assetPath);
   }
-  for (const key of ["poseUrl", "poseHatchUrl"]) {
-    if (entry[key]) {
+  for (const key of ["poseUrl", "sourceUrl"]) {
+    // Store URLs (/__cad/store?file=<packages-relative>) are already in their
+    // served form — their file param is store-relative by contract, never a
+    // root path to absolutize.
+    if (entry[key] && !String(entry[key]).startsWith("/__cad/store")) {
       const assetPath = assetPathFromCatalogUrl(scanRepoRoot, entry[key]);
       next[key] = localAssetUrlForPath(assetPath, queryValue(entry[key], "v"));
     }

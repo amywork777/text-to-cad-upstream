@@ -284,7 +284,6 @@ async function loadStepParameters({
   kind,
   stepParameters,
   stepParameterUrl,
-  stepPoseHatchUrl,
   cadPath,
   selectorRuntime
 }) {
@@ -299,10 +298,7 @@ async function loadStepParameters({
   }
   // stepParameterUrl is the package SOURCE SIDECAR url (source.json); the
   // pose block inside it is the one parameter mechanism.
-  const definition = await loadPoseModuleDefinition(stepParameterUrl, {
-    hatchUrl: stepPoseHatchUrl || "",
-    cadPath
-  });
+  const definition = await loadPoseModuleDefinition(stepParameterUrl, { cadPath });
   const renderParameters = normalizeStepParameterRenderValues(definition, explicit ? stepParameters : {});
   return {
     definition,
@@ -345,9 +341,7 @@ export async function loadSource(input, options = {}) {
   const stepParameterUrl = String(
     inputObject.stepParameterUrl || resolved.stepParameterUrl || options.stepParameterUrl || ""
   ).trim();
-  const stepPoseHatchUrl = String(
-    inputObject.stepPoseHatchUrl || resolved.stepPoseHatchUrl || options.stepPoseHatchUrl || ""
-  ).trim();
+
   const cadPath = String(inputObject.cadPath || resolved.inputPath || options.cadPath || "").trim();
   assertStepOnlyOption(kind, stepParameters, "stepParameters");
   assertStepOnlyOption(kind, stepParameterUrl, "stepParameterUrl");
@@ -375,7 +369,6 @@ export async function loadSource(input, options = {}) {
         kind: "step",
         stepParameters,
         stepParameterUrl,
-        stepPoseHatchUrl,
         cadPath,
         selectorRuntime: packageSelectorRuntime
       }),
@@ -442,7 +435,6 @@ export async function loadSource(input, options = {}) {
       kind,
       stepParameters,
       stepParameterUrl,
-      stepPoseHatchUrl,
       cadPath,
       selectorRuntime
     });

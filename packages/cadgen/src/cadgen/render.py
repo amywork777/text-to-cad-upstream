@@ -19,7 +19,7 @@ def relative_to_cwd(path: Path) -> str:
 def relative_to_directory(path: Path, base_dir: Path) -> str:
     """A path recorded relative to ``base_dir``, always with forward slashes.
 
-    This is the helper every PERSISTED path goes through, which is what makes a ``__cadgen__``
+    This is the helper every PERSISTED path goes through, which is what makes a store-package
     package movable: a descriptor records where a file sits relative to the model folder, not
     where it sat on the machine that wrote it. Posix separators for the same reason -- a
     package written on Windows is read on macOS.

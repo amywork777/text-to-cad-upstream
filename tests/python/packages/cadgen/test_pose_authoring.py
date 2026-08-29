@@ -203,12 +203,15 @@ class PoseEmissionTests(unittest.TestCase):
         )
 
     def _descriptor(self, script: Path) -> dict:
-        package = script.parent / "__cadgen__" / "models" / f"{script.stem}.step"
+        from cadgen.catalog import render_package_dir
+
+        package = render_package_dir(script.with_suffix(".step"))
         return json.loads((package / "assembly.json").read_text())
 
     def _sidecar(self, script: Path) -> dict:
-        package = script.parent / "__cadgen__" / "models" / f"{script.stem}.step"
-        return json.loads((package / "source.json").read_text())
+        from cadgen._internal.source_sidecar import read_source_sidecar
+
+        return read_source_sidecar(script.with_suffix(".step")) or {}
 
     def test_pose_block_lands_in_the_source_sidecar(self) -> None:
         script = self.root / "widget.py"
@@ -235,10 +238,11 @@ class PoseEmissionTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(0, self._build(script))
-        ref = self._sidecar(script)["pose"]["module"]
-        self.assertRegex(ref, r"^components/[0-9a-f]{12}\.pose\.js$")
-        copied = script.parent / "__cadgen__" / "models" / f"{script.stem}.step" / ref
-        self.assertEqual(copied.read_text(), hatch.read_text())
+        block = self._sidecar(script)["pose"]
+        # The escape hatch rides INLINE in the sidecar; no module file exists
+        # anywhere, and the block carries no module ref.
+        self.assertNotIn("module", block)
+        self.assertEqual(block["moduleSource"], hatch.read_text())
 
     def test_missing_hatch_module_fails_the_build(self) -> None:
         script = self.root / "broken.py"

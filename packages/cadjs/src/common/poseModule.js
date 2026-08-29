@@ -286,10 +286,11 @@ function animationsFromPose(pose) {
   return animations;
 }
 
-/** Fetch a package source sidecar (source.json), compile its pose block (and
- * dynamic-import the escape hatch when declared) into a normalized step-module
- * definition. The ONLY pose loading path. */
-export async function loadPoseModuleDefinition(poseUrl, { hatchUrl = "", cadPath = "" } = {}) {
+/** Fetch the model's source sidecar (<name>.step.source.json), compile its
+ * pose block into a normalized step-module definition. The optional escape
+ * hatch rides INLINE as pose.moduleSource (imported through a Blob URL) — no
+ * separate module file exists anywhere. The ONLY pose loading path. */
+export async function loadPoseModuleDefinition(poseUrl, { cadPath = "" } = {}) {
   const response = await fetch(poseUrl, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`pose sidecar fetch failed (${response.status}) for ${poseUrl}`);
@@ -300,11 +301,14 @@ export async function loadPoseModuleDefinition(poseUrl, { hatchUrl = "", cadPath
     throw new Error(`pose payload at ${poseUrl} declares no pose block`);
   }
   let hatch = null;
-  if (poseBlock.module) {
-    // The scanner hands the viewer an explicit asset URL; path-style servers
-    // (the snapshot loopback) can resolve the package-relative ref directly.
-    const resolvedHatchUrl = hatchUrl || new URL(poseBlock.module, poseUrl).toString();
-    hatch = await import(/* webpackIgnore: true */ /* @vite-ignore */ resolvedHatchUrl);
+  const moduleSource = typeof poseBlock.moduleSource === "string" ? poseBlock.moduleSource : "";
+  if (moduleSource) {
+    const blobUrl = URL.createObjectURL(new Blob([moduleSource], { type: "text/javascript" }));
+    try {
+      hatch = await import(/* webpackIgnore: true */ /* @vite-ignore */ blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
   }
   const raw = stepModuleFromPoseBlock(poseBlock, { hatch });
   return normalizeStepModuleDefinition(raw, { url: poseUrl, cadPath });

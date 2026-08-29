@@ -14,7 +14,7 @@ into itself, exactly as it already imports ``cadgen._internal.source_hash``. Sha
 code is what makes the two sides agree by construction instead of by review.
 
 No tolerant reads. A descriptor either records what the current producer records, or the
-package is stale and gets rebuilt (``__cadgen__/`` is a gitignored per-machine cache, so
+package is stale and gets rebuilt (the store is a per-machine cache, so
 invalidation costs one lazy rebuild per entry actually reopened).
 """
 

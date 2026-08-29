@@ -20,14 +20,26 @@ _DROP = object()
 def _write_package(
     model_dir: Path, entry_name: str, descriptor: dict, *, generated: bool = False
 ) -> Path:
-    package_dir = model_dir / "__cadgen__" / "models" / entry_name
-    (package_dir / "components").mkdir(parents=True)
+    from cadgen.catalog import render_package_dir
+
+    entry_file = model_dir / entry_name
+    if not entry_file.is_file():
+        entry_file.parent.mkdir(parents=True, exist_ok=True)
+        # Unique per root: content keying would collide same-bytes fixtures
+        # from different cases into one store package.
+        entry_file.write_text(f"ISO-10303-21;\n{entry_file.resolve()}\n")
+    package_dir = render_package_dir(entry_file)
+    (package_dir / "components").mkdir(parents=True, exist_ok=True)
+    if "stepHash" not in descriptor:
+        import hashlib
+
+        descriptor = {**descriptor, "stepHash": hashlib.sha256(entry_file.read_bytes()).hexdigest()}
     (package_dir / "assembly.json").write_text(json.dumps(descriptor), encoding="utf-8")
     if generated:
-        # The source sidecar's existence is the generated marker; the
+        # The MODEL-SIDE sidecar's existence is the generated marker; the
         # descriptor is STEP-pure and never records provenance.
-        (package_dir / "source.json").write_text(
-            json.dumps({"schemaVersion": 1, "sourceKind": "python"}), encoding="utf-8"
+        Path(f"{entry_file}.source.json").write_text(
+            json.dumps({"schemaVersion": 2, "sourceKind": "python"}), encoding="utf-8"
         )
     return package_dir
 

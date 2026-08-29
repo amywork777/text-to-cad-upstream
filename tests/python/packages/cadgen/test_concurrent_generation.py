@@ -82,7 +82,9 @@ class ConcurrentGenerationTest(unittest.TestCase):
 
     def test_package_is_intact_after_concurrent_builds(self):
         self._run_contenders(3)
-        package = self.root / "__cadgen__" / "models" / "widget.step"
+        from cadgen.catalog import render_package_dir
+
+        package = render_package_dir(self.root / "widget.step")
         descriptor = package / "assembly.json"
         self.assertTrue(descriptor.is_file(), "no descriptor after concurrent builds")
         # The viewer's freshness gate must accept the package the race produced.
@@ -101,7 +103,14 @@ class ConcurrentGenerationTest(unittest.TestCase):
         self.assertIn("step export is current; reusing", outputs[0])
 
     def _package_dir(self):
-        return self.root / "__cadgen__" / "models" / "widget.step"
+        from cadgen.catalog import render_package_dir
+
+        return render_package_dir(self.root / "widget.step")
+
+    def _lock_scope(self):
+        from cadgen.catalog import coordination_scope
+
+        return coordination_scope(self.root / "widget.step")
 
     def _run_gen_cli(self, *extra):
         """The skill CLI itself, not the library call the other tests use: the flag under
@@ -126,7 +135,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
         from cadgen.coordination.paths import write_lock_path
 
         # A REAL peer: this process holds the same advisory lock the CLI will ask for.
-        with exclusive(write_lock_path(self._package_dir())) as held:
+        with exclusive(write_lock_path(self._lock_scope())) as held:
             self.assertIsNotNone(held, "the test never acquired the lock it means to hold")
             result = self._run_gen_cli("--lock-timeout", "0.25", "--json")
 
@@ -142,7 +151,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
         self.assertNotIn("built", payload["outcome"])
 
     def tearDown(self):
-        shutil.rmtree(self.root / "__cadgen__", ignore_errors=True)
+        shutil.rmtree(self._package_dir(), ignore_errors=True)
 
 
 if __name__ == "__main__":

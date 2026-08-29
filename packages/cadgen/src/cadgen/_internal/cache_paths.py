@@ -67,3 +67,25 @@ def opmemo_base_dir() -> Path:
 
 def meshes_dir() -> Path:
     return cache_root() / "meshes"
+
+
+def packages_dir() -> Path:
+    """Render-package index: ``packages/<stepHash>-v<STEP_PACKAGE_VERSION>/``,
+    one self-contained package per DOCUMENT (STEP/DXF bytes), whichever
+    producer built it. Components inside a package hardlink into
+    :func:`components_dir`, so relocation costs no duplication."""
+    return cache_root() / "packages"
+
+
+def locks_dir() -> Path:
+    """Coordination scopes: locks and progress records keyed by the MODEL
+    path (``cadgen.catalog.artifact_path_key``), not by output content — two
+    runs building the same model must exclude each other even while the
+    content hash they will produce is still unknown."""
+    return cache_root() / "locks"
+
+
+def records_dir() -> Path:
+    """Per-model freshness records (step/dxf export records), keyed like
+    locks. Bookkeeping, not artifacts: deleting one costs a rebuild check."""
+    return cache_root() / "records"
