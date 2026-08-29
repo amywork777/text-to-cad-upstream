@@ -389,7 +389,7 @@ def build_step_artifact(
     # finished. Measured before this: two processes 0.3s apart on a cold package both ran
     # gen_step(), the second for a further 2.5s after waiting 2.67s for the lock.
     package_dir = render_package_dir(existing_spec.entry_path) if existing_spec.entry_path else None
-    # This builds exactly what `scripts/gen` builds, and reported nothing while doing it:
+    # This builds exactly what a model-script run builds, and reported nothing while doing it:
     # the sidecar went to the viewer and a terminal caller watched a silent process.
     with cli_progress_line(
         existing_spec.source_ref, logger=logger, fallback="Building..."
@@ -429,7 +429,7 @@ def build_step_artifact(
             # The generation pipeline's contract: a generated model's build
             # ALWAYS produces its STEP file (assembled from the package —
             # design/step-document-architecture.md), no matter which front
-            # door asked (scripts/gen, the viewer's Update, inspect).
+            # door asked (a model-script run, cadgen import, inspect).
             import dataclasses
 
             spec = existing_spec

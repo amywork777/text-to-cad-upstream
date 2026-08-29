@@ -15,7 +15,7 @@ from cadgen.cli.snapshot import SKILL_KINDS, run
 KINDS = SKILL_KINDS["dxf"]
 
 
-def main(argv: Sequence[str] | None = None, *, prog: str = "scripts/snapshot") -> int:
+def main(argv: Sequence[str] | None = None, *, prog: str = "cadgen dxf snapshot") -> int:
     return run(argv, kinds=KINDS, prog=prog)
 
 

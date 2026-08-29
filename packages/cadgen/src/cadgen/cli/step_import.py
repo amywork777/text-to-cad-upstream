@@ -56,7 +56,7 @@ def _add_artifact_arguments(parser: argparse.ArgumentParser) -> None:
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
 # `cadgen <command>` passes its own name instead, so each front door names itself.
-DEFAULT_PROG = "scripts/import"
+DEFAULT_PROG = "cadgen import"
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
@@ -89,7 +89,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
             "(python <model>.py) to build its render package"
         )
     if suffix not in {".step", ".stp"}:
-        parser.error(f"scripts/import target must be an imported STEP/STP file: {target}")
+        parser.error(f"cadgen import target must be an imported STEP/STP file: {target}")
     step = target
     source_path = None
     mesh_tolerance = _normalize_cli_numeric(
@@ -116,7 +116,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     except ValueError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
-        return report_cli_error(exc, tool="scripts/import", verbose=bool(args.verbose))
+        return report_cli_error(exc, tool="cadgen import", verbose=bool(args.verbose))
     print(json.dumps(payload, separators=(",", ":"), sort_keys=True))
     return 0
 

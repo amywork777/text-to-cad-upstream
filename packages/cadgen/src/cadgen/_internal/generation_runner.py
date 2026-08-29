@@ -237,7 +237,7 @@ def _write_shape_step_payload(
             f"got {type(shape).__name__}"
         )
     # gen_step builds the render scene in memory and does NOT write a text STEP — STEP is
-    # written on demand from scene.source_compound (`scripts/gen --write-step`, or the
+    # written on demand from scene.source_compound (a model-script run, or the
     # Viewer's Save-dialog export). The scene is built straight from the XCAF doc, never
     # via a STEP round-trip.
     source_identity = python_source_hash(script_path)

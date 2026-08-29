@@ -14,7 +14,7 @@ from cadgen.sdf_validation import validate_sdf_xml
 SDF_SUFFIX = ".sdf"
 
 
-DEFAULT_PROG = "scripts/validate"
+DEFAULT_PROG = "cadgen sdf validate"
 
 def validate_sdf_targets(
     targets: Sequence[str],

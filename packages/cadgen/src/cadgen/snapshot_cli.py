@@ -208,7 +208,7 @@ _MODE_BLURBS = {
 _KIND_HELP_ORDER = ("step", "stp", "3mf", "glb", "stl", "implicit", "dxf", "urdf", "srdf", "sdf")
 
 
-def help_text(*, kinds: frozenset[str] | None = None, prog: str = "scripts/snapshot") -> str:
+def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapshot") -> str:
     """The help for THIS skill: only the inputs, modes and options it actually has."""
     enabled = frozenset(KIND_RESOLVERS) | {"python"} if kinds is None else kinds
     listed = [k for k in _KIND_HELP_ORDER if k in enabled]
@@ -1556,7 +1556,7 @@ async def run_render_cli_async(
     *,
     kinds: Sequence[str],
     runtime_dir: Path | None = None,
-    prog: str = "scripts/snapshot",
+    prog: str = "cadgen snapshot",
     cwd: Path | None = None,
     stdout: Any = sys.stdout,
     stdin: Any = sys.stdin,
@@ -1606,7 +1606,7 @@ def run_snapshot_cli(
     *,
     kinds: Sequence[str],
     runtime_dir: Path | None = None,
-    prog: str = "scripts/snapshot",
+    prog: str = "cadgen snapshot",
     cwd: Path | None = None,
     stdout: Any = sys.stdout,
     stderr: Any = sys.stderr,

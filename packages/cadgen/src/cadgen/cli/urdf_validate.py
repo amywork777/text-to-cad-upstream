@@ -13,7 +13,7 @@ from cadgen.urdf_source import UrdfSource, validate_urdf_file
 URDF_SUFFIX = ".urdf"
 
 
-DEFAULT_PROG = "scripts/validate"
+DEFAULT_PROG = "cadgen urdf validate"
 
 def validate_urdf_targets(
     targets: Sequence[str],

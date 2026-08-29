@@ -19,7 +19,7 @@ def _inspect_api():
 
 # The skill entrypoint's name, which is what `--help` must say when invoked that way.
 # `cadgen <command>` passes its own name instead, so each front door names itself.
-DEFAULT_PROG = "scripts/inspect"
+DEFAULT_PROG = "cadgen step inspect"
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
@@ -29,9 +29,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  scripts/inspect refs STEP/foo.step '#f9' --detail --facts\n"
-            "  scripts/inspect measure STEP/foo.step --from '#f1' --to '#f2' --axis z\n"
-            "  scripts/inspect align STEP/foo.step --moving '#f1' --target '#f2' --mode flush --axis z\n"
+            "  cadgen step inspect refs STEP/foo.step '#f9' --detail --facts\n"
+            "  cadgen step inspect measure STEP/foo.step --from '#f1' --to '#f2' --axis z\n"
+            "  cadgen step inspect align STEP/foo.step --moving '#f1' --target '#f2' --mode flush --axis z\n"
         ),
     )
     parser.add_argument(
@@ -48,9 +48,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  scripts/inspect refs STEP/foo.step '#f9' --detail --facts\n"
-            "  scripts/inspect refs STEP/foo.step '#f1' '#e2' --positioning\n"
-            "  scripts/inspect refs STEP/foo.step --input-file /tmp/refs.txt --planes\n"
+            "  cadgen step inspect refs STEP/foo.step '#f9' --detail --facts\n"
+            "  cadgen step inspect refs STEP/foo.step '#f1' '#e2' --positioning\n"
+            "  cadgen step inspect refs STEP/foo.step --input-file /tmp/refs.txt --planes\n"
         ),
     )
     refs_parser.add_argument(
@@ -146,9 +146,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "examples:\n"
-            "  scripts/inspect interfere models/car/car.step.py\n"
-            "  scripts/inspect interfere models/car/car.step.py --refs o1.1,o1.7\n"
-            "  scripts/inspect interfere models/car/car.step --tolerance 25\n"
+            "  cadgen step inspect interfere models/car/car.step.py\n"
+            "  cadgen step inspect interfere models/car/car.step.py --refs o1.1,o1.7\n"
+            "  cadgen step inspect interfere models/car/car.step --tolerance 25\n"
         ),
     )
     interfere_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
@@ -180,9 +180,9 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
             "self-intersection, and positive volume. This is the geometry-soundness "
             "check; `refs --facts` reports counts and bounds and its \"ok\" field "
             "covers ref resolution only.\n"
-            "  scripts/inspect validate models/car/car.step.py\n"
-            "  scripts/inspect validate models/car/car.step.py --refs o1.1,o1.7\n"
-            "  scripts/inspect validate models/panel/panel.step.py --allow-open\n"
+            "  cadgen step inspect validate models/car/car.step.py\n"
+            "  cadgen step inspect validate models/car/car.step.py --refs o1.1,o1.7\n"
+            "  cadgen step inspect validate models/panel/panel.step.py --allow-open\n"
         ),
     )
     validate_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
@@ -205,7 +205,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     validate_parser.set_defaults(handler=run_validate)
 
     # Output is ALWAYS JSON; `--json` is accepted on every subcommand so
-    # muscle memory from verbs that need the flag (scripts/gen) doesn't error.
+    # muscle memory from verbs that need the flag does not error.
     for subparser in subparsers.choices.values():
         subparser.add_argument(
             "--json",
@@ -762,7 +762,7 @@ def main(argv: list[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
     parser = build_parser(prog)
     args = parser.parse_args(argv)
     command_label = str(getattr(args, "command", "inspect") or "inspect")
-    logger = CliLogger("scripts/inspect", verbose=bool(getattr(args, "verbose", False)))
+    logger = CliLogger("cadgen step inspect", verbose=bool(getattr(args, "verbose", False)))
     try:
         with logger.timed(command_label):
             return int(args.handler(args))

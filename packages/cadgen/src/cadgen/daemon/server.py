@@ -1,8 +1,8 @@
 """Warm-process daemon server for the CAD skill CLIs.
 
 One long-lived process imports cadgen / OCP / build123d ONCE and then services
-directly-run @step/@dxf model scripts ("run") plus ``scripts/export`` /
-``scripts/import`` / ``scripts/inspect`` / ``scripts/snapshot`` invocations over
+directly-run @step/@dxf model scripts ("run") plus ``cadgen step export`` /
+``cadgen import`` / ``cadgen step inspect`` / ``cadgen snapshot`` invocations over
 a per-worktree unix socket, so sessions skip the multi-second interpreter+OCP
 startup on every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
 never recurses into it.
@@ -524,8 +524,8 @@ cadgen-daemon takes no arguments.
 
 It is the warm-process server, started for you by cadgen.daemon.client when
 CADGEN_WARM=1 -- not a command to run by hand. It sits in scripts/ beside the
-CLIs you probably meant: scripts/gen, scripts/export, scripts/inspect,
-scripts/artifact, scripts/snapshot. Each of those takes --help.\
+CLIs you probably meant: python <model>.py, cadgen step export, cadgen step inspect,
+cadgen import, cadgen snapshot. Each of those takes --help.\
 """
 
 
