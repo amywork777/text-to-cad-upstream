@@ -1772,7 +1772,12 @@ export function normalizeThemeSettings(value = {}) {
     floor: {
       mode: normalizedFloorMode,
       enabled: normalizeBoolean(floor.enabled, normalizedFloorMode !== THEME_FLOOR_MODES.NONE),
-      followModel: normalizeBoolean(floor.followModel, DEFAULT_THEME_SETTINGS.floor?.followModel ?? true),
+      // Floor-dependent placement is COUPLED to the floor: with the stage
+      // floor disabled, followModel is inert (normalized false), so grid/axis
+      // canvases stay pinned to world z=0 and a hidden setting can never move
+      // the stage under the model. Enabling the floor re-exposes the trait.
+      followModel: normalizeBoolean(floor.enabled, normalizedFloorMode !== THEME_FLOOR_MODES.NONE)
+        && normalizeBoolean(floor.followModel, DEFAULT_THEME_SETTINGS.floor?.followModel ?? true),
       color: normalizedFloorColor,
       roughness: normalizeNumber(floor.roughness, DEFAULT_THEME_SETTINGS.floor?.roughness ?? 0.72, 0, 1),
       reflectivity: normalizeNumber(floor.reflectivity, DEFAULT_THEME_SETTINGS.floor?.reflectivity ?? 0.12, 0, 1),

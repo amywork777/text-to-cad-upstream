@@ -39,10 +39,21 @@ test("a model authored above z=0 genuinely floats", () => {
   assert.ok(Math.abs(floorZFor(liftedOffFloor)) < 1.0);
 });
 
-test("geometry below z=0 pushes the floor down so nothing clips", () => {
-  assert.ok(floorZFor(belowFloor) <= -350, "floor should follow the model downward");
+test("a grid-only canvas is pinned to world z=0 even for below-zero geometry", () => {
+  // followModel is a floor-DEPENDENT trait: with no stage floor plane (grid
+  // mode), it is inert, so the reference grid stays the true z=0 plane and
+  // geometry authored below z=0 visibly extends below it.
+  assert.ok(Math.abs(floorZFor(belowFloor)) < 1.0, "grid canvas must not chase the model down");
+  assert.ok(Math.abs(floorZFor(belowFloor, { followModel: true })) < 1.0, "followModel is inert without a floor");
 });
 
-test("followModel:false pins the floor to world z=0 regardless", () => {
-  assert.ok(Math.abs(floorZFor(belowFloor, { followModel: false })) < 1.0);
+test("an enabled stage floor follows below-zero geometry down so nothing clips", () => {
+  assert.ok(
+    floorZFor(belowFloor, { enabled: true }) <= -350,
+    "stage floor should follow the model downward"
+  );
+});
+
+test("followModel:false pins an enabled floor to world z=0 regardless", () => {
+  assert.ok(Math.abs(floorZFor(belowFloor, { enabled: true, followModel: false })) < 1.0);
 });
