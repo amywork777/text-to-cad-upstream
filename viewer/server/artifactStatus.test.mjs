@@ -15,7 +15,7 @@ import {
   artifactStatus,
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
-import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
+import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 function tempRoot(t, prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));

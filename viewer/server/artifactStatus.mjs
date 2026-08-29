@@ -25,7 +25,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { renderPackageDir } from "./scanner.mjs";
-import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
+import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";

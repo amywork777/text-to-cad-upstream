@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { createCadApp } from "./httpApp.mjs";
 import { _setKernelProbeForTests } from "./cadgenOps.mjs";
-import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
+import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 const SERVER_DIR = path.dirname(fileURLToPath(import.meta.url));
 const VIEWER_ROOT = path.resolve(SERVER_DIR, "..");

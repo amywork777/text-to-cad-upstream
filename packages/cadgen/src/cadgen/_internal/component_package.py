@@ -283,11 +283,11 @@ def _shape_brep_bytes(shape: Any) -> bytes:
         stream,
         False,  # theWithTriangles
         False,  # theWithNormals
-        # PINNED, not _CURRENT: these blobs are read by the standalone viewer's
-        # WASM OCCT (design/standalone-viewer.md), whose kernel version trails
-        # OCP's. A floating _CURRENT would let a future OCP upgrade silently
-        # emit a format the WASM reader rejects. Bumping this changes blob
-        # bytes and therefore every cid — treat it like a schema version bump.
+        # PINNED, not _CURRENT: these blobs are content-addressed — their
+        # bytes ARE the cid. A floating _CURRENT would let a future OCP
+        # upgrade silently re-serialize every blob and re-key every cid as a
+        # dependency-update side effect. Bumping this must stay a deliberate
+        # act — treat it like a schema version bump.
         BinTools_FormatVersion.BinTools_FormatVersion_VERSION_4,
     )
     return stream.getvalue()

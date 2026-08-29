@@ -1,6 +1,5 @@
 """The cross-language render contract: constants that exist in BOTH the Python
-producer and the JS consumer/producer must be bumped together, and the blob
-serialization the standalone viewer's WASM kernel reads must stay pinned.
+producer and the JS consumer must be bumped together.
 
 This repo has lost a cross-language mirror to a deleted check before (the
 viewer scanner's package-path constants drifted silently once nothing compared
@@ -41,62 +40,46 @@ class RenderContractSyncTest(unittest.TestCase):
             "them; a .surf the client cannot parse renders nothing).",
         )
 
-    def test_wasm_import_twin_constants_match_python(self) -> None:
-        # The WASM STEP import (viewer/server/import/stepImport.mjs) writes the
-        # SAME package format cadgen does, so every mirrored constant must move
-        # in lockstep: a one-sided bump ships a JS-built package the Python
-        # freshness gates call stale forever (or vice versa).
-        twin = ROOT / "viewer/server/import/stepImport.mjs"
+    def test_package_contract_constants_match_python(self) -> None:
+        # The JS status authority validates packages against the SAME versions
+        # the Python producer stamps (viewer/server/packageContract.mjs); a
+        # one-sided bump makes every package permanently stale (or permanently
+        # fresh) on one side.
+        contract = ROOT / "viewer/server/packageContract.mjs"
         self.assertEqual(
             _extract(
                 r"^STEP_PACKAGE_VERSION = (\d+)$",
                 ROOT / "packages/cadgen/src/cadgen/_internal/package_freshness.py",
             ),
-            _extract(r"^export const STEP_PACKAGE_VERSION = (\d+);", twin),
-            "STEP_PACKAGE_VERSION diverged between cadgen and the WASM import twin",
+            _extract(r"^export const STEP_PACKAGE_VERSION = (\d+);", contract),
+            "STEP_PACKAGE_VERSION diverged between cadgen and the viewer's package contract",
         )
         self.assertEqual(
             _extract(
                 r"^STEP_TOPOLOGY_SCHEMA_VERSION = (\d+)$",
                 ROOT / "packages/cadgen/src/cadgen/_internal/glb_topology.py",
             ),
-            _extract(r"^export const STEP_TOPOLOGY_SCHEMA_VERSION = (\d+);", twin),
-            "STEP_TOPOLOGY_SCHEMA_VERSION diverged between cadgen and the WASM import twin",
+            _extract(r"^export const STEP_TOPOLOGY_SCHEMA_VERSION = (\d+);", contract),
+            "STEP_TOPOLOGY_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
         )
-        glb_topology = ROOT / "packages/cadgen/src/cadgen/_internal/glb_topology.py"
-        for python_pattern, js_pattern, label in (
-            (r'^STEP_TOPOLOGY_EDGE_CLASSIFICATION_ALGORITHM = "([^"]+)"',
-             r'^const EDGE_CLASSIFICATION_ALGORITHM = "([^"]+)";', "edge classification algorithm"),
-            (r'^STEP_TOPOLOGY_SURFACE_EDGE_ALGORITHM = "([^"]+)"',
-             r'^const SURFACE_EDGE_ALGORITHM = "([^"]+)";', "surface edge algorithm"),
-            (r"^STEP_TOPOLOGY_EDGE_ANGULAR_TOLERANCE_DEG = (\d+)",
-             r"^const EDGE_ANGULAR_TOLERANCE_DEG = (\d+);", "edge angular tolerance"),
-            (r"^STEP_TOPOLOGY_EDGE_SAMPLE_COUNT = (\d+)",
-             r"^const EDGE_SAMPLE_COUNT = (\d+);", "edge sample count"),
-        ):
-            self.assertEqual(
-                _extract(python_pattern, glb_topology),
-                _extract(js_pattern, twin),
-                f"{label} diverged between cadgen and the WASM import twin",
-            )
 
     def test_status_authority_schema_gate_matches_python(self) -> None:
-        # The JS status authority gates render packages on the SAME schema
-        # version the producer stamps; a one-sided bump makes every package
-        # permanently stale (or permanently fresh) on one side.
+        # The JS status authority gates render packages on the one JS constant
+        # this suite pins against Python.
         status_module = ROOT / "viewer/server/artifactStatus.mjs"
         self.assertIn(
-            'import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";',
+            'import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";',
             status_module.read_text(),
             "the status authority must read the schema version from the one JS "
-            "constant (stepImport.mjs), which this suite pins against Python",
+            "constant (packageContract.mjs), which this suite pins against Python",
         )
 
     def test_component_blob_format_is_pinned_not_current(self) -> None:
-        # The standalone viewer's WASM OCCT trails OCP's version. A floating
-        # BinTools_FormatVersion_CURRENT would let an OCP upgrade silently emit
-        # blobs the WASM reader rejects; the write site must name an explicit
-        # version (bumping it re-keys every cid, so it is a deliberate act).
+        # Component blobs are content-addressed: their serialized bytes ARE the
+        # cid. A floating BinTools_FormatVersion_CURRENT would let an OCP
+        # upgrade silently re-serialize every blob and re-key every cid; the
+        # write site must name an explicit version so a format bump is a
+        # deliberate act, not a dependency-update side effect.
         source = (ROOT / "packages/cadgen/src/cadgen/_internal/component_package.py").read_text()
         writes = source.count("BinTools.Write_s(")
         self.assertGreaterEqual(writes, 1, "the component blob write site moved; update this test")
@@ -106,14 +89,6 @@ class RenderContractSyncTest(unittest.TestCase):
             "component blobs must be written with a PINNED BinTools format "
             "version (see _shape_brep_bytes), never _CURRENT",
         )
-        # The JS producer writes blobs too (WASM import); the same pin applies,
-        # and both write sites must name the SAME version.
-        twin_source = (ROOT / "viewer/server/import/stepImport.mjs").read_text()
-        self.assertNotIn("BinTools_FormatVersion_CURRENT", twin_source)
-        python_pin = re.search(r"BinTools_FormatVersion\.(BinTools_FormatVersion_VERSION_\d+)", source)
-        twin_pin = re.search(r"BinTools_FormatVersion\.(BinTools_FormatVersion_VERSION_\d+)", twin_source)
-        assert python_pin and twin_pin, "a blob write site lost its explicit format pin"
-        self.assertEqual(python_pin.group(1), twin_pin.group(1))
 
 
 if __name__ == "__main__":

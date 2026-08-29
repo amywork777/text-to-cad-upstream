@@ -10,7 +10,7 @@ import test from "node:test";
 
 import { cadgenStepIdentity } from "./stepIdentity.mjs";
 import { createCadgenOps, _setKernelProbeForTests } from "./cadgenOps.mjs";
-import { STEP_PACKAGE_VERSION } from "./import/stepImport.mjs";
+import { STEP_PACKAGE_VERSION } from "./packageContract.mjs";
 
 // The same property-graph shape export_build123d_step_file writes (verified
 // against a real assembled planetary_gear_assembly.step trailer).
