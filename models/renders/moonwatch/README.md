@@ -40,7 +40,7 @@ $PY -m cadgen.cli step snapshot --job <job.json>
 
 Parallel builders are fine now: the warm daemon runs a pool of worker processes and
 overflows to cold rather than queueing, so several builders no longer serialize behind
-one another. (It used to, which is why this said to avoid `CADGEN_WARM=1` here.)
+one another. (It used to, which is why this said to avoid the daemon — now `CADGEN_DAEMON=1` — here.)
 
 ## Modeling rules
 

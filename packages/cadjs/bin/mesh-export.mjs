@@ -17,7 +17,7 @@
  *   only the file the caller named (plus best-effort cache entries).
  *
  * Component tessellations are cached under <cache root>/meshes/ (root:
- * CADGEN_STORE_DIR, else the platform cache dir — see tessellationCacheFs.mjs)
+ * CADGEN_CACHE_DIR, else the platform cache dir — see tessellationCacheFs.mjs)
  * keyed <cid>-t<tessellator-version>-l<chord>-a<angle> (tolerances in the
  * tessellator's diagonal-relative units), so repeat exports and
  * multi-occurrence assemblies pay tessellation once per unique component. The
