@@ -2,8 +2,13 @@
 
 Every subcommand is also reachable as ``python -m cadgen.<module>``; this is the friendly
 front door, not a second implementation. A subcommand's parser lives in its own module and
-owns its arguments, so ``cadgen import`` and ``python -m cadgen.cli.step_import`` take the
-same flags and print the same output.
+owns its arguments, so ``cadgen step inspect`` and ``python -m cadgen.cli.step_inspect.cli``
+take the same flags and print the same output.
+
+Commands in the ``<format> <verb>`` grammar (design/format-doors.md) go one step further:
+their module names only the public verb function, and the parser is DERIVED from that
+function's signature (``cadgen._internal.cli_from_function``). A flag and a parameter
+cannot drift, because there is only one of them.
 
 **Dispatch is lazy on purpose.** Importing a CAD subcommand pulls in OCP/build123d, which
 costs seconds and needs the heavy dependency set installed. ``cadgen --help`` and an
@@ -35,7 +40,7 @@ import sys
 # itself — `python <model>.py` through the @step/@dxf decorators.
 _COMMANDS: dict[str, tuple[str, str]] = {
     # STEP
-    "import": ("cadgen.cli.step_import", "build the render package for an imported STEP/STP"),
+    "step build": ("cadgen.cli.step_build", "make a model's or STEP's derived state current"),
     "step export": ("cadgen.cli.step_export", "export a built STEP package to a file"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
@@ -120,7 +125,7 @@ def enforce_requirements_pin(requirements_path) -> None:
 # skill-shim launchers were an order of magnitude faster than the front door for no reason.
 _DAEMON_TOOLS = {
     "step export": "export",
-    "import": "import",
+    "step build": "step-build",
     "step inspect": "inspect",
     "step snapshot": "snapshot",
 }

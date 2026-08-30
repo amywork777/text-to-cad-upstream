@@ -30,7 +30,7 @@
 //
 // Requires: a viewer serving <models-root>; playwright; the part imported at
 // models-root/step/parts/cam_follower_roller.step (package built, e.g.
-// `cadgen import step/parts/cam_follower_roller.step`).
+// `cadgen step build step/parts/cam_follower_roller.step`).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -69,7 +69,7 @@ if (!fs.existsSync(path.join(args.dir, PART_FILE))) {
   fail(`missing ${PART_FILE} under ${args.dir}`);
 }
 if (!fs.existsSync(path.join(args.dir, "step/parts/__cadgen__/models/cam_follower_roller.step/assembly.json"))) {
-  fail("cam_follower_roller has no render package — import it first (cadgen import)");
+  fail("cam_follower_roller has no render package — import it first (cadgen step build)");
 }
 
 // ---- cache staging: cold pass = this component's entries moved aside -------

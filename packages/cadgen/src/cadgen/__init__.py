@@ -48,13 +48,21 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"step", "dxf", "stl", "glb", "threemf"}:
+    if name == "step":
+        # The `step` FORMAT NAMESPACE: the @step declaration decorator and the
+        # step.build(...) verb in one callable module (design/format-doors.md).
+        # Returning the module rather than cadgen.authoring.step keeps a single
+        # identity — `import cadgen.step` would otherwise shadow the decorator.
+        import cadgen.step as _step
+
+        return _step
+    if name in {"dxf", "stl", "glb", "threemf"}:
         # The library-first authoring decorators (design/library-first-generation.md):
         # @step/@dxf declare documents; @stl/@glb/@threemf declare a @step
         # model's mesh serializations.
-        from cadgen.authoring import dxf, glb, step, stl, threemf
+        from cadgen.authoring import dxf, glb, stl, threemf
 
-        return {"step": step, "dxf": dxf, "stl": stl, "glb": glb, "threemf": threemf}[name]
+        return {"dxf": dxf, "stl": stl, "glb": glb, "threemf": threemf}[name]
     if name == "pose":
         # Declarative view/pose block for @step(pose=...) — the single pose
         # authoring surface (no loose .params.js sidecars).
@@ -121,9 +129,9 @@ if TYPE_CHECKING:
     # without importing OCP. Every name here must have a branch there. develop's version of
     # this block pulled two names from the api alias module, which this branch deletes --
     # they come from their real modules now.
-    from cadgen import build123d
+    from cadgen import build123d, step
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
-    from cadgen.authoring import dxf, step
+    from cadgen.authoring import dxf
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
     from cadgen.posedef import pose
     from cadgen.instances import compound_from_instances

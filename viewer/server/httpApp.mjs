@@ -107,7 +107,7 @@ export function createCadApp({ root, host, port, distDir = "" }) {
       // The viewer is a static visualization tool: it never runs generators or
       // exports. The CLIs own those; this stays false by design.
       stepArtifactGenerationAvailable: false,
-      // Importing a foreign STEP spawns `cadgen import`; false when no
+      // Importing a foreign STEP spawns `cadgen step build`; false when no
       // runnable cadgen was found (viewing is unaffected either way).
       stepImportAvailable: ops.stepImportAvailable(),
       packageDir: path.dirname(new URL(import.meta.url).pathname),

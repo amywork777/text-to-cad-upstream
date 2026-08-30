@@ -95,11 +95,11 @@ exist. Generated models must be built first by running their model script (see
 the CAD skill); the Viewer will not build them.
 
 Raw `.step`/`.stp` files ARE importable from the Viewer: an unimported STEP
-reports `needs-build` and the in-Viewer build spawns `cadgen import` — the one
+reports `needs-build` and the in-Viewer build spawns `cadgen step build` — the one
 import producer — writing the standard render package. This needs a runnable
 cadgen (`CADGEN_PYTHON`, a `cadgen` on PATH, or a `.venv` in the served
 root); absent cadgen the Viewer says exactly that and keeps viewing. When an
-agent is doing the work, running `cadgen import <file>` directly is equivalent
+agent is doing the work, running `cadgen step build <file>` directly is equivalent
 — same producer, same package — then return the link.
 
 ## Links

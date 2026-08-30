@@ -42,7 +42,7 @@ class DaemonHandoff(unittest.TestCase):
         # via the decorator, so dispatch serves only the remaining STEP tools.
         self.assertEqual(
             set(cli._DAEMON_TOOLS),
-            {"step export", "import", "step inspect", "step snapshot"},
+            {"step export", "step build", "step inspect", "step snapshot"},
         )
 
     def test_a_step_command_hands_off_and_never_imports_the_module(self):

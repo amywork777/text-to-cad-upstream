@@ -18,7 +18,7 @@ set -euo pipefail
 # check-builds.sh).
 #
 # The runtime ships NO dependencies: dist/ + server/ only. Importing a foreign
-# STEP spawns `cadgen import` (a soft dependency resolved at request time —
+# STEP spawns `cadgen step build` (a soft dependency resolved at request time —
 # see server/cadgenResolve.mjs); viewing needs nothing beyond Node.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

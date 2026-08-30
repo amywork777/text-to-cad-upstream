@@ -81,7 +81,9 @@ class CompactStdoutTests(unittest.TestCase):
         # DXF migration; its replacement emits one compact JSON line and is checked here.
         "packages/cadgen/src/cadgen/dxf_export_target.py",
         "packages/cadgen/src/cadgen/cli/step_inspect/cli.py",
-        "packages/cadgen/src/cadgen/cli/step_import.py",
+        # Every GENERATED CLI (`cadgen <format> <verb>`) serializes its Result
+        # here rather than in its own module, so one entry covers all of them.
+        "packages/cadgen/src/cadgen/_internal/cli_from_function.py",
         "packages/cadgen/src/cadgen/cli/_run_model.py",
         "packages/cadgen/src/cadgen/cli/step_export.py",
         "packages/cadgen/src/cadgen/cli/urdf_validate.py",
@@ -96,13 +98,18 @@ class CompactStdoutTests(unittest.TestCase):
 
         The list is hand-written, which is how `cad artifact` and `dxf artifact` went
         unchecked the first time. Derive the expectation instead: anything under
-        `cadgen.cli` that serialises JSON is in scope, and nothing else is.
+        `cadgen.cli` that serialises JSON is in scope, plus the generated-CLI
+        serializer every `<format> <verb>` command prints through.
         """
         repo = Path(repo_path("."))
         cli_dir = Path(repo_path("packages/cadgen/src/cadgen/cli"))
+        sources = [
+            *cli_dir.rglob("*.py"),
+            Path(repo_path("packages/cadgen/src/cadgen/_internal/cli_from_function.py")),
+        ]
         emitters = {
             path.relative_to(repo).as_posix()
-            for path in cli_dir.rglob("*.py")
+            for path in sources
             if "json.dumps" in path.read_text(encoding="utf-8")
         }
         missing = emitters - set(self.STDOUT_JSON_SOURCES)

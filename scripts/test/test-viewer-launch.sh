@@ -42,7 +42,7 @@ fi
 
 log="$(mktemp)"
 serve_root="$(mktemp -d)"
-# The import e2e below spawns `cadgen import` from the server. The bundled
+# The import e2e below spawns `cadgen step build` from the server. The bundled
 # runtime carries no Python; hand it the repo's interpreter explicitly (the
 # soft-dependency contract), cold (no daemon spawned by a smoke test).
 export CADGEN_PYTHON="$REPO_ROOT/.venv/bin/python"
@@ -112,7 +112,7 @@ if ! printf '%s' "$reuse_json" | grep -q "\"port\":$PORT"; then
 fi
 
 # End-to-end import FROM THE BUNDLE: a raw STEP in the served root goes
-# needs-build -> POST build (spawns `cadgen import`) -> ready with a real
+# needs-build -> POST build (spawns `cadgen step build`) -> ready with a real
 # package. The bundled runtime has no Python of its own; the smoke run
 # provides the repo venv via CADGEN_PYTHON (set at server launch above,
 # see the env block) — the same soft-dependency contract users get. The
@@ -136,7 +136,7 @@ fi
 # The import pays one cold interpreter + OCP start; give it a real timeout.
 build_json="$(curl -s -m 120 -X POST -H 'x-cadgen-viewer: 1' "$step_url")"
 if ! printf '%s' "$build_json" | grep -q '"ok":true'; then
-  echo "FAIL: cadgen import build did not succeed: $build_json" >&2
+  echo "FAIL: cadgen step build did not succeed: $build_json" >&2
   exit 1
 fi
 # Store-primary: the package lands in the (isolated) store keyed by content.
@@ -161,5 +161,5 @@ if ! node "$RUNTIME/server/main.mjs" stop --port "$PORT" | grep -q "Stopped CAD 
   exit 1
 fi
 
-echo "    served / and /__cad/server on rolled port $PORT; cadgen import e2e OK; reuse/list/stop OK"
+echo "    served / and /__cad/server on rolled port $PORT; cadgen step build e2e OK; reuse/list/stop OK"
 echo "==> CAD Viewer launch smoke test passed"

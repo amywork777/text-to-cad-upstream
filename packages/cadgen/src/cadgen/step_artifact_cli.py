@@ -20,6 +20,7 @@ from cadgen._internal.generation import (
     _entry_spec_from_source,
     _generate_part_outputs,
     _generated_assembly_glb_closure_current,
+    _produce_declared_mesh_exports,
     run_script_generator,
 )
 from cadgen.coordination import PHASE_GENERATE, STEP_PACKAGE, artifact_build
@@ -227,6 +228,23 @@ def _current_artifact_for_spec(spec: EntrySpec) -> StepTopologyArtifact | None:
     return None
 
 
+def _with_declared_exports(
+    payload: dict[str, object], spec: EntrySpec, *, logger: CliLogger | None
+) -> dict[str, object]:
+    """Produce the model's declared mesh exports and list what this run wrote.
+
+    Declared `@stl`/`@glb`/`@threemf` outputs are CONTENT-gated, not
+    build-gated: a current model whose STL was deleted heals it here from the
+    store package without a rebuild — the same thing a model-script run does on
+    its own no-op path, so the two front doors cannot disagree about what a
+    finished build leaves on disk.
+    """
+    written = _produce_declared_mesh_exports(spec, logger=logger, announce=False)
+    if written:
+        payload["exports"] = [relative_to_cwd(path) for path in written]
+    return payload
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m cadgen.step_artifact_cli",
@@ -350,7 +368,11 @@ def build_step_artifact(
     if not force:
         existing_artifact = _current_artifact_for_spec(existing_spec)
         if existing_artifact is not None:
-            return _existing_result_payload(existing_spec, existing_artifact)
+            return _with_declared_exports(
+                _existing_result_payload(existing_spec, existing_artifact),
+                existing_spec,
+                logger=logger,
+            )
 
     # The lock covers the WHOLE build, not just the generator run. run_script_generator
     # takes this same lock internally (re-entrantly, so the nesting is a no-op), but it
@@ -390,7 +412,11 @@ def build_step_artifact(
         if progress.skipped:
             artifact = _current_artifact_for_spec(existing_spec)
             if artifact is not None:
-                return _existing_result_payload(existing_spec, artifact)
+                return _with_declared_exports(
+                    _existing_result_payload(existing_spec, artifact),
+                    existing_spec,
+                    logger=logger,
+                )
         if from_generator:
             scene = run_script_generator(
                 existing_spec,
@@ -435,7 +461,11 @@ def build_step_artifact(
             progress=progress,
         )
     stats = result.selector_bundle.manifest.get("stats") if result.selector_bundle is not None else {}
-    return _generated_result_payload(spec, scene, stats if isinstance(stats, dict) else {})
+    return _with_declared_exports(
+        _generated_result_payload(spec, scene, stats if isinstance(stats, dict) else {}),
+        spec,
+        logger=logger,
+    )
 
 
 def run_cli_payload(argv: list[str] | None = None) -> dict[str, object]:

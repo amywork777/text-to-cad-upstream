@@ -66,7 +66,7 @@ The dev server stays running unless `VIEWER_SERVER_LIFETIME_MS` is set.
 The backend is `server/` — dependency-free Node: viewing runs no Python at all.
 It renders existing artifacts (render packages, sibling `.dxf` files);
 generation and export are the CAD CLIs' job. Importing a raw foreign STEP is
-the one build-shaped thing it does, and it spawns `cadgen import` as a child
+the one build-shaped thing it does, and it spawns `cadgen step build` as a child
 process — cadgen is a SOFT dependency (`server/cadgenResolve.mjs`): absent,
 viewing is unaffected and imports answer with one actionable install hint. The
 cad-viewer skill bundles the built client + this server and starts them with
@@ -89,7 +89,7 @@ there is no stored fallback, so the same URL always shows the same thing.
 - `src/shared/`: config helpers shared by the client and the launchers.
 - `server/`: the backend — the local filesystem CAD API (`/__cad/*`), catalog
   scanner, static server for `dist/`, the artifact-status authority, the
-  `cadgen import` bridge for foreign STEPs, reveal dialogs, and the instance
+  `cadgen step build` bridge for foreign STEPs, reveal dialogs, and the instance
   registry. Zero dependencies; zero Python for viewing.
 - `scripts/`: developer and runtime launchers, the test runner, and the
   end-to-end sweeps.

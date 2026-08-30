@@ -674,8 +674,15 @@ def _generate_step_outputs(
     return result
 
 
-def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None) -> None:
-    """Produce the model's declared ``@stl``/``@glb``/``@threemf`` outputs.
+def _produce_declared_mesh_exports(
+    spec: EntrySpec, *, logger: CliLogger | None, announce: bool = True
+) -> "tuple[Path, ...]":
+    """Produce the model's declared ``@stl``/``@glb``/``@threemf`` outputs and
+    RETURN the ones this call actually wrote.
+
+    The return value is what ``BuildResult.exports`` reports: outputs the
+    ledger already found current are not listed, because the field answers
+    "what did this run write", not "what does the model declare".
 
     Runs through the ONE mesh engine `cadgen step export` uses — same Node
     invocation, same records — so the two front doors cannot drift. Each
@@ -687,9 +694,13 @@ def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None)
 
     Tolerance precedence: declaration-level explicit > @step model-level
     explicit > tessellator default (matching the CLI's flag > model > default).
+
+    ``announce`` prints the ``wrote <FMT>: <path>`` lines. A caller that
+    renders the produced paths itself — a generated CLI printing its Result —
+    passes False so the same file is not reported twice.
     """
     if not spec.mesh_exports or spec.entry_path is None or spec.step_path is None:
-        return
+        return ()
     from cadgen.catalog import artifact_file_hash
     from cadgen._internal.mesh_export import (
         MeshExportJob,
@@ -701,7 +712,7 @@ def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None)
     document_hash = artifact_file_hash(spec.entry_path)
     package_dir = render_package_dir(spec.entry_path)
     if document_hash is None or not (package_dir / "assembly.json").is_file():
-        return
+        return ()
     pending: list[MeshExportJob] = []
     for declared in spec.mesh_exports:
         chord = declared.mesh_tolerance
@@ -727,7 +738,7 @@ def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None)
             )
         )
     if not pending:
-        return
+        return ()
     from cadgen.step_export_target import _color_hex
 
     run_mesh_exporter(
@@ -745,7 +756,9 @@ def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None)
             mesh_tolerance=job.mesh_tolerance,
             mesh_angular_tolerance=job.mesh_angular_tolerance,
         )
-        print(f"[cadgen] wrote {job.fmt.upper()}: {_display_path(job.out)}")
+        if announce:
+            print(f"[cadgen] wrote {job.fmt.upper()}: {_display_path(job.out)}")
+    return tuple(job.out for job in pending)
 
 
 def _stamp_descriptor_step_identity(package_dir: Path, step_hash: str) -> None:

@@ -2,14 +2,14 @@
 
 One long-lived process imports cadgen / OCP / build123d ONCE and then services
 directly-run @step/@dxf model scripts ("run") plus ``cadgen step export`` /
-``cadgen import`` / ``cadgen step inspect`` / ``cadgen snapshot`` invocations over
+``cadgen step build`` / ``cadgen step inspect`` / ``cadgen snapshot`` invocations over
 a per-worktree unix socket, so sessions skip the multi-second interpreter+OCP
 startup on every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
 never recurses into it.
 
 Protocol — one JSON request per connection, JSON-lines response:
 
-  request : {"tool": "run"|"export"|"import"|"inspect"|"snapshot",
+  request : {"tool": "run"|"export"|"step-build"|"inspect"|"snapshot",
              "argv": [...], "cwd": "...",
              "token": <client version token>}
   response: {"stream": "stdout"|"stderr", "data": "..."} chunks, then
@@ -68,7 +68,7 @@ _TOOL_IMPORTS = {
     # PYTHONHASHSEED=0.
     "run": "cadgen.cli._run_model",
     "export": "cadgen.cli.step_export",
-    "import": "cadgen.cli.step_import",
+    "step-build": "cadgen.cli.step_build",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
 }
@@ -525,7 +525,7 @@ cadgen-daemon takes no arguments.
 It is the warm-process server, started for you by cadgen.daemon.client when
 CADGEN_DAEMON=1 -- not a command to run by hand. It sits in scripts/ beside the
 CLIs you probably meant: python <model>.py, cadgen step export, cadgen step inspect,
-cadgen import, cadgen snapshot. Each of those takes --help.\
+cadgen step build, cadgen snapshot. Each of those takes --help.\
 """
 
 

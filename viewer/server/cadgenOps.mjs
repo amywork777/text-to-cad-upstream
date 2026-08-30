@@ -4,8 +4,9 @@
 // packages and sibling .dxf files. Generation and export belong to running
 // model scripts and the CLIs; the viewer neither runs generators nor writes
 // artifact bytes itself. The one build-shaped thing it does is importing a
-// raw FOREIGN .step, and that spawns `cadgen import` — the single import
-// producer — as a child process. cadgen is a SOFT dependency: absent, viewing
+// raw FOREIGN .step, and that spawns `cadgen step build` — importing a foreign
+// document is that one verb applied to it — as a child process. cadgen is a
+// SOFT dependency: absent, viewing
 // is unaffected and imports fail with one actionable message
 // (cadgenResolve.mjs).
 //
@@ -51,7 +52,7 @@ export function ownsArtifactPath(filePath) {
 }
 
 // --- build progress ----------------------------------------------------------
-// Every cadgen build (a CLI run of a model script, a CLI `cadgen import`, or
+// Every cadgen build (a CLI run of a model script, a CLI `cadgen step build`, or
 // the viewer's own import child) writes `.<pathKey>.generation.progress.json`
 // in the store's locks/ tier, keyed by the MODEL path (storePaths.mjs mirrors
 // cadgen.catalog.coordination_scope). Its phase fields are flattened at the
@@ -130,10 +131,14 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
     }
     const args = [
       ...resolved.prefixArgs,
-      "import",
+      "step",
+      "build",
       candidate,
       "--lock-timeout",
       String(IMPORT_LOCK_TIMEOUT_SECONDS),
+      // The result is machine-read: `step build` prints human lines by
+      // default and one JSON line (the BuildResult dataclass) under --json.
+      "--json",
     ];
     if (force) {
       args.push("--force");
@@ -142,9 +147,9 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
     // Python knobs (PYTHONPATH for a worktree's cadgen sources, VIRTUAL_ENV,
     // etc.) flow through with no custom plumbing.
     const child = spawn(resolved.command, args, {
-      // The STEP's own directory, NOT the served root: `cadgen import` scans
-      // its cwd for CAD sources to resolve generated siblings, and a large
-      // served root would pay a full recursive walk per import.
+      // The STEP's own directory, NOT the served root: `cadgen step build`
+      // scans its cwd for CAD sources to resolve generated siblings, and a
+      // large served root would pay a full recursive walk per import.
       cwd: path.dirname(candidate),
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -160,7 +165,7 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
       // ENOENT here means the resolved command vanished (uninstalled while
       // the server ran). Drop the cache so the next request re-probes.
       resolver.invalidate();
-      resolve({ ok: false, error: `could not run cadgen import: ${error.message}` });
+      resolve({ ok: false, error: `could not run cadgen step build: ${error.message}` });
     });
     child.on("close", (code) => {
       const payload = parseResultLine(stdout);
@@ -170,7 +175,7 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
       }
       resolve({
         ok: false,
-        error: (stderr || stdout || `cadgen import exited with code ${code}`).trim().slice(-500),
+        error: (stderr || stdout || `cadgen step build exited with code ${code}`).trim().slice(-500),
       });
     });
   }).finally(() => {
@@ -204,7 +209,7 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
         return status;
       }
       // The ONLY buildable state the viewer supports is importing a raw
-      // foreign STEP via `cadgen import`. Everything else renders what
+      // foreign STEP via `cadgen step build`. Everything else renders what
       // exists or names the CLI.
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
       if (verdict.rawStep && !verdict.generated) {

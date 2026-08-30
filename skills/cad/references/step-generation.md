@@ -137,13 +137,13 @@ source-level relationships are preserved before STEP export (see
 ## Imported STEP/STP files
 
 An imported STEP/STP file needs no model script. Build its render package once
-with `cadgen import`; `cadgen step inspect` and `cadgen step snapshot` also build it
+with `cadgen step build`; `cadgen step inspect` and `cadgen step snapshot` also build it
 on demand, and its part/assembly kind is inferred from the STEP product
 hierarchy. (The CAD Viewer's in-app import spawns this same
-`cadgen import` under the hood — one producer, one package format.)
+`cadgen step build` under the hood — one producer, one package format.)
 
 ```bash
-cadgen import path/to/imported.step [--kind part|assembly] [--force]
+cadgen step build path/to/imported.step [--force]
 ```
 
 To produce STL/3MF/native GLB files from an imported STEP, pass it directly to
@@ -170,7 +170,7 @@ on implicit resolution by `inspect`, `snapshot`, or the Viewer.
 Every model run writes the hidden adjacent render package as the build output.
 It powers CAD Viewer review, `$cad-viewer` workflows, and `cadgen step inspect`
 refs, and is not optional in the STEP workflow. Imported STEP/STP files get the
-same package via `cadgen import` or on demand, per the previous section.
+same package via `cadgen step build` or on demand, per the previous section.
 
 ## After generation
 
@@ -184,7 +184,7 @@ cadgen step inspect refs path/to/model.step --facts --planes --positioning
 
 ## Warm daemon (on by default)
 
-Every model run and `cadgen step export` / `cadgen import` / `cadgen step inspect` /
+Every model run and `cadgen step export` / `cadgen step build` / `cadgen step inspect` /
 `cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
 import. They are routed through a shared warm daemon **by default** — the
 decorator hands a directly-run script to the daemon before any kernel import —
