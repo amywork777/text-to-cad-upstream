@@ -27,6 +27,11 @@ function makePackage(t) {
         transform: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
       { id: "o1.2", name: "gear", component: "c0", color: [0.8, 0.1, 0.1, 1],
         transform: [1, 0, 0, 40, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
+      // A MIDTONE occurrence: 0 and 1 are fixed points of the sRGB transfer
+      // function, so a package of saturated primaries cannot tell a correct
+      // linear -> sRGB encoding from no encoding at all. Linear 0.5 can.
+      { id: "o1.3", name: "gear", component: "c0", color: [0.5, 0.5, 0.5, 1],
+        transform: [1, 0, 0, 80, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] },
     ],
   };
   fs.writeFileSync(path.join(packageDir, "assembly.json"), JSON.stringify(descriptor));
@@ -73,7 +78,7 @@ test("exports every format from one package, byte-deterministically", (t) => {
   assert.match(cacheEntries[0], /^c0-t\d+-l[0-9.e+-]+-a[0-9.e+-]+\.tess$/);
 });
 
-test("both occurrences land in the mesh: distinct transforms, distinct colors", (t) => {
+test("every occurrence lands in the mesh: distinct transforms, distinct colors", (t) => {
   const { root, packageDir } = makePackage(t);
   const out = path.join(root, "pair.glb");
   const result = runCli(
@@ -84,18 +89,42 @@ test("both occurrences land in the mesh: distinct transforms, distinct colors", 
   const bytes = fs.readFileSync(out);
   const jsonLength = bytes.readUInt32LE(12);
   const gltf = JSON.parse(bytes.subarray(20, 20 + jsonLength).toString("utf8"));
-  // Uncolored occurrence -> default; colored occurrence -> its own material.
-  // baseColorFactor is linear-space per glTF; convert back to sRGB bytes.
-  assert.equal(gltf.materials.length, 2);
+  // Uncolored occurrence -> default; colored occurrences -> their own material.
+  // baseColorFactor is linear-space per glTF, so a descriptor colour (also
+  // linear) must come back out UNCHANGED: encode to sRGB hex once on the way
+  // in, decode once on the way out.
+  assert.equal(gltf.materials.length, 3);
   const linearToSrgb = (c) =>
     Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055) * 255);
   const factors = gltf.materials
-    .map((m) => m.pbrMetallicRoughness.baseColorFactor.slice(0, 3).map(linearToSrgb))
-    .sort((a, b) => b[0] - a[0]);
-  assert.deepEqual(factors[0], [212, 212, 216]);
-  assert.deepEqual(factors[1], [204, 26, 26]);
+    .map((m) => m.pbrMetallicRoughness.baseColorFactor.slice(0, 3))
+    .sort((a, b) => b[0] - a[0] || b[1] - a[1]);
+  // Descriptor [0.8, 0.1, 0.1] linear -> #e75959 -> back to linear.
+  assert.deepEqual(factors[0].map(linearToSrgb), [231, 89, 89]);
+  // The default #d4d4d8 is AUTHORED sRGB, not a linear colour: it passes
+  // through the hex slot unconverted and must still read back as itself.
+  assert.deepEqual(factors[1].map(linearToSrgb), [212, 212, 216]);
+  // The midtone: linear 0.5 -> #bcbcbc -> ~0.5 again, not 0.214.
+  assert.deepEqual(factors[2].map(linearToSrgb), [188, 188, 188]);
+  for (const channel of factors[2]) {
+    assert.ok(Math.abs(channel - 0.5) < 0.004, `linear midtone must survive: ${channel}`);
+  }
   // Cache disabled: no cache dir appears.
   assert.equal(fs.existsSync(path.join(root, ".cache", "cadgen", "meshes")), false);
+});
+
+test("3MF displaycolor carries sRGB bytes, not the raw linear floats", (t) => {
+  const { root, packageDir } = makePackage(t);
+  const out = path.join(root, "colors.3mf");
+  assert.equal(
+    runCli(["--package-dir", packageDir, "--format", "3mf", "--out", out], { HOME: root }).status,
+    0,
+  );
+  // Stored (uncompressed) zip entries, so the model XML is readable as-is.
+  const text = fs.readFileSync(out).toString("latin1");
+  assert.match(text, /displaycolor="#E75959FF"/, "linear [0.8,0.1,0.1] -> sRGB #E75959");
+  assert.match(text, /displaycolor="#BCBCBCFF"/, "linear 0.5 -> sRGB #BCBCBC, not #808080");
+  assert.doesNotMatch(text, /displaycolor="#CC1A1AFF"/, "the raw linear bytes must not appear");
 });
 
 test("cached and fresh tessellations export identical bytes", (t) => {

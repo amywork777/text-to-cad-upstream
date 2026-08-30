@@ -15,19 +15,17 @@
 // identical bytes out.
 import { meshToBinaryStl, xmlEscape, zipStore } from "./meshFormats.js";
 import { writeGlb } from "../glb/writeGlb.js";
+// Every colour this module reads out of a package -- face, occurrence,
+// component, part -- is LINEAR, and every colour it hands downstream is an sRGB
+// hex string (writeGlb decodes it back to a linear baseColorFactor; 3MF's
+// displaycolor is specified sRGB). linearRgbToHex is that boundary.
+import { linearRgbToHex } from "../color.js";
 
 export const PACKAGE_MESH_EXPORT_FORMATS = ["stl", "glb", "3mf"];
 
+// Authored sRGB already, not a linear colour: it goes into the same hex slot the
+// encoded colours do, so it must NOT run through linearRgbToHex.
 const DEFAULT_COLOR_HEX = "#d4d4d8";
-
-function colorHexFromRgba(rgba) {
-  if (!Array.isArray(rgba) || rgba.length < 3) return null;
-  const channel = (value) =>
-    Math.max(0, Math.min(255, Math.round(Number(value) * 255)))
-      .toString(16)
-      .padStart(2, "0");
-  return `#${channel(rgba[0])}${channel(rgba[1])}${channel(rgba[2])}`;
-}
 
 // Row-major 3x4 (first 12 of the descriptor's 16-float row-major 4x4).
 function transformPoint(m, x, y, z, out, offset) {
@@ -84,7 +82,7 @@ export function buildPackageMeshPrimitives(descriptor, componentTessellations, o
   const componentColors = new Map(
     Object.entries(descriptor.components || {}).map(([cid, entry]) => [
       cid,
-      colorHexFromRgba(entry?.color),
+      linearRgbToHex(entry?.color),
     ]),
   );
   const groups = new Map(); // colorHex -> { positions: number[], normals: number[] }
@@ -99,9 +97,9 @@ export function buildPackageMeshPrimitives(descriptor, componentTessellations, o
     const tessellation = componentTessellations.get(cid);
     if (!tessellation) continue;
     const { positions, normals, indices, faceRanges } = tessellation;
-    const occurrenceColor = colorHexFromRgba(occurrence.color);
+    const occurrenceColor = linearRgbToHex(occurrence.color);
     const componentColor = componentColors.get(cid) || null;
-    const partColor = colorHexFromRgba(tessellation.partColor) || null;
+    const partColor = linearRgbToHex(tessellation.partColor) || null;
     const fallback = occurrenceColor || componentColor || partColor || defaultColor;
 
     const transform = Array.isArray(occurrence.transform) ? occurrence.transform : null;
@@ -110,7 +108,7 @@ export function buildPackageMeshPrimitives(descriptor, componentTessellations, o
     const nm = identity ? null : normalMatrix3(transform);
 
     for (const range of faceRanges || []) {
-      const faceColor = colorHexFromRgba(range.color);
+      const faceColor = linearRgbToHex(range.color);
       const group = groupFor(faceColor || fallback);
       const out = group.positions;
       const outNormals = group.normals;

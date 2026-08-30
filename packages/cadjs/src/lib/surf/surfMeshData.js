@@ -9,6 +9,7 @@
 // same half-edge convention as the GLB writer (side 0 = (v1,v2),
 // side 1 = (v2,v0), side 2 = (v0,v1)).
 
+import { linearRgbToHex } from "../color.js";
 import { parseSurf } from "./container.js";
 import { tessellateComponent } from "./tessellate.js";
 
@@ -23,14 +24,6 @@ const SURFACE_CLASS_CODES = {
   nonManifold: 6,
   unknown: 7,
 };
-
-function colorHex(rgb) {
-  const channel = (value) =>
-    Math.round(Math.min(Math.max(value, 0), 1) * 255)
-      .toString(16)
-      .padStart(2, "0");
-  return `#${channel(rgb[0])}${channel(rgb[1])}${channel(rgb[2])}`;
-}
 
 export function buildMeshDataFromSurf(index, floats, options = {}) {
   const component = options.component || tessellateComponent(index, floats, options);
@@ -78,8 +71,10 @@ export function buildMeshDataFromSurf(index, floats, options = {}) {
     }
   }
 
+  // The surf's partColor is LINEAR RGBA (a build123d/OCCT Color), while
+  // `part.color` is the sRGB hex the viewer decodes with new THREE.Color.
   const partColor = Array.isArray(index.partColor) ? index.partColor : null;
-  const color = partColor ? colorHex(partColor) : null;
+  const color = partColor ? linearRgbToHex(partColor) : null;
   const part = {
     id: "surf:0",
     occurrenceId: "",

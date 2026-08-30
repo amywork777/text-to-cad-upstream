@@ -156,10 +156,27 @@ def _display_name_for(path: Path) -> str:
 MESH_EXPORT_BUILDER = "mesh-export.mjs"
 
 
+def _linear_channel_to_srgb_byte(channel: float) -> int:
+    """One LINEAR channel (0..1) to the 0..255 byte an sRGB hex carries.
+
+    The mirror of ``linearChannelToSrgbByte`` in ``packages/cadjs/src/lib/color.js``
+    -- see that module for why the boundary exists.
+    """
+    clamped = max(0.0, min(1.0, channel))
+    srgb = clamped * 12.92 if clamped <= 0.0031308 else 1.055 * clamped ** (1 / 2.4) - 0.055
+    return max(0, min(255, round(srgb * 255)))
+
+
 def _color_hex(color) -> str | None:
-    """RGBA floats (0..1) -> #rrggbb, or None when there is no usable color."""
+    """LINEAR RGBA floats (0..1) -> sRGB ``#rrggbb``, or None when there is no
+    usable color.
+
+    A build123d ``Color`` / OCCT ``Quantity_Color`` is linear; the hex this
+    feeds to ``--default-color`` is sRGB (the mesh exporter decodes it back to a
+    linear glTF ``baseColorFactor``, and 3MF's ``displaycolor`` is spec'd sRGB).
+    """
     try:
-        red, green, blue = (max(0, min(255, round(float(c) * 255))) for c in tuple(color)[:3])
+        red, green, blue = (_linear_channel_to_srgb_byte(float(c)) for c in tuple(color)[:3])
     except (TypeError, ValueError):
         return None
     return f"#{red:02x}{green:02x}{blue:02x}"

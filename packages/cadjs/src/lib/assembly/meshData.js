@@ -1,3 +1,10 @@
+// An occurrence override colour arrives as linear-RGB floats (the descriptor authors it in the
+// renderer's working space). The baked composer wrote those floats straight into vertex colours;
+// the shared-geometry composer instead drives them through the material via part.color, which the
+// viewer parses as an sRGB hex string (readSourceColor -> new THREE.Color, decoded back to linear).
+// Encoding linear -> sRGB hex makes that round-trip land on the same linear albedo the baked
+// path shaded, so a flat override renders pixel-identically without baking per-occurrence vertices.
+import { linearRgbToHex } from "../color.js";
 import { mergeBounds } from "../urdf/kinematics.js";
 
 const IDENTITY_TRANSFORM = Object.freeze([
@@ -25,31 +32,6 @@ function toVectorArray(value) {
   }
   const vector = value.slice(0, 3).map((component) => Number(component));
   return vector.every((component) => Number.isFinite(component)) ? vector : null;
-}
-
-// An occurrence override colour arrives as linear-RGB floats (the descriptor authors it in the
-// renderer's working space). The baked composer wrote those floats straight into vertex colours;
-// the shared-geometry composer instead drives them through the material via part.color, which the
-// viewer parses as an sRGB hex string (readSourceColor -> new THREE.Color, decoded back to linear).
-// Encoding linear -> sRGB hex here makes that round-trip land on the same linear albedo the baked
-// path shaded, so a flat override renders pixel-identically without baking per-occurrence vertices.
-function linearChannelToSrgbByte(channel) {
-  const clamped = Math.min(1, Math.max(0, Number(channel) || 0));
-  const srgb = clamped <= 0.0031308
-    ? clamped * 12.92
-    : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
-  return Math.round(Math.min(1, Math.max(0, srgb)) * 255);
-}
-
-function linearRgbToHex(rgb) {
-  if (!Array.isArray(rgb) || rgb.length < 3) {
-    return null;
-  }
-  const hex = rgb
-    .slice(0, 3)
-    .map((channel) => linearChannelToSrgbByte(channel).toString(16).padStart(2, "0"))
-    .join("");
-  return `#${hex}`;
 }
 
 function normalizeMateEndpoint(endpoint) {

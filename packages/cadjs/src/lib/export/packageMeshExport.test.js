@@ -54,6 +54,61 @@ test("color priority: face > occurrence > component > part > default", () => {
   }
 });
 
+// The regression this suite used to miss entirely: every fixture above is a
+// saturated primary, and 0 and 1 are FIXED POINTS of the sRGB transfer
+// function, so encoding a linear float as if it were already sRGB looks
+// perfect on them. Only midtones show it -- linear 0.5 is sRGB 0xbc, not 0x80.
+const MID_LINEAR = 0.5;
+const MID_SRGB_HEX = "bc";
+
+test("linear midtones encode as sRGB at every color level", () => {
+  // [faceColor, occurrenceColor, componentColor, partColor, expected]
+  const cases = [
+    [[MID_LINEAR, 0, 0, 1], null, null, null, `#${MID_SRGB_HEX}0000`],
+    [null, [MID_LINEAR, MID_LINEAR, MID_LINEAR, 1], null, null, `#${MID_SRGB_HEX.repeat(3)}`],
+    [null, null, [0, MID_LINEAR, 0, 1], null, `#00${MID_SRGB_HEX}00`],
+    [null, null, null, [0.2, MID_LINEAR, 0.8, 1], "#7cbce7"],
+  ];
+  for (const [faceColor, occurrenceColor, componentColor, partColor, expected] of cases) {
+    const tess = triangleTessellation({ partColor });
+    tess.faceRanges[0].color = faceColor;
+    const descriptor = descriptorWith(
+      [{ id: "o1", component: "c0", transform: IDENTITY, ...(occurrenceColor ? { color: occurrenceColor } : {}) }],
+      { c0: componentColor ? { color: componentColor } : {} },
+    );
+    const mesh = buildPackageMeshPrimitives(descriptor, new Map([["c0", tess]]));
+    assert.equal(mesh.primitives[0].color, expected);
+  }
+});
+
+test("GLB round-trips a linear midtone back to the same linear baseColorFactor", () => {
+  // The whole chain in one assertion: linear in -> sRGB hex -> glTF's LINEAR
+  // baseColorFactor. Encoding the hex naively made this land on 0.214, the
+  // signature of a double gamma application.
+  const descriptor = descriptorWith([
+    { id: "o1", component: "c0", transform: IDENTITY, color: [MID_LINEAR, MID_LINEAR, MID_LINEAR, 1] },
+  ]);
+  const mesh = buildPackageMeshPrimitives(descriptor, new Map([["c0", triangleTessellation()]]));
+  assert.equal(mesh.primitives[0].color, `#${MID_SRGB_HEX.repeat(3)}`);
+  const bytes = packageMeshToGlb(mesh, { name: "mid" });
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const gltf = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))));
+  const factor = gltf.materials[0].pbrMetallicRoughness.baseColorFactor;
+  for (const channel of factor.slice(0, 3)) {
+    assert.ok(Math.abs(channel - MID_LINEAR) < 0.004, `expected ~${MID_LINEAR}, got ${channel}`);
+  }
+});
+
+test("3MF displaycolor is the sRGB encoding of the linear part color", () => {
+  // displaycolor is spec'd sRGB, so the linear float must be converted exactly
+  // once on the way in -- it used to be written verbatim.
+  const tess = triangleTessellation({ partColor: [MID_LINEAR, MID_LINEAR, MID_LINEAR, 1] });
+  const descriptor = descriptorWith([{ id: "o1", component: "c0", transform: IDENTITY }]);
+  const mesh = buildPackageMeshPrimitives(descriptor, new Map([["c0", tess]]));
+  const text = new TextDecoder("latin1").decode(packageMeshTo3mf(mesh, { name: "mid" }));
+  assert.match(text, new RegExp(`displaycolor="#${MID_SRGB_HEX.repeat(3).toUpperCase()}FF"`));
+});
+
 test("per-face colors split one component into color-grouped primitives", () => {
   const tess = triangleTessellation({
     positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 0, 3, 0, 0, 2, 1, 0]),

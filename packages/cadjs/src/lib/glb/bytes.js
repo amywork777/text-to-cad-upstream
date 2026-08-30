@@ -112,7 +112,8 @@ export function boundsForPositions(positions) {
 }
 
 /**
- * One sRGB-encoded channel (0..1) to linear.
+ * One sRGB-encoded channel (0..1) to linear. Re-exported from the shared colour
+ * module so this file's callers need only one import.
  *
  * glTF is explicit that `baseColorFactor` and `COLOR_0` are LINEAR, while authored hex
  * colours -- what a colour picker shows and what every model's `baseColor` param holds --
@@ -123,11 +124,7 @@ export function boundsForPositions(positions) {
  * Kept separate from `hexToRgb01` on purpose: that function's job is "hex to 0..1", which is
  * still sRGB, and a future caller wanting sRGB should not be silently handed linear.
  */
-export function srgbToLinear(component) {
-  return component <= 0.04045
-    ? component / 12.92
-    : ((component + 0.055) / 1.055) ** 2.4;
-}
+export { srgbToLinear } from "../color.js";
 
 export function hexToRgb01(hex, fallback = "#d4d4d8") {
   const raw = String(hex || fallback).trim();
