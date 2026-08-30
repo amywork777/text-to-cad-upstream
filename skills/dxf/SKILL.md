@@ -153,9 +153,8 @@ cadgen dxf snapshot --input <drawing> --output <file.png>   # render it
 
 `cadgen dxf build` and running the script are the same build through the same
 gate: an unchanged source whose recorded `.dxf` still verifies is a no-op, and
-`--force` rebuilds anyway. Either way the bytes are a function of the source
-alone — the build pins PYTHONHASHSEED, because ezdxf's object ordering follows
-hash randomization.
+`--force` rebuilds anyway. Either way the bytes are a function of the drawing's
+GEOMETRY, so the two doors and a warm daemon worker all write the same file.
 
 An imported `.dxf` needs no build at all — the CAD Viewer renders it directly.
 

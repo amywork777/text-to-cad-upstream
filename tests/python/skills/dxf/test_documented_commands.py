@@ -207,6 +207,19 @@ class DocumentedCommandForms(_DrawingHarness):
         self.run_drawing("gasket.py", "-o", "out/custom.dxf")
         self.assertTrue((self.project / "out" / "custom.dxf").is_file())
 
+    def test_the_named_door_builds_the_same_file_as_the_script_door(self) -> None:
+        """`cadgen dxf build` and `python drawing.py` are one build, two doors.
+
+        Documented as identical, so the drawings they write must actually be
+        byte-identical — the property that would quietly break if either door
+        acquired its own serialization path.
+        """
+        self.run_drawing("gasket.py")
+        by_script = (self.project / "gasket.dxf").read_bytes()
+        (self.project / "gasket.dxf").unlink()
+        self.run_drawing("-m", "cadgen.cli", "dxf", "build", "gasket.py")
+        self.assertEqual(by_script, (self.project / "gasket.dxf").read_bytes())
+
     def test_no_undocumented_or_missing_flags(self) -> None:
         """SKILL.md's flag list is what the parser accepts, exactly.
 
