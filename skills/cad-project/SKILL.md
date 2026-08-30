@@ -1,6 +1,6 @@
 ---
 name: cad-project
-description: Project structure for multi-part CAD work - src/ for model scripts and shared code, format folders (STEP/, DXF/, STL/) for raw outputs, naming, and commit policy for projects with several @step/@dxf model scripts and vendor imports. Use when starting a CAD project with more than a couple of models, when asked how to organize CAD code and artifacts, or when growing a flat folder of models into a project.
+description: Project structure for multi-part CAD work - src/ for model scripts and shared code, format folders (STEP/, DXF/, STL/) for raw outputs, naming, and commit policy for projects with several @step/@dxf model scripts and imported source files. Use when starting a CAD project with more than a couple of models, when asked how to organize CAD code and artifacts, or when growing a flat folder of models into a project.
 ---
 
 # CAD project structure
@@ -28,8 +28,8 @@ Only OUTPUTS are organized by format. Code is not: a model script is not a
       holes.py
   STEP/                   # raw outputs ONLY (+ their source sidecars)
     plate.step
-    vendor/               #   committed vendor/imported STEPs (see commit policy)
-  DXF/  STL/  GLB/  3MF/  # other format folders, outputs only
+    imported/             #   committed source files brought in from outside (see commit policy)
+  DXF/  STL/  GLB/  3MF/  # other format folders: same shape, outputs + imported/
   tmp/                    # scratch: snapshots, debug renders (gitignored)
 ```
 
@@ -84,7 +84,10 @@ artifacts (scripts never appear); before anything is built, discovery is
   (one model per file).
 - Never distinguish files by case alone (macOS filesystems are usually
   case-insensitive).
-- Vendor/imported STEPs keep their upstream names and live in `STEP/vendor/`.
+- Files brought in from outside — vendor downloads, supplier files, anything
+  used as a SOURCE, whether rendered directly or composed into generated
+  models downstream — keep their upstream names and live in the format
+  folder's `imported/` subfolder (`STEP/imported/`, `DXF/imported/`, ...).
 
 ## `src/README.md` — the model catalog
 
@@ -100,7 +103,7 @@ what builds what without reading every script:
 | plate_drawing.py | DXF/plate_drawing.dxf | plate flat pattern            |
 
 Build: `python src/<script>` per row; unchanged models are no-ops.
-Vendor imports: STEP/vendor/servo.step (committed, no script).
+Imported sources: STEP/imported/servo.step (committed, no script).
 ```
 
 Keep it a table plus a few lines; update it whenever a model is added or
@@ -115,26 +118,31 @@ anything code cannot reproduce are committed:
 2. **Generated** (the format folders): NOT committed by default — a fresh
    clone regenerates by running the scripts. Snapshots and other review
    renders are scratch, not artifacts: they go to `tmp/`, always ignored.
-3. **Committed exceptions, made deliberately**: vendor/imported files under
-   `STEP/vendor/` (no code can regenerate them — a code-only checkout must
-   never be missing INPUTS, only derived outputs) and pinned fixtures —
+3. **Committed exceptions, made deliberately**: imported source files under
+   any format folder's `imported/` (no code can regenerate them — a
+   code-only checkout must never be missing INPUTS, only derived outputs)
+   and pinned fixtures —
    anything asserted against byte-for-byte, since regeneration on a newer
    kernel can legally change bytes for identical geometry. Pin a loose file
    with its own negation line or `git add -f`.
 
 ```gitignore
 /STEP/*
-!/STEP/vendor/
+!/STEP/imported/
 /DXF/*
+!/DXF/imported/
 /STL/*
+!/STL/imported/
 /GLB/*
+!/GLB/imported/
 /3MF/*
+!/3MF/imported/
 /tmp/
 __pycache__/
 ```
 
 Note the `*` forms: ignoring the directory itself (`/STEP/`) would make the
-vendor negation dead — git never descends into an ignored directory.
+`imported/` negation dead — git never descends into an ignored directory.
 
 ## Scaffolding a new project
 

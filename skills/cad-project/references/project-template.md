@@ -101,17 +101,21 @@ Build everything: run each script (`python src/plate.py`,
 
 ```gitignore
 /STEP/*
-!/STEP/vendor/
+!/STEP/imported/
 /DXF/*
+!/DXF/imported/
 /STL/*
+!/STL/imported/
 /GLB/*
+!/GLB/imported/
 /3MF/*
+!/3MF/imported/
 /tmp/
 __pycache__/
 ```
 
 The `*` forms matter: ignoring the directory itself (`/STEP/`) would make the
-vendor negation dead — git never descends into an ignored directory. Pin any
+`imported/` negation dead — git never descends into an ignored directory. Pin any
 other file deliberately with its own negation line or `git add -f`.
 
 ## Verify
