@@ -106,9 +106,10 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         prog=prog,
         description=(
             "Export one CAD model — a @step model script or an imported STEP/STP "
-            "file — to STL/3MF/GLB. The model is built once per run, so all requested "
-            "formats come from identical geometry. Writes no .step file: use "
-            "a model script (python <model>.py) to write a generated model's STEP."
+            "file — to STL/3MF/GLB. A current model exports straight from its render "
+            "package; otherwise geometry is built once per run. All requested formats "
+            "come from one tessellation of identical geometry. Writes no .step file: "
+            "use a model script (python <model>.py) to write a generated model's STEP."
         ),
     )
     _add_export_arguments(parser)

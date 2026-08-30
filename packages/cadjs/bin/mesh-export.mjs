@@ -10,11 +10,15 @@
  * native blob assembly and never meshes.
  *
  * Contract:
- *   node mesh-export.mjs --package-dir <abs dir> --format stl|glb|3mf \
- *     --out <abs path> [--name N] [--chord-tolerance t] [--angle-tolerance t]
- *   stdout is exactly one JSON line: {"ok":true,"path":...,"triangleCount":...}
+ *   node mesh-export.mjs --package-dir <abs dir> \
+ *     --format stl|glb|3mf --out <abs path> [--format F --out P ...] \
+ *     [--name N] [--chord-tolerance t] [--angle-tolerance t]
+ *   `--format`/`--out` repeat as ordered pairs; the package is tessellated and
+ *   the mesh built ONCE, then serialized per pair, so N formats cost one
+ *   tessellation. stdout is exactly one JSON line:
+ *   {"ok":true,"files":[{"path":...,"format":...,"triangleCount":...},...]}
  *   or {"ok":false,"error":...}. No locks, no progress protocol — this writes
- *   only the file the caller named (plus best-effort cache entries).
+ *   only the files the caller named (plus best-effort cache entries).
  *
  * Component tessellations are cached under <cache root>/meshes/ (root:
  * CADGEN_CACHE_DIR, else the platform cache dir — see tessellationCacheFs.mjs)
@@ -48,19 +52,22 @@ import {
 } from "../src/lib/export/packageMeshExport.js";
 
 function parseArgs(argv) {
+  // Scalar flags are last-wins; `--format`/`--out` collect in CLI order and
+  // zip into export pairs below.
   const args = {};
+  const formats = [];
+  const outs = [];
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith("--")) continue;
     const next = argv[index + 1];
-    if (next === undefined || next.startsWith("--")) {
-      args[token.slice(2)] = "true";
-    } else {
-      args[token.slice(2)] = next;
-      index += 1;
-    }
+    const value = next === undefined || next.startsWith("--") ? "true" : next;
+    if (value !== "true") index += 1;
+    if (token === "--format") formats.push(value);
+    else if (token === "--out") outs.push(value);
+    else args[token.slice(2)] = value;
   }
-  return args;
+  return { args, formats, outs };
 }
 
 function fail(message) {
@@ -92,20 +99,30 @@ function tessellationForComponent(packageDir, cid, entry, options) {
   return { ...component, partColor };
 }
 
-const args = parseArgs(process.argv.slice(2));
+const { args, formats, outs } = parseArgs(process.argv.slice(2));
 const packageDir = String(args["package-dir"] || "");
-const outPath = String(args.out || "");
-const format = String(args.format || "").toLowerCase();
 if (!packageDir || !path.isAbsolute(packageDir)) {
   fail("--package-dir must be an absolute render-package directory");
 }
-if (!outPath || !path.isAbsolute(outPath)) {
-  fail("--out must be an absolute output path");
+if (!formats.length || formats.length !== outs.length) {
+  fail("--format and --out must be given as one or more ordered pairs");
 }
-if (!PACKAGE_MESH_EXPORT_FORMATS.includes(format)) {
-  fail(`--format must be one of ${PACKAGE_MESH_EXPORT_FORMATS.join(", ")}`);
+const jobs = formats.map((rawFormat, index) => ({
+  format: String(rawFormat).toLowerCase(),
+  out: String(outs[index]),
+}));
+for (const job of jobs) {
+  if (!job.out || !path.isAbsolute(job.out)) {
+    fail("--out must be an absolute output path");
+  }
+  if (!PACKAGE_MESH_EXPORT_FORMATS.includes(job.format)) {
+    fail(`--format must be one of ${PACKAGE_MESH_EXPORT_FORMATS.join(", ")}`);
+  }
 }
-const name = String(args.name || path.basename(outPath).replace(/\.[^.]+$/, "") || "model");
+if (new Set(jobs.map((job) => job.out)).size !== jobs.length) {
+  fail("--out paths must be distinct");
+}
+const name = String(args.name || path.basename(jobs[0].out).replace(/\.[^.]+$/, "") || "model");
 const options = { ...DEFAULT_OPTIONS };
 if (args["chord-tolerance"] !== undefined) {
   options.chordTolerance = Number(args["chord-tolerance"]);
@@ -138,14 +155,16 @@ try {
     defaultColor ? { defaultColor: defaultColor.toLowerCase() } : {},
   );
   if (!mesh.triangleCount) throw new Error("package produced no triangles");
-  const { body } = packageMeshToFormat(mesh, format, { name });
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  const temp = `${outPath}.${process.pid}.tmp`;
-  fs.writeFileSync(temp, body);
-  fs.renameSync(temp, outPath);
-  process.stdout.write(
-    `${JSON.stringify({ ok: true, path: outPath, format, triangleCount: mesh.triangleCount })}\n`,
-  );
+  const files = [];
+  for (const job of jobs) {
+    const { body } = packageMeshToFormat(mesh, job.format, { name });
+    fs.mkdirSync(path.dirname(job.out), { recursive: true });
+    const temp = `${job.out}.${process.pid}.tmp`;
+    fs.writeFileSync(temp, body);
+    fs.renameSync(temp, job.out);
+    files.push({ path: job.out, format: job.format, triangleCount: mesh.triangleCount });
+  }
+  process.stdout.write(`${JSON.stringify({ ok: true, files })}\n`);
 } catch (error) {
   fail(error?.message || error);
 }

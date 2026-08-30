@@ -11,13 +11,16 @@ Two callers share this module, and they offer different formats:
   ``.step`` file is written by the model script (``python <model>.py``) instead.
 
 Both accept an imported ``.step``/``.stp`` or a generated ``gen_step()`` Python source;
-both always build from source, so exports can never be stale.
+exports can never be stale: a model either passes the canonical freshness gate (closure
+included) and exports from its store render package, or it rebuilds from source.
 
-It is deliberately distinct from :mod:`cadgen.step_artifact_cli`, which only (re)builds the
-store-primary render package for the viewer. This module
-produces standalone files and writes **no** package or beside-source artifacts. Within a
-run the scene is built once and meshed at most once, so every requested format comes from
-identical geometry.
+Mesh formats tessellate from a render package — the STORE package when the model is
+current (the fast path: no generator run, no STEP load, no extraction), else a one-shot
+temporary package extracted from the freshly built scene. Geometry is extracted at most
+once per run and one Node invocation serializes every requested format from one
+tessellation, so all formats come from identical geometry. The module writes no
+beside-source artifacts; the one cache effect is that an imported model missing its
+package warms the SHARED store via the ``cadgen import`` build.
 
 Emits a single final JSON line on stdout: ``{"ok": true, "path": ..., "filename": ...}``
 or ``{"ok": false, "error": ...}`` (the Node spawner parses the last stdout JSON line).
@@ -162,34 +165,19 @@ def _color_hex(color) -> str | None:
     return f"#{red:02x}{green:02x}{blue:02x}"
 
 
-def _export_mesh_from_scene(
-    fmt: str,
+def _build_export_package_from_scene(
     spec: EntrySpec,
     scene: LoadedStepScene,
-    out: Path,
+    package_dir: Path,
     *,
-    mesh_tolerance: float | None,
-    mesh_angular_tolerance: float | None,
     logger: CliLogger,
-) -> Path:
-    """STL/3MF/GLB through the ONE tessellation path (design/unified-tessellation.md).
-
-    The scene's exact geometry is written to a TEMPORARY render package (surf
-    extraction only — no OCCT meshing) and the bundled Node exporter tessellates
-    each component's exact surfaces with the same watertight tessellator the
-    viewport uses, then serializes the requested format: boundary vertices lie on
-    the exact STEP edge curves, colors carry per face/occurrence/part, and the
-    bytes are deterministic. Tolerance overrides are the tessellator's units —
-    chord tolerance RELATIVE to each component's bounding diagonal, angular
-    tolerance in radians — not the retired OCCT absolute deflections.
-    """
-    import subprocess
-    import tempfile
-
+) -> None:
+    """Extract the scene's exact geometry into ``package_dir`` (surf extraction
+    only — no OCCT meshing). Run at most ONCE per export run: every requested
+    format tessellates from this one package."""
     from cadgen.coordination.lock import exclusive
     from cadgen.coordination.paths import write_lock_path
     from cadgen._internal.component_package import build_package_from_compound
-    from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
 
     compound = getattr(scene, "source_compound", None)
     if compound is None:
@@ -197,37 +185,62 @@ def _export_mesh_from_scene(
 
         compound = scene_to_build123d_compound(scene)
 
-    with tempfile.TemporaryDirectory(prefix="cadgen-mesh-export-") as tmp:
-        package_dir = Path(tmp) / "package"
-        package_dir.mkdir(parents=True)
-        with logger.timed("extract exact geometry"):
-            # The write lock is formally required at the package mutation
-            # boundary; on a private temp dir it is uncontended by construction.
-            with exclusive(write_lock_path(package_dir)):
-                build_package_from_compound(
-                    compound,
-                    package_dir=package_dir,
-                    root_name=spec.step_path.stem,
-                    single_component=spec.kind != "assembly",
-                    force=True,
-                )
-        argv = [
-            str(cad_node_executable()),
-            str(node_builder_script(MESH_EXPORT_BUILDER)),
-            "--package-dir", str(package_dir),
-            "--format", fmt,
-            "--out", str(out),
-            "--name", spec.step_path.stem,
-        ]
-        if mesh_tolerance is not None:
-            argv += ["--chord-tolerance", repr(float(mesh_tolerance))]
-        if mesh_angular_tolerance is not None:
-            argv += ["--angle-tolerance", repr(float(mesh_angular_tolerance))]
-        default_color = _color_hex(spec.color)
-        if default_color is not None:
-            argv += ["--default-color", default_color]
-        with logger.timed(f"tessellate + write {fmt}"):
-            proc = subprocess.run(argv, capture_output=True, text=True)
+    package_dir.mkdir(parents=True, exist_ok=True)
+    with logger.timed("extract exact geometry"):
+        # The write lock is formally required at the package mutation
+        # boundary; on a private temp dir it is uncontended by construction.
+        with exclusive(write_lock_path(package_dir)):
+            build_package_from_compound(
+                compound,
+                package_dir=package_dir,
+                root_name=spec.step_path.stem,
+                single_component=spec.kind != "assembly",
+                force=True,
+            )
+
+
+def _run_mesh_exporter(
+    package_dir: Path,
+    jobs: "list[tuple[str, Path]]",
+    *,
+    name: str,
+    default_color: str | None,
+    mesh_tolerance: float | None,
+    mesh_angular_tolerance: float | None,
+    logger: CliLogger,
+) -> None:
+    """STL/3MF/GLB through the ONE tessellation path (design/unified-tessellation.md).
+
+    One Node invocation serves every requested format: the bundled exporter
+    tessellates each component's exact surfaces once — the same watertight
+    tessellator the viewport uses — then serializes per format. Boundary
+    vertices lie on the exact STEP edge curves, colors carry per
+    face/occurrence/part, and the bytes are deterministic. Tolerance overrides
+    are the tessellator's units — chord tolerance RELATIVE to each component's
+    bounding diagonal, angular tolerance in radians — not the retired OCCT
+    absolute deflections.
+    """
+    import subprocess
+
+    from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
+
+    argv = [
+        str(cad_node_executable()),
+        str(node_builder_script(MESH_EXPORT_BUILDER)),
+        "--package-dir", str(package_dir),
+        "--name", name,
+    ]
+    for fmt, out in jobs:
+        argv += ["--format", fmt, "--out", str(out)]
+    if mesh_tolerance is not None:
+        argv += ["--chord-tolerance", repr(float(mesh_tolerance))]
+    if mesh_angular_tolerance is not None:
+        argv += ["--angle-tolerance", repr(float(mesh_angular_tolerance))]
+    if default_color is not None:
+        argv += ["--default-color", default_color]
+    label = "+".join(fmt for fmt, _ in jobs)
+    with logger.timed(f"tessellate + write {label}"):
+        proc = subprocess.run(argv, capture_output=True, text=True)
     payload: dict = {}
     for line in reversed(proc.stdout.splitlines()):
         stripped = line.strip()
@@ -237,10 +250,53 @@ def _export_mesh_from_scene(
             except ValueError:
                 pass
             break
-    if not payload.get("ok") or not out.is_file():
+    missing = [out for _, out in jobs if not out.is_file()]
+    if not payload.get("ok") or missing:
         detail = str(payload.get("error") or proc.stderr or f"exit {proc.returncode}").strip()
-        raise RuntimeError(f"mesh export failed for {out.name}: {detail}")
-    return out
+        raise RuntimeError(f"mesh export failed for {label}: {detail}")
+
+
+def _current_store_package(spec: EntrySpec) -> Path | None:
+    """The store render package for a CURRENT model, or None.
+
+    This is the export fast path: when the canonical freshness gate — the same
+    one `python <model>.py` and the artifact CLI use, closure included — says
+    the model is current, its store package holds exactly the surf geometry the
+    mesh exporter consumes, and extraction is pure waste. A stale or unbuilt
+    model returns None and the caller builds from source, so exports can never
+    serve stale geometry (the #308 class)."""
+    from cadgen.catalog import render_package_dir
+    from cadgen.step_artifact_cli import _current_artifact_for_spec
+
+    if spec.entry_path is None:
+        return None
+    if _current_artifact_for_spec(spec) is None:
+        return None
+    return render_package_dir(spec.entry_path)
+
+
+def _ensure_imported_store_package(
+    repo_root: Path,
+    step_path: Path,
+    *,
+    logger: CliLogger,
+) -> Path:
+    """The store render package for an imported STEP, built if missing.
+
+    An imported file's package is keyed by its content hash, so it can never be
+    stale — only absent. On a miss this warms the SHARED store through the same
+    build (and locks) `cadgen import` uses; nothing export-specific is stored,
+    and every later export, view, or snapshot of these bytes reuses it."""
+    from cadgen.catalog import render_package_dir
+    from cadgen.step_artifact_cli import build_step_artifact
+
+    package_dir = render_package_dir(step_path)
+    if not (package_dir / "assembly.json").is_file():
+        build_step_artifact(repo_root=repo_root, step=step_path, logger=logger)
+        package_dir = render_package_dir(step_path)
+    if not (package_dir / "assembly.json").is_file():
+        raise RuntimeError(f"no render package for {step_path.name} after import build")
+    return package_dir
 
 
 def _export_scene(
@@ -283,20 +339,120 @@ def _export_scene(
             return out
         raise RuntimeError("No STEP geometry available to export")
 
-    if fmt in MESH_EXPORT_FORMATS:
-        # OCCT meshes nothing here: STL/3MF/GLB come from the JS tessellator
-        # via the bundled Node exporter (the GLB is Y-up glTF for external
-        # tools, matching the retired native writer's convention).
-        return _export_mesh_from_scene(
-            fmt,
+    raise ValueError(f"Unsupported export format: {fmt}")
+
+
+def _resolve_mesh_package(
+    repo_root: Path,
+    step_path: Path | None,
+    source_path: Path | None,
+    *,
+    logger: CliLogger,
+) -> tuple[EntrySpec, Path | None, LoadedStepScene | None]:
+    """Resolve what a mesh export tessellates from: ``(spec, package_dir, scene)``.
+
+    A CURRENT model resolves to its store render package — no generator run, no
+    STEP load, no extraction; the package already holds the exact surf geometry
+    the exporter consumes. An imported model can only miss (content-hash keying
+    cannot go stale), and a miss builds the shared store package via the
+    ``cadgen import`` path. Only a STALE generated model still pays for source:
+    its generator runs in-memory and the scene comes back for a one-shot
+    temporary package (``package_dir`` None)."""
+    if source_path is not None:
+        source = source_from_path(source_path)
+        if source is None:
+            raise RuntimeError(f"Python generator is not a gen_step() CAD source: {source_path}")
+        spec = _entry_spec_from_source(source)
+        if spec.step_path is None:
+            raise RuntimeError(f"Generator defines no STEP output: {source_path}")
+        if step_path is not None and spec.step_path.resolve() != step_path.resolve():
+            spec = replace(
+                spec,
+                cad_ref=_cad_ref_for_step(repo_root, step_path),
+                display_name=step_path.stem,
+                step_path=step_path,
+            )
+        package_dir = _current_store_package(spec)
+        if package_dir is not None:
+            logger.debug(f"reusing current render package: {package_dir.name}")
+            return spec, package_dir, None
+        # See _resolve_spec_and_scene on lock_intent: an export must not claim
+        # the writer lock, or a fully-current model reports `generating`.
+        scene = run_script_generator(
             spec,
-            scene,
-            out,
+            "gen_step",
+            logger=logger,
+            force=True,
+            lock_intent="generate",
+        )
+        if scene is None:
+            raise RuntimeError(f"Generator did not produce a STEP scene: {spec.source_ref}")
+        return spec, None, scene
+
+    if step_path is None:
+        raise ValueError("step_path is required for imported STEP/STP models")
+    if not step_path.is_file():
+        raise FileNotFoundError(f"STEP file does not exist: {step_path}")
+    from cadgen.step_artifact_cli import _relative_to_base
+
+    spec = EntrySpec(
+        source_ref=_relative_to_base(repo_root, step_path),
+        cad_ref=_cad_ref_for_step(repo_root, step_path),
+        kind="part",
+        source_path=step_path,
+        display_name=step_path.stem,
+        source="imported",
+        step_path=step_path,
+    )
+    package_dir = _ensure_imported_store_package(repo_root, step_path, logger=logger)
+    return spec, package_dir, None
+
+
+def _export_mesh_jobs(
+    spec: EntrySpec,
+    package_dir: Path | None,
+    scene: LoadedStepScene | None,
+    jobs: "list[tuple[str, Path]]",
+    *,
+    mesh_tolerance: float | None,
+    mesh_angular_tolerance: float | None,
+    logger: CliLogger,
+) -> None:
+    """Export every requested mesh format from ONE package: the store package
+    when the model resolved current, else a one-shot temp package extracted
+    from the scene. OCCT meshes nothing on either path (the GLB is Y-up glTF
+    for external tools, matching the retired native writer's convention)."""
+    for out in {out for _, out in jobs}:
+        out.parent.mkdir(parents=True, exist_ok=True)
+    name = spec.step_path.stem
+    default_color = _color_hex(spec.color)
+    if package_dir is not None:
+        _run_mesh_exporter(
+            package_dir,
+            jobs,
+            name=name,
+            default_color=default_color,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
             logger=logger,
         )
-    raise ValueError(f"Unsupported export format: {fmt}")
+        return
+    import tempfile
+
+    if scene is None:
+        raise RuntimeError(f"no render package and no scene to extract for {name}")
+    with tempfile.TemporaryDirectory(prefix="cadgen-mesh-export-") as tmp:
+        temp_package = Path(tmp) / "package"
+        _build_export_package_from_scene(spec, scene, temp_package, logger=logger)
+        _run_mesh_exporter(
+            temp_package,
+            jobs,
+            name=name,
+            default_color=default_color,
+            mesh_tolerance=mesh_tolerance,
+            mesh_angular_tolerance=mesh_angular_tolerance,
+            logger=logger,
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -346,6 +502,20 @@ def export_model_to_path(
     out = Path(out).expanduser().resolve()
     mesh_tolerance = normalize_mesh_numeric(mesh_tolerance, field_name="mesh_tolerance")
     mesh_angular_tolerance = normalize_mesh_numeric(mesh_angular_tolerance, field_name="mesh_angular_tolerance")
+    if fmt in MESH_EXPORT_FORMATS:
+        spec, package_dir, scene = _resolve_mesh_package(
+            repo_root, step_path, source_path, logger=logger
+        )
+        _export_mesh_jobs(
+            spec,
+            package_dir,
+            scene,
+            [(fmt, out)],
+            mesh_tolerance=mesh_tolerance,
+            mesh_angular_tolerance=mesh_angular_tolerance,
+            logger=logger,
+        )
+        return {"ok": True, "path": str(out), "filename": out.name, "format": fmt}
     spec, scene = _resolve_spec_and_scene(
         repo_root,
         step_path,
@@ -403,11 +573,14 @@ def export_cad_target(
     """Export one CAD model — an imported ``.step``/``.stp`` or a generated Python
     ``gen_step()`` source — to one or more of :data:`MESH_EXPORT_FORMATS` in a single run.
 
-    The scene is built once (the generator runs once for a Python source) and meshed at
-    most once, so all requested formats come from identical geometry. ``outputs`` pairs a
+    A CURRENT model exports straight from its store render package — no generator run,
+    no STEP load, no extraction. Geometry is extracted at most ONCE per run in every
+    case, and one Node invocation serializes all requested formats from one
+    tessellation, so every format comes from identical geometry. ``outputs`` pairs a
     format name with an explicit output path or ``None`` for the default sibling path.
-    Writes no ``.step``, no render package, and no other beside-source
-    artifacts."""
+    Writes no ``.step`` and no beside-source artifacts; an imported model missing its
+    render package warms the SHARED store through the ``cadgen import`` build (content
+    keyed — the same package every later view or export of those bytes reuses)."""
     if logger is None:
         logger = CliLogger("cadgen step export", verbose=verbose)
     if not outputs:
@@ -436,12 +609,10 @@ def export_cad_target(
             f"Export target must be a .step/.stp file or a gen_step() Python source: {target}"
         )
 
-    spec, scene = _resolve_spec_and_scene(
+    spec, package_dir, scene = _resolve_mesh_package(
         repo_root,
         step_path,
         source_path,
-        mesh_tolerance=mesh_tolerance,
-        mesh_angular_tolerance=mesh_angular_tolerance,
         logger=logger,
     )
 
@@ -454,19 +625,16 @@ def export_cad_target(
         seen[out] = fmt
         resolved.append((fmt, out))
 
-    files: list[dict[str, str]] = []
-    for fmt, out in resolved:
-        with logger.timed(f"export {fmt.upper()} {out.name}"):
-            written = _export_scene(
-                fmt,
-                spec,
-                scene,
-                out,
-                mesh_tolerance=mesh_tolerance,
-                mesh_angular_tolerance=mesh_angular_tolerance,
-                logger=logger,
-            )
-        files.append({"format": fmt, "path": str(written)})
+    _export_mesh_jobs(
+        spec,
+        package_dir,
+        scene,
+        resolved,
+        mesh_tolerance=mesh_tolerance,
+        mesh_angular_tolerance=mesh_angular_tolerance,
+        logger=logger,
+    )
+    files = [{"format": fmt, "path": str(out)} for fmt, out in resolved]
     logger.total()
     return {"ok": True, "files": files}
 

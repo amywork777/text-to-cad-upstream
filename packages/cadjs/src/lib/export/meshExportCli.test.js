@@ -54,10 +54,12 @@ test("exports every format from one package, byte-deterministically", (t) => {
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, true);
-    assert.equal(payload.path, out);
-    assert.ok(payload.triangleCount > 100, `${format}: ${payload.triangleCount} triangles`);
-    triangleCount = triangleCount ?? payload.triangleCount;
-    assert.equal(payload.triangleCount, triangleCount, "same mesh across formats");
+    assert.equal(payload.files.length, 1);
+    assert.equal(payload.files[0].path, out);
+    assert.equal(payload.files[0].format, format);
+    assert.ok(payload.files[0].triangleCount > 100, `${format}: ${payload.files[0].triangleCount} triangles`);
+    triangleCount = triangleCount ?? payload.files[0].triangleCount;
+    assert.equal(payload.files[0].triangleCount, triangleCount, "same mesh across formats");
 
     // Second export: cache hit, identical bytes.
     const again = path.join(root, `second.${format}`);
@@ -133,6 +135,35 @@ test("tolerance overrides change the cache key and the mesh density", (t) => {
   assert.equal(cacheEntries.length, 2, "distinct tolerances, distinct cache entries");
 });
 
+test("one invocation serializes every format from one tessellation", (t) => {
+  const { root, packageDir } = makePackage(t);
+  const env = { HOME: root };
+  const outs = { stl: path.join(root, "multi.stl"), glb: path.join(root, "multi.glb"), "3mf": path.join(root, "multi.3mf") };
+  const result = runCli(
+    ["--package-dir", packageDir, "--name", "gear",
+      "--format", "stl", "--out", outs.stl,
+      "--format", "glb", "--out", outs.glb,
+      "--format", "3mf", "--out", outs["3mf"]],
+    env,
+  );
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const payload = JSON.parse(result.stdout);
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.files.map((f) => f.format), ["stl", "glb", "3mf"], "pair order preserved");
+  for (const file of payload.files) {
+    assert.equal(file.path, outs[file.format]);
+    assert.ok(fs.existsSync(file.path), `${file.format} written`);
+    assert.equal(file.triangleCount, payload.files[0].triangleCount, "one mesh for all formats");
+  }
+  // Byte parity with the single-format contract: same package, same bytes.
+  const single = path.join(root, "single.stl");
+  assert.equal(
+    runCli(["--package-dir", packageDir, "--name", "gear", "--format", "stl", "--out", single], env).status,
+    0,
+  );
+  assert.deepEqual(fs.readFileSync(outs.stl), fs.readFileSync(single), "multi-pair stl matches single-pair stl");
+});
+
 test("failures are one JSON error line: bad args, bad package", (t) => {
   const { root, packageDir } = makePackage(t);
   for (const cliArgs of [
@@ -140,6 +171,10 @@ test("failures are one JSON error line: bad args, bad package", (t) => {
     ["--package-dir", packageDir, "--format", "obj", "--out", path.join(root, "x.obj")],
     ["--package-dir", packageDir, "--format", "stl", "--out", "relative.stl"],
     ["--package-dir", path.join(root, "nope"), "--format", "stl", "--out", path.join(root, "x.stl")],
+    // Pair mismatches: an extra --format, and two pairs sharing one --out.
+    ["--package-dir", packageDir, "--format", "stl", "--format", "glb", "--out", path.join(root, "x.stl")],
+    ["--package-dir", packageDir, "--format", "stl", "--out", path.join(root, "x.stl"),
+      "--format", "glb", "--out", path.join(root, "x.stl")],
   ]) {
     const result = runCli(cliArgs, { HOME: root });
     assert.equal(result.status, 1, cliArgs.join(" "));
