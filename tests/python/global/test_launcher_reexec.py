@@ -15,11 +15,13 @@ scope, wherever it lives; add new re-runners to ``LAUNCHER_SOURCES`` explicitly.
 The bug is Windows-only and CI is Linux, so the guard here is the policy: no re-runner uses
 ``os.execv``. ``subprocess`` quotes correctly on every platform, and on Windows
 ``os.execv`` never replaced the process anyway, so nothing was gained by it.
+
+The check reads the AST, so this paragraph is free to name the call it forbids.
 """
 
 from __future__ import annotations
 
-import re
+import ast
 import unittest
 from pathlib import Path
 
@@ -37,6 +39,34 @@ def launcher_sources() -> list[Path]:
     return [path for path in LAUNCHER_SOURCES if path.is_file()]
 
 
+def exec_calls(path: Path) -> list[str]:
+    """Every reference to an ``os.exec*`` family member in this source.
+
+    Over the AST rather than the text, for two reasons a regex got wrong: text
+    matching sees the word in docstrings and prose (so explaining WHY a module
+    avoids execv would fail the check, which is how the explanation ends up
+    written in code-avoiding contortions), and ``from os import execv`` never
+    contains the string "os.execv" at all — a FALSE PASS, the direction a policy
+    test must never fail in.
+    """
+    found: list[str] = []
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if (
+            isinstance(node, ast.Attribute)
+            and node.attr.startswith("exec")
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "os"
+        ):
+            found.append(f"os.{node.attr}")
+        elif isinstance(node, ast.ImportFrom) and node.module == "os":
+            found.extend(
+                f"from os import {alias.name}"
+                for alias in node.names
+                if alias.name.startswith("exec")
+            )
+    return found
+
+
 class LauncherReExecTest(unittest.TestCase):
     def test_there_are_launchers_to_check(self) -> None:
         self.assertEqual(
@@ -45,15 +75,11 @@ class LauncherReExecTest(unittest.TestCase):
             "a named re-runner source is missing from the tree",
         )
 
-    def test_no_launcher_re_runs_itself_through_os_execv(self) -> None:
-        # Comments are stripped first: a launcher is free to explain why it does NOT use execv.
+    def test_no_launcher_re_runs_itself_through_os_exec(self) -> None:
         offenders = [
-            str(path.relative_to(REPO_ROOT))
+            f"{path.relative_to(REPO_ROOT)}: {name}"
             for path in launcher_sources()
-            if re.search(
-                r"\bos\.execv",
-                re.sub(r"#[^\n]*", "", path.read_text(encoding="utf-8")),
-            )
+            for name in exec_calls(path)
         ]
         self.assertEqual(
             [],

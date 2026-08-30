@@ -13,14 +13,18 @@ non-deterministic):
 * ``cadgen.authoring`` — a directly executed `@dxf` model script.
 * ``cadgen.cli`` dispatch — ``cadgen dxf build``, re-run BEFORE the command's
   module is imported.
-* the warm daemon — already exempt: every worker is spawned with the seed
-  pinned, so a served build never pays an interpreter restart.
+* the warm daemon — exempt from the RE-RUN, not from the invariant:
+  ``cadgen.daemon.pool`` spawns every worker with :data:`STABLE_HASH_SEED` from
+  here, so a served build is already deterministic and pays no interpreter
+  restart. It reads the constant rather than repeating the literal, which is the
+  whole point of this module having one.
 
-subprocess rather than an exec-replacement, for the reason #245 hit: on Windows
-``execv`` hands the argument VECTOR to the C runtime, which re-joins it without
-quoting, so an interpreter path containing a space arrives as two arguments.
-subprocess applies Windows quoting rules, and nothing is lost on POSIX because
-that call never replaced the process on Windows anyway.
+subprocess rather than ``os.execv``, for the reason #245 hit: on Windows execv
+hands the argument VECTOR to the C runtime, which re-joins it without quoting, so
+an interpreter path containing a space arrives as two arguments. subprocess
+applies Windows quoting rules, and nothing is lost on POSIX because execv never
+replaced the process on Windows anyway. (The policy test that forbids execv reads
+the AST, so naming the call in prose here is safe.)
 """
 
 from __future__ import annotations

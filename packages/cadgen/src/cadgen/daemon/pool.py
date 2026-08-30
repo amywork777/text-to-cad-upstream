@@ -33,6 +33,8 @@ import sys
 import threading
 import time
 
+from cadgen._internal.hash_seed import STABLE_HASH_SEED
+
 DEFAULT_RECYCLE_AFTER = 200
 DEFAULT_WORKER_IDLE_SECONDS = 300.0
 _SPAWN_TIMEOUT_SECONDS = 120.0
@@ -187,8 +189,9 @@ class Worker:
         env["CADGEN_DAEMON_CHILD"] = "1"
         # Drawing packages are content-addressed and ezdxf's ordering follows the hash
         # seed. Setting it here is strictly better than the dispatch re-run: a warm job
-        # never pays an interpreter restart.
-        env["PYTHONHASHSEED"] = "0"
+        # never pays an interpreter restart. The value is the one invariant every door
+        # shares (cadgen._internal.hash_seed), not a second opinion about it.
+        env["PYTHONHASHSEED"] = STABLE_HASH_SEED
         self.proc = subprocess.Popen(
             [sys.executable, "-m", "cadgen.daemon.worker"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=None,

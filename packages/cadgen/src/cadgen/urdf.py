@@ -5,7 +5,7 @@ description is an AUTHORED file, not a document cadgen generates, so there is
 nothing to declare (design/format-doors.md). It is a plain module.
 
 ``cadgen urdf validate`` is an ADAPTER over :func:`validate` rather than a
-generated mirror: ``--package NAME=PATH`` is repeatable, and a repeatable
+generated mirror: ``--packages NAME=PATH`` is repeatable, and a repeatable
 key/value map is outside the annotation set a parser can be derived from. The
 verb still answers with the same :class:`~cadgen.results.ValidationResult` the
 other two families' mirrors do.

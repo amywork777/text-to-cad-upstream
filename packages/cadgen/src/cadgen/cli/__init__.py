@@ -148,6 +148,17 @@ _DAEMON_TOOLS = {
 _HASH_SEED_COMMANDS: set[str] = {"dxf build"}
 
 
+def _hash_seed_is_stable() -> bool:
+    """Whether this interpreter already started with the drawing seed pinned.
+
+    Lazy, like everything else in dispatch: `cadgen --help` must not import a
+    command's world, and this one is only consulted for a hash-seeded command.
+    """
+    from cadgen._internal.hash_seed import hash_seed_is_stable
+
+    return hash_seed_is_stable()
+
+
 # subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows
 # execv hands the argument VECTOR to the C runtime, which re-joins it into a command line
 # without quoting, so an interpreter path containing a space -- C:\Program Files\... --
@@ -225,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = _run_via_daemon(daemon_tool, rest, f"cadgen {command}")
         if exit_code is not None:
             return exit_code
-    if command in _HASH_SEED_COMMANDS and os.environ.get("PYTHONHASHSEED") != "0":
+    if command in _HASH_SEED_COMMANDS and not _hash_seed_is_stable():
         return _rerun_with_stable_hash_seed()
 
     module_name, _ = entry
