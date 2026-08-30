@@ -56,10 +56,6 @@ def plate_drawing(hole_d: float = 4.5):
     return document
 ```
 
-## `src/lib/__init__.py`
-
-Empty file.
-
 ## `src/lib/holes.py`
 
 ```python
