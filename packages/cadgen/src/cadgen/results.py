@@ -150,9 +150,10 @@ class SnapshotResult:
     debug: tuple[dict, ...] = ()
 
     def human_lines(self) -> list[str]:
-        # A list-mode run writes no files: its whole answer is the inventory,
-        # and it is read by an agent, so it stays one compact JSON line.
-        if not self.files and self.parts:
+        # A list-mode run writes no files: its whole answer is the inventory —
+        # `[]` when the model has no part occurrences — and it is read by an
+        # agent, so it stays one compact JSON line.
+        if not self.files:
             return [json.dumps(list(self.parts), separators=(",", ":"))]
         lines = [f"saved snapshot: {entry.path}" for entry in self.files]
         lines += [f"warning: {warning}" for warning in self.warnings]

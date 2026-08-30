@@ -56,7 +56,8 @@ def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
         target: the model to render. Omitted, JOB supplies the input(s).
         out: destination image path, or a directory to generate a name in.
         job: a render-job JSON file — one job, an array of them, or
-            {"jobs": [...]}. Mutually exclusive with target/out.
+            {"jobs": [...]}. When given it wins: target/out are ignored, and
+            a missing job file raises FileNotFoundError.
         mode: view (default), orbit, section, or list.
         camera: a preset, an "azimuth:elevation" pair, or a camera object.
         theme: a saved theme name, a theme-settings object, or a path to a

@@ -102,6 +102,11 @@ class ResultShape(unittest.TestCase):
         self.assertEqual(result.files, ())
         self.assertEqual(result.parts[0]["ref"], "#o1.1")
 
+    def test_an_empty_inventory_still_prints_itself(self) -> None:
+        # List mode with zero parts answers `[]`, not silence.
+        listing = {"ok": True, "mode": "list", "parts": []}
+        self.assertEqual(snapshot_result(listing).human_lines(), ["[]"])
+
 
 class JsonShape(unittest.TestCase):
     """`--json` IS `dataclasses.asdict`, so the shape is the dataclass."""

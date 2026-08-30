@@ -77,6 +77,13 @@ def vendor_panel(thickness: float = 3.0):
 _VENDOR_STEP: Path | None = None
 
 
+def tearDownModule() -> None:
+    global _VENDOR_STEP
+    if _VENDOR_STEP is not None:
+        shutil.rmtree(_VENDOR_STEP.parent, ignore_errors=True)
+        _VENDOR_STEP = None
+
+
 def _vendor_step() -> Path:
     global _VENDOR_STEP
     if _VENDOR_STEP is None or not _VENDOR_STEP.is_file():
