@@ -216,6 +216,78 @@ class DiscoveredFileInputTests(unittest.TestCase):
         self.assertEqual(before, artifact.stat().st_mtime_ns)
 
 
+class RetiredReaderTests(unittest.TestCase):
+    """`import_step` left a grave marker, not a bare AttributeError.
+
+    Half-removing a public name tells the caller the name is wrong and nothing
+    about what is right — and here "what is right" carries the reason the rename
+    happened at all.
+    """
+
+    def test_both_surfaces_name_the_replacement(self) -> None:
+        import cadgen
+        from cadgen import step_scene
+
+        for module in (cadgen, step_scene):
+            with self.subTest(module=module.__name__):
+                with self.assertRaises(AttributeError) as caught:
+                    module.import_step
+                message = str(caught.exception)
+                self.assertIn("cadgen.read_step", message)
+                self.assertIn("build input", message)
+
+    def test_an_unrelated_missing_name_keeps_the_plain_error(self) -> None:
+        from cadgen import step_scene
+
+        with self.assertRaises(AttributeError) as caught:
+            step_scene.no_such_helper
+        self.assertNotIn("read_step", str(caught.exception))
+
+
+class ScenePathRecordingTests(unittest.TestCase):
+    """`load_step_scene` records too.
+
+    It is the other public STEP reader, and a model that walks a vendor STEP's
+    occurrence tree depends on that file's bytes exactly as much as one that
+    takes its shape. Which cadgen reader records what it reads must not be
+    something anyone has to remember.
+    """
+
+    def test_the_public_scene_loader_declares_its_file(self) -> None:
+        import build123d
+
+        from cadgen import step_scene
+        from cadgen._internal.source_hash import record_discovered_inputs
+
+        with tempfile.TemporaryDirectory(prefix="scene-recording-") as tmp:
+            path = Path(tmp) / "part.step"
+            build123d.export_step(build123d.Box(4, 3, 2), path)
+            with record_discovered_inputs() as recorded:
+                step_scene.load_step_scene(path)
+            self.assertEqual(recorded, {path.resolve()})
+
+    def test_the_engines_own_loads_do_not_record(self) -> None:
+        """A build must never record its own output as its input."""
+        import build123d
+
+        from cadgen._internal import step_scene as engine
+        from cadgen._internal.source_hash import record_discovered_inputs
+
+        with tempfile.TemporaryDirectory(prefix="scene-recording-") as tmp:
+            path = Path(tmp) / "part.step"
+            build123d.export_step(build123d.Box(4, 3, 2), path)
+            with record_discovered_inputs() as recorded:
+                engine.load_step_scene(path)
+            self.assertEqual(recorded, set())
+
+    def test_a_missing_scene_file_fails_loudly(self) -> None:
+        from cadgen import step_scene
+
+        with self.assertRaises(FileNotFoundError) as caught:
+            step_scene.load_step_scene(Path("/nonexistent/part.step"))
+        self.assertIn("load_step_scene", str(caught.exception))
+
+
 class DiscoveredInputRecordingTests(unittest.TestCase):
     """The recorder itself, at the unit level."""
 

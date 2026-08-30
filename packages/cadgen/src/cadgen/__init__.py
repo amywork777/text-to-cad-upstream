@@ -102,6 +102,10 @@ def __getattr__(name: str):
         return {"report": report, "track": track}[name]
     if name == "__version__":
         return _resolve_version()
+    if name == "import_step":
+        from cadgen.step_scene import RETIRED_IMPORT_STEP_MESSAGE
+
+        raise AttributeError(RETIRED_IMPORT_STEP_MESSAGE)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

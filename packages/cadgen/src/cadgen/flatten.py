@@ -1,28 +1,36 @@
-"""Flat-pattern / 2D-projection helpers for DXF drawing generators.
+"""Flat patterns from 3D topology: exact 2D geometry for ``@dxf`` drawings.
 
-The shared engine for deriving DXF cut geometry from 3D topology: select planar
-faces, project their wires into 2D, union the projections (shapely), and emit
-clean closed contours into an ezdxf modelspace. Also provides kerf/tool-radius
-offsetting for cut compensation. Drawing generators (`<name>.dxf.py`) should
-consume this module instead of hand-rolling projection math; hand-drawn
-parametric outlines remain appropriate only when there is no reliable 3D
-topology to project.
+A drawing generator returns build123d 2D geometry and the engine writes the DXF
+(design/dxf-build123d.md). This module is the bridge from a solid to that
+geometry: pick the planar faces that make up the flat pattern, lay each one into
+the XY plane, fuse them, and — where the cutting process needs it — offset for
+kerf. Everything it hands back is build123d geometry, ready to return from a
+``@dxf`` function.
+
+**Exact, not sampled.** The union and the offset are OCC boolean and OCC offset
+operations on the real faces, so an arc stays an arc: a filleted corner exports
+as a DXF ``ARC``, a hole as a ``CIRCLE``, and kerf compensation preserves both.
+The previous pipeline sampled every wire into a point list, unioned polygons in
+shapely, and emitted polylines — which turned every curve into a run of chords
+before it ever reached the file, at a resolution nobody chose. Shapely survives
+here only as an internal fallback for the unions OCC refuses (see
+:func:`union_faces`), and even then only its topology is borrowed.
+
+A worked example lives in ``skills/dxf/references/generator-templates.md``.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Callable, Iterable
+from typing import Iterable, Sequence
 
 import build123d
 
 
-Point2D = tuple[float, float]
-ProjectFn = Callable[[build123d.Vector], Point2D]
+# A projected contour smaller than this is sampling debris, not a cut path.
 MIN_CUT_CONTOUR_AREA_MM2 = 0.05
-# Drop micron-scale duplicate edges from topology projection before writing DXF.
-# This is far below fabrication tolerance but keeps upload parsers from seeing
-# accidental stray/duplicate cut fragments.
+# Merge tolerance for the shapely fallback's rebuilt polygons. Far below any
+# fabrication tolerance; it exists to keep duplicate points out of a contour.
 POINT_MERGE_TOLERANCE_MM = 0.01
 
 
@@ -44,6 +52,13 @@ def planar_faces(
     tolerance: float = 0.02,
     min_area: float = 1e-5,
 ) -> tuple[build123d.Face, ...]:
+    """The planar faces of ``shape`` facing one way at one height.
+
+    This is the selection step of a flat pattern: "every upward face of the top
+    surface", "every outward face of the left flange". Raises rather than
+    returning nothing — an empty selection means the plane or the sign is wrong,
+    and a drawing generated from no faces is an empty file nobody notices.
+    """
     matches: list[build123d.Face] = []
     for face in shape.faces():
         if face.geom_type != build123d.GeomType.PLANE:
@@ -65,281 +80,175 @@ def planar_faces(
     return tuple(matches)
 
 
-def project_wire_points(
-    wire: build123d.Wire,
-    project: ProjectFn,
+def flatten_face(face: build123d.Face) -> build123d.Face:
+    """Lay one planar face into the XY plane, exactly.
+
+    The face is moved by the rigid transform that takes its own plane to XY — no
+    sampling, no projection error, and every curve survives as itself. A DXF is
+    2D and the engine refuses geometry off the XY plane, so this (or an explicit
+    ``bd.Location((0, 0, -z)) * face``) is how a derived face becomes drawable.
+
+    A face whose normal points away from +Z comes back mirrored, because that is
+    what looking at it from its own side means. Flip the source face first if you
+    want the other handedness.
+    """
+    plane = build123d.Plane(face)
+    return plane.to_local_coords(face)
+
+
+def flatten_faces(faces: Iterable[build123d.Face]) -> tuple[build123d.Face, ...]:
+    """:func:`flatten_face` over a selection."""
+    return tuple(flatten_face(face) for face in faces)
+
+
+def union_faces(faces: Sequence[build123d.Shape]) -> build123d.Shape:
+    """Fuse coplanar XY faces into one profile, exactly.
+
+    OCC's boolean is the primary path: overlapping faces merge, shared edges
+    disappear, holes survive as inner wires, and arcs stay arcs. Disjoint faces
+    come back as a multi-face result, which is a perfectly good nested cut
+    layout.
+
+    Shapely is the fallback, and only that. OCC refuses some genuinely
+    degenerate inputs — faces that touch along a zero-width sliver, self-
+    intersecting projections of a fold — where a tolerant polygon union still
+    gives a usable contour. Taking that route costs curvature (the rebuilt
+    profile is polygonal), so it is never the default and never silent.
+    """
+    shapes = [face for face in faces if face is not None]
+    if not shapes:
+        raise RuntimeError("No faces were given to union into a DXF profile")
+    if len(shapes) == 1:
+        return shapes[0]
+    try:
+        fused = shapes[0].fuse(*shapes[1:]).clean()
+    except Exception as exact_error:  # noqa: BLE001 - OCC raises many types; the fallback is the point
+        return _shapely_union_fallback(shapes, cause=exact_error)
+    if not fused.faces():
+        return _shapely_union_fallback(shapes, cause=RuntimeError("the exact union was empty"))
+    return fused
+
+
+def offset_profile(shape: build123d.Shape, amount: float) -> build123d.Shape:
+    """Kerf / tool-radius compensation, exactly.
+
+    Positive grows the profile (cut outside the line), negative shrinks it (cut
+    inside). The offset is OCC's, so a filleted corner offsets to a concentric
+    arc rather than to a fan of chords — the single biggest reason this module
+    stopped going through shapely.
+    """
+    if amount == 0.0:
+        return shape
+    try:
+        offset = build123d.offset(shape, amount=amount)
+    except Exception as error:  # noqa: BLE001 - OCC/build123d report a consumed profile several ways
+        offset = None
+        failure: BaseException | None = error
+    else:
+        failure = None
+    if offset is None or not offset.faces():
+        raise RuntimeError(
+            f"Kerf offset of {amount:+.3f} mm produced no profile. A negative offset "
+            "at or beyond half the narrowest feature consumes it entirely — check the "
+            "sign (positive grows the cut, negative shrinks it) and the magnitude."
+        ) from failure
+    return offset
+
+
+def flat_pattern(
+    shape: build123d.Shape,
     *,
-    max_segment_mm: float = 0.25,
-) -> list[Point2D]:
+    normal_axis: str = "z",
+    normal_sign: float = 1.0,
+    coordinate_axis: str = "z",
+    coordinate: float,
+    tolerance: float = 0.02,
+    kerf: float = 0.0,
+) -> build123d.Shape:
+    """Select, flatten, fuse, and optionally kerf-offset — the usual whole job.
+
+    The three steps are separately available above for drawings that need them
+    apart (a multi-plane bracket flattens each flange with its own selection
+    before one union)."""
+    faces = planar_faces(
+        shape,
+        normal_axis=normal_axis,
+        normal_sign=normal_sign,
+        coordinate_axis=coordinate_axis,
+        coordinate=coordinate,
+        tolerance=tolerance,
+    )
+    profile = union_faces(flatten_faces(faces))
+    return offset_profile(profile, kerf) if kerf else profile
+
+
+# --- the fallback ---------------------------------------------------------------------
+# Kept small and internal on purpose. It exists for the unions OCC will not do, and
+# it converts curves to chords on the way, so nothing above reaches for it by choice.
+
+
+def _shapely_union_fallback(shapes: Sequence[build123d.Shape], *, cause: BaseException):
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    polygons = []
+    for shape in shapes:
+        for face in shape.faces():
+            polygon = Polygon(
+                _wire_points(face.outer_wire()),
+                [_wire_points(wire) for wire in face.inner_wires() if wire.length > 1e-6],
+            )
+            if not polygon.is_valid:
+                polygon = polygon.buffer(0)
+            if not polygon.is_empty:
+                polygons.append(polygon)
+    if not polygons:
+        raise RuntimeError(f"Could not union these faces into a DXF profile: {cause}") from cause
+    geometry = unary_union(polygons).buffer(0)
+    if geometry.is_empty:
+        raise RuntimeError(f"Could not union these faces into a DXF profile: {cause}") from cause
+    faces = [
+        face
+        for polygon in (geometry.geoms if geometry.geom_type != "Polygon" else [geometry])
+        if polygon.area >= MIN_CUT_CONTOUR_AREA_MM2
+        for face in [_face_from_polygon(polygon)]
+        if face is not None
+    ]
+    if not faces:
+        raise RuntimeError(f"Could not union these faces into a DXF profile: {cause}") from cause
+    return faces[0] if len(faces) == 1 else build123d.Sketch(children=faces)
+
+
+def _wire_points(wire: build123d.Wire, *, max_segment_mm: float = 0.25) -> list[tuple[float, float]]:
     sample_count = max(16, int(math.ceil(wire.length / max_segment_mm)))
-    points: list[Point2D] = []
+    points: list[tuple[float, float]] = []
     for index in range(sample_count):
-        point = project(wire.position_at(index / sample_count))
-        if not points or math.dist(points[-1], point) > 1e-6:
+        position = wire.position_at(index / sample_count)
+        point = (float(position.X), float(position.Y))
+        if not points or math.dist(points[-1], point) > POINT_MERGE_TOLERANCE_MM:
             points.append(point)
-    if len(points) >= 2 and math.dist(points[0], points[-1]) < 1e-6:
+    while len(points) >= 2 and math.dist(points[0], points[-1]) <= POINT_MERGE_TOLERANCE_MM:
         points.pop()
     return points
 
 
-def project_face_polygon(face: build123d.Face, project: ProjectFn):
-    from shapely.geometry import Polygon
-
-    outer = project_wire_points(face.outer_wire(), project)
-    holes = [
-        project_wire_points(wire, project)
-        for wire in face.inner_wires()
-        if wire.length > 1e-6
-    ]
-    polygon = Polygon(outer, holes)
-    if not polygon.is_valid:
-        polygon = polygon.buffer(0)
-    if polygon.is_empty:
-        raise RuntimeError("Projected topology face produced an empty DXF polygon")
-    return polygon
+def _face_from_polygon(polygon) -> build123d.Face | None:
+    outer = _face_from_ring(polygon.exterior)
+    if outer is None:
+        return None
+    for interior in polygon.interiors:
+        hole = _face_from_ring(interior)
+        if hole is not None:
+            outer = outer.cut(hole)
+    faces = outer.faces()
+    return faces[0] if faces else None
 
 
-def union_projected_faces(
-    face_groups: Iterable[tuple[Iterable[build123d.Face], ProjectFn]],
-    *,
-    merge_touching_tolerance_mm: float = 0.0,
-):
-    from shapely.ops import unary_union
-
-    polygons = [
-        project_face_polygon(face, project)
-        for faces, project in face_groups
-        for face in faces
-    ]
-    if not polygons:
-        raise RuntimeError("No topology faces were projected into the DXF")
-    if merge_touching_tolerance_mm > 0.0:
-        expanded = [
-            polygon.buffer(merge_touching_tolerance_mm, join_style=2)
-            for polygon in polygons
-        ]
-        geometry = unary_union(expanded).buffer(
-            -merge_touching_tolerance_mm,
-            join_style=2,
-        )
-    else:
-        geometry = unary_union(polygons)
-    geometry = geometry.buffer(0)
-    if not geometry.is_valid:
-        geometry = geometry.buffer(0)
-    if geometry.is_empty:
-        raise RuntimeError("Projected topology union produced an empty DXF geometry")
-    return geometry
-
-
-def polyline_points_from_ring(ring) -> list[Point2D]:
+def _face_from_ring(ring) -> build123d.Face | None:
     points = [(float(x), float(y)) for x, y in ring.coords]
-    if (
-        len(points) >= 2
-        and math.dist(points[0], points[-1]) <= POINT_MERGE_TOLERANCE_MM
-    ):
+    while len(points) >= 2 and math.dist(points[0], points[-1]) <= POINT_MERGE_TOLERANCE_MM:
         points.pop()
-    return clean_closed_polyline_points(points)
-
-
-def clean_closed_polyline_points(
-    points: list[Point2D],
-    *,
-    tolerance_mm: float = POINT_MERGE_TOLERANCE_MM,
-) -> list[Point2D]:
-    cleaned: list[Point2D] = []
-    for point in points:
-        if not cleaned or math.dist(cleaned[-1], point) > tolerance_mm:
-            cleaned.append(point)
-
-    while (
-        len(cleaned) >= 2
-        and math.dist(cleaned[0], cleaned[-1]) <= tolerance_mm
-    ):
-        cleaned.pop()
-
-    index = 0
-    while len(cleaned) >= 2 and index < len(cleaned):
-        next_index = (index + 1) % len(cleaned)
-        if math.dist(cleaned[index], cleaned[next_index]) <= tolerance_mm:
-            del cleaned[next_index]
-            if next_index < index:
-                index = 0
-            continue
-        index += 1
-
-    return cleaned
-
-
-def polygon_area(points: list[Point2D]) -> float:
     if len(points) < 3:
-        return 0.0
-    area = 0.0
-    for index, point in enumerate(points):
-        next_point = points[(index + 1) % len(points)]
-        area += (point[0] * next_point[1]) - (next_point[0] * point[1])
-    return abs(0.5 * area)
-
-
-def circle_from_ring(
-    ring,
-    *,
-    tolerance_mm: float = 0.03,
-    min_points: int = 12,
-) -> tuple[Point2D, float] | None:
-    points = polyline_points_from_ring(ring)
-    if len(points) < min_points:
         return None
-    matrix = [[0.0, 0.0, 0.0] for _ in range(3)]
-    vector = [0.0, 0.0, 0.0]
-    for x, y in points:
-        row = (x, y, 1.0)
-        rhs = -(x * x + y * y)
-        for i in range(3):
-            vector[i] += row[i] * rhs
-            for j in range(3):
-                matrix[i][j] += row[i] * row[j]
-    try:
-        coeff_a, coeff_b, coeff_c = _solve_3x3(matrix, vector)
-    except ZeroDivisionError:
-        return None
-    center = (-0.5 * coeff_a, -0.5 * coeff_b)
-    radius_squared = (center[0] * center[0]) + (center[1] * center[1]) - coeff_c
-    if radius_squared <= 0.0:
-        return None
-    radius = math.sqrt(radius_squared)
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    min_x = min(xs)
-    max_x = max(xs)
-    min_y = min(ys)
-    max_y = max(ys)
-    width = max_x - min_x
-    height = max_y - min_y
-    if abs(width - height) > max(tolerance_mm, 0.04 * radius):
-        return None
-    radial_errors = [
-        abs(math.dist(point, center) - radius)
-        for point in points
-    ]
-    if max(radial_errors) > max(tolerance_mm, 0.02 * radius):
-        return None
-    return center, radius
-
-
-def _solve_3x3(matrix: list[list[float]], vector: list[float]) -> tuple[float, float, float]:
-    augmented = [row[:] + [value] for row, value in zip(matrix, vector)]
-    for column in range(3):
-        pivot_row = max(range(column, 3), key=lambda row: abs(augmented[row][column]))
-        if abs(augmented[pivot_row][column]) < 1e-12:
-            raise ZeroDivisionError("singular circle fit")
-        if pivot_row != column:
-            augmented[column], augmented[pivot_row] = augmented[pivot_row], augmented[column]
-        pivot = augmented[column][column]
-        for item in range(column, 4):
-            augmented[column][item] /= pivot
-        for row in range(3):
-            if row == column:
-                continue
-            factor = augmented[row][column]
-            for item in range(column, 4):
-                augmented[row][item] -= factor * augmented[column][item]
-    return (augmented[0][3], augmented[1][3], augmented[2][3])
-
-
-def add_closed_polyline(msp, points: list[Point2D], *, layer: str = "CUT") -> None:
-    points = clean_closed_polyline_points(points)
-    if len(points) < 3:
-        return
-    msp.add_lwpolyline(points, close=True, dxfattribs={"layer": layer})
-
-
-def add_circle_polyline(
-    msp,
-    center: Point2D,
-    radius: float,
-    *,
-    layer: str = "CUT",
-    segments: int = 72,
-) -> None:
-    # Keep circles as plain closed polylines. Bulge arcs are valid DXF, but
-    # some upload parsers classify them as unexpected entity data.
-    if radius <= 0.0:
-        return
-    center_x, center_y = center
-    point_count = max(24, int(segments))
-    points = [
-        (
-            center_x + (radius * math.cos((2.0 * math.pi * index) / point_count)),
-            center_y + (radius * math.sin((2.0 * math.pi * index) / point_count)),
-        )
-        for index in range(point_count)
-    ]
-    msp.add_lwpolyline(
-        points,
-        close=True,
-        dxfattribs={"layer": layer},
-    )
-
-
-def add_ring(
-    msp,
-    ring,
-    *,
-    layer: str = "CUT",
-    prefer_circle: bool = False,
-    min_area_mm2: float = MIN_CUT_CONTOUR_AREA_MM2,
-) -> None:
-    points = polyline_points_from_ring(ring)
-    if polygon_area(points) < min_area_mm2:
-        return
-    if prefer_circle:
-        circle = circle_from_ring(ring)
-        if circle is not None:
-            center, radius = circle
-            add_circle_polyline(msp, center, radius, layer=layer)
-            return
-    add_closed_polyline(msp, points, layer=layer)
-
-
-def add_shapely_geometry(msp, geometry, *, layer: str = "CUT") -> None:
-    polygons = [geometry] if geometry.geom_type == "Polygon" else list(geometry.geoms)
-    for polygon in polygons:
-        if polygon.area < MIN_CUT_CONTOUR_AREA_MM2:
-            continue
-        add_ring(msp, polygon.exterior, layer=layer)
-        for interior in polygon.interiors:
-            add_ring(msp, interior, layer=layer, prefer_circle=True)
-
-
-def offset_geometry(geometry, distance_mm: float):
-    """Offset closed cut geometry by a kerf / tool-radius compensation.
-
-    Positive ``distance_mm`` grows the profile (cut outside the line), negative
-    shrinks it (cut inside). Returns cleaned shapely geometry ready for
-    :func:`add_shapely_geometry`."""
-    if distance_mm == 0.0:
-        return geometry
-    offset = geometry.buffer(distance_mm, join_style=2)
-    offset = offset.buffer(0)
-    if offset.is_empty:
-        raise RuntimeError(
-            f"Kerf offset of {distance_mm:+.3f} mm produced an empty DXF geometry"
-        )
-    return offset
-
-
-def offset_closed_points(
-    points: list[Point2D],
-    distance_mm: float,
-) -> list[list[Point2D]]:
-    """Offset one closed contour (a point list) by a kerf / tool-radius
-    compensation; returns the resulting closed contour(s) as point lists."""
-    from shapely.geometry import Polygon
-
-    polygon = Polygon(points)
-    if not polygon.is_valid:
-        polygon = polygon.buffer(0)
-    offset = offset_geometry(polygon, distance_mm)
-    polygons = [offset] if offset.geom_type == "Polygon" else list(offset.geoms)
-    return [polyline_points_from_ring(polygon.exterior) for polygon in polygons]
+    wire = build123d.Polyline(*[(x, y, 0.0) for x, y in points], close=True)
+    return build123d.make_face(wire)

@@ -64,8 +64,8 @@ CLIENT_LIVENESS_INTERVAL_SECONDS = 0.5
 _TOOL_IMPORTS = {
     # "run" is the @step/@dxf decorator's warm-dispatch target (a directly
     # executed model script hands its argv here) — internal, not a user CLI.
-    # DXF models are safe to serve warm because every worker is spawned with
-    # PYTHONHASHSEED=0.
+    # DXF models are safe to serve warm because their bytes are a function of
+    # the drawing's geometry, not of the process that wrote them.
     "run": "cadgen.cli._run_model",
     "step-build": "cadgen.cli.step_build",
     # One warm tool per mesh door. `step export` served all three formats from a

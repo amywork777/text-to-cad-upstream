@@ -13,6 +13,11 @@ function of the drawing's geometry — layers sorted by name, edges sorted by
 geometric content, ezdxf's volatile provenance pinned, and its CLASSES registry
 (the actual seed-sensitive part) sorted — so the seed cannot reach the file.
 
+The warm daemon is in scope too. Its workers used to be spawned with the seed
+pinned, which was the same ritual by another route, and worse in one way: a
+worker whose seed differed from every other process was a standing warm/cold
+divergence, ready to hide the next ordering bug rather than reveal it.
+
 This guard exists because the re-exec is easy to reintroduce and expensive:
 it would silently double the cold cost of every drawing, and nothing else in
 the suite would notice. If a genuine need for a stable seed ever returns, fix
@@ -28,14 +33,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CADGEN = REPO_ROOT / "packages/cadgen/src/cadgen"
 
-# Named explicitly rather than globbed: the daemon legitimately sets a stable seed
-# in the environment it hands to its long-lived workers (cadgen/daemon/pool.py),
-# which is configuration, not a per-command restart.
+# Named explicitly rather than globbed: a glob over cadgen would sweep in modules
+# that legitimately spawn other programs. These are the four places a build starts
+# — both front doors, the model runner, the generator — plus the daemon's worker
+# spawn, which had the seed pinned in its environment instead of in a restart.
 ENTRY_POINT_SOURCES = [
     CADGEN / "cli/__init__.py",
     CADGEN / "authoring.py",
     CADGEN / "cli/_run_model.py",
     CADGEN / "_internal/generation_runner.py",
+    CADGEN / "daemon/pool.py",
 ]
 
 

@@ -23,11 +23,18 @@ __all__ = [
 # in front of every no-op run, which is exactly what `from cadgen import
 # build123d as bd` exists to avoid.
 _LAZY_EXPORTS = {
-    "load_step_scene": "load_step_scene",
     "located_shape": "_located_shape",
     "occurrence_selector_id": "occurrence_selector_id",
     "scene_occurrence_shape": "scene_occurrence_shape",
 }
+
+
+RETIRED_IMPORT_STEP_MESSAGE = (
+    "cadgen.import_step is gone; use cadgen.read_step instead. Same shape, same "
+    "cache — and it records the file it read as a build input, so replacing the "
+    "STEP makes your model stale instead of leaving it reporting itself current "
+    "until someone passes --force. (build123d.import_step is unaffected.)"
+)
 
 
 def __getattr__(name: str):
@@ -35,16 +42,54 @@ def __getattr__(name: str):
         from cadgen._internal import step_scene as engine
 
         return getattr(engine, _LAZY_EXPORTS[name])
+    if name == "import_step":
+        # A grave marker, not a shim. Half-removing a name leaves a bare
+        # AttributeError, which says the name is wrong but not what is right.
+        raise AttributeError(RETIRED_IMPORT_STEP_MESSAGE)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 if TYPE_CHECKING:  # pragma: no cover - mirrors the lazy exports for type checkers
     from cadgen._internal.step_scene import (
         _located_shape as located_shape,
-        load_step_scene,
         occurrence_selector_id,
         scene_occurrence_shape,
     )
+
+
+def _record_input(step_path: Path | str, *, reader: str) -> Path:
+    """Resolve a STEP a model asked for, and declare it a build input.
+
+    Both public readers go through here, because "which cadgen function records
+    what it reads" must not be a thing anyone has to remember: they all do. The
+    engine's own internal loads go straight to
+    :mod:`cadgen._internal.step_scene` and are unaffected — a build must not
+    record its own output as its input.
+    """
+    resolved = Path(step_path).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(
+            f"{reader}: no STEP file at {resolved}. Check the path — it resolves "
+            "relative to the process's working directory, so anchor a model's own "
+            "inputs on its file: Path(__file__).parent / '../STEP/part.step'."
+        )
+    from cadgen._internal.source_hash import note_discovered_input
+
+    note_discovered_input(resolved)
+    return resolved
+
+
+def load_step_scene(step_path: Path | str, **kwargs) -> Any:
+    """Load a STEP's full scene (occurrence tree, colors, prototypes), AND record it.
+
+    The scene-level twin of :func:`read_step`: same file, more structure. It
+    records for the same reason — a model that walks a vendor STEP's occurrence
+    tree depends on that STEP's bytes exactly as much as one that takes its
+    shape.
+    """
+    from cadgen._internal.step_scene import load_step_scene as engine_load
+
+    return engine_load(_record_input(step_path, reader="load_step_scene"), **kwargs)
 
 
 def read_step(step_path: Path | str, *, label: str | None = None) -> Any:
@@ -68,15 +113,6 @@ def read_step(step_path: Path | str, *, label: str | None = None) -> Any:
     A missing file raises here rather than deep inside the importer, because
     "the vendor STEP is not where the model thinks it is" is the whole message.
     """
-    resolved = Path(step_path).expanduser().resolve()
-    if not resolved.is_file():
-        raise FileNotFoundError(
-            f"read_step: no STEP file at {resolved}. Check the path — it resolves "
-            "relative to the process's working directory, so anchor a model's own "
-            "inputs on its file: Path(__file__).parent / '../STEP/part.step'."
-        )
-    from cadgen._internal.source_hash import note_discovered_input
     from cadgen._internal.step_scene import import_step
 
-    note_discovered_input(resolved)
-    return import_step(resolved, label=label)
+    return import_step(_record_input(step_path, reader="read_step"), label=label)
