@@ -22,6 +22,22 @@ classifiers = [
   "Topic :: Multimedia :: Graphics :: 3D Modeling",
   "Topic :: Scientific/Engineering",
 ]
+# ezdxf and shapely both look transitive through build123d, and both are kept
+# DIRECT on purpose: cadgen imports each one itself, so each is its own
+# dependency regardless of who else happens to pull it in.
+#
+# ezdxf stopped being a WRITING dependency when @dxf moved to build123d geometry
+# (design/dxf-build123d.md) -- the engine writes through build123d's ExportDXF
+# and no author-facing contract mentions ezdxf. It remains a READING one, which
+# is not going away: cadgen.drawing_render parses a .dxf to render it, and
+# cadgen.drawing_checks parses one to validate it post-hoc. A DXF reader needs a
+# DXF parser. Dropping the declaration would leave those two modules resting on
+# build123d's own dependency list, and they would fail at a user's runtime, not
+# at install, the day that list changes.
+#
+# shapely is likewise narrower than it was -- flatten's unions and offsets are
+# OCC operations now, with shapely only the fallback for the degenerate unions
+# OCC refuses -- but a fallback that is not installed is not a fallback.
 dependencies = [
   "build123d",
   "cadquery-ocp",
