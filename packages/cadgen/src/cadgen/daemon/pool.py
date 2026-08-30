@@ -163,18 +163,8 @@ def max_workers() -> int:
 
 
 def wait_seconds() -> float:
-    """Seconds to wait at the cap before telling the caller to run cold.
-
-    Zero restores the old refuse-immediately behaviour, for anyone who wants it back.
-    """
-    raw = os.environ.get("CADGEN_DAEMON_WAIT", "").strip()
-    if not raw:
-        return DEFAULT_WAIT_SECONDS
-    try:
-        value = float(raw)
-    except ValueError:
-        return DEFAULT_WAIT_SECONDS
-    return max(0.0, value)
+    """Seconds to wait at the worker cap before telling the caller to run cold."""
+    return DEFAULT_WAIT_SECONDS
 
 
 def _recycle_after() -> int:

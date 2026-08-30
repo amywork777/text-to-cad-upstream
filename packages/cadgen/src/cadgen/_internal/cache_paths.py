@@ -55,13 +55,7 @@ def components_dir() -> Path:
 
 def opmemo_base_dir() -> Path:
     """The op-memo tier's base (one salt-named subdirectory per generation).
-
-    ``CADGEN_OP_MEMO_DISK_DIR`` remains an op-memo-specific override of the
-    base, kept for tests and pre-existing setups.
-    """
-    override = os.environ.get("CADGEN_OP_MEMO_DISK_DIR", "").strip()
-    if override:
-        return Path(override)
+    Relocation is ``CADGEN_STORE_DIR``, like every other tier."""
     return cache_root() / "opmemo"
 
 

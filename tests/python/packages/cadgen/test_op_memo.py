@@ -40,12 +40,16 @@ class OpMemoTest(unittest.TestCase):
         op_memo.clear()
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["CADGEN_OP_MEMO"] = "1"
-        os.environ["CADGEN_OP_MEMO_DISK_DIR"] = self._tmp.name
+        self._prev_store = os.environ.get("CADGEN_STORE_DIR")
+        os.environ["CADGEN_STORE_DIR"] = self._tmp.name
 
     def tearDown(self):
         op_memo.clear()
         os.environ.pop("CADGEN_OP_MEMO", None)
-        os.environ.pop("CADGEN_OP_MEMO_DISK_DIR", None)
+        if self._prev_store is None:
+            os.environ.pop("CADGEN_STORE_DIR", None)
+        else:
+            os.environ["CADGEN_STORE_DIR"] = self._prev_store
         self._tmp.cleanup()
 
     def test_install_is_idempotent(self):

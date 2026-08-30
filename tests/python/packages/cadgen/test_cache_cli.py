@@ -41,7 +41,6 @@ class CacheCliTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         patcher = mock.patch.dict(os.environ, {
             "CADGEN_STORE_DIR": str(self.root),
-            "CADGEN_OP_MEMO_DISK_DIR": "",
         })
         patcher.start()
         self.addCleanup(patcher.stop)

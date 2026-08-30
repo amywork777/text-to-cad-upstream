@@ -87,20 +87,8 @@ def log_path(address: str | None = None) -> Path:
 
 
 def request_timeout() -> float:
-    """Seconds to wait for the daemon before giving up and running cold.
-
-    ``CADGEN_DAEMON_TIMEOUT`` overrides; 0 or a negative value disables the
-    deadline entirely (the old, unbounded behaviour) for anyone who genuinely
-    wants to wait out a very long queued build.
-    """
-    raw = os.environ.get("CADGEN_DAEMON_TIMEOUT", "").strip()
-    if not raw:
-        return DEFAULT_REQUEST_TIMEOUT_SECONDS
-    try:
-        value = float(raw)
-    except ValueError:
-        return DEFAULT_REQUEST_TIMEOUT_SECONDS
-    return value if value > 0 else 0.0
+    """Seconds to wait for the daemon before giving up and running cold."""
+    return DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
 def compute_version_token(root: Path | None = None) -> str:
@@ -283,8 +271,7 @@ def _run_request(channel: transport.Channel, payload: dict) -> int | object | No
             # stderr — a silent 10-minute stall that then "just works" is the exact
             # confusion this deadline exists to prevent.
             print(
-                f"cadgen-daemon: no response for {timeout:.0f}s; running cold "
-                "(set CADGEN_DAEMON_TIMEOUT to change or 0 to wait indefinitely)",
+                f"cadgen-daemon: no response for {timeout:.0f}s; running cold",
                 file=sys.stderr,
                 flush=True,
             )

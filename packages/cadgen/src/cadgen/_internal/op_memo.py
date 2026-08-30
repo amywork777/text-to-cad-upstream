@@ -27,9 +27,8 @@ Scope and placement:
   TShapes (the same discipline validity.py and interference.py already
   document); triangulation attachment is tolerated.
 
-Kill switch: ``CADGEN_OP_MEMO=0``. Capacity: ``CADGEN_OP_MEMO_SIZE`` (entries,
-default 4096). Stats: ``CADGEN_OP_MEMO_STATS=1`` logs a summary per process
-exit and after each install.
+Kill switch: ``CADGEN_OP_MEMO=0`` (and ``CADGEN_OP_MEMO_DISK=0`` for just the
+disk tier).
 
 Anything unkeyable — an argument type the normalizer does not understand, a
 shape that fails to serialize — falls through to the original call, uncached.
@@ -38,12 +37,10 @@ Correctness never depends on a cache hit.
 
 from __future__ import annotations
 
-import atexit
 import hashlib
 import io
 import os
 import struct
-import sys
 import threading
 from collections import OrderedDict
 
@@ -80,7 +77,7 @@ def _capacity() -> int:
     # every run thrash the disk tier (the moonwatch alone has ~6k keyable
     # ops, which is how the old 4096 default was caught).
     try:
-        return max(64, int(os.environ.get("CADGEN_OP_MEMO_SIZE", "32768")))
+        return 32768
     except ValueError:
         return 32768
 
@@ -256,7 +253,7 @@ def _disk_dir() -> str:
     # Resolved per call so tests (and long-lived workers) honor env changes;
     # the makedirs is a no-op syscall next to any kernel op. The base comes
     # from the shared cache root (cache_paths, which also keeps honoring the
-    # tier-specific CADGEN_OP_MEMO_DISK_DIR override); the salt subdirectory
+    # relocated as one unit via CADGEN_STORE_DIR); the salt subdirectory
     # is this tier's generation scheme, which `cadgen cache gc` reads by name.
     import build123d
 
@@ -432,45 +429,13 @@ def _thaw_result(stored):
     return stored
 
 
-def _result_digest(result) -> str:
-    try:
-        if isinstance(result, (tuple, list)):
-            return "|".join(_result_digest(r) for r in result)
-        if hasattr(result, "wrapped") and result.wrapped is not None:
-            from OCP.BinTools import BinTools
-
-            stream = io.BytesIO()
-            BinTools.Write_s(result.wrapped, stream)
-            return hashlib.sha256(stream.getvalue()).hexdigest()[:16]
-    except Exception:
-        return "<err>"
-    return "<nonshape>"
-
-
-def _trace(op_name: str, mode: str, key, result) -> None:
-    path = os.environ.get("CADGEN_OP_MEMO_TRACE")
-    if not path:
-        return
-    key_digest = hashlib.sha256(repr(key).encode()).hexdigest()[:12] if key else "-"
-    with open(path, "a", encoding="utf-8") as fh:
-        fh.write(f"{op_name}\t{mode}\t{key_digest}\t{_result_digest(result)}\n")
-
-
 def _memoized(op_name: str, fn, *, is_classmethod: bool):
     import functools
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         if not _enabled():
-            result = fn(*args, **kwargs)
-            if os.environ.get("CADGEN_OP_MEMO_TRACE"):
-                try:
-                    key_args = ((args[0].__name__,) + args[1:]) if is_classmethod else args
-                    key = _build_key(op_name, key_args, kwargs)
-                except Exception:
-                    key = None
-                _trace(op_name, "off", key, result)
-            return result
+            return fn(*args, **kwargs)
         try:
             # For classmethods, `cls` identifies the constructed type and must
             # be part of the key but not hashed as a shape.
@@ -486,9 +451,7 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         cached = _lookup(key)
         if cached is not None:
             _stats["hits"] += 1
-            clone = _thaw_result(cached)
-            _trace(op_name, "hit", key, clone)
-            return clone
+            return _thaw_result(cached)
 
         result = fn(*args, **kwargs)
         _stats["misses"] += 1
@@ -496,18 +459,14 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
             stored = _freeze_result(result)
         except _Unkeyable:
             _stats["unstorable"] += 1
-            _trace(op_name, "miss", key, result)
             return result
         except Exception:
             _stats["errors"] += 1
-            _trace(op_name, "miss", key, result)
             return result
         _store(key, stored)
         # The caller gets the same canonical reconstruction a future hit
         # would: package output must not depend on cache state.
-        canonical = _thaw_result(stored)
-        _trace(op_name, "miss", key, canonical)
-        return canonical
+        return _thaw_result(stored)
 
     wrapper.__op_memo__ = True
     return wrapper
@@ -576,8 +535,6 @@ def install() -> bool:
             setattr(cls, attr, classmethod(_memoized(label, fn, is_classmethod=True)))
 
         _installed = True
-        if os.environ.get("CADGEN_OP_MEMO_STATS") == "1":
-            atexit.register(_log_stats)
         return True
 
 
@@ -591,6 +548,3 @@ def clear() -> None:
         _cache.clear()
         _tshape_bytes_memo.clear()
 
-
-def _log_stats() -> None:
-    print(f"[op_memo] {stats()}", file=sys.stderr)
