@@ -17,7 +17,7 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("skills/srdf/scripts")
 
-from cadgen.cli import srdf_validate as cli
+from cadgen import srdf
 
 URDF = """\
 <robot name="edge">
@@ -182,18 +182,23 @@ class SrdfFindingsTests(unittest.TestCase):
     def tearDown(self) -> None:
         self._tempdir.cleanup()
 
-    def _report(self, srdf_text: str) -> dict[str, object]:
+    def _report(self, srdf_text: str, *, strict: bool = False):
+        """The public verb's ValidationResult for this SRDF.
+
+        The findings ARE the result now: `cadgen.srdf.validate` answers with the
+        typed issues (code included) that the CLI prints, so these tests read the
+        same values a caller does instead of a CLI-private report dict.
+        """
         srdf_path = self.temp_root / "robot.srdf"
         srdf_path.write_text(srdf_text, encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            report = cli._validate_target(srdf_path, strict=False, output_format="json")
-        return report
+            return srdf.validate(srdf_path, strict=strict)
 
     def _codes(self, srdf_text: str) -> tuple[set[str], set[str]]:
-        findings = self._report(srdf_text)["findings"]
+        issues = self._report(srdf_text).issues
         return (
-            {f["code"] for f in findings if f["severity"] == "error"},
-            {f["code"] for f in findings if f["severity"] == "warning"},
+            {issue.code for issue in issues if issue.severity == "error"},
+            {issue.code for issue in issues if issue.severity == "warning"},
         )
 
     def test_cases_emit_expected_codes(self) -> None:
@@ -216,13 +221,13 @@ class SrdfFindingsTests(unittest.TestCase):
             '  <disable_collisions link1="base" link2="island" reason="Adjacent"/>\n'
         )
         report = self._report(srdf_text)
-        self.assertTrue(report["ok"], report["findings"])
-        self.assertEqual([], report["findings"])
+        self.assertTrue(report.ok, report.issues)
+        self.assertEqual((), report.issues)
 
     def test_legacy_explorer_namespace_is_clean(self) -> None:
         header = '<robot name="edge" xmlns:explorer="https://text-to-cad.dev/explorer">\n  <explorer:urdf path="robot.urdf"/>\n'
         report = self._report(_srdf("", header=header))
-        self.assertTrue(report["ok"], report["findings"])
+        self.assertTrue(report.ok, report.issues)
 
     def test_many_manual_pairs_warns(self) -> None:
         # 25+ pairs with free-text reasons classify as "manual" provenance.
@@ -276,10 +281,10 @@ class SrdfFindingsTests(unittest.TestCase):
             encoding="utf-8",
         )
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-            default_report = cli._validate_target(srdf_path, strict=False, output_format="json")
-            strict_report = cli._validate_target(srdf_path, strict=True, output_format="json")
-        self.assertTrue(default_report["ok"])
-        self.assertFalse(strict_report["ok"])
+            default_result = srdf.validate(srdf_path, strict=False)
+            strict_result = srdf.validate(srdf_path, strict=True)
+        self.assertTrue(default_result.ok)
+        self.assertFalse(strict_result.ok)
 
 
 if __name__ == "__main__":

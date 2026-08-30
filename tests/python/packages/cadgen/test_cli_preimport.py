@@ -41,7 +41,9 @@ class DaemonHandoff(unittest.TestCase):
         # Generation has no CLI (library-first): model scripts dispatch themselves
         # via the decorator, so dispatch serves the document/mesh build doors plus
         # the two review tools. Every mesh door is warm: `step export` served all
-        # three formats from one spawn, and three doors are three spawns.
+        # three formats from one spawn, and three doors are three spawns. `dxf
+        # build` is warm too, and gets its stable hash seed from the worker's
+        # environment rather than an interpreter restart.
         self.assertEqual(
             set(cli._DAEMON_TOOLS),
             {
@@ -51,6 +53,7 @@ class DaemonHandoff(unittest.TestCase):
                 "stl build",
                 "3mf build",
                 "glb build",
+                "dxf build",
             },
         )
 

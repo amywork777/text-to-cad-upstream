@@ -32,6 +32,12 @@ FAMILY = [
     "cli/urdf_validate.py",
     "cli/srdf_validate.py",
     "cli/sdf_validate.py",
+    # The public namespaces the CLIs are shells over (design/format-doors.md).
+    # They are the family's front door now, so they inherit its purity rule.
+    "urdf.py",
+    "srdf.py",
+    "sdf.py",
+    "_internal/validation_door.py",
 ]
 
 # Heavy roots that would break extraction-readiness. `cadgen` itself is allowed only
@@ -48,6 +54,9 @@ ALLOWED_CADGEN = {
     "cadgen.sdf_external",
     "cadgen.cli_logging",
     "cadgen.cli",  # report_cli_error / shared CLI plumbing, itself lazy
+    "cadgen.results",  # the typed line protocol: dataclasses and pathlib only
+    "cadgen._internal.validation_door",  # findings -> ValidationResult, stdlib only
+    "cadgen._internal.cli_from_function",  # argparse over a signature, stdlib only
 }
 
 

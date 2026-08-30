@@ -62,33 +62,40 @@ class SdfValidateCliTests(unittest.TestCase):
         path.write_text(body, encoding="utf-8")
         return path
 
-    def _run(self, *argv: str) -> tuple[int, str, str]:
+    def _run(self, *argv: str) -> tuple[int, str]:
+        """The command's exit code and EVERYTHING it printed.
+
+        Findings now ride the ValidationResult's human lines on stdout rather
+        than being printed to stderr as a side effect, so what a caller reads is
+        one stream; the tests assert on both together and stay indifferent to
+        which one a given line lands on.
+        """
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exit_code = cli.main(list(argv))
-        return exit_code, stdout.getvalue(), stderr.getvalue()
+        return exit_code, stdout.getvalue() + stderr.getvalue()
 
     def test_valid_model_passes_with_summary(self) -> None:
         sdf_path = self._write("model.sdf", VALID_MODEL_SDF)
-        exit_code, stdout, _ = self._run(str(sdf_path), "--gz-check", "never")
+        exit_code, output = self._run(str(sdf_path), "--gz-check", "never")
         self.assertEqual(exit_code, 0)
-        self.assertIn("OK", stdout)
-        self.assertIn("SDF 1.12", stdout)
-        self.assertIn("box_bot", stdout)
-        self.assertIn("1 links", stdout)
+        self.assertIn("OK", output)
+        self.assertIn("SDF 1.12", output)
+        self.assertIn("box_bot", output)
+        self.assertIn("1 links", output)
 
     def test_valid_world_only_document_passes(self) -> None:
         sdf_path = self._write("world.sdf", VALID_WORLD_SDF)
-        exit_code, stdout, _ = self._run(str(sdf_path), "--gz-check", "never")
+        exit_code, output = self._run(str(sdf_path), "--gz-check", "never")
         self.assertEqual(exit_code, 0)
-        self.assertIn("worlds ['empty_lit_world']", stdout)
+        self.assertIn("worlds ['empty_lit_world']", output)
 
     def test_invalid_xml_fails(self) -> None:
         sdf_path = self._write("broken.sdf", "<sdf version='1.12'><model></sdf>\n")
-        exit_code, _, stderr = self._run(str(sdf_path), "--gz-check", "never")
+        exit_code, output = self._run(str(sdf_path), "--gz-check", "never")
         self.assertEqual(exit_code, 1)
-        self.assertIn("FAIL", stderr)
+        self.assertIn("FAIL", output)
 
     def test_joint_referencing_missing_link_fails(self) -> None:
         sdf_path = self._write(
@@ -107,9 +114,9 @@ class SdfValidateCliTests(unittest.TestCase):
 </sdf>
 """,
         )
-        exit_code, _, stderr = self._run(str(sdf_path), "--gz-check", "never")
+        exit_code, output = self._run(str(sdf_path), "--gz-check", "never")
         self.assertEqual(exit_code, 1)
-        self.assertIn("missing_link", stderr)
+        self.assertIn("missing_link", output)
 
     def test_strict_mode_promotes_warnings(self) -> None:
         sdf_path = self._write(
@@ -125,31 +132,30 @@ class SdfValidateCliTests(unittest.TestCase):
 </sdf>
 """,
         )
-        exit_code, _, _ = self._run(str(sdf_path), "--gz-check", "never")
+        exit_code, _ = self._run(str(sdf_path), "--gz-check", "never")
         self.assertEqual(exit_code, 0)
-        strict_exit, _, strict_stderr = self._run(str(sdf_path), "--gz-check", "never", "--strict")
+        strict_exit, strict_output = self._run(str(sdf_path), "--gz-check", "never", "--strict")
         self.assertEqual(strict_exit, 1)
-        self.assertIn("FAIL", strict_stderr)
+        self.assertIn("FAIL", strict_output)
 
     def test_gz_check_required_fails_when_gz_missing(self) -> None:
         sdf_path = self._write("model.sdf", VALID_MODEL_SDF)
-        exit_code, _, stderr = self._run(str(sdf_path), "--gz-check", "required")
-        combined = stderr
+        exit_code, combined = self._run(str(sdf_path), "--gz-check", "required")
         if exit_code == 0:
             self.skipTest("gz is installed in this environment")
         self.assertEqual(exit_code, 1)
         self.assertIn("gz", combined)
 
     def test_missing_file_fails(self) -> None:
-        exit_code, _, stderr = self._run(str(self.temp_root / "absent.sdf"), "--gz-check", "never")
+        exit_code, output = self._run(str(self.temp_root / "absent.sdf"), "--gz-check", "never")
         self.assertEqual(exit_code, 1)
-        self.assertIn("file not found", stderr)
+        self.assertIn("file not found", output)
 
     def test_non_sdf_suffix_fails(self) -> None:
         path = self._write("model.xml", VALID_MODEL_SDF)
-        exit_code, _, stderr = self._run(str(path), "--gz-check", "never")
+        exit_code, output = self._run(str(path), "--gz-check", "never")
         self.assertEqual(exit_code, 1)
-        self.assertIn("must be a .sdf file", stderr)
+        self.assertIn("must be a .sdf file", output)
 
 
 if __name__ == "__main__":

@@ -6,10 +6,11 @@ runtime re-joins it into a command line WITHOUT quoting, so the default all-user
 path ``C:\\Program Files\\Python311\\python.exe`` arrived as two arguments and the child tried
 to run ``Files\\Python311\\python.exe`` as a script (issue #245).
 
-The launchers are gone (skills are instruction-only over the ``cadgen`` front door), but the
-same re-run lives on in ``cadgen.cli``'s dispatch, which owns the hash seed. Anything that
-re-runs a command to pin the seed is in scope, wherever it lives; add new re-runners to
-``LAUNCHER_SOURCES`` explicitly.
+The launchers are gone (skills are instruction-only over the ``cadgen`` front door), and the
+re-run itself now lives in ONE module, ``cadgen._internal.hash_seed``, shared by the two
+callers that own a process to restart: ``cadgen.cli`` dispatch (``cadgen dxf build``) and the
+``@dxf`` decorator's direct-run path. Anything that re-runs a command to pin the seed is in
+scope, wherever it lives; add new re-runners to ``LAUNCHER_SOURCES`` explicitly.
 
 The bug is Windows-only and CI is Linux, so the guard here is the policy: no re-runner uses
 ``os.execv``. ``subprocess`` quotes correctly on every platform, and on Windows
@@ -27,6 +28,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # legitimately exec other programs, and the skill shims a glob used to find are gone.
 LAUNCHER_SOURCES = [
     REPO_ROOT / "packages/cadgen/src/cadgen/cli/__init__.py",
+    REPO_ROOT / "packages/cadgen/src/cadgen/_internal/hash_seed.py",
+    REPO_ROOT / "packages/cadgen/src/cadgen/authoring.py",
 ]
 
 
@@ -61,11 +64,15 @@ class LauncherReExecTest(unittest.TestCase):
 
     def test_the_hash_seed_re_run_passes_the_exit_code_through(self) -> None:
         # A re-run that swallowed the child's status would turn every generator failure into a
-        # success, which is worse than the crash it replaced.
-        for path in launcher_sources():
+        # success, which is worse than the crash it replaced. Only the source that actually
+        # spawns the child is in scope: its callers hand the code straight up.
+        re_runners = [
+            path for path in launcher_sources()
+            if "subprocess.run(" in path.read_text(encoding="utf-8")
+        ]
+        self.assertTrue(re_runners, "no listed source performs the hash-seed re-run any more")
+        for path in re_runners:
             source = path.read_text(encoding="utf-8")
-            if "PYTHONHASHSEED" not in source:
-                continue
             with self.subTest(launcher=str(path.relative_to(REPO_ROOT))):
                 # Two idioms, one property: a launcher raises SystemExit with the
                 # child's code, a dispatcher returns it up to its own main().

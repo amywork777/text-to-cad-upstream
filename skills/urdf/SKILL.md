@@ -60,13 +60,13 @@ From this skill directory, the validator shape is:
 
 ```bash
 cadgen urdf validate path/to/robot.urdf
-cadgen urdf validate path/to/a.urdf path/to/b.urdf
 cadgen urdf validate path/to/robot.urdf --strict
-cadgen urdf validate path/to/robot.urdf --format json
-cadgen urdf validate path/to/robot.urdf --package robot_description=/path/to/pkg
+cadgen urdf validate path/to/robot.urdf --json
+cadgen urdf validate path/to/robot.urdf --packages robot_description=/path/to/pkg
+cadgen urdf snapshot --input path/to/robot.urdf --output review.png
 ```
 
-The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a per-file summary. `--strict` treats warnings as failures; `--format json` emits a machine-readable findings document; `--package NAME=PATH` resolves `package://` mesh URIs. It exits nonzero if any target fails. Relative targets resolve from the current working directory; when running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
+The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a summary. One run validates ONE file: `--strict` treats warnings as failures; `--json` emits the machine-readable findings document; `--packages NAME=PATH` resolves `package://` mesh URIs and repeats for several roots. It exits nonzero if the target fails. Relative targets resolve from the current working directory; when running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
 
 Validation is a guardrail, not spatial proof: a URDF can pass every structural check while placing a joint in the wrong spot. The ledger and viewer sweep exist for that reason.
 

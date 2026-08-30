@@ -94,12 +94,27 @@ class MeshExportResult:
 
 @dataclass(frozen=True)
 class ValidationIssue:
-    """One conformance finding against a robot description."""
+    """One conformance finding against a robot description.
 
-    severity: str  # "error" | "warning"
+    ``code`` and ``hint`` carry what the checkers already produce: the skills
+    teach fixing findings BY CODE, so dropping the code at the result boundary
+    would make the typed result less useful than the dict it replaced.
+    """
+
+    severity: str  # "error" | "warning" | "info"
     message: str
     #: The offending element or reference, when the checker knows it.
     element: str | None = None
+    #: The checker's stable identifier for this class of finding.
+    code: str | None = None
+    #: How to fix it, when the checker has something specific to say.
+    hint: str | None = None
+
+    def human_line(self) -> str:
+        code = f"{self.code}" if self.code else ""
+        element = f" at {self.element}" if self.element else ""
+        hint = f" Hint: {self.hint}" if self.hint else ""
+        return f"{self.severity}: {code}{element}: {self.message}{hint}"
 
 
 @dataclass(frozen=True)
@@ -109,12 +124,15 @@ class ValidationResult:
     ok: bool
     path: Path
     issues: tuple[ValidationIssue, ...] = field(default_factory=tuple)
+    #: One line describing what was validated (link/joint counts and so on).
+    #: Empty when the document did not parse far enough to describe.
+    summary: str = ""
 
     def human_lines(self) -> list[str]:
-        lines = [
-            f"{issue.severity}: {issue.message}"
-            + (f" [{issue.element}]" if issue.element else "")
-            for issue in self.issues
-        ]
-        lines.append(f"{'OK' if self.ok else 'FAILED'} {_display(self.path)}")
+        lines = [issue.human_line() for issue in self.issues]
+        if self.ok:
+            lines.append(self.summary or f"OK {_display(self.path)}")
+        else:
+            blocking = sum(1 for issue in self.issues if issue.severity == "error")
+            lines.append(f"FAILED {_display(self.path)}: {blocking or len(self.issues)} blocking finding(s)")
         return lines

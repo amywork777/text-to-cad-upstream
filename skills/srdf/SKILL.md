@@ -64,12 +64,11 @@ From this skill directory, the validator shape is:
 
 ```bash
 cadgen srdf validate path/to/robot.srdf
-cadgen srdf validate path/to/a.srdf path/to/b.srdf
 cadgen srdf validate path/to/robot.srdf --strict
-cadgen srdf validate path/to/robot.srdf --format json
+cadgen srdf validate path/to/robot.srdf --json
 ```
 
-The validator collects all findings in one pass (severity, code, XML path). It parses the SRDF, resolves the paired URDF (the same-folder `.urdf` whose robot name matches; none or several is an error), and cross-validates: group/joint/link/subgroup name existence, chain path resolvability, subgroup cycles, virtual/passive joints, end-effector topology, group-state membership/limits/completeness, disabled-collision pairs (including Adjacent-reason truthfulness), and misspelled elements. `--strict` treats warnings as failures; `--format json` emits a machine-readable findings document. It exits nonzero if any target fails. Relative targets resolve from the current working directory.
+The validator collects all findings in one pass (severity, code, XML path). It parses the SRDF, resolves the paired URDF (the same-folder `.urdf` whose robot name matches; none or several is an error), and cross-validates: group/joint/link/subgroup name existence, chain path resolvability, subgroup cycles, virtual/passive joints, end-effector topology, group-state membership/limits/completeness, disabled-collision pairs (including Adjacent-reason truthfulness), and misspelled elements. One run validates ONE file: `--strict` treats warnings as failures and `--json` emits the machine-readable findings document. It exits nonzero if the target fails. Relative targets resolve from the current working directory.
 
 ## Hard rules
 

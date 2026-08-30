@@ -48,7 +48,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"step", "stl", "glb", "threemf"}:
+    if name in {"step", "dxf", "stl", "glb", "threemf"}:
         # A FORMAT NAMESPACE: the declaration decorator and the format's verbs in
         # one callable module (design/format-doors.md). Returning the module
         # rather than cadgen.authoring.<name> keeps a single identity —
@@ -56,12 +56,6 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module(f"cadgen.{name}")
-    if name == "dxf":
-        # Still just the authoring decorator (design/library-first-generation.md);
-        # `cadgen.dxf` becomes a namespace with the drawing family's verbs.
-        from cadgen.authoring import dxf
-
-        return dxf
     if name == "pose":
         # Declarative view/pose block for @step(pose=...) — the single pose
         # authoring surface (no loose .params.js sidecars).
@@ -128,9 +122,8 @@ if TYPE_CHECKING:
     # without importing OCP. Every name here must have a branch there. develop's version of
     # this block pulled two names from the api alias module, which this branch deletes --
     # they come from their real modules now.
-    from cadgen import build123d, glb, step, stl, threemf
+    from cadgen import build123d, dxf, glb, step, stl, threemf
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
-    from cadgen.authoring import dxf
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
     from cadgen.posedef import pose
     from cadgen.instances import compound_from_instances

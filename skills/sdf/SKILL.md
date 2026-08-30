@@ -70,11 +70,12 @@ Run with the project or workspace Python environment. Treat `python` in examples
 
 ```bash
 cadgen sdf validate path/to/model.sdf
-cadgen sdf validate path/to/a.sdf path/to/b.sdf
 cadgen sdf validate path/to/model.sdf --strict
+cadgen sdf validate path/to/model.sdf --json
+cadgen sdf snapshot --input path/to/model.sdf --output review.png
 ```
 
-The validator checks document shape, name scopes, pose/frame graphs, joints, geometry, mesh URIs, inertials, sensors, and plugins, and prints per-file findings plus a summary. `--strict` treats warnings as failures. It exits nonzero if any target fails.
+The validator checks document shape, name scopes, pose/frame graphs, joints, geometry, mesh URIs, inertials, sensors, and plugins, and prints its findings plus a summary. One run validates ONE file: `--strict` treats warnings as failures and `--json` emits the machine-readable findings document. It exits nonzero if the target fails.
 
 Optional external checking:
 

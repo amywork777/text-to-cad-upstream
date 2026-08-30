@@ -32,9 +32,11 @@ covers everything downstream of a build:
 | `step build` | make a model script's or an imported STEP/STP's derived state current |
 | `stl build` / `3mf build` / `glb build` | write that model's mesh outputs, one door per format |
 | `step inspect` / `step snapshot` | inspect selector references, render review images |
+| `dxf build` | make a @dxf drawing's .dxf output current |
 | `dxf snapshot` | render a DXF drawing |
 | `snapshot` | render any supported input |
 | `urdf validate` / `srdf validate` / `sdf validate` | validate robot descriptions |
+| `urdf snapshot` / `sdf snapshot` | render a robot description |
 | `cache` | inspect or garbage-collect the user-level caches |
 | `daemon` / `daemon status` | opt-in warm process that holds OCP resident between builds |
 | `doctor` | print installed cadgen and verify a skill's pin |
@@ -49,12 +51,16 @@ shipping entrypoints of their own.
 
 The supported surface is the root `cadgen` exports plus the top-level `cadgen.*` modules:
 
-- **Format namespaces**: `cadgen.step`, `cadgen.stl`, `cadgen.threemf`, `cadgen.glb`.
-  Each is one object: the declaration decorator (`@step`, `@stl`, ...) AND that
-  format's verbs (`step.build(...)`, `stl.build(...)`), returning the typed
-  results in `cadgen.results`. Every `cadgen <format> <verb>` command is that
-  function with a parser derived from its signature, so the library call and the
-  command cannot disagree.
+- **Format namespaces**: `cadgen.step`, `cadgen.dxf`, `cadgen.stl`,
+  `cadgen.threemf`, `cadgen.glb`. Each is one object: the declaration decorator
+  (`@step`, `@stl`, ...) AND that format's verbs (`step.build(...)`,
+  `stl.build(...)`), returning the typed results in `cadgen.results`. Every
+  `cadgen <format> <verb>` command is that function with a parser derived from
+  its signature, so the library call and the command cannot disagree.
+- **Robot description namespaces**: `cadgen.urdf`, `cadgen.srdf`, `cadgen.sdf` —
+  `validate(path, ...) -> ValidationResult`. No decorators: a description is an
+  authored file, not a document cadgen generates. Stdlib-pure, so this family
+  runs without the CAD kernel installed.
 - **Generator-script helpers**, all at the root: `AssemblyHelper`, `MateRelation`,
   `MateTarget`, `label_text`, `label_shape`, `target`, `report`, `track`, `srgb`,
   `compound_from_instances`, `ensure_step_topology_artifact`,

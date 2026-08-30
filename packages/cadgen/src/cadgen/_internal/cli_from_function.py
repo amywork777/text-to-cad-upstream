@@ -232,6 +232,58 @@ def result_lines(result: Any) -> list[str]:
     ]
 
 
+def emit(
+    invoke: Callable[[], Any],
+    *,
+    prog: str,
+    as_json: bool,
+    verbose: bool = False,
+    stdout: Any | None = None,
+) -> int:
+    """Call one verb and render its Result — the WHOLE of a command's output.
+
+    Every command in the schema prints through here, generated or not, so a
+    hand-written ADAPTER cannot end up serializing differently from a mirror:
+    one JSON line under ``--json``, the Result's human lines otherwise, and
+    ``{"ok": false, "error": ...}`` + exit 1 for an exception.
+    """
+    out = stdout if stdout is not None else sys.stdout
+    try:
+        result = invoke()
+    except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
+        if as_json:
+            print(json.dumps({"ok": False, "error": str(exc)}, separators=(",", ":")), file=out)
+            return 1
+        from cadgen._internal.cli_errors import report_cli_error
+
+        return report_cli_error(exc, tool=prog, verbose=verbose)
+    if as_json:
+        print(json.dumps(result_payload(result), separators=(",", ":")), file=out)
+    else:
+        for line in result_lines(result):
+            print(line, file=out)
+    return 0 if getattr(result, "ok", True) else 1
+
+
+def call_verb(
+    target: tuple[str, str],
+    invoke: Callable[[Callable[..., Any]], Any],
+    *,
+    prog: str,
+    as_json: bool,
+    verbose: bool = False,
+    stdout: Any | None = None,
+) -> int:
+    """:func:`emit` for an adapter: it passes its own arguments to the verb."""
+    return emit(
+        lambda: invoke(_verb(target)),
+        prog=prog,
+        as_json=as_json,
+        verbose=verbose,
+        stdout=stdout,
+    )
+
+
 def run_cli(
     func: Callable[..., Any],
     argv: Sequence[str] | None,
@@ -242,24 +294,14 @@ def run_cli(
     """Parse ``argv`` against ``func``'s generated parser, call it, print the result."""
     parser = cli_from_function(func, prog=prog)
     args = parser.parse_args(list(argv) if argv is not None else None)
-    as_json = bool(getattr(args, JSON_FLAG_DEST))
-    out = stdout if stdout is not None else sys.stdout
     positional, keywords = _call_arguments(func, args)
-    try:
-        result = func(*positional, **keywords)
-    except Exception as exc:  # noqa: BLE001 — the CLI boundary: report, do not traceback
-        if as_json:
-            print(json.dumps({"ok": False, "error": str(exc)}, separators=(",", ":")), file=out)
-            return 1
-        from cadgen._internal.cli_errors import report_cli_error
-
-        return report_cli_error(exc, tool=prog, verbose=bool(getattr(args, "verbose", False)))
-    if as_json:
-        print(json.dumps(result_payload(result), separators=(",", ":")), file=out)
-    else:
-        for line in result_lines(result):
-            print(line, file=out)
-    return 0 if getattr(result, "ok", True) else 1
+    return emit(
+        lambda: func(*positional, **keywords),
+        prog=prog,
+        as_json=bool(getattr(args, JSON_FLAG_DEST)),
+        verbose=bool(getattr(args, "verbose", False)),
+        stdout=stdout,
+    )
 
 
 # --- the shells the command table dispatches to ------------------------------

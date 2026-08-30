@@ -29,6 +29,7 @@ from pathlib import Path
 from cadgen import cli
 from cadgen._internal.cli_from_function import (
     JSON_FLAG_DEST,
+    NotDerivable,
     cli_from_function,
     function_parameters,
     parser_dests,
@@ -40,7 +41,16 @@ PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     "cadgen.stl": ("build",),
     "cadgen.threemf": ("build",),
     "cadgen.glb": ("build",),
+    "cadgen.dxf": ("build",),
+    "cadgen.urdf": ("validate",),
+    "cadgen.srdf": ("validate",),
+    "cadgen.sdf": ("validate",),
 }
+
+# The format namespaces that are ALSO their declaration decorator. The robot
+# families are not: a description is an authored file, so there is nothing to
+# declare and nothing to decorate.
+DECORATOR_NAMESPACES = ("step", "dxf", "stl", "threemf", "glb")
 
 # Commands whose parser is GENERATED from the verb it calls. No allowlist is
 # possible here: the parser has no independent existence.
@@ -49,6 +59,9 @@ MIRRORS: dict[str, tuple[str, str]] = {
     "stl build": ("cadgen.stl", "build"),
     "3mf build": ("cadgen.threemf", "build"),
     "glb build": ("cadgen.glb", "build"),
+    "dxf build": ("cadgen.dxf", "build"),
+    "sdf validate": ("cadgen.sdf", "validate"),
+    "srdf validate": ("cadgen.srdf", "validate"),
 }
 
 # The shared snapshot surface, WRITTEN OUT rather than imported: a test that
@@ -87,7 +100,12 @@ SNAPSHOT_OPTIONS = frozenset(
 ADAPTERS: dict[str, frozenset[str]] = {
     "step snapshot": SNAPSHOT_OPTIONS,
     "dxf snapshot": SNAPSHOT_OPTIONS,
+    "urdf snapshot": SNAPSHOT_OPTIONS,
+    "sdf snapshot": SNAPSHOT_OPTIONS,
     "snapshot": SNAPSHOT_OPTIONS,
+    # The one validator that cannot be a mirror: `--packages NAME=PATH` is
+    # repeatable, and a repeatable key/value map is outside the derivable set.
+    "urdf validate": frozenset({"path", "strict", "packages", "verbose"}),
     "step inspect": frozenset(
         {
             "verbose",
@@ -105,9 +123,6 @@ ADAPTERS: dict[str, frozenset[str]] = {
 
 # Commands not yet re-homed under the schema. This set only shrinks.
 UNCLASSIFIED = {
-    "urdf validate",
-    "sdf validate",
-    "srdf validate",
     "doctor",
     "cache",
     "daemon",
@@ -162,8 +177,17 @@ class Manifest(unittest.TestCase):
                     ]
                     self.assertEqual([], unannotated)
                     self.assertIsNot(signature.return_annotation, signature.empty)
-                    # Derivability is the property; raising here is the failure.
-                    cli_from_function(func, prog="probe")
+                    # Derivability is the CLASSIFICATION: a mirror's parser is
+                    # generated from this signature, and an adapter exists
+                    # precisely because its verb cannot be. Asserting both
+                    # directions keeps the classification honest — an adapter
+                    # whose verb became derivable should go back to being a
+                    # mirror rather than keep a hand-written parser.
+                    if (module_name, verb) in set(MIRRORS.values()):
+                        cli_from_function(func, prog="probe")
+                    else:
+                        with self.assertRaises(NotDerivable):
+                            cli_from_function(func, prog="probe")
 
     def test_a_format_namespace_is_also_its_decorator(self):
         # `from cadgen import step` must keep declaring models: the namespace
@@ -171,7 +195,7 @@ class Manifest(unittest.TestCase):
         # never shadow the authoring API.
         import cadgen
 
-        for name in ("step", "stl", "threemf", "glb"):
+        for name in DECORATOR_NAMESPACES:
             with self.subTest(format=name):
                 namespace = getattr(cadgen, name)
                 self.assertIs(namespace, importlib.import_module(f"cadgen.{name}"))

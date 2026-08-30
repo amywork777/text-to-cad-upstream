@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from cadgen._internal.hash_seed import hash_seed_is_stable, rerun_with_stable_hash_seed
 from cadgen.metadata import MeshExportDecl, resolve_model_output_path
 from cadgen.posedef import PoseDef
 
@@ -336,19 +337,11 @@ def _run_from_main(defn: ModelDef) -> int:
             return warm_exit
 
     # Drawing packages must be byte-deterministic and ezdxf's object ordering
-    # depends on hash randomization. Warm workers always carry PYTHONHASHSEED=0;
-    # a COLD @dxf run re-execs once to pin it (the same re-run the retired
-    # `dxf gen` dispatch performed).
-    if defn.fmt == "dxf" and os.environ.get("PYTHONHASHSEED") != "0":
-        import subprocess
-
-        env = dict(os.environ)
-        env["PYTHONHASHSEED"] = "0"
-        env["CADGEN_DAEMON"] = "0"  # already decided cold; do not bounce to the daemon
-        completed = subprocess.run(
-            [sys.executable, str(defn.script_path), *argv], env=env, check=False
-        )
-        return int(completed.returncode)
+    # depends on hash randomization. Warm workers always carry the pinned seed;
+    # a COLD @dxf run re-execs once to get it. The invariant itself lives in
+    # cadgen._internal.hash_seed, which `cadgen dxf build` dispatch shares.
+    if defn.fmt == "dxf" and not hash_seed_is_stable():
+        return rerun_with_stable_hash_seed([str(defn.script_path), *argv])
 
     from cadgen.cli._run_model import run_model_argv
 

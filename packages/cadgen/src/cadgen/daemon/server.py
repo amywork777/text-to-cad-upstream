@@ -9,8 +9,7 @@ never recurses into it.
 
 Protocol — one JSON request per connection, JSON-lines response:
 
-  request : {"tool": "run"|"step-build"|"stl-build"|"3mf-build"|"glb-build"
-                     |"inspect"|"snapshot",
+  request : {"tool": <a key of _TOOL_IMPORTS below>,
              "argv": [...], "cwd": "...",
              "token": <client version token>}
   response: {"stream": "stdout"|"stderr", "data": "..."} chunks, then
@@ -75,6 +74,10 @@ _TOOL_IMPORTS = {
     "stl-build": "cadgen.cli.stl_build",
     "3mf-build": "cadgen.cli.threemf_build",
     "glb-build": "cadgen.cli.glb_build",
+    # Served warm like the rest, and free of the cold path's interpreter
+    # restart: every worker is spawned with PYTHONHASHSEED pinned, which is
+    # exactly what a deterministic drawing build needs.
+    "dxf-build": "cadgen.cli.dxf_build",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
 }

@@ -84,11 +84,17 @@ Use these defaults unless the user specifies otherwise:
 
 ```bash
 python <drawing>.py [flags]      # a @dxf model script writes its sibling .dxf
+cadgen dxf build <drawing>.py    # the same build, asked for by name
 cadgen dxf snapshot --input <drawing> --output <file.png>   # render it
 ```
 
-An imported `.dxf` needs no build step at all — the CAD Viewer renders it
-directly — so there is no build command here.
+`cadgen dxf build` and running the script are the same build through the same
+gate: an unchanged source whose recorded `.dxf` still verifies is a no-op, and
+`--force` rebuilds anyway. Either way the bytes are a function of the source
+alone — the build pins PYTHONHASHSEED, because ezdxf's object ordering follows
+hash randomization.
+
+An imported `.dxf` needs no build at all — the CAD Viewer renders it directly.
 
 Use the active project Python interpreter; treat `python` as an interpreter placeholder, and use `--help` for the full interface. Target paths resolve from the command's current working directory; run from the workspace that owns the artifacts with cwd-relative target paths. Keep a drawing generator in the same directory as the geometry it derives from, named `<name>.py`.
 

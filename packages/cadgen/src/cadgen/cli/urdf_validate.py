@@ -1,176 +1,82 @@
+"""``cadgen urdf validate`` — an ADAPTER over :func:`cadgen.urdf.validate`.
+
+The one validator that is not a generated mirror: ``--package NAME=PATH`` is
+repeatable, and a repeatable key/value map is outside the annotation set a
+parser can be derived from (design/format-doors.md). So the parser is written
+here, its extra option is declared in the signature-sync policy test, and the
+body stays a shell: parse, call the verb, print the Result the same way every
+generated CLI does.
+"""
+
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-
-from cadgen.findings import ValidationResult
-from cadgen.urdf_source import UrdfSource, validate_urdf_file
-
-URDF_SUFFIX = ".urdf"
-
+from cadgen._internal.cli_from_function import JSON_FLAG_DEST
 
 DEFAULT_PROG = "cadgen urdf validate"
-
-def validate_urdf_targets(
-    targets: Sequence[str],
-    *,
-    strict: bool = False,
-    output_format: str = "text",
-    package_map: dict[str, Path] | None = None,
-) -> int:
-    target_paths = [_resolve_target_path(target) for target in targets]
-    reports: list[dict[str, object]] = []
-    failed = False
-    for target_path in target_paths:
-        report = _validate_target(target_path, strict=strict, output_format=output_format, package_map=package_map)
-        reports.append(report)
-        if not report["ok"]:
-            failed = True
-    if output_format == "json":
-        print(json.dumps({"files": reports}, separators=(",", ":")))
-    return 1 if failed else 0
+VERB = ("cadgen.urdf", "validate")
 
 
-def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
+def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog,
-        description="Validate explicit URDF targets.",
+        description="Check one URDF robot description for conformance.",
+    )
+    parser.add_argument("path", metavar="PATH", type=Path, help="The .urdf file to validate.")
+    parser.add_argument(
+        "--strict", action="store_true", help="Treat warnings as blocking."
     )
     parser.add_argument(
-        "targets",
-        nargs="+",
-        help="Explicit .urdf file to validate.",
-    )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Treat validation warnings as failures.",
-    )
-    parser.add_argument(
-        "--format",
-        choices=("text", "json"),
-        default="text",
-        dest="output_format",
-        help="Output format: human-readable text (default) or a JSON findings document.",
-    )
-    parser.add_argument(
-        "--package",
+        "--packages",
         action="append",
         default=[],
         metavar="NAME=PATH",
         help="Resolve package://NAME/... mesh URIs against PATH. Repeatable.",
     )
     parser.add_argument(
-        "--verbose",
+        "--verbose", action="store_true", help="Narrate the target on stderr."
+    )
+    parser.add_argument(
+        "--json",
+        dest=JSON_FLAG_DEST,
         action="store_true",
-        help="Narrate each target and its timing on stderr.",
+        help="Print the result as one JSON line on stdout instead of human lines.",
     )
-    args = parser.parse_args(list(argv) if argv is not None else None)
-    if args.verbose:
-        # Narration goes to stderr; the findings document on stdout stays exactly the same
-        # so `--verbose` never changes what a caller parses.
-        for target in args.targets:
-            print(f"[urdf] validating {target}", file=sys.stderr)
-    package_map = _parse_package_map(args.package, parser)
-    return validate_urdf_targets(
-        args.targets,
-        strict=args.strict,
-        output_format=args.output_format,
-        package_map=package_map,
-    )
+    return parser
 
 
-def _parse_package_map(entries: Sequence[str], parser: argparse.ArgumentParser) -> dict[str, Path] | None:
+def package_map(entries: Sequence[str]) -> "dict[str, Path] | None":
+    """``NAME=PATH`` pairs as the map the verb takes, or None for no roots."""
     if not entries:
         return None
-    package_map: dict[str, Path] = {}
+    roots: dict[str, Path] = {}
     for entry in entries:
-        name, separator, raw_path = str(entry).partition("=")
-        if not separator or not name.strip() or not raw_path.strip():
-            parser.error(f"--package expects NAME=PATH, got {entry!r}")
-        package_map[name.strip()] = Path(raw_path.strip()).expanduser()
-    return package_map
+        name, separator, raw = str(entry).partition("=")
+        if not separator or not name.strip() or not raw.strip():
+            raise ValueError(f"--packages expects NAME=PATH, got {entry!r}")
+        roots[name.strip()] = Path(raw.strip()).expanduser()
+    return roots
 
 
-def _resolve_target_path(raw_target: object) -> Path:
-    value = str(raw_target or "").strip()
-    if not value:
-        raise ValueError("urdf target must be a non-empty path")
-    target_path = Path(value).expanduser()
-    return target_path.resolve() if target_path.is_absolute() else (Path.cwd() / target_path).resolve()
+def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
+    from cadgen._internal.cli_from_function import call_verb
 
-
-def _validate_target(
-    target_path: Path,
-    *,
-    strict: bool,
-    output_format: str,
-    package_map: dict[str, Path] | None,
-) -> dict[str, object]:
-    display = _display_path(target_path)
-    text_mode = output_format == "text"
-    if target_path.suffix.lower() != URDF_SUFFIX:
-        return _report_precheck_failure(display, "target must be a .urdf file", text_mode)
-    if not target_path.is_file():
-        return _report_precheck_failure(display, "file not found", text_mode)
-
-    source, result = validate_urdf_file(target_path, package_map=package_map)
-    result = result.deduplicated()
-    ok = _report_findings(display, result, strict=strict, text_mode=text_mode)
-    summary = _summary_line(display, source) if source is not None else ""
-    if text_mode and ok and summary:
-        print(summary)
-    return {
-        "path": display,
-        "ok": ok,
-        "summary": summary,
-        "findings": [finding.to_dict() for finding in result.all_findings()],
-    }
-
-
-def _report_precheck_failure(display: str, message: str, text_mode: bool) -> dict[str, object]:
-    if text_mode:
-        print(f"FAIL {display}: {message}", file=sys.stderr)
-    return {
-        "path": display,
-        "ok": False,
-        "summary": "",
-        "findings": [{"severity": "error", "code": "invalid_target", "message": message}],
-    }
-
-
-def _report_findings(display: str, result: ValidationResult, *, strict: bool, text_mode: bool) -> bool:
-    if text_mode:
-        for finding in result.all_findings():
-            print(finding.format(), file=sys.stderr)
-    blocking = len(result.errors) + (len(result.warnings) if strict else 0)
-    if blocking:
-        if text_mode:
-            print(f"FAIL {display}: {blocking} blocking finding(s)", file=sys.stderr)
-        return False
-    return True
-
-
-def _summary_line(display: str, source: UrdfSource) -> str:
-    movable = sum(1 for joint in source.joints if joint.joint_type != "fixed")
-    mass_text = f", total mass {source.total_mass:.4g} kg" if source.total_mass > 0 else ""
-    return (
-        f"OK {display}: robot {source.robot_name!r}, root {source.root_link!r}, "
-        f"{len(source.links)} links, {len(source.joints)} joints ({movable} movable), "
-        f"{len(source.mesh_paths)} resolved mesh references{mass_text}"
+    args = build_parser(prog).parse_args(list(argv) if argv is not None else None)
+    return call_verb(
+        VERB,
+        lambda validate: validate(
+            args.path,
+            strict=bool(args.strict),
+            packages=package_map(args.packages),
+            verbose=bool(args.verbose),
+        ),
+        prog=prog,
+        as_json=bool(getattr(args, JSON_FLAG_DEST)),
+        verbose=bool(args.verbose),
     )
-
-
-def _display_path(path: Path) -> str:
-    resolved = path.resolve()
-    try:
-        return resolved.relative_to(Path.cwd().resolve()).as_posix()
-    except ValueError:
-        return resolved.as_posix()
 
 
 if __name__ == "__main__":

@@ -72,22 +72,28 @@ class SrdfValidateCliTests(unittest.TestCase):
         self._write("robot.urdf", urdf_body)
         return self._write("robot.srdf", srdf_body)
 
-    def _run(self, *argv: str) -> tuple[int, str, str]:
+    def _run(self, *argv: str) -> tuple[int, str]:
+        """The command's exit code and EVERYTHING it printed.
+
+        Findings now ride the ValidationResult's human lines on stdout rather
+        than being printed to stderr as a side effect, so what a caller reads is
+        one stream; the tests assert on both together and stay indifferent to
+        which one a given line lands on.
+        """
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exit_code = cli.main(list(argv))
-        return exit_code, stdout.getvalue(), stderr.getvalue()
+        return exit_code, stdout.getvalue() + stderr.getvalue()
 
     def test_valid_pair_passes_with_summary(self) -> None:
         srdf_path = self._write_pair()
-        exit_code, stdout, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 0)
-        self.assertIn("OK", stdout)
-        self.assertIn("robot 'sample'", stdout)
-        self.assertIn("2 groups", stdout)
-        self.assertIn("1 end effectors", stdout)
-        self.assertEqual(stderr, "")
+        self.assertIn("OK", output)
+        self.assertIn("robot 'sample'", output)
+        self.assertIn("2 groups", output)
+        self.assertIn("1 end effectors", output)
 
     def test_retired_urdf_link_element_warns_but_passes(self) -> None:
         srdf_path = self._write_pair(
@@ -96,29 +102,29 @@ class SrdfValidateCliTests(unittest.TestCase):
                 '<robot name="sample" xmlns:tcad="https://text-to-cad.dev/srdf">\n  <tcad:urdf path="robot.urdf"/>',
             )
         )
-        exit_code, stdout, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 0)
-        self.assertIn("OK", stdout)
-        self.assertIn("deprecated_urdf_link", stderr)
+        self.assertIn("OK", output)
+        self.assertIn("deprecated_urdf_link", output)
 
     def test_missing_paired_urdf_fails(self) -> None:
         srdf_path = self._write("robot.srdf", SAMPLE_SRDF)
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("declares robot name", stderr)
+        self.assertIn("declares robot name", output)
 
     def test_robot_name_without_matching_urdf_fails(self) -> None:
         srdf_path = self._write_pair(SAMPLE_SRDF.replace('name="sample"', 'name="other"', 1))
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("no_paired_urdf", stderr)
+        self.assertIn("no_paired_urdf", output)
 
     def test_ambiguous_paired_urdf_fails(self) -> None:
         srdf_path = self._write_pair()
         self._write("robot_copy.urdf", SAMPLE_URDF)
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("ambiguous_paired_urdf", stderr)
+        self.assertIn("ambiguous_paired_urdf", output)
 
     def test_unknown_group_joint_fails(self) -> None:
         srdf_path = self._write_pair(
@@ -127,9 +133,9 @@ class SrdfValidateCliTests(unittest.TestCase):
                 '<joint name="not_a_joint"/>',
             )
         )
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("not_a_joint", stderr)
+        self.assertIn("not_a_joint", output)
 
     def test_chain_that_is_not_a_tree_path_fails(self) -> None:
         srdf_path = self._write_pair(
@@ -138,17 +144,17 @@ class SrdfValidateCliTests(unittest.TestCase):
                 '<chain base_link="wrist" tip_link="base"/>',
             )
         )
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("not a parent-to-child path", stderr)
+        self.assertIn("not a parent-to-child path", output)
 
     def test_group_state_beyond_urdf_limits_fails(self) -> None:
         srdf_path = self._write_pair(
             SAMPLE_SRDF.replace('<joint name="shoulder" value="0"/>', '<joint name="shoulder" value="2.5"/>')
         )
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("above its URDF upper limit", stderr)
+        self.assertIn("above its URDF upper limit", output)
 
     def test_disable_collisions_unknown_link_fails(self) -> None:
         srdf_path = self._write_pair(
@@ -157,20 +163,20 @@ class SrdfValidateCliTests(unittest.TestCase):
                 '<disable_collisions link1="base" link2="phantom" reason="Adjacent"/>',
             )
         )
-        exit_code, _, stderr = self._run(str(srdf_path))
+        exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("phantom", stderr)
+        self.assertIn("phantom", output)
 
     def test_non_srdf_suffix_fails(self) -> None:
         path = self._write("robot.xml", SAMPLE_SRDF)
-        exit_code, _, stderr = self._run(str(path))
+        exit_code, output = self._run(str(path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("must be a .srdf file", stderr)
+        self.assertIn("must be a .srdf file", output)
 
     def test_missing_file_fails(self) -> None:
-        exit_code, _, stderr = self._run(str(self.temp_root / "absent.srdf"))
+        exit_code, output = self._run(str(self.temp_root / "absent.srdf"))
         self.assertEqual(exit_code, 1)
-        self.assertIn("file not found", stderr)
+        self.assertIn("file not found", output)
 
 
 if __name__ == "__main__":

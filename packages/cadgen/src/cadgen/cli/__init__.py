@@ -48,10 +48,13 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "3mf build": ("cadgen.cli.threemf_build", "write a model's 3MF output(s)"),
     "glb build": ("cadgen.cli.glb_build", "write a model's GLB output(s)"),
     # DXF
+    "dxf build": ("cadgen.cli.dxf_build", "make a drawing's .dxf output current"),
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Robot descriptions
-    "urdf validate": ("cadgen.cli.urdf_validate", "validate URDF robot descriptions"),
-    "sdf validate": ("cadgen.cli.sdf_validate", "validate SDF worlds and models"),
+    "urdf validate": ("cadgen.cli.urdf_validate", "validate a URDF robot description"),
+    "urdf snapshot": ("cadgen.cli.urdf_snapshot", "render a URDF to an image"),
+    "sdf validate": ("cadgen.cli.sdf_validate", "validate an SDF world or model"),
+    "sdf snapshot": ("cadgen.cli.sdf_snapshot", "render an SDF to an image"),
     "srdf validate": ("cadgen.cli.srdf_validate", "validate an SRDF against its URDF"),
     # Generic / services
     "doctor": ("cadgen.cli.doctor", "print installed cadgen and verify a skill's pin"),
@@ -133,15 +136,16 @@ _DAEMON_TOOLS = {
     "stl build": "stl-build",
     "3mf build": "3mf-build",
     "glb build": "glb-build",
+    "dxf build": "dxf-build",
 }
 
 # Drawing packages are content-addressed and ezdxf's object ordering depends on hash
 # randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read
-# at interpreter start; warm daemon workers always carry PYTHONHASHSEED=0, and a
-# directly-run @dxf model that lands in-process re-execs through the decorator's
-# daemon handoff or accepts the seed of the invoking interpreter (the runner pins
-# ordering-sensitive writes itself).
-_HASH_SEED_COMMANDS: set[str] = set()
+# at interpreter start, which is why this happens in DISPATCH, before the command's
+# module is imported. Warm daemon workers already carry the pinned seed, so a served
+# build skips the restart; the invariant itself lives in cadgen._internal.hash_seed,
+# shared with the @dxf decorator's direct-run path.
+_HASH_SEED_COMMANDS: set[str] = {"dxf build"}
 
 
 # subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows
@@ -153,10 +157,9 @@ _HASH_SEED_COMMANDS: set[str] = set()
 # under python.
 def _rerun_with_stable_hash_seed() -> int:
     """Re-run this command once with the seed pinned, and return its exit code."""
-    import subprocess
+    from cadgen._internal.hash_seed import rerun_with_stable_hash_seed
 
-    os.environ["PYTHONHASHSEED"] = "0"
-    return subprocess.run([sys.executable, *sys.argv], check=False).returncode
+    return rerun_with_stable_hash_seed(sys.argv)
 
 
 def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:

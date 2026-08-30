@@ -53,29 +53,37 @@ class UrdfValidateCliTests(unittest.TestCase):
         path.write_text(body, encoding="utf-8")
         return path
 
-    def _run(self, *argv: str) -> tuple[int, str, str]:
+    def _run(self, *argv: str) -> tuple[int, str]:
+        """The command's exit code and EVERYTHING it printed.
+
+        Findings now ride the ValidationResult's human lines on stdout rather
+        than being printed to stderr as a side effect, so what a caller reads is
+        one stream; the tests assert on both together and stay indifferent to
+        which one a given line lands on.
+        """
         stdout = io.StringIO()
         stderr = io.StringIO()
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exit_code = cli.main(list(argv))
-        return exit_code, stdout.getvalue(), stderr.getvalue()
+        return exit_code, stdout.getvalue() + stderr.getvalue()
 
     def test_valid_urdf_passes_with_summary(self) -> None:
         urdf_path = self._write("robot.urdf", VALID_URDF)
-        exit_code, stdout, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 0)
-        self.assertIn("OK", stdout)
-        self.assertIn("robot 'sample'", stdout)
-        self.assertIn("2 links", stdout)
-        self.assertIn("1 joints", stdout)
-        self.assertEqual(stderr, "")
+        self.assertIn("OK", output)
+        self.assertIn("robot 'sample'", output)
+        self.assertIn("2 links", output)
+        self.assertIn("1 joints", output)
 
-    def test_multiple_targets_validate_independently(self) -> None:
+    def test_one_run_validates_one_file(self) -> None:
+        # A second target is not a second validation: the verb takes ONE path,
+        # so the parser rejects it rather than quietly validating half the ask.
         first = self._write("a.urdf", VALID_URDF)
         second = self._write("b.urdf", VALID_URDF)
-        exit_code, stdout, _ = self._run(str(first), str(second))
-        self.assertEqual(exit_code, 0)
-        self.assertEqual(stdout.count("OK"), 2)
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(io.StringIO()):
+            self._run(str(first), str(second))
+        self.assertEqual(2, cm.exception.code)
 
     def test_invalid_structure_fails(self) -> None:
         urdf_path = self._write(
@@ -92,29 +100,27 @@ class UrdfValidateCliTests(unittest.TestCase):
 </robot>
 """,
         )
-        exit_code, stdout, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("FAIL", stderr)
-        self.assertNotIn("OK", stdout)
+        self.assertIn("FAIL", output)
+        self.assertNotIn("OK", output)
 
-    def test_one_failing_target_fails_run_but_validates_all(self) -> None:
-        good = self._write("good.urdf", VALID_URDF)
+    def test_a_failing_target_exits_nonzero(self) -> None:
         bad = self._write("bad.urdf", "<robot name='x'></robot>\n")
-        exit_code, stdout, stderr = self._run(str(good), str(bad))
+        exit_code, output = self._run(str(bad))
         self.assertEqual(exit_code, 1)
-        self.assertIn("OK", stdout)
-        self.assertIn("FAIL", stderr)
+        self.assertIn("FAILED", output)
 
     def test_missing_file_fails(self) -> None:
-        exit_code, _, stderr = self._run(str(self.temp_root / "absent.urdf"))
+        exit_code, output = self._run(str(self.temp_root / "absent.urdf"))
         self.assertEqual(exit_code, 1)
-        self.assertIn("file not found", stderr)
+        self.assertIn("file not found", output)
 
     def test_non_urdf_suffix_fails(self) -> None:
         path = self._write("robot.xml", VALID_URDF)
-        exit_code, _, stderr = self._run(str(path))
+        exit_code, output = self._run(str(path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("must be a .urdf file", stderr)
+        self.assertIn("must be a .urdf file", output)
 
     def test_missing_local_mesh_fails(self) -> None:
         urdf_path = self._write(
@@ -131,9 +137,9 @@ class UrdfValidateCliTests(unittest.TestCase):
 </robot>
 """,
         )
-        exit_code, _, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("missing mesh file", stderr)
+        self.assertIn("missing mesh file", output)
 
     def test_package_mesh_uri_warns_but_passes(self) -> None:
         urdf_path = self._write(
@@ -150,10 +156,10 @@ class UrdfValidateCliTests(unittest.TestCase):
 </robot>
 """,
         )
-        exit_code, stdout, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 0)
-        self.assertIn("OK", stdout)
-        self.assertIn("WARN", stderr)
+        self.assertIn("OK", output)
+        self.assertIn("WARN", output)
 
     def test_inertia_triangle_inequality_warns_and_strict_fails(self) -> None:
         urdf_path = self._write(
@@ -169,12 +175,12 @@ class UrdfValidateCliTests(unittest.TestCase):
 </robot>
 """,
         )
-        exit_code, _, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 0)
-        self.assertIn("triangle inequalities", stderr)
-        strict_exit, _, strict_stderr = self._run(str(urdf_path), "--strict")
+        self.assertIn("triangle inequalities", output)
+        strict_exit, strict_output = self._run(str(urdf_path), "--strict")
         self.assertEqual(strict_exit, 1)
-        self.assertIn("blocking finding", strict_stderr)
+        self.assertIn("blocking finding", strict_output)
 
     def test_non_psd_inertia_fails(self) -> None:
         urdf_path = self._write(
@@ -190,9 +196,9 @@ class UrdfValidateCliTests(unittest.TestCase):
 </robot>
 """,
         )
-        exit_code, _, stderr = self._run(str(urdf_path))
+        exit_code, output = self._run(str(urdf_path))
         self.assertEqual(exit_code, 1)
-        self.assertIn("not positive semidefinite", stderr)
+        self.assertIn("not positive semidefinite", output)
 
 
 if __name__ == "__main__":
