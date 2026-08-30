@@ -1,16 +1,17 @@
 # DXF Examples
 
 Small 2D DXF fixtures for exercising the `dxf` skill tooling, all in one flat
-folder: Python `gen_dxf()` generator sources alongside raw imported `.dxf`
-files. Everything here is intentionally simple so failures point at the
-tooling, not the fixture.
+folder: Python drawing sources alongside raw imported `.dxf` files. Everything
+here is intentionally simple so failures point at the tooling, not the fixture.
 
-## Generated sources (`.dxf.py`)
+## Drawing sources (`.py`)
 
-Build them by running the model script (`python <source>.py` — the `@dxf` decorator);
-drawing packages land in the gitignored `__cadgen__/` cache and `.dxf` exports
-are written on demand only, so no generated DXF output is committed. Together
-they cover the skill's standalone-drafting and STEP-projection workflows.
+Build one by running it (`python <source>.py`, or `cadgen dxf build <source>.py`
+— the same build through the other door). A `@dxf` model writes its sibling
+`.dxf`, and an unchanged source whose recorded drawing still verifies is a no-op.
+Generated `.dxf` files are committed only where a fixture needs them to be, and
+`gasket_plate.dxf` below is the one that does. Together these sources cover the
+skill's standalone-drafting and STEP-projection workflows.
 
 - `gasket_plate.py` — standalone drafting on the current `@dxf` contract:
   rounded-rectangle gasket outline (true `ARC`s at the corners), four bolt
@@ -125,8 +126,11 @@ the drawing validator (`empty_drawing`, `zero_length_entity`). Nothing under
 `tests/` referenced them, so no test coverage was lost, but the validator no
 longer has a committed example of either condition.
 
-Validate any of them post-hoc with:
+Validate any of them post-hoc with the drawing checks directly (there is no
+`--validate` flag; a clean drawing reports no findings):
 
-```bash
-python <drawing>.py --validate   # the @dxf model script validates its own output
+```python
+from cadgen.drawing_checks import validate_dxf_file
+
+print([finding.render() for finding in validate_dxf_file("gasket_plate.dxf")])
 ```

@@ -98,6 +98,15 @@ Use the active project Python interpreter; treat `python` in examples as an inte
 
 **Snapshot inputs.** This skill's snapshot renders `.step`/`.stp`, model scripts (`.py` declaring `@step`), `.3mf`, `.glb` and `.stl`. Robot descriptions are rendered by the `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
 
+**Snapshot output.** The path you name is the path you get:
+
+```bash
+cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
+# then Read tmp/review.png
+```
+
+`--output` is written exactly as given (a relative path against the current working directory), cleared before the render and written atomically after it — so reuse one name while iterating, name the iterations (`tmp/before.png`, `tmp/after.png`) when you need to compare, and treat a missing file as the failure signal: there is never an older image at the path to mistake for output. A directory (`--output tmp/`) is the don't-care case and gets a generated timestamped name inside it, printed on the `saved snapshot:` line. The same rule applies per output in a JSON packet.
+
 **Theme and display.** Theme settings live under one `--theme`, display settings under one `--display` — the viewer's two tabs, one option each. The default theme is `snapshot`: Workbench Light with the ground grid and origin axis removed, because in a still image those read as geometry rather than as orientation. Pass `--theme workbench-light` for the viewer's own look. Projection is a theme trait honoured by every format, so a snapshot frames the same way the viewport does.
 
 **Streams.** stdout carries the result; stderr carries progress, timing, and failures. Every tool answers on stdout — a model run prints `<outcome> <package path>` — and the two never interleave, so `2>/dev/null` leaves a clean parseable result and `>/dev/null` leaves a readable log. JSON on stdout is always compact; pipe through `jq .` to read it. For machine-readable output: model runs, the `build` doors (`step`, `stl`, `3mf`, `glb`) and `snapshot` take `--json`; `inspect` already emits JSON and takes `--format text` for prose. `--verbose` adds stage timing (and full tracebacks) on stderr. Output volume does not grow with model size — a 600-occurrence assembly logs the same dozen lines a single part does.

@@ -34,7 +34,7 @@ from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 from cadgen.coordination import PHASE_RENDER, resolve as resolve_progress
-from cadgen._internal.atomic_replace import replace_atomic
+from cadgen._internal.atomic_replace import replace_atomic, write_bytes_atomic
 from cadgen._internal.cache_paths import meshes_dir
 
 
@@ -438,11 +438,136 @@ def resolve_output_size(job: Mapping[str, object], output: Mapping[str, object])
     )
 def snapshot_timestamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-def timestamp_output_path(output_path: str, timestamp: str) -> str:
+
+
+# --- output paths: if you name it, you get it; if you don't, we name it -------------
+#
+# A snapshot used to append a datetimestamp to the filename it was ASKED for, so
+# `--output tmp/plate.png` wrote `tmp/plate_20260830T033855Z.png`. The reason was
+# stale imagery: a failed render left the previous file sitting at the requested
+# path, and an agent that read it anyway reasoned confidently about yesterday's
+# pixels. Unique names made that read impossible.
+#
+# It bought that with the wrong mechanism -- the command's output differed from its
+# declaration, every downstream step had to parse the "saved snapshot:" line instead
+# of knowing the path it had just written, and tmp/ filled with orphans. The guard
+# lives in `clear_render_output_targets` now: the target is DELETED before the render
+# starts, so a failure leaves NO file rather than an old one. That is strictly
+# stronger (the stale read is still impossible, and the failure is visible as a
+# missing file) and it costs the success path nothing, so the declared path is
+# honoured exactly.
+#
+# What survives of the timestamp is the case where the caller expressed no opinion:
+# a DIRECTORY output gets a generated name inside it, and that name is timestamped.
+
+
+def output_path_names_a_directory(output_path: str, resolved_path: Path) -> bool:
+    """True when this output names a directory to generate a name INSIDE.
+
+    A trailing separator says so outright, and is read off the raw STRING because
+    ``Path`` drops it -- that is the one way to name a directory that does not
+    exist yet. Otherwise a path that already IS one counts (``.`` and ``..``
+    included). Anything else is an explicit file path, whether or not it exists:
+    naming a file that is not there yet is the whole point of asking for one.
+    """
+    if output_path.endswith(("/", "\\")):
+        return True
+    return resolved_path.is_dir()
+
+
+def generated_output_name(
+    job: Mapping[str, object],
+    *,
+    index: int,
+    output_count: int,
+    timestamp: str,
+) -> str:
+    """The name a directory-mode output is given: ``<input-stem>[_<n>]_<ts>.<ext>``.
+
+    The extension follows the render, not the request: an orbit or an animated
+    parameter sweep encodes a GIF, everything else a PNG (headlessRenderEntry.js
+    picks the mime type the same way). The index only appears when a job has more
+    than one output, so the common single-output case reads cleanly and a
+    multi-view packet pointed at one directory cannot collide with itself.
+    """
+    stem = Path(str(job.get("input") or "")).stem or "snapshot"
+    animated = str(job.get("mode") or "").strip().lower() == "orbit" or (
+        step_parameter_render_values_are_animated(job.get("stepParameters"))
+    )
+    discriminator = f"_{index + 1}" if output_count > 1 else ""
+    return f"{stem}{discriminator}_{timestamp}{'.gif' if animated else '.png'}"
+
+
+def resolve_output_target(
+    output_path: str,
+    *,
+    resolved_cwd: Path,
+    generated_name: str,
+) -> str:
+    """The absolute path an output writes to, under the one output rule.
+
+    An explicit file path is used EXACTLY as given -- a relative one against the
+    invoking process's working directory -- and a directory gets ``generated_name``
+    inside it.
+    """
     if not output_path:
         return ""
-    path = Path(output_path)
-    return str(path.with_name(f"{path.stem}_{timestamp}{path.suffix}"))
+    candidate = Path(output_path)
+    resolved = candidate if candidate.is_absolute() else resolved_cwd / candidate
+    if output_path_names_a_directory(output_path, resolved):
+        return str((resolved / generated_name).resolve())
+    return str(resolved.resolve())
+
+
+def declared_output_path(output: object) -> str:
+    """The path an output declares, before or after normalization.
+
+    A raw output is a bare string or an object with a ``path``; a normalized one
+    is always the object. Both shapes are read here so the clear below can run
+    against a payload that has not been resolved yet.
+    """
+    if isinstance(output, str):
+        return output
+    if is_plain_object(output):
+        return str(output.get("path") or "")
+    return ""
+
+
+def clear_render_output_targets(jobs: object, *, resolved_cwd: Path | None = None) -> None:
+    """Delete every declared output target, before any work is done for it.
+
+    This is the guard the filename timestamp used to be (see the note above), and
+    it is why a declared path can now be honoured exactly: whatever happens next,
+    the only thing that can appear at that path is this run's output.
+
+    "Before any work" is stronger than "before the browser starts", and the
+    difference is the common failure. Resolution builds the STEP package, and that
+    is where a bad input fails -- minutes in, and long before the renderer is
+    reached. Clearing at render time would leave the previous image sitting at the
+    requested path for exactly the runs most likely to be read anyway.
+
+    Directory-valued outputs are skipped: their name is generated fresh, so there
+    is nothing of theirs to delete, and unlinking the directory itself would be
+    wrong. A target that cannot be removed is a target that cannot be honestly
+    written, so that failure is raised here -- before the expensive work, naming
+    the path -- rather than after the render has already been paid for.
+    """
+    base = (resolved_cwd or Path.cwd()).resolve()
+    for job in jobs or []:
+        if not is_plain_object(job):
+            continue
+        for output in job.get("outputs") or []:
+            declared = declared_output_path(output)
+            if not declared:
+                continue
+            candidate = Path(declared)
+            target = candidate if candidate.is_absolute() else base / candidate
+            if output_path_names_a_directory(declared, target):
+                continue
+            try:
+                target.unlink(missing_ok=True)
+            except OSError as exc:
+                raise SnapshotError(f"Cannot clear the snapshot output path: {target} ({exc})") from exc
 def normalize_snapshot_job_packet(raw_payload: object) -> tuple[bool, list[object]]:
     if isinstance(raw_payload, list):
         return False, raw_payload
@@ -457,8 +582,8 @@ def normalize_common_job(
     timestamp: str | None,
 ) -> dict[str, object]:
     """Kind-independent job normalization shared by every input kind: the outputs
-    guard, render clip-stripping + scene-scale coercion, timestamped output
-    resolution with per-output camera defaults, and the common return shape.
+    guard, render clip-stripping + scene-scale coercion, output-path resolution
+    with per-output camera defaults, and the common return shape.
     Kind resolvers run their capability checks first, then call this, so a
     STEP/mesh/robot job all normalize identically; the caller attaches its
     kind-specific ``resolved`` payload to the returned job."""
@@ -548,11 +673,19 @@ def normalize_common_job(
                 f"render output {index} has no path; each output must be a path "
                 'string or an object with a "path"'
             )
-        timestamped_output_path = timestamp_output_path(output_path, resolved_timestamp)
         normalized_outputs.append(
             {
                 **output_object,
-                "path": str((resolved_cwd / timestamped_output_path).resolve()) if timestamped_output_path else "",
+                "path": resolve_output_target(
+                    output_path,
+                    resolved_cwd=resolved_cwd,
+                    generated_name=generated_output_name(
+                        {**job, "mode": mode},
+                        index=index,
+                        output_count=len(outputs),
+                        timestamp=resolved_timestamp,
+                    ),
+                ),
                 "width": width,
                 "height": height,
                 "camera": output_object.get("camera") or job.get("camera") or "iso",
@@ -1238,6 +1371,10 @@ async def render_resolved_job_packet(
     progress: object | None = None,
 ) -> dict[str, object]:
     snapshot_renderer = renderer or BatchSnapshotRenderer(runtime_dir)
+    # The CLI already cleared these before resolution; repeating it costs an
+    # unlink of an absent file and makes the invariant hold for a caller that
+    # builds a packet itself and comes straight here.
+    clear_render_output_targets(packet["jobs"])
     report = resolve_progress(progress)
     started = time.perf_counter()
     results: list[dict[str, object]] = []
@@ -1271,20 +1408,27 @@ async def render_resolved_job_packet(
         },
     }
 def write_output_payload(output: Mapping[str, object]) -> None:
+    """Write one finished output to its declared path, atomically.
+
+    Temp file plus rename, so the target either does not exist (the state
+    `clear_render_output_targets` left it in) or holds the complete render.
+    There is no intermediate a reader can catch: the exact-path contract would
+    be worth much less if a crashed write could leave half a PNG at the name the
+    caller is about to read.
+    """
     output_path = str(output.get("path") or "")
     if not output_path:
         return
     path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = output.get("text")
     if isinstance(text, str):
-        path.write_text(text, encoding="utf-8")
+        write_bytes_atomic(path, text.encode("utf-8"))
         return
     data_url = str(output.get("dataUrl") or "")
     match = re.match(r"^data:([^;]+);base64,(.+)$", data_url)
     if not match:
         raise SnapshotError(f"Snapshot output did not include a base64 data URL: {output_path}")
-    path.write_bytes(base64.b64decode(match.group(2)))
+    write_bytes_atomic(path, base64.b64decode(match.group(2)))
 def write_render_outputs(result: Mapping[str, object]) -> None:
     if isinstance(result.get("jobs"), list):
         for job_result in result["jobs"]:

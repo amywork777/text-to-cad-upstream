@@ -53,7 +53,22 @@ Set `input` to the primary STEP/STP artifact using a relative or absolute path. 
 
 Use `--focus '#o1.2' ...` to emphasize specific part or subassembly occurrence refs — in `view`/`orbit` renders the focused refs keep full opacity while the rest of the assembly is ghosted in place (framing and context are preserved); in `section` mode focus isolates the refs entirely. Use `--hide '#o1.2' ...` to omit parts from the render in every mode. Do not combine focus and hide in the same snapshot command or job. These filters accept occurrence refs only, not face, edge, vertex, or shape selectors.
 
-The snapshot CLI appends one shared UTC seconds timestamp before each output file extension when saving a packet, so readable paths like `iso_solid.png` become names such as `iso_solid_20260527T163012Z.png`.
+## Output paths
+
+Name the file and you get that file:
+
+```bash
+cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
+# then Read tmp/review.png
+```
+
+`--output` (and an output's `path` in a JSON packet) is written exactly as given, with a relative path resolved against the current working directory. The target is deleted before the render starts and the finished image is written atomically, so the file at that path is always the render you just ran.
+
+1. **Tight iteration: reuse one name.** Render, Read, edit the source, render again to the same `tmp/review.png`. Every read is provably the latest render, because a failed one leaves nothing to read.
+2. **Comparisons: name the iterations.** Use `tmp/before.png` and `tmp/after.png` when both images are genuinely needed.
+3. **A missing file IS the failure signal.** A nonzero exit or a file-not-found means the render failed; there is never an older image at the path to mistake for output.
+
+Pass a directory (`--output tmp/`, or an output `path` that is one) only when the name does not matter: a timestamped name is generated inside it, and that is the one case where you read the path from the `saved snapshot:` line.
 
 ## Targeted additions
 

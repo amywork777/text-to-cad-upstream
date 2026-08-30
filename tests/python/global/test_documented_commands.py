@@ -147,5 +147,56 @@ class DocumentedCommands(unittest.TestCase):
                     self.fail(f"{source}: `cadgen {' '.join(argv)}` -> {exc}")
 
 
+class DocumentedSnapshotOutputPaths(unittest.TestCase):
+    """`--output` means what it says, and every documented form relies on that.
+
+    A snapshot used to append a datetimestamp to the filename it was asked for, so
+    the docs had to teach a defensive workaround: read the path off the
+    `saved snapshot:` line, because the one you passed was not the one written.
+    That workaround is now WRONG advice, and stale advice in a skill is a live
+    defect — an agent copies what it reads. So the sweep checks two things: no
+    document still teaches the timestamped filename, and every documented
+    `--output FILE` form is one whose file the reader may then open by name.
+    """
+
+    RETIRED = (
+        "appends one shared UTC seconds timestamp",
+        "_20260527T163012Z",
+    )
+
+    def _snapshot_output_forms(self) -> list[tuple[Path, list[str]]]:
+        forms = []
+        for source, argv, _elided in _documented_forms():
+            if "snapshot" not in argv:
+                continue
+            if "--output" in argv or "-o" in argv:
+                forms.append((source, argv))
+        return forms
+
+    def test_the_docs_still_show_snapshot_output_forms(self):
+        self.assertGreater(len(self._snapshot_output_forms()), 1)
+
+    def test_no_documented_output_is_a_directory(self):
+        """Every documented `--output` names a FILE, so what the doc shows is what
+        the reader gets. A directory would be the generate-a-name case, and a doc
+        that showed one while claiming an exact path would teach the wrong rule."""
+        for source, argv in self._snapshot_output_forms():
+            flag = "--output" if "--output" in argv else "-o"
+            value = argv[argv.index(flag) + 1]
+            with self.subTest(source=str(source), form=" ".join(argv)):
+                self.assertFalse(
+                    value.endswith(("/", "\\")),
+                    f"{source} documents `--output {value}`, a directory, as if it named a file",
+                )
+                self.assertTrue(Path(value).suffix, f"{source}: `--output {value}` names no file")
+
+    def test_no_skill_still_teaches_the_retired_timestamped_filename(self):
+        for path in sorted(SKILLS.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for retired in self.RETIRED:
+                with self.subTest(source=str(path.relative_to(SKILLS.parent)), retired=retired):
+                    self.assertNotIn(retired, text)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -188,6 +188,15 @@ headless browser runtime every rendering skill uses — so geometry and material
 render identically to the CAD Viewer; the default `snapshot` theme differs from the
 viewport only by dropping the grid, origin axis and shadows.
 
+`--output` is written exactly as given, with a relative path resolved against the
+current working directory. The target is deleted before the render starts and the
+finished image is written atomically, so: reuse one name while iterating (every read
+is provably the render you just ran), name the iterations when you genuinely need to
+compare two, and treat a missing file as the failure signal — there is never an older
+image at the path to mistake for output. A directory (`--output tmp/`) is the
+don't-care case and gets a generated timestamped name inside it, printed on the
+`saved snapshot:` line.
+
 Flags: `--mode view|orbit|list`, `--camera`, `--theme`, `--size-profile`,
 `--width`/`--height`, `--job`, `--force`, `--json`. Theme settings live under one
 `--theme`, mirroring the viewer's Theme tab; the default theme is `snapshot`, Workbench

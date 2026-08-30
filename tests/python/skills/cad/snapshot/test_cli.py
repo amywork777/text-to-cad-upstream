@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import io
 import json
@@ -80,8 +81,8 @@ from cadgen.snapshot_cli import (
     parse_snapshot_args,
     resolve_render_job_packet,
     resolve_snapshot_route_file,
-    timestamp_output_path,
 )
+from cadgen.snapshot_core import clear_render_output_targets, resolve_output_target
 
 # The shim no longer names a runtime directory: cadgen.assets resolves it, finding the
 # repo's live source here and the packaged copy in an installed wheel.
@@ -382,7 +383,12 @@ class SnapshotCliTests(unittest.TestCase):
             },
         )
 
-    def test_output_paths_are_timestamped_when_jobs_are_resolved(self) -> None:
+    def test_declared_output_paths_are_used_exactly(self) -> None:
+        """Every explicit output path is the path that gets written -- per output,
+        across jobs, in every mode. This used to append a shared UTC timestamp
+        before each extension (`iso.png` -> `iso_20260527T163012Z.png`), so the
+        command's output never matched its declaration and callers had to parse
+        the "saved snapshot:" line to learn where their own file went."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory).resolve()
             models = root / "models"
@@ -425,12 +431,66 @@ class SnapshotCliTests(unittest.TestCase):
                 for output in job["outputs"]
             ]
 
+        self.assertEqual(output_paths, ["tmp/iso.png", "tmp/front.png", "tmp/orbit.gif"])
+
+    def test_a_directory_output_gets_a_generated_name_inside_it(self) -> None:
+        """The don't-care case: `--output tmp/` names no file, so one is generated
+        -- timestamped, inside that directory, with the extension the render will
+        actually encode. A trailing separator counts before the directory exists;
+        an existing directory counts without one."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory).resolve()
+            models = root / "models"
+            models.mkdir()
+            (models / "part.step").write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
+            write_package(models / "part.step")
+            (root / "shots").mkdir()
+
+            original_timestamp = snapshot_main.snapshot_timestamp
+            original_ensure = snapshot_main.ensure_step_topology_artifact
+            try:
+                snapshot_main.snapshot_timestamp = lambda: "20260527T163012Z"
+                snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
+                packet = resolve_render_job_packet(
+                    {
+                        "jobs": [
+                            # A trailing slash, on a directory that does not exist yet.
+                            {"input": "models/part.step", "outputs": [{"path": "tmp/"}]},
+                            # No trailing slash, but the directory is already there.
+                            {"input": "models/part.step", "outputs": [{"path": "shots"}]},
+                            # Orbit encodes a GIF, so the generated name says .gif.
+                            {
+                                "input": "models/part.step",
+                                "mode": "orbit",
+                                "outputs": [{"path": "tmp/"}],
+                            },
+                            # Several outputs into one directory stay distinct.
+                            {
+                                "input": "models/part.step",
+                                "outputs": [{"path": "tmp/", "camera": "iso"}, {"path": "tmp/", "camera": "top"}],
+                            },
+                        ]
+                    },
+                    cwd=root,
+                )
+            finally:
+                snapshot_main.snapshot_timestamp = original_timestamp
+                snapshot_main.ensure_step_topology_artifact = original_ensure
+
+            output_paths = [
+                Path(output["path"]).relative_to(root).as_posix()
+                for job in packet["jobs"]
+                for output in job["outputs"]
+            ]
+
         self.assertEqual(
             output_paths,
             [
-                "tmp/iso_20260527T163012Z.png",
-                "tmp/front_20260527T163012Z.png",
-                "tmp/orbit_20260527T163012Z.gif",
+                "tmp/part_20260527T163012Z.png",
+                "shots/part_20260527T163012Z.png",
+                "tmp/part_20260527T163012Z.gif",
+                "tmp/part_1_20260527T163012Z.png",
+                "tmp/part_2_20260527T163012Z.png",
             ],
         )
 
@@ -1387,13 +1447,19 @@ class SnapshotCliTests(unittest.TestCase):
                 cwd=Path.cwd(),
             )
 
-    def test_timestamp_output_path_preserves_extension(self) -> None:
-        # The helper returns a NATIVE path -- both callers resolve its result as one --
-        # so the expectation is built the same way rather than hard-coding `/`, which
-        # failed on Windows against the `\` the helper actually returns (issue #196).
+    def test_output_target_resolution_is_native_and_cwd_relative(self) -> None:
+        # The helper returns a NATIVE absolute path, so the expectation is built the
+        # same way rather than hard-coding `/` -- which failed on Windows against the
+        # `\` it actually returns (issue #196). A relative path resolves against the
+        # invoking process's working directory, never the model's folder.
+        cwd = Path.cwd().resolve()
         self.assertEqual(
-            timestamp_output_path("snapshots/review.png", "20260527T163012Z"),
-            str(Path("snapshots") / "review_20260527T163012Z.png"),
+            resolve_output_target("snapshots/review.png", resolved_cwd=cwd, generated_name="ignored.png"),
+            str(cwd / "snapshots" / "review.png"),
+        )
+        self.assertEqual(
+            resolve_output_target("snapshots/", resolved_cwd=cwd, generated_name="part_20260527T163012Z.png"),
+            str(cwd / "snapshots" / "part_20260527T163012Z.png"),
         )
 
     def test_removed_daemon_flags_stay_removed(self) -> None:
@@ -1622,10 +1688,7 @@ class JobOutputResolutionTests(unittest.TestCase):
     def test_render_job_output_path_string_is_accepted(self):
         packet, root = self._packet_for(["tmp/iso.png"])
         resolved = Path(packet["jobs"][0]["outputs"][0]["path"]).resolve()
-        self.assertEqual(
-            resolved.relative_to(root.resolve()).as_posix(),
-            "tmp/iso_20260527T163012Z.png",
-        )
+        self.assertEqual(resolved.relative_to(root.resolve()).as_posix(), "tmp/iso.png")
 
     def test_render_job_output_without_path_is_rejected(self):
         with self.assertRaises(SnapshotError) as ctx:
@@ -1757,6 +1820,186 @@ class StepPoseParameterTests(unittest.TestCase):
         for key in ("paramsPath", "stepParametersPath"):
             with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
                 self._resolve(self._job(**{key: "models/part.step.js"}))
+
+
+class ExactOutputContractTests(unittest.TestCase):
+    """The declared path is the written path, and a failure leaves nothing there.
+
+    The two halves are one contract. Honouring the declaration is only safe
+    because the target is cleared BEFORE the render: what used to protect an
+    agent from reading yesterday's image was the datetimestamp appended to its
+    filename, and dropping that without the pre-delete would reintroduce exactly
+    the silently-plausible stale read the timestamp existed to prevent.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="snapshot-exact-")
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self.target = self.root / "tmp" / "review.png"
+        self.target.parent.mkdir(parents=True)
+
+    def _packet(self, *outputs: dict) -> dict:
+        return {
+            "single": True,
+            "jobs": [{"input": "models/part.step", "outputs": list(outputs)}],
+        }
+
+    def _render(self, packet: dict, renderer) -> object:
+        return asyncio.run(
+            snapshot_main.render_resolved_job_packet(packet, runtime_dir=RUNTIME_DIR, renderer=renderer)
+        )
+
+    @staticmethod
+    def _renderer(result: object = None, *, error: str | None = None):
+        class StubRenderer:
+            async def render(self, job):
+                if error is not None:
+                    raise SnapshotError(error)
+                return result if result is not None else {"ok": True, "mode": "view", "outputs": []}
+
+            async def close(self):
+                return None
+
+        return StubRenderer()
+
+    def test_a_successful_render_writes_exactly_the_declared_path(self) -> None:
+        payload = b"\x89PNG\r\n\x1a\n" + b"rendered"
+        output = {
+            "path": str(self.target),
+            "dataUrl": "data:image/png;base64," + base64.b64encode(payload).decode("ascii"),
+        }
+        result = {"ok": True, "mode": "view", "outputs": [output]}
+        self._render(self._packet({"path": str(self.target)}), self._renderer(result))
+        snapshot_main.write_render_outputs(result)
+
+        self.assertEqual(self.target.read_bytes(), payload)
+        # No timestamped sibling, and no temp file left beside it either.
+        self.assertEqual([p.name for p in sorted(self.target.parent.iterdir())], ["review.png"])
+
+    def test_a_failed_render_leaves_no_file_at_the_target(self) -> None:
+        self.target.write_bytes(b"yesterday's render")
+        with self.assertRaises(SnapshotError):
+            self._render(self._packet({"path": str(self.target)}), self._renderer(error="browser blew up"))
+        self.assertFalse(self.target.exists(), "a failed render must leave nothing to read")
+        self.assertEqual(list(self.target.parent.iterdir()), [])
+
+    def test_the_target_is_cleared_before_the_browser_starts(self) -> None:
+        """Ordering, not just outcome: the clear happens before any rendering, so a
+        render that hangs or is killed cannot leave the old file readable either."""
+        self.target.write_bytes(b"yesterday's render")
+        seen: list[bool] = []
+
+        class ObservingRenderer:
+            async def render(inner, job):  # noqa: N805 - stub signature
+                seen.append(self.target.exists())
+                return {"ok": True, "mode": "view", "outputs": []}
+
+            async def close(inner):  # noqa: N805 - stub signature
+                return None
+
+        self._render(self._packet({"path": str(self.target)}), ObservingRenderer())
+        self.assertEqual(seen, [False])
+
+    def test_a_multi_output_packet_clears_every_declared_target(self) -> None:
+        """Per output, and across jobs -- an earlier job's render must not leave a
+        later job's stale file readable while it runs."""
+        second = self.root / "tmp" / "front.png"
+        for path in (self.target, second):
+            path.write_bytes(b"stale")
+        packet = {
+            "single": False,
+            "jobs": [
+                {"input": "models/part.step", "outputs": [{"path": str(self.target)}]},
+                {"input": "models/part.step", "outputs": [{"path": str(second)}]},
+            ],
+        }
+        clear_render_output_targets(packet["jobs"])
+        self.assertFalse(self.target.exists())
+        self.assertFalse(second.exists())
+
+    def test_a_directory_output_is_left_alone(self) -> None:
+        """A directory-valued output generates a fresh name, so it has nothing of
+        its own to clear -- and unlinking the directory would be the wrong move
+        besides."""
+        shots = self.root / "shots"
+        shots.mkdir()
+        (shots / "old.png").write_bytes(b"an earlier generated name")
+        clear_render_output_targets(
+            [{"outputs": [{"path": "shots/"}, {"path": "shots"}]}], resolved_cwd=self.root
+        )
+        self.assertTrue(shots.is_dir())
+        self.assertTrue((shots / "old.png").exists())
+
+    def test_declared_paths_are_cleared_from_an_unresolved_payload(self) -> None:
+        """The clear runs on the RAW job, before resolution -- the stage where a bad
+        input actually fails. Bare-string outputs and cwd-relative paths are both
+        read here, because that is the shape the caller wrote."""
+        self.target.write_bytes(b"stale")
+        second = self.root / "tmp" / "front.png"
+        second.write_bytes(b"stale")
+        clear_render_output_targets(
+            [{"outputs": ["tmp/review.png", {"path": "tmp/front.png"}]}], resolved_cwd=self.root
+        )
+        self.assertFalse(self.target.exists())
+        self.assertFalse(second.exists())
+
+    def test_a_write_that_fails_leaves_no_partial_file(self) -> None:
+        """Atomicity: the payload lands through a temp file and a rename, so a write
+        that dies mid-stream leaves the target absent rather than half a PNG at the
+        exact name the caller is about to read."""
+        def exploding_replace(temp_path, target_path):
+            Path(temp_path).unlink(missing_ok=True)
+            raise OSError("disk went away mid-rename")
+
+        with mock.patch.object(
+            sys.modules["cadgen._internal.atomic_replace"], "replace_atomic", exploding_replace
+        ):
+            with self.assertRaises(OSError):
+                snapshot_main.write_output_payload(
+                    {
+                        "path": str(self.target),
+                        "dataUrl": "data:image/png;base64," + base64.b64encode(b"x" * 4096).decode("ascii"),
+                    }
+                )
+        self.assertFalse(self.target.exists())
+        self.assertEqual(list(self.target.parent.iterdir()), [])
+
+    def test_a_missing_data_url_writes_nothing_at_the_target(self) -> None:
+        with self.assertRaisesRegex(SnapshotError, "base64 data URL"):
+            snapshot_main.write_output_payload({"path": str(self.target)})
+        self.assertFalse(self.target.exists())
+
+    def test_a_target_that_cannot_be_cleared_fails_before_the_render(self) -> None:
+        def refuse(self_path, *, missing_ok=False):
+            raise PermissionError("held open")
+
+        self.target.write_bytes(b"held")
+        with mock.patch.object(Path, "unlink", refuse):
+            with self.assertRaisesRegex(SnapshotError, "Cannot clear the snapshot output path"):
+                clear_render_output_targets(self._packet({"path": str(self.target)})["jobs"])
+
+    def test_a_run_that_fails_before_the_render_still_leaves_no_file(self) -> None:
+        """End to end through the CLI: an input that fails during RESOLUTION -- the
+        expensive stage, where a broken model actually fails -- must not leave the
+        previous render sitting at the requested path. Clearing at render time
+        alone left it there for exactly the runs most likely to be misread."""
+        self.target.write_bytes(b"yesterday's render")
+        (self.root / "STEP").mkdir()
+        (self.root / "STEP" / "broken.step").write_text("not a step file at all\n", encoding="utf-8")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        code = snapshot_main.run_snapshot_cli(
+            ["--input", "STEP/broken.step", "--output", "tmp/review.png"],
+            kinds=cad_snapshot_entry.KINDS,
+            cwd=self.root,
+            stdout=stdout,
+            stderr=stderr,
+            stdin=_TtyStringIO(),
+        )
+        self.assertNotEqual(code, 0)
+        self.assertFalse(self.target.exists(), "a failed run must leave nothing to read")
 
 
 if __name__ == "__main__":

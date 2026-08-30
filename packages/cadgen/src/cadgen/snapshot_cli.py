@@ -81,6 +81,7 @@ from cadgen.snapshot_core import (
     WORKBENCH_RENDER_THEME_IDS,
     theme_id_for_job,
     asset_url_for_path,
+    clear_render_output_targets,
     content_type_for_path,
     default_render_size,
     encode_path_param,
@@ -107,7 +108,6 @@ from cadgen.snapshot_core import (
     route_file,
     snapshot_timestamp,
     step_parameter_render_values_are_animated,
-    timestamp_output_path,
     validate_direct_settings_payload,
     validate_display_settings_values,
     with_snapshot_timeout,
@@ -239,7 +239,10 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapsh
         "",
         "Options",
         "  --input/-i PATH   the model to render",
-        "  --output/-o PATH  where to write it; .gif only in orbit mode"
+        "  --output/-o PATH  a file path is written EXACTLY there (a relative one against the",
+        "                    current directory) and is cleared first, so a failed render leaves",
+        "                    no file at all; a directory gets a generated timestamped name",
+        "                    inside it. .gif only in orbit mode"
         + (" (or an animated --params sweep)" if has_step else ""),
         "  --job PATH        one render job, an array of them, or { \"jobs\": [...] }; - reads stdin",
         "  --camera VALUE    a preset, an azimuth:elevation pair, or JSON with preset/position/target/up/zoom",
@@ -1371,6 +1374,13 @@ async def run_render_cli_async(
         stdout.write(help_text(kinds=enabled, prog=prog))
         return 0
     raw_payload = load_job_from_options(options, stdin=stdin, cwd=cwd)
+    # Clear the declared outputs FIRST -- before resolution, which is where a bad
+    # input actually fails. The path a caller names is the path it gets, and that
+    # is only safe to promise if a run that never renders leaves nothing behind for
+    # the caller to read as though it had.
+    clear_render_output_targets(
+        normalize_snapshot_job_packet(raw_payload)[1], resolved_cwd=cwd or Path.cwd()
+    )
     # Resolution is where a STEP or drawing package gets built, and on a cold model that is
     # the SLOWEST part of a snapshot -- longer than the render. It is deliberately NOT
     # wrapped in a phase of ours: that build reports its own phases through artifact_build,

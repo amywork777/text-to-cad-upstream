@@ -299,6 +299,39 @@ class DocumentationTeachesTheNewContract(unittest.TestCase):
         self.assertNotIn("union_projected_faces", text)
         self.assertNotIn("add_shapely_geometry", text)
 
+    def test_the_skill_teaches_the_exact_snapshot_output_rule(self) -> None:
+        """The snapshot section's whole job here is the output contract.
+
+        A drawing review is render -> Read -> edit -> render, and the reader needs
+        to know that the second render replaces the file the first one wrote. The
+        section used to have to teach the opposite (the written name was not the
+        name passed), so this pins the replacement rather than leaving the section
+        free to drift back into teaching what to KNOW instead of what to do.
+        """
+        text = SKILL.read_text(encoding="utf-8")
+        snapshot_section = text[text.index("cadgen dxf snapshot` renders") :]
+        self.assertIn("written exactly as given", snapshot_section)
+        self.assertIn("current working directory", snapshot_section)
+        self.assertIn("missing file", snapshot_section)
+        # The generate-a-name case is the only surviving read-the-printed-path case.
+        self.assertIn("--output tmp/", snapshot_section)
+
+    def test_documented_snapshot_forms_name_a_file(self) -> None:
+        """`cadgen dxf snapshot --input X --output Y` — the Y in every documented
+        form is a file the reader can open by that name afterwards."""
+        forms = [
+            line.strip()
+            for line in SKILL.read_text(encoding="utf-8").splitlines()
+            if line.strip().startswith("cadgen dxf snapshot") and "--output" in line
+        ]
+        self.assertGreaterEqual(len(forms), 2)
+        for form in forms:
+            with self.subTest(form=form):
+                tokens = form.split()
+                value = tokens[tokens.index("--output") + 1]
+                self.assertTrue(Path(value).suffix, f"`--output {value}` names no file")
+                self.assertFalse(value.endswith(("/", "\\")))
+
     def test_the_project_template_matches_its_exemplar(self) -> None:
         """cad-project's template and models/projects/demo-plate are the same
         drawing shown twice; a reader who copies one and inspects the other must
