@@ -29,24 +29,24 @@ class GeneratorMetadata:
     # Library-first fields (design/library-first-generation.md): the @step/@dxf
     # decorated entry function and its statically-declared output target.
     entry_function: str | None = None
-    write_target: str | None = None
+    out_target: str | None = None
     is_decorated: bool = False
     # Declared mesh serializations (@stl/@glb/@threemf stacked on the @step
-    # function). Statically parsed like write=; resolved to paths at spec time.
+    # function). Statically parsed like out=; resolved to paths at spec time.
     mesh_exports: "tuple[MeshExportDecl, ...]" = ()
 
 
 @dataclass(frozen=True)
 class MeshExportDecl:
-    """One declared mesh export: `@stl(write=..., mesh_tolerance=...)` etc.
+    """One declared mesh export: `@stl(out=..., mesh_tolerance=...)` etc.
 
     ``fmt`` is the FORMAT name ("stl" | "3mf" | "glb"); the 3MF decorator is
-    spelled ``@threemf`` (identifiers cannot start with a digit). ``write``
+    spelled ``@threemf`` (identifiers cannot start with a digit). ``out``
     is the raw script-relative target, ``None`` meaning the sibling of the
     logical STEP artifact. Tolerances ``None`` inherit the model's policy."""
 
     fmt: str
-    write: str | None = None
+    out: str | None = None
     mesh_tolerance: float | None = None
     mesh_angular_tolerance: float | None = None
 
@@ -107,15 +107,15 @@ def resolve_mesh_settings(
     )
 
 
-def resolve_model_output_path(script_path: Path, *, fmt: str, explicit_write: str | None = None) -> Path:
+def resolve_model_output_path(script_path: Path, *, fmt: str, explicit_out: str | None = None) -> Path:
     """Where a model's primary artifact goes. cadgen is deliberately
     UNOPINIONATED about layout (design/library-first-generation.md): an explicit
-    ``write=`` resolves relative to the script's own folder (absolute allowed);
+    ``out=`` resolves relative to the script's own folder (absolute allowed);
     otherwise the artifact is the sibling ``<stem>.<fmt>``. Project structure
     conventions live in the cad-project skill as guidance, not in code."""
     script = Path(script_path).resolve()
-    if explicit_write:
-        target = Path(explicit_write)
+    if explicit_out:
+        target = Path(explicit_out)
         return (target if target.is_absolute() else script.parent / target).resolve()
     return (script.parent / f"{script.stem}.{fmt}").resolve()
 
@@ -174,30 +174,31 @@ def _match_mesh_export_decorators(
         if deco_name is None:
             continue
         fmt = _MESH_DECORATOR_FMT[deco_name]
-        write = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
+        _reject_renamed_write_kwarg(call_kwargs, deco_name, script_path=script_path)
+        out = _decorator_string_kwarg(call_kwargs, "out", script_path=script_path)
         # Variants are allowed: the same format may be declared repeatedly at
         # different destinations (e.g. a draft and a print-quality STL). Only
         # ambiguous duplicates fail: two bare declarations collide at the
-        # sibling default, and two identical write= targets collide outright.
-        if write is None and any(d.fmt == fmt and d.write is None for d in declarations):
+        # sibling default, and two identical out= targets collide outright.
+        if out is None and any(d.fmt == fmt and d.out is None for d in declarations):
             raise ValueError(
                 f"{_display_path(script_path)} declares bare @{deco_name} more than once; "
-                "at most one declaration per format may omit write= (the sibling default)"
+                "at most one declaration per format may omit out= (the sibling default)"
             )
-        if write is not None and any(d.fmt == fmt and d.write == write for d in declarations):
+        if out is not None and any(d.fmt == fmt and d.out == out for d in declarations):
             raise ValueError(
                 f"{_display_path(script_path)} declares @{deco_name} twice for the same "
-                f"target {write!r}"
+                f"target {out!r}"
             )
-        if write is not None and not write.lower().endswith(f".{fmt}" if fmt != "3mf" else ".3mf"):
+        if out is not None and not out.lower().endswith(f".{fmt}" if fmt != "3mf" else ".3mf"):
             raise ValueError(
-                f"{_display_path(script_path)} @{deco_name} write= must end with "
-                f"'.{fmt}': {write!r}"
+                f"{_display_path(script_path)} @{deco_name} out= must end with "
+                f"'.{fmt}': {out!r}"
             )
         declarations.append(
             MeshExportDecl(
                 fmt=fmt,
-                write=write,
+                out=out,
                 mesh_tolerance=_decorator_numeric_kwarg(
                     call_kwargs, "mesh_tolerance", script_path=script_path
                 ),
@@ -232,6 +233,36 @@ def _match_model_decorator(
         if fmt is not None:
             return fmt, call_kwargs
     return None
+
+
+#: What ``write=`` became, and why. The artifact destination now has ONE name
+#: across the whole surface: the decorator kwarg, the door functions'
+#: ``out=`` (``stl.build(target, out=...)``), and the CLIs' ``OUT`` positional.
+RENAMED_WRITE_KWARG_HINT = (
+    "write= was renamed to out=; the artifact destination has one name "
+    "everywhere — the decorator's out=, the door functions' out= "
+    "(stl.build(target, out=...)), and the CLIs' OUT positional"
+)
+
+
+def renamed_write_kwarg_message(deco_name: str, value: object = None) -> str:
+    """The teaching error for a decorator still passing ``write=``."""
+    suggestion = f'; use out={value!r}' if isinstance(value, str) and value.strip() else ""
+    return f"@{deco_name} {RENAMED_WRITE_KWARG_HINT}{suggestion}"
+
+
+def _reject_renamed_write_kwarg(
+    kwargs: dict[str, ast.expr], deco_name: str, *, script_path: Path
+) -> None:
+    """``write=`` is gone. A script that still uses it must be told the new
+    name, not left to a silently-ignored keyword."""
+    node = kwargs.get("write")
+    if node is None:
+        return
+    value = node.value if isinstance(node, ast.Constant) else None
+    raise ValueError(
+        f"{_display_path(script_path)} {renamed_write_kwarg_message(deco_name, value)}"
+    )
 
 
 def _decorator_string_kwarg(
@@ -333,7 +364,8 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             "defaults — the pipeline calls it with no arguments"
         )
 
-    write_target = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
+    _reject_renamed_write_kwarg(call_kwargs, fmt, script_path=script_path)
+    out_target = _decorator_string_kwarg(call_kwargs, "out", script_path=script_path)
     kind: str | None = None
     # A @dxf return carries no static metadata: the drawing IS its geometry, and
     # what a layer map holds is only knowable at run time (design/dxf-build123d.md).
@@ -377,7 +409,7 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             call_kwargs, "mesh_angular_tolerance", script_path=script_path
         ),
         entry_function=function.name,
-        write_target=write_target,
+        out_target=out_target,
         is_decorated=True,
         mesh_exports=mesh_exports,
     )

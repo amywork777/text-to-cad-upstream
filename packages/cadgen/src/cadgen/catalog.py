@@ -418,7 +418,7 @@ def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadat
     from cadgen.metadata import resolve_model_output_path
 
     dxf_path = resolve_model_output_path(
-        resolved_script_path, fmt="dxf", explicit_write=metadata.write_target
+        resolved_script_path, fmt="dxf", explicit_out=metadata.out_target
     )
     return CadSource(
         source_ref=source_ref_from_path(resolved_script_path),
@@ -463,7 +463,7 @@ def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> C
     from cadgen.metadata import resolve_model_output_path
 
     step_path = resolve_model_output_path(
-        resolved_script_path, fmt="step", explicit_write=metadata.write_target
+        resolved_script_path, fmt="step", explicit_out=metadata.out_target
     )
     return CadSource(
         source_ref=source_ref_from_path(resolved_script_path),

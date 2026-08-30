@@ -17,8 +17,8 @@ from cadgen import build123d as bd
 from cadgen import glb, step, stl
 
 
-@step(write="STEP/bracket.step")
-@stl(write="STL/bracket.stl")
+@step(out="STEP/bracket.step")
+@stl(out="STL/bracket.stl")
 @glb
 def bracket():
     return bd.Box(40, 20, 6)
@@ -27,8 +27,8 @@ def bracket():
 `python models/bracket.py` (or `cadgen step build models/bracket.py`) then writes the STEP **and** the declared meshes, and heals any of them that were deleted — no separate export step. Declare the same format more than once at distinct targets for draft/print variants:
 
 ```python
-@stl(write="STL/bracket_draft.stl", mesh_tolerance=8e-3)
-@stl(write="STL/bracket_print.stl", mesh_tolerance=4e-4)
+@stl(out="STL/bracket_draft.stl", mesh_tolerance=8e-3)
+@stl(out="STL/bracket_print.stl", mesh_tolerance=4e-4)
 ```
 
 ## Tool

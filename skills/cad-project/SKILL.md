@@ -8,7 +8,7 @@ description: Project structure for multi-part CAD work - src/ for model scripts 
 Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad).
 
 This skill is pure convention: cadgen itself is deliberately unopinionated (a
-model script's artifact defaults to its sibling; `write=` relocates it). Use
+model script's artifact defaults to its sibling; `out=` relocates it). Use
 this structure for anything bigger than a couple of loose models; skip it for
 one-off parts, where a flat folder is fine. Authoring the models themselves is
 the `$cad` skill; drawings are `$dxf`.
@@ -42,12 +42,12 @@ Two mechanical rules:
    from cadgen import build123d as bd
    from cadgen import step
 
-   @step(write="../STEP/plate.step")
+   @step(out="../STEP/plate.step")
    def plate(width: float = 10.0):
        return bd.Box(width, 10, 10)
    ```
 
-   `write=` resolves relative to the script, so the project relocates as a
+   `out=` resolves relative to the script, so the project relocates as a
    unit.
 2. **`src/` holds ONLY runnable model scripts.** Every `.py` directly under
    `src/` is a model — run it to build it. Everything shared goes in
@@ -78,7 +78,7 @@ artifacts (scripts never appear); before anything is built, discovery is
 
 - Model script stem = artifact stem = a Python identifier (`plate.py` →
   `STEP/plate.step`). Industry/exchange names (part numbers, revisions,
-  spaces) go on the ARTIFACT via `write=` ("../STEP/PN-10432_revB.step"),
+  spaces) go on the ARTIFACT via `out=` ("../STEP/PN-10432_revB.step"),
   never into the stem — scripts must stay importable modules.
 - A drawing gets its own stem: `plate_drawing.py` → `DXF/plate_drawing.dxf`
   (one model per file).

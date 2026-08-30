@@ -171,7 +171,7 @@ Flags (a model script runs itself; there is no generation CLI):
 - `--verbose`, `--json`, `--lock-timeout SECONDS`.
 
 One script, one drawing: run each script you want built. Do not put output paths
-in the `@dxf` function's return value; `write=` on the decorator is the only
+in the `@dxf` function's return value; `out=` on the decorator is the only
 place a drawing names its destination.
 
 `cadgen dxf snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:

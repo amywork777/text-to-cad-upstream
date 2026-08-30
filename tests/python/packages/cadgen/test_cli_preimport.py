@@ -115,7 +115,7 @@ def _defn(fmt: str) -> authoring.ModelDef:
         func=fake,
         fmt=fmt,
         script_path=pathlib.Path("/tmp/preimport-model.py"),
-        write=None,
+        out=None,
         kind=None,
         mesh_tolerance=None,
         mesh_angular_tolerance=None,

@@ -73,7 +73,7 @@ Generation has NO CLI. A model is a plain Python script:
 from cadgen import build123d as bd
 from cadgen import step
 
-@step()                       # or @dxf() for drawings; write= relocates the artifact
+@step()                       # or @dxf() for drawings; out= relocates the artifact
 def bracket(width: float = 10.0):
     return bd.Box(width, 10, 10)
 ```
@@ -138,7 +138,7 @@ Silent generators are unaffected.
 
 **A build waits for a concurrent build of the same model** rather than racing it, and says so on stderr (`waiting for another run to finish building ...`), repeating while it waits. Pass `--lock-timeout SECONDS` to give up instead and report `{"ok":true,"contended":true}`. With `--json`, each target's `outcome` is `built`, `current`, `skipped-peer` (the peer finished and its package is current), or `contended` (the peer is still building and this run declined to wait).
 
-Target paths resolve from the command's current working directory, not from the skill directory. Run commands from the workspace that owns the artifacts and pass cwd-relative target paths so project CAD files never resolve accidentally under the skill directory. By default a model's STEP is its sibling with the same stem; the artifact→source link is recorded in the render package (descriptor provenance), so relocating outputs with `write=` is safe.
+Target paths resolve from the command's current working directory, not from the skill directory. Run commands from the workspace that owns the artifacts and pass cwd-relative target paths so project CAD files never resolve accidentally under the skill directory. By default a model's STEP is its sibling with the same stem; the artifact→source link is recorded in the render package (descriptor provenance), so relocating outputs with `out=` is safe.
 
 CAD references are `#...` selector tokens local to a target, for example `#o1.2` or `#o1.2.f1`. Pass the STEP/CAD file as a separate target argument when using CAD CLIs.
 
@@ -152,7 +152,7 @@ Scale depth to the task: a simple part needs a short brief and few spec-driven c
 4. **Check named purchasable components.** When an assembly includes named off-the-shelf actuators, servos, motors, electronics boards, connectors, or other purchasable components, search `$step-parts` before creating simplified placeholder geometry. If no exact match is found, record the miss and then use a documented envelope.
 5. **Plan before coding.** Define parameters, intent labels, source paths, expected bounding boxes, and any mating/positioning datums before editing.
 6. **Edit source, not generated artifacts.** Author a plain `.py` model script with one `@step`-decorated function (underscore-prefixed helper modules carry shared code; see `references/step-generation.md`). When a model script exists, run IT, never hand-edit its exported STEP. Imported STEP/STP files (no script) build their render package via `cadgen step build`, and the mesh doors accept them directly.
-7. **Generate explicit targets.** Run each model script directly (`python <model>.py`); do not sweep directories. Every run writes the model's `.step` (sibling `<stem>.step` by default; `write=` in the decorator or `-o PATH` to relocate); declare `@stl`/`@threemf`/`@glb` exports on the model, or run `cadgen stl|3mf|glb build` for one-off mesh files. For multi-model project structure, see the `$cad-project` skill.
+7. **Generate explicit targets.** Run each model script directly (`python <model>.py`); do not sweep directories. Every run writes the model's `.step` (sibling `<stem>.step` by default; `out=` in the decorator or `-o PATH` to relocate); declare `@stl`/`@threemf`/`@glb` exports on the model, or run `cadgen stl|3mf|glb build` for one-off mesh files. For multi-model project structure, see the `$cad-project` skill.
 8. **Validate geometrically.** Run `cadgen step inspect refs <step-or-cad-target> --facts --planes --positioning` as the baseline, then verify the dimensions and relationships the user's spec calls out with targeted `measure`, `align`, `frame`, or `diff` checks. Run `cadgen step inspect validate <step-or-cad-target>` for geometry soundness: `refs --facts` reports counts and bounds, and its `ok` field covers ref resolution only — an open shell and an inverted solid both pass it.
 9. **Snapshot the primary STEP — snapshot validation is mandatory.** After creating or visibly updating a primary STEP/STP part or assembly, ALWAYS run CAD `cadgen step snapshot` against it and review the output; deterministic checks passing is not a reason to skip. The only skip cases are documented in `references/snapshot-review.md` (no visible geometry changed, or no valid artifact exists); report the reason when skipping.
 10. **Repair and rerun.** If a check fails, change the smallest responsible source section, regenerate, and rerun the failed validation.

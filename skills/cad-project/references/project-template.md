@@ -21,7 +21,7 @@ DEPTH = 40.0
 THICKNESS = 4.0
 
 
-@step(write="../STEP/plate.step")
+@step(out="../STEP/plate.step")
 def plate(hole_d: float = 4.5):
     body = bd.Box(WIDTH, DEPTH, THICKNESS)
     return holes.corner_holes(body, WIDTH, DEPTH, THICKNESS, hole_d)
@@ -41,7 +41,7 @@ from lib import holes
 from plate import DEPTH, WIDTH  # importing a model never builds it
 
 
-@dxf(write="../DXF/plate_drawing.dxf")
+@dxf(out="../DXF/plate_drawing.dxf")
 def plate_drawing(hole_d: float = 4.5):
     with bd.BuildSketch() as cut:
         bd.Rectangle(WIDTH, DEPTH)

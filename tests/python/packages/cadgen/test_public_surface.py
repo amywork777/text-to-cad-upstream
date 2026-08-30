@@ -212,7 +212,7 @@ class Manifest(unittest.TestCase):
 
         this_file = Path(__file__).resolve()
         self.addCleanup(authoring._REGISTRY.pop, this_file, None)
-        cadgen.stl(write="declared.stl")(model)
+        cadgen.stl(out="declared.stl")(model)
         cadgen.step(model)
         declared = authoring.registered_model(this_file)
         self.assertEqual({d.fmt for d in declared.mesh_exports}, {"stl"})

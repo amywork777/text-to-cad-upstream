@@ -25,7 +25,7 @@ Every run keeps the model's render package (the document of record: exact-shape
 `.brep` blobs + `.surf` render views + descriptor, in the user-level store keyed by the document's content hash)
 current and ALWAYS writes the `.step` output, assembled from that package rather
 than re-generated. Unchanged sources are a fast no-op. The default output is the
-sibling `<stem>.step`; relocate it durably with `@step(write="path/to/out.step")`
+sibling `<stem>.step`; relocate it durably with `@step(out="path/to/out.step")`
 (relative to the script) or per-run with `-o PATH` (relative to the command cwd).
 Do not put output paths in the model's return value. Mesh formats are declared
 on the model with `@stl`/`@threemf`/`@glb`, or written by the matching
@@ -42,7 +42,7 @@ Rules the decorator enforces:
   closures key off it.
 - **Parameters must all have defaults** — the pipeline calls the function with
   no arguments; defaults are the authored values.
-- Options: `write=`, `kind="part"|"assembly"` (else inferred from the return),
+- Options: `out=`, `kind="part"|"assembly"` (else inferred from the return),
   `mesh_tolerance=`, `mesh_angular_tolerance=`. Envelope returns
   (`{"shape": ..., "params": ..., "stl": ..., "3mf": ...}`) keep working.
 

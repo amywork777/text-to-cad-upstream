@@ -78,10 +78,10 @@ class RunModelArgvTests(unittest.TestCase):
             runner.run_model_argv([str(script), "-o", "out/custom.step"])
         self.assertEqual([f"{script}=out/custom.step"], generate.call_args.args[0])
 
-    def test_write_kwarg_is_the_declared_output(self) -> None:
+    def test_out_kwarg_is_the_declared_output(self) -> None:
         script = self._write(
             "bracket.py",
-            STEP_MODEL.replace("@step", "@step(write='exports/bracket.step')"),
+            STEP_MODEL.replace("@step", "@step(out='exports/bracket.step')"),
         )
         with mock.patch("cadgen.generation.generate_step_targets", return_value=0) as generate:
             runner.run_model_argv([str(script)])

@@ -110,7 +110,7 @@ _RETIRED_CONTRACT_MESSAGE = (
     "    from cadgen import build123d as bd\n"
     "    from cadgen import dxf\n"
     "\n"
-    "    @dxf(write=\"../DXF/gasket.dxf\")\n"
+    "    @dxf(out=\"../DXF/gasket.dxf\")\n"
     "    def gasket(hole_d: float = 4.5):\n"
     "        with bd.BuildSketch() as cut:\n"
     "            bd.Rectangle(60, 40)\n"

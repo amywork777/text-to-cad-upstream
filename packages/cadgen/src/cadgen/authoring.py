@@ -6,8 +6,8 @@ A CAD model is a plain Python script; the decorator is the entrypoint::
     from cadgen import build123d as bd
     from cadgen import step
 
-    @step()                      # write= defaults to <stem>.step beside the
-    def bracket(width: float = 10.0):    # script; pass write="..." to relocate
+    @step()                      # out= defaults to <stem>.step beside the
+    def bracket(width: float = 10.0):    # script; pass out="..." to relocate
         return bd.Box(width, 10, 10)
 
 Semantics (settled in the design doc):
@@ -45,7 +45,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen.metadata import MeshExportDecl, resolve_model_output_path
+from cadgen.metadata import (
+    MeshExportDecl,
+    renamed_write_kwarg_message,
+    resolve_model_output_path,
+)
 from cadgen.posedef import PoseDef
 
 __all__ = [
@@ -67,7 +71,7 @@ class ModelDef:
     func: Callable[..., Any]
     fmt: str  # "step" | "dxf"
     script_path: Path
-    write: str | None
+    out: str | None
     kind: str | None
     mesh_tolerance: float | None
     mesh_angular_tolerance: float | None
@@ -79,7 +83,7 @@ class ModelDef:
 
     @property
     def output_path(self) -> Path:
-        return resolve_model_output_path(self.script_path, fmt=self.fmt, explicit_write=self.write)
+        return resolve_model_output_path(self.script_path, fmt=self.fmt, explicit_out=self.out)
 
 
 # Keyed by resolved script path. One model per file is a hard rule (see module
@@ -131,10 +135,20 @@ def _register(defn: ModelDef) -> None:
     _REGISTRY[defn.script_path] = defn
 
 
+def _reject_renamed_kwargs(deco_name: str, kwargs: dict[str, Any]) -> None:
+    """``write=`` is gone (hard cutover). Name its replacement rather than
+    letting a stale model script die on a bare TypeError."""
+    if "write" in kwargs:
+        raise TypeError(renamed_write_kwarg_message(deco_name, kwargs["write"]))
+    if kwargs:
+        unexpected = ", ".join(sorted(kwargs))
+        raise TypeError(f"@{deco_name} got an unexpected keyword argument: {unexpected}")
+
+
 def _decorator(
     fmt: str,
     *,
-    write: str | None,
+    out: str | None,
     kind: str | None,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
@@ -169,7 +183,7 @@ def _decorator(
             func=func,
             fmt=fmt,
             script_path=script_path,
-            write=write,
+            out=out,
             kind=kind,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
@@ -193,16 +207,18 @@ def _decorator(
 def step(
     func: Callable[..., Any] | None = None,
     *,
-    write: str | None = None,
+    out: str | None = None,
     kind: str | None = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
     pose: PoseDef | None = None,
+    **renamed: Any,
 ):
     """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``)."""
+    _reject_renamed_kwargs("step", renamed)
     decorator = _decorator(
         "step",
-        write=write,
+        out=out,
         kind=kind,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
@@ -214,11 +230,13 @@ def step(
 def dxf(
     func: Callable[..., Any] | None = None,
     *,
-    write: str | None = None,
+    out: str | None = None,
+    **renamed: Any,
 ):
     """Declare a DXF drawing. Usable bare (``@dxf``) or configured (``@dxf(...)``)."""
+    _reject_renamed_kwargs("dxf", renamed)
     decorator = _decorator(
-        "dxf", write=write, kind=None, mesh_tolerance=None, mesh_angular_tolerance=None
+        "dxf", out=out, kind=None, mesh_tolerance=None, mesh_angular_tolerance=None
     )
     return decorator(func) if func is not None else decorator
 
@@ -228,16 +246,16 @@ _MESH_FMT_DECORATOR = {"stl": "stl", "glb": "glb", "3mf": "threemf"}
 
 def _validate_variant(existing, decl: MeshExportDecl, deco_name: str) -> None:
     """Variants of one format are allowed; ambiguous duplicates are not: two
-    bare declarations collide at the sibling default, two identical write=
+    bare declarations collide at the sibling default, two identical out=
     targets collide outright."""
-    if decl.write is None:
-        if any(d.fmt == decl.fmt and d.write is None for d in existing):
+    if decl.out is None:
+        if any(d.fmt == decl.fmt and d.out is None for d in existing):
             raise TypeError(
                 f"bare @{deco_name} is declared more than once; at most one "
-                "declaration per format may omit write= (the sibling default)"
+                "declaration per format may omit out= (the sibling default)"
             )
-    elif any(d.fmt == decl.fmt and d.write == decl.write for d in existing):
-        raise TypeError(f"@{deco_name} is declared twice for the same target {decl.write!r}")
+    elif any(d.fmt == decl.fmt and d.out == decl.out for d in existing):
+        raise TypeError(f"@{deco_name} is declared twice for the same target {decl.out!r}")
 
 
 def _mesh_export_decorator(deco_name: str, fmt: str):
@@ -252,15 +270,17 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
     def decorator_factory(
         func: Callable[..., Any] | None = None,
         *,
-        write: str | None = None,
+        out: str | None = None,
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
+        **renamed: Any,
     ):
-        if write is not None and not str(write).lower().endswith(suffix):
-            raise ValueError(f"@{deco_name} write= must end with '{suffix}': {write!r}")
+        _reject_renamed_kwargs(deco_name, renamed)
+        if out is not None and not str(out).lower().endswith(suffix):
+            raise ValueError(f"@{deco_name} out= must end with '{suffix}': {out!r}")
         decl = MeshExportDecl(
             fmt=fmt,
-            write=write,
+            out=out,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
         )

@@ -32,10 +32,10 @@ MODEL = textwrap.dedent("""\
     from cadgen import glb, step, stl, threemf
 
 
-    @step(write="../STEP/widget.step")
-    @stl(write="../STL/widget.stl")
+    @step(out="../STEP/widget.step")
+    @stl(out="../STL/widget.stl")
     @glb
-    @threemf(write="../3MF/widget.3mf", mesh_tolerance=5e-3)
+    @threemf(out="../3MF/widget.3mf", mesh_tolerance=5e-3)
     def widget(size: float = 12.0):
         body = bd.Box(size, size / 2, 3)
         body -= bd.Pos(0, 0, 0) * bd.Cylinder(2, 10)
@@ -56,15 +56,15 @@ class MeshExportMetadataTest(unittest.TestCase):
         below = self._parse(MODEL)
         above = self._parse(
             MODEL.replace(
-                '@step(write="../STEP/widget.step")\n@stl(write="../STL/widget.stl")',
-                '@stl(write="../STL/widget.stl")\n@step(write="../STEP/widget.step")',
+                '@step(out="../STEP/widget.step")\n@stl(out="../STL/widget.stl")',
+                '@stl(out="../STL/widget.stl")\n@step(out="../STEP/widget.step")',
             )
         )
         for metadata in (below, above):
             declared = {d.fmt: d for d in metadata.mesh_exports}
             self.assertEqual(set(declared), {"stl", "glb", "3mf"})
-            self.assertEqual(declared["stl"].write, "../STL/widget.stl")
-            self.assertIsNone(declared["glb"].write)
+            self.assertEqual(declared["stl"].out, "../STL/widget.stl")
+            self.assertIsNone(declared["glb"].out)
             self.assertEqual(declared["3mf"].mesh_tolerance, 5e-3)
 
     def test_variants_parse_but_ambiguous_duplicates_fail(self) -> None:
@@ -73,21 +73,21 @@ class MeshExportMetadataTest(unittest.TestCase):
             from cadgen import step, stl
 
             @step(kind="part")
-            @stl(write="a_draft.stl", mesh_tolerance=8e-3)
-            @stl(write="a_print.stl", mesh_tolerance=4e-4)
+            @stl(out="a_draft.stl", mesh_tolerance=8e-3)
+            @stl(out="a_print.stl", mesh_tolerance=4e-4)
             def part():
                 return None
             """))
-        self.assertEqual([d.write for d in variants.mesh_exports],
+        self.assertEqual([d.out for d in variants.mesh_exports],
                          ["a_draft.stl", "a_print.stl"])
         # Two bare declarations collide at the sibling default.
         with self.assertRaises(ValueError):
             self._parse(MODEL.replace("@glb\n", "@glb\n@glb\n"))
-        # Two identical write= targets collide outright.
+        # Two identical out= targets collide outright.
         with self.assertRaises(ValueError):
             self._parse(MODEL.replace(
-                '@stl(write="../STL/widget.stl")',
-                '@stl(write="../STL/widget.stl")\n@stl(write="../STL/widget.stl")',
+                '@stl(out="../STL/widget.stl")',
+                '@stl(out="../STL/widget.stl")\n@stl(out="../STL/widget.stl")',
             ))
 
     def test_dxf_misuse_fails(self) -> None:
@@ -113,7 +113,7 @@ class MeshExportMetadataTest(unittest.TestCase):
         this_file = Path(__file__).resolve()
         self.addCleanup(_REGISTRY.pop, this_file, None)
 
-        stl_deco(write="a.stl")(below)
+        stl_deco(out="a.stl")(below)
         step_deco(below)
         model = registered_model(this_file)
         self.assertIsNotNone(model)
@@ -127,7 +127,7 @@ class MeshExportMetadataTest(unittest.TestCase):
             return None
 
         step_deco(above)
-        stl_deco(write="b.stl")(above)
+        stl_deco(out="b.stl")(above)
         model = registered_model(this_file)
         self.assertEqual({d.fmt for d in model.mesh_exports}, {"stl"})
 
@@ -208,9 +208,9 @@ class MeshExportProductionTest(unittest.TestCase):
         # model are two files, at their own tolerances, from one door run.
         (self.project / "src" / "widget.py").write_text(
             MODEL.replace(
-                '@stl(write="../STL/widget.stl")',
-                '@stl(write="../STL/widget_draft.stl", mesh_tolerance=2e-2)\n'
-                '@stl(write="../STL/widget_print.stl", mesh_tolerance=2e-4)',
+                '@stl(out="../STL/widget.stl")',
+                '@stl(out="../STL/widget_draft.stl", mesh_tolerance=2e-2)\n'
+                '@stl(out="../STL/widget_print.stl", mesh_tolerance=2e-4)',
             )
         )
         self._run("src/widget.py")

@@ -3,7 +3,7 @@
 The retired gen/artifact CLIs each carried a private sibling-path helper and
 the two disagreed on Windows separators. Library-first has exactly one:
 ``cadgen.metadata.resolve_model_output_path`` — sibling ``<stem>.<fmt>`` by
-default, an explicit ``write=`` resolved relative to the script's own folder
+default, an explicit ``out=`` resolved relative to the script's own folder
 (structure conventions live in the cad-project skill as guidance, not code).
 """
 
@@ -39,27 +39,27 @@ class ResolveModelOutputPathTest(unittest.TestCase):
             resolve_model_output_path(self.script, fmt="dxf"),
         )
 
-    def test_write_resolves_relative_to_the_script_folder(self) -> None:
+    def test_out_resolves_relative_to_the_script_folder(self) -> None:
         # The cad-project skill's convention (src/ + capitalized format folders)
         # is expressed exactly this way in model code.
         self.assertEqual(
             self.root / "STEP" / "bracket.step",
-            resolve_model_output_path(self.script, fmt="step", explicit_write="../STEP/bracket.step"),
+            resolve_model_output_path(self.script, fmt="step", explicit_out="../STEP/bracket.step"),
         )
 
-    def test_write_may_rename_the_artifact(self) -> None:
+    def test_out_may_rename_the_artifact(self) -> None:
         # Industry exchange names (part numbers, revisions) belong on the
-        # artifact via write=; the script stem stays a Python identifier.
+        # artifact via out=; the script stem stays a Python identifier.
         self.assertEqual(
             self.root / "src" / "PN-10432_revB.step",
-            resolve_model_output_path(self.script, fmt="step", explicit_write="PN-10432_revB.step"),
+            resolve_model_output_path(self.script, fmt="step", explicit_out="PN-10432_revB.step"),
         )
 
-    def test_absolute_write_is_honored(self) -> None:
+    def test_absolute_out_is_honored(self) -> None:
         target = self.root / "elsewhere" / "out.step"
         self.assertEqual(
             target,
-            resolve_model_output_path(self.script, fmt="step", explicit_write=str(target)),
+            resolve_model_output_path(self.script, fmt="step", explicit_out=str(target)),
         )
 
     def test_resolution_is_independent_of_the_working_directory(self) -> None:
@@ -68,9 +68,9 @@ class ResolveModelOutputPathTest(unittest.TestCase):
         cwd = Path.cwd()
         try:
             os.chdir(self.root / "src")
-            from_inside = resolve_model_output_path(self.script, fmt="step", explicit_write="../STEP/bracket.step")
+            from_inside = resolve_model_output_path(self.script, fmt="step", explicit_out="../STEP/bracket.step")
             os.chdir(self.root)
-            from_root = resolve_model_output_path(self.script, fmt="step", explicit_write="../STEP/bracket.step")
+            from_root = resolve_model_output_path(self.script, fmt="step", explicit_out="../STEP/bracket.step")
         finally:
             os.chdir(cwd)
         self.assertEqual(from_inside, from_root)

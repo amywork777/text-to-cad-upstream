@@ -12,7 +12,7 @@ DEPTH = 40.0
 THICKNESS = 4.0
 
 
-@step(write="../STEP/plate.step")
+@step(out="../STEP/plate.step")
 def plate(hole_d: float = 4.5):
     body = bd.Box(WIDTH, DEPTH, THICKNESS)
     return holes.corner_holes(body, WIDTH, DEPTH, THICKNESS, hole_d)

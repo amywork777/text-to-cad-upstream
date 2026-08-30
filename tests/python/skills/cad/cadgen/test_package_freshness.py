@@ -75,7 +75,7 @@ class PackageFreshnessGateTests(unittest.TestCase):
             mesh_tolerance=None,
             mesh_angular_tolerance=None,
             entry_function="model",
-            write_target=None,
+            out_target=None,
             is_decorated=True,
         )
         return generation.EntrySpec(
@@ -158,7 +158,7 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
             mesh_tolerance=None,
             mesh_angular_tolerance=None,
             entry_function="model",
-            write_target=None,
+            out_target=None,
             is_decorated=True,
         )
         return generation.EntrySpec(

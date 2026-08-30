@@ -61,7 +61,7 @@ class EntrySpec:
     def entry_path(self) -> Path | None:
         # The on-disk file the render package is keyed by. Library-first models
         # (design/library-first-generation.md) key by the ARTIFACT: the package
-        # must ride beside the .step wherever write= routed it,
+        # must ride beside the .step wherever out= routed it,
         # so the viewer (artifacts-only catalog) finds it, and so provenance —
         # not filenames — links artifact to source. Legacy imported entries and
         # DXF drawings keep their existing keying.
@@ -77,7 +77,7 @@ class EntrySpec:
 @dataclass(frozen=True)
 class ResolvedMeshExport:
     """One declared mesh export with its destination resolved: `@stl` and
-    friends carry script-relative ``write=`` targets (or None for the sibling
+    friends carry script-relative ``out=`` targets (or None for the sibling
     of the logical STEP artifact); the spec carries the final answer."""
 
     fmt: str
@@ -100,12 +100,12 @@ def _resolve_mesh_exports(
     resolved: list[ResolvedMeshExport] = []
     for decl in declarations:
         suffix = MESH_FORMAT_SUFFIX[decl.fmt]
-        if decl.write is not None and script_path is not None:
+        if decl.out is not None and script_path is not None:
             path = resolve_model_output_path(
-                script_path, fmt=decl.fmt, explicit_write=decl.write
+                script_path, fmt=decl.fmt, explicit_out=decl.out
             )
         else:
-            # Bare declaration: sibling of the STEP artifact, wherever write=
+            # Bare declaration: sibling of the STEP artifact, wherever out=
             # routed it — exports follow the artifact they derive from.
             path = step_path.with_suffix(suffix)
         resolved.append(
@@ -247,7 +247,7 @@ def _apply_step_options_to_spec(spec: EntrySpec, step_options: StepImportOptions
 
 def _spec_requests_extra_outputs(spec: EntrySpec) -> bool:
     """True when the target asks for an on-demand output beyond the render package
-    (an explicit ``write=`` on the model). An explicitly requested output must be produced
+    (an explicit ``out=`` on the model). An explicitly requested output must be produced
     even when the compose is current, so it defeats every no-op and reuse fast
     path."""
     return spec.step_export_path is not None
