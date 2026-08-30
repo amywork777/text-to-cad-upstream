@@ -20,11 +20,11 @@ function write(root, rel, content = "") {
 
 async function startApp(t, { withDist = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cad-http-"));
-  const previous = process.env.CADGEN_STORE_DIR;
-  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  const previous = process.env.CADGEN_CACHE_DIR;
+  process.env.CADGEN_CACHE_DIR = path.join(root, ".store");
   t.after(() => {
-    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
-    else process.env.CADGEN_STORE_DIR = previous;
+    if (previous === undefined) delete process.env.CADGEN_CACHE_DIR;
+    else process.env.CADGEN_CACHE_DIR = previous;
   });
   let distDir = "";
   if (withDist) {

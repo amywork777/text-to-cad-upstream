@@ -40,16 +40,16 @@ class OpMemoTest(unittest.TestCase):
         op_memo.clear()
         self._tmp = tempfile.TemporaryDirectory()
         os.environ["CADGEN_OP_MEMO"] = "1"
-        self._prev_store = os.environ.get("CADGEN_STORE_DIR")
-        os.environ["CADGEN_STORE_DIR"] = self._tmp.name
+        self._prev_store = os.environ.get("CADGEN_CACHE_DIR")
+        os.environ["CADGEN_CACHE_DIR"] = self._tmp.name
 
     def tearDown(self):
         op_memo.clear()
         os.environ.pop("CADGEN_OP_MEMO", None)
         if self._prev_store is None:
-            os.environ.pop("CADGEN_STORE_DIR", None)
+            os.environ.pop("CADGEN_CACHE_DIR", None)
         else:
-            os.environ["CADGEN_STORE_DIR"] = self._prev_store
+            os.environ["CADGEN_CACHE_DIR"] = self._prev_store
         self._tmp.cleanup()
 
     def test_install_is_idempotent(self):
@@ -163,10 +163,10 @@ class ComponentStoreTest(unittest.TestCase):
         import tempfile
 
         self._tmp = tempfile.TemporaryDirectory()
-        os.environ["CADGEN_STORE_DIR"] = self._tmp.name
+        os.environ["CADGEN_CACHE_DIR"] = self._tmp.name
 
     def tearDown(self):
-        os.environ.pop("CADGEN_STORE_DIR", None)
+        os.environ.pop("CADGEN_CACHE_DIR", None)
         self._tmp.cleanup()
 
     def test_publish_then_fetch_hardlinks(self):
@@ -227,7 +227,7 @@ class ComponentStoreTest(unittest.TestCase):
 
         from cadgen._internal import component_store
 
-        os.environ["CADGEN_COMPONENT_STORE"] = "0"
+        os.environ["CADGEN_COMPONENT_CACHE"] = "0"
         try:
             src = Path(self._tmp.name) / "cid123.surf"
             src.write_bytes(b"payload")
@@ -235,7 +235,7 @@ class ComponentStoreTest(unittest.TestCase):
             dest = Path(self._tmp.name) / "fetched.surf"
             self.assertFalse(component_store.fetch("cid123", dest))
         finally:
-            os.environ.pop("CADGEN_COMPONENT_STORE", None)
+            os.environ.pop("CADGEN_COMPONENT_CACHE", None)
 
 
 if __name__ == "__main__":

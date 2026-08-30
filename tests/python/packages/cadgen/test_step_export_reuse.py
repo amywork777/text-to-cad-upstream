@@ -42,9 +42,9 @@ def _write_model(root: Path) -> Path:
 def _run(entry: Path, args: list[str], store: Path) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env.update({
-        "CADGEN_WARM": "0",
+        "CADGEN_DAEMON": "0",
         "CADGEN_COMPONENT_WORKERS": "1",
-        "CADGEN_STORE_DIR": str(store),
+        "CADGEN_CACHE_DIR": str(store),
         "PYTHONPATH": str(REPO / "packages/cadgen/src"),
     })
     code = (
@@ -112,8 +112,8 @@ class StepExportReuseTest(unittest.TestCase):
         from cadgen.catalog import render_package_dir
 
         # Resolve against the CHILD's store: the subprocess ran with the
-        # per-test CADGEN_STORE_DIR, and cache_root() reads env at call time.
-        with unittest.mock.patch.dict(os.environ, {"CADGEN_STORE_DIR": str(self.store)}):
+        # per-test CADGEN_CACHE_DIR, and cache_root() reads env at call time.
+        with unittest.mock.patch.dict(os.environ, {"CADGEN_CACHE_DIR": str(self.store)}):
             original_pkg = render_package_dir(self.entry.parent / "block.step")
             copy_pkg = render_package_dir(copy_target)
         self.assertTrue(copy_target.is_file())

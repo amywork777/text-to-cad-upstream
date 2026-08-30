@@ -216,7 +216,7 @@ def _run_from_main(defn: ModelDef) -> int:
     # The daemon worker re-imports this module under a loader name (never
     # __main__), so the decorator over there only registers and the runner
     # calls the function — the documented double-import semantics.
-    if os.environ.get("CADGEN_WARM") != "0" and not os.environ.get("CADGEN_DAEMON_CHILD"):
+    if os.environ.get("CADGEN_DAEMON") != "0" and not os.environ.get("CADGEN_DAEMON_CHILD"):
         try:
             from cadgen.daemon.client import run_via_daemon
         except ModuleNotFoundError:
@@ -240,7 +240,7 @@ def _run_from_main(defn: ModelDef) -> int:
 
         env = dict(os.environ)
         env["PYTHONHASHSEED"] = "0"
-        env["CADGEN_WARM"] = "0"  # already decided cold; do not bounce to the daemon
+        env["CADGEN_DAEMON"] = "0"  # already decided cold; do not bounce to the daemon
         completed = subprocess.run(
             [sys.executable, str(defn.script_path), *argv], env=env, check=False
         )

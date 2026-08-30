@@ -22,12 +22,12 @@ function tempRoot(t, prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   // Store-primary: packages resolve into the user-level store; isolate it
-  // per-test exactly the way the Python runner does (CADGEN_STORE_DIR).
-  const previous = process.env.CADGEN_STORE_DIR;
-  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  // per-test exactly the way the Python runner does (CADGEN_CACHE_DIR).
+  const previous = process.env.CADGEN_CACHE_DIR;
+  process.env.CADGEN_CACHE_DIR = path.join(root, ".store");
   t.after(() => {
-    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
-    else process.env.CADGEN_STORE_DIR = previous;
+    if (previous === undefined) delete process.env.CADGEN_CACHE_DIR;
+    else process.env.CADGEN_CACHE_DIR = previous;
   });
   return root;
 }

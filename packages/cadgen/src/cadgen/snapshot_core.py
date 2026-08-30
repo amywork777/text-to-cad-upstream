@@ -767,7 +767,7 @@ def tessellation_cache_enabled() -> bool:
 
 
 def tessellation_cache_dir() -> Path:
-    # One root for every user-level cache (CADGEN_STORE_DIR / platform cache
+    # One root for every user-level cache (CADGEN_CACHE_DIR / platform cache
     # dir): cadgen._internal.cache_paths is the Python authority, mirrored by
     # cadgenCacheRootDir in the JS store modules.
     return meshes_dir()

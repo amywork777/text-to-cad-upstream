@@ -46,7 +46,7 @@ class DaemonHandoff(unittest.TestCase):
         )
 
     def test_a_step_command_hands_off_and_never_imports_the_module(self):
-        with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
+        with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "1"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=7) as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             self.assertEqual(cli.main(["step", "export", "part.step"]), 7)
@@ -56,7 +56,7 @@ class DaemonHandoff(unittest.TestCase):
         imported.assert_not_called()  # the whole point: no OCP import
 
     def test_a_daemon_that_declines_falls_through_to_the_module(self):
-        with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
+        with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "1"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=None), \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
@@ -64,8 +64,8 @@ class DaemonHandoff(unittest.TestCase):
         imported.assert_called_once()
 
     def test_no_handoff_when_explicitly_disabled(self):
-        # Warm is the default now; CADGEN_WARM=0 is the opt-out.
-        with mock.patch.dict("os.environ", {"CADGEN_WARM": "0"}, clear=False), \
+        # Warm is the default now; CADGEN_DAEMON=0 is the opt-out.
+        with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "0"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
@@ -74,7 +74,7 @@ class DaemonHandoff(unittest.TestCase):
 
     def test_the_daemon_child_never_routes_back_to_itself(self):
         with mock.patch.dict(
-            "os.environ", {"CADGEN_WARM": "1", "CADGEN_DAEMON_CHILD": "1"}, clear=False
+            "os.environ", {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_CHILD": "1"}, clear=False
         ), mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
@@ -86,7 +86,7 @@ class DaemonHandoff(unittest.TestCase):
         # in the worker.
         for command in (["snapshot", "x"], ["doctor"]):
             with self.subTest(command=command):
-                with mock.patch.dict("os.environ", {"CADGEN_WARM": "1"}, clear=False), \
+                with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "1"}, clear=False), \
                         mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                         mock.patch.object(cli.importlib, "import_module") as imported:
                     imported.return_value.main.return_value = 0
@@ -111,12 +111,12 @@ def _defn(fmt: str) -> authoring.ModelDef:
 
 class HashSeedRerun(unittest.TestCase):
     """The COLD @dxf re-exec, now owned by the decorator's direct-run path.
-    Every case sets CADGEN_WARM=0: a served build gets its stable seed from the
+    Every case sets CADGEN_DAEMON=0: a served build gets its stable seed from the
     worker's environment instead, so without the opt-out these would route past
     the code they are about."""
 
     def test_a_dxf_run_reruns_when_the_seed_is_unset(self):
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]):
             run.return_value = mock.Mock(returncode=0)
@@ -126,11 +126,11 @@ class HashSeedRerun(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][0], sys.executable)
         self.assertEqual(run.call_args.kwargs["env"]["PYTHONHASHSEED"], "0")
         # The re-run must not bounce to the daemon: cold was already decided.
-        self.assertEqual(run.call_args.kwargs["env"]["CADGEN_WARM"], "0")
+        self.assertEqual(run.call_args.kwargs["env"]["CADGEN_DAEMON"], "0")
 
     def test_the_reruns_exit_code_reaches_the_caller(self):
         # Swallowing it would turn every failed generator into a success.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]):
             run.return_value = mock.Mock(returncode=3)
@@ -138,7 +138,7 @@ class HashSeedRerun(unittest.TestCase):
 
     def test_no_rerun_once_the_seed_is_already_stable(self):
         # Otherwise the second pass would spawn again, forever.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0", "CADGEN_WARM": "0"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0", "CADGEN_DAEMON": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]), \
                 mock.patch("cadgen.cli._run_model.run_model_argv", return_value=0):
@@ -148,7 +148,7 @@ class HashSeedRerun(unittest.TestCase):
     def test_step_models_never_rerun(self):
         # A STEP build has no ordering sensitivity; re-running it would cost a whole
         # interpreter start for nothing.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "0"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
                 mock.patch("subprocess.run") as run, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]), \
                 mock.patch("cadgen.cli._run_model.run_model_argv", return_value=0):
@@ -158,7 +158,7 @@ class HashSeedRerun(unittest.TestCase):
     def test_a_warm_dxf_run_skips_the_rerun(self):
         # The worker already has a stable seed, so paying an interpreter restart on
         # the warm path would be pure waste.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_WARM": "1"}, clear=False), \
+        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "1"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=0) as daemon, \
                 mock.patch("subprocess.run") as rerun, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]):

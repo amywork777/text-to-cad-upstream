@@ -65,11 +65,11 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
   // renderPackageAssetDir exists).
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const previousStore = process.env.CADGEN_STORE_DIR;
-  process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+  const previousStore = process.env.CADGEN_CACHE_DIR;
+  process.env.CADGEN_CACHE_DIR = path.join(root, ".store");
   t.after(() => {
-    if (previousStore === undefined) delete process.env.CADGEN_STORE_DIR;
-    else process.env.CADGEN_STORE_DIR = previousStore;
+    if (previousStore === undefined) delete process.env.CADGEN_CACHE_DIR;
+    else process.env.CADGEN_CACHE_DIR = previousStore;
   });
 
   const stepBytes = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n";
@@ -181,18 +181,18 @@ test(
   { skip: !cadgenPresent || !fs.existsSync(IMPORT_FIXTURE) },
   async (t) => {
     process.env.CADGEN_PYTHON = REPO_PYTHON;
-    process.env.CADGEN_WARM = "0"; // hermetic: no daemon spawned by a test
+    process.env.CADGEN_DAEMON = "0"; // hermetic: no daemon spawned by a test
     t.after(() => {
       delete process.env.CADGEN_PYTHON;
-      delete process.env.CADGEN_WARM;
+      delete process.env.CADGEN_DAEMON;
     });
     const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-standalone-import-")));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const previousStore = process.env.CADGEN_STORE_DIR;
-    process.env.CADGEN_STORE_DIR = path.join(root, ".store");
+    const previousStore = process.env.CADGEN_CACHE_DIR;
+    process.env.CADGEN_CACHE_DIR = path.join(root, ".store");
     t.after(() => {
-      if (previousStore === undefined) delete process.env.CADGEN_STORE_DIR;
-      else process.env.CADGEN_STORE_DIR = previousStore;
+      if (previousStore === undefined) delete process.env.CADGEN_CACHE_DIR;
+      else process.env.CADGEN_CACHE_DIR = previousStore;
     });
     // A bare STEP is a bare STEP: files carry no cadgen metadata, so any
     // .step without a package is simply importable, whatever produced it.

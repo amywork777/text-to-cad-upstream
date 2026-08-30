@@ -40,13 +40,13 @@ def build_entry(
 
     ``env`` overrides are applied on top of a hermetic base: warm daemon off,
     serial component workers (deterministic measurement), caches ON unless
-    the caller says otherwise. Callers isolate CADGEN_STORE_DIR themselves —
+    the caller says otherwise. Callers isolate CADGEN_CACHE_DIR themselves —
     the oracle never touches the user-level store.
     """
     entry_path = Path(entry_path).resolve()
     merged = dict(os.environ)
     merged.update({
-        "CADGEN_WARM": "0",
+        "CADGEN_DAEMON": "0",
         "CADGEN_COMPONENT_WORKERS": "1",
         "PYTHONPATH": str(CADGEN_SRC),
     })
@@ -151,7 +151,7 @@ def inspect_fingerprint(entry_path: Path, refs: list[str],
     volatile fields stripped."""
     entry_path = Path(entry_path).resolve()
     merged = dict(os.environ)
-    merged.update({"CADGEN_WARM": "0", "PYTHONPATH": str(CADGEN_SRC)})
+    merged.update({"CADGEN_DAEMON": "0", "PYTHONPATH": str(CADGEN_SRC)})
     merged.update(env or {})
     code = (
         "from cadgen.cli.step_inspect.cli import main\n"

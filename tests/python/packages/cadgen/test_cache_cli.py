@@ -1,6 +1,6 @@
 """``cadgen cache`` info/gc: dead generations go, live-and-young stays.
 
-The suite builds a synthetic cache root via CADGEN_STORE_DIR — the same knob
+The suite builds a synthetic cache root via CADGEN_CACHE_DIR — the same knob
 that governs every tier — so nothing here touches the developer's real cache.
 """
 
@@ -40,7 +40,7 @@ class CacheCliTest(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         patcher = mock.patch.dict(os.environ, {
-            "CADGEN_STORE_DIR": str(self.root),
+            "CADGEN_CACHE_DIR": str(self.root),
         })
         patcher.start()
         self.addCleanup(patcher.stop)

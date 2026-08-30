@@ -188,11 +188,11 @@ Every model run and `cadgen step export` / `cadgen import` / `cadgen step inspec
 `cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
 import. They are routed through a shared warm daemon **by default** — the
 decorator hands a directly-run script to the daemon before any kernel import —
-and `CADGEN_WARM=0` forces the cold path:
+and `CADGEN_DAEMON=0` forces the cold path:
 
 ```bash
 python path/to/part.py            # warm, no flag needed
-CADGEN_WARM=0 python part.py      # force a cold in-process run
+CADGEN_DAEMON=0 python part.py      # force a cold in-process run
 ```
 
 - The daemon is a **supervisor over a pool of warm worker processes**. It never imports

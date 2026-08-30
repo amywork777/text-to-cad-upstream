@@ -83,7 +83,7 @@ def _env(**extra) -> dict:
     env["PYTHONPATH"] = os.pathsep.join(
         [str(CADGEN_SRC), *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
-    env.pop("CADGEN_WARM", None)
+    env.pop("CADGEN_DAEMON", None)
     env.update({k: v for k, v in extra.items() if v is not None})
     return env
 
@@ -182,7 +182,7 @@ class _Daemon:
         self.log = daemon_client.log_path(self.address)
 
     def env(self) -> dict:
-        return {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
+        return {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
 
     def __enter__(self):
         return self
@@ -223,7 +223,7 @@ class WarmOutputEquivalence(unittest.TestCase):
 
     def _cold(self, name: str, source: str, argv: list[str]):
         tree = self._tree(name, source)
-        code, output = _run(argv, tree, CADGEN_WARM="0")
+        code, output = _run(argv, tree, CADGEN_DAEMON="0")
         self.assertEqual(code, 0, output)
         return _manifest(tree), output
 
@@ -274,7 +274,7 @@ class WarmOutputEquivalence(unittest.TestCase):
         cold, _ = self._cold("plate.py", DRAWING, argv)
         self.assertTrue(cold, "the cold DXF build produced nothing to compare")
         tree = self._tree("plate.py", DRAWING)
-        code, out = _run(argv, tree, CADGEN_WARM="1")
+        code, out = _run(argv, tree, CADGEN_DAEMON="1")
         self.assertEqual(code, 0, out)
         self.assertEqual(_manifest(tree), cold)
 
@@ -287,7 +287,7 @@ class WarmOutputEquivalence(unittest.TestCase):
             "    raise ValueError('bad radius')\n"
         )
         tree = self._tree("broken.py", broken)
-        cold_code, cold_out = _run(["broken.py"], tree, CADGEN_WARM="0")
+        cold_code, cold_out = _run(["broken.py"], tree, CADGEN_DAEMON="0")
         self.assertNotEqual(cold_code, 0)
 
         tree2 = self._tree("broken.py", broken)

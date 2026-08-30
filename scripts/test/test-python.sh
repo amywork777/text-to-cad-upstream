@@ -38,7 +38,7 @@ export CADGEN_STRICT_LOCKS=1
 # expects to run (and test runs would pollute the user's cache in return).
 CADGEN_TEST_CACHE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/cadgen-test-store.XXXXXX")"
 trap 'rm -rf "$CADGEN_TEST_CACHE_DIR"' EXIT
-export CADGEN_STORE_DIR="$CADGEN_TEST_CACHE_DIR"
+export CADGEN_CACHE_DIR="$CADGEN_TEST_CACHE_DIR"
 
 run_suite "cadgen package Python tests" "tests/python/packages/cadgen" "packages/cadgen/src"
 

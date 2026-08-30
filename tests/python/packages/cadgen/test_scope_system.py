@@ -75,13 +75,13 @@ def _package(compound: Compound, package_dir: Path) -> dict:
 class StoreIsolatedTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
-        os.environ["CADGEN_STORE_DIR"] = str(Path(self._tmp.name) / "store")
+        os.environ["CADGEN_CACHE_DIR"] = str(Path(self._tmp.name) / "store")
         with compose._lock:
             for key in compose._stats:
                 compose._stats[key] = 0
 
     def tearDown(self) -> None:
-        os.environ.pop("CADGEN_STORE_DIR", None)
+        os.environ.pop("CADGEN_CACHE_DIR", None)
         self._tmp.cleanup()
 
     def _dir(self, name: str) -> Path:

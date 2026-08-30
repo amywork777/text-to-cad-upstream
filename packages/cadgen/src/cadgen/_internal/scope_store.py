@@ -15,7 +15,7 @@ Anything else non-JSON-able on a node makes the value Unfreezable: the scope
 simply is not cached, and execution falls through (correctness never depends
 on a hit).
 
-Store layout (under the shared root, ``CADGEN_STORE_DIR`` override):
+Store layout (under the shared root, ``CADGEN_CACHE_DIR`` override):
 
     blobs/<sha256>.brep                      content-addressed leaf geometry
     scopes/v<salt>/<scope_key>/<closure_hash>.json   one entry per variant
@@ -49,7 +49,7 @@ class Unfreezable(Exception):
 
 
 def store_root() -> Path:
-    root = os.environ.get("CADGEN_STORE_DIR") or os.path.join(
+    root = os.environ.get("CADGEN_CACHE_DIR") or os.path.join(
         os.path.expanduser("~"), ".cache", "cadgen")
     return Path(root)
 

@@ -74,7 +74,7 @@ if (!fs.existsSync(path.join(args.dir, "step/parts/__cadgen__/models/cam_followe
 
 // ---- cache staging: cold pass = this component's entries moved aside -------
 function meshCacheDir() {
-  const override = (process.env.CADGEN_STORE_DIR || "").trim();
+  const override = (process.env.CADGEN_CACHE_DIR || "").trim();
   const base = override
     || (process.env.XDG_CACHE_HOME ? path.join(process.env.XDG_CACHE_HOME, "cadgen") : "")
     || path.join(os.homedir(), ".cache", "cadgen");

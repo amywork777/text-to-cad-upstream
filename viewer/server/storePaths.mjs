@@ -11,9 +11,9 @@ import path from "node:path";
 import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";
 
 // Inline mirror of cadgenCacheRootDir (same resolution rule as Python):
-// CADGEN_STORE_DIR, else the platform cache convention, else ~/.cache/cadgen.
+// CADGEN_CACHE_DIR, else the platform cache convention, else ~/.cache/cadgen.
 export function cadgenCacheRootDir(env = process.env) {
-  const override = (env.CADGEN_STORE_DIR || "").trim();
+  const override = (env.CADGEN_CACHE_DIR || "").trim();
   if (override) return override;
   if (process.platform === "win32") {
     const localAppData = (env.LOCALAPPDATA || "").trim();

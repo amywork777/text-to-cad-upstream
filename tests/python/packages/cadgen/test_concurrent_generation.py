@@ -119,7 +119,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
         # Library-first: the model script is its own CLI; run it COLD so the
         # test's in-process lock is the only peer in play.
         env = dict(os.environ)
-        env["CADGEN_WARM"] = "0"
+        env["CADGEN_DAEMON"] = "0"
         return subprocess.run(
             [sys.executable, str(self.generator), *extra],
             env=env,

@@ -33,7 +33,7 @@ TESSELLATE_JS = ROOT / "packages" / "cadjs" / "src" / "lib" / "surf" / "tessella
 def _node_resolve_root(env_overrides: dict[str, str]) -> str:
     from cadgen._internal.node_runtime import cad_node_executable
 
-    env = {k: v for k, v in os.environ.items() if k not in {"CADGEN_STORE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"}}
+    env = {k: v for k, v in os.environ.items() if k not in {"CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"}}
     env.update(env_overrides)
     module_url = CADJS_FS.resolve().as_uri()
     script = f"import({module_url!r}).then(m => process.stdout.write(m.cadgenCacheRootDir()))"
@@ -49,15 +49,15 @@ def _node_resolve_root(env_overrides: dict[str, str]) -> str:
 
 class CacheRootSyncTest(unittest.TestCase):
     def _python_root(self, env_overrides: dict[str, str]) -> str:
-        cleared = {"CADGEN_STORE_DIR": "", "XDG_CACHE_HOME": "", **env_overrides}
+        cleared = {"CADGEN_CACHE_DIR": "", "XDG_CACHE_HOME": "", **env_overrides}
         with mock.patch.dict(os.environ, cleared):
             return str(cache_paths.cache_root())
 
     def test_root_resolution_matches_between_python_and_js(self) -> None:
         cases = [
-            {"CADGEN_STORE_DIR": "/tmp/cadgen-sync-store"},
-            # CADGEN_STORE_DIR wins over the platform convention.
-            {"CADGEN_STORE_DIR": "/tmp/cadgen-sync-store", "XDG_CACHE_HOME": "/tmp/xdg"},
+            {"CADGEN_CACHE_DIR": "/tmp/cadgen-sync-store"},
+            # CADGEN_CACHE_DIR wins over the platform convention.
+            {"CADGEN_CACHE_DIR": "/tmp/cadgen-sync-store", "XDG_CACHE_HOME": "/tmp/xdg"},
         ]
         if os.name != "nt":
             cases.append({"XDG_CACHE_HOME": "/tmp/cadgen-sync-xdg"})
@@ -75,7 +75,7 @@ class CacheRootSyncTest(unittest.TestCase):
         # skill runtime has no cadjs tree). Pin the copied resolver's BODY,
         # not just its behavior somewhere: the three decision reads must
         # appear in both files.
-        for needle in ("CADGEN_STORE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"):
+        for needle in ("CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"):
             for path in (CADJS_FS, VIEWER_COPY):
                 self.assertIn(needle, path.read_text(), f"{needle} missing from {path.name}")
 

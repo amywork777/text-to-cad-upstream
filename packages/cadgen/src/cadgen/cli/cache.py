@@ -1,7 +1,7 @@
 """``cadgen cache`` — inspect and garbage-collect the user-level caches.
 
 The tiers all live under one root (``cadgen._internal.cache_paths``:
-``CADGEN_STORE_DIR``, else the platform cache dir, else ``~/.cache/cadgen``):
+``CADGEN_CACHE_DIR``, else the platform cache dir, else ``~/.cache/cadgen``):
 
 - ``components/`` — exact-geometry component store. The version salt is hashed
   INTO the cid, so dead generations are indistinguishable by name; age is the

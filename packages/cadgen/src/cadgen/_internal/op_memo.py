@@ -253,7 +253,7 @@ def _disk_dir() -> str:
     # Resolved per call so tests (and long-lived workers) honor env changes;
     # the makedirs is a no-op syscall next to any kernel op. The base comes
     # from the shared cache root (cache_paths, which also keeps honoring the
-    # relocated as one unit via CADGEN_STORE_DIR); the salt subdirectory
+    # relocated as one unit via CADGEN_CACHE_DIR); the salt subdirectory
     # is this tier's generation scheme, which `cadgen cache gc` reads by name.
     import build123d
 

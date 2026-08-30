@@ -17,11 +17,11 @@ function tmpRoot(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cad-scan-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   // Store-primary: isolate the user-level store per test.
-  const previous = process.env.CADGEN_STORE_DIR;
-  process.env.CADGEN_STORE_DIR = path.join(dir, ".store");
+  const previous = process.env.CADGEN_CACHE_DIR;
+  process.env.CADGEN_CACHE_DIR = path.join(dir, ".store");
   t.after(() => {
-    if (previous === undefined) delete process.env.CADGEN_STORE_DIR;
-    else process.env.CADGEN_STORE_DIR = previous;
+    if (previous === undefined) delete process.env.CADGEN_CACHE_DIR;
+    else process.env.CADGEN_CACHE_DIR = previous;
   });
   return dir;
 }

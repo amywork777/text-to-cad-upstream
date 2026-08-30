@@ -21,10 +21,10 @@ function tessellationCacheEnabled() {
 }
 
 // Inline mirror of cadgenCacheRootDir in the cadjs fs module (same resolution
-// rule as Python's cadgen/_internal/cache_paths.py): CADGEN_STORE_DIR, else
+// rule as Python's cadgen/_internal/cache_paths.py): CADGEN_CACHE_DIR, else
 // the platform cache convention, else ~/.cache/cadgen.
 function cadgenCacheRootDir(env = process.env) {
-  const override = (env.CADGEN_STORE_DIR || "").trim();
+  const override = (env.CADGEN_CACHE_DIR || "").trim();
   if (override) return override;
   if (process.platform === "win32") {
     const localAppData = (env.LOCALAPPDATA || "").trim();

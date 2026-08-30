@@ -28,14 +28,14 @@ PLANETARY = REPO_ROOT / "models/step/assemblies/planetary_gear_assembly.py"
 class OracleSmokeTest(unittest.TestCase):
     def setUp(self) -> None:
         self._store = tempfile.TemporaryDirectory()
-        self.env = {"CADGEN_STORE_DIR": self._store.name}
+        self.env = {"CADGEN_CACHE_DIR": self._store.name}
 
     def tearDown(self) -> None:
         self._store.cleanup()
 
     def _fingerprint(self):
         # Resolve against the CHILD's store: builds ran with the per-test
-        # CADGEN_STORE_DIR, and the store paths read env at call time.
+        # CADGEN_CACHE_DIR, and the store paths read env at call time.
         import os
         import unittest.mock
 

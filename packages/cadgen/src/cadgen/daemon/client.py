@@ -1,6 +1,6 @@
 """Stdlib-only client for the warm CAD CLI daemon.
 
-The tool launchers' ``CADGEN_WARM`` shim imports this module BEFORE any heavy
+The tool launchers' ``CADGEN_DAEMON`` shim imports this module BEFORE any heavy
 import, so it must stay dependency-free and cheap to import. Everything here
 falls back to ``None`` (caller runs inline, cold) on any spawn or protocol
 problem — the daemon is a fast path, never a requirement.
@@ -121,7 +121,7 @@ def run_via_daemon(
     # avoid it for exactly that. The pool removed the reason: a burst spawns workers up
     # to the cap and overflows cold rather than queueing. An optimisation nobody enables
     # is the same as not having one.
-    if os.environ.get("CADGEN_WARM") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
+    if os.environ.get("CADGEN_DAEMON") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
     if not daemon_supported():
         return None
@@ -303,7 +303,7 @@ def invoke(module: str, args, repo_root: str) -> dict | None:
     uses this in place of the warm-worker system it used to own, so a terminal build and
     a viewer build now share one set of warm processes.
 
-    Unlike run_via_daemon this does NOT gate on CADGEN_WARM: a long-lived
+    Unlike run_via_daemon this does NOT gate on CADGEN_DAEMON: a long-lived
     server is exactly the caller that should always prefer warm.
     """
     if os.environ.get("CADGEN_DAEMON_CHILD"):

@@ -180,7 +180,7 @@ every producer.
 
 ### Storage tiers, in one rule
 
-`~/.cache/cadgen` (or `$CADGEN_STORE_DIR`, or the platform cache dir —
+`~/.cache/cadgen` (or `$CADGEN_CACHE_DIR`, or the platform cache dir —
 `$XDG_CACHE_HOME`/`%LOCALAPPDATA%`; one resolution rule in cadgen's
 `_internal/cache_paths.py`, mirrored by `cadgenCacheRootDir` in the JS store
 modules and sync-tested) holds everything CONTENT-ADDRESSED and DISPOSABLE:

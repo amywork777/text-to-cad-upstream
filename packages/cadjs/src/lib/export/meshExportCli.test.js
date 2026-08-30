@@ -37,8 +37,8 @@ function runCli(cliArgs, env = {}) {
   return spawnSync(process.execPath, [CLI, ...cliArgs], {
     encoding: "utf-8",
     // Blank the cache-root overrides so a sandboxed HOME really contains the
-    // store (the root resolves CADGEN_STORE_DIR and XDG_CACHE_HOME first).
-    env: { ...process.env, CADGEN_STORE_DIR: "", XDG_CACHE_HOME: "", ...env },
+    // store (the root resolves CADGEN_CACHE_DIR and XDG_CACHE_HOME first).
+    env: { ...process.env, CADGEN_CACHE_DIR: "", XDG_CACHE_HOME: "", ...env },
   });
 }
 

@@ -49,7 +49,7 @@ def run_script(script: str, *args: str) -> subprocess.CompletedProcess:
     env["PYTHONPATH"] = os.pathsep.join(
         [own_cadgen, *([env["PYTHONPATH"]] if env.get("PYTHONPATH") else [])]
     )
-    env["CADGEN_WARM"] = "0"
+    env["CADGEN_DAEMON"] = "0"
     return subprocess.run(
         [sys.executable, str(REPO / script), *args],
         cwd=REPO, capture_output=True, text=True, check=False, env=env,

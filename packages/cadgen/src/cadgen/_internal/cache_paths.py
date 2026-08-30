@@ -4,7 +4,7 @@ Every user-level cache (the component store, the op-memo disk tier, the shared
 mesh/tessellation cache) lives under a single root so one env knob relocates
 everything and one command (``cadgen cache``) can reason about all of it:
 
-1. ``$CADGEN_STORE_DIR`` when set — the explicit override, honored by BOTH
+1. ``$CADGEN_CACHE_DIR`` when set — the explicit override, honored by BOTH
    languages and every tier.
 2. The platform cache convention: ``$XDG_CACHE_HOME/cadgen`` on POSIX when
    set; ``%LOCALAPPDATA%\\cadgen`` on Windows when set. (Windows behavior is
@@ -35,7 +35,7 @@ MESH_TESSELLATION_VERSION = 1
 
 
 def cache_root() -> Path:
-    override = os.environ.get("CADGEN_STORE_DIR", "").strip()
+    override = os.environ.get("CADGEN_CACHE_DIR", "").strip()
     if override:
         return Path(override)
     if os.name == "nt":
@@ -55,7 +55,7 @@ def components_dir() -> Path:
 
 def opmemo_base_dir() -> Path:
     """The op-memo tier's base (one salt-named subdirectory per generation).
-    Relocation is ``CADGEN_STORE_DIR``, like every other tier."""
+    Relocation is ``CADGEN_CACHE_DIR``, like every other tier."""
     return cache_root() / "opmemo"
 
 

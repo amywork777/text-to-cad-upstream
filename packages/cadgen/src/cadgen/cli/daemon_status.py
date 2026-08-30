@@ -74,7 +74,7 @@ def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
             return 0
         sys.stdout.write(
             "No CAD daemon is running. One starts on the next build "
-            "(set CADGEN_WARM=0 to keep builds cold).\n"
+            "(set CADGEN_DAEMON=0 to keep builds cold).\n"
         )
         return 0
     sys.stdout.write(_render(status) + "\n")

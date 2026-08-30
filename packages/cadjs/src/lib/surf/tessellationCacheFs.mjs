@@ -18,12 +18,12 @@ export function tessellationCacheEnabled(env = process.env) {
 
 // ONE resolution rule for the user-level cadgen cache root, mirrored from the
 // Python authority (cadgen/_internal/cache_paths.py — sync-tested by
-// tests/python/global/test_cache_root_sync.py): CADGEN_STORE_DIR override,
+// tests/python/global/test_cache_root_sync.py): CADGEN_CACHE_DIR override,
 // else the platform cache convention (XDG_CACHE_HOME on POSIX, LOCALAPPDATA
 // on Windows — the latter untested in CI, keep it trivially auditable), else
 // ~/.cache/cadgen.
 export function cadgenCacheRootDir(env = process.env) {
-  const override = (env.CADGEN_STORE_DIR || "").trim();
+  const override = (env.CADGEN_CACHE_DIR || "").trim();
   if (override) return override;
   if (process.platform === "win32") {
     const localAppData = (env.LOCALAPPDATA || "").trim();

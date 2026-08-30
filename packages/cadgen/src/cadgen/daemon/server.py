@@ -58,7 +58,7 @@ REQUEST_READ_TIMEOUT_SECONDS = 30.0
 CLIENT_LIVENESS_INTERVAL_SECONDS = 0.5
 
 # Parser modules are imported directly rather than through a skill's launcher, so the
-# daemon skips that launcher's CADGEN_WARM shim -- which would otherwise route straight
+# daemon skips that launcher's CADGEN_DAEMON shim -- which would otherwise route straight
 # back here. They are ordinary cadgen modules now, so this no longer depends on a skill's
 # sys.path being set up first.
 _TOOL_IMPORTS = {
@@ -523,7 +523,7 @@ USAGE = """\
 cadgen-daemon takes no arguments.
 
 It is the warm-process server, started for you by cadgen.daemon.client when
-CADGEN_WARM=1 -- not a command to run by hand. It sits in scripts/ beside the
+CADGEN_DAEMON=1 -- not a command to run by hand. It sits in scripts/ beside the
 CLIs you probably meant: python <model>.py, cadgen step export, cadgen step inspect,
 cadgen import, cadgen snapshot. Each of those takes --help.\
 """

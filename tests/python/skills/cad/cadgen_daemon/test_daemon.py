@@ -79,8 +79,8 @@ class CadgenDaemonTests(unittest.TestCase):
         (cls.model_dir / "box.py").write_text(BOX_SOURCE, encoding="utf-8")
 
         # Build inline (cold) first so the daemon request is a warm current-skip.
-        build_env = {k: v for k, v in os.environ.items() if k != "CADGEN_WARM"}
-        build_env["CADGEN_WARM"] = "0"  # inline: the daemon under test starts below
+        build_env = {k: v for k, v in os.environ.items() if k != "CADGEN_DAEMON"}
+        build_env["CADGEN_DAEMON"] = "0"  # inline: the daemon under test starts below
         build = subprocess.run(
             [sys.executable, "box.py"],
             cwd=cls.model_dir,
@@ -138,7 +138,7 @@ class CadgenDaemonTests(unittest.TestCase):
         cls.socket_dir.cleanup()
 
     def _warm_run(self, argv: list[str]) -> tuple[int | None, str]:
-        env = {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
+        env = {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
         out, err = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, env):
             os.environ.pop("CADGEN_DAEMON_CHILD", None)
@@ -225,10 +225,10 @@ class CadgenDaemonTests(unittest.TestCase):
         )
 
         # And it still serves: the pool replaces the killed worker on the next acquire.
-        # run_via_daemon gates on CADGEN_WARM, which this test process does not set.
+        # run_via_daemon gates on CADGEN_DAEMON, which this test process does not set.
         with mock.patch.dict(
             os.environ,
-            {"CADGEN_WARM": "1", "CADGEN_DAEMON_SOCKET": str(self.address)},
+            {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": str(self.address)},
         ):
             exit_code = daemon_client.run_via_daemon(
                 "run", ["box_orphan.py"], str(self.model_dir)

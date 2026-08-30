@@ -155,10 +155,10 @@ def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
     CADGEN_DAEMON_CHILD is set in the process the daemon serves from, so this cannot
     recurse. A daemon that is not installed or not running just falls through.
     """
-    # Warm by default; CADGEN_WARM=0 opts out. There are two gates on this path -- this
+    # Warm by default; CADGEN_DAEMON=0 opts out. There are two gates on this path -- this
     # one and the client's -- and only changing the client's left the default a no-op,
     # which a live check caught rather than any test.
-    if os.environ.get("CADGEN_WARM") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
+    if os.environ.get("CADGEN_DAEMON") == "0" or os.environ.get("CADGEN_DAEMON_CHILD"):
         return None
     try:
         from cadgen.daemon.client import run_via_daemon
