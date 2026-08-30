@@ -48,6 +48,17 @@ def drawing():
 Two layers, when the part is both cut and marked:
 
 ```python
+"""Standalone 2D drawing with a marking layer."""
+
+from __future__ import annotations
+
+from cadgen import build123d as bd
+from cadgen import dxf
+
+WIDTH_MM = 40.0
+HEIGHT_MM = 20.0
+
+
 @dxf
 def drawing():
     with bd.BuildSketch() as cut:
