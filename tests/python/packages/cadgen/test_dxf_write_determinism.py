@@ -1,0 +1,270 @@
+"""Written DXF bytes are a function of drawing content, not traversal order.
+
+The engine owns DXF serialization (design/dxf-build123d.md): a ``@dxf``
+function returns build123d 2D geometry and :mod:`cadgen._internal.dxf_emit`
+writes it. Two things could make identical geometry write different bytes:
+
+* **ezdxf's volatile provenance** — two random GUIDs, four Julian timestamps
+  and two ``"<version> @ <iso>"`` marker comments, all stamped per save. The
+  emitter pins them.
+* **entity order** — ``ExportDXF`` converts ``shape.edges()`` in OCC traversal
+  order, which is not a property of the drawing. The emitter sorts edges by
+  geometric content instead, so an OCP upgrade that reorders traversal cannot
+  churn a committed fixture.
+
+The rig below is the shape of drawing that exercises both: several layers,
+exact ARCs from a kerf offset, CIRCLEs, LINEs, and SPLINE text outlines. It is
+rebuilt from scratch for every run — fresh kernel objects, fresh traversal —
+and must hash identically, in-process and across processes.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import unittest
+
+from tests.python.support.paths import add_repo_path
+
+CADGEN_SRC = add_repo_path("packages/cadgen/src")
+
+
+_RIG_SOURCE = """
+import build123d as bd
+
+
+def build_drawing():
+    with bd.BuildSketch() as cut:
+        bd.Rectangle(60, 40)
+        bd.Circle(8, mode=bd.Mode.SUBTRACT)
+        with bd.Locations((-24, -14), (24, -14), (-24, 14), (24, 14)):
+            bd.Circle(2.25, mode=bd.Mode.SUBTRACT)
+    with bd.BuildSketch() as mark:
+        bd.Text("REV B", font_size=6)
+    # offset() keeps exact ARCs at the corners -- the entity kind the shapely
+    # path could never produce.
+    return {"CUT": bd.offset(cut.sketch, amount=0.15), "ENGRAVE": mark.sketch}
+"""
+
+exec(compile(_RIG_SOURCE, "<dxf-determinism-rig>", "exec"), globals())  # noqa: S102
+
+
+def _digest() -> str:
+    from cadgen._internal.dxf_emit import emit_dxf
+
+    payload, _ = emit_dxf(build_drawing(), label="determinism-rig")  # noqa: F821
+    return hashlib.sha256(payload).hexdigest()
+
+
+class DxfWriteDeterminismTest(unittest.TestCase):
+    def test_three_fresh_builds_write_identical_bytes(self) -> None:
+        digests = {_digest() for _ in range(3)}
+        self.assertEqual(
+            len(digests),
+            1,
+            f"identical drawings wrote {len(digests)} distinct byte streams: {sorted(digests)}",
+        )
+
+    def test_digest_matches_across_processes(self) -> None:
+        """A separate interpreter — different heap, different hash seed — must
+        agree. Byte-determinism is engineered here, so the PYTHONHASHSEED
+        re-exec the old ezdxf pipeline needed is gone; this is what replaced it.
+
+        The unset seed (``"random"``) is the case that matters and the one that
+        caught the CLASSES-section ordering: ezdxf registers required classes by
+        iterating a SET of entity-type strings, so a cold run wrote one of two
+        byte streams at random until the emitter sorted that registry.
+        """
+        script = "\n".join(
+            [
+                "import hashlib, json, sys",
+                f"sys.path.insert(0, {str(CADGEN_SRC)!r})",
+                _RIG_SOURCE,
+                "from cadgen._internal.dxf_emit import emit_dxf",
+                'payload, _ = emit_dxf(build_drawing(), label="determinism-rig")',
+                'print(json.dumps({"digest": hashlib.sha256(payload).hexdigest()}))',
+            ]
+        )
+        expected = _digest()
+        for seed in ("0", "12345", "random", "random", "random", "random"):
+            environment = dict(os.environ)
+            environment.pop("PYTHONHASHSEED", None)
+            if seed != "random":
+                environment["PYTHONHASHSEED"] = seed
+            environment["CADGEN_DAEMON"] = "0"
+            completed = subprocess.run(
+                [sys.executable, "-c", script],
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            payload = json.loads(completed.stdout.strip().splitlines()[-1])
+            self.assertEqual(
+                payload["digest"],
+                expected,
+                f"cross-process digest differs at PYTHONHASHSEED={seed}",
+            )
+
+    def test_layer_and_edge_order_do_not_reach_the_bytes(self) -> None:
+        """The same drawing described in a different ORDER is the same file."""
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        forward = build_drawing()  # noqa: F821
+        reversed_layers = dict(reversed(list(build_drawing().items())))  # noqa: F821
+        first, _ = emit_dxf(forward, label="rig")
+        second, _ = emit_dxf(reversed_layers, label="rig")
+        self.assertEqual(hashlib.sha256(first).hexdigest(), hashlib.sha256(second).hexdigest())
+
+    def test_sort_key_is_content_only(self) -> None:
+        """The ordering key must not encode traversal position or identity.
+
+        Two independently constructed copies of one edge — different objects,
+        different traversal history — must produce the same key, and shuffling
+        an edge list must not change the sorted result.
+        """
+        import random
+
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import _edge_sort_key
+
+        left = bd.Line((0, 0), (10, 0)).edges()[0]
+        right = bd.Line((0, 0), (10, 0)).edges()[0]
+        self.assertIsNot(left, right)
+        self.assertEqual(_edge_sort_key(left), _edge_sort_key(right))
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(20, 10)
+            bd.Circle(3, mode=bd.Mode.SUBTRACT)
+        edges = list(sketch.sketch.edges())
+        canonical = [_edge_sort_key(edge) for edge in sorted(edges, key=_edge_sort_key)]
+        shuffled = list(edges)
+        random.Random(7).shuffle(shuffled)
+        self.assertEqual(
+            canonical, [_edge_sort_key(edge) for edge in sorted(shuffled, key=_edge_sort_key)]
+        )
+
+    def test_volatile_provenance_is_pinned(self) -> None:
+        """The six volatile header fields carry their pinned constants.
+
+        Probed empirically (build123d 0.11.1 / ezdxf 1.4.4): two exports of one
+        drawing differ ONLY in $FINGERPRINTGUID, $VERSIONGUID and the two marker
+        comments, with the four $TD* Julian stamps volatile across days.
+        """
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        payload, _ = emit_dxf(build_drawing(), label="rig")  # noqa: F821
+        text = payload.decode("utf-8")
+        lines = [line.strip() for line in text.split("\n")]
+        for header in ("$FINGERPRINTGUID", "$VERSIONGUID"):
+            self.assertIn(header, lines)
+            self.assertEqual(lines[lines.index(header) + 2], "{00000000-0000-0000-0000-000000000000}")
+        for header in ("$TDCREATE", "$TDUCREATE", "$TDUPDATE", "$TDUUPDATE"):
+            self.assertIn(header, lines)
+            self.assertEqual(lines[lines.index(header) + 2], "2451545.0")
+        self.assertEqual(text.count("0.0 @ 2000-01-01T00:00:00.000000+00:00"), 2)
+
+    def test_class_registry_is_sorted(self) -> None:
+        """The CLASSES section is emitted in class-name order, not set order."""
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        payload, _ = emit_dxf(build_drawing(), label="rig")  # noqa: F821
+        lines = [line.strip() for line in payload.decode("utf-8").split("\n")]
+        start = lines.index("CLASSES")
+        end = lines.index("ENDSEC", start)
+        # A CLASS record is "CLASS", group code "1", then the class name.
+        names = [lines[index + 2] for index in range(start, end) if lines[index] == "CLASS"]
+        self.assertGreaterEqual(len(names), 2, "rig must register several classes")
+        self.assertEqual(names, sorted(names))
+
+    def test_offset_keeps_exact_arcs(self) -> None:
+        """Kerf compensation must survive as true ARCs, not polygonized noise —
+        the whole reason the shapely path stops being primary."""
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        _, document = emit_dxf(build_drawing(), label="rig")  # noqa: F821
+        kinds = {entity.dxftype() for entity in document.modelspace()}
+        self.assertIn("ARC", kinds)
+        self.assertIn("CIRCLE", kinds)
+        self.assertIn("SPLINE", kinds)
+
+
+class DxfEmitContractTest(unittest.TestCase):
+    def test_off_plane_geometry_raises_with_a_relocation_hint(self) -> None:
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import OffPlaneGeometryError, emit_dxf
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(10, 5)
+        lifted = bd.Location((0, 0, 5)) * sketch.sketch
+        with self.assertRaises(OffPlaneGeometryError) as caught:
+            emit_dxf(lifted, label="lifted.py")
+        message = str(caught.exception)
+        self.assertIn("off the XY plane", message)
+        self.assertIn("bd.Location((0, 0, -z))", message)
+
+    def test_bare_shape_lands_on_the_cut_layer(self) -> None:
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(10, 5)
+        bare, _ = emit_dxf(sketch.sketch, label="rig")
+        named, _ = emit_dxf({"CUT": sketch.sketch}, label="rig")
+        self.assertEqual(bare, named)
+
+    def test_labelled_compound_normalizes_like_the_dict(self) -> None:
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        cut = bd.Rectangle(10, 5).face()
+        cut.label = "CUT"
+        engrave = bd.Rectangle(4, 2).face()
+        engrave.label = "ENGRAVE"
+        compound, _ = emit_dxf(bd.Compound(children=[cut, engrave]), label="rig")
+        mapping, _ = emit_dxf({"CUT": cut, "ENGRAVE": engrave}, label="rig")
+        self.assertEqual(compound, mapping)
+
+    def test_ezdxf_document_return_raises_the_teaching_error(self) -> None:
+        import ezdxf
+
+        from cadgen._internal.dxf_emit import DxfContractError, emit_dxf
+
+        for value in (ezdxf.new("R2010"), {"document": ezdxf.new("R2010")}):
+            with self.assertRaises(DxfContractError) as caught:
+                emit_dxf(value, label="old_drawing.py")
+            message = str(caught.exception)
+            self.assertIn("That contract is removed", message)
+            self.assertIn("from cadgen import build123d as bd", message)
+            self.assertIn("skills/dxf/SKILL.md", message)
+
+    def test_non_geometry_return_raises(self) -> None:
+        from cadgen._internal.dxf_emit import DxfContractError, emit_dxf
+
+        with self.assertRaises(DxfContractError):
+            emit_dxf(42, label="rig")
+        with self.assertRaises(DxfContractError):
+            emit_dxf({"CUT": "not geometry"}, label="rig")
+
+    def test_invalid_layer_names_raise(self) -> None:
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import DxfContractError, emit_dxf
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(10, 5)
+        for name in ("", "   ", "CUT/2"):
+            with self.assertRaises(DxfContractError):
+                emit_dxf({name: sketch.sketch}, label="rig")
+
+
+if __name__ == "__main__":
+    unittest.main()
