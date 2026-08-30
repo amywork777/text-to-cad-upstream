@@ -72,5 +72,5 @@ they are authored concept packages, not the imported robot fixtures that
 
 Some packages keep a `render/` (or `renders/`) subfolder holding snapshot job
 templates and presentation-theme JSON. Those configs are committed; the
-generated PNG/GIF output beside them stays gitignored per the repo-wide media
+generated PNG output beside them stays gitignored per the repo-wide media
 rules in `.gitignore`.

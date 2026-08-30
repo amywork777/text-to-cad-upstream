@@ -10,8 +10,7 @@ import {
 } from "./stepModule.js";
 import {
   normalizeStepParameterRenderValues,
-  stepParameterRenderFrameProgress,
-  stepParameterRenderFrameValues
+  stepParameterRenderValues
 } from "../../common/stepParameters.js";
 import {
   createStepModuleEffectsApi,
@@ -240,7 +239,7 @@ test("STEP module transform detection ignores floating point pose noise", () => 
   assert.equal(transforms.length, 1);
 });
 
-test("STEP render parameters normalize static values and animated numeric ranges", () => {
+test("STEP render parameters normalize static values from bare and envelope forms", () => {
   const definition = normalizeStepModuleDefinition({
     manifest: {
       schemaVersion: 1,
@@ -251,34 +250,23 @@ test("STEP render parameters normalize static values and animated numeric ranges
       }
     }
   });
-  const params = normalizeStepParameterRenderValues(definition, {
-    values: {
-      visible: false,
-      mode: "ghost"
-    },
-    animate: {
-      drive: { from: 0, to: 360 }
-    },
-    durationSeconds: 2,
-    fps: 4
+  const enveloped = normalizeStepParameterRenderValues(definition, {
+    values: { drive: 180, visible: false, mode: "ghost" }
   });
-
-  assert.equal(params.animated, true);
-  assert.equal(params.frameCount, 8);
-  assert.deepEqual(stepParameterRenderFrameValues(definition, params, 0), {
-    drive: 0,
-    visible: false,
-    mode: "ghost"
-  });
-  assert.deepEqual(stepParameterRenderFrameValues(definition, params, 4), {
+  const bare = normalizeStepParameterRenderValues(definition, {
     drive: 180,
     visible: false,
     mode: "ghost"
   });
-  assert.equal(stepParameterRenderFrameProgress(params, 7), 7 / 8);
+  assert.deepEqual(enveloped, bare);
+  assert.deepEqual(stepParameterRenderValues(enveloped), {
+    drive: 180,
+    visible: false,
+    mode: "ghost"
+  });
 });
 
-test("non-looping STEP render parameters include the final animated endpoint", () => {
+test("STEP render parameters reject unknown ids and retired animation keys", () => {
   const definition = normalizeStepModuleDefinition({
     manifest: {
       schemaVersion: 1,
@@ -287,43 +275,23 @@ test("non-looping STEP render parameters include the final animated endpoint", (
       }
     }
   });
-  const params = normalizeStepParameterRenderValues(definition, {
-    animate: {
-      drive: { from: 0, to: 360 }
-    },
-    durationSeconds: 1,
-    fps: 4,
-    loop: false
-  });
-
-  assert.equal(params.frameCount, 4);
-  assert.equal(stepParameterRenderFrameProgress(params, 3), 1);
-  assert.deepEqual(stepParameterRenderFrameValues(definition, params, 3), {
-    drive: 360
-  });
-});
-
-test("STEP render parameters reject unknown ids and non-number animation ranges", () => {
-  const definition = normalizeStepModuleDefinition({
-    manifest: {
-      schemaVersion: 1,
-      parameters: {
-        drive: { type: "number", min: 0, max: 360, default: 0 },
-        visible: { type: "boolean", default: true }
-      }
-    }
-  });
 
   assert.throws(
     () => normalizeStepParameterRenderValues(definition, { missing: 1 }),
     /Unknown STEP parameter/
   );
-  assert.throws(
-    () => normalizeStepParameterRenderValues(definition, {
-      animate: {
-        visible: { from: 0, to: 1 }
-      }
-    }),
-    /must be numeric/
-  );
+  // Animated sweeps are deleted, not ignored: every retired envelope key
+  // fails loudly so an old recipe cannot silently render a still.
+  for (const retired of [
+    { animate: { drive: { from: 0, to: 360 } } },
+    { fps: 4 },
+    { durationSeconds: 2 },
+    { duration: 2 },
+    { loop: false }
+  ]) {
+    assert.throws(
+      () => normalizeStepParameterRenderValues(definition, retired),
+      /was removed: animated parameter sweeps no longer render/
+    );
+  }
 });

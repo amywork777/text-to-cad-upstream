@@ -255,7 +255,7 @@ Validation:
 - Major planes/refs: <summary>
 - Positioning: <frame/measure/align results if relevant>
 - Feature checks: <holes, cutouts, bosses, etc.>
-- Visual review: `$cad-viewer` viewer link returned; CAD `cadgen step snapshot` PNG/GIF included or skipped with reason; follow-up geometry checks for any visual findings
+- Visual review: `$cad-viewer` viewer link returned; CAD `cadgen step snapshot` PNG included or skipped with reason; follow-up geometry checks for any visual findings
 ```
 
 Do not claim:

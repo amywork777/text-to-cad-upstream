@@ -81,13 +81,12 @@ The validator collects all findings in one pass (severity, code, XML path). It p
 
 ## Snapshot Tool
 
-`cadgen snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
+`cadgen snapshot` renders the robot to a PNG still, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
 cadgen snapshot --input path/to/robot.srdf --output review.png
-cadgen snapshot --input path/to/robot.srdf --output turntable.gif --mode orbit
 ```
 
 It accepts `.srdf` only. Pose the robot with the job field `"jointValues"` (joint name to

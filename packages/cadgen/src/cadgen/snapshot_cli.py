@@ -58,8 +58,6 @@ from cadgen.snapshot_core import (
     DISPLAY_OPTION_KEYS,
     MESH_INPUT_KINDS,
     MESH_SUPPORTED_RENDER_MODES,
-    ORBIT_RENDER_HEIGHT,
-    ORBIT_RENDER_WIDTH,
     PRESENTATION_LARGE_RENDER_HEIGHT,
     PRESENTATION_LARGE_RENDER_WIDTH,
     PRESENTATION_RENDER_HEIGHT,
@@ -109,7 +107,7 @@ from cadgen.snapshot_core import (
     resolve_snapshot_route_file,
     route_file,
     snapshot_timestamp,
-    step_parameter_render_values_are_animated,
+    reject_animated_step_parameters,
     validate_direct_settings_payload,
     validate_display_settings_values,
     with_snapshot_timeout,
@@ -119,9 +117,8 @@ from cadgen.snapshot_core import (
 
 
 # SUPPORTED_RENDER_MODES is the union across every kind -- "is that a mode at all?" -- so
-# each kind still has to name its own. A STEP model is swept through an animated --params
-# sweep in `view` mode.
-STEP_SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list"}
+# each kind still has to name its own.
+STEP_SUPPORTED_RENDER_MODES = {"view", "section", "list"}
 
 # Imported lazily by ensure_render_job_step_artifact: only a STEP input needs it, and
 # importing it eagerly would drag OCP into a robot or mesh snapshot that never builds
@@ -219,7 +216,6 @@ KIND_MODES: dict[str, frozenset[str]] = {
 
 _MODE_BLURBS = {
     "view": "one still image per output (default)",
-    "orbit": "360-degree turntable GIF",
     "section": "cutaway sweep",
     "list": "part occurrence refs as JSON; writes no files",
 }
@@ -257,13 +253,12 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapsh
         "  --output/-o PATH  a file path is written EXACTLY there (a relative one against the",
         "                    current directory) and is cleared first, so a failed render leaves",
         "                    no file at all; a directory gets a generated timestamped name",
-        "                    inside it. .gif only in orbit mode"
-        + (" (or an animated --params sweep)" if has_step else ""),
+        "                    inside it",
         "  --job PATH        one render job, an array of them, or { \"jobs\": [...] }; - reads stdin",
         "  --camera VALUE    a preset, an azimuth:elevation pair, or JSON with preset/position/target/up/zoom",
         "  --theme VALUE     see Theme below",
         *(["  --display VALUE   see Display below"] if has_step else []),
-        "  --size-profile ID simple, diagnostic, labeled, assembly, presentation, orbit, contact-sheet",
+        "  --size-profile ID simple, diagnostic, labeled, assembly, presentation, contact-sheet",
         "  --width/--height  pixels, overriding the size profile",
         "  --json            print the render result as JSON on stdout",
     ]
@@ -1056,7 +1051,7 @@ def resolve_step_render_job(
     **_kind_context: object,
 ) -> dict[str, object]:
     has_param_render = has_step_parameter_render_values(job.get("stepParameters"))
-    animated_params = step_parameter_render_values_are_animated(job.get("stepParameters"))
+    reject_animated_step_parameters(job.get("stepParameters"))
     # Parameter values drive the model's declarative pose block (descriptor
     # `pose`, authored via @step(pose=...)). The retired sidecar-path key is
     # rejected upfront in job normalization with a teaching error.
@@ -1093,10 +1088,6 @@ def resolve_step_render_job(
         )
     if has_param_render and mode != "view":
         raise SnapshotError("stepParameters support only view mode; set display.mode for display-style changes")
-
-    outputs = job.get("outputs") if isinstance(job.get("outputs"), list) else []
-    if animated_params and len(outputs) != 1:
-        raise SnapshotError("animated stepParameters require exactly one output")
 
     resolved: dict[str, object] = {
         "rootPath": str(root_path),

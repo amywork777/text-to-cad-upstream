@@ -419,8 +419,8 @@ class SnapshotCliTests(unittest.TestCase):
                             },
                             {
                                 "input": "models/part.step",
-                                "mode": "orbit",
-                                "outputs": [{"path": "tmp/orbit.gif"}],
+                                "mode": "section",
+                                "outputs": [{"path": "tmp/section.png"}],
                             },
                         ]
                     },
@@ -436,13 +436,13 @@ class SnapshotCliTests(unittest.TestCase):
                 for output in job["outputs"]
             ]
 
-        self.assertEqual(output_paths, ["tmp/iso.png", "tmp/front.png", "tmp/orbit.gif"])
+        self.assertEqual(output_paths, ["tmp/iso.png", "tmp/front.png", "tmp/section.png"])
 
     def test_a_directory_output_gets_a_generated_name_inside_it(self) -> None:
         """The don't-care case: `--output tmp/` names no file, so one is generated
-        -- timestamped, inside that directory, with the extension the render will
-        actually encode. A trailing separator counts before the directory exists;
-        an existing directory counts without one."""
+        -- timestamped, inside that directory, always ``.png`` (snapshot is
+        PNG-only). A trailing separator counts before the directory exists; an
+        existing directory counts without one."""
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory).resolve()
             models = root / "models"
@@ -463,12 +463,6 @@ class SnapshotCliTests(unittest.TestCase):
                             {"input": "models/part.step", "outputs": [{"path": "tmp/"}]},
                             # No trailing slash, but the directory is already there.
                             {"input": "models/part.step", "outputs": [{"path": "shots"}]},
-                            # Orbit encodes a GIF, so the generated name says .gif.
-                            {
-                                "input": "models/part.step",
-                                "mode": "orbit",
-                                "outputs": [{"path": "tmp/"}],
-                            },
                             # Several outputs into one directory stay distinct.
                             {
                                 "input": "models/part.step",
@@ -495,9 +489,8 @@ class SnapshotCliTests(unittest.TestCase):
             [
                 "tmp/part_j1_20260527T163012Z.png",
                 "shots/part_j2_20260527T163012Z.png",
-                "tmp/part_j3_20260527T163012Z.gif",
-                "tmp/part_j4_1_20260527T163012Z.png",
-                "tmp/part_j4_2_20260527T163012Z.png",
+                "tmp/part_j3_1_20260527T163012Z.png",
+                "tmp/part_j3_2_20260527T163012Z.png",
             ],
         )
 
@@ -793,7 +786,7 @@ class SnapshotCliTests(unittest.TestCase):
         """--json must not echo the rendered bytes back. dataUrl/text are how the browser
         returns them for write_output_payload to decode; by report time the file is on disk
         and `path` names it. Echoing them cost 228 KB of stdout for one PNG and 1.7 MB --
-        ~445k tokens -- for an orbit GIF.
+        ~445k tokens -- for a large presentation PNG.
 
         This used to be a filter over the browser dict, which had to KNOW every payload
         key. SnapshotResult has no field one could land in, so a new payload key in the
@@ -1230,36 +1223,36 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertEqual(resolved["kind"], "glb")
         self.assertTrue(urlparse(str(resolved["inputUrl"])).path.endswith("widget.glb"))
 
-    def test_render_job_supports_orbit_for_mesh_input(self) -> None:
+    def test_render_job_rejects_orbit_mode(self) -> None:
+        # GIF export is deleted, and orbit mode went with it: the mode is not in
+        # any kind's supported set any more.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            packet = resolve_render_job_packet(
-                {"input": "models/widget.glb", "mode": "orbit", "outputs": [{"path": "tmp/orbit.gif"}]},
-                cwd=root,
-            )
-        self.assertEqual(packet["jobs"][0]["mode"], "orbit")
-        self.assertEqual(packet["jobs"][0]["resolved"]["kind"], "glb")
+            with self.assertRaisesRegex(SnapshotError, "Unsupported render mode: orbit"):
+                resolve_render_job_packet(
+                    {"input": "models/widget.glb", "mode": "orbit", "outputs": [{"path": "tmp/spin.png"}]},
+                    cwd=root,
+                )
 
-    def test_render_job_rejects_static_gif_outside_orbit_mode(self) -> None:
-        # A .gif output in a static job would silently save a single frame; the
-        # CLI must instead point at orbit mode or animated params.
+    def test_render_job_rejects_gif_outputs(self) -> None:
+        # Snapshot is PNG-only; a .gif output fails loudly instead of saving a
+        # still under an animation-suggesting name.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "renders a single frame.*--mode orbit"):
+            with self.assertRaisesRegex(SnapshotError, "GIF export was removed"):
                 resolve_render_job_packet(
                     {"input": "models/widget.glb", "outputs": [{"path": "tmp/spin.gif", "camera": "iso"}]},
                     cwd=root,
                 )
 
-    def test_render_job_allows_gif_for_animated_step_parameters(self) -> None:
-        # Animated --params sweeps legitimately render multi-frame GIFs in view
-        # mode; the static-gif guard must not reject them.
+    def test_render_job_rejects_animated_step_parameters(self) -> None:
+        # Animated --params sweeps are deleted with GIF export: every retired
+        # envelope key is a teaching error, not a silently static render.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory).resolve()
             models = root / "models"
             models.mkdir()
             (models / "part.step").write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            # stepParameters drive the model's declarative pose block.
             write_package(models / "part.step", pose={
                 "schemaVersion": 1,
                 "params": {"width": {"type": "number", "min": 0, "max": 5, "default": 1}},
@@ -1268,19 +1261,17 @@ class SnapshotCliTests(unittest.TestCase):
             original_ensure = snapshot_main.ensure_step_topology_artifact
             try:
                 snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
-                packet = resolve_render_job_packet(
-                    {
-                        "input": "models/part.step",
-                        "stepParameters": {"animate": {"from": {"width": 1}, "to": {"width": 2}}},
-                        "outputs": [{"path": "tmp/sweep.gif"}],
-                    },
-                    cwd=root,
-                )
+                with self.assertRaisesRegex(SnapshotError, "stepParameters.animate was removed"):
+                    resolve_render_job_packet(
+                        {
+                            "input": "models/part.step",
+                            "stepParameters": {"animate": {"width": {"from": 1, "to": 2}}},
+                            "outputs": [{"path": "tmp/sweep.png"}],
+                        },
+                        cwd=root,
+                    )
             finally:
                 snapshot_main.ensure_step_topology_artifact = original_ensure
-
-        self.assertEqual(packet["jobs"][0]["mode"], "view")
-        self.assertTrue(str(packet["jobs"][0]["outputs"][0]["path"]).endswith(".gif"))
 
     def test_input_kind_detects_robot_descriptions(self) -> None:
         self.assertEqual(snapshot_main.input_kind(Path("robots/arm.urdf")), "urdf")

@@ -102,9 +102,9 @@ class SnapshotFile:
     """One image a snapshot run wrote."""
 
     path: Path
-    #: The encoding the render produced: ``png``, ``gif``, or whatever suffix a
-    #: text output carried. It follows the RENDER, not the request — an orbit or
-    #: an animated parameter sweep encodes a GIF, everything else a PNG.
+    #: The encoding the render produced: ``png``, or whatever suffix a text
+    #: output carried. It follows the RENDER, not the request — an SVG served
+    #: under a ``.png`` name still reports ``svg``.
     kind: str
     #: What this output framed: the camera preset, ``azimuth:elevation`` pair, or
     #: view label the output declared. Empty when the job named none.

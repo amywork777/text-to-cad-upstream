@@ -197,11 +197,11 @@ One script, one drawing: run each script you want built. Do not put output paths
 in the `@dxf` function's return value; `out=` on the decorator is the only
 place a drawing names its destination.
 
-`cadgen dxf snapshot` renders a drawing's 3D flat pattern to a PNG still or an orbit GIF:
+`cadgen dxf snapshot` renders a drawing's 3D flat pattern to a PNG still:
 
 ```bash
 cadgen dxf snapshot --input path/to/imported.dxf --output review.png
-cadgen dxf snapshot --input path/to/source.py --output turntable.gif --mode orbit
+cadgen dxf snapshot --input path/to/source.py --output review.png --camera top
 ```
 
 For a generator it makes the sibling `.dxf` current first (the ordinary no-op
@@ -220,7 +220,7 @@ image at the path to mistake for output. A directory (`--output tmp/`) is the
 don't-care case and gets a generated timestamped name inside it, printed on the
 `saved snapshot:` line.
 
-Flags: `--mode view|orbit|list`, `--camera`, `--theme`, `--size-profile`,
+Flags: `--mode view|list`, `--camera`, `--theme`, `--size-profile`,
 `--width`/`--height`, `--job`, `--force`, `--json`. Theme settings live under one
 `--theme`, mirroring the viewer's Theme tab; the default theme is `snapshot`, Workbench
 Light without the ground grid, origin axis or shadows. There is no `--display`, and no

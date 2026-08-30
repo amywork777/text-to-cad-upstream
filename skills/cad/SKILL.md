@@ -64,7 +64,7 @@ python <model>.py            # a model script BUILDS ITSELF (the @step/@dxf deco
 cadgen step build ...     # make a model or imported STEP/STP current (documents + declared exports)
 cadgen stl build ...      # one door per mesh format; `3mf` and `glb` are the others
 cadgen step inspect ...   # refs, measure, align, frame, diff
-cadgen step snapshot ...  # PNG/GIF visual review packets, for STEP
+cadgen step snapshot ...  # PNG visual review packets, for STEP
 cadgen stl snapshot ...   # the same, for a mesh file; `3mf` and `glb` again
 ```
 
@@ -176,7 +176,7 @@ Scale depth to the task: a simple part needs a short brief and few spec-driven c
 
 After completing CAD work that creates or modifies `.step`, `.stp`, `.stl`, `.3mf`, or native `.glb` artifacts, you must ALWAYS hand the explicit file path(s) to `$cad-viewer` when that skill is installed. `$cad-viewer` must start CAD Viewer if it is not already running and return link(s) to the relevant created or updated file(s); include those live viewer link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report that and rely on CLI inspection plus snapshots instead of silently omitting the handoff. This rule applies to every workflow in this skill, including secondary STL/3MF/GLB outputs.
 
-When verification snapshots are generated, include the saved PNG/GIF snapshot(s) in the final response. If no snapshot applies, or if snapshot generation fails, say why and report the deterministic validation that still ran.
+When verification snapshots are generated, include the saved PNG snapshot(s) in the final response. If no snapshot applies, or if snapshot generation fails, say why and report the deterministic validation that still ran.
 
 ## Non-negotiables
 

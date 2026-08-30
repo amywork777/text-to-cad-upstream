@@ -13,7 +13,7 @@
 
 SNAPSHOT_RUNTIME_ESBUILD_VERSION="${CAD_SNAPSHOT_ESBUILD_VERSION:-0.27.7}"
 
-# three, gifenc, and meshoptimizer are read from packages/cadjs/package-lock.json, the one
+# three and meshoptimizer are read from packages/cadjs/package-lock.json, the one
 # place their exact versions are already pinned, so a dependency bump cannot silently change
 # what ships without also changing the committed bundle. This matches node_builders.sh.
 # Resolved lazily: BUNDLE_REPO_ROOT is set before the first call, not necessarily before
@@ -36,7 +36,6 @@ snapshot_runtime_pinned_version() {
   local override
   case "$name" in
     three) override="${CAD_SNAPSHOT_THREE_VERSION:-}" ;;
-    gifenc) override="${CAD_SNAPSHOT_GIFENC_VERSION:-}" ;;
     meshoptimizer) override="${CAD_SNAPSHOT_MESHOPTIMIZER_VERSION:-}" ;;
     *) override="" ;;
   esac
@@ -51,18 +50,16 @@ snapshot_runtime_entrypoint() {
   printf '%s\n' "$BUNDLE_REPO_ROOT/packages/cadjs/src/common/headlessRenderEntry.js"
 }
 
-# snapshot_runtime_need_install <deps_dir> <three> <gifenc> <meshoptimizer>
+# snapshot_runtime_need_install <deps_dir> <three> <meshoptimizer>
 snapshot_runtime_need_install() {
   local deps_dir="$1"
   local three="$2"
-  local gifenc="$3"
-  local meshoptimizer="$4"
+  local meshoptimizer="$3"
   [ -x "$deps_dir/node_modules/.bin/esbuild" ] || return 0
   node <<EOF || return 0
 const deps = {
   esbuild: "$SNAPSHOT_RUNTIME_ESBUILD_VERSION",
   three: "$three",
-  gifenc: "$gifenc",
   meshoptimizer: "$meshoptimizer",
 };
 for (const [name, expected] of Object.entries(deps)) {
@@ -87,11 +84,10 @@ ensure_snapshot_runtime_deps() {
   done
   # Resolved once, and a failure here is fatal: falling through with an empty version
   # would npm-install `three@`, which resolves to latest rather than the pinned build.
-  local three gifenc meshoptimizer
+  local three meshoptimizer
   three="$(snapshot_runtime_pinned_version three)" || exit 1
-  gifenc="$(snapshot_runtime_pinned_version gifenc)" || exit 1
   meshoptimizer="$(snapshot_runtime_pinned_version meshoptimizer)" || exit 1
-  if snapshot_runtime_need_install "$deps_dir" "$three" "$gifenc" "$meshoptimizer"; then
+  if snapshot_runtime_need_install "$deps_dir" "$three" "$meshoptimizer"; then
     if [ "$install_allowed" -eq 0 ]; then
       echo "Missing or stale build dependencies in $deps_dir." >&2
       echo "Run without --no-install to install them." >&2
@@ -102,7 +98,6 @@ ensure_snapshot_runtime_deps() {
       --fetch-retries=1 --fetch-timeout=10000 \
       "esbuild@$SNAPSHOT_RUNTIME_ESBUILD_VERSION" \
       "three@$three" \
-      "gifenc@$gifenc" \
       "meshoptimizer@$meshoptimizer"
   fi
 }
@@ -162,7 +157,6 @@ build_snapshot_runtime() {
     --minify \
     --legal-comments=none \
     --alias:three="$deps_dir/node_modules/three" \
-    --alias:gifenc="$deps_dir/node_modules/gifenc/dist/gifenc.esm.js" \
     --outfile="$target_dir/snapshot-render.js"
 }
 

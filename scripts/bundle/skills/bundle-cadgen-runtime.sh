@@ -97,7 +97,7 @@ require_dir() {
 }
 
 # --- third-party notices --------------------------------------------------------------
-# The builders and the browser bundle inline three, meshoptimizer and gifenc. Shipping
+# The builders and the browser bundle inline three and meshoptimizer. Shipping
 # them inside a wheel is redistribution, and all three are MIT: the licence text has to
 # travel with the copy. esbuild keeps the per-file banners (--legal-comments=eof); this is
 # the human-readable summary beside them.
@@ -108,7 +108,6 @@ The JavaScript in this directory is bundled output. It inlines third-party code:
 
   three          (MIT)  https://github.com/mrdoob/three.js
   meshoptimizer  (MIT)  https://github.com/zeux/meshoptimizer
-  gifenc         (MIT)  https://github.com/mattdesl/gifenc
 
 Each bundle carries the originating licence banners at end of file
 (esbuild --legal-comments=eof). Exact versions are pinned by

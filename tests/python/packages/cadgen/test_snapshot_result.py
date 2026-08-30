@@ -57,14 +57,14 @@ class ResultShape(unittest.TestCase):
         self.assertEqual(result.timings, SnapshotTimings(job_count=1, total_ms=42.0))
 
     def test_the_encoding_follows_the_render_not_the_filename(self) -> None:
-        """An orbit named `.png` still holds GIF bytes: the renderer's mime type
-        is what actually happened, so it wins over the suffix."""
-        orbit = {
+        """An SVG served under a `.png` name is still SVG: the renderer's mime
+        type is what actually happened, so it wins over the suffix."""
+        listing = {
             "ok": True,
-            "mode": "orbit",
-            "outputs": [{"path": "/tmp/turntable.png", "mimeType": "image/gif"}],
+            "mode": "view",
+            "outputs": [{"path": "/tmp/plate.png", "mimeType": "image/svg+xml"}],
         }
-        self.assertEqual(snapshot_result(orbit).files[0].kind, "gif")
+        self.assertEqual(snapshot_result(listing).files[0].kind, "svg")
 
     def test_a_path_less_output_is_not_a_file(self) -> None:
         # An animation's frame outputs carry no path; only what was WRITTEN counts.

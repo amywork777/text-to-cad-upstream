@@ -36,8 +36,8 @@ import {
 import {
   hasStepParameterRenderValues,
   normalizeStepParameterRenderValues,
-  stepParameterRenderFrameState,
-  stepParameterRenderFrameValues
+  stepParameterRenderState,
+  stepParameterRenderValues
 } from "./stepParameters.js";
 
 export const SOURCE_KIND = Object.freeze({
@@ -309,7 +309,7 @@ async function loadStepParameters({
   };
 }
 
-export function stepParameterFrameRuntime(stepParameterSource, frameIndex = 0) {
+export function stepParameterRuntime(stepParameterSource) {
   if (!stepParameterSource) {
     return null;
   }
@@ -317,8 +317,8 @@ export function stepParameterFrameRuntime(stepParameterSource, frameIndex = 0) {
   return {
     definition,
     selectorRuntime: stepParameterSource.selectorRuntime || null,
-    parameterValues: stepParameterRenderFrameValues(definition, renderParameters, frameIndex),
-    animationState: stepParameterRenderFrameState(renderParameters, frameIndex),
+    parameterValues: stepParameterRenderValues(renderParameters),
+    animationState: stepParameterRenderState(),
     cadPath: stepParameterSource.cadPath || definition.cadPath || "",
     sourceUrl: stepParameterSource.sourceUrl || definition.url || ""
   };

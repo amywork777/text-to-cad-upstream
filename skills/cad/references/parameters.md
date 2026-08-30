@@ -110,8 +110,8 @@ for the full-vocabulary example).
   [{param, keys: [{t, value, easing?}]}]}` with `t` in [0, 1] of the
   duration. Numbers lerp (easing belongs to the destination key);
   booleans/enums step-hold. Sample sinusoids densely from Python rather than
-  approximating with a few keys. Snapshot `--params` sweeps and GIF recipes
-  drive these clips unchanged.
+  approximating with a few keys. Clips play in the viewer's parameter panel;
+  snapshot renders stills only.
 
 Anything outside this vocabulary is an ERROR by design — computational
 behavior belongs in the escape hatch, not in new driver kinds.
@@ -146,10 +146,10 @@ def vendor_arm():
 - Identify fixed pivots, moving pivots, link lengths, gear ratios, axes, and
   joint limits BEFORE declaring joints; pivot every rotation about its hinge,
   mate, or local frame — never a bounding-box center.
-- Render the animations (`cadgen step snapshot <model> --params
-  '{"animate": ...}'`) and check for disconnected hinges, drifting pivots,
-  collisions, and looping jumps; convert visual concerns into measurements
-  before calling them fixed.
+- Review the animations in the viewer (play each clip) and check for
+  disconnected hinges, drifting pivots, collisions, and looping jumps;
+  convert visual concerns into measurements before calling them fixed.
+  For still evidence, snapshot key poses with `--params` values.
 - Eyeballed keyframes that violate real link lengths, and interpolating
   between two valid poses through invalid intermediate geometry, are the two
   classic failures.

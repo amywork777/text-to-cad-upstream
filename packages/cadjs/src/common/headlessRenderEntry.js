@@ -1,6 +1,3 @@
-import gifencDefault, {
-  GIFEncoder as exportedGifEncoder
-} from "gifenc";
 import * as THREE from "three";
 import {
   buildModel
@@ -16,42 +13,12 @@ import {
 } from "./stepParameters.js";
 import {
   loadSource,
-  stepParameterFrameRuntime
+  stepParameterRuntime
 } from "./source.js";
 import {
   createHttpTessellationCacheProvider,
   setTessellationCacheProvider
 } from "../lib/surf/tessellationCache.js";
-import {
-  orbitFrameOutputs
-} from "./headlessOrbitFrames.js";
-import { encodeGifFrameImageData } from "./gifFrameEncoder.js";
-
-const GIFEncoder = exportedGifEncoder || gifencDefault?.GIFEncoder || gifencDefault;
-
-async function dataUrlToImageData(dataUrl, width, height) {
-  const image = new Image();
-  image.decoding = "async";
-  const loaded = new Promise((resolve, reject) => {
-    image.onload = resolve;
-    image.onerror = () => reject(new Error("Failed to load rendered orbit frame"));
-  });
-  image.src = dataUrl;
-  await loaded;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(image, 0, 0, width, height);
-  return context.getImageData(0, 0, width, height);
-}
-
-function shouldEncodeTransparentGif(job = {}) {
-  const backgroundType = String(
-    job.theme?.background?.type || ""
-  ).toLowerCase();
-  return Boolean(job.render?.transparent) || backgroundType === "transparent";
-}
 
 // Coarse per-stage wall times for the last view-mode job, attached to its
 // result so the driver can print where a slow snapshot actually went (load =
@@ -87,113 +54,10 @@ async function capturePreparedSource(source, job) {
   }
 }
 
-async function renderOrbit(source, job) {
-  const orbit = orbitFrameOutputs(job);
-  const frameResult = await capturePreparedSource(source, {
-    ...job,
-    mode: "view",
-    outputs: orbit.outputs,
-    render: {
-      ...(job.render || {}),
-      lockFraming: true
-    }
-  });
-  const encoder = GIFEncoder();
-  const transparent = shouldEncodeTransparentGif(job);
-  for (let index = 0; index < frameResult.outputs.length; index += 1) {
-    const imageData = await dataUrlToImageData(frameResult.outputs[index].dataUrl, orbit.width, orbit.height);
-    const frame = encodeGifFrameImageData(imageData, { transparent });
-    encoder.writeFrame(frame.indexed, orbit.width, orbit.height, {
-      palette: frame.palette,
-      transparent: frame.transparent,
-      transparentIndex: frame.transparentIndex,
-      delay: 1000 / orbit.fps,
-      repeat: 0,
-      dispose: frame.transparent ? 2 : -1
-    });
-  }
-  encoder.finish();
-  const bytes = encoder.bytesView();
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-  return {
-    ok: true,
-    mode: "orbit",
-    outputs: [{
-      path: orbit.path,
-      width: orbit.width,
-      height: orbit.height,
-      frameCount: orbit.frameCount,
-      mimeType: "image/gif",
-      dataUrl: `data:image/gif;base64,${btoa(binary)}`
-    }],
-    timings: frameResult.timings,
-    warnings: frameResult.warnings || []
-  };
-}
-
-async function renderParamAnimation(source, job, stepParameterSource) {
-  const params = stepParameterSource.renderParameters;
-  const output = Array.isArray(job.outputs) && job.outputs.length ? job.outputs[0] : {};
-  const width = Math.max(1, Math.floor(Number(output.width || job.width || 720)));
-  const height = Math.max(1, Math.floor(Number(output.height || job.height || 480)));
-  const frameOutputs = Array.from({ length: params.frameCount }, (_, index) => ({
-    ...output,
-    path: "",
-    width,
-    height,
-    stepParameters: stepParameterFrameRuntime(stepParameterSource, index)
-  }));
-  const frameResult = await capturePreparedSource(source, {
-    ...job,
-    outputs: frameOutputs,
-    render: {
-      ...(job.render || {}),
-      lockFraming: true
-    }
-  });
-  const encoder = GIFEncoder();
-  const transparent = shouldEncodeTransparentGif(job);
-  for (let index = 0; index < frameResult.outputs.length; index += 1) {
-    const imageData = await dataUrlToImageData(frameResult.outputs[index].dataUrl, width, height);
-    const frame = encodeGifFrameImageData(imageData, { transparent });
-    encoder.writeFrame(frame.indexed, width, height, {
-      palette: frame.palette,
-      transparent: frame.transparent,
-      transparentIndex: frame.transparentIndex,
-      delay: 1000 / params.fps,
-      repeat: params.loop === false ? -1 : 0,
-      dispose: frame.transparent ? 2 : -1
-    });
-  }
-  encoder.finish();
-  const bytes = encoder.bytesView();
-  let binary = "";
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index]);
-  }
-  return {
-    ok: true,
-    mode: String(job.mode || "view").toLowerCase(),
-    outputs: [{
-      path: String(output.path || job.output || ""),
-      width,
-      height,
-      frameCount: params.frameCount,
-      fps: params.fps,
-      durationSeconds: params.durationSeconds,
-      loop: params.loop !== false,
-      mimeType: "image/gif",
-      dataUrl: `data:image/gif;base64,${btoa(binary)}`
-    }],
-    timings: frameResult.timings,
-    warnings: frameResult.warnings || []
-  };
-}
-
 export async function runHeadlessRenderJob(job) {
+  if (String(job.mode || "view").toLowerCase() === "orbit") {
+    throw new Error("orbit rendering was removed: snapshot writes PNG stills only");
+  }
   const loadStarted = performance.now();
   const source = await loadSource(job);
   headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);
@@ -210,15 +74,9 @@ export async function runHeadlessRenderJob(job) {
   const renderJobWithStepParameters = stepParameterSource
     ? {
         ...renderJob,
-        stepParameters: stepParameterFrameRuntime(stepParameterSource, 0)
+        stepParameters: stepParameterRuntime(stepParameterSource)
       }
     : renderJob;
-  if (stepParameterSource?.renderParameters?.animated) {
-    return renderParamAnimation(source, renderJob, stepParameterSource);
-  }
-  if (String(job.mode || "view").toLowerCase() === "orbit") {
-    return renderOrbit(source, renderJobWithStepParameters);
-  }
   return capturePreparedSource(source, renderJobWithStepParameters);
 }
 

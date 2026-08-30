@@ -72,13 +72,12 @@ Validation is a guardrail, not spatial proof: a URDF can pass every structural c
 
 ## Snapshot Tool
 
-`cadgen snapshot` renders the robot to a PNG still or an orbit GIF, using the same shared
+`cadgen snapshot` renders the robot to a PNG still, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
 cadgen snapshot --input path/to/robot.urdf --output review.png
-cadgen snapshot --input path/to/robot.urdf --output turntable.gif --mode orbit
 ```
 
 It accepts `.urdf` only. Pose the robot with the job field `"jointValues"` (joint name to

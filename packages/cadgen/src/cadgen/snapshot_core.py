@@ -54,9 +54,9 @@ DEFAULT_RENDER_THEME_ID = "snapshot"
 VIEWER_DEFAULT_THEME_ID = "workbench-light"
 DEFAULT_TIMEOUT_SECONDS = 300
 RENDER_BROWSER_STARTUP_TIMEOUT_MS = 15_000
-SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list"}
+SUPPORTED_RENDER_MODES = {"view", "section", "list"}
 MESH_INPUT_KINDS = {"glb", "stl", "3mf"}
-MESH_SUPPORTED_RENDER_MODES = {"view", "orbit", "list"}
+MESH_SUPPORTED_RENDER_MODES = {"view", "list"}
 TOPOLOGY_DISPLAY_MODES = {"hidden_edges", "hidden_lines_removed"}
 # Every id that IS the workbench theme, because this set decides a render's default
 # dimensions (see default_render_size). With only the legacy "workbench" in it, asking for
@@ -117,8 +117,6 @@ PRESENTATION_RENDER_WIDTH = 2400
 PRESENTATION_RENDER_HEIGHT = 1600
 PRESENTATION_LARGE_RENDER_WIDTH = 2800
 PRESENTATION_LARGE_RENDER_HEIGHT = 1800
-ORBIT_RENDER_WIDTH = 960
-ORBIT_RENDER_HEIGHT = 640
 CONTACT_SHEET_RENDER_WIDTH = 2400
 CONTACT_SHEET_RENDER_HEIGHT = 1600
 DISPLAY_OPTION_KEYS = {"projection", "mode", "clip", "exploded", "edges"}
@@ -446,8 +444,6 @@ def default_render_size(job: Mapping[str, object], output: Mapping[str, object])
         return COMPLEX_ASSEMBLY_RENDER_WIDTH, COMPLEX_ASSEMBLY_RENDER_HEIGHT
     if profile in {"contact-sheet", "contactsheet"}:
         return CONTACT_SHEET_RENDER_WIDTH, CONTACT_SHEET_RENDER_HEIGHT
-    if profile == "orbit" or mode == "orbit" or step_parameter_render_values_are_animated(job.get("stepParameters")):
-        return ORBIT_RENDER_WIDTH, ORBIT_RENDER_HEIGHT
     render = job.get("render") if is_plain_object(job.get("render")) else {}
     if (
         profile in {"dimensioned", "section", "labeled"}
@@ -528,11 +524,7 @@ def generated_output_name(
     job_index: int = 0,
     job_count: int = 1,
 ) -> str:
-    """The name a directory-mode output is given: ``<input-stem>[_j<m>][_<n>]_<ts>.<ext>``.
-
-    The extension follows the render, not the request: an orbit or an animated
-    parameter sweep encodes a GIF, everything else a PNG (headlessRenderEntry.js
-    picks the mime type the same way).
+    """The name a directory-mode output is given: ``<input-stem>[_j<m>][_<n>]_<ts>.png``.
 
     Every output in a packet shares one timestamp -- that is what makes a
     multi-view run read as one run -- so the discriminator is the ONLY thing
@@ -544,16 +536,13 @@ def generated_output_name(
     the common single-job single-output case still reads as ``<stem>_<ts>.png``.
     """
     stem = Path(str(job.get("input") or "")).stem or "snapshot"
-    animated = str(job.get("mode") or "").strip().lower() == "orbit" or (
-        step_parameter_render_values_are_animated(job.get("stepParameters"))
-    )
     parts = []
     if job_count > 1:
         parts.append(f"j{job_index + 1}")
     if output_count > 1:
         parts.append(str(index + 1))
     discriminator = f"_{'_'.join(parts)}" if parts else ""
-    return f"{stem}{discriminator}_{timestamp}{'.gif' if animated else '.png'}"
+    return f"{stem}{discriminator}_{timestamp}.png"
 
 
 def resolve_output_target(
@@ -655,18 +644,16 @@ def normalize_common_job(
     if mode != "list" and not outputs:
         raise SnapshotError("render job must include outputs for non-list modes")
 
-    # A .gif output only animates in orbit mode or under animated stepParameters;
-    # anything else would silently save a single-frame GIF that looks like a
-    # broken animation, so reject it with the fix spelled out.
-    if mode != "orbit" and not step_parameter_render_values_are_animated(job.get("stepParameters")):
-        for output in outputs:
-            output_path_text = str((output.get("path") if is_plain_object(output) else output) or "")
-            if output_path_text.strip().lower().endswith(".gif"):
-                raise SnapshotError(
-                    f"a .gif output in {mode} mode with static parameters renders a single frame; "
-                    "use --mode orbit (job \"mode\": \"orbit\") for a turntable GIF or animate "
-                    "--params values for a parameter-sweep GIF"
-                )
+    # GIF export is deleted: snapshot writes PNG stills only. Refuse the
+    # output up front so an old recipe fails loudly instead of rendering a
+    # still into a .gif name.
+    for output in outputs:
+        output_path_text = str((output.get("path") if is_plain_object(output) else output) or "")
+        if output_path_text.strip().lower().endswith(".gif"):
+            raise SnapshotError(
+                "GIF export was removed: snapshot renders PNG stills only; "
+                "name a .png output (animation now lives in the viewer, not in files)"
+            )
 
     # A job's own `theme` string gets the SAME treatment as the
     # `--theme` flag: a saved-theme name stays a name, but a path or an
@@ -758,40 +745,6 @@ def normalize_common_job(
             }
         )
 
-    # Preflight the animation frame budget.
-    #
-    # Every frame of an animated render is held before the GIF is encoded, so
-    # the cost is frames x pixels, not frames alone. Past roughly 120 Mpx the
-    # headless browser is killed mid-run and the whole render is lost:
-    #
-    #     playwright._impl._errors.TargetClosedError:
-    #     Target page, context or browser has been closed
-    #
-    # Measured on this machine: 144 frames @1200x750 (130 Mpx) fine,
-    # 203 @860x645 (113 Mpx) fine, 252 @1000x740 (186 Mpx) killed. The failure
-    # arrives minutes in, after all the expensive work, so say so up front.
-    # This is advisory: the ceiling is machine-dependent and a bigger box may
-    # well cope, so it must not block a render that would have succeeded.
-    if step_parameter_render_values_are_animated(job.get("stepParameters")):
-        raw_params = job.get("stepParameters") if is_plain_object(job.get("stepParameters")) else {}
-        fps = float(raw_params.get("fps") or 18)
-        seconds = float(raw_params.get("durationSeconds") or raw_params.get("duration") or 4)
-        frames = max(2, min(round(fps * seconds), 720))
-        pixels = sum(
-            int(out.get("width") or 0) * int(out.get("height") or 0)
-            for out in normalized_outputs
-        )
-        megapixels = frames * pixels / 1_000_000
-        if megapixels > 120:
-            sys.stderr.write(
-                f"warning: animated render is about {megapixels:.0f} Mpx "
-                f"({frames} frames x {pixels / 1_000_000:.2f} Mpx). Past roughly "
-                "120 Mpx the headless browser is often killed mid-run "
-                "(TargetClosedError) and the render is lost after doing all the "
-                "work. Lower fps, shorten durationSeconds, or reduce the output "
-                "size — or render in segments and stitch.\n"
-            )
-
     job.pop("clip", None)
     job.pop("clipSettings", None)
     return {
@@ -828,8 +781,20 @@ def positive_integer(value: object, label: str) -> int:
     if parsed <= 0:
         raise SnapshotError(f"{label} must be a positive integer")
     return parsed
-def step_parameter_render_values_are_animated(value: object) -> bool:
-    return is_plain_object(value) and is_plain_object(value.get("animate")) and bool(value["animate"])
+def reject_animated_step_parameters(value: object) -> None:
+    """Animated --params sweeps are deleted (with GIF export): fail loudly.
+
+    Snapshot renders one PNG at the given values; motion review lives in the
+    viewer. Every retired envelope key errors so an old sweep recipe cannot
+    silently render a still frame."""
+    if not is_plain_object(value):
+        return
+    for key in ("animate", "fps", "durationSeconds", "duration", "loop"):
+        if key in value:
+            raise SnapshotError(
+                f"stepParameters.{key} was removed: animated parameter sweeps no "
+                "longer render; snapshot writes a single PNG at the given values"
+            )
 
 def resolve_mesh_render_job(
     job: dict[str, object],
@@ -1523,7 +1488,7 @@ def write_render_outputs(result: Mapping[str, object]) -> None:
 # asked for. The files are already on disk by the time this runs -- the write
 # happens before anything is reported -- so the payload keys are a verbatim
 # second copy of bytes the caller can read from the path beside them, and
-# printing one put a 228 KB base64 PNG (or a 1.7 MB orbit GIF, ~445k tokens) on
+# printing one put a 228 KB base64 PNG on
 # stdout.
 #
 # So the boundary is a dataclass rather than a filtered dict. Filtering was the
@@ -1538,7 +1503,7 @@ def _output_kind(output: Mapping[str, object], path: Path) -> str:
     """What was actually encoded: the mime subtype, else the path's suffix.
 
     The renderer's mime type is authoritative because the encoding follows the
-    RENDER, not the request -- an orbit named ``.png`` still holds GIF bytes.
+    RENDER, not the request -- an SVG served under a ``.png`` name is still SVG.
     """
     mime = str(output.get("mimeType") or "")
     subtype = mime.rsplit("/", 1)[-1].strip().lower() if "/" in mime else ""
@@ -1574,7 +1539,7 @@ def snapshot_result(result: Mapping[str, object], *, total_ms: float = 0.0) -> S
                     kind=_output_kind(output, path),
                     # The camera the renderer RESOLVED, not the one requested: a
                     # preset name, an azimuth:elevation pair, or the burnt-in view
-                    # label. An orbit has no single view and reports none.
+                    # label. A list-mode run has no view and reports none.
                     view=str(
                         output.get("viewLabel") or output.get("label") or output.get("camera") or ""
                     ),

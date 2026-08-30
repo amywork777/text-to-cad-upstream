@@ -55,7 +55,6 @@ import {
   frameHalfHeightForView as sharedFrameHalfHeightForView,
   framePadding as sharedFramePadding,
   inferRenderSceneScale,
-  lockedFrameHalfHeight as sharedLockedFrameHalfHeight,
   normalizeRenderSceneScale as normalizeSharedRenderSceneScale,
   outputSize as sharedOutputSize,
   RENDER_SCENE_SCALE,
@@ -194,10 +193,6 @@ function fitPerspectiveCamera(camera, cameraSpec, bounds, width, height, sceneSc
     settingsByScale: RENDER_SCENE_SCALE_SETTINGS,
     strict: true
   });
-}
-
-function lockedFrameHalfHeight(outputs, bounds, width, height, job, sceneScale = RENDER_SCENE_SCALE.CAD) {
-  return sharedLockedFrameHalfHeight(outputs, bounds, width, height, job, sceneScale, RENDER_SCENE_SCALE_SETTINGS);
 }
 
 function outputSize(output, job) {
@@ -804,7 +799,7 @@ export function renderJobContext(meshData, job = {}) {
 
 export function modelOptionsForRenderJob(context, job = {}) {
   const selection = job.selection || {};
-  const keepsAllParts = context.mode === "view" || context.mode === "orbit";
+  const keepsAllParts = context.mode === "view";
   const filterSelection = keepsAllParts
     ? {
         hide: selection.hide
@@ -1042,26 +1037,12 @@ export async function captureModel(viewport, captureOptions = {}) {
 
   await viewport.ready;
   const sceneBuildMs = performance.now() - viewport.sceneBuildStarted;
-  const lockFraming = normalizeBoolean(job.render?.lockFraming, normalizeBoolean(job.lockFraming, false));
   const padding = framePadding(job);
-  const boundsByOutput = new Map();
   const parametersForOutput = (output) => (
     output.stepParameters ||
     job.stepParameters ||
     null
   );
-  for (const output of outputs) {
-    const parameters = parametersForOutput(output);
-    const effectiveBounds = parameters
-      ? viewport.model.update({ stepParameters: parameters }).bounds
-      : viewport.model.update({ stepParameters: null }).bounds;
-    boundsByOutput.set(output, applyViewportExplodedView(viewport, effectiveBounds));
-  }
-  const lockedBounds = lockFraming
-    ? mergeBoundsList(outputs.map((output) => boundsByOutput.get(output))) || bounds
-    : null;
-  const firstSize = outputSize(outputs[0] || {}, job);
-  const lockedHalfHeight = lockFraming ? lockedFrameHalfHeight(outputs, lockedBounds, firstSize.width, firstSize.height, job, sceneScale) : null;
   const renderedOutputs = [];
   const renderStarted = performance.now();
   for (const output of outputs) {
@@ -1079,10 +1060,10 @@ export async function captureModel(viewport, captureOptions = {}) {
     const usePerspectiveCamera = outputProjection === CAMERA_PROJECTION.PERSPECTIVE;
     const cameraView = usePerspectiveCamera ? null : resolveView(cameraSpec);
     const resolvedCamera = usePerspectiveCamera
-      ? fitPerspectiveCamera(viewport.perspectiveCamera, cameraSpec, lockedBounds || outputBounds, width, height, sceneScale)
-      : fitCamera(viewport.orthographicCamera, cameraView, lockedBounds || outputBounds, width, height, lockedHalfHeight, padding, sceneScale);
+      ? fitPerspectiveCamera(viewport.perspectiveCamera, cameraSpec, outputBounds, width, height, sceneScale)
+      : fitCamera(viewport.orthographicCamera, cameraView, outputBounds, width, height, null, padding, sceneScale);
     const renderCamera = usePerspectiveCamera ? viewport.perspectiveCamera : viewport.orthographicCamera;
-    if (!usePerspectiveCamera && !lockFraming && tightFrameEnabled(job)) {
+    if (!usePerspectiveCamera && tightFrameEnabled(job)) {
       viewport.scene.updateMatrixWorld(true);
       applyTightOrthographicFrame(renderCamera, viewport.model.displayRecords, width, height, padding, cameraView?.zoom);
     }

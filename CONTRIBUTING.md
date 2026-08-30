@@ -123,7 +123,7 @@ ask it to write files under that scratch path. This keeps skill scripts,
 fixtures, generated sidecars, and Viewer links using the same repo-relative
 paths that CI and local checks expect.
 
-Review media such as snapshot PNGs and orbit GIFs are not model artifacts:
+Review media such as snapshot PNGs are not model artifacts:
 render them under `/tmp` and attach them to the pull request instead. `.gitignore`
 keeps them out of `models/`.
 

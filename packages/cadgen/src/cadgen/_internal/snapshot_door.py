@@ -58,7 +58,7 @@ def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
         job: a render-job JSON file — one job, an array of them, or
             {"jobs": [...]}. When given it wins: target/out are ignored, and
             a missing job file raises FileNotFoundError.
-        mode: view (default), orbit, section, or list.
+        mode: view (default), section, or list.
         camera: a preset, an "azimuth:elevation" pair, or a camera object.
         theme: a saved theme name, a theme-settings object, or a path to a
             theme JSON file. Defaults to the `snapshot` theme.
@@ -67,7 +67,7 @@ def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
         width: output width in pixels, overriding the size profile.
         height: output height in pixels, overriding the size profile.
         size_profile: simple, diagnostic, labeled, assembly, presentation,
-            orbit, or contact-sheet.
+            or contact-sheet.
         params: pose parameter values for the model's @step(pose=...) block.
         focus: occurrence refs to render alone. STEP inputs only.
         hide: occurrence refs to leave out. STEP inputs only.

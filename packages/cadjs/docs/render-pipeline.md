@@ -244,7 +244,6 @@ camera presets, and deterministic renderer settings.
 `captureModel(viewport, { job })` returns data only:
 
 - `mode: "view"`: PNG data URLs in `outputs`.
-- `mode: "orbit"`: the caller composes frames into GIF output.
 - `mode: "section"`: PNG data URLs or SVG text in `outputs`.
 - `mode: "list"`: part list and bounds.
 
@@ -347,11 +346,6 @@ try {
   viewport.dispose();
 }
 ```
-
-Orbit GIF jobs default to 6 fps over 12 seconds for a calmer review spin
-without increasing default render frame count.
-Override with `orbit.fps` and `orbit.durationSeconds` when a shorter or denser
-render is needed.
 
 ## Ownership Rules
 
