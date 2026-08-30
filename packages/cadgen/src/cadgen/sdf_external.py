@@ -5,13 +5,13 @@ import shutil
 import subprocess
 import tempfile
 
-from cadgen.findings import ValidationResult
+from cadgen.findings import FindingsReport
 
 GzCheckMode = str
 
 
-def run_gz_sdf_check(xml_text: str, *, output_path: Path, mode: GzCheckMode = "auto") -> ValidationResult:
-    result = ValidationResult()
+def run_gz_sdf_check(xml_text: str, *, output_path: Path, mode: GzCheckMode = "auto") -> FindingsReport:
+    result = FindingsReport()
     normalized_mode = str(mode or "auto").strip().lower()
     if normalized_mode not in {"auto", "required", "never"}:
         raise ValueError("gz_check must be one of: auto, required, never")

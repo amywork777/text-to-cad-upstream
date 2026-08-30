@@ -14,7 +14,7 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from cadgen.findings import ValidationResult
+from cadgen.findings import FindingsReport
 from cadgen.xml_common import display_path
 from cadgen.srdf_source import SrdfPlanningGroup
 
@@ -47,7 +47,7 @@ def _urdf_root_name(urdf_path: Path) -> str | None:
     return None
 
 
-def resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationResult) -> Path | None:
+def resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: FindingsReport) -> Path | None:
     if not robot_name:
         return None
     urdf_path, matches = find_paired_urdf(robot_name, srdf_dir)
@@ -74,7 +74,7 @@ def resolve_paired_urdf(robot_name: str, *, srdf_dir: Path, result: ValidationRe
     return None
 
 
-def read_urdf_robot(urdf_path: Path, result: ValidationResult) -> dict[str, object] | None:
+def read_urdf_robot(urdf_path: Path, result: FindingsReport) -> dict[str, object] | None:
     """Read the paired URDF through cadgen's real URDF reader.
 
     This used to hand-parse <robot> here, because the skill-isolation rule meant the srdf
@@ -141,7 +141,7 @@ def validate_srdf_against_urdf(
     srdf_source: SrdfSource,
     *,
     urdf_robot: dict[str, object],
-    result: ValidationResult,
+    result: FindingsReport,
 ) -> None:
     links = urdf_robot["links"]
     joints = urdf_robot["joints"]
@@ -332,7 +332,7 @@ def validate_srdf_against_urdf(
         )
 
 
-def _check_subgroup_cycles(groups_by_name: dict[str, SrdfPlanningGroup], result: ValidationResult) -> None:
+def _check_subgroup_cycles(groups_by_name: dict[str, SrdfPlanningGroup], result: FindingsReport) -> None:
     visited: set[str] = set()
 
     def visit(name: str, stack: tuple[str, ...]) -> None:
@@ -509,7 +509,7 @@ def _validate_end_effector_topology(
     *,
     groups_by_name: dict[str, SrdfPlanningGroup],
     urdf_robot: dict[str, object],
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
 ) -> None:
     group_name = str(getattr(end_effector, "group", "") or "")
@@ -562,7 +562,7 @@ def _validate_group_state_joint_kind(
     state_name: str,
     joint_name: str,
     joint: object,
-    result: ValidationResult,
+    result: FindingsReport,
     state_path: str,
 ) -> bool:
     if not isinstance(joint, dict):
@@ -591,7 +591,7 @@ def _validate_group_state_joint_value(
     joint_name: str,
     value: float,
     joint: object,
-    result: ValidationResult,
+    result: FindingsReport,
     state_path: str,
 ) -> None:
     if not isinstance(joint, dict):
@@ -628,7 +628,7 @@ def _append_unique(target: list[str], values: list[str]) -> None:
 def _check_names_exist(
     names: object,
     allowed: set[str],
-    result: ValidationResult,
+    result: FindingsReport,
     *,
     label: str,
     path: str,

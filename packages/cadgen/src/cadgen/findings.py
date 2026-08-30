@@ -1,3 +1,16 @@
+"""The checkers' internal finding accumulator.
+
+:class:`FindingsReport` is what a validator BUILDS while it walks a document:
+findings split by severity, extended across checkers, deduplicated at the end.
+It is not what a caller receives — :class:`cadgen.results.ValidationResult` is
+the typed line protocol every ``validate`` verb answers with, and
+:mod:`cadgen._internal.validation_door` converts one into the other.
+
+Both classes were called ``ValidationResult``, which is why this one is not any
+more: two classes sharing a name means every grep returns both and every import
+line has to be read for its module before it can be read for its meaning.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -29,7 +42,7 @@ class Finding:
 
 
 @dataclass
-class ValidationResult:
+class FindingsReport:
     errors: list[Finding] = field(default_factory=list)
     warnings: list[Finding] = field(default_factory=list)
     infos: list[Finding] = field(default_factory=list)
@@ -56,7 +69,7 @@ class ValidationResult:
             self.infos.append(finding)
         return finding
 
-    def extend(self, other: ValidationResult) -> None:
+    def extend(self, other: FindingsReport) -> None:
         self.errors.extend(other.errors)
         self.warnings.extend(other.warnings)
         self.infos.extend(other.infos)
@@ -64,8 +77,8 @@ class ValidationResult:
     def all_findings(self) -> list[Finding]:
         return [*self.errors, *self.warnings, *self.infos]
 
-    def deduplicated(self) -> ValidationResult:
-        deduped = ValidationResult()
+    def deduplicated(self) -> FindingsReport:
+        deduped = FindingsReport()
         seen: set[tuple[str, str, str, str]] = set()
         for finding in self.all_findings():
             key = (str(finding.severity), finding.code, finding.message, finding.path or "")

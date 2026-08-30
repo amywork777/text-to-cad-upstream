@@ -95,17 +95,23 @@ class MeshExportMetadataTest(unittest.TestCase):
                 '@stl(out="../STL/widget.stl")\n@stl(out="../STL/widget.stl")',
             ))
 
-    def test_dxf_misuse_fails(self) -> None:
-        with self.assertRaises(ValueError):
-            self._parse(textwrap.dedent("""\
-                from cadgen import dxf, stl
+    def test_dxf_misuse_fails_in_either_order(self) -> None:
+        """A mesh export on a drawing is rejected however it is stacked.
 
-                @dxf
-                @stl
-                def drawing():
-                    from cadgen import build123d as bd
-                    return bd.Rectangle(10, 5)
-                """))
+        Order neutrality is the point of the AST scan, so the misuse guard has to
+        be order-neutral too. Only `@dxf` above `@stl` was pinned; the reversed
+        order was verified by hand and left unpinned, which is exactly how the
+        `ast.Name` model-format bug survived on the other side of this file."""
+        for above, below in (("@dxf", "@stl"), ("@stl", "@dxf")):
+            with self.subTest(order=f"{above} above {below}"):
+                with self.assertRaises(ValueError):
+                    self._parse(
+                        "from cadgen import dxf, stl\n\n"
+                        f"{above}\n{below}\n"
+                        "def drawing():\n"
+                        "    from cadgen import build123d as bd\n"
+                        "    return bd.Rectangle(10, 5)\n"
+                    )
 
     def test_runtime_decorators_converge_both_orders(self) -> None:
         from cadgen.authoring import step as step_deco, stl as stl_deco

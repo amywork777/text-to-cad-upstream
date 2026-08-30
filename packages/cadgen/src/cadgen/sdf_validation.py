@@ -7,7 +7,7 @@ import re
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-from cadgen.findings import ValidationResult, format_findings
+from cadgen.findings import FindingsReport, format_findings
 # The inertia tensor is the same physics in both formats, and this was a verbatim copy
 # of URDF's routine. Imported rather than duplicated -- a divergent eigenvalue check
 # would make one format accept a tensor the other rejects.
@@ -69,8 +69,8 @@ def validate_sdf_xml(
     source_path: Path,
     base_dir: Path | None = None,
     metadata: Mapping[str, object] | None = None,
-) -> ValidationResult:
-    result = ValidationResult()
+) -> FindingsReport:
+    result = FindingsReport()
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError as exc:
@@ -91,9 +91,9 @@ def validate_sdf_root(
     source_path: Path,
     base_dir: Path | None = None,
     metadata: Mapping[str, object] | None = None,
-) -> ValidationResult:
+) -> FindingsReport:
     del metadata
-    result = ValidationResult()
+    result = FindingsReport()
     resolved_path = source_path.resolve()
     resolved_base_dir = Path(base_dir).resolve() if base_dir is not None else resolved_path.parent
 
@@ -153,7 +153,7 @@ def validate_sdf_root(
     return result
 
 
-def raise_for_validation_errors(result: ValidationResult, *, strict: bool = False) -> None:
+def raise_for_validation_errors(result: FindingsReport, *, strict: bool = False) -> None:
     findings = result.errors + (result.warnings if strict else [])
     if findings:
         # Deferred: cadgen.sdf_source imports this module at import time, so taking
@@ -163,7 +163,7 @@ def raise_for_validation_errors(result: ValidationResult, *, strict: bool = Fals
         raise SdfSourceError(format_findings(findings))
 
 
-def _validate_world(world_element: ET.Element, result: ValidationResult, base_dir: Path) -> None:
+def _validate_world(world_element: ET.Element, result: FindingsReport, base_dir: Path) -> None:
     world_name = _required_name(world_element, result, _path("world", world_element), "world")
     world_path = _path("world", world_element, fallback="/sdf/world")
     if not world_name:
@@ -195,7 +195,7 @@ def _validate_world(world_element: ET.Element, result: ValidationResult, base_di
 
 def _validate_model(
     model_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     base_dir: Path,
     *,
     parent_targets: set[str],
@@ -296,7 +296,7 @@ def _validate_model(
 
 def _validate_link(
     link_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     base_dir: Path,
     targets: set[str],
     model_path: str,
@@ -341,7 +341,7 @@ def _validate_link(
         _validate_sensor(sensor_element, result, targets, f"{link_path}/sensor")
 
 
-def _validate_frame(frame_element: ET.Element, result: ValidationResult, targets: set[str], owner_path: str) -> None:
+def _validate_frame(frame_element: ET.Element, result: FindingsReport, targets: set[str], owner_path: str) -> None:
     frame_name = _required_name(frame_element, result, f"{owner_path}/frame", "frame")
     frame_path = f"{owner_path}/frame[@name='{frame_name}']" if frame_name else f"{owner_path}/frame"
     attached_to = str(frame_element.attrib.get("attached_to") or "").strip()
@@ -353,7 +353,7 @@ def _validate_frame(frame_element: ET.Element, result: ValidationResult, targets
 
 def _validate_joint(
     joint_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     link_names: set[str],
     targets: set[str],
     model_path: str,
@@ -401,7 +401,7 @@ def _validate_joint(
 
 def _validate_axis(
     axis_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     targets: set[str],
     axis_path: str,
     *,
@@ -466,7 +466,7 @@ def _validate_axis(
 
 def _validate_geometry_owner(
     owner: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     base_dir: Path,
     targets: set[str],
     owner_path: str,
@@ -525,7 +525,7 @@ def _validate_geometry_owner(
     return set()
 
 
-def _validate_inertial(inertial_element: ET.Element, result: ValidationResult, targets: set[str], inertial_path: str) -> None:
+def _validate_inertial(inertial_element: ET.Element, result: FindingsReport, targets: set[str], inertial_path: str) -> None:
     _warn_unknown_children(inertial_element, KNOWN_INERTIAL_CHILDREN, result, inertial_path)
     for pose_element in children(inertial_element, "pose"):
         # Inertial pose defaults to the owning link frame (unambiguous).
@@ -565,7 +565,7 @@ def _validate_inertial(inertial_element: ET.Element, result: ValidationResult, t
         )
 
 
-def _validate_sensor(sensor_element: ET.Element, result: ValidationResult, targets: set[str], sensor_path: str) -> None:
+def _validate_sensor(sensor_element: ET.Element, result: FindingsReport, targets: set[str], sensor_path: str) -> None:
     sensor_name = _required_name(sensor_element, result, sensor_path, "sensor")
     path = f"{sensor_path}[@name='{sensor_name}']" if sensor_name else sensor_path
     sensor_type = str(sensor_element.attrib.get("type") or "").strip()
@@ -586,7 +586,7 @@ def _validate_sensor(sensor_element: ET.Element, result: ValidationResult, targe
         result.add("error", "invalid_sensor_update_rate", "sensor update_rate must be non-negative", path=f"{path}/update_rate")
 
 
-def _validate_plugin(plugin_element: ET.Element, result: ValidationResult, plugin_path: str) -> None:
+def _validate_plugin(plugin_element: ET.Element, result: FindingsReport, plugin_path: str) -> None:
     filename = str(plugin_element.attrib.get("filename") or "").strip()
     if not filename:
         result.add("error", "missing_plugin_filename", "plugin filename is required", path=plugin_path)
@@ -596,13 +596,13 @@ def _validate_plugin(plugin_element: ET.Element, result: ValidationResult, plugi
         result.add("warning", "missing_plugin_name", "plugin name is omitted", path=plugin_path)
 
 
-def _validate_include(include_element: ET.Element, result: ValidationResult, include_path: str) -> None:
+def _validate_include(include_element: ET.Element, result: FindingsReport, include_path: str) -> None:
     _required_child_text(include_element, "uri", result, f"{include_path}/uri", "include uri")
 
 
 def _validate_pose(
     pose_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     pose_path: str,
     targets: set[str],
     *,
@@ -642,7 +642,7 @@ def _validate_pose(
         _check_reference(relative_to, result, pose_path, "relative_to", targets)
 
 
-def _validate_frame_cycles(frames: list[ET.Element], result: ValidationResult, owner_path: str) -> None:
+def _validate_frame_cycles(frames: list[ET.Element], result: FindingsReport, owner_path: str) -> None:
     frame_names = set(_names(frames))
     edges: dict[str, str] = {}
     for frame in frames:
@@ -675,7 +675,7 @@ def _validate_frame_cycles(frames: list[ET.Element], result: ValidationResult, o
         visit(frame_name, [])
 
 
-def _validate_mesh_uri(uri: str, result: ValidationResult, base_dir: Path, uri_path: str) -> None:
+def _validate_mesh_uri(uri: str, result: FindingsReport, base_dir: Path, uri_path: str) -> None:
     parsed = urlparse(uri)
     if parsed.scheme in EXTERNAL_URI_SCHEMES:
         return
@@ -699,7 +699,7 @@ def _validate_mesh_uri(uri: str, result: ValidationResult, base_dir: Path, uri_p
 
 def _validate_link_reference(
     link_ref: str,
-    result: ValidationResult,
+    result: FindingsReport,
     link_names: set[str],
     path: str,
     *,
@@ -722,7 +722,7 @@ def _validate_link_reference(
         result.add("error", "missing_link_reference", f"references missing link {link_ref!r}", path=path)
 
 
-def _check_reference(ref: str, result: ValidationResult, path: str, attr: str, targets: set[str]) -> None:
+def _check_reference(ref: str, result: FindingsReport, path: str, attr: str, targets: set[str]) -> None:
     if "::" in ref:
         if any(part == "" for part in ref.split("::")):
             result.add("error", "invalid_scoped_reference", f"{attr} has malformed scoped reference {ref!r}", path=path)
@@ -738,7 +738,7 @@ def _check_reference(ref: str, result: ValidationResult, path: str, attr: str, t
         result.add("error", "unresolved_reference", f"{attr} references unknown frame or link {ref!r}", path=path)
 
 
-def _check_unique_named(elements: list[ET.Element], result: ValidationResult, scope_path: str, label: str) -> None:
+def _check_unique_named(elements: list[ET.Element], result: FindingsReport, scope_path: str, label: str) -> None:
     seen: set[str] = set()
     duplicates: set[str] = set()
     for element in elements:
@@ -762,7 +762,7 @@ def _validate_positive_vector_child(
     parent: ET.Element,
     tag: str,
     expected_len: int,
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
     *,
     required: bool = True,
@@ -782,7 +782,7 @@ def _validate_positive_vector_child(
     return values
 
 
-def _validate_positive_number_child(parent: ET.Element, tag: str, result: ValidationResult, path: str) -> float | None:
+def _validate_positive_number_child(parent: ET.Element, tag: str, result: FindingsReport, path: str) -> float | None:
     value = _optional_number_child(parent, tag, result, path, required=True)
     if value is not None and value <= 0:
         result.add("error", "invalid_dimension", f"{tag} must be positive", path=path)
@@ -792,7 +792,7 @@ def _validate_positive_number_child(parent: ET.Element, tag: str, result: Valida
 def _optional_number_child(
     parent: ET.Element,
     tag: str,
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
     *,
     required: bool = False,
@@ -808,7 +808,7 @@ def _optional_number_child(
 
 def _parse_optional_number(
     value: str,
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
     label: str,
     *,
@@ -838,7 +838,7 @@ def _parse_optional_number(
 def _parse_number_text(
     text: str,
     expected_len: int,
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
     label: str,
 ) -> list[float] | None:
@@ -860,13 +860,13 @@ def _parse_number_text(
     return values
 
 
-def _validate_boolean_text(element: ET.Element, result: ValidationResult, path: str, label: str) -> None:
+def _validate_boolean_text(element: ET.Element, result: FindingsReport, path: str, label: str) -> None:
     value = str(element.text or "").strip().lower()
     if value and value not in BOOLEAN_VALUES:
         result.add("error", "invalid_boolean", f"{label} must be boolean-like", path=path)
 
 
-def _required_name(element: ET.Element, result: ValidationResult, path: str, label: str) -> str:
+def _required_name(element: ET.Element, result: FindingsReport, path: str, label: str) -> str:
     name = _name(element)
     if not name:
         result.add("error", "missing_name", f"{label} name is required", path=path)
@@ -876,7 +876,7 @@ def _required_name(element: ET.Element, result: ValidationResult, path: str, lab
 def _required_child_text(
     parent: ET.Element,
     tag: str,
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
     label: str,
 ) -> str:
@@ -953,7 +953,7 @@ def _path(tag: str, element: ET.Element, *, fallback: str | None = None) -> str:
     return fallback or f"/sdf/{tag}"
 
 
-def _validate_light(light_element: ET.Element, result: ValidationResult, targets: set[str], owner_path: str) -> None:
+def _validate_light(light_element: ET.Element, result: FindingsReport, targets: set[str], owner_path: str) -> None:
     light_name = _required_name(light_element, result, f"{owner_path}/light", "light")
     light_path = f"{owner_path}/light[@name='{light_name}']" if light_name else f"{owner_path}/light"
     light_type = str(light_element.attrib.get("type") or "").strip()
@@ -970,7 +970,7 @@ def _validate_light(light_element: ET.Element, result: ValidationResult, targets
         _validate_pose(pose_element, result, f"{light_path}/pose", targets)
 
 
-def _validate_mesh_scale_child(shape: ET.Element, result: ValidationResult, scale_path: str) -> None:
+def _validate_mesh_scale_child(shape: ET.Element, result: FindingsReport, scale_path: str) -> None:
     scale_element = _first_child(shape, "scale")
     if scale_element is None:
         return
@@ -990,7 +990,7 @@ def _validate_mesh_scale_child(shape: ET.Element, result: ValidationResult, scal
 
 
 def _check_cross_type_scope_names(
-    result: ValidationResult,
+    result: FindingsReport,
     scope_path: str,
     **names_by_kind: set[str],
 ) -> None:
@@ -1012,7 +1012,7 @@ def _check_cross_type_scope_names(
 def _warn_unknown_children(
     element: ET.Element,
     known_children: set[str],
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
 ) -> None:
     for child in list(element):

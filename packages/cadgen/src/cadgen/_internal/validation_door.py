@@ -1,10 +1,15 @@
 """What the ``urdf``/``srdf``/``sdf`` ``validate`` verbs share.
 
-The checkers all answer with :class:`cadgen.findings.ValidationResult` — an
+The checkers all answer with :class:`cadgen.findings.FindingsReport` — an
 accumulator of Findings split by severity — and the public verbs all answer with
 :class:`cadgen.results.ValidationResult`, the typed line protocol every door
 returns. That conversion, and the one rule that decides ``ok``, live here so the
 three verbs cannot come to disagree about what "valid" means.
+
+The two used to share the name ``ValidationResult``, which made every grep for
+either one return both and every ``from ... import ValidationResult`` a question
+about which module was meant. The internal accumulator is the one that got
+renamed: the public name is the line protocol callers import.
 """
 
 from __future__ import annotations

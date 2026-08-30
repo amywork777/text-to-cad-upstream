@@ -102,9 +102,32 @@ Copy the full generator template for the applicable workflow from
    closure, so editing the 3D part invalidates the drawing.
 
 3. **Flat pattern of an imported STEP** (a `.step`/`.stp` with no Python source):
-   read it with `cadgen.read_step`, which records the file's content hash as a
-   build input — replacing the vendor STEP makes the drawing stale on its own,
-   with no `--force`.
+   read it with `cadgen.read_step`, not `build123d.import_step`. It records the
+   file's content hash as a build INPUT, so replacing the vendor STEP makes the
+   drawing stale on its own, with no `--force`; read it through build123d and the
+   drawing stays "current" against a file that changed underneath it.
+
+   ```python
+   from pathlib import Path
+
+   from cadgen import dxf, flatten, read_step
+
+   _HERE = Path(__file__).resolve().parent
+
+   @dxf
+   def panel_flat(kerf: float = 0.15):
+       panel = read_step(_HERE / "imported" / "vendor_panel.step")   # recorded input
+       return flatten.flat_pattern(panel, coordinate=3.0, kerf=kerf)
+   ```
+
+   **Never read a STEP this project generates.** Reading the `.step` a `@step`
+   model writes is not a loop, it is a drawing whose input changes on every run of
+   the model: the freshness gate can never say "current", every build is a full
+   rebuild, and the flat pattern depends on what the last run left on disk. Keep
+   source STEPs in an `imported/` directory beside the drawing, committed like any
+   other input — input path and output path being different files is the whole
+   rule. For a STEP this project DOES generate, use workflow 2 instead: import the
+   model script and call it, which is traced properly and never touches an artifact.
 
 One model per file: a source declaring both a `@step` and a `@dxf` model is
 rejected — a drawing gets its own script. The viewer catalog is artifacts-only:

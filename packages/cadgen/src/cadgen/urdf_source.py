@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlparse
 import xml.etree.ElementTree as ET
 
-from cadgen.findings import ValidationResult, format_findings
+from cadgen.findings import FindingsReport, format_findings
 from cadgen.xml_common import duplicate_values, display_path
 
 URDF_SUFFIX = ".urdf"
@@ -107,8 +107,8 @@ def validate_urdf_file(
     urdf_path: Path,
     *,
     package_map: dict[str, Path] | None = None,
-) -> tuple[UrdfSource | None, ValidationResult]:
-    result = ValidationResult()
+) -> tuple[UrdfSource | None, FindingsReport]:
+    result = FindingsReport()
     resolved_path = urdf_path.resolve()
     if resolved_path.suffix.lower() != URDF_SUFFIX:
         result.add("error", "invalid_target", f"{resolved_path} is not a URDF source file", path="/")
@@ -126,8 +126,8 @@ def validate_urdf_xml(
     *,
     source_path: Path,
     package_map: dict[str, Path] | None = None,
-) -> tuple[UrdfSource | None, ValidationResult]:
-    result = ValidationResult()
+) -> tuple[UrdfSource | None, FindingsReport]:
+    result = FindingsReport()
     resolved_path = source_path.resolve()
     display = display_path(resolved_path)
 
@@ -392,7 +392,7 @@ def _collect_material_definitions(root: ET.Element) -> set[str]:
 # --- inertials ---
 def _validate_link_inertials(
     link_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     link_path: str,
 ) -> float:
@@ -462,7 +462,7 @@ def _validate_link_inertials(
 def _validate_inertia_tensor(
     link_name: str,
     values: dict[str, float],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     path: str,
@@ -568,7 +568,7 @@ def _validate_inertia_magnitude(
     link_name: str,
     mass: float,
     values: dict[str, float],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     path: str,
@@ -641,7 +641,7 @@ def symmetric_inertia_eigenvalues(values: dict[str, float]) -> tuple[float, floa
 def _warn_movable_links_without_inertial(
     root: ET.Element,
     joints: list[UrdfJoint],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
 ) -> None:
     movable_children = {joint.child_link for joint in joints if joint.joint_type in {"revolute", "continuous", "prismatic"}}
@@ -665,7 +665,7 @@ def _validate_link_geometry(
     link_element: ET.Element,
     *,
     element_name: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     link_path: str,
     source_path: Path,
@@ -721,7 +721,7 @@ def _validate_link_geometry(
 def _validate_material_reference(
     visual_element: ET.Element,
     material_names: set[str],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     owner_path: str,
 ) -> None:
@@ -744,7 +744,7 @@ def _validate_material_reference(
 
 def _validate_geometry_element(
     geometry_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -783,7 +783,7 @@ def _validate_geometry_element(
 def _validate_mesh_reference(
     mesh_element: ET.Element,
     *,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     source_path: Path,
     package_map: dict[str, Path] | None,
@@ -831,7 +831,7 @@ def _validate_mesh_reference(
 
 def _validate_mesh_scale(
     mesh_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     filename: str,
@@ -865,7 +865,7 @@ def _validate_joint_axis(
     joint_element: ET.Element,
     *,
     joint_type: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     joint_path: str,
 ) -> None:
@@ -906,7 +906,7 @@ def _validate_joint_limits(
     joint_element: ET.Element,
     *,
     joint_type: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     joint_path: str,
 ) -> tuple[float | None, float | None]:
@@ -991,7 +991,7 @@ def _validate_effort_velocity(
     limit_element: ET.Element,
     joint_type: str,
     joint_name: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     limit_path: str,
 ) -> None:
@@ -1025,7 +1025,7 @@ def _validate_effort_velocity(
 
 def _validate_joint_dynamics(
     joint_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     joint_path: str,
 ) -> None:
@@ -1055,7 +1055,7 @@ def _validate_joint_dynamics(
 
 def _validate_mimic(
     joint_element: ET.Element,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     joint_path: str,
     *,
@@ -1098,7 +1098,7 @@ def _validate_mimic(
 def _validate_mimic_graph(
     mimic_targets_by_joint: dict[str, str],
     joint_types_by_name: dict[str, str],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
 ) -> None:
     for joint_name, target in mimic_targets_by_joint.items():
@@ -1138,7 +1138,7 @@ def _validate_mimic_graph(
 # --- generic attribute helpers ---
 def _validate_origin(
     origin_element: ET.Element | None,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -1155,7 +1155,7 @@ def _validate_origin(
 def _float_attr(
     element: ET.Element,
     attr_name: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -1178,7 +1178,7 @@ def _float_attr(
 def _positive_float_attr(
     element: ET.Element,
     attr_name: str,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -1197,7 +1197,7 @@ def _vector_attr(
     element: ET.Element,
     attr_name: str,
     expected_count: int,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -1230,7 +1230,7 @@ def _positive_vector_attr(
     element: ET.Element,
     attr_name: str,
     expected_count: int,
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,
@@ -1248,7 +1248,7 @@ def _positive_vector_attr(
 def _warn_unknown_children(
     element: ET.Element,
     known_children: set[str],
-    result: ValidationResult,
+    result: FindingsReport,
     path: str,
 ) -> None:
     for child in list(element):
@@ -1269,7 +1269,7 @@ def _warn_unknown_children(
 
 def _report_duplicates(
     values: list[str],
-    result: ValidationResult,
+    result: FindingsReport,
     display: str,
     *,
     label: str,

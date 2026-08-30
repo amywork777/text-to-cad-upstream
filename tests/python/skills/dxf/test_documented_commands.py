@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -55,6 +56,50 @@ def bracket(thickness: float = 3.0):
             bd.Circle(2.5, mode=bd.Mode.SUBTRACT)
     return bd.extrude(profile.sketch, amount=thickness)
 '''
+
+
+# The imported-STEP workflow reads a `.step` this project does not generate, so
+# the documented example needs a real one to read -- `read_step` parses it. Built
+# rather than committed, so the fixture cannot drift from the writer that makes
+# them, and built ONCE for the module: it is the same file for every project.
+_VENDOR_MODEL = '''from cadgen import build123d as bd
+from cadgen import step
+
+
+@step(kind="part")
+def vendor_panel(thickness: float = 3.0):
+    with bd.BuildSketch() as profile:
+        bd.Rectangle(60, 40)
+        bd.Circle(4, mode=bd.Mode.SUBTRACT)
+    return bd.extrude(profile.sketch, amount=thickness)
+'''
+
+_VENDOR_STEP: Path | None = None
+
+
+def _vendor_step() -> Path:
+    global _VENDOR_STEP
+    if _VENDOR_STEP is None or not _VENDOR_STEP.is_file():
+        workspace = Path(tempfile.mkdtemp(prefix="dxf-docs-vendor-")).resolve()
+        script = workspace / "vendor_panel.py"
+        script.write_text(_VENDOR_MODEL, encoding="utf-8")
+        subprocess.run(
+            [sys.executable, script.name],
+            cwd=str(workspace),
+            env={
+                **os.environ,
+                "CADGEN_DAEMON": "0",
+                "CADGEN_COMPONENT_WORKERS": "1",
+                "CADGEN_CACHE_DIR": str(workspace / "store"),
+                "PYTHONPATH": str(CADGEN_SRC),
+            },
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        _VENDOR_STEP = workspace / "vendor_panel.step"
+    return _VENDOR_STEP
 
 
 def _python_blocks(path: Path) -> list[str]:
@@ -105,6 +150,11 @@ class _DrawingHarness(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.project = Path(self._tmp.name).resolve()
         (self.project / "bracket.py").write_text(_BRACKET_MODEL, encoding="utf-8")
+        # Where the docs say a source STEP lives: an input path that is not any
+        # model's output path, which is the whole of the self-read rule.
+        imported = self.project / "imported"
+        imported.mkdir()
+        shutil.copyfile(_vendor_step(), imported / "vendor_panel.step")
         self.environment = dict(os.environ)
         self.environment.update(
             {

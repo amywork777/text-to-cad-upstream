@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 import xml.etree.ElementTree as ET
 
-from cadgen.findings import ValidationResult, format_findings
+from cadgen.findings import FindingsReport, format_findings
 from cadgen.xml_common import duplicate_values, display_path
 
 SRDF_SUFFIX = ".srdf"
@@ -116,8 +116,8 @@ def parse_srdf_xml(xml_text: str, *, source_path: Path) -> SrdfSource:
     return source
 
 
-def parse_srdf_file(srdf_path: Path) -> tuple[SrdfSource | None, ValidationResult]:
-    result = ValidationResult()
+def parse_srdf_file(srdf_path: Path) -> tuple[SrdfSource | None, FindingsReport]:
+    result = FindingsReport()
     resolved_path = srdf_path.resolve()
     if resolved_path.suffix.lower() != SRDF_SUFFIX:
         result.add("error", "invalid_target", f"{resolved_path} is not an SRDF source file", path="/")
@@ -130,8 +130,8 @@ def parse_srdf_file(srdf_path: Path) -> tuple[SrdfSource | None, ValidationResul
     return parse_srdf_text(xml_text, source_path=resolved_path)
 
 
-def parse_srdf_text(xml_text: str, *, source_path: Path) -> tuple[SrdfSource | None, ValidationResult]:
-    result = ValidationResult()
+def parse_srdf_text(xml_text: str, *, source_path: Path) -> tuple[SrdfSource | None, FindingsReport]:
+    result = FindingsReport()
     resolved_path = source_path.resolve()
     display = display_path(resolved_path)
     try:
@@ -146,8 +146,8 @@ def _parse_srdf_root(
     root: ET.Element,
     *,
     source_path: Path,
-    result: ValidationResult,
-) -> tuple[SrdfSource | None, ValidationResult]:
+    result: FindingsReport,
+) -> tuple[SrdfSource | None, FindingsReport]:
     display = display_path(source_path)
     if root.tag != "robot":
         result.add("error", "invalid_root", f"{display} root element must be <robot>", path="/")
@@ -384,7 +384,7 @@ def _parse_srdf_root(
     return source, result
 
 
-def _warn_unknown_children(root: ET.Element, result: ValidationResult) -> None:
+def _warn_unknown_children(root: ET.Element, result: FindingsReport) -> None:
     for child in list(root):
         if not isinstance(child.tag, str):
             continue
@@ -424,7 +424,7 @@ def _child_names(element: ET.Element, tag: str) -> tuple[str, ...]:
     return tuple(names)
 
 
-def _report_duplicates(names: list[str], result: ValidationResult, display: str, *, label: str) -> None:
+def _report_duplicates(names: list[str], result: FindingsReport, display: str, *, label: str) -> None:
     duplicates = duplicate_values(names)
     if duplicates:
         result.add(

@@ -122,6 +122,36 @@ returning shapes/compounds).
 `sys.path` after loading the module, so import sibling helpers at module top
 level and only *call* them inside the function.
 
+**Reading a STEP file the model does not generate.** Use `cadgen.read_step`, not
+`build123d.import_step`. It returns the same shape, served from cache on a warm
+run, and — the part that matters — it RECORDS the file's content hash as a build
+input. Replacing the vendor STEP then makes the model stale on its own, with no
+`--force`; read through build123d and the model stays "current" against a file
+that changed underneath it.
+
+```python
+from pathlib import Path
+
+from cadgen import read_step, step
+
+_HERE = Path(__file__).resolve().parent
+
+@step(kind="assembly")
+def rig():
+    motor = read_step(_HERE / "imported" / "vendor_motor.step")   # recorded input
+    ...
+```
+
+**Never `read_step` your own output.** A model that reads the `.step` it is about
+to write is not a loop — it is a model whose input changes every time it runs, so
+the freshness gate can never say "current", every build is a full rebuild, and the
+geometry depends on what the last run happened to leave on disk. Keep source STEPs
+somewhere they cannot be written: an `imported/` (or `STEP/imported/`) directory
+beside the model, committed like any other input. Input path and output path being
+different files is the whole rule. If the geometry you want is something the model
+already builds, call that function instead of reading the artifact — no file, no
+staleness question.
+
 For structuring multi-part projects (folder layout, shared `src/` code, commit
 policy), load the `$cad-project` skill.
 
