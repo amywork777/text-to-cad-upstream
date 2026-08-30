@@ -295,6 +295,160 @@ def _renumber_nauo_ids(model: Any) -> None:
         iterator.Next()
 
 
+_MDGPR_TYPE = "StepVisual_MechanicalDesignGeometricPresentationRepresentation"
+
+# The complete entity family OCCT's writeColors() appends per styled product
+# (STEPCAFControl_Writer.cxx, MakeSTEPStyles + "register all MDGPRs in model").
+# _canonicalize_presentation_styles only reorders a tail made entirely of these;
+# an unexpected type in the tail means the writer changed shape, and the
+# canonicalization steps aside rather than guess.
+_STYLE_TAIL_FAMILY = frozenset({
+    _MDGPR_TYPE,
+    "StepVisual_StyledItem",
+    "StepVisual_OverRidingStyledItem",
+    "StepVisual_PresentationStyleAssignment",
+    "StepVisual_PresentationStyleByContext",
+    "StepVisual_SurfaceStyleUsage",
+    "StepVisual_SurfaceSideStyle",
+    "StepVisual_SurfaceStyleFillArea",
+    "StepVisual_FillAreaStyle",
+    "StepVisual_FillAreaStyleColour",
+    "StepVisual_ColourRgb",
+    "StepVisual_Colour",
+    "StepVisual_PreDefinedColour",
+    "StepVisual_DraughtingPreDefinedColour",
+    "StepVisual_CurveStyle",
+    "StepVisual_DraughtingPreDefinedCurveFont",
+})
+
+
+def _style_entity_children(ent: Any) -> list:
+    """One style-tail entity's referenced entities, in FIELD order — the same
+    order AddWithRefs traverses, so a canonical DFS reproduces each closure's
+    internal layout exactly."""
+    name = ent.DynamicType().Name()
+    out: list = []
+
+    def add(value: object) -> None:
+        if value is not None:
+            out.append(value)
+
+    def add_select(select: object) -> None:
+        value = getattr(select, "Value", None)
+        add(value() if callable(value) else select)
+
+    def add_array(array: object) -> None:
+        if array is not None:
+            for index in range(1, array.Length() + 1):
+                add_select(array.Value(index))
+
+    if name == _MDGPR_TYPE:
+        add_array(ent.Items())
+    elif name in ("StepVisual_StyledItem", "StepVisual_OverRidingStyledItem"):
+        add(ent.Item())
+        add_array(ent.Styles())
+        if name == "StepVisual_OverRidingStyledItem":
+            add(ent.OverRiddenStyle())
+    elif name in ("StepVisual_PresentationStyleAssignment", "StepVisual_PresentationStyleByContext"):
+        add_array(ent.Styles())
+        if name == "StepVisual_PresentationStyleByContext":
+            add_select(ent.StyleContext())
+    elif name == "StepVisual_SurfaceStyleUsage":
+        add(ent.Style())
+    elif name == "StepVisual_SurfaceSideStyle":
+        add_array(ent.Styles())
+    elif name == "StepVisual_SurfaceStyleFillArea":
+        add(ent.FillArea())
+    elif name == "StepVisual_FillAreaStyle":
+        add_array(ent.FillStyles())
+    elif name == "StepVisual_FillAreaStyleColour":
+        add(ent.FillColour())
+    # Colours and predefined fonts are leaves.
+    return out
+
+
+def _canonicalize_presentation_styles(model: Any) -> None:
+    """Make the style section's entity order a function of model CONTENT.
+
+    OCCT registers each styled product's presentation graph by iterating an
+    ADDRESS-hashed shape map (STEPCAFControl_Writer::transfer's myMapCompMDGPR,
+    still address-hashed on master), so with two or more styled products the
+    MDGPR closures — and every entity number after them — land in heap-address
+    order: byte-different files for identical models, varying per process and
+    even per call. Everything before the style tail is deterministic transfer
+    order (see _renumber_nauo_ids, which leans on the same property).
+
+    Reorder the tail deterministically: MDGPR blocks sorted by the styled
+    targets they reference (head entity numbers, which ARE stable), each
+    closure laid out in field-order DFS. Entities shared between closures
+    (deduplicated colours) land with the first canonical owner. Anything
+    unexpected in the tail aborts untouched — worst case is the old
+    nondeterminism, never a corrupt file.
+    """
+    from OCP.StepVisual import (
+        StepVisual_MechanicalDesignGeometricPresentationRepresentation as _MDGPR,
+    )
+
+    # Cheap C++-side count first: parts and single-product assemblies have at
+    # most one MDGPR, one closure, nothing to permute — skip the Python scan.
+    iterator = model.Entities()
+    iterator.SelectType(_MDGPR.get_type_descriptor_s(), True)
+    mdgpr_count = 0
+    iterator.Start()
+    while iterator.More():
+        mdgpr_count += 1
+        iterator.Next()
+    if mdgpr_count <= 1:
+        return
+
+    total = model.NbEntities()
+    # OCP's model.Number() binding returns 0, so numbers come from this scan;
+    # Entity(i) returns an identity-stable wrapper, so id() keys are sound
+    # while `entities` holds the references.
+    entities = [None] + [model.Entity(index) for index in range(1, total + 1)]
+    type_names = [None] + [ent.DynamicType().Name() for ent in entities[1:]]
+    mdgpr_nums = [i for i in range(1, total + 1) if type_names[i] == _MDGPR_TYPE]
+    tail_start = mdgpr_nums[0]
+    if any(type_names[i] not in _STYLE_TAIL_FAMILY for i in range(tail_start, total + 1)):
+        return
+    number_of = {id(ent): index for index, ent in enumerate(entities[1:], start=1)}
+    tail_ids = {id(entities[i]) for i in range(tail_start, total + 1)}
+
+    def block_key(mdgpr_num: int) -> tuple:
+        targets = []
+        for item in _style_entity_children(entities[mdgpr_num]):
+            if item.DynamicType().Name() in ("StepVisual_StyledItem", "StepVisual_OverRidingStyledItem"):
+                target_num = number_of.get(id(item.Item()))
+                if target_num is not None and target_num < tail_start:
+                    targets.append(target_num)
+        return (tuple(sorted(targets)), mdgpr_num)
+
+    desired: list = []
+    seen: set[int] = set()
+
+    def visit(ent: Any) -> None:
+        if id(ent) not in tail_ids or id(ent) in seen:
+            return
+        seen.add(id(ent))
+        desired.append(ent)
+        for child in _style_entity_children(ent):
+            visit(child)
+
+    for mdgpr_num in sorted(mdgpr_nums, key=block_key):
+        visit(entities[mdgpr_num])
+    if len(desired) != total - tail_start + 1:
+        return
+
+    order = [id(entities[i]) for i in range(tail_start, total + 1)]
+    for offset, ent in enumerate(desired):
+        current = tail_start + order.index(id(ent))
+        target = tail_start + offset
+        if current != target:
+            model.ChangeOrder(current, target)
+            order.remove(id(ent))
+            order.insert(offset, id(ent))
+
+
 def write_xcaf_doc_step_file(
     doc: Any,
     output_path: Path,
@@ -345,6 +499,9 @@ def write_xcaf_doc_step_file(
     # for the same model. Renumber them 1..N in model-entity order (which is
     # deterministic transfer order) so identical models write identical bytes.
     _renumber_nauo_ids(writer.Writer().Model())
+    # Same contract, other direction: OCCT appends multi-product style graphs
+    # in heap-address order. Reorder them into content order.
+    _canonicalize_presentation_styles(writer.Writer().Model())
 
     # The header must be edited AFTER Transfer: Transfer rebuilds the writer's
     # model, discarding anything set on the pre-transfer header.
