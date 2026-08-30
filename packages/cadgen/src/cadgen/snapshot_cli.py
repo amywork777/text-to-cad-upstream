@@ -25,6 +25,7 @@ import os
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -149,6 +150,27 @@ class SnapshotOptions:
     debug: bool = False
     json: bool = False
     help: bool = False
+
+
+# Bookkeeping, not options: `<name>_specified` records whether the user passed
+# the flag at all, and `help` is argparse's own.
+_NON_OPTION_FIELDS = frozenset({"help"})
+
+
+def option_names() -> tuple[str, ...]:
+    """The option surface every snapshot command carries, one name per flag.
+
+    Snapshot is an ADAPTER in the format-doors schema (design/format-doors.md):
+    its camera/theme/display surface is exactly what makes it underivable from a
+    verb signature, so there is no generated parser to read the surface off.
+    This is what the signature-sync policy test checks its declaration against
+    instead — :class:`SnapshotOptions` is the surface, one field per flag.
+    """
+    return tuple(
+        field.name
+        for field in dataclasses.fields(SnapshotOptions)
+        if field.name not in _NON_OPTION_FIELDS and not field.name.endswith("_specified")
+    )
 
 
 

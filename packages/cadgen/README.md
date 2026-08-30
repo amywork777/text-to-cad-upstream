@@ -29,8 +29,9 @@ covers everything downstream of a build:
 
 | | |
 |---|---|
-| `import` | build the render package for an imported (foreign) STEP/STP |
-| `step export` / `inspect` / `snapshot` | export a built package to exchange files, inspect selector references, render |
+| `step build` | make a model script's or an imported STEP/STP's derived state current |
+| `stl build` / `3mf build` / `glb build` | write that model's mesh outputs, one door per format |
+| `step inspect` / `step snapshot` | inspect selector references, render review images |
 | `dxf snapshot` | render a DXF drawing |
 | `snapshot` | render any supported input |
 | `urdf validate` / `srdf validate` / `sdf validate` | validate robot descriptions |
@@ -48,6 +49,12 @@ shipping entrypoints of their own.
 
 The supported surface is the root `cadgen` exports plus the top-level `cadgen.*` modules:
 
+- **Format namespaces**: `cadgen.step`, `cadgen.stl`, `cadgen.threemf`, `cadgen.glb`.
+  Each is one object: the declaration decorator (`@step`, `@stl`, ...) AND that
+  format's verbs (`step.build(...)`, `stl.build(...)`), returning the typed
+  results in `cadgen.results`. Every `cadgen <format> <verb>` command is that
+  function with a parser derived from its signature, so the library call and the
+  command cannot disagree.
 - **Generator-script helpers**, all at the root: `AssemblyHelper`, `MateRelation`,
   `MateTarget`, `label_text`, `label_shape`, `target`, `report`, `track`, `srgb`,
   `compound_from_instances`, `ensure_step_topology_artifact`,

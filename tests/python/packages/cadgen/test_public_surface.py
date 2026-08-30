@@ -18,6 +18,7 @@ Three properties that only hold if something checks them:
 
 from __future__ import annotations
 
+import argparse
 import importlib
 import inspect
 import subprocess
@@ -50,22 +51,65 @@ MIRRORS: dict[str, tuple[str, str]] = {
     "glb build": ("cadgen.glb", "build"),
 }
 
-# Commands with a hand-written parser, and the options that parser may carry
-# beyond its verb's parameters. A snapshot's camera/theme/display surface is
-# exactly what disqualifies it from mirror status.
-ADAPTERS: dict[str, frozenset[str]] = {}
+# The shared snapshot surface, WRITTEN OUT rather than imported: a test that
+# derived this from the same place the command does would pass no matter what
+# either said. Adding a flag to the snapshot CLI has to fail here first.
+SNAPSHOT_OPTIONS = frozenset(
+    {
+        "job",
+        "input",
+        "output",
+        "mode",
+        "theme",
+        "display",
+        "camera",
+        "width",
+        "height",
+        "size_profile",
+        "params",
+        "focus",
+        "hide",
+        "view_labels",
+        "debug",
+        "json",
+    }
+)
+
+# Commands with a HAND-WRITTEN parser, and the option surface each one owns. An
+# adapter has no generated parser to compare against a signature — a snapshot's
+# camera/theme/display surface, and inspect's subcommand tree, are exactly what
+# disqualify them from mirror status — so the declaration IS the contract, and a
+# flag or subcommand that appears without being declared here fails.
+#
+# For a parser with subcommands the surface is its top-level options plus the
+# subcommand names: pinning every leaf flag of `step inspect` would be a copy of
+# the CLI in a test file, which is churn rather than a guard.
+ADAPTERS: dict[str, frozenset[str]] = {
+    "step snapshot": SNAPSHOT_OPTIONS,
+    "dxf snapshot": SNAPSHOT_OPTIONS,
+    "snapshot": SNAPSHOT_OPTIONS,
+    "step inspect": frozenset(
+        {
+            "verbose",
+            "command",
+            "refs",
+            "diff",
+            "frame",
+            "measure",
+            "align",
+            "interfere",
+            "validate",
+        }
+    ),
+}
 
 # Commands not yet re-homed under the schema. This set only shrinks.
 UNCLASSIFIED = {
-    "step inspect",
-    "step snapshot",
-    "dxf snapshot",
     "urdf validate",
     "sdf validate",
     "srdf validate",
     "doctor",
     "cache",
-    "snapshot",
     "daemon",
     "daemon status",
 }
@@ -76,6 +120,24 @@ HEAVY = ("OCP", "build123d", "ezdxf", "shapely")
 def _verb(target: tuple[str, str]):
     module, attribute = target
     return getattr(importlib.import_module(module), attribute)
+
+
+def _adapter_surface(module) -> frozenset[str]:
+    """One adapter command's real option surface, read off the command itself.
+
+    Two shapes exist: an argparse command answers with its destinations (plus
+    its subcommand names, which is where a subcommand tree's meaning lives), and
+    a command that parses argv by hand — snapshot — declares ``OPTION_NAMES``.
+    """
+    parser_builder = getattr(module, "build_parser", None)
+    if parser_builder is None:
+        return frozenset(module.OPTION_NAMES)
+    parser = parser_builder()
+    names = set(parser_dests(parser)) - {JSON_FLAG_DEST}
+    for action in parser._actions:  # noqa: SLF001 - argparse exposes no public view
+        if action.nargs == argparse.PARSER:
+            names |= set(action.choices or ())
+    return frozenset(names)
 
 
 class Manifest(unittest.TestCase):
@@ -158,20 +220,12 @@ class SignatureSync(unittest.TestCase):
                 dests = set(parser_dests(module.build_parser())) - {JSON_FLAG_DEST}
                 self.assertEqual(set(function_parameters(_verb(target))), dests)
 
-    def test_an_adapters_extra_options_are_declared(self):
-        for command, allowed in ADAPTERS.items():
+    def test_an_adapters_option_surface_is_exactly_what_it_declares(self):
+        for command, declared in ADAPTERS.items():
             with self.subTest(command=command):
                 module_name, _ = cli._COMMANDS[command]
                 module = importlib.import_module(module_name)
-                target = MIRRORS.get(command) or module.VERB
-                parameters = set(function_parameters(_verb(target)))
-                dests = set(parser_dests(module.build_parser())) - {JSON_FLAG_DEST}
-                self.assertEqual(
-                    set(), dests - parameters - set(allowed), "undeclared parser option"
-                )
-                self.assertEqual(
-                    set(), parameters - dests - set(allowed), "parameter with no CLI option"
-                )
+                self.assertEqual(declared, _adapter_surface(module))
 
 
 class ImportBudget(unittest.TestCase):

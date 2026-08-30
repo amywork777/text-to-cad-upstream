@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cadgen.cli.snapshot import SKILL_KINDS, run
+from cadgen.cli.snapshot import OPTION_NAMES, SKILL_KINDS, run
 
 KINDS = SKILL_KINDS["cad"]
+# Re-exported so this command's declared adapter surface is readable from the
+# command's own module, the way a generated command's parser is.
+__all__ = ["KINDS", "OPTION_NAMES", "main"]
 
 
 def main(argv: Sequence[str] | None = None, *, prog: str = "cadgen step snapshot") -> int:

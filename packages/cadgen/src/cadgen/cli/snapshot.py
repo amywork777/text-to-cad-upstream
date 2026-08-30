@@ -16,7 +16,14 @@ from __future__ import annotations
 import sys
 from collections.abc import Sequence
 
-from cadgen.snapshot_cli import run_snapshot_cli
+from cadgen.snapshot_cli import option_names, run_snapshot_cli
+
+# Every snapshot command is an ADAPTER in the format-doors schema
+# (design/format-doors.md): its option surface is too rich to derive from a verb
+# signature, so it declares that surface instead and the signature-sync policy
+# test checks the declaration. No family adds flags of its own — they differ
+# only in which input kinds they accept — so there is one surface, here.
+OPTION_NAMES: tuple[str, ...] = option_names()
 
 # Which input kinds each skill's snapshot accepts. Unioned for the bare `cadgen snapshot`.
 SKILL_KINDS: dict[str, tuple[str, ...]] = {

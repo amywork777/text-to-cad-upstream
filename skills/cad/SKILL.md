@@ -61,10 +61,10 @@ The command surface (the `cadgen` console script, installed with the package):
 
 ```bash
 python <model>.py            # a model script BUILDS ITSELF (the @step/@dxf decorator)
-cadgen step export ...    # STL/3MF/GLB mesh files from model scripts or imported STEP
+cadgen step build ...     # make a model or imported STEP/STP current (documents + declared exports)
+cadgen stl build ...      # one door per mesh format; `3mf` and `glb` are the others
 cadgen step inspect ...   # refs, measure, align, frame, diff
 cadgen step snapshot ...  # PNG/GIF visual review packets
-cadgen step build ...     # make a model or imported STEP/STP current (documents + declared exports)
 ```
 
 Generation has NO CLI. A model is a plain Python script:
@@ -151,8 +151,8 @@ Scale depth to the task: a simple part needs a short brief and few spec-driven c
 3. **Write a natural-language CAD brief.** Extract dimensions, units, coordinate convention, feature intent, output paths, assumptions, and validation targets from all provided inputs — prose, reference images, technical drawings. Use `references/cad-brief.md`.
 4. **Check named purchasable components.** When an assembly includes named off-the-shelf actuators, servos, motors, electronics boards, connectors, or other purchasable components, search `$step-parts` before creating simplified placeholder geometry. If no exact match is found, record the miss and then use a documented envelope.
 5. **Plan before coding.** Define parameters, intent labels, source paths, expected bounding boxes, and any mating/positioning datums before editing.
-6. **Edit source, not generated artifacts.** Author a plain `.py` model script with one `@step`-decorated function (underscore-prefixed helper modules carry shared code; see `references/step-generation.md`). When a model script exists, run IT, never hand-edit its exported STEP. Imported STEP/STP files (no script) build their render package via `cadgen step build`, and `cadgen step export` accepts them directly.
-7. **Generate explicit targets.** Run each model script directly (`python <model>.py`); do not sweep directories. Every run writes the model's `.step` (sibling `<stem>.step` by default; `write=` in the decorator or `-o PATH` to relocate); use `cadgen step export` when the user needs STL/3MF/GLB mesh files. For multi-model project structure, see the `$cad-project` skill.
+6. **Edit source, not generated artifacts.** Author a plain `.py` model script with one `@step`-decorated function (underscore-prefixed helper modules carry shared code; see `references/step-generation.md`). When a model script exists, run IT, never hand-edit its exported STEP. Imported STEP/STP files (no script) build their render package via `cadgen step build`, and the mesh doors accept them directly.
+7. **Generate explicit targets.** Run each model script directly (`python <model>.py`); do not sweep directories. Every run writes the model's `.step` (sibling `<stem>.step` by default; `write=` in the decorator or `-o PATH` to relocate); declare `@stl`/`@threemf`/`@glb` exports on the model, or run `cadgen stl|3mf|glb build` for one-off mesh files. For multi-model project structure, see the `$cad-project` skill.
 8. **Validate geometrically.** Run `cadgen step inspect refs <step-or-cad-target> --facts --planes --positioning` as the baseline, then verify the dimensions and relationships the user's spec calls out with targeted `measure`, `align`, `frame`, or `diff` checks. Run `cadgen step inspect validate <step-or-cad-target>` for geometry soundness: `refs --facts` reports counts and bounds, and its `ok` field covers ref resolution only — an open shell and an inverted solid both pass it.
 9. **Snapshot the primary STEP — snapshot validation is mandatory.** After creating or visibly updating a primary STEP/STP part or assembly, ALWAYS run CAD `cadgen step snapshot` against it and review the output; deterministic checks passing is not a reason to skip. The only skip cases are documented in `references/snapshot-review.md` (no visible geometry changed, or no valid artifact exists); report the reason when skipping.
 10. **Repair and rerun.** If a check fails, change the smallest responsible source section, regenerate, and rerun the failed validation.
@@ -182,7 +182,7 @@ Load these files only when their trigger applies:
 - `references/snapshot-review.md` — mandatory snapshot policy, packet sizing, targeted views, and converting visual findings into geometry checks.
 - `references/positioning.md` — part-local datums and origins, assembly transforms, build123d joints, CLI alignment validation, and positioning reports.
 - `references/parameters.md` — parameterizing or animating a STEP model: geometry parameters (the function signature) and the declarative pose block (`@step(pose=cadgen.pose(...))`) — joints, drivers, animation clips, and the escape hatch.
-- `references/supported-exports.md` — STL/3MF/native GLB mesh export workflows via `cadgen step export`.
+- `references/supported-exports.md` — STL/3MF/native GLB mesh export workflows: declared exports and the `cadgen stl|3mf|glb build` doors.
 - `references/repair-loop.md` — diagnosis and repair procedures.
 - `references/migrating-generators.md` — migrating legacy gen_step()/gen_dxf() sources and .step.py/.dxf.py naming to @step/@dxf model scripts (codemod: `python -m cadgen.migrate`).
 

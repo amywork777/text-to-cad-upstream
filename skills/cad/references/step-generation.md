@@ -27,8 +27,9 @@ current and ALWAYS writes the `.step` output, assembled from that package rather
 than re-generated. Unchanged sources are a fast no-op. The default output is the
 sibling `<stem>.step`; relocate it durably with `@step(write="path/to/out.step")`
 (relative to the script) or per-run with `-o PATH` (relative to the command cwd).
-Do not put output paths in the model's return value. `cadgen step export` writes
-mesh formats only (see `supported-exports.md`).
+Do not put output paths in the model's return value. Mesh formats are declared
+on the model with `@stl`/`@threemf`/`@glb`, or written by the matching
+`cadgen <format> build` door (see `supported-exports.md`).
 
 Rules the decorator enforces:
 
@@ -147,7 +148,8 @@ cadgen step build path/to/imported.step [--force]
 ```
 
 To produce STL/3MF/native GLB files from an imported STEP, pass it directly to
-`cadgen step export`; read `supported-exports.md`.
+the matching format door (`cadgen stl build path/to/imported.step`); read
+`supported-exports.md`.
 
 ## Optional-module generators and the artifact cache
 
@@ -184,8 +186,8 @@ cadgen step inspect refs path/to/model.step --facts --planes --positioning
 
 ## Warm daemon (on by default)
 
-Every model run and `cadgen step export` / `cadgen step build` / `cadgen step inspect` /
-`cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
+Every model run and `cadgen step build` / `cadgen stl|3mf|glb build` /
+`cadgen step inspect` / `cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
 import. They are routed through a shared warm daemon **by default** — the
 decorator hands a directly-run script to the daemon before any kernel import —
 and `CADGEN_DAEMON=0` forces the cold path:

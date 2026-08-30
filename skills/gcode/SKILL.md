@@ -120,7 +120,7 @@ Pass `.stl`, `.obj`, and unsliced `.3mf` directly to the slicer. Convert `.ply`,
 
 Reject `.step`, `.stp`, `.dxf`, `.svg`, `.urdf`, and `.sdf` in v1. `inspect` and `slice` fail with a structured `remediation` object naming the skill and command that produce a sliceable mesh; use it instead of inferring a conversion workflow:
 
-- `.step`, `.stp`: boundary-representation CAD, not a mesh. Export an STL sidecar with `$cad` (`cadgen step export <input> --stl <output>.stl`, or target the model script with `cadgen step export <model>.py --stl <output>.stl`), then slice the exported `.stl` here.
+- `.step`, `.stp`: boundary-representation CAD, not a mesh. Export an STL sidecar with `$cad` (`cadgen stl build <input> <output>.stl`, or target the model script with `cadgen stl build <model>.py <output>.stl`), then slice the exported `.stl` here.
 - `.dxf`, `.svg`: 2D drawings with no 2D-to-mesh conversion in this toolchain. Model the 3D solid in `$cad` as a `@step` model script and export an STL sidecar, then slice that. If the part is a flat cut rather than a print, use `$sendcutsend` instead of this skill.
 - `.urdf`, `.sdf`: robot descriptions that reference per-link mesh files. Slice the referenced `.stl`/`.obj` meshes one at a time; regenerate stale or missing ones from the owning CAD source with `$cad` first. Use `$urdf` or `$sdf` for the robot description itself.
 

@@ -203,6 +203,37 @@ class MeshExportProductionTest(unittest.TestCase):
         self.assertEqual(glb_before, (self.project / "STEP" / "widget.glb").read_bytes())
         self.assertEqual(step_before, (self.project / "STEP" / "widget.step").read_bytes())
 
+    def test_a_bare_door_produces_every_declared_variant(self) -> None:
+        # `OUT` omitted means the DECLARATIONS, plural: two @stl variants of one
+        # model are two files, at their own tolerances, from one door run.
+        (self.project / "src" / "widget.py").write_text(
+            MODEL.replace(
+                '@stl(write="../STL/widget.stl")',
+                '@stl(write="../STL/widget_draft.stl", mesh_tolerance=2e-2)\n'
+                '@stl(write="../STL/widget_print.stl", mesh_tolerance=2e-4)',
+            )
+        )
+        self._run("src/widget.py")
+        draft = self.project / "STL" / "widget_draft.stl"
+        printed = self.project / "STL" / "widget_print.stl"
+        for path in (draft, printed):
+            path.unlink()
+
+        wrote = self._run("-c", "from cadgen.cli.stl_build import main; raise SystemExit(main())",
+                          "src/widget.py")
+        self.assertTrue(draft.is_file() and printed.is_file(), wrote.stdout)
+        self.assertNotEqual(
+            draft.read_bytes(),
+            printed.read_bytes(),
+            "each variant must be written at its own declared tolerance",
+        )
+        self.assertEqual(2, wrote.stdout.count("wrote STL"))
+
+        # And the ledger now covers both: a second bare run rewrites neither.
+        again = self._run("-c", "from cadgen.cli.stl_build import main; raise SystemExit(main())",
+                          "src/widget.py")
+        self.assertEqual(2, again.stdout.count("current STL"))
+
 
 if __name__ == "__main__":
     unittest.main()
