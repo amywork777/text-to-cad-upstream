@@ -430,7 +430,7 @@ def build_step_artifact(
             # The generation pipeline's contract: a generated model's build
             # ALWAYS produces its STEP file (assembled from the package —
             # design/step-document-architecture.md), no matter which front
-            # door asked (a model-script run, cadgen import, inspect).
+            # door asked (a model-script run, `cadgen step build`, inspect).
             import dataclasses
 
             spec = existing_spec

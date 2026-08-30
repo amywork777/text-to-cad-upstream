@@ -37,21 +37,30 @@ class DaemonHandoff(unittest.TestCase):
 
         self.assertEqual(set(cli._DAEMON_TOOLS.values()) | {"run"}, set(server._TOOL_IMPORTS))
 
-    def test_the_served_set_is_the_non_generation_step_tools(self):
+    def test_the_served_set_is_the_non_generation_build_and_review_tools(self):
         # Generation has no CLI (library-first): model scripts dispatch themselves
-        # via the decorator, so dispatch serves only the remaining STEP tools.
+        # via the decorator, so dispatch serves the document/mesh build doors plus
+        # the two review tools. Every mesh door is warm: `step export` served all
+        # three formats from one spawn, and three doors are three spawns.
         self.assertEqual(
             set(cli._DAEMON_TOOLS),
-            {"step export", "step build", "step inspect", "step snapshot"},
+            {
+                "step build",
+                "step inspect",
+                "step snapshot",
+                "stl build",
+                "3mf build",
+                "glb build",
+            },
         )
 
     def test_a_step_command_hands_off_and_never_imports_the_module(self):
         with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "1"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=7) as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
-            self.assertEqual(cli.main(["step", "export", "part.step"]), 7)
+            self.assertEqual(cli.main(["stl", "build", "part.step"]), 7)
         daemon.assert_called_once()
-        self.assertEqual(daemon.call_args.args[0], "export")
+        self.assertEqual(daemon.call_args.args[0], "stl-build")
         self.assertEqual(daemon.call_args.args[1], ["part.step"])
         imported.assert_not_called()  # the whole point: no OCP import
 
@@ -60,7 +69,7 @@ class DaemonHandoff(unittest.TestCase):
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=None), \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
-            self.assertEqual(cli.main(["step", "export", "part.step"]), 0)
+            self.assertEqual(cli.main(["stl", "build", "part.step"]), 0)
         imported.assert_called_once()
 
     def test_no_handoff_when_explicitly_disabled(self):
@@ -69,7 +78,7 @@ class DaemonHandoff(unittest.TestCase):
                 mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
-            cli.main(["step", "export", "x"])
+            cli.main(["stl", "build", "x"])
         daemon.assert_not_called()
 
     def test_the_daemon_child_never_routes_back_to_itself(self):
@@ -78,7 +87,7 @@ class DaemonHandoff(unittest.TestCase):
         ), mock.patch("cadgen.daemon.client.run_via_daemon") as daemon, \
                 mock.patch.object(cli.importlib, "import_module") as imported:
             imported.return_value.main.return_value = 0
-            cli.main(["step", "export", "x"])
+            cli.main(["stl", "build", "x"])
         daemon.assert_not_called()
 
     def test_an_unserved_command_is_never_routed_to_the_daemon(self):

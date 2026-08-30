@@ -1,15 +1,16 @@
 """Warm-process daemon server for the CAD skill CLIs.
 
 One long-lived process imports cadgen / OCP / build123d ONCE and then services
-directly-run @step/@dxf model scripts ("run") plus ``cadgen step export`` /
-``cadgen step build`` / ``cadgen step inspect`` / ``cadgen snapshot`` invocations over
+directly-run @step/@dxf model scripts ("run") plus ``cadgen step build`` /
+``cadgen stl|3mf|glb build`` / ``cadgen step inspect`` / ``cadgen snapshot`` invocations over
 a per-worktree unix socket, so sessions skip the multi-second interpreter+OCP
 startup on every call. The daemon runs with ``CADGEN_DAEMON_CHILD=1`` so the launcher shim
 never recurses into it.
 
 Protocol — one JSON request per connection, JSON-lines response:
 
-  request : {"tool": "run"|"export"|"step-build"|"inspect"|"snapshot",
+  request : {"tool": "run"|"step-build"|"stl-build"|"3mf-build"|"glb-build"
+                     |"inspect"|"snapshot",
              "argv": [...], "cwd": "...",
              "token": <client version token>}
   response: {"stream": "stdout"|"stderr", "data": "..."} chunks, then
@@ -67,8 +68,13 @@ _TOOL_IMPORTS = {
     # DXF models are safe to serve warm because every worker is spawned with
     # PYTHONHASHSEED=0.
     "run": "cadgen.cli._run_model",
-    "export": "cadgen.cli.step_export",
     "step-build": "cadgen.cli.step_build",
+    # One warm tool per mesh door. `step export` served all three formats from a
+    # single spawn; three doors are three spawns, which is exactly the cost the
+    # warm workers exist to remove.
+    "stl-build": "cadgen.cli.stl_build",
+    "3mf-build": "cadgen.cli.threemf_build",
+    "glb-build": "cadgen.cli.glb_build",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
 }
@@ -524,8 +530,8 @@ cadgen-daemon takes no arguments.
 
 It is the warm-process server, started for you by cadgen.daemon.client when
 CADGEN_DAEMON=1 -- not a command to run by hand. It sits in scripts/ beside the
-CLIs you probably meant: python <model>.py, cadgen step export, cadgen step inspect,
-cadgen step build, cadgen snapshot. Each of those takes --help.\
+CLIs you probably meant: python <model>.py, cadgen step build, cadgen stl build,
+cadgen step inspect, cadgen snapshot. Each of those takes --help.\
 """
 
 

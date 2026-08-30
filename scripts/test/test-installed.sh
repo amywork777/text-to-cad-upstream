@@ -103,39 +103,48 @@ PY
 step "Every subcommand dispatches from an empty directory"
 cd "$EMPTY"
 "$VENV/bin/cadgen" --help >/dev/null || fail "cadgen --help"
+# The list comes from the INSTALLED registry, not from a copy of it here: a
+# hand-written list goes stale silently the first time a command is renamed, and
+# then this step passes while checking commands that no longer exist.
+"$VENV/bin/python" -c 'from cadgen.cli import _COMMANDS; print("\n".join(sorted(_COMMANDS)))' \
+  >"$WORK/commands.txt" || fail "read the installed command registry"
+[ -s "$WORK/commands.txt" ] || fail "the installed command registry is empty"
 while read -r command; do
   [ -n "$command" ] || continue
   # shellcheck disable=SC2086
   "$VENV/bin/cadgen" $command --help >/dev/null 2>&1 || fail "cadgen $command --help"
   echo "   cadgen $command"
-done <<'COMMANDS'
-step gen
-step artifact
-step export
-step inspect
-step snapshot
-dxf gen
-dxf artifact
-dxf snapshot
-snapshot
-COMMANDS
+done <"$WORK/commands.txt"
 
 step "Build a real STEP with no repo in sight"
 mkdir -p "$EMPTY/models"
-cat >"$EMPTY/models/probe.step.py" <<'PY'
-# A .step.py target is a module exposing gen_step() -> shape. Deliberately the simplest
-# one that exists: this checks that an installed cadgen can build at all, not that it
-# models anything interesting.
-from build123d import Box
+cat >"$EMPTY/models/probe.py" <<'PY'
+# A model script declares one @step function and builds itself (library-first:
+# there is no gen verb). Deliberately the simplest one that exists: this checks
+# that an installed cadgen can build at all, not that it models anything
+# interesting. @stl declares a mesh serialization so the mesh door has something
+# to produce below.
+from cadgen import build123d as bd
+from cadgen import step, stl
 
 
-def gen_step():
-    return Box(10, 10, 10)
+@step
+@stl
+def probe():
+    return bd.Box(10, 10, 10)
 PY
-"$VENV/bin/cadgen" step gen models/probe.step.py >"$WORK/gen.log" 2>&1 \
-  || { cat "$WORK/gen.log" >&2; fail "cadgen step gen"; }
-find "$EMPTY/models" -name '*.glb' -o -name '*.step' | head -1 | grep -q . \
-  || { cat "$WORK/gen.log" >&2; fail "step gen produced no artifact"; }
-echo "   built a STEP package"
+"$VENV/bin/cadgen" step build models/probe.py >"$WORK/build.log" 2>&1 \
+  || { cat "$WORK/build.log" >&2; fail "cadgen step build"; }
+[ -f "$EMPTY/models/probe.step" ] \
+  || { cat "$WORK/build.log" >&2; fail "step build produced no STEP document"; }
+echo "   built a STEP document and package"
+
+step "Export it through a format door"
+rm -f "$EMPTY/models/probe.stl"
+"$VENV/bin/cadgen" stl build models/probe.py >"$WORK/stl.log" 2>&1 \
+  || { cat "$WORK/stl.log" >&2; fail "cadgen stl build"; }
+[ -s "$EMPTY/models/probe.stl" ] \
+  || { cat "$WORK/stl.log" >&2; fail "stl build produced no mesh"; }
+echo "   wrote the declared STL"
 
 printf '\nInstalled-mode checks passed.\n'

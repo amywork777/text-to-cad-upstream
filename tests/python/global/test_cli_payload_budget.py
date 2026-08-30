@@ -85,7 +85,6 @@ class CompactStdoutTests(unittest.TestCase):
         # here rather than in its own module, so one entry covers all of them.
         "packages/cadgen/src/cadgen/_internal/cli_from_function.py",
         "packages/cadgen/src/cadgen/cli/_run_model.py",
-        "packages/cadgen/src/cadgen/cli/step_export.py",
         "packages/cadgen/src/cadgen/cli/urdf_validate.py",
         "packages/cadgen/src/cadgen/cli/sdf_validate.py",
         "packages/cadgen/src/cadgen/cli/srdf_validate.py",

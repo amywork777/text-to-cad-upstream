@@ -684,7 +684,7 @@ def _produce_declared_mesh_exports(
     ledger already found current are not listed, because the field answers
     "what did this run write", not "what does the model declare".
 
-    Runs through the ONE mesh engine `cadgen step export` uses — same Node
+    Runs through the ONE mesh engine the `cadgen stl|3mf|glb build` doors use — same Node
     invocation, same records — so the two front doors cannot drift. Each
     output is gated by its content-keyed record (document hash + effective
     tolerances): current outputs cost a stat + record read; stale or missing

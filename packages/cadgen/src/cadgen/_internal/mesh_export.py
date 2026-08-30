@@ -1,8 +1,8 @@
 """The ONE mesh-export engine and its freshness ledger.
 
 Every mesh serialization (STL/3MF/GLB) — a `@stl`/`@glb`/`@threemf`
-declaration produced by a model-script run, or an ad-hoc `cadgen step export`
-— funnels through :func:`run_mesh_exporter`, so the two front doors cannot
+declaration produced by a model-script run, or an ad-hoc `cadgen stl|3mf|glb
+build` — funnels through :func:`run_mesh_exporter`, so the front doors cannot
 drift: one Node invocation, one tessellation per distinct tolerance pair,
 formats serialized from it (design/unified-tessellation.md).
 

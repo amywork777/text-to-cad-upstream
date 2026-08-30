@@ -1,12 +1,12 @@
 """Mesh export resolves the STORE render package before touching source.
 
-The export fast path: a CURRENT model (canonical freshness gate, closure
-included) exports straight from its store package — no generator run, no
-extraction. A stale generated model rebuilds from source so exports can never
-serve old geometry (the #308 class). An imported model missing its package
-warms the SHARED store once via the import build, then every later export
-reuses it. All requested formats come from ONE extraction and one Node
-invocation per run.
+The export fast path, exercised through the `cadgen stl|3mf|glb build` doors: a
+CURRENT model (canonical freshness gate, closure included) exports straight from
+its store package — no generator run, no extraction. A stale generated model
+rebuilds from source so exports can never serve old geometry (the #308 class),
+in ONE extraction and writing nothing but its own format. An imported model
+missing its package warms the SHARED store once via the same build
+`cadgen step build` runs, then every later export reuses it.
 """
 
 from __future__ import annotations
@@ -63,8 +63,9 @@ class MeshExportStoreReuseTest(unittest.TestCase):
             capture_output=True, text=True, timeout=600,
         )
 
-    def _export(self, target: str, *flags: str) -> subprocess.CompletedProcess:
-        code = "from cadgen.cli.step_export import main; raise SystemExit(main())"
+    def _export(self, fmt: str, target: str, *flags: str) -> subprocess.CompletedProcess:
+        module = {"stl": "stl_build", "3mf": "threemf_build", "glb": "glb_build"}[fmt]
+        code = f"from cadgen.cli.{module} import main; raise SystemExit(main())"
         proc = subprocess.run(
             [PYTHON, "-c", code, target, "--verbose", *flags],
             cwd=str(self.root), env=self.env, capture_output=True, text=True, timeout=600,
@@ -85,39 +86,42 @@ class MeshExportStoreReuseTest(unittest.TestCase):
         step_file = self.root / "block.step"
         self.assertTrue(step_file.is_file(), "model script writes its STEP")
 
-        # CURRENT generated model: exports from the store package. No generator
-        # run, no extraction — and one run serves every requested format.
-        first = self._export("block.py", "--stl", "--glb", "--3mf")
-        self.assertIn("reusing current render package", first.stderr)
-        self.assertNotIn("run gen_step", first.stderr)
-        self.assertNotIn("extract exact geometry", first.stderr)
-        for suffix in (".stl", ".glb", ".3mf"):
-            self.assertTrue(step_file.with_suffix(suffix).is_file(), suffix)
+        # CURRENT generated model: each door exports from the store package. No
+        # generator run, no extraction.
+        for fmt in ("stl", "glb", "3mf"):
+            current = self._export(fmt, "block.py")
+            self.assertIn("reusing current render package", current.stderr)
+            self.assertNotIn("run gen_step", current.stderr)
+            self.assertNotIn("extract exact geometry", current.stderr)
+            self.assertTrue(step_file.with_suffix(f".{fmt}").is_file(), fmt)
         stl_current = step_file.with_suffix(".stl").read_bytes()
 
         # STALE generated model: the closure gate must reject the package and
-        # rebuild from source — exactly ONE extraction for all formats.
+        # rebuild from source — one extraction, and the door writes only its own
+        # format (no .step, and the model stays stale for the next door).
         _write_model(self.root, size=9.0)
-        stale = self._export("block.py", "--stl", "--glb")
+        step_before = step_file.read_bytes()
+        stale = self._export("stl", "block.py")
         self.assertNotIn("reusing current render package", stale.stderr)
         self.assertIn("run gen_step", stale.stderr)
         self.assertEqual(stale.stderr.count("extract exact geometry started"), 1)
+        self.assertEqual(step_before, step_file.read_bytes(), "a mesh door writes no .step")
         stl_stale = step_file.with_suffix(".stl").read_bytes()
         self.assertNotEqual(stl_current, stl_stale, "stale export must re-run the generator")
 
         # IMPORTED model with no package: the first export warms the shared
-        # store via the import build; the second resolves it without building.
+        # store via the same build `cadgen step build` runs; the second resolves
+        # it without building.
         imported = self.root / "imported_block.step"
         imported.write_bytes(step_file.read_bytes() + b"\n")
         before = self._package_dirs()
-        warm = self._export("imported_block.step", "--glb")
+        self._export("glb", "imported_block.step")
         self.assertTrue(imported.with_suffix(".glb").is_file())
         after_first = self._package_dirs()
         self.assertEqual(len(after_first - before), 1, "one store package built by export")
-        again = self._export("imported_block.step", "--stl")
+        again = self._export("stl", "imported_block.step")
         self.assertEqual(self._package_dirs(), after_first, "second export builds nothing")
         self.assertNotIn("extract exact geometry", again.stderr)
-        del warm
 
 
 if __name__ == "__main__":

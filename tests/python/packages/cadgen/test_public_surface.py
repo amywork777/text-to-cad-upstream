@@ -23,6 +23,7 @@ import inspect
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from cadgen import cli
 from cadgen._internal.cli_from_function import (
@@ -35,12 +36,18 @@ from cadgen._internal.cli_from_function import (
 # The manifest: format namespace -> exactly the verbs it exports.
 PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
     "cadgen.step": ("build",),
+    "cadgen.stl": ("build",),
+    "cadgen.threemf": ("build",),
+    "cadgen.glb": ("build",),
 }
 
 # Commands whose parser is GENERATED from the verb it calls. No allowlist is
 # possible here: the parser has no independent existence.
 MIRRORS: dict[str, tuple[str, str]] = {
     "step build": ("cadgen.step", "build"),
+    "stl build": ("cadgen.stl", "build"),
+    "3mf build": ("cadgen.threemf", "build"),
+    "glb build": ("cadgen.glb", "build"),
 }
 
 # Commands with a hand-written parser, and the options that parser may carry
@@ -50,7 +57,6 @@ ADAPTERS: dict[str, frozenset[str]] = {}
 
 # Commands not yet re-homed under the schema. This set only shrinks.
 UNCLASSIFIED = {
-    "step export",
     "step inspect",
     "step snapshot",
     "dxf snapshot",
@@ -103,14 +109,36 @@ class Manifest(unittest.TestCase):
         # never shadow the authoring API.
         import cadgen
 
-        self.assertIs(cadgen.step, importlib.import_module("cadgen.step"))
-        self.assertTrue(callable(cadgen.step))
+        for name in ("step", "stl", "threemf", "glb"):
+            with self.subTest(format=name):
+                namespace = getattr(cadgen, name)
+                self.assertIs(namespace, importlib.import_module(f"cadgen.{name}"))
+                self.assertTrue(callable(namespace))
+
+    def test_a_decorated_namespace_still_declares(self):
+        # The callable module must reach the SAME decorator `cadgen.authoring`
+        # exports, or a model script would declare into a different registry.
+        import cadgen
+        from cadgen import authoring
+
+        def model():
+            return None
+
+        this_file = Path(__file__).resolve()
+        self.addCleanup(authoring._REGISTRY.pop, this_file, None)
+        cadgen.stl(write="declared.stl")(model)
+        cadgen.step(model)
+        declared = authoring.registered_model(this_file)
+        self.assertEqual({d.fmt for d in declared.mesh_exports}, {"stl"})
 
     def test_the_retired_commands_are_gone(self):
-        # No backwards compatibility: `cadgen import` folded into `step build`.
+        # No backwards compatibility: `cadgen import` folded into `step build`,
+        # and `cadgen step export` into the three per-format doors.
         self.assertNotIn("import", cli._COMMANDS)
-        with self.assertRaises(ModuleNotFoundError):
-            importlib.import_module("cadgen.cli.step_import")
+        self.assertNotIn("step export", cli._COMMANDS)
+        for module in ("cadgen.cli.step_import", "cadgen.cli.step_export"):
+            with self.subTest(module=module), self.assertRaises(ModuleNotFoundError):
+                importlib.import_module(module)
 
 
 class SignatureSync(unittest.TestCase):

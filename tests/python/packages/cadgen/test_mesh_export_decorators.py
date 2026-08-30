@@ -1,12 +1,13 @@
 """@stl/@glb/@threemf: declared mesh exports produced by the model run.
 
 The decorators are metadata-attachers lowered into EntrySpec.mesh_exports;
-production runs through the ONE mesh engine `cadgen step export` uses, gated
-by the shared content-keyed ledger. Contracts pinned here: stacking order is
-behavior-neutral (AST scanning sees the whole decorator list), duplicates and
-@dxf misuse fail loudly, bare declarations land beside the STEP artifact,
-script runs produce/heal declared exports without rebuilding the model, and
-the CLI front door byte-matches and shares the ledger.
+production runs through the ONE mesh engine the `cadgen stl|3mf|glb build`
+doors use, gated by the shared content-keyed ledger. Contracts pinned here:
+stacking order is behavior-neutral (AST scanning sees the whole decorator
+list), duplicates and @dxf misuse fail loudly, bare declarations land beside
+the STEP artifact, script runs produce/heal declared exports without rebuilding
+the model, and the format door byte-matches the script run, shares its ledger,
+and writes nothing outside its own format.
 """
 
 from __future__ import annotations
@@ -170,18 +171,37 @@ class MeshExportProductionTest(unittest.TestCase):
         self.assertIn("wrote STL", heal.stdout)
         self.assertNotIn("wrote GLB", heal.stdout)
 
-        # CLI parity: bare --stl targets the DECLARED path and the shared
-        # ledger makes it a no-op; an explicit out is byte-identical.
-        export = "from cadgen.cli.step_export import main; raise SystemExit(main())"
-        skip = self._run("-c", export, "src/widget.py", "--stl", "--verbose")
+        # DOOR parity: a bare `cadgen stl build` targets the DECLARED path and
+        # the shared ledger makes it a no-op; an explicit OUT is byte-identical
+        # to what the script run wrote.
+        door = "from cadgen.cli.stl_build import main; raise SystemExit(main())"
+        skip = self._run("-c", door, "src/widget.py", "--verbose")
         self.assertNotIn("tessellate", skip.stderr + skip.stdout)
+        self.assertIn("current STL", skip.stdout)
         explicit = self.project / "parity.stl"
-        self._run("-c", export, "src/widget.py", "--stl", str(explicit))
+        self._run("-c", door, "src/widget.py", str(explicit))
         self.assertEqual(
             explicit.read_bytes(),
             (self.project / "STL" / "widget.stl").read_bytes(),
-            "CLI and script-produced STL must be byte-identical",
+            "the door and the script run must write byte-identical STL",
         )
+
+        # --force re-exports past the ledger but does NOT rebuild the model:
+        # the bytes are the same because the geometry is.
+        declared = self.project / "STL" / "widget.stl"
+        before = declared.read_bytes()
+        forced = self._run("-c", door, "src/widget.py", "--force", "--verbose")
+        self.assertIn("wrote STL", forced.stdout)
+        self.assertNotIn("run gen_step", forced.stderr)
+        self.assertEqual(before, declared.read_bytes())
+
+        # A door writes ONLY its own format: nothing here touches the .step or
+        # the sibling declarations of the other two formats.
+        glb_before = (self.project / "STEP" / "widget.glb").read_bytes()
+        step_before = (self.project / "STEP" / "widget.step").read_bytes()
+        self._run("-c", door, "src/widget.py", "--force")
+        self.assertEqual(glb_before, (self.project / "STEP" / "widget.glb").read_bytes())
+        self.assertEqual(step_before, (self.project / "STEP" / "widget.step").read_bytes())
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ def cli_progress_line(
     narrating every stage and a bar repainting between its lines would fight with them. The
     status record is written regardless, so an open CAD Viewer still tracks the build.
 
-    `cadgen import` builds exactly what a model-script run builds and reported nothing while
+    `cadgen step build` builds exactly what a model-script run builds and reported nothing while
     doing it -- the record went to the viewer, and a terminal caller watched a silent
     process. Sharing this is what stops the two disagreeing about whether a build is worth
     narrating."""

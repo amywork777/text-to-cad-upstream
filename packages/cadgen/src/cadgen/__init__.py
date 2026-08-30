@@ -48,21 +48,20 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "step":
-        # The `step` FORMAT NAMESPACE: the @step declaration decorator and the
-        # step.build(...) verb in one callable module (design/format-doors.md).
-        # Returning the module rather than cadgen.authoring.step keeps a single
-        # identity — `import cadgen.step` would otherwise shadow the decorator.
-        import cadgen.step as _step
+    if name in {"step", "stl", "glb", "threemf"}:
+        # A FORMAT NAMESPACE: the declaration decorator and the format's verbs in
+        # one callable module (design/format-doors.md). Returning the module
+        # rather than cadgen.authoring.<name> keeps a single identity —
+        # `import cadgen.stl` would otherwise shadow the decorator.
+        import importlib
 
-        return _step
-    if name in {"dxf", "stl", "glb", "threemf"}:
-        # The library-first authoring decorators (design/library-first-generation.md):
-        # @step/@dxf declare documents; @stl/@glb/@threemf declare a @step
-        # model's mesh serializations.
-        from cadgen.authoring import dxf, glb, stl, threemf
+        return importlib.import_module(f"cadgen.{name}")
+    if name == "dxf":
+        # Still just the authoring decorator (design/library-first-generation.md);
+        # `cadgen.dxf` becomes a namespace with the drawing family's verbs.
+        from cadgen.authoring import dxf
 
-        return {"dxf": dxf, "stl": stl, "glb": glb, "threemf": threemf}[name]
+        return dxf
     if name == "pose":
         # Declarative view/pose block for @step(pose=...) — the single pose
         # authoring surface (no loose .params.js sidecars).
@@ -129,7 +128,7 @@ if TYPE_CHECKING:
     # without importing OCP. Every name here must have a branch there. develop's version of
     # this block pulled two names from the api alias module, which this branch deletes --
     # they come from their real modules now.
-    from cadgen import build123d, step
+    from cadgen import build123d, glb, step, stl, threemf
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
     from cadgen.authoring import dxf
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear

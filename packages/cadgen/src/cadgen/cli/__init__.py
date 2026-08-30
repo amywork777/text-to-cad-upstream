@@ -41,9 +41,12 @@ import sys
 _COMMANDS: dict[str, tuple[str, str]] = {
     # STEP
     "step build": ("cadgen.cli.step_build", "make a model's or STEP's derived state current"),
-    "step export": ("cadgen.cli.step_export", "export a built STEP package to a file"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
+    # Mesh formats — one door each, replacing the retired `step export`
+    "stl build": ("cadgen.cli.stl_build", "write a model's STL output(s)"),
+    "3mf build": ("cadgen.cli.threemf_build", "write a model's 3MF output(s)"),
+    "glb build": ("cadgen.cli.glb_build", "write a model's GLB output(s)"),
     # DXF
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Robot descriptions
@@ -124,10 +127,12 @@ def enforce_requirements_pin(requirements_path) -> None:
 # rather than inside each command. It served only the skill launchers until now, so
 # skill-shim launchers were an order of magnitude faster than the front door for no reason.
 _DAEMON_TOOLS = {
-    "step export": "export",
     "step build": "step-build",
     "step inspect": "inspect",
     "step snapshot": "snapshot",
+    "stl build": "stl-build",
+    "3mf build": "3mf-build",
+    "glb build": "glb-build",
 }
 
 # Drawing packages are content-addressed and ezdxf's object ordering depends on hash

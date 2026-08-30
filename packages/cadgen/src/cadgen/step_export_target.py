@@ -5,10 +5,12 @@ Two callers share this module, and they offer different formats:
 * The CAD Viewer's "Export model" backend — one format to an arbitrary ``--out``
   destination picked from a native Save dialog, via ``main()``/
   :func:`export_model_to_path`. Offers every :data:`FORMAT_SUFFIX` format, STEP included,
-  because "Download STEP" is a Viewer menu item.
-* The CAD skill workflow (``cadgen step export``) — one or more formats per run, via
-  :func:`export_cad_target`. Mesh formats only (:data:`MESH_EXPORT_FORMATS`); a model's
-  ``.step`` file is written by the model script (``python <model>.py``) instead.
+  because "Download STEP" is a Viewer menu item. This is a machine ABI, not a public
+  verb: it gets no generated CLI (design/format-doors.md, decision 4).
+* The per-format doors — ``cadgen.stl.build`` / ``.threemf`` / ``.glb`` and their
+  ``cadgen <format> build`` CLIs — via :func:`export_cad_target`. Mesh formats only
+  (:data:`MESH_EXPORT_FORMATS`); a model's ``.step`` file is written by ``step.build``
+  or the model script (``python <model>.py``) instead.
 
 Both accept an imported ``.step``/``.stp`` or a generated ``gen_step()`` Python source;
 exports can never be stale: a model either passes the canonical freshness gate (closure
@@ -20,7 +22,7 @@ temporary package extracted from the freshly built scene. Geometry is extracted 
 once per run and one Node invocation serializes every requested format from one
 tessellation, so all formats come from identical geometry. The module writes no
 beside-source artifacts; the one cache effect is that an imported model missing its
-package warms the SHARED store via the ``cadgen import`` build.
+package warms the SHARED store via the same build ``cadgen step build`` runs.
 
 Emits a single final JSON line on stdout: ``{"ok": true, "path": ..., "filename": ...}``
 or ``{"ok": false, "error": ...}`` (the Node spawner parses the last stdout JSON line).
@@ -52,10 +54,11 @@ from cadgen._internal.step_scene import (
 # Logical format name -> conventional file suffix (informational; the caller owns `--out`).
 FORMAT_SUFFIX = {"step": ".step", "stl": ".stl", "3mf": ".3mf", "glb": ".glb"}
 
-# Formats :func:`export_cad_target` (`cadgen step export`) offers. STEP is
-# deliberately absent: a generated model writes its `.step` through
-# its model script run, and an imported model's STEP is
-# already the file on disk. The Viewer's Save-dialog export still offers STEP.
+# Formats :func:`export_cad_target` — the per-format doors — offer. STEP is
+# deliberately absent: a format door writes only its own format, so a generated
+# model writes its `.step` through `cadgen step build` or its model script run,
+# and an imported model's STEP is already the file on disk. The Viewer's
+# Save-dialog export still offers STEP (a machine ABI, not a door).
 MESH_EXPORT_FORMATS = ("stl", "3mf", "glb")
 
 
@@ -279,8 +282,8 @@ def _ensure_imported_store_package(
 
     An imported file's package is keyed by its content hash, so it can never be
     stale — only absent. On a miss this warms the SHARED store through the same
-    build (and locks) `cadgen import` uses; nothing export-specific is stored,
-    and every later export, view, or snapshot of these bytes reuses it."""
+    build (and locks) `cadgen step build` uses; nothing export-specific is
+    stored, and every later export, view, or snapshot of these bytes reuses it."""
     from cadgen.catalog import render_package_dir
     from cadgen.step_artifact_cli import build_step_artifact
 
@@ -349,7 +352,7 @@ def _resolve_mesh_package(
     STEP load, no extraction; the package already holds the exact surf geometry
     the exporter consumes. An imported model can only miss (content-hash keying
     cannot go stale), and a miss builds the shared store package via the
-    ``cadgen import`` path. Only a STALE generated model still pays for source:
+    ``cadgen step build`` path. Only a STALE generated model still pays for source:
     its generator runs in-memory and the scene comes back for a one-shot
     temporary package (``package_dir`` None)."""
     if source_path is not None:
@@ -409,7 +412,8 @@ def _export_mesh_jobs(
     jobs: "list[MeshExportJob]",
     *,
     logger: CliLogger,
-) -> None:
+    force: bool = False,
+) -> "frozenset[Path]":
     """Export every requested mesh job from ONE package: the store package
     when the model resolved current, else a one-shot temp package extracted
     from the scene. OCCT meshes nothing on either path (the GLB is Y-up glTF
@@ -417,7 +421,12 @@ def _export_mesh_jobs(
 
     Jobs against a STORE package are gated and recorded in the shared
     mesh-export ledger — the same one `@stl`/`@glb`/`@threemf` script runs
-    read — so the two front doors never redo each other's work."""
+    read — so the two front doors never redo each other's work. ``force``
+    ignores that gate and re-exports; it never rebuilds the MODEL, which is
+    `step build`'s job (design/format-doors.md, decision 5).
+
+    RETURNS the outputs this call actually wrote, so a caller can report which
+    of its jobs the ledger had already satisfied."""
     name = spec.step_path.stem
     default_color = _color_hex(spec.color)
     if package_dir is not None:
@@ -429,7 +438,8 @@ def _export_mesh_jobs(
         pending = [
             job
             for job in jobs
-            if not mesh_export_current(
+            if force
+            or not mesh_export_current(
                 job.out,
                 document_hash=document_hash,
                 mesh_tolerance=job.mesh_tolerance,
@@ -437,7 +447,7 @@ def _export_mesh_jobs(
             )
         ]
         if not pending:
-            return
+            return frozenset()
         for job in pending:
             job.out.parent.mkdir(parents=True, exist_ok=True)
         run_mesh_exporter(
@@ -452,7 +462,7 @@ def _export_mesh_jobs(
                     mesh_tolerance=job.mesh_tolerance,
                     mesh_angular_tolerance=job.mesh_angular_tolerance,
                 )
-        return
+        return frozenset(job.out for job in pending)
     import tempfile
 
     if scene is None:
@@ -465,6 +475,9 @@ def _export_mesh_jobs(
         run_mesh_exporter(
             temp_package, jobs, name=name, default_color=default_color, logger=logger
         )
+    # A one-shot package has no document identity to key a ledger record on, so
+    # nothing here is gated and everything is written.
+    return frozenset(job.out for job in jobs)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -579,7 +592,7 @@ def _resolve_export_output(
         out = logical_step.parent / out
     out = out.resolve()
     if out.suffix.lower() != FORMAT_SUFFIX[fmt]:
-        raise ValueError(f"--{fmt} output must end with {FORMAT_SUFFIX[fmt]}: {raw}")
+        raise ValueError(f"{fmt} OUT must end with {FORMAT_SUFFIX[fmt]}: {raw}")
     return out
 
 
@@ -590,22 +603,29 @@ def export_cad_target(
     repo_root: Path | None = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
+    force: bool = False,
     verbose: bool = False,
     logger: CliLogger | None = None,
 ) -> dict[str, object]:
-    """Export one CAD model — an imported ``.step``/``.stp`` or a generated Python
-    ``gen_step()`` source — to one or more of :data:`MESH_EXPORT_FORMATS` in a single run.
+    """Export one CAD model — an imported ``.step``/``.stp`` or a decorated ``@step``
+    model script — to one or more of :data:`MESH_EXPORT_FORMATS` in a single run.
 
-    A CURRENT model exports straight from its store render package — no generator run,
-    no STEP load, no extraction. Geometry is extracted at most ONCE per run in every
-    case, and one Node invocation serializes all requested formats from one
+    The shared engine entry behind the per-format doors (``cadgen.stl.build`` and
+    friends). A CURRENT model exports straight from its store render package — no
+    generator run, no STEP load, no extraction. Geometry is extracted at most ONCE per
+    run in every case, and one Node invocation serializes all requested formats from one
     tessellation, so every format comes from identical geometry. ``outputs`` pairs a
-    format name with an explicit output path or ``None`` for the default sibling path.
+    format name with an explicit output path, or ``None`` for the model's declarations
+    (all variants) falling back to the default sibling path. ``force`` re-exports past
+    the ledger without rebuilding the model.
+
     Writes no ``.step`` and no beside-source artifacts; an imported model missing its
-    render package warms the SHARED store through the ``cadgen import`` build (content
-    keyed — the same package every later view or export of those bytes reuses)."""
+    render package warms the SHARED store through the same build ``cadgen step build``
+    runs (content keyed — the same package every later view or export of those bytes
+    reuses). Each returned file carries whether the ledger had already satisfied it and
+    the effective tolerance pair it was written at."""
     if logger is None:
-        logger = CliLogger("cadgen step export", verbose=verbose)
+        logger = CliLogger("cadgen mesh export", verbose=verbose)
     if not outputs:
         raise ValueError("No export formats requested")
     for fmt, _ in outputs:
@@ -644,7 +664,7 @@ def export_cad_target(
 
     def _add(fmt: str, out: Path, chord: float | None, angle: float | None) -> None:
         if out in seen:
-            raise ValueError(f"--{seen[out]} and --{fmt} resolve to the same output path: {out}")
+            raise ValueError(f"{seen[out]} and {fmt} resolve to the same output path: {out}")
         seen[out] = fmt
         resolved.append(
             MeshExportJob(fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle)
@@ -678,8 +698,17 @@ def export_cad_target(
         )
         _add(fmt, out, chord, angle)
 
-    _export_mesh_jobs(spec, package_dir, scene, resolved, logger=logger)
-    files = [{"format": job.fmt, "path": str(job.out)} for job in resolved]
+    written = _export_mesh_jobs(spec, package_dir, scene, resolved, logger=logger, force=force)
+    files = [
+        {
+            "format": job.fmt,
+            "path": str(job.out),
+            "skipped": job.out not in written,
+            "meshTolerance": job.mesh_tolerance,
+            "meshAngularTolerance": job.mesh_angular_tolerance,
+        }
+        for job in resolved
+    ]
     logger.total()
     return {"ok": True, "files": files}
 
