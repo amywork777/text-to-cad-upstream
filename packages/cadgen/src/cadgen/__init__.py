@@ -24,6 +24,9 @@ __all__ = [
     "AssemblyHelper",
     "step",
     "dxf",
+    "stl",
+    "glb",
+    "threemf",
     "pose",
     "build123d",
     "srgb",
@@ -45,11 +48,13 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name in {"step", "dxf"}:
-        # The library-first authoring decorators (design/library-first-generation.md).
-        from cadgen.authoring import dxf, step
+    if name in {"step", "dxf", "stl", "glb", "threemf"}:
+        # The library-first authoring decorators (design/library-first-generation.md):
+        # @step/@dxf declare documents; @stl/@glb/@threemf declare a @step
+        # model's mesh serializations.
+        from cadgen.authoring import dxf, glb, step, stl, threemf
 
-        return {"step": step, "dxf": dxf}[name]
+        return {"step": step, "dxf": dxf, "stl": stl, "glb": glb, "threemf": threemf}[name]
     if name == "pose":
         # Declarative view/pose block for @step(pose=...) — the single pose
         # authoring surface (no loose .params.js sidecars).

@@ -53,6 +53,9 @@ class EntrySpec:
     mesh_tolerance_explicit: bool = False
     mesh_angular_tolerance_explicit: bool = False
     color: tuple[float, float, float, float] | None = None
+    # Declared mesh serializations, resolved to absolute paths. Tolerances
+    # ``None`` inherit the model's policy at export time.
+    mesh_exports: "tuple[ResolvedMeshExport, ...]" = ()
 
     @property
     def entry_path(self) -> Path | None:
@@ -69,6 +72,51 @@ class EntrySpec:
         ):
             return self.step_path
         return self.script_path if self.script_path is not None else self.step_path
+
+
+@dataclass(frozen=True)
+class ResolvedMeshExport:
+    """One declared mesh export with its destination resolved: `@stl` and
+    friends carry script-relative ``write=`` targets (or None for the sibling
+    of the logical STEP artifact); the spec carries the final answer."""
+
+    fmt: str
+    path: Path
+    mesh_tolerance: float | None = None
+    mesh_angular_tolerance: float | None = None
+
+
+def _resolve_mesh_exports(
+    declarations,
+    *,
+    script_path: Path | None,
+    step_path: Path | None,
+) -> "tuple[ResolvedMeshExport, ...]":
+    from cadgen.metadata import resolve_model_output_path
+    from cadgen._internal.mesh_export import MESH_FORMAT_SUFFIX
+
+    if not declarations or step_path is None:
+        return ()
+    resolved: list[ResolvedMeshExport] = []
+    for decl in declarations:
+        suffix = MESH_FORMAT_SUFFIX[decl.fmt]
+        if decl.write is not None and script_path is not None:
+            path = resolve_model_output_path(
+                script_path, fmt=decl.fmt, explicit_write=decl.write
+            )
+        else:
+            # Bare declaration: sibling of the STEP artifact, wherever write=
+            # routed it — exports follow the artifact they derive from.
+            path = step_path.with_suffix(suffix)
+        resolved.append(
+            ResolvedMeshExport(
+                fmt=decl.fmt,
+                path=path.expanduser().resolve(),
+                mesh_tolerance=decl.mesh_tolerance,
+                mesh_angular_tolerance=decl.mesh_angular_tolerance,
+            )
+        )
+    return tuple(resolved)
 
 
 @dataclass
@@ -382,6 +430,11 @@ def _entry_spec_from_source(source: CadSource) -> EntrySpec:
         mesh_tolerance_explicit=source.mesh_tolerance is not None,
         mesh_angular_tolerance_explicit=source.mesh_angular_tolerance is not None,
         color=source.color,
+        mesh_exports=_resolve_mesh_exports(
+            getattr(generator_metadata, "mesh_exports", ()) or (),
+            script_path=script_path,
+            step_path=step_path,
+        ),
     )
 
 

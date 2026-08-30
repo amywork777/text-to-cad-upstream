@@ -152,8 +152,14 @@ def _display_name_for(path: Path) -> str:
         return str(path)
 
 
-# The bundled Node mesh exporter (packages/cadjs/bin/mesh-export.mjs).
-MESH_EXPORT_BUILDER = "mesh-export.mjs"
+# The shared mesh engine: one implementation behind the CLI and the
+# @stl/@glb/@threemf declarations (cadgen._internal.mesh_export).
+from cadgen._internal.mesh_export import (  # noqa: E402
+    MeshExportJob,
+    mesh_export_current,
+    record_mesh_export,
+    run_mesh_exporter,
+)
 
 
 def _linear_channel_to_srgb_byte(channel: float) -> int:
@@ -216,61 +222,28 @@ def _build_export_package_from_scene(
             )
 
 
-def _run_mesh_exporter(
-    package_dir: Path,
-    jobs: "list[tuple[str, Path]]",
+def _effective_export_tolerances(
+    spec: EntrySpec,
+    fmt: str,
     *,
-    name: str,
-    default_color: str | None,
-    mesh_tolerance: float | None,
-    mesh_angular_tolerance: float | None,
-    logger: CliLogger,
-) -> None:
-    """STL/3MF/GLB through the ONE tessellation path (design/unified-tessellation.md).
-
-    One Node invocation serves every requested format: the bundled exporter
-    tessellates each component's exact surfaces once — the same watertight
-    tessellator the viewport uses — then serializes per format. Boundary
-    vertices lie on the exact STEP edge curves, colors carry per
-    face/occurrence/part, and the bytes are deterministic. Tolerance overrides
-    are the tessellator's units — chord tolerance RELATIVE to each component's
-    bounding diagonal, angular tolerance in radians — not the retired OCCT
-    absolute deflections.
-    """
-    import subprocess
-
-    from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
-
-    argv = [
-        str(cad_node_executable()),
-        str(node_builder_script(MESH_EXPORT_BUILDER)),
-        "--package-dir", str(package_dir),
-        "--name", name,
-    ]
-    for fmt, out in jobs:
-        argv += ["--format", fmt, "--out", str(out)]
-    if mesh_tolerance is not None:
-        argv += ["--chord-tolerance", repr(float(mesh_tolerance))]
-    if mesh_angular_tolerance is not None:
-        argv += ["--angle-tolerance", repr(float(mesh_angular_tolerance))]
-    if default_color is not None:
-        argv += ["--default-color", default_color]
-    label = "+".join(fmt for fmt, _ in jobs)
-    with logger.timed(f"tessellate + write {label}"):
-        proc = subprocess.run(argv, capture_output=True, text=True)
-    payload: dict = {}
-    for line in reversed(proc.stdout.splitlines()):
-        stripped = line.strip()
-        if stripped.startswith("{"):
-            try:
-                payload = json.loads(stripped)
-            except ValueError:
-                pass
-            break
-    missing = [out for _, out in jobs if not out.is_file()]
-    if not payload.get("ok") or missing:
-        detail = str(payload.get("error") or proc.stderr or f"exit {proc.returncode}").strip()
-        raise RuntimeError(f"mesh export failed for {label}: {detail}")
+    cli_mesh_tolerance: float | None,
+    cli_mesh_angular_tolerance: float | None,
+) -> tuple[float | None, float | None]:
+    """One precedence rule, both front doors: CLI run-level flag > declared
+    format-level (@stl/@glb/@threemf) > @step model-level explicit >
+    tessellator default (None)."""
+    declared = next((d for d in spec.mesh_exports if d.fmt == fmt), None)
+    chord = cli_mesh_tolerance
+    if chord is None and declared is not None:
+        chord = declared.mesh_tolerance
+    if chord is None and spec.mesh_tolerance_explicit:
+        chord = spec.mesh_tolerance
+    angle = cli_mesh_angular_tolerance
+    if angle is None and declared is not None:
+        angle = declared.mesh_angular_tolerance
+    if angle is None and spec.mesh_angular_tolerance_explicit:
+        angle = spec.mesh_angular_tolerance
+    return chord, angle
 
 
 def _current_store_package(spec: EntrySpec) -> Path | None:
@@ -429,46 +402,64 @@ def _export_mesh_jobs(
     spec: EntrySpec,
     package_dir: Path | None,
     scene: LoadedStepScene | None,
-    jobs: "list[tuple[str, Path]]",
+    jobs: "list[MeshExportJob]",
     *,
-    mesh_tolerance: float | None,
-    mesh_angular_tolerance: float | None,
     logger: CliLogger,
 ) -> None:
-    """Export every requested mesh format from ONE package: the store package
+    """Export every requested mesh job from ONE package: the store package
     when the model resolved current, else a one-shot temp package extracted
     from the scene. OCCT meshes nothing on either path (the GLB is Y-up glTF
-    for external tools, matching the retired native writer's convention)."""
-    for out in {out for _, out in jobs}:
-        out.parent.mkdir(parents=True, exist_ok=True)
+    for external tools, matching the retired native writer's convention).
+
+    Jobs against a STORE package are gated and recorded in the shared
+    mesh-export ledger — the same one `@stl`/`@glb`/`@threemf` script runs
+    read — so the two front doors never redo each other's work."""
     name = spec.step_path.stem
     default_color = _color_hex(spec.color)
     if package_dir is not None:
-        _run_mesh_exporter(
-            package_dir,
-            jobs,
-            name=name,
-            default_color=default_color,
-            mesh_tolerance=mesh_tolerance,
-            mesh_angular_tolerance=mesh_angular_tolerance,
-            logger=logger,
+        from cadgen.catalog import artifact_file_hash
+
+        document_hash = (
+            artifact_file_hash(spec.entry_path) if spec.entry_path is not None else None
         )
+        pending = [
+            job
+            for job in jobs
+            if not mesh_export_current(
+                job.out,
+                document_hash=document_hash,
+                mesh_tolerance=job.mesh_tolerance,
+                mesh_angular_tolerance=job.mesh_angular_tolerance,
+            )
+        ]
+        if not pending:
+            return
+        for job in pending:
+            job.out.parent.mkdir(parents=True, exist_ok=True)
+        run_mesh_exporter(
+            package_dir, pending, name=name, default_color=default_color, logger=logger
+        )
+        if document_hash:
+            for job in pending:
+                record_mesh_export(
+                    job.out,
+                    document_hash=document_hash,
+                    fmt=job.fmt,
+                    mesh_tolerance=job.mesh_tolerance,
+                    mesh_angular_tolerance=job.mesh_angular_tolerance,
+                )
         return
     import tempfile
 
     if scene is None:
         raise RuntimeError(f"no render package and no scene to extract for {name}")
+    for job in jobs:
+        job.out.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="cadgen-mesh-export-") as tmp:
         temp_package = Path(tmp) / "package"
         _build_export_package_from_scene(spec, scene, temp_package, logger=logger)
-        _run_mesh_exporter(
-            temp_package,
-            jobs,
-            name=name,
-            default_color=default_color,
-            mesh_tolerance=mesh_tolerance,
-            mesh_angular_tolerance=mesh_angular_tolerance,
-            logger=logger,
+        run_mesh_exporter(
+            temp_package, jobs, name=name, default_color=default_color, logger=logger
         )
 
 
@@ -523,13 +514,17 @@ def export_model_to_path(
         spec, package_dir, scene = _resolve_mesh_package(
             repo_root, step_path, source_path, logger=logger
         )
+        chord, angle = _effective_export_tolerances(
+            spec,
+            fmt,
+            cli_mesh_tolerance=mesh_tolerance,
+            cli_mesh_angular_tolerance=mesh_angular_tolerance,
+        )
         _export_mesh_jobs(
             spec,
             package_dir,
             scene,
-            [(fmt, out)],
-            mesh_tolerance=mesh_tolerance,
-            mesh_angular_tolerance=mesh_angular_tolerance,
+            [MeshExportJob(fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle)],
             logger=logger,
         )
         return {"ok": True, "path": str(out), "filename": out.name, "format": fmt}
@@ -562,10 +557,17 @@ def _resolve_export_output(
     raw: str | Path | None,
     *,
     logical_step: Path,
+    spec: EntrySpec | None = None,
 ) -> Path:
-    """Resolve one requested mesh export output. ``None`` means the default sibling path
-    (``<name>.<ext>`` beside the logical STEP); a relative path resolves beside the
-    logical STEP, matching the historical sidecar-path semantics."""
+    """Resolve one requested mesh export output. ``None`` means the model's
+    DECLARED path when `@stl`/`@glb`/`@threemf` declares one — both front
+    doors converge on the same artifact — else the default sibling path
+    (``<name>.<ext>`` beside the logical STEP); a relative path resolves
+    beside the logical STEP, matching the historical sidecar-path semantics."""
+    if raw is None and spec is not None:
+        declared = next((d for d in spec.mesh_exports if d.fmt == fmt), None)
+        if declared is not None:
+            return declared.path
     if raw is None:
         return logical_step.with_suffix(FORMAT_SUFFIX[fmt]).resolve()
     out = Path(raw).expanduser()
@@ -633,25 +635,27 @@ def export_cad_target(
         logger=logger,
     )
 
-    resolved: list[tuple[str, Path]] = []
+    resolved: list[MeshExportJob] = []
     seen: dict[Path, str] = {}
     for fmt, raw in outputs:
-        out = _resolve_export_output(fmt, raw, logical_step=spec.step_path)
+        out = _resolve_export_output(fmt, raw, logical_step=spec.step_path, spec=spec)
+        chord, angle = _effective_export_tolerances(
+            spec,
+            fmt,
+            cli_mesh_tolerance=mesh_tolerance,
+            cli_mesh_angular_tolerance=mesh_angular_tolerance,
+        )
         if out in seen:
             raise ValueError(f"--{seen[out]} and --{fmt} resolve to the same output path: {out}")
         seen[out] = fmt
-        resolved.append((fmt, out))
+        resolved.append(
+            MeshExportJob(
+                fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle
+            )
+        )
 
-    _export_mesh_jobs(
-        spec,
-        package_dir,
-        scene,
-        resolved,
-        mesh_tolerance=mesh_tolerance,
-        mesh_angular_tolerance=mesh_angular_tolerance,
-        logger=logger,
-    )
-    files = [{"format": fmt, "path": str(out)} for fmt, out in resolved]
+    _export_mesh_jobs(spec, package_dir, scene, resolved, logger=logger)
+    files = [{"format": job.fmt, "path": str(job.out)} for job in resolved]
     logger.total()
     return {"ok": True, "files": files}
 

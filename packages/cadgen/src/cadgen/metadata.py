@@ -31,6 +31,24 @@ class GeneratorMetadata:
     entry_function: str | None = None
     write_target: str | None = None
     is_decorated: bool = False
+    # Declared mesh serializations (@stl/@glb/@threemf stacked on the @step
+    # function). Statically parsed like write=; resolved to paths at spec time.
+    mesh_exports: "tuple[MeshExportDecl, ...]" = ()
+
+
+@dataclass(frozen=True)
+class MeshExportDecl:
+    """One declared mesh export: `@stl(write=..., mesh_tolerance=...)` etc.
+
+    ``fmt`` is the FORMAT name ("stl" | "3mf" | "glb"); the 3MF decorator is
+    spelled ``@threemf`` (identifiers cannot start with a digit). ``write``
+    is the raw script-relative target, ``None`` meaning the sibling of the
+    logical STEP artifact. Tolerances ``None`` inherit the model's policy."""
+
+    fmt: str
+    write: str | None = None
+    mesh_tolerance: float | None = None
+    mesh_angular_tolerance: float | None = None
 
 
 STEP_ENVELOPE_FIELDS = {
@@ -103,21 +121,84 @@ def resolve_model_output_path(script_path: Path, *, fmt: str, explicit_write: st
     return (script.parent / f"{script.stem}.{fmt}").resolve()
 
 
+_MESH_DECORATOR_NAMES = ("stl", "glb", "threemf")
+_MESH_DECORATOR_FMT = {"stl": "stl", "glb": "glb", "threemf": "3mf"}
+
+
 def _cadgen_decorator_aliases(tree: ast.Module) -> tuple[dict[str, str], set[str]]:
-    """Local names bound to cadgen's ``step``/``dxf`` decorators, and local
+    """Local names bound to cadgen's model/export decorators, and local
     names bound to the cadgen module itself (for ``@cadgen.step(...)``)."""
     names: dict[str, str] = {}
     module_aliases: set[str] = set()
+    tracked = {"step", "dxf", *_MESH_DECORATOR_NAMES}
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module in {"cadgen", "cadgen.authoring"}:
             for alias in node.names:
-                if alias.name in {"step", "dxf"}:
+                if alias.name in tracked:
                     names[alias.asname or alias.name] = alias.name
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name == "cadgen":
                     module_aliases.add(alias.asname or "cadgen")
     return names, module_aliases
+
+
+def _match_mesh_export_decorators(
+    function: ast.FunctionDef,
+    names: dict[str, str],
+    module_aliases: set[str],
+    *,
+    script_path: Path,
+) -> "tuple[MeshExportDecl, ...]":
+    """The function's stacked ``@stl``/``@glb``/``@threemf`` declarations.
+
+    AST scanning sees the whole ``decorator_list``, so stacking order (above
+    or below ``@step``) is irrelevant here by construction. Duplicate formats
+    fail loudly."""
+    declarations: list[MeshExportDecl] = []
+    for decorator in function.decorator_list:
+        call_kwargs: dict[str, ast.expr] = {}
+        target = decorator
+        if isinstance(decorator, ast.Call):
+            target = decorator.func
+            for keyword in decorator.keywords:
+                if keyword.arg is not None:
+                    call_kwargs[keyword.arg] = keyword.value
+        deco_name: str | None = None
+        if isinstance(target, ast.Name):
+            resolved = names.get(target.id)
+            if resolved in _MESH_DECORATOR_NAMES:
+                deco_name = resolved
+        elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
+            if target.value.id in module_aliases and target.attr in _MESH_DECORATOR_NAMES:
+                deco_name = target.attr
+        if deco_name is None:
+            continue
+        fmt = _MESH_DECORATOR_FMT[deco_name]
+        if any(existing.fmt == fmt for existing in declarations):
+            raise ValueError(
+                f"{_display_path(script_path)} declares @{deco_name} more than once; "
+                "each mesh format is declared at most once per model"
+            )
+        write = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
+        if write is not None and not write.lower().endswith(f".{fmt}" if fmt != "3mf" else ".3mf"):
+            raise ValueError(
+                f"{_display_path(script_path)} @{deco_name} write= must end with "
+                f"'.{fmt}': {write!r}"
+            )
+        declarations.append(
+            MeshExportDecl(
+                fmt=fmt,
+                write=write,
+                mesh_tolerance=_decorator_numeric_kwarg(
+                    call_kwargs, "mesh_tolerance", script_path=script_path
+                ),
+                mesh_angular_tolerance=_decorator_numeric_kwarg(
+                    call_kwargs, "mesh_angular_tolerance", script_path=script_path
+                ),
+            )
+        )
+    return tuple(declarations)
 
 
 def _match_model_decorator(
@@ -274,6 +355,14 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
                     "inferred from its return; declare it explicitly: @step(kind=...)"
                 ) from exc
 
+    mesh_exports = _match_mesh_export_decorators(
+        function, decorator_names, module_aliases, script_path=script_path
+    )
+    if fmt == "dxf" and mesh_exports:
+        raise ValueError(
+            f"{_display_path(script_path)} stacks a mesh export decorator on a @dxf "
+            "drawing; STL/3MF/GLB derive from a @step model's geometry"
+        )
     return GeneratorMetadata(
         script_path=script_path.resolve(),
         kind=kind,
@@ -288,6 +377,7 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
         entry_function=function.name,
         write_target=write_target,
         is_decorated=True,
+        mesh_exports=mesh_exports,
     )
 
 

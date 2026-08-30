@@ -633,6 +633,10 @@ def _generate_step_outputs(
     ):
         if logger is not None:
             logger.debug(f"reused current GLB/topology: {_display_path(render_package_dir(spec.entry_path))}")
+        # Declared mesh exports are content-gated, not build-gated: a current
+        # model with a deleted/stale STL heals it here from the store package
+        # without a rebuild.
+        _produce_declared_mesh_exports(spec, logger=logger)
         return GeneratedStepResult(spec=spec, scene=None)
     output_kwargs: dict[str, object] = {
         "entries_by_step_path": entries_by_step_path,
@@ -666,7 +670,82 @@ def _generate_step_outputs(
         output_kwargs["require_step_file"] = True
     result = _generate_part_outputs(spec, **output_kwargs)
     _record_step_export(spec, scene=preloaded_scene)
+    _produce_declared_mesh_exports(spec, logger=logger)
     return result
+
+
+def _produce_declared_mesh_exports(spec: EntrySpec, *, logger: CliLogger | None) -> None:
+    """Produce the model's declared ``@stl``/``@glb``/``@threemf`` outputs.
+
+    Runs through the ONE mesh engine `cadgen step export` uses — same Node
+    invocation, same records — so the two front doors cannot drift. Each
+    output is gated by its content-keyed record (document hash + effective
+    tolerances): current outputs cost a stat + record read; stale or missing
+    ones tessellate from the store package. Content-gated deliberately even
+    under --force: a byte-identical rebuild leaves exports byte-identical by
+    determinism, so rewriting them is pure waste.
+
+    Tolerance precedence: declaration-level explicit > @step model-level
+    explicit > tessellator default (matching the CLI's flag > model > default).
+    """
+    if not spec.mesh_exports or spec.entry_path is None or spec.step_path is None:
+        return
+    from cadgen.catalog import artifact_file_hash
+    from cadgen._internal.mesh_export import (
+        MeshExportJob,
+        mesh_export_current,
+        record_mesh_export,
+        run_mesh_exporter,
+    )
+
+    document_hash = artifact_file_hash(spec.entry_path)
+    package_dir = render_package_dir(spec.entry_path)
+    if document_hash is None or not (package_dir / "assembly.json").is_file():
+        return
+    pending: list[MeshExportJob] = []
+    for declared in spec.mesh_exports:
+        chord = declared.mesh_tolerance
+        if chord is None and spec.mesh_tolerance_explicit:
+            chord = spec.mesh_tolerance
+        angle = declared.mesh_angular_tolerance
+        if angle is None and spec.mesh_angular_tolerance_explicit:
+            angle = spec.mesh_angular_tolerance
+        if mesh_export_current(
+            declared.path,
+            document_hash=document_hash,
+            mesh_tolerance=chord,
+            mesh_angular_tolerance=angle,
+        ):
+            continue
+        declared.path.parent.mkdir(parents=True, exist_ok=True)
+        pending.append(
+            MeshExportJob(
+                fmt=declared.fmt,
+                out=declared.path,
+                mesh_tolerance=chord,
+                mesh_angular_tolerance=angle,
+            )
+        )
+    if not pending:
+        return
+    from cadgen.step_export_target import _color_hex
+
+    run_mesh_exporter(
+        package_dir,
+        pending,
+        name=spec.step_path.stem,
+        default_color=_color_hex(spec.color),
+        logger=logger if logger is not None else CliLogger("cadgen", verbose=False),
+    )
+    for job in pending:
+        record_mesh_export(
+            job.out,
+            document_hash=document_hash,
+            fmt=job.fmt,
+            mesh_tolerance=job.mesh_tolerance,
+            mesh_angular_tolerance=job.mesh_angular_tolerance,
+        )
+        print(f"[cadgen] wrote {job.fmt.upper()}: {_display_path(job.out)}")
 
 
 def _stamp_descriptor_step_identity(package_dir: Path, step_hash: str) -> None:
@@ -1383,6 +1462,10 @@ def generate_step_targets(
                     )
                 else:
                     logger.info(f"{spec.cad_ref} is current; skipped recompose")
+                # A current model can still owe declared mesh exports (deleted
+                # file, changed declaration): heal them from the store package
+                # without leaving the no-op path.
+                _produce_declared_mesh_exports(spec, logger=logger)
                 _emit(spec, "current")
             current_refs = {spec.source_ref for spec in current_specs}
             selected_specs = [spec for spec in selected_specs if spec.source_ref not in current_refs]

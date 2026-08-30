@@ -45,10 +45,19 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen.metadata import resolve_model_output_path
+from cadgen.metadata import MeshExportDecl, resolve_model_output_path
 from cadgen.posedef import PoseDef
 
-__all__ = ["step", "dxf", "ModelDef", "registered_model", "registered_models"]
+__all__ = [
+    "step",
+    "dxf",
+    "stl",
+    "glb",
+    "threemf",
+    "ModelDef",
+    "registered_model",
+    "registered_models",
+]
 
 
 @dataclass(frozen=True)
@@ -65,6 +74,8 @@ class ModelDef:
     # Declarative view/pose block (cadgen.pose()); serialized into the render
     # package descriptor at build time. STEP models only.
     pose: PoseDef | None = None
+    # Declared mesh serializations (@stl/@glb/@threemf). STEP models only.
+    mesh_exports: tuple[MeshExportDecl, ...] = ()
 
     @property
     def output_path(self) -> Path:
@@ -142,6 +153,18 @@ def _decorator(
         lowered = script_path.name.lower()
         if lowered.endswith((".step.py", ".dxf.py")):
             raise _legacy_naming_error(script_path)
+        pending = tuple(getattr(func, "__cadgen_pending_mesh_exports__", ()))
+        if pending and fmt != "step":
+            names = ", ".join(f"@{_MESH_FMT_DECORATOR[d.fmt]}" for d in pending)
+            raise TypeError(
+                f"{script_path.name} stacks {names} on a @{fmt} drawing; "
+                "STL/3MF/GLB derive from a @step model's geometry"
+            )
+        if pending:
+            try:
+                delattr(func, "__cadgen_pending_mesh_exports__")
+            except AttributeError:
+                pass
         defn = ModelDef(
             func=func,
             fmt=fmt,
@@ -151,11 +174,16 @@ def _decorator(
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
             pose=pose,
+            mesh_exports=pending,
         )
         _register(defn)
         func.__cadgen_model__ = defn  # type: ignore[attr-defined]
         if func.__module__ == "__main__":
             # Decoration-time execution: running the script builds the model.
+            # A mesh decorator stacked ABOVE @step has not run yet in THIS
+            # process — that is fine: the pipeline re-imports the module under
+            # a loader name (never __main__), where every decorator applies
+            # before the runner reads the registry.
             raise SystemExit(_run_from_main(defn))
         return func
 
@@ -193,6 +221,75 @@ def dxf(
         "dxf", write=write, kind=None, mesh_tolerance=None, mesh_angular_tolerance=None
     )
     return decorator(func) if func is not None else decorator
+
+
+_MESH_FMT_DECORATOR = {"stl": "stl", "glb": "glb", "3mf": "threemf"}
+
+
+def _mesh_export_decorator(deco_name: str, fmt: str):
+    """Factory for ``@stl``/``@glb``/``@threemf``: metadata-attachers, never
+    wrappers. Below ``@step`` they park a pending declaration on the raw
+    function; above it they extend the registered model. Both routes converge
+    in the loader import, so stacking order is behavior-neutral."""
+    from dataclasses import replace as _replace
+
+    suffix = f".{fmt}"
+
+    def decorator_factory(
+        func: Callable[..., Any] | None = None,
+        *,
+        write: str | None = None,
+        mesh_tolerance: float | None = None,
+        mesh_angular_tolerance: float | None = None,
+    ):
+        if write is not None and not str(write).lower().endswith(suffix):
+            raise ValueError(f"@{deco_name} write= must end with '{suffix}': {write!r}")
+        decl = MeshExportDecl(
+            fmt=fmt,
+            write=write,
+            mesh_tolerance=mesh_tolerance,
+            mesh_angular_tolerance=mesh_angular_tolerance,
+        )
+
+        def attach(target: Callable[..., Any]) -> Callable[..., Any]:
+            existing_model: ModelDef | None = getattr(target, "__cadgen_model__", None)
+            if existing_model is not None:
+                # Above @step: extend the registered model in place.
+                if existing_model.fmt != "step":
+                    raise TypeError(
+                        f"@{deco_name} declares a mesh export of a @step model; "
+                        f"{existing_model.script_path.name} is a @{existing_model.fmt} drawing"
+                    )
+                if any(d.fmt == fmt for d in existing_model.mesh_exports):
+                    raise TypeError(
+                        f"@{deco_name} is declared more than once on "
+                        f"{existing_model.func.__name__}()"
+                    )
+                updated = _replace(
+                    existing_model, mesh_exports=(*existing_model.mesh_exports, decl)
+                )
+                _REGISTRY[updated.script_path] = updated
+                target.__cadgen_model__ = updated  # type: ignore[attr-defined]
+                return target
+            # Below @step: park a pending declaration for @step to consume.
+            pending = list(getattr(target, "__cadgen_pending_mesh_exports__", ()))
+            if any(d.fmt == fmt for d in pending):
+                raise TypeError(
+                    f"@{deco_name} is declared more than once on {target.__name__}()"
+                )
+            pending.append(decl)
+            target.__cadgen_pending_mesh_exports__ = tuple(pending)  # type: ignore[attr-defined]
+            return target
+
+        return attach(func) if func is not None else attach
+
+    decorator_factory.__name__ = deco_name
+    return decorator_factory
+
+
+stl = _mesh_export_decorator("stl", "stl")
+glb = _mesh_export_decorator("glb", "glb")
+threemf = _mesh_export_decorator("threemf", "3mf")
 
 
 def _maybe_hint_eager_imports(defn: ModelDef) -> None:
