@@ -110,8 +110,7 @@ Build everything: run each script (`python src/plate.py`,
 /STL/*
 /GLB/*
 /3MF/*
-/PNG/*
-/GIF/*
+/tmp/
 __pycache__/
 ```
 
@@ -125,5 +124,5 @@ other file deliberately with its own negation line or `git add -f`.
 python src/plate.py                      # builds STEP/plate.step + its package
 python src/plate.py                      # "current" — the no-op gate works
 python src/plate_drawing.py              # builds DXF/plate_drawing.dxf
-cadgen step snapshot --input STEP/plate.step --output PNG/plate.png
+cadgen step snapshot --input STEP/plate.step --output tmp/plate.png
 ```

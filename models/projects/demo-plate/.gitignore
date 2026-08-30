@@ -4,6 +4,5 @@
 /STL/*
 /GLB/*
 /3MF/*
-/PNG/*
-/GIF/*
+/tmp/
 __pycache__/

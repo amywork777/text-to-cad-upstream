@@ -32,7 +32,7 @@ Only OUTPUTS are organized by format. Code is not: a model script is not a
     plate.step
     vendor/               #   committed vendor/imported STEPs (see commit policy)
   DXF/  STL/  GLB/  3MF/  # other format folders, outputs only
-  PNG/  GIF/              # snapshots / animations
+  tmp/                    # scratch: snapshots, animations, debug renders (gitignored)
 ```
 
 Two mechanical rules:
@@ -137,6 +137,8 @@ anything code cannot reproduce are committed:
 2. **Generated** (the format folders): NOT committed by default —
    a fresh clone regenerates by running the scripts, and the shared
    content-addressed caches make that cheap (repeat runs near-instant).
+   Snapshots, animations, and other review renders are scratch, not
+   artifacts: they go to `tmp/`, which is always ignored wholesale.
 3. **Committed exceptions, made deliberately**: vendor/imported files under
    `STEP/vendor/` (no code can regenerate them — a code-only checkout must
    never be missing INPUTS, only derived outputs) and pinned fixtures —
@@ -151,8 +153,7 @@ anything code cannot reproduce are committed:
 /STL/*
 /GLB/*
 /3MF/*
-/PNG/*
-/GIF/*
+/tmp/
 __pycache__/
 ```
 
