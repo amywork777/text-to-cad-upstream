@@ -232,7 +232,11 @@ def _effective_export_tolerances(
     """One precedence rule, both front doors: CLI run-level flag > declared
     format-level (@stl/@glb/@threemf) > @step model-level explicit >
     tessellator default (None)."""
-    declared = next((d for d in spec.mesh_exports if d.fmt == fmt), None)
+    matches = [d for d in spec.mesh_exports if d.fmt == fmt]
+    # With VARIANTS declared, an ad-hoc explicit-out export is ambiguous about
+    # which declaration it means — fall back to the model policy rather than
+    # guess. A single declaration is unambiguous and applies.
+    declared = matches[0] if len(matches) == 1 else None
     chord = cli_mesh_tolerance
     if chord is None and declared is not None:
         chord = declared.mesh_tolerance
@@ -637,7 +641,34 @@ def export_cad_target(
 
     resolved: list[MeshExportJob] = []
     seen: dict[Path, str] = {}
+
+    def _add(fmt: str, out: Path, chord: float | None, angle: float | None) -> None:
+        if out in seen:
+            raise ValueError(f"--{seen[out]} and --{fmt} resolve to the same output path: {out}")
+        seen[out] = fmt
+        resolved.append(
+            MeshExportJob(fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle)
+        )
+
     for fmt, raw in outputs:
+        declared = [d for d in spec.mesh_exports if d.fmt == fmt]
+        if raw is None and declared:
+            # A bare format flag means the model's declarations — ALL of them,
+            # variants included, matching what the script run produces. CLI
+            # run-level tolerance flags override each variant's own.
+            for decl in declared:
+                chord = mesh_tolerance if mesh_tolerance is not None else decl.mesh_tolerance
+                if chord is None and spec.mesh_tolerance_explicit:
+                    chord = spec.mesh_tolerance
+                angle = (
+                    mesh_angular_tolerance
+                    if mesh_angular_tolerance is not None
+                    else decl.mesh_angular_tolerance
+                )
+                if angle is None and spec.mesh_angular_tolerance_explicit:
+                    angle = spec.mesh_angular_tolerance
+                _add(fmt, decl.path, chord, angle)
+            continue
         out = _resolve_export_output(fmt, raw, logical_step=spec.step_path, spec=spec)
         chord, angle = _effective_export_tolerances(
             spec,
@@ -645,14 +676,7 @@ def export_cad_target(
             cli_mesh_tolerance=mesh_tolerance,
             cli_mesh_angular_tolerance=mesh_angular_tolerance,
         )
-        if out in seen:
-            raise ValueError(f"--{seen[out]} and --{fmt} resolve to the same output path: {out}")
-        seen[out] = fmt
-        resolved.append(
-            MeshExportJob(
-                fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle
-            )
-        )
+        _add(fmt, out, chord, angle)
 
     _export_mesh_jobs(spec, package_dir, scene, resolved, logger=logger)
     files = [{"format": job.fmt, "path": str(job.out)} for job in resolved]

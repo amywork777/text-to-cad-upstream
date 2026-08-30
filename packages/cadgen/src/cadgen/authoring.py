@@ -226,6 +226,20 @@ def dxf(
 _MESH_FMT_DECORATOR = {"stl": "stl", "glb": "glb", "3mf": "threemf"}
 
 
+def _validate_variant(existing, decl: MeshExportDecl, deco_name: str) -> None:
+    """Variants of one format are allowed; ambiguous duplicates are not: two
+    bare declarations collide at the sibling default, two identical write=
+    targets collide outright."""
+    if decl.write is None:
+        if any(d.fmt == decl.fmt and d.write is None for d in existing):
+            raise TypeError(
+                f"bare @{deco_name} is declared more than once; at most one "
+                "declaration per format may omit write= (the sibling default)"
+            )
+    elif any(d.fmt == decl.fmt and d.write == decl.write for d in existing):
+        raise TypeError(f"@{deco_name} is declared twice for the same target {decl.write!r}")
+
+
 def _mesh_export_decorator(deco_name: str, fmt: str):
     """Factory for ``@stl``/``@glb``/``@threemf``: metadata-attachers, never
     wrappers. Below ``@step`` they park a pending declaration on the raw
@@ -260,11 +274,7 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
                         f"@{deco_name} declares a mesh export of a @step model; "
                         f"{existing_model.script_path.name} is a @{existing_model.fmt} drawing"
                     )
-                if any(d.fmt == fmt for d in existing_model.mesh_exports):
-                    raise TypeError(
-                        f"@{deco_name} is declared more than once on "
-                        f"{existing_model.func.__name__}()"
-                    )
+                _validate_variant(existing_model.mesh_exports, decl, deco_name)
                 updated = _replace(
                     existing_model, mesh_exports=(*existing_model.mesh_exports, decl)
                 )
@@ -273,10 +283,7 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
                 return target
             # Below @step: park a pending declaration for @step to consume.
             pending = list(getattr(target, "__cadgen_pending_mesh_exports__", ()))
-            if any(d.fmt == fmt for d in pending):
-                raise TypeError(
-                    f"@{deco_name} is declared more than once on {target.__name__}()"
-                )
+            _validate_variant(pending, decl, deco_name)
             pending.append(decl)
             target.__cadgen_pending_mesh_exports__ = tuple(pending)  # type: ignore[attr-defined]
             return target

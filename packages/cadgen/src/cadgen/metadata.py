@@ -175,12 +175,21 @@ def _match_mesh_export_decorators(
         if deco_name is None:
             continue
         fmt = _MESH_DECORATOR_FMT[deco_name]
-        if any(existing.fmt == fmt for existing in declarations):
-            raise ValueError(
-                f"{_display_path(script_path)} declares @{deco_name} more than once; "
-                "each mesh format is declared at most once per model"
-            )
         write = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
+        # Variants are allowed: the same format may be declared repeatedly at
+        # different destinations (e.g. a draft and a print-quality STL). Only
+        # ambiguous duplicates fail: two bare declarations collide at the
+        # sibling default, and two identical write= targets collide outright.
+        if write is None and any(d.fmt == fmt and d.write is None for d in declarations):
+            raise ValueError(
+                f"{_display_path(script_path)} declares bare @{deco_name} more than once; "
+                "at most one declaration per format may omit write= (the sibling default)"
+            )
+        if write is not None and any(d.fmt == fmt and d.write == write for d in declarations):
+            raise ValueError(
+                f"{_display_path(script_path)} declares @{deco_name} twice for the same "
+                f"target {write!r}"
+            )
         if write is not None and not write.lower().endswith(f".{fmt}" if fmt != "3mf" else ".3mf"):
             raise ValueError(
                 f"{_display_path(script_path)} @{deco_name} write= must end with "

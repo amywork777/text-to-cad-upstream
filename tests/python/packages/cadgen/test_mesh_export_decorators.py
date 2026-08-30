@@ -66,9 +66,30 @@ class MeshExportMetadataTest(unittest.TestCase):
             self.assertIsNone(declared["glb"].write)
             self.assertEqual(declared["3mf"].mesh_tolerance, 5e-3)
 
-    def test_duplicate_and_dxf_misuse_fail(self) -> None:
+    def test_variants_parse_but_ambiguous_duplicates_fail(self) -> None:
+        # Same format at DISTINCT targets is a variant, not a duplicate.
+        variants = self._parse(textwrap.dedent("""\
+            from cadgen import step, stl
+
+            @step(kind="part")
+            @stl(write="a_draft.stl", mesh_tolerance=8e-3)
+            @stl(write="a_print.stl", mesh_tolerance=4e-4)
+            def part():
+                return None
+            """))
+        self.assertEqual([d.write for d in variants.mesh_exports],
+                         ["a_draft.stl", "a_print.stl"])
+        # Two bare declarations collide at the sibling default.
         with self.assertRaises(ValueError):
-            self._parse(MODEL.replace("@glb\n", "@glb\n    @glb\n").replace("    @glb", "@glb"))
+            self._parse(MODEL.replace("@glb\n", "@glb\n@glb\n"))
+        # Two identical write= targets collide outright.
+        with self.assertRaises(ValueError):
+            self._parse(MODEL.replace(
+                '@stl(write="../STL/widget.stl")',
+                '@stl(write="../STL/widget.stl")\n@stl(write="../STL/widget.stl")',
+            ))
+
+    def test_dxf_misuse_fails(self) -> None:
         with self.assertRaises(ValueError):
             self._parse(textwrap.dedent("""\
                 from cadgen import dxf, stl

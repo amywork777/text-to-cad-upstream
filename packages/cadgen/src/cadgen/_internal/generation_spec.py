@@ -116,6 +116,13 @@ def _resolve_mesh_exports(
                 mesh_angular_tolerance=decl.mesh_angular_tolerance,
             )
         )
+    seen_paths: set[Path] = set()
+    for export in resolved:
+        if export.path in seen_paths:
+            raise ValueError(
+                f"two mesh export declarations resolve to the same target: {export.path}"
+            )
+        seen_paths.add(export.path)
     return tuple(resolved)
 
 
