@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import ezdxf
-
+from cadgen import build123d as bd
 from cadgen import dxf
 
 from lib import holes
@@ -12,13 +11,8 @@ from plate import DEPTH, WIDTH  # importing a model never builds it
 
 @dxf(write="../DXF/plate_drawing.dxf")
 def plate_drawing(hole_d: float = 4.5):
-    document = ezdxf.new()
-    space = document.modelspace()
-    half_w, half_d = WIDTH / 2, DEPTH / 2
-    space.add_lwpolyline(
-        [(-half_w, -half_d), (half_w, -half_d), (half_w, half_d), (-half_w, half_d)],
-        close=True,
-    )
-    for x, y in holes.corner_hole_centers(WIDTH, DEPTH):
-        space.add_circle((x, y), hole_d / 2)
-    return document
+    with bd.BuildSketch() as cut:
+        bd.Rectangle(WIDTH, DEPTH)
+        with bd.Locations(*holes.corner_hole_centers(WIDTH, DEPTH)):
+            bd.Circle(hole_d / 2, mode=bd.Mode.SUBTRACT)
+    return cut.sketch  # a bare shape is the CUT layer

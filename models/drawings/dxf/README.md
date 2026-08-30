@@ -12,9 +12,14 @@ drawing packages land in the gitignored `__cadgen__/` cache and `.dxf` exports
 are written on demand only, so no generated DXF output is committed. Together
 they cover the skill's standalone-drafting and STEP-projection workflows.
 
-- `gasket_plate.dxf.py` — standalone drafting: rounded-rectangle gasket
-  outline (lwpolyline bulge arcs), four bolt holes, center cutout, and an
-  engraved alignment crosshair on an `ENGRAVE` layer.
+- `gasket_plate.py` — standalone drafting on the current `@dxf` contract:
+  rounded-rectangle gasket outline (true `ARC`s at the corners), four bolt
+  holes, a center cutout, and an engraved alignment crosshair returned on an
+  `ENGRAVE` layer. Its `gasket_plate.dxf` is committed as the byte-determinism
+  fixture: the engine writes it as a pure function of the returned geometry, so
+  a rebuild that changes those bytes is a real change to report, not noise.
+  Every other source in this folder still uses the retired `.dxf.py` /
+  `gen_dxf()` naming and does not build; the corpus migration is its own job.
 - `l_bracket_flat.dxf.py` — standalone sheet-metal flat pattern: rectangular
   blank, four mounting holes, and a dashed bend line on a `BEND` layer.
 - `u_channel_bracket.dxf.py` — U-channel flat pattern with **two parallel**
