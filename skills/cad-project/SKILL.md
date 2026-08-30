@@ -97,10 +97,10 @@ what builds what without reading every script:
 ```markdown
 # <project> models
 
-| script           | artifact              | what it is                    |
+| Script           | Artifact              | Description                   |
 |------------------|-----------------------|-------------------------------|
-| plate.py         | STEP/plate.step       | mounting plate, param `hole_d`|
-| plate_drawing.py | DXF/plate_drawing.dxf | plate flat pattern            |
+| plate.py         | STEP/plate.step       | Mounting plate, param `hole_d`|
+| plate_drawing.py | DXF/plate_drawing.dxf | Plate flat pattern            |
 
 Build: `python src/<script>` per row; unchanged models are no-ops.
 Imported sources: STEP/imported/servo.step (committed, no script).

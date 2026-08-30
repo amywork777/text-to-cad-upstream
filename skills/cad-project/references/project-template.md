@@ -88,10 +88,10 @@ def corner_holes(body, width: float, depth: float, thickness: float, hole_d: flo
 ```markdown
 # demo models
 
-| script           | artifact              | what it is                     |
+| Script           | Artifact              | Description                    |
 |------------------|-----------------------|--------------------------------|
-| plate.py         | STEP/plate.step       | mounting plate, param `hole_d` |
-| plate_drawing.py | DXF/plate_drawing.dxf | plate flat pattern             |
+| plate.py         | STEP/plate.step       | Mounting plate, param `hole_d` |
+| plate_drawing.py | DXF/plate_drawing.dxf | Plate flat pattern             |
 
 Build everything: run each script (`python src/plate.py`,
 `python src/plate_drawing.py`); unchanged models are no-ops.
