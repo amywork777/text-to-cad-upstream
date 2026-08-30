@@ -27,7 +27,11 @@ __all__ = [
     "stl",
     "glb",
     "threemf",
-    "pose",
+    "revolute",
+    "slider",
+    "cylindrical",
+    "fastened",
+    "couple",
     "build123d",
     "srgb",
     "MateRelation",
@@ -56,10 +60,23 @@ def __getattr__(name: str):
         import importlib
 
         return importlib.import_module(f"cadgen.{name}")
+    if name in {"revolute", "slider", "cylindrical", "fastened", "couple"}:
+        # Typed-mates kinematics vocabulary for the kinematics= dict on
+        # @step/@stl/@glb/@threemf (design/pose-animation-split.md).
+        from cadgen import kinematics
+
+        return getattr(kinematics, name)
     if name == "pose":
-        # Declarative view/pose block for @step(pose=...) — the single pose
-        # authoring surface (no loose .params.js sidecars).
-        from cadgen.posedef import pose
+        # Retired surface: cadgen.pose() was the params/features/joints/drivers/
+        # animations/module block. Teach the split, loudly.
+        def pose(*_args, **_kwargs):
+            raise ValueError(
+                "cadgen.pose() was removed. Kinematics is now typed mates: pass "
+                "kinematics={'mates': [cadgen.revolute(...)], 'couplings': [...], "
+                "'poses': {...}} on @step/@stl/@glb/@threemf, and put "
+                "choreography in a .js module declared via @step(animation="
+                "'<name>.anim.js'). See the cad skill's kinematics reference."
+            )
 
         return pose
     if name == "build123d":
@@ -117,7 +134,7 @@ if TYPE_CHECKING:
     from cadgen import build123d, dxf, glb, step, stl, threemf
     from cadgen.assembly import AssemblyHelper, MateRelation, MateTarget, label_shape, label_text, target
     from cadgen.color import linear_to_srgb, srgb, srgb_to_linear
-    from cadgen.posedef import pose
+    from cadgen.kinematics import couple, cylindrical, fastened, revolute, slider
     from cadgen.instances import compound_from_instances
     from cadgen.progress import report, track
     from cadgen.step_scene import (

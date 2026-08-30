@@ -33,13 +33,21 @@ MESH_FORMAT_SUFFIX = {"stl": ".stl", "3mf": ".3mf", "glb": ".glb"}
 
 @dataclass(frozen=True)
 class MeshExportJob:
-    """One output the exporter must write: format, destination, and the
-    tolerances it tessellates at (``None`` = the tessellator's defaults)."""
+    """One output the exporter must write: format, destination, the
+    tolerances it tessellates at (``None`` = the tessellator's defaults), and
+    the export-at-pose placement.
+
+    ``pose_deltas`` maps occurrence id -> flat-16 row-major world delta
+    (cadgen's FK evaluator expands mate subtrees); ``pose_values`` is the
+    {dof: value} bake the deltas came from, which keys the freshness ledger —
+    a posed variant must never satisfy a rest export's gate or vice versa."""
 
     fmt: str
     out: Path
     mesh_tolerance: float | None = None
     mesh_angular_tolerance: float | None = None
+    pose_deltas: dict | None = None
+    pose_values: dict | None = None
 
 
 def run_mesh_exporter(
@@ -77,6 +85,8 @@ def run_mesh_exporter(
             argv += ["--chord-tolerance", repr(float(job.mesh_tolerance))]
         if job.mesh_angular_tolerance is not None:
             argv += ["--angle-tolerance", repr(float(job.mesh_angular_tolerance))]
+        if job.pose_deltas:
+            argv += ["--pose-deltas", json.dumps(job.pose_deltas, sort_keys=True)]
     if default_color is not None:
         argv += ["--default-color", default_color]
     label = "+".join(job.fmt for job in jobs)
@@ -99,6 +109,15 @@ def run_mesh_exporter(
 
 def _tolerance_token(value: float | None) -> str:
     return "default" if value is None else repr(float(value))
+
+
+def pose_token(pose_values: dict | None) -> str:
+    """The ledger's pose discriminator: canonical JSON of the bake values, or
+    ``rest``. Part of the record entry so a posed export and a rest export of
+    the same document at the same tolerances never satisfy each other."""
+    if not pose_values:
+        return "rest"
+    return json.dumps({str(k): float(v) for k, v in pose_values.items()}, sort_keys=True)
 
 
 def mesh_export_record_path(output_path: Path) -> Path:
@@ -129,6 +148,7 @@ def record_mesh_export(
     fmt: str,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
+    pose_values: dict | None = None,
 ) -> None:
     """Merge this export into the mesh's content-keyed record. Multiple
     documents may legally produce identical mesh bytes, so the record keeps a
@@ -144,6 +164,7 @@ def record_mesh_export(
             "fmt": fmt,
             "chord": _tolerance_token(mesh_tolerance),
             "angle": _tolerance_token(mesh_angular_tolerance),
+            "pose": pose_token(pose_values),
         }
         tmp = record_path.with_name(f"{record_path.name}{temp_suffix()}")
         tmp.write_text(json.dumps(data), encoding="utf-8")
@@ -158,10 +179,11 @@ def mesh_export_current(
     document_hash: str | None,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
+    pose_values: dict | None = None,
 ) -> bool:
     """Whether the mesh on disk is the CURRENT export of this document at
-    these tolerances: its content-keyed record names the document with a
-    matching tolerance pair."""
+    these tolerances and this pose: its content-keyed record names the
+    document with a matching tolerance pair and pose token."""
     if not document_hash or not Path(output_path).is_file():
         return False
     data = _read_record(mesh_export_record_path(output_path))
@@ -173,4 +195,5 @@ def mesh_export_current(
     return (
         entry.get("chord") == _tolerance_token(mesh_tolerance)
         and entry.get("angle") == _tolerance_token(mesh_angular_tolerance)
+        and entry.get("pose") == pose_token(pose_values)
     )

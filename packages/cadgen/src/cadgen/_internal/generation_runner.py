@@ -94,29 +94,31 @@ def _load_generator_module(script_path: Path) -> object:
     return module
 
 
-def _resolve_pose_block(defn: object, *, script_path: Path) -> tuple[dict, Path | None]:
-    """The model's declarative pose block plus its resolved escape-hatch source.
+def _resolve_declared_kinematics(
+    defn: object, *, script_path: Path
+) -> tuple[dict | None, dict | None, str | None]:
+    """The model's kinematics block, bake pose, and animation module TEXT.
 
-    The block comes validated from ``cadgen.pose()`` on the ModelDef; this only
-    resolves the optional hatch module (script-relative, must exist). The
-    module's SOURCE is inlined into the model's sidecar at build time — pose
-    data has exactly one authoring surface (``@step(pose=...)``) and one
-    transport (the source sidecar); no separate module file ships anywhere."""
-    pose_def = getattr(defn, "pose", None)
-    if pose_def is None:
-        return {}, None
-    block = dict(pose_def.block)
-    block.pop("module", None)
-    module = pose_def.module
-    if not module:
-        return block, None
-    candidate = Path(module)
-    resolved = (candidate if candidate.is_absolute() else script_path.parent / candidate).resolve()
-    if not resolved.is_file():
-        raise FileNotFoundError(
-            f"{_display_path(script_path)} pose module not found: {module}"
-        )
-    return block, resolved
+    The block comes validated from the decoration-time normalizer; axis refs
+    resolve against real geometry later in the package build. The animation
+    path is an authoring-time input only: its text is read HERE and copied
+    into the sidecar, so no generated file ever references the source tree."""
+    kinematics_def = getattr(defn, "kinematics", None)
+    block = dict(kinematics_def.block) if kinematics_def is not None else None
+    bake_pose = dict(getattr(defn, "bake_pose", None) or {}) or None
+    animation = getattr(defn, "animation", None)
+    animation_source: str | None = None
+    if animation:
+        candidate = Path(animation)
+        resolved = (candidate if candidate.is_absolute() else script_path.parent / candidate).resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(
+                f"{_display_path(script_path)} animation module not found: {animation} "
+                "(animation= names a .js file beside the script; the declared "
+                "file must exist — there is no convention discovery)"
+            )
+        animation_source = resolved.read_text(encoding="utf-8")
+    return block, bake_pose, animation_source
 
 
 def _normalize_step_payload(
@@ -131,15 +133,16 @@ def _normalize_step_payload(
     if isinstance(result, dict):
         # stl / 3mf / mesh_tolerance / mesh_angular_tolerance are consumed via the static
         # metadata path (per-generator STL/3MF outputs + mesh tolerances); keep allowing them.
-        # 'params' (the loose .params.js sidecar) is DELETED: pose data is declared on the
-        # decorator (@step(pose=cadgen.pose(...))) and travels in the descriptor.
+        # 'params' (the loose .params.js sidecar) is DELETED: articulation is declared as
+        # typed mates (kinematics= on the decorator) and travels in the sidecar.
         allowed_fields = {"shape", "stl", "3mf", "mesh_tolerance", "mesh_angular_tolerance"}
         extra_fields = sorted(str(key) for key in result if key not in allowed_fields)
         if extra_fields:
             joined = ", ".join(extra_fields)
             hint = (
-                " — the .params.js sidecar mechanism was replaced by @step(pose=...); "
-                "see skills/cad/references/parameters.md"
+                " — the .params.js sidecar mechanism was replaced by typed mates: "
+                "declare kinematics= on @step and (for choreography) "
+                "animation='<name>.anim.js'; see the cad skill's kinematics reference"
                 if "params" in extra_fields
                 else ""
             )
@@ -460,14 +463,15 @@ def _run_script_generator_inner(
             logger=logger,
             entry_kind=_shape_payload_entry_kind(envelope.get("shape"), fallback=spec.kind),
         )
-        # Declarative pose block (validated at decoration by cadgen.pose());
-        # rides the scene into the descriptor exactly like provenance does.
-        pose_block, pose_module_source = _resolve_pose_block(
+        # Kinematics + bake pose + animation text (validated at decoration);
+        # ride the scene into the sidecar exactly like provenance does.
+        kinematics_block, bake_pose, animation_source = _resolve_declared_kinematics(
             getattr(generator, "__cadgen_model__", None), script_path=spec.script_path
         )
-        if pose_block:
-            generated_scene.pose = pose_block
-            generated_scene.pose_module_source = pose_module_source
+        if kinematics_block:
+            generated_scene.kinematics = kinematics_block
+            generated_scene.bake_pose = bake_pose
+        generated_scene.animation_source = animation_source
     elif generator_name == "gen_dxf":
         from cadgen._internal.dxf_output import record_dxf_output
 

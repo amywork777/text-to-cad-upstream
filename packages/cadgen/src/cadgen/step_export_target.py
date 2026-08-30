@@ -444,6 +444,7 @@ def _export_mesh_jobs(
                 document_hash=document_hash,
                 mesh_tolerance=job.mesh_tolerance,
                 mesh_angular_tolerance=job.mesh_angular_tolerance,
+                pose_values=job.pose_values,
             )
         ]
         if not pending:
@@ -461,6 +462,7 @@ def _export_mesh_jobs(
                     fmt=job.fmt,
                     mesh_tolerance=job.mesh_tolerance,
                     mesh_angular_tolerance=job.mesh_angular_tolerance,
+                    pose_values=job.pose_values,
                 )
         return frozenset(job.out for job in pending)
     import tempfile
@@ -661,13 +663,39 @@ def export_cad_target(
 
     resolved: list[MeshExportJob] = []
     seen: dict[Path, str] = {}
+    # Declared poses live only in the runtime registry (kinematics= is not
+    # statically evaluable); explicit ad-hoc OUTs export at rest.
+    posed_declarations: dict = {}
+    if spec.script_path is not None:
+        from cadgen._internal.kinematics_resolve import runtime_mesh_declarations
+
+        posed_declarations = runtime_mesh_declarations(spec.script_path)
 
     def _add(fmt: str, out: Path, chord: float | None, angle: float | None) -> None:
         if out in seen:
             raise ValueError(f"{seen[out]} and {fmt} resolve to the same output path: {out}")
         seen[out] = fmt
+        kinematics_def, pose_values = posed_declarations.get((fmt, out), (None, None))
+        pose_deltas = None
+        if kinematics_def is not None and pose_values and package_dir is not None and spec.step_path is not None:
+            from cadgen._internal.kinematics_resolve import mesh_pose_deltas
+
+            pose_deltas = mesh_pose_deltas(
+                kinematics_def,
+                pose_values,
+                package_dir=package_dir,
+                step_path=spec.step_path,
+                source_ref=str(spec.source_ref),
+            )
         resolved.append(
-            MeshExportJob(fmt=fmt, out=out, mesh_tolerance=chord, mesh_angular_tolerance=angle)
+            MeshExportJob(
+                fmt=fmt,
+                out=out,
+                mesh_tolerance=chord,
+                mesh_angular_tolerance=angle,
+                pose_deltas=pose_deltas,
+                pose_values=pose_values,
+            )
         )
 
     for fmt, raw in outputs:

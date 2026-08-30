@@ -250,7 +250,7 @@ test("loadSource accepts descriptor pose blocks for STEP sources", async () => {
       kind: "step",
       meshData: meshData(),
       cadPath: "part.step",
-      stepParameterUrl: "/__render_asset/pkg/source.json",
+      stepParameterUrl: "/__render_asset/pkg/model.step.cadgen.json",
       stepParameters: { drive: 90 }
     });
 

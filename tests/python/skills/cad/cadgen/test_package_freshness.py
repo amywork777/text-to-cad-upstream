@@ -35,8 +35,8 @@ def _write_package(
     if generated:
         # The MODEL-SIDE sidecar's existence is the generated marker; the
         # descriptor is STEP-pure and never records provenance.
-        Path(f"{entry_file}.source.json").write_text(
-            json.dumps({"schemaVersion": 2, "sourceKind": "python"}), encoding="utf-8"
+        Path(f"{entry_file}.cadgen.json").write_text(
+            json.dumps({"schemaVersion": 3, "sourceKind": "python"}), encoding="utf-8"
         )
     return package_dir
 
@@ -45,7 +45,7 @@ class DirAwareManifestReaderTests(unittest.TestCase):
     def test_package_directory_returns_descriptor(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            descriptor = {"kind": PACKAGE_KIND, "schemaVersion": 2}
+            descriptor = {"kind": PACKAGE_KIND, "schemaVersion": 3}
             package_dir = _write_package(root, "part.step", descriptor, generated=True)
             manifest = read_step_topology_manifest_from_glb(package_dir)
             self.assertIsInstance(manifest, dict)

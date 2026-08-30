@@ -204,7 +204,7 @@ function loadRenderMeshForEntry(entry, options) {
 // The ONE client-side merge point (mirrors cadgen's package-aware manifest
 // reader): the store descriptor (assembly.json) is a pure function of the
 // STEP bytes; everything source-derived — assembly mates included — rides the
-// MODEL-SIDE sidecar (<name>.step.source.json, entry.sourceUrl). Attach the
+// MODEL-SIDE sidecar (<name>.step.cadgen.json, entry.sourceUrl). Attach the
 // sidecar's mates here so every descriptor consumer keeps seeing one shape.
 // A missing sidecar simply means the model is imported, which has no mates.
 // One fetch per (descriptor URL, sidecar URL) pair: the mesh path and the

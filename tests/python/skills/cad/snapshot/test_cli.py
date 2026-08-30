@@ -61,8 +61,8 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
     )
     if pose:
         # Pose (source-derived) rides the MODEL-SIDE sidecar, never the descriptor.
-        Path(f"{step_path}.source.json").write_text(
-            json.dumps({"schemaVersion": 2, "sourceKind": "python", "pose": pose})
+        Path(f"{step_path}.cadgen.json").write_text(
+            json.dumps({"schemaVersion": 3, "sourceKind": "python", "pose": pose})
         )
     return pkg_dir
 
@@ -1872,7 +1872,7 @@ class StepPoseParameterTests(unittest.TestCase):
         self._step()
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("source.json", str(resolved["stepParameterUrl"]))
+        self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
     def test_pose_hatch_rides_inline_in_the_sidecar(self) -> None:
@@ -1882,7 +1882,7 @@ class StepPoseParameterTests(unittest.TestCase):
         write_package(step_path, pose={**self.POSE, "moduleSource": "export default {};"})
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("source.json", str(resolved["stepParameterUrl"]))
+        self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepPoseHatchUrl", resolved)
 
     def test_parameters_without_a_pose_block_teach_the_migration(self) -> None:

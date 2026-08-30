@@ -88,7 +88,7 @@ function validateStep(stepPath) {
     return { ok: false, code: "missing_step_topology", packageDir };
   }
   // Generated-vs-imported is the SOURCE SIDECAR's existence (generation writes
-  // <name>.step.source.json beside the model, import removes it), never a
+  // <name>.step.cadgen.json beside the model, import removes it), never a
   // descriptor field: the store descriptor is a pure function of the STEP bytes.
   const generated = fs.existsSync(sourceSidecarPath(stepPath));
   if (descriptor.kind !== STEP_PACKAGE_KIND) {

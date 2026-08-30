@@ -27,16 +27,19 @@ from cadgen._internal.step_assemble import assemble_step_from_package  # noqa: E
 from cadgen.catalog import render_package_dir  # noqa: E402
 from tests.python.support.cad_test_roots import IsolatedCadRoots  # noqa: E402
 
-# Two occurrences of DISTINCT parts with per-occurrence colors and a pose
-# block — the planetary pilot's shape of metadata, minimized.
+# Two occurrences of DISTINCT parts with per-occurrence colors and a
+# kinematics block — the planetary pilot's shape of metadata, minimized.
 COLORED_ASSEMBLY_GENERATOR = """from build123d import Box, Color, Compound, Location
 
-from cadgen import pose, step
+import cadgen
+from cadgen import step
 
 
-@step(kind="assembly", pose=pose(
-    params={"drive": {"type": "number", "min": 0, "max": 360, "default": 0}},
-))
+@step(kind="assembly", kinematics={
+    "mates": [cadgen.revolute("drive", parent="#left", child="#right",
+                              origin=(20, 0, 0), direction=(0, 0, 1),
+                              limits=(0, 360))],
+})
 def model():
     left = Box(10.0, 10.0, 10.0)
     left.label = "left"
@@ -83,7 +86,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(len(colored), 2, occurrences)
         # Source-derived state rides the sidecar, never the descriptor: the
-        # pose block lives in source.json, and the sidecar's existence is the
+        # kinematics lives in the .cadgen.json sidecar, and its existence is the
         # generated marker (the descriptor carries no sourceKind at all).
         self.assertNotIn("pose", descriptor)
         self.assertNotIn("paramsPath", descriptor)
@@ -92,9 +95,9 @@ class GeneratedStepFidelityTests(unittest.TestCase):
 
         sidecar = read_source_sidecar(logical_step)
         self.assertIsInstance(sidecar, dict)
-        block = sidecar.get("pose")
+        block = sidecar.get("kinematics")
         self.assertIsInstance(block, dict)
-        self.assertIn("drive", block["params"])
+        self.assertEqual(block["mates"][0]["name"], "drive")
         self.assertEqual(sidecar.get("sourceKind"), "python")
 
     def test_assembled_step_carries_occurrence_colors(self) -> None:

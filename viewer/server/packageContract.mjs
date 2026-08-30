@@ -11,8 +11,8 @@ export const CACHE_SCHEMA_VERSION = 16; // cache_schema.CACHE_SCHEMA_VERSION
 
 // The source sidecar carries everything SOURCE-derived (provenance, pose with
 // inline escape-hatch source, mates); it sits BESIDE THE MODEL
-// (<name>.step.source.json) and its EXISTENCE is the generated-vs-imported
+// (<name>.step.cadgen.json) and its EXISTENCE is the generated-vs-imported
 // marker on both freshness authorities. Pinned to cadgen's source_sidecar.py
 // by the same sync test.
-export const SOURCE_SIDECAR_SUFFIX = ".source.json"; // source_sidecar.SOURCE_SIDECAR_SUFFIX
-export const SOURCE_SIDECAR_SCHEMA_VERSION = 2; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION
+export const SOURCE_SIDECAR_SUFFIX = ".cadgen.json"; // source_sidecar.SOURCE_SIDECAR_SUFFIX
+export const SOURCE_SIDECAR_SCHEMA_VERSION = 3; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION

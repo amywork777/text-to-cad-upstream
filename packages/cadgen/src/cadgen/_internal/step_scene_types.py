@@ -40,11 +40,14 @@ class LoadedStepScene:
     step_hash: str | None = None
     source_kind: str = "step"
     source_path: str | None = None
-    # Declarative pose block from @step(pose=...) (JSON-ready dict; emitted
-    # into the descriptor as `pose`) plus the resolved escape-hatch source file
-    # the package build copies content-addressed into components/.
-    pose: dict[str, Any] | None = None
-    pose_module_source: Path | None = None
+    # Typed-mates kinematics block from kinematics= (JSON-ready dict; axis
+    # refs resolved to numbers during the package build, then written into the
+    # model's sidecar), the resolved {dof: value} bake pose the artifact is
+    # written at, and the .anim.js choreography TEXT (copied at build; no path
+    # survives into generated files).
+    kinematics: dict[str, Any] | None = None
+    bake_pose: dict[str, float] | None = None
+    animation_source: str | None = None
     source_hash: str | None = None
     source_closure_hash: str | None = None
     source_closure_files: tuple[str, ...] = ()

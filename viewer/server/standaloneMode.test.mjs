@@ -227,7 +227,7 @@ test(
     // the descriptor itself carries no provenance kind at all.
     assert.equal(descriptor.sourceKind, undefined);
     assert.equal(
-      fs.existsSync(`${step}.source.json`),
+      fs.existsSync(`${step}.cadgen.json`),
       false,
       "an imported package must not carry a source sidecar",
     );

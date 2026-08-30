@@ -3,13 +3,16 @@
 The render package (in the user-level store, keyed by the document's content
 hash) is a pure function of the STEP file's bytes plus schema versions — the
 cache engine's world, freely evictable. Everything derived from the Python
-source instead lives in a sidecar FILE BESIDE THE MODEL,
-``<name>.step.source.json``: generation provenance (source path/hash, the
-runtime closure the no-op gate re-validates), the declarative pose block from
-``@step(pose=...)`` (with the optional escape-hatch module source INLINED),
-assembly mates (authored in Python, not representable in STEP), and the build
-timestamp. It sits beside the model because it cannot be re-derived from the
-STEP bytes: evicting the store must never lose pose or provenance.
+source instead lives in ONE sidecar FILE BESIDE THE MODEL,
+``<name>.step.cadgen.json``: generation provenance (source path/hash, the
+runtime closure the no-op gate re-validates), the KINEMATICS section (typed
+mates with axes resolved to world numbers, couplings, pose presets), the
+ANIMATION section (the .anim.js choreography text, COPIED — no path back to
+the source tree ever appears in a generated file), assembly mates (authored
+in Python, not representable in STEP), and the build timestamp. It sits
+beside the model because it cannot be re-derived from the STEP bytes:
+evicting the store must never lose kinematics or provenance. New capability
+= new SECTION + schema bump, never a second sidecar file.
 
 Imports write NO sidecar — **the sidecar's existence is the "generated"
 marker**, on both freshness authorities (Python gates in
@@ -29,12 +32,12 @@ from typing import Any, Mapping
 
 from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 
-SOURCE_SIDECAR_SUFFIX = ".source.json"
-SOURCE_SIDECAR_SCHEMA_VERSION = 2
+SOURCE_SIDECAR_SUFFIX = ".cadgen.json"
+SOURCE_SIDECAR_SCHEMA_VERSION = 3
 
 
 def source_sidecar_path(step_path: Path | str) -> Path:
-    """``<name>.step`` -> ``<name>.step.source.json``, beside the model."""
+    """``<name>.step`` -> ``<name>.step.cadgen.json``, beside the model."""
     artifact = Path(step_path)
     return artifact.with_name(artifact.name + SOURCE_SIDECAR_SUFFIX)
 

@@ -100,15 +100,15 @@ test("a source-sidecar pose block is exposed as poseUrl; sidecars only teach", (
   // The store descriptor is STEP-pure; pose (and all source-derived state)
   // rides the MODEL-SIDE sidecar, whose existence marks the model generated.
   writeStorePackage(stepPath, { kind: "assembly-package" });
-  write(root, "gripper.step.source.json", JSON.stringify({
-    schemaVersion: 2,
+  write(root, "gripper.step.cadgen.json", JSON.stringify({
+    schemaVersion: 3,
     sourceKind: "python",
     pose: { schemaVersion: 1, params: { drive: { type: "number" } }, moduleSource: "export function update() {}\n" }
   }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
   assert.equal(entry.sourceKind, "python");
-  assert.ok(entry.poseUrl.includes("source.json"));
-  assert.ok(entry.sourceUrl.includes("source.json"));
+  assert.ok(entry.poseUrl.includes("cadgen.json"));
+  assert.ok(entry.sourceUrl.includes("cadgen.json"));
   assert.equal(entry.poseHatchUrl, undefined);
 
   // A loose .params.js beside a model is inert bytes: never loaded, never
@@ -124,7 +124,7 @@ test("a source-sidecar pose block is exposed as poseUrl; sidecars only teach", (
 test("the served-asset gate: hidden never, source sidecars yes, stray js never", (t) => {
   const root = tmpRoot(t);
   const hidden = write(root, ".secret.step", "x");
-  const sourceSidecar = write(root, "part.step.source.json", "{}");
+  const sourceSidecar = write(root, "part.step.cadgen.json", "{}");
   const stray = write(root, "random.js", "x");
   const sidecar = write(root, "part.step.js", "x");
   write(root, "part.step", "ISO-10303-21;\n");

@@ -286,7 +286,7 @@ function animationsFromPose(pose) {
   return animations;
 }
 
-/** Fetch the model's source sidecar (<name>.step.source.json), compile its
+/** Fetch the model's source sidecar (<name>.step.cadgen.json), compile its
  * pose block into a normalized step-module definition. The optional escape
  * hatch rides INLINE as pose.moduleSource (imported through a Blob URL) — no
  * separate module file exists anywhere. The ONLY pose loading path. */

@@ -45,12 +45,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from cadgen.kinematics import (
+    KinematicsDef,
+    normalize_bake_pose,
+    normalize_kinematics,
+)
 from cadgen.metadata import (
     MeshExportDecl,
     renamed_write_kwarg_message,
     resolve_model_output_path,
 )
-from cadgen.posedef import PoseDef
 
 __all__ = [
     "step",
@@ -75,9 +79,15 @@ class ModelDef:
     kind: str | None
     mesh_tolerance: float | None
     mesh_angular_tolerance: float | None
-    # Declarative view/pose block (cadgen.pose()); serialized into the render
-    # package descriptor at build time. STEP models only.
-    pose: PoseDef | None = None
+    # Typed mates (kinematics= dict, validated at decoration); axis refs
+    # resolve at build and the block lands in the model's sidecar. STEP only.
+    kinematics: KinematicsDef | None = None
+    # pose= bake selector resolved to {dof: value}: the artifact is WRITTEN at
+    # this configuration (and is therefore its own q=0). None = authored rest.
+    bake_pose: dict[str, float] | None = None
+    # Script-relative path of the .anim.js choreography module; its TEXT is
+    # copied into the sidecar at build (never a path in generated files).
+    animation: str | None = None
     # Declared mesh serializations (@stl/@glb/@threemf). STEP models only.
     mesh_exports: tuple[MeshExportDecl, ...] = ()
 
@@ -145,6 +155,18 @@ def _reject_renamed_kwargs(deco_name: str, kwargs: dict[str, Any]) -> None:
         raise TypeError(f"@{deco_name} got an unexpected keyword argument: {unexpected}")
 
 
+def _normalize_animation(animation: object, *, fmt: str) -> str | None:
+    if animation is None:
+        return None
+    text = str(animation).strip()
+    if not text.lower().endswith(".js"):
+        raise ValueError(
+            f"@{fmt} animation must name a .js module beside the script "
+            f"(e.g. animation='arm.anim.js'), got {animation!r}"
+        )
+    return text
+
+
 def _decorator(
     fmt: str,
     *,
@@ -152,14 +174,17 @@ def _decorator(
     kind: str | None,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
-    pose: PoseDef | None = None,
+    kinematics: object = None,
+    pose: object = None,
+    animation: object = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     if kind is not None and kind not in {"part", "assembly"}:
         raise ValueError(f"@{fmt} kind must be 'part' or 'assembly', got {kind!r}")
-    if pose is not None and not isinstance(pose, PoseDef):
-        raise TypeError(
-            f"@{fmt} pose must be built by cadgen.pose(...), got {type(pose).__name__}"
-        )
+    kinematics_def = (
+        normalize_kinematics(kinematics, where=f"@{fmt}") if kinematics is not None else None
+    )
+    bake_pose = normalize_bake_pose(pose, kinematics_def, where=f"@{fmt}")
+    animation_path = _normalize_animation(animation, fmt=fmt)
 
     def apply(func: Callable[..., Any]) -> Callable[..., Any]:
         _validate_signature(func, fmt=fmt)
@@ -187,7 +212,9 @@ def _decorator(
             kind=kind,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
-            pose=pose,
+            kinematics=kinematics_def,
+            bake_pose=bake_pose,
+            animation=animation_path,
             mesh_exports=pending,
         )
         _register(defn)
@@ -211,10 +238,20 @@ def step(
     kind: str | None = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
-    pose: PoseDef | None = None,
+    kinematics: object = None,
+    pose: object = None,
+    animation: str | None = None,
     **renamed: Any,
 ):
-    """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``)."""
+    """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``).
+
+    ``kinematics=`` takes the typed-mates dict (see ``cadgen.kinematics``);
+    ``pose=`` names the configuration to BAKE the artifact at (preset name or
+    ``{dof: value}``; the written artifact is its own q=0); ``animation=``
+    names a ``.js`` choreography module beside the script whose text is copied
+    into the sidecar. STEP is the only format with animation — mesh exports
+    are static bakes.
+    """
     _reject_renamed_kwargs("step", renamed)
     decorator = _decorator(
         "step",
@@ -222,7 +259,9 @@ def step(
         kind=kind,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
+        kinematics=kinematics,
         pose=pose,
+        animation=animation,
     )
     return decorator(func) if func is not None else decorator
 
@@ -234,6 +273,13 @@ def dxf(
     **renamed: Any,
 ):
     """Declare a DXF drawing. Usable bare (``@dxf``) or configured (``@dxf(...)``)."""
+    for retired in ("kinematics", "pose", "animation"):
+        if retired in renamed:
+            raise TypeError(
+                f"@dxf takes no {retired}=: a drawing is 2D geometry — kinematics "
+                "and pose baking live on @step and the mesh decorators, and "
+                "animation is @step-only"
+            )
     _reject_renamed_kwargs("dxf", renamed)
     decorator = _decorator(
         "dxf", out=out, kind=None, mesh_tolerance=None, mesh_angular_tolerance=None
@@ -273,16 +319,31 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
         out: str | None = None,
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
+        kinematics: object = None,
+        pose: object = None,
         **renamed: Any,
     ):
+        if "animation" in renamed:
+            raise TypeError(
+                f"@{deco_name} takes no animation=: mesh exports are static "
+                "bakes with no sidecar — animation is a STEP-x-viewer concern "
+                "and lives on @step only"
+            )
         _reject_renamed_kwargs(deco_name, renamed)
         if out is not None and not str(out).lower().endswith(suffix):
             raise ValueError(f"@{deco_name} out= must end with '{suffix}': {out!r}")
+        kinematics_def = (
+            normalize_kinematics(kinematics, where=f"@{deco_name}")
+            if kinematics is not None
+            else None
+        )
         decl = MeshExportDecl(
             fmt=fmt,
             out=out,
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
+            kinematics=kinematics_def,
+            bake_pose=normalize_bake_pose(pose, kinematics_def, where=f"@{deco_name}"),
         )
 
         def attach(target: Callable[..., Any]) -> Callable[..., Any]:

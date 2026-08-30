@@ -96,7 +96,7 @@ from cadgen._internal.generation_runner import (
     _mark_scene_python_backed,
     _mark_scene_step_payload,
     _normalize_step_payload,
-    _resolve_pose_block,
+    _resolve_declared_kinematics,
     _run_artifact_jobs,
     _run_script_generator_inner,
     _scene_entry_kind,
@@ -357,12 +357,14 @@ def _assembly_provenance_manifest(
 
 
 def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> dict[str, object] | None:
-    """The source.json payload for a GENERATED build, or None for an import.
+    """The sidecar payload for a GENERATED build, or None for an import.
 
-    Everything source-derived lands here: provenance (the no-op gate's closure),
-    the pose block, assembly mates (authored in Python, unrepresentable in
-    STEP), and the build timestamp — the one volatile field, which moving here
-    keeps the descriptor byte-stable across identical rebuilds.
+    Everything source-derived lands here: provenance (the no-op gate's
+    closure), the copied animation module text, assembly mates (authored in
+    Python, unrepresentable in STEP), and the build timestamp — the one
+    volatile field, which moving here keeps the descriptor byte-stable across
+    identical rebuilds. The KINEMATICS section is injected later, once the
+    staging package exists to resolve axis refs against.
     """
     from datetime import datetime, timezone
 
@@ -381,16 +383,12 @@ def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> 
     if closure_hash and closure_files:
         payload["sourceClosureHash"] = closure_hash
         payload["sourceClosureFiles"] = list(closure_files)
-    pose_block = getattr(scene, "pose", None)
-    if isinstance(pose_block, dict) and pose_block:
-        pose_payload = dict(pose_block)
-        module_source = getattr(scene, "pose_module_source", None)
-        if module_source is not None:
-            # The escape-hatch module rides INLINE: the sidecar is the one
-            # durable home for source-derived state, and a separate file
-            # would need its own serving, eviction, and pairing rules.
-            pose_payload["moduleSource"] = Path(module_source).read_text(encoding="utf-8")
-        payload["pose"] = pose_payload
+    animation_source = getattr(scene, "animation_source", None)
+    if animation_source:
+        # COPIED text, never a path: the sidecar is the one durable home for
+        # source-derived state, and generated files carry no reference back
+        # to the source tree.
+        payload["animation"] = {"clips": str(animation_source)}
     mates = getattr(compound, "assembly_mates", None) if compound is not None else None
     if not mates:
         mates = getattr(scene, "assembly_mates", None)
@@ -540,6 +538,34 @@ def _generate_part_outputs(
         shutil.rmtree(staging, ignore_errors=True)
         try:
             stats = _build_into(staging)
+            kinematics_block = getattr(scene, "kinematics", None)
+            if kinematics_block:
+                # Axis refs resolve against the staging package (the same
+                # composed selector index inspect uses), a declared bake pose
+                # is written into the descriptor's absolute transforms, and
+                # the sidecar is rewritten with the resolved section — still
+                # before the package lands at its content key.
+                from cadgen._internal.kinematics_resolve import (
+                    bake_pose_into_package,
+                    resolve_kinematics_block,
+                )
+
+                resolved_block, occurrence_ids = resolve_kinematics_block(
+                    kinematics_block,
+                    package_dir=staging,
+                    step_path=spec.step_path,
+                    source_ref=str(spec.source_ref),
+                )
+                bake_values = getattr(scene, "bake_pose", None)
+                if bake_values:
+                    resolved_block = bake_pose_into_package(
+                        resolved_block,
+                        bake_values,
+                        package_dir=staging,
+                        occurrence_ids=occurrence_ids,
+                    )
+                sidecar_payload["kinematics"] = resolved_block
+                write_source_sidecar(spec.entry_path, sidecar_payload)
             from cadgen._internal.step_assemble import assemble_step_from_package
 
             spec.step_path.parent.mkdir(parents=True, exist_ok=True)
@@ -712,6 +738,13 @@ def _produce_declared_mesh_exports(
     package_dir = render_package_dir(spec.entry_path)
     if document_hash is None or not (package_dir / "assembly.json").is_file():
         return ()
+    # Posed declarations live only in the RUNTIME registry (a kinematics= dict
+    # is not statically evaluable), keyed by (fmt, resolved path).
+    posed_declarations: dict = {}
+    if spec.script_path is not None:
+        from cadgen._internal.kinematics_resolve import runtime_mesh_declarations
+
+        posed_declarations = runtime_mesh_declarations(spec.script_path)
     pending: list[MeshExportJob] = []
     for declared in spec.mesh_exports:
         chord = declared.mesh_tolerance
@@ -720,13 +753,28 @@ def _produce_declared_mesh_exports(
         angle = declared.mesh_angular_tolerance
         if angle is None and spec.mesh_angular_tolerance_explicit:
             angle = spec.mesh_angular_tolerance
+        kinematics_def, pose_values = posed_declarations.get(
+            (declared.fmt, declared.path), (None, None)
+        )
         if mesh_export_current(
             declared.path,
             document_hash=document_hash,
             mesh_tolerance=chord,
             mesh_angular_tolerance=angle,
+            pose_values=pose_values,
         ):
             continue
+        pose_deltas = None
+        if kinematics_def is not None and pose_values:
+            from cadgen._internal.kinematics_resolve import mesh_pose_deltas
+
+            pose_deltas = mesh_pose_deltas(
+                kinematics_def,
+                pose_values,
+                package_dir=package_dir,
+                step_path=spec.step_path,
+                source_ref=str(spec.source_ref),
+            )
         declared.path.parent.mkdir(parents=True, exist_ok=True)
         pending.append(
             MeshExportJob(
@@ -734,6 +782,8 @@ def _produce_declared_mesh_exports(
                 out=declared.path,
                 mesh_tolerance=chord,
                 mesh_angular_tolerance=angle,
+                pose_deltas=pose_deltas,
+                pose_values=pose_values,
             )
         )
     if not pending:
@@ -754,6 +804,7 @@ def _produce_declared_mesh_exports(
             fmt=job.fmt,
             mesh_tolerance=job.mesh_tolerance,
             mesh_angular_tolerance=job.mesh_angular_tolerance,
+            pose_values=job.pose_values,
         )
         if announce:
             print(f"[cadgen] wrote {job.fmt.upper()}: {_display_path(job.out)}")

@@ -143,7 +143,7 @@ def _manifest(root: pathlib.Path) -> dict[str, str]:
         if not artifact.is_file():
             continue
         rel = artifact.relative_to(root).as_posix()
-        if artifact.suffix in {".step", ".stp", ".dxf"} or rel.endswith(".source.json"):
+        if artifact.suffix in {".step", ".stp", ".dxf"} or rel.endswith(".cadgen.json"):
             out[rel] = _digest(artifact)
         if artifact.suffix in {".step", ".stp"}:
             package = render_package_dir(artifact)
