@@ -16,10 +16,11 @@
 //   every payload file on disk;
 // - STEP bakes no settings, so a descriptor recording a bakeHash came from
 //   another producer and is stale;
-// - an IMPORTED file's digest must match the descriptor (file->render
-//   coherence);
-// - generated outputs are DETACHED from their source code: no source checks,
-//   ever (the CLI's no-op gates own that direction).
+// - every STEP file's digest must match the descriptor (file->render
+//   coherence), regardless of whether it was imported or generated;
+// - generated outputs are DETACHED from their source code: no SOURCE checks,
+//   ever (the CLI's no-op gates own that direction). The STEP itself remains
+//   canonical, so its bytes still gate the render package.
 //
 // Implicit models are NOT validated here: they render live from their own
 // source in the client, so the viewer has no implicit artifact to be stale.
@@ -134,11 +135,9 @@ function validateStep(stepPath) {
   if (!bakeHashMatches(descriptor, null)) {
     return { ok: false, code: "stale_step_artifact", packageDir, descriptor, generated };
   }
-  if (generated) {
-    // Detached outputs: no source checks, ever.
-    return { ok: true, packageDir, descriptor, generated };
-  }
-  // Imported file: the render is DERIVED from these bytes. Fails closed.
+  // The render is DERIVED from the canonical STEP bytes. This gate applies to
+  // imported and generated packages alike; generated only means that source
+  // freshness is intentionally ignored.
   const recorded = String(descriptor.stepHash || "").trim();
   if (fs.existsSync(stepPath)) {
     if (!recorded) {

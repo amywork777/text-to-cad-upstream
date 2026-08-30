@@ -1,7 +1,7 @@
 // The artifact-status authority's contract (ported from the retired Python
 // validator suite when freshness moved to this single JS implementation):
 // ready / needs-build / generating / error, schema and bake gates, the
-// imported-file digest gate, and the detached-outputs policy for everything
+// canonical-STEP digest gate, and the source-detachment policy for everything
 // generated.
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
@@ -89,24 +89,31 @@ test("imported STEP: digest gate fails closed (stale, blank, and absent hashes)"
   }
 });
 
-test("generated entries are detached: no source checks, ever", (t) => {
+test("generated entries ignore source edits but remain bound to the canonical STEP", (t) => {
   const root = tempRoot(t, "status-");
   // Python-backedness is descriptor PROVENANCE (sourceKind), never a sibling
-  // filename: no stepHash recorded, source edited after the build — all READY.
-  const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: null });
+  // filename. Source edits do not invalidate a package whose STEP hash still
+  // matches because source-to-STEP freshness belongs to the explicit rebuild.
+  const step = writeStepPackage(root, "widget.step", { sourceKind: "python" });
   const generator = write(root, "widget.py", "from cadgen import step\n@step\ndef model():\n    return 1\n");
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
   fs.writeFileSync(generator, "from cadgen import step\n@step\ndef model():\n    return 999\n");
   assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
 });
 
-test("provenance owns the digest gate: a python-backed .step skips it", (t) => {
+test("generated packages fail closed when their canonical STEP hash is missing or stale", (t) => {
   const root = tempRoot(t, "status-");
-  const step = writeStepPackage(root, "widget.step", { sourceKind: "python", stepHash: "recorded-at-export" });
-  // The exported file's bytes do not match the recorded hash, but the
-  // DESCRIPTOR says python-backed -> detached -> ready. No sibling script is
-  // consulted (none exists here).
-  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
+  for (const [stepHash, reason] of [
+    ["recorded-at-export", "stale_step_artifact"],
+    ["", "missing_step_hash"],
+    [null, "missing_step_hash"],
+  ]) {
+    const sub = fs.mkdtempSync(path.join(root, "case-"));
+    const step = writeStepPackage(sub, "widget.step", { sourceKind: "python", stepHash });
+    const status = artifactStatus(step, sub);
+    assert.equal(status.state, ARTIFACT_STATE.NEEDS_BUILD, `hash=${stepHash}`);
+    assert.equal(status.reason, reason);
+  }
 });
 
 test("schema gate: strict equality, missing/old/stringified all unsupported (and buildable)", (t) => {

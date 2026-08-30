@@ -48,6 +48,16 @@ function generatedStepHint(identity) {
   );
 }
 
+function generatedPackageError(verdict) {
+  const sourcePath = String(verdict?.descriptor?.sourcePath || "").trim();
+  const identity = sourcePath ? { sourcePath } : cadgenStepIdentity(verdict?.candidate);
+  const remedy = identity ? generatedStepHint(identity) : CLI_BUILD_HINT;
+  if (verdict?.digestMismatch) {
+    return `The canonical STEP changed after this render package was built. ${remedy}`;
+  }
+  return `The generated render package is missing, incomplete, or incompatible. ${remedy}`;
+}
+
 // The viewer owns status for the entries whose render artifact it reads from
 // disk. Implicit models render LIVE from their own source, so they are not
 // artifact-managed here at all (their baked packages exist for CLI exports).
@@ -296,6 +306,16 @@ export function createCadgenOps(rootDir) {
       // The ONLY buildable state the viewer supports is the WASM import of a
       // raw STEP. Everything else renders what exists or names the CLI.
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
+      if (verdict.generated) {
+        // A source-linked package is safe to attach only while it represents
+        // the canonical STEP bytes. Opening is read-only: never regenerate or
+        // import here, and never render a stale package under a current STEP.
+        return {
+          state: "error",
+          ...(verdict.digestMismatch ? { stale: true } : {}),
+          error: generatedPackageError(verdict),
+        };
+      }
       if (verdict.rawStep && !verdict.generated) {
         // The descriptor said "not generated" (or no package exists), but the
         // FILE may still self-identify as cadgen-generated via its embedded
@@ -346,6 +366,9 @@ export function createCadgenOps(rootDir) {
       }
       const candidate = path.isAbsolute(fileRef) ? fileRef : path.resolve(rootDir, fileRef);
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
+      if (verdict.generated) {
+        return { ok: false, state: "error", error: generatedPackageError(verdict) };
+      }
       if (isRawStepFile(candidate) && !verdict.generated) {
         // Same guard as status: the viewer never imports a cadgen-generated
         // file, force included — regeneration belongs to the model script

@@ -85,6 +85,40 @@ test("bare generated .step: status names the script, build refuses (force includ
   }
 });
 
+test("source-linked package attaches only while its STEP hash matches", async (t) => {
+  const root = tempRoot(t);
+  const stepText = generatedStepText("colored.py");
+  const step = write(root, "colored.step", stepText);
+  const crypto = await import("node:crypto");
+  const stepHash = crypto.createHash("sha256").update(stepText).digest("hex");
+  const packageRel = path.join("__cadgen__", "models", "colored.step");
+  write(root, path.join(packageRel, "components", "c0.surf"), Buffer.from("SURF...."));
+  write(root, path.join(packageRel, "assembly.json"), JSON.stringify({
+    kind: "assembly-package",
+    packageSchemaVersion: STEP_PACKAGE_VERSION,
+    sourceKind: "python",
+    sourcePath: "colored.py",
+    stepHash,
+    components: { c0: { surf: "components/c0.surf" } },
+  }));
+
+  const ops = createCadgenOps(root);
+  assert.deepEqual(await ops.artifactStatus("colored.step"), { state: "ready" });
+
+  fs.appendFileSync(step, "\n");
+  const stale = await ops.artifactStatus("colored.step");
+  assert.equal(stale.state, "error");
+  assert.equal(stale.stale, true);
+  assert.match(stale.error, /canonical STEP changed/);
+  assert.match(stale.error, /python colored\.py/);
+  assert.equal(stale.wasmImport, undefined);
+
+  const build = await ops.buildArtifact("colored.step", { force: true });
+  assert.equal(build.ok, false);
+  assert.match(build.error, /canonical STEP changed/);
+  assert.match(build.error, /python colored\.py/);
+});
+
 test("generated .step over an accidentally-imported package: renders as-is, badged with the remedy", async (t) => {
   const root = tempRoot(t);
   const stepText = generatedStepText("colored.py");
