@@ -1,6 +1,6 @@
 # Supported exports
 
-Read this file when the user requests STL, 3MF, or native GLB output files from CAD geometry. For a `.step` file, run the model script or `cadgen step build` (either writes the STEP output; see `step-generation.md`) — a mesh door writes mesh formats only. For 2D DXF output, use the `$dxf` skill; DXF uses a separate the `@dxf` model function contract in a dedicated `<name>.py` drawing generator (never inside a `.py`).
+Read this file when the user requests STL, 3MF, or native GLB output files from CAD geometry. For a `.step` file, run the model script or `cadgen step build` (either writes the STEP output; see `step-generation.md`) — a mesh door writes mesh formats only. For 2D DXF output, use the `$dxf` skill: a drawing is its own `<name>.py` declaring one `@dxf` function — one model per file, so a drawing never shares a script with a `@step` model.
 
 ## Policy
 
