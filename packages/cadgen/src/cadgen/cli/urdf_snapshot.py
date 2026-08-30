@@ -14,9 +14,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cadgen.cli.snapshot import OPTION_NAMES, SKILL_KINDS, run
+from cadgen.cli.snapshot import DOOR_KINDS, OPTION_NAMES, run
 
-KINDS = SKILL_KINDS["urdf"]
+KINDS = DOOR_KINDS["urdf"]
 # Re-exported so this command's declared adapter surface is readable from the
 # command's own module, the way a generated command's parser is.
 __all__ = ["KINDS", "OPTION_NAMES", "main"]

@@ -34,6 +34,7 @@ from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 from cadgen.coordination import PHASE_RENDER, resolve as resolve_progress
+from cadgen.results import SnapshotFile, SnapshotResult, SnapshotTimings
 from cadgen._internal.atomic_replace import replace_atomic, write_bytes_atomic
 from cadgen._internal.cache_paths import meshes_dir
 
@@ -198,7 +199,18 @@ def load_json_text(text: str, source_label: str) -> object:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise SnapshotError(f"Failed to parse JSON from {source_label}: {exc}") from exc
+# --- option values: a string from argv, or the real thing from a verb call ---------
+#
+# Every option below arrives as TEXT from the CLI and has to be parsed. The public
+# `<format>.snapshot()` verbs hand the same options over as Python values -- a dict
+# for a theme, a dict for a camera -- and stringifying one of those would produce
+# "{'materials': ...}", which parses as a saved-theme NAME and silently renders the
+# default. So each loader takes the already-parsed shape as itself.
+
+
 def parse_camera_option(raw_camera: object) -> object:
+    if is_plain_object(raw_camera):
+        return raw_camera
     camera = str(raw_camera or "").strip()
     if not camera:
         raise SnapshotError("--camera requires a preset, azimuth:elevation pair, or JSON camera object")
@@ -276,6 +288,16 @@ def validate_display_settings_values(payload: Mapping[str, object], *, source_la
                 f"is automatic); unsupported keys: {', '.join(unknown)} ({source_label})"
             )
 def load_display_option(raw_display: object, *, cwd: Path) -> dict[str, object]:
+    if is_plain_object(raw_display):
+        payload = validate_direct_settings_payload(
+            raw_display,
+            option_name="--display",
+            source_label="display settings",
+            allowed_keys=DISPLAY_OPTION_KEYS,
+            setting_label="display settings",
+        )
+        validate_display_settings_values(payload, source_label="display settings")
+        return payload
     display = str(raw_display or "").strip()
     if not display:
         raise SnapshotError("--display requires a JSON object, JSON file path, or display mode")
@@ -310,6 +332,14 @@ def load_display_option(raw_display: object, *, cwd: Path) -> dict[str, object]:
     validate_display_settings_values(payload, source_label=str(display_path))
     return payload
 def load_theme_option(raw_theme: object, *, cwd: Path) -> object:
+    if is_plain_object(raw_theme):
+        return validate_direct_settings_payload(
+            raw_theme,
+            option_name="--theme",
+            source_label="theme settings",
+            allowed_keys=THEME_OPTION_KEYS,
+            setting_label="theme settings",
+        )
     theme = str(raw_theme or DEFAULT_RENDER_THEME_ID).strip() or DEFAULT_RENDER_THEME_ID
     if theme.startswith("{"):
         return validate_direct_settings_payload(
@@ -469,8 +499,22 @@ def output_path_names_a_directory(output_path: str, resolved_path: Path) -> bool
     exist yet. Otherwise a path that already IS one counts (``.`` and ``..``
     included). Anything else is an explicit file path, whether or not it exists:
     naming a file that is not there yet is the whole point of asking for one.
+
+    A trailing separator on a path that already exists as a FILE is neither: it
+    asks for a directory and names something that cannot become one. Left alone
+    it resolved to ``<the file>/<generated name>``, which nothing detects until
+    the write -- a ``NotADirectoryError`` from inside the atomic replace, after
+    the whole render has been paid for. It raises HERE instead, at the first
+    resolution of the path, which for a CLI run is before the input is even
+    read.
     """
     if output_path.endswith(("/", "\\")):
+        if resolved_path.exists() and not resolved_path.is_dir():
+            raise SnapshotError(
+                f"snapshot output {output_path!r} ends in a path separator, which names a "
+                f"directory to generate a name inside, but {resolved_path} is an existing "
+                "file; drop the trailing separator to write that file, or name a directory"
+            )
         return True
     return resolved_path.is_dir()
 
@@ -481,20 +525,34 @@ def generated_output_name(
     index: int,
     output_count: int,
     timestamp: str,
+    job_index: int = 0,
+    job_count: int = 1,
 ) -> str:
-    """The name a directory-mode output is given: ``<input-stem>[_<n>]_<ts>.<ext>``.
+    """The name a directory-mode output is given: ``<input-stem>[_j<m>][_<n>]_<ts>.<ext>``.
 
     The extension follows the render, not the request: an orbit or an animated
     parameter sweep encodes a GIF, everything else a PNG (headlessRenderEntry.js
-    picks the mime type the same way). The index only appears when a job has more
-    than one output, so the common single-output case reads cleanly and a
-    multi-view packet pointed at one directory cannot collide with itself.
+    picks the mime type the same way).
+
+    Every output in a packet shares one timestamp -- that is what makes a
+    multi-view run read as one run -- so the discriminator is the ONLY thing
+    keeping two generated names apart, and it has to cover both axes a packet
+    varies along. The output index alone was not enough: a packet of one-output
+    jobs rendering the same model from different cameras into one directory gave
+    every job the identical ``<stem>_<ts>.png``, so N renders finished and one
+    file survived. Each half appears only when it discriminates something, so
+    the common single-job single-output case still reads as ``<stem>_<ts>.png``.
     """
     stem = Path(str(job.get("input") or "")).stem or "snapshot"
     animated = str(job.get("mode") or "").strip().lower() == "orbit" or (
         step_parameter_render_values_are_animated(job.get("stepParameters"))
     )
-    discriminator = f"_{index + 1}" if output_count > 1 else ""
+    parts = []
+    if job_count > 1:
+        parts.append(f"j{job_index + 1}")
+    if output_count > 1:
+        parts.append(str(index + 1))
+    discriminator = f"_{'_'.join(parts)}" if parts else ""
     return f"{stem}{discriminator}_{timestamp}{'.gif' if animated else '.png'}"
 
 
@@ -580,13 +638,19 @@ def normalize_common_job(
     mode: str,
     resolved_cwd: Path,
     timestamp: str | None,
+    job_index: int = 0,
+    job_count: int = 1,
 ) -> dict[str, object]:
     """Kind-independent job normalization shared by every input kind: the outputs
     guard, render clip-stripping + scene-scale coercion, output-path resolution
     with per-output camera defaults, and the common return shape.
     Kind resolvers run their capability checks first, then call this, so a
     STEP/mesh/robot job all normalize identically; the caller attaches its
-    kind-specific ``resolved`` payload to the returned job."""
+    kind-specific ``resolved`` payload to the returned job.
+
+    ``job_index``/``job_count`` are this job's place in its packet, needed only
+    so a directory-valued output's generated name can discriminate across jobs
+    as well as within one (see :func:`generated_output_name`)."""
     outputs = job.get("outputs") if isinstance(job.get("outputs"), list) else []
     if mode != "list" and not outputs:
         raise SnapshotError("render job must include outputs for non-list modes")
@@ -684,6 +748,8 @@ def normalize_common_job(
                         index=index,
                         output_count=len(outputs),
                         timestamp=resolved_timestamp,
+                        job_index=job_index,
+                        job_count=job_count,
                     ),
                 ),
                 "width": width,
@@ -773,6 +839,8 @@ def resolve_mesh_render_job(
     root_path: Path,
     resolved_cwd: Path,
     timestamp: str | None,
+    job_index: int = 0,
+    job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
     """Resolve a direct mesh input (GLB/STL/3MF) that carries no STEP topology.
@@ -841,7 +909,14 @@ def resolve_mesh_render_job(
     if bool(job.get("debug")):
         resolved["debug"] = {"meshSource": {"kind": kind}}
 
-    normalized = normalize_common_job(job, mode=mode, resolved_cwd=resolved_cwd, timestamp=timestamp)
+    normalized = normalize_common_job(
+        job,
+        mode=mode,
+        resolved_cwd=resolved_cwd,
+        timestamp=timestamp,
+        job_index=job_index,
+        job_count=job_count,
+    )
     normalized["resolved"] = resolved
     return normalized
 def content_type_for_path(path: Path) -> str:
@@ -1439,66 +1514,111 @@ def write_render_outputs(result: Mapping[str, object]) -> None:
     for output in outputs:
         if is_plain_object(output):
             write_output_payload(output)
-# stdout is read by an agent far more often than by a person, and indentation is pure
-# volume: on a 600-part list payload it was 38% of 294 KB. A human who wants it laid out
-# pipes through `jq .`; an agent that has to pay for the whitespace cannot get it back.
-_JSON = {"separators": (",", ":")}
-
-# How the browser hands rendered bytes back for write_output_payload to decode. By the time
-# anything prints, that has already written the file -- the CLI writes before it prints -- so
-# these are a verbatim second copy of it, and the `path` beside them is what a caller needs.
-# Printing them put a base64 PNG on stdout (228 KB for one 1600x1200 view) or an entire orbit
-# GIF (1.7 MB, ~445k tokens), in the one output this release has spent its effort making
-# cheap: see the note above _JSON, which strips indentation for a fraction of that. Nothing
-# reads either key back from stdout.
-_OUTPUT_PAYLOAD_KEYS = ("dataUrl", "text")
 
 
-def _without_output_payloads(result: Mapping[str, object]) -> dict:
-    """``result`` minus the output payload blobs.
+# --- the typed result -------------------------------------------------------------
+#
+# The renderer answers with a BROWSER payload: base64 image bytes, viewport
+# internals, per-stage timings, the echoed job. None of that is what a caller
+# asked for. The files are already on disk by the time this runs -- the write
+# happens before anything is reported -- so the payload keys are a verbatim
+# second copy of bytes the caller can read from the path beside them, and
+# printing one put a 228 KB base64 PNG (or a 1.7 MB orbit GIF, ~445k tokens) on
+# stdout.
+#
+# So the boundary is a dataclass rather than a filtered dict. Filtering was the
+# old fix, and it is the weaker one: it has to KNOW every payload key, so a new
+# one in the browser reaches stdout by default. A SnapshotResult cannot carry a
+# payload at all, because it has no field for one -- and `--json` becomes
+# `dataclasses.asdict`, the same serialization every other cadgen verb uses
+# (design/format-doors.md).
 
-    Returns a COPY, so a caller that still needs the payload -- write_output_payload reads the
-    same dict -- is unaffected by print order.
+
+def _output_kind(output: Mapping[str, object], path: Path) -> str:
+    """What was actually encoded: the mime subtype, else the path's suffix.
+
+    The renderer's mime type is authoritative because the encoding follows the
+    RENDER, not the request -- an orbit named ``.png`` still holds GIF bytes.
     """
-    printable = dict(result)
-    jobs = printable.get("jobs")
-    if isinstance(jobs, list):
-        printable["jobs"] = [
-            _without_output_payloads(job) if is_plain_object(job) else job for job in jobs
-        ]
-    outputs = printable.get("outputs")
-    if isinstance(outputs, list):
-        printable["outputs"] = [
-            {key: value for key, value in output.items() if key not in _OUTPUT_PAYLOAD_KEYS}
-            if is_plain_object(output)
-            else output
-            for output in outputs
-        ]
-    return printable
+    mime = str(output.get("mimeType") or "")
+    subtype = mime.rsplit("/", 1)[-1].strip().lower() if "/" in mime else ""
+    if subtype:
+        return "svg" if subtype.startswith("svg") else subtype
+    return path.suffix.lstrip(".").lower()
 
 
-def print_render_result(result: Mapping[str, object], *, json_output: bool = False, stdout: Any = sys.stdout) -> None:
-    if json_output:
-        stdout.write(f"{json.dumps(_without_output_payloads(result), **_JSON)}\n")
-        return
-    if isinstance(result.get("jobs"), list):
-        for job_result in result["jobs"]:
-            if is_plain_object(job_result):
-                print_render_result(job_result, json_output=False, stdout=stdout)
-        for warning in result.get("warnings") or []:
-            stdout.write(f"warning: {warning}\n")
-        return
-    outputs = result.get("outputs")
-    if not isinstance(outputs, list):
-        # Nothing to summarise as "saved snapshot:" lines, so fall back to the raw result --
-        # stripped the same way, so an unexpected shape cannot reintroduce the payload.
-        stdout.write(f"{json.dumps(_without_output_payloads(result), **_JSON)}\n")
-        return
-    if result.get("mode") == "list":
-        stdout.write(f"{json.dumps(result.get('parts') or [], **_JSON)}\n")
-        return
-    for output in outputs:
-        if is_plain_object(output) and output.get("path"):
-            stdout.write(f"saved snapshot: {output['path']}\n")
-    for warning in result.get("warnings") or []:
-        stdout.write(f"warning: {warning}\n")
+def snapshot_result(result: Mapping[str, object], *, total_ms: float = 0.0) -> SnapshotResult:
+    """The typed answer for one finished render packet.
+
+    Reads both packet shapes -- a single job's result verbatim, or the
+    ``{"jobs": [...]}`` envelope -- because that distinction is a detail of how
+    the renderer was called, not something a caller should have to branch on.
+    """
+    job_results = [
+        job
+        for job in (result["jobs"] if isinstance(result.get("jobs"), list) else [result])
+        if is_plain_object(job)
+    ]
+    files: list[SnapshotFile] = []
+    parts: list[dict] = []
+    warnings: list[str] = []
+    debug: list[dict] = []
+    for job_result in job_results:
+        for output in job_result.get("outputs") or []:
+            if not is_plain_object(output) or not output.get("path"):
+                continue
+            path = Path(str(output["path"]))
+            files.append(
+                SnapshotFile(
+                    path=path,
+                    kind=_output_kind(output, path),
+                    # The camera the renderer RESOLVED, not the one requested: a
+                    # preset name, an azimuth:elevation pair, or the burnt-in view
+                    # label. An orbit has no single view and reports none.
+                    view=str(
+                        output.get("viewLabel") or output.get("label") or output.get("camera") or ""
+                    ),
+                )
+            )
+        parts.extend(part for part in (job_result.get("parts") or []) if is_plain_object(part))
+        warnings.extend(str(warning) for warning in (job_result.get("warnings") or []))
+        info = job_result.get("debug")
+        if is_plain_object(info):
+            # --debug diagnostics are attached at RESOLVE time and merged into the
+            # browser result by the render loop; the input rides alongside so a
+            # multi-job packet's entries stay attributable.
+            entry = dict(info)
+            if job_result.get("input"):
+                entry = {"input": str(job_result["input"]), **entry}
+            debug.append(entry)
+    return SnapshotResult(
+        ok=bool(result.get("ok", True)) and all(job.get("ok") is not False for job in job_results),
+        files=tuple(files),
+        parts=tuple(parts),
+        warnings=tuple(warnings),
+        timings=SnapshotTimings(job_count=len(job_results), total_ms=total_ms),
+        debug=tuple(debug),
+    )
+
+
+async def render_snapshot(
+    packet: Mapping[str, object],
+    *,
+    runtime_dir: Path,
+    renderer: BatchSnapshotRenderer | None = None,
+    progress: object | None = None,
+) -> SnapshotResult:
+    """Render a resolved packet, write its outputs, and report what was written.
+
+    The three steps are one call because their ORDER is the exact-path contract:
+    every declared target was cleared before resolution, the bytes land through a
+    temp file and a rename, and only then does anything describe them. A caller
+    that could render without writing could also be handed a path holding
+    nothing.
+    """
+    started = time.perf_counter()
+    result = await render_resolved_job_packet(
+        packet, runtime_dir=runtime_dir, renderer=renderer, progress=progress
+    )
+    write_render_outputs(result)
+    return snapshot_result(result, total_ms=(time.perf_counter() - started) * 1000)

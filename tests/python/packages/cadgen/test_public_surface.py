@@ -37,14 +37,16 @@ from cadgen._internal.cli_from_function import (
 
 # The manifest: format namespace -> exactly the verbs it exports.
 PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
-    "cadgen.step": ("build",),
-    "cadgen.stl": ("build",),
-    "cadgen.threemf": ("build",),
-    "cadgen.glb": ("build",),
-    "cadgen.dxf": ("build",),
-    "cadgen.urdf": ("validate",),
+    "cadgen.step": ("build", "inspect", "snapshot"),
+    "cadgen.stl": ("build", "snapshot"),
+    "cadgen.threemf": ("build", "snapshot"),
+    "cadgen.glb": ("build", "snapshot"),
+    "cadgen.dxf": ("build", "snapshot"),
+    "cadgen.urdf": ("snapshot", "validate"),
+    # An SRDF's geometry comes from the URDF beside it, so it has no snapshot
+    # door of its own; `cadgen snapshot` still routes one by suffix.
     "cadgen.srdf": ("validate",),
-    "cadgen.sdf": ("validate",),
+    "cadgen.sdf": ("snapshot", "validate"),
 }
 
 # The format namespaces that are ALSO their declaration decorator. The robot
@@ -99,6 +101,9 @@ SNAPSHOT_OPTIONS = frozenset(
 # the CLI in a test file, which is churn rather than a guard.
 ADAPTERS: dict[str, frozenset[str]] = {
     "step snapshot": SNAPSHOT_OPTIONS,
+    "stl snapshot": SNAPSHOT_OPTIONS,
+    "3mf snapshot": SNAPSHOT_OPTIONS,
+    "glb snapshot": SNAPSHOT_OPTIONS,
     "dxf snapshot": SNAPSHOT_OPTIONS,
     "urdf snapshot": SNAPSHOT_OPTIONS,
     "sdf snapshot": SNAPSHOT_OPTIONS,

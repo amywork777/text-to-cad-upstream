@@ -12,13 +12,18 @@ import this at module scope and must stay inside the ~0.2s pre-gate budget.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 __all__ = [
     "BuildResult",
+    "InspectResult",
     "MeshExportFile",
     "MeshExportResult",
+    "SnapshotFile",
+    "SnapshotResult",
+    "SnapshotTimings",
     "ValidationIssue",
     "ValidationResult",
 ]
@@ -90,6 +95,91 @@ class MeshExportResult:
             f"{'current' if entry.skipped else 'wrote'} {entry.fmt.upper()}: {_display(entry.path)}"
             for entry in self.files
         ]
+
+
+@dataclass(frozen=True)
+class SnapshotFile:
+    """One image a snapshot run wrote."""
+
+    path: Path
+    #: The encoding the render produced: ``png``, ``gif``, or whatever suffix a
+    #: text output carried. It follows the RENDER, not the request — an orbit or
+    #: an animated parameter sweep encodes a GIF, everything else a PNG.
+    kind: str
+    #: What this output framed: the camera preset, ``azimuth:elevation`` pair, or
+    #: view label the output declared. Empty when the job named none.
+    view: str = ""
+
+
+@dataclass(frozen=True)
+class SnapshotTimings:
+    """What the run cost. Resolution (building a cold model's package) is NOT in
+    here: it happens before the renderer starts and reports its own phases."""
+
+    #: Render jobs in the packet. One for the ``--input`` shortcut, N for a
+    #: ``--job`` packet.
+    job_count: int = 0
+    #: Wall time across every job's render, in milliseconds.
+    total_ms: float = 0.0
+
+
+@dataclass(frozen=True)
+class SnapshotResult:
+    """The outcome of one snapshot run.
+
+    The renderer answers with a browser payload — base64 image bytes, viewport
+    internals, per-stage timings — and none of that is a caller's business: the
+    files are already on disk by the time this exists, so what a caller needs is
+    WHICH paths were written. ``--json`` is this dataclass, so the library call
+    and the CLI report the same thing (design/format-doors.md).
+    """
+
+    ok: bool
+    #: Every file this run wrote, in the order the packet declared them.
+    files: tuple[SnapshotFile, ...] = ()
+    #: ``--mode list`` only: the model's part occurrences, each carrying the
+    #: ``ref`` that pastes straight into ``--focus``/``--hide`` and ``inspect``.
+    #: Empty for every mode that renders.
+    parts: tuple[dict, ...] = ()
+    #: Non-fatal notes from the renderer (an unresolved selector, a clamped
+    #: frame budget). ``ok`` stays true.
+    warnings: tuple[str, ...] = ()
+    timings: SnapshotTimings = field(default_factory=SnapshotTimings)
+    #: ``--debug`` only: how each job's artifact resolved (cache hit, source,
+    #: timing), one entry per job that reported any. Empty otherwise.
+    debug: tuple[dict, ...] = ()
+
+    def human_lines(self) -> list[str]:
+        # A list-mode run writes no files: its whole answer is the inventory,
+        # and it is read by an agent, so it stays one compact JSON line.
+        if not self.files and self.parts:
+            return [json.dumps(list(self.parts), separators=(",", ":"))]
+        lines = [f"saved snapshot: {entry.path}" for entry in self.files]
+        lines += [f"warning: {warning}" for warning in self.warnings]
+        return lines
+
+
+@dataclass(frozen=True)
+class InspectResult:
+    """The outcome of one ``cadgen step inspect`` subcommand.
+
+    Inspection answers with a DOCUMENT rather than a summary — refs, facts,
+    planes, measurements — and that document is the product: an agent reads it,
+    and every subcommand shapes it differently. So the typed result carries the
+    document rather than flattening it, and adds the two things a caller needs
+    without parsing it: whether the inspection succeeded, and which subcommand
+    produced it.
+    """
+
+    ok: bool
+    #: ``refs`` | ``diff`` | ``frame`` | ``measure`` | ``align`` | ``interfere``
+    #: | ``validate`` — the inspection that ran.
+    command: str
+    #: That subcommand's own JSON document, exactly as the CLI prints it.
+    report: dict = field(default_factory=dict)
+
+    def human_lines(self) -> list[str]:
+        return [json.dumps(self.report, separators=(",", ":"))]
 
 
 @dataclass(frozen=True)

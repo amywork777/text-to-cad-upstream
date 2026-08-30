@@ -39,6 +39,8 @@ from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact, StepTo
 from cadgen.cli_logging import CliLogger
 from cadgen.coordination import PHASE_BROWSER, SNAPSHOT, ProgressReporter
 from cadgen.cli_progress import cli_progress_line
+from cadgen.results import SnapshotResult
+from cadgen._internal.cli_from_function import emit
 from cadgen.snapshot_core import (
     THEME_OPTION_KEYS,
     BatchSnapshotRenderer,
@@ -97,8 +99,8 @@ from cadgen.snapshot_core import (
     parse_camera_option,
     path_is_inside_or_equal,
     positive_integer,
-    print_render_result,
     render_resolved_job_packet,
+    render_snapshot,
     resolve_mesh_render_job,
     has_step_parameter_render_values,
     resolve_output_size,
@@ -127,8 +129,17 @@ STEP_SUPPORTED_RENDER_MODES = {"view", "orbit", "section", "list"}
 ensure_step_topology_artifact = None
 
 
-@dataclass
+@dataclass(slots=True)
 class SnapshotOptions:
+    """Every snapshot flag, as a field.
+
+    ``slots=True`` so a typo'd assignment fails loudly. The parser mutates this
+    object attribute by attribute, and on a plain dataclass
+    ``options.size_profle = ...`` silently created a NEW attribute: the flag
+    parsed, the run succeeded, and the setting was never applied. There is
+    nothing left for a slot to hide behind.
+    """
+
     job: str = ""
     input: str = ""
     output: str = ""
@@ -182,7 +193,8 @@ def option_names() -> tuple[str, ...]:
 # blob documented STEP parameters and robot joint poses to every reader regardless of
 # which skill they were in.
 KIND_BLURBS: dict[str, str] = {
-    "step": "a STEP model, or the gen_step() generator that builds one",
+    # `gen_step()` is retired; a model is a @step-decorated function in a .py.
+    "step": "a STEP document, or the @step model script that builds one",
     "stp": "a STEP model",
     "glb": "a mesh, rendered shaded solid",
     "stl": "a mesh, rendered shaded solid",
@@ -225,8 +237,11 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapsh
 
     lines = [
         "Usage:",
-        f"  python {prog} --input models/part{sample} --output /tmp/part.png",
-        f"  python {prog} --job render-job.json          # or --job - to read stdin",
+        # `prog` is already the whole command (`cadgen stl snapshot`), so it does
+        # not take a `python` in front of it; the line used to print one, which
+        # made the first thing a reader saw the one thing they could not run.
+        f"  {prog} --input models/part{sample} --output /tmp/part.png",
+        f"  {prog} --job render-job.json          # or --job - to read stdin",
         "",
         "Inputs",
     ]
@@ -278,7 +293,11 @@ def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapsh
         ]
     lines += [
         "",
-        "Outputs are saved with a shared UTC seconds timestamp before the extension.",
+        # This used to say every output was saved with a timestamp before the
+        # extension. It has not been true since the declared path became the
+        # written path, and it contradicted --output six lines above it.
+        "The path you name is the path you get. Only a DIRECTORY output gets a",
+        "generated name, timestamped, and the `saved snapshot:` line reports it.",
         "",
     ]
     return "\n".join(lines)
@@ -433,6 +452,10 @@ def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
 
 
 def parse_params_option(raw_params: object) -> dict[str, object]:
+    # Already an object when it came from a `<format>.snapshot(params={...})`
+    # call rather than argv; see the note above parse_camera_option.
+    if is_plain_object(raw_params):
+        return dict(raw_params)
     parsed = load_json_text(str(raw_params or ""), "--params")
     if not is_plain_object(parsed):
         raise SnapshotError("--params must be a STEP parameter JSON object")
@@ -829,6 +852,8 @@ def resolve_robot_render_job(
     root_path: Path,
     resolved_cwd: Path,
     timestamp: str | None,
+    job_index: int = 0,
+    job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
     """Resolve a robot description (`.urdf` / `.srdf` / `.sdf`).
@@ -907,7 +932,14 @@ def resolve_robot_render_job(
     if not str(job.get("sceneScale") or job.get("scale") or "").strip():
         job = {**job, "sceneScale": "urdf"}
 
-    normalized = normalize_common_job(job, mode=mode, resolved_cwd=resolved_cwd, timestamp=timestamp)
+    normalized = normalize_common_job(
+        job,
+        mode=mode,
+        resolved_cwd=resolved_cwd,
+        timestamp=timestamp,
+        job_index=job_index,
+        job_count=job_count,
+    )
     normalized["resolved"] = resolved
     return normalized
 
@@ -918,6 +950,8 @@ def resolve_render_job(
     cwd: Path | None = None,
     timestamp: str | None = None,
     kinds: frozenset[str] | None = None,
+    job_index: int = 0,
+    job_count: int = 1,
 ) -> dict[str, object]:
     if not is_plain_object(raw_job):
         raise SnapshotError("render job must be an object")
@@ -1002,6 +1036,8 @@ def resolve_render_job(
         reference_root=reference_root,
         resolved_cwd=resolved_cwd,
         timestamp=timestamp,
+        job_index=job_index,
+        job_count=job_count,
     )
 
 
@@ -1015,6 +1051,8 @@ def resolve_step_render_job(
     reference_root: Path,
     resolved_cwd: Path,
     timestamp: str | None,
+    job_index: int = 0,
+    job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
     has_param_render = has_step_parameter_render_values(job.get("stepParameters"))
@@ -1099,7 +1137,14 @@ def resolve_step_render_job(
     if normalized_selection is not None:
         job["selection"] = normalized_selection
 
-    normalized = normalize_common_job(job, mode=mode, resolved_cwd=resolved_cwd, timestamp=timestamp)
+    normalized = normalize_common_job(
+        job,
+        mode=mode,
+        resolved_cwd=resolved_cwd,
+        timestamp=timestamp,
+        job_index=job_index,
+        job_count=job_count,
+    )
     normalized["resolved"] = resolved
     return normalized
 
@@ -1112,6 +1157,8 @@ def resolve_drawing_render_job(
     root_path: Path,
     resolved_cwd: Path,
     timestamp: str | None,
+    job_index: int = 0,
+    job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
     """Resolve a drawing input (`.dxf` or a `gen_dxf()` generator).
@@ -1169,6 +1216,8 @@ def resolve_drawing_render_job(
         root_path=serve_root,
         resolved_cwd=resolved_cwd,
         timestamp=timestamp,
+        job_index=job_index,
+        job_count=job_count,
     )
 
 
@@ -1283,13 +1332,26 @@ def enabled_kinds(kinds: Sequence[str]) -> frozenset[str]:
     return frozenset(resolved)
 
 
-def reject_unsupported_kind(kind: str, input_path: Path, enabled: frozenset[str]) -> None:
-    """Refuse an input this skill does not render.
+# The cadgen command that owns each mesh format's snapshot. Named in the refusal
+# because these moved: `cadgen step snapshot` rendered meshes until the door split,
+# so a caller reaching the STEP door with a `.stl` is following instructions that
+# were right, and "it accepts .step" alone does not tell them where it went. Safe
+# to name, unlike a SKILL: every one of these ships in this same distribution.
+MESH_SNAPSHOT_DOORS: dict[str, str] = {
+    "stl": "cadgen stl snapshot",
+    "3mf": "cadgen 3mf snapshot",
+    "glb": "cadgen glb snapshot",
+}
 
-    A shared implementation makes every skill CAPABLE of every format, so the gate is the
-    only thing keeping `cad` from quietly rendering a robot. It states what this skill
-    takes and stops there: naming another skill would assume that skill is installed, and
-    skills ship independently.
+
+def reject_unsupported_kind(kind: str, input_path: Path, enabled: frozenset[str]) -> None:
+    """Refuse an input this door does not render.
+
+    A shared implementation makes every door CAPABLE of every format, so the gate is the
+    only thing keeping `step snapshot` from quietly rendering a robot. It states what this
+    door takes and stops there: naming another SKILL would assume that skill is installed,
+    and skills ship independently. A sibling cadgen COMMAND is different — it is in the
+    same distribution, so the mesh doors are named outright.
     """
     if kind in enabled:
         return
@@ -1299,8 +1361,10 @@ def reject_unsupported_kind(kind: str, input_path: Path, enabled: frozenset[str]
         for name in _KIND_HELP_ORDER
         if name in enabled and name in KIND_LABELS
     )
+    door = MESH_SNAPSHOT_DOORS.get(kind)
+    where = f" Mesh inputs have their own door: `{door} --input <file> --output <path>`." if door else ""
     raise SnapshotError(
-        f"snapshot does not render {label} inputs: {input_path}. "
+        f"snapshot does not render {label} inputs: {input_path}.{where} "
         f"It accepts: {accepted or '(nothing)'}."
     )
 
@@ -1312,10 +1376,24 @@ def resolve_render_job_packet(
     kinds: frozenset[str] | None = None,
 ) -> dict[str, object]:
     single, jobs = normalize_snapshot_job_packet(raw_payload)
+    # ONE timestamp for the whole packet: a multi-view run reads as one run, not
+    # as N runs that happened to be close together. That is also why every
+    # generated name in the packet needs a discriminator that covers the job as
+    # well as the output (see generated_output_name).
     timestamp = snapshot_timestamp()
     return {
         "single": single,
-        "jobs": [resolve_render_job(job, cwd=cwd, timestamp=timestamp, kinds=kinds) for job in jobs],
+        "jobs": [
+            resolve_render_job(
+                job,
+                cwd=cwd,
+                timestamp=timestamp,
+                kinds=kinds,
+                job_index=index,
+                job_count=len(jobs),
+            )
+            for index, job in enumerate(jobs)
+        ],
     }
 
 
@@ -1349,18 +1427,21 @@ def snapshot_progress_label(packet: object) -> str:
     return f"snapshot ({len(jobs)} jobs)"
 
 
-async def run_render_cli_async(
-    argv: Sequence[str],
+async def run_snapshot_async(
+    options: SnapshotOptions,
     *,
     kinds: Sequence[str],
     runtime_dir: Path | None = None,
-    prog: str = "cadgen snapshot",
     cwd: Path | None = None,
-    stdout: Any = sys.stdout,
     stdin: Any = sys.stdin,
-) -> int:
+) -> SnapshotResult:
+    """Render whatever ``options`` describes and report what was written.
+
+    THE snapshot implementation: the CLI parses argv into ``options`` and prints
+    what comes back, and the public ``<format>.snapshot()`` verbs build the same
+    options object. Nothing here prints, so the two cannot report differently.
+    """
     enabled = enabled_kinds(kinds)
-    options = parse_snapshot_args(argv)
     if options.display_specified and "step" not in enabled:
         # Display settings ARE STEP topology settings: mode, clip, exploded and edges all
         # need occurrences and CAD edges. Every other kind already rejected all four at
@@ -1368,11 +1449,8 @@ async def run_render_cli_async(
         # at all. renderJobContext gates job.display on the same condition.
         raise SnapshotError(
             "--display applies to STEP inputs only: its settings (mode, clip, exploded, "
-            "edges) are CAD topology settings, and this skill renders none"
+            "edges) are CAD topology settings, and this door renders none"
         )
-    if options.help:
-        stdout.write(help_text(kinds=enabled, prog=prog))
-        return 0
     raw_payload = load_job_from_options(options, stdin=stdin, cwd=cwd)
     # Clear the declared outputs FIRST -- before resolution, which is where a bad
     # input actually fails. The path a caller names is the path it gets, and that
@@ -1397,13 +1475,27 @@ async def run_render_cli_async(
             labels=SNAPSHOT.labels,
         )
         progress.phase(PHASE_BROWSER)
-        result = await render_resolved_job_packet(
+        result = await render_snapshot(
             packet, runtime_dir=browser_runtime_dir(runtime_dir), progress=progress
         )
         progress.finish()
-    write_render_outputs(result)
-    print_render_result(result, json_output=options.json, stdout=stdout)
-    return 0
+    return result
+
+
+def run_snapshot(
+    options: SnapshotOptions,
+    *,
+    kinds: Sequence[str],
+    runtime_dir: Path | None = None,
+    cwd: Path | None = None,
+    stdin: Any = sys.stdin,
+) -> SnapshotResult:
+    """:func:`run_snapshot_async` for a synchronous caller (the CLI, the verbs)."""
+    return asyncio.run(
+        run_snapshot_async(
+            options, kinds=kinds, runtime_dir=runtime_dir, cwd=cwd, stdin=stdin
+        )
+    )
 
 
 def run_snapshot_cli(
@@ -1417,28 +1509,34 @@ def run_snapshot_cli(
     stderr: Any = sys.stderr,
     stdin: Any = sys.stdin,
 ) -> int:
-    """Run one skill's snapshot CLI. ``kinds`` is what that skill accepts.
+    """Run one snapshot door's CLI. ``kinds`` is what that door accepts.
 
-    The whole of a skill's snapshot entrypoint is a call to this: everything else about
+    The whole of a door's snapshot entrypoint is a call to this: everything else about
     rendering -- arguments, job schema, theme, display, the browser -- is identical across
-    skills by construction rather than by three copies agreeing.
+    doors by construction rather than by several copies agreeing.
+
+    Printing is `cli_from_function.emit`, the same serializer every generated
+    `cadgen <format> <verb>` command prints through: one compact JSON line of the
+    Result under `--json`, its human lines otherwise, and `{"ok":false,"error":...}`
+    + exit 1 for a failure. Snapshot used to hand-roll all three.
     """
     try:
-        return asyncio.run(
-            run_render_cli_async(
-                argv,
-                kinds=kinds,
-                runtime_dir=runtime_dir,
-                prog=prog,
-                cwd=cwd,
-                stdout=stdout,
-                stdin=stdin,
-            )
-        )
+        options = parse_snapshot_args(argv)
+        if options.help:
+            stdout.write(help_text(kinds=enabled_kinds(kinds), prog=prog))
+            return 0
     except SnapshotError as exc:
+        # Argument errors precede the Result contract -- there is no result to
+        # serialize -- so they stay a plain line on stderr.
         stderr.write(f"{exc}\n")
         return 1
-    except Exception as exc:
-        stderr.write(f"{exc}\n")
-        return 1
+    return emit(
+        lambda: run_snapshot(
+            options, kinds=kinds, runtime_dir=runtime_dir, cwd=cwd, stdin=stdin
+        ),
+        prog=prog,
+        as_json=options.json,
+        stdout=stdout,
+        stderr=stderr,
+    )
 

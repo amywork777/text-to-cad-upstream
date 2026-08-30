@@ -13,9 +13,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cadgen._internal.format_namespace import callable_namespace
+from cadgen._internal.snapshot_door import snapshot_door
 from cadgen.results import MeshExportResult
 
-__all__ = ["build"]
+__all__ = ["build", "snapshot"]
+
+#: ``cadgen 3mf snapshot``'s verb: render a 3MF mesh.
+snapshot = snapshot_door("3mf")
 
 
 def build(

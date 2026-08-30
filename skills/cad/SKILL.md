@@ -64,7 +64,8 @@ python <model>.py            # a model script BUILDS ITSELF (the @step/@dxf deco
 cadgen step build ...     # make a model or imported STEP/STP current (documents + declared exports)
 cadgen stl build ...      # one door per mesh format; `3mf` and `glb` are the others
 cadgen step inspect ...   # refs, measure, align, frame, diff
-cadgen step snapshot ...  # PNG/GIF visual review packets
+cadgen step snapshot ...  # PNG/GIF visual review packets, for STEP
+cadgen stl snapshot ...   # the same, for a mesh file; `3mf` and `glb` again
 ```
 
 Generation has NO CLI. A model is a plain Python script:
@@ -96,7 +97,12 @@ sources and `.step.py`/`.dxf.py` naming fail with a pointer to
 
 Use the active project Python interpreter; treat `python` in examples as an interpreter placeholder. Every operational verb is a `cadgen` subcommand (warm-by-default; `python -m cadgen.cli <verb>` is the PATH-independent equivalent). Use `cadgen <verb> --help` for the complete current interface; reference docs show recommended workflows, not every flag. Install per `requirements.txt`; `cadgen doctor <skill-dir>` verifies the installed cadgen matches this skill's pin (docs drift silently on a mismatched install).
 
-**Snapshot inputs.** This skill's snapshot renders `.step`/`.stp`, model scripts (`.py` declaring `@step`), `.3mf`, `.glb` and `.stl`. Robot descriptions are rendered by the `urdf`/`srdf`/`sdf` skills; the CLI refuses them rather than rendering something it should not.
+**Snapshot inputs.** One format, one door. `cadgen step snapshot` renders `.step`/`.stp` and the model scripts that build them (`.py` declaring `@step`) — nothing else. A mesh file goes to its own door: `cadgen stl snapshot`, `cadgen 3mf snapshot`, `cadgen glb snapshot`. They take the identical options and render the same way; a mesh has no CAD topology, so the STEP-only options (`--focus`/`--hide`, `--display`, `--params`, `--mode section`) are not offered. Robot descriptions belong to the `urdf`/`srdf`/`sdf` skills. Each door refuses what is not its own, and names the door that takes it.
+
+```bash
+cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
+cadgen stl snapshot  --input STL/bracket.stl   --output tmp/mesh.png
+```
 
 **Snapshot output.** The path you name is the path you get:
 

@@ -42,11 +42,16 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     # STEP
     "step build": ("cadgen.cli.step_build", "make a model's or STEP's derived state current"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
-    "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP or mesh to an image"),
-    # Mesh formats — one door each, replacing the retired `step export`
+    "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP model to an image"),
+    # Mesh formats — one door each, replacing the retired `step export`. Their
+    # `snapshot` is the mesh arm `step snapshot` used to carry: one format, one
+    # door, so a mesh renders from the same command that writes it.
     "stl build": ("cadgen.cli.stl_build", "write a model's STL output(s)"),
+    "stl snapshot": ("cadgen.cli.stl_snapshot", "render an STL mesh to an image"),
     "3mf build": ("cadgen.cli.threemf_build", "write a model's 3MF output(s)"),
+    "3mf snapshot": ("cadgen.cli.threemf_snapshot", "render a 3MF mesh to an image"),
     "glb build": ("cadgen.cli.glb_build", "write a model's GLB output(s)"),
+    "glb snapshot": ("cadgen.cli.glb_snapshot", "render a GLB mesh to an image"),
     # DXF
     "dxf build": ("cadgen.cli.dxf_build", "make a drawing's .dxf output current"),
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
@@ -129,6 +134,11 @@ def enforce_requirements_pin(requirements_path) -> None:
 # happen BEFORE the command's module is imported -- which is why it lives here in dispatch
 # rather than inside each command. It served only the skill launchers until now, so
 # skill-shim launchers were an order of magnitude faster than the front door for no reason.
+#
+# The mesh, drawing and robot snapshot doors are deliberately absent: the daemon
+# exists to skip the OCP/build123d import, and none of those paths imports it —
+# a mesh renders from the file it was handed, so a warm worker would save it
+# nothing and cost it a round trip.
 _DAEMON_TOOLS = {
     "step build": "step-build",
     "step inspect": "inspect",

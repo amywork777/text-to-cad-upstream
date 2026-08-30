@@ -18,9 +18,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from cadgen._internal.format_namespace import callable_namespace
+from cadgen._internal.snapshot_door import snapshot_door
 from cadgen.results import BuildResult
 
-__all__ = ["build"]
+__all__ = ["build", "snapshot"]
+
+#: ``cadgen dxf snapshot``'s verb: render a drawing as its 3D flat pattern.
+snapshot = snapshot_door("dxf")
 
 
 def build(

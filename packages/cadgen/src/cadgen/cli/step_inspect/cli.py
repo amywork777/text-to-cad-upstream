@@ -4,7 +4,6 @@ import argparse
 import contextlib
 import io
 import json
-import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -90,7 +89,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         help="Include full face/edge selector lists for whole-entry refs. Expensive on large topology GLBs.",
     )
     _add_output_arguments(refs_parser)
-    refs_parser.set_defaults(handler=run_refs)
+    refs_parser.set_defaults(handler=run_subcommand)
 
     diff_parser = subparsers.add_parser(
         "diff",
@@ -105,7 +104,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     )
     _add_plane_report_arguments(diff_parser)
     _add_output_arguments(diff_parser)
-    diff_parser.set_defaults(handler=run_diff)
+    diff_parser.set_defaults(handler=run_subcommand)
 
     frame_parser = subparsers.add_parser(
         "frame",
@@ -114,7 +113,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     frame_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
     frame_parser.add_argument("selector", nargs="?", default="", help="Optional selector ref such as #o1.2.")
     _add_output_arguments(frame_parser)
-    frame_parser.set_defaults(handler=run_frame)
+    frame_parser.set_defaults(handler=run_subcommand)
 
     measure_parser = subparsers.add_parser(
         "measure",
@@ -125,7 +124,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     measure_parser.add_argument("--to", dest="to_selector", required=True, help="Target selector ref.")
     measure_parser.add_argument("--axis", choices=("x", "y", "z"), help="Axis to measure along. Inferred when possible.")
     _add_output_arguments(measure_parser)
-    measure_parser.set_defaults(handler=run_measure)
+    measure_parser.set_defaults(handler=run_subcommand)
 
     align_parser = subparsers.add_parser(
         "align",
@@ -138,7 +137,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     align_parser.add_argument("--offset", type=float, default=0.0, help="Offset in mm. For flush, applies along target normal when axis-aligned.")
     align_parser.add_argument("--axis", choices=("x", "y", "z"), help="Axis to use for flush or one-axis center alignment.")
     _add_output_arguments(align_parser)
-    align_parser.set_defaults(handler=run_align)
+    align_parser.set_defaults(handler=run_subcommand)
 
     interfere_parser = subparsers.add_parser(
         "interfere",
@@ -170,7 +169,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         help="Cap the number of boolean tests. Truncated pairs are reported in stats.",
     )
     _add_output_arguments(interfere_parser)
-    interfere_parser.set_defaults(handler=run_interfere)
+    interfere_parser.set_defaults(handler=run_subcommand)
 
     validate_parser = subparsers.add_parser(
         "validate",
@@ -202,7 +201,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         help="Skip the boolean self-intersection test, which dominates runtime on large assemblies.",
     )
     _add_output_arguments(validate_parser)
-    validate_parser.set_defaults(handler=run_validate)
+    validate_parser.set_defaults(handler=run_subcommand)
 
     # Output is ALWAYS JSON; `--json` is accepted on every subcommand so
     # muscle memory from verbs that need the flag does not error.
@@ -259,173 +258,187 @@ def _add_plane_report_arguments(
     )
 
 
-def run_refs(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    try:
-        entry_target, refs_text = _read_refs_input(args)
-        result = inspect.inspect_cad_refs(
-            entry_target,
-            refs_text,
-            detail=bool(args.detail),
-            include_topology=bool(args.topology),
-            facts=bool(args.facts),
-            positioning=bool(args.positioning),
-            planes=bool(args.planes),
-            plane_coordinate_tolerance=float(args.plane_coordinate_tolerance),
-            plane_min_area_ratio=float(args.plane_min_area_ratio),
-            plane_limit=int(args.plane_limit),
-        )
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
-            "tokens": [],
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-
-    _emit_result(args, result, _format_refs_text)
-    return 0 if bool(result.get("ok")) else 2
+# --- the subcommands, each a shell over cadgen.step.inspect -------------------
+#
+# The verb owns the inspection; the CLI owns argv. So a subcommand is TWO small
+# things -- how to read its namespace into a verb call, and how to format the
+# report that comes back -- and both the printing front door and the in-process
+# runner below drive them, so the CLI and a Python caller cannot come to answer
+# the same question differently (design/format-doors.md).
+#
+# `identity` is the fields a subcommand's error report carried before the verb
+# was reached: they name what the CALLER asked about, which is something the
+# verb never sees, and a resolution failure never gets far enough to include.
 
 
-def run_diff(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    try:
-        result = inspect.diff_entry_targets(
-            args.left,
-            args.right,
-            planes=bool(args.planes),
-            plane_coordinate_tolerance=float(args.plane_coordinate_tolerance),
-            plane_min_area_ratio=float(args.plane_min_area_ratio),
-            plane_limit=int(args.plane_limit),
-        )
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
+def _inspect_verb():
+    from cadgen import step
+
+    return step.inspect
+
+
+def _comma_refs(args: argparse.Namespace) -> list[str]:
+    return [ref for ref in str(getattr(args, "refs", "") or "").split(",") if ref.strip()]
+
+
+def _refs_call(args: argparse.Namespace) -> dict:
+    entry_target, refs_text = _read_refs_input(args)
+    return {
+        "target": entry_target,
+        "refs": refs_text.splitlines(),
+        "inspection": "refs",
+        "detail": bool(args.detail),
+        "topology": bool(args.topology),
+        "facts": bool(args.facts),
+        "positioning": bool(args.positioning),
+        "planes": bool(args.planes),
+        "plane_coordinate_tolerance": float(args.plane_coordinate_tolerance),
+        "plane_min_area_ratio": float(args.plane_min_area_ratio),
+        "plane_limit": int(args.plane_limit),
+    }
+
+
+def _diff_call(args: argparse.Namespace) -> dict:
+    return {
+        "target": args.left,
+        "against": args.right,
+        "inspection": "diff",
+        "planes": bool(args.planes),
+        "plane_coordinate_tolerance": float(args.plane_coordinate_tolerance),
+        "plane_min_area_ratio": float(args.plane_min_area_ratio),
+        "plane_limit": int(args.plane_limit),
+    }
+
+
+# subcommand -> (verb call from argv, identity fields, extra exceptions to report
+# rather than raise, text formatter).
+_SUBCOMMANDS: dict[str, tuple] = {
+    "refs": (_refs_call, lambda args: {"tokens": []}, (), lambda: _format_refs_text),
+    "diff": (
+        _diff_call,
+        lambda args: {
             "left": {"cadPath": _safe_cad_path(args.left)},
             "right": {"cadPath": _safe_cad_path(args.right)},
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-
-    _emit_result(args, result, _format_diff_text)
-    return 0 if bool(result.get("ok")) else 2
-
-
-def run_frame(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    try:
-        result = inspect.inspect_target_frame(args.entry, args.selector)
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
+        },
+        (),
+        lambda: _format_diff_text,
+    ),
+    "frame": (
+        lambda args: {
             "target": args.entry,
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-
-    _emit_result(args, result, _format_frame_text)
-    return 0 if bool(result.get("ok")) else 2
-
-
-def run_interfere(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    from cadgen import interference
-
-    refs = [ref for ref in str(getattr(args, "refs", "") or "").split(",") if ref.strip()]
-    tolerance = args.tolerance if args.tolerance is not None else interference.DEFAULT_TOLERANCE_MM3
-    try:
-        result = interference.inspect_interference(
-            args.entry,
-            refs=refs,
-            tolerance=tolerance,
-            max_pairs=args.max_pairs,
-        )
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-    except (OSError, RuntimeError, ValueError) as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
-            "errors": [{"message": str(exc)}],
-        }
-
-    _emit_result(args, result, _format_interfere_text)
-    return 0 if bool(result.get("ok")) else 2
-
-
-def run_validate(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    # Imported here, not at module scope: `inspect --help` must not pull OCP in.
-    from cadgen import validity
-
-    refs = [ref for ref in str(getattr(args, "refs", "") or "").split(",") if ref.strip()]
-    try:
-        result = validity.inspect_validity(
-            args.entry,
-            refs=refs,
-            allow_open=bool(getattr(args, "allow_open", False)),
-            check_self_intersection=not bool(getattr(args, "skip_self_intersection", False)),
-        )
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-    except (OSError, RuntimeError, ValueError) as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
-            "errors": [{"message": str(exc)}],
-        }
-
-    _emit_result(args, result, _format_validate_text)
-    return 0 if bool(result.get("ok")) else 2
-
-
-def run_measure(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    try:
-        result = inspect.measure_targets(args.entry, args.from_selector, args.to_selector, axis=args.axis)
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
-            "from": args.from_selector,
-            "to": args.to_selector,
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
-
-    _emit_result(args, result, _format_measure_text)
-    return 0 if bool(result.get("ok")) else 2
-
-
-def run_align(args: argparse.Namespace) -> int:
-    inspect = _inspect_api()
-    try:
-        result = inspect.align_targets(
-            args.entry,
-            args.moving,
-            args.target,
-            mode=args.mode,
-            offset=float(args.offset),
-            axis=args.axis,
-        )
-    except inspect.CadRefError as exc:
-        result = {
-            "ok": False,
-            "entry": args.entry,
+            "refs": [args.selector] if args.selector else [],
+            "inspection": "frame",
+        },
+        lambda args: {"target": args.entry},
+        (),
+        lambda: _format_frame_text,
+    ),
+    "measure": (
+        lambda args: {
+            "target": args.entry,
+            "refs": [args.from_selector, args.to_selector],
+            "inspection": "measure",
+            "axis": args.axis or "",
+        },
+        lambda args: {"entry": args.entry, "from": args.from_selector, "to": args.to_selector},
+        (),
+        lambda: _format_measure_text,
+    ),
+    "align": (
+        lambda args: {
+            "target": args.entry,
+            "inspection": "align",
             "moving": args.moving,
-            "target": args.target,
-            "errors": [inspect.cad_ref_error_payload(exc)],
-        }
+            "onto": args.target,
+            "align_mode": args.mode,
+            "offset": float(args.offset),
+            "axis": args.axis or "",
+        },
+        lambda args: {"entry": args.entry, "moving": args.moving, "target": args.target},
+        (),
+        lambda: _format_align_text,
+    ),
+    # The two that reach the kernel directly, so an OCP failure is a finding
+    # rather than a traceback through the CLI.
+    "interfere": (
+        lambda args: {
+            "target": args.entry,
+            "refs": _comma_refs(args),
+            "inspection": "interfere",
+            "tolerance": args.tolerance,
+            "max_pairs": args.max_pairs,
+        },
+        lambda args: {"entry": args.entry},
+        (OSError, RuntimeError, ValueError),
+        lambda: _format_interfere_text,
+    ),
+    "validate": (
+        lambda args: {
+            "target": args.entry,
+            "refs": _comma_refs(args),
+            "inspection": "validate",
+            "allow_open": bool(getattr(args, "allow_open", False)),
+            "skip_self_intersection": bool(getattr(args, "skip_self_intersection", False)),
+        },
+        lambda args: {"entry": args.entry},
+        (OSError, RuntimeError, ValueError),
+        lambda: _format_validate_text,
+    ),
+}
 
-    _emit_result(args, result, _format_align_text)
-    return 0 if bool(result.get("ok")) else 2
+
+def _with_identity(report: dict, identity: dict | None) -> dict:
+    """``report`` with the caller's identity fields folded in.
+
+    ``ok`` stays first and the report's own values win: the key ORDER is what a
+    reader of these documents has always seen.
+    """
+    rest = {key: value for key, value in report.items() if key != "ok"}
+    return {"ok": bool(report.get("ok")), **(identity or {}), **rest}
+
+
+def inspect_report(args: argparse.Namespace) -> tuple[bool, dict]:
+    """One subcommand's ``(ok, report)``, whoever is asking."""
+    inspect = _inspect_api()
+    build_call, identity, catch, _ = _SUBCOMMANDS[args.command]
+    try:
+        call = build_call(args)
+    except inspect.CadRefError as exc:
+        # Reading the subcommand's own input failed (a missing entry target, an
+        # unreadable --input-file); the verb was never reached.
+        return False, _with_identity(
+            {"ok": False, "errors": [inspect.cad_ref_error_payload(exc)]}, identity(args)
+        )
+    try:
+        result = _inspect_verb()(**call)
+    except (inspect.CadRefError, *catch) as exc:
+        payload = (
+            inspect.cad_ref_error_payload(exc)
+            if isinstance(exc, inspect.CadRefError)
+            else {"message": str(exc)}
+        )
+        return False, _with_identity({"ok": False, "errors": [payload]}, identity(args))
+    if result.ok:
+        return True, result.report
+    return False, _with_identity(result.report, identity(args))
+
+
+def run_subcommand(args: argparse.Namespace) -> int:
+    """The parser's handler for every subcommand: inspect, then print."""
+    ok, report = inspect_report(args)
+    _emit_result(args, report, _SUBCOMMANDS[args.command][3]())
+    return 0 if ok else 2
 
 
 def inspect_command_result(argv: Sequence[str]) -> tuple[int, dict[str, object]]:
+    """Run one inspect command IN PROCESS, returning ``(exit code, report)``.
+
+    The same subcommand table the printing front door uses, so this cannot drift
+    from what `cadgen step inspect` answers. Only the failure handling differs:
+    a caller in-process gets an argparse exit turned into a report rather than a
+    SystemExit, and gets ANY exception reported rather than raised — nothing here
+    may take a worker down.
+    """
     command_argv = [str(item) for item in argv]
     if not command_argv:
         return 2, {"ok": False, "errors": [{"message": "empty inspect command"}]}
@@ -438,53 +451,10 @@ def inspect_command_result(argv: Sequence[str]) -> tuple[int, dict[str, object]]
         return _system_exit_result(exc, stderr=stderr.getvalue())
 
     try:
-        if args.command == "refs":
-            if not args.inputs and not args.input_file:
-                raise _inspect_api().CadRefError("No STEP/CAD entry target provided.")
-            entry_target, refs_text = _read_refs_input(args)
-            inspect = _inspect_api()
-            result = inspect.inspect_cad_refs(
-                entry_target,
-                refs_text,
-                detail=bool(args.detail),
-                include_topology=bool(args.topology),
-                facts=bool(args.facts),
-                positioning=bool(args.positioning),
-                planes=bool(args.planes),
-                plane_coordinate_tolerance=float(args.plane_coordinate_tolerance),
-                plane_min_area_ratio=float(args.plane_min_area_ratio),
-                plane_limit=int(args.plane_limit),
-            )
-        elif args.command == "diff":
-            inspect = _inspect_api()
-            result = inspect.diff_entry_targets(
-                args.left,
-                args.right,
-                planes=bool(args.planes),
-                plane_coordinate_tolerance=float(args.plane_coordinate_tolerance),
-                plane_min_area_ratio=float(args.plane_min_area_ratio),
-                plane_limit=int(args.plane_limit),
-            )
-        elif args.command == "frame":
-            result = _inspect_api().inspect_target_frame(args.entry, args.selector)
-        elif args.command == "measure":
-            result = _inspect_api().measure_targets(args.entry, args.from_selector, args.to_selector, axis=args.axis)
-        elif args.command == "align":
-            result = _inspect_api().align_targets(
-                args.entry,
-                args.moving,
-                args.target,
-                mode=args.mode,
-                offset=float(args.offset),
-                axis=args.axis,
-            )
-        else:
-            raise _inspect_api().CadRefError(f"Unsupported inspect command: {args.command}")
-    except _inspect_api().CadRefError as exc:
-        result = {"ok": False, "errors": [_inspect_api().cad_ref_error_payload(exc)]}
-    except Exception as exc:
-        result = {"ok": False, "errors": [_exception_error_payload(exc)]}
-    return (0 if bool(result.get("ok")) else 2), result
+        ok, report = inspect_report(args)
+    except Exception as exc:  # noqa: BLE001 - a worker must get a payload, never a raise
+        return 2, {"ok": False, "errors": [_exception_error_payload(exc)]}
+    return (0 if ok else 2), report
 
 
 def _system_exit_result(exc: SystemExit, *, stderr: str = "") -> tuple[int, dict[str, object]]:

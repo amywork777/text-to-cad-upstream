@@ -59,6 +59,20 @@ cadgen stl build path/to/imported.step
 
 A mesh door never writes a `.step` file. A generated model's STEP is the OUTPUT of `python <model>.py` or `cadgen step build <model>.py` (always written, assembled from the model's package); an imported model's STEP is already the file on disk.
 
+## Rendering a mesh file
+
+Each mesh format also has a `snapshot` verb, taking the same options as `cadgen step snapshot`:
+
+```bash
+cadgen stl snapshot --input STL/bracket.stl --output tmp/bracket_mesh.png
+cadgen 3mf snapshot --input 3MF/bracket.3mf --output tmp/bracket_3mf.png
+cadgen glb snapshot --input meshes/bracket.glb --output tmp/bracket_glb.png
+```
+
+A mesh carries no CAD topology, so these render shaded solid and do not offer `--focus`/`--hide`, `--display`, `--params`, or `--mode section` — a mesh has no occurrences, CAD edges, or pose block for those to act on. `cadgen step snapshot` refuses a mesh input and names the door that takes it.
+
+This is a review of the EXPORT, not of the model. Snapshot validation of the primary STEP is still what the required workflow means; render the mesh when the question is about the mesh (tessellation density, a tolerance change, what an external tool will receive).
+
 ## Mesh tolerance
 
 Mesh exports tessellate each component's exact surfaces with the same watertight tessellator the CAD Viewer renders with, at the same default tolerances — an export matches what renders, boundary vertices lie on the exact STEP edge curves, and repeated exports are byte-identical.

@@ -75,7 +75,9 @@ class CompactStdoutTests(unittest.TestCase):
     # Every source that writes JSON to stdout. `cad artifact` and `dxf artifact` were
     # missed by the first pass of this test and were still pretty-printing.
     STDOUT_JSON_SOURCES = (
-        "packages/cadgen/src/cadgen/snapshot_core.py",
+        # Result dataclasses whose human_lines() are a JSON document -- the
+        # `--mode list` parts inventory, and each inspection's report.
+        "packages/cadgen/src/cadgen/results.py",
         "packages/cadgen/src/cadgen/step_artifact_cli.py",
         # dxf_artifact (both module and cli shim) was deleted by the standalone-viewer
         # DXF migration; its replacement emits one compact JSON line and is checked here.

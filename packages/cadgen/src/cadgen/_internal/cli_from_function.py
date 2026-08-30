@@ -239,6 +239,7 @@ def emit(
     as_json: bool,
     verbose: bool = False,
     stdout: Any | None = None,
+    stderr: Any | None = None,
 ) -> int:
     """Call one verb and render its Result — the WHOLE of a command's output.
 
@@ -256,7 +257,7 @@ def emit(
             return 1
         from cadgen._internal.cli_errors import report_cli_error
 
-        return report_cli_error(exc, tool=prog, verbose=verbose)
+        return report_cli_error(exc, tool=prog, verbose=verbose, stream=stderr)
     if as_json:
         print(json.dumps(result_payload(result), separators=(",", ":")), file=out)
     else:

@@ -15,11 +15,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cadgen._internal.snapshot_door import snapshot_door
 from cadgen.results import ValidationResult
 
-__all__ = ["validate"]
+__all__ = ["snapshot", "validate"]
 
 SUFFIX = ".urdf"
+
+#: ``cadgen urdf snapshot``'s verb: render the robot the browser assembles from
+#: this description's link meshes.
+snapshot = snapshot_door("urdf")
 
 
 def validate(

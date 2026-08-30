@@ -82,7 +82,12 @@ from cadgen.snapshot_cli import (
     resolve_render_job_packet,
     resolve_snapshot_route_file,
 )
-from cadgen.snapshot_core import clear_render_output_targets, resolve_output_target
+from cadgen.snapshot_core import (
+    clear_render_output_targets,
+    resolve_output_target,
+    snapshot_result,
+)
+from cadgen._internal.cli_from_function import result_payload
 
 # The shim no longer names a runtime directory: cadgen.assets resolves it, finding the
 # repo's live source here and the packaged copy in an installed wheel.
@@ -483,16 +488,80 @@ class SnapshotCliTests(unittest.TestCase):
                 for output in job["outputs"]
             ]
 
+        # Every name in a packet shares one timestamp, so the discriminator is all
+        # that keeps them apart: `j<n>` for the job, then the output index within it.
         self.assertEqual(
             output_paths,
             [
-                "tmp/part_20260527T163012Z.png",
-                "shots/part_20260527T163012Z.png",
-                "tmp/part_20260527T163012Z.gif",
-                "tmp/part_1_20260527T163012Z.png",
-                "tmp/part_2_20260527T163012Z.png",
+                "tmp/part_j1_20260527T163012Z.png",
+                "shots/part_j2_20260527T163012Z.png",
+                "tmp/part_j3_20260527T163012Z.gif",
+                "tmp/part_j4_1_20260527T163012Z.png",
+                "tmp/part_j4_2_20260527T163012Z.png",
             ],
         )
+
+    def test_a_lone_job_and_output_gets_an_undecorated_generated_name(self) -> None:
+        """The common case reads cleanly: one job, one output, nothing to
+        discriminate against, so no discriminator appears."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory).resolve()
+            (root / "models").mkdir()
+            (root / "models" / "part.step").write_text(
+                "ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8"
+            )
+            write_package(root / "models" / "part.step")
+            original_timestamp = snapshot_main.snapshot_timestamp
+            original_ensure = snapshot_main.ensure_step_topology_artifact
+            try:
+                snapshot_main.snapshot_timestamp = lambda: "20260527T163012Z"
+                snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
+                packet = resolve_render_job_packet(
+                    {"input": "models/part.step", "outputs": [{"path": "tmp/"}]}, cwd=root
+                )
+            finally:
+                snapshot_main.snapshot_timestamp = original_timestamp
+                snapshot_main.ensure_step_topology_artifact = original_ensure
+            self.assertEqual(
+                Path(packet["jobs"][0]["outputs"][0]["path"]).name,
+                "part_20260527T163012Z.png",
+            )
+
+    def test_one_directory_shared_by_several_jobs_gets_distinct_names(self) -> None:
+        """The collision the job discriminator exists for.
+
+        A packet rendering ONE model from several cameras is the ordinary
+        multi-view request, and every job in it carries a single output. With
+        only the output index to discriminate, no job had an index — so all of
+        them generated the identical `<stem>_<ts>.png`, every render finished,
+        and one file survived."""
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory).resolve()
+            (root / "models").mkdir()
+            (root / "models" / "part.step").write_text(
+                "ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8"
+            )
+            write_package(root / "models" / "part.step")
+            original_ensure = snapshot_main.ensure_step_topology_artifact
+            try:
+                snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
+                packet = resolve_render_job_packet(
+                    {
+                        "jobs": [
+                            {
+                                "input": "models/part.step",
+                                "camera": camera,
+                                "outputs": [{"path": "shots/"}],
+                            }
+                            for camera in ("iso", "front", "top")
+                        ]
+                    },
+                    cwd=root,
+                )
+            finally:
+                snapshot_main.ensure_step_topology_artifact = original_ensure
+            names = [Path(job["outputs"][0]["path"]).name for job in packet["jobs"]]
+            self.assertEqual(len(set(names)), 3, names)
 
     def test_render_job_derives_asset_root_from_input_path(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -720,12 +789,15 @@ class SnapshotCliTests(unittest.TestCase):
             packet = resolve_render_job_packet(job, cwd=root)
             self.assertEqual(packet["jobs"][0]["display"], {"projection": "orthographic"})
 
-    def test_json_output_omits_output_payload_blobs(self) -> None:
+    def test_the_typed_result_cannot_carry_output_payload_blobs(self) -> None:
         """--json must not echo the rendered bytes back. dataUrl/text are how the browser
-        returns them for write_output_payload to decode; by print time the file is on disk and
-        `path` names it. Echoing them cost 228 KB of stdout for one PNG and 1.7 MB -- ~445k
-        tokens -- for an orbit GIF. The one test that covered this path used an empty outputs
-        list, which is why it shipped."""
+        returns them for write_output_payload to decode; by report time the file is on disk
+        and `path` names it. Echoing them cost 228 KB of stdout for one PNG and 1.7 MB --
+        ~445k tokens -- for an orbit GIF.
+
+        This used to be a filter over the browser dict, which had to KNOW every payload
+        key. SnapshotResult has no field one could land in, so a new payload key in the
+        browser cannot reach stdout by default."""
         data_url = "data:image/png;base64," + "A" * 4096
         svg_text = "<svg>" + "x" * 4096 + "</svg>"
         result = {
@@ -735,29 +807,36 @@ class SnapshotCliTests(unittest.TestCase):
                     "ok": True,
                     "mode": "view",
                     "outputs": [
-                        {"path": "/tmp/a.png", "width": 800, "height": 600, "dataUrl": data_url},
-                        {"path": "/tmp/b.svg", "text": svg_text},
+                        {
+                            "path": "/tmp/a.png",
+                            "width": 800,
+                            "height": 600,
+                            "camera": "ISO",
+                            "mimeType": "image/png",
+                            "dataUrl": data_url,
+                        },
+                        {"path": "/tmp/b.svg", "mimeType": "image/svg+xml", "text": svg_text},
                     ],
                 }
             ],
         }
-        stream = io.StringIO()
-        snapshot_main.print_render_result(result, json_output=True, stdout=stream)
-        printed = stream.getvalue()
+        typed = snapshot_result(result)
+        printed = json.dumps(result_payload(typed), separators=(",", ":"))
         self.assertNotIn("dataUrl", printed)
         self.assertNotIn(data_url, printed)
         self.assertNotIn(svg_text, printed)
         # Everything a caller actually uses survives.
-        outputs = json.loads(printed)["jobs"][0]["outputs"]
-        self.assertEqual([output["path"] for output in outputs], ["/tmp/a.png", "/tmp/b.svg"])
-        self.assertEqual(outputs[0]["width"], 800)
+        self.assertEqual([str(f.path) for f in typed.files], ["/tmp/a.png", "/tmp/b.svg"])
+        self.assertEqual([f.kind for f in typed.files], ["png", "svg"])
+        self.assertEqual(typed.files[0].view, "ISO")
         # The caller's dict keeps its payload: write_output_payload reads the same object.
         self.assertEqual(result["jobs"][0]["outputs"][0]["dataUrl"], data_url)
 
     def test_debug_reaches_rendered_json_output(self) -> None:
-        """--debug diagnostics are attached at resolve time, but the printed result is the
+        """--debug diagnostics are attached at resolve time, but the rendered result is the
         browser's return value — the render stage must merge them in or the help text's
-        promised "debug" section never appears in --json output."""
+        promised "debug" section never appears in --json output. The typed result keeps
+        one entry per job, tagged with the input it describes."""
 
         class StubRenderer:
             async def render(self, job):
@@ -778,9 +857,10 @@ class SnapshotCliTests(unittest.TestCase):
             )
         )
         self.assertEqual(result["debug"], debug_payload)
-        stream = io.StringIO()
-        snapshot_main.print_render_result(result, json_output=True, stdout=stream)
-        self.assertEqual(json.loads(stream.getvalue())["debug"], debug_payload)
+        typed = snapshot_result(result)
+        self.assertEqual(
+            result_payload(typed)["debug"], [{**debug_payload}]
+        )
 
         multi = asyncio.run(
             snapshot_main.render_resolved_job_packet(
@@ -788,6 +868,10 @@ class SnapshotCliTests(unittest.TestCase):
             )
         )
         self.assertEqual(multi["jobs"][0]["debug"], debug_payload)
+        self.assertEqual(
+            snapshot_result(multi).debug,
+            ({"input": "models/part.step", **debug_payload},),
+        )
 
     def test_render_job_omits_debug_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
