@@ -95,7 +95,6 @@ from cadgen._internal.generation_runner import (
     _load_generator_module,
     _mark_scene_python_backed,
     _mark_scene_step_payload,
-    _normalize_dxf_payload,
     _normalize_step_payload,
     _resolve_pose_block,
     _run_artifact_jobs,

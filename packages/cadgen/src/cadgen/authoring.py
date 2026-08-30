@@ -45,7 +45,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen._internal.hash_seed import hash_seed_is_stable, rerun_with_stable_hash_seed
 from cadgen.metadata import MeshExportDecl, resolve_model_output_path
 from cadgen.posedef import PoseDef
 
@@ -336,13 +335,11 @@ def _run_from_main(defn: ModelDef) -> int:
         if warm_exit is not None:
             return warm_exit
 
-    # Drawing packages must be byte-deterministic and ezdxf's object ordering
-    # depends on hash randomization. Warm workers always carry the pinned seed;
-    # a COLD @dxf run re-execs once to get it. The invariant itself lives in
-    # cadgen._internal.hash_seed, which `cadgen dxf build` dispatch shares.
-    if defn.fmt == "dxf" and not hash_seed_is_stable():
-        return rerun_with_stable_hash_seed([str(defn.script_path), *argv])
-
+    # A cold @dxf run used to re-exec itself here with PYTHONHASHSEED=0, because
+    # ezdxf's emitted order depended on string hashing. The engine's emitter makes
+    # DXF bytes a function of the drawing's geometry instead
+    # (cadgen._internal.dxf_emit), so a cold run needs no interpreter restart and
+    # @dxf reaches the pipeline by exactly the route @step does.
     from cadgen.cli._run_model import run_model_argv
 
     return run_model_argv(

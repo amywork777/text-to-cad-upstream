@@ -98,8 +98,8 @@ class MeshExportMetadataTest(unittest.TestCase):
                 @dxf
                 @stl
                 def drawing():
-                    import ezdxf
-                    return ezdxf.new()
+                    from cadgen import build123d as bd
+                    return bd.Rectangle(10, 5)
                 """))
 
     def test_runtime_decorators_converge_both_orders(self) -> None:

@@ -59,7 +59,6 @@ STEP_ENVELOPE_FIELDS = {
     "mesh_tolerance",
     "mesh_angular_tolerance",
 }
-DXF_ENVELOPE_FIELDS = {"document"}
 
 
 DEFAULT_MESH_SETTINGS = MeshSettings(
@@ -336,15 +335,9 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
 
     write_target = _decorator_string_kwarg(call_kwargs, "write", script_path=script_path)
     kind: str | None = None
-    if fmt == "dxf":
-        try:
-            single_return = len(
-                [stmt for stmt in function.body if isinstance(stmt, ast.Return)]
-            ) == 1
-        except Exception:  # noqa: BLE001
-            single_return = False
-        if single_return:
-            _parse_dxf_envelope_metadata(script_path=script_path, function=function)
+    # A @dxf return carries no static metadata: the drawing IS its geometry, and
+    # what a layer map holds is only knowable at run time (design/dxf-build123d.md).
+    # @step still parses its return, because `kind` must be known before the build.
     if fmt == "step":
         kind = _decorator_string_kwarg(call_kwargs, "kind", script_path=script_path)
         if kind is not None and kind not in {"part", "assembly"}:
@@ -539,27 +532,6 @@ def _is_multi_item_sequence_expression(
     if isinstance(expression, (ast.List, ast.Tuple, ast.Set)):
         return len(expression.elts) > 1
     return False
-
-
-def _parse_dxf_envelope_metadata(
-    *,
-    script_path: Path,
-    function: ast.FunctionDef,
-) -> str | None:
-    return_node = _single_return_value(script_path=script_path, function=function)
-    if not isinstance(return_node, ast.Dict):
-        return None
-    envelope = _parse_literal_return_envelope(script_path=script_path, function=function)
-    _reject_unsupported_fields(
-        script_path=script_path,
-        function_name=function.name,
-        envelope=envelope,
-        allowed_fields=DXF_ENVELOPE_FIELDS,
-    )
-    if "document" not in envelope:
-        raise ValueError(f"{_display_path(script_path)} gen_dxf() envelope must define 'document'")
-    return None
-
 
 
 def _parse_literal_return_envelope(

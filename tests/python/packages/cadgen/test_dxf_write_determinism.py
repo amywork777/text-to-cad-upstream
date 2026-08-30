@@ -25,7 +25,9 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 from tests.python.support.paths import add_repo_path
 
@@ -264,6 +266,183 @@ class DxfEmitContractTest(unittest.TestCase):
         for name in ("", "   ", "CUT/2"):
             with self.assertRaises(DxfContractError):
                 emit_dxf({name: sketch.sketch}, label="rig")
+
+    def test_a_layer_name_that_looks_like_a_header_field_is_harmless(self) -> None:
+        """A layer called ``$TDCREATE`` must not corrupt the file.
+
+        The volatile-field pin used to REWRITE matching lines, and a layer with a
+        header variable's name put its own table record in range: the layer's flag
+        line and four entity subclass markers came out as Julian dates. The pin
+        verifies instead of rewriting, so the only thing this layer name can do
+        now is look odd.
+        """
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(10, 5)
+        payload, _ = emit_dxf({"$TDCREATE": sketch.sketch}, label="rig")
+        self.assertNotIn(b"2451545.0\r\nAcDbEntity", payload)
+
+        import ezdxf
+
+        with tempfile.TemporaryDirectory(prefix="dxf-layer-name-") as tmp:
+            path = Path(tmp) / "odd.dxf"
+            path.write_bytes(payload)
+            document = ezdxf.readfile(str(path))
+        self.assertEqual(
+            {str(entity.dxf.layer) for entity in document.modelspace()}, {"$TDCREATE"}
+        )
+
+    def test_a_partly_labelled_compound_raises_instead_of_merging(self) -> None:
+        """Labelling some children is a mistake with two silent readings."""
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import DxfContractError, emit_dxf
+
+        cut = bd.Rectangle(10, 5).face()
+        cut.label = "CUT"
+        unnamed = bd.Pos(20, 0) * bd.Rectangle(4, 2).face()
+        with self.assertRaises(DxfContractError) as caught:
+            emit_dxf(bd.Compound(children=[cut, unnamed]), label="half_labelled.py")
+        self.assertIn("unlabelled", str(caught.exception))
+
+        twin = bd.Pos(20, 0) * bd.Rectangle(4, 2).face()
+        twin.label = "CUT"
+        with self.assertRaises(DxfContractError) as caught:
+            emit_dxf(bd.Compound(children=[cut, twin]), label="duplicate_labels.py")
+        self.assertIn("repeat the layer label", str(caught.exception))
+
+    def test_a_lost_class_registry_raises_rather_than_degrading(self) -> None:
+        """Determinism must fail loudly, never quietly.
+
+        If ezdxf renames the registry this emitter sorts, skipping the sort would
+        leave the bytes seed-dependent again — and only a lucky hash seed would
+        make any test notice.
+        """
+        from unittest import mock
+
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import DxfDeterminismError, emit_dxf
+
+        with bd.BuildSketch() as sketch:
+            bd.Rectangle(10, 5)
+        with mock.patch(
+            "cadgen._internal.dxf_emit._canonicalize_class_registry",
+            side_effect=DxfDeterminismError("registry shape changed"),
+        ):
+            with self.assertRaises(DxfDeterminismError):
+                emit_dxf(sketch.sketch, label="rig")
+
+    def test_unpinned_provenance_raises(self) -> None:
+        """The check is the guarantee: without ezdxf's fixed-metadata mode the
+        build must fail rather than emit bytes that rehash on every rebuild."""
+        from cadgen._internal.dxf_emit import (
+            DxfDeterminismError,
+            _assert_volatile_fields_pinned,
+        )
+
+        volatile = "\n".join(
+            [
+                "0", "SECTION", "2", "HEADER",
+                "9", "$FINGERPRINTGUID", "2", "{1D5A0B2C-0000-0000-0000-000000000001}",
+                "0", "ENDSEC",
+            ]
+        )
+        with self.assertRaises(DxfDeterminismError) as caught:
+            _assert_volatile_fields_pinned(volatile, label="rig")
+        self.assertIn("$FINGERPRINTGUID", str(caught.exception))
+
+    def test_shape_order_within_a_layer_does_not_reach_the_bytes(self) -> None:
+        """A layer may hold several shapes; which order they arrive in is the
+        author's incidental choice, not part of the drawing."""
+        import build123d as bd
+
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        left = bd.Rectangle(10, 5).face()
+        right = bd.Pos(20, 0) * bd.Rectangle(4, 2).face()
+        forward, _ = emit_dxf({"CUT": [left, right]}, label="rig")
+        backward, _ = emit_dxf({"CUT": [right, left]}, label="rig")
+        self.assertEqual(forward, backward)
+
+
+_DRAWING_MODEL = '''"""A repo-shaped drawing: several layers, arcs from a kerf offset, text."""
+
+from cadgen import build123d as bd
+from cadgen import dxf
+
+
+@dxf
+def bracket_plate(kerf: float = 0.15):
+    with bd.BuildSketch() as cut:
+        bd.Rectangle(60, 40)
+        bd.Circle(8, mode=bd.Mode.SUBTRACT)
+        with bd.Locations((-24, -14), (24, -14), (-24, 14), (24, 14)):
+            bd.Circle(2.25, mode=bd.Mode.SUBTRACT)
+    with bd.BuildSketch() as mark:
+        bd.Text("REV B", font_size=6)
+    return {"CUT": bd.offset(cut.sketch, amount=kerf), "ENGRAVE": mark.sketch}
+'''
+
+
+class DxfRunPathDeterminismTest(unittest.TestCase):
+    """The determinism that ships: a model script, run the way a user runs it.
+
+    Everything above tests the emitter directly. This runs the whole ``@dxf``
+    path — decorator, freshness gate, runner, drawing validation, atomic write —
+    in separate COLD processes under different hash seeds, and compares the file
+    on disk. That is the surface the deleted ``PYTHONHASHSEED`` re-exec used to
+    protect, so it is the surface that has to hold without it.
+    """
+
+    def _build(self, seed: str | None) -> bytes:
+        with tempfile.TemporaryDirectory(prefix="dxf-run-path-") as tmp:
+            project = Path(tmp)
+            script = project / "bracket_plate.py"
+            script.write_text(_DRAWING_MODEL, encoding="utf-8")
+            environment = dict(os.environ)
+            environment.pop("PYTHONHASHSEED", None)
+            if seed is not None:
+                environment["PYTHONHASHSEED"] = seed
+            environment["CADGEN_DAEMON"] = "0"  # a warm worker would serve another checkout
+            environment["CADGEN_CACHE_DIR"] = str(project / "store")
+            environment["PYTHONPATH"] = str(CADGEN_SRC)
+            completed = subprocess.run(
+                [sys.executable, str(script)],
+                cwd=str(project),
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+            written = project / "bracket_plate.dxf"
+            self.assertTrue(written.is_file(), completed.stdout + completed.stderr)
+            return written.read_bytes()
+
+    def test_cold_runs_under_different_seeds_write_identical_files(self) -> None:
+        digests = {
+            hashlib.sha256(self._build(seed)).hexdigest()
+            for seed in (None, "0", "12345", None)
+        }
+        self.assertEqual(
+            len(digests),
+            1,
+            f"the same drawing model wrote {len(digests)} distinct files: {sorted(digests)}",
+        )
+
+    def test_the_written_file_matches_the_emitter(self) -> None:
+        """No transformation sits between the emitter and the file on disk."""
+        from cadgen._internal.dxf_emit import emit_dxf
+
+        namespace: dict = {}
+        exec(compile(_DRAWING_MODEL, "<drawing-model>", "exec"), namespace)  # noqa: S102
+        expected, _ = emit_dxf(namespace["bracket_plate"](), label="bracket_plate.py")
+        self.assertEqual(self._build(None), expected)
 
 
 if __name__ == "__main__":

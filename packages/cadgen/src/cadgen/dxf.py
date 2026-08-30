@@ -32,10 +32,11 @@ def build(
     """Make TARGET's drawing current; no-op when it already is.
 
     Runs the closure gate, runs the generator if stale, and writes the ``.dxf``
-    document plus its content-keyed record. The bytes are a function of the
-    source alone: this build path pins PYTHONHASHSEED, because ezdxf's object
-    ordering follows hash randomization and a drawing record is only meaningful
-    if the same source writes the same file.
+    plus its content-keyed record. The bytes are a function of the drawing's
+    GEOMETRY — layers sorted by name, entities by content, ezdxf's volatile
+    provenance pinned (:mod:`cadgen._internal.dxf_emit`) — which is what makes a
+    content-keyed record meaningful. This path used to pin PYTHONHASHSEED to get
+    there; it costs no interpreter restart now.
 
     target: @dxf model script (.py) to build.
     force: rebuild even when the record says the drawing is current.

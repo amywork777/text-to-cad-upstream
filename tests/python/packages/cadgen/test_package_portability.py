@@ -84,21 +84,15 @@ def model():
     return Compound(children=[plate, bolt])
 """
 
-DRAWING = """import ezdxf
-from ezdxf.units import MM
-
-
+DRAWING = """from cadgen import build123d as bd
 from cadgen import dxf
+
+
 @dxf
 def drawing():
-    doc = ezdxf.new(setup=True)
-    doc.units = MM
-    msp = doc.modelspace()
-    doc.layers.add("CUT")
-    msp.add_lwpolyline(
-        [(0, 0), (60, 0), (60, 40), (0, 40)], close=True, dxfattribs={"layer": "CUT"}
-    )
-    return {"document": doc}
+    with bd.BuildSketch() as cut:
+        bd.Rectangle(60, 40)
+    return {"CUT": cut.sketch}
 """
 
 

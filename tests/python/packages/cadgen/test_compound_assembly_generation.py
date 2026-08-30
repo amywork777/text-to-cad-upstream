@@ -91,17 +91,13 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
             scene.assembly_mates,
         )
 
-    def test_dxf_payload_rejects_legacy_output_field(self) -> None:
-        with self.assertRaisesRegex(TypeError, "unsupported field\\(s\\): dxf_output"):
-            generation._normalize_dxf_payload(
-                {"document": object(), "dxf_output": "legacy.dxf"},
-                script_path=Path("part.py"),
-            )
-
     def test_metadata_rejects_legacy_output_fields(self) -> None:
+        # @dxf is absent here on purpose: a drawing's return carries no static
+        # metadata at all now (design/dxf-build123d.md), so there is no envelope
+        # for the parser to reject. The emitter owns that rejection instead --
+        # see tests/python/packages/cadgen/test_dxf_write_determinism.py.
         cases = [
             ("step", "return {'shape': object(), 'step_output': 'legacy.step'}", "step_output"),
-            ("dxf", "return {'document': object(), 'dxf_output': 'legacy.dxf'}", "dxf_output"),
         ]
         for decorator, return_line, field_name in cases:
             with self.subTest(decorator=decorator), tempfile.TemporaryDirectory(prefix="cadgen-output-field-") as tempdir:

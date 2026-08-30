@@ -17,8 +17,13 @@ Three steps, in order:
    is entirely ours.
 3. **Pin.** ezdxf stamps volatile provenance into every file — two random GUIDs,
    four Julian timestamps and two ``"<ezdxf version> @ <iso timestamp>"`` marker
-   comments. All eight are pinned to constants, so identical geometry is
-   identical bytes across processes, machines and days.
+   values — and populates the CLASSES section by iterating a SET of entity-type
+   strings, which puts the emitted class order at the mercy of ``PYTHONHASHSEED``.
+   Provenance is pinned to constants and the class registry is sorted, so
+   identical geometry is identical bytes across processes, machines and days.
+   Anything here that upstream takes away raises :class:`DxfDeterminismError`
+   rather than degrading: a silent loss would reach committed fixtures long
+   before it reached a test.
 
 Why canonical ordering matters, and what the key is made of
 -----------------------------------------------------------
@@ -79,6 +84,17 @@ class DxfContractError(TypeError):
 
 class OffPlaneGeometryError(ValueError):
     """Drawing geometry does not lie in the XY plane."""
+
+
+class DxfDeterminismError(RuntimeError):
+    """The emitter could not guarantee that these bytes are a function of the drawing.
+
+    Raised, never warned. Every mechanism this module uses to fix the output —
+    ezdxf's fixed-metadata mode, its CLASSES registry, ExportDXF's document — is
+    upstream's to change. Losing one silently would not fail any build; it would
+    quietly reintroduce output that rehashes on every rebuild, and the first sign
+    would be churning fixtures long after the upgrade that caused it.
+    """
 
 
 # --- the retired contract ------------------------------------------------------------
@@ -170,18 +186,35 @@ def _layer_edges(value: object, *, layer: str, label: str) -> tuple["Edge", ...]
     return tuple(sorted(edges, key=_edge_sort_key))
 
 
-def _labelled_compound_layers(result: object) -> dict[str, Any] | None:
-    """``{label: child}`` when this is a Compound whose children are ALL labelled.
+def _labelled_compound_layers(result: object, *, label: str) -> dict[str, Any] | None:
+    """``{child label: child}`` when this Compound's children name layers.
 
-    A partially-labelled compound is an accident rather than a layer map, so it
-    falls through to the bare-shape reading and lands on the default layer.
+    All labelled is a layer map; none labelled is one drawing that happens to be
+    a compound, and lands on the default layer. Anything between is a mistake
+    with two silent readings, so it raises: labelling three children of four
+    would otherwise merge all four onto ``CUT`` without a word.
     """
     children = tuple(getattr(result, "children", ()) or ())
     if not children:
         return None
     labels = [str(getattr(child, "label", "") or "").strip() for child in children]
-    if not all(labels) or len(set(labels)) != len(labels):
+    if not any(labels):
         return None
+    if not all(labels):
+        unlabelled = [index for index, name in enumerate(labels) if not name]
+        raise DxfContractError(
+            f"{label}: a Compound names DXF layers through its children's labels, "
+            f"but {len(unlabelled)} of {len(children)} children are unlabelled "
+            f"(at index {', '.join(str(index) for index in unlabelled)}). Label "
+            "every child, or return a {layer: shape} dict."
+        )
+    duplicates = sorted({name for name in labels if labels.count(name) > 1})
+    if duplicates:
+        raise DxfContractError(
+            f"{label}: Compound children repeat the layer label(s) "
+            f"{', '.join(repr(name) for name in duplicates)}. One child per layer — "
+            "merge them into a single child, or return a {layer: shape} dict."
+        )
     return dict(zip(labels, children, strict=True))
 
 
@@ -197,7 +230,7 @@ def normalize_layers(result: object, *, label: str) -> tuple[tuple[str, tuple["E
     if isinstance(result, dict):
         raw = result
     elif isinstance(result, shape_type):
-        raw = _labelled_compound_layers(result) or {DEFAULT_LAYER: result}
+        raw = _labelled_compound_layers(result, label=label) or {DEFAULT_LAYER: result}
     else:
         raise DxfContractError(
             f"{label}: @dxf must return build123d 2D geometry — a shape, or a "
@@ -231,9 +264,9 @@ def _edge_sort_key(edge: "Edge") -> tuple:
 
     ``(curve kind, rounded samples + length, exact samples + length)``. The
     rounded half absorbs last-bit differences between two constructions of the
-    same edge; the exact tail means only bitwise-identical edges can tie, and
-    those emit identical entities in either order. Traversal position and object
-    identity appear nowhere.
+    same edge; the exact tail means a tie needs two edges agreeing bit-for-bit at
+    five sampled points and in length, which for anything but a genuine duplicate
+    is pathological. Traversal position and object identity appear nowhere.
     """
     samples = _edge_samples(edge)
     try:
@@ -265,11 +298,12 @@ def _assert_planar(layers: tuple[tuple[str, tuple["Edge", ...]], ...], *, label:
 def _pinned_ezdxf_metadata():
     """ezdxf's fixed-metadata mode, restored afterwards.
 
-    This is the primary pin: it zeroes ``$FINGERPRINTGUID``/``$VERSIONGUID``, sets
-    the four ``$TD*`` Julian timestamps to J2000, and neutralizes both
-    created-by/written-by marker comments. :func:`_pin_volatile_bytes` re-pins the
-    same fields textually afterwards, so the guarantee survives the option being
-    renamed upstream.
+    This is the pin: it zeroes ``$FINGERPRINTGUID``/``$VERSIONGUID``, sets the
+    four ``$TD*`` Julian timestamps to J2000, and neutralizes both created-by /
+    written-by marker values. :func:`_assert_volatile_fields_pinned` then CHECKS
+    the emitted text, so if the option is ever renamed or dropped upstream the
+    build fails loudly instead of quietly emitting a file that rehashes on every
+    rebuild.
     """
     import ezdxf
 
@@ -297,11 +331,21 @@ def _canonicalize_class_registry(document: object) -> None:
     ``(name, cpp_class_name)`` key fixes the order at content. The save path
     re-runs registration, but ``add_class`` skips keys already present, so this
     order is the one that reaches the file.
+
+    An unrecognized registry shape RAISES rather than skipping. Skipping would
+    turn this module's guarantee into a coin flip that only a random hash seed
+    could expose — the failure would reach committed fixtures long before it
+    reached a test.
     """
     section = getattr(document, "classes", None)
     registry = getattr(section, "classes", None)
     if section is None or not isinstance(registry, dict):
-        return
+        raise DxfDeterminismError(
+            "ezdxf's CLASSES registry is not the mapping this emitter can order "
+            f"(got {type(registry).__name__}). Its population iterates a set of "
+            "entity-type strings, so without sorting it the written bytes follow "
+            "PYTHONHASHSEED. Re-establish a content order for the new shape."
+        )
     section.add_required_classes(document.dxfversion)
     ordered = sorted(registry.items())
     registry.clear()
@@ -311,35 +355,60 @@ def _canonicalize_class_registry(document: object) -> None:
 _PINNED_GUID = "{00000000-0000-0000-0000-000000000000}"
 _PINNED_JULIAN = "2451545.0"
 _PINNED_MARKER = "0.0 @ 2000-01-01T00:00:00.000000+00:00"
-_GUID_HEADERS = ("$FINGERPRINTGUID", "$VERSIONGUID")
-_TIME_HEADERS = ("$TDCREATE", "$TDUCREATE", "$TDUPDATE", "$TDUUPDATE")
-# "1.4.4 @ 2026-08-30T18:14:31.649023+00:00" — ezdxf's created-by/written-by markers.
+# header variable -> (group code of its value, the pinned value)
+_PINNED_HEADER_FIELDS = {
+    "$FINGERPRINTGUID": ("2", _PINNED_GUID),
+    "$VERSIONGUID": ("2", _PINNED_GUID),
+    "$TDCREATE": ("40", _PINNED_JULIAN),
+    "$TDUCREATE": ("40", _PINNED_JULIAN),
+    "$TDUPDATE": ("40", _PINNED_JULIAN),
+    "$TDUUPDATE": ("40", _PINNED_JULIAN),
+}
+# "1.4.4 @ 2026-08-30T18:14:31.649023+00:00" — ezdxf's created-by / written-by
+# markers, which live as group-1 values on DICTIONARYVAR objects.
 _MARKER_RE = re.compile(r"^\d+\.\d+(?:\.\d+)? @ \d{4}-\d{2}-\d{2}T[\d:.+\-]+$")
 
 
-def _pin_volatile_bytes(text: str) -> str:
-    """Textual backstop for the six volatile header fields.
+def _assert_volatile_fields_pinned(text: str, *, label: str) -> None:
+    """Verify that nothing volatile survived into the emitted bytes.
 
-    A DXF group is two lines: the code, then the value. So a volatile value is
-    always the line after its ``$NAME`` line, and marker comments are matched by
-    their own shape. Re-pinning what the ezdxf option already pinned is a no-op;
-    if that option ever stops working, this is what still holds the bytes still.
+    Checks rather than rewrites, deliberately. An earlier version substituted the
+    pinned values textually, which corrupted any drawing whose LAYER table held a
+    name like ``$TDCREATE``: the matcher took the layer record's own group lines
+    for header values and overwrote them. A check has no such blast radius, and
+    the failure it reports — "ezdxf stopped honouring its fixed-metadata mode" —
+    is one a human must act on anyway.
+
+    A DXF group is two lines, code then value, so each field is verified against
+    BOTH its name and its expected group code, and only inside the HEADER section.
     """
-    lines = text.split("\n")
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped in _GUID_HEADERS and index + 2 < len(lines):
-            lines[index + 2] = _replace_value(lines[index + 2], _PINNED_GUID)
-        elif stripped in _TIME_HEADERS and index + 2 < len(lines):
-            lines[index + 2] = _replace_value(lines[index + 2], _PINNED_JULIAN)
-        elif _MARKER_RE.match(stripped):
-            lines[index] = _replace_value(line, _PINNED_MARKER)
-    return "\n".join(lines)
+    lines = [line.strip() for line in text.split("\n")]
+    try:
+        header_end = lines.index("ENDSEC")
+    except ValueError:
+        header_end = len(lines)
 
+    unpinned: list[str] = []
+    for index in range(header_end):
+        field = _PINNED_HEADER_FIELDS.get(lines[index])
+        if field is None or index + 2 >= header_end:
+            continue
+        code, expected = field
+        if lines[index + 1] == code and lines[index + 2] != expected:
+            unpinned.append(f"{lines[index]}={lines[index + 2]!r}")
 
-def _replace_value(line: str, value: str) -> str:
-    """Swap a group value, preserving the line's own trailing newline style."""
-    return value + ("\r" if line.endswith("\r") else "")
+    for index in range(1, len(lines)):
+        if lines[index - 1] == "1" and _MARKER_RE.match(lines[index]):
+            if lines[index] != _PINNED_MARKER:
+                unpinned.append(f"ezdxf marker={lines[index]!r}")
+
+    if unpinned:
+        raise DxfDeterminismError(
+            f"{label}: ezdxf wrote volatile provenance that should have been pinned "
+            f"({', '.join(sorted(unpinned))}). Identical drawings must produce "
+            "identical bytes — the drawing's freshness record is a hash of them. "
+            "ezdxf's fixed-metadata mode is what pins these; re-establish it."
+        )
 
 
 def emit_dxf(result: object, *, label: str) -> tuple[bytes, object]:
@@ -353,34 +422,43 @@ def emit_dxf(result: object, *, label: str) -> tuple[bytes, object]:
     layers = normalize_layers(result, label=label)
     _assert_planar(layers, label=label)
 
-    exporter = ExportDXF(unit=Unit.MM)
-    for name, edges in layers:
-        if name != "0":
-            exporter.add_layer(name)
-        # ExportDXF warns to STDOUT for off-plane points. We reject those above,
-        # and stdout is a machine-readable channel for several cadgen CLIs, so
-        # nothing from this call may reach it.
-        with contextlib.redirect_stdout(io.StringIO()):
-            exporter.add_shape(list(edges), layer=name)
-
-    # Upstream's own planarity criterion, as a backstop to the sampled check:
-    # ExportDXF counts every emitted point outside the XY plane.
-    off_plane = getattr(exporter, "_non_planar_point_count", 0)
-    if off_plane:
-        raise OffPlaneGeometryError(
-            f"{label}: {off_plane} exported point(s) lie off the XY plane. A DXF is "
-            "2D: relocate the geometry, e.g. `bd.Location((0, 0, -z)) * face`."
-        )
-
-    document = getattr(exporter, "_document", None)
-    if document is not None:
-        _canonicalize_class_registry(document)
-
     buffer = io.BytesIO()
+    # The pin spans CONSTRUCTION as well as the write. ezdxf stamps its created-by
+    # marker when the document is made and its written-by marker when the document
+    # is saved, so pinning only the save leaves the first one carrying a real
+    # version and timestamp — which is exactly what the check below caught.
     with _pinned_ezdxf_metadata():
+        exporter = ExportDXF(unit=Unit.MM)
+        for name, edges in layers:
+            if name != "0":
+                exporter.add_layer(name)
+            # ExportDXF warns to STDOUT for off-plane points. We reject those
+            # above, and stdout is a machine-readable channel for several cadgen
+            # CLIs, so nothing from this call may reach it.
+            with contextlib.redirect_stdout(io.StringIO()):
+                exporter.add_shape(list(edges), layer=name)
+
+        # Upstream's own planarity criterion, as a backstop to the sampled check:
+        # ExportDXF counts every emitted point outside the XY plane.
+        off_plane = getattr(exporter, "_non_planar_point_count", 0)
+        if off_plane:
+            raise OffPlaneGeometryError(
+                f"{label}: {off_plane} exported point(s) lie off the XY plane. A DXF "
+                "is 2D: relocate the geometry, e.g. `bd.Location((0, 0, -z)) * face`."
+            )
+
+        document = getattr(exporter, "_document", None)
+        if document is None:
+            raise DxfDeterminismError(
+                "build123d's ExportDXF no longer exposes the ezdxf document this "
+                "emitter orders and validates. Determinism and drawing validation "
+                "both depend on reaching it; re-establish that access."
+            )
+        _canonicalize_class_registry(document)
         exporter.write(buffer)
-    text = _pin_volatile_bytes(buffer.getvalue().decode("utf-8"))
-    return text.encode("utf-8"), document
+    payload = buffer.getvalue()
+    _assert_volatile_fields_pinned(payload.decode("utf-8"), label=label)
+    return payload, document
 
 
 def dxf_bytes_hash(payload: bytes) -> str:

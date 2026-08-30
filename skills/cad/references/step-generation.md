@@ -223,5 +223,6 @@ CADGEN_DAEMON=0 python part.py      # force a cold in-process run
 - **Idle exit:** workers reap down to one after 5 minutes idle; the daemon exits after 10
   minutes without a request (`CADGEN_DAEMON_IDLE_TIMEOUT` overrides).
 - On any daemon spawn or protocol problem the run silently falls back to a cold
-  in-process build. A cold `@dxf` run re-execs once with `PYTHONHASHSEED=0` so drawing
-  bytes stay deterministic.
+  in-process build. Cold and warm builds write identical bytes for both formats —
+  drawing determinism is engineered in the DXF emitter rather than bought with a
+  pinned hash seed, so a cold `@dxf` run costs one interpreter, not two.

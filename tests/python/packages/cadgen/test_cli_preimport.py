@@ -3,15 +3,16 @@
 `cadgen <command>` dispatch hands off to the warm daemon before importing the
 command's module (the daemon exists to avoid paying the multi-second
 OCP/build123d import per invocation). Directly-run model scripts do the same
-inside the @step/@dxf decorator (cadgen.authoring), which also owns the DXF
-hash-seed re-exec: drawing packages are content-addressed and ezdxf's object
-ordering depends on hash randomization, so a COLD @dxf run re-runs once with
-PYTHONHASHSEED pinned — through subprocess, not os.execv (issue #245: execv
-does not quote on Windows). The re-run's exit code must reach the caller or
-every generator failure would read as a success.
+inside the @step/@dxf decorator (cadgen.authoring).
 
-Neither is testable by calling a command's `main()`; they are properties of
-dispatch and of the decorator respectively.
+The decorator used to own one more pre-import ritual: a COLD @dxf run re-ran
+itself with PYTHONHASHSEED pinned, because ezdxf's emitted order followed string
+hashing. The engine's emitter makes DXF bytes a function of the drawing's
+geometry instead, so that re-exec is gone and its absence is now the thing
+worth testing — a returning re-exec would double every drawing's cold cost.
+
+None of this is testable by calling a command's `main()`; it is a property of
+dispatch and of the decorator.
 """
 
 from __future__ import annotations
@@ -121,56 +122,45 @@ def _defn(fmt: str) -> authoring.ModelDef:
     )
 
 
-class HashSeedRerun(unittest.TestCase):
-    """The COLD @dxf re-exec, now owned by the decorator's direct-run path.
-    Every case sets CADGEN_DAEMON=0: a served build gets its stable seed from the
-    worker's environment instead, so without the opt-out these would route past
-    the code they are about."""
+class ColdRunsStayInProcess(unittest.TestCase):
+    """No format re-execs the interpreter any more.
 
-    def test_a_dxf_run_reruns_when_the_seed_is_unset(self):
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
-                mock.patch("subprocess.run") as run, \
-                mock.patch.object(sys, "argv", ["preimport-model.py"]):
-            run.return_value = mock.Mock(returncode=0)
-            self.assertEqual(authoring._run_from_main(_defn("dxf")), 0)
-        run.assert_called_once()
-        # Same interpreter, same script, so the second pass reaches the same model.
-        self.assertEqual(run.call_args.args[0][0], sys.executable)
-        self.assertEqual(run.call_args.kwargs["env"]["PYTHONHASHSEED"], "0")
-        # The re-run must not bounce to the daemon: cold was already decided.
-        self.assertEqual(run.call_args.kwargs["env"]["CADGEN_DAEMON"], "0")
+    A cold ``@dxf`` run used to restart itself with ``PYTHONHASHSEED=0``, because
+    ezdxf's emitted order followed string hashing. The engine's emitter makes DXF
+    bytes a function of the drawing's geometry
+    (:mod:`cadgen._internal.dxf_emit`), so both formats now reach the pipeline by
+    the same route and a directly-run model costs one interpreter, not two.
 
-    def test_the_reruns_exit_code_reaches_the_caller(self):
+    Every case sets ``CADGEN_DAEMON=0``: the warm handoff comes first, and without
+    the opt-out these would route past the code they are about.
+    """
+
+    def test_neither_format_spawns_a_second_interpreter(self):
+        for fmt in ("dxf", "step"):
+            for seed in ("", "0", "12345"):
+                with self.subTest(fmt=fmt, seed=seed):
+                    with mock.patch.dict(
+                        "os.environ",
+                        {"PYTHONHASHSEED": seed, "CADGEN_DAEMON": "0"},
+                        clear=False,
+                    ), mock.patch("subprocess.run") as run, mock.patch.object(
+                        sys, "argv", ["preimport-model.py"]
+                    ), mock.patch(
+                        "cadgen.cli._run_model.run_model_argv", return_value=0
+                    ) as pipeline:
+                        self.assertEqual(authoring._run_from_main(_defn(fmt)), 0)
+                    run.assert_not_called()
+                    pipeline.assert_called_once()
+
+    def test_the_pipelines_exit_code_reaches_the_caller(self):
         # Swallowing it would turn every failed generator into a success.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
-                mock.patch("subprocess.run") as run, \
-                mock.patch.object(sys, "argv", ["preimport-model.py"]):
-            run.return_value = mock.Mock(returncode=3)
+        with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "0"}, clear=False), \
+                mock.patch.object(sys, "argv", ["preimport-model.py"]), \
+                mock.patch("cadgen.cli._run_model.run_model_argv", return_value=3):
             self.assertEqual(authoring._run_from_main(_defn("dxf")), 3)
 
-    def test_no_rerun_once_the_seed_is_already_stable(self):
-        # Otherwise the second pass would spawn again, forever.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "0", "CADGEN_DAEMON": "0"}, clear=False), \
-                mock.patch("subprocess.run") as run, \
-                mock.patch.object(sys, "argv", ["preimport-model.py"]), \
-                mock.patch("cadgen.cli._run_model.run_model_argv", return_value=0):
-            self.assertEqual(authoring._run_from_main(_defn("dxf")), 0)
-        run.assert_not_called()
-
-    def test_step_models_never_rerun(self):
-        # A STEP build has no ordering sensitivity; re-running it would cost a whole
-        # interpreter start for nothing.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "0"}, clear=False), \
-                mock.patch("subprocess.run") as run, \
-                mock.patch.object(sys, "argv", ["preimport-model.py"]), \
-                mock.patch("cadgen.cli._run_model.run_model_argv", return_value=0):
-            self.assertEqual(authoring._run_from_main(_defn("step")), 0)
-        run.assert_not_called()
-
-    def test_a_warm_dxf_run_skips_the_rerun(self):
-        # The worker already has a stable seed, so paying an interpreter restart on
-        # the warm path would be pure waste.
-        with mock.patch.dict("os.environ", {"PYTHONHASHSEED": "", "CADGEN_DAEMON": "1"}, clear=False), \
+    def test_a_warm_dxf_run_still_hands_off(self):
+        with mock.patch.dict("os.environ", {"CADGEN_DAEMON": "1"}, clear=False), \
                 mock.patch("cadgen.daemon.client.run_via_daemon", return_value=0) as daemon, \
                 mock.patch("subprocess.run") as rerun, \
                 mock.patch.object(sys, "argv", ["preimport-model.py"]):

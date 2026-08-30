@@ -276,7 +276,6 @@ class CadGenerationTests(unittest.TestCase):
         step_output: str | None = None,
         stl: str | None = None,
         three_mf: str | None = None,
-        dxf_output: str | None = None,
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
     ) -> Path:
@@ -326,10 +325,10 @@ class CadGenerationTests(unittest.TestCase):
         script_path = self.temp_root / f"{name}.py"
         script_path.write_text("\n".join(line for block in blocks for line in block), encoding="utf-8")
         if with_dxf:
-            self._dxf_generator_script(name, dxf_output=dxf_output)
+            self._dxf_generator_script(name)
         return script_path
 
-    def _dxf_generator_script(self, name: str, *, dxf_output: str | None = None) -> Path:
+    def _dxf_generator_script(self, name: str) -> Path:
         # A dedicated drawing MODEL beside the step model (one model per file, so
         # the drawing gets its own script). Records calls into the SAME
         # `<name>.calls` file as the step generator so cross-generator execution
@@ -339,26 +338,18 @@ class CadGenerationTests(unittest.TestCase):
             "\n".join(
                 [
                     "from pathlib import Path",
-                    "import ezdxf",
+                    "from cadgen import build123d as bd",
+                    "from cadgen import dxf",
                     f"CALLS = Path(__file__).with_name('{name}.calls')",
                     "def _record(record_name):",
                     "    with CALLS.open('a', encoding='utf-8') as handle:",
                     "        handle.write(record_name + '\\n')",
-                    "def _make_doc():",
-                    "    doc = ezdxf.new('R2010')",
-                    "    doc.units = ezdxf.units.MM",
-                    "    doc.modelspace().add_lwpolyline(",
-                    "        [(0, 0), (10, 0), (10, 5), (0, 5)], close=True, dxfattribs={'layer': 'CUT'}",
-                    "    )",
-                    "    return doc",
-                    "from cadgen import dxf",
                     "@dxf",
                     "def drawing():",
                     "    _record('gen_dxf')",
-                    "    return {",
-                    "        'document': _make_doc(),",
-                    *([f"        'dxf_output': {dxf_output!r}," ] if dxf_output is not None else []),
-                    "    }",
+                    "    with bd.BuildSketch() as cut:",
+                    "        bd.Rectangle(10, 5)",
+                    "    return {'CUT': cut.sketch}",
                     "",
                 ]
             ),
@@ -375,7 +366,6 @@ class CadGenerationTests(unittest.TestCase):
         step_output: str | None = None,
         stl: str | None = None,
         three_mf: str | None = None,
-        dxf_output: str | None = None,
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
     ) -> Path:
@@ -428,7 +418,7 @@ class CadGenerationTests(unittest.TestCase):
         assembly_path = self.temp_root / f"{name}.py"
         assembly_path.write_text("\n".join(lines), encoding="utf-8")
         if with_dxf:
-            self._dxf_generator_script(name, dxf_output=dxf_output)
+            self._dxf_generator_script(name)
         return assembly_path
 
     def test_generated_part_discovery_includes_missing_step_output(self) -> None:
@@ -533,12 +523,6 @@ class CadGenerationTests(unittest.TestCase):
         self._generator_script("flat", step_output="custom/renamed.step")
 
         with self.assertRaisesRegex(ValueError, "unsupported field\\(s\\): step_output"):
-            cad_generation.list_entry_specs()
-
-    def test_generated_dxf_rejects_legacy_dxf_output_field(self) -> None:
-        self._generator_script("flat", with_dxf=True, dxf_output="../drawings/renamed.dxf")
-
-        with self.assertRaisesRegex(ValueError, "unsupported field\\(s\\): dxf_output"):
             cad_generation.list_entry_specs()
 
     def test_generated_source_rejects_legacy_parent_output(self) -> None:
@@ -696,23 +680,22 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual("python", scene.source_kind)
         self.assertEqual(cad_generation.python_source_hash(script_path).source_hash, scene.source_hash)
 
-    def test_bare_dxf_document_return_is_supported(self) -> None:
+    def test_bare_shape_return_is_supported(self) -> None:
         # The CLI stays naming-agnostic: a plain `.py` defining only drawing() is a
         # valid EXPLICIT target. The product is the sibling .dxf, always written.
+        # A bare shape is the whole contract for a one-layer drawing: no layer map,
+        # no envelope, and the engine puts it on CUT.
         script_path = self.temp_root / "bare_dxf.py"
         script_path.write_text(
             "\n".join(
                 [
-                    "import ezdxf",
+                    "from cadgen import build123d as bd",
                     "from cadgen import dxf",
                     "@dxf",
                     "def drawing():",
-                    "    doc = ezdxf.new('R2010')",
-                    "    doc.units = ezdxf.units.MM",
-                    "    doc.modelspace().add_lwpolyline(",
-                    "        [(0, 0), (10, 0), (10, 5), (0, 5)], close=True, dxfattribs={'layer': 'CUT'}",
-                    "    )",
-                    "    return doc",
+                    "    with bd.BuildSketch() as cut:",
+                    "        bd.Rectangle(10, 5)",
+                    "    return cut.sketch",
                     "",
                 ]
             ),
@@ -766,33 +749,27 @@ class CadGenerationTests(unittest.TestCase):
         cad_generation.generate_dxf_targets([str(script_path)])
         self.assertEqual("gen_dxf\ngen_dxf\n", calls_path.read_text(encoding="utf-8"))
 
-    def test_dxf_envelope_rejects_unknown_fields(self) -> None:
-        # The gen_dxf envelope is {"document"} only. Non-Python inputs (e.g. an
-        # imported .step the drawing projects) are deliberately not freshness
-        # inputs — code reuse is the staleness link, not data files.
+    def test_a_dxf_return_that_is_not_geometry_is_refused(self) -> None:
+        # There is no drawing envelope any more: a @dxf function returns build123d
+        # geometry, so a dict of anything else is a layer map holding the wrong
+        # thing. Refused at the emitter, with nothing written.
         script_path = self.temp_root / "projection.py"
         script_path.write_text(
             "\n".join(
                 [
-                    "from pathlib import Path",
-                    "class _FakeDxf:",
-                    "    def saveas(self, output_path):",
-                    "        Path(output_path).write_text('0\\nEOF\\n', encoding='utf-8')",
                     "from cadgen import dxf",
                     "@dxf",
                     "def drawing():",
-                    "    return {",
-                    "        'document': _FakeDxf(),",
-                    "        'sources': ['imported-part.step'],",
-                    "    }",
+                    "    return {'CUT': 'imported-part.step'}",
                     "",
                 ]
             ),
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(ValueError, "unsupported field\\(s\\): sources"):
-            cad_generation.list_entry_specs()
+        with self.assertRaisesRegex(TypeError, "must hold build123d geometry"):
+            cad_generation.generate_dxf_targets([str(script_path)])
+        self.assertFalse((self.temp_root / "projection.dxf").exists())
 
     def test_direct_step_is_discovered_as_imported_part(self) -> None:
         self._write_step("loose")

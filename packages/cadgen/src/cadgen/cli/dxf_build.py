@@ -2,10 +2,10 @@
 
 There is no parser here on purpose; see :mod:`cadgen.cli.step_build`.
 
-Dispatch re-runs this command once with PYTHONHASHSEED pinned when it is not
-already (``cadgen.cli._HASH_SEED_COMMANDS``), because a drawing's bytes must be
-a function of its source alone. That happens before this module is imported —
-the seed is read at interpreter start, so nothing here could fix it.
+Dispatch used to re-run this command once with PYTHONHASHSEED pinned, because
+ezdxf's emitted order followed string hashing and a drawing's bytes have to be a
+function of its source. The DXF emitter engineers that instead
+(:mod:`cadgen._internal.dxf_emit`), so this is an ordinary command again.
 """
 
 from __future__ import annotations

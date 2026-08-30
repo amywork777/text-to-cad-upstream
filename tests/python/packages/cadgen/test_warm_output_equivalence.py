@@ -63,18 +63,16 @@ def model():
     return base.part + post.part
 """
 
-DRAWING = """import ezdxf
-from ezdxf.units import MM
-
+DRAWING = """from cadgen import build123d as bd
 from cadgen import dxf
+
+
 @dxf
 def drawing():
-    document = ezdxf.new(setup=True)
-    document.units = MM
-    msp = document.modelspace()
-    msp.add_lwpolyline([(0, 0), (60, 0), (60, 40), (0, 40)], close=True)
-    msp.add_circle((30, 20), 8)
-    return {"document": document}
+    with bd.BuildSketch() as cut:
+        bd.Rectangle(60, 40)
+        bd.Circle(8, mode=bd.Mode.SUBTRACT)
+    return cut.sketch
 """
 
 
@@ -268,8 +266,10 @@ class WarmOutputEquivalence(unittest.TestCase):
                     self.assertEqual(_manifest(tree), cold)
 
     def test_a_drawing_package_is_byte_identical_warm(self):
-        """DXF is the format with a determinism hazard: ezdxf's ordering follows the
-        hash seed, which is why the dxf commands re-run with PYTHONHASHSEED pinned."""
+        """DXF is the format that USED to have a determinism hazard: ezdxf's emitted
+        order followed the hash seed, and a warm worker's environment differs from a
+        cold run's. The emitter engineers that away, so warm and cold must now agree
+        on the bytes with no seed pinning anywhere."""
         argv = ["plate.py"]
         cold, _ = self._cold("plate.py", DRAWING, argv)
         self.assertTrue(cold, "the cold DXF build produced nothing to compare")

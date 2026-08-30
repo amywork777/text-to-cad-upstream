@@ -11,16 +11,15 @@ STANDALONE_DXF_SOURCE = textwrap.dedent(
     '''
     """Standalone DXF drafting source."""
 
-    import ezdxf
-
-
+    from cadgen import build123d as bd
     from cadgen import dxf
+
+
     @dxf
     def drawing():
-        doc = ezdxf.new()
-        msp = doc.modelspace()
-        msp.add_lwpolyline([(0, 0), (40, 0), (40, 20), (0, 20)], close=True)
-        return doc
+        with bd.BuildSketch() as cut:
+            bd.Rectangle(40, 20)
+        return cut.sketch
     '''
 ).strip()
 
@@ -117,34 +116,38 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             before = sibling.read_bytes()
 
             script_path.write_text(
-                STANDALONE_DXF_SOURCE.replace("(40, 0)", "(50, 0)").replace("(40, 20)", "(50, 20)") + "\n"
+                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(50, 20)") + "\n"
             )
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertNotEqual(before, sibling.read_bytes())
 
-    def test_generate_dxf_targets_rejects_non_document_payload(self) -> None:
-        # Fail closed: an object that only implements saveas is not a drawing and
-        # must be rejected, not silently written without validation.
+    def test_the_retired_ezdxf_contract_fails_with_a_teaching_error(self) -> None:
+        # Hard cutover (design/dxf-build123d.md): a drawing that returns an ezdxf
+        # document is not converted, warned about, or written — it is refused, and
+        # the refusal shows the contract that replaced it.
         with temporary_directory(prefix="dxf-skill") as root:
-            script_path = Path(root) / "fake.py"
+            script_path = Path(root) / "legacy.py"
             script_path.write_text(
                 "\n".join(
                     [
-                        "class _FakeDxf:",
-                        "    def saveas(self, output_path):",
-                        "        pass",
+                        "import ezdxf",
                         "from cadgen import dxf",
                         "@dxf",
                         "def drawing():",
-                        "    return {'document': _FakeDxf()}",
+                        "    doc = ezdxf.new()",
+                        "    doc.modelspace().add_lwpolyline(",
+                        "        [(0, 0), (40, 0), (40, 20), (0, 20)], close=True",
+                        "    )",
+                        "    return doc",
                         "",
                     ]
                 ),
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(TypeError, "must return an ezdxf document"):
+            with self.assertRaisesRegex(TypeError, "That contract is removed"):
                 cad_generation.generate_dxf_targets([str(script_path)])
+            self.assertFalse(script_path.with_suffix(".dxf").exists())
 
     def test_the_two_authorities_answer_different_questions_by_design(self) -> None:
         # The CLI's no-op gate (cadgen._internal.dxf_output) reads the output
@@ -161,7 +164,9 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             sibling = script_path.with_suffix(".dxf")
             rendered = sibling.read_bytes()
 
-            script_path.write_text(STANDALONE_DXF_SOURCE.replace("(40, 0)", "(60, 0)") + "\n")
+            script_path.write_text(
+                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(60, 20)") + "\n"
+            )
             self.assertFalse(dxf_output_current(script_path))
             self.assertEqual(rendered, sibling.read_bytes(), "a source edit must not touch the drawing")
 

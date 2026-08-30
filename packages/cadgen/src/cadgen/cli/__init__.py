@@ -139,40 +139,6 @@ _DAEMON_TOOLS = {
     "dxf build": "dxf-build",
 }
 
-# Drawing packages are content-addressed and ezdxf's object ordering depends on hash
-# randomization, so a DXF build has to be byte-deterministic. PYTHONHASHSEED is read
-# at interpreter start, which is why this happens in DISPATCH, before the command's
-# module is imported. Warm daemon workers already carry the pinned seed, so a served
-# build skips the restart; the invariant itself lives in cadgen._internal.hash_seed,
-# shared with the @dxf decorator's direct-run path.
-_HASH_SEED_COMMANDS: set[str] = {"dxf build"}
-
-
-def _hash_seed_is_stable() -> bool:
-    """Whether this interpreter already started with the drawing seed pinned.
-
-    Lazy, like everything else in dispatch: `cadgen --help` must not import a
-    command's world, and this one is only consulted for a hash-seeded command.
-    """
-    from cadgen._internal.hash_seed import hash_seed_is_stable
-
-    return hash_seed_is_stable()
-
-
-# subprocess rather than os.execv, for the reason #245 hit in the dxf launcher: on Windows
-# execv hands the argument VECTOR to the C runtime, which re-joins it into a command line
-# without quoting, so an interpreter path containing a space -- C:\Program Files\... --
-# arrives as two arguments and the child tries to run the tail as a script. subprocess
-# applies Windows quoting rules, and nothing is lost on POSIX because execv never replaced
-# the process on Windows anyway. argv[0] is the console script or __main__.py; either runs
-# under python.
-def _rerun_with_stable_hash_seed() -> int:
-    """Re-run this command once with the seed pinned, and return its exit code."""
-    from cadgen._internal.hash_seed import rerun_with_stable_hash_seed
-
-    return rerun_with_stable_hash_seed(sys.argv)
-
-
 def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
     """Exit code when the daemon handled it, None to run in this process.
 
@@ -227,17 +193,13 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"cadgen: unknown command {command!r}\n\n" + _usage())
         return 2
 
-    # Both of these must happen before the command's module is imported.
-    # The daemon first: its workers already have a stable hash seed, so a served dxf
-    # build skips the re-run entirely. Only a build that will actually run in THIS
-    # process needs the interpreter restart.
+    # Before the command's module is imported: the daemon exists to avoid paying the
+    # multi-second OCP/build123d import, so the handoff cannot wait until afterwards.
     daemon_tool = _DAEMON_TOOLS.get(command)
     if daemon_tool is not None:
         exit_code = _run_via_daemon(daemon_tool, rest, f"cadgen {command}")
         if exit_code is not None:
             return exit_code
-    if command in _HASH_SEED_COMMANDS and not _hash_seed_is_stable():
-        return _rerun_with_stable_hash_seed()
 
     module_name, _ = entry
     module = importlib.import_module(module_name)

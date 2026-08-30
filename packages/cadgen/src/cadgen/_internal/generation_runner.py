@@ -156,19 +156,6 @@ def _normalize_step_payload(
     )
 
 
-def _normalize_dxf_payload(result: object, *, script_path: Path) -> dict[str, object]:
-    if isinstance(result, dict):
-        allowed_fields = {"document"}
-        extra_fields = sorted(str(key) for key in result if key not in allowed_fields)
-        if extra_fields:
-            joined = ", ".join(extra_fields)
-            raise TypeError(f"{_display_path(script_path)} gen_dxf() envelope has unsupported field(s): {joined}")
-        if "document" not in result:
-            raise TypeError(f"{_display_path(script_path)} gen_dxf() envelope must define 'document'")
-        return {"document": result["document"]}
-    return {"document": result}
-
-
 def _shape_payload_entry_kind(shape: object, *, fallback: str) -> str:
     if fallback not in {"part", "assembly"}:
         raise RuntimeError(f"Unsupported generated STEP kind: {fallback}")
@@ -297,76 +284,32 @@ def _mark_scene_python_backed(
     return scene
 
 
-@contextlib.contextmanager
-def deterministic_dxf_output(document: object):
-    """Make ezdxf output a pure function of the drawing content while saving.
-
-    ezdxf stamps volatile metadata into every file (julian-date headers, random
-    fingerprint/version GUIDs, created/written-by markers with timestamps), which
-    would churn the output record's dxfHash on every rebuild. The generated .dxf
-    is a content-addressed product — provenance lives in the identity metadata
-    comment — so it is saved with ezdxf's fixed-metadata mode plus a pinned ezdxf marker string
-    (the written-by marker is stamped unconditionally on export and is not
-    covered by the fixed-metadata option): identical geometry produces identical
-    bytes."""
-    try:
-        import ezdxf
-        from ezdxf import document as ezdxf_document
-    except ImportError:
-        yield
-        return
-    options = ezdxf.options
-    previous_fixed = bool(getattr(options, "write_fixed_meta_data_for_testing", False))
-    # Tolerate ezdxf API drift: if the marker hook disappears, output degrades to
-    # "written-by marker not pinned" instead of every build crashing.
-    previous_marker = getattr(ezdxf_document, "ezdxf_marker_string", None)
-    fixed_marker = f"{ezdxf.__version__} @ 2000-01-01T00:00:00+00:00"
-    previous_created: str | None = None
-    metadata = None
-    options.write_fixed_meta_data_for_testing = True
-    try:
-        if previous_marker is not None:
-            ezdxf_document.ezdxf_marker_string = lambda: fixed_marker
-        metadata_reader = getattr(document, "ezdxf_metadata", None)
-        if callable(metadata_reader):
-            metadata = metadata_reader()
-            # The created-by marker was stamped when the generator constructed the
-            # document (before this save path had any control); pin it for the
-            # cached package write and RESTORE it afterwards so later saves of the
-            # same document (e.g. a --dxf export) keep real provenance.
-            try:
-                previous_created = metadata[ezdxf_document.CREATED_BY_EZDXF]
-            except Exception:  # noqa: BLE001 - ezdxf metadata API drift; a missing created-by marker degrades gracefully
-                previous_created = None
-            metadata[ezdxf_document.CREATED_BY_EZDXF] = fixed_marker
-        yield
-    finally:
-        options.write_fixed_meta_data_for_testing = previous_fixed
-        if previous_marker is not None:
-            ezdxf_document.ezdxf_marker_string = previous_marker
-        if metadata is not None and previous_created is not None:
-            metadata[ezdxf_document.CREATED_BY_EZDXF] = previous_created
-
-
 def _write_dxf_payload(
-    envelope: dict[str, object],
+    result: object,
     *,
     output_path: Path,
     script_path: Path,
     logger: CliLogger,
 ) -> None:
-    document = envelope.get("document")
-    saveas = getattr(document, "saveas", None)
-    if not callable(saveas):
-        raise TypeError(
-            f"{_display_path(script_path)} gen_dxf() envelope field 'document' must be a DXF document, "
-            f"got {type(document).__name__}"
-        )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    # Deterministic bytes: identical drawing content must produce an identical
-    # file — the output record hashes it, and warm/cold builds must agree.
-    with deterministic_dxf_output(document):
-        saveas(str(output_path))
+    """Serialize a ``@dxf`` return value and write it.
+
+    The drawing's bytes are engineered to be a pure function of its geometry
+    (:mod:`cadgen._internal.dxf_emit`), so nothing about this process — heap
+    layout, hash seed, wall clock — reaches the file. Validation runs against the
+    document those exact bytes came from, before anything is written.
+    """
+    from cadgen._internal.dxf_emit import emit_dxf, write_dxf
+    from cadgen.drawing_checks import raise_on_error_findings, validate_drawing_document
+
+    label = _display_path(script_path)
+    payload, document = emit_dxf(result, label=label)
+    if document is not None:
+        findings = validate_drawing_document(document)
+        for finding in findings:
+            if finding.severity != "error":
+                logger.info(f"{label} {finding.render()}")
+        raise_on_error_findings(findings, label=label)
+    write_dxf(payload, output_path)
     logger.debug(f"wrote DXF: {_display_path(output_path)}")
 
 
@@ -522,25 +465,9 @@ def _run_script_generator_inner(
             generated_scene.pose_module_source = pose_module_source
     elif generator_name == "gen_dxf":
         from cadgen._internal.dxf_output import record_dxf_output
-        from cadgen.drawing_checks import raise_on_error_findings, validate_drawing_document
 
-        envelope = _normalize_dxf_payload(raw_payload, script_path=spec.script_path)
         if spec.dxf_path is None:
             raise RuntimeError(f"{spec.source_ref} has no configured DXF output")
-        # Validation happens IN generation: the in-memory document is checked once,
-        # gating every written DXF alike. Fail closed — anything that is not a real
-        # drawing document is rejected rather than skipped.
-        document = envelope.get("document")
-        if not (hasattr(document, "modelspace") and hasattr(document, "header")):
-            raise TypeError(
-                f"{_display_path(spec.script_path)} gen_dxf() must return an ezdxf "
-                f"document, got {type(document).__name__}"
-            )
-        findings = validate_drawing_document(document)
-        for finding in findings:
-            if finding.severity != "error":
-                logger.info(f"{spec.source_ref} {finding.render()}")
-        raise_on_error_findings(findings, label=_display_path(spec.script_path))
         # Mirror gen_step: capture the generator's closure (relative to the model
         # folder) — the freshness input both the CLI's no-op gate and the viewer's
         # staleness gate read through the output record. Code reuse is the
@@ -558,7 +485,7 @@ def _run_script_generator_inner(
         # beside the lock sentinel is what makes an unchanged source a no-op.
         output_path = spec.dxf_export_path if spec.dxf_export_path is not None else spec.dxf_path
         _write_dxf_payload(
-            envelope, output_path=output_path, script_path=spec.script_path, logger=logger
+            raw_payload, output_path=output_path, script_path=spec.script_path, logger=logger
         )
         record_dxf_output(spec.script_path, output_path, source_closure=source_closure)
     if generated_scene is not None and source_closure is not None:
