@@ -129,17 +129,17 @@ Use the frame method that matches native build123d joint inputs: `rigid_frame()`
 When a generated assembly's the `@step` model function builds on a child part, that child is a **dependency** of the parent generator. Wire it in by the child's kind (see "Generated vs imported STEP" in `step-generation.md`):
 
 - **Generated child** (its source is a `@step`-decorated model function script): path-load the child `.py` and call its the `@step` model function — or the underlying build function it returns — inside the parent's the decorated model function, composing from the live generator. You cannot `import` the child by name; load it by path (see "Entry generators are named `<name>.py`" in `step-generation.md` for the snippet). Do NOT route a generated child through an exported STEP; keep the dependency at the source level so a child edit flows into the parent on the next rebuild and there are no committed `.step` bytes to keep in sync.
-- **Imported child** (the STEP is its own source — purchased, downloaded, or otherwise not generated here): import it through the cached `cadgen.import_step` util (see "Imported components" below).
-- **Decoupling a generated child — only on explicit request:** if the user explicitly asks for a generated child NOT to be a direct dependency of the parent, export that child to a STEP file and then import it as an imported child via `import_step`. This is never the default — by default a generated child is composed directly from its the decorated model function.
+- **Imported child** (the STEP is its own source — purchased, downloaded, or otherwise not generated here): import it through the cached `cadgen.read_step` util (see "Imported components" below).
+- **Decoupling a generated child — only on explicit request:** if the user explicitly asks for a generated child NOT to be a direct dependency of the parent, export that child to a STEP file and then import it as an imported child via `read_step`. This is never the default — by default a generated child is composed directly from its the decorated model function.
 
 ## Imported components
 
-For purchased or downloaded parts (see `$step-parts`), import the STEP file and add it like any authored part. Always import STEP parts through `cadgen.import_step`, not `build123d.import_step` — it is a drop-in that returns a topologically and chromatically identical shape but reuses the content-keyed render-package store, so re-imports of the same part (an assembly with repeated fasteners or servos) and rebuilds skip re-parsing the text STEP:
+For purchased or downloaded parts (see `$step-parts`), read the STEP file and add it like any authored part. Always read STEP parts through `cadgen.read_step`, not `build123d.import_step`. It is a drop-in that returns a topologically and chromatically identical shape, and it does two more things: it reuses the content-keyed render-package store (so repeated fasteners and rebuilds skip re-parsing the text STEP), and it **records the file as a build input**, so replacing the vendor STEP makes your model stale instead of leaving it stuck reporting itself current until someone passes `--force`.
 
 ```python
-from cadgen import import_step
+from cadgen import read_step
 
-servo = asm.add(import_step("models/parts/sg90_servo.step"), "servo")
+servo = asm.add(read_step("models/parts/sg90_servo.step"), "servo")
 ```
 
 The cache lives in the user-level store (`~/.cache/cadgen`), never beside your models. It falls back to `build123d.import_step` automatically when the cache cannot be written, so no extra error handling is needed.

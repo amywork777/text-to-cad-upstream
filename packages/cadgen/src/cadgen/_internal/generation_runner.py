@@ -16,6 +16,7 @@ from cadgen._internal.source_hash import PythonSourceHash
 from cadgen._internal.source_hash import capture_runtime_closure
 from cadgen._internal.source_hash import evict_first_party_modules
 from cadgen._internal.source_hash import python_source_hash
+from cadgen._internal.source_hash import record_discovered_inputs
 from cadgen._internal.source_hash import record_first_party_execution
 from cadgen._internal.step_scene import LoadedStepScene
 from cadgen.catalog import coordination_scope, render_package_dir
@@ -406,9 +407,12 @@ def _run_script_generator_inner(
     # clean first-party module space, then record every first-party file executed while
     # the generator loads and runs. The recorded set is complete even if the generator
     # unloads modules mid-run; the sys.modules delta stays as a belt-and-braces union.
+    # Alongside it, the DISCOVERED-input window: a model's Python reach announces
+    # itself, but a data file it reads does not, so `cadgen.read_step` declares one
+    # here and it joins the closure like any other input.
     evict_first_party_modules()
     modules_before_load = set(sys.modules)
-    with record_first_party_execution() as executed_files:
+    with record_first_party_execution() as executed_files, record_discovered_inputs() as read_files:
         with logger.timed(f"load generator {spec.source_ref}"):
             module = _load_generator_module(spec.script_path)
         # `generator_name` stays the DISPATCH kind ("gen_step"/"gen_dxf" decides
@@ -447,6 +451,7 @@ def _run_script_generator_inner(
             spec.script_path,
             base=spec.script_path.parent,
             executed_files=executed_files,
+            discovered_inputs=read_files,
         )
         generated_scene = _write_shape_step_payload(
             envelope,
@@ -478,6 +483,7 @@ def _run_script_generator_inner(
             spec.script_path,
             base=spec.script_path.parent,
             executed_files=executed_files,
+            discovered_inputs=read_files,
         )
         # The product IS the .dxf (design/standalone-viewer.md Phase A): gen always
         # writes it — the sibling by default, `-o` renames — and the viewer parses

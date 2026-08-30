@@ -422,6 +422,48 @@ def record_first_party_execution():
             previous |= recorded
 
 
+_ACTIVE_DISCOVERED_INPUTS: set[Path] | None = None
+
+
+@contextlib.contextmanager
+def record_discovered_inputs():
+    """Record every NON-Python file a model read while the context is active.
+
+    Import reach is observed (the audit hook above); data reach has to be
+    declared, because reading a file is an ordinary function call with nothing
+    to hook. ``cadgen.read_step`` declares its file here, so a model that builds
+    from a vendor STEP records that STEP's bytes in its closure and rebuilds when
+    they change — the hole that used to need ``--force`` to work around.
+
+    "Discovered" rather than declared-up-front on purpose, in the build-system
+    sense: the inputs are whatever THIS run actually read, recorded as it runs
+    and re-hashed by the next run's gate. A model that reads a different file
+    depending on its parameters records what it read.
+    """
+    global _ACTIVE_DISCOVERED_INPUTS
+
+    recorded: set[Path] = set()
+    previous = _ACTIVE_DISCOVERED_INPUTS
+    _ACTIVE_DISCOVERED_INPUTS = recorded
+    try:
+        yield recorded
+    finally:
+        _ACTIVE_DISCOVERED_INPUTS = previous
+        if previous is not None:
+            previous |= recorded
+
+
+def note_discovered_input(path: Path) -> None:
+    """Declare ``path`` a freshness input of the run in progress.
+
+    A no-op outside a capture window: reading a STEP from a REPL, a test, or a
+    tool is not a build, and there is nothing to record it into.
+    """
+    if _ACTIVE_DISCOVERED_INPUTS is None:
+        return
+    _ACTIVE_DISCOVERED_INPUTS.add(Path(path).expanduser().resolve())
+
+
 def _relative_to_base(path: Path, base: Path) -> str:
     """A closure file's path relative to the model folder ``base`` (the directory that holds the
     generator source / logical STEP). Uses ``os.path.relpath`` so a sibling or parent file gets a
@@ -480,22 +522,27 @@ def capture_runtime_closure(
     *,
     base: Path,
     executed_files: object = (),
+    discovered_inputs: object = (),
 ) -> PythonSourceClosure:
     """Capture a generator's dependency closure after running it.
 
-    Two observation channels are unioned: ``executed_files`` — the first-party
-    files recorded by :func:`record_first_party_execution` while the generator
-    ran (complete even when the generator unloads modules mid-run) — and the
-    ``sys.modules`` delta against ``before_module_names`` (a belt-and-braces
-    catch for modules registered without a fresh body execution). Every recorded
-    path is relative to ``base`` (the model folder).
+    Three observation channels are unioned. Two cover the generator's PYTHON
+    import reach: ``executed_files`` — the first-party files recorded by
+    :func:`record_first_party_execution` while the generator ran (complete even
+    when the generator unloads modules mid-run) — and the ``sys.modules`` delta
+    against ``before_module_names`` (a belt-and-braces catch for modules
+    registered without a fresh body execution). The third is
+    ``discovered_inputs``: the data files the run declared through
+    :func:`note_discovered_input`, which is how ``cadgen.read_step`` puts a
+    vendor STEP into the closure. Every recorded path is relative to ``base``
+    (the model folder), and a non-``.py`` input is hashed by its bytes.
 
-    The closure is therefore the generator's PYTHON import reach and nothing
-    else. A composed child is captured when it is composed the documented way —
-    by importing its ``.step.py`` generator — but a raw ``.step``/``.dxf`` file
-    read as data is NOT a freshness input, for STEP assemblies and DXF drawings
-    alike. Generated children are kept current by
-    ``generation._rebuild_stale_assembly_children``, not by this closure.
+    A file read WITHOUT going through a declaring reader is still not a
+    freshness input — nothing observes it — which is exactly why reading one is
+    spelled ``read_step`` rather than left to ``open()``. A composed child is
+    captured the documented way, by importing its generator; generated children
+    are kept current by ``generation._rebuild_stale_assembly_children``, not by
+    this closure.
     """
     import sys
 
@@ -503,6 +550,7 @@ def capture_runtime_closure(
     dependency_files = [
         *repo_local_loaded_modules(new_names).values(),
         *executed_files,
+        *discovered_inputs,
     ]
     return closure_for_files(script_path, dependency_files, base=base)
 

@@ -23,7 +23,7 @@ from typing import Any, Sequence
 from build123d import Compound, Location
 
 from cadgen.assembly import AssemblyHelper
-from cadgen.step_scene import import_step
+from cadgen.step_scene import read_step
 
 
 def location_from_transform(transform: Sequence[float]) -> Location:
@@ -101,7 +101,7 @@ def _resolve_shape(path: object, *, base_dir: Path) -> Any:
     generator_path = step_path.with_name(step_path.name + ".py")
     if generator_path.exists():
         return copy.deepcopy(_generated_child_shape(str(generator_path)))
-    return import_step(step_path)
+    return read_step(step_path)
 
 
 def compound_from_instances(

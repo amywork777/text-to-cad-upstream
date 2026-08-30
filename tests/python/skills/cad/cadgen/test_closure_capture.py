@@ -18,15 +18,12 @@ _CADGEN_ROOT = Path(cadgen.__file__).resolve().parent
 
 _HELPER = "SIZE_MM = 10.0\n"
 
-_FAKE_DOC_PRELUDE = [
-    "import ezdxf",
-    "def _make_doc():",
-    "    doc = ezdxf.new('R2010')",
-    "    doc.units = ezdxf.units.MM",
-    "    doc.modelspace().add_lwpolyline(",
-    "        [(0, 0), (10, 0), (10, 5), (0, 5)], close=True, dxfattribs={'layer': 'CUT'}",
-    "    )",
-    "    return doc",
+_DRAWING_PRELUDE = [
+    "from cadgen import build123d as bd",
+    "def _make_drawing():",
+    "    with bd.BuildSketch() as cut:",
+    "        bd.Rectangle(10, 5)",
+    "    return cut.sketch",
 ]
 
 
@@ -57,13 +54,13 @@ class ClosureCaptureTests(unittest.TestCase):
                     [
                         "import sys",
                         "import geom_helper",
-                        *_FAKE_DOC_PRELUDE,
+                        *_DRAWING_PRELUDE,
                         "from cadgen import dxf",
                         "@dxf",
                         "def drawing():",
                         "    size = geom_helper.SIZE_MM",
                         "    sys.modules.pop('geom_helper', None)",
-                        "    return {'document': _make_doc()}",
+                        "    return _make_drawing()",
                         "",
                     ]
                 ),
@@ -83,12 +80,12 @@ class ClosureCaptureTests(unittest.TestCase):
                     "\n".join(
                         [
                             "import geom_helper",
-                            *_FAKE_DOC_PRELUDE,
+                            *_DRAWING_PRELUDE,
                             "from cadgen import dxf",
                             "@dxf",
                             "def drawing():",
                             "    assert geom_helper.SIZE_MM > 0",
-                            "    return {'document': _make_doc()}",
+                            "    return _make_drawing()",
                             "",
                         ]
                     ),
@@ -112,25 +109,25 @@ class ClosureCaptureTests(unittest.TestCase):
             failing = "\n".join(
                 [
                     "import geom_helper",
-                    *_FAKE_DOC_PRELUDE,
+                    *_DRAWING_PRELUDE,
                     "from cadgen import dxf",
                     "@dxf",
                     "def drawing():",
                     "    if geom_helper.SIZE_MM > 0:",
                     "        raise RuntimeError('boom')",
-                    "    return {'document': _make_doc()}",
+                    "    return _make_drawing()",
                     "",
                 ]
             )
             fixed = "\n".join(
                 [
                     "import geom_helper",
-                    *_FAKE_DOC_PRELUDE,
+                    *_DRAWING_PRELUDE,
                     "from cadgen import dxf",
                     "@dxf",
                     "def drawing():",
                     "    assert geom_helper.SIZE_MM > 0",
-                    "    return {'document': _make_doc()}",
+                    "    return _make_drawing()",
                     "",
                 ]
             )
@@ -158,17 +155,14 @@ class ClosureCaptureTests(unittest.TestCase):
                         "from pathlib import Path",
                         "from cadgen.sources import load_source_module",
                         "_step = load_source_module(Path(__file__).with_name('part.py'))",
-                        "import ezdxf",
+                        "from cadgen import build123d as bd",
                         "from cadgen import dxf",
                         "@dxf",
                         "def drawing():",
                         "    assert _step.WIDTH_MM > 0",
-                        "    doc = ezdxf.new('R2010')",
-                        "    doc.units = ezdxf.units.MM",
-                        "    doc.modelspace().add_lwpolyline(",
-                        "        [(0, 0), (10, 0), (10, 5), (0, 5)], close=True, dxfattribs={'layer': 'CUT'}",
-                        "    )",
-                        "    return {'document': doc}",
+                        "    with bd.BuildSketch() as cut:",
+                        "        bd.Rectangle(10, 5)",
+                        "    return cut.sketch",
                         "",
                     ]
                 ),

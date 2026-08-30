@@ -33,7 +33,7 @@ __all__ = [
     "MateRelation",
     "MateTarget",
     "compound_from_instances",
-    "import_step",
+    "read_step",
     "load_step_scene",
     "located_shape",
     "occurrence_selector_id",
@@ -84,22 +84,10 @@ def __getattr__(name: str):
             "label_shape": label_shape,
             "target": target,
         }[name]
-    if name in {"import_step", "load_step_scene", "located_shape", "occurrence_selector_id", "scene_occurrence_shape"}:
-        from cadgen.step_scene import (
-            import_step,
-            load_step_scene,
-            located_shape,
-            occurrence_selector_id,
-            scene_occurrence_shape,
-        )
+    if name in {"read_step", "load_step_scene", "located_shape", "occurrence_selector_id", "scene_occurrence_shape"}:
+        from cadgen import step_scene
 
-        return {
-            "import_step": import_step,
-            "load_step_scene": load_step_scene,
-            "located_shape": located_shape,
-            "occurrence_selector_id": occurrence_selector_id,
-            "scene_occurrence_shape": scene_occurrence_shape,
-        }[name]
+        return getattr(step_scene, name)
     if name in {"srgb", "srgb_to_linear", "linear_to_srgb"}:
         from cadgen import color
 
@@ -129,7 +117,7 @@ if TYPE_CHECKING:
     from cadgen.instances import compound_from_instances
     from cadgen.progress import report, track
     from cadgen.step_scene import (
-        import_step,
+        read_step,
         load_step_scene,
         located_shape,
         occurrence_selector_id,

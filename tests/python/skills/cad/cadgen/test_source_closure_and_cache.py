@@ -118,22 +118,24 @@ class SourceClosureTests(unittest.TestCase):
         self.assertNotIn("build123d", captured)      # site-packages: excluded
 
 
-class ImportStepCachedTests(unittest.TestCase):
-    """cadgen import_step: build123d shape identical to build123d.import_step, served from cache."""
+class ReadStepCachedTests(unittest.TestCase):
+    """cadgen read_step: build123d shape identical to build123d.import_step, served from cache."""
 
-    def test_matches_import_step_and_warms_from_the_render_package(self) -> None:
+    def test_matches_build123d_import_and_warms_from_the_render_package(self) -> None:
         with temporary_directory(prefix="import-cached-") as raw_dir:
             step_path = Path(raw_dir) / "widget.step"
             build123d.export_step(build123d.Box(4, 3, 2), step_path)
 
+            from cadgen.step_scene import read_step
+
             raw = build123d.import_step(step_path)
-            cold = step_scene.import_step(step_path)  # cold: full text-STEP parse
+            cold = read_step(step_path)  # cold: full text-STEP parse
 
             self.assertEqual(_face_count(raw.wrapped), _face_count(cold.wrapped))
             self.assertAlmostEqual(raw.volume, cold.volume, places=4)
 
             # Once the entry is built, its render package IS the warm store:
-            # import_step must reconstruct from it without re-parsing the text.
+            # read_step must reconstruct from it without re-parsing the text.
             from cadgen.step_artifact_cli import build_step_artifact
 
             build_step_artifact(repo_root=Path(raw_dir), step=step_path)
@@ -141,7 +143,7 @@ class ImportStepCachedTests(unittest.TestCase):
                 "cadgen._internal.step_scene_package.load_step_scene",
                 side_effect=AssertionError("package miss"),
             ):
-                warm = step_scene.import_step(step_path)
+                warm = read_step(step_path)
             self.assertEqual(_face_count(raw.wrapped), _face_count(warm.wrapped))
             self.assertAlmostEqual(raw.volume, warm.volume, places=4)
 

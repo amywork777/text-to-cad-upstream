@@ -138,7 +138,7 @@ model: a minimal script that wraps the import and declares the pose —
 ```python
 @step(pose=pose(...))
 def vendor_arm():
-    return cadgen.import_step("vendor_arm_v3.step")
+    return cadgen.read_step("vendor_arm_v3.step")
 ```
 
 ## Validation
