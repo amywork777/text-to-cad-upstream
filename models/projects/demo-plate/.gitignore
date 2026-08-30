@@ -1,7 +1,9 @@
-/STEP/
-/DXF/
-/STL/
-/GLB/
-/3MF/
-/PNG/
-/GIF/
+/STEP/*
+!/STEP/vendor/
+/DXF/*
+/STL/*
+/GLB/*
+/3MF/*
+/PNG/*
+/GIF/*
+__pycache__/
