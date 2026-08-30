@@ -226,7 +226,15 @@ def _match_model_decorator(
                     call_kwargs[keyword.arg] = keyword.value
         fmt: str | None = None
         if isinstance(target, ast.Name):
-            fmt = names.get(target.id)
+            # Only MODEL formats may match here. `names` tracks all five
+            # decorator aliases, so an unrestricted get() let the first
+            # cadgen decorator top-down win — a mesh decorator stacked ABOVE
+            # @step was mis-taken as the model format, breaking the
+            # documented stacking-order neutrality (runtime was neutral, the
+            # parser was not).
+            resolved = names.get(target.id)
+            if resolved in {"step", "dxf"}:
+                fmt = resolved
         elif isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
             if target.value.id in module_aliases and target.attr in {"step", "dxf"}:
                 fmt = target.attr

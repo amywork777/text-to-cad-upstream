@@ -61,6 +61,11 @@ class MeshExportMetadataTest(unittest.TestCase):
             )
         )
         for metadata in (below, above):
+            # Order neutrality covers the MODEL format too, not just the mesh
+            # declarations: @stl above @step must not be mis-taken as the
+            # model (the parser bug that hid behind mesh-only assertions).
+            self.assertTrue(metadata.has_gen_step)
+            self.assertEqual(metadata.out_target, "../STEP/widget.step")
             declared = {d.fmt: d for d in metadata.mesh_exports}
             self.assertEqual(set(declared), {"stl", "glb", "3mf"})
             self.assertEqual(declared["stl"].out, "../STL/widget.stl")
