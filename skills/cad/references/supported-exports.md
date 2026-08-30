@@ -41,7 +41,7 @@ cadgen stl build path/to/model.py                     # every declared @stl vari
 cadgen stl build path/to/model.py meshes/model.stl    # one ad-hoc export
 ```
 
-Omitting the output is the normal form: it produces exactly what the model declares. A relative output path resolves beside the model; an absolute path is used as-is. Ask for several formats by running several doors — each writes only its own format:
+Omitting the output is the normal form: it produces exactly what the model declares. A relative output path resolves beside the model's STEP document (not beside the script), so pass an absolute path when that is not what you mean. Ask for several formats by running several doors — each writes only its own format:
 
 ```bash
 cadgen stl build path/to/model.py
