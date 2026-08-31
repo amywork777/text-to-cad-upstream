@@ -11,19 +11,12 @@ from .metadata import GeneratorMetadata, normalize_mesh_numeric, parse_generator
 
 
 STEP_SUFFIXES = (".step", ".stp")
+# Discovery skips EVERY dot-directory (matching the CAD Viewer's catalog scan),
+# plus these well-known build/dependency dirs. An enumerated dot-list rotted
+# here once: `.claude/worktrees/` checkouts carrying pre-rename sources
+# poisoned every scan run from a repo root.
 IGNORED_DISCOVERY_DIR_NAMES = {
     "__pycache__",
-    ".cache",
-    ".eggs",
-    ".env",
-    ".git",
-    ".hg",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".svn",
-    ".tox",
-    ".venv",
     "build",
     "dist",
     "env",
@@ -536,7 +529,7 @@ def _iter_paths(root: Path, pattern: str) -> tuple[Path, ...]:
         dirnames[:] = sorted(
             dirname
             for dirname in dirnames
-            if dirname not in IGNORED_DISCOVERY_DIR_NAMES
+            if not dirname.startswith(".") and dirname not in IGNORED_DISCOVERY_DIR_NAMES
         )
         for filename in sorted(filenames):
             if not fnmatch(filename, pattern):

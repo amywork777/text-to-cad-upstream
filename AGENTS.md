@@ -82,14 +82,16 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   repository-root module, and must not add `skills/`, the repository root, or a
   sibling skill directory to `sys.path`, `PYTHONPATH`, `NODE_PATH`, or any other
   runtime lookup path. Skills are independent of each other, not of everything.
-- Shared runtime comes from the **`cadgen` distribution**, named in each skill's
-  `requirements.txt` — unpinned on `develop` so the editable install in
-  `requirements-dev.txt` satisfies it, pinned to the release at publish. Skills do
-  not vendor it: a skill script is a thin entrypoint whose parser and behaviour
-  live in `cadgen.cli`, and which fails with the `pip install -r requirements.txt`
-  hint when cadgen is missing. cadgen carries the JavaScript it executes too (Node
-  builders, the snapshot browser bundle, the CAD Viewer client), so a skill ships
-  no runtime of its own.
+- Shared runtime comes from the **`cadgen` distribution**. A skill that uses it
+  names it in its `requirements.txt` — unpinned on `develop` so the editable
+  install in `requirements-dev.txt` satisfies it, pinned to the release at
+  publish. Skills do not vendor it: a skill script is a thin entrypoint whose
+  parser and behaviour live in `cadgen.cli`, and which fails with the
+  `pip install -r requirements.txt` hint when cadgen is missing. cadgen carries
+  the JavaScript it executes too (Node builders, the snapshot browser bundle,
+  the CAD Viewer client), so a skill ships no runtime of its own. Not every
+  skill needs cadgen (bambu-labs, dfam-check, gcode, sendcutsend, step-parts
+  are cadgen-free); do not add the dependency to a skill that never invokes it.
 - Edit the source reached by the `develop` symlink layout first, then regenerate
   explicit derived outputs when a production-output task requires it.
 - Write all test, sample, permanent, and generated CAD/robot-description

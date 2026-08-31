@@ -14,8 +14,10 @@ because nothing derived the expectation from what the skill actually does.
 The skills are instruction-only now (the per-verb shims are gone), so "what the skill
 does" is what its documentation TEACHES: a skill whose docs invoke `cadgen ...` (or
 whose remaining Python imports cadgen) must declare it, and one that teaches a snapshot
-verb needs the `snapshot` extra. Skills that never touch cadgen (bambu-labs, gcode,
-step-parts) correctly have no manifest.
+verb needs the `snapshot` extra. Skills that never touch cadgen (bambu-labs, dfam-check,
+gcode, sendcutsend, step-parts) correctly have no cadgen line — a mention on a line that
+hands off to another skill (`$cad: cadgen stl build ...`) is that skill's command, not a
+dependency here.
 """
 
 from __future__ import annotations
@@ -43,9 +45,29 @@ def _declared(skill: Path) -> tuple[bool, set[str]]:
     return False, set()
 
 
+_HANDOFF_MARKER = re.compile(r"\$(?P<name>[a-z0-9-]+)")
+
+
+def _own_lines(skill: Path, text: str) -> str:
+    """Drop lines that route the agent to ANOTHER skill (`$cad`, `$dxf`, ...).
+
+    A remediation line like "export an STL with $cad: `cadgen stl build ...`"
+    teaches the CAD skill's command, not a dependency of the skill that says it
+    — that skill installs nothing and runs nothing; the named skill's own
+    requirements cover the command.
+    """
+    kept = []
+    for line in text.splitlines():
+        markers = {m.group("name") for m in _HANDOFF_MARKER.finditer(line)}
+        if markers and skill.name not in markers:
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def _imports_cadgen(skill: Path) -> bool:
     return any(
-        "cadgen" in path.read_text(encoding="utf-8")
+        "cadgen" in _own_lines(skill, path.read_text(encoding="utf-8"))
         for path in skill.rglob("*.py")
         if "__pycache__" not in path.parts
     )
@@ -57,7 +79,7 @@ _SNAPSHOT_INVOCATION = re.compile(r"cadgen\s+(?:(?:step|dxf)\s+)?snapshot\b")
 
 def _docs_text(skill: Path) -> str:
     return "\n".join(
-        path.read_text(encoding="utf-8")
+        _own_lines(skill, path.read_text(encoding="utf-8"))
         for path in skill.rglob("*.md")
         if "__pycache__" not in path.parts
     )
