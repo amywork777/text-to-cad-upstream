@@ -5,8 +5,12 @@ screen coordinates, layer summaries, bounds). ezdxf is imported lazily so cadgen
 imports stay light.
 
 The SVG snapshot writer this module used to carry is gone: visual review of a
-drawing is the 3D flat-pattern render now, which comes from the drawing package's
-preview.glb rather than a second, 2D-only rendering of the same geometry.
+drawing is the 3D flat-pattern render now, meshed on demand by the bundled
+`dxf-mesh.mjs` one-shot rather than by a second, 2D-only rendering of the same
+geometry. Its per-intent stroke palette went with it — how a cut edge, a crease
+guide and an engraved marking are drawn is decided in the render path that
+actually draws them (`src/lib/dxf/drawingLineMesh.js` and the viewer's overlays),
+not in a table here that nothing reads.
 """
 
 from __future__ import annotations
@@ -450,13 +454,3 @@ def build_dxf_render_payload(dxf_path: Path, *, file_ref: str) -> dict[str, obje
         "paths": path_records,
         "circles": circle_records,
     }
-
-
-_SNAPSHOT_STROKES = {
-    "cut": ("#111827", ""),
-    "bend": ("#2563eb", "4 3"),
-    "engrave": ("#059669", "1 2"),
-    "reference": ("#9ca3af", "2 2"),
-    "unknown": ("#6b7280", "2 2"),
-}
-_SNAPSHOT_MARGIN_RATIO = 0.05

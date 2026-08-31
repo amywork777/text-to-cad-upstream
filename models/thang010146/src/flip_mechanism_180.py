@@ -3,7 +3,7 @@
 The geometry is not ours — the vendor document under ``STEP/imported/`` is the
 only source of shape here. This script exists so the ANNOTATION (mates, poses,
 the reference clip) is authored code that can be edited and rebuilt with one
-``python src/180_degree_flip_mechanism.py``.
+``python src/flip_mechanism_180.py``.
 
 The mechanism is a closed-loop four-bar: crank, coupler, rocker. cadgen mates
 are a tree evaluating forward kinematics, so each named pose is the loop
@@ -82,9 +82,9 @@ KINEMATICS = {
 
 
 @step(
-    out="../STEP/180_degree_flip_mechanism.step",
+    out="../STEP/flip_mechanism_180.step",
     kinematics=KINEMATICS,
-    animation="180_degree_flip_mechanism.anim.js",
+    animation="flip_mechanism_180.anim.js",
 )
 def flip_mechanism_180():
     return read_step(_SOURCE)

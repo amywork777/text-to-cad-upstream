@@ -25,9 +25,14 @@ import path from "node:path";
 
 import { parseDxf } from "../src/lib/dxf/parseDxf.js";
 import { buildDxfPreviewMeshData } from "../src/lib/dxf/buildPreviewMesh.js";
-import { drawingLinesToRibbonPositions } from "../src/lib/dxf/drawingLineMesh.js";
+import {
+  drawingLinesToRibbonPositions,
+  dxfEngraveRibbonPositions,
+  DXF_ENGRAVE_STROKE_COLOR,
+} from "../src/lib/dxf/drawingLineMesh.js";
 import {
   dxfPreviewPositions,
+  dxfSoupToGlbPositions,
   DXF_PREVIEW_REFERENCE_THICKNESS_MM,
 } from "../src/lib/dxf/previewGlb.js";
 import { writeGlb } from "../src/lib/glb/writeGlb.js";
@@ -83,23 +88,55 @@ try {
     // the fallback below also has nothing to draw.
     prismError = error;
   }
+  // ENGRAVE/score markings: the drawing's serial numbers, score lines, witness
+  // lines and dimension callouts. They are not cut contours, so the prism above
+  // never sees them — without this primitive an engraved plate snapshots as a
+  // blank sheet, which is what `cadgen dxf snapshot` used to do.
+  //
+  // elevationSign -1: `dxfSoupToGlbPositions` maps mesher +y to CAD -Z, so the sheet's
+  // top face in the rendered scene is its MINUS-y side in the mesher's frame. Marking
+  // the +y side puts every stroke under the plate, where it renders as nothing at all.
+  const engravePositions = positions.length
+    ? dxfSoupToGlbPositions(
+        dxfEngraveRibbonPositions(dxfData, DXF_PREVIEW_REFERENCE_THICKNESS_MM, {
+          elevationSign: -1,
+        }),
+      )
+    : new Float32Array(0);
   if (!positions.length) {
     // A document profile is still a drawing: render its line work as hairline
     // ribbons in the sheet plane, the mesh twin of the viewer's LineSegments
     // rendering. Text markings are not drawn (the viewer rasterizes strings
     // itself), so a dimensioned drawing snapshots as its line graphics.
-    positions = drawingLinesToRibbonPositions(dxfData);
+    //
+    // Converted through the SAME axis map and mm->metre scale as the prism: the
+    // ribbon builder emits in the mesher's Y-up frame, and handing that straight
+    // to writeGlb stood the sheet on its edge at a thousand times its size.
+    positions = dxfSoupToGlbPositions(drawingLinesToRibbonPositions(dxfData));
     renderMode = "lines";
   }
-  const triangleCount = positions.length / 9;
+  const triangleCount = (positions.length + engravePositions.length) / 9;
   if (!triangleCount) {
     if (prismError) {
       throw prismError;
     }
     fail("the DXF has no renderable geometry (no cut contours and no line work)");
   }
+  // A stroke is ink, not sheet: shading alone cannot separate a marking floating
+  // 0.03 mm over the face from the face itself, so both stroke primitives carry
+  // the engrave colour explicitly. writeGlb makes one material per primitive.
+  const primitives = renderMode === "lines"
+    ? [{ positions, name, color: DXF_ENGRAVE_STROKE_COLOR }]
+    : [{ positions, name }];
+  if (engravePositions.length) {
+    primitives.push({
+      positions: engravePositions,
+      name: `${name}_engrave`,
+      color: DXF_ENGRAVE_STROKE_COLOR,
+    });
+  }
   const glb = writeGlb(
-    { primitives: [{ positions, name }], name, units: "mm" },
+    { primitives, name, units: "mm" },
     { preset: "export", sourceKind: "dxf", occurrenceIdPrefix: "dxf" },
   );
   fs.mkdirSync(path.dirname(outPath), { recursive: true });

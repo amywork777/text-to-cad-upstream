@@ -7,7 +7,7 @@ poses, and choreography are ours.
 
 | Script | Artifact | DOFs / poses | Clip |
 |---|---|---|---|
-| `180_degree_flip_mechanism.py` | `STEP/180_degree_flip_mechanism.step` | `crank`, `coupler`, `rocker`; poses `rest`, `quarter`, `over_center`, `three_quarter`, `flipped` | `flip` (5 s) |
+| `flip_mechanism_180.py` | `STEP/flip_mechanism_180.step` | `crank`, `coupler`, `rocker`; poses `rest`, `quarter`, `over_center`, `three_quarter`, `flipped` | `flip` (5 s) |
 | `adjustable_height_table_2.py` | `STEP/adjustable_height_table_2.step` | `hoist`, `rise`, `descend`, four roller sliders, `actuator_rod`, `actuator_slider`, coupling `scissor`; poses `collapsed`, `mid`, `raised` | `lift` (8 s) |
 | `gear_rack_gripper.py` | `STEP/gear_rack_gripper.step` | `left_pinion`, `right_pinion`, `left_jaw`, `right_jaw`, `piston`, two conrods, coupling `grip`; poses `closed`, `half_open`, `open` | `drive` (6 s) |
 

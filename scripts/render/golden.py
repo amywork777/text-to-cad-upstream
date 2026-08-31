@@ -25,8 +25,8 @@ FIXTURES = {
     "planetary": "examples/STEP/planetary_gear_assembly.step",
     "turbofan": "examples/STEP/cutaway_turbofan_engine.step",
     # A render project's artifacts live in its own format folder, and are NOT
-    # committed — build it first: `python models/renders/moonwatch/src/moonwatch.py`.
-    "moonwatch": "renders/moonwatch/STEP/moonwatch.step",
+    # committed — build it first: `python models/moonwatch/src/moonwatch.py`.
+    "moonwatch": "moonwatch/STEP/moonwatch.step",
 }
 THEMES = ["workbench-light", "workbench-dark", "cinematic", "vibrant",
           "blue", "pink", "clay-sunrise", "terminal"]

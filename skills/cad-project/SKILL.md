@@ -25,6 +25,7 @@ Only OUTPUTS are organized by format. Code is not: a model script is not a
     plate.py              #   one @step/@dxf model per file
     plate_drawing.py
     lib/                  #   shared code (plain modules — never models)
+      __init__.py         #     one-line docstring; lib is a regular package
       holes.py
   STEP/                   # raw outputs ONLY (+ their source sidecars)
     plate.step
@@ -51,7 +52,9 @@ Two mechanical rules:
    unit.
 2. **`src/` holds ONLY runnable model scripts.** Every `.py` directly under
    `src/` is a model — run it to build it. Everything shared goes in
-   `src/lib/`. So `ls src/*.py` IS the model catalog.
+   `src/lib/`. So `ls src/*.py` IS the model catalog. `src/lib/` is a regular
+   package, not a namespace one: it always contains an `__init__.py`, and a
+   one-line docstring naming what the package holds is enough.
 
 Because scripts sit directly in `src/`, imports need no setup: python puts the
 script's own directory — `src/` — on `sys.path`, so shared code and sibling

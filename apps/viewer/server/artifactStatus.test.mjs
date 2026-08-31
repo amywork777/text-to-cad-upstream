@@ -16,7 +16,7 @@ import {
   resolveArtifactVerdict,
 } from "./artifactStatus.mjs";
 import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";
-import { renderPackageDir } from "./storePaths.mjs";
+import { renderPackageDir, sourceProvenanceRecordPath } from "./storePaths.mjs";
 
 function tempRoot(t, prefix) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), prefix)));
@@ -43,9 +43,25 @@ function sha256(data) {
   return crypto.createHash("sha256").update(data).digest("hex");
 }
 
+// The provenance record every generated build writes, in the evictable records
+// tier. This — not the sidecar — is what makes a PLAIN generated model (one
+// declaring no kinematics, animation or mesh exports, so no sidecar is written)
+// classify as generated.
+function writeProvenanceRecord(stepPath, body = { schemaVersion: 5, sourceKind: "python" }) {
+  const target = sourceProvenanceRecordPath(stepPath);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, JSON.stringify(body));
+  return target;
+}
+
 // A package the validator considers current, with knobs for each gate.
+//
+// `generated` writes BOTH markers (the declaring case). `plainGenerated` writes
+// only the record — a generated model with nothing to declare, which is the
+// shape the sidecar-only classifier used to get wrong.
 function writeStepPackage(root, stepName, {
   generated = false,
+  plainGenerated = false,
   stepHash,
   components = ["c0"],
   withSurf = true,
@@ -66,10 +82,14 @@ function writeStepPackage(root, stepName, {
     componentMap[cid] = { surf: rel };
   }
   const descriptor = { kind: "assembly-package", components: componentMap };
+  if (generated || plainGenerated) {
+    // The provenance RECORD is the marker; the store descriptor is a pure
+    // function of the STEP bytes and carries no provenance at all.
+    writeProvenanceRecord(stepPath);
+  }
   if (generated) {
-    // The MODEL-SIDE sidecar's existence is the generated marker; the store
-    // descriptor is a pure function of the STEP bytes, no provenance at all.
-    fs.writeFileSync(`${stepPath}.json`, JSON.stringify({ schemaVersion: 4, sourceKind: "python" }));
+    // ...and a declaring model also drops its sidecar beside the artifact.
+    fs.writeFileSync(`${stepPath}.json`, JSON.stringify({ schemaVersion: 5, kinematics: {} }));
   }
   if (stepHash !== null) {
     descriptor.stepHash = stepHash === undefined ? sha256(stepBytes) : stepHash;
@@ -175,6 +195,78 @@ test("verdicts carry what the import path needs", (t) => {
   const bare = write(root, "bare.step", "ISO-10303-21;\nbare\n");
   const verdict = resolveArtifactVerdict(bare, root);
   assert.equal(verdict.rawStep, true);
-  assert.equal(verdict.generated, undefined);
+  // Classification is decided BEFORE the package gates and rides every verdict:
+  // "no package" is exactly when the import path asks, and answering `undefined`
+  // there offered to import whatever it was handed.
+  assert.equal(verdict.generated, false);
   assert.equal(verdict.descriptor, undefined);
+});
+
+test("a package-less generated model is still generated, so import is not offered", (t) => {
+  const root = tempRoot(t, "status-");
+  // The store was evicted (or never built here): no package at all. This is the
+  // decision the import path actually acts on — `rawStep && !generated` would
+  // otherwise offer `cadgen step compile` for a model whose fix is its script.
+  const step = write(root, "plate.step", "ISO-10303-21;\nplate\n");
+  writeProvenanceRecord(step);
+  const verdict = resolveArtifactVerdict(step, root);
+  assert.equal(verdict.code, "missing_glb");
+  assert.equal(verdict.rawStep, true);
+  assert.equal(verdict.generated, true);
+});
+
+test("a PLAIN generated model classifies generated on its record alone", (t) => {
+  const root = tempRoot(t, "status-");
+  // No sidecar: this model declares no kinematics, animation or mesh exports,
+  // which is the ordinary case since sidecars became declarations-only. Reading
+  // only the sidecar called it imported and offered a STEP-import button for a
+  // file whose real fix is rerunning its script.
+  const step = writeStepPackage(root, "plate.step", { plainGenerated: true });
+  assert.equal(fs.existsSync(`${step}.json`), false, "fixture must have no sidecar");
+  assert.equal(resolveArtifactVerdict(step, root).generated, true);
+});
+
+test("a declaring generated model classifies generated with or without its record", (t) => {
+  const root = tempRoot(t, "status-");
+  const step = writeStepPackage(root, "arm.step", { generated: true });
+  assert.equal(resolveArtifactVerdict(step, root).generated, true);
+  // The sidecar remains a fast yes: eviction of the records tier cannot
+  // reclassify a model that still declares something beside its artifact.
+  fs.rmSync(sourceProvenanceRecordPath(step));
+  assert.equal(resolveArtifactVerdict(step, root).generated, true);
+});
+
+test("an imported STEP classifies imported: no sidecar, no record", (t) => {
+  const root = tempRoot(t, "status-");
+  const step = writeStepPackage(root, "vendor.step");
+  assert.equal(resolveArtifactVerdict(step, root).generated, false);
+});
+
+test("an evicted or damaged record degrades to imported, never to an error", (t) => {
+  const root = tempRoot(t, "status-");
+  const step = writeStepPackage(root, "plate.step", { plainGenerated: true });
+  // Evicted: `cadgen cache gc` sweeps the records tier, so this is routine.
+  const record = sourceProvenanceRecordPath(step);
+  fs.rmSync(record);
+  assert.equal(resolveArtifactVerdict(step, root).generated, false);
+  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
+  // Truncated mid-write, and a record naming no sourceKind: both are "no",
+  // and neither may throw out of the status path.
+  fs.mkdirSync(path.dirname(record), { recursive: true });
+  fs.writeFileSync(record, '{"sourceKind": "pyth');
+  assert.equal(resolveArtifactVerdict(step, root).generated, false);
+  fs.writeFileSync(record, JSON.stringify({ schemaVersion: 5 }));
+  assert.equal(resolveArtifactVerdict(step, root).generated, false);
+  assert.deepEqual(artifactStatus(step, root), { state: ARTIFACT_STATE.READY });
+});
+
+test("the record is keyed by the artifact's path, not its bytes", (t) => {
+  const root = tempRoot(t, "status-");
+  // Two documents with identical bytes share a store package (content keying)
+  // but must NOT share provenance: one is generated, the other imported.
+  const generatedStep = writeStepPackage(root, "twin.step", { plainGenerated: true });
+  const importedStep = write(root, "copy.step", fs.readFileSync(generatedStep));
+  assert.equal(renderPackageDir(importedStep), renderPackageDir(generatedStep));
+  assert.equal(resolveArtifactVerdict(generatedStep, root).generated, true);
+  assert.equal(resolveArtifactVerdict(importedStep, root).generated, false);
 });

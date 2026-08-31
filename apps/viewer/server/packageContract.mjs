@@ -9,10 +9,11 @@
 // is current-scheme by construction.
 export const CACHE_SCHEMA_VERSION = 16; // cache_schema.CACHE_SCHEMA_VERSION
 
-// The source sidecar carries everything SOURCE-derived (provenance, the
-// resolved kinematics block, the copied animation text, and the model's
-// declared mesh exports); it sits BESIDE THE MODEL (<name>.step.json) and its
-// EXISTENCE is the generated-vs-imported marker on both freshness authorities.
+// The source sidecar carries the model's DECLARATIONS — the resolved kinematics
+// block, the copied animation text, the declared mesh exports — beside the model
+// at <name>.step.json. It is written only when there is something to declare, so
+// its existence proves a document is generated but its absence proves nothing;
+// see RECORDS_DIR_NAME below for the marker that actually decides.
 // Pinned to cadgen's source_sidecar.py by the same sync test.
 //
 // APPENDED to the artifact's whole name: `part.step` -> `part.step.json`.
@@ -25,3 +26,20 @@ export const SOURCE_SIDECAR_SUFFIX = ".json"; // source_sidecar.SOURCE_SIDECAR_S
 // safe membership test where a path is all you have.
 export const SOURCE_SIDECAR_NAMES = [".step.json", ".stp.json"];
 export const SOURCE_SIDECAR_SCHEMA_VERSION = 5; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION (5: declarations-only — provenance moved to the records tier)
+
+// The RECORDS tier — where a build's provenance actually lives at schema 5.
+//
+// The sidecar above is written only when the model DECLARES something worth
+// carrying (kinematics, animation, mesh exports), so a plain generated model
+// has no sidecar at all and its existence answers only half of
+// generated-vs-imported. Every generated build, plain or not, writes a
+// provenance record at <cache>/records/<artifactPathKey>.source.json, so THAT
+// is the marker the freshness authorities consult; the sidecar's presence is
+// only ever a fast yes.
+//
+// Evictable by design (cadgen cache gc sweeps it): a missing record must
+// degrade to "imported", never to an error. Losing one costs a rebuild, which
+// re-records it.
+export const RECORDS_DIR_NAME = "records"; // cache_paths.records_dir
+export const PROVENANCE_RECORD_SUFFIX = ".source.json"; // source_sidecar._provenance_record_path
+export const ARTIFACT_PATH_KEY_LENGTH = 24; // catalog.artifact_path_key (sha256 hexdigest[:24])

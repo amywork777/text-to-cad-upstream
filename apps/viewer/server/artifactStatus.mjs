@@ -24,6 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { renderPackageDir, sourceSidecarPath } from "./scanner.mjs";
+import { sourceProvenanceRecordPath } from "./storePaths.mjs";
 
 const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
@@ -55,6 +56,35 @@ function readJson(filePath) {
   }
 }
 
+// --- generated vs imported ---------------------------------------------------
+/**
+ * Was this document GENERATED (a declaration owns it) or IMPORTED (a foreign
+ * file the viewer may offer to bring in)?
+ *
+ * The model-side sidecar used to answer this on its own, and stopped being able
+ * to at schema 5: it now carries DECLARATIONS only, and is written only when the
+ * model declares something (kinematics, animation, mesh exports). A plain
+ * generated model has no sidecar, so sidecar-existence alone called every one of
+ * them imported and offered a STEP-import button for a file whose real fix is
+ * rerunning its script.
+ *
+ * The authority is the provenance RECORD, which every generated build writes:
+ * <cache>/records/<sha256(abs artifact path)[:24]>.source.json. Present and
+ * naming a sourceKind => generated; absent, unreadable, or empty => imported.
+ *
+ * That fallback is deliberate, not defensive sloppiness. The records tier is
+ * evictable (`cadgen cache gc` sweeps it), so "no record" is a routine state, not
+ * a fault: reading it must never raise. An evicted record costs one wrong badge
+ * until the next build re-records it — the same rebuild an eviction always costs.
+ */
+function isGeneratedDocument(stepPath) {
+  if (fs.existsSync(sourceSidecarPath(stepPath))) {
+    return true;
+  }
+  const record = readJson(sourceProvenanceRecordPath(stepPath));
+  return Boolean(record && String(record.sourceKind || "").trim());
+}
+
 // --- ownership + source resolution (render_ops twins) ------------------------
 export function ownsStepPath(filePath) {
   return STEP_ENTRY_RE.test(String(filePath || ""));
@@ -79,18 +109,25 @@ function resolveCandidate(fileRef, rootDir) {
 
 // --- freshness verdicts ------------------------------------------------------
 function validateStep(stepPath) {
+  // Generated-vs-imported comes from cadgen's own provenance bookkeeping (the
+  // records tier, with the model-side sidecar as a fast yes), never from a
+  // descriptor field: the store descriptor is a pure function of the STEP bytes.
+  //
+  // Decided BEFORE the package gates, and carried on every verdict including the
+  // failures. The import path reads `rawStep && !generated` to decide whether to
+  // offer "import this STEP", and the case where that decision matters most is
+  // precisely a document with NO package — which used to return before this line
+  // ran, leaving `generated` undefined and offering to import a model whose real
+  // fix is rerunning its script.
+  const generated = isGeneratedDocument(stepPath);
   const packageDir = renderPackageDir(stepPath);
   if (!fs.existsSync(packageDir) || !fs.statSync(packageDir).isDirectory()) {
-    return { ok: false, code: "missing_glb", packageDir };
+    return { ok: false, code: "missing_glb", packageDir, generated };
   }
   const descriptor = readJson(path.join(packageDir, STEP_DESCRIPTOR_NAME));
   if (descriptor === null) {
-    return { ok: false, code: "missing_step_topology", packageDir };
+    return { ok: false, code: "missing_step_topology", packageDir, generated };
   }
-  // Generated-vs-imported is the SOURCE SIDECAR's existence (generation writes
-  // <name>.step.json beside the model, import removes it), never a
-  // descriptor field: the store descriptor is a pure function of the STEP bytes.
-  const generated = fs.existsSync(sourceSidecarPath(stepPath));
   if (descriptor.kind !== STEP_PACKAGE_KIND) {
     return { ok: false, code: "unsupported_step_topology", packageDir, descriptor, generated };
   }

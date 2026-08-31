@@ -2,7 +2,8 @@
 
 Create these files verbatim (rename `demo`/`plate` to the real project/part),
 then run `python src/plate.py` from the project root to verify the loop.
-A built copy of this exact project lives at `models/projects/demo-plate/`.
+Living exemplars of this structure ship in this repo under `models/`
+(the `examples/` project is the largest).
 
 ## `src/plate.py`
 
@@ -53,6 +54,15 @@ def plate_drawing(hole_d: float = 4.5):
 A `@dxf` function returns build123d 2D geometry and the engine writes the DXF —
 the same division of labor `@step` has. Return `{layer: shape}` instead when a
 drawing genuinely has more than one CAM operation. See the `$dxf` skill.
+
+## `src/lib/__init__.py`
+
+```python
+"""Shared helpers for the demo project's plate and its drawing."""
+```
+
+`src/lib/` is a regular package, so this file is never omitted — one line naming
+what the package holds is the whole file.
 
 ## `src/lib/holes.py`
 

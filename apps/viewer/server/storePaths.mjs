@@ -8,7 +8,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";
+import {
+  ARTIFACT_PATH_KEY_LENGTH,
+  CACHE_SCHEMA_VERSION,
+  PROVENANCE_RECORD_SUFFIX,
+  RECORDS_DIR_NAME,
+} from "./packageContract.mjs";
 
 // Inline mirror of cadgenCacheRootDir (same resolution rule as Python):
 // CADGEN_CACHE_DIR, else the platform cache convention, else ~/.cache/cadgen.
@@ -31,6 +36,10 @@ export function storePackagesDir() {
 
 export function storeLocksDir() {
   return path.join(cadgenCacheRootDir(), "locks");
+}
+
+export function storeRecordsDir() {
+  return path.join(cadgenCacheRootDir(), RECORDS_DIR_NAME);
 }
 
 // Content-hash memo keyed by (path, mtimeNs, size): status polls and catalog
@@ -86,11 +95,23 @@ export function artifactPathKey(filePath) {
   } catch {
     resolved = path.resolve(String(filePath));
   }
-  return crypto.createHash("sha256").update(resolved, "utf-8").digest("hex").slice(0, 24);
+  return crypto
+    .createHash("sha256")
+    .update(resolved, "utf-8")
+    .digest("hex")
+    .slice(0, ARTIFACT_PATH_KEY_LENGTH);
 }
 
 /** The coordination scope the progress reader derives dot-named siblings
  * from: <cache>/locks/<pathKey> (mirror of cadgen.catalog.coordination_scope). */
 export function coordinationScope(filePath) {
   return path.join(storeLocksDir(), artifactPathKey(filePath));
+}
+
+/** The build's provenance record: <cache>/records/<pathKey>.source.json (mirror
+ * of cadgen._internal.source_sidecar._provenance_record_path). Path-keyed like
+ * the lock, because it is memory ABOUT a model rather than a product of one.
+ * The file need not exist — the records tier is evictable. */
+export function sourceProvenanceRecordPath(filePath) {
+  return path.join(storeRecordsDir(), `${artifactPathKey(filePath)}${PROVENANCE_RECORD_SUFFIX}`);
 }
