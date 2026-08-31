@@ -14,7 +14,10 @@
 // must be a pure function of t — scrub, loop, and seek are free, and there is
 // no persistent state to mutate.
 //
-// Handle API — m.get(label) returns an occurrence handle:
+// Handle API — m.get(target) returns an occurrence handle. A target is a
+// LABEL (canonical), or an occurrence-id ref — "#o1.3.1", "o1.3.1", or a
+// comma list "#o1.3.1,o1.3.2" — matching each id and everything beneath it
+// (dotted-prefix containment):
 //   .rotate(axisVec3, degrees, originVec3 = [0,0,0])
 //   .translate(vec3)
 //   .opacity(value 0..1)
@@ -83,6 +86,21 @@ function partIdsByLabel(meshData) {
   return byLabel;
 }
 
+function partIdsForOccurrenceRefs(meshData, target) {
+  const wanted = String(target).replace(/^#/, "").split(",").map((t) => t.trim()).filter(Boolean);
+  if (!wanted.length || !wanted.every((t) => /^o[\d.]+$/.test(t))) {
+    return null;
+  }
+  const ids = [];
+  for (const part of meshData?.parts || []) {
+    const id = String(part.id);
+    if (wanted.some((t) => id === t || id.startsWith(`${t}.`))) {
+      ids.push(id);
+    }
+  }
+  return ids.length ? ids : null;
+}
+
 // One frame's evaluation surface. Collects per-part effects; the caller
 // applies them to display records exactly like pose/step-module effects.
 export function createAnimationFrame(THREE, meshData) {
@@ -91,7 +109,9 @@ export function createAnimationFrame(THREE, meshData) {
   const styles = new Map(); // partId -> {opacity?, visible?}
 
   const handleFor = (label) => {
-    const partIds = byLabel.get(label);
+    const partIds = byLabel.get(String(label).replace(/^#/, ""))
+      || byLabel.get(String(label))
+      || partIdsForOccurrenceRefs(meshData, label);
     if (!partIds || !partIds.length) {
       const known = [...byLabel.keys()].sort().join(", ") || "(none)";
       throw new Error(`animation: no occurrence labeled ${JSON.stringify(label)}; labels: ${known}`);

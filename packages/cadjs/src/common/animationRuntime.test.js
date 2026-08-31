@@ -80,3 +80,17 @@ test("evaluation is a pure function of t with looping", () => {
   const clamped = evaluateAnimationClip(THREE, MESH_DATA, { ...clip, loop: false }, 99);
   assert.deepEqual(through(clamped.matrices.get("o1.1"), [0, 0, 0]), [2, 0, 0]);
 });
+
+test("occurrence-id refs and comma lists resolve with subtree containment", () => {
+  const frame = createAnimationFrame(THREE, {
+    parts: [
+      { id: "o1.3.1.5", label: "" },
+      { id: "o1.3.1.6", label: "" },
+      { id: "o1.3.2", label: "" },
+      { id: "o1.3.2.4", label: "" },
+      { id: "o1.7", label: "" }
+    ]
+  });
+  frame.model.get("#o1.3.1.5,o1.3.2").translate([1, 0, 0]);
+  assert.deepEqual([...frame.matrices.keys()].sort(), ["o1.3.1.5", "o1.3.2", "o1.3.2.4"]);
+});
