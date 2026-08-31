@@ -208,6 +208,10 @@ import {
   displayTransformForPart,
   resetStepModuleRecordEffects
 } from "cadjs/common/stepModuleEffects";
+import {
+  applyAnimationFrameToEffects,
+  evaluateAnimationClip
+} from "cadjs/common/animationRuntime";
 
 const IDLE_PIXEL_RATIO_CAP = 2;
 const INTERACTION_PIXEL_RATIO_CAP = 1.25;
@@ -1777,6 +1781,7 @@ const CadViewer = forwardRef(function CadViewer({
   selectorRuntime = null,
   displayEdgeRuntime = null,
   stepParameters = null,
+  stepAnimation = null,
   pickableFaces = [],
   pickableEdges = [],
   pickableVertices = [],
@@ -1802,7 +1807,10 @@ const CadViewer = forwardRef(function CadViewer({
   onStepModuleTransformDetectedChange,
 }, ref) {
   const stepParameterRuntime = stepParameters;
-  const stepAnimationPlaying = Boolean(stepParameterRuntime?.animationState?.playing);
+  // The animation runtime is {clip, elapsedSec, playing} or null. Null means the
+  // model has no clip selected, and the evaluator never runs.
+  const stepAnimationRuntime = stepAnimation;
+  const stepAnimationPlaying = Boolean(stepAnimationRuntime?.playing);
   // What counts as "something is on screen" for overlays and the view cube.
   const viewportContent = meshData;
   const hasViewportContent = !!viewportContent;
@@ -4280,7 +4288,11 @@ const CadViewer = forwardRef(function CadViewer({
 
     const definition = stepParameterRuntime?.definition || null;
     const module = definition?.module || null;
-    if (!definition || isLoading || !meshData) {
+    const animationClip = stepAnimationRuntime?.clip || null;
+    // Either system can be the only one present: a model may declare mates
+    // without shipping clips, or ship clips without declaring a single mate.
+    // Only when NEITHER has anything to say does the pass fall back to rest.
+    if ((!definition && !animationClip) || isLoading || !meshData) {
       stepModuleTransformDetectedChangeRef.current?.(false);
       updateTransformedRuntimeState(setTransformedSelectorRuntime, null);
       updateTransformedRuntimeState(setTransformedDisplayEdgeRuntime, null);
@@ -4346,10 +4358,37 @@ const CadViewer = forwardRef(function CadViewer({
       viewerAlertChangeRef.current?.({
         severity: "warning",
         compact: true,
-        title: "STEP parameter update failed",
+        title: "Pose update failed",
         message: error instanceof Error ? error.message : String(error)
       });
-      console.error("STEP parameter update failed", error);
+      console.error("Pose update failed", error);
+    }
+
+    // Animation composes OVER pose: the clip is evaluated against the live mesh
+    // at the current time and its matrices premultiply whatever the mate graph
+    // already wrote. Neither system knows about the other; they meet here, in
+    // the effect records, and nowhere else. A clip is a pure function of t, so
+    // this is the whole of "apply" — there is no animation state to carry.
+    if (animationClip) {
+      try {
+        const frame = evaluateAnimationClip(
+          runtime.THREE,
+          meshData,
+          animationClip,
+          Number(stepAnimationRuntime?.elapsedSec) || 0
+        );
+        if (applyAnimationFrameToEffects(runtime.THREE, effectsByPartId, frame) > 0) {
+          transformDetected = true;
+        }
+      } catch (error) {
+        viewerAlertChangeRef.current?.({
+          severity: "warning",
+          compact: true,
+          title: "Animation update failed",
+          message: error instanceof Error ? error.message : String(error)
+        });
+        console.error("Animation update failed", error);
+      }
     }
 
     applyStepModuleEffectsToRecords(runtime.THREE, runtime.displayRecords, effectsByPartId);
@@ -4437,7 +4476,8 @@ const CadViewer = forwardRef(function CadViewer({
     selectedPartIds,
     selectorRuntime,
     displayEdgeRuntime,
-    stepParameterRuntime
+    stepParameterRuntime,
+    stepAnimationRuntime
   ]);
 
   useEffect(() => {

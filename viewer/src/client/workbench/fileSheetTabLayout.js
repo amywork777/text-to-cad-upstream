@@ -13,10 +13,11 @@ import { FILE_SHEET_SECTION_IDS } from "./fileSheetSections.js";
 // per-file `openSectionIds` list (see resolveFileSheetTabPanes) so that the
 // existing reveal-on-select behavior keeps working.
 
-// Bumped to reset saved arrangements when the default pane assignment changes
-// (Tree alone on top; Parameters down in the bottom pane between Reference and
-// Display), since a stored layout would otherwise keep the old pane/order.
-export const FILE_SHEET_TAB_LAYOUT_STORAGE_KEY = "cad-viewer:file-sheet-tab-layout:v4";
+// Bumped to reset saved arrangements when the default pane assignment changes.
+// v5: the single Parameters tab became two — Pose and Animation — so a stored
+// v4 arrangement names a tab that no longer exists and knows nothing of the two
+// that replaced it.
+export const FILE_SHEET_TAB_LAYOUT_STORAGE_KEY = "cad-viewer:file-sheet-tab-layout:v5";
 
 export const DEFAULT_FILE_SHEET_SPLIT_RATIO = 0.5;
 export const MIN_FILE_SHEET_SPLIT_RATIO = 0.2;
@@ -50,9 +51,9 @@ export function clampSplitRatio(ratio) {
 }
 
 // Tabs that live in the top pane of a split layout; everything else defaults to
-// the bottom pane, in render order. STEP: the Tree on top, Reference/Measure/
-// Parameters/Display below. DXF: Material on top (it always renders), the conditional
-// Bends/Layers tabs below.
+// the bottom pane, in render order. STEP: the Tree on top, Reference/Pose/
+// Animation/Measure/Display below. DXF: Material on top (it always renders), the
+// conditional Bends/Layers tabs below.
 const TOP_PANE_SECTION_IDS = Object.freeze(new Set([
   FILE_SHEET_SECTION_IDS.STEP_TREE,
   FILE_SHEET_SECTION_IDS.DXF_MATERIAL
@@ -61,10 +62,10 @@ const TOP_PANE_SECTION_IDS = Object.freeze(new Set([
 // Where to slot a tab that the stored arrangement has never seen: at its
 // render-order position among the tabs already in the pane, not at the end.
 //
-// Issues and Parameters render only for some files, so appending would park them
-// at the end of a strip carried over from a file that had neither — Issues would
-// stop being leftmost (and so stop being the default-active tab), and Parameters
-// would land after Display instead of between Reference and Display. Tabs the
+// Issues, Pose and Animation render only for some files, so appending would park
+// them at the end of a strip carried over from a file that had none — Issues would
+// stop being leftmost (and so stop being the default-active tab), and Pose would
+// land after Display instead of between Reference and Display. Tabs the
 // user has explicitly dragged are already in the arrangement and keep the
 // position they were dropped at; this only places tabs that are not in it yet.
 function renderOrderInsertIndex(pane, id, renderIndex) {

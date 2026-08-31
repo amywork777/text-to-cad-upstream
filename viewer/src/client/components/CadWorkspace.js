@@ -39,6 +39,7 @@ import {
 } from "./workbench/DxfSettingsSection";
 import { buildDxfLayersTab } from "./workbench/DxfLayersSection";
 import StepFileSheet from "./workbench/StepFileSheet";
+import { poseValuesForPreset } from "./workbench/PoseControlsSection";
 import StatusToast from "./workbench/StatusToast";
 import UrdfFileSheet from "./workbench/UrdfFileSheet";
 import ViewerAlertDialog from "./workbench/ViewerAlertDialog";
@@ -186,17 +187,23 @@ import {
   toFiniteNumber
 } from "@/workbench/valueUtils";
 import {
+  advanceAnimationElapsed,
+  animationClipDuration,
+  animationClipList,
   animationNowMs,
-  buildDefaultStepModuleAnimationState,
-  findStepModuleAnimation
-} from "@/workbench/stepModuleAnimation";
+  buildDefaultAnimationState,
+  clampAnimationElapsed,
+  clampAnimationSpeed,
+  findAnimationClip,
+  firstAnimationClipId,
+  restoreAnimationState,
+  shouldPublishAnimationFrame
+} from "@/workbench/animationPlayback";
 import {
-  getStepAnimationElapsed,
-  getStepAnimationParameterValues,
-  resetStepAnimationStore,
-  setStepAnimationElapsed,
-  setStepAnimationFrame
-} from "@/workbench/stepAnimationStore";
+  getAnimationClock,
+  resetAnimationClock,
+  setAnimationClock
+} from "@/workbench/animationClockStore";
 import {
   applyMeasureRulerDelete,
   applyMeasureRulerHover,
@@ -205,12 +212,6 @@ import {
   clearMeasureRulerMeasurements,
   measureRulerStateForChange
 } from "@/workbench/measureRulerState";
-import {
-  buildDefaultParameterAnimationState,
-  findParameterAnimation,
-  hasParameterAnimations,
-  shouldPublishAnimationFrame
-} from "@/workbench/parameterAnimation";
 import {
   buildUrdfJointAnglesCopyText,
   cloneJointValueMap,
@@ -296,7 +297,11 @@ import {
 import {
   normalizeStepModuleParameterValues
 } from "cadjs/common/stepModule";
-import { loadKinematicsModuleDefinition } from "cadjs/common/kinematicsModule";
+import {
+  loadAnimationSource,
+  loadKinematicsModuleDefinition
+} from "cadjs/common/kinematicsModule";
+import { compileAnimationClips } from "cadjs/common/animationRuntime";
 import {
   normalizeParameterValue,
   normalizeParameterValues
@@ -915,50 +920,6 @@ function collectStepTreeSubtreeIds(root, nodeId) {
   return ids;
 }
 
-function buildStepModuleAnimationFrameValues({
-  definition,
-  animation,
-  elapsedSec,
-  speed,
-  parameterValues
-}) {
-  if (!definition) {
-    return {};
-  }
-  const baseValues = normalizeStepModuleParameterValues(definition, parameterValues);
-  if (typeof animation?.update !== "function") {
-    return baseValues;
-  }
-  const duration = Math.max(Number(animation.duration) || 1, 0.001);
-  const safeElapsedSec = clampNumber(elapsedSec, 0, duration);
-  const progress = duration > 0 ? clampNumber(safeElapsedSec / duration, 0, 1) : 0;
-  const nextValues = { ...baseValues };
-  const set = (parameterId, value) => {
-    const id = String(parameterId || "").trim();
-    const parameter = definition.parameterMap?.[id];
-    if (!parameter) {
-      return;
-    }
-    nextValues[id] = normalizeParameterValue(parameter, value);
-  };
-  try {
-    animation.update({
-      elapsed: safeElapsedSec,
-      elapsedSec: safeElapsedSec,
-      duration,
-      progress,
-      cycle: duration > 0 ? safeElapsedSec / duration : 0,
-      loop: animation.loop !== false,
-      params: baseValues,
-      set,
-      speed: clampNumber(speed, 0.1, 5)
-    });
-  } catch (error) {
-    console.error("STEP animation update failed", error);
-  }
-  return nextValues;
-}
-
 // The values throttled here are rebuilt objects — a useMemo over animation
 // state, a map of parameter values — so their identity churns on renders where
 // nothing about their contents changed. Comparing by identity made this hook
@@ -1256,15 +1217,18 @@ export default function CadWorkspace({
   });
   const [stepModuleParameterValues, setStepModuleParameterValues] = useState({});
   const [stepModuleEnabled, setStepModuleEnabled] = useState(true);
-  const [stepModuleAnimationState, setStepModuleAnimationState] = useState({
-    activeId: "",
-    playing: false,
-    elapsedSec: 0,
-    speed: 1,
-    loopEnabled: true
+  // The ANIMATION system, loaded and held entirely apart from the kinematics
+  // state above (design/pose-animation-split.md): same sidecar, two sections,
+  // and a model may ship either, both, or neither.
+  const [animationLoadState, setAnimationLoadState] = useState({
+    url: "",
+    status: "idle",
+    error: "",
+    clips: null
   });
+  const [animationState, setAnimationState] = useState(buildDefaultAnimationState);
   const stepModuleParameterValuesRef = useRef(stepModuleParameterValues);
-  const stepModuleAnimationStateRef = useRef(stepModuleAnimationState);
+  const animationStateRef = useRef(animationState);
   const lastPersistenceFailureKeyRef = useRef("");
   const urdfTrajectoryPlaybackRef = useRef({
     frameId: 0,
@@ -1502,7 +1466,15 @@ export default function CadWorkspace({
   const selectedStepModuleDefinition = stepModuleLoadState.url === selectedStepModuleUrl
     ? stepModuleLoadState.definition
     : null;
-  const selectedStepModuleHasAnimations = hasParameterAnimations(selectedStepModuleDefinition);
+  const selectedAnimationClips = animationLoadState.url === selectedStepModuleUrl
+    ? animationLoadState.clips
+    : null;
+  const selectedAnimationStatus = selectedStepModuleUrl
+    ? (animationLoadState.url === selectedStepModuleUrl ? animationLoadState.status : "loading")
+    : "idle";
+  const selectedAnimationError = animationLoadState.url === selectedStepModuleUrl
+    ? animationLoadState.error
+    : "";
   const selectedStepModuleStatus = selectedStepModuleUrl
     ? (stepModuleLoadState.url === selectedStepModuleUrl ? stepModuleLoadState.status : "loading")
     : "idle";
@@ -1671,8 +1643,6 @@ export default function CadWorkspace({
       });
       setStepModuleParameterValues({});
       setStepModuleEnabled(true);
-      setStepModuleAnimationState(buildDefaultStepModuleAnimationState(null));
-      resetStepAnimationStore();
       return () => {
         cancelled = true;
       };
@@ -1686,8 +1656,6 @@ export default function CadWorkspace({
     });
     setStepModuleParameterValues({});
     setStepModuleEnabled(true);
-    setStepModuleAnimationState(buildDefaultStepModuleAnimationState(null));
-    resetStepAnimationStore();
 
     loadKinematicsModuleDefinition(selectedStepModuleUrl, {
       cadPath: selectedStepModuleCadPath
@@ -1701,7 +1669,6 @@ export default function CadWorkspace({
         selectedEntry
       );
       const restoredStepModuleState = restoredSessionState?.slices?.stepModule || null;
-      const defaultAnimationState = buildDefaultStepModuleAnimationState(definition);
       setStepModuleLoadState({
         url: selectedStepModuleUrl,
         status: "ready",
@@ -1712,23 +1679,9 @@ export default function CadWorkspace({
         definition,
         restoredStepModuleState?.parameterValues || definition.defaultParameterValues
       );
-      const nextAnimationState = restoredStepModuleState?.animationState
-        ? {
-            ...defaultAnimationState,
-            ...restoredStepModuleState.animationState,
-            activeId: restoredStepModuleState.animationState.activeId || defaultAnimationState.activeId,
-            playing: false
-          }
-        : defaultAnimationState;
       stepModuleParameterValuesRef.current = nextParameterValues;
-      stepModuleAnimationStateRef.current = nextAnimationState;
       setStepModuleParameterValues(nextParameterValues);
       setStepModuleEnabled(restoredStepModuleState ? restoredStepModuleState.enabled !== false : true);
-      setStepModuleAnimationState(nextAnimationState);
-      resetStepAnimationStore({
-        elapsedSec: nextAnimationState.elapsedSec,
-        parameterValues: nextParameterValues
-      });
     }).catch((error) => {
       if (cancelled) {
         return;
@@ -1741,14 +1694,81 @@ export default function CadWorkspace({
       });
       setStepModuleParameterValues({});
       setStepModuleEnabled(true);
-      setStepModuleAnimationState(buildDefaultStepModuleAnimationState(null));
-      resetStepAnimationStore();
     });
 
     return () => {
       cancelled = true;
     };
   }, [fileSessionNamespace, selectedEntry, selectedStepModuleCadPath, selectedStepModuleUrl]);
+
+  // The animation half of the same sidecar, loaded on its own: the copied
+  // .anim.js text compiles to clips through a Blob import. A model with no
+  // animation section resolves to no clips and no Animation tab, and a broken
+  // one reports its own error without disturbing the Pose tab.
+  useEffect(() => {
+    let cancelled = false;
+    const resetAnimation = () => {
+      const nextState = buildDefaultAnimationState();
+      animationStateRef.current = nextState;
+      setAnimationState(nextState);
+      resetAnimationClock();
+    };
+
+    if (!selectedStepModuleUrl) {
+      setAnimationLoadState({ url: "", status: "idle", error: "", clips: null });
+      resetAnimation();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setAnimationLoadState({
+      url: selectedStepModuleUrl,
+      status: "loading",
+      error: "",
+      clips: null
+    });
+    resetAnimation();
+
+    loadAnimationSource(selectedStepModuleUrl)
+      .then((moduleSource) => compileAnimationClips(moduleSource))
+      .then((clips) => {
+        if (cancelled) {
+          return;
+        }
+        setAnimationLoadState({
+          url: selectedStepModuleUrl,
+          status: "ready",
+          error: "",
+          clips
+        });
+        const restoredSessionState = readFileSessionState(
+          fileSessionNamespace,
+          fileKey(selectedEntry),
+          selectedEntry
+        );
+        const nextState = restoreAnimationState(restoredSessionState?.slices?.animation, clips);
+        animationStateRef.current = nextState;
+        setAnimationState(nextState);
+        setAnimationClock(nextState.elapsedSec);
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setAnimationLoadState({
+          url: selectedStepModuleUrl,
+          status: "error",
+          error: error instanceof Error ? error.message : String(error),
+          clips: null
+        });
+        resetAnimation();
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [fileSessionNamespace, selectedEntry, selectedStepModuleUrl]);
 
   const selectedUrdfMeshGeometryResult = useMemo(() => {
     if (!selectedUrdfData || !selectedUrdfMeshes) {
@@ -1808,17 +1828,14 @@ export default function CadWorkspace({
     : selectedMeshMatches
       ? meshState.meshData
       : null;
-  const selectedStepModuleActiveAnimation = useMemo(
-    () => findStepModuleAnimation(selectedStepModuleDefinition, stepModuleAnimationState.activeId),
-    [selectedStepModuleDefinition, stepModuleAnimationState.activeId]
+  const selectedAnimationClipList = useMemo(
+    () => animationClipList(selectedAnimationClips),
+    [selectedAnimationClips]
   );
-  const selectedStepModuleAnimationViewState = useMemo(() => ({
-    ...stepModuleAnimationState,
-    activeId: selectedStepModuleActiveAnimation?.id || stepModuleAnimationState.activeId || "",
-    duration: selectedStepModuleActiveAnimation?.duration || 0,
-    loop: selectedStepModuleActiveAnimation?.loop !== false,
-    loopEnabled: stepModuleAnimationState.loopEnabled ?? (selectedStepModuleActiveAnimation?.loop !== false)
-  }), [selectedStepModuleActiveAnimation, stepModuleAnimationState]);
+  const selectedActiveAnimationClip = useMemo(
+    () => findAnimationClip(selectedAnimationClips, animationState.activeClipId),
+    [selectedAnimationClips, animationState.activeClipId]
+  );
   const selectedStepParameterRuntime = useMemo(() => {
     if (!selectedStepModuleDefinition || !stepModuleEnabled) {
       return null;
@@ -1826,18 +1843,29 @@ export default function CadWorkspace({
     return {
       definition: selectedStepModuleDefinition,
       parameterValues: normalizeStepModuleParameterValues(selectedStepModuleDefinition, stepModuleParameterValues),
-      animationState: selectedStepModuleAnimationViewState,
       cadPath: selectedStepModuleDefinition.cadPath || selectedStepModuleCadPath,
       sourceUrl: selectedStepModuleUrl
     };
   }, [
-    selectedStepModuleAnimationViewState,
     selectedStepModuleCadPath,
     selectedStepModuleDefinition,
     selectedStepModuleUrl,
     stepModuleEnabled,
     stepModuleParameterValues
   ]);
+  // What the viewport needs to draw one animated frame: the compiled clip and a
+  // time. The render pane swaps in the live clock while playing; everything else
+  // about playback stays out of the render path.
+  const selectedAnimationRuntime = useMemo(() => {
+    if (!selectedActiveAnimationClip) {
+      return null;
+    }
+    return {
+      clip: selectedActiveAnimationClip,
+      elapsedSec: animationState.elapsedSec,
+      playing: animationState.playing === true
+    };
+  }, [animationState.elapsedSec, animationState.playing, selectedActiveAnimationClip]);
   const handleStepModuleTransformDetectedChange = useCallback(() => {}, []);
   const stepModuleTreeSelectionDisabled = false;
   const stepModuleTreeSelectionDisabledReason = "";
@@ -1847,8 +1875,8 @@ export default function CadWorkspace({
   }, [stepModuleParameterValues]);
 
   useEffect(() => {
-    stepModuleAnimationStateRef.current = stepModuleAnimationState;
-  }, [stepModuleAnimationState]);
+    animationStateRef.current = animationState;
+  }, [animationState]);
 
   const handleStepModuleParameterChange = useCallback((parameterId, value) => {
     const id = String(parameterId || "").trim();
@@ -1877,178 +1905,165 @@ export default function CadWorkspace({
       selectedStepModuleDefinition,
       selectedStepModuleDefinition.defaultParameterValues
     );
-    const nextAnimationState = buildDefaultStepModuleAnimationState(selectedStepModuleDefinition);
     stepModuleParameterValuesRef.current = nextParameterValues;
-    stepModuleAnimationStateRef.current = nextAnimationState;
     setStepModuleParameterValues(nextParameterValues);
-    setStepModuleAnimationState(nextAnimationState);
-    resetStepAnimationStore({
-      elapsedSec: nextAnimationState.elapsedSec,
-      parameterValues: nextParameterValues
-    });
   }, [selectedStepModuleDefinition]);
 
-  const handleStepModuleAnimationSelect = useCallback((animationId) => {
-    const animation = findStepModuleAnimation(selectedStepModuleDefinition, animationId);
+  // A named pose is a full configuration, not a patch: every DOF the preset
+  // does not mention returns to 0 (the artifact as written), so two presets in
+  // a row can never leave a joint behind from the first.
+  const handleApplyPose = useCallback((poseName) => {
+    if (!selectedStepModuleDefinition) {
+      return;
+    }
+    const nextParameterValues = normalizeStepModuleParameterValues(
+      selectedStepModuleDefinition,
+      poseValuesForPreset(selectedStepModuleDefinition, poseName)
+    );
+    stepModuleParameterValuesRef.current = nextParameterValues;
+    setStepModuleParameterValues(nextParameterValues);
+  }, [selectedStepModuleDefinition]);
+
+  // Turning the mate graph off leaves the model at rest — and leaves any playing
+  // clip alone. Animation is not downstream of pose and never stops with it.
+  const handleStepModuleEnabledChange = useCallback((enabled) => {
+    setStepModuleEnabled(enabled !== false);
+  }, []);
+
+  // --- Animation transport -------------------------------------------------
+  //
+  // Playback is a clock over a pure function of t: every handler here does no
+  // more than move that clock or say whether it is running. Nothing below reads
+  // a DOF, a preset or the kinematics definition.
+
+  const handleAnimationClipSelect = useCallback((clipId) => {
+    const clip = findAnimationClip(selectedAnimationClips, clipId);
     const nextState = {
-      ...stepModuleAnimationStateRef.current,
-      activeId: animation?.id || "",
+      ...animationStateRef.current,
+      activeClipId: clip?.id || "",
       playing: false,
       elapsedSec: 0,
-      // Reset the loop preference to the newly-selected animation's default.
-      loopEnabled: animation?.loop !== false
+      // The loop preference follows the newly-selected clip's own default.
+      loopEnabled: clip ? clip.loop !== false : true
     };
-    stepModuleAnimationStateRef.current = nextState;
-    resetStepAnimationStore({
-      elapsedSec: 0,
-      parameterValues: stepModuleParameterValuesRef.current
-    });
-    setStepModuleAnimationState(nextState);
-  }, [selectedStepModuleDefinition]);
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
+    resetAnimationClock();
+  }, [selectedAnimationClips]);
 
-  const handleStepModuleAnimationPlayToggle = useCallback(() => {
-    const currentState = stepModuleAnimationStateRef.current;
-    const animation = findStepModuleAnimation(selectedStepModuleDefinition, currentState.activeId);
-    if (!animation) {
+  const handleAnimationPlayToggle = useCallback(() => {
+    const currentState = animationStateRef.current;
+    // Play at rest starts the first clip: with one clip there is no select to
+    // pick it from, and with several it is the obvious one to open on.
+    const clip = findAnimationClip(selectedAnimationClips, currentState.activeClipId)
+      || findAnimationClip(selectedAnimationClips, firstAnimationClipId(selectedAnimationClips));
+    if (!clip) {
       return;
     }
-    const duration = Math.max(Number(animation.duration) || 0, 0.001);
+    const duration = animationClipDuration(clip);
     if (currentState.playing) {
-      const elapsedSec = clampNumber(getStepAnimationElapsed(), 0, duration);
-      const liveValues = getStepAnimationParameterValues();
-      const nextValues = liveValues && typeof liveValues === "object" && Object.keys(liveValues).length
-        ? liveValues
-        : stepModuleParameterValuesRef.current;
-      stepModuleParameterValuesRef.current = nextValues;
-      setStepModuleParameterValues(nextValues);
-      setStepAnimationFrame({ elapsedSec, parameterValues: nextValues });
       const nextState = {
         ...currentState,
-        activeId: animation.id,
-        elapsedSec,
+        activeClipId: clip.id,
+        elapsedSec: clampAnimationElapsed(getAnimationClock(), duration),
         playing: false
       };
-      stepModuleAnimationStateRef.current = nextState;
-      setStepModuleAnimationState(nextState);
+      animationStateRef.current = nextState;
+      setAnimationState(nextState);
       return;
     }
+    // Resuming from the end of a non-looping clip restarts it; there is nowhere
+    // else for the clock to go.
     const elapsedSec = currentState.elapsedSec >= duration
       ? 0
-      : clampNumber(currentState.elapsedSec, 0, duration);
-    setStepAnimationElapsed(elapsedSec);
+      : clampAnimationElapsed(currentState.elapsedSec, duration);
+    setAnimationClock(elapsedSec);
     const nextState = {
       ...currentState,
-      activeId: animation.id,
+      activeClipId: clip.id,
       elapsedSec,
       playing: true
     };
-    stepModuleAnimationStateRef.current = nextState;
-    setStepModuleAnimationState(nextState);
-  }, [selectedStepModuleDefinition]);
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
+  }, [selectedAnimationClips]);
 
-  const handleStepModuleAnimationReset = useCallback(() => {
-    const currentState = stepModuleAnimationStateRef.current;
-    const animation = findStepModuleAnimation(selectedStepModuleDefinition, currentState.activeId);
-    const nextValues = selectedStepModuleDefinition && animation
-      ? buildStepModuleAnimationFrameValues({
-          definition: selectedStepModuleDefinition,
-          animation,
-          elapsedSec: 0,
-          speed: currentState.speed,
-          parameterValues: stepModuleParameterValuesRef.current
-        })
-      : stepModuleParameterValuesRef.current;
-    stepModuleParameterValuesRef.current = nextValues;
-    setStepModuleParameterValues((current) => (
-      shallowObjectValuesEqual(current, nextValues) ? current : nextValues
-    ));
-    resetStepAnimationStore({ elapsedSec: 0, parameterValues: nextValues });
+  const handleAnimationRestart = useCallback(() => {
     const nextState = {
-      ...currentState,
+      ...animationStateRef.current,
       elapsedSec: 0,
       playing: false
     };
-    stepModuleAnimationStateRef.current = nextState;
-    setStepModuleAnimationState(nextState);
-  }, [selectedStepModuleDefinition]);
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
+    resetAnimationClock();
+  }, []);
 
-  const handleStepModuleAnimationScrub = useCallback((elapsedSec) => {
-    const duration = Math.max(Number(selectedStepModuleActiveAnimation?.duration) || 1, 0.001);
-    const clampedElapsedSec = clampNumber(elapsedSec, 0, duration);
-    setStepAnimationElapsed(clampedElapsedSec);
+  const handleAnimationScrub = useCallback((elapsedSec) => {
+    const clip = selectedActiveAnimationClip;
+    if (!clip) {
+      return;
+    }
+    const clampedElapsedSec = clampAnimationElapsed(elapsedSec, animationClipDuration(clip));
+    setAnimationClock(clampedElapsedSec);
     const nextState = {
-      ...stepModuleAnimationStateRef.current,
+      ...animationStateRef.current,
       elapsedSec: clampedElapsedSec
     };
-    stepModuleAnimationStateRef.current = nextState;
-    setStepModuleAnimationState(nextState);
-  }, [selectedStepModuleActiveAnimation]);
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
+  }, [selectedActiveAnimationClip]);
 
-  const handleStepModuleAnimationSpeedChange = useCallback((speed) => {
+  const handleAnimationSpeedChange = useCallback((speed) => {
     const nextState = {
-      ...stepModuleAnimationStateRef.current,
-      speed: clampNumber(speed, 0.1, 5)
+      ...animationStateRef.current,
+      speed: clampAnimationSpeed(speed)
     };
-    stepModuleAnimationStateRef.current = nextState;
-    setStepModuleAnimationState(nextState);
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
   }, []);
 
-  const handleStepModuleAnimationLoopToggle = useCallback((nextLoopEnabled) => {
-    const currentState = stepModuleAnimationStateRef.current;
-    const animation = findStepModuleAnimation(selectedStepModuleDefinition, currentState.activeId);
-    const currentLoop = currentState.loopEnabled ?? (animation?.loop !== false);
-    const loopEnabled = typeof nextLoopEnabled === "boolean" ? nextLoopEnabled : !currentLoop;
+  const handleAnimationLoopToggle = useCallback((nextLoopEnabled) => {
+    const currentState = animationStateRef.current;
     const nextState = {
       ...currentState,
-      loopEnabled
+      loopEnabled: typeof nextLoopEnabled === "boolean" ? nextLoopEnabled : !currentState.loopEnabled
     };
-    stepModuleAnimationStateRef.current = nextState;
-    setStepModuleAnimationState(nextState);
-  }, [selectedStepModuleDefinition]);
-
-  const handleStepModuleEnabledChange = useCallback((enabled) => {
-    const nextEnabled = enabled !== false;
-    setStepModuleEnabled(nextEnabled);
-    if (!nextEnabled) {
-      const nextState = {
-        ...stepModuleAnimationStateRef.current,
-        playing: false
-      };
-      stepModuleAnimationStateRef.current = nextState;
-      setStepModuleAnimationState(nextState);
-    }
+    animationStateRef.current = nextState;
+    setAnimationState(nextState);
   }, []);
 
+  // The playback loop. The clock is published through the external store rather
+  // than React state so a playing clip re-renders only the render pane and the
+  // time slider; the paused elapsed time is written back to React state once,
+  // when playback stops. Frame pacing (shouldPublishAnimationFrame) keeps a
+  // heavy assembly from saturating the main thread.
   useEffect(() => {
     if (
-      !selectedStepModuleDefinition ||
-      !stepModuleEnabled ||
-      !selectedStepModuleActiveAnimation ||
-      !stepModuleAnimationState.playing ||
+      !selectedActiveAnimationClip ||
+      !animationState.playing ||
       typeof window === "undefined" ||
       typeof window.requestAnimationFrame !== "function"
     ) {
       return undefined;
     }
 
-    const definition = selectedStepModuleDefinition;
-    const animation = selectedStepModuleActiveAnimation;
-    const duration = Math.max(Number(animation.duration) || 1, 0.001);
+    const clip = selectedActiveAnimationClip;
+    const duration = animationClipDuration(clip);
     let frameId = 0;
     let previousTimeMs = animationNowMs();
-    // Frame pacing -- see shouldPublishAnimationFrame.  A published frame is
-    // measured by the gap to the next callback, which includes the downstream
-    // render, and the next publish waits that long again.  previousTimeMs only
-    // advances on a publish, so time skipped this way still lands in the next
-    // delta and playback stays wall-clock accurate.
+    // A published frame is measured by the gap to the next callback, which
+    // includes the downstream render, and the next publish waits that long
+    // again. previousTimeMs only advances on a publish, so time skipped this way
+    // still lands in the next delta and playback stays wall-clock accurate.
     let publishedAtMs = NaN;
     let publishCostMs = 0;
     let measuringPublish = false;
-    setStepAnimationElapsed(clampNumber(stepModuleAnimationStateRef.current.elapsedSec, 0, duration));
+    setAnimationClock(clampAnimationElapsed(animationStateRef.current.elapsedSec, duration));
 
     const tick = (timeMs) => {
-      const currentState = stepModuleAnimationStateRef.current;
-      if (!currentState.playing || currentState.activeId !== animation.id) {
+      const currentState = animationStateRef.current;
+      if (!currentState.playing || currentState.activeClipId !== clip.id) {
         return;
       }
       if (measuringPublish) {
@@ -2063,37 +2078,20 @@ export default function CadWorkspace({
       previousTimeMs = timeMs;
       publishedAtMs = timeMs;
       measuringPublish = true;
-      const speed = clampNumber(currentState.speed, 0.1, 5);
-      let elapsedSec = getStepAnimationElapsed() + (deltaSec * speed);
-      let playing = currentState.playing;
-      const loopEnabled = currentState.loopEnabled ?? (animation.loop !== false);
-      if (loopEnabled) {
-        elapsedSec %= duration;
-      } else if (elapsedSec >= duration) {
-        elapsedSec = duration;
-        playing = false;
-      }
-      const nextValues = buildStepModuleAnimationFrameValues({
-        definition,
-        animation,
-        elapsedSec,
-        speed,
-        parameterValues: stepModuleParameterValuesRef.current
+      const { elapsedSec, playing } = advanceAnimationElapsed({
+        elapsedSec: getAnimationClock(),
+        deltaSec,
+        speed: currentState.speed,
+        duration,
+        loopEnabled: currentState.loopEnabled !== false
       });
-      setStepAnimationFrame({ elapsedSec, parameterValues: nextValues });
+      setAnimationClock(elapsedSec);
       if (!playing) {
-        stepModuleParameterValuesRef.current = nextValues;
-        setStepModuleParameterValues((current) => (
-          shallowObjectValuesEqual(current, nextValues) ? current : nextValues
-        ));
-        const nextState = {
-          ...currentState,
-          elapsedSec,
-          speed,
-          playing: false
-        };
-        stepModuleAnimationStateRef.current = nextState;
-        setStepModuleAnimationState(nextState);
+        // A non-looping clip ran out: settle the clock into React state so the
+        // paused transport and the session snapshot agree with the viewport.
+        const nextState = { ...currentState, elapsedSec, playing: false };
+        animationStateRef.current = nextState;
+        setAnimationState(nextState);
         return;
       }
       frameId = window.requestAnimationFrame(tick);
@@ -2103,47 +2101,7 @@ export default function CadWorkspace({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [
-    selectedStepModuleActiveAnimation,
-    selectedStepModuleDefinition,
-    stepModuleEnabled,
-    stepModuleAnimationState.playing
-  ]);
-
-  useEffect(() => {
-    const animation = selectedStepModuleActiveAnimation;
-    if (!selectedStepModuleDefinition || !stepModuleEnabled || typeof animation?.update !== "function") {
-      resetStepAnimationStore({
-        elapsedSec: 0,
-        parameterValues: stepModuleParameterValuesRef.current
-      });
-      return;
-    }
-    if (stepModuleAnimationState.playing) {
-      return;
-    }
-    const duration = Math.max(Number(animation.duration) || 1, 0.001);
-    const elapsedSec = clampNumber(stepModuleAnimationState.elapsedSec, 0, duration);
-    const nextValues = buildStepModuleAnimationFrameValues({
-      definition: selectedStepModuleDefinition,
-      animation,
-      elapsedSec,
-      speed: stepModuleAnimationState.speed,
-      parameterValues: stepModuleParameterValuesRef.current
-    });
-    stepModuleParameterValuesRef.current = nextValues;
-    setStepModuleParameterValues((current) => (
-      shallowObjectValuesEqual(current, nextValues) ? current : nextValues
-    ));
-    setStepAnimationFrame({ elapsedSec, parameterValues: nextValues });
-  }, [
-    selectedStepModuleActiveAnimation,
-    selectedStepModuleDefinition,
-    stepModuleEnabled,
-    stepModuleAnimationState.elapsedSec,
-    stepModuleAnimationState.playing,
-    stepModuleAnimationState.speed
-  ]);
+  }, [animationState.playing, selectedActiveAnimationClip]);
 
   // THE content signal: "is there anything on screen?", answered once for every format.
   // Consumers (toolbar gates, CTA, preview mode, zoom pill, alert blocking) read this
@@ -2217,30 +2175,26 @@ export default function CadWorkspace({
     activeParameterRuntime?.reset();
   }, [activeParameterRuntime]);
 
-  // The animation half of the same idea as `activeParameterRuntime`: the toolbar's
-  // Play button is a viewport control, so it asks the active runtime "do you have
-  // clips, are you playing, can I toggle you" instead of reading the STEP store by
-  // name.
+  // The toolbar's Play button is a viewport control over the ANIMATION system —
+  // it asks "does this model ship clips, is one running, can I toggle it". The
+  // pose runtime is not consulted: a model can animate with no mates at all.
   const activeAnimationRuntime = useMemo(() => {
     switch (parameterSourceKind(selectedEntrySourceFormat)) {
       case PARAMETER_SOURCE.SIDECAR:
         return {
-          available: selectedStepModuleHasAnimations,
-          playing: selectedStepModuleAnimationViewState.playing,
-          // A disabled sidecar is still loaded and still lists its clips; playing one
-          // would drive a build nobody asked for.
-          disabled: !stepModuleEnabled,
-          onPlayToggle: handleStepModuleAnimationPlayToggle
+          available: selectedAnimationClipList.length > 0,
+          playing: animationState.playing === true,
+          disabled: false,
+          onPlayToggle: handleAnimationPlayToggle
         };
       default:
         return null;
     }
   }, [
-    handleStepModuleAnimationPlayToggle,
-    selectedEntrySourceFormat,
-    selectedStepModuleAnimationViewState.playing,
-    selectedStepModuleHasAnimations,
-    stepModuleEnabled
+    animationState.playing,
+    handleAnimationPlayToggle,
+    selectedAnimationClipList,
+    selectedEntrySourceFormat
   ]);
 
   const assemblyRoot = selectedAssemblyStructureReady
@@ -3151,10 +3105,17 @@ export default function CadWorkspace({
   const selectedFileHasWarningOrErrorStatus = fileStatusHasWarningsOrErrors(selectedFileStatusItems);
 
   const fileSheetSectionOptions = useMemo(() => ({
-    hasStepModulePanel: Boolean(
+    // Gated separately, because the two systems are separate: mates give a Pose
+    // tab, clips give an Animation tab, and a model may have either or both.
+    hasStepPosePanel: Boolean(
       selectedStepModuleDefinition ||
       selectedStepModuleStatus === "loading" ||
       selectedStepModuleError
+    ),
+    hasStepAnimationPanel: Boolean(
+      selectedAnimationClipList.length ||
+      (selectedStepModuleUrl && selectedAnimationStatus === "loading") ||
+      selectedAnimationError
     ),
     hasFileStatus: selectedFileHasWarningOrErrorStatus,
     hasDxfBendsPanel: selectedFileSheetKind === "dxf" && drawingBends.length > 0,
@@ -3162,11 +3123,15 @@ export default function CadWorkspace({
     isSdf: selectedFileSheetKind === "sdf",
     showJoints: selectedFileSheetKind === "urdf" || selectedFileSheetKind === "srdf" || selectedFileSheetKind === "sdf"
   }), [
+    selectedAnimationClipList,
+    selectedAnimationError,
+    selectedAnimationStatus,
     selectedFileSheetKind,
     selectedFileHasWarningOrErrorStatus,
     selectedStepModuleDefinition,
     selectedStepModuleError,
     selectedStepModuleStatus,
+    selectedStepModuleUrl,
     drawingBends,
     drawingLayers
   ]);
@@ -3312,15 +3277,11 @@ export default function CadWorkspace({
     const targetUrdfJointValues = targetFileKey && jointValuesByFileRef?.[targetFileKey]
       ? jointValuesByFileRef[targetFileKey]
       : {};
-    const snapshotStepModuleAnimationState = stepModuleAnimationState.playing
-      ? {
-          ...stepModuleAnimationState,
-          elapsedSec: getStepAnimationElapsed()
-        }
-      : stepModuleAnimationState;
-    const snapshotStepModuleParameterValues = stepModuleAnimationState.playing
-      ? getStepAnimationParameterValues()
-      : stepModuleParameterValues;
+    // While a clip plays the authoritative time is the clock store's, not React
+    // state's — the loop only writes back when playback stops.
+    const snapshotAnimationElapsedSec = animationState.playing
+      ? getAnimationClock()
+      : animationState.elapsedSec;
     return createFileSessionSnapshot({
       fileKey: targetFileKey,
       entry: targetEntry,
@@ -3329,8 +3290,13 @@ export default function CadWorkspace({
         tab: buildActiveTabSnapshot(),
         stepModule: {
           enabled: stepModuleEnabled,
-          parameterValues: snapshotStepModuleParameterValues,
-          animationState: snapshotStepModuleAnimationState
+          parameterValues: stepModuleParameterValues
+        },
+        animation: {
+          activeClipId: animationState.activeClipId,
+          elapsedSec: snapshotAnimationElapsedSec,
+          speed: animationState.speed,
+          loopEnabled: animationState.loopEnabled
         },
         urdf: {
           jointValues: targetUrdfJointValues,
@@ -3341,12 +3307,12 @@ export default function CadWorkspace({
       }
     });
   }, [
+    animationState,
     buildActiveTabSnapshot,
     displaySettings,
     jointValuesByFileRef,
     largeFileState,
     selectedEntry,
-    stepModuleAnimationState,
     stepModuleEnabled,
     stepModuleParameterValues,
   ]);
@@ -3411,12 +3377,20 @@ export default function CadWorkspace({
     if (stepModuleSlice) {
       setStepModuleEnabled(stepModuleSlice.enabled !== false);
       setStepModuleParameterValues(stepModuleSlice.parameterValues || {});
-      setStepModuleAnimationState({
-        activeId: String(stepModuleSlice.animationState?.activeId || ""),
-        playing: false,
-        elapsedSec: Math.max(Number(stepModuleSlice.animationState?.elapsedSec) || 0, 0),
-        speed: clampNumber(stepModuleSlice.animationState?.speed, 0.1, 5)
-      });
+    }
+
+    // The animation slice restores against the CLIPS this model actually
+    // compiled, which is why it is resolved through restoreAnimationState rather
+    // than trusted as stored.
+    const animationSlice = sessionState?.slices?.animation || null;
+    if (animationSlice) {
+      const restoredAnimationState = restoreAnimationState(
+        animationSlice,
+        animationLoadState.url === entryPoseUrl(entry) ? animationLoadState.clips : null
+      );
+      animationStateRef.current = restoredAnimationState;
+      setAnimationState(restoredAnimationState);
+      setAnimationClock(restoredAnimationState.elapsedSec);
     }
 
     const urdfSlice = sessionState?.slices?.urdf || null;
@@ -3435,7 +3409,7 @@ export default function CadWorkspace({
         return next;
       });
     }
-  }, [entryMap, readEntrySessionState]);
+  }, [animationLoadState, entryMap, readEntrySessionState]);
 
   const fileSheetSelectionKeyForTab = useCallback((key) => {
     const normalizedKey = String(key || "").trim();
@@ -3632,7 +3606,9 @@ export default function CadWorkspace({
   });
 
   useEffect(() => {
-    if (stepModuleAnimationState.playing) {
+    // No session writes while a clip plays: the clock moves every frame and the
+    // stored elapsed time would be rewritten (and re-serialized) with it.
+    if (animationState.playing) {
       return undefined;
     }
     scheduleActiveFileSessionSave();
@@ -3640,9 +3616,9 @@ export default function CadWorkspace({
       clearFileSessionSaveTimer();
     };
   }, [
+    animationState.playing,
     clearFileSessionSaveTimer,
-    scheduleActiveFileSessionSave,
-    stepModuleAnimationState.playing
+    scheduleActiveFileSessionSave
   ]);
 
   useEffect(() => {
@@ -7190,8 +7166,11 @@ export default function CadWorkspace({
           drawingIsDocument={selectedEntryIsDrawingDocument}
           drawingThicknessMm={selectedEntryIsDrawing ? drawingThicknessMm : 0}
           onCameraZoomPercentChange={setViewerZoomPercent}
-          renderPartsIndividually={isUrdfView || Boolean(selectedStepParameterRuntime)}
+          renderPartsIndividually={
+            isUrdfView || Boolean(selectedStepParameterRuntime) || Boolean(selectedAnimationRuntime)
+          }
           stepParameters={selectedStepParameterRuntime}
+          stepAnimation={selectedAnimationRuntime}
           selectedMeshData={selectedMeshData}
           selectedKey={selectedKey}
           missingFileRef={missingFileRef}
@@ -7456,18 +7435,28 @@ export default function CadWorkspace({
                   definition: selectedStepModuleDefinition,
                   enabled: stepModuleEnabled,
                   parameterValues: stepModuleParameterValues,
-                  animationState: selectedStepModuleAnimationViewState,
                   onParameterChange: handleStepModuleParameterChange,
                   onResetParameters: handleResetParameters,
-                  onAnimationSelect: handleStepModuleAnimationSelect,
-                  onAnimationPlayToggle: handleStepModuleAnimationPlayToggle,
-                  onAnimationReset: handleStepModuleAnimationReset,
-                  onAnimationScrub: handleStepModuleAnimationScrub,
-                  onAnimationSpeedChange: handleStepModuleAnimationSpeedChange,
-                  onAnimationLoopToggle: handleStepModuleAnimationLoopToggle,
+                  onApplyPose: handleApplyPose,
                   onEnabledChange: handleStepModuleEnabledChange,
                   onCopyParams: handleCopyParameters,
                   onPasteParams: handlePasteParameters
+                }}
+                stepAnimation={{
+                  status: selectedAnimationStatus,
+                  error: selectedAnimationError,
+                  clips: selectedAnimationClipList,
+                  activeClipId: animationState.activeClipId,
+                  playing: animationState.playing,
+                  elapsedSec: animationState.elapsedSec,
+                  speed: animationState.speed,
+                  loopEnabled: animationState.loopEnabled,
+                  onClipSelect: handleAnimationClipSelect,
+                  onPlayToggle: handleAnimationPlayToggle,
+                  onRestart: handleAnimationRestart,
+                  onScrub: handleAnimationScrub,
+                  onSpeedChange: handleAnimationSpeedChange,
+                  onLoopToggle: handleAnimationLoopToggle
                 }}
                 fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}

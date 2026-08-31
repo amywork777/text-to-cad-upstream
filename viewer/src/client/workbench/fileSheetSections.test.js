@@ -17,7 +17,10 @@ test("file sheet section defaults match current sheet behavior", () => {
   assert.deepEqual(defaultOpenFileSheetSectionIds("step", { hasFileStatus: true }), ["status", "tree"]);
   // In the tabbed layout the Tree is the only default-open section; Display is
   // the default-active bottom tab, resolved by the tab layout, not this list.
-  assert.deepEqual(defaultOpenFileSheetSectionIds("step", { hasStepModulePanel: true }), ["tree"]);
+  assert.deepEqual(
+    defaultOpenFileSheetSectionIds("step", { hasStepPosePanel: true, hasStepAnimationPanel: true }),
+    ["tree"]
+  );
   assert.deepEqual(defaultOpenFileSheetSectionIds("mesh"), ["measurements"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("mesh", { hasFileStatus: true }), ["status", "measurements"]);
   assert.deepEqual(defaultOpenFileSheetSectionIds("srdf"), ["joints"]);
@@ -46,14 +49,41 @@ test("rendered file sheet sections include closed-by-default sections", () => {
     renderedFileSheetSectionIds("dxf", { hasDxfBendsPanel: true, hasDxfLayersPanel: true }),
     ["material", "bends", "dxfLayers"]
   );
-  assert.deepEqual(renderedFileSheetSectionIds("step", { hasFileStatus: true, hasStepModulePanel: true }), [
+  assert.deepEqual(renderedFileSheetSectionIds("step", {
+    hasFileStatus: true,
+    hasStepPosePanel: true,
+    hasStepAnimationPanel: true
+  }), [
     "status",
     "tree",
     "reference",
-    // Parameters sits directly after Reference: it is the one tab in this strip that
-    // CHANGES the geometry, so it takes the position nearest the default rather than
-    // trailing the readouts.
-    "parameters",
+    // Pose sits directly after Reference: it is the one tab in this strip that MOVES
+    // the geometry, so it takes the position nearest the default rather than trailing
+    // the readouts. Animation follows it.
+    "pose",
+    "animation",
+    "measurements",
+    "display"
+  ]);
+  // The two systems are gated independently: a model may declare mates without
+  // shipping clips, ship clips without declaring mates, or do neither.
+  assert.deepEqual(renderedFileSheetSectionIds("step", { hasStepPosePanel: true }), [
+    "tree",
+    "reference",
+    "pose",
+    "measurements",
+    "display"
+  ]);
+  assert.deepEqual(renderedFileSheetSectionIds("step", { hasStepAnimationPanel: true }), [
+    "tree",
+    "reference",
+    "animation",
+    "measurements",
+    "display"
+  ]);
+  assert.deepEqual(renderedFileSheetSectionIds("step"), [
+    "tree",
+    "reference",
     "measurements",
     "display"
   ]);

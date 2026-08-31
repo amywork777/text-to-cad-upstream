@@ -325,15 +325,43 @@ test("file session state skips stale content-sensitive slices", () => {
       },
       stepModule: {
         enabled: false,
-        parameterValues: { width: 42 },
-        animationState: { activeId: "open", elapsedSec: 1.5, speed: 1.2 }
-      }
+        parameterValues: { elbow: 42 }
+      },
+      animation: { activeClipId: "meshCycle", elapsedSec: 1.5, speed: 1.2 }
     }
   }), { storage });
 
   const restored = readFileSessionState("models", nextEntry.file, nextEntry, { storage });
   assert.equal(restored.slices.tab, undefined);
   assert.equal(restored.slices.stepModule, undefined);
+  // Both halves of the sidecar ride the same signature: a rebuilt sidecar
+  // invalidates the stored pose AND the stored playback position.
+  assert.equal(restored.slices.animation, undefined);
+});
+
+test("pose and animation are stored as independent slices", () => {
+  const storage = createMemoryStorage();
+  const entry = stepEntry("parts/bracket.step", "mesh", "module");
+
+  writeFileSessionState("models", entry.file, createFileSessionSnapshot({
+    entry,
+    slices: {
+      stepModule: { enabled: true, parameterValues: { drive: 315 } },
+      animation: { activeClipId: "meshCycle", elapsedSec: 2.25, speed: 1.5, loopEnabled: false }
+    }
+  }), { storage });
+
+  const restored = readFileSessionState("models", entry.file, entry, { storage });
+  assert.deepEqual(restored.slices.stepModule, {
+    enabled: true,
+    parameterValues: { drive: 315 }
+  });
+  assert.deepEqual(restored.slices.animation, {
+    activeClipId: "meshCycle",
+    elapsedSec: 2.25,
+    speed: 1.5,
+    loopEnabled: false
+  });
 });
 
 test("file session state stores large-file settings with topology signatures", () => {

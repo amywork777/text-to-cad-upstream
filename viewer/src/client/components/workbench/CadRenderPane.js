@@ -26,7 +26,7 @@ import {
 } from "cadjs/lib/displaySettings";
 import { VIEWER_SCENE_SCALE } from "cadjs/lib/viewer/sceneScale";
 import { VIEWER_PICK_MODE } from "cadjs/lib/viewer/constants";
-import { useStepAnimationSnapshot } from "@/workbench/stepAnimationStore";
+import { useAnimationClock } from "@/workbench/animationClockStore";
 import { viewerPickModeForRenderPane } from "@/workbench/viewerPickMode";
 
 const EMPTY_LIST = Object.freeze([]);
@@ -302,6 +302,7 @@ export default function CadRenderPane({
   selectorRuntime,
   displayEdgeRuntime,
   stepParameters = null,
+  stepAnimation = null,
   pickableFaces,
   pickableEdges,
   pickableVertices,
@@ -348,24 +349,16 @@ export default function CadRenderPane({
   handleCopySelection,
   handleScreenshotCopy,
 }) {
-  const liveStepAnimation = useStepAnimationSnapshot();
-  const resolvedStepParameters = useMemo(() => {
-    if (!stepParameters?.animationState?.playing) {
-      return stepParameters;
+  // The clock is the ONE thing that changes per frame during playback, and this
+  // is the only component that re-renders for it: subscribing here (rather than
+  // in the workspace) keeps a playing clip off the workspace's render path.
+  const liveAnimationElapsedSec = useAnimationClock();
+  const resolvedStepAnimation = useMemo(() => {
+    if (!stepAnimation?.playing) {
+      return stepAnimation;
     }
-    const liveParameterValues = liveStepAnimation?.parameterValues;
-    if (!liveParameterValues || typeof liveParameterValues !== "object") {
-      return stepParameters;
-    }
-    return {
-      ...stepParameters,
-      parameterValues: liveParameterValues,
-      animationState: {
-        ...stepParameters.animationState,
-        elapsedSec: liveStepAnimation.elapsedSec
-      }
-    };
-  }, [stepParameters, liveStepAnimation]);
+    return { ...stepAnimation, elapsedSec: liveAnimationElapsedSec };
+  }, [stepAnimation, liveAnimationElapsedSec]);
   const viewerAlertIconLabel = "Viewer error. See the Issues section for details.";
   // One capability lookup replaces the per-format mode booleans. Every gate below asks
   // what this format CAN do; none of them ask what it IS.
@@ -387,8 +380,9 @@ export default function CadRenderPane({
     : capabilities.themeProjection
       ? normalizeCameraProjection(themeSettings?.projection)
       : CAMERA_PROJECTION.PERSPECTIVE;
-  const stepBoundsAnimationActive = Boolean(resolvedStepParameters?.animationState?.playing);
-  const cadViewerBoundsAnimationActive = Boolean(boundsAnimationActive || stepBoundsAnimationActive);
+  const cadViewerBoundsAnimationActive = Boolean(
+    boundsAnimationActive || resolvedStepAnimation?.playing
+  );
   const missingFileLabel = String(missingFileRef || "").trim();
   // A Viewer resolves paths against ITS OWN served root. Point one at an
   // absolute path belonging to a different checkout — easy to do when an
@@ -547,7 +541,9 @@ export default function CadRenderPane({
         panToolActive={panToolActive}
         renderPartsIndividually={capabilities.sceneScale === "urdf"
           ? true
-          : (renderPartsIndividually || Boolean(resolvedStepParameters?.definition))}
+          : (renderPartsIndividually
+            || Boolean(stepParameters?.definition)
+            || Boolean(resolvedStepAnimation?.clip))}
         pickableParts={hasParts ? assemblyParts : EMPTY_LIST}
         hiddenPartIds={hasParts ? hiddenPartIds : []}
         selectedPartIds={hasParts ? selectedPartIds : []}
@@ -559,7 +555,8 @@ export default function CadRenderPane({
         selectedReferenceIds={hasTopology ? selectedReferenceIds : []}
         selectorRuntime={hasTopology ? selectorRuntime : null}
         displayEdgeRuntime={hasTopology ? displayEdgeRuntime : null}
-        stepParameters={capabilities.params === PARAMETER_SOURCE.SIDECAR ? resolvedStepParameters : null}
+        stepParameters={capabilities.params === PARAMETER_SOURCE.SIDECAR ? stepParameters : null}
+        stepAnimation={capabilities.params === PARAMETER_SOURCE.SIDECAR ? resolvedStepAnimation : null}
         pickableFaces={hasTopology ? pickableFaces : []}
         pickableEdges={hasTopology ? pickableEdges : []}
         pickableVertices={hasTopology ? pickableVertices : []}

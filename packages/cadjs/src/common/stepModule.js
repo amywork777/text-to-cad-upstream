@@ -205,24 +205,6 @@ function normalizeFeatures(value, { cadPath = "" } = {}) {
     .filter(Boolean);
 }
 
-function normalizeAnimations(value) {
-  return Object.entries(isObject(value) ? value : {})
-    .map(([id, rawAnimation]) => {
-      const raw = isObject(rawAnimation) ? rawAnimation : {};
-      const animationId = normalizeString(id);
-      return animationId ? {
-        id: animationId,
-        label: normalizeString(raw.label, animationId),
-        description: normalizeString(raw.description),
-        duration: Math.max(toFiniteNumber(raw.duration ?? raw.durationSeconds, 1), 0.001),
-        loop: raw.loop !== false,
-        update: typeof raw.update === "function" ? raw.update : null,
-        raw
-      } : null;
-    })
-    .filter(Boolean);
-}
-
 function normalizeVector3(value, fallback = [0, 0, 0]) {
   const source = Array.isArray(value) ? value : fallback;
   return [
@@ -282,8 +264,10 @@ export function normalizeStepModuleDefinition(rawModule, { url = "", cadPath = "
     features: normalizeFeatures(manifest.features, { cadPath: normalizedCadPath }),
     parameters,
     parameterMap,
-    defaultParameterValues,
-    animations: normalizeAnimations(manifest.animations)
+    defaultParameterValues
+    // No `animations` here by design: choreography is the sidecar's ANIMATION
+    // section, compiled by animationRuntime.js and driven by the Animation tab.
+    // A step-module definition is the POSE half and never carries clips.
   };
 }
 
@@ -332,14 +316,11 @@ export function stepModuleParameterValuesAtZeroState(definition, values = {}) {
   ));
 }
 
-export function stepModuleAnimationStateAtZeroState(animationState = {}) {
-  return animationState?.playing !== true &&
-    Math.abs(toFiniteNumber(animationState?.elapsedSec, 0)) <= STEP_MODULE_ZERO_STATE_EPSILON;
-}
-
+// Zero state is a POSE question now: every DOF at its default. Playback used to
+// be half of the answer, back when clips drove parameter values; it no longer
+// touches them, so it has no say here.
 export function stepModuleRuntimeAtZeroState(definition, runtimeState = {}) {
-  return stepModuleParameterValuesAtZeroState(definition, runtimeState?.parameterValues) &&
-    stepModuleAnimationStateAtZeroState(runtimeState?.animationState);
+  return stepModuleParameterValuesAtZeroState(definition, runtimeState?.parameterValues);
 }
 
 function boundsCenter(bounds) {

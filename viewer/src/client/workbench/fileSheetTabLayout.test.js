@@ -18,7 +18,7 @@ import {
   MIN_FILE_SHEET_SPLIT_RATIO
 } from "./fileSheetTabLayout.js";
 
-const STEP_SECTIONS = ["tree", "parameters", "display", "theme", "metadata"];
+const STEP_SECTIONS = ["tree", "pose", "display", "theme", "metadata"];
 
 test("only step supports the split", () => {
   assert.equal(kindSupportsSplit("step"), true);
@@ -30,17 +30,46 @@ test("default step arrangement puts the tree on top and everything else on the b
   const arrangement = defaultFileSheetTabArrangement("step", STEP_SECTIONS);
   assert.equal(arrangement.split, true);
   assert.deepEqual(arrangement.top, ["tree"]);
-  assert.deepEqual(arrangement.bottom, ["parameters", "display", "theme", "metadata"]);
+  assert.deepEqual(arrangement.bottom, ["pose", "display", "theme", "metadata"]);
   assert.equal(arrangement.ratio, 0.5);
 });
 
-test("parameters sits between reference and display in the bottom pane", () => {
+test("pose sits between reference and display in the bottom pane", () => {
   const arrangement = defaultFileSheetTabArrangement(
     "step",
-    ["tree", "reference", "parameters", "display"]
+    ["tree", "reference", "pose", "display"]
   );
   assert.deepEqual(arrangement.top, ["tree"]);
-  assert.deepEqual(arrangement.bottom, ["reference", "parameters", "display"]);
+  assert.deepEqual(arrangement.bottom, ["reference", "pose", "display"]);
+});
+
+test("pose and animation are two bottom-pane tabs, in render order", () => {
+  // The split's two systems land side by side under the tree; neither is
+  // promoted to the top pane, and Animation follows Pose.
+  const arrangement = defaultFileSheetTabArrangement(
+    "step",
+    ["tree", "reference", "pose", "animation", "measurements", "display"]
+  );
+  assert.deepEqual(arrangement.top, ["tree"]);
+  assert.deepEqual(arrangement.bottom, ["reference", "pose", "animation", "measurements", "display"]);
+  // A model with clips but no mates renders Animation alone — it must not
+  // inherit Pose's slot rules by being appended somewhere else.
+  const clipsOnly = defaultFileSheetTabArrangement(
+    "step",
+    ["tree", "reference", "animation", "measurements", "display"]
+  );
+  assert.deepEqual(clipsOnly.bottom, ["reference", "animation", "measurements", "display"]);
+});
+
+test("a stored strip picks up animation at its render-order slot", () => {
+  // Stored from a model with mates only; the next one also ships clips.
+  const stored = { split: true, top: ["tree"], bottom: ["reference", "pose", "display"] };
+  const normalized = normalizeFileSheetTabArrangement(
+    stored,
+    "step",
+    ["tree", "reference", "pose", "animation", "display"]
+  );
+  assert.deepEqual(normalized.bottom, ["reference", "pose", "animation", "display"]);
 });
 
 test("default non-split-kind arrangement is a single strip", () => {
@@ -72,23 +101,23 @@ test("step with only a tree collapses to a single strip", () => {
 test("normalize drops missing tabs and slots new ones into their default pane", () => {
   const stored = { split: true, top: ["tree"], bottom: ["display", "theme"], ratio: 0.6 };
   const normalized = normalizeFileSheetTabArrangement(stored, "step", STEP_SECTIONS);
-  // parameters + metadata are newly rendered; both default to the bottom pane and
-  // land at their render-order position (parameters before display, metadata last).
+  // pose + metadata are newly rendered; both default to the bottom pane and
+  // land at their render-order position (pose before display, metadata last).
   assert.deepEqual(normalized.top, ["tree"]);
-  assert.deepEqual(normalized.bottom, ["parameters", "display", "theme", "metadata"]);
+  assert.deepEqual(normalized.bottom, ["pose", "display", "theme", "metadata"]);
   assert.equal(normalized.ratio, 0.6);
 });
 
-test("issues and parameters slot into render order when they first appear", () => {
-  // Stored from a plain STEP file; the next one has both issues and parameters.
+test("issues and pose slot into render order when they first appear", () => {
+  // Stored from a plain STEP file; the next one has both issues and pose.
   const stored = { split: true, top: ["tree"], bottom: ["reference", "display"] };
   const normalized = normalizeFileSheetTabArrangement(
     stored,
     "step",
-    ["status", "tree", "reference", "parameters", "display"]
+    ["status", "tree", "reference", "pose", "display"]
   );
-  // Issues leads, parameters sits between reference and display — not appended.
-  assert.deepEqual(normalized.bottom, ["status", "reference", "parameters", "display"]);
+  // Issues leads, pose sits between reference and display — not appended.
+  assert.deepEqual(normalized.bottom, ["status", "reference", "pose", "display"]);
   // Leftmost is the pane fallback, so Issues is what you land on.
   assert.equal(resolveFileSheetTabPanes(normalized, "step", []).panes[1].activeId, "status");
 });
@@ -111,11 +140,11 @@ test("normalize de-dupes a tab present in both panes (top wins)", () => {
 });
 
 test("normalize re-derives the default split when a requested split has an empty pane", () => {
-  const stored = { split: true, top: ["tree", "parameters", "display", "theme", "metadata"], bottom: [] };
+  const stored = { split: true, top: ["tree", "pose", "display", "theme", "metadata"], bottom: [] };
   const normalized = normalizeFileSheetTabArrangement(stored, "step", STEP_SECTIONS);
   assert.equal(normalized.split, true);
   assert.deepEqual(normalized.top, ["tree"]);
-  assert.deepEqual(normalized.bottom, ["parameters", "display", "theme", "metadata"]);
+  assert.deepEqual(normalized.bottom, ["pose", "display", "theme", "metadata"]);
 });
 
 test("normalize forces a single strip for non-split kinds", () => {
@@ -130,7 +159,7 @@ test("moving a tab across panes updates assignment", () => {
   const arrangement = defaultFileSheetTabArrangement("step", STEP_SECTIONS);
   const next = moveFileSheetTab(arrangement, "step", "display", FILE_SHEET_TAB_PANES.TOP, 1);
   assert.deepEqual(next.top, ["tree", "display"]);
-  assert.deepEqual(next.bottom, ["parameters", "theme", "metadata"]);
+  assert.deepEqual(next.bottom, ["pose", "theme", "metadata"]);
   assert.equal(next.split, true);
 });
 
@@ -146,12 +175,12 @@ test("toggling the split off merges panes, on restores the default split", () =>
   const arrangement = defaultFileSheetTabArrangement("step", STEP_SECTIONS);
   const merged = setFileSheetTabSplit(arrangement, "step", false, STEP_SECTIONS);
   assert.equal(merged.split, false);
-  assert.deepEqual(merged.top, ["tree", "parameters", "display", "theme", "metadata"]);
+  assert.deepEqual(merged.top, ["tree", "pose", "display", "theme", "metadata"]);
 
   const reSplit = setFileSheetTabSplit(merged, "step", true, STEP_SECTIONS);
   assert.equal(reSplit.split, true);
   assert.deepEqual(reSplit.top, ["tree"]);
-  assert.deepEqual(reSplit.bottom, ["parameters", "display", "theme", "metadata"]);
+  assert.deepEqual(reSplit.bottom, ["pose", "display", "theme", "metadata"]);
 });
 
 test("split ratio is clamped", () => {
@@ -162,7 +191,7 @@ test("split ratio is clamped", () => {
 });
 
 test("resolve panes: each pane defaults to its leftmost tab", () => {
-  const sections = ["tree", "reference", "parameters", "display", "theme", "metadata"];
+  const sections = ["tree", "reference", "pose", "display", "theme", "metadata"];
   const arrangement = defaultFileSheetTabArrangement("step", sections);
   const resolved = resolveFileSheetTabPanes(arrangement, "step", []);
   assert.equal(resolved.split, true);
@@ -250,7 +279,7 @@ test("a drop lands where the indicator promised, including the last slot", () =>
   // started has shifted left by one. Reading the index literally moved a rightward drag one
   // slot too far, and the end-of-strip clamp hid it at the only position with nowhere to
   // overshoot to -- which is why it surfaced as "drag to the last spot, land second-last".
-  const tabs = ["tree", "reference", "parameters", "measurements", "display"];
+  const tabs = ["tree", "reference", "pose", "measurements", "display"];
   const arrangement = { split: false, top: [...tabs], bottom: [], ratio: 0.5 };
 
   for (const id of tabs) {
@@ -265,7 +294,7 @@ test("a drop lands where the indicator promised, including the last slot", () =>
 });
 
 test("dropping any tab past the last slot puts it last", () => {
-  const tabs = ["tree", "reference", "parameters", "measurements", "display"];
+  const tabs = ["tree", "reference", "pose", "measurements", "display"];
   const arrangement = { split: false, top: [...tabs], bottom: [], ratio: 0.5 };
   for (const id of tabs) {
     const top = moveFileSheetTab(arrangement, "step", id, FILE_SHEET_TAB_PANES.TOP, tabs.length).top;

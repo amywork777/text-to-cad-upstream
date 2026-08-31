@@ -180,3 +180,54 @@ export function evaluateAnimationClip(THREE, meshData, clip, t) {
   clip.update(localT, frame.model);
   return { matrices: frame.matrices, styles: frame.styles };
 }
+
+// Merge an evaluated frame into the viewer's per-part effect records — the same
+// records the kinematics module writes through ctx.effects, so animation
+// COMPOSES OVER pose without either system knowing about the other. The
+// animation matrix premultiplies whatever is already there (pose first, then
+// choreography on top, in world space). Returns the number of parts whose
+// transform the frame touched, which is what tells the caller its edge runtimes
+// need re-deriving.
+export function applyAnimationFrameToEffects(THREE, effectsByPartId, frame) {
+  if (!effectsByPartId || !frame) {
+    return 0;
+  }
+  const ensureEffect = (partId) => {
+    const id = String(partId || "").trim();
+    if (!id) {
+      return null;
+    }
+    const current = effectsByPartId.get(id) || {
+      matrix: null,
+      style: null,
+      visible: null,
+      highlighted: false
+    };
+    effectsByPartId.set(id, current);
+    return current;
+  };
+  let transformCount = 0;
+  for (const [partId, matrix] of frame.matrices || []) {
+    const effect = ensureEffect(partId);
+    if (!effect) {
+      continue;
+    }
+    effect.matrix = effect.matrix
+      ? new THREE.Matrix4().multiplyMatrices(matrix, effect.matrix)
+      : matrix.clone();
+    transformCount += 1;
+  }
+  for (const [partId, style] of frame.styles || []) {
+    const effect = ensureEffect(partId);
+    if (!effect) {
+      continue;
+    }
+    if (style && Object.hasOwn(style, "opacity")) {
+      effect.style = { ...(effect.style || {}), opacity: style.opacity };
+    }
+    if (style && Object.hasOwn(style, "visible")) {
+      effect.visible = style.visible !== false;
+    }
+  }
+  return transformCount;
+}

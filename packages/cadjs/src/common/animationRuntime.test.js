@@ -3,6 +3,7 @@ import { test } from "node:test";
 import * as THREE from "three";
 
 import {
+  applyAnimationFrameToEffects,
   createAnimationFrame,
   evaluateAnimationClip,
   normalizeAnimationClips
@@ -93,4 +94,33 @@ test("occurrence-id refs and comma lists resolve with subtree containment", () =
   });
   frame.model.get("#o1.3.1.5,o1.3.2").translate([1, 0, 0]);
   assert.deepEqual([...frame.matrices.keys()].sort(), ["o1.3.1.5", "o1.3.2", "o1.3.2.4"]);
+});
+
+test("frame effects premultiply onto an existing pose matrix", () => {
+  // Pose put the part at x=10; the clip then orbits the origin by 90deg. The
+  // animation must act on the ALREADY-POSED part (world space), not under it.
+  const effectsByPartId = new Map([
+    ["o1.1", {
+      matrix: new THREE.Matrix4().makeTranslation(10, 0, 0),
+      style: null,
+      visible: null,
+      highlighted: false
+    }]
+  ]);
+  const frame = createAnimationFrame(THREE, MESH_DATA);
+  frame.model.get("base").rotate([0, 0, 1], 90, [0, 0, 0]);
+  const transformCount = applyAnimationFrameToEffects(THREE, effectsByPartId, frame);
+  assert.equal(transformCount, 1);
+  assert.deepEqual(through(effectsByPartId.get("o1.1").matrix, [0, 0, 0]), [0, 10, 0]);
+});
+
+test("frame effects open records for untouched parts and merge styles", () => {
+  const effectsByPartId = new Map();
+  const frame = createAnimationFrame(THREE, MESH_DATA);
+  frame.model.get("base").opacity(0.5);
+  frame.model.get("arm").visible(false);
+  assert.equal(applyAnimationFrameToEffects(THREE, effectsByPartId, frame), 0);
+  assert.deepEqual(effectsByPartId.get("o1.1").style, { opacity: 0.5 });
+  assert.equal(effectsByPartId.get("o1.2").visible, false);
+  assert.equal(effectsByPartId.get("o1.1").matrix, null);
 });

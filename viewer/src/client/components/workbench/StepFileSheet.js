@@ -6,7 +6,6 @@ import {
   flattenVisibleStepTreeRows,
   stepTreeNodeChildren
 } from "cadjs/lib/step/stepTree";
-import { useStepAnimationElapsed } from "@/workbench/stepAnimationStore";
 import { Button } from "../ui/button";
 import {
   ContextMenu,
@@ -15,17 +14,14 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from "../ui/context-menu";
-import { Slider } from "../ui/slider";
 import FileSheet, {
-  FILE_SHEET_PRECISION_SLIDER_CLASSES,
-  FileSheetSliderField,
-  FileSheetStatusText,
-  parseFileSheetNumberInput
+  FileSheetStatusText
 } from "./FileSheet";
 import FileSheetTabbedSurface from "./FileSheetTabbedSurface";
 import AssemblyContextMenuItems from "./AssemblyContextMenuItems";
 import { buildFileStatusTab } from "./FileStatusSection";
-import { buildParameterControlsTab } from "./ParameterControlsSection";
+import { buildPoseControlsTab } from "./PoseControlsSection";
+import { buildAnimationControlsTab } from "./AnimationControlsSection";
 import { buildStepReferenceTab } from "./StepReferenceSection";
 import StepMeasurementsSection from "./StepMeasurementsSection";
 import { FILE_SHEET_SECTION_IDS } from "../../workbench/fileSheetSections";
@@ -45,10 +41,6 @@ const treeSectionId = "tree";
 const measurementsSectionId = FILE_SHEET_SECTION_IDS.STEP_MEASUREMENTS;
 const EMPTY_MEASUREMENTS = [];
 const treeRevealScrollPaddingTopPx = 120;
-function formatSeconds(value) {
-  const numericValue = Math.max(Number(value) || 0, 0);
-  return `${numericValue.toFixed(numericValue >= 10 ? 1 : 2)}s`;
-}
 
 function leafIdsHidden(leafPartIds, hiddenPartIds) {
   const leafIds = Array.isArray(leafPartIds)
@@ -431,52 +423,6 @@ function normalizeAssemblyMateRows(assemblyMates) {
     });
 }
 
-// The shared TimeControl contract, with STEP's live elapsed time: while the
-// animation plays the value comes from the frame store rather than the runtime
-// snapshot, so the slider tracks playback instead of sitting still.
-function StepModuleAnimationTimeControl({
-  animationState,
-  duration,
-  enabled,
-  onScrub,
-  label = "STEP"
-}) {
-  const liveElapsedSec = useStepAnimationElapsed();
-  const rawElapsedSec = animationState?.playing
-    ? liveElapsedSec
-    : Number(animationState?.elapsedSec) || 0;
-  const elapsedSec = Math.min(Math.max(rawElapsedSec, 0), duration);
-
-  return (
-    <FileSheetSliderField
-      label="Time"
-      value={formatSeconds(elapsedSec)}
-      onValueCommit={(nextValue) => {
-        onScrub?.(parseFileSheetNumberInput(nextValue, {
-          fallback: elapsedSec,
-          min: 0,
-          max: duration
-        }));
-      }}
-      valueInputProps={{
-        disabled: !enabled,
-        ariaLabel: `${label} animation time value`
-      }}
-    >
-      <Slider
-        className={FILE_SHEET_PRECISION_SLIDER_CLASSES}
-        value={[elapsedSec]}
-        min={0}
-        max={duration}
-        step={0.01}
-        onValueChange={(nextValue) => onScrub?.(nextValue?.[0] ?? 0)}
-        disabled={!enabled}
-        aria-label={`${label} animation time`}
-      />
-    </FileSheetSliderField>
-  );
-}
-
 export default function StepFileSheet({
   open,
   measurements = EMPTY_MEASUREMENTS,
@@ -528,6 +474,7 @@ export default function StepFileSheet({
   hideAllParts,
   showAllHiddenParts,
   stepModule = null,
+  stepAnimation = null,
   fileDownloadAvailable = false,
   viewerServerInfo = null,
   localFileOpenAvailable = false,
@@ -1328,23 +1275,25 @@ export default function StepFileSheet({
       )
     },
     buildStepReferenceTab({ references: selectedReferences }),
-    // Parameters sits directly after Reference, ahead of the readouts: it is the one tab in
-    // this strip that CHANGES the geometry, so it takes the position nearest the default.
-    // This array is what orders the tab strip; renderedFileSheetSectionIds decides which
-    // sections exist, and the two have to agree.
+    // Pose then Animation, directly after Reference and ahead of the readouts: they are
+    // the tabs in this strip that MOVE the geometry, so they take the positions nearest
+    // the default. This array is what orders the tab strip; renderedFileSheetSectionIds
+    // decides which sections exist, and the two have to agree.
     //
-    // The parameters tab is the shared ParameterControlsSection; the only
-    // STEP-specific part is the time control, which tracks live playback.
-    buildParameterControlsTab({
+    // Two tabs, two independent systems: one drives the mate graph, the other plays
+    // choreography. Neither knows the other exists; they meet only in the viewport.
+    buildPoseControlsTab({
+      value: FILE_SHEET_SECTION_IDS.STEP_POSE,
       runtime: stepModule,
-      label: "STEP",
-      loadingLabel: "Loading STEP module...",
-      noParametersLabel: "No module parameters.",
+      loadingLabel: "Loading kinematics...",
+      noParametersLabel: "No pose controls.",
       showEnableToggle: true,
-      enableAriaLabel: "Enable STEP module",
-      animationAriaLabel: "STEP animation",
-      resetTitle: "Reset STEP parameters",
-      TimeControl: StepModuleAnimationTimeControl
+      enableAriaLabel: "Enable pose",
+      resetTitle: "Reset pose"
+    }),
+    buildAnimationControlsTab({
+      value: FILE_SHEET_SECTION_IDS.STEP_ANIMATION,
+      runtime: stepAnimation
     }),
     measurementsSection,
     ...themeTabs,

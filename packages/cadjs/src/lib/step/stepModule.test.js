@@ -17,7 +17,7 @@ import {
   displayTransformForPart
 } from "../../common/stepModuleEffects.js";
 
-test("STEP modules normalize controls, defaults, and animation metadata", () => {
+test("STEP modules normalize controls and defaults", () => {
   const definition = normalizeStepModuleDefinition({
     manifest: {
       schemaVersion: 1,
@@ -26,9 +26,6 @@ test("STEP modules normalize controls, defaults, and animation metadata", () => 
         visible: { type: "boolean", default: true },
         color: { type: "color", default: "#f97316" },
         mode: { type: "select", options: ["mesh", "ghost"], default: "ghost" }
-      },
-      animations: {
-        spin: { duration: 3, loop: false }
       }
     }
   });
@@ -40,8 +37,9 @@ test("STEP modules normalize controls, defaults, and animation metadata", () => 
     mode: "ghost"
   });
   assert.equal(definition.parameters[3].type, "enum");
-  assert.equal(definition.animations[0].duration, 3);
-  assert.equal(definition.animations[0].loop, false);
+  // A step-module definition carries POSE controls only: clips live in the
+  // sidecar's animation section and never reach this normalizer.
+  assert.equal(definition.animations, undefined);
   assert.deepEqual(normalizeStepModuleParameterValues(definition, {
     open: -5,
     visible: false,
@@ -55,7 +53,7 @@ test("STEP modules normalize controls, defaults, and animation metadata", () => 
   });
 });
 
-test("STEP module zero state uses normalized defaults and animation rest", () => {
+test("STEP module zero state uses normalized defaults", () => {
   const definition = normalizeStepModuleDefinition({
     manifest: {
       schemaVersion: 1,
@@ -74,8 +72,7 @@ test("STEP module zero state uses normalized defaults and animation rest", () =>
       compression: 0.5,
       tint: "#f97316",
       visible: true
-    },
-    animationState: { playing: false, elapsedSec: 0 }
+    }
   }), true);
   assert.equal(stepModuleRuntimeAtZeroState(definition, {
     parameterValues: {
@@ -83,17 +80,11 @@ test("STEP module zero state uses normalized defaults and animation rest", () =>
       compression: 0.5,
       tint: "#f97316",
       visible: true
-    },
-    animationState: { playing: false, elapsedSec: 0 }
+    }
   }), false);
   assert.equal(stepModuleRuntimeAtZeroState(definition, {
-    parameterValues: definition.defaultParameterValues,
-    animationState: { playing: false, elapsedSec: 0.01 }
-  }), false);
-  assert.equal(stepModuleRuntimeAtZeroState(definition, {
-    parameterValues: definition.defaultParameterValues,
-    animationState: { playing: true, elapsedSec: 0 }
-  }), false);
+    parameterValues: definition.defaultParameterValues
+  }), true);
 });
 
 test("STEP module features resolve CAD occurrence refs to render part ids and bounds", () => {

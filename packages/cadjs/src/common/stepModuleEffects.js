@@ -5,10 +5,6 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(numericValue) ? numericValue : fallback;
 }
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
 function uniqueStrings(values) {
   return [...new Set((Array.isArray(values) ? values : [])
     .map((value) => String(value || "").trim())
@@ -275,20 +271,6 @@ export function createStepModuleEffectsApi(THREE, {
   };
 }
 
-export function buildStepModuleTimeState(animationState = {}) {
-  const duration = Math.max(Number(animationState.duration) || 0, 0);
-  const elapsedSec = Math.max(Number(animationState.elapsedSec) || 0, 0);
-  return {
-    elapsed: elapsedSec,
-    elapsedSec,
-    duration,
-    progress: duration > 0 ? clamp(elapsedSec / duration, 0, 1) : 0,
-    cycle: duration > 0 ? elapsedSec / duration : 0,
-    playing: animationState.playing === true,
-    speed: Math.max(Number(animationState.speed) || 1, 0)
-  };
-}
-
 export function buildStepModuleContext({
   runtime,
   stepModuleRuntime,
@@ -309,7 +291,9 @@ export function buildStepModuleContext({
     params: stepModuleRuntime?.parameterValues || {},
     features,
     effects,
-    time: buildStepModuleTimeState(stepModuleRuntime?.animationState),
+    // No `time` here: a step module is the POSE half and is a function of DOF
+    // values alone. Time belongs to the animation system, which never routes
+    // through this context.
     cleanup: typeof cleanup === "function" ? cleanup : () => {},
     requestRender: () => runtime?.requestRender?.()
   };

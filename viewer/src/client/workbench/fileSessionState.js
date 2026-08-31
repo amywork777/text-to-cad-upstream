@@ -218,33 +218,30 @@ function normalizeDisplaySlice(value) {
   return normalizeDisplaySettings(value);
 }
 
-function normalizeStepModuleAnimationState(value) {
-  if (!isPlainObject(value)) {
-    return {
-      activeId: "",
-      playing: false,
-      elapsedSec: 0,
-      speed: 1,
-      loopEnabled: true
-    };
-  }
-  return {
-    activeId: normalizeString(value.activeId),
-    playing: false,
-    elapsedSec: Math.max(normalizeNumber(value.elapsedSec, 0), 0),
-    speed: Math.min(Math.max(normalizeNumber(value.speed, 1), 0.1), 5),
-    loopEnabled: normalizeBoolean(value.loopEnabled, true)
-  };
-}
-
+// The POSE slice: DOF values and whether the mate graph is driving at all.
+// Playback is a separate slice on purpose — the two systems are independent, so
+// restoring one must never carry state belonging to the other.
 function normalizeStepModuleSlice(value) {
   if (!isPlainObject(value)) {
     return null;
   }
   return {
     enabled: normalizeBoolean(value.enabled, true),
-    parameterValues: isPlainObject(value.parameterValues) ? cloneSerializable(value.parameterValues) : {},
-    animationState: normalizeStepModuleAnimationState(value.animationState)
+    parameterValues: isPlainObject(value.parameterValues) ? cloneSerializable(value.parameterValues) : {}
+  };
+}
+
+// The ANIMATION slice: which clip, where its clock stopped, and how it plays.
+// `playing` is deliberately absent — a restored session never resumes playback.
+function normalizeAnimationSlice(value) {
+  if (!isPlainObject(value)) {
+    return null;
+  }
+  return {
+    activeClipId: normalizeString(value.activeClipId),
+    elapsedSec: Math.max(normalizeNumber(value.elapsedSec, 0), 0),
+    speed: Math.min(Math.max(normalizeNumber(value.speed, 1), 0.1), 3),
+    loopEnabled: normalizeBoolean(value.loopEnabled, true)
   };
 }
 
@@ -290,6 +287,13 @@ const FILE_SESSION_SLICE_SCHEMA = Object.freeze({
   },
   stepModule: {
     normalize: normalizeStepModuleSlice,
+    equals: storageValuesEqual,
+    signatureKey: "stepModule"
+  },
+  // Same signature as the pose slice: both are read out of the one sidecar, so
+  // a rebuilt sidecar invalidates both.
+  animation: {
+    normalize: normalizeAnimationSlice,
     equals: storageValuesEqual,
     signatureKey: "stepModule"
   },

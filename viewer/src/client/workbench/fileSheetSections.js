@@ -3,7 +3,11 @@ export const FILE_SHEET_SECTION_IDS = Object.freeze({
   STEP_TREE: "tree",
   STEP_MEASUREMENTS: "measurements",
   STEP_REFERENCE: "reference",
-  STEP_PARAMETERS: "parameters",
+  // Two tabs, two independent systems: Pose drives the sidecar's mate graph
+  // (sliders per DOF + named presets), Animation plays the sidecar's clips.
+  // A model may ship either, both, or neither, so they are gated separately.
+  STEP_POSE: "pose",
+  STEP_ANIMATION: "animation",
   ROBOT_SDF: "sdf",
   ROBOT_MOTION: "motion",
   ROBOT_JOINTS: "joints",
@@ -53,10 +57,12 @@ export function renderedFileSheetSectionIds(kind, options = {}) {
         ...status,
         FILE_SHEET_SECTION_IDS.STEP_TREE,
         FILE_SHEET_SECTION_IDS.STEP_REFERENCE,
-        // Parameters sits directly after Reference when the model has a sidecar: it is the
-        // one tab here that CHANGES the geometry, so it earns the position nearest the
-        // default rather than trailing the readouts.
-        ...(options.hasStepModulePanel ? [FILE_SHEET_SECTION_IDS.STEP_PARAMETERS] : []),
+        // Pose sits directly after Reference when the model declares mates: it is the
+        // one tab here that MOVES the geometry, so it earns the position nearest the
+        // default rather than trailing the readouts. Animation follows it — same model,
+        // separate system, and present only when the model ships clips.
+        ...(options.hasStepPosePanel ? [FILE_SHEET_SECTION_IDS.STEP_POSE] : []),
+        ...(options.hasStepAnimationPanel ? [FILE_SHEET_SECTION_IDS.STEP_ANIMATION] : []),
         // Measurements then follows: it and Reference are both readouts about geometry the
         // user has picked, as against the Tree's inventory of what is in the file.
         FILE_SHEET_SECTION_IDS.STEP_MEASUREMENTS,
