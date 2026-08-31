@@ -381,7 +381,16 @@ def runtime_mesh_declarations(script_path: Path) -> dict[tuple[str, Path], tuple
     model = registered_model(script)
     if model is None:
         from cadgen._internal.generation_runner import _load_generator_module
+        from cadgen._internal.source_hash import evict_first_party_modules
 
+        # Same clean first-party module space the generation path starts from.
+        # This load happens when the STEP is already current and only declared
+        # mesh exports need refreshing, so it is the ONE module load that skips
+        # generation — and without the eviction it inherits whatever project a
+        # warm worker built last. Every cad-project keeps shared code in
+        # `src/lib/`, so a stale `lib` from another project makes this model's
+        # own helpers unimportable (or, worse, importable and wrong).
+        evict_first_party_modules()
         _load_generator_module(script)
         model = registered_model(script)
     if model is None:

@@ -17,6 +17,7 @@ determinism contract the design docs establish.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -62,17 +63,40 @@ def build_entry(
     )
 
 
-def package_dir(entry_path: Path) -> Path:
+def artifact_path(entry_path: Path) -> Path:
+    """The .step a model entry writes — its declared ``out=``, else the sibling.
+
+    A cad-project routes its artifacts into a format folder
+    (``@step(out="../STEP/x.step")``), so assuming the sibling default silently
+    resolves a package that was never built. Read the declaration statically:
+    importing the module would drag in the CAD kernel.
+    """
     entry_path = Path(entry_path).resolve()
-    # Generated entries are keyed by the STEP artifact they produce (sibling
-    # default: <stem>.step); the package resolves from the STORE by that
-    # document's content hash (cadgen.catalog.render_package_dir).
+    if not entry_path.name.endswith(".py"):
+        return entry_path
+    declared = None
+    for node in ast.parse(entry_path.read_text()).body:
+        if not isinstance(node, ast.FunctionDef):
+            continue
+        for decorator in node.decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+            if getattr(decorator.func, "id", None) != "step":
+                continue
+            for keyword in decorator.keywords:
+                if keyword.arg == "out" and isinstance(keyword.value, ast.Constant):
+                    declared = str(keyword.value.value)
+    if declared:
+        return (entry_path.parent / declared).resolve()
+    return entry_path.with_name(entry_path.name[: -len(".py")] + ".step")
+
+
+def package_dir(entry_path: Path) -> Path:
+    # The package resolves from the STORE by the ARTIFACT's content hash
+    # (cadgen.catalog.render_package_dir), wherever out= routed it.
     from cadgen.catalog import render_package_dir
 
-    artifact = entry_path
-    if artifact.name.endswith(".py"):
-        artifact = artifact.with_name(artifact.name[: -len(".py")] + ".step")
-    return render_package_dir(artifact)
+    return render_package_dir(artifact_path(entry_path))
 
 
 def fingerprint(entry_path: Path) -> dict:
@@ -94,15 +118,16 @@ def fingerprint(entry_path: Path) -> dict:
         for path in sorted((pkg / "components").glob(pattern))
     }
 
-    # Mates are source-derived, so they ride the MODEL-SIDE sidecar; an
-    # imported model has no sidecar and therefore no mates.
-    artifact = Path(entry_path).resolve()
-    if artifact.name.endswith(".py"):
-        artifact = artifact.with_name(artifact.name[: -len(".py")] + ".step")
-    sidecar_path = Path(f"{artifact}.step.json")
+    # Mates are source-derived, so they ride the MODEL-SIDE sidecar (<name>.step
+    # gets <name>.step.json beside it); an imported model has no sidecar and
+    # therefore no mates. `kinematics` is the current spelling; the legacy
+    # `assemblyMates` key is still read so older sidecars fingerprint the same.
+    artifact = artifact_path(entry_path)
+    sidecar_path = artifact.with_name(f"{artifact.name}.json")
     mates = None
     if sidecar_path.is_file():
-        mates = json.loads(sidecar_path.read_text()).get("assemblyMates")
+        sidecar = json.loads(sidecar_path.read_text())
+        mates = sidecar.get("kinematics", sidecar.get("assemblyMates"))
 
     return {
         "cids": sorted((descriptor.get("components") or {}).keys()),

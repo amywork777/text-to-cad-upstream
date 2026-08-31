@@ -13,15 +13,16 @@ models/
 ├── step/                  STEP generator sources, one flat file per model
 │   ├── parts/             single-body generators (no `children=`)
 │   ├── assemblies/        multi-part generators (+ optional .params.js sidecar)
-│   └── mechanisms/        imported .step assemblies (+ .step.js sidecars)
+│   └── mechanisms/        cad-project of imported, animated .step assemblies
 ├── renders/               folder-per-model concept packages and experiments
 │   ├── f1/ hypercar/ moonwatch/ qdd_actuator/ raptor3/ starship-mechazilla/
 │   ├── raptor2/ merlin1d/ falcon_heavy/ starship/     (SpaceX reconstructions)
 │   └── juno/ lyra/                                    (robot descriptions)
 ├── mesh/                  exported meshes, by format
 │   ├── stl/  3mf/  glb/
-├── drawings/
-│   └── dxf/               2D DXF fixtures (generators + imported files)
+├── drawings/              2D DXF fixtures, as one cad-project
+│   ├── src/               @dxf model scripts (+ lib/ helpers)
+│   └── DXF/               drawings built by those scripts (+ imported/)
 └── robots/                imported robot fixtures with URDF/SRDF
     └── elrobot/ lekiwi/ openarm/ so101/ tom/
 ```
@@ -44,8 +45,10 @@ the sources and is gitignored — never commit it.
   - [step/assemblies/](step/assemblies/README.md): flat multi-part
     `<name>.step.py` generators — one-shot concepts and standalone demo
     assemblies, each a single file plus an optional `.params.js` sidecar.
-  - [step/mechanisms/](step/mechanisms/README.md): flattened, imported
-    mechanism STEP demos and their viewer sidecars.
+  - [step/mechanisms/](step/mechanisms/README.md): a cad-project whose
+    content is `imported/` — annotated mechanism STEPs, each with a
+    new-format `.step.json` sidecar (kinematics + animation) and its
+    authored `.kinematics.json` / `.anim.js` sources.
   - `models/renders/` and `models/robots/` (below) are the only other places
     STEP files belong — both keep STEP sources inside self-contained project
     folders.
@@ -58,9 +61,11 @@ the sources and is gitignored — never commit it.
 - [mesh/](mesh/README.md): exported `stl/`, `3mf/`, and `glb/` mesh artifacts —
   durable exports from `step/parts/` and `step/assemblies/` kept as fixtures
   for testing export/render behavior, organized by format.
-- [drawings/dxf/](drawings/dxf/README.md): small 2D DXF fixtures — Python
-  `gen_dxf()` generator examples and imported permissively licensed `.dxf`
-  files for tooling robustness tests.
+- [drawings/](drawings/src/README.md): small 2D DXF fixtures as one
+  cad-project — `@dxf` model scripts in `src/`, their built drawings in `DXF/`
+  (regenerate with `python models/drawings/src/<name>.py`; not committed), and
+  imported permissively licensed `.dxf` files in `DXF/imported/` for tooling
+  robustness tests.
 - [robots/](robots/README.md): imported robot fixtures with URDF/SRDF — each
   keeps its own mix of STEP, mesh, and other file types alongside the robot
   description rather than splitting across the buckets above. (The authored

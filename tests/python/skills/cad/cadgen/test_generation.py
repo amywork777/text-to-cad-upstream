@@ -1634,12 +1634,18 @@ class CadGenerationTests(unittest.TestCase):
         cad_generation.generate_step_targets([str(script)])
         spec = self._part_spec(script)
 
-        # The closure is source-derived, so it rides the MODEL-SIDE sidecar.
-        from cadgen._internal.source_sidecar import read_source_sidecar
+        # The closure is source-derived. A PLAIN model warrants no sidecar
+        # file — its provenance rides the records tier, where every gate
+        # falls back to it.
+        from cadgen._internal.source_sidecar import (
+            read_source_provenance,
+            source_sidecar_path,
+        )
 
-        sidecar = read_source_sidecar(spec.entry_path) or {}
-        self.assertTrue(sidecar.get("sourceClosureHash"))
-        joined = " ".join(sidecar.get("sourceClosureFiles") or [])
+        self.assertFalse(source_sidecar_path(spec.entry_path).exists())
+        provenance = read_source_provenance(spec.entry_path) or {}
+        self.assertTrue(provenance.get("sourceClosureHash"))
+        joined = " ".join(provenance.get("sourceClosureFiles") or [])
         self.assertIn("record.py", joined)
         self.assertIn("record_dims.py", joined)
 

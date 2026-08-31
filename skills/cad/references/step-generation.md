@@ -66,11 +66,12 @@ These two terms classify a STEP file by what its source is:
 - An **imported STEP file** is its own source: authored or downloaded
   elsewhere. There is nothing upstream to regenerate.
 
-The link between an artifact and its script is the sidecar generation writes
-BESIDE THE MODEL (`<name>.step.json` — `part.step` gets `part.step.json` —
-carrying source hashes, the resolved kinematics, animation, and the model's
-declared mesh exports), and that sidecar's existence is what marks a model
-as generated; imports write none.
+A model that DECLARES something beyond geometry — kinematics, animation, or
+mesh exports — gets a sidecar BESIDE THE MODEL (`<name>.step.json` —
+`part.step` gets `part.step.json`) carrying those sections plus source
+hashes. A plain model writes NO sidecar: its provenance and freshness ride a
+record in the user-level store, so reruns still no-op and the doors still
+refuse a document whose script changed. Imports write none of it.
 The written STEP/DXF file itself carries NO cadgen metadata and no link back
 to source code, ever — a bare artifact separated from its package is a plain
 importable file. Provenance is never inferred from filenames either — so

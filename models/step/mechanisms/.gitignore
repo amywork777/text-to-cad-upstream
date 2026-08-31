@@ -1,0 +1,11 @@
+# `mechanisms/` is a STEP format folder, so the cad-project commit policy
+# applies: only the IMPORTED sources under imported/ are committed, and no code
+# can regenerate them. Everything else here — snapshots, scratch re-emits,
+# anything a tool drops beside the sources — stays out of git.
+#
+# Note the `/*` form: ignoring the directory itself would make the negation
+# dead, because git never descends into an ignored directory.
+/*
+!/.gitignore
+!/README.md
+!/imported/

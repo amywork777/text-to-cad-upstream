@@ -69,7 +69,8 @@ cadgen stl snapshot ...   # the same, for a mesh file; `3mf` and `glb` again
 ```
 
 **Scripts are RUN; commands take DOCUMENTS.** `python model.py` is the one
-source door — it writes the document, its sidecar, and every declared export.
+source door — it writes the document, every declared export, and (only when
+the model declares kinematics, animation, or exports) its sidecar.
 Every command above takes a `.step`/`.stl`/`.dxf` FILE, and one handed a `.py`
 says so. Nothing needs a separate cache or import step: each door makes what it
 needs. A document that has drifted from its script is refused by name — rerun
@@ -153,7 +154,7 @@ Silent generators are unaffected.
 
 ```text
 [cadgen] FAILED: ValueError: bad radius
-[cadgen]   models/step/parts/widget.py:9 in bracket
+[cadgen]   src/widget.py:9 in bracket
 [cadgen]       return _profile(radius)
 [cadgen] re-run with --verbose for the full traceback
 ```

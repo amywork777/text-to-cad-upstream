@@ -17,14 +17,19 @@ re-derived from the STEP bytes: evicting the store must never lose kinematics
 or provenance. New capability = new SECTION + schema bump, never a second
 sidecar file.
 
-Imports write NO sidecar — **the sidecar's existence is the "generated"
-marker**, on both freshness authorities (Python gates in
-``cadgen._internal.generation``, JS in ``viewer/server/artifactStatus.mjs``).
+A sidecar exists ONLY when the model NEEDS one: a kinematics section, an
+animation section, or declared mesh exports. A plain model — geometry and
+nothing else — writes no sidecar at all; its provenance and freshness ride
+the PROVENANCE RECORD in the evictable records tier (bottom of this module),
+which every generated build writes and every gate falls back to. Eviction
+costs one rebuild, never correctness. Imports write neither. One consequence
+is accepted by design: the JS authority (``viewer/server/artifactStatus.mjs``)
+reads only the sidecar file, so a plain generated model classifies as
+imported in the Viewer.
 
 Write ordering matters: the sidecar is written BEFORE the package lands at
 its content key, so a resolvable package never races a missing sidecar.
-Readers are lock-blind and tolerate a missing sidecar (a model without one
-simply classifies as imported).
+Readers are lock-blind and tolerate a missing sidecar.
 """
 
 from __future__ import annotations
@@ -65,7 +70,26 @@ def read_source_sidecar(step_path: Path | str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
+# The sections that WARRANT a sidecar. Provenance alone does not: it also
+# lives in the package descriptor, and a file per plain model is pure clutter.
+_WARRANTING_SECTIONS = ("kinematics", "animation", "meshExports")
+
+
+def sidecar_is_warranted(payload: Mapping[str, Any] | None) -> bool:
+    """Whether this payload carries anything the model actually needs a
+    sidecar FOR (kinematics, animation, or declared mesh exports)."""
+    if not payload:
+        return False
+    return any(payload.get(section) for section in _WARRANTING_SECTIONS)
+
+
 def write_source_sidecar(step_path: Path | str, payload: Mapping[str, Any]) -> None:
+    """Write the sidecar — or, for a payload that warrants none, remove any
+    stale one (a model that DROPPED its kinematics must lose the file).
+    Only the FILE: the build's provenance record stays."""
+    if not sidecar_is_warranted(payload):
+        source_sidecar_path(step_path).unlink(missing_ok=True)
+        return
     target = source_sidecar_path(step_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     body = dict(payload)
@@ -139,3 +163,53 @@ def remove_source_sidecar(step_path: Path | str) -> None:
     """Imports must never leave a stale generated-marker behind (e.g. a
     re-import over a model that used to be generated)."""
     source_sidecar_path(step_path).unlink(missing_ok=True)
+    _provenance_record_path(step_path).unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# The provenance RECORD: the freshness gates' path-keyed memory of a build's
+# source (kind, path, hash, closure). Every generated build writes one, in the
+# evictable records tier — eviction costs one rebuild, never correctness. It
+# exists so a PLAIN model (no sidecar warranted) still no-ops on rerun and is
+# still refused by the doors when it drifts from its script.
+
+_PROVENANCE_FIELDS = (
+    "generatedAt",
+    "schemaVersion",
+    "sourceKind",
+    "sourcePath",
+    "sourceHash",
+    "sourceClosureFiles",
+    "sourceClosureHash",
+    "annotationHash",
+)
+
+
+def _provenance_record_path(step_path: Path | str) -> Path:
+    from cadgen.catalog import artifact_path_key
+    from cadgen._internal.cache_paths import records_dir
+
+    return records_dir() / f"{artifact_path_key(Path(step_path))}.source.json"
+
+
+def write_source_provenance_record(step_path: Path | str, payload: Mapping[str, Any]) -> None:
+    body = {key: payload[key] for key in _PROVENANCE_FIELDS if key in payload}
+    body.setdefault("schemaVersion", SOURCE_SIDECAR_SCHEMA_VERSION)
+    target = _provenance_record_path(step_path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_name(f".{target.name}{temp_suffix()}")
+    temp.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
+    replace_atomic(temp, target)
+
+
+def read_source_provenance(step_path: Path | str) -> dict[str, Any] | None:
+    """The document's source provenance: its sidecar when it carries one,
+    else the records-tier provenance record, else ``None`` (an import)."""
+    sidecar = read_source_sidecar(step_path)
+    if sidecar is not None:
+        return sidecar
+    try:
+        payload = json.loads(_provenance_record_path(step_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None

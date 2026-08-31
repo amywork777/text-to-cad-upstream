@@ -171,7 +171,11 @@ def reemit_step_document(
     or emit.
     """
     from cadgen.catalog import artifact_file_hash, render_package_dir
-    from cadgen._internal.source_sidecar import read_source_sidecar, write_source_sidecar
+    from cadgen._internal.source_sidecar import (
+        read_source_provenance,
+        write_source_provenance_record,
+        write_source_sidecar,
+    )
 
     input_hash = artifact_file_hash(document)
     if not input_hash:
@@ -179,7 +183,7 @@ def reemit_step_document(
     digest = annotation_digest(kinematics_def, animation_source)
     at = None if kinematics_def is None else kinematics_def.at
 
-    sidecar = read_source_sidecar(out) or {}
+    sidecar = read_source_provenance(out) or {}
     package_dir = render_package_dir(out)
     bytes_current = (
         not force
@@ -217,6 +221,7 @@ def reemit_step_document(
             payload["kinematics"] = resolved
         if animation_source:
             payload["animation"] = {"clips": animation_source}
+        write_source_provenance_record(out, payload)
         write_source_sidecar(out, payload)
         return {
             "ok": True,

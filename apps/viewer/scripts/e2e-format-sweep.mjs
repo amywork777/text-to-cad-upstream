@@ -53,7 +53,7 @@ const FIXTURES = [
   { format: "3mf", file: "mesh/3mf/miniature_spiral_staircase_highres.3mf", parts: false },
   { format: "glb", file: "mesh/glb/miniature_spiral_staircase_highres.glb", parts: false },
   { format: "step", file: "step/parts/cam_follower_roller.step.py", parts: true },
-  { format: "dxf", file: "drawings/dxf/alu_extrusion_profile.dxf", parts: false },
+  { format: "dxf", file: "drawings/DXF/imported/alu_extrusion_profile.dxf", parts: false },
   // The robot family had no fixture here at all, which is how it kept missing features
   // nobody was looking at. Needs `git lfs checkout models/robots/so101` first, like the
   // mesh and DXF fixtures.

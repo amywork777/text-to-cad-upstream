@@ -313,16 +313,57 @@ def evict_first_party_modules() -> tuple[str, ...]:
     regardless of what earlier builds in the same process imported, whether a
     previous build failed partway, or what the generator unloads mid-run. Runtime
     and third-party modules (cadgen, build123d, OCP, ...) are never touched: they
-    cannot reload safely and are not freshness inputs."""
+    cannot reload safely and are not freshness inputs.
+
+    NAMESPACE packages are evicted too, and they have to be: a namespace package
+    has no ``__file__``, so it is invisible to :func:`repo_local_loaded_modules`
+    (which maps modules to SOURCE files) and used to survive every eviction. The
+    cad-project layout makes that a wrong-file hazard rather than a nicety —
+    every project keeps its shared code in ``src/lib/``, so the first project a
+    warm worker builds pins ``lib`` to ITS directory and every later project in
+    that worker either fails to import (``cannot import name X from 'lib'
+    (unknown location)``) or, when the module names happen to line up, silently
+    builds against the wrong project's helpers."""
     protected = _packages_owning_loaded_extensions()
     evicted = tuple(
         name
-        for name in repo_local_loaded_modules(set(sys.modules))
+        for name in {*repo_local_loaded_modules(set(sys.modules)), *_first_party_namespace_packages()}
         if name.partition(".")[0] not in protected
     )
     for name in evicted:
         sys.modules.pop(name, None)
     return evicted
+
+
+def _first_party_namespace_packages() -> set[str]:
+    """Loaded namespace packages whose search paths are all first-party dirs.
+
+    A namespace package's identity IS its ``__path__``; requiring every entry to
+    be first-party keeps runtime/site-packages namespaces (which must stay warm)
+    out of the eviction set."""
+    names: set[str] = set()
+    for name, module in list(sys.modules.items()):
+        if module is None or getattr(module, "__file__", None):
+            continue
+        search_paths = getattr(module, "__path__", None)
+        if search_paths is None:
+            continue
+        try:
+            entries = [str(entry) for entry in search_paths]
+        except TypeError:  # _NamespacePath can raise while its finder is mid-update
+            continue
+        if entries and all(_is_first_party_directory(entry) for entry in entries):
+            names.add(name)
+    return names
+
+
+@functools.lru_cache(maxsize=None)
+def _is_first_party_directory(entry: str) -> bool:
+    try:
+        path = Path(entry).resolve()
+    except OSError:
+        return False
+    return not any(_is_within(path, root) for root in _excluded_roots())
 
 
 def _packages_owning_loaded_extensions() -> frozenset[str]:

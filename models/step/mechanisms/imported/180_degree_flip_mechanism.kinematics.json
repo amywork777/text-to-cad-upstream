@@ -1,0 +1,51 @@
+{
+  "mates": [
+    {
+      "name": "crank",
+      "kind": "revolute",
+      "parent": "#o1.1",
+      "child": "#o1.3",
+      "axis": { "origin": [104.981, 29.599, 0.0], "dir": [0.0, 0.0, 1.0] },
+      "limits": [-115.0, 0.0]
+    },
+    {
+      "name": "coupler",
+      "kind": "revolute",
+      "parent": "#o1.3",
+      "child": "#o1.4",
+      "axis": { "origin": [45.03, 229.61, 0.0], "dir": [0.0, 0.0, 1.0] },
+      "limits": [-185.0, 170.0]
+    },
+    {
+      "name": "rocker",
+      "kind": "revolute",
+      "parent": "#o1.1",
+      "child": "#o1.2",
+      "axis": { "origin": [-15.002, 229.609, 0.0], "dir": [0.0, 0.0, 1.0] },
+      "limits": [-150.0, 0.0]
+    }
+  ],
+  "poses": {
+    "rest": { "crank": 0.0, "coupler": 0.0, "rocker": 0.0 },
+    "quarter": {
+      "crank": -54.953089135182346,
+      "coupler": 85.21953242495402,
+      "rocker": -32.49779469176195
+    },
+    "over_center": {
+      "crank": -109.90617827036469,
+      "coupler": 167.0800826980021,
+      "rocker": -105.3506617817834
+    },
+    "three_quarter": {
+      "crank": -54.953089135182346,
+      "coupler": -171.807869748,
+      "rocker": -129.06225340466568
+    },
+    "flipped": {
+      "crank": 0.0,
+      "coupler": -180.02571935719533,
+      "rocker": -145.09125186021225
+    }
+  }
+}

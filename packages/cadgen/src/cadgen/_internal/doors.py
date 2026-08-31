@@ -80,9 +80,9 @@ def document_source_script(document: Path) -> Path | None:
     together; a document whose recorded script has since moved away resolves to
     ``None`` and is treated as having nothing to be stale against.
     """
-    from cadgen._internal.source_sidecar import read_source_sidecar
+    from cadgen._internal.source_sidecar import read_source_provenance
 
-    sidecar = read_source_sidecar(document) or {}
+    sidecar = read_source_provenance(document) or {}
     if str(sidecar.get("sourceKind") or "").strip().lower() != "python":
         return None
     recorded = str(sidecar.get("sourcePath") or "").strip()
@@ -101,13 +101,13 @@ def require_current_document(document: Path) -> None:
     (``sourceKind: "step"``) have no Python source and are never stale here.
     """
     from cadgen._internal.source_hash import closure_hash_matches
-    from cadgen._internal.source_sidecar import read_source_sidecar
+    from cadgen._internal.source_sidecar import read_source_provenance
 
     document = Path(document)
     script = document_source_script(document)
     if script is None:
         return
-    sidecar = read_source_sidecar(document) or {}
+    sidecar = read_source_provenance(document) or {}
     recorded_hash = str(sidecar.get("sourceClosureHash") or "").strip()
     recorded_files = sidecar.get("sourceClosureFiles")
     if not recorded_hash or not isinstance(recorded_files, list) or not recorded_files:

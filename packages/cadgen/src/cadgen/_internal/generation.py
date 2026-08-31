@@ -553,7 +553,11 @@ def _generate_part_outputs(
             shape = scene_to_build123d_compound(scene)
         from cadgen.catalog import artifact_path_key, package_dir_for_hash
         from cadgen._internal.cache_paths import packages_dir
-        from cadgen._internal.source_sidecar import remove_source_sidecar, write_source_sidecar
+        from cadgen._internal.source_sidecar import (
+            remove_source_sidecar,
+            write_source_provenance_record,
+            write_source_sidecar,
+        )
 
         sidecar_payload = _source_sidecar_payload(scene, shape)
         generated = sidecar_payload is not None
@@ -588,6 +592,9 @@ def _generate_part_outputs(
         # export. Stage the package in a dot-named temp dir under the store,
         # write the document, then move the package to its content key.
         # Sidecar first: a resolvable package must never race a missing one.
+        # The provenance record ALWAYS lands (the freshness gates' memory);
+        # the sidecar file only when the model warrants one.
+        write_source_provenance_record(spec.entry_path, sidecar_payload)
         write_source_sidecar(spec.entry_path, sidecar_payload)
         staging = packages_dir() / f".building-{artifact_path_key(spec.entry_path)}-{os.getpid()}"
         shutil.rmtree(staging, ignore_errors=True)
@@ -927,9 +934,9 @@ def _record_step_export(spec: EntrySpec, scene: object | None = None) -> None:
     try:
         import hashlib
 
-        from cadgen._internal.source_sidecar import read_source_sidecar
+        from cadgen._internal.source_sidecar import read_source_provenance
 
-        sidecar = read_source_sidecar(spec.entry_path)
+        sidecar = read_source_provenance(spec.entry_path)
         closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         resolved = target.expanduser().resolve()
         if not closure or not resolved.is_file():
@@ -968,9 +975,9 @@ def _step_export_current(spec: EntrySpec) -> bool:
     try:
         import hashlib
 
-        from cadgen._internal.source_sidecar import read_source_sidecar
+        from cadgen._internal.source_sidecar import read_source_provenance
 
-        sidecar = read_source_sidecar(spec.entry_path)
+        sidecar = read_source_provenance(spec.entry_path)
         closure = str((sidecar or {}).get("sourceClosureHash") or "").strip()
         record_path = _step_export_record_path(spec)
         if not closure:

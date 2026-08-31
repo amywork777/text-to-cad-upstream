@@ -1,0 +1,112 @@
+{
+  "mates": [
+    {
+      "name": "hoist",
+      "kind": "slider",
+      "parent": "#o1.1",
+      "child": "#o1.2",
+      "axis": { "origin": [14.610456, -171.775187, 69.00033], "dir": [0.0, 0.0, 1.0] },
+      "limits": [0.0, 176.708]
+    },
+    {
+      "name": "rise",
+      "kind": "revolute",
+      "parent": "#o1.1",
+      "child": "#o1.3",
+      "axis": { "origin": [14.610456, -171.775187, 23.0], "dir": [1.0, 0.0, 0.0] },
+      "limits": [0.0, 39.113]
+    },
+    {
+      "name": "descend",
+      "kind": "revolute",
+      "parent": "#o1.2",
+      "child": "#o1.4",
+      "axis": { "origin": [14.610456, -171.775187, 69.00033], "dir": [1.0, 0.0, 0.0] },
+      "limits": [-39.113, 0.0]
+    },
+    {
+      "name": "lower_roller_1",
+      "kind": "slider",
+      "parent": "#o1.1",
+      "child": "#o1.6",
+      "axis": { "origin": [14.610456, 124.677119, 23.0], "dir": [0.0, 1.0, 0.0] },
+      "limits": [-95.453, 0.0]
+    },
+    {
+      "name": "lower_roller_2",
+      "kind": "slider",
+      "parent": "#o1.1",
+      "child": "#o1.7",
+      "axis": { "origin": [14.610456, 124.677119, 23.0], "dir": [0.0, 1.0, 0.0] },
+      "limits": [-95.453, 0.0]
+    },
+    {
+      "name": "upper_roller_1",
+      "kind": "slider",
+      "parent": "#o1.2",
+      "child": "#o1.8",
+      "axis": { "origin": [14.610456, 124.677119, 69.00033], "dir": [0.0, 1.0, 0.0] },
+      "limits": [-95.453, 0.0]
+    },
+    {
+      "name": "upper_roller_2",
+      "kind": "slider",
+      "parent": "#o1.2",
+      "child": "#o1.9",
+      "axis": { "origin": [14.610456, 124.677119, 69.00033], "dir": [0.0, 1.0, 0.0] },
+      "limits": [-95.453, 0.0]
+    },
+    {
+      "name": "actuator_rod",
+      "kind": "slider",
+      "parent": "#o1.1",
+      "child": "#o1.5",
+      "axis": { "origin": [14.610456, -142.775187, 27.499913], "dir": [0.0, 0.0, 1.0] },
+      "limits": [0.0, 27.633]
+    },
+    {
+      "name": "actuator_shaft",
+      "kind": "fastened",
+      "parent": "#o1.5",
+      "child": "#o1.11"
+    },
+    {
+      "name": "actuator_slider",
+      "kind": "revolute",
+      "parent": "#o1.5",
+      "child": "#o1.10",
+      "axis": { "origin": [14.610456, -142.775187, 27.499913], "dir": [1.0, 0.0, 0.0] },
+      "limits": [0.0, 39.113]
+    }
+  ],
+  "couplings": [
+    {
+      "name": "scissor",
+      "gears": { "rise": 1.0, "descend": -1.0 },
+      "limits": [0.0, 39.113]
+    }
+  ],
+  "poses": {
+    "collapsed": { "hoist": 0.0 },
+    "mid": {
+      "hoist": 84.49983499999998,
+      "scissor": 16.96511725715513,
+      "lower_roller_1": -26.32324975502783,
+      "lower_roller_2": -26.32324975502783,
+      "upper_roller_1": -26.32324975502783,
+      "upper_roller_2": -26.32324975502783,
+      "actuator_rod": 9.510074809559974,
+      "actuator_slider": 16.96511725715513
+    },
+    "raised": {
+      "hoist": 168.99966999999998,
+      "scissor": 36.95974393771785,
+      "lower_roller_1": -87.22754624908873,
+      "lower_roller_2": -87.22754624908873,
+      "upper_roller_1": -87.22754624908873,
+      "upper_roller_2": -87.22754624908873,
+      "actuator_rod": 25.300575275971575,
+      "actuator_slider": 36.95974393771785
+    }
+  }
+}

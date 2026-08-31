@@ -1,0 +1,87 @@
+{
+  "mates": [
+    {
+      "name": "left_pinion",
+      "kind": "revolute",
+      "parent": "#o1.1.10",
+      "child": "#o1.1.13",
+      "axis": { "origin": [-40.0, 0.0, 14.000004], "dir": [0.0, 0.0, 1.0] },
+      "limits": [0.0, 82.0]
+    },
+    {
+      "name": "right_pinion",
+      "kind": "revolute",
+      "parent": "#o1.1.10",
+      "child": "#o1.1.14",
+      "axis": { "origin": [40.0, 0.0, 14.000004], "dir": [0.0, 0.0, 1.0] },
+      "limits": [-82.0, 0.0]
+    },
+    {
+      "name": "left_jaw",
+      "kind": "slider",
+      "parent": "#o1.1.10",
+      "child": "#o1.1.11",
+      "axis": { "origin": [-27.36, 54.5, 14.0], "dir": [-1.0, 0.0, 0.0] },
+      "limits": [0.0, 28.6234]
+    },
+    {
+      "name": "right_jaw",
+      "kind": "slider",
+      "parent": "#o1.1.10",
+      "child": "#o1.1.12",
+      "axis": { "origin": [27.36, 54.5, 14.0], "dir": [1.0, 0.0, 0.0] },
+      "limits": [0.0, 28.6234]
+    },
+    {
+      "name": "piston",
+      "kind": "slider",
+      "parent": "#o1.1.10",
+      "child": "#o1.1.17",
+      "axis": { "origin": [0.0, -47.0, 14.0], "dir": [0.0, 1.0, 0.0] },
+      "limits": [0.0, 27.8754]
+    },
+    {
+      "name": "left_conrod",
+      "kind": "revolute",
+      "parent": "#o1.1.17",
+      "child": "#o1.1.15",
+      "axis": { "origin": [-20.0, -10.0, 14.000004], "dir": [0.0, 0.0, 1.0] },
+      "limits": [0.0, 62.0]
+    },
+    {
+      "name": "right_conrod",
+      "kind": "revolute",
+      "parent": "#o1.1.17",
+      "child": "#o1.1.16",
+      "axis": { "origin": [20.0, -10.0, 14.000004], "dir": [0.0, 0.0, 1.0] },
+      "limits": [-62.0, 0.0]
+    }
+  ],
+  "couplings": [
+    {
+      "name": "grip",
+      "gears": {
+        "left_pinion": 82.0,
+        "right_pinion": -82.0,
+        "left_jaw": 28.623399732707,
+        "right_jaw": 28.623399732707
+      },
+      "limits": [0.0, 1.0]
+    }
+  ],
+  "poses": {
+    "closed": { "grip": 0.0 },
+    "half_open": {
+      "grip": 0.5,
+      "piston": 16.617929017260018,
+      "left_conrod": 46.439667670303905,
+      "right_conrod": -46.43966767030392
+    },
+    "open": {
+      "grip": 1.0,
+      "piston": 27.87534165741835,
+      "left_conrod": 61.50892814542118,
+      "right_conrod": -61.508928145421194
+    }
+  }
+}

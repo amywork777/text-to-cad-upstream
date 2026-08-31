@@ -235,9 +235,11 @@ def read_step_topology_index_from_glb(glb_path: Path, *, entry_path: Path | None
     # The sidecar lives BESIDE THE MODEL, so callers that know the entry
     # file pass it; store packages themselves carry no source state.
     if entry_path is not None:
-        from cadgen._internal.source_sidecar import read_source_sidecar
+        from cadgen._internal.source_sidecar import read_source_provenance
 
-        sidecar = read_source_sidecar(entry_path)
+        # Sidecar when the model carries one (kinematics/animation/exports);
+        # else the records-tier provenance record a plain model's build wrote.
+        sidecar = read_source_provenance(entry_path)
         if sidecar is not None:
             manifest["_sourceSidecar"] = sidecar
     return manifest
