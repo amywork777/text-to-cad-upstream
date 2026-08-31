@@ -209,15 +209,64 @@ class PublicVerbs(unittest.TestCase):
                 self.assertIn("snapshot", module.__all__)
                 self.assertTrue(callable(module.snapshot))
 
-    def test_the_verbs_are_one_signature_not_seven_copies(self) -> None:
+    def test_each_door_has_its_own_shape(self) -> None:
+        """Three signatures, not one shared fifteen-parameter blob.
+
+        The doors used to share ONE signature and refuse the options a format
+        cannot act on at runtime — so `cadgen stl snapshot --help` advertised
+        `--display`, `--kinematics`, `--focus` and `--hide` to a reader holding
+        a mesh, and every one of them errored. The signature is the surface
+        now, so what a door cannot do is simply absent from it.
+        """
         import importlib
         import inspect as inspect_module
 
-        signatures = {
-            str(inspect_module.signature(importlib.import_module(f"cadgen.{door}").snapshot))
-            for door in self.DOORS
-        }
-        self.assertEqual(len(signatures), 1, signatures)
+        def parameters(module_name: str, attribute: str = "snapshot") -> set[str]:
+            verb = getattr(importlib.import_module(module_name), attribute)
+            return set(inspect_module.signature(verb).parameters)
+
+        step = parameters("cadgen.step")
+        self.assertLessEqual(
+            {"display", "kinematics", "focus", "hide"},
+            step,
+            "the STEP door carries the full surface",
+        )
+        self.assertNotIn("joint_values", step, "a STEP model has no joints to pose")
+
+        for door in ("stl", "threemf", "glb", "dxf"):
+            with self.subTest(door=door):
+                mesh = parameters(f"cadgen.{door}")
+                for absent in ("display", "kinematics", "focus", "hide", "joint_values"):
+                    self.assertNotIn(absent, mesh, f"{absent} has nothing to act on here")
+
+        for door in ("urdf", "sdf"):
+            with self.subTest(door=door):
+                robot = parameters(f"cadgen.{door}")
+                self.assertIn("joint_values", robot)
+                for absent in ("display", "kinematics", "focus", "hide"):
+                    self.assertNotIn(absent, robot, f"{absent} requires STEP topology")
+
+        # The polymorphic door routes by suffix, so it is the UNION: a job
+        # packet may mix formats, and each input is still held to its own
+        # format's rules at resolve time.
+        union = parameters("cadgen.cli.snapshot")
+        self.assertEqual(
+            union,
+            step | parameters("cadgen.urdf"),
+            "`cadgen snapshot` is exactly the union of the door shapes",
+        )
+
+    def test_the_mesh_and_robot_shapes_share_everything_they_can(self) -> None:
+        """A robot door IS the mesh door plus posing — not a third dialect."""
+        import importlib
+        import inspect as inspect_module
+
+        def parameters(door: str) -> set[str]:
+            verb = importlib.import_module(f"cadgen.{door}").snapshot
+            return set(inspect_module.signature(verb).parameters)
+
+        self.assertEqual(parameters("urdf") - {"joint_values"}, parameters("stl"))
+        self.assertEqual(parameters("stl"), parameters("dxf"))
 
     def test_a_verb_refuses_a_format_that_is_not_its_door(self) -> None:
         import tempfile

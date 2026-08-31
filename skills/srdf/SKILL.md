@@ -86,12 +86,13 @@ CLI and headless browser runtime every rendering skill uses — so a snapshot ma
 the CAD Viewer shows.
 
 ```bash
-cadgen snapshot --input path/to/robot.srdf --output review.png
+cadgen snapshot path/to/robot.srdf review.png
 ```
 
-It accepts `.srdf` only. Pose the robot with the job field `"jointValues"` (joint name to
-degrees, defaulting to the rest pose) rather than `--params`, which is STEP-only; robots
-are authored in metres and are framed on the robot scene scale automatically.
+It accepts `.srdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+joints you do not name staying at the rest pose (the `"jointValues"` job field is the same
+thing in a packet). Robots are authored in metres and are framed on the robot scene scale
+automatically.
 
 Theme settings live under one `--theme`, mirroring the viewer's Theme tab. The default
 theme is `snapshot` — Workbench Light with the ground grid, origin axis and shadows
@@ -102,7 +103,10 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `cadgen snapshot --help` for the complete current command interface.
+An SRDF's geometry comes from the URDF beside it, so it has no snapshot door of its
+own; the polymorphic `cadgen snapshot` routes one by suffix. The grammar is
+`cadgen snapshot TARGET [OUT] [flags]`, the same one every format door uses. Use
+`cadgen snapshot --help` for the complete current interface.
 
 ## References
 

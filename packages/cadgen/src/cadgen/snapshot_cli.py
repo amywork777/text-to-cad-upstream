@@ -1049,13 +1049,17 @@ KIND_RESOLVERS: dict[str, Callable[..., dict[str, object]]] = {
 KIND_ENABLES: dict[str, tuple[str, ...]] = {"step": ("step", "python")}
 
 
-# What each kind is called in help and in errors, in the order a reader wants them.
+# What each kind is called in errors, and the order a reader wants them listed
+# in. Help is the verb signature's business now; this survives because a refusal
+# still has to say what the door DOES take.
 KIND_LABELS: dict[str, str] = {
     "step": ".step / .step.py", "stp": ".stp", "python": ".step.py",
     "glb": ".glb", "stl": ".stl", "3mf": ".3mf",
     "dxf": ".dxf / .dxf.py",
     "urdf": ".urdf", "srdf": ".srdf", "sdf": ".sdf",
 }
+
+_KIND_HELP_ORDER = ("step", "stp", "3mf", "glb", "stl", "dxf", "urdf", "srdf", "sdf")
 
 
 def enabled_kinds(kinds: Sequence[str]) -> frozenset[str]:

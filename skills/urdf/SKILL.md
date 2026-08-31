@@ -63,7 +63,7 @@ cadgen urdf validate path/to/robot.urdf
 cadgen urdf validate path/to/robot.urdf --strict
 cadgen urdf validate path/to/robot.urdf --json
 cadgen urdf validate path/to/robot.urdf --packages robot_description=/path/to/pkg
-cadgen urdf snapshot --input path/to/robot.urdf --output review.png
+cadgen urdf snapshot path/to/robot.urdf review.png
 ```
 
 The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a summary. One run validates ONE file: `--strict` treats warnings as failures; `--json` emits the machine-readable findings document; `--packages NAME=PATH` resolves `package://` mesh URIs and repeats for several roots. It exits nonzero if the target fails. Relative targets resolve from the current working directory; when running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
@@ -77,12 +77,13 @@ CLI and headless browser runtime every rendering skill uses — so a snapshot ma
 the CAD Viewer shows.
 
 ```bash
-cadgen snapshot --input path/to/robot.urdf --output review.png
+cadgen snapshot path/to/robot.urdf review.png
 ```
 
-It accepts `.urdf` only. Pose the robot with the job field `"jointValues"` (joint name to
-degrees, defaulting to the rest pose) rather than `--params`, which is STEP-only; robots
-are authored in metres and are framed on the robot scene scale automatically.
+It accepts `.urdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+joints you do not name staying at the rest pose (the `"jointValues"` job field is the same
+thing in a packet). Robots are authored in metres and are framed on the robot scene scale
+automatically.
 
 Theme settings live under one `--theme`, mirroring the viewer's Theme tab. The default
 theme is `snapshot` — Workbench Light with the ground grid, origin axis and shadows
@@ -93,7 +94,9 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `cadgen snapshot --help` for the complete current command interface.
+The grammar is `cadgen urdf snapshot TARGET [OUT] [flags]`, the same one every
+format door uses. Use `cadgen urdf snapshot --help` for the complete current
+interface — the flags a robot cannot act on are absent from it, not refused by it.
 
 ## References
 

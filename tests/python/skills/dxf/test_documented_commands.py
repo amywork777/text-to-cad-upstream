@@ -371,22 +371,31 @@ class DocumentationTeachesTheNewContract(unittest.TestCase):
         self.assertIn("current working directory", snapshot_section)
         self.assertIn("missing file", snapshot_section)
         # The generate-a-name case is the only surviving read-the-printed-path case.
-        self.assertIn("--output tmp/", snapshot_section)
+        self.assertIn("`tmp/` as OUT", snapshot_section)
 
     def test_documented_snapshot_forms_name_a_file(self) -> None:
-        """`cadgen dxf snapshot --input X --output Y` — the Y in every documented
-        form is a file the reader can open by that name afterwards."""
+        """`cadgen dxf snapshot TARGET OUT` — the OUT in every documented form is
+        a file the reader can open by that name afterwards.
+
+        Read off the command's OWN parser rather than by counting words, so a
+        form written against a retired spelling fails here instead of quietly
+        matching nothing and passing."""
+        from cadgen.cli.dxf_snapshot import build_parser
+
         forms = [
             line.strip()
             for line in SKILL.read_text(encoding="utf-8").splitlines()
-            if line.strip().startswith("cadgen dxf snapshot") and "--output" in line
+            if line.strip().startswith("cadgen dxf snapshot ")
+            and "--help" not in line
         ]
         self.assertGreaterEqual(len(forms), 2)
         for form in forms:
             with self.subTest(form=form):
-                tokens = form.split()
-                value = tokens[tokens.index("--output") + 1]
-                self.assertTrue(Path(value).suffix, f"`--output {value}` names no file")
+                rest = form.split("#")[0].split()[3:]
+                out = build_parser().parse_args(rest).out
+                self.assertIsNotNone(out, f"`{form}` names no OUT")
+                value = str(out)
+                self.assertTrue(Path(value).suffix, f"OUT `{value}` names no file")
                 self.assertFalse(value.endswith(("/", "\\")))
 
     def test_the_project_template_matches_its_exemplar(self) -> None:

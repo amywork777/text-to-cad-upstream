@@ -171,7 +171,7 @@ Use these defaults unless the user specifies otherwise:
 ```bash
 python <drawing>.py [flags]      # a @dxf model script writes its sibling .dxf
 cadgen dxf build <drawing>.py    # the same build, asked for by name
-cadgen dxf snapshot --input <drawing> --output <file.png>   # render it
+cadgen dxf snapshot <drawing> <file.png>       # render it
 ```
 
 `cadgen dxf build` and running the script are the same build through the same
@@ -200,8 +200,8 @@ place a drawing names its destination.
 `cadgen dxf snapshot` renders a drawing's 3D flat pattern to a PNG still:
 
 ```bash
-cadgen dxf snapshot --input path/to/imported.dxf --output review.png
-cadgen dxf snapshot --input path/to/source.py --output review.png --camera top
+cadgen dxf snapshot path/to/imported.dxf review.png
+cadgen dxf snapshot path/to/source.py review.png --camera top
 ```
 
 For a generator it makes the sibling `.dxf` current first (the ordinary no-op
@@ -211,21 +211,23 @@ headless browser runtime every rendering skill uses — so geometry and material
 render identically to the CAD Viewer; the default `snapshot` theme differs from the
 viewport only by dropping the grid, origin axis and shadows.
 
-`--output` is written exactly as given, with a relative path resolved against the
+OUT — the second positional — is written exactly as given, with a relative path resolved against the
 current working directory. The target is deleted before the render starts and the
 finished image is written atomically, so: reuse one name while iterating (every read
 is provably the render you just ran), name the iterations when you genuinely need to
 compare two, and treat a missing file as the failure signal — there is never an older
-image at the path to mistake for output. A directory (`--output tmp/`) is the
+image at the path to mistake for output. A directory (`tmp/` as OUT) is the
 don't-care case and gets a generated timestamped name inside it, printed on the
 `saved snapshot:` line.
 
-Flags: `--mode view|list`, `--camera`, `--theme`, `--size-profile`,
-`--width`/`--height`, `--job`, `--force`, `--json`. Theme settings live under one
-`--theme`, mirroring the viewer's Theme tab; the default theme is `snapshot`, Workbench
-Light without the ground grid, origin axis or shadows. There is no `--display`, and no
-selector, parameter, section or exploded options: a drawing carries no CAD topology, and
-display settings are CAD topology settings.
+Grammar: `cadgen dxf snapshot TARGET [OUT] [flags]`. Flags: `--mode view|list`,
+`--camera`, `--theme`, `--size-profile`, `--width`/`--height`, `--job`,
+`--view-labels`, `--debug`, `--json`. Theme settings live under one `--theme`,
+mirroring the viewer's Theme tab; the default theme is `snapshot`, Workbench Light
+without the ground grid, origin axis or shadows. The command has no `--display`,
+and no selector, kinematics, section or exploded options at all — they are absent
+from `--help` rather than refused at runtime, because a drawing carries no CAD
+topology and display settings are CAD topology settings.
 
 No CLI inspects an existing `.dxf`. For entity/layer checks read it with `ezdxf`
 directly (it arrives with build123d), and `validate_dxf_file` for the drawing checks;

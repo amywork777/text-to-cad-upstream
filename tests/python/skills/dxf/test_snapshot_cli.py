@@ -10,11 +10,13 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("packages/cadgen/src")
 
-# The CLI is shared (cadgen.snapshot_cli); `cadgen dxf snapshot`
-# (cadgen.cli.dxf_snapshot) is the DXF entrypoint and declares which kinds it accepts.
+# Job resolution is shared (cadgen.snapshot_cli); `cadgen dxf snapshot`
+# (cadgen.cli.dxf_snapshot) is the DXF entrypoint, a GENERATED CLI over
+# cadgen.dxf.snapshot. Which kinds the door accepts is declared beside the verbs.
 # What is DXF-specific -- resolving a .dxf or a drawing() source to its built package --
 # is what these tests cover.
 import cadgen.snapshot_cli as snapshot
+from cadgen._internal.snapshot_door import DOOR_KINDS
 import cadgen.cli.dxf_snapshot as dxf_snapshot_entry
 
 
@@ -91,9 +93,11 @@ class DxfSnapshotCliTests(unittest.TestCase):
             snapshot.drawing_mesh_path(Path("/models/definitely-absent.dxf"), force=False)
 
     def test_section_mode_is_rejected_for_a_drawing(self) -> None:
-        # Drawings have no CAD topology, so section has nothing to work with. The shared
-        # CLI accepts the flag for every skill and refuses it per KIND at resolve time,
-        # which is what keeps the message specific instead of "invalid choice".
+        # Drawings have no CAD topology, so section has nothing to work with.
+        # `--mode` is one string across every door, so section is refused per KIND
+        # at resolve time -- which is what keeps the message specific instead of
+        # "invalid choice". (`--display` and `--kinematics` are a different case:
+        # those are absent from this door's SIGNATURE, so they never parse at all.)
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -103,7 +107,7 @@ class DxfSnapshotCliTests(unittest.TestCase):
                 snapshot.resolve_render_job_packet(
                     {"input": "a.dxf", "mode": "section", "outputs": [{"path": "a.png"}]},
                     cwd=root,
-                    kinds=snapshot.enabled_kinds(dxf_snapshot_entry.KINDS),
+                    kinds=snapshot.enabled_kinds(DOOR_KINDS["dxf"]),
                 )
 
     def test_cadgen_dxf_snapshot_help_names_drawings(self) -> None:
@@ -116,8 +120,13 @@ class DxfSnapshotCliTests(unittest.TestCase):
         )
         self.assertEqual("", result.stderr)
         self.assertEqual(0, result.returncode)
-        self.assertIn("Usage:", result.stdout)
+        # The help is GENERATED from cadgen.dxf.snapshot's signature, so what it
+        # names is what the verb takes: a positional TARGET that accepts .dxf.
+        self.assertIn("usage: cadgen dxf snapshot", result.stdout)
+        self.assertIn("[TARGET] [OUT]", result.stdout)
         self.assertIn(".dxf", result.stdout)
+        for absent in ("--display", "--kinematics", "--focus", "--input", "--output"):
+            self.assertNotIn(absent, result.stdout, f"{absent} is not a drawing's business")
 
     def test_runtime_is_bundled_beside_the_cli(self) -> None:
         # The skill must carry its own render runtime: it may not reach into the CAD

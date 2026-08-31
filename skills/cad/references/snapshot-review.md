@@ -58,17 +58,17 @@ Use `--focus '#o1.2' ...` to emphasize specific part or subassembly occurrence r
 Name the file and you get that file:
 
 ```bash
-cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
+cadgen step snapshot STEP/bracket.step tmp/review.png
 # then Read tmp/review.png
 ```
 
-`--output` (and an output's `path` in a JSON packet) is written exactly as given, with a relative path resolved against the current working directory. The target is deleted before the render starts and the finished image is written atomically, so the file at that path is always the render you just ran.
+OUT (and an output's `path` in a JSON packet) is written exactly as given, with a relative path resolved against the current working directory. The target is deleted before the render starts and the finished image is written atomically, so the file at that path is always the render you just ran.
 
 1. **Tight iteration: reuse one name.** Render, Read, edit the source, render again to the same `tmp/review.png`. Every read is provably the latest render, because a failed one leaves nothing to read.
 2. **Comparisons: name the iterations.** Use `tmp/before.png` and `tmp/after.png` when both images are genuinely needed.
 3. **A missing file IS the failure signal.** A nonzero exit or a file-not-found means the render failed; there is never an older image at the path to mistake for output.
 
-Pass a directory (`--output tmp/`, or an output `path` that is one) only when the name does not matter: a timestamped name is generated inside it, and that is the one case where you read the path from the `saved snapshot:` line.
+Pass a directory (`tmp/` as OUT, or an output `path` that is one) only when the name does not matter: a timestamped name is generated inside it, and that is the one case where you read the path from the `saved snapshot:` line.
 
 ## Targeted additions
 
