@@ -196,7 +196,7 @@ Load these files only when their trigger applies:
 - `references/inspection-and-validation.md` — validation sequence, selector refs, facts, planes, measurements, alignment, diff, frame, and validation reporting.
 - `references/snapshot-review.md` — mandatory snapshot policy, packet sizing, targeted views, and converting visual findings into geometry checks.
 - `references/positioning.md` — part-local datums and origins, assembly transforms, build123d joints, CLI alignment validation, and positioning reports.
-- `references/parameters.md` — articulating, posing, or animating a STEP model: geometry parameters (the function signature), typed mates (`kinematics=` on the export decorators — mates, couplings, pose presets, export-at-pose), and the `.anim.js` choreography contract.
+- `references/kinematics.md` — articulating, posing, or animating a STEP model: geometry parameters (the function signature), typed mates (`kinematics=` on the export decorators — mates, couplings, pose presets, export-at-pose), and the `.anim.js` choreography contract.
 - `references/supported-exports.md` — STL/3MF/native GLB mesh export workflows: declared exports and the `cadgen stl|3mf|glb build` doors.
 - `references/repair-loop.md` — diagnosis and repair procedures.
 - `references/migrating-generators.md` — migrating legacy gen_step()/gen_dxf() sources and .step.py/.dxf.py naming to @step/@dxf model scripts (codemod: `python -m cadgen.migrate`).
