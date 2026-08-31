@@ -16,6 +16,12 @@ dict whose shape mirrors the sidecar's kinematics section exactly
     @step(out="../STEP/arm.step", kinematics=KINEMATICS)
     def arm(): ...
 
+EVERYTHING SAYS KINEMATICS. The bake point is the dict's own ``"at"`` key —
+a preset name or ``{dof: value}`` — so one argument name spans the decorator,
+the doors and the snapshot flag::
+
+    @step(out="gripper.step", kinematics={**KINEMATICS, "at": "closed"})
+
 Semantics: AUTHORED PLACEMENT IS q=0. A mate declares the one axis its DOF
 moves about (a selector ref resolved to numbers at build time, or literal
 origin/direction) and measures displacement from wherever the author built the
@@ -51,13 +57,19 @@ __all__ = [
     "couple",
     "normalize_kinematics",
     "kinematics_dof_ids",
-    "normalize_bake_pose",
+    "retired_pose_kwarg_message",
 ]
 
-# The closed section vocabulary of the kinematics dict (and of the sidecar's
-# kinematics block). A new capability adds a key HERE and a sidecar schema
-# bump, never a new sidecar file.
-KINEMATICS_KEYS = ("mates", "couplings", "poses")
+# The closed section vocabulary of the kinematics dict. ``mates``/``couplings``/
+# ``poses`` are the sidecar's kinematics block; ``at`` is authoring-only — it
+# selects the BAKE point and never survives into the block, because the artifact
+# as written is its own q=0. A new capability adds a key HERE and a sidecar
+# schema bump, never a new sidecar file.
+KINEMATICS_KEYS = ("mates", "couplings", "poses", "at")
+
+#: The keys that make up the sidecar's kinematics block (``at`` is consumed at
+#: build time and re-expressed as the baked descriptor plus ``bakedPose``).
+KINEMATICS_BLOCK_KEYS = ("mates", "couplings", "poses")
 
 _MATE_KINDS = {"revolute", "slider", "cylindrical", "fastened"}
 # Sub-DOF names of a cylindrical mate: "<name>.turn" rotates, "<name>.travel"
@@ -213,8 +225,8 @@ def _mate(
         # moment a panel opened — the ambiguity is designed out.
         raise _fail(
             f"mate {mate_name!r}: default= was dropped — 0 is always the "
-            "artifact as written; declare a preset in poses= or bake the "
-            "artifact with pose= instead"
+            "artifact as written; declare a preset under poses or bake the "
+            "artifact with kinematics={..., 'at': <preset>} instead"
         )
     if kind == "fastened":
         if axis is not None or origin is not None or direction is not None:
@@ -279,31 +291,108 @@ def couple(name, gears, *, limits=None) -> Coupling:
     return Coupling(name=text, gears=normalized, limits=bounds)
 
 
+# The keys a plain-dict mate / coupling entry may carry. JSON has no
+# constructors, so `cadgen step build --kinematics '{"mates": [{...}]}'`
+# hands dicts to the SAME validator the Python constructors feed — one
+# vocabulary, one set of teaching errors, no second parser to drift.
+_MATE_DICT_KEYS = {"name", "kind", "parent", "child", "axis", "origin", "direction", "limits"}
+_COUPLING_DICT_KEYS = {"name", "gears", "limits"}
+
+
+def _mate_from_mapping(entry: Mapping[str, Any], *, where: str) -> Mate:
+    unknown = set(entry) - _MATE_DICT_KEYS
+    if unknown:
+        raise _fail(
+            f"{where} mate entry has unknown key(s) {sorted(unknown)}; a mate is "
+            f"{sorted(_MATE_DICT_KEYS)}"
+        )
+    kind = str(entry.get("kind") or "").strip()
+    if kind not in _MATE_KINDS:
+        raise _fail(
+            f"{where} mate {entry.get('name')!r} kind must be one of "
+            f"{sorted(_MATE_KINDS)}, got {entry.get('kind')!r}"
+        )
+    axis = entry.get("axis")
+    origin = entry.get("origin")
+    direction = entry.get("direction")
+    if isinstance(axis, Mapping):
+        # The already-resolved literal spelling, the same shape the sidecar
+        # carries: {"origin": [...], "dir": [...]}.
+        origin = axis.get("origin")
+        direction = axis.get("dir", axis.get("direction"))
+        axis = None
+    limits = entry.get("limits")
+    if isinstance(limits, Mapping):
+        limits = {str(key): value for key, value in limits.items()}
+    return _mate(
+        kind,
+        entry.get("name"),
+        parent=entry.get("parent"),
+        child=entry.get("child"),
+        axis=axis,
+        origin=origin,
+        direction=direction,
+        limits=limits,
+    )
+
+
+def _coupling_from_mapping(entry: Mapping[str, Any], *, where: str) -> Coupling:
+    unknown = set(entry) - _COUPLING_DICT_KEYS
+    if unknown:
+        raise _fail(
+            f"{where} coupling entry has unknown key(s) {sorted(unknown)}; a "
+            f"coupling is {sorted(_COUPLING_DICT_KEYS)}"
+        )
+    return couple(entry.get("name"), entry.get("gears"), limits=entry.get("limits"))
+
+
 @dataclass(frozen=True)
 class KinematicsDef:
     """The validated declaration, carried on a ModelDef / mesh declaration.
 
     ``block`` is JSON-ready except that mate axes may still be selector refs;
-    the build resolves those to numbers before anything serializes.
+    the build resolves those to numbers before anything serializes. ``at`` is
+    the resolved ``{dof: value}`` bake point the declaration's ``"at"`` key
+    named, or ``None`` for authored rest.
     """
 
     block: dict[str, Any]
+    at: dict[str, float] | None = None
 
     def dof_ids(self) -> tuple[str, ...]:
         return kinematics_dof_ids(self.block)
 
-    def pose_values(self, pose: object, *, where: str) -> dict[str, float]:
-        """Resolve a ``pose=`` bake selector (preset name or value dict) to
+    def at_values(self, at: object, *, where: str) -> dict[str, float]:
+        """Resolve an ``"at"`` bake point (preset name or value dict) to
         concrete DOF values, validated against this declaration."""
-        poses = self.block.get("poses") or {}
-        if isinstance(pose, str):
-            if pose not in poses:
-                known = ", ".join(sorted(poses)) or "(none declared)"
-                raise _fail(f"{where} pose {pose!r} is not a declared preset; poses: {known}")
-            return dict(poses[pose])
-        if isinstance(pose, Mapping):
-            return _validated_pose_values(self.block, pose, where=where)
-        raise _fail(f"{where} pose must be a preset name or a {{dof: value}} dict, got {type(pose).__name__}")
+        return resolve_kinematics_at(self.block, at, where=where)
+
+
+def resolve_kinematics_at(
+    block: Mapping[str, Any], at: object, *, where: str
+) -> dict[str, float]:
+    """One rule for every ``at`` spelling — the decorator's ``"at"`` key, a mesh
+    door's ``kinematics=``, snapshot's ``--kinematics``: a declared preset NAME
+    or a ``{dof: value}`` dict, checked against the DOFs this block declares."""
+    poses = block.get("poses") or {}
+    if isinstance(at, str):
+        if at not in poses:
+            known = ", ".join(sorted(poses)) or "(none declared)"
+            raise _fail(f"{where} 'at' names {at!r}, which is not a declared preset; poses: {known}")
+        return dict(poses[at])
+    if isinstance(at, Mapping):
+        return _validated_pose_values(block, at, where=where)
+    raise _fail(
+        f"{where} 'at' must be a preset name or a {{dof: value}} dict, got {type(at).__name__}"
+    )
+
+
+def retired_pose_kwarg_message(deco_name: str) -> str:
+    """The teaching error at the deleted ``pose=`` decorator kwarg."""
+    return (
+        f"@{deco_name} takes no pose=: pose= folded into the kinematics dict: "
+        "kinematics={**K, 'at': 'closed'}"
+    )
 
 
 def kinematics_dof_ids(block: Mapping[str, Any]) -> tuple[str, ...]:
@@ -324,11 +413,11 @@ def _validated_pose_values(block: Mapping[str, Any], values: Mapping[str, Any], 
         dof_name = str(dof)
         if dof_name not in known:
             listing = ", ".join(sorted(known)) or "(none)"
-            raise _fail(f"{where} pose names unknown DOF {dof_name!r}; declared DOFs: {listing}")
+            raise _fail(f"{where} names unknown DOF {dof_name!r}; declared DOFs: {listing}")
         try:
             resolved[dof_name] = float(value)
         except (TypeError, ValueError):
-            raise _fail(f"{where} pose value for {dof_name!r} must be a number, got {value!r}") from None
+            raise _fail(f"{where} value for {dof_name!r} must be a number, got {value!r}") from None
     return resolved
 
 
@@ -338,13 +427,19 @@ def normalize_kinematics(value: object, *, where: str) -> KinematicsDef:
     Checks everything checkable without geometry: the closed key vocabulary,
     constructor-built mates/couplings, unique DOF names, string-level tree
     rules (one parent mate per child, no cycles — closed loops are an explicit
-    deferral), coupling targets, and pose presets over declared DOFs. Selector
-    refs (occurrence labels, axis refs) resolve at build time.
+    deferral), coupling targets, pose presets over declared DOFs, and the
+    ``"at"`` bake point against those same DOFs. Selector refs (occurrence
+    labels, axis refs) resolve at build time.
     """
     if isinstance(value, KinematicsDef):
         return value
     if not isinstance(value, Mapping):
         raise _fail(f"{where} kinematics must be a dict with keys {list(KINEMATICS_KEYS)}, got {type(value).__name__}")
+    if "pose" in value:
+        raise _fail(
+            f"{where} kinematics has no 'pose' key: pose= folded into the "
+            "kinematics dict: kinematics={**K, 'at': 'closed'}"
+        )
     unknown = set(value) - set(KINEMATICS_KEYS)
     if unknown:
         raise _fail(
@@ -358,24 +453,37 @@ def normalize_kinematics(value: object, *, where: str) -> KinematicsDef:
         raise _fail(f"{where} kinematics['mates'] must be a list of cadgen.revolute/slider/cylindrical(...)")
     mates: list[Mate] = []
     for entry in raw_mates:
-        if not isinstance(entry, Mate):
-            raise _fail(
-                f"{where} kinematics['mates'] entries must be built by "
-                f"cadgen.revolute/slider/cylindrical(...), got {type(entry).__name__}"
-            )
-        mates.append(entry)
+        if isinstance(entry, Mate):
+            mates.append(entry)
+            continue
+        if isinstance(entry, Mapping):
+            # The JSON spelling (`cadgen step build --kinematics '{...}'`):
+            # same closed vocabulary, same validator, so the two authoring
+            # surfaces cannot drift.
+            mates.append(_mate_from_mapping(entry, where=where))
+            continue
+        raise _fail(
+            f"{where} kinematics['mates'] entries must be built by "
+            f"cadgen.revolute/slider/cylindrical(...) or be plain dicts with "
+            f"{sorted(_MATE_DICT_KEYS)}, got {type(entry).__name__}"
+        )
 
     raw_couplings = value.get("couplings", [])
     if not isinstance(raw_couplings, (list, tuple)):
         raise _fail(f"{where} kinematics['couplings'] must be a list of cadgen.couple(...)")
     couplings: list[Coupling] = []
     for entry in raw_couplings:
-        if not isinstance(entry, Coupling):
-            raise _fail(
-                f"{where} kinematics['couplings'] entries must be built by cadgen.couple(...), "
-                f"got {type(entry).__name__}"
-            )
-        couplings.append(entry)
+        if isinstance(entry, Coupling):
+            couplings.append(entry)
+            continue
+        if isinstance(entry, Mapping):
+            couplings.append(_coupling_from_mapping(entry, where=where))
+            continue
+        raise _fail(
+            f"{where} kinematics['couplings'] entries must be built by "
+            f"cadgen.couple(...) or be plain dicts with {sorted(_COUPLING_DICT_KEYS)}, "
+            f"got {type(entry).__name__}"
+        )
 
     raw_poses = value.get("poses", {})
     if not isinstance(raw_poses, Mapping):
@@ -451,17 +559,9 @@ def normalize_kinematics(value: object, *, where: str) -> KinematicsDef:
             str(name): _validated_pose_values(block, values, where=f"{where} poses[{name!r}]")
             for name, values in raw_poses.items()
         }
-    return KinematicsDef(block=block)
-
-
-def normalize_bake_pose(pose: object, kinematics: KinematicsDef | None, *, where: str) -> dict[str, float] | None:
-    """Validate a decorator's ``pose=`` bake selector at decoration time."""
-    if pose is None:
-        return None
-    if kinematics is None:
-        raise _fail(
-            f"{where} pose= needs kinematics= on the SAME decorator — each "
-            "declaration stands alone (share one module-level dict between "
-            "decorators rather than expecting inheritance)"
-        )
-    return kinematics.pose_values(pose, where=where)
+    # ``at`` is the BAKE point, validated exactly as the retired ``pose=`` kwarg
+    # was — but it lives inside the one kinematics space rather than beside it,
+    # so a declaration is a single object at every surface.
+    raw_at = value.get("at")
+    at = None if raw_at is None else resolve_kinematics_at(block, raw_at, where=f"{where} kinematics")
+    return KinematicsDef(block=block, at=at)

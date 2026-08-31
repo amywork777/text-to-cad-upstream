@@ -62,7 +62,7 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", kinematic
     if kinematics or animation:
         # Kinematics/animation (source-derived) ride the MODEL-SIDE sidecar,
         # never the descriptor.
-        sidecar = {"schemaVersion": 3, "sourceKind": "python"}
+        sidecar = {"schemaVersion": 4, "sourceKind": "python"}
         if kinematics:
             sidecar["kinematics"] = kinematics
         if animation:

@@ -36,7 +36,7 @@ def _write_package(
         # The MODEL-SIDE sidecar's existence is the generated marker; the
         # descriptor is STEP-pure and never records provenance.
         Path(f"{entry_file}.cadgen.json").write_text(
-            json.dumps({"schemaVersion": 3, "sourceKind": "python"}), encoding="utf-8"
+            json.dumps({"schemaVersion": 4, "sourceKind": "python"}), encoding="utf-8"
         )
     return package_dir
 

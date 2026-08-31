@@ -18,6 +18,7 @@ from pathlib import Path
 
 __all__ = [
     "BuildResult",
+    "CompileResult",
     "InspectResult",
     "MeshExportFile",
     "MeshExportResult",
@@ -40,28 +41,61 @@ def _display(path: Path | None) -> str:
 
 
 @dataclass(frozen=True)
-class BuildResult:
-    """The outcome of making one document's derived state current."""
+class CompileResult:
+    """The outcome of compiling one document into its render package.
+
+    ``cadgen step compile`` is a CACHE action: bytes in, package in the store,
+    the document itself untouched. It is deliberately not a `build` — nothing
+    new appears on disk beside the model — and it is INTERNAL: the doors and
+    the viewer compile a missing package on demand, so no skill teaches it.
+    """
 
     ok: bool
-    #: The ``.step``/``.dxf`` document — this build's OUTPUT for a model script,
-    #: its INPUT for a foreign document. ``None`` when the run claimed none.
+    #: The document that was compiled. Its bytes are the package's key.
     document: Path | None
-    #: The store package directory holding the built geometry.
+    #: The store package directory holding the compiled geometry.
     package: Path | None
-    #: True when the freshness gate said the derived state was already current.
+    #: True when the package was already current, so nothing was compiled.
+    skipped: bool
+    #: A peer process held this document's lock and the caller asked not to
+    #: wait. Nothing went wrong (``ok`` stays true) and nothing was compiled.
+    contended: bool = False
+
+    def human_lines(self) -> list[str]:
+        if self.contended:
+            return [f"contended {_display(self.package)} (another run is compiling it)"]
+        head = "current" if self.skipped else "compiled"
+        return [f"{head} {_display(self.document or self.package)}"]
+
+
+@dataclass(frozen=True)
+class BuildResult:
+    """The outcome of writing one NEW document.
+
+    ``cadgen step build IN OUT`` re-emits an existing document in cadgen's own
+    dialect (OCCT read -> content-keyed package -> the canonical XCAF writer),
+    optionally annotating it with kinematics and animation. Unlike ``compile``,
+    something new lands on disk — which is what earns the name.
+    """
+
+    ok: bool
+    #: The document this build WROTE.
+    document: Path | None
+    #: The store package directory holding the written document's geometry.
+    package: Path | None
+    #: True when the freshness gate said the output was already current.
     skipped: bool
     #: Declared artifacts produced (or healed) by THIS run. Outputs the ledger
     #: already found current are not listed: the field answers "what did this
     #: run write", not "what does the model declare".
     exports: tuple[Path, ...] = ()
-    #: A peer process held this model's lock and the caller asked not to wait.
-    #: Nothing went wrong (``ok`` stays true) and nothing was built here.
-    contended: bool = False
+    #: True when the bytes were already current and only the sidecar (the
+    #: kinematics/animation annotation) was refreshed.
+    sidecar_only: bool = False
 
     def human_lines(self) -> list[str]:
-        if self.contended:
-            return [f"contended {_display(self.package)} (another run is building it)"]
+        if self.sidecar_only:
+            return [f"annotated {_display(self.document)} (bytes unchanged)"]
         head = "current" if self.skipped else "built"
         lines = [f"{head} {_display(self.document or self.package)}"]
         lines += [f"wrote {path.suffix.lstrip('.').upper()}: {_display(path)}" for path in self.exports]

@@ -331,6 +331,44 @@ def mesh_pose_deltas(
     }
 
 
+def resolved_block_pose_deltas(
+    block: Mapping[str, Any],
+    pose_values: Mapping[str, float],
+    *,
+    package_dir: Path,
+) -> dict[str, list[float]]:
+    """FK deltas from an ALREADY-RESOLVED block — the sidecar's kinematics.
+
+    The mesh DOORS' path. A sidecar block carries world-number axes and the
+    ``parentId``/``childId`` this expansion needs, so a door evaluates forward
+    kinematics with no selector index, no topology and no OCCT: it reads the
+    package descriptor for the occurrence tree and folds. Nothing is written —
+    a mesh bake is transient (no sidecar, ever).
+    """
+    from cadgen._internal.component_package import read_package_descriptor
+
+    descriptor = read_package_descriptor(package_dir)
+    if not isinstance(descriptor, dict):
+        raise _fail(f"package descriptor missing under {package_dir}")
+    occurrence_ids: dict[str, str] = {}
+    for mate in block.get("mates", []):
+        for ref_key, id_key in (("parent", "parentId"), ("child", "childId")):
+            ref = str(mate.get(ref_key) or "")
+            occurrence_id = str(mate.get(id_key) or "")
+            if not ref or not occurrence_id:
+                raise _fail(
+                    f"mate {mate.get('name')!r} in the sidecar carries no resolved "
+                    f"{id_key}; rebuild the document by running its model script"
+                )
+            occurrence_ids[ref] = occurrence_id
+    return {
+        occurrence_id: [value for row in delta for value in row]
+        for occurrence_id, delta in _delta_by_occurrence(
+            block, pose_values, descriptor=descriptor, occurrence_ids=occurrence_ids
+        ).items()
+    }
+
+
 def runtime_mesh_declarations(script_path: Path) -> dict[tuple[str, Path], tuple[Any, dict | None]]:
     """The RUNTIME mesh declarations' kinematics, keyed by (fmt, resolved out
     path). The AST metadata cannot evaluate a kinematics= dict, so posed mesh

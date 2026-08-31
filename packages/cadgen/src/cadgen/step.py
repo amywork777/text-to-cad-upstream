@@ -1,12 +1,24 @@
 """The public ``step`` format namespace: the ``@step`` decorator and its verbs.
 
-``@step`` DECLARES a model; ``step.build(...)`` OPERATES on one. They are the
-same object — this module is callable (see
+``@step`` DECLARES a model; the verbs OPERATE on documents. They are the same
+object — this module is callable (see
 :mod:`cadgen._internal.format_namespace`) — so a format is one table row:
 decorator, verbs, and generated CLI together (design/format-doors.md).
 
-``cadgen step build`` is this module's ``build`` with a parser derived from its
-signature, so the flags cannot drift from the function.
+Two verbs make documents, and the difference is what lands on disk:
+
+* ``compile`` is a CACHE action — a document in, its render package in the
+  store, the document untouched. It is INTERNAL: every door and the viewer
+  compile a missing package on demand, so no skill teaches the command.
+* ``build`` writes a NEW document — ``IN.step OUT.step`` — re-emitted through
+  cadgen's own pipeline (OCCT read -> package -> canonical XCAF writer), so the
+  output's bytes are deterministic whichever kernel wrote the input, and
+  optionally annotated with ``kinematics=``/``animation=``. OUT is REQUIRED,
+  which is what tells the two verbs apart at the command line.
+
+Model scripts are RUN, never passed here: ``python model.py`` is the one source
+door (design/pose-animation-split.md, CLI/doors follow-on). Every verb takes a
+DOCUMENT and refuses a ``.py`` by naming the run.
 
 Import discipline: nothing here may pull in OCP/build123d at module scope. A
 model script pays this import before its freshness gate runs, and the whole
@@ -21,77 +33,123 @@ from pathlib import Path
 
 from cadgen._internal.format_namespace import callable_namespace
 from cadgen._internal.snapshot_door import step_snapshot_verb
-from cadgen.results import BuildResult, InspectResult
+from cadgen.results import BuildResult, CompileResult, InspectResult
 
-__all__ = ["build", "inspect", "snapshot"]
+__all__ = ["build", "compile", "inspect", "snapshot"]
 
-#: ``cadgen step snapshot``'s verb: render a STEP/STP document, or the model
-#: script that builds one. Mesh inputs belong to their own doors
-#: (``cadgen.stl.snapshot`` and friends).
+#: ``cadgen step snapshot``'s verb: render a STEP/STP document. Mesh inputs
+#: belong to their own doors (``cadgen.stl.snapshot`` and friends).
 snapshot = step_snapshot_verb("step")
 
 
-def build(
+def compile(  # noqa: A001 - the verb IS "compile"; the builtin is not used here
     target: Path,
     *,
     force: bool = False,
     verbose: bool = False,
     lock_timeout: float = 0.0,
-) -> BuildResult:
-    """Make TARGET's derived state current; no-op when it already is.
+) -> CompileResult:
+    """Make TARGET's render package current; no-op when it already is.
 
-    A model script runs its closure gate, runs the generator if stale, builds
-    the store package, assembles and writes the .step document, and produces
-    the model's declared @stl/@glb/@threemf exports. A foreign STEP/STP runs a
-    content-hash gate and extracts a store package when one is absent; the
-    document itself is never modified. Idempotent, so repeating it is free.
+    A cache action, not a build: the package is keyed by the document's bytes,
+    so nothing new appears beside the model and repeating it is free. Every
+    door and the CAD Viewer compile a missing package on demand — this command
+    exists for tooling and CI, and no skill documentation teaches it.
 
-    target: model script (.py) or STEP/STP document to build.
-    force: rebuild even when the freshness gate says the model is current.
+    target: the STEP/STP document to compile.
+    force: recompile even when the package is already current.
     verbose: show detailed progress and timing on stderr.
-    lock_timeout: give up after SECONDS when another run holds this model's
-        generation lock, answering contended instead of building. 0 (the
-        default) waits for the peer.
+    lock_timeout: give up after SECONDS when another run holds this document's
+        lock, answering contended instead of compiling. 0 (the default) waits
+        for the peer.
     """
-    from cadgen.catalog import source_from_path
+    from cadgen._internal.doors import document_target, require_current_document
     from cadgen.step_artifact_cli import build_step_artifact
 
-    path = Path(target).expanduser().resolve()
-    suffix = path.suffix.lower()
-    if suffix == ".py":
-        if not path.is_file():
-            raise FileNotFoundError(f"model script does not exist: {target}")
-        source = source_from_path(path)
-        if source is None:
-            raise ValueError(
-                f"{path.name} declares no CAD model — decorate one function with "
-                "@step from cadgen"
-            )
-        if source.step_path is None:
-            raise ValueError(
-                f"{path.name} declares no @step model; `cadgen step build` builds "
-                "STEP documents (a @dxf drawing builds with `cadgen dxf build`)"
-            )
-        step_path: Path = source.step_path
-        source_path: Path | None = path
-    elif suffix in {".step", ".stp"}:
-        if not path.is_file():
-            raise FileNotFoundError(f"STEP file does not exist: {target}")
-        step_path, source_path = path, None
-    else:
-        raise ValueError(
-            f"build target must be a model script (.py) or a STEP/STP document: {target}"
-        )
-
+    document = document_target(target, suffixes=(".step", ".stp"))
+    require_current_document(document)
     payload = build_step_artifact(
         repo_root=Path.cwd(),
-        step=step_path,
-        source_path=source_path,
+        step=document,
+        source_path=None,
         force=force,
         verbose=verbose,
         lock_timeout_s=lock_timeout,
     )
-    return _build_result(payload)
+
+    def path_of(key: str) -> Path | None:
+        value = payload.get(key)
+        return Path(str(value)).resolve() if value else None
+
+    return CompileResult(
+        ok=bool(payload.get("ok", True)),
+        document=path_of("stepPath"),
+        package=path_of("packagePath"),
+        skipped=bool(payload.get("skipped")),
+        contended=bool(payload.get("contended")),
+    )
+
+
+def build(
+    target: Path,
+    out: Path,
+    *,
+    kinematics: str | dict | None = None,
+    animation: Path | None = None,
+    force: bool = False,
+    verbose: bool = False,
+) -> BuildResult:
+    """Write OUT: TARGET re-emitted in cadgen's dialect, optionally annotated —
+    compile caches a document, build writes a new one.
+
+    TARGET is read with
+    OCCT, packaged, and re-emitted by the canonical XCAF writer, so OUT's bytes
+    are deterministic regardless of which kernel produced TARGET — the way to
+    canonicalize a foreign STEP or to give one kinematics without wrapping it
+    in a model script. Vendor metadata (PMI, GD&T) does not survive; a model
+    that keeps evolving belongs in a script instead.
+
+    Re-running is a no-op. Editing only the kinematics or animation refreshes
+    OUT's sidecar without re-emitting a byte.
+
+    target: the STEP/STP document to read.
+    out: the STEP/STP document to write. Required, and never TARGET itself.
+    kinematics: the kinematics SPACE this document declares — inline JSON or a
+        .json path, with the same {mates, couplings, poses, at} vocabulary the
+        decorator takes.
+    animation: a .js choreography module whose TEXT is copied into the sidecar.
+    force: re-emit even when the freshness gate says OUT is current.
+    verbose: show detailed progress and timing on stderr.
+    """
+    from cadgen._internal.doors import require_current_document
+    from cadgen._internal.step_reemit import (
+        load_animation_text,
+        load_kinematics_space,
+        reemit_step_document,
+        resolve_output,
+    )
+    from cadgen.cli_logging import CliLogger
+
+    document, destination = resolve_output(target, out)
+    require_current_document(document)
+    where = "cadgen step build"
+    kinematics_def = load_kinematics_space(kinematics, where=where)
+    animation_source = load_animation_text(animation, where=where)
+    payload = reemit_step_document(
+        document,
+        destination,
+        kinematics_def=kinematics_def,
+        animation_source=animation_source,
+        force=force,
+        logger=CliLogger(where, verbose=verbose),
+    )
+    return BuildResult(
+        ok=bool(payload.get("ok", True)),
+        document=payload.get("document"),  # type: ignore[arg-type]
+        package=payload.get("package"),  # type: ignore[arg-type]
+        skipped=bool(payload.get("skipped")),
+        sidecar_only=bool(payload.get("sidecarOnly")),
+    )
 
 
 INSPECTIONS = ("refs", "diff", "frame", "measure", "align", "interfere", "validate")
@@ -129,7 +187,7 @@ def inspect(
     ignored. Every inspection resolves refs the same way and builds the same
     package, so they are one verb with a mode rather than seven verbs.
 
-    target: STEP/STP document, model script, or CAD entry target.
+    target: STEP/STP document, or a CAD entry target naming one.
     refs: selector refs such as `#o1.2` or `#f9`. refs/interfere/validate read
         the whole list; measure reads the first two as from/to; frame reads the
         first as the occurrence to report.
@@ -159,8 +217,11 @@ def inspect(
     """
     # Every heavy import stays in the body: this module is on a model script's
     # pre-gate path (see the module docstring).
+    from cadgen._internal.doors import script_target_message
     from cadgen.cli.step_inspect import inspect as inspection_api
 
+    if str(target).strip().lower().endswith(".py"):
+        raise ValueError(script_target_message(Path(str(target))))
     if inspection not in INSPECTIONS:
         raise ValueError(
             f"unknown inspection {inspection!r}; expected one of: {', '.join(INSPECTIONS)}"
@@ -228,24 +289,6 @@ def inspect(
         report = {"ok": False, "errors": [inspection_api.cad_ref_error_payload(exc)]}
     return InspectResult(
         ok=bool(report.get("ok")), command=inspection, report=dict(report)
-    )
-
-
-def _build_result(payload: "dict[str, object]") -> BuildResult:
-    """The build payload, typed. Paths in the payload are cwd-relative strings."""
-
-    def path_of(key: str) -> Path | None:
-        value = payload.get(key)
-        return Path(str(value)).resolve() if value else None
-
-    exports = payload.get("exports") or ()
-    return BuildResult(
-        ok=bool(payload.get("ok", True)),
-        document=path_of("stepPath"),
-        package=path_of("packagePath"),
-        skipped=bool(payload.get("skipped")),
-        exports=tuple(Path(str(item)).resolve() for item in exports),  # type: ignore[union-attr]
-        contended=bool(payload.get("contended")),
     )
 
 

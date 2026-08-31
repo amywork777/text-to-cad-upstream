@@ -333,11 +333,6 @@ def load_job_from_options(
 
 
 def input_kind(file_path: Path) -> str:
-    # Compound suffixes first: `Path.suffix` sees only the last one, so `<name>.dxf.py`
-    # would read as a STEP generator.
-    name = file_path.name.lower()
-    if name.endswith(".dxf.py"):
-        return "dxf"
     suffix = file_path.suffix.lower()
     if suffix == ".step":
         return "step"
@@ -346,6 +341,8 @@ def input_kind(file_path: Path) -> str:
     if suffix == ".dxf":
         return "dxf"
     if suffix == ".py":
+        # DOCUMENTS-ONLY: a model script is a program. The kind survives only so
+        # the resolver can refuse it by naming the run.
         return "python"
     if suffix == ".glb":
         return "glb"
@@ -358,23 +355,6 @@ def input_kind(file_path: Path) -> str:
     return ""
 
 
-def logical_step_path_for_python_source(source_path: Path) -> Path:
-    # `<name>.step.py` -> `<name>.step` (strip only `.py`; the stem already ends in `.step`).
-    name = source_path.name
-    if name.endswith(".step.py"):
-        return source_path.with_name(name[: -len(".py")])
-    return source_path.with_suffix(".step")
-
-
-def same_stem_python_generator_path(step_path: Path) -> Path | None:
-    # The generator for `<name>.step` is `<name>.step.py` (append `.py` to the full step filename).
-    candidate = step_path.with_name(step_path.name + ".py")
-    try:
-        return candidate if re.search(r"\bgen_step\s*\(", candidate.read_text(encoding="utf-8")) else None
-    except OSError:
-        return None
-
-
 def resolve_input_path(raw_input: object, *, cwd: Path) -> Path:
     input_text = str(raw_input or "").strip()
     if not input_text:
@@ -382,8 +362,6 @@ def resolve_input_path(raw_input: object, *, cwd: Path) -> Path:
     raw_path = Path(input_text)
     selected = raw_path.resolve() if raw_path.is_absolute() else (cwd / raw_path).resolve()
     if not selected.exists():
-        if selected.suffix.lower() in {".step", ".stp"} and same_stem_python_generator_path(selected):
-            return selected
         raise SnapshotError(f"Render input does not exist: {input_text}")
     return selected
 
@@ -444,9 +422,6 @@ def ensure_render_job_step_artifact(
         kind="part",
         source_path=input_path,
         step_path=step_path,
-        # A job input naming the .py generator must keep using the generator
-        # entry even when a same-stem exported .step exists beside it.
-        explicit_python=input_path.suffix.lower() == ".py",
     )
     try:
         ensure_artifact = load_ensure_step_topology_artifact()
@@ -701,8 +676,8 @@ def resolve_render_job(
         raise SnapshotError("render jobs use stepParameters; params is reserved for shortcut --params parsing")
     if "paramsPath" in job or "stepParametersPath" in job:
         raise SnapshotError(
-            "parameter sidecar paths are retired: pose data is declared on the model "
-            "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
+            "parameter sidecar paths are retired: kinematics is declared on the model "
+            "(@step(kinematics={...})) and read from its sidecar; "
             "see skills/cad/references/kinematics.md"
         )
     forbidden_root_fields = [field for field in ("workspaceRoot", "rootDir") if field in job]
@@ -754,15 +729,14 @@ def resolve_render_job(
     reference_root = reference_root_for_input(input_path, resolved_cwd)
     kind = input_kind(input_path)
     source_path = input_path
-    # The gate is on the AUTHORED kind, before `.py` collapses into `step`: a skill that
-    # does not accept STEP should reject `part.step.py` as a STEP generator, not report a
-    # confusing failure about the `.step` path it was rewritten to.
+    if kind == "python":
+        # Scripts are RUN, never rendered: `python <script>` writes the
+        # document, and snapshot renders the document.
+        from cadgen._internal.doors import script_target_message
+
+        raise SnapshotError(script_target_message(input_path))
     if kinds is not None:
         reject_unsupported_kind(kind, input_path, kinds)
-    if kind == "python":
-        input_path = logical_step_path_for_python_source(input_path)
-        root_path = input_path.parent.resolve()
-        kind = "step"
     resolver = KIND_RESOLVERS.get(kind)
     if resolver is None:
         raise SnapshotError(
@@ -798,9 +772,14 @@ def resolve_step_render_job(
 ) -> dict[str, object]:
     has_param_render = has_step_parameter_render_values(job.get("stepParameters"))
     reject_animated_step_parameters(job.get("stepParameters"))
-    # Parameter values drive the model's declarative pose block (descriptor
-    # `pose`, authored via @step(pose=...)). The retired sidecar-path key is
-    # rejected upfront in job normalization with a teaching error.
+    # A render is a READ. A document whose sidecar closure no longer re-hashes
+    # is refused by naming the run rather than rebuilt here — putting a build
+    # inside a render is exactly the coupling documents-only inputs remove.
+    from cadgen._internal.doors import require_current_document
+
+    require_current_document(input_path)
+    # Kinematics values drive the model's sidecar kinematics block. The retired
+    # sidecar-path key is rejected upfront in job normalization.
     debug_enabled = bool(job.get("debug"))
     step_artifact_debug: dict[str, object] | None = {} if debug_enabled else None
     artifact = ensure_render_job_step_artifact(
@@ -965,43 +944,26 @@ def resolve_drawing_render_job(
 DXF_MESH_BUILDER = "dxf-mesh.mjs"
 
 
-def generate_dxf_for_snapshot(source: Path, *, force: bool = False) -> Path:
-    """Module-level indirection over the drawing generator.
-
-    Deferred so importing this CLI does not drag ezdxf in for a skill that never
-    renders a drawing, and module-level so it is one patchable seam. Returns the
-    generated sibling `.dxf` path."""
-    from cadgen._internal.generation import generate_dxf_targets
-
-    generate_dxf_targets([str(source)], force=force)
-    sibling = source.with_name(source.name[: -len(".py")])
-    if not sibling.is_file():
-        raise SnapshotError(f"gen did not write {sibling}")
-    return sibling
-
-
 def drawing_mesh_path(source: Path, *, force: bool = False) -> Path:
     """Mesh the drawing on demand and return a GLB path for the mesh renderer.
 
-    A `.dxf.py` generator is made current first (the ordinary gen no-op gate);
-    an imported `.dxf` is meshed as-is. The mesh is produced by the bundled
-    dxf-mesh.mjs one-shot into the snapshot's temp space — nothing is cached,
-    matching the viewer, which parses and meshes the `.dxf` client-side.
+    The `.dxf` is meshed as-is: a drawing has no derived state a door
+    materializes, and a `@dxf` script is made current by running it. The mesh is
+    produced by the bundled dxf-mesh.mjs one-shot into the snapshot's temp space
+    — nothing is cached, matching the viewer, which parses and meshes the `.dxf`
+    client-side.
     """
     import subprocess
     import tempfile
 
     from cadgen._internal.node_runtime import cad_node_executable, node_builder_script
 
-    if not source.name.lower().endswith((".dxf", ".py")):
-        raise SnapshotError(
-            f"snapshot input must be a .dxf file or a gen_dxf() Python source: {source}"
-        )
+    del force  # a .dxf is the product; there is nothing to regenerate here
+    if not source.name.lower().endswith(".dxf"):
+        raise SnapshotError(f"snapshot input must be a .dxf document: {source}")
     if not source.is_file():
         raise SnapshotError(f"snapshot input does not exist: {source}")
     dxf_path = source
-    if source.name.lower().endswith(".py"):
-        dxf_path = generate_dxf_for_snapshot(source, force=force)
     out_dir = Path(tempfile.mkdtemp(prefix="cadgen-dxf-snapshot-"))
     out_path = out_dir / f"{dxf_path.stem}.glb"
     proc = subprocess.run(
@@ -1042,20 +1004,18 @@ KIND_RESOLVERS: dict[str, Callable[..., dict[str, object]]] = {
     "sdf": resolve_robot_render_job,
 }
 
-# `python` is not a kind of its own: a `.py` input is a generator, and which kind it
-# resolves to depends on the generator (a `.step.py` is a STEP entry). Enabling `step`
-# therefore enables its generator, which is why the two are listed together here rather
-# than a skill having to remember to name both.
-KIND_ENABLES: dict[str, tuple[str, ...]] = {"step": ("step", "python")}
+# Every kind now resolves to itself: `.py` inputs are refused outright
+# (documents-only), so there is no generator kind to expand into.
+KIND_ENABLES: dict[str, tuple[str, ...]] = {}
 
 
 # What each kind is called in errors, and the order a reader wants them listed
 # in. Help is the verb signature's business now; this survives because a refusal
 # still has to say what the door DOES take.
 KIND_LABELS: dict[str, str] = {
-    "step": ".step / .step.py", "stp": ".stp", "python": ".step.py",
+    "step": ".step", "stp": ".stp",
     "glb": ".glb", "stl": ".stl", "3mf": ".3mf",
-    "dxf": ".dxf / .dxf.py",
+    "dxf": ".dxf",
     "urdf": ".urdf", "srdf": ".srdf", "sdf": ".sdf",
 }
 

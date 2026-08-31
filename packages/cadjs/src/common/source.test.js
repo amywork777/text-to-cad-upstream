@@ -321,7 +321,7 @@ test("loadSource leaves no source scope behind", async (t) => {
 test("loadSource accepts sidecar kinematics for STEP sources", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({
-    schemaVersion: 3,
+    schemaVersion: 4,
     kinematics: {
       mates: [{ name: "drive", kind: "revolute", parent: "#base", child: "#rotor",
         axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, limits: { value: [0, 360] } }]

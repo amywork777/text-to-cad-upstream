@@ -9,10 +9,10 @@
 // is current-scheme by construction.
 export const CACHE_SCHEMA_VERSION = 16; // cache_schema.CACHE_SCHEMA_VERSION
 
-// The source sidecar carries everything SOURCE-derived (provenance, pose with
-// inline escape-hatch source, mates); it sits BESIDE THE MODEL
-// (<name>.step.cadgen.json) and its EXISTENCE is the generated-vs-imported
-// marker on both freshness authorities. Pinned to cadgen's source_sidecar.py
-// by the same sync test.
+// The source sidecar carries everything SOURCE-derived (provenance, the
+// resolved kinematics block, the copied animation text, and the model's
+// declared mesh exports); it sits BESIDE THE MODEL (<name>.step.cadgen.json)
+// and its EXISTENCE is the generated-vs-imported marker on both freshness
+// authorities. Pinned to cadgen's source_sidecar.py by the same sync test.
 export const SOURCE_SIDECAR_SUFFIX = ".cadgen.json"; // source_sidecar.SOURCE_SIDECAR_SUFFIX
-export const SOURCE_SIDECAR_SCHEMA_VERSION = 3; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION
+export const SOURCE_SIDECAR_SCHEMA_VERSION = 4; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION

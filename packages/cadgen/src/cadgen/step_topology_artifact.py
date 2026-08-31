@@ -222,14 +222,10 @@ def _entry_spec_for_target(
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
 ) -> EntrySpec:
-    python_source = _python_source_for_target(target)
-    if python_source is not None:
-        source = source_from_path(python_source)
-        if source is None:
-            raise RuntimeError(f"Python generator is not a gen_step() CAD source: {python_source}")
-        spec = _entry_spec_from_source(source)
-        return _with_mesh_overrides(spec, mesh_tolerance=mesh_tolerance, mesh_angular_tolerance=mesh_angular_tolerance)
-
+    # DOCUMENTS-ONLY (design/pose-animation-split.md, CLI/doors follow-on): a
+    # target is the document. The artifact resolver used to walk back to a
+    # `.py` generator and re-run it here, which is how a render could contain a
+    # build; a stale document is now refused at the door instead.
     if not target.step_path.is_file():
         raise FileNotFoundError(f"STEP file does not exist: {target.step_path}")
     return EntrySpec(
@@ -385,43 +381,6 @@ def _scene_for_regeneration(
     if inferred_kind != spec.kind:
         spec = replace(spec, kind=inferred_kind)
     return spec, scene
-
-
-def _python_source_for_target(target: ResolvedStepTarget) -> Path | None:
-    source_is_generator = (
-        target.source_path.suffix.lower() == ".py" and target.source_path.is_file()
-    )
-    # An explicitly-targeted `.py` generator keeps resolving to the generator
-    # entry even when its same-stem exported `.step` exists beside it — the
-    # `.step.py` and `.step` files are distinct entry-keyed models, and only an
-    # explicit `.step`/`.stp` target means "treat as imported STEP".
-    if target.explicit_python and source_is_generator:
-        return target.source_path
-    if target.step_path.is_file():
-        return None
-    if source_is_generator:
-        return target.source_path
-    # Artifact->source is descriptor PROVENANCE first (library-first: filenames
-    # carry no linkage); the sibling `<stem>.py` is accepted only when it
-    # statically declares a model, as the regenerate hint for a missing artifact.
-    from cadgen.catalog import render_package_dir, source_from_path
-    from cadgen._internal.source_sidecar import read_source_sidecar
-
-    sidecar = read_source_sidecar(target.step_path)
-    recorded = str((sidecar or {}).get("sourcePath") or "").strip()
-    if recorded:
-        candidate = (target.step_path.parent / recorded).resolve()
-        if candidate.is_file():
-            return candidate
-    candidate = target.step_path.with_suffix(".py")
-    if candidate.is_file():
-        try:
-            source = source_from_path(candidate)
-        except Exception:  # noqa: BLE001 - a broken sibling is not a generator
-            return None
-        if source is not None and source.step_path is not None:
-            return candidate
-    return None
 
 
 def _with_mesh_overrides(

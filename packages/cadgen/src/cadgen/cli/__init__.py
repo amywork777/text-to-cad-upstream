@@ -39,8 +39,11 @@ import sys
 # Generation has NO CLI (design/library-first-generation.md): a model script runs
 # itself — `python <model>.py` through the @step/@dxf decorators.
 _COMMANDS: dict[str, tuple[str, str]] = {
-    # STEP
-    "step build": ("cadgen.cli.step_build", "make a model's or STEP's derived state current"),
+    # STEP. `build` writes a NEW document (IN OUT); `compile` only makes an
+    # existing document's render package current and is INTERNAL — every door
+    # and the viewer compile on demand, so no skill documentation names it.
+    "step build": ("cadgen.cli.step_build", "write a new STEP from one, with kinematics"),
+    "step compile": ("cadgen.cli.step_compile", "make a STEP's render package current"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP model to an image"),
     # Mesh formats — one door each, replacing the retired `step export`. Their
@@ -52,8 +55,8 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "3mf snapshot": ("cadgen.cli.threemf_snapshot", "render a 3MF mesh to an image"),
     "glb build": ("cadgen.cli.glb_build", "write a model's GLB output(s)"),
     "glb snapshot": ("cadgen.cli.glb_snapshot", "render a GLB mesh to an image"),
-    # DXF
-    "dxf build": ("cadgen.cli.dxf_build", "make a drawing's .dxf output current"),
+    # DXF. There is no `dxf build`: a .dxf has no derived state a door must
+    # materialize, so a drawing is made by running its script.
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Robot descriptions
     "urdf validate": ("cadgen.cli.urdf_validate", "validate a URDF robot description"),
@@ -141,12 +144,23 @@ def enforce_requirements_pin(requirements_path) -> None:
 # nothing and cost it a round trip.
 _DAEMON_TOOLS = {
     "step build": "step-build",
+    "step compile": "step-compile",
     "step inspect": "inspect",
     "step snapshot": "snapshot",
     "stl build": "stl-build",
     "3mf build": "3mf-build",
     "glb build": "glb-build",
-    "dxf build": "dxf-build",
+}
+
+#: Commands that were DELETED, and what to run instead. A hard cutover has to
+#: teach at the surface it removed: falling through to "unknown command" would
+#: send a reader to the command list to guess.
+_RETIRED_COMMANDS: dict[str, str] = {
+    "dxf build": (
+        "`cadgen dxf build` was deleted: a .dxf has no derived state a door must "
+        "materialize — the file is the product, and `cadgen dxf snapshot` meshes it "
+        "on demand. Make a drawing by running its script: python <drawing>.py"
+    ),
 }
 
 def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
@@ -196,6 +210,9 @@ def main(argv: list[str] | None = None) -> int:
     # Longest match first, so `step gen` beats a hypothetical `step`.
     command, rest = " ".join(argv[:2]), argv[2:]
     entry = _COMMANDS.get(command)
+    if entry is None and command in _RETIRED_COMMANDS:
+        sys.stderr.write(f"cadgen: {_RETIRED_COMMANDS[command]}\n")
+        return 2
     if entry is None:
         command, rest = argv[0], argv[1:]
         entry = _COMMANDS.get(command)

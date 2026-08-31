@@ -1,4 +1,4 @@
-"""``cadgen step build`` — a GENERATED CLI over :func:`cadgen.step.build`.
+"""``cadgen step compile`` — a GENERATED CLI over :func:`cadgen.step.compile`.
 
 There is no parser here on purpose. Everything the command accepts is derived
 from the verb function's signature by
@@ -6,10 +6,10 @@ from the verb function's signature by
 parameter: this module only names which function the command is
 (design/format-doors.md).
 
-``IN.step OUT.step``: one document in, a NEW document out, re-emitted in
-cadgen's dialect and optionally annotated with ``--kinematics``/``--animation``.
-OUT is a REQUIRED positional, which is what tells this apart from the cache
-action next door — compile caches a document; build writes a new one.
+INTERNAL. Compiling a document into its render package is what every door and
+the CAD Viewer do on demand, so nothing a user reads should ever tell them to
+run this; it exists for tooling and CI. The user-facing pair is `python
+<script>` for source and `cadgen step build IN OUT` for an existing document.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from collections.abc import Sequence
 
 from cadgen._internal.cli_from_function import generated_main, generated_parser
 
-DEFAULT_PROG = "cadgen step build"
-VERB = ("cadgen.step", "build")
+DEFAULT_PROG = "cadgen step compile"
+VERB = ("cadgen.step", "compile")
 
 
 def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:

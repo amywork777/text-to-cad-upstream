@@ -8,6 +8,12 @@ second implementation to drift.
 The engine is unchanged: :func:`cadgen.step_export_target.export_cad_target`
 is the one entry, so a door and a model-script run cannot produce different
 bytes (design/format-doors.md).
+
+The doors take DOCUMENTS. A bare door reads the model's declared variants from
+the document's SIDECAR — never from source, never from the Python registry —
+and an explicit OUT is one ad-hoc export, optionally at a ``kinematics=`` bake
+point resolved against that same sidecar (design/pose-animation-split.md,
+CLI/doors follow-on).
 """
 
 from __future__ import annotations
@@ -16,12 +22,15 @@ from pathlib import Path
 
 from cadgen.results import MeshExportFile, MeshExportResult
 
+STEP_SUFFIXES = (".step", ".stp")
+
 
 def mesh_build(
     fmt: str,
     target: Path,
     out: Path | None,
     *,
+    kinematics: str | dict | None,
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
     force: bool,
@@ -29,17 +38,26 @@ def mesh_build(
 ) -> MeshExportResult:
     """One format door's ``build``, typed.
 
-    ``out`` None means the model's DECLARATIONS — every declared variant of
-    this format, or the sibling default when it declares none. An explicit
-    ``out`` is one ad-hoc export at that path. Either way the shared ledger
-    gates the write.
+    ``out`` None means the DOCUMENT's declarations — every declared variant of
+    this format, read from its sidecar. An explicit ``out`` is one ad-hoc
+    export at that path. Either way the shared ledger gates the write.
     """
+    from cadgen._internal.doors import document_target, require_current_document
     from cadgen.cli_logging import CliLogger
     from cadgen.step_export_target import export_cad_target
 
+    document = document_target(target, suffixes=STEP_SUFFIXES)
+    require_current_document(document)
+    if out is None and kinematics is not None:
+        raise ValueError(
+            "kinematics= names the bake point for ONE explicit OUT; without an "
+            "OUT the door produces the document's DECLARED variants, each at "
+            "the bake point its declaration recorded"
+        )
     payload = export_cad_target(
-        Path(target).expanduser(),
+        document,
         [(fmt, None if out is None else Path(out).expanduser())],
+        kinematics=kinematics,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
         force=force,

@@ -102,7 +102,7 @@ test("a sidecar kinematics section is exposed as poseUrl; sidecars only teach", 
   // generated.
   writeStorePackage(stepPath, { kind: "assembly-package" });
   write(root, "gripper.step.cadgen.json", JSON.stringify({
-    schemaVersion: 3,
+    schemaVersion: 4,
     sourceKind: "python",
     kinematics: { mates: [{ name: "jaw", kind: "slider", parent: "#body", child: "#jaw",
       axis: { origin: [0, 0, 0], dir: [1, 0, 0] }, limits: { value: [0, 40] } }] },

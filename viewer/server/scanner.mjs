@@ -406,7 +406,10 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
       hasSelector: false,
       hasDisplayEdges: false,
     },
-    sourceKind: sidecar ? "python" : "step",
+    // The sidecar NAMES its own source kind: "python" for a model script's
+    // artifact, "step" for a document `cadgen step build` re-emitted (which
+    // carries kinematics/animation but no Python behind it).
+    sourceKind: sidecar ? String(sidecar.sourceKind || "python") : "step",
     sourcePath: String(sidecar?.sourcePath ?? ""),
     sourceHash: String(sidecar?.sourceHash ?? ""),
     stepHash: String(descriptor.stepHash ?? ""),

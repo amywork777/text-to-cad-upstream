@@ -51,6 +51,13 @@ class LoadedStepScene:
     source_hash: str | None = None
     source_closure_hash: str | None = None
     source_closure_files: tuple[str, ...] = ()
+    # `cadgen step build IN OUT` only: the INPUT document's content hash (the
+    # closure a re-emitted document is fresh against) and a digest of the
+    # annotation it was given (kinematics declaration + bake point + animation
+    # text). Set on a scene loaded from IN and re-pathed to OUT; their presence
+    # is what tells the sidecar writer this is a re-emit rather than an import.
+    reemit_source_hash: str | None = None
+    reemit_annotation_hash: str | None = None
     assembly_mates: list[dict[str, Any]] = field(default_factory=list)
     doc: Any | None = None
 

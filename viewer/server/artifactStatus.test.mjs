@@ -69,7 +69,7 @@ function writeStepPackage(root, stepName, {
   if (generated) {
     // The MODEL-SIDE sidecar's existence is the generated marker; the store
     // descriptor is a pure function of the STEP bytes, no provenance at all.
-    fs.writeFileSync(`${stepPath}.cadgen.json`, JSON.stringify({ schemaVersion: 3, sourceKind: "python" }));
+    fs.writeFileSync(`${stepPath}.cadgen.json`, JSON.stringify({ schemaVersion: 4, sourceKind: "python" }));
   }
   if (stepHash !== null) {
     descriptor.stepHash = stepHash === undefined ? sha256(stepBytes) : stepHash;

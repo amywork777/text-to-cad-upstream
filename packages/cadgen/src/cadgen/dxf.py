@@ -1,13 +1,14 @@
 """The public ``dxf`` format namespace: the ``@dxf`` decorator and its verbs.
 
-``@dxf`` DECLARES a drawing; ``dxf.build(...)`` makes one current. They are the
+``@dxf`` DECLARES a drawing; ``dxf.snapshot(...)`` renders one. They are the
 same object — this module is callable (see
 :mod:`cadgen._internal.format_namespace`) — so the drawing family is one table
 row like every other format (design/format-doors.md).
 
-``cadgen dxf build`` is this module's ``build`` with a parser derived from its
-signature. It is a NEW verb: until now only the script door built a drawing, so
-there was no way to ask for one by name.
+**There is no ``dxf.build``** (deleted, hard cutover). A ``.dxf`` has no derived
+state a door must materialize: the file IS the product, the viewer parses it
+directly, and snapshot meshes it on demand. Drawings are made the way every
+model is made — by running the script: ``python drawing.py``.
 
 Import discipline: nothing here may pull in ezdxf/OCP at module scope (see
 :mod:`cadgen.step`).
@@ -15,68 +16,27 @@ Import discipline: nothing here may pull in ezdxf/OCP at module scope (see
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cadgen._internal.format_namespace import callable_namespace
 from cadgen._internal.snapshot_door import mesh_snapshot_verb
-from cadgen.results import BuildResult
 
-__all__ = ["build", "snapshot"]
+__all__ = ["snapshot"]
 
 #: ``cadgen dxf snapshot``'s verb: render a drawing as its 3D flat pattern.
 snapshot = mesh_snapshot_verb("dxf")
 
+#: The teaching error at the deleted verb, shared with the command dispatcher so
+#: `cadgen dxf build` and `cadgen.dxf.build` say the same thing.
+RETIRED_BUILD_MESSAGE = (
+    "`dxf build` was deleted: a .dxf has no derived state a door must "
+    "materialize — the file is the product, and snapshot meshes it on demand. "
+    "Make a drawing by running its script: python <drawing>.py"
+)
 
-def build(
-    target: Path,
-    *,
-    force: bool = False,
-    verbose: bool = False,
-) -> BuildResult:
-    """Make TARGET's drawing current; no-op when it already is.
 
-    Runs the closure gate, runs the generator if stale, and writes the ``.dxf``
-    plus its content-keyed record. The bytes are a function of the drawing's
-    GEOMETRY — layers sorted by name, entities by content, ezdxf's volatile
-    provenance pinned (:mod:`cadgen._internal.dxf_emit`) — which is what makes a
-    content-keyed record meaningful. This path used to pin PYTHONHASHSEED to get
-    there; it costs no interpreter restart now.
-
-    target: @dxf model script (.py) to build.
-    force: rebuild even when the record says the drawing is current.
-    verbose: show detailed progress and timing on stderr.
-    """
-    from cadgen._internal.dxf_output import dxf_output_current
-    from cadgen._internal.generation import _entry_spec_from_source, generate_dxf_targets
-    from cadgen.catalog import source_from_path
-
-    path = Path(target).expanduser().resolve()
-    if path.suffix.lower() != ".py":
-        raise ValueError(f"dxf build target must be a model script (.py): {target}")
-    if not path.is_file():
-        raise FileNotFoundError(f"model script does not exist: {target}")
-    source = source_from_path(path)
-    if source is None:
-        raise ValueError(
-            f"{path.name} declares no CAD model — decorate one function with @dxf from cadgen"
-        )
-    spec = _entry_spec_from_source(source)
-    if spec.dxf_path is None:
-        raise ValueError(
-            f"{path.name} declares no @dxf drawing; `cadgen dxf build` builds DXF "
-            "documents (a @step model builds with `cadgen step build`)"
-        )
-    document: Path = spec.dxf_path
-    skipped = not force and dxf_output_current(path, document)
-    generate_dxf_targets([str(path)], force=force, verbose=verbose)
-    return BuildResult(
-        ok=document.is_file(),
-        document=document,
-        # A drawing has no render package: the .dxf IS the product, and the
-        # viewer parses it directly (design/standalone-viewer.md).
-        package=None,
-        skipped=skipped,
-    )
+def __getattr__(name: str):
+    if name == "build":
+        raise AttributeError(RETIRED_BUILD_MESSAGE)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 callable_namespace(__name__, "dxf")
