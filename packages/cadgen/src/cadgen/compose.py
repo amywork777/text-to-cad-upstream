@@ -1,14 +1,17 @@
-"""Composition seams for traced, cached model subtrees.
+"""The composition seam: ``memo`` — traced, cached model subtrees.
 
-``child_entry(path)`` replaces the hand-rolled ``importlib`` loaders parent
-entries use to compose sibling generators, and ``@memo`` marks expensive
-model functions. Both are SCOPES (design/production-architecture.md): their
-results are cached in the shared store keyed by source — the scope's static
-import closure plus everything observed executing/reading during a miss —
+``memo(fn)`` wraps a function — a sibling model's imported entry function,
+or any expensive pure helper — as a SCOPE
+(design/production-architecture.md): its results are cached in the shared
+store keyed by source — the function's file, its static import closure, plus
+everything observed executing/reading during a miss — and by its arguments,
 so an edit that does not reach a scope's sources skips the scope's Python,
-kernel work, and any nondeterminism wholesale. Validation is a semantic
-re-hash of the recorded file list (stat-cached, milliseconds); a resident
-session can install a cheaper validator that answers from its watcher.
+kernel work, and any nondeterminism wholesale. Importing links; ``memo``
+caches. A decorated model function passed to ``memo`` is just its geometry:
+calling it never builds, and the child's own export declarations fire only
+when the child is the entry being built. Validation is a semantic re-hash of
+the recorded file list (stat-cached, milliseconds); a resident session can
+install a cheaper validator that answers from its watcher.
 
 Rules inherited from the op layer: a miss returns the same canonical
 reconstruction a future hit would (cache-state independence); anything
@@ -18,7 +21,6 @@ unkeyable, untrackable, or unfreezable falls through to plain execution
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import sys
 import threading
@@ -29,11 +31,6 @@ from cadgen._internal import scope_capture, scope_store
 _lock = threading.RLock()
 _stats = {"hits": 0, "misses": 0, "unkeyable": 0, "unfreezable": 0,
           "untrackable": 0, "errors": 0}
-
-# (resolved path, mtime_ns, size) -> loaded module. Keyed on stat so an
-# edited child reloads even though this cache outlives the runner's
-# first-party module eviction.
-_MODULE_CACHE: dict[tuple[str, int, int], object] = {}
 
 # Optional session-installed fast validator: files-unchanged answers from a
 # watcher instead of re-hashing. Returning None means "don't know, re-hash".
@@ -52,45 +49,6 @@ def stats() -> dict:
 
 def _enabled() -> bool:
     return os.environ.get("CADGEN_SCOPE_CACHE", "1") != "0"
-
-
-def _caller_dir() -> Path | None:
-    frame = sys._getframe(2)
-    file_name = frame.f_globals.get("__file__")
-    return Path(file_name).resolve().parent if file_name else None
-
-
-def _resolve_entry(path: Path | str, caller_dir: Path | None) -> Path:
-    candidate = Path(path)
-    if not candidate.is_absolute() and caller_dir is not None:
-        candidate = caller_dir / candidate
-    return candidate.resolve()
-
-
-def _load_module(entry: Path):
-    stat = entry.stat()
-    key = (str(entry), stat.st_mtime_ns, stat.st_size)
-    with _lock:
-        cached = _MODULE_CACHE.get(key)
-        if cached is not None:
-            return cached
-    root = str(entry.parent)
-    inserted = root not in sys.path
-    if inserted:
-        sys.path.insert(0, root)
-    try:
-        spec = importlib.util.spec_from_file_location(entry.stem, entry)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-    finally:
-        if inserted:
-            try:
-                sys.path.remove(root)
-            except ValueError:
-                pass
-    with _lock:
-        _MODULE_CACHE[key] = module
-    return module
 
 
 def _args_key(args: tuple, kwargs: dict):
@@ -181,8 +139,6 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
             continue
         if inside:
             sys.modules.pop(name, None)
-    with _lock:
-        _MODULE_CACHE.clear()
     with scope_capture.scoped_recording(entry_file, root) as recording:
         result = call()
     with _lock:
@@ -220,54 +176,25 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
         return result
 
 
-class ChildEntry:
-    """A composed sibling model. The child's @step/@dxf-decorated entry
-    function is the cached scope; every other attribute lazily proxies to the
-    loaded module."""
-
-    def __init__(self, entry: Path):
-        self._entry = entry
-        self._root = entry.parent
-
-    def _entry_function_name(self) -> str | None:
-        from cadgen.metadata import parse_generator_metadata
-
-        try:
-            metadata = parse_generator_metadata(self._entry)
-        except (RuntimeError, ValueError):
-            return None
-        return getattr(metadata, "entry_function", None) if metadata else None
-
-    def __getattr__(self, name: str):
-        if name == self._entry_function_name():
-            def cached_entry(*args, **kwargs):
-                return _run_scope(
-                    self._entry.name, self._entry, self._root,
-                    lambda: getattr(_load_module(self._entry), name)(*args, **kwargs),
-                    args, kwargs,
-                )
-
-            return cached_entry
-        return getattr(_load_module(self._entry), name)
-
-
-def child_entry(path: Path | str) -> ChildEntry:
-    """Load a sibling ``.step.py`` generator as a traced, cached scope.
-
-    Relative paths resolve against the calling file's directory. The child's
-    directory is guaranteed on ``sys.path`` while its module loads, so
-    ``import _helpers``-style sibling imports work regardless of the process
-    working directory."""
-    entry = _resolve_entry(path, _caller_dir())
-    if not entry.is_file():
-        raise FileNotFoundError(f"child entry not found: {entry}")
-    return ChildEntry(entry)
+def child_entry(path=None):
+    """Retired surface: the path-addressed seam is gone (hard cutover)."""
+    raise RuntimeError(
+        "child_entry() was removed. Compose by FUNCTION: import the child's "
+        "model function and wrap it — `from part import gen_part; "
+        "_PART = memo(gen_part)` — importing links, memo caches. "
+        "(A path presumed one model per file; a function does not.)"
+    )
 
 
 def memo(fn):
-    """Cache an expensive model function as a traced scope. The function must
-    be pure given its arguments and its source closure, and must return
-    shapes/compounds (or JSON-able values)."""
+    """Cache a function as a traced scope: a sibling model's imported entry
+    function, or any expensive helper. The function must be pure given its
+    arguments and its source closure, and must return shapes/compounds (or
+    JSON-able values). A decorated model function is just its geometry here:
+    the wrapper caches the shape; the child's own export declarations fire
+    only when the child is the entry being built. Freshness is per RUN (like
+    imports): each build re-imports edited modules, and the scope key —
+    the child's file + traced closure + args — decides hit or miss."""
     import functools
 
     file_name = fn.__globals__.get("__file__")

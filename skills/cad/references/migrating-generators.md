@@ -58,7 +58,7 @@ drawing content — no identity comments — so a rename changes nothing.)
 - Everything the model needs must be defined ABOVE the decorated function
   (decoration-time execution); importing the module never builds; calling the
   function returns the shape (composition: `import bracket; bracket.bracket()`,
-  or `cadgen.compose.child_entry` for the cached seam).
+  or wrap the imported function with `cadgen.compose.memo` for the cached seam).
 - One `@step` or `@dxf` model per file.
 - Declared options move into the decorator: `out=` (output path, relative to
   the script), `kind=` ("part"/"assembly", else inferred from the return),

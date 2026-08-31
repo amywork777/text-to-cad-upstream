@@ -76,10 +76,10 @@ importable file. Provenance is never inferred from filenames either — so
 relocated outputs, renamed scripts, and shared output folders all stay
 traceable through the package alone.
 
-When a model builds on another part, wire it in as LINKED or DETACHED —
+When a model builds on another part, wire it in as LINKED or UNLINKED —
 see "Composing on other parts" below.
 
-## Composing on other parts: linked vs detached
+## Composing on other parts: linked vs unlinked
 
 A **model script** is any plain `.py` defining one `@step` (or `@dxf`)
 function, and a model that builds on another part wires it in one of two
@@ -89,49 +89,48 @@ modes. Choose deliberately:
   SOURCE. A child edit flows into the parent on the next rebuild; there are
   no exported bytes to keep in sync. Never route a generated child through
   its exported `.step`.
-- **DETACHED** — the child is a document, not source: a purchased or
+- **UNLINKED** — the child is a document, not source: a purchased or
   downloaded part, or a generated part the user has EXPLICITLY asked to
   decouple (export it once, then treat the export like any other document).
   Read it with `cadgen.read_step`, below.
 
-For a cheap child sitting beside the parent, a linked child is just an
-import: model scripts are real modules, and `import widget; widget.widget()`
-returns the shape with no build side effects (the import tracer records the
-child's files into the parent's closure, so staleness flows). For
-assemblies, link through **`cadgen.compose.child_entry`** instead — the
-traced, cached seam. It does two things a plain import cannot: each child's
-model function becomes a SCOPE keyed by its own source closure, so an edit
-that does not reach a child's files skips that child's Python and kernel
-work entirely (this is what makes big-assembly edits cost seconds instead
-of minutes); and it loads by PATH with the child's own `sys.path` context,
-so composition works across directories where `import` cannot reach:
+A linked child is just an import: model scripts are real modules, and
+`import widget; widget.widget()` returns the shape with no build side
+effects (the import tracer records the child's files into the parent's
+closure, so staleness flows). For anything expensive, wrap the imported
+function with **`cadgen.compose.memo`** — importing links, `memo` caches.
+The wrapped call becomes a SCOPE keyed by the child's own source closure
+plus the call arguments, so an edit that does not reach the child's files
+skips that child's Python and kernel work entirely (this is what makes
+big-assembly edits cost seconds instead of minutes). The contract: a
+memoized function is pure given its arguments and source closure, and
+returns shapes/compounds (or JSON-able values). A decorated model function
+is just its geometry here — its own `out=`/export declarations fire only
+when it is the entry being built:
 
 ```python
-from pathlib import Path
-
 from cadgen import build123d as bd
 from cadgen import step
-from cadgen.compose import child_entry
+from cadgen.compose import memo
+from widget import widget as build_widget   # importing links; never builds
 
-_HERE = Path(__file__).resolve().parent
-_WIDGET = child_entry(_HERE / "widget.py")
+_WIDGET = memo(build_widget)                # memo caches
 
 @step(kind="assembly")
 def rig():
-    widget = _WIDGET.widget()   # cached scope; compose into the parent
+    widget = _WIDGET()          # cached scope; compose into the parent
     widget.label = "widget"
     ...
 ```
 
-Expensive helper FUNCTIONS inside one entry can opt into the same caching with
-`@cadgen.compose.memo` (pure functions of their arguments and source closure,
-returning shapes/compounds).
+The same wrapper serves in-file use: decorate an expensive local function
+with `@memo` and it caches under the same contract.
 
 **`sys.path` does not survive into the model function.** The pipeline restores
 `sys.path` after loading the module, so do imports at module top level and
 only *call* the imported code inside the function.
 
-**Detached children: reading a STEP file the model does not generate.** Use
+**Unlinked children: reading a STEP file the model does not generate.** Use
 `cadgen.read_step`, not `build123d.import_step`. It returns the same shape, served from cache on a warm
 run, and — the part that matters — it RECORDS the file's content hash as a build
 input. Replacing the vendor STEP then makes the model stale on its own, with no

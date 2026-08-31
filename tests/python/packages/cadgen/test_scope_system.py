@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -230,23 +231,54 @@ class ComposeSeamTest(StoreIsolatedTest):
                          BinTools_FormatVersion.BinTools_FormatVersion_CURRENT)
         return hashlib.sha256(stream.getvalue()).hexdigest()
 
+    def _fresh_model(self, child: Path):
+        """Import the child fresh and wrap its entry function with memo — the
+        new-model composition pattern (`from part import gen_part;
+        memo(gen_part)`), with the fresh import modeling what every real run
+        does (workers evict and re-import edited first-party modules; memo's
+        freshness contract is per RUN, like any import's)."""
+        import importlib.util
+        import shutil
+
+        root = child.parent.resolve()
+        # A same-size edit within one mtime second leaves a validly-stamped
+        # stale .pyc; the runner purges pycache around scope re-execution, so
+        # the fresh-import helper does too.
+        for pycache in root.rglob("__pycache__"):
+            shutil.rmtree(pycache, ignore_errors=True)
+        for name, module in list(sys.modules.items()):
+            file_name = getattr(module, "__file__", None)
+            if file_name and Path(file_name).resolve().is_relative_to(root):
+                sys.modules.pop(name, None)
+        sys.path.insert(0, str(root))
+        try:
+            spec = importlib.util.spec_from_file_location(child.stem, child)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        finally:
+            sys.path.remove(str(root))
+        return compose.memo(module.model)
+
     def test_miss_then_hit_and_canonical_return(self) -> None:
         child = self._write_model()
-        first = compose.child_entry(child).model()
+        first = self._fresh_model(child)()
         self.assertEqual(compose.stats()["misses"], 1)
-        second = compose.child_entry(child).model()
+        # A separate wrapper of a separately-imported module still HITS: the
+        # scope key is the child's file + closure + args, never the function
+        # object's identity.
+        second = self._fresh_model(child)()
         self.assertEqual(compose.stats()["hits"], 1)
         self.assertEqual(self._digest(first), self._digest(second))
         self.assertEqual(second.label, "child")
 
     def test_closure_edit_misses_unrelated_edit_hits(self) -> None:
         child = self._write_model()
-        compose.child_entry(child).model()
+        self._fresh_model(child)()
         (child.parent / "_other.py").write_text("UNRELATED = 2\n")
-        compose.child_entry(child).model()
+        self._fresh_model(child)()
         self.assertEqual(compose.stats()["hits"], 1)
         (child.parent / "_spec.py").write_text("SIZE = 7.0\n")
-        bigger = compose.child_entry(child).model()
+        bigger = self._fresh_model(child)()
         self.assertEqual(compose.stats()["misses"], 2)
         self.assertAlmostEqual(bigger.volume, 343.0, places=6)
 
@@ -254,11 +286,15 @@ class ComposeSeamTest(StoreIsolatedTest):
         child = self._write_model()
         os.environ["CADGEN_SCOPE_CACHE"] = "0"
         try:
-            compose.child_entry(child).model()
-            compose.child_entry(child).model()
+            self._fresh_model(child)()
+            self._fresh_model(child)()
             self.assertEqual(compose.stats()["hits"], 0)
         finally:
             os.environ.pop("CADGEN_SCOPE_CACHE", None)
+
+    def test_child_entry_is_a_teaching_error(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "Compose by FUNCTION.*memo"):
+            compose.child_entry("child.py")
 
     def test_memo_function(self) -> None:
         calls = {"n": 0}
