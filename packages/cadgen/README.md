@@ -24,15 +24,15 @@ chromium`). Plain STEP generation needs neither.
 ## Command line
 
 Building is library-first: a model script declares one `@step` (or `@dxf`)
-function and `python <model>.py` builds it — there is no `gen` verb. The CLI
-covers everything downstream of a build:
+function and `python <model>.py` builds it — there is no `gen` verb. Scripts are
+RUN, never handed to a CLI: every command below takes a DOCUMENT, and one given
+a `.py` says so. The CLI covers everything downstream of a build:
 
 | | |
 |---|---|
-| `step build` | make a model script's or an imported STEP/STP's derived state current |
-| `stl build` / `3mf build` / `glb build` | write that model's mesh outputs, one door per format |
+| `step build IN OUT` | write a new STEP from an existing one, with kinematics/animation |
+| `stl build` / `3mf build` / `glb build` | write that document's mesh outputs, one door per format |
 | `step inspect` / `step snapshot` | inspect selector references, render review images |
-| `dxf build` | make a @dxf drawing's .dxf output current |
 | `dxf snapshot` | render a DXF drawing |
 | `snapshot` | render any supported input |
 | `urdf validate` / `srdf validate` / `sdf validate` | validate robot descriptions |
@@ -40,6 +40,10 @@ covers everything downstream of a build:
 | `cache` | inspect or garbage-collect the user-level caches |
 | `daemon` / `daemon status` | opt-in warm process that holds OCP resident between builds |
 | `doctor` | print installed cadgen and verify a skill's pin |
+
+`step compile` also exists — it makes a document's render package current — but
+it is INTERNAL: every door and the CAD Viewer compile on demand, so nothing you
+read should tell you to run it.
 
 Dispatch is lazy: `cadgen --help` does not import the CAD stack.
 

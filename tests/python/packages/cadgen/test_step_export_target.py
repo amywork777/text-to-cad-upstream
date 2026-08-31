@@ -124,34 +124,70 @@ class StepExportTargetTests(unittest.TestCase):
         self.assertFalse(payload.get("ok"))
         self.assertIn("error", payload)
 
+    def _write_box_document(self) -> Path:
+        """A real .step on disk — what the mesh doors take.
+
+        DOCUMENTS-ONLY: `export_cad_target` is the engine behind
+        `cadgen stl|3mf|glb build`, which never sees a script.
+        """
+        generator = self._write_box_generator()
+        document = self.temp_root / "box_document.step"
+        code, payload = self._run([
+            "--repo-root", str(Path.cwd()),
+            "--step", str(self.temp_root / "box.step"),
+            "--source-path", str(generator),
+            "--format", "step",
+            "--out", str(document),
+        ])
+        self.assertEqual(code, 0, payload)
+        return document
+
     def test_export_cad_target_rejects_step_format(self) -> None:
         # The Viewer's Save-dialog path (main(), tested above) still exports STEP; the CAD
         # CAD workflow does not — the model script itself owns .step files.
-        generator = self._write_box_generator()
+        document = self._write_box_document()
         with self.assertRaises(ValueError) as cm:
-            step_export_target.export_cad_target(generator, [("step", None)])
+            step_export_target.export_cad_target(document, [("step", None)])
         self.assertIn("Unsupported export format: step", str(cm.exception))
 
-    def test_export_cad_target_writes_mesh_formats(self) -> None:
+    def test_a_model_script_is_refused_by_naming_the_run(self) -> None:
+        # Scripts are RUN; the engine takes the document the run wrote.
         generator = self._write_box_generator()
+        with self.assertRaises(ValueError) as cm:
+            step_export_target.export_cad_target(generator, [("stl", None)])
+        self.assertIn("run it: python", str(cm.exception))
+
+    def test_a_bare_door_with_no_declarations_teaches_both_ways_out(self) -> None:
+        # An imported document declares nothing, so "every declared variant" is
+        # empty — which is a teaching error, not a silent sibling default.
+        document = self._write_box_document()
+        with self.assertRaises(ValueError) as cm:
+            step_export_target.export_cad_target(document, [("stl", None)])
+        message = str(cm.exception)
+        self.assertIn("declare @stl on the model and run python <script>", message)
+        self.assertIn("explicit OUT", message)
+
+    def test_export_cad_target_writes_mesh_formats(self) -> None:
+        document = self._write_box_document()
         payload = step_export_target.export_cad_target(
-            generator,
-            [(fmt, None) for fmt in step_export_target.MESH_EXPORT_FORMATS],
+            document,
+            [
+                (fmt, self.out_dir / f"box.{fmt}")
+                for fmt in step_export_target.MESH_EXPORT_FORMATS
+            ],
         )
         self.assertTrue(payload["ok"])
         for entry in payload["files"]:
             self._assert_export_file(Path(entry["path"]), entry["format"])
-        # Mesh exports never leave a .step behind.
-        self.assertFalse((self.temp_root / "box.step").exists())
 
     def test_mesh_exports_are_byte_deterministic(self) -> None:
         # design/unified-tessellation.md Phase 4: one deterministic code path,
         # so exporting the same model twice yields identical bytes per format.
-        generator = self._write_box_generator()
+        document = self._write_box_document()
         digests: dict[str, bytes] = {}
         for round_index in range(2):
             payload = step_export_target.export_cad_target(
-                generator,
+                document,
                 [
                     (fmt, f"round{round_index}.{fmt}")
                     for fmt in step_export_target.MESH_EXPORT_FORMATS

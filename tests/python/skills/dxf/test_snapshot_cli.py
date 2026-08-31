@@ -46,29 +46,18 @@ class DxfSnapshotCliTests(unittest.TestCase):
             self.assertTrue(str(resolved).endswith(".glb"))
             self.assertTrue(resolved.is_file())
 
-    def test_a_generator_is_made_current_first_and_force_reaches_gen(self) -> None:
+    def test_a_script_is_not_a_snapshot_input(self) -> None:
+        # A .dxf has no derived state a door materializes, so the resolver
+        # never ran a generator here again: drawings are made by running their
+        # script, and snapshot meshes the DOCUMENT.
         import tempfile
 
+        self.assertFalse(hasattr(snapshot, "generate_dxf_for_snapshot"))
         with tempfile.TemporaryDirectory() as tmp:
             py = Path(tmp) / "x.py"
             py.write_text("def drawing():\n    raise NotImplementedError\n")
-            sibling = Path(tmp) / "x.dxf"
-
-            def fake_gen(source, *, force=False):
-                fake_gen.forced = force
-                sibling.write_text("0\nEOF\n")
-                return sibling
-
-            def fake_run(cmd, **kwargs):
-                out = Path(cmd[cmd.index("--out") + 1])
-                out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_bytes(b"glTF")
-                return mock.Mock(returncode=0, stdout='{"ok": true}', stderr="")
-
-            with mock.patch.object(snapshot, "generate_dxf_for_snapshot", side_effect=fake_gen) as gen:
-                with mock.patch("subprocess.run", side_effect=fake_run):
-                    snapshot.drawing_mesh_path(py, force=True)
-            self.assertTrue(gen.call_args.kwargs["force"])
+            with self.assertRaisesRegex(snapshot.SnapshotError, "must be a .dxf document"):
+                snapshot.drawing_mesh_path(py, force=True)
 
     def test_a_mesh_failure_is_an_error_not_a_blank_image(self) -> None:
         # The one-shot's error (a drawing with nothing renderable at all —

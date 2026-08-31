@@ -67,4 +67,6 @@ drawing content — no identity comments — so a rename changes nothing.)
 - The render package records artifact→source provenance, so nothing depends on
   filenames pairing up any more; the viewer catalogs artifacts only.
 - `scripts/gen` and `cadgen step gen`/`cadgen dxf gen` are gone. Imported
-  foreign STEP/STP files use `cadgen step build`.
+  foreign STEP/STP files need no build step: every door makes what it needs on
+  demand. `cadgen step build IN OUT` re-emits one as a new document when you
+  want cadgen's own bytes or want to attach kinematics to it.

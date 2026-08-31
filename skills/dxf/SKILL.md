@@ -170,16 +170,19 @@ Use these defaults unless the user specifies otherwise:
 
 ```bash
 python <drawing>.py [flags]      # a @dxf model script writes its sibling .dxf
-cadgen dxf build <drawing>.py    # the same build, asked for by name
-cadgen dxf snapshot <drawing> <file.png>       # render it
+cadgen dxf snapshot <drawing.dxf> <file.png>   # render it
 ```
 
-`cadgen dxf build` and running the script are the same build through the same
-gate: an unchanged source whose recorded `.dxf` still verifies is a no-op, and
-`--force` rebuilds anyway. Either way the bytes are a function of the drawing's
-GEOMETRY, so the two doors and a warm daemon worker all write the same file.
+**Running the script is the only door.** There is no `cadgen dxf build`: a
+`.dxf` has no derived state a command must materialize — the file IS the
+product, the CAD Viewer parses it directly, and `dxf snapshot` meshes it on
+demand. The script's own gate makes a rebuild cheap: an unchanged source whose
+recorded `.dxf` still verifies is a no-op, and `--force` rebuilds anyway. The
+bytes are a function of the drawing's GEOMETRY, so a cold run and a warm daemon
+worker write the same file.
 
-An imported `.dxf` needs no build at all — the CAD Viewer renders it directly.
+An imported `.dxf` needs nothing at all — hand it straight to snapshot or the
+Viewer.
 
 Use the active project Python interpreter; treat `python` as an interpreter
 placeholder, and use `--help` for the full interface. Target paths resolve from

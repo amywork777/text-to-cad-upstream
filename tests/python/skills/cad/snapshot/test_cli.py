@@ -62,12 +62,12 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", kinematic
     if kinematics or animation:
         # Kinematics/animation (source-derived) ride the MODEL-SIDE sidecar,
         # never the descriptor.
-        sidecar = {"schemaVersion": 3, "sourceKind": "python"}
+        sidecar = {"schemaVersion": 4, "sourceKind": "python"}
         if kinematics:
             sidecar["kinematics"] = kinematics
         if animation:
             sidecar["animation"] = animation
-        Path(f"{step_path}.cadgen.json").write_text(
+        Path(f"{step_path}.json").write_text(
             json.dumps(sidecar)
         )
     return pkg_dir
@@ -1120,7 +1120,7 @@ class SnapshotCliTests(unittest.TestCase):
     def test_render_job_rejects_step_parameters_path_for_mesh_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
@@ -1911,7 +1911,7 @@ class StepPoseParameterTests(unittest.TestCase):
         self._step()
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
+        self.assertIn(".step.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
     def test_animation_never_gates_the_parameter_url(self) -> None:
@@ -1930,7 +1930,7 @@ class StepPoseParameterTests(unittest.TestCase):
     def test_retired_job_keys_are_rejected_by_name(self) -> None:
         self._step()
         for key in ("paramsPath", "stepParametersPath"):
-            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
                 self._resolve(self._job(**{key: "models/part.step.js"}))
 
 

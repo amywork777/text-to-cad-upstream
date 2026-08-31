@@ -113,7 +113,7 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   at `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
   `bundle-cad-viewer.sh` for publish), and each release mirrors `viewer/` to the
   standalone `earthtojake/cad-viewer` repo. The backend's render path runs no
-  Python; importing a foreign STEP spawns `cadgen step build` (a soft dependency —
+  Python; importing a foreign STEP spawns `cadgen step compile` (a soft dependency —
   absent cadgen, viewing still works). Keep repo-level tooling in `scripts/`,
   not under `viewer/`.
 - `packages/cadjs` must stay reusable/non-React; app UI and workflow state

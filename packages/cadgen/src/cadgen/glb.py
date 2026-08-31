@@ -22,6 +22,7 @@ def build(
     target: Path,
     out: Path | None = None,
     *,
+    kinematics: str | dict | None = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
     force: bool = False,
@@ -29,16 +30,18 @@ def build(
 ) -> MeshExportResult:
     """Produce GLB output(s) for TARGET through the shared mesh engine.
 
-    target: model script (.py) or STEP/STP document to export.
-    out: destination .glb path. Omitted, TARGET's declared @glb variants are
-        produced instead — every one of them — or the sibling <name>.glb when
-        it declares none.
+    target: the STEP/STP document to export.
+    out: destination .glb path. Omitted, the document's declared @glb variants
+        are produced instead — every one of them, each at the bake point its
+        declaration recorded.
+    kinematics: bake point for an explicit OUT — a declared preset name or
+        {dof: value} JSON, resolved against the document's kinematics.
     mesh_tolerance: chord deflection RELATIVE to each component's bounding
-        diagonal, overriding what the model declares.
+        diagonal, overriding what the document declares.
     mesh_angular_tolerance: max normal spread across a triangle edge in
-        radians, overriding what the model declares.
+        radians, overriding what the document declares.
     force: re-export even where the ledger says the output is current. Never
-        rebuilds the model itself — that is `cadgen step build`.
+        rebuilds the model itself — run `python <script>` for that.
     verbose: show detailed progress and timing on stderr.
     """
     from cadgen._internal.mesh_door import mesh_build
@@ -47,6 +50,7 @@ def build(
         "glb",
         target,
         out,
+        kinematics=kinematics,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
         force=force,

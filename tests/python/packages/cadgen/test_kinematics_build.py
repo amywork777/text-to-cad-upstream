@@ -3,9 +3,10 @@
 The decoration-time vocabulary is pinned in test_kinematics_def; this covers
 the BUILD half (design/pose-animation-split.md): mate refs validate against
 real occurrences, axis selector refs resolve to world numbers, the block lands
-in the ``.cadgen.json`` sidecar (schema 3) with the animation module's text
-COPIED in, and ``pose=`` bakes the artifact — descriptor transforms move, and
-the sidecar re-zeroes so the artifact as written is q=0.
+in the ``.step.json`` sidecar (schema 4) with the animation module's text
+COPIED in, and the kinematics dict's ``"at"`` key bakes the artifact —
+descriptor transforms move, and the sidecar re-zeroes so the artifact as
+written is q=0.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ KINEMATICS = {{
         cadgen.revolute("swing", parent="#base", child="#arm",
                         origin=(0, 0, 6), direction=(0, 0, 1), limits=(0, 90)),
     ],
-    "poses": {{"open": {{"swing": 45}}}},
+    "poses": {{"open": {{"swing": 45}}}}{kinematics_extra},
 }}
 
 @step(kind="assembly", kinematics=KINEMATICS{extra})
@@ -106,9 +107,12 @@ class KinematicsBuildTests(unittest.TestCase):
 
         return read_source_sidecar(script.with_suffix(".step")) or {}
 
-    def _write(self, name: str, extra: str = "") -> Path:
+    def _write(self, name: str, extra: str = "", kinematics_extra: str = "") -> Path:
         script = self.root / name
-        script.write_text(HINGE_MODEL.format(extra=extra), encoding="utf-8")
+        script.write_text(
+            HINGE_MODEL.format(extra=extra, kinematics_extra=kinematics_extra),
+            encoding="utf-8",
+        )
         return script
 
     def test_kinematics_and_animation_land_in_the_sidecar(self) -> None:
@@ -117,9 +121,9 @@ class KinematicsBuildTests(unittest.TestCase):
         self.assertEqual(0, self._build(script))
 
         sidecar = self._sidecar(script)
-        self.assertEqual(sidecar["schemaVersion"], 3)
+        self.assertEqual(sidecar["schemaVersion"], 4)
         # The sidecar file carries the branded suffix.
-        self.assertTrue((self.root / "hinge.step.cadgen.json").is_file())
+        self.assertTrue((self.root / "hinge.step.json").is_file())
 
         block = sidecar["kinematics"]
         (mate,) = block["mates"]
@@ -142,7 +146,7 @@ class KinematicsBuildTests(unittest.TestCase):
     def test_axis_selector_refs_resolve_to_world_numbers(self) -> None:
         script = self.root / "pivot.py"
         script.write_text(
-            HINGE_MODEL.format(extra="").replace(
+            HINGE_MODEL.format(extra="", kinematics_extra="").replace(
                 'cadgen.revolute("swing", parent="#base", child="#arm",\n'
                 '                        origin=(0, 0, 6), direction=(0, 0, 1), limits=(0, 90)),',
                 'cadgen.revolute("swing", parent="#base", child="#arm",\n'
@@ -182,7 +186,7 @@ class KinematicsBuildTests(unittest.TestCase):
     def test_an_unresolvable_mate_ref_fails_the_build(self) -> None:
         script = self.root / "broken.py"
         script.write_text(
-            HINGE_MODEL.format(extra="").replace('child="#arm"', 'child="#wrist"'),
+            HINGE_MODEL.format(extra="", kinematics_extra="").replace('child="#arm"', 'child="#wrist"'),
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "'#wrist' does not name an occurrence"):
@@ -193,9 +197,11 @@ class KinematicsBuildTests(unittest.TestCase):
         with self.assertRaisesRegex(FileNotFoundError, "animation module not found"):
             self._build(script)
 
-    def test_pose_bakes_the_artifact_and_rezeroes_the_sidecar(self) -> None:
+    def test_at_bakes_the_artifact_and_rezeroes_the_sidecar(self) -> None:
         rest = self._write("rest.py")
-        posed = self._write("posed.py", extra=', pose="open"')
+        # The bake point lives INSIDE the kinematics dict: everything says
+        # kinematics, so there is no pose= kwarg beside it to keep in step.
+        posed = self._write("posed.py", kinematics_extra=', "at": "open"')
         self.assertEqual(0, self._build(rest))
         self.assertEqual(0, self._build(posed))
 
@@ -253,7 +259,7 @@ KINEMATICS = {
 
 @step(kind="assembly")
 @stl(out="latch_rest.stl")
-@stl(out="latch_open.stl", kinematics=KINEMATICS, pose="open")
+@stl(out="latch_open.stl", kinematics={**KINEMATICS, "at": "open"})
 def latch():
     base = label_shape(bd.Box(20, 20, 4), "base")
     arm = label_shape(bd.Pos(10, 0, 6) * bd.Box(16, 4, 4), "arm")
@@ -262,7 +268,7 @@ def latch():
 
 
 class PosedMeshExportTests(unittest.TestCase):
-    """A mesh declaration's OWN kinematics + pose bake, independent of @step."""
+    """A mesh declaration's OWN kinematics + "at" bake, independent of @step."""
 
     def setUp(self) -> None:
         self._roots = IsolatedCadRoots(self, prefix="cadkinmesh-")

@@ -45,7 +45,7 @@ DESCRIPTOR_NAME = "assembly.json"
 # Source-provenance keys stripped from a component GLB's embedded STEP_TOPOLOGY so the
 # component is a pure function of geometry+tolerances (content-addressable). All of this
 # is model-level and lives on the descriptor (assembly.json) or the source sidecar
-# (the .cadgen.json sidecar), not the reusable leaf.
+# (the .step.json sidecar), not the reusable leaf.
 COMPONENT_PROVENANCE_KEYS = (
     "sourceKind",
     "sourcePath",

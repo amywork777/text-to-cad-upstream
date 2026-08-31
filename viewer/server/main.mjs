@@ -23,7 +23,7 @@
 //
 // cadgen is NOT required to start: without it the viewer serves packaged
 // models read-only and importing a foreign STEP answers with an install hint
-// (imports spawn `cadgen step build`; see cadgenResolve.mjs).
+// (imports spawn `cadgen step compile`; see cadgenResolve.mjs).
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";

@@ -66,25 +66,52 @@ class DoorArguments(unittest.TestCase):
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
         stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+        import tempfile
+
+        root = Path(stack.enter_context(tempfile.TemporaryDirectory())).resolve()
+        # DOCUMENTS-ONLY: a door resolves its target as a document that exists,
+        # so the mapping under test starts from a real file.
+        self.document = root / "sample.step"
+        self.document.write_text("ISO-10303-21;\n", encoding="utf-8")
 
     def test_each_door_names_exactly_its_own_format(self):
         for fmt, module, _ in DOORS:
             with self.subTest(format=fmt), _engine() as export:
-                self.assertEqual(0, module.main(["parts/sample.py"]))
+                self.assertEqual(0, module.main([str(self.document)]))
             self.assertEqual([(fmt, None)], export.call_args.args[1])
 
     def test_a_bare_target_asks_for_the_declarations(self):
         # `OUT` omitted is None all the way to the engine, where it means EVERY
-        # declared variant of this format (the sibling default when none are).
+        # variant of this format the DOCUMENT's sidecar declares.
         with _engine() as export:
-            self.assertEqual(0, stl_build.main(["parts/sample.py"]))
-        self.assertEqual(Path("parts/sample.py"), export.call_args.args[0])
+            self.assertEqual(0, stl_build.main([str(self.document)]))
+        self.assertEqual(self.document, export.call_args.args[0])
         self.assertEqual([("stl", None)], export.call_args.args[1])
 
     def test_an_explicit_out_is_one_ad_hoc_export(self):
         with _engine() as export:
-            self.assertEqual(0, stl_build.main(["parts/sample.py", "meshes/sample.stl"]))
+            self.assertEqual(0, stl_build.main([str(self.document), "meshes/sample.stl"]))
         self.assertEqual([("stl", Path("meshes/sample.stl"))], export.call_args.args[1])
+
+    def test_a_bake_point_needs_an_explicit_out(self):
+        # `kinematics=` names the configuration for ONE artifact. Without an
+        # OUT the door produces the declared variants, each at the bake point
+        # its own declaration recorded, so a run-level point would be ambiguous.
+        with _engine(), contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(1, stl_build.main([str(self.document), "--kinematics", "open"]))
+
+    def test_a_bake_point_reaches_the_engine(self):
+        with _engine() as export:
+            self.assertEqual(
+                0, stl_build.main([str(self.document), "posed.stl", "--kinematics", "open"])
+            )
+        self.assertEqual("open", export.call_args.kwargs["kinematics"])
+
+    def test_a_model_script_is_refused_by_naming_the_run(self):
+        stderr = io.StringIO()
+        with _engine(), contextlib.redirect_stderr(stderr):
+            self.assertEqual(1, stl_build.main(["parts/sample.py"]))
+        self.assertIn("python parts/sample.py", stderr.getvalue())
 
     def test_tolerances_force_and_verbose_reach_the_engine(self):
         with _engine() as export:
@@ -92,7 +119,7 @@ class DoorArguments(unittest.TestCase):
                 0,
                 glb_build.main(
                     [
-                        "parts/sample.py",
+                        str(self.document),
                         "--mesh-tolerance",
                         "0.2",
                         "--mesh-angular-tolerance",
@@ -110,10 +137,11 @@ class DoorArguments(unittest.TestCase):
 
     def test_the_defaults_ask_for_nothing_extra(self):
         with _engine() as export:
-            self.assertEqual(0, stl_build.main(["parts/sample.py"]))
+            self.assertEqual(0, stl_build.main([str(self.document)]))
         kwargs = export.call_args.kwargs
         self.assertIsNone(kwargs["mesh_tolerance"])
         self.assertIsNone(kwargs["mesh_angular_tolerance"])
+        self.assertIsNone(kwargs["kinematics"])
         self.assertFalse(kwargs["force"])
         self.assertFalse(kwargs["verbose"])
 
@@ -126,11 +154,20 @@ class DoorArguments(unittest.TestCase):
         # A door exports ONE model to ONE destination; `--stl a --3mf b` was the
         # retired export CLI's job and is three commands now.
         with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(io.StringIO()):
-            stl_build.main(["a.py", "b.stl", "c.stl"])
+            stl_build.main([str(self.document), "b.stl", "c.stl"])
         self.assertEqual(2, cm.exception.code)
 
 
 class DoorResults(unittest.TestCase):
+    def setUp(self) -> None:
+        import tempfile
+
+        stack = contextlib.ExitStack()
+        self.addCleanup(stack.close)
+        root = Path(stack.enter_context(tempfile.TemporaryDirectory())).resolve()
+        self.document = root / "sample.step"
+        self.document.write_text("ISO-10303-21;\n", encoding="utf-8")
+
     def test_human_lines_distinguish_written_from_current(self):
         payload = {
             "ok": True,
@@ -153,7 +190,7 @@ class DoorResults(unittest.TestCase):
         }
         out = io.StringIO()
         with _engine(payload), contextlib.redirect_stdout(out):
-            self.assertEqual(0, stl_build.main(["parts/sample.py"]))
+            self.assertEqual(0, stl_build.main([str(self.document)]))
         self.assertEqual(
             ["current STL: /abs/draft.stl", "wrote STL: /abs/print.stl"],
             out.getvalue().splitlines(),
@@ -174,7 +211,7 @@ class DoorResults(unittest.TestCase):
         }
         out = io.StringIO()
         with _engine(payload), contextlib.redirect_stdout(out):
-            self.assertEqual(0, threemf_build.main(["parts/sample.py", "--json"]))
+            self.assertEqual(0, threemf_build.main([str(self.document), "--json"]))
         self.assertEqual(
             {
                 "ok": True,
@@ -197,7 +234,7 @@ class DoorResults(unittest.TestCase):
             "cadgen.step_export_target.export_cad_target",
             side_effect=ValueError("stl OUT must end with .stl: sample.bin"),
         ), contextlib.redirect_stderr(err):
-            self.assertEqual(1, stl_build.main(["parts/sample.py", "sample.bin"]))
+            self.assertEqual(1, stl_build.main([str(self.document), "sample.bin"]))
         self.assertIn("stl OUT must end with .stl", err.getvalue())
         self.assertNotIn("Traceback", err.getvalue())
 

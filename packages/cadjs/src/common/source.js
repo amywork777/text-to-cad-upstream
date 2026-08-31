@@ -317,7 +317,7 @@ async function loadStepParameters({
     }
     throw new Error("STEP render parameters require resolved.stepParameterUrl");
   }
-  // stepParameterUrl is the model SIDECAR url (the .cadgen.json); its
+  // stepParameterUrl is the model SIDECAR url (the .step.json); its
   // kinematics section is the one articulation mechanism.
   const definition = await loadKinematicsModuleDefinition(stepParameterUrl, { cadPath });
   if (!definition) {

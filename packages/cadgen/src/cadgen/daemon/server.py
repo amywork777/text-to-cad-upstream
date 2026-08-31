@@ -68,16 +68,13 @@ _TOOL_IMPORTS = {
     # the drawing's geometry, not of the process that wrote them.
     "run": "cadgen.cli._run_model",
     "step-build": "cadgen.cli.step_build",
+    "step-compile": "cadgen.cli.step_compile",
     # One warm tool per mesh door. `step export` served all three formats from a
     # single spawn; three doors are three spawns, which is exactly the cost the
     # warm workers exist to remove.
     "stl-build": "cadgen.cli.stl_build",
     "3mf-build": "cadgen.cli.threemf_build",
     "glb-build": "cadgen.cli.glb_build",
-    # Served warm like the rest, and free of the cold path's interpreter
-    # restart: every worker is spawned with PYTHONHASHSEED pinned, which is
-    # exactly what a deterministic drawing build needs.
-    "dxf-build": "cadgen.cli.dxf_build",
     "inspect": "cadgen.cli.step_inspect.cli",
     "snapshot": "cadgen.cli.step_snapshot",
 }

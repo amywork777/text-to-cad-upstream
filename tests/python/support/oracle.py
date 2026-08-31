@@ -99,7 +99,7 @@ def fingerprint(entry_path: Path) -> dict:
     artifact = Path(entry_path).resolve()
     if artifact.name.endswith(".py"):
         artifact = artifact.with_name(artifact.name[: -len(".py")] + ".step")
-    sidecar_path = Path(f"{artifact}.cadgen.json")
+    sidecar_path = Path(f"{artifact}.step.json")
     mates = None
     if sidecar_path.is_file():
         mates = json.loads(sidecar_path.read_text()).get("assemblyMates")

@@ -67,9 +67,10 @@ These two terms classify a STEP file by what its source is:
   elsewhere. There is nothing upstream to regenerate.
 
 The link between an artifact and its script is the sidecar generation writes
-BESIDE THE MODEL (`<name>.step.cadgen.json`, carrying source hashes,
-kinematics, animation, and mates), and that sidecar's existence is what marks
-a model as generated; imports write none.
+BESIDE THE MODEL (`<name>.step.json` — `part.step` gets `part.step.json` —
+carrying source hashes, the resolved kinematics, animation, and the model's
+declared mesh exports), and that sidecar's existence is what marks a model
+as generated; imports write none.
 The written STEP/DXF file itself carries NO cadgen metadata and no link back
 to source code, ever — a bare artifact separated from its package is a plain
 importable file. Provenance is never inferred from filenames either — so
@@ -175,19 +176,44 @@ source-level relationships are preserved before STEP export (see
 
 ## Imported STEP/STP files
 
-An imported STEP/STP file needs no model script. Build its render package once
-with `cadgen step build`; `cadgen step inspect` and `cadgen step snapshot` also build it
-on demand, and its part/assembly kind is inferred from the STEP product
-hierarchy. (The CAD Viewer's in-app import spawns this same
-`cadgen step build` under the hood — one producer, one package format.)
+An imported STEP/STP file needs no model script and no preparation step. Hand it
+straight to `cadgen step inspect`, `cadgen step snapshot`, or a mesh door: each
+makes whatever it needs on demand, and its part/assembly kind is inferred from
+the STEP product hierarchy.
 
 ```bash
-cadgen step build path/to/imported.step [--force]
+cadgen step inspect refs path/to/imported.step --facts
+cadgen stl build path/to/imported.step meshes/imported.stl
 ```
 
-To produce STL/3MF/native GLB files from an imported STEP, pass it directly to
-the matching format door (`cadgen stl build path/to/imported.step`); read
-`supported-exports.md`.
+To produce STL/3MF/native GLB files from an imported STEP, pass it to the
+matching format door with an explicit OUT (an imported file declares nothing, so
+a bare door has no variants to produce); read `supported-exports.md`.
+
+### Re-emitting a foreign STEP as your own
+
+A STEP written by another kernel round-trips through cadgen with
+`cadgen step build IN OUT`: OCCT reads it, the package is rebuilt, and the
+canonical writer emits it, so OUT's bytes are deterministic and identical on
+every run. The same command ANNOTATES a document that has no model script —
+`--kinematics` takes the whole space (`{mates, couplings, poses, at}`, the same
+vocabulary the decorator takes, as inline JSON or a `.json` path) and
+`--animation` copies a `.js` module's text into OUT's sidecar.
+
+```bash
+cadgen step build vendor/hinge.step STEP/hinge.step \
+  --kinematics '{"mates": [{"name": "swing", "kind": "revolute",
+                            "parent": "#body", "child": "#lever",
+                            "axis": "#lever.bore", "limits": [0, 90]}],
+                 "poses": {"open": {"swing": 45}}}'
+```
+
+Re-running is a no-op; editing only the kinematics refreshes the sidecar without
+re-emitting a byte. Vendor metadata (PMI, GD&T) does not survive the round trip.
+**Choose the door by how the model will evolve**: a shape you will keep changing
+belongs in a model script (a thin wrapper that imports the foreign STEP), while
+a one-shot canonicalization or annotation of a file you do not own is exactly
+what `step build` is for.
 
 ## Optional-module generators and the artifact cache
 
@@ -210,7 +236,7 @@ on implicit resolution by `inspect`, `snapshot`, or the Viewer.
 Every model run writes the hidden adjacent render package as the build output.
 It powers CAD Viewer review, `$cad-viewer` workflows, and `cadgen step inspect`
 refs, and is not optional in the STEP workflow. Imported STEP/STP files get the
-same package via `cadgen step build` or on demand, per the previous section.
+same package on demand, per the previous section.
 
 ## After generation
 
@@ -224,7 +250,7 @@ cadgen step inspect refs path/to/model.step --facts --planes --positioning
 
 ## Warm daemon (on by default)
 
-Every model run and `cadgen step build` / `cadgen stl|3mf|glb build` /
+Every model run and `cadgen stl|3mf|glb build` /
 `cadgen step inspect` / `cadgen step snapshot` invocation would otherwise pay a multi-second OCP/build123d
 import. They are routed through a shared warm daemon **by default** — the
 decorator hands a directly-run script to the daemon before any kernel import —

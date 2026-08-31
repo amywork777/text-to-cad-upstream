@@ -234,8 +234,15 @@ def _effective_export_tolerances(
 ) -> tuple[float | None, float | None]:
     """One precedence rule, both front doors: CLI run-level flag > declared
     format-level (@stl/@glb/@threemf) > @step model-level explicit >
-    tessellator default (None)."""
-    matches = [d for d in spec.mesh_exports if d.fmt == fmt]
+    tessellator default (None).
+
+    At a DOCUMENT door the declarations come from the sidecar, where the run
+    that wrote the document already folded its model-level policy in; the spec
+    supplies the policy only for the Viewer's spec-driven export path."""
+    matches = list(spec.mesh_exports)
+    if not matches and spec.step_path is not None:
+        matches = list(_sidecar_declarations(spec.step_path, fmt))
+    matches = [d for d in matches if d.fmt == fmt]
     # With VARIANTS declared, an ad-hoc explicit-out export is ambiguous about
     # which declaration it means — fall back to the model policy rather than
     # guess. A single declaration is unambiguous and applies.
@@ -598,34 +605,108 @@ def _resolve_export_output(
     return out
 
 
+def _sidecar_declarations(step_path: Path, fmt: str) -> "tuple":
+    """The document's declared variants of ``fmt``, from its sidecar.
+
+    DOCUMENTS-ONLY: a door never imports a model module and never reads the
+    Python registry. What the model declared was recorded into the sidecar's
+    ``meshExports`` section by the script run that wrote the document, so the
+    door reads a file (design/pose-animation-split.md, CLI/doors follow-on).
+    """
+    from cadgen._internal.source_sidecar import sidecar_mesh_exports
+
+    return tuple(entry for entry in sidecar_mesh_exports(step_path) if entry.fmt == fmt)
+
+
+def _no_declarations_error(step_path: Path, fmt: str) -> ValueError:
+    decorator = {"stl": "@stl", "3mf": "@threemf", "glb": "@glb"}[fmt]
+    return ValueError(
+        f"{step_path.name} declares no {fmt.upper()} exports: declare "
+        f"{decorator} on the model and run python <script>, or name an "
+        f"explicit OUT"
+    )
+
+
+def _bake_point_values(
+    kinematics: object, step_path: Path, *, where: str
+) -> "dict[str, float] | None":
+    """An ad-hoc ``kinematics=`` bake point, resolved against the DOCUMENT.
+
+    The point is a preset NAME or a ``{dof: value}`` mapping — the same two
+    spellings snapshot's ``--kinematics`` takes — and it is validated against
+    the kinematics block in the document's own sidecar, which is the only
+    declaration a door can see.
+    """
+    if kinematics is None:
+        return None
+    from cadgen._internal.source_sidecar import read_source_sidecar
+    from cadgen.kinematics import resolve_kinematics_at
+
+    block = (read_source_sidecar(step_path) or {}).get("kinematics")
+    if not isinstance(block, dict) or not block.get("mates"):
+        raise ValueError(
+            f"{step_path.name} declares no kinematics, so there is no bake point "
+            "to name: declare kinematics= on the model and run python <script>"
+        )
+    point: object = kinematics
+    if isinstance(point, str):
+        text = point.strip()
+        if text.startswith("{"):
+            point = json.loads(text)
+        elif not text:
+            return None
+    return resolve_kinematics_at(block, point, where=where)
+
+
+def _sidecar_pose_deltas(
+    pose_values: "dict[str, float]", *, step_path: Path, package_dir: Path | None
+) -> "dict[str, list[float]] | None":
+    """FK deltas for a bake point, evaluated from the SIDECAR's block.
+
+    The sidecar's mates are already axis-resolved (world numbers) and carry the
+    ``parentId``/``childId`` the subtree expansion needs, so a door evaluates
+    forward kinematics with no selector index and no OCCT at all.
+    """
+    if not pose_values or package_dir is None:
+        return None
+    from cadgen._internal.kinematics_resolve import resolved_block_pose_deltas
+    from cadgen._internal.source_sidecar import read_source_sidecar
+
+    block = (read_source_sidecar(step_path) or {}).get("kinematics")
+    if not isinstance(block, dict):
+        return None
+    return resolved_block_pose_deltas(block, pose_values, package_dir=package_dir)
+
+
 def export_cad_target(
     target: str | Path,
     outputs: "list[tuple[str, str | Path | None]]",
     *,
     repo_root: Path | None = None,
+    kinematics: object = None,
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
     force: bool = False,
     verbose: bool = False,
     logger: CliLogger | None = None,
 ) -> dict[str, object]:
-    """Export one CAD model — an imported ``.step``/``.stp`` or a decorated ``@step``
-    model script — to one or more of :data:`MESH_EXPORT_FORMATS` in a single run.
+    """Export one CAD DOCUMENT to one or more of :data:`MESH_EXPORT_FORMATS`
+    in a single run.
 
     The shared engine entry behind the per-format doors (``cadgen.stl.build`` and
-    friends). A CURRENT model exports straight from its store render package — no
-    generator run, no STEP load, no extraction. Geometry is extracted at most ONCE per
-    run in every case, and one Node invocation serializes all requested formats from one
-    tessellation, so every format comes from identical geometry. ``outputs`` pairs a
-    format name with an explicit output path, or ``None`` for the model's declarations
-    (all variants) falling back to the default sibling path. ``force`` re-exports past
-    the ledger without rebuilding the model.
+    friends). Geometry comes from the document's store render package — no generator
+    run, no source, no extraction — and one Node invocation serializes every requested
+    format from one tessellation, so all formats come from identical geometry.
+    ``outputs`` pairs a format name with an explicit output path, or ``None`` for the
+    DOCUMENT's declarations (all variants, read from its sidecar). ``kinematics`` is an
+    ad-hoc bake point for an explicit OUT, resolved against the document's own
+    kinematics block. ``force`` re-exports past the ledger.
 
-    Writes no ``.step`` and no beside-source artifacts; an imported model missing its
-    render package warms the SHARED store through the same build ``cadgen step build``
-    runs (content keyed — the same package every later view or export of those bytes
-    reuses). Each returned file carries whether the ledger had already satisfied it and
-    the effective tolerance pair it was written at."""
+    Writes no ``.step`` and no beside-source artifacts; a document missing its render
+    package compiles one into the SHARED store (content keyed — the same package every
+    later view or export of those bytes reuses). Each returned file carries whether the
+    ledger had already satisfied it and the effective tolerance pair it was written
+    at."""
     if logger is None:
         logger = CliLogger("cadgen mesh export", verbose=verbose)
     if not outputs:
@@ -643,50 +724,40 @@ def export_cad_target(
         mesh_angular_tolerance, field_name="mesh_angular_tolerance"
     )
 
-    if _is_step_suffix(target_path):
-        step_path: Path | None = target_path
-        source_path: Path | None = None
-    elif target_path.suffix.lower() == ".py":
-        step_path = None
-        source_path = target_path
-    else:
-        raise ValueError(
-            f"Export target must be a .step/.stp file or a gen_step() Python source: {target}"
-        )
+    if not _is_step_suffix(target_path):
+        from cadgen._internal.doors import script_target_message
+
+        if target_path.suffix.lower() == ".py":
+            raise ValueError(script_target_message(target_path))
+        raise ValueError(f"Export target must be a .step/.stp document: {target}")
+    step_path: Path = target_path
 
     spec, package_dir, scene = _resolve_mesh_package(
         repo_root,
         step_path,
-        source_path,
+        None,
         logger=logger,
     )
 
     resolved: list[MeshExportJob] = []
     seen: dict[Path, str] = {}
-    # Declared poses live only in the runtime registry (kinematics= is not
-    # statically evaluable); explicit ad-hoc OUTs export at rest.
-    posed_declarations: dict = {}
-    if spec.script_path is not None:
-        from cadgen._internal.kinematics_resolve import runtime_mesh_declarations
+    ad_hoc_pose = _bake_point_values(kinematics, step_path, where="kinematics=")
 
-        posed_declarations = runtime_mesh_declarations(spec.script_path)
-
-    def _add(fmt: str, out: Path, chord: float | None, angle: float | None) -> None:
+    def _add(
+        fmt: str,
+        out: Path,
+        chord: float | None,
+        angle: float | None,
+        pose_values: "dict[str, float] | None" = None,
+    ) -> None:
         if out in seen:
             raise ValueError(f"{seen[out]} and {fmt} resolve to the same output path: {out}")
         seen[out] = fmt
-        kinematics_def, pose_values = posed_declarations.get((fmt, out), (None, None))
-        pose_deltas = None
-        if kinematics_def is not None and pose_values and package_dir is not None and spec.step_path is not None:
-            from cadgen._internal.kinematics_resolve import mesh_pose_deltas
-
-            pose_deltas = mesh_pose_deltas(
-                kinematics_def,
-                pose_values,
-                package_dir=package_dir,
-                step_path=spec.step_path,
-                source_ref=str(spec.source_ref),
-            )
+        pose_deltas = (
+            _sidecar_pose_deltas(pose_values, step_path=step_path, package_dir=package_dir)
+            if pose_values
+            else None
+        )
         resolved.append(
             MeshExportJob(
                 fmt=fmt,
@@ -699,23 +770,22 @@ def export_cad_target(
         )
 
     for fmt, raw in outputs:
-        declared = [d for d in spec.mesh_exports if d.fmt == fmt]
-        if raw is None and declared:
-            # A bare format flag means the model's declarations — ALL of them,
-            # variants included, matching what the script run produces. CLI
-            # run-level tolerance flags override each variant's own.
+        if raw is None:
+            # A bare door means the DOCUMENT's declarations — ALL variants of
+            # this format, exactly as the script run produced them, read from
+            # the sidecar. Run-level tolerance arguments override each
+            # variant's own.
+            declared = _sidecar_declarations(step_path, fmt)
+            if not declared:
+                raise _no_declarations_error(step_path, fmt)
             for decl in declared:
                 chord = mesh_tolerance if mesh_tolerance is not None else decl.mesh_tolerance
-                if chord is None and spec.mesh_tolerance_explicit:
-                    chord = spec.mesh_tolerance
                 angle = (
                     mesh_angular_tolerance
                     if mesh_angular_tolerance is not None
                     else decl.mesh_angular_tolerance
                 )
-                if angle is None and spec.mesh_angular_tolerance_explicit:
-                    angle = spec.mesh_angular_tolerance
-                _add(fmt, decl.path, chord, angle)
+                _add(fmt, decl.path, chord, angle, decl.at)
             continue
         out = _resolve_export_output(fmt, raw, logical_step=spec.step_path, spec=spec)
         chord, angle = _effective_export_tolerances(
@@ -724,7 +794,7 @@ def export_cad_target(
             cli_mesh_tolerance=mesh_tolerance,
             cli_mesh_angular_tolerance=mesh_angular_tolerance,
         )
-        _add(fmt, out, chord, angle)
+        _add(fmt, out, chord, angle, ad_hoc_pose)
 
     written = _export_mesh_jobs(spec, package_dir, scene, resolved, logger=logger, force=force)
     files = [

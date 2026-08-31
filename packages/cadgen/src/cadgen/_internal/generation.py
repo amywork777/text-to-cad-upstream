@@ -369,20 +369,31 @@ def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> 
     from datetime import datetime, timezone
 
     source_kind = str(getattr(scene, "source_kind", "step") or "step").strip().lower()
-    if source_kind != "python":
+    reemit_hash = str(getattr(scene, "reemit_source_hash", "") or "").strip()
+    if source_kind != "python" and not reemit_hash:
         return None
-    payload: dict[str, object] = {"sourceKind": "python"}
-    source_path = str(getattr(scene, "source_path", "") or "")
-    if source_path:
-        payload["sourcePath"] = source_path
-    source_hash = str(getattr(scene, "source_hash", "") or "").strip()
-    if source_hash:
-        payload["sourceHash"] = source_hash
-    closure_hash = str(getattr(scene, "source_closure_hash", "") or "").strip()
-    closure_files = getattr(scene, "source_closure_files", ()) or ()
-    if closure_hash and closure_files:
-        payload["sourceClosureHash"] = closure_hash
-        payload["sourceClosureFiles"] = list(closure_files)
+    payload: dict[str, object]
+    if reemit_hash:
+        # `cadgen step build IN OUT`: no Python behind the document, so the
+        # freshness closure is the INPUT's content hash and the annotation
+        # digest. No path to anything is recorded — the pair is self-describing.
+        payload = {"sourceKind": "step", "sourceHash": reemit_hash}
+        annotation = str(getattr(scene, "reemit_annotation_hash", "") or "").strip()
+        if annotation:
+            payload["annotationHash"] = annotation
+    else:
+        payload = {"sourceKind": "python"}
+        source_path = str(getattr(scene, "source_path", "") or "")
+        if source_path:
+            payload["sourcePath"] = source_path
+        source_hash = str(getattr(scene, "source_hash", "") or "").strip()
+        if source_hash:
+            payload["sourceHash"] = source_hash
+        closure_hash = str(getattr(scene, "source_closure_hash", "") or "").strip()
+        closure_files = getattr(scene, "source_closure_files", ()) or ()
+        if closure_hash and closure_files:
+            payload["sourceClosureHash"] = closure_hash
+            payload["sourceClosureFiles"] = list(closure_files)
     animation_source = getattr(scene, "animation_source", None)
     if animation_source:
         # COPIED text, never a path: the sidecar is the one durable home for
@@ -396,6 +407,46 @@ def _source_sidecar_payload(scene: LoadedStepScene, compound: object | None) -> 
         payload["assemblyMates"] = list(mates)
     payload["generatedAt"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     return payload
+
+
+def _mesh_exports_sidecar_section(spec: EntrySpec) -> list[dict[str, object]]:
+    """The sidecar's ``meshExports`` section: what this model DECLARES.
+
+    The script run is the only thing that can see ``@stl``/``@glb``/``@threemf``
+    (a kinematics dict is not statically evaluable, and a CLI must never import
+    a model module), so it records the declarations here and the bare mesh
+    doors read them back off the DOCUMENT. ``out`` is relative to the artifact
+    so the pair travels together; the tolerances are the EFFECTIVE pair the run
+    wrote at, ``null`` meaning the tessellator default; ``at`` is the resolved
+    bake point or ``null``.
+    """
+    if not spec.mesh_exports or spec.step_path is None:
+        return []
+    posed: dict = {}
+    if spec.script_path is not None:
+        from cadgen._internal.kinematics_resolve import runtime_mesh_declarations
+
+        posed = runtime_mesh_declarations(spec.script_path)
+    base = spec.step_path.parent.resolve()
+    entries: list[dict[str, object]] = []
+    for declared in spec.mesh_exports:
+        chord = declared.mesh_tolerance
+        if chord is None and spec.mesh_tolerance_explicit:
+            chord = spec.mesh_tolerance
+        angle = declared.mesh_angular_tolerance
+        if angle is None and spec.mesh_angular_tolerance_explicit:
+            angle = spec.mesh_angular_tolerance
+        _, pose_values = posed.get((declared.fmt, declared.path), (None, None))
+        entries.append(
+            {
+                "fmt": declared.fmt,
+                "out": Path(os.path.relpath(declared.path, base)).as_posix(),
+                "meshTolerance": chord,
+                "meshAngularTolerance": angle,
+                "at": {str(k): float(v) for k, v in pose_values.items()} if pose_values else None,
+            }
+        )
+    return entries
 
 
 def _generate_part_outputs(
@@ -506,6 +557,10 @@ def _generate_part_outputs(
 
         sidecar_payload = _source_sidecar_payload(scene, shape)
         generated = sidecar_payload is not None
+        if generated:
+            mesh_export_section = _mesh_exports_sidecar_section(spec)
+            if mesh_export_section:
+                sidecar_payload["meshExports"] = mesh_export_section
 
         def _build_into(package_dir: Path) -> dict[str, object]:
             return build_package_from_compound(

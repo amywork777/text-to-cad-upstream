@@ -93,7 +93,7 @@ export function stepModuleFromKinematics(block) {
   };
 }
 
-/** Fetch the model's sidecar (<name>.step.cadgen.json) and compile its
+/** Fetch the model's sidecar (<name>.step.json) and compile its
  * kinematics section into a normalized step-module definition. Models with no
  * kinematics resolve to null (nothing to pose). The animation section is NOT
  * read here — the two systems stay independent end to end. */

@@ -47,8 +47,8 @@ from typing import Any, Callable
 
 from cadgen.kinematics import (
     KinematicsDef,
-    normalize_bake_pose,
     normalize_kinematics,
+    retired_pose_kwarg_message,
 )
 from cadgen.metadata import (
     MeshExportDecl,
@@ -82,8 +82,9 @@ class ModelDef:
     # Typed mates (kinematics= dict, validated at decoration); axis refs
     # resolve at build and the block lands in the model's sidecar. STEP only.
     kinematics: KinematicsDef | None = None
-    # pose= bake selector resolved to {dof: value}: the artifact is WRITTEN at
-    # this configuration (and is therefore its own q=0). None = authored rest.
+    # The kinematics dict's "at" bake point resolved to {dof: value}: the
+    # artifact is WRITTEN at this configuration (and is therefore its own q=0).
+    # None = authored rest.
     bake_pose: dict[str, float] | None = None
     # Script-relative path of the .anim.js choreography module; its TEXT is
     # copied into the sidecar at build (never a path in generated files).
@@ -175,7 +176,6 @@ def _decorator(
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
     kinematics: object = None,
-    pose: object = None,
     animation: object = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     if kind is not None and kind not in {"part", "assembly"}:
@@ -183,7 +183,7 @@ def _decorator(
     kinematics_def = (
         normalize_kinematics(kinematics, where=f"@{fmt}") if kinematics is not None else None
     )
-    bake_pose = normalize_bake_pose(pose, kinematics_def, where=f"@{fmt}")
+    bake_pose = None if kinematics_def is None else kinematics_def.at
     animation_path = _normalize_animation(animation, fmt=fmt)
 
     def apply(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -239,19 +239,20 @@ def step(
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
     kinematics: object = None,
-    pose: object = None,
     animation: str | None = None,
     **renamed: Any,
 ):
     """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``).
 
-    ``kinematics=`` takes the typed-mates dict (see ``cadgen.kinematics``);
-    ``pose=`` names the configuration to BAKE the artifact at (preset name or
-    ``{dof: value}``; the written artifact is its own q=0); ``animation=``
-    names a ``.js`` choreography module beside the script whose text is copied
-    into the sidecar. STEP is the only format with animation — mesh exports
-    are static bakes.
+    ``kinematics=`` takes the typed-mates dict (see ``cadgen.kinematics``),
+    whose ``"at"`` key names the configuration to BAKE the artifact at (a
+    preset name or ``{dof: value}``; the written artifact is its own q=0).
+    ``animation=`` names a ``.js`` choreography module beside the script whose
+    text is copied into the sidecar. STEP is the only format with animation —
+    mesh exports are static bakes.
     """
+    if "pose" in renamed:
+        raise TypeError(retired_pose_kwarg_message("step"))
     _reject_renamed_kwargs("step", renamed)
     decorator = _decorator(
         "step",
@@ -260,7 +261,6 @@ def step(
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
         kinematics=kinematics,
-        pose=pose,
         animation=animation,
     )
     return decorator(func) if func is not None else decorator
@@ -273,12 +273,17 @@ def dxf(
     **renamed: Any,
 ):
     """Declare a DXF drawing. Usable bare (``@dxf``) or configured (``@dxf(...)``)."""
-    for retired in ("kinematics", "pose", "animation"):
+    if "pose" in renamed:
+        raise TypeError(
+            f"{retired_pose_kwarg_message('dxf')} — and @dxf takes no kinematics "
+            "at all: a drawing is 2D geometry"
+        )
+    for retired in ("kinematics", "animation"):
         if retired in renamed:
             raise TypeError(
                 f"@dxf takes no {retired}=: a drawing is 2D geometry — kinematics "
-                "and pose baking live on @step and the mesh decorators, and "
-                "animation is @step-only"
+                "and its 'at' bake point live on @step and the mesh decorators, "
+                "and animation is @step-only"
             )
     _reject_renamed_kwargs("dxf", renamed)
     decorator = _decorator(
@@ -320,9 +325,10 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
         kinematics: object = None,
-        pose: object = None,
         **renamed: Any,
     ):
+        if "pose" in renamed:
+            raise TypeError(retired_pose_kwarg_message(deco_name))
         if "animation" in renamed:
             raise TypeError(
                 f"@{deco_name} takes no animation=: mesh exports are static "
@@ -343,7 +349,7 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
             mesh_tolerance=mesh_tolerance,
             mesh_angular_tolerance=mesh_angular_tolerance,
             kinematics=kinematics_def,
-            bake_pose=normalize_bake_pose(pose, kinematics_def, where=f"@{deco_name}"),
+            bake_pose=None if kinematics_def is None else kinematics_def.at,
         )
 
         def attach(target: Callable[..., Any]) -> Callable[..., Any]:

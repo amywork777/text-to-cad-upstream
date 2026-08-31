@@ -86,7 +86,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         colored = [o for o in occurrences if isinstance(o.get("color"), list)]
         self.assertEqual(len(colored), 2, occurrences)
         # Source-derived state rides the sidecar, never the descriptor: the
-        # kinematics lives in the .cadgen.json sidecar, and its existence is the
+        # kinematics lives in the .step.json sidecar, and its existence is the
         # generated marker (the descriptor carries no sourceKind at all).
         self.assertNotIn("pose", descriptor)
         self.assertNotIn("paramsPath", descriptor)
