@@ -63,6 +63,16 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 
 ## Repo Rules
 
+- cadgen has three architectural LAWS, stated with their pressure-tests in
+  `skills/cad/references/design-principles.md`; read them before changing
+  generation, rendering, storage, or public interfaces: (1) generated files
+  (and their sidecars) are totally independent of source — renderable from
+  generated files + cache alone, cache regenerable from the generated file's
+  own bytes, never from source; (2) the cache holds only format-derived
+  build/render artifacts — never sidecars or authored context; (3)
+  decorators, public functions, and generated CLIs are one surface — same
+  names, role-determined payloads, structural sync tests.
+
 - Keep root guidance short. Put domain workflows, CLI details, and validation
   policy in the relevant `skills/<skill>/SKILL.md` or `references/` file.
 - Keep relevant Markdown docs current when changing behavior, commands, or repo
