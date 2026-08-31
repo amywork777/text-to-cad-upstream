@@ -1,170 +1,122 @@
 # CAD Viewer
 
-CAD Viewer is a browser workbench for inspecting CAD files,
-robot-description files, and generated CAD artifacts from a URL-selected local
-directory or hosted catalog. It is built for engineering review loops where you
-need to open a model quickly, understand the source tree, copy stable `#...`
-CAD references, and verify generated assets without leaving the browser.
+A local-filesystem CAD review app: a React client (`src/`) over a
+dependency-free Node backend (`server/`). One instance serves ONE directory,
+fixed at start; the page is always the bare origin and `?file=` selects an
+artifact inside that root. There is no hosted deployment — the `cad-viewer`
+skill bundles the built client + server, and each release mirrors this app
+into the standalone `earthtojake/cad-viewer` repo unchanged.
 
-## Features
+**PURPOSE** — the application: all UI, workflow, and session state for
+reviewing CAD artifacts (catalog, tabs, selection, pose, animation,
+measurements, themes).
 
-- Scans the local directory named by the URL's path and mirrors its folder
-  structure in the sidebar.
-- Opens `.step`, `.stp`, `.stl`, `.3mf`, `.glb`, `.dxf`, `.urdf`, `.srdf`,
-  and `.sdf` entries.
-- Uses hidden STEP GLB/topology sidecars for assembly structure, face/edge
-  picking, copied CAD references, and STEP parameter controls.
-- Previews mesh files, DXF flat patterns, URDF/SDF robots, and SRDF group
-  states in one app shell.
-- Runs against either a local filesystem backend or hosted Vercel Blob storage.
-- Can regenerate STEP GLB/topology artifacts and generated-DXF drawing
-  packages when the CAD Python runtime is
-  available.
+**MAY DEPEND ON** — `cadgen-js` (source, via the `cadgen-js` specifier;
+in the dev layout `packages/cadgen-js` here is a symlink to the canonical
+package, dereferenced into a vendored copy when mirrored) and its own npm
+dependencies. The backend spawns `cadgen step build` for foreign STEP
+imports as a SOFT dependency: absent cadgen, viewing still works.
 
-## Quick Start
+**DEPENDED ON BY** — nothing. No code imports from this app, by law.
 
-Run these commands from this directory:
+## The laws that bind the app
 
-```bash
-npm install
-npm run test
-npm run build
-```
+- **Three-input law**: everything renders from the artifact file, its
+  sidecar (`<name>.step.json`), and the cache. The viewer never reads
+  source code and never rebuilds on source changes — generated outputs are
+  detached, and a stale artifact stays stale until someone runs its script.
+- **Kinematics/animation independence**: the Pose tab drives the sidecar's
+  mate data through the shared FK runtime; the Animation tab evaluates the
+  sidecar's copied `.anim.js` clips. They compose in the effect records and
+  nowhere else.
+- **Loud failure**: a missing entry, an unresolvable ref, or a failed
+  compile surfaces as an alert — never a silently wrong scene.
 
-For local development, start the dev server and then pass a local directory and
-directory-relative file path in the URL:
+## Launching
 
-```bash
-npm run dev -- --host 127.0.0.1
-```
-
-Open the URL printed by Vite. A Viewer instance serves one directory, fixed when it
-starts, and `?file=` selects one artifact inside it:
-
-```text
-http://127.0.0.1:5173/?file=assemblies/robot-arm/robot-arm.step
-```
-
-The bare origin names no directory and falls back to the server's cwd. One Viewer
-serves any folder — change the path, no restart.
-
-Use `npm run dev` for iterating on the client/backend (HMR), and `npm run start`
-to serve the built `dist/` bundle via the JS server (the production path the
-`cad-viewer` skill uses). The two launch differently on purpose:
-
-- **dev** lives on Vite's port (5173), is strict about it (taken → pick another with
-  `--port`), and never enters the instance registry — a hand-managed foreground
-  process you restart yourself to test server changes.
-- **start** is unconditional: it reuses a running instance already serving the same
-  root at the same version (identity-probed), else binds the first free port from
-  `3245` upward, and prints the real URL (`--json` adds
-  `{url,port,action:"started"|"reused"}`). `--new` forces a fresh instance; an
-  explicit `--port` is strict.
-
-The dev server stays running unless `VIEWER_SERVER_LIFETIME_MS` is set.
-
-The backend is `server/` — dependency-free Node: viewing runs no Python at all.
-It renders existing artifacts (render packages, sibling `.dxf` files);
-generation and export are the CAD CLIs' job. Importing a raw foreign STEP is
-the one build-shaped thing it does, and it spawns `cadgen step compile` as a child
-process — cadgen is a SOFT dependency (`server/cadgenResolve.mjs`): absent,
-viewing is unaffected and imports answer with one actionable install hint. The
-cad-viewer skill bundles the built client + this server and starts them with
-`node scripts/viewer/server/main.mjs` — no clone, no npm install; Python only
-if you import.
-
-Agent handoff links from the cad-viewer skill must use an absolute directory as
-the URL path, with `?file=` relative to it. The URL is the only source of truth —
-there is no stored fallback, so the same URL always shows the same thing.
-
-## Project Layout
-
-- `src/client/`: React app, browser state, styling, and viewer + workbench UI.
-- `src/client/components/`: top-level CAD, DXF, workbench, and shadcn-style UI
-  components.
-- `src/client/workbench/`: selection, persistence, file-sheet, alert, motion,
-  and reference helpers that are not React components.
-- `src/client/ui/`: viewer-owned browser utilities such as clipboard, color
-  scheme, class merging, and DOM helpers.
-- `src/shared/`: config helpers shared by the client and the launchers.
-- `server/`: the backend — the local filesystem CAD API (`/__cad/*`), catalog
-  scanner, static server for `dist/`, the artifact-status authority, the
-  `cadgen step compile` bridge for foreign STEPs, reveal dialogs, and the instance
-  registry. Zero dependencies; zero Python for viewing.
-- `scripts/`: developer and runtime launchers, the test runner, and the
-  end-to-end sweeps.
-- `docs/`: workflow reference docs for backend storage, browser persistence,
-  render types, and settings UI.
-- `packages/cadgen-js`: the shared client runtime this app
-  builds against. Keep reusable parsing, rendering, sidecar,
-  selector, topology, snapshot, and export logic in these
-  packages rather than in `src/`.
-
-`packages/*` is a symlinked development layout inside the text-to-cad workbench; the
-client is built against those sources and its bundle ships inside the cadgen wheel.
-
-## Common Commands
+Dev (Vite serves the client from source with HMR; edits to `src/` and
+`packages/cadgen-js` show live):
 
 ```bash
-npm run dev          # Vite dev server (HMR) + local CAD API middleware — use for iteration
-npm run build        # Production frontend build (writes dist/)
-npm run start        # Prod: serve the built dist/ + CAD API on 3245 (or --port)
-npm run test         # Discover and run all JS tests
+npm --prefix apps/viewer run dev -- --host 127.0.0.1
+# open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
-`npm run test` uses `scripts/run-tests.mjs`, which discovers
-`*.test.js` and `*.test.mjs` under `src/`, `scripts/`, and `server/`. To run specific tests:
+Prod (the shipped bundle — build first, then the JS server):
 
 ```bash
-node scripts/run-tests.mjs src/client/workbench/sidebar.test.js
-node scripts/run-tests.mjs src/shared/viewerConfig.test.mjs
+npm --prefix apps/viewer run build
+node apps/viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
 ```
 
-Artifact status is tested beside its implementation
-(`server/artifactStatus.test.mjs`); the generation lock the CLIs coordinate on is
-tested in cadgen's Python suite (`test_generation_lock_state.py`).
+The launcher is unconditional and prints the URL it serves: a live instance
+already serving that realpath at this version is REUSED (`action:"reused"`);
+otherwise it binds the first free port from 3245 upward. `--new` forces a
+fresh instance (needed when testing server-code changes — a reused instance
+runs the code it started with); an explicit `--port` is strict.
+`main.mjs list` shows every running instance; `main.mjs stop --port <n>`
+ends one. Do not stop instances you did not start. Dev lives on Vite's
+port (5173, strict) and never enters the instance registry.
 
-## Runtime Configuration
-
-Important environment variables:
-
-- `VIEWER_DEFAULT_FILE`: directory-relative file opened when `?file=` is absent.
-- `VIEWER_SERVER_LIFETIME_MS`: optional server lifetime in milliseconds for
-  local dev and production servers. When unset, there is no automatic shutdown.
-- `VIEWER_GITHUB_URL`: optional top-bar GitHub link target. When set, the
-  version label links to the matching GitHub release tag. For GitHub-hosted
-  repositories, the Viewer also checks the latest release and lightly marks the
-  version label when a newer release is available.
-- `VIEWER_DISCORD_URL`: optional top-bar Discord community link target.
-- `VIEWER_ALLOWED_HOSTS`: extra hostnames accepted by local Vite dev and
-  production servers.
-
-`VIEWER_LOCAL_ROOT_DIR` and `VIEWER_LOCAL_WORKSPACE_ROOT` are removed for local
-filesystem viewing. Setting either variable is a hard startup error; the URL's
-path names the directory instead.
-
-Production builds contain the frontend and initial catalog module only. CAD
-assets are served by the local backend and are not copied into `dist/`.
-
-## Reference Docs
-
-- [Settings UI guidelines](./docs/settings-ui.md): the mandatory row grammar,
-  spacing, and control standards for file-sheet and theme settings panels.
-- [Backend storage](./docs/backend.md): local filesystem backend contracts.
-- [Browser storage](./docs/storage.md): URL, `localStorage`, and
-  `sessionStorage` ownership.
-- [`cadgen-js` render pipeline](./packages/cadgen-js/docs/render-pipeline.md): shared
-  render APIs used by the viewer, docs, and snapshot runtime.
-
-## Verification
-
-Run the focused viewer checks before handing off viewer changes:
+From a lightweight worktree (backend is pure JS; builds need a
+cadgen-importable interpreter handed down):
 
 ```bash
-npm run test
-npm run build
+CADGEN_PYTHON=<main>/.venv/bin/python \
+PYTHONPATH=<worktree>/packages/cadgen/src \
+node <worktree>/apps/viewer/server/main.mjs \
+  --root <worktree>/models --dist <worktree>/apps/viewer/dist \
+  --host 127.0.0.1 --json
 ```
 
-For UI behavior changes, also run `npm run dev -- --host 127.0.0.1`, open the
-printed URL with `/absolute/root?file=path/to/model.step`, and check that the app
-renders, selection works, and the browser console is clean.
+Worktrees deliberately carry no `node_modules`; link them from the primary
+checkout before building:
+
+```bash
+ln -s <main>/apps/viewer/node_modules apps/viewer/node_modules
+mkdir -p packages/cadgen-js/node_modules
+ln -s <main>/packages/cadgen-js/node_modules/three packages/cadgen-js/node_modules/three
+ln -s <main>/apps/docs/node_modules/meshoptimizer  packages/cadgen-js/node_modules/meshoptimizer
+npm --prefix apps/viewer run build
+```
+
+Reuse keys on realpath(root) × version, so another checkout's instance can
+never be handed back for this worktree.
+
+## Behaviours worth knowing before concluding something is broken
+
+- **The catalog scan skips dot-directories.** A buildable entry under
+  `.review/` (or any dotted path) never appears, even with `--root`
+  pointed straight at it.
+- **Verify a link by loading the page**, never by curling `/__cad/asset` —
+  that route serves raw files; generated entries render through a
+  different route, so probing it 404s whether or not anything is wrong.
+- **Vite's transform cache can outlive HMR and hard reloads.** If a source
+  edit does not show up, restart the dev server and delete
+  `apps/viewer/node_modules/.vite`.
+- Never invoke the export/reveal routes from automation — they open native
+  save-as dialogs and Finder windows.
+
+## The shape of the app
+
+```
+server/     # pure-Node backend: scanner (catalog), backend/httpApp
+            #   (routes), artifactStatus (generated-vs-imported authority),
+            #   packageContract.mjs (schema constants mirroring cadgen —
+            #   sync-tested), tessCache, launcher (main.mjs)
+src/client/ # React app: CadWorkspace (state root), CadViewer (scene +
+            #   effects application), workbench/ (tabs, sections, session
+            #   state, playback), render/ (viewport)
+scripts/    # app tooling incl. e2e helpers and selfContained.test.mjs
+            #   (the mirror's no-external-paths gate)
+docs/       # subsystem docs; settings-ui.md is the CURATED design-system
+            #   reference for all settings UI work — binding, read it
+            #   before touching controls
+dist/       # built client (gitignored)
+```
+
+## Testing
+
+`npm --prefix apps/viewer run test` (node:test suites beside the code).
+Headless UI verification uses Playwright with `--use-angle=metal` —
+the default software WebGL renderer is not what users see.

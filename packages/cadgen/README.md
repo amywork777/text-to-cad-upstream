@@ -1,118 +1,168 @@
 # cadgen
 
-The CAD runtime behind [text-to-cad](https://github.com/earthtojake/text-to-cad):
-STEP-first artifact generation on [build123d](https://github.com/gumyr/build123d) and
-OCCT, and the command line that drives it. (The CAD Viewer is a separate standalone
-app — [earthtojake/cad-viewer](https://github.com/earthtojake/cad-viewer) — bundled
-by the cad-viewer skill, not by this package.)
+The published distribution: everything that turns CAD source into documents,
+documents into derived state, and derived state into pixels and meshes. One
+PyPI package carrying both language halves — the Python engine under
+`src/cadgen/`, and the built JavaScript it executes under
+`src/cadgen/_runtime/` (bundled from `packages/cadgen-js`, stamped by
+`scripts/bundle/bundle.sh`; the JS *source* lives in its own package).
 
-```bash
-pip install cadgen
-python part.py  # a @step model script builds its STEP and render package
+**PURPOSE** — the engine and its command surface: model execution, the
+content-keyed cache, document assembly, kinematics, exports, validation,
+inspection, snapshots, and the warm daemon.
+
+**MAY DEPEND ON** — the Python ecosystem it declares (OCP/build123d lazily,
+never at namespace-import time) and the *built outputs* of `cadgen-js`.
+Never app code, never `cadgen-js` source at runtime.
+
+**DEPENDED ON BY** — every skill (as a pinned installed distribution), the
+CAD Viewer's build path (`cadgen step build` spawned for foreign STEP
+imports — a soft dependency; viewing works without it), and CI.
+
+## The design laws
+
+These are LAWS, not conventions: a change that violates them is wrong even
+when it works. Each carries a pressure-test to apply before writing code.
+
+### 1. Generated files are totally independent of their source code
+
+A generated file (STEP, DXF, STL, GLB, 3MF) and its sidecar
+(`<name>.step.json`) stand alone, forever.
+
+*Pressure-test*: a generated file must be fully renderable — viewer,
+snapshot, inspect — by reading ONLY the generated file(s), the sidecar, and
+the cache. Never the source. A missing cache regenerates from the generated
+file's own bytes (`cadgen step compile` semantics), never from source.
+Deleting every `.py` in a project must not change what renders.
+
+- Nothing a renderer reads references the source tree: the sidecar's
+  kinematics are resolved numbers and labels, its animation is COPIED
+  module text.
+- The sidecar's closure fields exist for the source-side no-op gate only.
+  Staleness at any door is a teaching error naming `python <script>` —
+  nothing auto-rebuilds.
+- Source scripts are PROGRAMS: run, never passed to CLIs, never parsed by
+  renderers.
+
+### 2. The cache contains only format-derived build and render artifacts
+
+`~/.cache/cadgen` holds data derivable from a file's bytes — render
+packages, tessellations, freshness records — and nothing else.
+
+*Pressure-test*: everything in the cache is (a) a pure function of some
+file's bytes plus schema versions, (b) safely deletable at any time, and
+(c) rebuildable from generated files alone. If losing a cache entry would
+lose information, that information is in the wrong place.
+
+**The cache is what the bytes imply; the sidecar is what the author meant.**
+
+There is no automatic GC: `cadgen cache gc` is the only sweeper, and every
+tier is content-addressed and best-effort, so deletion never needs
+coordination — a racing reader re-misses and rebuilds.
+
+### 3. One sidecar per artifact
+
+`part.step` gets `part.step.json` — schema-versioned sections (closure,
+kinematics, animation, meshExports). New capability = new section + schema
+bump, never a second sidecar file. Model-side, beside the artifact, so it
+travels with the file it describes.
+
+### 4. Zero metadata in written artifacts
+
+A STEP or DXF is pure geometry. Provenance, kinematics, and context ride
+the sidecar; the artifact separated from everything else is a plain
+importable file.
+
+### 5. Byte determinism
+
+Same inputs, same bytes, every format — STEP (canonicalized NAUO ids and
+presentation-style ordering), meshes (one deterministic tessellator), DXF
+(geometry-ordered emitter). Content-addressing and every freshness ledger
+depend on it.
+
+### 6. One surface, three faces
+
+The DECORATOR declares a capability on a model, the PUBLIC FUNCTION
+(`cadgen.<format>.<verb>`) performs it, and the CLI (`cadgen <format>
+<verb>`) is GENERATED from the function's signature
+(`_internal/cli_from_function.py`) — never hand-written, structurally
+sync-tested.
+
+*Pressure-test*: for any option, "what is this called on the other two
+surfaces?" must answer with the same name and a role-determined payload —
+`kinematics` everywhere: on DECLARING surfaces (decorators, `step build`)
+it is the space (`{mates, couplings, poses, at}`); on CONSUMING surfaces
+(snapshot, mesh `build`) it is a point in that space (a preset name or
+`{dof: value}`). One name, one validator, no synonyms.
+
+### 7. Documents-only CLIs; scripts are programs
+
+`python model.py` is the one source door: it gates, builds, writes the
+document + sidecar, and heals declared exports. Every CLI takes documents.
+
+### 8. No backwards compatibility
+
+Hard cutovers only. Every retired surface fails loudly with a teaching
+error naming its replacement — never an alias, never a shim.
+
+### 9. Closed vocabularies
+
+Every declaration surface has a closed key/kind set. Unknown keys are
+teaching errors, never silently ignored.
+
+### 10. Loud failure or correct output, nothing between
+
+The cardinal sin is plausible-wrong output at exit 0. No silent fallbacks,
+no globs, no guessing; a failed render leaves NO file at the requested
+path.
+
+### 11–14. Runtime laws (shared with cadgen-js)
+
+Kinematics is pure data and choreography is pure JS, fully independent
+(11). Clients render from file + sidecar + cache and never read source or
+trigger builds (12). Correctness never depends on a cache hit (13).
+Composition: importing links, `cadgen.compose.memo` caches; a model must
+never `read_step` its own output (14). See `packages/cadgen-js/README.md`
+for the JS half of these.
+
+## The shape of the package
+
+```
+src/cadgen/
+  <format>.py            # public namespaces: step, stl, threemf, glb, dxf,
+                         #   urdf, srdf, sdf — each binds its verbs
+  authoring.py           # @step/@dxf/@stl/@glb/@threemf decorators
+  kinematics.py          # typed mates vocabulary (revolute/slider/
+                         #   cylindrical/fastened, couple, normalize)
+  compose.py             # memo — the traced, cached composition scope
+  step_scene.py          # read_step and scene loading (recorded inputs)
+  assembly.py            # AssemblyHelper, mates, labels
+  results.py             # the typed Results every verb returns (stdlib-only)
+  cli/                   # generated command shells, one per <format> <verb>
+  daemon/                # warm worker pool (supervisor never imports OCP)
+  _internal/             # the engine: generation pipeline, package builder,
+                         #   FK (kinematics_fk/resolve), mesh_export ledger,
+                         #   cli_from_function, doors (documents-only gate),
+                         #   source_sidecar, step_assemble/step_reemit,
+                         #   caches (op memo, scope store, cache_paths)
+  _runtime/              # BUILT JS (browser snapshot renderer, node
+                         #   builders) — generated from cadgen-js, never
+                         #   edited here
 ```
 
-`cadgen` carries the JavaScript it executes as well as the Python. Mesh and drawing
-builders run under Node and snapshots render in a headless browser — both ship inside
-the wheel, so a single `pip install` is the whole runtime. Nothing is fetched at build
-time and nothing is resolved relative to a checkout.
+Verbs by format: `step` compile · build · snapshot · inspect;
+`stl`/`3mf`/`glb` build · snapshot; `dxf` snapshot; `urdf`/`sdf`
+validate · snapshot; `srdf` validate. `cadgen snapshot` routes any suffix.
+`cadgen cache|daemon|doctor` are status commands, deliberately outside the
+mirror pattern. `cadgen step compile` is internal tooling: skills never
+teach it — doors compile missing packages on demand.
 
-Two things it deliberately does not carry: **Node ≥ 20 on `PATH`** (needed only by the
-DXF and mesh-export builders, resolved when they run, never at import), and a **browser**
-for snapshots (`pip install 'cadgen[snapshot]'` then `python -m playwright install
-chromium`). Plain STEP generation needs neither.
+## Working on cadgen
 
-## Command line
-
-Building is library-first: a model script declares one `@step` (or `@dxf`)
-function and `python <model>.py` builds it — there is no `gen` verb. Scripts are
-RUN, never handed to a CLI: every command below takes a DOCUMENT, and one given
-a `.py` says so. The CLI covers everything downstream of a build:
-
-| | |
-|---|---|
-| `step build IN OUT` | write a new STEP from an existing one, with kinematics/animation |
-| `stl build` / `3mf build` / `glb build` | write that document's mesh outputs, one door per format |
-| `step inspect` / `step snapshot` | inspect selector references, render review images |
-| `dxf snapshot` | render a DXF drawing |
-| `snapshot` | render any supported input |
-| `urdf validate` / `srdf validate` / `sdf validate` | validate robot descriptions |
-| `urdf snapshot` / `sdf snapshot` | render a robot description |
-| `cache` | inspect or garbage-collect the user-level caches |
-| `daemon` / `daemon status` | opt-in warm process that holds OCP resident between builds |
-| `doctor` | print installed cadgen and verify a skill's pin |
-
-`step compile` also exists — it makes a document's render package current — but
-it is INTERNAL: every door and the CAD Viewer compile on demand, so nothing you
-read should tell you to run it.
-
-Dispatch is lazy: `cadgen --help` does not import the CAD stack.
-
-Each command is also available as `python -m <module>`. The agent skills in
-text-to-cad are instruction-only: they teach these same commands rather than
-shipping entrypoints of their own.
-
-## Python API
-
-The supported surface is the root `cadgen` exports plus the top-level `cadgen.*` modules:
-
-- **Format namespaces**: `cadgen.step`, `cadgen.dxf`, `cadgen.stl`,
-  `cadgen.threemf`, `cadgen.glb`. Each is one object: the declaration decorator
-  (`@step`, `@stl`, ...) AND that format's verbs (`step.build(...)`,
-  `stl.build(...)`), returning the typed results in `cadgen.results`. Every
-  `cadgen <format> <verb>` command is that function with a parser derived from
-  its signature, so the library call and the command cannot disagree.
-- **Robot description namespaces**: `cadgen.urdf`, `cadgen.srdf`, `cadgen.sdf` —
-  `validate(path, ...) -> ValidationResult`. No decorators: a description is an
-  authored file, not a document cadgen generates. Stdlib-pure, so this family
-  runs without the CAD kernel installed.
-- **Generator-script helpers**, all at the root: `AssemblyHelper`, `MateRelation`,
-  `MateTarget`, `label_text`, `label_shape`, `target`, `report`, `track`, `srgb`,
-  `compound_from_instances`, `ensure_step_topology_artifact`,
-  `validate_step_topology_artifact`, and the STEP scene helpers `read_step`,
-  `load_step_scene`, `located_shape`, `occurrence_selector_id`,
-  `scene_occurrence_shape`. Resolved lazily, so `import cadgen` does not pay for OCP.
-- **2D generators**: `cadgen.sources` (`load_source_module`) and `cadgen.flatten`
-  (planar-face projection/unfold, contour emission, kerf offsetting) for `@dxf` drawings.
-- **Build and inspection**: `cadgen.generation` (`generate_step_targets`,
-  `generate_dxf_targets`, `targets_include_output_pairs`), `cadgen.catalog`,
-  `cadgen.metadata`, `cadgen.analysis`, `cadgen.lookup`, `cadgen.cad_ref_syntax`,
-  `cadgen.selector_types`, `cadgen.reporting`, `cadgen.cli_logging`, `cadgen.render`,
-  `cadgen.step_topology_artifact`, `cadgen.step_targets`, `cadgen.step_export`,
-  `cadgen.drawing_checks`, `cadgen.drawing_render`.
-- **Asset resolution**: `cadgen.assets` (`node_builders_dir`, `browser_runtime_dir`)
-  — where the packaged JavaScript lives, resolved at call time.
-
-`cadgen.cli` holds the argument parsers and `cadgen.daemon` the warm build
-process (the CAD Viewer's backend is pure Node, in the separate viewer app).
-Everything under `cadgen._internal` is private
-implementation — the STEP scene, generation, GLB/topology and export engines — with no
-import stability between releases. `cadgen.generation` and `cadgen.step_scene` are thin
-facades over those engines that re-export only the supported names.
-
-## Versioning
-
-Released to PyPI by the repository's `Release` workflow. The package version always
-matches the plugin release version, and published skills pin the exact release
-(`cadgen==0.4.7`), so a skill and the runtime under it are never a version apart.
-
-## Local development
-
-From a text-to-cad checkout:
-
-```bash
-./.venv/bin/python -m pip install -e packages/cadgen
-```
-
-Source edits under `packages/cadgen/src/cadgen` take effect immediately. The packaged
-JavaScript is generated rather than committed in full, so build it once — and again
-after changing anything under `packages/cadgen-js`:
-
-```bash
-scripts/bundle/bundle-skill.sh cadgen-runtime
-```
-
-`cadgen.assets` prefers a checkout's live `packages/cadgen-js/bin` over the packaged copy,
-so builder JavaScript stays editable without rebundling.
-
-To check the package the way a user receives it — installed, from a directory that is
-not the repo — run `scripts/test/test-installed.sh`.
+- `scripts/test/test-python.sh` (or path-targeted `unittest`) for the
+  engine; `tests/python/global/` holds the policy gates that enforce the
+  laws above.
+- Editing anything the bundlers consume? `scripts/bundle/bundle.sh`, commit
+  the regenerated `_runtime/`, then `scripts/dev/setup-symlinks.sh`.
+- `VERSION` at the repo root is canonical; release tooling stamps every
+  duplicate. Never hand-edit versions here.

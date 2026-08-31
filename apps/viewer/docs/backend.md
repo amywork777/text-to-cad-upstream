@@ -4,7 +4,7 @@ The CAD Viewer client never reads filesystem paths. It talks to HTTP routes unde
 `/__cad/*` and to catalog URLs, and a backend on the other side resolves those to
 files. The viewer is a local-filesystem app, so there is exactly one backend.
 
-That backend is **pure JS**: `viewer/server/`, dependency-free Node (>= 22). It owns
+That backend is **pure JS**: `apps/viewer/server/`, dependency-free Node (>= 22). It owns
 everything the viewer does — the catalog scan, path containment, asset serving, the
 SPA, artifact status, the STEP import bridge, the native reveal dialog, the instance
 registry. The viewer is a STATIC VISUALIZATION TOOL: its render path runs no Python.

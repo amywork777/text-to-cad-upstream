@@ -1,80 +1,81 @@
 # cadgen-js
 
-`cadgen-js` is the shared JavaScript runtime for CAD Viewer, documentation previews,
-and generated snapshot browser assets. It owns reusable parsing, scene-building,
-explicit-CAD rendering, STEP topology, selector, mesh, robot-description, and
-artifact helpers without depending on React or application chrome.
+The shared JavaScript half of cadgen: everything the distribution and its
+clients both need to turn cached geometry into pixels, meshes, and motion.
+This is SOURCE; the built, stamped copies that ship live in
+`packages/cadgen/src/cadgen/_runtime/` — one sentence that resolves the one
+ambiguity the name carries.
 
-## Install
+**PURPOSE** — the shared dependencies between cadgen (as it relates to
+rendering files) and its clients: the CAD Viewer, the docs app, and any
+future client. One package, one copy of each shared primitive.
 
-In this workbench, consumers link the package directly:
+**MAY DEPEND ON** — three (pinned; the repo pins 0.160.0 deliberately),
+meshoptimizer, and nothing else at runtime. **Never React, never app or
+workflow state, never Python coupling.** Framework-agnostic by law,
+enforced by the imports-direction policy test.
 
-```json
-{
-  "dependencies": {
-    "cadgen-js": "file:../packages/cadgen-js"
-  }
-}
+**DEPENDED ON BY** — `apps/viewer` and `apps/docs` (source, via the
+`cadgen-js` specifier and each app's alias), and the bundlers
+(`scripts/bundle/`), which build it into cadgen's `_runtime/` (the browser
+snapshot renderer and the node builders in `bin/`).
+
+## The laws that live here
+
+- **Viewer three-input law**: a client renders from the file, its sidecar
+  (`<name>.step.json`), and the cache — never source, never a build. The
+  code in this package must be writable against exactly those inputs.
+- **Kinematics is data, choreography is JS, independently**: the FK
+  evaluator (`kinematicsRuntime.js`) folds sidecar mate data into
+  transforms and is the operation-for-operation twin of the Python
+  evaluator (`cadgen/_internal/kinematics_fk.py`) — a viewer slider and an
+  exported bake agree to the bit. The animation runtime
+  (`animationRuntime.js`) evaluates the sidecar's copied `.anim.js` text
+  with the `m.get(target)` handle contract (premultiplying calls, reset to
+  rest every frame, pure in t). Neither half references the other; they
+  meet only in the effect records.
+- **Byte determinism**: the tessellator and mesh serializers here produce
+  the shipped export bytes — same geometry in, same bytes out.
+- **Loud failure**: unresolved refs, unknown labels, and unknown presets
+  throw with the known set listed; nothing renders a plausible wrong frame.
+
+## The shape of the package
+
+```
+src/
+  common/          # rendering + runtime entries shared by every consumer:
+                   #   cadScene (scene build), renderMeshScene/renderModel/
+                   #   renderOptions (stills), headlessRenderEntry (the
+                   #   snapshot browser bundle's entrypoint),
+                   #   kinematicsRuntime + kinematicsModule (FK + sidecar ->
+                   #   pose definition), animationRuntime (clips),
+                   #   stepModule/stepModuleEffects (effects application),
+                   #   source (render-source loading), themeSettings,
+                   #   displaySettings, stepTopology
+  lib/             # subsystems: surf/ (tessellation + caches), selectors/
+                   #   (ref runtime), assembly/ (package composition),
+                   #   render/ (format mesh loaders), viewer/ (exploded
+                   #   view, part visual state), urdf/ (robot loading),
+                   #   export/ (packageMeshExport), cadRefs (grammar,
+                   #   parity-tested against cad_ref_syntax.py)
+bin/               # node builders the bundler ships into _runtime/node:
+                   #   mesh-export.mjs (the ONE mesh path), dxf-mesh.mjs
+docs/              # subsystem docs (render-pipeline.md)
 ```
 
-The package exports source files so local consumers can alias or install it and
-pick up edits without copying generated bundles.
+Contract mirrors that must stay in lockstep (each has a sync test):
+`lib/cadRefs.js` ↔ `cadgen/cad_ref_syntax.py`;
+`common/kinematicsRuntime.js` ↔ `cadgen/_internal/kinematics_fk.py`;
+tessellation cache keys ↔ `cadgen/_internal/cache_paths.py`;
+`apps/viewer/server/packageContract.mjs` ↔ `cadgen/_internal/`
+schema constants.
 
-## Layout
+## Working on cadgen-js
 
-- `src/index.js`: public package entrypoint.
-- `src/common/`: browser-safe render pipeline used by interactive viewer,
-  docs previews, and snapshot browser runtime.
-- `src/lib/`: lower-level first-party helpers for assets, formats, mesh
-  decoding, selector runtimes, STEP sidecars, and URDF/SRDF/SDF.
-- `src/lib/viewer/`: shared non-React 3D viewer runtime helpers such as picking,
-  clipping, drawing geometry, reference geometry, stage theme, scene scale, and
-  visual state.
-- `scripts/run-tests.mjs`: package test discovery and Node test runner wrapper.
-- `docs/`: reference docs for package-owned APIs.
-
-Tests live beside the modules they cover as `*.test.js` or `*.test.mjs`.
-
-## Boundaries
-
-Keep this package UI-framework agnostic. Do not add React components, Tailwind
-helpers, browser workbench state, or CAD Viewer chrome utilities here. Those
-belong in consumer apps such as `viewer/`.
-
-Prefer moving logic into `cadgen-js` when it is reusable across:
-
-- interactive CAD Viewer rendering,
-- docs or marketing previews,
-- generated snapshot browser runtime,
-- testable CAD parsing or sidecar preparation.
-
-Keep app-specific workflows in the app. A useful rule of thumb: `cadgen-js` should
-understand CAD data and rendering state, while `viewer/` should understand user
-interface and product workflow.
-
-## Commands
-
-From this package directory:
-
-```bash
-npm test
-```
-
-From the workbench repository root:
-
-```bash
-npm --prefix packages/cadgen-js test
-```
-
-The test command discovers all `*.test.js` and `*.test.mjs` files under
-`src/`. To run one file:
-
-```bash
-node scripts/run-tests.mjs src/lib/themeSettings.test.js
-```
-
-## Reference
-
-- [Render pipeline](./docs/render-pipeline.md): `loadSource`, `buildModel`,
-  `renderModel`, and `captureModel` stages shared by viewer, docs, and
-  snapshots.
+- `npm --prefix packages/cadgen-js test` (node:test; no browser needed).
+- Anything here that the bundlers consume changes the shipped runtimes:
+  run `scripts/bundle/bundle.sh`, commit the regenerated `_runtime/`, then
+  `scripts/dev/setup-symlinks.sh`. The staleness gate in CI enforces this.
+- The viewer dev server aliases this package's source, and Vite's
+  transform cache can outlive HMR — if an edit doesn't show up, restart
+  the dev server and delete `apps/viewer/node_modules/.vite`.

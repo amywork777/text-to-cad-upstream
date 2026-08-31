@@ -63,9 +63,10 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 
 ## Repo Rules
 
-- Read `packages/cadgen/DESIGN.md` — the three cadgen design laws
-  (generated-file independence, cache purity, decorator/function/CLI sync) —
-  before changing generation, rendering, storage, or public interfaces.
+- Boundaries and design laws live in each package's README: read
+  `packages/cadgen/README.md` (the laws), `packages/cadgen-js/README.md`,
+  `apps/viewer/README.md`, and `apps/docs/README.md` before changing
+  generation, rendering, storage, layout, or public interfaces.
 
 - Keep root guidance short. Put domain workflows, CLI details, and validation
   policy in the relevant `skills/<skill>/SKILL.md` or `references/` file.
@@ -187,110 +188,11 @@ the development symlink layout afterward if you are continuing on `develop`.
 
 ## CAD Viewer
 
-A Viewer instance serves ONE directory, fixed when it starts. The page is always the
-bare origin and `?file=` selects an artifact inside that root:
-
-```text
-http://127.0.0.1:3245/?file=path/relative/to/the/served/root
-```
-
-Launch it against a directory with `--root` (defaults to the current one) and read
-the URL it prints — launching is unconditional:
-
-```bash
-node apps/viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
-```
-
-A live instance already serving that realpath at this version is REUSED
-(`action:"reused"`); otherwise the server binds the first free port from `3245`
-upward (`action:"started"`). `--new` forces a fresh instance (use it when testing
-server-code changes from a checkout — a reused instance runs the code it started
-with); an explicit `--port` is strict and exits 1 when taken. To review a second
-directory, just launch again with that root. `node apps/viewer/server/main.mjs list`
-shows every running instance with the root it serves and the checkout its code came
-from; `... stop --port <n>` ends one.
-
-When reviewing repo fixtures, start the Viewer with the repo `models/` directory as
-its root and keep permanent or generated CAD/robot-description files there so the
-catalog and artifacts stay in one place. Pass an absolute `--root`: the Viewer runs
-from an arbitrary working directory, so a relative one resolves against the wrong
-place. Do not stop another Viewer unless the user asks.
-
-Editing `apps/viewer/` or `packages/cadgen-js` source and not seeing the change? Vite's
-server-side transform cache can outlive both HMR and a hard reload — the browser
-keeps serving the old module while the file on disk is already correct. Restart
-the dev server and delete `apps/viewer/node_modules/.vite`.
-
-### Dev by default, prod only for e2e
-
-Iterate with the **dev** server — Vite serves the client from source with HMR, so
-your `apps/viewer/` and `packages/cadgen-js` edits show up live:
-
-```bash
-npm --prefix apps/viewer run dev -- --host 127.0.0.1
-# then open http://127.0.0.1:5173/?file=<path relative to the served root>
-```
-
-Use the **prod** path only for end-to-end tests against the shipped bundle, or
-when explicitly asked to test prod. It serves the built `dist/` via the JS server
-(the `cad-viewer` skill's launch command), so build first:
-
-```bash
-npm --prefix apps/viewer run build
-npm --prefix apps/viewer run start -- --host 127.0.0.1 --json
-# then open the URL from the printed {url,port,action} line
-```
-
-### Ports
-
-Dev lives on Vite's port (`5173`), is strict (taken → pick another with `--port`),
-and never enters the instance registry. The bundled launcher (`start` /
-`main.mjs`) needs no port at all: it reuses or rolls and prints the real URL.
-
-Packaged Viewer runtime and handoff details live in the `cad-viewer` skill.
-Treat packaged Viewer checks as generated-output checks via the master bundle
-wrapper unless you are debugging a lower-level script.
-
-### Starting the Viewer from a lightweight worktree
-
-The backend is pure JS (`apps/viewer/server`), so a worktree needs only Node — plus a
-cadgen-importable interpreter for builds, handed down via env:
-
-```bash
-CADGEN_PYTHON=<main>/.venv/bin/python \
-PYTHONPATH=<worktree>/packages/cadgen/src \
-node <worktree>/apps/viewer/server/main.mjs \
-  --root <worktree>/models --dist <worktree>/apps/viewer/dist --host 127.0.0.1 --json
-```
-
-`--dist` points at the client you are editing; `--root` names the directory this
-instance serves, so point it at the worktree rather than relying on the shell's
-cwd. Building that
-client needs the worktree's `node_modules`, which worktrees deliberately do not carry —
-link them from the primary checkout first:
-
-```bash
-ln -s <main>/apps/viewer/node_modules apps/viewer/node_modules
-mkdir -p packages/cadgen-js/node_modules
-ln -s <main>/packages/cadgen-js/node_modules/three        packages/cadgen-js/node_modules/three
-ln -s <main>/apps/docs/node_modules/meshoptimizer          packages/cadgen-js/node_modules/meshoptimizer
-npm --prefix apps/viewer run build
-```
-
-No port juggling is needed: reuse keys on realpath(root) × version, so a Viewer
-from another checkout (different root) can never be handed back for this worktree —
-the launcher just rolls to a free port and prints the real URL.
-
-Two behaviours worth knowing before you conclude a model is broken:
-
-- **The catalog scan skips dot-directories.** A buildable entry under `.review/`
-  or any other dotted path never appears in a scan of the served root, and the
-  Viewer reports that the file does not exist. Pointing `--root` straight at the
-  dotted directory does not help either: entries below the root are filtered on the
-  same rule. Keep buildable entries out of dotted directories.
-- **Verify a Viewer link by loading the page**, not by curling `/__cad/asset`.
-  That route serves raw files; a generated entry's render package is served by a
-  different route, so probing it returns 404 whether or not anything is wrong.
+The whole launch/dev/worktree playbook lives in `apps/viewer/README.md`:
+launcher contract (reuse, ports, `--new`), dev vs prod, the lightweight-
+worktree recipe, and the catalog/link-verification gotchas. Read it before
+starting, stopping, or debugging a Viewer. Never stop an instance you did
+not start; packaged-runtime checks go through `scripts/bundle/bundle.sh`.
 
 ## Git And LFS
 

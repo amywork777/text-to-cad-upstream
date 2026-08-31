@@ -1,0 +1,38 @@
+# Docs site
+
+The documentation website (Next.js) — texttocad.dev. A cadgen-js CLIENT: the
+hero and example scenes render real CAD packages in the browser through the
+same shared runtime the viewer uses.
+
+**PURPOSE** — the public documentation and marketing site.
+
+**MAY DEPEND ON** — `cadgen-js` (source, mapped by `tsconfig.json` and
+aliased in `next.config.ts` to `../../packages/cadgen-js/src`) and its own
+npm dependencies. Never the viewer, never cadgen Python.
+
+**DEPENDED ON BY** — nothing in the repo. It is a website, not an install.
+
+## Build and deploy
+
+```bash
+npm --prefix apps/docs run check    # the CI gate: lint + typecheck + build
+```
+
+Deployment is the `Deploy Docs` workflow only, and it deploys a SOURCE ref
+(default `develop`), never `main` — the publish tree drops `apps/` and
+`packages/`, which this app builds against. The Vercel project's Root
+Directory setting (in Vercel, not this repo) must point at `apps/docs`.
+
+Hero STEP assets under `public/hero/` are LFS-tracked; the check script
+(`scripts/check-hero-step-assets.mjs`) pins their topology schema against
+cadgen-js so a schema bump cannot silently break the hero render.
+
+## The shape of the app
+
+```
+src/app/         # routes
+src/components/  # site components incl. the CAD hero renderers
+src/lib/         # site utilities
+public/hero/     # LFS-tracked showcase packages
+scripts/         # asset checks
+```
