@@ -66,36 +66,45 @@ These two terms classify a STEP file by what its source is:
 - An **imported STEP file** is its own source: authored or downloaded
   elsewhere. There is nothing upstream to regenerate.
 
-The link between an artifact and its script is the source sidecar generation
-writes BESIDE THE MODEL (`<name>.step.source.json`, carrying `sourcePath`,
-source hashes, pose, and mates), and that sidecar's existence is what marks a
-model as generated; imports write none.
+The link between an artifact and its script is the sidecar generation writes
+BESIDE THE MODEL (`<name>.step.cadgen.json`, carrying source hashes,
+kinematics, animation, and mates), and that sidecar's existence is what marks
+a model as generated; imports write none.
 The written STEP/DXF file itself carries NO cadgen metadata and no link back
 to source code, ever — a bare artifact separated from its package is a plain
 importable file. Provenance is never inferred from filenames either — so
 relocated outputs, renamed scripts, and shared output folders all stay
 traceable through the package alone.
 
-When a generated model builds on another STEP file, that file is a
-**dependency** (see "Child dependencies" in `positioning.md`).
+When a model builds on another part, wire it in as LINKED or DETACHED —
+see "Composing on other parts" below.
 
-## Model scripts, helpers, and composition
+## Composing on other parts: linked vs detached
 
 A **model script** is any plain `.py` defining one `@step` (or `@dxf`)
-function. **Helper/library modules** (shared geometry functions, `_parts.py`,
-`*_common.py`) are ordinary undecorated Python — import them normally. Only
-decorated scripts are buildable entries; helpers never appear in the viewer
-catalog no matter what they are named. Prefer an underscore prefix
-(`_fasteners.py`) to make the split obvious at a glance.
+function, and a model that builds on another part wires it in one of two
+modes. Choose deliberately:
 
-Because model scripts are plain `.py`, they are real importable modules:
-`import bracket; bracket.bracket()` returns the shape with no build side
-effects. For assembly composition prefer **`cadgen.compose.child_entry`** — the
-traced, cached seam. Each child's model function becomes a SCOPE keyed by its
-own source closure: an edit that does not reach a child's files skips that
-child's Python and kernel work entirely (this is what makes big-assembly edits
-cost seconds instead of minutes), and the seam owns the child's `sys.path`
-context so its sibling-helper imports resolve regardless of working directory:
+- **LINKED (the default)** — the child is generated here: compose from its
+  SOURCE. A child edit flows into the parent on the next rebuild; there are
+  no exported bytes to keep in sync. Never route a generated child through
+  its exported `.step`.
+- **DETACHED** — the child is a document, not source: a purchased or
+  downloaded part, or a generated part the user has EXPLICITLY asked to
+  decouple (export it once, then treat the export like any other document).
+  Read it with `cadgen.read_step`, below.
+
+For a cheap child sitting beside the parent, a linked child is just an
+import: model scripts are real modules, and `import widget; widget.widget()`
+returns the shape with no build side effects (the import tracer records the
+child's files into the parent's closure, so staleness flows). For
+assemblies, link through **`cadgen.compose.child_entry`** instead — the
+traced, cached seam. It does two things a plain import cannot: each child's
+model function becomes a SCOPE keyed by its own source closure, so an edit
+that does not reach a child's files skips that child's Python and kernel
+work entirely (this is what makes big-assembly edits cost seconds instead
+of minutes); and it loads by PATH with the child's own `sys.path` context,
+so composition works across directories where `import` cannot reach:
 
 ```python
 from pathlib import Path
@@ -119,11 +128,11 @@ Expensive helper FUNCTIONS inside one entry can opt into the same caching with
 returning shapes/compounds).
 
 **`sys.path` does not survive into the model function.** The pipeline restores
-`sys.path` after loading the module, so import sibling helpers at module top
-level and only *call* them inside the function.
+`sys.path` after loading the module, so do imports at module top level and
+only *call* the imported code inside the function.
 
-**Reading a STEP file the model does not generate.** Use `cadgen.read_step`, not
-`build123d.import_step`. It returns the same shape, served from cache on a warm
+**Detached children: reading a STEP file the model does not generate.** Use
+`cadgen.read_step`, not `build123d.import_step`. It returns the same shape, served from cache on a warm
 run, and — the part that matters — it RECORDS the file's content hash as a build
 input. Replacing the vendor STEP then makes the model stale on its own, with no
 `--force`; read through build123d and the model stays "current" against a file
@@ -145,12 +154,12 @@ def rig():
 **Never `read_step` your own output.** A model that reads the `.step` it is about
 to write is not a loop — it is a model whose input changes every time it runs, so
 the freshness gate can never say "current", every build is a full rebuild, and the
-geometry depends on what the last run happened to leave on disk. Keep source STEPs
-somewhere they cannot be written: an `imported/` (or `STEP/imported/`) directory
-beside the model, committed like any other input. Input path and output path being
-different files is the whole rule. If the geometry you want is something the model
-already builds, call that function instead of reading the artifact — no file, no
-staleness question.
+geometry depends on what the last run happened to leave on disk. Keep source
+documents where the model cannot write them — placement policy belongs to
+`$cad-project` (`imported/`). Input path and output path being different files is
+the whole rule. If the geometry you want is something the model already builds,
+call that function instead of reading the artifact — no file, no staleness
+question.
 
 For structuring multi-part projects (folder layout, shared `src/` code, commit
 policy), load the `$cad-project` skill.
@@ -233,6 +242,8 @@ CADGEN_DAEMON=0 python part.py      # force a cold in-process run
   warm one and stream the CLI's stdout/stderr and exit code back unchanged.
 - **Parallel builds are supported.** A burst spawns workers up to a cap, and a second
   burst reuses the first's workers, so repeated parallel work converges to warm.
+- **Same-model builds serialize** on a per-model lock; a caller that declines to
+  wait reports `contended` in its result rather than building twice.
 - **The cap follows the machine**: the smaller of what memory allows (half of RAM, or the
   cgroup limit inside a container, divided by ~300 MB a warm worker holds) and what the
   cores allow (`cores - 2`), never more than 32. `CADGEN_DAEMON_MAX_WORKERS` overrides.
