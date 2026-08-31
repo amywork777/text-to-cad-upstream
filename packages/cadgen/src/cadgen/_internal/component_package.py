@@ -17,6 +17,7 @@ import contextlib
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -367,6 +368,64 @@ def _component_build_worker_count(missing_count: int) -> int:
     return max(1, min((os.cpu_count() or 2) - 2, missing_count, 8))
 
 
+# Where a package build spends its wall clock, gated behind an env var so the
+# hot path pays nothing when nobody is looking. Set CADGEN_PACKAGE_TIMING to a
+# file path and every build appends one JSON line: the per-stage seconds plus
+# the component counts they moved. This exists because the package write is the
+# dominant cost of an edit-path rebuild and "107 s in build_package_from_compound"
+# is not an actionable number -- serialize+hash, the missing scan, worker spawn,
+# and the extractions themselves each want a different fix.
+_TIMING_ENV = "CADGEN_PACKAGE_TIMING"
+
+
+class _StageTimer:
+    """Accumulating wall-clock spans, keyed by stage name. A no-op instance
+    (``enabled=False``) is installed when the env var is unset so the call sites
+    stay unconditional."""
+
+    __slots__ = ("enabled", "spans", "counts")
+
+    def __init__(self, enabled: bool) -> None:
+        self.enabled = enabled
+        self.spans: dict[str, float] = {}
+        self.counts: dict[str, float] = {}
+
+    def add(self, name: str, seconds: float) -> None:
+        if self.enabled:
+            self.spans[name] = self.spans.get(name, 0.0) + seconds
+
+    def count(self, name: str, value: float) -> None:
+        if self.enabled:
+            self.counts[name] = value
+
+    @contextlib.contextmanager
+    def span(self, name: str):
+        if not self.enabled:
+            yield
+            return
+        started = time.perf_counter()
+        try:
+            yield
+        finally:
+            self.add(name, time.perf_counter() - started)
+
+    def dump(self, *, package_dir: Path, extra: Mapping[str, Any]) -> None:
+        if not self.enabled:
+            return
+        path = os.environ.get(_TIMING_ENV, "").strip()
+        if not path:
+            return
+        record = {
+            "package": package_dir.name,
+            "spans": {k: round(v, 4) for k, v in sorted(self.spans.items())},
+            "counts": {k: v for k, v in sorted(self.counts.items())},
+            **dict(extra),
+        }
+        with contextlib.suppress(OSError):
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record) + "\n")
+
+
 def _write_atomic(path: Path, data: bytes) -> None:
     """Write to a sibling temp file and rename into place, so a killed build
     never leaves a truncated artifact that a later run would trust as a
@@ -456,6 +515,8 @@ def build_package_from_compound(
     denominator known before the work starts."""
     package_dir = Path(package_dir)
     progress = resolve_progress(progress)
+    timer = _StageTimer(bool(os.environ.get(_TIMING_ENV, "").strip()))
+    build_started = time.perf_counter()
     # Each package is a SELF-CONTAINED unit: the descriptor dir lives at
     # the store package dir and its content-addressed components live in a
     # components/ dir INSIDE that package (<key>/components/<hash>.glb), so the whole model —
@@ -513,11 +574,13 @@ def build_package_from_compound(
             memo_key = node.wrapped.TShape()
             content_hash = hash_memo.get(memo_key)
             if content_hash is None:
-                content_hash, brep = _content_hash_and_bytes(node)
+                with timer.span("hash_serialize"):
+                    content_hash, brep = _content_hash_and_bytes(node)
                 hash_memo[memo_key] = content_hash
                 _retain_payload_brep(content_hash, brep)
         except TypeError:  # unhashable TShape wrapper: correctness over the micro-optimization
-            content_hash, brep = _content_hash_and_bytes(node)
+            with timer.span("hash_serialize"):
+                content_hash, brep = _content_hash_and_bytes(node)
             _retain_payload_brep(content_hash, brep)
         cid = _component_id(content_hash)
         shapes.setdefault(cid, node)
@@ -561,6 +624,7 @@ def build_package_from_compound(
     assembly_root: dict[str, Any] | None = None
     occurrence_tree = getattr(compound, "_occurrence_tree", None)
     progress.phase(PHASE_PACKAGE)
+    walk_started = time.perf_counter()
     if single_component:
         _add_leaf(compound, getattr(compound, "location", None) or Location(), "o1.1")
     elif occurrence_tree is not None:
@@ -626,6 +690,7 @@ def build_package_from_compound(
         assembly_root = _walk(compound, Location(), "o1")
         assembly_root["nodeType"] = "assembly"
 
+    timer.add("walk_total", time.perf_counter() - walk_started)
     if not occurrences:
         raise RuntimeError(f"model {root_name!r} has no geometry to package")
 
@@ -638,24 +703,26 @@ def build_package_from_compound(
     missing: list[tuple[str, Any]] = []
     from cadgen._internal import component_store
 
-    for cid, shape in shapes.items():
-        if (
-            (comp_dir / f"{cid}.surf").exists()
-            and (comp_dir / f"{cid}.brep").exists()
-            and not force
-        ):
-            reused.append(cid)
-        elif not force and component_store.fetch(cid, comp_dir / f"{cid}.surf"):
-            # Shared-store tier: another package (or worktree) already
-            # extracted this exact component; materialized as a hardlink.
-            reused.append(cid)
-        else:
-            missing.append((cid, shape))
+    with timer.span("missing_scan"):
+        for cid, shape in shapes.items():
+            if (
+                (comp_dir / f"{cid}.surf").exists()
+                and (comp_dir / f"{cid}.brep").exists()
+                and not force
+            ):
+                reused.append(cid)
+            elif not force and component_store.fetch(cid, comp_dir / f"{cid}.surf"):
+                # Shared-store tier: another package (or worktree) already
+                # extracted this exact component; materialized as a hardlink.
+                reused.append(cid)
+            else:
+                missing.append((cid, shape))
     # Every missing component builds from its location-stripped BREP payload —
     # the same bytes whether built in-process or in a worker — so the emitted
     # artifact is independent of worker count AND of the caller's Python class
     # for the shape (a parametric Box and an imported Solid with identical
     # geometry emit identical components; XCAF auto-labels no longer leak in).
+    payload_started = time.perf_counter()
     payloads = [
         (
             # Reuse the BREP bytes captured when this cid was content-hashed;
@@ -668,12 +735,14 @@ def build_package_from_compound(
         )
         for cid, shape in missing
     ]
+    timer.add("payload_prep", time.perf_counter() - payload_started)
     workers = _component_build_worker_count(len(payloads))
     # The one stage of a model build whose denominator is known before any of the work
     # runs: the missing set is fully resolved above. Note the total is the MISSING
     # count, not the component count -- re-meshing one edited part of a 300-part
     # assembly is honestly 1/1, not 1/300.
     progress.phase(PHASE_COMPONENTS, total=len(payloads))
+    build_stage_started = time.perf_counter()
     if workers > 1:
         # Each missing component is surface-extracted independently (the
         # extraction is Python-heavy and GIL-bound, so threads don't help).
@@ -691,10 +760,18 @@ def build_package_from_compound(
             # component early in the list would pin the bar while the rest complete
             # behind it. Results are collected by cid and re-ordered below, so the
             # value this function computes is identical either way.
+            timer.add("pool_startup", time.perf_counter() - build_stage_started)
             futures = {pool.submit(_build_component_surf_worker, args): args[1] for args in payloads}
             errors_by_cid: dict[str, str | None] = {}
+            first_result_at: float | None = None
             for future in as_completed(futures):
                 built_cid, error = future.result()
+                if first_result_at is None:
+                    # Time to the FIRST completed component: with a spawn context
+                    # this is dominated by one worker's interpreter + OCP import,
+                    # so it separates fixed pool overhead from real extraction work.
+                    first_result_at = time.perf_counter()
+                    timer.add("pool_first_result", first_result_at - build_stage_started)
                 errors_by_cid[built_cid] = error
                 progress.advance(detail=built_cid)
         results = [(cid, errors_by_cid[cid]) for _payload, cid, *_rest in payloads]
@@ -703,6 +780,7 @@ def build_package_from_compound(
         for args in payloads:
             results.append(_build_component_surf_worker(args))
             progress.advance(detail=args[1])
+    timer.add("component_build", time.perf_counter() - build_stage_started)
     shapes_by_cid = dict(missing)
     for cid, error in results:
         if error is not None and error.startswith(PAYLOAD_UNREADABLE):
@@ -723,10 +801,11 @@ def build_package_from_compound(
     # Publish into the shared store: freshly built components always (force
     # overwrites, since force means the build code changed), and reused local
     # components opportunistically so pre-store packages seed it over time.
-    for cid in built:
-        component_store.publish(comp_dir / f"{cid}.surf", cid, overwrite=bool(force))
-    for cid in reused:
-        component_store.publish(comp_dir / f"{cid}.surf", cid)
+    with timer.span("store_publish"):
+        for cid in built:
+            component_store.publish(comp_dir / f"{cid}.surf", cid, overwrite=bool(force))
+        for cid in reused:
+            component_store.publish(comp_dir / f"{cid}.surf", cid)
 
     # The descriptor IS the assembly's index manifest: the provenance block (schema/
     # source/step hashes, mesh, edgeRendering) the freshness gates read, plus the
@@ -753,7 +832,8 @@ def build_package_from_compound(
         descriptor["assembly"] = {"root": assembly_root}
     # Lightweight geometry summary so whole-entry inspect/diff reads the descriptor
     # directly (faceCount/edgeCount need full topology and are filled on demand).
-    bbox = _bbox_from_shape(compound)
+    with timer.span("bbox"):
+        bbox = _bbox_from_shape(compound)
     if bbox is not None:
         descriptor["bbox"] = bbox
     stats = dict(descriptor.get("stats") or {})
@@ -791,11 +871,19 @@ def build_package_from_compound(
         f"{cid}.brep" for cid in components
     }
     pruned = 0
-    for pattern in ("*.surf", "*.brep", "*.glb"):
-        for stale in comp_dir.glob(pattern):
-            if stale.name not in referenced:
-                stale.unlink(missing_ok=True)
-                pruned += 1
+    with timer.span("prune"):
+        for pattern in ("*.surf", "*.brep", "*.glb"):
+            for stale in comp_dir.glob(pattern):
+                if stale.name not in referenced:
+                    stale.unlink(missing_ok=True)
+                    pruned += 1
+    timer.add("build_total", time.perf_counter() - build_started)
+    timer.count("occurrences", len(occurrences))
+    timer.count("unique_components", len(components))
+    timer.count("built", len(built))
+    timer.count("reused", len(reused))
+    timer.count("workers", workers)
+    timer.dump(package_dir=package_dir, extra={"root": root_name, "force": bool(force)})
     return {
         "occurrences": len(occurrences),
         "unique_components": len(components),

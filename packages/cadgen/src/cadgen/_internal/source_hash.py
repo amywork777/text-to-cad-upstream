@@ -310,6 +310,18 @@ def repo_local_loaded_modules(module_names: object) -> dict[str, Path]:
     return result
 
 
+# `python my_model.py` puts the model script in sys.modules as __main__, and its
+# __file__ is a first-party path, so both evictors below would happily drop it.
+# Nothing re-imports it (the generator is loaded under its own loader name), but
+# multiprocessing's spawn start method reads sys.modules['__main__'] in
+# get_preparation_data to tell the child what to re-import -- so evicting it turns
+# the very next process-pool component build into
+# `KeyError: '__main__'`, which is how a direct in-process run of a model with six
+# or more missing components used to die. __main__ is an entry point, never a
+# freshness input: re-executing it is exactly what must NOT happen.
+_NEVER_EVICTED = frozenset({"__main__"})
+
+
 def evict_first_party_modules() -> tuple[str, ...]:
     """Drop every first-party module from ``sys.modules`` and return the evicted names.
 
@@ -334,7 +346,7 @@ def evict_first_party_modules() -> tuple[str, ...]:
     evicted = tuple(
         name
         for name in {*repo_local_loaded_modules(set(sys.modules)), *_first_party_namespace_packages()}
-        if name.partition(".")[0] not in protected
+        if name.partition(".")[0] not in protected and name not in _NEVER_EVICTED
     )
     for name in evicted:
         sys.modules.pop(name, None)
@@ -361,11 +373,11 @@ def evict_foreign_first_party_modules(own_roots) -> tuple[str, ...]:
     protected = _packages_owning_loaded_extensions()
     foreign: list[str] = []
     for name, path in repo_local_loaded_modules(set(sys.modules)).items():
-        if name.partition(".")[0] in protected or _owned(path):
+        if name.partition(".")[0] in protected or name in _NEVER_EVICTED or _owned(path):
             continue
         foreign.append(name)
     for name in _first_party_namespace_packages():
-        if name.partition(".")[0] in protected:
+        if name.partition(".")[0] in protected or name in _NEVER_EVICTED:
             continue
         module = sys.modules.get(name)
         entries = list(getattr(module, "__path__", None) or ())

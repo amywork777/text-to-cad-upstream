@@ -413,6 +413,15 @@ def _run_script_generator_inner(
     from cadgen._internal import op_memo
 
     op_memo.install()
+    # Order-stable shape de-duplication (see determinism.py). Installed in the
+    # same breath as the op memo and for the same reason: both exist so that a
+    # re-executed model script produces the SAME geometry it produced last time.
+    # A memo that hands back identical shapes is worthless if the code consuming
+    # them re-keys the components anyway, so this has to be in force before the
+    # generator's first kernel call, not merely before the package write.
+    from cadgen._internal import determinism
+
+    determinism.install()
     generated_scene: LoadedStepScene | None = None
     # Deterministic closure capture (see run_script_generator's docstring): start from a
     # clean first-party module space, then record every first-party file executed while

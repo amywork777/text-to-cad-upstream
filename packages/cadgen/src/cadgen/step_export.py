@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
@@ -299,7 +300,7 @@ _MDGPR_TYPE = "StepVisual_MechanicalDesignGeometricPresentationRepresentation"
 
 # The complete entity family OCCT's writeColors() appends per styled product
 # (STEPCAFControl_Writer.cxx, MakeSTEPStyles + "register all MDGPRs in model").
-# _canonicalize_presentation_styles only reorders a tail made entirely of these;
+# _style_tail_plan only orders a tail made entirely of these;
 # an unexpected type in the tail means the writer changed shape, and the
 # canonicalization steps aside rather than guess.
 _STYLE_TAIL_FAMILY = frozenset({
@@ -311,6 +312,13 @@ _STYLE_TAIL_FAMILY = frozenset({
     "StepVisual_SurfaceStyleUsage",
     "StepVisual_SurfaceSideStyle",
     "StepVisual_SurfaceStyleFillArea",
+    # Emitted only for a part whose colour carries alpha: the transparency rides
+    # a rendering entity hanging off the same SurfaceSideStyle as the fill area.
+    # Without these two the tail-family check below rejected every model with a
+    # single transparent part and left it writing address-ordered bytes.
+    "StepVisual_SurfaceStyleRendering",
+    "StepVisual_SurfaceStyleRenderingWithProperties",
+    "StepVisual_SurfaceStyleTransparent",
     "StepVisual_FillAreaStyle",
     "StepVisual_FillAreaStyleColour",
     "StepVisual_ColourRgb",
@@ -363,12 +371,23 @@ def _style_entity_children(ent: Any) -> list:
         add_array(ent.FillStyles())
     elif name == "StepVisual_FillAreaStyleColour":
         add(ent.FillColour())
-    # Colours and predefined fonts are leaves.
+    elif name in (
+        "StepVisual_SurfaceStyleRendering",
+        "StepVisual_SurfaceStyleRenderingWithProperties",
+    ):
+        # SURFACE_STYLE_RENDERING[_WITH_PROPERTIES](rendering_method, surface_colour
+        # [, properties]): the method is an enum, not an entity, so the DFS starts at
+        # the colour. `properties` is a select array whose members are the
+        # SurfaceStyleTransparent leaves.
+        add(ent.SurfaceColour())
+        if name == "StepVisual_SurfaceStyleRenderingWithProperties":
+            add_array(ent.Properties())
+    # Colours, transparency values, and predefined fonts are leaves.
     return out
 
 
-def _canonicalize_presentation_styles(model: Any) -> None:
-    """Make the style section's entity order a function of model CONTENT.
+def _style_tail_plan(model: Any) -> tuple[int, int, list[int]] | None:
+    """The canonical order for the style section, as entity NUMBERS.
 
     OCCT registers each styled product's presentation graph by iterating an
     ADDRESS-hashed shape map (STEPCAFControl_Writer::transfer's myMapCompMDGPR,
@@ -378,12 +397,16 @@ def _canonicalize_presentation_styles(model: Any) -> None:
     even per call. Everything before the style tail is deterministic transfer
     order (see _renumber_nauo_ids, which leans on the same property).
 
-    Reorder the tail deterministically: MDGPR blocks sorted by the styled
-    targets they reference (head entity numbers, which ARE stable), each
-    closure laid out in field-order DFS. Entities shared between closures
-    (deduplicated colours) land with the first canonical owner. Anything
-    unexpected in the tail aborts untouched — worst case is the old
-    nondeterminism, never a corrupt file.
+    The canonical order: MDGPR blocks sorted by the styled targets they
+    reference (head entity numbers, which ARE stable), each closure laid out in
+    field-order DFS. Entities shared between closures (deduplicated colours)
+    land with the first canonical owner. Anything unexpected in the tail
+    returns None — worst case is the old nondeterminism, never a corrupt file.
+
+    Returns ``(tail_start, total, old_numbers)`` where ``old_numbers[i]`` is the
+    entity that must end up numbered ``tail_start + i``. This function only
+    READS the model; the two appliers below differ in where they put the
+    permutation, not in what it is.
     """
     from OCP.StepVisual import (
         StepVisual_MechanicalDesignGeometricPresentationRepresentation as _MDGPR,
@@ -399,7 +422,7 @@ def _canonicalize_presentation_styles(model: Any) -> None:
         mdgpr_count += 1
         iterator.Next()
     if mdgpr_count <= 1:
-        return
+        return None
 
     total = model.NbEntities()
     # OCP's model.Number() binding returns 0, so numbers come from this scan;
@@ -410,7 +433,7 @@ def _canonicalize_presentation_styles(model: Any) -> None:
     mdgpr_nums = [i for i in range(1, total + 1) if type_names[i] == _MDGPR_TYPE]
     tail_start = mdgpr_nums[0]
     if any(type_names[i] not in _STYLE_TAIL_FAMILY for i in range(tail_start, total + 1)):
-        return
+        return None
     number_of = {id(ent): index for index, ent in enumerate(entities[1:], start=1)}
     tail_ids = {id(entities[i]) for i in range(tail_start, total + 1)}
 
@@ -437,16 +460,96 @@ def _canonicalize_presentation_styles(model: Any) -> None:
     for mdgpr_num in sorted(mdgpr_nums, key=block_key):
         visit(entities[mdgpr_num])
     if len(desired) != total - tail_start + 1:
-        return
+        return None
+    return tail_start, total, [number_of[id(ent)] for ent in desired]
 
-    order = [id(entities[i]) for i in range(tail_start, total + 1)]
-    for offset, ent in enumerate(desired):
-        current = tail_start + order.index(id(ent))
+
+def _apply_style_tail_plan_in_model(model: Any, tail_start: int, old_numbers: list[int]) -> None:
+    """Permute the model itself, one ``ChangeOrder`` per tail entity.
+
+    Exact, and quadratic: each call renumbers a model that holds ~10^5-10^6
+    entities, so juno's ~3400-entity tail costs ~110 s. It survives only as the
+    backstop for the one case the text applier below refuses (a tail whose
+    entity numbers do not all have the same digit width); the byte-identity
+    test pins the two appliers to the same output.
+    """
+    total = tail_start + len(old_numbers) - 1
+    order = list(range(tail_start, total + 1))
+    for offset, old_number in enumerate(old_numbers):
+        current = tail_start + order.index(old_number)
         target = tail_start + offset
         if current != target:
             model.ChangeOrder(current, target)
-            order.remove(id(ent))
-            order.insert(offset, id(ent))
+            order.remove(old_number)
+            order.insert(offset, old_number)
+
+
+# A STEP record header: `#123 = TYPE(...)`, always at the start of a line. A
+# wrapped continuation line can also begin with `#`, but only a header carries
+# the ` = `, so this cannot mistake one for the other.
+_STEP_RECORD_START = re.compile(r"(?m)^#(\d+) = ")
+# A quoted STEP string OR an entity reference. The string alternative comes
+# first and consumes the whole literal (`''` is an escaped quote), so a `#` that
+# happens to sit inside a part name is never rewritten as a reference.
+_STEP_STRING_OR_REF = re.compile(r"'(?:[^']|'')*'|#(\d+)")
+
+
+def _apply_style_tail_plan_in_text(
+    text: str, tail_start: int, old_numbers: list[int]
+) -> str | None:
+    """The same permutation, applied to the WRITTEN file instead of the model.
+
+    Two linear passes over the text: renumber every reference through the
+    old->new map (the regex skips string literals), then reorder the tail
+    records, which are a contiguous suffix of the DATA section. Returns None if
+    the text does not have the shape this expects.
+
+    This is byte-identical to the in-model applier only because the caller
+    guarantees every rewritten number keeps its digit width: OCCT wraps long
+    records at a fixed column, so a number that grew a digit would shift the
+    wrapping and produce a differently-formatted (though semantically equal)
+    file. Same width in, same bytes out.
+    """
+    new_of = {old: tail_start + offset for offset, old in enumerate(old_numbers)}
+    if all(old == new for old, new in new_of.items()):
+        return text
+
+    def renumber(match: "re.Match[str]") -> str:
+        digits = match.group(1)
+        if digits is None:  # a string literal — leave it exactly as written
+            return match.group(0)
+        number = int(digits)
+        replacement = new_of.get(number)
+        return match.group(0) if replacement is None else f"#{replacement}"
+
+    renumbered = _STEP_STRING_OR_REF.sub(renumber, text)
+
+    # Record starts, so the tail records can be sorted into their new order.
+    # After the substitution above each header carries its NEW number.
+    headers = list(_STEP_RECORD_START.finditer(renumbered))
+    if not headers:
+        return None
+    first_tail = next(
+        (i for i, m in enumerate(headers) if int(m.group(1)) >= tail_start), None
+    )
+    if first_tail is None or len(headers) - first_tail != len(old_numbers):
+        return None
+    region_start = headers[first_tail].start()
+    end_marker = renumbered.find("\nENDSEC;", region_start)
+    if end_marker < 0:
+        return None
+    region_end = end_marker + 1  # the last record keeps its trailing newline
+    bounds = [m.start() for m in headers[first_tail:]] + [region_end]
+    records = [
+        (int(headers[first_tail + i].group(1)), renumbered[bounds[i]:bounds[i + 1]])
+        for i in range(len(bounds) - 1)
+    ]
+    records.sort(key=lambda record: record[0])
+    return (
+        renumbered[:region_start]
+        + "".join(body for _number, body in records)
+        + renumbered[region_end:]
+    )
 
 
 def write_xcaf_doc_step_file(
@@ -498,10 +601,38 @@ def write_xcaf_doc_step_file(
     # process that has exported before writes different ids than a cold one
     # for the same model. Renumber them 1..N in model-entity order (which is
     # deterministic transfer order) so identical models write identical bytes.
-    _renumber_nauo_ids(writer.Writer().Model())
+    with (logger.timed("renumber NAUO ids") if logger is not None else nullcontext()):
+        _renumber_nauo_ids(writer.Writer().Model())
     # Same contract, other direction: OCCT appends multi-product style graphs
     # in heap-address order. Reorder them into content order.
-    _canonicalize_presentation_styles(writer.Writer().Model())
+    #
+    # The permutation is computed here, from the model, because model entity
+    # numbers ARE the numbers Write() is about to emit. WHERE it gets applied is
+    # a performance decision, not a correctness one:
+    #
+    #   - in the written TEXT (the normal path): two linear passes over the
+    #     file, low single-digit seconds on the largest models we have;
+    #   - in the MODEL, before writing: exact but quadratic — ~110 s on juno,
+    #     because each ChangeOrder renumbers the whole model.
+    #
+    # The text applier is byte-identical to the model applier only while every
+    # number it rewrites keeps its digit width (OCCT wraps records at a fixed
+    # column, so a number that gained a digit would shift the wrapping). A tail
+    # that straddles a power of ten is rare and cannot be made width-safe, so it
+    # takes the slow path rather than writing differently-formatted bytes.
+    with (logger.timed("plan style tail order") if logger is not None else nullcontext()):
+        plan = _style_tail_plan(writer.Writer().Model())
+    if plan is not None:
+        tail_start, total, old_numbers = plan
+        if (
+            len(str(tail_start)) != len(str(total))
+            or os.environ.get("CADGEN_STEP_STYLE_REORDER", "").strip() == "model"
+        ):
+            with (logger.timed("canonicalize style tail (in model)") if logger is not None else nullcontext()):
+                _apply_style_tail_plan_in_model(
+                    writer.Writer().Model(), tail_start, old_numbers
+                )
+            plan = None
 
     # The header must be edited AFTER Transfer: Transfer rebuilds the writer's
     # model, discarding anything set on the pre-transfer header.
@@ -521,6 +652,20 @@ def write_xcaf_doc_step_file(
             raise RuntimeError(f"Failed to write STEP file: {output_path}")
     if not output_path.exists() or output_path.stat().st_size <= 0:
         raise RuntimeError(f"STEP export did not create {output_path}")
+    if plan is not None:
+        with (logger.timed("canonicalize style tail (in text)") if logger is not None else nullcontext()):
+            tail_start, _total, old_numbers = plan
+            canonical = _apply_style_tail_plan_in_text(
+                output_path.read_text(encoding="utf-8", errors="surrogateescape"),
+                tail_start,
+                old_numbers,
+            )
+            # A text shape this did not recognize leaves the file exactly as
+            # OCCT wrote it: nondeterministically ordered, never corrupt.
+            if canonical is not None:
+                output_path.write_text(
+                    canonical, encoding="utf-8", errors="surrogateescape"
+                )
     return step_file_hash(output_path)
 
 
@@ -565,7 +710,8 @@ def export_build123d_step_file(
     The write-only counterpart to :func:`export_build123d_step_scene`, used by the
     on-demand ``--step`` export: the build already holds the in-memory scene/compound,
     so STEP export only needs to serialize the shape, not rebuild a scene."""
-    doc = _create_bin_xcaf_doc(to_export)
+    with (logger.timed("build XCAF document") if logger is not None else nullcontext()):
+        doc = _create_bin_xcaf_doc(to_export)
     return write_xcaf_doc_step_file(
         doc,
         output_path,

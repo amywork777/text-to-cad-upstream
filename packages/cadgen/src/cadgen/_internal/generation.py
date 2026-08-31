@@ -559,7 +559,14 @@ def _generate_part_outputs(
             write_source_sidecar,
         )
 
-        sidecar_payload = _source_sidecar_payload(scene, shape)
+        # This job is the long pole of an edit-path rebuild, and it is FIVE
+        # unrelated pieces of work under one label ("write GLB package"), so a
+        # single span for the whole thing says only that the build was slow.
+        # Each step below gets its own --verbose span; the names are the ones a
+        # perf investigation needs to tell "we re-extracted components" from
+        # "we re-assembled the STEP document" from "we resolved kinematics".
+        with logger.timed("package: sidecar payload"):
+            sidecar_payload = _source_sidecar_payload(scene, shape)
         generated = sidecar_payload is not None
         if generated:
             mesh_export_section = _mesh_exports_sidecar_section(spec)
@@ -567,19 +574,20 @@ def _generate_part_outputs(
                 sidecar_payload["meshExports"] = mesh_export_section
 
         def _build_into(package_dir: Path) -> dict[str, object]:
-            return build_package_from_compound(
-                shape,
-                package_dir=package_dir,
-                # rootName is a plain model name, not a repo path (which would leak
-                # the arbitrary `models/` root into a relocatable package).
-                root_name=spec.step_path.stem,
-                single_component=single_component,
-                force=force,
-                provenance=package_provenance,
-                linear_deflection=selector_options.linear_deflection,
-                angular_deflection=selector_options.angular_deflection,
-                progress=progress,
-            )
+            with logger.timed("package: components"):
+                return build_package_from_compound(
+                    shape,
+                    package_dir=package_dir,
+                    # rootName is a plain model name, not a repo path (which would leak
+                    # the arbitrary `models/` root into a relocatable package).
+                    root_name=spec.step_path.stem,
+                    single_component=single_component,
+                    force=force,
+                    provenance=package_provenance,
+                    linear_deflection=selector_options.linear_deflection,
+                    angular_deflection=selector_options.angular_deflection,
+                    progress=progress,
+                )
 
         if not generated:
             # Imported document: the content hash IS the file's — build straight
@@ -612,12 +620,13 @@ def _generate_part_outputs(
                     resolve_kinematics_block,
                 )
 
-                resolved_block, occurrence_ids = resolve_kinematics_block(
-                    kinematics_block,
-                    package_dir=staging,
-                    step_path=spec.step_path,
-                    source_ref=str(spec.source_ref),
-                )
+                with logger.timed("package: kinematics"):
+                    resolved_block, occurrence_ids = resolve_kinematics_block(
+                        kinematics_block,
+                        package_dir=staging,
+                        step_path=spec.step_path,
+                        source_ref=str(spec.source_ref),
+                    )
                 bake_values = getattr(scene, "bake_pose", None)
                 if bake_values:
                     resolved_block = bake_pose_into_package(
@@ -631,7 +640,8 @@ def _generate_part_outputs(
             from cadgen._internal.step_assemble import assemble_step_from_package
 
             spec.step_path.parent.mkdir(parents=True, exist_ok=True)
-            exported_hash = assemble_step_from_package(staging, spec.step_path, logger=logger)
+            with logger.timed("package: assemble STEP"):
+                exported_hash = assemble_step_from_package(staging, spec.step_path, logger=logger)
             from cadgen.catalog import seed_artifact_hash
 
             seed_artifact_hash(spec.step_path, exported_hash)
@@ -647,18 +657,19 @@ def _generate_part_outputs(
             # document). os.replace onto a non-empty dir fails, so a peer
             # winning the publish is an ORDINARY outcome: its package is
             # byte-equivalent by construction, and ours is redundant.
-            for _ in range(4):
-                if (final_dir / "assembly.json").is_file():
-                    break
-                shutil.rmtree(final_dir, ignore_errors=True)
-                try:
-                    replace_dir_atomic(staging, final_dir)
-                    break
-                except OSError:
-                    continue
-            else:
-                if not (final_dir / "assembly.json").is_file():
-                    raise RuntimeError(f"could not publish render package: {final_dir}")
+            with logger.timed("package: publish"):
+                for _ in range(4):
+                    if (final_dir / "assembly.json").is_file():
+                        break
+                    shutil.rmtree(final_dir, ignore_errors=True)
+                    try:
+                        replace_dir_atomic(staging, final_dir)
+                        break
+                    except OSError:
+                        continue
+                else:
+                    if not (final_dir / "assembly.json").is_file():
+                        raise RuntimeError(f"could not publish render package: {final_dir}")
         finally:
             shutil.rmtree(staging, ignore_errors=True)
         return stats
