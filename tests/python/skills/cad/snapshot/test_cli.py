@@ -1120,7 +1120,7 @@ class SnapshotCliTests(unittest.TestCase):
     def test_render_job_rejects_step_parameters_path_for_mesh_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
@@ -1930,7 +1930,7 @@ class StepPoseParameterTests(unittest.TestCase):
     def test_retired_job_keys_are_rejected_by_name(self) -> None:
         self._step()
         for key in ("paramsPath", "stepParametersPath"):
-            with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
+            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
                 self._resolve(self._job(**{key: "models/part.step.js"}))
 
 

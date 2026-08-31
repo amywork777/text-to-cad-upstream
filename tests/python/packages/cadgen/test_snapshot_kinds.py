@@ -71,13 +71,13 @@ MESH_DOORS = ("stl", "3mf", "glb")
 
 
 class InputKindTests(unittest.TestCase):
-    def test_compound_suffixes_are_not_read_as_their_last_one(self):
-        # Path.suffix sees only `.py`, which would misread this one.
-        self.assertEqual("dxf", input_kind(Path("panel.dxf.py")))
-        # Suffix retirement: a plain .py classifies as python; dxf-ness comes from metadata.
-        self.assertEqual("python", input_kind(Path("panel.py")))
-        # A plain `.py` IS a STEP generator, which is why the two need telling apart.
-        self.assertEqual("python", input_kind(Path("bracket.py")))
+    def test_a_script_classifies_as_python_whatever_it_declares(self):
+        # DOCUMENTS-ONLY: every `.py` is one kind, because the resolver's only
+        # use for it is refusing it by naming the run. Which format the script
+        # declares no longer matters — nothing downstream will render it.
+        for sample in ("panel.dxf.py", "panel.py", "bracket.py"):
+            with self.subTest(sample=sample):
+                self.assertEqual("python", input_kind(Path(sample)))
 
     def test_every_kind_it_names_has_a_resolver_or_is_a_generator(self):
         for sample in ("a.step", "a.stp", "a.glb", "a.stl", "a.3mf",
@@ -98,10 +98,10 @@ class EnabledKindsTests(unittest.TestCase):
             {kind for kinds in DOOR_KINDS.values() for kind in kinds}, set(ALL_KINDS)
         )
 
-    def test_enabling_step_enables_its_generator(self):
-        # `.py` resolves as `python` before it collapses to `step`, so a door that
-        # named only "step" would reject its own generators.
-        self.assertIn("python", enabled_kinds(("step",)))
+    def test_a_declared_kind_enables_exactly_itself(self):
+        # There is nothing left to expand: `.py` inputs are refused outright,
+        # so a door's declared kinds ARE the set it accepts.
+        self.assertEqual({"step", "stp"}, set(enabled_kinds(DOOR_KINDS["step"])))
 
     def test_a_door_gets_only_what_it_declares(self):
         self.assertEqual({"dxf"}, set(enabled_kinds(DOOR_KINDS["dxf"])))

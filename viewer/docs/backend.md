@@ -10,7 +10,7 @@ SPA, artifact status, the STEP import bridge, the native reveal dialog, the inst
 registry. The viewer is a STATIC VISUALIZATION TOOL: its render path runs no Python.
 It renders artifacts that exist — render packages, sibling `.dxf` files — and the
 CLIs own generation and export. The one build-shaped thing it does is importing a
-raw foreign STEP, which spawns `cadgen step build` as a child process (below); cadgen
+raw foreign STEP, which spawns `cadgen step compile` as a child process (below); cadgen
 is a soft dependency, needed only for that.
 
 ## Where it runs
@@ -80,7 +80,7 @@ backend.assetPathForFileRef(fileRef)      // guarded path for bytes we will send
 backend.containedPathForFileRef(fileRef)  // guarded path for bytes we will not
 backend.catalogEntryForFileRef(catalog, fileRef)
 ops.artifactStatus(fileRef)               // JS freshness verdict + advisory progress
-ops.buildArtifact(fileRef, { force })     // spawns `cadgen step build` for a raw STEP; else a CLI hint
+ops.buildArtifact(fileRef, { force })     // spawns `cadgen step compile` for a raw STEP; else a CLI hint
 ```
 
 `readCatalog()` scans the served root and returns schema v4 entries whose `file`
@@ -125,7 +125,7 @@ unaffected either way.
 ## STEP import (via cadgen)
 
 A raw `.step`/`.stp` with no render package (or a stale one — the file changed after
-import) is importable right here: the server spawns `cadgen step build <file>` — the
+import) is importable right here: the server spawns `cadgen step compile <file>` — the
 single import producer — as a child process, which parses the STEP natively and
 writes the standard package. cadgen is a SOFT dependency, resolved at request time
 by `server/cadgenResolve.mjs`: `$CADGEN_PYTHON` (spawned as
@@ -144,7 +144,7 @@ A bare `.step` with no package is simply importable, whatever produced it —
 STEP files carry no cadgen metadata of any kind, so there is nothing to read
 from the file beyond its geometry.
 
-Progress needs no protocol of its own: `cadgen step build` writes the standard build
+Progress needs no protocol of its own: `cadgen step compile` writes the standard build
 progress record beside the package (phase fields flattened, the exact shape the
 client badge renders), and the status route serves it through the same reader
 used for CLI builds (`buildProgressSnapshot` in `cadgenOps.mjs`). One reader,

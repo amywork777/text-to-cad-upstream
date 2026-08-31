@@ -1,6 +1,6 @@
 // Build progress for the artifact-status route: one reader
 // (buildProgressSnapshot) serves every producer — a CLI model-script run, a
-// CLI `cadgen step build`, or the viewer's own import child — because they all
+// CLI `cadgen step compile`, or the viewer's own import child — because they all
 // write the same progress record beside the package, with the phase fields
 // flattened in the exact shape the client's generating badge renders
 // (artifactProgress.js).

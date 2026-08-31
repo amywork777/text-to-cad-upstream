@@ -1,7 +1,7 @@
 // The static-viewer contract, end to end against a live server. The viewer's
 // render path runs no Python: built packages render (with honest staleness)
 // and generated entries without artifacts name the CLI. Importing a raw
-// foreign STEP — the viewer's only build — spawns `cadgen step build`; without a
+// foreign STEP — the viewer's only build — spawns `cadgen step compile`; without a
 // runnable cadgen it degrades to one actionable message and viewing is
 // unaffected.
 import assert from "node:assert/strict";
@@ -166,7 +166,7 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
 });
 
 // The full import flow against a REAL vendor-style STEP: status offers the
-// build, the build spawns `cadgen step build` (cold interpreter — the e2e must
+// build, the build spawns `cadgen step compile` (cold interpreter — the e2e must
 // not depend on a warm daemon), and the resulting package renders. Skips
 // cleanly where no project cadgen exists (the mirrored cad-viewer repo runs
 // this suite standalone).
@@ -209,7 +209,7 @@ test(
     assert.equal(status.state, "needs-build");
     assert.equal(status.stepImport, true);
 
-    // POST the build: `cadgen step build` runs in a child process and the entry
+    // POST the build: `cadgen step compile` runs in a child process and the entry
     // settles ready with a real package on disk.
     const build = await (
       await fetch(`${base}/__cad/artifact?file=${encodeURIComponent(step)}`, {

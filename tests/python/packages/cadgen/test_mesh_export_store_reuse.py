@@ -1,12 +1,18 @@
-"""Mesh export resolves the STORE render package before touching source.
+"""Mesh export resolves the STORE render package before touching anything else.
 
-The export fast path, exercised through the `cadgen stl|3mf|glb build` doors: a
-CURRENT model (canonical freshness gate, closure included) exports straight from
-its store package — no generator run, no extraction. A stale generated model
-rebuilds from source so exports can never serve old geometry (the #308 class),
-in ONE extraction and writing nothing but its own format. An imported model
-missing its package warms the SHARED store once via the same build
-`cadgen step build` runs, then every later export reuses it.
+The export fast path, exercised through the `cadgen stl|3mf|glb build` doors.
+Doors take DOCUMENTS (design/pose-animation-split.md, CLI/doors follow-on), so
+there are exactly two shapes to cover:
+
+* A document whose package is current exports straight from it — no generator
+  run, no extraction, no source read at all. Its DECLARED variants come from
+  the sidecar the script run wrote.
+* A document whose sidecar closure no longer re-hashes is STALE, and the door
+  says so by naming `python <script>` instead of rebuilding. A render or an
+  export must never contain a build.
+
+A document with no package at all (an import) compiles one into the shared
+store on first use, and every later export reuses it.
 """
 
 from __future__ import annotations
@@ -32,8 +38,11 @@ def _write_model(root: Path, size: float) -> Path:
     entry.write_text(textwrap.dedent(f"""\
         SIZE = {size}
 
-        from cadgen import step
+        from cadgen import glb, step, stl, threemf
         @step
+        @stl
+        @glb
+        @threemf
         def model():
             from build123d.topology import Solid
             block = Solid.make_box(SIZE, SIZE, SIZE)
@@ -63,13 +72,16 @@ class MeshExportStoreReuseTest(unittest.TestCase):
             capture_output=True, text=True, timeout=600,
         )
 
-    def _export(self, fmt: str, target: str, *flags: str) -> subprocess.CompletedProcess:
+    def _door(self, fmt: str, target: str, *flags: str) -> subprocess.CompletedProcess:
         module = {"stl": "stl_build", "3mf": "threemf_build", "glb": "glb_build"}[fmt]
         code = f"from cadgen.cli.{module} import main; raise SystemExit(main())"
-        proc = subprocess.run(
+        return subprocess.run(
             [PYTHON, "-c", code, target, "--verbose", *flags],
             cwd=str(self.root), env=self.env, capture_output=True, text=True, timeout=600,
         )
+
+    def _export(self, fmt: str, target: str, *flags: str) -> subprocess.CompletedProcess:
+        proc = self._door(fmt, target, *flags)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         return proc
 
@@ -79,47 +91,67 @@ class MeshExportStoreReuseTest(unittest.TestCase):
             return set()
         return {p.name for p in packages.iterdir() if p.is_dir()}
 
-    def test_generated_current_reuses_stale_rebuilds_and_imported_warms(self) -> None:
+    def test_a_current_document_exports_from_its_store_package(self) -> None:
         entry = _write_model(self.root, size=6.0)
         build = self._run([entry.name], self.root)
         self.assertEqual(build.returncode, 0, build.stdout + build.stderr)
         step_file = self.root / "block.step"
         self.assertTrue(step_file.is_file(), "model script writes its STEP")
 
-        # CURRENT generated model: each door exports from the store package. No
-        # generator run, no extraction.
+        # The declared variants come from the sidecar the run wrote — the door
+        # imports no model module and reads no source.
         for fmt in ("stl", "glb", "3mf"):
-            current = self._export(fmt, "block.py")
-            self.assertIn("reusing current render package", current.stderr)
+            current = self._export(fmt, "block.step", "--force")
+            # Straight to the tessellator: the package is already keyed by these
+            # bytes, so there is nothing to run, load or extract.
+            self.assertIn(f"tessellate + write {fmt}", current.stderr)
             self.assertNotIn("run gen_step", current.stderr)
             self.assertNotIn("extract exact geometry", current.stderr)
+            self.assertNotIn("load STEP", current.stderr)
             self.assertTrue(step_file.with_suffix(f".{fmt}").is_file(), fmt)
-        stl_current = step_file.with_suffix(".stl").read_bytes()
 
-        # STALE generated model: the closure gate must reject the package and
-        # rebuild from source — one extraction, and the door writes only its own
-        # format (no .step, and the model stays stale for the next door).
-        _write_model(self.root, size=9.0)
+    def test_a_stale_document_teaches_the_run_instead_of_rebuilding(self) -> None:
+        entry = _write_model(self.root, size=6.0)
+        self.assertEqual(0, self._run([entry.name], self.root).returncode)
+        step_file = self.root / "block.step"
         step_before = step_file.read_bytes()
-        stale = self._export("stl", "block.py")
-        self.assertNotIn("reusing current render package", stale.stderr)
-        self.assertIn("run gen_step", stale.stderr)
-        self.assertEqual(stale.stderr.count("extract exact geometry started"), 1)
-        self.assertEqual(step_before, step_file.read_bytes(), "a mesh door writes no .step")
-        stl_stale = step_file.with_suffix(".stl").read_bytes()
-        self.assertNotEqual(stl_current, stl_stale, "stale export must re-run the generator")
+        stl_before = step_file.with_suffix(".stl").read_bytes()
 
-        # IMPORTED model with no package: the first export warms the shared
-        # store via the same build `cadgen step build` runs; the second resolves
-        # it without building.
+        _write_model(self.root, size=9.0)
+        stale = self._door("stl", "block.step")
+        self.assertEqual(1, stale.returncode)
+        self.assertIn("stale relative to its source", stale.stderr)
+        self.assertIn("python block.py", stale.stderr)
+        # Nothing was rebuilt, re-exported, or otherwise touched.
+        self.assertEqual(step_before, step_file.read_bytes())
+        self.assertEqual(stl_before, step_file.with_suffix(".stl").read_bytes())
+        self.assertNotIn("run gen_step", stale.stderr)
+
+    def test_a_bare_door_needs_declarations_in_the_sidecar(self) -> None:
+        # An imported document declares nothing, so there is no variant set to
+        # produce — and the answer is a teaching error, not a guessed sibling.
+        entry = _write_model(self.root, size=6.0)
+        self.assertEqual(0, self._run([entry.name], self.root).returncode)
         imported = self.root / "imported_block.step"
-        imported.write_bytes(step_file.read_bytes() + b"\n")
+        imported.write_bytes((self.root / "block.step").read_bytes() + b"\n")
+
+        bare = self._door("stl", "imported_block.step")
+        self.assertEqual(1, bare.returncode)
+        self.assertIn("declare @stl on the model and run python <script>", bare.stderr)
+        self.assertIn("explicit OUT", bare.stderr)
+
+    def test_an_imported_document_compiles_once_then_reuses(self) -> None:
+        entry = _write_model(self.root, size=6.0)
+        self.assertEqual(0, self._run([entry.name], self.root).returncode)
+        imported = self.root / "imported_block.step"
+        imported.write_bytes((self.root / "block.step").read_bytes() + b"\n")
+
         before = self._package_dirs()
-        self._export("glb", "imported_block.step")
-        self.assertTrue(imported.with_suffix(".glb").is_file())
+        self._export("glb", "imported_block.step", "out/imported.glb")
+        self.assertTrue((self.root / "out/imported.glb").is_file())
         after_first = self._package_dirs()
         self.assertEqual(len(after_first - before), 1, "one store package built by export")
-        again = self._export("stl", "imported_block.step")
+        again = self._export("stl", "imported_block.step", "out/imported.stl")
         self.assertEqual(self._package_dirs(), after_first, "second export builds nothing")
         self.assertNotIn("extract exact geometry", again.stderr)
 

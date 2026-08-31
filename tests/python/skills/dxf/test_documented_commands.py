@@ -264,18 +264,20 @@ class DocumentedCommandForms(_DrawingHarness):
         self.run_drawing("gasket.py", "-o", "out/custom.dxf")
         self.assertTrue((self.project / "out" / "custom.dxf").is_file())
 
-    def test_the_named_door_builds_the_same_file_as_the_script_door(self) -> None:
-        """`cadgen dxf build` and `python drawing.py` are one build, two doors.
+    def test_the_named_door_is_deleted_and_teaches_the_script_run(self) -> None:
+        """`cadgen dxf build` is gone: the .dxf IS the product.
 
-        Documented as identical, so the drawings they write must actually be
-        byte-identical — the property that would quietly break if either door
-        acquired its own serialization path.
+        A drawing has no derived state a door must materialize — the viewer
+        parses the file directly and snapshot meshes it on demand — so the one
+        door is running the script. The removed command teaches that rather
+        than reporting an unknown command.
         """
-        self.run_drawing("gasket.py")
-        by_script = (self.project / "gasket.dxf").read_bytes()
-        (self.project / "gasket.dxf").unlink()
-        self.run_drawing("-m", "cadgen.cli", "dxf", "build", "gasket.py")
-        self.assertEqual(by_script, (self.project / "gasket.dxf").read_bytes())
+        completed = subprocess.run(
+            [sys.executable, "-m", "cadgen.cli", "dxf", "build", "gasket.py"],
+            cwd=str(self.project), env=self.environment, capture_output=True, text=True, timeout=600,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertIn("python <drawing>.py", completed.stderr)
 
     def test_no_undocumented_or_missing_flags(self) -> None:
         """SKILL.md's flag list is what the parser accepts, exactly.

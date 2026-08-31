@@ -37,11 +37,11 @@ from cadgen._internal.cli_from_function import (
 
 # The manifest: format namespace -> exactly the verbs it exports.
 PUBLIC_SURFACE: dict[str, tuple[str, ...]] = {
-    "cadgen.step": ("build", "inspect", "snapshot"),
+    "cadgen.step": ("build", "compile", "inspect", "snapshot"),
     "cadgen.stl": ("build", "snapshot"),
     "cadgen.threemf": ("build", "snapshot"),
     "cadgen.glb": ("build", "snapshot"),
-    "cadgen.dxf": ("build", "snapshot"),
+    "cadgen.dxf": ("snapshot",),
     "cadgen.urdf": ("snapshot", "validate"),
     # An SRDF's geometry comes from the URDF beside it, so it has no snapshot
     # door of its own; `cadgen snapshot` still routes one by suffix.
@@ -58,10 +58,10 @@ DECORATOR_NAMESPACES = ("step", "dxf", "stl", "threemf", "glb")
 # possible here: the parser has no independent existence.
 MIRRORS: dict[str, tuple[str, str]] = {
     "step build": ("cadgen.step", "build"),
+    "step compile": ("cadgen.step", "compile"),
     "stl build": ("cadgen.stl", "build"),
     "3mf build": ("cadgen.threemf", "build"),
     "glb build": ("cadgen.glb", "build"),
-    "dxf build": ("cadgen.dxf", "build"),
     "sdf validate": ("cadgen.sdf", "validate"),
     "srdf validate": ("cadgen.srdf", "validate"),
     # Snapshot was the schema's LAST adapter. Its rich options are typed
@@ -204,13 +204,25 @@ class Manifest(unittest.TestCase):
         self.assertEqual({d.fmt for d in declared.mesh_exports}, {"stl"})
 
     def test_the_retired_commands_are_gone(self):
-        # No backwards compatibility: `cadgen import` folded into `step build`,
-        # and `cadgen step export` into the three per-format doors.
+        # No backwards compatibility: `cadgen import` folded into the STEP
+        # door, `cadgen step export` into the three per-format doors, and
+        # `cadgen dxf build` was deleted outright.
         self.assertNotIn("import", cli._COMMANDS)
         self.assertNotIn("step export", cli._COMMANDS)
-        for module in ("cadgen.cli.step_import", "cadgen.cli.step_export"):
+        self.assertNotIn("dxf build", cli._COMMANDS)
+        for module in ("cadgen.cli.step_import", "cadgen.cli.step_export", "cadgen.cli.dxf_build"):
             with self.subTest(module=module), self.assertRaises(ModuleNotFoundError):
                 importlib.import_module(module)
+
+    def test_a_deleted_command_teaches_rather_than_reporting_unknown(self):
+        # A hard cutover has to teach at the surface it removed: falling
+        # through to the command list would send a reader off to guess.
+        message = cli._RETIRED_COMMANDS["dxf build"]
+        self.assertIn("python <drawing>.py", message)
+        dxf = importlib.import_module("cadgen.dxf")
+        with self.assertRaises(AttributeError) as caught:
+            dxf.build  # noqa: B018 - the attribute access IS the assertion
+        self.assertIn("python <drawing>.py", str(caught.exception))
 
 
 class SignatureSync(unittest.TestCase):

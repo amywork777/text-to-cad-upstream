@@ -9,13 +9,21 @@ from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact
 
 
 class StepArtifactsTests(unittest.TestCase):
-    def test_existing_step_target_ignores_python_source_for_glb_regeneration(self) -> None:
+    def test_a_target_resolves_to_its_document_and_never_to_a_script(self) -> None:
+        # DOCUMENTS-ONLY (design/pose-animation-split.md, CLI/doors follow-on):
+        # the artifact resolver used to walk a target back to a `.py` generator
+        # and re-run it, which is how a render could contain a build. That
+        # layer is deleted — a spec is built from the document, full stop.
+        self.assertFalse(hasattr(step_artifacts, "_python_source_for_target"))
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             step_path = root / "part.step"
             source_path = root / "part.py"
             step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
+            source_path.write_text(
+                "from cadgen import step\n@step\ndef model():\n    return None\n",
+                encoding="utf-8",
+            )
 
             target = ResolvedStepTarget(
                 cad_path="part",
@@ -23,55 +31,21 @@ class StepArtifactsTests(unittest.TestCase):
                 source_path=source_path,
                 step_path=step_path,
             )
-            self.assertIsNone(step_artifacts._python_source_for_target(target))
-
-    def test_explicit_python_target_wins_over_same_stem_step_export(self) -> None:
-        # A `<name>.py` generator explicitly targeted by the caller keeps
-        # resolving to the generator even when its same-stem exported
-        # `<name>.step` exists beside it (entry-keyed coexistence).
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            step_path = root / "part.step"
-            source_path = root / "part.py"
-            step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
-
-            target = ResolvedStepTarget(
-                cad_path="part",
-                kind="part",
-                source_path=source_path,
-                step_path=step_path,
-                explicit_python=True,
+            spec = step_artifacts._entry_spec_for_target(
+                target, mesh_tolerance=None, mesh_angular_tolerance=None
             )
-            self.assertEqual(step_artifacts._python_source_for_target(target), source_path)
+            # Imported, even with a same-stem script sitting right beside it.
+            self.assertEqual(spec.source, "imported")
+            self.assertIsNone(spec.script_path)
+            self.assertEqual(spec.step_path, step_path)
 
-    def test_non_explicit_step_target_with_same_stem_export_stays_imported(self) -> None:
-        # Without an explicit .py target, an existing .step file keeps its
-        # documented direct-import semantics even when a generator exists.
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            root = Path(temporary_directory)
-            step_path = root / "part.step"
-            source_path = root / "part.py"
-            step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            source_path.write_text("def model():\n    return None\n", encoding="utf-8")
-
-            target = ResolvedStepTarget(
-                cad_path="part",
-                kind="part",
-                source_path=source_path,
-                step_path=step_path,
-            )
-            self.assertIsNone(step_artifacts._python_source_for_target(target))
-
-    def test_missing_logical_step_finds_step_py_convention_generator(self) -> None:
-        # The generator for `<name>.step` is `<name>.py` under the entry
-        # convention; the fallback must find it when no .step file exists.
+    def test_a_missing_document_is_an_error_not_a_generator_hunt(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             step_path = root / "part.step"
             generator_path = root / "part.py"
             generator_path.write_text(
-                "from cadgen import step\n@step\ndef model():\n    return {'shape': object()}\n",
+                "from cadgen import step\n@step\ndef model():\n    return None\n",
                 encoding="utf-8",
             )
 
@@ -81,9 +55,10 @@ class StepArtifactsTests(unittest.TestCase):
                 source_path=step_path,
                 step_path=step_path,
             )
-            # The sibling is accepted only because it DECLARES a model; a plain
-            # .py beside a missing artifact stays a non-source.
-            self.assertEqual(step_artifacts._python_source_for_target(target), generator_path)
+            with self.assertRaises(FileNotFoundError):
+                step_artifacts._entry_spec_for_target(
+                    target, mesh_tolerance=None, mesh_angular_tolerance=None
+                )
 
     def test_existing_step_spec_can_reuse_python_backed_glb_when_step_hash_matches(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
