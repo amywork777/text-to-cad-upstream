@@ -182,7 +182,6 @@ import {
   cadDirectoryStorageEventAction
 } from "@/workbench/storageEvents";
 import {
-  clampNumber,
   shallowObjectValuesEqual,
   toFiniteNumber
 } from "@/workbench/valueUtils";

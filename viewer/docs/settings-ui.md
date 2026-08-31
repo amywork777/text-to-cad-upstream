@@ -34,11 +34,13 @@ Tab body                    px-0, vertical stack of sections
 - Everyday settings stay visible. Progressive disclosure is allowed only when a
   gate switch turns a whole feature off (Floor, Grid, Environment, a light):
   the switch stays, the dependent rows unmount.
-- Split a tab by *what the controls act on*, not by what fits. The parameters
-  tab is `Module` (the enable switch), then `Animation` (playback: clip, play,
-  loop, time, speed) when the model has one, then `Parameters` (the model's own
-  inputs). Playback sits above the inputs because it is the thing you reach for
-  while watching, and it is absent for most models.
+- Split a tab by *what the controls act on*, not by what fits. Pose and
+  Animation are two tabs for exactly that reason: `Pose` is the enable switch,
+  a slider per kinematic DOF, and the model's named presets; `Animation` is the
+  transport (clip, play, restart, loop, time, speed). They act on independent
+  systems, so one tab carrying both would have read as one system with two
+  halves — and each is absent on its own terms, since a model may declare mates,
+  ship clips, both, or neither.
 
 ## Spacing and sizing tokens
 
@@ -234,19 +236,19 @@ one sanctioned label-above pattern; independent settings never use it.
   as the last row of the section it resets. Its section names the scope, so the
   label is just "Reset".
 - **One reset per tab.** Two buttons reading "Reset" in one tab is a bug even
-  when they act on different things. The parameters tab carries both a playback
-  restart and a parameter reset, so they are named for what they do: the
-  transport button is **Restart** (playback back to zero) and only the
-  parameter button is **Reset** (values back to defaults). Name the action;
-  never let two controls share a label they do not share a meaning with. The
-  reset must not be conditioned on a neighbouring feature either — parameters
-  stay resettable whether or not the model has an animation.
+  when they act on different things. Pose and Animation are separate tabs, and
+  each carries exactly one: **Reset** in Pose (DOFs back to their defaults) and
+  **Restart** in Animation (playback back to zero). They are named for what they
+  do rather than sharing a label they do not share a meaning with — which is why
+  the transport button is not a second "Reset" even though it now lives in a tab
+  of its own. Neither is conditioned on the other: a model with no clips still
+  resets its pose, and a model with no mates still restarts its clip.
 
 ## States
 
 - Empty / loading / info: one pattern — `text-[11px] text-muted-foreground`
   in the row gutter (`px-2`), sentence case ("No movable joints.",
-  "Loading STEP module...").
+  "Loading kinematics...").
 - Errors: same pattern in `text-destructive`.
 - Disabled controls keep their row; hide rows only behind a section gate
   switch. Disabled state is the control's own (`disabled`), no extra styling.
