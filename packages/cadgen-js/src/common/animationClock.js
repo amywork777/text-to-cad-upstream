@@ -1,4 +1,5 @@
-// Playback state for the Animation tab: which clip is active, where the clock
+// The animation TRANSPORT, shared by every client (viewer Animation tab,
+// the docs hero, any embed): which clip is active, where the clock
 // is, and how fast it runs. Choreography itself lives in the sidecar's copied
 // .anim.js text and is compiled by cadgen-js/common/animationRuntime; this module
 // owns only the transport around it.

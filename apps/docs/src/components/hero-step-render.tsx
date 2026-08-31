@@ -8,55 +8,40 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import {
-  CAD_SCENE_SCALE,
-  buildModel,
-} from "cadgen-js/common/cadScene.js";
+  animationClipDuration,
+  findAnimationClip,
+  firstAnimationClipId,
+} from "cadgen-js/common/animationClock.js";
+import { compileAnimationClips } from "cadgen-js/common/animationRuntime.js";
+import { CAD_SCENE_SCALE, buildModel } from "cadgen-js/common/cadScene.js";
+import { loadAnimationSource } from "cadgen-js/common/kinematicsModule.js";
 import { renderModel } from "cadgen-js/common/renderModel.js";
-import { loadSource } from "cadgen-js/common/source.js";
 import {
-  normalizeParameterValue,
-  normalizeStepModuleParameterValues as normalizeStepParameterValues,
-} from "cadgen-js/common/stepModule.js";
+  loadSource,
+  packageSourceFromBaseUrl,
+  stepParameterRuntime,
+} from "cadgen-js/common/source.js";
 import { cloneThemeSettings } from "cadgen-js/common/themeSettings.js";
 
-const HERO_STEP_URL = "/hero/planetary_gear_assembly.step.glb";
-const HERO_STEP_PARAMETER_URL = "/hero/planetary_gear_assembly.step.js";
+// The hero renders the planetary gear STEP the way every cadgen-js client
+// renders a STEP: the model's render package (exact surfaces, tessellated in
+// the browser) plus its sidecar (kinematics for the mate graph, copied
+// animation clips for choreography). No GLB export, no site-local gear math —
+// the same clip the viewer's Animation tab plays drives this scene.
+const HERO_PACKAGE_BASE_URL = "/hero/planetary";
+const HERO_SIDECAR_URL = "/hero/planetary_gear_assembly.step.json";
 const HERO_STEP_CAD_PATH = "models/step/assemblies/planetary_gear_assembly.step";
 const HERO_STEP_DEMO_URL =
   "https://cad.fun/?file=fun%2Fplanetary_gear_assembly.step";
 const HERO_STEP_LABEL = "PLANETARY_GEAR_ASSEMBLY.STEP";
-const GEAR_MESH_ANIMATION_SPEED = 0.14;
-const HERO_STEP_PARAMETER_VALUES = {
-  drive: 0,
-  explode: 0,
-  highlightMeshing: false,
-  orbitGuides: false,
-  ringVisible: true,
-  viewMode: "mesh",
-};
+const HERO_CLIP_ID = "meshCycle";
+// The mesh cycle covers 1260 degrees of drive in one nominal pass; slowed so
+// the hero turns at a display pace rather than a demo pace.
+const HERO_CLIP_SPEED = 0.14;
 
 type PreviewScheme = "dark" | "light";
-type StepParameterDefinition = NonNullable<
-  Awaited<ReturnType<typeof loadSource>>["stepParameterSource"]
->["definition"];
-type StepParameterAnimation = StepParameterDefinition["animations"][number];
-type StepParameterRuntime = {
-  animation: StepParameterAnimation | null;
-  animationElapsedSec: number;
-  animationState: {
-    activeId: string;
-    duration: number;
-    elapsedSec: number;
-    loop: boolean;
-    playing: boolean;
-    speed: number;
-  };
-  cadPath: string;
-  definition: StepParameterDefinition;
-  parameterValues: Record<string, unknown>;
-  selectorRuntime: null;
-  sourceUrl: string;
-};
+type HeroModel = ReturnType<typeof buildModel>;
+type HeroClip = ReturnType<typeof findAnimationClip>;
 
 const STEP_PREVIEW_PALETTES = {
   dark: {
@@ -159,93 +144,6 @@ function buildWorkbenchTheme(scheme: PreviewScheme) {
   };
 }
 
-function createHeroStepParameterRuntime(
-  definition: StepParameterDefinition,
-  parameterUrl: string
-): StepParameterRuntime {
-  const animation =
-    definition.animations.find((item) => item.id === "meshCycle") ??
-    definition.animations[0] ??
-    null;
-  const duration = Math.max(Number(animation?.duration) || 6, 0.001);
-
-  return {
-    animation,
-    animationElapsedSec: 0,
-    animationState: {
-      activeId: animation?.id ?? "",
-      duration,
-      elapsedSec: 0,
-      loop: animation?.loop !== false,
-      playing: false,
-      speed: GEAR_MESH_ANIMATION_SPEED,
-    },
-    cadPath: HERO_STEP_CAD_PATH,
-    definition,
-    parameterValues: normalizeStepParameterValues(
-      definition,
-      HERO_STEP_PARAMETER_VALUES
-    ),
-    selectorRuntime: null,
-    sourceUrl: parameterUrl,
-  };
-}
-
-function advanceStepParameterRuntime(
-  runtime: StepParameterRuntime,
-  deltaSeconds: number
-) {
-  const animation = runtime.animation;
-  if (!animation?.update) {
-    return;
-  }
-
-  const duration = Math.max(Number(animation.duration) || 6, 0.001);
-  const nextElapsed =
-    (runtime.animationElapsedSec +
-      Math.max(deltaSeconds, 0) * GEAR_MESH_ANIMATION_SPEED) %
-    duration;
-  const progress = nextElapsed / duration;
-  const currentValues = normalizeStepParameterValues(
-    runtime.definition,
-    runtime.parameterValues
-  );
-  const nextValues = { ...currentValues };
-
-  const set = (parameterId: string, value: unknown) => {
-    const id = String(parameterId || "").trim();
-    const parameter = runtime.definition.parameterMap?.[id];
-    if (!parameter) {
-      return;
-    }
-    nextValues[id] = normalizeParameterValue(parameter, value);
-  };
-
-  animation.update({
-    cycle: nextElapsed / duration,
-    duration,
-    elapsed: nextElapsed,
-    elapsedSec: nextElapsed,
-    loop: animation.loop !== false,
-    params: currentValues,
-    progress,
-    set,
-  });
-
-  runtime.animationElapsedSec = nextElapsed;
-  // The hero drives sidecar parameter values directly; keep time.playing false so
-  // sidecar-only inspection highlights do not override native STEP colors.
-  runtime.animationState = {
-    activeId: animation.id,
-    duration,
-    elapsedSec: nextElapsed,
-    loop: animation.loop !== false,
-    playing: false,
-    speed: GEAR_MESH_ANIMATION_SPEED,
-  };
-  runtime.parameterValues = nextValues;
-}
-
 export function HeroStepRender() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -278,9 +176,11 @@ export function HeroStepRender() {
     }
 
     let disposed = false;
-    let cadModel: ReturnType<typeof buildModel> | null = null;
+    let cadModel: HeroModel | null = null;
     let viewport: ReturnType<typeof renderModel> | null = null;
-    let stepParameterRuntime: StepParameterRuntime | null = null;
+    let clip: HeroClip = null;
+    let clipDuration = 0;
+    let clipElapsedSec = 0;
     const dragState = {
       active: false,
       lastX: 0,
@@ -294,9 +194,13 @@ export function HeroStepRender() {
       if (disposed || !cadModel) {
         return;
       }
-      if (stepParameterRuntime) {
-        advanceStepParameterRuntime(stepParameterRuntime, deltaSeconds);
-        cadModel.update({ stepParameters: stepParameterRuntime });
+      if (clip) {
+        clipElapsedSec =
+          (clipElapsedSec + Math.max(deltaSeconds, 0) * HERO_CLIP_SPEED) %
+          clipDuration;
+        cadModel.update({
+          callbacks: { animation: { clip, elapsedSec: clipElapsedSec } },
+        });
       }
 
       if (!dragState.active) {
@@ -345,29 +249,41 @@ export function HeroStepRender() {
     const load = async () => {
       try {
         setStatus("loading step");
-        const parameterUrl = `${HERO_STEP_PARAMETER_URL}?v=${Date.now()}`;
+        // The render package descriptor and the sidecar's animation text load
+        // in parallel; the clips compile through the same runtime the viewer
+        // uses (kinematics and animation stay independent end to end).
+        const [descriptor, animationSource] = await Promise.all([
+          fetch(`${HERO_PACKAGE_BASE_URL}/assembly.json`, {
+            cache: "no-store",
+          }).then((response) => {
+            if (!response.ok) {
+              throw new Error(`hero package descriptor: HTTP ${response.status}`);
+            }
+            return response.json();
+          }),
+          loadAnimationSource(HERO_SIDECAR_URL),
+        ]);
         const source = await loadSource({
-          kind: "step",
-          glbUrl: HERO_STEP_URL,
-          stepParameterUrl: parameterUrl,
+          ...packageSourceFromBaseUrl(HERO_PACKAGE_BASE_URL, descriptor),
+          stepParameterUrl: HERO_SIDECAR_URL,
           cadPath: HERO_STEP_CAD_PATH,
-          stepParameters: HERO_STEP_PARAMETER_VALUES,
         });
+        const clips = await compileAnimationClips(animationSource);
         if (disposed) {
           return;
         }
-        if (!source.stepParameterSource?.definition) {
-          throw new Error("missing STEP parameter sidecar");
+        clip =
+          findAnimationClip(clips, HERO_CLIP_ID) ??
+          findAnimationClip(clips, firstAnimationClipId(clips));
+        if (!clip) {
+          throw new Error("hero sidecar declares no animation clips");
         }
-        stepParameterRuntime = createHeroStepParameterRuntime(
-          source.stepParameterSource.definition,
-          parameterUrl
-        );
+        clipDuration = animationClipDuration(clip);
 
         cadModel = buildModel(THREE, source, {
           theme: buildWorkbenchTheme(scheme),
           displayMode: "solid",
-          stepParameters: stepParameterRuntime,
+          stepParameters: stepParameterRuntime(source.stepParameterSource),
           scale: CAD_SCENE_SCALE.CAD,
           selection: {
             showEdges: true,

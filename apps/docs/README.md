@@ -23,9 +23,12 @@ Deployment is the `Deploy Docs` workflow only, and it deploys a SOURCE ref
 `packages/`, which this app builds against. The Vercel project's Root
 Directory setting (in Vercel, not this repo) must point at `apps/docs`.
 
-Hero STEP assets under `public/hero/` are LFS-tracked; the check script
-(`scripts/check-hero-step-assets.mjs`) pins their topology schema against
-cadgen-js so a schema bump cannot silently break the hero render.
+Hero STEP assets under `public/hero/` are the model's render package +
+sidecar, committed as PLAIN files (never LFS — Vercel serves them statically
+with no backend). Refresh them with `scripts/sync-hero-step-assets.mjs`; the
+check script (`scripts/check-hero-step-assets.mjs`) pins the surf container
+and sidecar contracts against cadgen-js so a schema bump cannot silently
+break the hero render.
 
 ## The shape of the app
 

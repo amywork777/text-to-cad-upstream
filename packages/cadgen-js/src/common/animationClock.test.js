@@ -14,7 +14,7 @@ import {
   hasAnimationClips,
   restoreAnimationState,
   shouldPublishAnimationFrame
-} from "./animationPlayback.js";
+} from "./animationClock.js";
 
 const CLIPS = {
   meshCycle: { id: "meshCycle", label: "Mesh cycle", duration: 6, loop: true, update() {} },

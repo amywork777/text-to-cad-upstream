@@ -197,7 +197,7 @@ import {
   firstAnimationClipId,
   restoreAnimationState,
   shouldPublishAnimationFrame
-} from "@/workbench/animationPlayback";
+} from "cadgen-js/common/animationClock";
 import {
   getAnimationClock,
   resetAnimationClock,

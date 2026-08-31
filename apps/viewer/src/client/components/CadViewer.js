@@ -202,16 +202,12 @@ import {
   resolveStepModuleFeatures
 } from "cadgen-js/common/stepModule";
 import {
-  applyStepModuleEffectsToRecords,
   buildStepModuleContext,
   createStepModuleEffectsApi,
   displayTransformForPart,
   resetStepModuleRecordEffects
 } from "cadgen-js/common/stepModuleEffects";
-import {
-  applyAnimationFrameToEffects,
-  evaluateAnimationClip
-} from "cadgen-js/common/animationRuntime";
+import { applySceneState } from "cadgen-js/common/applySceneState";
 
 const IDLE_PIXEL_RATIO_CAP = 2;
 const INTERACTION_PIXEL_RATIO_CAP = 1.25;
@@ -4324,74 +4320,38 @@ const CadViewer = forwardRef(function CadViewer({
       return;
     }
 
+    // ONE effects pass, shared with the headless twin (applySceneState):
+    // kinematics update, then the clip merged OVER it — the two systems meet
+    // in the effect records and nowhere else.
     let transformDetected = false;
-    const features = resolveStepModuleFeatures(definition, {
-      meshData,
-      selectorRuntime: selectorRuntimeRef.current
-    });
-    const effectsByPartId = new Map();
-    const effects = createStepModuleEffectsApi(runtime.THREE, {
-      meshData,
-      features,
+    const sceneState = applySceneState(runtime.THREE, {
       runtime,
-      effectsByPartId,
+      meshData,
+      stepParameterRuntime,
+      animation: animationClip
+        ? { clip: animationClip, elapsedSec: Number(stepAnimationRuntime?.elapsedSec) || 0 }
+        : null,
+      selectorRuntime: selectorRuntimeRef.current,
       onTransformEffect: () => {
         transformDetected = true;
-      }
-    });
-    const ctx = buildStepModuleContext({
-      runtime,
-      stepModuleRuntime: stepParameterRuntime,
-      features,
-      effects,
+      },
+      onError: ({ phase, error }) => {
+        const title = phase === "animation" ? "Animation update failed" : "Pose update failed";
+        viewerAlertChangeRef.current?.({
+          severity: "warning",
+          compact: true,
+          title,
+          message: error instanceof Error ? error.message : String(error)
+        });
+        console.error(title, error);
+      },
       cleanup: (cleanup) => {
         if (typeof cleanup === "function") {
           stepModuleCleanupRef.current.push(cleanup);
         }
       }
     });
-
-    try {
-      module?.update?.(ctx);
-      module?.render?.(ctx);
-    } catch (error) {
-      viewerAlertChangeRef.current?.({
-        severity: "warning",
-        compact: true,
-        title: "Pose update failed",
-        message: error instanceof Error ? error.message : String(error)
-      });
-      console.error("Pose update failed", error);
-    }
-
-    // Animation composes OVER pose: the clip is evaluated against the live mesh
-    // at the current time and its matrices premultiply whatever the mate graph
-    // already wrote. Neither system knows about the other; they meet here, in
-    // the effect records, and nowhere else. A clip is a pure function of t, so
-    // this is the whole of "apply" — there is no animation state to carry.
-    if (animationClip) {
-      try {
-        const frame = evaluateAnimationClip(
-          runtime.THREE,
-          meshData,
-          animationClip,
-          Number(stepAnimationRuntime?.elapsedSec) || 0
-        );
-        if (applyAnimationFrameToEffects(runtime.THREE, effectsByPartId, frame) > 0) {
-          transformDetected = true;
-        }
-      } catch (error) {
-        viewerAlertChangeRef.current?.({
-          severity: "warning",
-          compact: true,
-          title: "Animation update failed",
-          message: error instanceof Error ? error.message : String(error)
-        });
-        console.error("Animation update failed", error);
-      }
-    }
-
-    applyStepModuleEffectsToRecords(runtime.THREE, runtime.displayRecords, effectsByPartId);
+    void sceneState;
     const useRecordTopologyEdgeTransforms = explodedViewActive || shouldUseRecordTopologyEdgeTransforms({
       transformDetected,
       topologyDisplayEdgesVisible,

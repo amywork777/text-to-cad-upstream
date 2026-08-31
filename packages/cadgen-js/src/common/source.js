@@ -354,6 +354,32 @@ export function stepParameterRuntime(stepParameterSource) {
   };
 }
 
+// A render package served off a plain static host (a docs site, a CDN): no
+// backend resolves component URLs there, but the descriptor already names
+// every component's surf path relative to the package directory. This maps
+// that layout to a loadSource package input. The caller fetches
+// `${baseUrl}/assembly.json` itself (it may want to cache or inline it) and
+// spreads extra fields (stepParameterUrl, cadPath) into the returned object.
+export function packageSourceFromBaseUrl(baseUrl, descriptor) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  if (!base) {
+    throw new Error("packageSourceFromBaseUrl requires the package directory URL");
+  }
+  const components = isObject(descriptor?.components) ? descriptor.components : null;
+  if (!components) {
+    throw new Error(`Render package descriptor at ${base}/assembly.json has no components`);
+  }
+  const componentUrls = {};
+  for (const [cid, entry] of Object.entries(components)) {
+    const surf = String(entry?.surf || "").trim();
+    if (!surf) {
+      throw new Error(`Render package component ${cid} declares no surf path`);
+    }
+    componentUrls[cid] = `${base}/${surf}`;
+  }
+  return { kind: "step", package: { descriptor, componentUrls } };
+}
+
 export async function loadSource(input, options = {}) {
   const inputObject = isObject(input) ? input : {};
   if (Object.prototype.hasOwnProperty.call(inputObject, "params")) {

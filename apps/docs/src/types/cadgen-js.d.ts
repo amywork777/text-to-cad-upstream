@@ -1,5 +1,42 @@
+// Hand-written declarations for the cadgen-js surface the docs app consumes
+// (cadgen-js ships untyped JS). Declare exactly what is imported — a member
+// missing here is a member the hero stopped using or never had.
+
+declare module "cadgen-js/common/animationClock.js" {
+  export type AnimationClip = {
+    id: string;
+    label: string;
+    duration: number;
+    loop: boolean;
+    update: (t: number, m: unknown) => void;
+  };
+
+  export function animationClipDuration(clip: AnimationClip | null): number;
+
+  export function findAnimationClip(
+    clips: Record<string, AnimationClip>,
+    clipId: string
+  ): AnimationClip | null;
+
+  export function firstAnimationClipId(
+    clips: Record<string, AnimationClip>
+  ): string;
+}
+
+declare module "cadgen-js/common/animationRuntime.js" {
+  import type { AnimationClip } from "cadgen-js/common/animationClock.js";
+
+  export function compileAnimationClips(
+    moduleSource: string
+  ): Promise<Record<string, AnimationClip>>;
+}
+
+declare module "cadgen-js/common/kinematicsModule.js" {
+  export function loadAnimationSource(sidecarUrl: string): Promise<string>;
+}
+
 declare module "cadgen-js/common/cadScene.js" {
-  import type { Group, Vector3 } from "three";
+  import type { Group } from "three";
 
   type CadBounds = {
     min: number[];
@@ -29,18 +66,6 @@ declare module "cadgen-js/common/cadScene.js" {
     source: unknown,
     settings?: Record<string, unknown>
   ): CadSceneApi;
-
-  export function fitCameraToModel(
-    THREE: unknown,
-    camera: unknown,
-    bounds: CadBounds,
-    options?: Record<string, unknown>
-  ): {
-    center: Vector3;
-    radius: number;
-    halfHeight: number;
-    distance: number;
-  };
 }
 
 declare module "cadgen-js/common/renderModel.js" {
@@ -68,15 +93,22 @@ declare module "cadgen-js/common/source.js" {
   export type RenderSource = {
     kind: string;
     meshData: unknown;
-    stepParameterSource: {
-      definition: import("cadgen-js/common/stepModule.js").StepModuleDefinition;
-    } | null;
+    stepParameterSource: unknown;
   };
 
   export function loadSource(
     input: unknown,
     options?: Record<string, unknown>
   ): Promise<RenderSource>;
+
+  export function packageSourceFromBaseUrl(
+    baseUrl: string,
+    descriptor: unknown
+  ): { kind: string; package: Record<string, unknown> };
+
+  export function stepParameterRuntime(
+    stepParameterSource: unknown
+  ): Record<string, unknown> | null;
 }
 
 declare module "cadgen-js/common/themeSettings.js" {
@@ -86,48 +118,4 @@ declare module "cadgen-js/common/themeSettings.js" {
   > & {
     materials?: Record<string, unknown>;
   };
-}
-
-declare module "cadgen-js/common/stepModule.js" {
-  export type StepModuleParameter = {
-    id: string;
-    type: string;
-    defaultValue: unknown;
-  };
-
-  export type StepModuleAnimation = {
-    id: string;
-    duration: number;
-    loop: boolean;
-    update?: (context: {
-      cycle: number;
-      duration: number;
-      elapsed: number;
-      elapsedSec: number;
-      loop: boolean;
-      params: Record<string, unknown>;
-      progress: number;
-      set: (parameterId: string, value: unknown) => void;
-    }) => void;
-  };
-
-  export type StepModuleDefinition = {
-    animations: StepModuleAnimation[];
-    parameterMap: Record<string, StepModuleParameter>;
-  };
-
-  export function loadStepModuleDefinition(
-    url: string,
-    options?: Record<string, unknown>
-  ): Promise<StepModuleDefinition>;
-
-  export function normalizeParameterValue(
-    definition: StepModuleParameter,
-    value: unknown
-  ): unknown;
-
-  export function normalizeStepModuleParameterValues(
-    definition: StepModuleDefinition,
-    values?: Record<string, unknown>
-  ): Record<string, unknown>;
 }

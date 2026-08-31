@@ -4,7 +4,7 @@ import {
   ANIMATION_SPEED_MAX,
   ANIMATION_SPEED_MIN,
   REST_CLIP_ID
-} from "@/workbench/animationPlayback";
+} from "cadgen-js/common/animationClock";
 import { useAnimationClock } from "@/workbench/animationClockStore";
 import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";

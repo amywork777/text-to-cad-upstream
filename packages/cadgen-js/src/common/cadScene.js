@@ -24,6 +24,7 @@ import {
   createStepModuleEffectsApi,
   displayTransformForPart
 } from "./stepModuleEffects.js";
+import { applySceneState } from "./applySceneState.js";
 import {
   applyDisplayRecordTransform,
   composeDisplayRecordEffectMatrix
@@ -1536,51 +1537,31 @@ function cleanupParameterRuntime(runtime, parameters, callbacks = {}) {
 }
 
 function applyParameters(THREE, runtime, parameters, meshData, callbacks = {}) {
-  const definition = parameters?.definition || null;
-  const module = definition?.module || null;
-  if (!definition || !module) {
-    resetParameterEffects(runtime.displayRecords);
-    for (const record of runtime.displayRecords) {
-      applyDisplayRecordTransform(THREE, record);
-    }
-    return runtime.baseBounds;
-  }
-
-  const effectsByPartId = new Map();
-  const features = resolveStepModuleFeatures(definition, {
-    meshData,
-    selectorRuntime: parameters?.selectorRuntime || null
-  });
-  const effects = createStepModuleEffectsApi(THREE, {
-    meshData,
-    features,
+  const { applied } = applySceneState(THREE, {
     runtime,
-    effectsByPartId
-  });
-  const ctx = buildStepModuleContext({
-    runtime,
-    stepModuleRuntime: parameters,
-    features,
-    effects,
+    meshData,
+    stepParameterRuntime: parameters,
+    animation: callbacks.animation || null,
+    onError: ({ phase, error }) => {
+      callbacks.onWarning?.({
+        title: phase === "animation" ? "Animation update failed" : "STEP parameter update failed",
+        message: error instanceof Error ? error.message : String(error),
+        error
+      });
+    },
     cleanup: (cleanup) => {
       if (typeof cleanup === "function") {
         runtime.cleanups.push(cleanup);
       }
     }
   });
-
-  try {
-    module.update?.(ctx);
-    module.render?.(ctx);
-  } catch (error) {
-    callbacks.onWarning?.({
-      title: "STEP parameter update failed",
-      message: error instanceof Error ? error.message : String(error),
-      error
-    });
+  if (!applied) {
+    resetParameterEffects(runtime.displayRecords);
+    for (const record of runtime.displayRecords) {
+      applyDisplayRecordTransform(THREE, record);
+    }
+    return runtime.baseBounds;
   }
-
-  applyStepModuleEffectsToRecords(THREE, runtime.displayRecords, effectsByPartId);
   for (const record of runtime.displayRecords) {
     applyDisplayRecordTransform(THREE, record);
   }
