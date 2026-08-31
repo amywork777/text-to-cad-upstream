@@ -27,9 +27,17 @@ from tests.python.support.paths import add_repo_path
 add_repo_path("packages/cadgen/src")
 
 
-def _build_assembly():
+def _build_assembly(*, transparent_part: bool = False):
     """A minimal shape that hits the nondeterministic path: nested group
-    products whose parts carry per-occurrence colors — several MDGPRs."""
+    products whose parts carry per-occurrence colors — several MDGPRs.
+
+    ``transparent_part`` gives ONE part an alpha color. That is not a variation
+    for its own sake: an alpha color makes OCCT append
+    SURFACE_STYLE_RENDERING_WITH_PROPERTIES + SURFACE_STYLE_TRANSPARENT to the
+    style tail, and the canonicalization only reorders a tail it fully
+    recognizes — so a family list missing those two types silently disables
+    canonicalization for every model with a transparent part, which is exactly
+    what happened."""
     from build123d import Color, Compound
     from build123d.topology import Solid
 
@@ -40,7 +48,10 @@ def _build_assembly():
             part = Solid.make_box(4 + group_index, 3 + part_index, 2)
             part = part.moved(part.location)  # fresh wrapper, shared TShape semantics
             part.label = f"part_{group_index}_{part_index}"
-            part.color = Color(0.2 + 0.3 * group_index, 0.9 - 0.4 * part_index, 0.5)
+            if transparent_part and group_index == 0 and part_index == 0:
+                part.color = Color(0.2, 0.9, 0.5, 0.4)
+            else:
+                part.color = Color(0.2 + 0.3 * group_index, 0.9 - 0.4 * part_index, 0.5)
             parts.append(part)
         group = Compound(children=parts)
         group.label = f"group_{group_index}"
@@ -64,6 +75,36 @@ class StepWriteDeterminismTest(unittest.TestCase):
                 len(digests), 1,
                 f"identical models wrote {len(digests)} distinct byte streams: {sorted(digests)}",
             )
+
+    def test_transparent_part_still_writes_identical_bytes(self) -> None:
+        """One alpha color must not switch canonicalization back off."""
+        from cadgen.step_export import export_build123d_step_file
+
+        with tempfile.TemporaryDirectory(prefix="step-determinism-alpha-") as tmp:
+            digests = set()
+            for run in range(4):
+                out = Path(tmp) / f"run{run}.step"
+                export_build123d_step_file(
+                    _build_assembly(transparent_part=True), out
+                )
+                digests.add(hashlib.sha256(out.read_bytes()).hexdigest())
+            self.assertEqual(
+                len(digests), 1,
+                "a model with one transparent part wrote "
+                f"{len(digests)} distinct byte streams: {sorted(digests)}",
+            )
+
+    def test_transparent_part_emits_the_rendering_tail(self) -> None:
+        """Guard the premise of the test above: if OCCT ever stops emitting
+        these entities the alpha case would pass for the wrong reason."""
+        from cadgen.step_export import export_build123d_step_file
+
+        with tempfile.TemporaryDirectory(prefix="step-determinism-alpha-") as tmp:
+            out = Path(tmp) / "alpha.step"
+            export_build123d_step_file(_build_assembly(transparent_part=True), out)
+            text = out.read_text(errors="replace")
+            self.assertIn("SURFACE_STYLE_RENDERING_WITH_PROPERTIES(", text)
+            self.assertIn("SURFACE_STYLE_TRANSPARENT(", text)
 
     def test_canonicalization_is_a_pure_reorder(self) -> None:
         """The canonical file must carry the same entity population — sorted

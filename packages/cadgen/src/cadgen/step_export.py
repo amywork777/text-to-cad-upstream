@@ -311,6 +311,13 @@ _STYLE_TAIL_FAMILY = frozenset({
     "StepVisual_SurfaceStyleUsage",
     "StepVisual_SurfaceSideStyle",
     "StepVisual_SurfaceStyleFillArea",
+    # Emitted only for a part whose colour carries alpha: the transparency rides
+    # a rendering entity hanging off the same SurfaceSideStyle as the fill area.
+    # Without these two the tail-family check below rejected every model with a
+    # single transparent part and left it writing address-ordered bytes.
+    "StepVisual_SurfaceStyleRendering",
+    "StepVisual_SurfaceStyleRenderingWithProperties",
+    "StepVisual_SurfaceStyleTransparent",
     "StepVisual_FillAreaStyle",
     "StepVisual_FillAreaStyleColour",
     "StepVisual_ColourRgb",
@@ -363,7 +370,18 @@ def _style_entity_children(ent: Any) -> list:
         add_array(ent.FillStyles())
     elif name == "StepVisual_FillAreaStyleColour":
         add(ent.FillColour())
-    # Colours and predefined fonts are leaves.
+    elif name in (
+        "StepVisual_SurfaceStyleRendering",
+        "StepVisual_SurfaceStyleRenderingWithProperties",
+    ):
+        # SURFACE_STYLE_RENDERING[_WITH_PROPERTIES](rendering_method, surface_colour
+        # [, properties]): the method is an enum, not an entity, so the DFS starts at
+        # the colour. `properties` is a select array whose members are the
+        # SurfaceStyleTransparent leaves.
+        add(ent.SurfaceColour())
+        if name == "StepVisual_SurfaceStyleRenderingWithProperties":
+            add_array(ent.Properties())
+    # Colours, transparency values, and predefined fonts are leaves.
     return out
 
 
@@ -498,10 +516,12 @@ def write_xcaf_doc_step_file(
     # process that has exported before writes different ids than a cold one
     # for the same model. Renumber them 1..N in model-entity order (which is
     # deterministic transfer order) so identical models write identical bytes.
-    _renumber_nauo_ids(writer.Writer().Model())
+    with (logger.timed("renumber NAUO ids") if logger is not None else nullcontext()):
+        _renumber_nauo_ids(writer.Writer().Model())
     # Same contract, other direction: OCCT appends multi-product style graphs
     # in heap-address order. Reorder them into content order.
-    _canonicalize_presentation_styles(writer.Writer().Model())
+    with (logger.timed("canonicalize style tail") if logger is not None else nullcontext()):
+        _canonicalize_presentation_styles(writer.Writer().Model())
 
     # The header must be edited AFTER Transfer: Transfer rebuilds the writer's
     # model, discarding anything set on the pre-transfer header.
@@ -565,7 +585,8 @@ def export_build123d_step_file(
     The write-only counterpart to :func:`export_build123d_step_scene`, used by the
     on-demand ``--step`` export: the build already holds the in-memory scene/compound,
     so STEP export only needs to serialize the shape, not rebuild a scene."""
-    doc = _create_bin_xcaf_doc(to_export)
+    with (logger.timed("build XCAF document") if logger is not None else nullcontext()):
+        doc = _create_bin_xcaf_doc(to_export)
     return write_xcaf_doc_step_file(
         doc,
         output_path,
