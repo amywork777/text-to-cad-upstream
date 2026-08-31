@@ -38,7 +38,7 @@ export function normalizeStepParameterRenderValues(definition, rawParams = {}) {
   for (const key of RETIRED_ANIMATION_KEYS) {
     if (Object.hasOwn(rawParams, key)) {
       throw new Error(
-        `stepParameters.${key} was removed: animated parameter sweeps no longer render; snapshot writes a single PNG at the given values`
+        `kinematics.${key} was removed: animated parameter sweeps no longer render; snapshot writes a single PNG at the given values`
       );
     }
   }
@@ -46,7 +46,7 @@ export function normalizeStepParameterRenderValues(definition, rawParams = {}) {
   if (!isObject(rawValues)) {
     throw new Error("STEP parameters.values must be a JSON object");
   }
-  assertKnownParameterIds(definition, rawValues, "stepParameters");
+  assertKnownParameterIds(definition, rawValues, "kinematics");
   return {
     values: normalizeStepModuleParameterValues(definition, rawValues)
   };

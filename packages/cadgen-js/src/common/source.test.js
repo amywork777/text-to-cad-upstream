@@ -97,7 +97,18 @@ test("loadSource rejects the removed shared params field", async () => {
       meshData: meshData(),
       params: { drive: 90 }
     }),
-    /use stepParameters/
+    /use kinematics/
+  );
+});
+
+test("loadSource rejects the retired stepParameters spelling", async () => {
+  await assert.rejects(
+    () => loadSource({
+      kind: "step",
+      meshData: meshData(),
+      stepParameters: { drive: 90 }
+    }),
+    /stepParameters was renamed to kinematics/
   );
 });
 
@@ -106,9 +117,9 @@ test("loadSource rejects STEP parameter options for non-STEP sources", async () 
     () => loadSource({
       kind: "glb",
       meshData: meshData(),
-      stepParameters: { drive: 90 }
+      kinematics: { drive: 90 }
     }),
-    /stepParameters is supported only for STEP\/STP sources/
+    /kinematics is supported only for STEP\/STP sources/
   );
   await assert.rejects(
     () => loadSource({
@@ -153,11 +164,11 @@ function stubSidecarFetch(t, sidecarUrl, sidecar = HINGE_SIDECAR) {
   });
 }
 
-function poseJob(stepParameters, sidecarUrl) {
+function poseJob(kinematics, sidecarUrl) {
   return {
     kind: "step",
     meshData: meshData(),
-    stepParameters,
+    kinematics,
     resolved: { kind: "step", stepParameterUrl: sidecarUrl, inputPath: "/models/hinge.step" }
   };
 }
@@ -333,7 +344,7 @@ test("loadSource accepts sidecar kinematics for STEP sources", async () => {
       meshData: meshData(),
       cadPath: "part.step",
       stepParameterUrl: "/__render_asset/pkg/model.step.json",
-      stepParameters: { drive: 90 }
+      kinematics: { drive: 90 }
     });
 
     assert.equal(source.kind, "step");

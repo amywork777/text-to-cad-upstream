@@ -1076,7 +1076,7 @@ class SnapshotCliTests(unittest.TestCase):
     def test_render_output_rejects_unknown_keys(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "unknown key\\(s\\): stepParameters"):
+            with self.assertRaisesRegex(SnapshotError, "unknown key\\(s\\): kinematics"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
@@ -1084,7 +1084,7 @@ class SnapshotCliTests(unittest.TestCase):
                             {
                                 "path": "tmp/iso.png",
                                 "camera": "iso",
-                                "stepParameters": {"width": 5},
+                                "kinematics": {"width": 5},
                             }
                         ],
                     },
@@ -1104,14 +1104,14 @@ class SnapshotCliTests(unittest.TestCase):
                     cwd=root,
                 )
 
-    def test_render_job_rejects_step_parameters_for_mesh_input(self) -> None:
+    def test_render_job_rejects_kinematics_for_mesh_input(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "stepParameters require a STEP model"):
+            with self.assertRaisesRegex(SnapshotError, "kinematics values require a STEP model"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
-                        "stepParameters": {"width": 5},
+                        "kinematics": {"width": 5},
                         "outputs": [{"path": "tmp/iso.png", "camera": "iso"}],
                     },
                     cwd=root,
@@ -1264,7 +1264,7 @@ class SnapshotCliTests(unittest.TestCase):
                     cwd=root,
                 )
 
-    def test_render_job_rejects_animated_step_parameters(self) -> None:
+    def test_render_job_rejects_animated_kinematics(self) -> None:
         # Animated --params sweeps are deleted with GIF export: every retired
         # envelope key is a teaching error, not a silently static render.
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1281,11 +1281,11 @@ class SnapshotCliTests(unittest.TestCase):
             original_ensure = snapshot_main.ensure_step_topology_artifact
             try:
                 snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
-                with self.assertRaisesRegex(SnapshotError, "stepParameters.animate was removed"):
+                with self.assertRaisesRegex(SnapshotError, "kinematics.animate was removed"):
                     resolve_render_job_packet(
                         {
                             "input": "models/part.step",
-                            "stepParameters": {"animate": {"width": {"from": 1, "to": 2}}},
+                            "kinematics": {"animate": {"width": {"from": 1, "to": 2}}},
                             "outputs": [{"path": "tmp/sweep.png"}],
                         },
                         cwd=root,
@@ -1356,7 +1356,7 @@ class SnapshotCliTests(unittest.TestCase):
                 resolve_render_job_packet({**base, "selection": {"focus": ["#o1"]}}, cwd=root)
             # A robot IS parametric, just not by STEP sidecar — the error says which key to use.
             with self.assertRaisesRegex(SnapshotError, "pose a URDF robot with jointValues"):
-                resolve_render_job_packet({**base, "stepParameters": {"width": 5}}, cwd=root)
+                resolve_render_job_packet({**base, "kinematics": {"width": 5}}, cwd=root)
             with self.assertRaisesRegex(SnapshotError, "cannot be exploded"):
                 resolve_render_job_packet(
                     {**base, "display": {"exploded": {"enabled": True, "amount": 1}}}, cwd=root
@@ -1473,6 +1473,74 @@ class SnapshotCliTests(unittest.TestCase):
 
         selection = packet["jobs"][0]["selection"]
         self.assertEqual(selection["hide"], ["o1.2.1"])
+
+    def _group_selection(self, selection: dict) -> dict:
+        """Resolve `selection` against a LEAF-ONLY occurrence index.
+
+        That is what a real assembly package produces: only the instance tree's leaves own
+        geometry, so only leaves become selector-index rows (cadgen.assembly_lookup). The
+        subassembly nodes `o1` and `o1.4` are carried by the ids alone.
+        """
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory).resolve()
+            models = root / "models"
+            models.mkdir()
+            (models / "assembly.step").write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
+            write_package(models / "assembly.step", entry_kind="assembly")
+
+            original_ensure = snapshot_main.ensure_step_topology_artifact
+            try:
+                snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: _selector_artifact(
+                    "o1.1.1",
+                    "o1.1.2",
+                    "o1.4.1",
+                    "o1.4.2",
+                    "o1.4.10",
+                )
+                packet = resolve_render_job_packet(
+                    {
+                        "input": "models/assembly.step",
+                        "selection": selection,
+                        "outputs": [{"path": "tmp/iso.png", "camera": "iso"}],
+                    },
+                    cwd=root,
+                )
+            finally:
+                snapshot_main.ensure_step_topology_artifact = original_ensure
+        return packet["jobs"][0]["selection"]
+
+    def test_focus_expands_a_group_ref_to_its_subtree(self) -> None:
+        """A subassembly ref covers every rendered part under it.
+
+        `#o1.4` names an instance-tree NODE, which kinematics mates address and pose
+        without complaint; it carried no selector-index row of its own and so was refused
+        as "unknown", by an error that claimed to support subassemblies. Ordered by
+        numeric path, so o1.4.10 follows o1.4.2 rather than o1.4.1.
+        """
+        selection = self._group_selection({"focus": ["#o1.4"]})
+        self.assertEqual(selection["focus"], ["o1.4.1", "o1.4.2", "o1.4.10"])
+
+    def test_hide_expands_a_group_ref_the_same_way(self) -> None:
+        selection = self._group_selection({"hide": ["#o1.4"]})
+        self.assertEqual(selection["hide"], ["o1.4.1", "o1.4.2", "o1.4.10"])
+
+    def test_the_root_group_covers_the_whole_model(self) -> None:
+        selection = self._group_selection({"focus": ["#o1"]})
+        self.assertEqual(
+            selection["focus"], ["o1.1.1", "o1.1.2", "o1.4.1", "o1.4.2", "o1.4.10"]
+        )
+
+    def test_a_group_and_one_of_its_parts_do_not_duplicate(self) -> None:
+        selection = self._group_selection({"focus": ["#o1.4", "#o1.4.2"]})
+        self.assertEqual(selection["focus"], ["o1.4.1", "o1.4.2", "o1.4.10"])
+
+    def test_an_unknown_group_ref_names_what_does_exist(self) -> None:
+        """Expansion must not turn every typo into a silent no-op: a ref with nothing
+        under it still fails, and the error walks up to the deepest node that IS there."""
+        with self.assertRaisesRegex(SnapshotError, r"o1\.9.*o1 does exist, and holds: o1\.1, o1\.4"):
+            self._group_selection({"focus": ["#o1.9"]})
+        with self.assertRaisesRegex(SnapshotError, r"o1\.4\.99.*o1\.4 does exist, and holds: "):
+            self._group_selection({"focus": ["#o1.4.99"]})
 
     def test_render_job_rejects_face_focus_refs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -1852,8 +1920,9 @@ class JobDisplayResolutionTests(unittest.TestCase):
 
 
 class StepPoseParameterTests(unittest.TestCase):
-    """stepParameters drive the model's declarative pose block — the ONE
-    parameter transport. The retired sidecar paths (--params-path,
+    """The job's `kinematics` key drives the model's declarative kinematics
+    block — the ONE parameter transport, spelled the same as the flag and the
+    sidecar section. The retired spellings (`stepParameters`, --params-path,
     stepParametersPath, descriptor paramsPath) are hard teaching errors."""
 
     POSE = {
@@ -1898,18 +1967,18 @@ class StepPoseParameterTests(unittest.TestCase):
 
         A name cannot be resolved here — the declared names live in the model's
         kinematics block, which only the renderer has loaded — so it travels
-        through as a string and `stepParameters` carries either form."""
+        through as a string and the job's `kinematics` key carries either form."""
         values = job_from_argv(
             ["models/part.step", "tmp/o.png", "--kinematics", '{"jaw": 40}']
         )
-        self.assertEqual({"jaw": 40}, values["stepParameters"])
+        self.assertEqual({"jaw": 40}, values["kinematics"])
 
         named = job_from_argv(["models/part.step", "tmp/o.png", "--kinematics", "open"])
-        self.assertEqual("open", named["stepParameters"])
+        self.assertEqual("open", named["kinematics"])
 
     def test_pose_parameters_resolve_the_sidecar_url(self) -> None:
         self._step()
-        packet = self._resolve(self._job(stepParameters={"stroke": 1}))
+        packet = self._resolve(self._job(kinematics={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
         self.assertIn(".step.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
@@ -1920,18 +1989,27 @@ class StepPoseParameterTests(unittest.TestCase):
         step_path = self._step(pose=False)
         write_package(step_path, animation={"clips": "export const clips = {};"})
         with self.assertRaisesRegex(SnapshotError, "declares no kinematics"):
-            self._resolve(self._job(stepParameters={"stroke": 1}))
+            self._resolve(self._job(kinematics={"stroke": 1}))
 
     def test_parameters_without_kinematics_teach_the_migration(self) -> None:
         self._step(pose=False)
         with self.assertRaisesRegex(SnapshotError, "declares no kinematics"):
-            self._resolve(self._job(stepParameters={"stroke": 1}))
+            self._resolve(self._job(kinematics={"stroke": 1}))
 
     def test_retired_job_keys_are_rejected_by_name(self) -> None:
         self._step()
         for key in ("paramsPath", "stepParametersPath"):
             with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
                 self._resolve(self._job(**{key: "models/part.step.js"}))
+
+    def test_the_retired_step_parameters_key_teaches_the_rename(self) -> None:
+        """No aliasing. A packet written against the old vocabulary must say so
+        out loud, or two spellings of one key stay alive in every job file."""
+        self._step()
+        with self.assertRaisesRegex(
+            SnapshotError, "stepParameters was renamed to kinematics"
+        ):
+            self._resolve(self._job(stepParameters={"stroke": 1}))
 
 
 class ExactOutputContractTests(unittest.TestCase):

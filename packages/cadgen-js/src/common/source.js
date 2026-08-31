@@ -284,11 +284,11 @@ async function loadMeshDataFromUrl(url, kind) {
 // spelling, and the CLI cannot tell them apart on its own: the declared preset
 // names live in the model's kinematics block, which is only loaded here. So the
 // name travels as a bare string and is resolved against the definition.
-function resolvePoseValues(definition, stepParameters) {
-  if (typeof stepParameters !== "string") {
-    return stepParameters;
+function resolvePoseValues(definition, kinematics) {
+  if (typeof kinematics !== "string") {
+    return kinematics;
   }
-  const name = stepParameters.trim();
+  const name = kinematics.trim();
   const poses = isObject(definition?.manifest?.poses) ? definition.manifest.poses : {};
   if (isObject(poses[name])) {
     return poses[name];
@@ -303,32 +303,32 @@ function resolvePoseValues(definition, stepParameters) {
 
 async function loadStepParameters({
   kind,
-  stepParameters,
+  kinematics,
   stepParameterUrl,
   cadPath,
   selectorRuntime
 }) {
-  assertStepOnlyOption(kind, stepParameters, "stepParameters");
+  assertStepOnlyOption(kind, kinematics, "kinematics");
   assertStepOnlyOption(kind, stepParameterUrl, "stepParameterUrl");
-  const explicit = hasStepParameterRenderValues(stepParameters);
+  const explicit = hasStepParameterRenderValues(kinematics);
   if (!stepParameterUrl) {
     if (!explicit) {
       return null;
     }
-    throw new Error("STEP render parameters require resolved.stepParameterUrl");
+    throw new Error("kinematics values require resolved.stepParameterUrl");
   }
   // stepParameterUrl is the model SIDECAR url (the .step.json); its
   // kinematics section is the one articulation mechanism.
   const definition = await loadKinematicsModuleDefinition(stepParameterUrl, { cadPath });
   if (!definition) {
     if (explicit) {
-      throw new Error("model declares no kinematics, so stepParameters have nothing to drive");
+      throw new Error("model declares no kinematics, so the kinematics values have nothing to drive");
     }
     return null;
   }
   const renderParameters = normalizeStepParameterRenderValues(
     definition,
-    explicit ? resolvePoseValues(definition, stepParameters) : {}
+    explicit ? resolvePoseValues(definition, kinematics) : {}
   );
   return {
     definition,
@@ -383,7 +383,14 @@ export function packageSourceFromBaseUrl(baseUrl, descriptor) {
 export async function loadSource(input, options = {}) {
   const inputObject = isObject(input) ? input : {};
   if (Object.prototype.hasOwnProperty.call(inputObject, "params")) {
-    throw new Error("Render source jobs use stepParameters; params is no longer a shared render API field");
+    throw new Error("Render source jobs use kinematics; params is no longer a shared render API field");
+  }
+  // The pose input is `kinematics` — the same word the CLI flag, the model's `kinematics=`
+  // declaration and its sidecar section use. It was `stepParameters`, which also names the
+  // compiled runtime object that buildModel takes, so one spelling meant two things
+  // depending on which side of loadSource you were standing on. Named, never aliased.
+  if (Object.prototype.hasOwnProperty.call(inputObject, "stepParameters")) {
+    throw new Error("stepParameters was renamed to kinematics: pass a pose preset name or {dof: value}");
   }
   const resolved = isObject(inputObject.resolved) ? inputObject.resolved : {};
   const explicitMeshData = inputObject.meshData || options.meshData || (
@@ -393,13 +400,13 @@ export async function loadSource(input, options = {}) {
     typeof input === "string" ? sourceKindFromUrl(input) : ""
   );
   const kind = normalizeKind(rawKind);
-  const stepParameters = inputObject.stepParameters ?? options.stepParameters;
+  const kinematics = inputObject.kinematics ?? options.kinematics;
   const stepParameterUrl = String(
     inputObject.stepParameterUrl || resolved.stepParameterUrl || options.stepParameterUrl || ""
   ).trim();
 
   const cadPath = String(inputObject.cadPath || resolved.inputPath || options.cadPath || "").trim();
-  assertStepOnlyOption(kind, stepParameters, "stepParameters");
+  assertStepOnlyOption(kind, kinematics, "kinematics");
   assertStepOnlyOption(kind, stepParameterUrl, "stepParameterUrl");
 
   let meshData = explicitMeshData;
@@ -423,7 +430,7 @@ export async function loadSource(input, options = {}) {
       // runtime (feature refs prefix-match meshData part occurrence ids).
       stepParameterSource: await loadStepParameters({
         kind: "step",
-        stepParameters,
+        kinematics,
         stepParameterUrl,
         cadPath,
         selectorRuntime: packageSelectorRuntime
@@ -489,7 +496,7 @@ export async function loadSource(input, options = {}) {
     );
     const stepParameterSource = await loadStepParameters({
       kind,
-      stepParameters,
+      kinematics,
       stepParameterUrl,
       cadPath,
       selectorRuntime

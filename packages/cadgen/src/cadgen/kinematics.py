@@ -400,6 +400,10 @@ def kinematics_dof_ids(block: Mapping[str, Any]) -> tuple[str, ...]:
     for mate in block.get("mates", ()):
         if mate.get("kind") == "cylindrical":
             ids.extend(f"{mate['name']}.{dof}" for dof in _CYLINDRICAL_DOFS)
+        elif mate.get("kind") == "fastened":
+            # A rigid attachment has ZERO degrees of freedom: no slider, no
+            # pose key, nothing a value could drive.
+            continue
         else:
             ids.append(mate["name"])
     ids.extend(coupling["name"] for coupling in block.get("couplings", ()))

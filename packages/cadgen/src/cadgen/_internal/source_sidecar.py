@@ -94,6 +94,13 @@ def write_source_sidecar(step_path: Path | str, payload: Mapping[str, Any]) -> N
     target.parent.mkdir(parents=True, exist_ok=True)
     body = dict(payload)
     body.setdefault("schemaVersion", SOURCE_SIDECAR_SCHEMA_VERSION)
+    # A rewrite that changes nothing but the timestamp is pure churn — for
+    # committed sidecars (imported/ projects) it dirties git on every no-op.
+    existing = read_source_sidecar(step_path)
+    if existing is not None:
+        stripped = {k: v for k, v in existing.items() if k != "generatedAt"}
+        if stripped == {k: v for k, v in body.items() if k != "generatedAt"}:
+            return
     temp = target.with_name(f".{target.name}{temp_suffix()}")
     temp.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
     replace_atomic(temp, target)
@@ -195,6 +202,15 @@ def _provenance_record_path(step_path: Path | str) -> Path:
 def write_source_provenance_record(step_path: Path | str, payload: Mapping[str, Any]) -> None:
     body = {key: payload[key] for key in _PROVENANCE_FIELDS if key in payload}
     body.setdefault("schemaVersion", SOURCE_SIDECAR_SCHEMA_VERSION)
+    try:
+        existing = json.loads(_provenance_record_path(step_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        existing = None
+    if isinstance(existing, dict):
+        if {k: v for k, v in existing.items() if k != "generatedAt"} == {
+            k: v for k, v in body.items() if k != "generatedAt"
+        }:
+            return
     target = _provenance_record_path(step_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     temp = target.with_name(f".{target.name}{temp_suffix()}")

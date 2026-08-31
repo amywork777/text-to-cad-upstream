@@ -72,8 +72,6 @@ test's fixture), not an output.
 | `compact_humanoid.py` | `STEP/compact_humanoid.step` | Original 28-DOF compact humanoid research platform concept |
 | `cutaway_turbofan_engine.py` | `STEP/cutaway_turbofan_engine.step` | Labeled multi-body cutaway turbofan display model |
 | `flying_car.py` | `STEP/flying_car.step` | Four-rotor flying car concept |
-| `gd01_mecha_concept.py` | `STEP/gd01_mecha_concept.step` | GD01-inspired manned transformable mecha concept |
-| `lunar_mass_driver.py` | `STEP/lunar_mass_driver.step` | SpaceX-inspired lunar mass driver launch complex - speculative concept |
 | `lunar_rover_corner_assembly.py` | `STEP/lunar_rover_corner_assembly.step` | Lunar rover corner module: wheel, hub motor, suspension |
 | `mars_rover_concept.py` | `STEP/mars_rover_concept.step` | Mars rover concept on terrain, mated + animated |
 | `mechanical_iris_aperture.py` | `STEP/mechanical_iris_aperture.step` | Labeled mechanical iris aperture assembly |

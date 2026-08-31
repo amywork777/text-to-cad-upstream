@@ -8,6 +8,7 @@ is intentionally simple so failures point at the tooling, not the fixture.
 | Script                     | Artifact                        | Description                                                              |
 |----------------------------|---------------------------------|--------------------------------------------------------------------------|
 | `angled_tab.py`            | `DXF/angled_tab.dxf`            | Plate with a corner gusset tab on a **45° bend line**                     |
+| `cabinet_panel_drawing.py` | `DXF/cabinet_panel_drawing.dxf` | Workshop **drawing**: three views, engraved dimension callouts, title block |
 | `clamp_plate.py`           | `DXF/clamp_plate.dxf`           | Cut profile projected from 3D topology (`lib/clamp_plate_profile.py`)     |
 | `gasket_plate.py`          | `DXF/gasket_plate.dxf`          | Rounded gasket, bolt holes, centre cutout, engraved crosshair             |
 | `l_bracket_flat.py`        | `DXF/l_bracket_flat.dxf`        | Sheet-metal flat pattern with a single bend line                          |
@@ -28,6 +29,21 @@ Shared code lives in `src/lib/` and is never a model:
   profile is projected from live geometry rather than read back from a STEP
   artifact this project wrote (which the `$dxf` skill forbids — the freshness
   gate could never say "current").
+
+## Why the cabinet panel drawing exists
+
+`cabinet_panel_drawing.py` is the only model here that is a **drawing document**
+rather than a cut layout: three views (front elevation, plan, section A-A), the
+eleven measurements a cabinetmaker needs, and a title block. It was a committed
+baked file until its information was re-expressed in what `@dxf` actually emits —
+geometry on layers that carry intent. The views and dowel holes are `CUT`;
+everything annotative is `ENGRAVE`, so the dimension VALUES are `bd.Text`
+outlines and the witness, leader, centre and shelf lines are open geometry, which
+an engrave-intent layer allows. The DXF constructs the retired ezdxf generator
+used — `DIMENSION` entities, ISO 128 `CENTER`/`HIDDEN` linetypes, a non-plotting
+layer, `TEXT` entities — have no `@dxf` equivalent and are not reproduced; the
+numbers they carried are. That generator is in git history at
+`models/drawings/dxf/cabinet_panel_drawing.dxf.py`.
 
 ## Why each bend fixture exists
 
@@ -51,10 +67,10 @@ Raw DXF files no script regenerates, committed via Git LFS and never rebuilt.
 They cover R12 (AC1009) and R2013+ (AC1027) flavors and a spread of entity
 types.
 
-**Every file here encloses at least one closed area**, except the dimensioned
-drawings noted below. That is the selection rule, and it exists because the
-viewer renders a DXF by extruding its closed cut contours into a 3D flat
-pattern — a drawing with no area has nothing to extrude and nothing to show.
+**Every file here encloses at least one closed area.** That is the selection
+rule, and it exists because the viewer renders a DXF by extruding its closed cut
+contours into a 3D flat pattern — a drawing with no area has nothing to extrude
+and nothing to show.
 
 Several of these deliberately mix closed cut profiles with open annotation
 (dimension extension lines, stray arcs), because real drawings do — layer
@@ -107,18 +123,11 @@ Authored in-repo (committed because no script here can rebuild them):
   too small. Its LWPOLYLINEs omit the `AcDbPolyline` subclass marker, so
   ezdxf's strict reader refuses it while cadgen's own parser accepts it — which
   is itself the point of keeping it.
-- `cabinet_panel_drawing.dxf` — a workshop DRAWING rather than a cut layout
-  (issue #246): plan view, front elevation, a section, eleven DIMENSION
-  entities, ISO 128 `CENTER`/`HIDDEN` linetypes, a non-plotting CONSTRUCTION
-  layer, and a TEXT title block. It is committed rather than generated because
-  **`@dxf` cannot express any of that**: the contract is build123d geometry in,
-  entities out, with no dimensions, linetypes, plot flags or TEXT entities. So
-  a validator must not demand closed cut profiles here (`drawing_checks`
-  classifies it as a dimensioned drawing and skips closure), and the Viewer
-  must render it as lines rather than extruding a prism out of contours that
-  enclose nothing. This is also the folder's only remaining DXF `TEXT` entity
-  fixture. Its retired ezdxf generator is in git history at
-  `models/drawings/dxf/cabinet_panel_drawing.dxf.py`.
+`DIMENSION`-entity coverage lives in `alu_extrusion_profile.dxf`. DXF `TEXT` and
+`MTEXT` entities are covered by unit fixtures in
+`packages/cadgen-js/src/lib/dxf/parseDxf.test.js`, not by a file here — the
+cabinet panel drawing that used to hold that coverage is now generated, as
+`src/cabinet_panel_drawing.py`.
 
 Validate any file here post-hoc with the drawing checks (there is no
 `--validate` flag; a clean drawing reports no findings):

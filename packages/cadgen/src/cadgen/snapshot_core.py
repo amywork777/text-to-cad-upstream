@@ -75,9 +75,13 @@ SUPPORTED_JOB_KEYS = frozenset(
         "render",
         "camera",
         "selection",
-        "stepParameters",
+        # A STEP model's pose: a declared preset name, or {dof: value}. Named for the
+        # thing it drives (the model's kinematics= declaration) and spelled the same as
+        # the --kinematics flag and the sidecar section. It was "stepParameters" until
+        # the rename, and RETIRED_JOB_KEYS teaches that.
+        "kinematics",
         "stepParametersPath",
-        # A robot's pose. The STEP analogue is stepParameters; a robot is posed by joint
+        # A robot's pose. The STEP analogue is kinematics; a robot is posed by joint
         # angle, so it gets its own key rather than overloading one that means a sidecar.
         "jointValues",
         "sizeProfile",
@@ -90,6 +94,17 @@ SUPPORTED_JOB_KEYS = frozenset(
     }
 )
 SELECTION_SHAPED_JOB_KEYS = ("hide", "focus", "refs")
+# Job keys that WERE the schema and are not any more. Named individually rather than folded
+# into the generic "unknown key" list because the generic message tells a caller holding a
+# working recipe only that their key is gone, not what replaced it. No aliasing: the old key
+# is an error, and the error is the migration note.
+RETIRED_JOB_KEYS = {
+    "stepParameters": (
+        "stepParameters was renamed to kinematics: pose values are declared under "
+        '"kinematics" (a preset name, or {dof: value}), matching --kinematics and the '
+        "model's kinematics= declaration"
+    ),
+}
 SUPPORTED_OUTPUT_KEYS = frozenset(
     {
         "path",
@@ -754,7 +769,7 @@ def normalize_common_job(
         "render": normalized_render,
         "outputs": normalized_outputs,
     }
-def has_step_parameter_render_values(value: object) -> bool:
+def has_kinematics_render_values(value: object) -> bool:
     return value is not None
 def selection_value_list(value: object) -> list[str]:
     if isinstance(value, list):
@@ -781,7 +796,7 @@ def positive_integer(value: object, label: str) -> int:
     if parsed <= 0:
         raise SnapshotError(f"{label} must be a positive integer")
     return parsed
-def reject_animated_step_parameters(value: object) -> None:
+def reject_animated_kinematics(value: object) -> None:
     """Animated --params sweeps are deleted (with GIF export): fail loudly.
 
     Snapshot renders one PNG at the given values; motion review lives in the
@@ -792,7 +807,7 @@ def reject_animated_step_parameters(value: object) -> None:
     for key in ("animate", "fps", "durationSeconds", "duration", "loop"):
         if key in value:
             raise SnapshotError(
-                f"stepParameters.{key} was removed: animated parameter sweeps no "
+                f"kinematics.{key} was removed: animated parameter sweeps no "
                 "longer render; snapshot writes a single PNG at the given values"
             )
 
@@ -821,10 +836,10 @@ def resolve_mesh_render_job(
             f"selection focus/hide/refs require STEP topology; {label} mesh inputs have no "
             "part/subassembly selectors"
         )
-    # stepParameters drive a STEP parameter sidecar module.
-    if has_step_parameter_render_values(job.get("stepParameters")):
+    # kinematics values drive the model's declared kinematics block.
+    if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
-            f"stepParameters require a STEP model; {label} mesh inputs are not parametric"
+            f"kinematics values require a STEP model; {label} mesh inputs are not parametric"
         )
     if job.get("stepParametersPath") is not None:
         raise SnapshotError(

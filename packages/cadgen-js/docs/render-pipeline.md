@@ -29,7 +29,7 @@ resolution, Playwright routing, and writing returned outputs to disk.
 ```js
 import {
   loadSource,
-  stepParameterFrameRuntime
+  stepParameterRuntime
 } from "cadgen-js/common/source.js";
 ```
 
@@ -63,16 +63,18 @@ Accepted input fields:
   the docs hero renderer) render one source per page and need nothing.
 - `selectorRuntime` and `displayEdgeRuntime`: preloaded runtimes when a caller
   already owns sidecar loading.
-- `stepParameters`: raw STEP render values or animation envelope.
-- `stepParameterUrl` or `resolved.stepParameterUrl`: `.step.js`/`.stp.js`
-  parameter sidecar URL.
+- `kinematics`: pose values for the model's kinematics — a declared preset name,
+  or `{dof: value}`. Same spelling as the `--kinematics` flag, the snapshot job
+  key and the sidecar section.
+- `stepParameterUrl` or `resolved.stepParameterUrl`: model sidecar
+  (`.step.json`) URL, whose `kinematics` section is compiled here.
 
 STEP-only options are rejected for non-STEP sources. The old shared `params`
-field is rejected; use `stepParameters`.
+field is rejected, and so is the retired `stepParameters` spelling; use
+`kinematics`.
 
-Use `stepParameterFrameRuntime(stepParameterSource, frameIndex)` to turn the
-loaded STEP parameter source into the runtime object accepted by `buildModel`
-for a still or animation frame.
+Use `stepParameterRuntime(stepParameterSource)` to turn the loaded parameter
+source into the runtime object `buildModel` accepts.
 
 ### `common/cadScene.js`
 
@@ -115,8 +117,8 @@ Common settings:
   filter rendered parts before records are built. Viewer-only fields such as
   `selectedPartIds`, `hiddenPartIds`, and `showEdges` affect visual state.
 - `clip`: normalized clip-plane settings.
-- `stepParameters`: STEP parameter runtime object, usually from
-  `stepParameterFrameRuntime()`.
+- `stepParameters`: compiled kinematics runtime object, from
+  `stepParameterRuntime()`.
 - `parameterSetup`: set `false` to skip sidecar setup lifecycle calls.
 - `renderPartsIndividually`: build per-part records instead of a whole mesh.
 - `edgeRendering`: declarative edge rendering configuration.
@@ -254,40 +256,27 @@ bundle this entrypoint into cadgen's packaged runtime (`cadgen/_runtime/browser`
 `renderMeshJob(meshData, job)` is a compatibility wrapper that builds a context,
 builds a model, renders/captures it, and disposes owned resources.
 
-## STEP Parameters
+## Kinematics
 
-Shared render APIs use the name `stepParameters`.
+Two names, two things, and they are not interchangeable:
 
-Raw render values can be direct parameter values:
+* `kinematics` is the POSE INPUT — what `loadSource()` and the snapshot job
+  packet take. A declared preset name, or direct DOF values:
 
-```json
-{
-  "drive": 180,
-  "ringVisible": false
-}
-```
+  ```json
+  { "drive": 180, "ringVisible": false }
+  ```
 
-Or an animation envelope:
+  Animation envelopes (`animate`, `fps`, `durationSeconds`, `duration`, `loop`)
+  are retired and throw: a still renders one frame at the given values.
 
-```json
-{
-  "values": {
-    "ringVisible": true
-  },
-  "animate": {
-    "drive": { "from": 0, "to": 1260 }
-  },
-  "durationSeconds": 6,
-  "fps": 18,
-  "loop": true
-}
-```
+* `stepParameters` is the compiled RUNTIME OBJECT that `buildModel()` takes,
+  produced by `stepParameterRuntime(source.stepParameterSource)`.
 
-`common/stepParameters.js` validates these values against the loaded STEP
-parameter sidecar schema, normalizes defaults, and computes per-frame values.
-`loadSource()` uses it to populate `source.stepParameterSource`; callers can
-then use `stepParameterFrameRuntime()` when passing parameters into
-`buildModel()`.
+`common/stepParameters.js` validates the pose values against the loaded
+definition and normalizes defaults.
+`loadSource()` uses it to populate `source.stepParameterSource`; callers then
+pass `stepParameterRuntime()` into `buildModel()`.
 
 ## Examples
 
@@ -295,7 +284,7 @@ Interactive viewer/docs usage:
 
 ```js
 import * as THREE from "three";
-import { loadSource, stepParameterFrameRuntime } from "cadgen-js/common/source.js";
+import { loadSource, stepParameterRuntime } from "cadgen-js/common/source.js";
 import { buildModel } from "cadgen-js/common/cadScene.js";
 import { renderModel } from "cadgen-js/common/renderModel.js";
 
@@ -304,13 +293,13 @@ const source = await loadSource({
   glbUrl: "/models/.part.step.glb",
   stepParameterUrl: "/models/.part.step.js",
   cadPath: "models/part.step",
-  stepParameters: { drive: 180 }
+  kinematics: { drive: 180 }
 });
 
 const model = buildModel(THREE, source, {
   theme,
   displayMode: "solid",
-  stepParameters: stepParameterFrameRuntime(source.stepParameterSource, 0)
+  stepParameters: stepParameterRuntime(source.stepParameterSource)
 });
 
 const viewport = renderModel(THREE, model, {

@@ -66,6 +66,7 @@ from cadgen.snapshot_core import (
     PRESENTATION_RENDER_WIDTH,
     RENDER_BROWSER_STARTUP_TIMEOUT_MS,
     RouteFileError,
+    RETIRED_JOB_KEYS,
     SELECTION_SHAPED_JOB_KEYS,
     SETTINGS_KEY_HOMES,
     SIMPLE_RENDER_HEIGHT,
@@ -101,14 +102,14 @@ from cadgen.snapshot_core import (
     render_resolved_job_packet,
     render_snapshot,
     resolve_mesh_render_job,
-    has_step_parameter_render_values,
+    has_kinematics_render_values,
     resolve_output_size,
     selection_filter_values,
     selection_value_list,
     resolve_snapshot_route_file,
     route_file,
     snapshot_timestamp,
-    reject_animated_step_parameters,
+    reject_animated_kinematics,
     validate_direct_settings_payload,
     validate_display_settings_values,
     with_snapshot_timeout,
@@ -170,7 +171,7 @@ def parse_params_option(raw_params: object) -> dict[str, object] | str:
     a second flag: text that opens with ``{`` is inline JSON, anything else is
     the name of a pose the model DECLARES. Resolving that name needs the
     kinematics declaration, which only the renderer has loaded, so the name
-    travels through unresolved and `stepParameters` carries either shape.
+    travels through unresolved and the job's `kinematics` key carries either shape.
     """
     if is_plain_object(raw_params):
         return dict(raw_params)
@@ -247,7 +248,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
     if options.theme_specified:
         next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
     if options.params_specified:
-        next_job["stepParameters"] = parse_params_option(options.params)
+        next_job["kinematics"] = parse_params_option(options.params)
     if options.joint_values_specified:
         next_job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.display_specified:
@@ -321,7 +322,7 @@ def load_job_from_options(
     if options.display_specified:
         job["display"] = load_display_option(options.display, cwd=resolved_cwd)
     if options.params_specified:
-        job["stepParameters"] = parse_params_option(options.params)
+        job["kinematics"] = parse_params_option(options.params)
     if options.joint_values_specified:
         job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.debug:
@@ -451,11 +452,122 @@ def artifact_selector_index(artifact: StepTopologyArtifact | None) -> lookup.Sel
     return index_with_assembly_occurrences(index, artifact)
 
 
-def validate_occurrence_selector(selector: str, *, selector_index: lookup.SelectorIndex | None, source_label: str) -> None:
+# How many sibling refs an "unknown selector" error names before it stops listing. A
+# 160-part assembly's child list is not a hint, it is a wall of text.
+OCCURRENCE_NEAR_MISS_LIMIT = 12
+
+
+def occurrence_sort_key(occurrence_id: str) -> tuple[int, ...]:
+    """Order occurrence ids by their numeric PATH, so o1.1.10 follows o1.1.2.
+
+    Mirrors ``label_refs._occurrence_sort_key``; these lists are user-facing, and
+    lexicographic order reads as arbitrary to anyone holding the instance tree.
+    """
+    body = str(occurrence_id or "").lstrip("oO")
+    parts: list[int] = []
+    for chunk in body.split("."):
+        try:
+            parts.append(int(chunk))
+        except ValueError:
+            return (1 << 30,)
+    return tuple(parts)
+
+
+def occurrence_group_ids(selector_index: lookup.SelectorIndex) -> set[str]:
+    """Every instance-tree node that is NOT itself a rendered occurrence.
+
+    Derived from the leaf ids rather than read out of ``assembly.json``: an occurrence id
+    IS its path through the tree, so the strict prefixes of a leaf are exactly its
+    ancestors. That keeps this in step with how the runtime resolves a group — by id
+    prefix, in kinematicsModule.js and cadScene.js alike — instead of introducing a third
+    opinion about what the tree contains.
+    """
+    leaves = set(selector_index.occurrence_by_id)
+    groups: set[str] = set()
+    for occurrence_id in leaves:
+        parts = str(occurrence_id).split(".")
+        for depth in range(1, len(parts)):
+            groups.add(".".join(parts[:depth]))
+    return groups - leaves
+
+
+def occurrence_near_miss_hint(selector: str, selector_index: lookup.SelectorIndex) -> str:
+    """What DOES exist near a ref that does not.
+
+    A bare "unknown selector: o1.4" leaves the caller guessing whether the document has no
+    such branch or whether they mistyped a depth. This walks up to the deepest ancestor of
+    the ref that the document really has and names that node's children.
+    """
+    known = set(selector_index.occurrence_by_id) | occurrence_group_ids(selector_index)
+    if not known:
+        return "this document declares no part/subassembly occurrences"
+    parts = str(selector).split(".")
+    ancestor = ""
+    for depth in range(len(parts) - 1, 0, -1):
+        candidate = ".".join(parts[:depth])
+        if candidate in known:
+            ancestor = candidate
+            break
+    scope = f"{ancestor}." if ancestor else ""
+    child_depth = len(ancestor.split(".")) + 1 if ancestor else 1
+    siblings = sorted(
+        {
+            occurrence_id
+            for occurrence_id in known
+            if occurrence_id.startswith(scope) and len(occurrence_id.split(".")) == child_depth
+        },
+        key=occurrence_sort_key,
+    )
+    if not siblings:
+        return "this document declares no part/subassembly occurrences"
+    listed = ", ".join(siblings[:OCCURRENCE_NEAR_MISS_LIMIT])
+    if len(siblings) > OCCURRENCE_NEAR_MISS_LIMIT:
+        listed += f", ... ({len(siblings)} total)"
+    if ancestor:
+        return f"{ancestor} does exist, and holds: {listed}"
+    return f"known occurrence refs start at: {listed}"
+
+
+def expand_occurrence_selector(
+    selector: str, *, selector_index: lookup.SelectorIndex | None, source_label: str
+) -> list[str]:
+    """The rendered occurrences a selection ref covers.
+
+    ONE document, TWO occurrence namespaces (see :mod:`cadgen.assembly_lookup`): the
+    descriptor's instance tree, and the flat selector index whose rows are that tree's
+    LEAVES, because only a leaf owns geometry. So a subassembly node — ``#o1.1`` here,
+    the very kind of ref a kinematics mate names and poses without complaint — carried no
+    row and was refused as "unknown", by an error whose own text claimed subassemblies
+    were supported.
+
+    A group is an id PREFIX of its subtree, exactly as kinematicsModule.js and
+    cadScene.js treat it, so a ref that no row carries but that rows descend FROM expands
+    to those rows. Expanded here rather than passed through: the resolved job then says
+    which parts it means, and a group with nothing rendered under it fails as a CLI error
+    instead of as an empty picture.
+
+    With no selector index (no topology to check against) the ref travels unchanged, as
+    it always has.
+    """
     if selector_index is None:
-        return
-    if selector not in selector_index.occurrence_by_id:
-        raise SnapshotError(f"{source_label} references unknown part/subassembly occurrence selector: {selector}")
+        return [selector]
+    if selector in selector_index.occurrence_by_id:
+        return [selector]
+    prefix = f"{selector}."
+    members = sorted(
+        (
+            occurrence_id
+            for occurrence_id in selector_index.occurrence_by_id
+            if occurrence_id.startswith(prefix)
+        ),
+        key=occurrence_sort_key,
+    )
+    if members:
+        return members
+    raise SnapshotError(
+        f"{source_label} references unknown part/subassembly occurrence selector: "
+        f"{selector}; {occurrence_near_miss_hint(selector, selector_index)}"
+    )
 
 
 def normalize_selection_selector(
@@ -506,8 +618,12 @@ def normalize_selection_selector(
             f"{source_label} supports only part/subassembly occurrence refs; "
             f"got {parsed.selector_type} selector {text!r}"
         )
-    validate_occurrence_selector(parsed.canonical, selector_index=selector_index, source_label=source_label)
-    return [parsed.canonical]
+    # A GROUP ref expands to its subtree here — including a label that resolved to a group
+    # id, which takes this same path, so labels and ids behave identically wherever the
+    # label already exists.
+    return expand_occurrence_selector(
+        parsed.canonical, selector_index=selector_index, source_label=source_label
+    )
 
 
 def normalize_selection_filter_values(
@@ -517,17 +633,19 @@ def normalize_selection_filter_values(
     selector_index: lookup.SelectorIndex | None,
     source_label: str,
 ) -> list[str]:
-    selectors: list[str] = []
+    # Deduped, first-seen order. A group ref expands to its subtree, so naming a
+    # subassembly AND one of its parts (or two overlapping groups) is an ordinary thing to
+    # do and must not put the same occurrence in the job twice.
+    selectors: dict[str, None] = {}
     for raw_value in selection_value_list(value):
-        selectors.extend(
-            normalize_selection_selector(
-                raw_value,
-                selector_index=selector_index,
-                source_label=source_label,
-                expected_cad_path=expected_cad_path,
-            )
-        )
-    return selectors
+        for selector in normalize_selection_selector(
+            raw_value,
+            selector_index=selector_index,
+            source_label=source_label,
+            expected_cad_path=expected_cad_path,
+        ):
+            selectors.setdefault(selector, None)
+    return list(selectors)
 
 
 def normalize_render_job_selection(
@@ -584,9 +702,9 @@ def resolve_robot_render_job(
             f"selection focus/hide/refs require STEP topology; {label} robots have no "
             "part/subassembly selectors"
         )
-    if has_step_parameter_render_values(job.get("stepParameters")):
+    if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
-            f"stepParameters require a STEP model; pose a {label} robot with jointValues"
+            f"kinematics values require a STEP model; pose a {label} robot with jointValues"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()
@@ -673,7 +791,14 @@ def resolve_render_job(
         raise SnapshotError("render job must be an object")
     job = copy.deepcopy(raw_job)
     if "params" in job:
-        raise SnapshotError("render jobs use stepParameters; params is reserved for shortcut --params parsing")
+        raise SnapshotError("render jobs use kinematics; params is reserved for shortcut --kinematics parsing")
+    # A key that WAS the schema is named, not aliased. Reading `stepParameters` as
+    # `kinematics` would leave two spellings of one thing alive in every job file, and the
+    # whole point of the rename is that the CLI flag, the sidecar section and the job
+    # packet say the same word.
+    for retired_key, guidance in RETIRED_JOB_KEYS.items():
+        if retired_key in job:
+            raise SnapshotError(guidance)
     if "paramsPath" in job or "stepParametersPath" in job:
         raise SnapshotError(
             "parameter sidecar paths are retired: kinematics is declared on the model "
@@ -770,8 +895,8 @@ def resolve_step_render_job(
     job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
-    has_param_render = has_step_parameter_render_values(job.get("stepParameters"))
-    reject_animated_step_parameters(job.get("stepParameters"))
+    has_param_render = has_kinematics_render_values(job.get("kinematics"))
+    reject_animated_kinematics(job.get("kinematics"))
     # A render is a READ. A document whose sidecar closure no longer re-hashes
     # is refused by naming the run rather than rebuilt here — putting a build
     # inside a render is exactly the coupling documents-only inputs remove.
@@ -812,7 +937,7 @@ def resolve_step_render_job(
             f"{mode} mode is not supported for STEP inputs; STEP supports: {supported}"
         )
     if has_param_render and mode != "view":
-        raise SnapshotError("stepParameters support only view mode; set display.mode for display-style changes")
+        raise SnapshotError("kinematics values support only view mode; set display.mode for display-style changes")
 
     resolved: dict[str, object] = {
         "rootPath": str(root_path),
@@ -843,6 +968,22 @@ def resolve_step_render_job(
         # sidecar and folds --params DOF values through the shared FK
         # evaluator (cadgen-js kinematicsModule).
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
+        # A pose NAME is validated HERE, against the declaration the CLI just
+        # loaded — a typo must fail as a clean CLI error, not as a stack trace
+        # out of the browser runtime (which repeats this check as a backstop).
+        preset = job.get("kinematics")
+        if isinstance(preset, str) and preset.strip():
+            poses = kinematics_block.get("poses")
+            declared = sorted(poses) if isinstance(poses, dict) else []
+            if preset.strip() not in declared:
+                raise SnapshotError(
+                    f"Unknown kinematics pose: {preset.strip()}. "
+                    + (
+                        f"This model declares: {', '.join(declared)}"
+                        if declared
+                        else "This model declares no poses; pass {dof: value} JSON instead"
+                    )
+                )
     elif has_param_render:
         raise SnapshotError(
             f"{input_path.name} declares no kinematics, so pose values have nothing to "
@@ -895,9 +1036,9 @@ def resolve_drawing_render_job(
             "selection focus/hide/refs require STEP topology; drawings have no "
             "part/subassembly selectors"
         )
-    if has_step_parameter_render_values(job.get("stepParameters")):
+    if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
-            "stepParameters require a STEP model; a drawing is parameterized by its gen_dxf() source"
+            "kinematics values require a STEP model; a drawing is parameterized by its gen_dxf() source"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()

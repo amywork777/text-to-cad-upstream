@@ -62,14 +62,18 @@ export async function runHeadlessRenderJob(job) {
   const source = await loadSource(job);
   headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);
   const stepParameterSource = source.stepParameterSource;
-  const explicitParams = hasStepParameterRenderValues(job.stepParameters);
+  // `job.kinematics` is the JOB PACKET's pose input (a preset name or {dof: value}); the
+  // `stepParameters` set below is the shared buildModel/renderMeshScene SETTINGS key,
+  // carrying the compiled runtime object. They used to be the same key, so a packet field
+  // and a runtime object took turns living on it.
+  const explicitParams = hasStepParameterRenderValues(job.kinematics);
   const renderJob = {
     ...job,
     selectorRuntime: source.selectorRuntime,
     displayEdgeRuntime: source.displayEdgeRuntime
   };
   if (stepParameterSource && explicitParams && String(job.mode || "view").toLowerCase() !== "view") {
-    throw new Error("stepParameters support only view mode; set display.mode for display-style changes");
+    throw new Error("kinematics values support only view mode; set display.mode for display-style changes");
   }
   const renderJobWithStepParameters = stepParameterSource
     ? {
