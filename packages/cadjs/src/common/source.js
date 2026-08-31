@@ -280,6 +280,27 @@ async function loadMeshDataFromUrl(url, kind) {
   throw new Error(`Unsupported render source kind: ${kind || SOURCE_KIND.UNKNOWN}`);
 }
 
+// A pose PRESET name in place of a values object. `--kinematics` takes either
+// spelling, and the CLI cannot tell them apart on its own: the declared preset
+// names live in the model's kinematics block, which is only loaded here. So the
+// name travels as a bare string and is resolved against the definition.
+function resolvePoseValues(definition, stepParameters) {
+  if (typeof stepParameters !== "string") {
+    return stepParameters;
+  }
+  const name = stepParameters.trim();
+  const poses = isObject(definition?.manifest?.poses) ? definition.manifest.poses : {};
+  if (isObject(poses[name])) {
+    return poses[name];
+  }
+  const declared = Object.keys(poses);
+  throw new Error(
+    declared.length
+      ? `Unknown kinematics pose: ${name}. This model declares: ${declared.join(", ")}`
+      : `Unknown kinematics pose: ${name}. This model declares no poses; pass {dof: value} JSON instead`
+  );
+}
+
 async function loadStepParameters({
   kind,
   stepParameters,
@@ -305,7 +326,10 @@ async function loadStepParameters({
     }
     return null;
   }
-  const renderParameters = normalizeStepParameterRenderValues(definition, explicit ? stepParameters : {});
+  const renderParameters = normalizeStepParameterRenderValues(
+    definition,
+    explicit ? resolvePoseValues(definition, stepParameters) : {}
+  );
   return {
     definition,
     renderParameters,

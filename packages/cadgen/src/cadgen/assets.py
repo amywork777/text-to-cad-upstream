@@ -82,7 +82,7 @@ def node_builders_dir() -> Path:
 def browser_runtime_dir(explicit: Path | str | None = None) -> Path:
     """Directory holding ``snapshot-render.js`` + ``render.html``.
 
-    ``explicit`` is a caller-supplied directory (``run_snapshot_cli(runtime_dir=...)``),
+    ``explicit`` is a caller-supplied directory (``run_snapshot(runtime_dir=...)``),
     which a skill used to have to pass because the runtime was vendored beside it. It
     still wins when given; otherwise the packaged copy is used.
     """

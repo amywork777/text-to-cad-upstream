@@ -20,14 +20,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from cadgen._internal.format_namespace import callable_namespace
-from cadgen._internal.snapshot_door import snapshot_door
+from cadgen._internal.snapshot_door import mesh_snapshot_verb
 from cadgen.results import MeshExportResult
 
 __all__ = ["build", "snapshot"]
 
 #: ``cadgen stl snapshot``'s verb: render an STL mesh. The mesh half of what
 #: ``step snapshot`` used to carry, now behind the door that writes the format.
-snapshot = snapshot_door("stl")
+snapshot = mesh_snapshot_verb("stl")
 
 
 def build(

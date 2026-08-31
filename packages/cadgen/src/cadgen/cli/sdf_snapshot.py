@@ -1,29 +1,35 @@
 """``cadgen sdf snapshot`` — render SDF robot descriptions.
 
-A thin declaration over :mod:`cadgen.cli.snapshot`: the only thing that distinguishes one
-family's snapshot from another's is which input kinds it accepts, so that is the only thing
-stated here. Everything else — arguments, job schema, theme, joint values, the headless
-browser — is shared by construction rather than by copies agreeing.
+A GENERATED CLI over :func:`cadgen.sdf.snapshot`. There is no parser here on
+purpose: everything the command accepts is derived from the verb function's
+signature by :mod:`cadgen._internal.cli_from_function`, so a flag cannot drift
+from a parameter (design/format-doors.md). Which input kinds the door accepts
+is declared once, beside the verb, in
+:data:`cadgen._internal.snapshot_door.DOOR_KINDS`.
 
-New in the format-doors schema (design/format-doors.md): the renderer always
-supported this input, but only the polymorphic ``cadgen snapshot`` could reach it,
-so the sdf family had a validate verb and no way to look at the thing.
+The verb is the ROBOT shape: the mesh surface plus ``--joint-values``, which is
+how a description gets posed. STEP-only options (selection, display modes,
+exploded, kinematics, section mode) are not in this signature at all.
 """
 
 from __future__ import annotations
 
+import argparse
 from collections.abc import Sequence
 
-from cadgen.cli.snapshot import DOOR_KINDS, OPTION_NAMES, run
+from cadgen._internal.cli_from_function import generated_main, generated_parser
+from cadgen._internal.snapshot_door import RETIRED_SNAPSHOT_FLAGS
 
-KINDS = DOOR_KINDS["sdf"]
-# Re-exported so this command's declared adapter surface is readable from the
-# command's own module, the way a generated command's parser is.
-__all__ = ["KINDS", "OPTION_NAMES", "main"]
+DEFAULT_PROG = "cadgen sdf snapshot"
+VERB = ("cadgen.sdf", "snapshot")
 
 
-def main(argv: Sequence[str] | None = None, *, prog: str = "cadgen sdf snapshot") -> int:
-    return run(argv, kinds=KINDS, prog=prog)
+def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
+    return generated_parser(VERB, prog=prog)
+
+
+def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
+    return generated_main(VERB, argv, prog=prog, retired=RETIRED_SNAPSHOT_FLAGS)
 
 
 if __name__ == "__main__":
