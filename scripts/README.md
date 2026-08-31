@@ -27,7 +27,7 @@ Lower-level scripts stay grouped by ownership:
 - `install/`: local skill install/uninstall scripts for agent skill folders.
 - `utils/`: shared helper scripts used by durable repo commands.
 - `release/`: version bumping, release commits, tags, and GitHub Releases.
-- `viewer/`, `git-hooks/`: specialized repo tooling.
+- `viewer/`, `git-hooks/`: specialized repo tooling (scripts/viewer operates on apps/viewer).
 
 Root `tests/` contains repo-wide policy tests that are not owned by one package,
 skill, or app runtime.
@@ -74,7 +74,7 @@ lives in `tests/python/global/test_plugin_manifests.py`.
 
 The CAD Viewer runtime (built client + JS server) is bundled INTO the cad-viewer
 skill at `skills/cad-viewer/scripts/viewer` by `bundle-cad-viewer.sh`. On develop
-that path stays a development symlink to `viewer/` and the 16 MB Vite output is
+that path stays a development symlink to `apps/viewer/` and the 16 MB Vite output is
 never committed; CI and the publish job bundle first, so the publish tree carries
 the real runtime and the trim step refuses to publish without it.
 

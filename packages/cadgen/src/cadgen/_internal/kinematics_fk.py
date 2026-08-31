@@ -1,6 +1,6 @@
 """The Python half of the mates FK evaluator (design/pose-animation-split.md).
 
-Mirrors ``packages/cadjs/src/common/kinematicsRuntime.js`` operation for
+Mirrors ``packages/cadgen-js/src/common/kinematicsRuntime.js`` operation for
 operation: effective DOF values (defaults, then additive coupling gears), one
 motion matrix per mate about its world-at-rest axis, deltas composed down the
 mate tree. Pure 4x4 arithmetic on plain floats — deterministic to the bit, no

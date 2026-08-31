@@ -32,7 +32,7 @@ source package under `packages/*`.
 For CAD Viewer development:
 
 ```bash
-npm --prefix viewer install
+npm --prefix apps/viewer install
 ```
 
 When running a tool manually, use an interpreter that can import cadgen (the
@@ -105,7 +105,7 @@ prunes empty destination directories unless `--keep-empty-dirs` is passed.
 
 Run development and test prompts from inside this repository instead of a
 separate project checkout. The skills assume this workbench layout while you are
-iterating: `models/` contains fixtures and generated CAD artifacts, `viewer/`
+iterating: `models/` contains fixtures and generated CAD artifacts, `apps/viewer/`
 contains the editable CAD Viewer source, and repo-relative validation commands
 live under `scripts/`.
 
@@ -144,12 +144,12 @@ is gone. cadgen now carries the JavaScript it executes as well as the Python.
 Canonical source directories are:
 
 - `skills/*` for skill instructions, references, and the thin entrypoints.
-- `viewer/` for the CAD Viewer app (client + JS server). Its
+- `apps/viewer/` for the CAD Viewer app (client + JS server). Its
   built client ships inside the cadgen wheel.
 - `packages/*` for the shared runtimes. `packages/cadgen` is the published
-  distribution; `packages/cadjs` is its JS build input.
+  distribution; `packages/cadgen-js` is its JS build input.
 
-On `develop`, `viewer/packages/cadjs` is a symlink mirroring the root
+On `develop`, `apps/viewer/packages/cadgen-js` is a symlink mirroring the root
 sources. Treat them as aliases, not separate source roots — edit the canonical path.
 
 Production-output checks are intentionally centralized. Normal development
@@ -223,7 +223,7 @@ documentation checks, and runs the code tests against that generated output.
 Most generated paths cannot drift on `develop` because they are symlinks to
 their canonical sources, and the freshness check skips those. It covers the
 generated outputs that `develop` does commit as real files, such as the CAD
-snapshot runtime built from `packages/cadjs`, and
+snapshot runtime built from `packages/cadgen-js`, and
 version metadata derived from `VERSION`.
 
 ## Releases
@@ -338,7 +338,7 @@ gh workflow run deploy-docs.yml -f ref=develop
 ```
 
 It cannot deploy `main`. The docs app builds against repo-root `packages/`
-(`docs/tsconfig.json` maps `cadjs/*` to `../packages/cadjs/src/*`), and the
+(`docs/tsconfig.json` maps `cadgen-js/*` to `../packages/cadgen-js/src/*`), and the
 publish tree drops both `docs/` and `packages/`. The workflow checks for them up
 front and fails with that explanation rather than an opaque module-resolution
 error inside `next build`.
@@ -401,8 +401,8 @@ Use path-targeted validation. Common checks from the repo root:
 scripts/test/test.sh
 scripts/dev/setup-symlinks.sh --check
 scripts/release/check-version.sh
-npm --prefix viewer run test
-npm --prefix docs run check
+npm --prefix apps/viewer run test
+npm --prefix apps/docs run check
 ```
 
 Use `AGENTS.md` or `scripts/README.md` for path-specific validation when you are
@@ -424,7 +424,7 @@ not run the packaged viewer from an installed cadgen while modifying Viewer
 behavior:
 
 ```bash
-npm --prefix viewer run dev -- --host 127.0.0.1
+npm --prefix apps/viewer run dev -- --host 127.0.0.1
 ```
 
 The dev server serves ONE root, fixed at startup (the directory Vite runs

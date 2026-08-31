@@ -24,22 +24,22 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-VIEWER_DIR = REPO_ROOT / "viewer"
+VIEWER_DIR = REPO_ROOT / "apps" / "viewer"
 # The resolver moved with viewer bundling when the viewer left the cadgen
 # wheel (cadgen/viewer split): the cad-viewer skill bundler owns it now.
 VIEWER_BUNDLER = REPO_ROOT / "scripts" / "bundle" / "skills" / "bundle-cad-viewer.sh"
-CADJS_RUNNER = REPO_ROOT / "packages" / "cadjs" / "scripts" / "run-tests.mjs"
+CADJS_RUNNER = REPO_ROOT / "packages" / "cadgen-js" / "scripts" / "run-tests.mjs"
 TEST_RUNNERS = (
     CADJS_RUNNER,
-    REPO_ROOT / "viewer" / "scripts" / "run-tests.mjs",
+    REPO_ROOT / "apps" / "viewer" / "scripts" / "run-tests.mjs",
 )
 
 
-def _cadjs_node_floor() -> str:
-    """The single declared Node major the cadjs suite refuses to start below."""
+def _cadgen_js_node_floor() -> str:
+    """The single declared Node major the cadgen-js suite refuses to start below."""
     floors = set(re.findall(r"nodeMajor < (\d+)", CADJS_RUNNER.read_text(encoding="utf-8")))
     if len(floors) != 1:
-        raise AssertionError(f"the cadjs runner states {len(floors)} Node floors")
+        raise AssertionError(f"the cadgen-js runner states {len(floors)} Node floors")
     return floors.pop()
 
 
@@ -63,9 +63,9 @@ def resolved_viewer_package_manager(*lockfiles: str, override: str = "") -> str:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         bin_dir = root / "bin"
-        viewer_dir = root / "viewer"
+        viewer_dir = root / "apps" / "viewer"
         bin_dir.mkdir()
-        viewer_dir.mkdir()
+        viewer_dir.mkdir(parents=True)
         for command in ("npm", "pnpm"):
             executable = bin_dir / command
             executable.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
@@ -141,17 +141,17 @@ class TestRunnersStartOnCurrentNodeTest(unittest.TestCase):
                     f"{runner.relative_to(REPO_ROOT)} passes a flag current Node rejects",
                 )
 
-    def test_the_cadjs_node_floor_is_one_number(self) -> None:
+    def test_the_cadgen_js_node_floor_is_one_number(self) -> None:
         # The runner refuses below the floor and prints the same limit to whoever ran it;
         # a hand-copied second number in the message is how the two drift.
         runner = CADJS_RUNNER.read_text(encoding="utf-8")
         floors = set(re.findall(r"nodeMajor < (\d+)", runner))
-        self.assertEqual(1, len(floors), f"the cadjs runner states {len(floors)} Node floors")
+        self.assertEqual(1, len(floors), f"the cadgen-js runner states {len(floors)} Node floors")
         declared = floors.pop()
         self.assertIn(f"Node {declared} or newer", runner)
 
     def test_the_ci_node_version_satisfies_that_floor(self) -> None:
-        declared = int(_cadjs_node_floor())
+        declared = int(_cadgen_js_node_floor())
         workflow = (REPO_ROOT / ".github" / "workflows" / "test.yml").read_text(encoding="utf-8")
         versions = [int(value) for value in re.findall(r'node-version:\s*"(\d+)"', workflow)]
         self.assertTrue(versions, "test.yml must pin a Node version")
@@ -159,15 +159,15 @@ class TestRunnersStartOnCurrentNodeTest(unittest.TestCase):
             self.assertGreaterEqual(
                 version,
                 declared,
-                "CI runs a Node the cadjs suite refuses to start on",
+                "CI runs a Node the cadgen-js suite refuses to start on",
             )
 
     def test_viewer_declares_the_module_type_its_tests_rely_on(self) -> None:
         # The flag existed to force module semantics; the durable answer is that every
         # package that owns .js tests declares itself a module package.
         for package_json in (
-            REPO_ROOT / "packages" / "cadjs" / "package.json",
-            REPO_ROOT / "packages" / "cadjs" / "package.json",
+            REPO_ROOT / "packages" / "cadgen-js" / "package.json",
+            REPO_ROOT / "packages" / "cadgen-js" / "package.json",
             VIEWER_DIR / "package.json",
         ):
             with self.subTest(package=package_json.parent.name):

@@ -1,4 +1,4 @@
-"""Query the artifact-status authority (viewer/server/artifactStatus.mjs) from Python tests.
+"""Query the artifact-status authority (apps/viewer/server/artifactStatus.mjs) from Python tests.
 
 Freshness verdicts have exactly one implementation, and it is JS; Python suites
 that need a verdict (portability, concurrency) ask it through this shim instead
@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_STATUS_MODULE = _REPO_ROOT / "viewer" / "server" / "artifactStatus.mjs"
+_STATUS_MODULE = _REPO_ROOT / "apps" / "viewer" / "server" / "artifactStatus.mjs"
 
 _SNIPPET = """
 import { pathToFileURL } from "node:url";

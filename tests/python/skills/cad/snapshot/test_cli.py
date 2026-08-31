@@ -1676,7 +1676,7 @@ class SnapshotCliTests(unittest.TestCase):
             RUNTIME_DIR / "snapshot-render.js",
         ]
         forbidden = (
-            "packages/cadjs",
+            "packages/cadgen-js",
             "skills/cad-viewer",
             "/node_modules/",
             "\\node_modules\\",

@@ -225,7 +225,7 @@ class BuildRun:
         # was started by the lock holder by matching its run id against the sentinel, and a
         # degraded run never stamped one. This flag is the only way the child can tell "no
         # lock was taken here" from "you are not the holder", which are the same empty
-        # sentinel from where it stands. See cadjs/lib/glb/assertWriteLock.js.
+        # sentinel from where it stands. See cadgen-js/lib/glb/assertWriteLock.js.
         self.degraded = degraded
 
     def phase(self, name: str, *, total: int | None = None, detail: str = "") -> None:

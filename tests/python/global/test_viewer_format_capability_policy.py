@@ -8,7 +8,7 @@ That is not hypothetical: the Orbit button was gated off per format independentl
 had to be fixed twice, and one format grew a parallel export route to an endpoint the
 server does not implement.
 
-The fix is the capability registry (``packages/cadjs/src/lib/renderCapabilities.js``):
+The fix is the capability registry (``packages/cadgen-js/src/lib/renderCapabilities.js``):
 code asks *what a format can do*, not *what it is*. This test ratchets the old pattern
 downward so it cannot grow back — without it the count creeps up again one feature at a
 time and the unification silently rots.
@@ -24,7 +24,7 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-CLIENT_ROOT = REPO_ROOT / "viewer" / "src" / "client"
+CLIENT_ROOT = REPO_ROOT / "apps" / "viewer" / "src" / "client"
 
 # Every remaining identity check is a unification candidate. Lower these as phases land;
 # never raise them.
@@ -80,7 +80,7 @@ class ViewerFormatCapabilityPolicyTest(unittest.TestCase):
             MAX_RENDER_FORMAT_CHECKS,
             "viewer client gained RENDER_FORMAT identity checks "
             f"({total} > {MAX_RENDER_FORMAT_CHECKS}). Gate on a capability from "
-            "cadjs/lib/renderCapabilities instead of on the format's identity. "
+            "cadgen-js/lib/renderCapabilities instead of on the format's identity. "
             f"Heaviest files: {worst}",
         )
 

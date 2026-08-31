@@ -33,10 +33,10 @@ how you resume a failed publish; it is never a release setting.
 
 The standalone `Deploy Docs` workflow redeploys the docs site without running a
 release. It deploys a source ref (defaulting to `develop`), never `main`: the
-publish tree drops `docs/` and `packages/`, which the docs app builds against.
+publish tree drops `apps/` and `packages/`, which the docs app builds against.
 The CAD Viewer is a local-filesystem app with no hosted deployment: the
 cad-viewer skill bundles the built client + JS server, and each release mirrors
-`viewer/` into the standalone `earthtojake/cad-viewer` repo through the
+`apps/viewer/` into the standalone `earthtojake/cad-viewer` repo through the
 `Sync CAD Viewer Repo` workflow (which `Release` calls after publishing and which
 can also be dispatched on its own; it reads the release SOURCE commit, because
 `main` carries only what installs). `Deploy Docs` also reads the release SOURCE
@@ -51,12 +51,12 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
 - `.claude-plugin/`, `.codex-plugin/`: agent plugin manifests. The repository
   root is the plugin package; its skills are `skills/` directly.
 - `models/`: sample and durable CAD/robot-description fixtures.
-- `viewer/`: editable CAD Viewer source app.
-- `packages/cadjs`: shared JS CAD/render/runtime code, UI-framework agnostic.
+- `apps/viewer/`: editable CAD Viewer source app.
+- `packages/cadgen-js`: shared JS CAD/render/runtime code, UI-framework agnostic.
 - `packages/cadgen`: the published distribution — STEP/GLB/topology generation,
   the skill CLI parsers, the CAD Viewer backend + client, and the Node/browser
   runtimes it executes.
-- `docs/`: documentation site.
+- `apps/docs/`: documentation site.
 - `tests/`: root-owned test suites for skills, packages, viewer services, and
   repo-wide policy.
 - `scripts/`: durable repo commands grouped by purpose.
@@ -107,17 +107,17 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   Code preserves them, and Codex `plugin add` drops them with no error, shipping
   a skill with missing files. `scripts/github-workflows/check-builds.sh` enforces
   this; do not relax it.
-- `viewer/` is the whole CAD Viewer app: the React client (`src/`) AND its
+- `apps/viewer/` is the whole CAD Viewer app: the React client (`src/`) AND its
   pure-JS backend (`server/`, dependency-free Node). It is a standalone app,
   separate from cadgen: the cad-viewer skill bundles the built client + server
   at `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
-  `bundle-cad-viewer.sh` for publish), and each release mirrors `viewer/` to the
+  `bundle-cad-viewer.sh` for publish), and each release mirrors `apps/viewer/` to the
   standalone `earthtojake/cad-viewer` repo. The backend's render path runs no
   Python; importing a foreign STEP spawns `cadgen step compile` (a soft dependency —
   absent cadgen, viewing still works). Keep repo-level tooling in `scripts/`,
-  not under `viewer/`.
-- `packages/cadjs` must stay reusable/non-React; app UI and workflow state
-  belong in `viewer/`. It holds the shared CAD render/runtime code: one package,
+  not under `apps/viewer/`.
+- `packages/cadgen-js` must stay reusable/non-React; app UI and workflow state
+  belong in `apps/viewer/`. It holds the shared CAD render/runtime code: one package,
   one copy of each shared primitive.
 - `packages/cadgen` is the whole distribution, not just the Python: artifact
   generation, the CLI parsers behind every skill command (`cadgen/cli`), the warm
@@ -175,10 +175,10 @@ when touching shared surfaces or before handoff:
 - Development symlink layout: `scripts/dev/setup-symlinks.sh --check`
 - Canonical release version: `scripts/release/check-version.sh`
 - Generated runtime freshness: `scripts/bundle/bundle.sh --check`
-- CAD Viewer or `packages/cadjs`:
-  `npm --prefix packages/cadjs test`,
-  `npm --prefix viewer run test`, `npm --prefix viewer run build`
-- Docs site: `npm --prefix docs run check`
+- CAD Viewer or `packages/cadgen-js`:
+  `npm --prefix packages/cadgen-js test`,
+  `npm --prefix apps/viewer run test`, `npm --prefix apps/viewer run build`
+- Docs site: `npm --prefix apps/docs run check`
 - Targeted Python tests: `./.venv/bin/python -m unittest <changed test paths>`
 
 When a task intentionally writes production outputs locally, run
@@ -198,7 +198,7 @@ Launch it against a directory with `--root` (defaults to the current one) and re
 the URL it prints — launching is unconditional:
 
 ```bash
-node viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
+node apps/viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
 ```
 
 A live instance already serving that realpath at this version is REUSED
@@ -206,7 +206,7 @@ A live instance already serving that realpath at this version is REUSED
 upward (`action:"started"`). `--new` forces a fresh instance (use it when testing
 server-code changes from a checkout — a reused instance runs the code it started
 with); an explicit `--port` is strict and exits 1 when taken. To review a second
-directory, just launch again with that root. `node viewer/server/main.mjs list`
+directory, just launch again with that root. `node apps/viewer/server/main.mjs list`
 shows every running instance with the root it serves and the checkout its code came
 from; `... stop --port <n>` ends one.
 
@@ -216,18 +216,18 @@ catalog and artifacts stay in one place. Pass an absolute `--root`: the Viewer r
 from an arbitrary working directory, so a relative one resolves against the wrong
 place. Do not stop another Viewer unless the user asks.
 
-Editing `viewer/` or `packages/cadjs` source and not seeing the change? Vite's
+Editing `apps/viewer/` or `packages/cadgen-js` source and not seeing the change? Vite's
 server-side transform cache can outlive both HMR and a hard reload — the browser
 keeps serving the old module while the file on disk is already correct. Restart
-the dev server and delete `viewer/node_modules/.vite`.
+the dev server and delete `apps/viewer/node_modules/.vite`.
 
 ### Dev by default, prod only for e2e
 
 Iterate with the **dev** server — Vite serves the client from source with HMR, so
-your `viewer/` and `packages/cadjs` edits show up live:
+your `apps/viewer/` and `packages/cadgen-js` edits show up live:
 
 ```bash
-npm --prefix viewer run dev -- --host 127.0.0.1
+npm --prefix apps/viewer run dev -- --host 127.0.0.1
 # then open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
@@ -236,8 +236,8 @@ when explicitly asked to test prod. It serves the built `dist/` via the JS serve
 (the `cad-viewer` skill's launch command), so build first:
 
 ```bash
-npm --prefix viewer run build
-npm --prefix viewer run start -- --host 127.0.0.1 --json
+npm --prefix apps/viewer run build
+npm --prefix apps/viewer run start -- --host 127.0.0.1 --json
 # then open the URL from the printed {url,port,action} line
 ```
 
@@ -253,14 +253,14 @@ wrapper unless you are debugging a lower-level script.
 
 ### Starting the Viewer from a lightweight worktree
 
-The backend is pure JS (`viewer/server`), so a worktree needs only Node — plus a
+The backend is pure JS (`apps/viewer/server`), so a worktree needs only Node — plus a
 cadgen-importable interpreter for builds, handed down via env:
 
 ```bash
 CADGEN_PYTHON=<main>/.venv/bin/python \
 PYTHONPATH=<worktree>/packages/cadgen/src \
-node <worktree>/viewer/server/main.mjs \
-  --root <worktree>/models --dist <worktree>/viewer/dist --host 127.0.0.1 --json
+node <worktree>/apps/viewer/server/main.mjs \
+  --root <worktree>/models --dist <worktree>/apps/viewer/dist --host 127.0.0.1 --json
 ```
 
 `--dist` points at the client you are editing; `--root` names the directory this
@@ -270,11 +270,11 @@ client needs the worktree's `node_modules`, which worktrees deliberately do not 
 link them from the primary checkout first:
 
 ```bash
-ln -s <main>/viewer/node_modules viewer/node_modules
-mkdir -p packages/cadjs/node_modules
-ln -s <main>/packages/cadjs/node_modules/three        packages/cadjs/node_modules/three
-ln -s <main>/docs/node_modules/meshoptimizer          packages/cadjs/node_modules/meshoptimizer
-npm --prefix viewer run build
+ln -s <main>/apps/viewer/node_modules apps/viewer/node_modules
+mkdir -p packages/cadgen-js/node_modules
+ln -s <main>/packages/cadgen-js/node_modules/three        packages/cadgen-js/node_modules/three
+ln -s <main>/apps/docs/node_modules/meshoptimizer          packages/cadgen-js/node_modules/meshoptimizer
+npm --prefix apps/viewer run build
 ```
 
 No port juggling is needed: reuse keys on realpath(root) × version, so a Viewer

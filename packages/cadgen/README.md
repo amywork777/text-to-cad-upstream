@@ -105,13 +105,13 @@ From a text-to-cad checkout:
 
 Source edits under `packages/cadgen/src/cadgen` take effect immediately. The packaged
 JavaScript is generated rather than committed in full, so build it once — and again
-after changing anything under `packages/cadjs`:
+after changing anything under `packages/cadgen-js`:
 
 ```bash
 scripts/bundle/bundle-skill.sh cadgen-runtime
 ```
 
-`cadgen.assets` prefers a checkout's live `packages/cadjs/bin` over the packaged copy,
+`cadgen.assets` prefers a checkout's live `packages/cadgen-js/bin` over the packaged copy,
 so builder JavaScript stays editable without rebundling.
 
 To check the package the way a user receives it — installed, from a directory that is

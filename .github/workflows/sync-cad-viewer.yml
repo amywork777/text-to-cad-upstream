@@ -1,19 +1,19 @@
 name: Sync CAD Viewer Repo
 
-# Mirrors viewer/ into the standalone earthtojake/cad-viewer repo.
+# Mirrors apps/viewer/ into the standalone earthtojake/cad-viewer repo.
 #
 # The Release workflow calls this after it publishes, so the mirror tracks
 # releases rather than in-flight develop work. Dispatch it manually for an
 # out-of-band sync or a dry run.
 #
 # It mirrors from the release SOURCE commit, not from main: the publish tree
-# drops viewer/ (it is source, and what installs is the bundled runtime under
+# drops apps/ (it is source, and what installs is the bundled runtime under
 # skills/cad-viewer), while the mirror is a source repo. Pointing this at main
-# fails fast on the missing viewer/package.json.
+# fails fast on the missing apps/viewer/package.json.
 #
-# The mirror is a straight copy with the viewer/packages/* symlinks dereferenced;
-# nothing rewrites paths on the way out. viewer/ is kept self-contained instead,
-# and viewer/scripts/selfContained.test.mjs (run below, in the mirror) is what
+# The mirror is a straight copy with the apps/viewer/packages/* symlinks dereferenced;
+# nothing rewrites paths on the way out. apps/viewer/ is kept self-contained instead,
+# and apps/viewer/scripts/selfContained.test.mjs (run below, in the mirror) is what
 # keeps it that way.
 
 on:

@@ -417,7 +417,7 @@ jobs:
       # target branch is copied into every install. None of these is part of what
       # installs:
       #   models/            fixture data
-      #   viewer/            the client SOURCE. What installs is the bundled runtime
+      #   apps/viewer/       the client SOURCE. What installs is the bundled runtime
       #                      under skills/cad-viewer/scripts/viewer, and the standalone
       #                      cad-viewer mirror syncs from the release SOURCE commit
       #                      rather than from here (.github/workflows/sync-cad-viewer.yml).
@@ -426,7 +426,7 @@ jobs:
       #   requirements-dev.txt  a source-checkout dev environment whose editable
       #                      paths (packages/cadgen) do not
       #                      survive the trim anyway
-      #   docs/              a website, not an install; Deploy Docs builds and
+      #   apps/docs/         a website, not an install; Deploy Docs builds and
       #                      deploys it from the release SOURCE commit
       #   packages/          the shared source runtimes, including cadgen itself.
       #                      Skills install cadgen from PyPI -- the wheel is built
@@ -442,7 +442,7 @@ jobs:
       - name: Trim publish tree
         if: steps.gate.outputs.should_publish == 'true'
         run: |
-          removed_roots="models viewer tests requirements-dev.txt docs packages"
+          removed_roots="models apps tests requirements-dev.txt packages"
           for root in $removed_roots; do
             rm -rf "$root"
             if [ -e "$root" ]; then
@@ -602,7 +602,7 @@ jobs:
     secrets: inherit
 
   # Mirrors from the release SOURCE commit, not the publish commit: the publish
-  # tree deliberately drops viewer/, and the mirror is a source repo.
+  # tree deliberately drops apps/viewer/, and the mirror is a source repo.
   sync-cad-viewer:
     name: Sync CAD Viewer Repo
     needs:

@@ -34,8 +34,8 @@ CHECK_DIR="${CADGEN_RUNTIME_CHECK_DIR:-$REPO_ROOT/tmp/cadgen-runtime-check}"
 SNAPSHOT_BUILD_DEPS_DIR="${CADGEN_SNAPSHOT_BUILD_DEPS_DIR:-$REPO_ROOT/tmp/cadgen-snapshot-build}"
 
 BUILDER_ENTRIES=(
-  "$REPO_ROOT/packages/cadjs/bin/dxf-mesh.mjs"
-  "$REPO_ROOT/packages/cadjs/bin/mesh-export.mjs"
+  "$REPO_ROOT/packages/cadgen-js/bin/dxf-mesh.mjs"
+  "$REPO_ROOT/packages/cadgen-js/bin/mesh-export.mjs"
 )
 
 MODE="write"
@@ -111,7 +111,7 @@ The JavaScript in this directory is bundled output. It inlines third-party code:
 
 Each bundle carries the originating licence banners at end of file
 (esbuild --legal-comments=eof). Exact versions are pinned by
-packages/cadjs/package-lock.json at the commit that produced these files.
+packages/cadgen-js/package-lock.json at the commit that produced these files.
 
 MIT License
 

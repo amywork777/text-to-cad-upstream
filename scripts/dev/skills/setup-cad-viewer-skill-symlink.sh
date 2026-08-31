@@ -62,8 +62,8 @@ check_no_tracked_runtime_dist() {
 }
 
 cd "$REPO_ROOT"
-setup_link "$MODE" "viewer/packages/cadjs" "../../packages/cadjs"
-setup_link "$MODE" "skills/cad-viewer/scripts/viewer" "../../../viewer"
+setup_link "$MODE" "apps/viewer/packages/cadgen-js" "../../../packages/cadgen-js"
+setup_link "$MODE" "skills/cad-viewer/scripts/viewer" "../../../apps/viewer"
 if [ "$MODE" = "check" ]; then
   check_no_tracked_runtime_dist
 fi

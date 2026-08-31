@@ -49,7 +49,7 @@ from cadgen._internal.cache_paths import (
 )
 
 # Matches the -t<version>- salt in a mesh entry name (key scheme home:
-# packages/cadjs/src/lib/surf/tessellationCache.js).
+# packages/cadgen-js/src/lib/surf/tessellationCache.js).
 _MESH_VERSION_RE = re.compile(r"-t(\d+)-l")
 
 # Crash leftovers from atomic writes (tmp + rename): collectable once clearly

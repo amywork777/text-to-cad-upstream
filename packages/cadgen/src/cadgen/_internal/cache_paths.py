@@ -13,7 +13,7 @@ everything and one command (``cadgen cache``) can reason about all of it:
 3. ``~/.cache/cadgen`` otherwise — the historical default, all platforms.
 
 The JS mirror is ``cadgenCacheRootDir`` in
-``packages/cadjs/src/lib/surf/tessellationCacheFs.mjs`` (and its deliberate
+``packages/cadgen-js/src/lib/surf/tessellationCacheFs.mjs`` (and its deliberate
 inline copy in ``viewer/server/tessCache.mjs``);
 ``tests/python/global/test_cache_root_sync.py`` pins the languages together.
 
@@ -27,7 +27,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# Mirror of TESSELLATION_VERSION in packages/cadjs/src/lib/surf/tessellate.js
+# Mirror of TESSELLATION_VERSION in packages/cadgen-js/src/lib/surf/tessellate.js
 # (sync-tested by tests/python/global/test_cache_root_sync.py). It salts every
 # mesh-cache key as ``-t<version>-``; ``cadgen cache gc`` uses it to identify
 # dead mesh generations by name.

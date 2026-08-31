@@ -4,7 +4,7 @@
     {
       "name": "cad-viewer-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "viewer", "run", "dev", "--", "--host", "127.0.0.1", "--port", "3251"],
+      "runtimeArgs": ["--prefix", "apps/viewer", "run", "dev", "--", "--host", "127.0.0.1", "--port", "3251"],
       "port": 3251
     }
   ]

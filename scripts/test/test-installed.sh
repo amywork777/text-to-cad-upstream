@@ -3,7 +3,7 @@
 # directory that is not this repo.
 #
 # Every other check in this repo runs against the source tree, where the repo root is on
-# sys.path and `packages/cadjs/bin` exists. None of
+# sys.path and `packages/cadgen-js/bin` exists. None of
 # that is true after `pip install cadgen`, so the failures this catches are exactly the
 # ones no other check can: an asset left out of package-data, a module that resolves only
 # because a sibling directory happened to be adjacent, a builder that still imports a bare

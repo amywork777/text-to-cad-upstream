@@ -841,7 +841,7 @@ def resolve_step_render_job(
     if kinematics_block:
         # Typed mates are the ONE articulation mechanism: the page fetches the
         # sidecar and folds --params DOF values through the shared FK
-        # evaluator (cadjs kinematicsModule).
+        # evaluator (cadgen-js kinematicsModule).
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
     elif has_param_render:
         raise SnapshotError(

@@ -30,7 +30,7 @@ class RenderContractSyncTest(unittest.TestCase):
         )
         js_version = _extract(
             r"^export const SURF_VERSION = (\d+);$",
-            ROOT / "packages/cadjs/src/lib/surf/container.js",
+            ROOT / "packages/cadgen-js/src/lib/surf/container.js",
         )
         self.assertEqual(
             python_version,
@@ -42,9 +42,9 @@ class RenderContractSyncTest(unittest.TestCase):
 
     def test_package_contract_constants_match_python(self) -> None:
         # Both languages resolve store keys with the SAME cache-scheme number
-        # (viewer/server/packageContract.mjs mirrors cache_schema.py); a
+        # (apps/viewer/server/packageContract.mjs mirrors cache_schema.py); a
         # one-sided bump strands one side in the old key generation.
-        contract = ROOT / "viewer/server/packageContract.mjs"
+        contract = ROOT / "apps/viewer/server/packageContract.mjs"
         self.assertEqual(
             _extract(
                 r"^CACHE_SCHEMA_VERSION = (\d+)$",
@@ -71,7 +71,7 @@ class RenderContractSyncTest(unittest.TestCase):
         # Schema gating lives in the package KEY: storePaths.mjs salts the
         # store key with the one JS constant this suite pins against Python.
         # A package that resolves at all is current-scheme by construction.
-        store_module = ROOT / "viewer/server/storePaths.mjs"
+        store_module = ROOT / "apps/viewer/server/storePaths.mjs"
         self.assertIn(
             'import { CACHE_SCHEMA_VERSION } from "./packageContract.mjs";',
             store_module.read_text(),

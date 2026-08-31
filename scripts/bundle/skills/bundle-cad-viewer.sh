@@ -11,7 +11,7 @@ set -euo pipefail
 # works with NO install step (the client is prebuilt, the server has zero npm
 # dependencies; Node >= 22 is the one requirement, which cadgen already has).
 #
-# On develop, skills/cad-viewer/scripts/viewer is a SYMLINK to viewer/ (the dev
+# On develop, skills/cad-viewer/scripts/viewer is a SYMLINK to apps/viewer/ (the dev
 # layout, managed by scripts/dev/setup-symlinks.sh); this bundler replaces it
 # with the real runtime for CI and the publish tree, where a symlink must never
 # survive (installer semantics: Codex silently drops symlinks — see
@@ -29,7 +29,7 @@ BUILD=1
 CLEAN=0
 PRINT_OUTPUTS=0
 
-VIEWER_DIR="$REPO_ROOT/viewer"
+VIEWER_DIR="$REPO_ROOT/apps/viewer"
 RUNTIME_DIR="$REPO_ROOT/skills/cad-viewer/scripts/viewer"
 CHECK_DIR="${CAD_VIEWER_RUNTIME_CHECK_DIR:-$REPO_ROOT/tmp/cad-viewer-runtime-check}"
 VIEWER_PACKAGE_MANAGER="${CAD_VIEWER_PACKAGE_MANAGER:-}"
@@ -48,7 +48,7 @@ Options:
   --check     Bundle into tmp/ and fail if skills/cad-viewer/scripts/viewer is
               stale. Skipped while the path is a development symlink.
   --clean     Remove temporary check directories first.
-  --no-build  Reuse the current viewer/dist instead of rebuilding the viewer.
+  --no-build  Reuse the current apps/viewer/dist instead of rebuilding the viewer.
               The existing dist must already include client sourcemaps.
   --print-outputs
               Print the repo-relative generated output paths, then exit.
@@ -130,7 +130,7 @@ require_client_sourcemaps() {
   map_count="$(find "$dist_dir/assets" -type f -name '*.map' | wc -l | tr -d '[:space:]')"
   if [ "$map_count" -eq 0 ]; then
     echo "Missing Viewer client sourcemaps in $dist_dir/assets." >&2
-    echo "Run scripts/bundle/bundle-skill.sh cad-viewer without --no-build to regenerate viewer/dist with sourcemaps." >&2
+    echo "Run scripts/bundle/bundle-skill.sh cad-viewer without --no-build to regenerate apps/viewer/dist with sourcemaps." >&2
     exit 1
   fi
 }
@@ -213,7 +213,7 @@ fi
 
 if [ ! -f "$VIEWER_DIR/dist/index.html" ]; then
   echo "Missing viewer production bundle: $VIEWER_DIR/dist/index.html" >&2
-  echo "Build it (drop --no-build, or run npm --prefix viewer run build -- --sourcemap true)." >&2
+  echo "Build it (drop --no-build, or run npm --prefix apps/viewer run build -- --sourcemap true)." >&2
   exit 1
 fi
 require_client_sourcemaps "$VIEWER_DIR/dist"

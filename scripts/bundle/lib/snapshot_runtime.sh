@@ -4,7 +4,7 @@
 #
 # Shared because two skills now render: the CAD skill renders STEP models and meshes, and
 # the DXF skill renders a drawing's baked flat pattern. Both drive the SAME browser bundle,
-# built from the same cadjs entrypoint the CAD Viewer uses, so the picture a snapshot
+# built from the same cadgen-js entrypoint the CAD Viewer uses, so the picture a snapshot
 # produces matches the viewport. A skill may not import another skill's files, so each gets
 # its own generated copy rather than reaching across.
 #
@@ -13,7 +13,7 @@
 
 SNAPSHOT_RUNTIME_ESBUILD_VERSION="${CAD_SNAPSHOT_ESBUILD_VERSION:-0.27.7}"
 
-# three and meshoptimizer are read from packages/cadjs/package-lock.json, the one
+# three and meshoptimizer are read from packages/cadgen-js/package-lock.json, the one
 # place their exact versions are already pinned, so a dependency bump cannot silently change
 # what ships without also changing the committed bundle. This matches node_builders.sh.
 # Resolved lazily: BUNDLE_REPO_ROOT is set before the first call, not necessarily before
@@ -21,10 +21,10 @@ SNAPSHOT_RUNTIME_ESBUILD_VERSION="${CAD_SNAPSHOT_ESBUILD_VERSION:-0.27.7}"
 snapshot_runtime_locked_version() {
   local name="$1"
   node -p "
-    const lock = require('$BUNDLE_REPO_ROOT/packages/cadjs/package-lock.json');
+    const lock = require('$BUNDLE_REPO_ROOT/packages/cadgen-js/package-lock.json');
     const entry = lock.packages && lock.packages['node_modules/$name'];
     if (!entry || !entry.version) {
-      throw new Error('packages/cadjs/package-lock.json has no pinned $name');
+      throw new Error('packages/cadgen-js/package-lock.json has no pinned $name');
     }
     entry.version;
   "
@@ -47,7 +47,7 @@ snapshot_runtime_pinned_version() {
 }
 
 snapshot_runtime_entrypoint() {
-  printf '%s\n' "$BUNDLE_REPO_ROOT/packages/cadjs/src/common/headlessRenderEntry.js"
+  printf '%s\n' "$BUNDLE_REPO_ROOT/packages/cadgen-js/src/common/headlessRenderEntry.js"
 }
 
 # snapshot_runtime_need_install <deps_dir> <three> <meshoptimizer>
@@ -135,10 +135,10 @@ build_snapshot_runtime() {
   rm -rf "$target_dir"
   mkdir -p "$target_dir"
   write_snapshot_render_html "$target_dir"
-  # NODE_PATH resolves cadjs's remaining bare imports directly
+  # NODE_PATH resolves cadgen-js's remaining bare imports directly
   # from packages/ source, honoring the package's exports map, and resolves the
   # pinned meshoptimizer out of the tmp toolchain, so the bundle stays hermetic
-  # on fresh checkouts with no packages/cadjs/node_modules.
+  # on fresh checkouts with no packages/cadgen-js/node_modules.
   # A directory --alias cannot do the first: it bypasses the exports map.
   #
   # meshoptimizer MUST be resolvable here. glbMeshData.js reaches it through a

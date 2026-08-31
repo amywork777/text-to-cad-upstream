@@ -911,7 +911,7 @@ def route_file(pathname: str, prefix: str, root: Path) -> Path:
 #
 # The snapshot page resolves component tessellations through the SAME disk
 # cache the mesh-export CLI uses (~/.cache/cadgen/meshes/<key>.tess; codec and
-# key scheme in packages/cadjs/src/lib/surf/tessellationCache.js). The page
+# key scheme in packages/cadgen-js/src/lib/surf/tessellationCache.js). The page
 # cannot touch the filesystem, so the host serves the cache: GET
 # /__tess_cache/<key>.tess is a read, POST is a best-effort write-back after
 # an in-page tessellation miss. CADGEN_MESH_CACHE=0 turns both directions
@@ -986,7 +986,7 @@ def write_tessellation_cache_entry(pathname: str, body: bytes | None) -> bool:
 # POST /__tess_cache/batch: one round trip for N entries — a many-component
 # assembly otherwise pays ~2 requests per component. Request body is JSON
 # {"names": ["<key>.tess", ...]}; the response is the TESB container defined
-# in packages/cadjs/src/lib/surf/tessellationCache.js (that file is the
+# in packages/cadgen-js/src/lib/surf/tessellationCache.js (that file is the
 # format's single home; Python only frames the opaque entry bytes): "TESB"
 # u32, version u32, count u32, then per entry u32 byteLength (0 = miss) +
 # bytes padded to a 4-byte boundary.

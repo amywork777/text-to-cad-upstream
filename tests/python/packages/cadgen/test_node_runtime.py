@@ -1,7 +1,7 @@
 """The Python<->Node builder bridge.
 
 Every test here spawns a REAL node child running a REAL script that imports the REAL
-``cadjs/glb/progressStream.js`` helper through ``NODE_PATH``. That is deliberate: the
+``cadgen-js/glb/progressStream.js`` helper through ``NODE_PATH``. That is deliberate: the
 three things this module actually promises -- that bare specifiers resolve through the
 exports map, that NDJSON reaches the lock holder, and that no child outlives the lock -- are
 all properties of a separate process, and a mocked ``Popen`` proves none of them.
@@ -37,11 +37,11 @@ from cadgen.coordination import DRAWING_PACKAGE, artifact_build  # noqa: E402
 _NODE = shutil.which("node")
 
 # The helper is imported by BARE SPECIFIER, so every script below is also a live test of the
-# NODE_PATH mechanism: cadjs/package.json maps "./glb/*" -> "./src/lib/glb/*", and only
+# NODE_PATH mechanism: cadgen-js/package.json maps "./glb/*" -> "./src/lib/glb/*", and only
 # a NODE_PATH entry (not a directory alias) resolves through an exports map.
 _IMPORT = (
     'import { reportPhase, reportTotal, reportAdvance, reportResult } '
-    'from "cadjs/glb/progressStream.js";\n'
+    'from "cadgen-js/glb/progressStream.js";\n'
 )
 
 
@@ -272,9 +272,9 @@ class DiscoveryTest(NodeRuntimeTestCase):
         self.assertIn("node was not found", message)
         self.assertIn("CADGEN_NODE", message)
 
-    def test_node_path_points_at_the_packages_dir_holding_cadjs(self):
+    def test_node_path_points_at_the_packages_dir_holding__cadgen_js(self):
         root = node_package_root()
-        self.assertTrue((root / "cadjs" / "package.json").is_file(), root)
+        self.assertTrue((root / "cadgen-js" / "package.json").is_file(), root)
         env = node_child_env()
         self.assertEqual(str(root), env["NODE_PATH"].split(os.pathsep)[0])
 
@@ -289,15 +289,15 @@ class DiscoveryTest(NodeRuntimeTestCase):
         # dir with no node_modules above it, so they all depend on this. Pinned explicitly
         # because the mechanism is subtle: Node's ESM resolver ignores NODE_PATH, so the
         # bridge's --import hook forwards the miss to the CJS resolver, which reads NODE_PATH
-        # AND applies the exports map. `cadjs/glb/*` is mapped to `./src/lib/glb/*`, so gluing
+        # AND applies the exports map. `cadgen-js/glb/*` is mapped to `./src/lib/glb/*`, so gluing
         # the specifier onto the package directory would look for src/glb/ -- which does not
         # exist. Resolving it proves the map was consulted rather than a path joined.
         script = self.script(
-            'reportResult({ ok: true, url: import.meta.resolve("cadjs/glb/writeGlb.js") });\n'
+            'reportResult({ ok: true, url: import.meta.resolve("cadgen-js/glb/writeGlb.js") });\n'
         )
         payload = run_node_builder(script, run=Recorder())
         self.assertTrue(
-            payload["url"].endswith("/cadjs/src/lib/glb/writeGlb.js"), payload["url"]
+            payload["url"].endswith("/cadgen-js/src/lib/glb/writeGlb.js"), payload["url"]
         )
 
     def test_node_path_is_what_makes_it_resolve(self):

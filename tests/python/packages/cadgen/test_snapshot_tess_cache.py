@@ -1,7 +1,7 @@
 """The snapshot host's side of the shared component-tessellation cache.
 
 The page and the export CLI share ONE on-disk store (~/.cache/cadgen/meshes;
-codec in packages/cadjs/src/lib/surf/tessellationCache.js). Python never
+codec in packages/cadgen-js/src/lib/surf/tessellationCache.js). Python never
 decodes entries — it stores and serves opaque bytes — so what these tests pin
 is the transport contract: name validation (the cache lives OUTSIDE any model
 root, so a bad name must be refused, never resolved), the CADGEN_MESH_CACHE=0

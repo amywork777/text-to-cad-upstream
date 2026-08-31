@@ -12,7 +12,7 @@ browser, and the CAD Viewer's long-lived server must import light. A format that
 asset asks for it at the moment it needs it, and gets an actionable error if it is absent.
 
 **Development beats the package, on purpose.** In this repo the builders resolve to the
-live ``packages/cadjs/bin`` sources rather than the committed bundles, so editing builder
+live ``packages/cadgen-js/bin`` sources rather than the committed bundles, so editing builder
 JS takes effect without a rebundle. An installed wheel has no such sources and falls
 through to ``_runtime``.
 """
@@ -48,17 +48,17 @@ def _env_dir(name: str) -> Path | None:
 
 
 def _dev_builders_dir() -> Path | None:
-    """``packages/cadjs/bin`` when cadgen is imported from a source checkout.
+    """``packages/cadgen-js/bin`` when cadgen is imported from a source checkout.
 
-    Walks up from this module looking for a sibling ``cadjs/bin`` under a ``packages``
+    Walks up from this module looking for a sibling ``cadgen-js/bin`` under a ``packages``
     directory -- true for ``packages/cadgen/src/cadgen/assets.py`` in this repo, and for a
-    skill runtime that still vendors ``packages/cadgen`` beside ``packages/cadjs``. An
+    skill runtime that still vendors ``packages/cadgen`` beside ``packages/cadgen-js``. An
     installed wheel matches nothing here and falls through to the packaged copy.
     """
     for parent in Path(__file__).resolve().parents:
         if parent.name != "packages":
             continue
-        candidate = parent / "cadjs" / "bin"
+        candidate = parent / "cadgen-js" / "bin"
         if candidate.is_dir():
             return candidate
     return None
@@ -68,7 +68,7 @@ def node_builders_dir() -> Path:
     """Directory holding the esbuilt Node builders (``dxf-artifact.mjs`` and friends).
 
     ``CADGEN_NODE_BUILDERS_DIR`` names it directly. Otherwise a checkout's live
-    ``packages/cadjs/bin`` wins over the packaged copy, so builder JS stays editable.
+    ``packages/cadgen-js/bin`` wins over the packaged copy, so builder JS stays editable.
     """
     override = _env_dir("CADGEN_NODE_BUILDERS_DIR")
     if override:

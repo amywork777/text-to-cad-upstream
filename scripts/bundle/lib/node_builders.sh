@@ -3,7 +3,7 @@
 #
 # cadgen builds the DXF render package and the mesh exports by spawning a Node child
 # (packages/cadgen/src/cadgen/_internal/node_runtime.py). The builders themselves live in
-# packages/cadjs/bin and import three and meshoptimizer -- a dependency GRAPH,
+# packages/cadgen-js/bin and import three and meshoptimizer -- a dependency GRAPH,
 # not just a file. A published skill ships no node_modules (design
 # §4.5, "Node the binary is available; the dependency graph is not"), so the builders are
 # esbuild-bundled into ONE self-contained --platform=node file each, exactly as
@@ -13,7 +13,7 @@
 # `node_builder_script()` already derives (node_package_root() is cadgen's own
 # parents[4] -- packages/ in the dev checkout, <skill>/scripts/packages/ in a vendored
 # runtime). Nothing in the Python side changes, and the dev checkout keeps resolving the
-# real packages/cadjs/bin sources through the cadgen symlink.
+# real packages/cadgen-js/bin sources through the cadgen symlink.
 #
 # Source it after setting BUNDLE_REPO_ROOT, then call bundle_node_builders /
 # check_node_builders with the entry files the skill's builders need.
@@ -21,12 +21,12 @@
 # shellcheck shell=bash
 
 # Pinned so the committed bundles are reproducible. three and
-# meshoptimizer are read from packages/cadjs/package-lock.json, the one place their exact
+# meshoptimizer are read from packages/cadgen-js/package-lock.json, the one place their exact
 # versions are already pinned, so a dependency bump cannot silently change what ships without
 # also changing the committed bundle.
 NODE_BUILDER_ESBUILD_VERSION="${NODE_BUILDER_ESBUILD_VERSION:-0.27.7}"
 NODE_BUILDER_BUILD_DEPS_DIR="${NODE_BUILDER_BUILD_DEPS_DIR:-${BUNDLE_REPO_ROOT:?BUNDLE_REPO_ROOT must be set before sourcing node_builders.sh}/tmp/node-builder-build}"
-NODE_BUILDER_LOCKFILE="$BUNDLE_REPO_ROOT/packages/cadjs/package-lock.json"
+NODE_BUILDER_LOCKFILE="$BUNDLE_REPO_ROOT/packages/cadgen-js/package-lock.json"
 
 node_builder_locked_version() {
   local name="$1"
@@ -34,7 +34,7 @@ node_builder_locked_version() {
     const lock = require('$NODE_BUILDER_LOCKFILE');
     const entry = lock.packages && lock.packages['node_modules/$name'];
     if (!entry || !entry.version) {
-      throw new Error('packages/cadjs/package-lock.json has no pinned $name');
+      throw new Error('packages/cadgen-js/package-lock.json has no pinned $name');
     }
     entry.version;
   "
@@ -92,7 +92,7 @@ bundle_node_builders() {
   local entry basename_out
   rm -rf "$out_dir"
   mkdir -p "$out_dir"
-  # Mark the emitted directory as ESM, matching packages/cadjs itself, so a builder emitted
+  # Mark the emitted directory as ESM, matching packages/cadgen-js itself, so a builder emitted
   # as a bare `.js` still parses as a module rather than as CommonJS.
   printf '%s\n' '{ "type": "module" }' > "$out_dir/package.json"
   for entry in "$@"; do

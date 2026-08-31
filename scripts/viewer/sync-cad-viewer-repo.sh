@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mirror viewer/ into the standalone cad-viewer repo.
+# Mirror apps/viewer/ into the standalone cad-viewer repo.
 #
 # This is a STRAIGHT COPY: nothing rewrites paths, commands, or prose on the way
-# out. viewer/ is kept self-contained in this repo instead (enforced by
-# viewer/scripts/selfContained.test.mjs), so the mirror needs no transform step
+# out. apps/viewer/ is kept self-contained in this repo instead (enforced by
+# apps/viewer/scripts/selfContained.test.mjs), so the mirror needs no transform step
 # that can silently rot between releases.
 #
-# The one structural change is dereferencing: viewer/packages/* is a development
+# The one structural change is dereferencing: apps/viewer/packages/* is a development
 # symlink layout here and must land as real directories in the mirror. Agent
 # installers disagree about symlinks (see AGENTS.md), and a published tree must
 # never contain one, so the copy is verified symlink-free before it is reported
 # as good.
 #
 # Run this against a SOURCE ref (develop or a release source commit), never main:
-# the publish tree drops viewer/ entirely, because it is source and what installs
+# the publish tree drops apps/ entirely, because it is source and what installs
 # is the bundled runtime under skills/cad-viewer. What lands in packages/ is
-# whatever viewer/packages/ holds -- normally the development symlinks, which
+# whatever apps/viewer/packages/ holds -- normally the development symlinks, which
 # dereference to the live package sources.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,21 +29,21 @@ TARGET_SET=0
 DRY_RUN=0
 MODE="write"
 
-# Packages that must be present under viewer/packages for the mirror to install.
-# The viewer's one in-repo dependency is cadjs ("cadjs": "file:./packages/cadjs"), and
-# the Python backend is gone, so cadjs is the whole list.
-REQUIRED_PACKAGES=(cadjs)
+# Packages that must be present under apps/viewer/packages for the mirror to install.
+# The viewer's one in-repo dependency is cadgen-js ("cadgen-js": "file:./packages/cadgen-js"), and
+# the Python backend is gone, so cadgen-js is the whole list.
+REQUIRED_PACKAGES=(cadgen-js)
 
 usage() {
   cat <<'EOF'
 Usage:
   scripts/viewer/sync-cad-viewer-repo.sh [--check|--dry-run] [target-dir]
 
-Copies viewer/ into a standalone cad-viewer git checkout, dereferencing the
-viewer/packages/* development symlinks into real vendored copies.
+Copies apps/viewer/ into a standalone cad-viewer git checkout, dereferencing the
+apps/viewer/packages/* development symlinks into real vendored copies.
 
 Run it from a source checkout (develop or a release source commit). main is the
-publish branch and carries no viewer/ at all, so it cannot be a sync source.
+publish branch and carries no apps/viewer/ at all, so it cannot be a sync source.
 
 Default target:
   ../cad-viewer   (relative paths resolve against this repo's root)
@@ -127,15 +127,15 @@ require_command git
 require_command rsync
 require_command diff
 
-VIEWER_DIR="$SOURCE_REPO_ROOT/viewer"
+VIEWER_DIR="$SOURCE_REPO_ROOT/apps/viewer"
 if [ ! -e "$VIEWER_DIR/package.json" ]; then
-  echo "No viewer/ in this checkout: $VIEWER_DIR" >&2
-  echo "main is the publish branch and drops viewer/ from the published tree." >&2
+  echo "No apps/viewer/ in this checkout: $VIEWER_DIR" >&2
+  echo "main is the publish branch and drops apps/ from the published tree." >&2
   echo "Sync from a source ref instead (develop, or a release source commit)." >&2
   exit 1
 fi
 for package_name in "${REQUIRED_PACKAGES[@]}"; do
-  require_path "$VIEWER_DIR/packages/$package_name" "viewer/packages/$package_name"
+  require_path "$VIEWER_DIR/packages/$package_name" "apps/viewer/packages/$package_name"
 done
 
 case "$TARGET_ARG" in
@@ -226,7 +226,7 @@ DIFF_EXCLUDES=(
   -x '.env'
 )
 
-# One pass over viewer/, including packages/. --copy-links is what turns the
+# One pass over apps/viewer/, including packages/. --copy-links is what turns the
 # development symlinks into real directories; the mirror must never contain a
 # symlink.
 build_copy() {
@@ -236,15 +236,15 @@ build_copy() {
 }
 
 # The symlink layout is the expected one. Real directories mean bundle.sh has run
-# in this checkout, so viewer/packages holds the bundle output instead of the live
-# sources -- a smaller tree (cadjs ships without its own tests), which would show
+# in this checkout, so apps/viewer/packages holds the bundle output instead of the live
+# sources -- a smaller tree (cadgen-js ships without its own tests), which would show
 # up as drift against a mirror synced normally. Say so rather than letting it look
 # like real drift.
 warn_on_bundled_layout() {
   local package_name
   for package_name in "${REQUIRED_PACKAGES[@]}"; do
     if [ ! -L "$VIEWER_DIR/packages/$package_name" ]; then
-      echo "Note: viewer/packages holds real directories, so bundle.sh has run here and"
+      echo "Note: apps/viewer/packages holds real directories, so bundle.sh has run here and"
       echo "      this copies the bundle output rather than the live package sources."
       echo "      Run scripts/dev/setup-symlinks.sh to restore the development layout."
       return

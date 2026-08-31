@@ -29,15 +29,15 @@ from cadgen.snapshot_core import (  # noqa: E402
     WORKBENCH_RENDER_THEME_IDS,
 )
 
-THEME_SETTINGS_JS = Path(repo_path("packages/cadjs/src/common/themeSettings.js"))
-DISPLAY_SETTINGS_JS = Path(repo_path("packages/cadjs/src/common/displaySettings.js"))
+THEME_SETTINGS_JS = Path(repo_path("packages/cadgen-js/src/common/themeSettings.js"))
+DISPLAY_SETTINGS_JS = Path(repo_path("packages/cadgen-js/src/common/displaySettings.js"))
 
 
 def _js_source() -> str:
     return THEME_SETTINGS_JS.read_text(encoding="utf-8")
 
 
-def _cadjs_declares_theme_settings() -> bool:
+def _cadgen_js_declares_theme_settings() -> bool:
     # The module below must declare the presets itself rather than forward to somewhere
     # else. If they ever move, this guard moves with them rather than quietly comparing
     # against a module the viewer no longer loads.
@@ -88,11 +88,11 @@ class DisplayParityTests(unittest.TestCase):
 
 class ThemeParityTests(unittest.TestCase):
     def test_the_viewer_still_loads_the_shared_theme_source(self):
-        # The parity checks below read cadjs's declarations because that is where they
+        # The parity checks below read cadgen-js's declarations because that is where they
         # live now; this keeps the viewer's consumption path honest.
         self.assertTrue(
-            _cadjs_declares_theme_settings(),
-            "cadjs/common/themeSettings.js no longer declares the theme presets itself",
+            _cadgen_js_declares_theme_settings(),
+            "cadgen-js/common/themeSettings.js no longer declares the theme presets itself",
         )
 
     def test_the_snapshot_default_is_the_render_only_snapshot_theme(self):
@@ -104,7 +104,7 @@ class ThemeParityTests(unittest.TestCase):
         self.assertNotIn(DEFAULT_RENDER_THEME_ID, _preset_ids())
 
     def test_the_snapshot_theme_id_the_cli_names_is_the_one_js_declares(self):
-        # Behaviour (what the theme actually renders) is asserted in cadjs's own suite;
+        # Behaviour (what the theme actually renders) is asserted in cadgen-js's own suite;
         # what this side can check is that the two agree on the id at all.
         match = re.search(r'export const SNAPSHOT_THEME_ID\s*=\s*"([^"]+)"', _js_source())
         self.assertIsNotNone(match, "themeSettings.js no longer declares SNAPSHOT_THEME_ID")

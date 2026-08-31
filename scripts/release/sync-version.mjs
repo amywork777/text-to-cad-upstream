@@ -10,17 +10,17 @@ const canonicalVersionPath = "VERSION";
 const semverPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 export const jsonTargets = [
-  { path: "docs/package.json", fields: [["version"]] },
-  { path: "docs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
-  { path: "packages/cadjs/package.json", fields: [["version"]] },
-  { path: "packages/cadjs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
-  { path: "viewer/package.json", fields: [["version"]] },
+  { path: "apps/docs/package.json", fields: [["version"]] },
+  { path: "apps/docs/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
+  { path: "packages/cadgen-js/package.json", fields: [["version"]] },
+  { path: "packages/cadgen-js/package-lock.json", fields: [["version"], ["packages", "", "version"]] },
+  { path: "apps/viewer/package.json", fields: [["version"]] },
   {
-    path: "viewer/package-lock.json",
+    path: "apps/viewer/package-lock.json",
     fields: [
       ["version"],
       ["packages", "", "version"],
-      ["packages", "packages/cadjs", "version"],
+      ["packages", "packages/cadgen-js", "version"],
     ],
   },
   { path: ".claude-plugin/plugin.json", fields: [["version"]] },
@@ -187,7 +187,7 @@ function syncTomlTarget(relativePath, version) {
  * happens, so two of them stamping it means the last write wins -- and when the mirror declares
  * FEWER fields than the canonical target, the field only the canonical one knows about is
  * silently reverted. That is how the 0.4.10 release gate came to reject its own bump:
- * `packages/cadjs/package-lock.json` was stamped with a package version and then
+ * `packages/cadgen-js/package-lock.json` was stamped with a package version and then
  * overwritten through its own symlink, which did not carry that field.
  */
 export function mergeTargetsByRealPath(targets) {
