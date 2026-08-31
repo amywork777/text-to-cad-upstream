@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Emit the SUBPARTS ref block for f14d.params.js from the built package.
+"""Emit the act-2 SUBS ref lists for f14d.anim.js from the built package.
 
 The second act of the teardown separates parts INSIDE the wings and the aft
-section, and those are addressed by leaf occurrence id -- there is no name
-selector in a sidecar ref, only an occurrence list ("#o1.3.1.21,o1.3.1.22,...").
-Hand-maintaining ~100 ids is not viable, so they are generated from
-assembly.json by name pattern and pasted in.
+section, and those are addressed by leaf occurrence id -- the animation handle
+takes a label or an occurrence list ("o1.3.1.21,o1.3.1.22,..."), and there is
+no name pattern that says "every slat track on both wings". Hand-maintaining
+~100 ids is not viable, so they are generated from assembly.json by name
+pattern and pasted into the SUBS table.
 
 REGENERATE AFTER ANY REBUILD THAT CHANGES LEAF COUNTS:
 
-    python render/subrefs.py > /tmp/subparts.js   # then paste into f14d.params.js
+    python render/subrefs.py > /tmp/subrefs.txt   # then update SUBS in f14d.anim.js
 
 Anything mirrored port/stbd is split into two groups, because one ref moves
 every occurrence it matches by the SAME vector -- a single "wingtips" group
@@ -24,7 +25,19 @@ import re
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parent.parent
-ASSEMBLY = PROJECT / "__cadgen__" / "models" / "f14d.step.py" / "assembly.json"
+STEP = PROJECT / "f14d.step"
+
+
+def _assembly_json() -> Path:
+    """The built package's descriptor.
+
+    Render packages are content-keyed under the user cache now, so the path is
+    asked for rather than guessed at (it used to be hardcoded at a
+    ``__cadgen__/`` directory beside the model, which no longer exists).
+    """
+    from cadgen._internal.component_package import render_package_dir
+
+    return Path(render_package_dir(STEP)) / "assembly.json"
 
 # group name -> (parent occurrence prefix, name patterns, side filter or None)
 GROUPS = [
@@ -42,8 +55,11 @@ GROUPS = [
 
 
 def main() -> int:
-    occurrences = json.loads(ASSEMBLY.read_text())["occurrences"]
-    print("const SUBPARTS = {")
+    assembly = _assembly_json()
+    if not assembly.is_file():
+        raise SystemExit(f"no built package for {STEP.name}; run `python f14d.py` first")
+    occurrences = json.loads(assembly.read_text())["occurrences"]
+    print("// ref values for the SUBS table in f14d.anim.js")
     for name, prefix, patterns, side in GROUPS:
         ids = [
             o["id"]
@@ -54,8 +70,7 @@ def main() -> int:
         ]
         if not ids:
             raise SystemExit(f"no occurrences matched {name}")
-        print(f'  {name}: "#{",".join(ids)}",   // {len(ids)} occurrences')
-    print("};")
+        print(f'{name}: ref: "{",".join(ids)}"   // {len(ids)} occurrences')
     return 0
 
 

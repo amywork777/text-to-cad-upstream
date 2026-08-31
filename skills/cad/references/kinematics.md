@@ -57,7 +57,12 @@ def arm(): ...
   with its carrier; instance-tree children ride for free).
 - **`parent`/`child`** are occurrence refs: `#`-prefixed labels (canonical —
   label parts with `cadgen.label_shape`) or occurrence ids. They must resolve
-  at build or the build fails; `cadgen step inspect refs` lists both.
+  at build or the build fails; `cadgen step inspect refs` lists the leaves.
+  A ref may name a SUBASSEMBLY as well as a part — a labelled group `Compound`
+  is an occurrence in the instance tree, and mating it carries every part
+  beneath it. That is how a rocker-bogie chain is three mates instead of three
+  hundred; `inspect refs` does not list group refs, because they are not
+  rendered parts.
 - **`axis`** is a selector ref (`axis="#forearm.pivot_bore"` — a cylindrical
   face or circular edge yields its axis, a planar face its center+normal) or
   literals (`origin=(x, y, z), direction=(x, y, z)`). Refs resolve ONCE at
@@ -112,7 +117,9 @@ export const clips = {
 
 - `m.get(target)` takes a LABEL (canonical) or occurrence-id refs
   (`"#o1.3.1"`, comma lists; each id covers its whole subtree). Unknown
-  targets THROW — a typo never silently animates nothing.
+  targets THROW — a typo never silently animates nothing. Labels here match
+  RENDERED PARTS only, unlike a mate ref: to animate a whole group, name its
+  occurrence id.
 - Handles: `.rotate(axis, degrees, origin=[0,0,0])`, `.translate(vec)`,
   `.opacity(0..1)`, `.visible(bool)`. Successive transform calls
   PREMULTIPLY: spin about a part's own center first, then orbit the origin,

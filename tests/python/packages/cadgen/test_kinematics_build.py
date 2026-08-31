@@ -42,6 +42,37 @@ def hinge():
 
 ANIM_JS = "export const clips = { demo: { duration: 2, update(t, m) {} } };\n"
 
+# The same hinge, but each side is a GROUP of two parts. Mating the groups is
+# what "a mate on a parent occurrence carries its whole instance subtree" means
+# in practice, and it is the shape every real assembly has.
+GROUPED_MODEL = """
+import cadgen
+from cadgen import label_shape, step
+from cadgen import build123d as bd
+
+KINEMATICS = {
+    "mates": [
+        cadgen.revolute("swing", parent="#base_group", child="#arm_group",
+                        origin=(0, 0, 6), direction=(0, 0, 1), limits=(0, 90)),
+    ],
+}
+
+def _group(label, parts):
+    return bd.Compound(obj=list(parts), children=list(parts), label=label)
+
+@step(kind="assembly", kinematics=KINEMATICS)
+def grouped():
+    base = _group("base_group", [
+        label_shape(bd.Box(20, 20, 4), "base_plate"),
+        label_shape(bd.Pos(0, 0, 4) * bd.Box(8, 8, 4), "base_boss"),
+    ])
+    arm = _group("arm_group", [
+        label_shape(bd.Pos(10, 0, 6) * bd.Box(16, 4, 4), "arm_tube"),
+        label_shape(bd.Pos(18, 0, 6) * bd.Box(4, 6, 6), "arm_tip"),
+    ])
+    return bd.Compound(children=[base, arm])
+"""
+
 
 class KinematicsBuildTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -126,6 +157,27 @@ class KinematicsBuildTests(unittest.TestCase):
         self.assertEqual(len(axis["origin"]), 3)
         self.assertEqual(len(axis["dir"]), 3)
         self.assertAlmostEqual(math.hypot(*axis["dir"]), 1.0, places=6)
+
+    def test_a_mate_on_a_subassembly_resolves_to_the_group(self) -> None:
+        # Subassemblies are not rendered parts, so they are absent from the flat
+        # leaf index; they live in the descriptor's instance tree, which is the
+        # namespace mates target. Without this the rocker-bogie shape of model
+        # (a mate per GROUP) could not be declared at all.
+        script = self.root / "grouped.py"
+        script.write_text(GROUPED_MODEL, encoding="utf-8")
+        self.assertEqual(0, self._build(script))
+
+        (mate,) = self._sidecar(script)["kinematics"]["mates"]
+        self.assertEqual(mate["parent"], "#base_group")
+        self.assertEqual(mate["child"], "#arm_group")
+        # The resolved ids ride the sidecar beside the labels, so the viewer
+        # matches a whole subtree by id prefix rather than redoing topology.
+        self.assertEqual(mate["parentId"], "o1.1")
+        self.assertEqual(mate["childId"], "o1.2")
+
+        # Both of the arm group's leaves sit under the mated occurrence.
+        leaves = {o["id"] for o in self._descriptor(script)["occurrences"]}
+        self.assertEqual({"o1.1.1", "o1.1.2", "o1.2.1", "o1.2.2"}, leaves)
 
     def test_an_unresolvable_mate_ref_fails_the_build(self) -> None:
         script = self.root / "broken.py"
