@@ -407,10 +407,11 @@ export function createCadApp({ root, host, port, distDir = "" }) {
         } else if (pathname === "/__cad/download") {
           serveAsset(req, res, query, { download: true });
         } else {
-          if (!distDir) {
-            return false;
-          }
-          serveDist(req, res, pathname);
+          // An unrecognized /__cad/* path is a bad API call, not a page (ports
+          // develop's 9bc6bd44). Falling through to the SPA answered typo'd and
+          // retired routes with index.html at HTTP 200, so a client doing
+          // res.json() got an HTML parse error instead of a status it could read.
+          sendJson(req, res, 404, { error: "Not found" });
         }
       } catch (error) {
         if (error instanceof ForbiddenAssetError) {
