@@ -25,8 +25,8 @@
 // Usage:
 //   node viewer/scripts/e2e-lod-picking.mjs --dir <models-root> [--url http://127.0.0.1:3245]
 //
-// Requires: a viewer serving <models-root>, playwright, and the demo plate
-// built at models/projects/demo-plate (python src/STEP/plate.py).
+// Requires: a viewer serving <models-root>, playwright, and the mounting plate
+// built in the examples project (python models/examples/src/parts/mounting_plate.py).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -36,7 +36,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const { PNG } = require("pngjs");
 
-const PLATE_FILE = "projects/demo-plate/STEP/plate.step";
+const PLATE_FILE = "examples/STEP/mounting_plate.step";
 const TOP_FACE_MIN_COVERAGE = 0.98;
 
 function parseArgs(argv) {
@@ -64,7 +64,7 @@ if (!args.dir || !path.isAbsolute(args.dir)) {
 const plateRelCandidates = [PLATE_FILE, path.join("models", PLATE_FILE)];
 const plateRel = plateRelCandidates.find((candidate) => fs.existsSync(path.join(args.dir, candidate)));
 if (!plateRel) {
-  fail(`demo plate not built under ${args.dir} (run: python models/projects/demo-plate/src/STEP/plate.py)`);
+  fail(`mounting plate not built under ${args.dir} (run its model script in models/examples)`);
 }
 
 const pageUrl = `${args.url.replace(/\/$/, "")}${args.dir}?file=${plateRel.split(path.sep).join("/")}`;

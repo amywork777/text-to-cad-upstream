@@ -182,5 +182,5 @@ Note the `*` forms: ignoring the directory itself (`/STEP/`) would make the
 Copy `references/project-template.md` — the full tree with a working example
 model, drawing, lib module, README, and .gitignore to create verbatim. Then
 verify the loop end to end: `python src/<first-model>.py`, snapshot it, and
-confirm the format folder gained the artifact. A living exemplar ships in
-this repo at `models/projects/demo-plate/`.
+confirm the format folder gained the artifact. Living exemplars ship in
+this repo under `models/` (the `examples/` and `drawings/` projects).

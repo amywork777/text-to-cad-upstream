@@ -40,7 +40,6 @@ CADGEN_SRC = add_repo_path("packages/cadgen/src")
 SKILL = repo_path("skills/dxf/SKILL.md")
 TEMPLATES = repo_path("skills/dxf/references/generator-templates.md")
 PROJECT_TEMPLATE = repo_path("skills/cad-project/references/project-template.md")
-EXEMPLAR_DRAWING = repo_path("models/projects/demo-plate/src/plate_drawing.py")
 
 _PYTHON_BLOCK = re.compile(r"```python\n(.*?)```", re.S)
 # A model the reader could paste somewhere else needs this to exist first.
@@ -400,20 +399,53 @@ class DocumentationTeachesTheNewContract(unittest.TestCase):
                 self.assertTrue(Path(value).suffix, f"OUT `{value}` names no file")
                 self.assertFalse(value.endswith(("/", "\\")))
 
-    def test_the_project_template_matches_its_exemplar(self) -> None:
-        """cad-project's template and models/projects/demo-plate are the same
-        drawing shown twice; a reader who copies one and inspects the other must
-        not find two different contracts."""
-        block = re.search(
-            r"## `src/plate_drawing\.py`\n\n```python\n(.*?)```",
-            PROJECT_TEMPLATE.read_text(encoding="utf-8"),
-            re.S,
-        )
-        self.assertIsNotNone(block, "the template lost its drawing example")
-        self.assertEqual(
-            block.group(1).strip(),
-            EXEMPLAR_DRAWING.read_text(encoding="utf-8").strip(),
-        )
+    def test_the_project_template_builds(self) -> None:
+        """cad-project's template is the exemplar: a reader who copies it
+        verbatim gets a project whose model and drawing BUILD, with the outputs
+        landing in the format folders the template's out= targets name."""
+        template = PROJECT_TEMPLATE.read_text(encoding="utf-8")
+
+        def block(header: str) -> str:
+            found = re.search(
+                rf"## `{re.escape(header)}`\n\n```python\n(.*?)```", template, re.S
+            )
+            self.assertIsNotNone(found, f"the template lost its {header} example")
+            return found.group(1)
+
+        with tempfile.TemporaryDirectory(prefix="cad-project-template-") as tmp:
+            project = Path(tmp).resolve()
+            src = project / "src"
+            (src / "lib").mkdir(parents=True)
+            (src / "plate.py").write_text(block("src/plate.py"), encoding="utf-8")
+            (src / "plate_drawing.py").write_text(
+                block("src/plate_drawing.py"), encoding="utf-8"
+            )
+            (src / "lib" / "holes.py").write_text(
+                block("src/lib/holes.py"), encoding="utf-8"
+            )
+            environment = {
+                **os.environ,
+                "CADGEN_DAEMON": "0",
+                "CADGEN_COMPONENT_WORKERS": "1",
+                "CADGEN_CACHE_DIR": str(project / "store"),
+                "PYTHONPATH": str(CADGEN_SRC),
+            }
+            for script in ("plate.py", "plate_drawing.py"):
+                completed = subprocess.run(
+                    [sys.executable, script],
+                    cwd=str(src),
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                )
+                self.assertEqual(
+                    completed.returncode,
+                    0,
+                    f"{script} failed:\n{completed.stdout}\n{completed.stderr}",
+                )
+            self.assertTrue((project / "STEP" / "plate.step").is_file())
+            self.assertTrue((project / "DXF" / "plate_drawing.dxf").is_file())
 
 
 if __name__ == "__main__":

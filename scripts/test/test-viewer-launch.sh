@@ -117,7 +117,7 @@ fi
 # provides the repo venv via CADGEN_PYTHON (set at server launch above,
 # see the env block) — the same soft-dependency contract users get. The
 # fixture is deliberately non-LFS (CI checks out without LFS).
-FIXTURE="$REPO_ROOT/models/fixtures/import-smoke.step"
+FIXTURE="$REPO_ROOT/models/examples/imported/import-smoke.step"
 if ! head -1 "$FIXTURE" | grep -q "ISO-10303-21"; then
   echo "FAIL: import fixture is not STEP text (LFS pointer?): $FIXTURE" >&2
   exit 1

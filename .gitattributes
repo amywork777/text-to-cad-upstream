@@ -21,4 +21,4 @@ apps/docs/public/hero/** !filter !diff !merge -text
 **/.*.step/topology.json filter=lfs diff=lfs merge=lfs -text
 # Tiny plain-text STEP used by the viewer launch smoke's end-to-end import
 # (CI checks out without LFS, so this one fixture must be real text).
-models/fixtures/import-smoke.step !filter !diff !merge text
+models/examples/imported/import-smoke.step !filter !diff !merge text
