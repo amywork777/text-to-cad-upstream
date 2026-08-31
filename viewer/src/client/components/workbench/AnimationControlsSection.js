@@ -99,7 +99,9 @@ export default function AnimationControlsSection({ runtime = null }) {
       ) : null}
 
       {clips.length ? (
-        <FileSheetSubsection title="Clip">
+        // "Playback", not "Clip": the group and the row inside it must not share
+        // a name (viewer/docs/settings-ui.md), and the group is the transport.
+        <FileSheetSubsection title="Playback">
           {/* The section's primary control: which clip is selected reframes the
               transport and the time/speed rows beneath it. "Rest" leaves the
               model wherever pose put it. */}
