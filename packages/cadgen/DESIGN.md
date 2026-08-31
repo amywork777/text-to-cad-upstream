@@ -9,7 +9,7 @@ code.
 ## 1. Generated files are totally independent of their source code
 
 A generated file (STEP, DXF, STL, GLB, 3MF) and its generated sidecar
-(`<name>.step.cadgen.json`) stand alone, forever, with no dependency of any
+(`<name>.step.json`) stand alone, forever, with no dependency of any
 kind on the source that produced them.
 
 **Pressure-test**: a generated file must be fully renderable — viewer,

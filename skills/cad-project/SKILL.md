@@ -92,12 +92,12 @@ artifacts (scripts never appear); before anything is built, discovery is
 ## Renaming or retiring outputs
 
 Changing a model's `out=` (or deleting a model) does not remove what the old
-declaration produced: the previous artifact, its `.cadgen.json` sidecar, and
+declaration produced: the previous artifact, its `.step.json` sidecar, and
 any declared mesh exports stay on disk and will look like real project files
 forever. Treat a rename as an edit PLUS a cleanup, done conservatively:
 
 1. BEFORE editing, list exactly what the old declaration names: the `out=`
-   target, its `<name>.step.cadgen.json` sidecar, and each declared export's
+   target, its `<name>.step.json` sidecar, and each declared export's
    `out=` target (`@stl`/`@glb`/`@threemf`).
 2. Make the edit, rebuild, and verify the new artifacts exist.
 3. Delete ONLY the files from step 1, by exact path. Never glob
