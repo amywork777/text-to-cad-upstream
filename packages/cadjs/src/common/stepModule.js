@@ -289,7 +289,7 @@ export function normalizeStepModuleDefinition(rawModule, { url = "", cadPath = "
 
 // loadStepModuleDefinition (URL-import of a loose .params.js sidecar) is
 // retired: pose definitions come from the package descriptor via
-// poseModule.loadPoseModuleDefinition — the single pose mechanism.
+// kinematicsModule.loadKinematicsModuleDefinition — typed mates only.
 
 export function normalizeStepModuleParameterValues(definition, values = {}) {
   const parameterMap = definition?.parameterMap || {};

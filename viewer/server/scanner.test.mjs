@@ -94,16 +94,19 @@ test("a .implicit.js file is not a catalog entry at all", (t) => {
   assert.ok(entries.find((e) => e.file === "outline.dxf"));
 });
 
-test("a source-sidecar pose block is exposed as poseUrl; sidecars only teach", (t) => {
+test("a sidecar kinematics section is exposed as poseUrl; sidecars only teach", (t) => {
   const root = tmpRoot(t);
   const stepPath = write(root, "gripper.step", "ISO-10303-21;\ngripper\n");
-  // The store descriptor is STEP-pure; pose (and all source-derived state)
-  // rides the MODEL-SIDE sidecar, whose existence marks the model generated.
+  // The store descriptor is STEP-pure; kinematics (and all source-derived
+  // state) rides the MODEL-SIDE sidecar, whose existence marks the model
+  // generated.
   writeStorePackage(stepPath, { kind: "assembly-package" });
   write(root, "gripper.step.cadgen.json", JSON.stringify({
     schemaVersion: 3,
     sourceKind: "python",
-    pose: { schemaVersion: 1, params: { drive: { type: "number" } }, moduleSource: "export function update() {}\n" }
+    kinematics: { mates: [{ name: "jaw", kind: "slider", parent: "#body", child: "#jaw",
+      axis: { origin: [0, 0, 0], dir: [1, 0, 0] }, limits: { value: [0, 40] } }] },
+    animation: { clips: "export const clips = {};\n" }
   }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
   assert.equal(entry.sourceKind, "python");

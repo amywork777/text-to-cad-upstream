@@ -296,7 +296,7 @@ import {
 import {
   normalizeStepModuleParameterValues
 } from "cadjs/common/stepModule";
-import { loadPoseModuleDefinition } from "cadjs/common/poseModule";
+import { loadKinematicsModuleDefinition } from "cadjs/common/kinematicsModule";
 import {
   normalizeParameterValue,
   normalizeParameterValues
@@ -1689,7 +1689,7 @@ export default function CadWorkspace({
     setStepModuleAnimationState(buildDefaultStepModuleAnimationState(null));
     resetStepAnimationStore();
 
-    loadPoseModuleDefinition(selectedStepModuleUrl, {
+    loadKinematicsModuleDefinition(selectedStepModuleUrl, {
       cadPath: selectedStepModuleCadPath
     }).then((definition) => {
       if (cancelled) {

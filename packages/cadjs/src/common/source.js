@@ -27,7 +27,7 @@ import {
   renderAssetSourceScopeForJob,
   setRenderAssetSourceScope
 } from "../lib/renderAssetSourceScope.js";
-import { loadPoseModuleDefinition } from "./poseModule.js";
+import { loadKinematicsModuleDefinition } from "./kinematicsModule.js";
 import {
   isRobotSourceKind,
   loadRobotMeshData,
@@ -296,9 +296,15 @@ async function loadStepParameters({
     }
     throw new Error("STEP render parameters require resolved.stepParameterUrl");
   }
-  // stepParameterUrl is the package SOURCE SIDECAR url (the .cadgen.json); the
-  // pose block inside it is the one parameter mechanism.
-  const definition = await loadPoseModuleDefinition(stepParameterUrl, { cadPath });
+  // stepParameterUrl is the model SIDECAR url (the .cadgen.json); its
+  // kinematics section is the one articulation mechanism.
+  const definition = await loadKinematicsModuleDefinition(stepParameterUrl, { cadPath });
+  if (!definition) {
+    if (explicit) {
+      throw new Error("model declares no kinematics, so stepParameters have nothing to drive");
+    }
+    return null;
+  }
   const renderParameters = normalizeStepParameterRenderValues(definition, explicit ? stepParameters : {});
   return {
     definition,

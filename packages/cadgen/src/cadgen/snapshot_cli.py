@@ -1110,17 +1110,19 @@ def resolve_step_render_job(
     from cadgen._internal.source_sidecar import read_source_sidecar, source_sidecar_path
 
     sidecar = read_source_sidecar(source_path) or {}
-    pose_block = sidecar.get("pose") if isinstance(sidecar.get("pose"), dict) else None
-    if pose_block:
-        # The pose block is the ONE parameter mechanism: the page fetches the
-        # source sidecar and compiles it (cadjs poseModule); the optional
-        # escape-hatch module rides inline in the sidecar (pose.moduleSource).
+    kinematics_block = (
+        sidecar.get("kinematics") if isinstance(sidecar.get("kinematics"), dict) else None
+    )
+    if kinematics_block:
+        # Typed mates are the ONE articulation mechanism: the page fetches the
+        # sidecar and folds --params DOF values through the shared FK
+        # evaluator (cadjs kinematicsModule).
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
     elif has_param_render:
         raise SnapshotError(
-            f"{input_path.name} declares no pose block, so stepParameters have nothing to "
-            "drive — declare @step(pose=cadgen.pose(...)) on the model "
-            "(the .params.js sidecar mechanism is retired; see skills/cad/references/parameters.md)"
+            f"{input_path.name} declares no kinematics, so pose values have nothing to "
+            "drive — declare kinematics= (typed mates) on the model's @step; "
+            "see the cad skill's kinematics reference"
         )
     if debug_enabled:
         resolved["debug"] = {"stepArtifact": step_artifact_debug}

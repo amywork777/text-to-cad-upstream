@@ -410,7 +410,8 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
     sourcePath: String(sidecar?.sourcePath ?? ""),
     sourceHash: String(sidecar?.sourceHash ?? ""),
     stepHash: String(descriptor.stepHash ?? ""),
-    pose: sidecar && typeof sidecar.pose === "object" && sidecar.pose ? sidecar.pose : null,
+    kinematics: sidecar && typeof sidecar.kinematics === "object" && sidecar.kinematics ? sidecar.kinematics : null,
+    animation: sidecar && typeof sidecar.animation === "object" && sidecar.animation ? sidecar.animation : null,
   };
 }
 
@@ -423,7 +424,7 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
   const topology = metadata.topology;
   const descriptorStats = packageDescriptorStats(packageDir);
   const topologyIndex = topology && topology.index && typeof topology.index === "object" ? topology.index : topology;
-  const poseBlock = metadata.pose || null;
+  const poseBlock = metadata.kinematics || metadata.animation || null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
   const sourceHash = String(metadata.sourceHash || "").trim();
   const generated = metadata.sourceKind === "python";
@@ -458,9 +459,9 @@ function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
     entry.sourceUrl = assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));
   }
   if (poseBlock) {
-    // Declarative pose (the ONLY pose mechanism): the client fetches the
-    // source sidecar and compiles its pose block; the optional escape-hatch
-    // module rides INLINE in the sidecar (pose.moduleSource).
+    // Typed mates + choreography (the ONLY articulation mechanisms): the
+    // client fetches the sidecar and compiles its kinematics section (pure
+    // data -> FK) and its animation section (the copied .anim.js text).
     entry.poseUrl = entry.sourceUrl || assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));
   }
   return entry;

@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from tests.python.support.paths import add_repo_path, repo_path
 
 
-def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None):
+def write_package(step_path, *, entry_kind="part", source_kind="step", kinematics=None, animation=None):
     """Materialize the canonical render artifact for ``step_path``: a SELF-CONTAINED
     component-GLB PACKAGE directory inside the per-folder cache
     (``__cadgen__/models/<step-filename>/assembly.json``) whose content-addressed component
@@ -59,10 +59,16 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", pose=None
             }
         )
     )
-    if pose:
-        # Pose (source-derived) rides the MODEL-SIDE sidecar, never the descriptor.
+    if kinematics or animation:
+        # Kinematics/animation (source-derived) ride the MODEL-SIDE sidecar,
+        # never the descriptor.
+        sidecar = {"schemaVersion": 3, "sourceKind": "python"}
+        if kinematics:
+            sidecar["kinematics"] = kinematics
+        if animation:
+            sidecar["animation"] = animation
         Path(f"{step_path}.cadgen.json").write_text(
-            json.dumps({"schemaVersion": 3, "sourceKind": "python", "pose": pose})
+            json.dumps(sidecar)
         )
     return pkg_dir
 
@@ -1253,9 +1259,10 @@ class SnapshotCliTests(unittest.TestCase):
             models = root / "models"
             models.mkdir()
             (models / "part.step").write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-            write_package(models / "part.step", pose={
-                "schemaVersion": 1,
-                "params": {"width": {"type": "number", "min": 0, "max": 5, "default": 1}},
+            write_package(models / "part.step", kinematics={
+                "mates": [{"name": "width", "kind": "slider", "parent": "#a", "child": "#b",
+                           "axis": {"origin": [0, 0, 0], "dir": [1, 0, 0]},
+                           "limits": {"value": [0, 5]}}],
             })
 
             original_ensure = snapshot_main.ensure_step_topology_artifact
@@ -1827,8 +1834,9 @@ class StepPoseParameterTests(unittest.TestCase):
     stepParametersPath, descriptor paramsPath) are hard teaching errors."""
 
     POSE = {
-        "schemaVersion": 1,
-        "params": {"stroke": {"type": "number", "min": 0, "max": 1, "default": 0}},
+        "mates": [{"name": "stroke", "kind": "slider", "parent": "#body", "child": "#ram",
+                   "axis": {"origin": [0, 0, 0], "dir": [0, 0, 1]},
+                   "limits": {"value": [0, 1]}}],
     }
 
     def setUp(self) -> None:
@@ -1842,7 +1850,7 @@ class StepPoseParameterTests(unittest.TestCase):
     def _step(self, name="part.step", *, pose=True):
         step_path = self.models / name
         step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
-        write_package(step_path, pose=self.POSE if pose else None)
+        write_package(step_path, kinematics=self.POSE if pose else None)
         return step_path
 
     def _job(self, **overrides):
@@ -1875,19 +1883,17 @@ class StepPoseParameterTests(unittest.TestCase):
         self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
-    def test_pose_hatch_rides_inline_in_the_sidecar(self) -> None:
-        # The escape hatch is pose.moduleSource, inlined in the sidecar; there
-        # is no module file and no separate hatch URL to resolve.
+    def test_animation_never_gates_the_parameter_url(self) -> None:
+        # Choreography is sidecar-borne but INDEPENDENT: an animation section
+        # without kinematics gives pose values nothing to drive.
         step_path = self._step(pose=False)
-        write_package(step_path, pose={**self.POSE, "moduleSource": "export default {};"})
-        packet = self._resolve(self._job(stepParameters={"stroke": 1}))
-        resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
-        self.assertNotIn("stepPoseHatchUrl", resolved)
+        write_package(step_path, animation={"clips": "export const clips = {};"})
+        with self.assertRaisesRegex(SnapshotError, "declares no kinematics"):
+            self._resolve(self._job(stepParameters={"stroke": 1}))
 
-    def test_parameters_without_a_pose_block_teach_the_migration(self) -> None:
+    def test_parameters_without_kinematics_teach_the_migration(self) -> None:
         self._step(pose=False)
-        with self.assertRaisesRegex(SnapshotError, "declares no pose block"):
+        with self.assertRaisesRegex(SnapshotError, "declares no kinematics"):
             self._resolve(self._job(stepParameters={"stroke": 1}))
 
     def test_retired_job_keys_are_rejected_by_name(self) -> None:
