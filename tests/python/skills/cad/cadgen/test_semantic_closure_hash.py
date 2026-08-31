@@ -179,20 +179,24 @@ class RuntimeRootsStdinFootgunTests(unittest.TestCase):
             # window can outlive the restore.
             source_hash._excluded_roots.cache_clear()
 
-    def test_real_launcher_file_is_a_runtime_root(self) -> None:
+    def test_model_script_main_is_not_a_runtime_root(self) -> None:
+        """An on-disk ``__main__`` OUTSIDE the interpreter's and cadgen's own
+        roots is USER CODE — under the model-script contract it is the model
+        itself (``python src/model.py``), and treating its directory as
+        runtime dropped ``src/lib`` helpers from every recorded closure."""
         import sys
 
         main = sys.modules["__main__"]
         original = getattr(main, "__file__", None)
         with tempfile.TemporaryDirectory() as tmp:
             launcher = Path(tmp) / "__main__.py"
-            launcher.write_text("# launcher\n", encoding="utf-8")
+            launcher.write_text("# a model script\n", encoding="utf-8")
             source_hash._runtime_roots.cache_clear()
             try:
                 main.__file__ = str(launcher)
                 source_hash._runtime_roots.cache_clear()
                 roots = source_hash._runtime_roots()
-                self.assertIn(launcher.parent.resolve(), roots)
+                self.assertNotIn(launcher.parent.resolve(), roots)
             finally:
                 if original is None:
                     if hasattr(main, "__file__"):

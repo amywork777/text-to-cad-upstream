@@ -62,25 +62,16 @@ def _try_chamfer(solid, edges, length):
 
 
 def _soften_reveal(solid, seam_x, radius=0.8):
-    """Break the edges bounding a clamshell panel's flat reveal face.
+    """Break every edge of a clamshell panel with a small fillet.
 
-    The obvious spelling — `fillet(panel.edges(), 0.8)` over every edge —
-    cannot be used on the forearm panels: the elliptical loft's parametric
-    seam runs down the +X meridian, exactly where the front panel is split
-    off, and filleting across it rebuilds the outer face with UV bounds
-    about 1e-8 OUTSIDE its own knot domain. cadgen's surface extractor
-    rejects that face (`Geom_RectangularTrimmedSurface::U parameters out of
-    range`, packages/cadgen/.../surface_extract.py: the `1e-9` UV-domain
-    guard added for the moonwatch bezel), so the whole part fails to build.
-    Softening only the reveal-face edges gives the same visual read — the
-    graphite reveal strip reads as a broken edge, the silhouette stays
-    crisp — and leaves the seam face untouched.
+    (Historical note: this used to fillet only the reveal-face edges,
+    because filleting across the elliptical loft's parametric seam left the
+    outer face's UV ~1e-8 outside its knot domain and the surface
+    extractor's 1e-9 UV guard rejected the part. That guard is 1e-6 now, so
+    the blanket fillet extracts fine.)
     """
-    reveal = [f for f in solid.faces() if abs(f.center().X - seam_x) < 1e-6]
-    edges = [edge for face in reveal for edge in face.edges()]
-    if not edges:
-        return solid
-    return _try_fillet(solid, edges, radius)
+    del seam_x
+    return _try_fillet(solid, solid.edges(), radius)
 
 
 def _ring_groove(solid, z, r_out, depth=0.9, width=1.5):

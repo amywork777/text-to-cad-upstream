@@ -229,19 +229,25 @@ def _runtime_roots() -> tuple[Path, ...]:
     main_module = sys.modules.get("__main__")
     main_file = getattr(main_module, "__file__", None)
     if main_file:
-        # Only a real on-disk launcher is runtime. Interactive / stdin / ``-c``
-        # entry points set ``__file__`` to a placeholder like ``<stdin>`` or
-        # ``<string>``, whose ``resolve().parent`` is the CWD — adding that would
-        # wrongly mark the model folder (and its sibling helper modules) as
-        # runtime, drop them from the recorded closure, and silently disable
-        # staleness detection for stdin/`-c`-driven builds. ``is_file()`` rejects
-        # every ``<...>`` placeholder while still catching the CLI launcher.
+        # ``__main__``'s directory is runtime ONLY when ``__main__`` is itself
+        # a launcher — a script living inside the interpreter's or cadgen's
+        # own roots (console script in the venv's bin/, ``python -m cadgen.X``).
+        # Under the model-script contract ``__main__`` IS the user's model
+        # (``python model.py``), and its directory is ``src/`` — adding that
+        # would mark the model folder and every ``src/lib`` helper as runtime,
+        # drop them from the recorded closure, and silently disable staleness
+        # detection for exactly the layout the cad-project skill mandates
+        # (and make the daemon and daemonless paths record DIFFERENT closures
+        # for one source). ``is_file()`` additionally rejects interactive /
+        # stdin / ``-c`` placeholders like ``<stdin>``.
         try:
             resolved_main = Path(main_file).resolve()
         except OSError:
             resolved_main = None
         if resolved_main is not None and resolved_main.is_file():
-            roots.append(resolved_main.parent)
+            launcher_roots = (_PACKAGE_ROOT.resolve(), *_interpreter_roots())
+            if any(root in resolved_main.parents for root in launcher_roots):
+                roots.append(resolved_main.parent)
     return tuple(roots)
 
 
@@ -330,6 +336,43 @@ def evict_first_party_modules() -> tuple[str, ...]:
         for name in {*repo_local_loaded_modules(set(sys.modules)), *_first_party_namespace_packages()}
         if name.partition(".")[0] not in protected
     )
+    for name in evicted:
+        sys.modules.pop(name, None)
+    return evicted
+
+
+def evict_foreign_first_party_modules(own_roots) -> tuple[str, ...]:
+    """Drop first-party modules that do NOT belong to the model being loaded.
+
+    The cad-project convention gives every project the same top-level module
+    names (``lib``, sibling models), so a process that builds two projects gets
+    a name collision: whatever the worker imported last wins, and the next
+    project either fails to import or silently builds against the WRONG
+    project's helpers. Called by the module loader itself, with the script's
+    own search roots, so the guarantee holds for EVERY load path — not just
+    the ones that remembered to run the blanket eviction first. A module whose
+    file (or, for a namespace package, every ``__path__`` entry) lies under one
+    of ``own_roots`` is this project's and stays."""
+    roots = [Path(root).resolve() for root in own_roots]
+
+    def _owned(path: Path) -> bool:
+        return any(_is_within(path, root) for root in roots)
+
+    protected = _packages_owning_loaded_extensions()
+    foreign: list[str] = []
+    for name, path in repo_local_loaded_modules(set(sys.modules)).items():
+        if name.partition(".")[0] in protected or _owned(path):
+            continue
+        foreign.append(name)
+    for name in _first_party_namespace_packages():
+        if name.partition(".")[0] in protected:
+            continue
+        module = sys.modules.get(name)
+        entries = list(getattr(module, "__path__", None) or ())
+        if entries and all(_owned(Path(str(entry)).resolve()) for entry in entries):
+            continue
+        foreign.append(name)
+    evicted = tuple(dict.fromkeys(foreign))
     for name in evicted:
         sys.modules.pop(name, None)
     return evicted

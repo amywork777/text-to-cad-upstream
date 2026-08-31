@@ -85,6 +85,14 @@ def _load_generator_module(script_path: Path) -> object:
         if candidate not in sys.path:
             sys.path.insert(0, candidate)
 
+    # Another project's modules must not be importable-by-cache here: every
+    # cad-project shares the same top-level names (`lib`, sibling models), so a
+    # warm process that built project A would hand project B a stale `lib`
+    # bound to A's directory. Path-aware eviction at the ONE load choke point
+    # makes "which project's lib" unambiguous for every caller.
+    from cadgen._internal.source_hash import evict_foreign_first_party_modules
+
+    evict_foreign_first_party_modules(search_paths)
     try:
         sys.modules[module_name] = module
         exec(source_code, module.__dict__)

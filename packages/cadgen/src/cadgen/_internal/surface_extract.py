@@ -22,6 +22,7 @@ is the entire point — display cost leaves the build path.
 from __future__ import annotations
 
 import json
+import math
 import struct
 from typing import Any
 
@@ -157,6 +158,32 @@ def _assert_surface_covers_face(payload, u0, u1, v0, v1, bin_out) -> None:
             "extrapolate")
 
 
+def _translate_knots_to_window(
+    nurbs, period: float, w0: float, eps: float,
+    first_knot: float, nb_knots, knot, set_knot,
+) -> None:
+    """Shift a clamped copy's knots by whole PERIODS so its span starts at
+    the period containing ``w0`` (the face window's low edge).
+
+    Translating every knot by the same constant re-parameterizes without
+    moving geometry — and because the ORIGINAL surface is periodic, the
+    copy evaluated in the shifted frame gives exactly the points the face's
+    pcurves address there. A no-op for aperiodic directions (period 0) and
+    for faces already inside the span."""
+    if not period:
+        return
+    shift = math.floor((w0 - first_knot) / period + eps)
+    if not shift:
+        return
+    delta = shift * period
+    count = nb_knots()
+    # Keep knots monotonic at every intermediate step: walk from the end
+    # for a positive shift, from the start for a negative one.
+    order = range(count, 0, -1) if delta > 0 else range(1, count + 1)
+    for index in order:
+        set_knot(index, knot(index) + delta)
+
+
 class _Bin:
     """The single f32 buffer; append() returns [offset, count] refs."""
 
@@ -286,21 +313,36 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
         if isinstance(native, _Trim):
             native = native.BasisSurface()
         if isinstance(native, Geom_BSplineSurface):
+            period_u = native.UPeriod() if native.IsUPeriodic() else 0.0
+            period_v = native.VPeriod() if native.IsVPeriodic() else 0.0
             nurbs = native.Copy()
             if nurbs.IsUPeriodic():
                 nurbs.SetUNotPeriodic()
             if nurbs.IsVPeriodic():
                 nurbs.SetVNotPeriodic()
             # Direct copy is valid only when the face addresses parameters
-            # inside the (clamped) domain. A PERIODIC surface whose face
-            # crosses the period (u range past one turn) must go through
-            # the trimmed conversion below instead — segmenting a B-spline
-            # preserves parametrization, so nothing is lost, while a
-            # clamped copy would EXTRAPOLATE outside its knots (moonwatch
-            # bezel: face u in [28.5, 66.1] over a ~41-period surface).
+            # inside the (clamped) domain. A face on a PERIODIC surface may
+            # sit a WHOLE number of periods away from the clamped span
+            # (booleans re-anchor pcurves; f1 engine cover: face u exactly
+            # one period past the basis knots). The surface is identical
+            # there, so translate the copy's knots by those periods —
+            # surface, face uv, and pcurves stay in ONE parameter frame,
+            # which is the contract (:func:`_assert_surface_covers_face`).
+            # A window that still does not fit ONE clamped span (u range
+            # past one turn) goes through the trimmed conversion below
+            # instead — segmenting a B-spline preserves parametrization, so
+            # nothing is lost, while a clamped copy would EXTRAPOLATE
+            # outside its knots (moonwatch bezel: face u in [28.5, 66.1]
+            # over a ~41-period surface).
             u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
-            eps_u = max(abs(u1 - u0), 1.0) * 1e-9
-            eps_v = max(abs(v1 - v0), 1.0) * 1e-9
+            eps_u = max(abs(u1 - u0), 1.0) * 1e-6
+            eps_v = max(abs(v1 - v0), 1.0) * 1e-6
+            _translate_knots_to_window(
+                nurbs, period_u, u0, eps_u,
+                nurbs.UKnot(1), nurbs.NbUKnots, nurbs.UKnot, nurbs.SetUKnot)
+            _translate_knots_to_window(
+                nurbs, period_v, v0, eps_v,
+                nurbs.VKnot(1), nurbs.NbVKnots, nurbs.VKnot, nurbs.SetVKnot)
             if (
                 u0 >= nurbs.UKnot(1) - eps_u
                 and u1 <= nurbs.UKnot(nurbs.NbUKnots()) + eps_u
