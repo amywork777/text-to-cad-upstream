@@ -1,4 +1,4 @@
-# Mechanism STEP demos
+# thang010146 mechanism demos
 
 Mechanism assemblies inspired by the YouTube channel
 [thang010146](https://www.youtube.com/@thang010146/videos). Original mechanism
@@ -9,7 +9,7 @@ A standard cad-project (`$cad-project`): authored code in `src/`, raw outputs
 in `STEP/`, vendor documents in `STEP/imported/`.
 
 ```
-mechanisms/
+thang010146/
   src/                    # authored: one @step wrapper + its clip per mechanism
     README.md             #   the model catalog
     gear_rack_gripper.py

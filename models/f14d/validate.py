@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic checks for the F-14D assembly.
 
-    .venv/bin/python models/renders/f14d/validate.py
+    .venv/bin/python models/f14d/validate.py
 
 This is a HARNESS, not a model, which is why it sits at the project root rather
 than in ``src/`` (every ``.py`` directly under ``src/`` is a runnable model).

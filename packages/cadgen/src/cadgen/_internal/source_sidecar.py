@@ -2,20 +2,20 @@
 
 The render package (in the user-level store, keyed by the document's content
 hash) is a pure function of the STEP file's bytes plus schema versions — the
-cache engine's world, freely evictable. Everything derived from the Python
-source instead lives in ONE sidecar FILE BESIDE THE MODEL,
-``<name>.step.json``: generation provenance (source path/hash, the
-runtime closure the no-op gate re-validates), the KINEMATICS section (typed
-mates with axes resolved to world numbers, couplings, pose presets), the
-ANIMATION section (the .anim.js choreography text, COPIED — no path back to
-the source tree ever appears in a generated file), the MESH EXPORTS section
+cache engine's world, freely evictable. The model's DECLARATIONS live in ONE
+sidecar FILE BESIDE THE MODEL, ``<name>.step.json``: the KINEMATICS section
+(typed mates with axes resolved to world numbers, couplings, pose presets),
+the ANIMATION section (the .anim.js choreography text, COPIED — no path back
+to the source tree ever appears in a generated file), the MESH EXPORTS section
 (what the model's ``@stl``/``@glb``/``@threemf`` declarations resolved to, so
 a bare mesh door reads DECLARATIONS from the document instead of importing
-the model module), assembly mates (authored in Python, not representable in
-STEP), and the build timestamp. It sits beside the model because it cannot be
-re-derived from the STEP bytes: evicting the store must never lose kinematics
-or provenance. New capability = new SECTION + schema bump, never a second
-sidecar file.
+the model module), and assembly mates (authored in Python, not representable in
+STEP). NOTHING source-derived-as-identity — no paths, hashes, closures, or
+timestamps: a sidecar ships beside the artifact, and a generated file carries
+no tie back to its source. Provenance lives in the RECORDS tier below. The
+sidecar sits beside the model because declarations cannot be re-derived from
+the STEP bytes: evicting the store must never lose kinematics. New capability
+= new SECTION + schema bump, never a second sidecar file.
 
 A sidecar exists ONLY when the model NEEDS one: a kinematics section, an
 animation section, or declared mesh exports. A plain model — geometry and
@@ -47,8 +47,15 @@ from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 # path from the artifact (:func:`source_sidecar_path`), or match the artifact
 # suffix too (`.step.json` / `.stp.json`).
 SOURCE_SIDECAR_SUFFIX = ".json"
-# 4: the meshExports section (doors read declarations from the document).
-SOURCE_SIDECAR_SCHEMA_VERSION = 4
+# 5: provenance moved OUT of the sidecar (a generated file must carry no tie
+#    to its source; the freshness gates read the records tier). 4 added the
+#    meshExports section.
+SOURCE_SIDECAR_SCHEMA_VERSION = 5
+
+# What a sidecar may CONTAIN: declarations only. Anything source-derived-as-
+# provenance (paths, hashes, closures, timestamps) belongs to the provenance
+# record; a sidecar sits beside the artifact and ships with it.
+_SIDECAR_SECTIONS = ("schemaVersion", "kinematics", "animation", "meshExports")
 
 
 def source_sidecar_path(step_path: Path | str) -> Path:
@@ -92,15 +99,12 @@ def write_source_sidecar(step_path: Path | str, payload: Mapping[str, Any]) -> N
         return
     target = source_sidecar_path(step_path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    body = dict(payload)
-    body.setdefault("schemaVersion", SOURCE_SIDECAR_SCHEMA_VERSION)
+    body = {k: v for k, v in payload.items() if k in _SIDECAR_SECTIONS}
+    body["schemaVersion"] = SOURCE_SIDECAR_SCHEMA_VERSION
     # A rewrite that changes nothing but the timestamp is pure churn — for
     # committed sidecars (imported/ projects) it dirties git on every no-op.
-    existing = read_source_sidecar(step_path)
-    if existing is not None:
-        stripped = {k: v for k, v in existing.items() if k != "generatedAt"}
-        if stripped == {k: v for k, v in body.items() if k != "generatedAt"}:
-            return
+    if read_source_sidecar(step_path) == body:
+        return
     temp = target.with_name(f".{target.name}{temp_suffix()}")
     temp.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
     replace_atomic(temp, target)
@@ -219,13 +223,17 @@ def write_source_provenance_record(step_path: Path | str, payload: Mapping[str, 
 
 
 def read_source_provenance(step_path: Path | str) -> dict[str, Any] | None:
-    """The document's source provenance: its sidecar when it carries one,
-    else the records-tier provenance record, else ``None`` (an import)."""
-    sidecar = read_source_sidecar(step_path)
-    if sidecar is not None:
-        return sidecar
+    """The document's source provenance, from the records tier — the ONE home
+    of source-derived identity now that sidecars carry declarations only.
+    Falls back to the sidecar for documents written by older schemas, else
+    ``None`` (an import, or an evicted record: one rebuild re-records)."""
     try:
         payload = json.loads(_provenance_record_path(step_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None
-    return payload if isinstance(payload, dict) else None
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    sidecar = read_source_sidecar(step_path)
+    if sidecar is not None and sidecar.get("sourceKind"):
+        return sidecar
+    return None

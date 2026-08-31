@@ -114,12 +114,17 @@ class StepReemitTests(unittest.TestCase):
         self.assertFalse(result.skipped)
 
         sidecar = self._sidecar()
-        self.assertEqual(4, sidecar["schemaVersion"])
-        # A re-emitted document has no Python behind it: its freshness closure
-        # is the INPUT's content hash, and it declares no mesh exports.
-        self.assertEqual("step", sidecar["sourceKind"])
+        self.assertEqual(5, sidecar["schemaVersion"])
+        # Declarations only (schema 5): no source tie of any kind in the file
+        # beside the artifact. The freshness identity — sourceKind "step", the
+        # INPUT's content hash — lives in the provenance RECORD.
+        self.assertNotIn("sourceKind", sidecar)
         self.assertNotIn("meshExports", sidecar)
         self.assertNotIn("sourcePath", sidecar)
+        from cadgen._internal.source_sidecar import read_source_provenance
+
+        provenance = read_source_provenance(self.out) or {}
+        self.assertEqual("step", provenance.get("sourceKind"))
 
         (mate,) = sidecar["kinematics"]["mates"]
         # Refs resolved against the geometry we just wrote, not just echoed.

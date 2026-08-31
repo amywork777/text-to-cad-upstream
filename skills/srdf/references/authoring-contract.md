@@ -65,7 +65,7 @@ Every `link`, `joint`, `base_link`, `tip_link`, `parent_link`, and group-state j
 </robot>
 ```
 
-Repository fixtures under `models/robots/` (for example `so101.srdf`, `tom.srdf`) are full worked examples.
+Repository fixtures under `models/` (for example `so101/so101.srdf`, `openarm/openarm-bimanual.srdf`) are full worked examples.
 
 ## Helper Scripts
 

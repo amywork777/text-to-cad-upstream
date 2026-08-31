@@ -22,7 +22,7 @@ from tests.python.support.paths import repo_path
 
 REPO = Path(repo_path("."))
 PART = "models/examples/src/cylindrical_spacer_sleeve.py"
-ROBOT = "models/robots/so101/so101.urdf"
+ROBOT = "models/so101/so101.urdf"
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -91,7 +91,7 @@ class StderrIsEverythingElseTests(unittest.TestCase):
         # The logger prefixes every line it owns. Finding one on stdout means narration and
         # result have been mixed, and `2>/dev/null` no longer yields something parseable.
         # Library-first: the model script is the build entrypoint for STEP and DXF alike.
-        for kind, target in (("step", PART), ("dxf", "models/drawings/src/gasket_plate.py")):
+        for kind, target in (("step", PART), ("dxf", "models/examples/src/gasket_plate.py")):
             with self.subTest(kind=kind):
                 result = run_script(target)
                 self.assertNotIn("[cadgen]", result.stdout)

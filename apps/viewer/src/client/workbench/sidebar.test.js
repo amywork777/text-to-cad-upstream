@@ -631,20 +631,41 @@ test("filenameLabelForEntry shows canonical step, stl, 3mf, glb, dxf, urdf, srdf
 
 });
 
-test("filenameLabelForEntry names the source file, not the logical output", () => {
-  // A gen_step model can carry its logical STEP in `file` while the file the user edits is
-  // the generator recorded in sourcePath. The label follows the source, so a generator never
-  // masquerades as a committed STEP.
+test("filenameLabelForEntry names the file on disk, never the script that generated it", () => {
+  // A generated model is an artifact and is presented as one. Recorded provenance --
+  // `sourcePath`, `source.sourcePath`, `source.file` -- drives freshness gates and status
+  // badges; it never renames the file. `moonwatch.step` reads as `moonwatch.step`.
   assert.equal(
     filenameLabelForEntry({
       file: "simple/spur_gear_blank.step",
       kind: "part",
       sourceKind: "python",
-      sourcePath: "simple/spur_gear_blank.step.py"
+      sourcePath: "simple/src/spur_gear_blank.py"
     }),
-    "spur_gear_blank.step.py"
+    "spur_gear_blank.step"
   );
-  // A committed STEP (sourceKind step) keeps the plain `.step` label.
+  assert.equal(
+    filenameLabelForEntry({
+      file: "watches/moonwatch.step",
+      kind: "assembly",
+      sourceKind: "python",
+      source: {
+        file: "watches/src/moonwatch.py",
+        sourcePath: "watches/src/moonwatch.py"
+      }
+    }),
+    "moonwatch.step"
+  );
+  assert.equal(
+    filenameLabelForEntry({
+      file: "drawings/mars_rover_concept.dxf",
+      kind: "dxf",
+      sourceKind: "python",
+      source: { path: "drawings/src/mars_rover_concept.py" }
+    }),
+    "mars_rover_concept.dxf"
+  );
+  // An imported STEP was never affected and still reads as itself.
   assert.equal(
     filenameLabelForEntry({
       file: "imports/widget.step",
@@ -754,6 +775,33 @@ test("buildSidebarDirectoryTree lists CAD files in their exact source directory"
       ...listSidebarItems(partsDirectory).map((item) => `${item.type}:${item.label}`),
     ],
     ["entry:sample_plate.dxf", "entry:sample_plate.step"]
+  );
+});
+
+test("catalog rows for generated models read as their artifacts, in the artifact's folder", () => {
+  // Post-migration the script lives in `models/watches/src/`; the artifact lives in
+  // `models/watches/`. Labelling the row from the script both renamed the file and would
+  // have implied the wrong folder.
+  const tree = buildSidebarDirectoryTree([
+    {
+      file: "watches/moonwatch.step",
+      kind: "assembly",
+      sourceKind: "python",
+      source: { file: "watches/src/moonwatch.py", sourcePath: "watches/src/moonwatch.py" }
+    },
+    {
+      file: "watches/mars_rover_concept.step",
+      kind: "assembly",
+      sourceKind: "python",
+      sourcePath: "watches/src/mars_rover_concept.py"
+    }
+  ]);
+
+  const watchesDirectory = tree.directories.find((directory) => directory.id === "watches");
+  assert.ok(watchesDirectory);
+  assert.deepEqual(
+    listSidebarItems(watchesDirectory).map((item) => `${item.type}:${item.label}`),
+    ["entry:mars_rover_concept.step", "entry:moonwatch.step"]
   );
 });
 

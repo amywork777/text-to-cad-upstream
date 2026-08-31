@@ -236,43 +236,6 @@ function stepSourceStatusMessage(stepStatus, stepSourceStatus) {
   return cleanText(stepStatus?.message) || "STEP file is missing from the directory.";
 }
 
-function generatedSourceStatusTitle(sourceStatus) {
-  if (sourceStatus?.status === "missing") {
-    return "Generator source missing";
-  }
-  return "Generated source warning";
-}
-
-function generatedSourceStatusMessage(sourceStatus) {
-  if (sourceStatus?.status === "missing") {
-    return "This file records a Python generator path, but that source file is not available.";
-  }
-  return cleanText(sourceStatus?.message) || "Generated source metadata is incomplete.";
-}
-
-export function generatedSourceStatusItems(entry = null, {
-  viewerServerInfo = {},
-} = {}) {
-  const sourceStatus = entry?.sourceStatus;
-  if (!sourceStatus || sourceStatus.ok !== false) {
-    return [];
-  }
-  return normalizeFileStatusItems([{
-    id: "generated-source",
-    level: FILE_STATUS_LEVELS.WARNING,
-    source: "source-metadata",
-    code: cleanText(sourceStatus.status) || "source_identity",
-    title: generatedSourceStatusTitle(sourceStatus),
-    message: generatedSourceStatusMessage(sourceStatus),
-    details: [
-      pathDetail("File", entry?.file, viewerServerInfo, entry?.file),
-      detail("Source kind", sourceStatus.sourceKind || entry?.sourceKind),
-      pathDetail("Python source", sourceStatus.sourcePath || entry?.source?.file, viewerServerInfo, entry?.file),
-      detail("Raw message", sourceStatus.message)
-    ].filter(Boolean)
-  }]);
-}
-
 export function stepFileStatusItems({
   entry = null,
   stepSourceStatus = null,
@@ -445,7 +408,6 @@ export function buildFileStatusItems({
 
   const kind = cleanText(fileSheetKind).toLowerCase();
   const items = [];
-  items.push(...generatedSourceStatusItems(entry, { viewerServerInfo }));
   // Advisory badges apply to every artifact-managed kind, not just STEP.
   items.push(...artifactAdvisoryStatusItems(artifactAdvisory, { entry, viewerServerInfo }));
   if (kind === "step") {

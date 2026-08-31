@@ -62,7 +62,7 @@ both reuse and rolling.
 The page is the bare origin, and `file=` selects one artifact inside the served root:
 
 ```text
-http://127.0.0.1:3245/?file=mechanisms/lift_table.step
+http://127.0.0.1:3245/?file=thang010146/STEP/gear_rack_gripper.step
 ```
 
 The `file=` value is relative to `--root`. Nothing about the directory appears in the
@@ -75,7 +75,7 @@ switch files without a new link. Pick the directory the user thinks of as their
 model workspace — typically the project's `models/` directory, or the nearest
 common parent of the files you were asked to review — and put the rest of the
 path in `file=`. Rooting at the artifact's own deep folder
-(`--root .../models/step/mechanisms`, `?file=lift_table.step`) opens the same model
+(`--root .../models/thang010146/STEP`, `?file=gear_rack_gripper.step`) opens the same model
 but hides the rest of the project, which is almost never what the user wants.
 
 Port collisions are not your problem: the launcher rolls to a free port and the
@@ -106,11 +106,15 @@ and return the link.
 
 - Before returning any link, resolve `<directory>/<file>` and confirm it
   exists. Pass the `.step`/`.stp` artifact itself — generated and imported
-  alike (the catalog lists artifacts; generated-ness is package provenance,
-  shown as the model script in the UI). A generated model's render artifacts
-  must already be built (run the model script, `python <model>.py`); the
-  Viewer will not build them on open. If the resolved path is missing, do not
-  return the link; report the problem and point to the correct path.
+  alike. The catalog lists artifacts and names them exactly as they read on
+  disk: `moonwatch.step` is `moonwatch.step` in the tab, the breadcrumb, the
+  catalog row and the file picker, whether it was generated or imported.
+  Generated-ness is package provenance — it drives status badges, rebuild
+  behaviour and freshness gates, and never the displayed name; the model
+  script is not shown anywhere in the UI. A generated model's render artifacts
+  must already be built (run the model script); the Viewer will not build them
+  on open. If the resolved path is missing, do not return the link; report the
+  problem and point to the correct path.
 - Return one Viewer URL per requested file.
 - Start the Viewer once and pick one workspace root for the session. Every link is
   the same origin plus `?file=<path relative to that root>`, so all of them share one

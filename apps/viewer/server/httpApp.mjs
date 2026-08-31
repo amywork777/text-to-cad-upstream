@@ -298,21 +298,12 @@ export function createCadApp({ root, host, port, distDir = "" }) {
     // Resolves through the same containment as every other asset route; being a
     // POST it sits behind the cross-site header gate — which matters more here
     // than elsewhere, since it spawns a process.
+    //
+    // Reveal targets the ENTRY, always. An `asset=source` branch used to redirect it to the
+    // model script recorded in the entry's sidecar, which is the one thing this route must
+    // not do: the viewer shows artifacts as artifacts, and no UI offers a script to open.
     const fileRef = query.get("file") || "";
-    let target = backend.containedPathForFileRef(fileRef);
-    if (target && String(query.get("asset") || "output").trim() === "source") {
-      const catalog = backend.readCatalog();
-      const entry = backend.catalogEntryForFileRef(catalog, fileRef) || {};
-      const source = entry.source && typeof entry.source === "object" ? entry.source : {};
-      if (source.sourcePath) {
-        // Re-resolve rather than trusting the catalog: the same containment must
-        // apply to the source path as to the entry itself.
-        const sourceTarget = backend.containedPathForFileRef(source.sourcePath);
-        if (sourceTarget) {
-          target = sourceTarget;
-        }
-      }
-    }
+    const target = backend.containedPathForFileRef(fileRef);
     if (!target || !fs.existsSync(target)) {
       sendJson(req, res, 404, { ok: false, error: "Not found" });
       return;

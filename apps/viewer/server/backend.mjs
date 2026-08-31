@@ -120,9 +120,6 @@ function absolutizeEntry(entry, { rootPath, scanRepoRoot }) {
   if (entry.source) {
     next.source = absolutizeKeyed(entry.source, scanRepoRoot, ["file", "path", "sourcePath"]);
   }
-  if (entry.sourceStatus) {
-    next.sourceStatus = absolutizeKeyed(entry.sourceStatus, scanRepoRoot, ["sourcePath", "stepPath", "packagePath"]);
-  }
   if (entry.artifact) {
     next.artifact = absolutizeKeyed(entry.artifact, scanRepoRoot, ["stepPath", "packagePath", "sourcePath", "cadPath"]);
   }

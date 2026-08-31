@@ -31,8 +31,8 @@ comparisons (solid display, `presentation-large` size profile);
 ## Commands (run from this directory)
 
 ```bash
-PY=../../../.venv/bin/python
-CADGEN=../../../.venv/bin/cadgen
+PY=../../.venv/bin/python
+CADGEN=../../.venv/bin/cadgen
 
 $PY src/<model>.py                                  # a model script builds itself
 ls src/*.py | xargs -n1 -P4 $PY                     # rebuild everything

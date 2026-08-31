@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildSidebarDirectoryTree } from "./sidebar.js";
+import { buildSidebarDirectoryTree, sidebarLabelForEntry } from "./sidebar.js";
 import {
   buildBreadcrumbNodes,
   collapsedBreadcrumbNodes,
@@ -65,6 +65,34 @@ test("breadcrumb dropdown directories target adjacent siblings", () => {
       "assemblies/robot/arm/forearm.step"
     ]
   );
+});
+
+test("the breadcrumb tail of a generated model reads as the file on disk", () => {
+  // CadWorkspaceTopBar builds selectedFileLabel with sidebarLabelForEntry and
+  // selectedFileTitle from entry.file, so both ends of the breadcrumb name the artifact.
+  // This used to end in `moonwatch.py` -- a file that is not even in that directory.
+  const selectedEntry = {
+    file: "watches/moonwatch.step",
+    kind: "assembly",
+    sourceKind: "python",
+    source: {
+      file: "watches/src/moonwatch.py",
+      sourcePath: "watches/src/moonwatch.py"
+    }
+  };
+  const tree = buildSidebarDirectoryTree([selectedEntry], { rootName: "models" });
+
+  const nodes = buildBreadcrumbNodes({
+    directoryTree: tree,
+    selectedEntry,
+    selectedFileLabel: sidebarLabelForEntry(selectedEntry),
+    selectedFileTitle: String(selectedEntry.file)
+  });
+
+  const tail = nodes[nodes.length - 1];
+  assert.equal(tail.type, "entry");
+  assert.equal(tail.label, "moonwatch.step");
+  assert.equal(tail.title, "watches/moonwatch.step");
 });
 
 test("breadcrumb helpers support collapsed paths", () => {

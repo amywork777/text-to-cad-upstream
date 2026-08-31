@@ -1,4 +1,11 @@
-import { entryStepSourceKind } from "./entryIconStatus.js";
+// File-access assets are ARTIFACTS ONLY.
+//
+// This module used to synthesize a third "source" asset by guessing a same-stem `.py`
+// sibling for any Python-backed STEP (`moonwatch.step` -> `moonwatch.py`), which put a
+// script name in front of the user for a file that is not there: model scripts live in
+// `src/` directories, not beside their output. The guess and every affordance built on it
+// are gone. Provenance still travels in the sidecar and drives freshness gates; it never
+// names a file in the UI.
 import {
   normalizeRelativePath as normalizedRelativePath,
   viewerRootRelativePath
@@ -8,57 +15,6 @@ import { fileKey } from "./sidebar.js";
 function basenameFromFileRef(value) {
   const normalized = normalizedRelativePath(value);
   return normalized.split("/").filter(Boolean).pop() || "";
-}
-
-function normalizedFilePath(value) {
-  const normalized = String(value || "").trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  return normalized.startsWith("/")
-    ? normalized
-    : normalized.replace(/^\/+/, "");
-}
-
-function dirnameFromFileRef(value) {
-  const parts = normalizedRelativePath(value).split("/").filter(Boolean);
-  parts.pop();
-  return parts.join("/");
-}
-
-function joinRelativePath(...parts) {
-  return parts
-    .map((part) => normalizedRelativePath(part))
-    .filter(Boolean)
-    .join("/");
-}
-
-function sameStemPythonFilename(value) {
-  const filename = basenameFromFileRef(value);
-  return filename.replace(/\.(step|stp)$/i, ".py");
-}
-
-function sameStemPythonFileRef(value) {
-  const dirname = dirnameFromFileRef(value);
-  const filename = sameStemPythonFilename(value);
-  return joinRelativePath(dirname, filename);
-}
-
-function isStepFileRef(value) {
-  return /\.(step|stp)$/i.test(normalizedRelativePath(value));
-}
-
-function explicitSourceFileRef(entry) {
-  return (
-    normalizedFilePath(entry?.sourceFile) ||
-    normalizedFilePath(entry?.source?.file) ||
-    normalizedFilePath(entry?.source?.path)
-  );
-}
-
-function explicitSourceDirectoryFileRef(entry) {
-  return (
-    normalizedFilePath(entry?.sourceDirectoryFile) ||
-    normalizedFilePath(entry?.source?.directoryFile) ||
-    normalizedFilePath(entry?.source?.sourcePath)
-  );
 }
 
 function artifactFileRef(entry, viewerServerInfo = {}) {
@@ -85,7 +41,6 @@ function joinLocalPath(basePath, relativePath) {
 }
 
 export function fileAccessAssetsForEntry(entry, {
-  stepSourceStatus = null,
   viewerServerInfo = {},
 } = {}) {
   const fileRef = fileKey(entry);
@@ -93,7 +48,6 @@ export function fileAccessAssetsForEntry(entry, {
     return {
       artifact: null,
       output: null,
-      source: null,
     };
   }
 
@@ -102,24 +56,6 @@ export function fileAccessAssetsForEntry(entry, {
   const outputFilename = basenameFromFileRef(outputFileRef);
   const artifactRef = artifactFileRef(entry, viewerServerInfo);
   const artifactFilename = basenameFromFileRef(artifactRef);
-  const sourceKind = String(stepSourceStatus?.sourceKind || entryStepSourceKind(entry)).trim().toLowerCase();
-  const stepSourcePath = normalizedFilePath(stepSourceStatus?.sourcePath);
-  const explicitSourceRef = explicitSourceFileRef(entry);
-  const explicitSourceDirectoryRef = explicitSourceDirectoryFileRef(entry);
-  const inferredSourceRootRef = sourceKind === "python" && isStepFileRef(outputFileRef)
-    ? sameStemPythonFileRef(outputFileRef)
-    : "";
-  const sourceRef = explicitSourceRef || stepSourcePath || inferredSourceRootRef;
-  const sourceDirectoryRef = stepSourcePath || explicitSourceDirectoryRef;
-  const hasViewerPathContext = Boolean(viewerServerInfo?.rootPath);
-  const sourceRootRef = sourceRef
-    ? hasViewerPathContext
-      ? (viewerRootRelativePath(sourceRef, viewerServerInfo, { anchorFile: outputFileRef }) || sourceRef)
-      : sourceDirectoryRef ? "" : (explicitSourceRef || inferredSourceRootRef)
-    : "";
-  const sourceFilename = sourceRootRef || sourceRef
-    ? (basenameFromFileRef(sourceRootRef || sourceRef) || sameStemPythonFilename(outputFileRef))
-    : "";
 
   return {
     artifact: artifactFilename ? {
@@ -136,14 +72,6 @@ export function fileAccessAssetsForEntry(entry, {
       label: outputFilename || "download",
       rootRelativePath: outputFileRef,
     },
-    source: sourceFilename ? {
-      asset: "source",
-      fileRef,
-      filename: sourceFilename,
-      label: sourceFilename,
-      rootRelativePath: sourceRootRef,
-      directoryRelativePath: sourceDirectoryRef,
-    } : null,
   };
 }
 
@@ -174,14 +102,12 @@ export function openUrlForFileAsset(fileRef, asset = "output", baseUrl = "") {
 export function copyTargetsForFileAccessAsset(asset, viewerServerInfo = {}) {
   // A path relative to the served directory IS a path relative to the root: they are
   // the same directory now, so the old re-basing between them is gone.
-  const directoryRelativePath = normalizedRelativePath(asset?.directoryRelativePath);
-  const rawRootRelativePath = directoryRelativePath || normalizedRelativePath(asset?.rootRelativePath);
-  const rootRelativePath = rawRootRelativePath
+  const rawRootRelativePath = normalizedRelativePath(asset?.rootRelativePath);
+  const relativePath = rawRootRelativePath
     ? viewerRootRelativePath(rawRootRelativePath, viewerServerInfo, { anchorFile: asset?.fileRef })
     : "";
-  const relativePath = rootRelativePath || directoryRelativePath;
-  const absolutePath = rootRelativePath && viewerServerInfo?.rootPath
-    ? joinLocalPath(viewerServerInfo.rootPath, rootRelativePath)
+  const absolutePath = relativePath && viewerServerInfo?.rootPath
+    ? joinLocalPath(viewerServerInfo.rootPath, relativePath)
     : "";
 
   return {

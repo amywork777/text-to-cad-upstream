@@ -202,33 +202,20 @@ test("parser warnings normalize to status items", () => {
   })[0].title, "SDF warning");
 });
 
-test("generated source status explains missing generator source", () => {
+test("a sourceStatus field on an entry produces no status item (retired tier)", () => {
+  // The scanner never emitted sourceStatus and the generated-source card was
+  // dead code; an entry carrying the retired field must render nothing.
   const items = buildFileStatusItems({
     entry: {
       file: "robots/robot.urdf",
       kind: "urdf",
-      sourceKind: "python",
-      sourceStatus: {
-        ok: false,
-        status: "missing",
-        stale: false,
-        sourceKind: "python",
-        sourcePath: "models/robots/robot_urdf.py",
-        message: "Python generator source is unavailable."
-      }
+      sourceStatus: { ok: false, status: "missing" }
     },
     fileSheetKind: "urdf",
     viewerServerInfo
   });
 
-  assert.equal(items.length, 1);
-  assert.equal(items[0].level, FILE_STATUS_LEVELS.WARNING);
-  assert.equal(items[0].title, "Generator source missing");
-  assert.equal(
-    items[0].message,
-    "This file records a Python generator path, but that source file is not available."
-  );
-  assert.equal(items[0].details.find((item) => item.label === "Python source")?.value, "robots/robot_urdf.py");
+  assert.equal(items.length, 0);
 });
 
 test("viewer alerts normalize to status items", () => {

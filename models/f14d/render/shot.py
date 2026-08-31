@@ -86,7 +86,7 @@ def build_job(target, outdir, stem, views, size, mode, focus=None, hide=None,
         outs.append({"path": str(Path(outdir) / f"{stem}_{v}.png"), "camera": dict(cam)})
     # Edge styling lives in DISPLAY, not in the theme.  Passing an "edges" key
     # inside a theme JSON is rejected outright -- and the repo's own example
-    # presentation theme (models/renders/hypercar/render/presentation_theme.json)
+    # presentation theme (models/hypercar/render/presentation_theme.json)
     # still carries one, so copying it as a starting point fails.
     display = json.loads(DISPLAY.read_text())
     display.pop("_comment", None)

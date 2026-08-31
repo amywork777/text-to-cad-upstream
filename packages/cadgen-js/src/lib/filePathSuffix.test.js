@@ -38,12 +38,12 @@ test("a genuinely colliding filename gains directory segments until it is unique
   // cad-project layout every project has its own STEP/ folder, so a shared
   // part name collides on the folder above it.
   const suffixes = shortestUniquePathSuffixes([
-    "models/renders/juno/STEP/palm.step",
-    "models/renders/lyra/STEP/palm.step",
+    "models/juno/STEP/palm.step",
+    "models/lyra/STEP/palm.step",
     "models/step/parts/unique_part.step"
   ]);
-  assert.equal(suffixes.get("models/renders/juno/STEP/palm.step"), "juno/STEP/palm.step");
-  assert.equal(suffixes.get("models/renders/lyra/STEP/palm.step"), "lyra/STEP/palm.step");
+  assert.equal(suffixes.get("models/juno/STEP/palm.step"), "juno/STEP/palm.step");
+  assert.equal(suffixes.get("models/lyra/STEP/palm.step"), "lyra/STEP/palm.step");
   assert.equal(suffixes.get("models/step/parts/unique_part.step"), "unique_part.step");
 });
 

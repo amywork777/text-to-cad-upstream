@@ -24,4 +24,4 @@ export const SOURCE_SIDECAR_SUFFIX = ".json"; // source_sidecar.SOURCE_SIDECAR_S
 // The sidecar names a CAD artifact carries: `<artifact>.step.json`. This is the
 // safe membership test where a path is all you have.
 export const SOURCE_SIDECAR_NAMES = [".step.json", ".stp.json"];
-export const SOURCE_SIDECAR_SCHEMA_VERSION = 4; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION
+export const SOURCE_SIDECAR_SCHEMA_VERSION = 5; // source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION (5: declarations-only — provenance moved to the records tier)

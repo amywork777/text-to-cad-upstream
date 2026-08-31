@@ -98,7 +98,14 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         block = sidecar.get("kinematics")
         self.assertIsInstance(block, dict)
         self.assertEqual(block["mates"][0]["name"], "drive")
-        self.assertEqual(sidecar.get("sourceKind"), "python")
+        # Provenance moved to the records tier (schema 5): the sidecar beside
+        # the artifact carries declarations only, never a source tie.
+        self.assertNotIn("sourceKind", sidecar)
+        self.assertNotIn("sourcePath", sidecar)
+        from cadgen._internal.source_sidecar import read_source_provenance
+
+        provenance = read_source_provenance(logical_step) or {}
+        self.assertEqual(provenance.get("sourceKind"), "python")
 
     def test_assembled_step_carries_occurrence_colors(self) -> None:
         _, logical_step = self._build_generated_package()

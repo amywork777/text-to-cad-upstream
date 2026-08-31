@@ -1,4 +1,4 @@
-# mechanisms models
+# thang010146 models
 
 Every script here is a thin `@step` wrapper: it reads the vendor document in
 `STEP/imported/` with `cadgen.read_step` and re-exports it to `STEP/` with the

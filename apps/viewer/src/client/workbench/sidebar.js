@@ -182,31 +182,6 @@ function entryLeafName(entry) {
   return parts[parts.length - 1] || file;
 }
 
-function sourceLeafName(entry) {
-  const source = entry?.source;
-  const candidate = String(
-    entry?.sourcePath
-    || (source && typeof source === "object" ? (source.sourcePath || source.path || source.file) : "")
-    || ""
-  ).trim();
-  if (!candidate) {
-    return "";
-  }
-  const parts = candidate.split("/");
-  return parts[parts.length - 1] || "";
-}
-
-function normalizedEntryStem(entry) {
-  return entryLeafName(entry)
-    .replace(/\.step\.json$/i, "")
-    .replace(/\.urdf\.json$/i, "")
-    // A generator entry's filename is `<name>.step.py` / `<name>.dxf.py` — strip the whole
-    // generator suffix to `<name>` so the label reconstructs as `<name>.step` / `<name>.dxf`
-    // (not `<name>.step.step` or `<name>.dxf.dxf`).
-    .replace(/\.(step|stp|dxf)\.py$/i, "")
-    .replace(/\.(step|stp|stl|3mf|glb|dxf|urdf|srdf|sdf|py)$/i, "");
-}
-
 export function sidebarDirectoryIdForEntry(entry) {
   const file = String(entry?.rootRelativeFile || fileKey(entry) || "").trim();
   const parts = file.split("/").filter(Boolean);
@@ -214,27 +189,21 @@ export function sidebarDirectoryIdForEntry(entry) {
   return parts.join("/");
 }
 
-function sourceExtensionForEntry(entry) {
-  const leafName = entryLeafName(entry);
-  const match = /\.([^.]+)$/.exec(leafName);
-  return String(match?.[1] || "").trim().toLowerCase();
-}
-
 export function filenameLabelForEntry(entry) {
-  // The entry's REAL filename, never a reconstruction.
+  // The entry's REAL filename on disk, never a reconstruction and never a substitution.
   //
-  // This used to rebuild a label from a stem plus a canonical extension, which erased what
-  // the file is actually called: `gasket_plate.dxf.py` displayed as `gasket_plate.dxf`, so a
-  // generated drawing and an imported one beside it were indistinguishable in the explorer,
-  // the breadcrumb and the tab. Two different files, one label — and the one you clicked was
-  // whichever the list happened to hold.
+  // Two rules used to live here and both lied about what the user was looking at. The first
+  // rebuilt a label from a stem plus a canonical extension, so `gasket_plate.dxf.py` showed
+  // as `gasket_plate.dxf` and an imported drawing beside it was indistinguishable. The
+  // second preferred the recorded generator path, so `moonwatch.step` — a real file, sitting
+  // right there — showed as `moonwatch.py`, a file that does not even live in that directory
+  // any more now that model scripts moved into `src/`.
   //
-  // Showing the filename verbatim also means new source kinds need no case here.
-  //
-  // Prefer the recorded SOURCE path over `file`: a generated model can carry its logical
-  // output there (`<stem>.step`) while the file a user edits is the generator beside it.
-  // The source path is what they opened, so it is what the label should say.
-  return sourceLeafName(entry) || entryLeafName(entry);
+  // An artifact is presented as an artifact: every user-visible name is the basename of the
+  // catalog entry's own path. Generated-vs-imported still drives status badges and rebuild
+  // behaviour; it never drives the NAME. Showing the filename verbatim also means new source
+  // kinds need no case here.
+  return entryLeafName(entry);
 }
 
 export function sidebarLabelForEntry(entry) {

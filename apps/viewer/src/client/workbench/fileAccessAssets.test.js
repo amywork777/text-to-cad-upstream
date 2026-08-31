@@ -25,7 +25,6 @@ test("file access assets always include output filename", () => {
     label: "robot-arm.step",
     rootRelativePath: "assemblies/robot-arm/robot-arm.step",
   });
-  assert.equal(assets.source, null);
 });
 
 test("file access assets include generated artifact URLs when present", () => {
@@ -45,67 +44,56 @@ test("file access assets include generated artifact URLs when present", () => {
   });
 });
 
-test("file access assets infer same-stem Python source filenames for Python-backed STEP entries", () => {
+test("a Python-backed entry offers no source asset and keeps its on-disk output name", () => {
+  // There is no same-stem `.py` beside a generated STEP -- model scripts live in `src/` --
+  // and the viewer never presents an artifact under its generator's name anyway.
   const assets = fileAccessAssetsForEntry({
     file: "assemblies/robot-arm/robot-arm.step",
     sourceKind: "python",
   });
 
-  assert.equal(assets.source?.asset, "source");
-  assert.equal(assets.source?.fileRef, "assemblies/robot-arm/robot-arm.step");
-  assert.equal(assets.source?.filename, "robot-arm.py");
-  assert.equal(assets.source?.label, "robot-arm.py");
-  assert.equal(assets.source?.rootRelativePath, "assemblies/robot-arm/robot-arm.py");
+  assert.equal(assets.source, undefined);
+  assert.equal(assets.output.filename, "robot-arm.step");
+  assert.equal(assets.output.label, "robot-arm.step");
 });
 
-test("file access assets prefer loaded STEP source status filenames", () => {
+test("recorded generator provenance never becomes a file access asset", () => {
+  // The sidecar still records where the artifact came from; that is machine-side
+  // provenance for freshness gates, not a file the UI offers or names.
   const assets = fileAccessAssetsForEntry({
     file: "generated/robot.step",
     sourceKind: "python",
-  }, {
-    stepSourceStatus: {
-      sourceKind: "python",
-      sourcePath: "models/generated/source/robot_module.py",
-    },
-  });
-
-  assert.equal(assets.source?.filename, "robot_module.py");
-  assert.equal(assets.source?.label, "robot_module.py");
-  assert.equal(assets.source?.directoryRelativePath, "models/generated/source/robot_module.py");
-});
-
-test("file access assets expose explicit catalog source files without changing catalog schema", () => {
-  const assets = fileAccessAssetsForEntry({
-    file: "generated/robot.step",
     source: {
-      file: "generated/robot_source.py",
+      file: "generated/src/robot_module.py",
+      sourcePath: "generated/src/robot_module.py",
     },
   });
 
-  assert.equal(assets.source?.filename, "robot_source.py");
-  assert.equal(assets.source?.rootRelativePath, "generated/robot_source.py");
+  assert.equal(assets.source, undefined);
+  assert.deepEqual(Object.keys(assets).sort(), ["artifact", "output"]);
+  assert.equal(assets.output.filename, "robot.step");
 });
 
-test("file access assets preserve directory-relative generator source paths", () => {
+test("a Python-backed URDF still names the URDF it is", () => {
   const assets = fileAccessAssetsForEntry({
     file: "robots/tom/tom.urdf",
     kind: "urdf",
     sourceKind: "python",
     source: {
-      file: "models/robots/tom/tom.py",
-      sourcePath: "models/robots/tom/tom.py",
+      file: "robots/tom/src/tom.py",
+      sourcePath: "robots/tom/src/tom.py",
     },
   });
 
-  assert.equal(assets.source?.filename, "tom.py");
-  assert.equal(assets.source?.rootRelativePath, "");
-  assert.equal(assets.source?.directoryRelativePath, "models/robots/tom/tom.py");
+  assert.equal(assets.source, undefined);
+  assert.equal(assets.output.filename, "tom.urdf");
+  assert.equal(assets.output.rootRelativePath, "robots/tom/tom.urdf");
 });
 
-test("file access download URLs target exact output or source assets", () => {
+test("file access download URLs target the requested asset", () => {
   assert.equal(
-    downloadUrlForFileAsset("assemblies/robot arm.step", "source"),
-    "/__cad/download?file=assemblies%2Frobot%20arm.step&asset=source"
+    downloadUrlForFileAsset("assemblies/robot arm.step", "artifact"),
+    "/__cad/download?file=assemblies%2Frobot%20arm.step&asset=artifact"
   );
   assert.equal(
     downloadUrlForFileAsset("assemblies/robot arm.step", "output", "https://cad.example.test/viewer"),
@@ -115,8 +103,8 @@ test("file access download URLs target exact output or source assets", () => {
 
 test("file access open URLs target the local reveal endpoint", () => {
   assert.equal(
-    openUrlForFileAsset("assemblies/robot arm.step", "source"),
-    "/__cad/reveal?file=assemblies%2Frobot%20arm.step&asset=source"
+    openUrlForFileAsset("assemblies/robot arm.step", "artifact"),
+    "/__cad/reveal?file=assemblies%2Frobot%20arm.step&asset=artifact"
   );
   assert.equal(
     openUrlForFileAsset("assemblies/robot arm.step", "output", "http://127.0.0.1:4179/viewer"),
@@ -124,7 +112,7 @@ test("file access open URLs target the local reveal endpoint", () => {
   );
 });
 
-test("file access copy targets include absolute and directory-relative local paths", () => {
+test("file access copy targets include absolute and root-relative local paths", () => {
   const targets = copyTargetsForFileAccessAsset({
     rootRelativePath: "assemblies/robot-arm/robot-arm.step",
   }, {
@@ -138,54 +126,36 @@ test("file access copy targets include absolute and directory-relative local pat
   });
 });
 
-test("file access copy targets prefer loaded source directory-relative paths", () => {
-  // The directory-relative path is relative to the SERVED root. It used to be relative
-  // to a repo root one level up, carrying a leading "models/" that then had to be
-  // stripped back off against rootDir.
-  const targets = copyTargetsForFileAccessAsset({
-    rootRelativePath: "generated/robot.py",
-    directoryRelativePath: "generated/source/robot_module.py",
-  }, {
-    rootPath: "/project/text-to-cad/models",
-  });
-
-  assert.deepEqual(targets, {
-    path: "/project/text-to-cad/models/generated/source/robot_module.py",
-    filename: "robot_module.py",
-    relativePath: "generated/source/robot_module.py",
-  });
-});
-
-test("file access copy targets resolve directory-relative paths against the served root", () => {
+test("copy targets resolve the asset's root-relative path against the served root", () => {
   // This used to resolve against a SECOND root (the repo root, one level above the
   // served directory), which is how a path outside the served root still got an
   // absolute form. There is one root now, so a relative path is relative to it.
   const targets = copyTargetsForFileAccessAsset({
-    directoryRelativePath: "cad/source/robot_module.py",
+    rootRelativePath: "cad/drawings/gasket_plate.dxf",
   }, viewerServerInfo);
 
   assert.deepEqual(targets, {
-    path: "/project/text-to-cad/models/cad/source/robot_module.py",
-    filename: "robot_module.py",
-    relativePath: "cad/source/robot_module.py",
+    path: "/project/text-to-cad/models/cad/drawings/gasket_plate.dxf",
+    filename: "gasket_plate.dxf",
+    relativePath: "cad/drawings/gasket_plate.dxf",
   });
 });
 
 test("copy targets take the filename the asset already carries", () => {
-  // The generated-source asset's display filename is not the basename of the
-  // path it resolves to, so the asset's own value has to win.
+  // An artifact asset's display filename can differ from the basename of the path it
+  // resolves to (a package artifact resolves to its own file), so the asset wins.
   const targets = copyTargetsForFileAccessAsset({
-    filename: "robot.step.py",
-    directoryRelativePath: "cad/source/robot_module.py",
+    filename: ".robot-arm.step.glb",
+    rootRelativePath: "assemblies/robot-arm/.robot-arm.step.glb",
   }, viewerServerInfo);
 
-  assert.equal(targets.filename, "robot.step.py");
+  assert.equal(targets.filename, ".robot-arm.step.glb");
 });
 
 test("copy targets fall back to the path basename when the asset has no filename", () => {
   const targets = copyTargetsForFileAccessAsset({
-    directoryRelativePath: "cad/source/robot_module.py",
+    rootRelativePath: "cad/assemblies/robot-arm.step",
   }, viewerServerInfo);
 
-  assert.equal(targets.filename, "robot_module.py");
+  assert.equal(targets.filename, "robot-arm.step");
 });
