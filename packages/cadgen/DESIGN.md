@@ -1,17 +1,18 @@
-# cadgen design principles
+# cadgen design laws
 
-Read this before changing generation, rendering, storage, or any public
-interface. These are LAWS, not conventions: changes that violate them are
-wrong even when they work, and each has a pressure-test you can apply to a
-proposed design before writing code.
+Internal development document. Read this before changing generation,
+rendering, storage, or any public interface. These are LAWS, not
+conventions: a change that violates them is wrong even when it works, and
+each carries a pressure-test to apply to a proposed design before writing
+code.
 
 ## 1. Generated files are totally independent of their source code
 
 A generated file (STEP, DXF, STL, GLB, 3MF) and its generated sidecar
-(`<name>.step.cadgen.json`) must stand alone, forever, with no dependency of
-any kind on the source that produced them.
+(`<name>.step.cadgen.json`) stand alone, forever, with no dependency of any
+kind on the source that produced them.
 
-**The pressure-test**: a generated file must be fully renderable — viewer,
+**Pressure-test**: a generated file must be fully renderable — viewer,
 snapshot, inspect — by reading ONLY (a) the generated file(s), including the
 generated sidecar, and (b) the cache. Never the source. If the cache is
 missing or evicted, cadgen may regenerate cache artifacts, but ONLY from the
@@ -39,8 +40,8 @@ The cache (`~/.cache/cadgen`) holds data derivable from a generated file's
 bytes — render packages, tessellations, freshness records — and nothing
 else. No sidecars, no authored context, no source-derived state.
 
-**The pressure-test**: everything in the cache must be (a) a pure function
-of some file's bytes plus schema versions, (b) safely deletable at any time,
+**Pressure-test**: everything in the cache must be (a) a pure function of
+some file's bytes plus schema versions, (b) safely deletable at any time,
 and (c) rebuildable from generated files alone. If losing a cache entry
 would lose information — kinematics, animation, provenance — that
 information is in the wrong place: authored context lives in the sidecar
@@ -55,12 +56,13 @@ Every capability appears as a rigidly aligned triple: the DECORATOR declares
 it on a model, the PUBLIC FUNCTION (`cadgen.<format>.<verb>`) performs it
 from Python, and the CLI (`cadgen <format> <verb>`) is GENERATED from that
 function's signature — never hand-written, so a flag cannot exist without a
-parameter or drift from one (`cli_from_function`; structural sync tests pin
-`function_parameters == parser_dests` per command).
+parameter or drift from one (`cadgen._internal.cli_from_function`;
+structural sync tests pin `function_parameters == parser_dests` per
+command).
 
-**The pressure-test**: for any option, ask "what is this called on the other
-two surfaces?" The answer must be the same name with a role-determined
-payload — e.g. `kinematics` everywhere: on DECLARING surfaces (decorators,
+**Pressure-test**: for any option, ask "what is this called on the other two
+surfaces?" The answer must be the same name with a role-determined payload —
+e.g. `kinematics` everywhere: on DECLARING surfaces (decorators,
 `step build`) it is the space (the mates/couplings/poses/at dict); on
 CONSUMING surfaces (snapshot, mesh `build`) it is a point in that space (a
 preset name or `{dof: value}`). One name, one validator, no synonyms, no
