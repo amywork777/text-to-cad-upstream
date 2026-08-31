@@ -1,6 +1,12 @@
 import { RotateCcw } from "lucide-react";
 import { cn } from "@/ui/utils";
 import { resolveParameterNumberControlStep } from "@/workbench/parameterControls";
+import {
+  poseControlDisplayValue,
+  poseControlWrite,
+  poseDisplayValues,
+  poseDrivenDofs
+} from "@/workbench/poseDrivenControls";
 import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";
 import {
@@ -84,6 +90,15 @@ export default function PoseControlsSection({
   const values = runtime?.parameterValues || {};
   const enabled = runtime?.enabled !== false;
   const poseNames = poseNamesFromDefinition(definition);
+  // Back-drive routing: which members a coupling drives, and what every DOF's
+  // effective value is. Both are pure functions of the definition and the
+  // current values, so a driven slider needs no state of its own.
+  const drivenDofs = poseDrivenDofs(definition);
+  const displayValues = poseDisplayValues(definition, values);
+  const changeParameter = (parameterId, value) => {
+    const write = poseControlWrite({ driven: drivenDofs, values, parameterId, value });
+    runtime?.onParameterChange?.(write.id, write.value);
+  };
   if (!poseControlsHaveContent(runtime, { hideWhenEmpty })) {
     return null;
   }
@@ -114,7 +129,13 @@ export default function PoseControlsSection({
             <FileSheetStatusText>{noParametersLabel}</FileSheetStatusText>
           ) : null}
           {parameters.map((parameter) => {
-            const currentValue = values?.[parameter.id] ?? parameter.defaultValue;
+            const driver = drivenDofs[parameter.id] || null;
+            const currentValue = poseControlDisplayValue({
+              driven: drivenDofs,
+              displayValues,
+              values,
+              parameter
+            });
             const controlStep = resolveParameterNumberControlStep(parameter);
             if (parameter.type === "boolean") {
               return (
@@ -194,10 +215,17 @@ export default function PoseControlsSection({
             return (
               <FileSheetSliderField
                 key={parameter.id}
-                label={parameter.label}
+                // A driven member says so: its slider reads the effective value
+                // and writes through the coupling named here, never into itself.
+                label={driver ? (
+                  <>
+                    {parameter.label}
+                    <span className="ml-1 font-normal opacity-70">{`· driven by ${driver.coupling}`}</span>
+                  </>
+                ) : parameter.label}
                 value={`${formatControlNumber(currentValue)}${parameter.unit ? ` ${parameter.unit}` : ""}`}
                 onValueCommit={(nextValue) => {
-                  runtime?.onParameterChange?.(parameter.id, parseFileSheetNumberInput(nextValue, {
+                  changeParameter(parameter.id, parseFileSheetNumberInput(nextValue, {
                     fallback: currentValue,
                     min: parameter.min,
                     max: parameter.max
@@ -214,7 +242,7 @@ export default function PoseControlsSection({
                   min={parameter.min}
                   max={parameter.max}
                   step={controlStep}
-                  onValueChange={(nextValue) => runtime?.onParameterChange?.(parameter.id, nextValue?.[0] ?? currentValue)}
+                  onValueChange={(nextValue) => changeParameter(parameter.id, nextValue?.[0] ?? currentValue)}
                   disabled={!enabled}
                   aria-label={parameter.label}
                 />

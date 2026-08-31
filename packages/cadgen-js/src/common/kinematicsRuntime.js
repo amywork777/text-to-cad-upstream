@@ -24,6 +24,14 @@ export function kinematicsMates(block) {
   return isObject(block) && Array.isArray(block.mates) ? block.mates : [];
 }
 
+export function kinematicsCouplings(block) {
+  return isObject(block) && Array.isArray(block.couplings) ? block.couplings : [];
+}
+
+function couplingLimits(coupling) {
+  return Array.isArray(coupling?.limits) ? coupling.limits : [0, 1];
+}
+
 // Every controllable DOF, in declaration order: mate DOFs first (cylindrical
 // contributes "<name>.turn" and "<name>.travel"), then coupling DOFs. Each
 // entry carries what a slider needs: id, kind, limits [lo, hi], default.
@@ -54,13 +62,13 @@ export function kinematicsDofs(block) {
       });
     }
   }
-  for (const coupling of (isObject(block) && Array.isArray(block.couplings) ? block.couplings : [])) {
+  for (const coupling of kinematicsCouplings(block)) {
     const name = String(coupling.name || "");
     if (name) {
       dofs.push({
         id: name,
         kind: "coupling",
-        limits: Array.isArray(coupling.limits) ? coupling.limits : [0, 1]
+        limits: couplingLimits(coupling)
       });
     }
   }
@@ -87,7 +95,7 @@ export function effectiveDofValues(block, rawValues) {
       ? Number(raw)
       : 0;
   }
-  for (const coupling of (isObject(block) && Array.isArray(block.couplings) ? block.couplings : [])) {
+  for (const coupling of kinematicsCouplings(block)) {
     const raw = values[String(coupling.name || "")];
     const amount = Number.isFinite(Number(raw)) && raw !== null && raw !== undefined && raw !== "" ? Number(raw) : 0;
     if (!amount || !isObject(coupling.gears)) {
@@ -98,6 +106,78 @@ export function effectiveDofValues(block, rawValues) {
     }
   }
   return effective;
+}
+
+// Back-drive classification. A mate DOF is DRIVEN when EXACTLY ONE coupling
+// gears it with a nonzero ratio: then the additive gearing is invertible, and
+// moving the member can be expressed as moving that coupling. A DOF geared by
+// two or more couplings stays INDEPENDENT — the inverse is underdetermined
+// (many coupling splits give the same effective value) and guessing one would
+// silently move a train the user never touched.
+//
+// Returns { [dofId]: { coupling, ratio, limits } } over mate DOFs only:
+// couplings themselves are always independent, and a gear naming a DOF this
+// block does not declare is ignored rather than invented.
+export function kinematicsDrivenDofs(block) {
+  const mateDofIds = new Set(
+    kinematicsDofs(block).filter((dof) => dof.kind !== "coupling").map((dof) => dof.id)
+  );
+  const drivers = new Map();
+  const contested = new Set();
+  for (const coupling of kinematicsCouplings(block)) {
+    const name = String(coupling.name || "");
+    if (!name || !isObject(coupling.gears)) {
+      continue;
+    }
+    for (const [dof, rawRatio] of Object.entries(coupling.gears)) {
+      const ratio = Number(rawRatio) || 0;
+      // A zero (or non-numeric) ratio is not a drive: the coupling cannot move
+      // this member at all, so it does not claim it either.
+      if (!ratio || !mateDofIds.has(dof)) {
+        continue;
+      }
+      if (drivers.has(dof)) {
+        contested.add(dof);
+        continue;
+      }
+      drivers.set(dof, { coupling: name, ratio, limits: couplingLimits(coupling) });
+    }
+  }
+  const driven = {};
+  for (const [dof, driver] of drivers.entries()) {
+    if (!contested.has(dof)) {
+      driven[dof] = driver;
+    }
+  }
+  return driven;
+}
+
+// The inverse of the additive gearing, for one driven DOF: the coupling value
+// whose contribution lands the member's EFFECTIVE value on target, given the
+// member's own term (which back-driving never touches — a preset or
+// --kinematics JSON that set it keeps it, and the coupling makes up the rest).
+// Clamped to the coupling's own limits, so back-driving can never put a train
+// somewhere the coupling slider could not.
+export function couplingValueForDrivenDof(driver, targetValue, ownValue = 0) {
+  const ratio = Number(driver?.ratio) || 0;
+  if (!ratio) {
+    return null;
+  }
+  const target = Number(targetValue) || 0;
+  const own = Number(ownValue) || 0;
+  const limits = Array.isArray(driver?.limits) ? driver.limits : [0, 1];
+  const lo = Number(limits[0]);
+  const hi = Number(limits[1]);
+  const value = (target - own) / ratio;
+  const min = Number.isFinite(lo) && Number.isFinite(hi) ? Math.min(lo, hi) : lo;
+  const max = Number.isFinite(lo) && Number.isFinite(hi) ? Math.max(lo, hi) : hi;
+  if (Number.isFinite(min) && value < min) {
+    return min;
+  }
+  if (Number.isFinite(max) && value > max) {
+    return max;
+  }
+  return value;
 }
 
 function axisNumbers(mate) {

@@ -74,6 +74,14 @@ def arm(): ...
 - **`couple(name, {dof: ratio})`** declares a virtual DOF gearing real ones
   linearly and ADDITIVELY (setting `curl=x` adds `50*x` degrees to `mcp`).
   Exact gear trains are ratio arithmetic, not code.
+  A geared member BACK-DRIVES in the viewer: when exactly one coupling gears a
+  DOF with a nonzero ratio, its Pose slider reads the effective value
+  (own + ratio x coupling), is labelled "driven by <coupling>", and dragging it
+  moves the COUPLING — `coupling = (target - own)/ratio`, clamped to the
+  coupling's limits — so sliding one gear turns the whole train. A member's own
+  value (from a preset or `--kinematics`) is never overwritten, and a DOF geared
+  by two couplings stays independent: that inverse is underdetermined, so the
+  viewer refuses it rather than guessing a split.
 - **`poses`** are named `{dof: value}` presets — all that remains of "pose"
   as a concept.
 - The mate graph is a TREE: one parent mate per occurrence, no cycles.
