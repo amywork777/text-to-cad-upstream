@@ -14,7 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { fileVersion } from "./encoding.mjs";
-import { SOURCE_SIDECAR_SUFFIX } from "./packageContract.mjs";
+import { SOURCE_SIDECAR_NAMES, SOURCE_SIDECAR_SUFFIX } from "./packageContract.mjs";
 import { renderPackageDir as storeRenderPackageDir, storePackagesDir } from "./storePaths.mjs";
 
 export const CAD_CATALOG_SCHEMA_VERSION = 4;
@@ -388,7 +388,7 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
     return {};
   }
   // Everything SOURCE-derived rides the model-side sidecar
-  // (<name>.step.cadgen.json); its existence is the generated-vs-imported
+  // (<name>.step.json); its existence is the generated-vs-imported
   // marker. The store descriptor is STEP-pure.
   let sidecar = null;
   if (sourcePath) {
@@ -479,10 +479,14 @@ export function isServedCadAsset(filePath) {
     // so a model root that itself lives under a hidden path still serves.
     return false;
   }
-  if (filePath.endsWith(SOURCE_SIDECAR_SUFFIX)) {
-    // The model-side source sidecar (<name>.step.cadgen.json): kinematics, animation, mates
-    // for the client. Loose .js sidecars beside models are NOT served —
-    // the .params.js mechanism is retired.
+  // The model-side source sidecar (<name>.step.json): kinematics, animation and
+  // mates for the client. Matched on the FULL pair of suffixes, never on
+  // SOURCE_SIDECAR_SUFFIX alone — that is `.json`, and serving every JSON file
+  // under the root would hand out configs, secrets and anything else that
+  // happens to be there.
+  if (SOURCE_SIDECAR_NAMES.some((name) => filePath.toLowerCase().endsWith(name))) {
+    // Loose .js sidecars beside models are NOT served — the .params.js
+    // mechanism is retired.
     return true;
   }
   if (SOURCE_EXTENSIONS.has(extension)) {

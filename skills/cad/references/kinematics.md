@@ -12,7 +12,7 @@ There are THREE systems with different lifecycles, deliberately independent:
 - **Kinematics** is typed mates declared as PURE DATA via `kinematics=` on
   the export decorators. It drives the viewer's pose sliders and bakes posed
   exports — no rebuild, no Python at render time. It lives in the model's
-  sidecar (`<name>.step.cadgen.json`, written beside the artifact).
+  sidecar (`<name>.step.json`, written beside the artifact).
 - **Animation** is choreography in a plain `.js` module declared via
   `@step(animation="<name>.anim.js")`, whose TEXT is copied into the same
   sidecar. It targets occurrences directly and knows nothing about mates.

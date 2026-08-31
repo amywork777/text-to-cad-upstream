@@ -4,7 +4,7 @@ The render package (in the user-level store, keyed by the document's content
 hash) is a pure function of the STEP file's bytes plus schema versions — the
 cache engine's world, freely evictable. Everything derived from the Python
 source instead lives in ONE sidecar FILE BESIDE THE MODEL,
-``<name>.step.cadgen.json``: generation provenance (source path/hash, the
+``<name>.step.json``: generation provenance (source path/hash, the
 runtime closure the no-op gate re-validates), the KINEMATICS section (typed
 mates with axes resolved to world numbers, couplings, pose presets), the
 ANIMATION section (the .anim.js choreography text, COPIED — no path back to
@@ -36,13 +36,18 @@ from typing import Any, Mapping
 
 from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 
-SOURCE_SIDECAR_SUFFIX = ".cadgen.json"
+# APPENDED to the artifact's whole name, so the pair sorts and reads together:
+# `part.step` -> `part.step.json`. Never match a sidecar on this suffix alone —
+# it is `.json`, which every unrelated JSON file also ends with. Construct the
+# path from the artifact (:func:`source_sidecar_path`), or match the artifact
+# suffix too (`.step.json` / `.stp.json`).
+SOURCE_SIDECAR_SUFFIX = ".json"
 # 4: the meshExports section (doors read declarations from the document).
 SOURCE_SIDECAR_SCHEMA_VERSION = 4
 
 
 def source_sidecar_path(step_path: Path | str) -> Path:
-    """``<name>.step`` -> ``<name>.step.cadgen.json``, beside the model."""
+    """``<name>.step`` -> ``<name>.step.json``, beside the model."""
     artifact = Path(step_path)
     return artifact.with_name(artifact.name + SOURCE_SIDECAR_SUFFIX)
 

@@ -67,8 +67,9 @@ These two terms classify a STEP file by what its source is:
   elsewhere. There is nothing upstream to regenerate.
 
 The link between an artifact and its script is the source sidecar generation
-writes BESIDE THE MODEL (`<name>.step.source.json`, carrying `sourcePath`,
-source hashes, pose, and mates), and that sidecar's existence is what marks a
+writes BESIDE THE MODEL (`<name>.step.json` — `part.step` gets `part.step.json`
+— carrying `sourcePath`, source hashes, the resolved kinematics, and the
+model's declared mesh exports), and that sidecar's existence is what marks a
 model as generated; imports write none.
 The written STEP/DXF file itself carries NO cadgen metadata and no link back
 to source code, ever — a bare artifact separated from its package is a plain

@@ -31,7 +31,7 @@ SIDECAR_ONLY_KEYS = ("kinematics", "animation", "bakedPose")
 
 
 def _sidecars() -> list[Path]:
-    return sorted(MODELS.rglob("*.cadgen.json"))
+    return sorted(MODELS.rglob("*.step.json"))
 
 
 def _descriptors() -> list[Path]:

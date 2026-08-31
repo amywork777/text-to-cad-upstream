@@ -283,15 +283,30 @@ def _emit(
     spec = _build_entry_spec(Path.cwd().resolve(), scene.step_path, scene, kind=kind)
     from dataclasses import replace as _replace
 
+    from cadgen.catalog import render_package_dir
+    from cadgen.cli_progress import cli_progress_line
+    from cadgen.coordination import STEP_PACKAGE, artifact_build
+
     # source="generated" selects the STAGE-then-publish path: a document whose
     # content key does not exist until after it is written. That is exactly the
     # shape of a re-emit, and it is why the writer here is the canonical one.
     spec = _replace(spec, source="generated", script_path=None, step_path=scene.step_path)
-    _generate_part_outputs(
-        spec,
-        entries_by_step_path=_entries_by_step_path_for_repo(Path.cwd().resolve(), spec),
-        preloaded_scene=scene,
-        require_step_file=False,
-        force=force,
-        logger=logger,
-    )
+    # The write lock is required at the package mutation boundary — the package
+    # writer asserts it — and it is what makes a concurrent re-emit of the same
+    # output safe rather than two processes racing on one content key.
+    with cli_progress_line(
+        spec.source_ref, logger=logger, fallback="Building..."
+    ) as progress_sink, artifact_build(
+        STEP_PACKAGE,
+        render_package_dir(spec.entry_path) if spec.entry_path else None,
+        force=True,
+        sink=progress_sink,
+    ):
+        _generate_part_outputs(
+            spec,
+            entries_by_step_path=_entries_by_step_path_for_repo(Path.cwd().resolve(), spec),
+            preloaded_scene=scene,
+            require_step_file=False,
+            force=force,
+            logger=logger,
+        )

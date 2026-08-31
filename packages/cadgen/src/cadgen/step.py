@@ -221,7 +221,10 @@ def inspect(
     from cadgen.cli.step_inspect import inspect as inspection_api
 
     if str(target).strip().lower().endswith(".py"):
-        raise ValueError(script_target_message(Path(str(target))))
+        # A CadRefError, not a bare ValueError: an unusable target is an ANSWER
+        # here, so the refusal prints as this door's ordinary error report
+        # rather than as a traceback.
+        raise inspection_api.CadRefError(script_target_message(Path(str(target))))
     if inspection not in INSPECTIONS:
         raise ValueError(
             f"unknown inspection {inspection!r}; expected one of: {', '.join(INSPECTIONS)}"

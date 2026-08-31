@@ -67,7 +67,7 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", kinematic
             sidecar["kinematics"] = kinematics
         if animation:
             sidecar["animation"] = animation
-        Path(f"{step_path}.cadgen.json").write_text(
+        Path(f"{step_path}.json").write_text(
             json.dumps(sidecar)
         )
     return pkg_dir
@@ -1911,7 +1911,7 @@ class StepPoseParameterTests(unittest.TestCase):
         self._step()
         packet = self._resolve(self._job(stepParameters={"stroke": 1}))
         resolved = packet["jobs"][0]["resolved"]
-        self.assertIn("cadgen.json", str(resolved["stepParameterUrl"]))
+        self.assertIn(".step.json", str(resolved["stepParameterUrl"]))
         self.assertNotIn("stepParameterPath", resolved)
 
     def test_animation_never_gates_the_parameter_url(self) -> None:

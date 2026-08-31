@@ -110,7 +110,7 @@ def package_files(root: Path) -> list[Path]:
 
     out: list[Path] = []
     for artifact in _model_artifacts(root):
-        sidecar = Path(f"{artifact}.cadgen.json")
+        sidecar = Path(f"{artifact}.step.json")
         if sidecar.is_file():
             out.append(sidecar)
         package = render_package_dir(artifact)
@@ -223,7 +223,7 @@ class PackagePortabilityTest(unittest.TestCase):
                     continue
                 self.assertIn(path.suffix, allowed)
                 if path.suffix == ".json":
-                    self.assertTrue(path.name.endswith(".cadgen.json"))
+                    self.assertTrue(path.name.endswith(".step.json"))
 
     def test_no_package_file_mentions_the_directory_it_was_built_in(self) -> None:
         # Over bytes, not text: the component GLBs carry a JSON chunk with the topology

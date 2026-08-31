@@ -163,7 +163,7 @@ function poseJob(stepParameters, sidecarUrl) {
 }
 
 test("a kinematics pose NAME resolves against the model's declared poses", async (t) => {
-  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  const sidecarUrl = "/__cad/sidecar/hinge.step.json";
   stubSidecarFetch(t, sidecarUrl);
 
   const source = await loadSource(poseJob("open", sidecarUrl));
@@ -172,7 +172,7 @@ test("a kinematics pose NAME resolves against the model's declared poses", async
 });
 
 test("a pose name the model does not declare names the ones it does", async (t) => {
-  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  const sidecarUrl = "/__cad/sidecar/hinge.step.json";
   stubSidecarFetch(t, sidecarUrl);
 
   await assert.rejects(
@@ -182,7 +182,7 @@ test("a pose name the model does not declare names the ones it does", async (t) 
 });
 
 test("pose VALUES still pass straight through", async (t) => {
-  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  const sidecarUrl = "/__cad/sidecar/hinge.step.json";
   stubSidecarFetch(t, sidecarUrl);
 
   const source = await loadSource(poseJob({ swing: 45 }, sidecarUrl));
@@ -191,7 +191,7 @@ test("pose VALUES still pass straight through", async (t) => {
 });
 
 test("refuses a pose name against a model that declares no poses", async (t) => {
-  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  const sidecarUrl = "/__cad/sidecar/hinge.step.json";
   stubSidecarFetch(t, sidecarUrl, {
     kinematics: { ...HINGE_SIDECAR.kinematics, poses: {} }
   });
@@ -332,7 +332,7 @@ test("loadSource accepts sidecar kinematics for STEP sources", async () => {
       kind: "step",
       meshData: meshData(),
       cadPath: "part.step",
-      stepParameterUrl: "/__render_asset/pkg/model.step.cadgen.json",
+      stepParameterUrl: "/__render_asset/pkg/model.step.json",
       stepParameters: { drive: 90 }
     });
 

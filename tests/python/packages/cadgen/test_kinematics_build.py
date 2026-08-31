@@ -3,7 +3,7 @@
 The decoration-time vocabulary is pinned in test_kinematics_def; this covers
 the BUILD half (design/pose-animation-split.md): mate refs validate against
 real occurrences, axis selector refs resolve to world numbers, the block lands
-in the ``.cadgen.json`` sidecar (schema 4) with the animation module's text
+in the ``.step.json`` sidecar (schema 4) with the animation module's text
 COPIED in, and the kinematics dict's ``"at"`` key bakes the artifact —
 descriptor transforms move, and the sidecar re-zeroes so the artifact as
 written is q=0.
@@ -123,7 +123,7 @@ class KinematicsBuildTests(unittest.TestCase):
         sidecar = self._sidecar(script)
         self.assertEqual(sidecar["schemaVersion"], 4)
         # The sidecar file carries the branded suffix.
-        self.assertTrue((self.root / "hinge.step.cadgen.json").is_file())
+        self.assertTrue((self.root / "hinge.step.json").is_file())
 
         block = sidecar["kinematics"]
         (mate,) = block["mates"]
