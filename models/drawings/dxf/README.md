@@ -6,8 +6,8 @@ here is intentionally simple so failures point at the tooling, not the fixture.
 
 ## Drawing sources (`.py`)
 
-Build one by running it (`python <source>.py`, or `cadgen dxf build <source>.py`
-— the same build through the other door). A `@dxf` model writes its sibling
+Build one by running it (`python <source>.py` — the only door; a `.dxf` has no
+derived state a command materializes). A `@dxf` model writes its sibling
 `.dxf`, and an unchanged source whose recorded drawing still verifies is a no-op.
 Generated `.dxf` files are committed only where a fixture needs them to be, and
 `gasket_plate.dxf` below is the one that does. Together these sources cover the

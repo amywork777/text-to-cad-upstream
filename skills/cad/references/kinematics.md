@@ -21,9 +21,10 @@ There are THREE systems with different lifecycles, deliberately independent:
 
 ## Kinematics: typed mates
 
-One `kinematics=` dict, closed keys `mates` / `couplings` / `poses`, on any
-of `@step`/`@stl`/`@glb`/`@threemf`. Each decorator's declaration stands
+One `kinematics=` dict, closed keys `mates` / `couplings` / `poses` / `at`, on
+any of `@step`/`@stl`/`@glb`/`@threemf`. Each decorator's declaration stands
 alone (share a module-level dict; there is no cross-decorator inheritance).
+`at` is the bake point and is covered below; the other three are the space.
 
 ```python
 import cadgen
@@ -80,22 +81,54 @@ def arm(): ...
   solver; cadgen evaluates pure forward kinematics, identically in Python
   and the viewer, so a slider position and an exported bake agree to the bit.
 
-## Export at pose
+## Export at a bake point
 
-`pose=` (a preset name or `{dof: value}` dict) on the SAME decorator bakes
-that artifact at the configuration:
+EVERYTHING SAYS KINEMATICS: the bake point is the kinematics dict's own `"at"`
+key — a preset name or `{dof: value}` — so a declaration stays one object.
 
 ```python
-@step(out="gripper.step", kinematics=KINEMATICS, pose="closed")
-@stl(out="gripper_open.stl", kinematics=KINEMATICS, pose="open")
-@stl(out="gripper_closed.stl", kinematics=KINEMATICS, pose="closed")
+@step(out="gripper.step", kinematics={**KINEMATICS, "at": "closed"})
+@stl(out="gripper_open.stl", kinematics={**KINEMATICS, "at": "open"})
+@stl(out="gripper_closed.stl", kinematics={**KINEMATICS, "at": "closed"})
 ```
 
 The written artifact is its own q=0: a baked STEP's sidecar shifts limits and
 re-zeroes presets to describe the file as written. Mesh bakes are transient —
 stl/glb/3mf never have sidecars or animation. The mesh freshness ledger keys
-on the pose, so posed and rest variants never satisfy each other's no-op
+on the bake point, so posed and rest variants never satisfy each other's no-op
 gates.
+
+For a ONE-OFF mesh at a configuration the model does not declare, the mesh
+doors take the same argument name for the point:
+
+```bash
+cadgen stl build STEP/gripper.step tmp/gripper_open.stl --kinematics open
+```
+
+## Annotating a STEP you did not generate
+
+A document with no model script gets its kinematics from
+`cadgen step build IN OUT`, whose `--kinematics` takes the whole SPACE — the
+same `{mates, couplings, poses, at}` vocabulary, as inline JSON or a `.json`
+path — and whose `--animation` copies a `.js` module's text into OUT's sidecar.
+The input is read with OCCT and re-emitted by the canonical writer, so OUT's
+bytes are deterministic whichever kernel wrote IN:
+
+```bash
+cadgen step build vendor/hinge.step STEP/hinge.step \
+  --kinematics '{"mates": [{"name": "swing", "kind": "revolute",
+                            "parent": "#body", "child": "#lever",
+                            "axis": "#lever.bore", "limits": [0, 90]}],
+                 "poses": {"open": {"swing": 45}}}'
+```
+
+**Wrapper script or `step build`?** A model that will keep changing belongs in a
+script — a thin `@step` function that imports the foreign STEP and re-exports
+it, so the kinematics live beside the geometry decisions and every edit is one
+`python model.py`. Reach for `step build` when the geometry is fixed and not
+yours: a one-shot annotation or canonicalization of a vendor file. Re-running it
+is a no-op, editing only the kinematics refreshes the sidecar without
+re-emitting a byte, and vendor metadata (PMI, GD&T) does not survive the trip.
 
 ## Animation: the .anim.js contract
 
@@ -158,8 +191,10 @@ inspect measure` checks before calling them fixed.
 
 ## Migration from the retired pose framework
 
-`cadgen.pose(params/features/joints/drivers/animations/module)` and the
-`.params.js` sidecars are gone (hard cutover). The mapping: features+joints →
+`cadgen.pose(params/features/joints/drivers/animations/module)`, the `pose=`
+decorator kwarg, and the `.params.js` sidecars are all gone (hard cutover).
+`pose=` folded into the dict: `kinematics={**K, "at": "closed"}`. Otherwise:
+features+joints →
 mates (axes by selector ref); ratio drivers → `couplings`; params that moved
 geometry → mate DOFs; params that toggled styles/visibility → animation
 clips or viewer display settings; keyframe animations and escape-hatch

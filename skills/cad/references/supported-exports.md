@@ -1,6 +1,6 @@
 # Supported exports
 
-Read this file when the user requests STL, 3MF, or native GLB output files from CAD geometry. For a `.step` file, run the model script or `cadgen step build` (either writes the STEP output; see `step-generation.md`) — a mesh door writes mesh formats only. For 2D DXF output, use the `$dxf` skill: a drawing is its own `<name>.py` declaring one `@dxf` function — one model per file, so a drawing never shares a script with a `@step` model.
+Read this file when the user requests STL, 3MF, or native GLB output files from CAD geometry. For a `.step` file, run the model script (see `step-generation.md`) — a mesh door writes mesh formats only. For 2D DXF output, use the `$dxf` skill: a drawing is its own `<name>.py` declaring one `@dxf` function — one model per file, so a drawing never shares a script with a `@step` model.
 
 ## Policy
 
@@ -24,7 +24,7 @@ def bracket():
     return bd.Box(40, 20, 6)
 ```
 
-`python models/bracket.py` (or `cadgen step build models/bracket.py`) then writes the STEP **and** the declared meshes, and heals any of them that were deleted — no separate export step. Declare the same format more than once at distinct targets for draft/print variants:
+`python models/bracket.py` then writes the STEP **and** the declared meshes, and heals any of them that were deleted — no separate export step. The declarations are recorded in the document's sidecar, which is where the mesh doors read them from. Declare the same format more than once at distinct targets for draft/print variants:
 
 ```python
 @stl(out="STL/bracket_draft.stl", mesh_tolerance=8e-3)
@@ -33,31 +33,40 @@ def bracket():
 
 ## Tool
 
-One door per format — `cadgen stl build`, `cadgen 3mf build`, `cadgen glb build` — each taking one model target (a `@step`-decorated model script or an imported STEP/STP file) and an optional output path:
+One door per format — `cadgen stl build`, `cadgen 3mf build`, `cadgen glb build` — each taking a STEP/STP **document** and an optional output path:
 
 ```bash
-cadgen stl build path/to/model.py                     # every declared @stl variant,
-                                                      # or the sibling <name>.stl
-cadgen stl build path/to/model.py meshes/model.stl    # one ad-hoc export
+cadgen stl build STEP/model.step                     # every declared @stl variant
+cadgen stl build STEP/model.step meshes/model.stl    # one ad-hoc export
 ```
 
-Omitting the output is the normal form: it produces exactly what the model declares. A relative output path resolves beside the model's STEP document (not beside the script), so pass an absolute path when that is not what you mean. Ask for several formats by running several doors — each writes only its own format:
+Doors take documents, never scripts: `python model.py` is the one source door, and a door handed a `.py` says so. Omitting the output is the normal form: it produces exactly what the model declared, read from the document's sidecar. A document that declares no variants of that format has nothing to produce — declare `@stl` on the model and rerun the script, or name an explicit OUT. A relative output path resolves beside the document, so pass an absolute path when that is not what you mean. Ask for several formats by running several doors — each writes only its own format:
 
 ```bash
-cadgen stl build path/to/model.py
-cadgen 3mf build path/to/model.py
-cadgen glb build path/to/model.py
+cadgen stl build STEP/model.step
+cadgen 3mf build STEP/model.step
+cadgen glb build STEP/model.step
 ```
 
-An output the model already has at the requested tolerances is reported `current` and not rewritten. `--force` re-exports it anyway; it never rebuilds the model itself (that is `cadgen step build`).
+An output the model already has at the requested tolerances is reported `current` and not rewritten. `--force` re-exports it anyway; it never rebuilds the model itself — rerun `python <script>` for that. A document that has drifted from its script is refused by name rather than rebuilt.
 
-Pass an imported STEP/STP file directly only when no model script exists or the user explicitly identifies that file as the target; its part/assembly kind is inferred automatically:
+An imported STEP/STP file declares nothing, so give it an explicit OUT; its part/assembly kind is inferred automatically:
 
 ```bash
-cadgen stl build path/to/imported.step
+cadgen stl build path/to/imported.step meshes/imported.stl
 ```
 
-A mesh door never writes a `.step` file. A generated model's STEP is the OUTPUT of `python <model>.py` or `cadgen step build <model>.py` (always written, assembled from the model's package); an imported model's STEP is already the file on disk.
+### One variant at a bake point
+
+For an ad-hoc export at a kinematic configuration, `--kinematics` names the point — a declared preset name or `{dof: value}` JSON, resolved against the document's own kinematics:
+
+```bash
+cadgen stl build STEP/gripper.step meshes/gripper_open.stl --kinematics open
+```
+
+It applies to an explicit OUT only: without one, each declared variant is produced at the bake point its own declaration recorded.
+
+A mesh door never writes a `.step` file. A generated model's STEP is the OUTPUT of `python <model>.py`; an imported model's STEP is already the file on disk.
 
 ## Rendering a mesh file
 
