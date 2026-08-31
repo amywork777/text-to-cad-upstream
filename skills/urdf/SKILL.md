@@ -56,7 +56,7 @@ After completing URDF work that creates or modifies a `.urdf`, you must ALWAYS h
 
 Run with the Python environment for the project or workspace. Treat `python` in examples as an interpreter placeholder; if bare `python` is unavailable, substitute `python3`, a project virtualenv interpreter, or the configured interpreter path. The validator uses only the Python standard library.
 
-From this skill directory, the validator shape is:
+The validator shape is:
 
 ```bash
 cadgen urdf validate path/to/robot.urdf
@@ -66,18 +66,18 @@ cadgen urdf validate path/to/robot.urdf --packages robot_description=/path/to/pk
 cadgen urdf snapshot path/to/robot.urdf review.png
 ```
 
-The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a summary. One run validates ONE file: `--strict` treats warnings as failures; `--json` emits the machine-readable findings document; `--packages NAME=PATH` resolves `package://` mesh URIs and repeats for several roots. It exits nonzero if the target fails. Relative targets resolve from the current working directory; when running from outside this skill directory, prefix the launcher path so target files still resolve from the intended workspace.
+The validator collects all findings in one pass (severity, code, XML path) across XML structure, tree topology, joint semantics (limits, mimic, dynamics), geometry, mesh references, materials, inertial physics, and misspelled elements, and prints a summary. One run validates ONE file: `--strict` treats warnings as failures; `--json` emits the machine-readable findings document; `--packages NAME=PATH` resolves `package://` mesh URIs and repeats for several roots. It exits nonzero if the target fails. Relative targets resolve from the current working directory; run from the workspace that owns the files.
 
 Validation is a guardrail, not spatial proof: a URDF can pass every structural check while placing a joint in the wrong spot. The ledger and viewer sweep exist for that reason.
 
 ## Snapshot Tool
 
-`cadgen snapshot` renders the robot to a PNG still, using the same shared
+`cadgen urdf snapshot` renders the robot to a PNG still, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
-cadgen snapshot path/to/robot.urdf review.png
+cadgen urdf snapshot path/to/robot.urdf review.png
 ```
 
 It accepts `.urdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
@@ -87,8 +87,9 @@ automatically.
 
 Theme settings live under one `--theme`, mirroring the viewer's Theme tab. The default
 theme is `snapshot` — Workbench Light with the ground grid, origin axis and shadows
-removed, because in a still image those read as geometry. There is no `--display`: display
-settings (mode, clip, exploded, edges) are CAD topology settings, and a robot carries none.
+removed, because in a still image those read as geometry. There is no `--display` on this
+door: display settings (mode, clip, exploded, edges) are CAD topology settings, and a robot
+carries none.
 
 Link meshes are resolved relative to the description, so they must be present: an
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run

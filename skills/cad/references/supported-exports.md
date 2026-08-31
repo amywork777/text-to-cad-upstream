@@ -109,7 +109,7 @@ Example — the model declares its STL, and a one-off coarse GLB is requested be
 ```bash
 python models/bracket.py
 
-cadgen glb build models/bracket.py meshes/bracket_preview.glb \
+cadgen glb build models/bracket.step meshes/bracket_preview.glb \
   --mesh-tolerance 5e-3 \
   --mesh-angular-tolerance 0.5
 

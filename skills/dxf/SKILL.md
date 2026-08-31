@@ -204,11 +204,12 @@ place a drawing names its destination.
 
 ```bash
 cadgen dxf snapshot path/to/imported.dxf review.png
-cadgen dxf snapshot path/to/source.py review.png --camera top
+cadgen dxf snapshot path/to/drawing.dxf review.png --camera top
 ```
 
-For a generator it makes the sibling `.dxf` current first (the ordinary no-op
-gate), then meshes the flat pattern on demand through the bundled Node one-shot and
+It takes the `.dxf` document only — a model script is refused by name (run
+`python <drawing>.py`, then snapshot the drawing it wrote). The command meshes
+the flat pattern on demand through the bundled Node one-shot and
 renders it through the shared snapshot CLI (`cadgen.snapshot_cli`) and the same
 headless browser runtime every rendering skill uses — so geometry and materials
 render identically to the CAD Viewer; the default `snapshot` theme differs from the
@@ -299,9 +300,9 @@ Report only checks that actually ran.
 
 ## Handoff
 
-After creating or modifying DXF drawings, you must ALWAYS hand the explicit `.py` file
-path(s) to `$cad-viewer` when that skill is installed and include its live viewer
-link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report
+After creating or modifying DXF drawings, you must ALWAYS hand the explicit `.dxf`
+file path(s) to `$cad-viewer` when that skill is installed and include its live
+viewer link(s) in the final response. If `$cad-viewer` is unavailable or startup fails, report
 that and rely on `ezdxf` checks instead of silently omitting the handoff.
 
 Final responses should include generated files, returned viewer links, validation

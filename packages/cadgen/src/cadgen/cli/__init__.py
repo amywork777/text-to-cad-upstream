@@ -17,7 +17,7 @@ strings and imports exactly the one being run. Do not hoist these to module-leve
 when adding commands.
 
 The CAD Viewer is NOT here: it is a standalone app (the ``cad-viewer`` skill bundles it;
-a checkout runs ``viewer/server/main.mjs`` directly), and cadgen is exclusively the
+a checkout runs ``apps/viewer/server/main.mjs`` directly), and cadgen is exclusively the
 programmatic generation/inspection/snapshot toolchain.
 """
 

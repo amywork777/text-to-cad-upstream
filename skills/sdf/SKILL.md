@@ -107,15 +107,15 @@ Risks:
 
 ## Snapshot Tool
 
-`cadgen snapshot` renders the robot to a PNG still, using the same shared
+`cadgen sdf snapshot` renders the robot to a PNG still, using the same shared
 CLI and headless browser runtime every rendering skill uses — so a snapshot matches what
 the CAD Viewer shows.
 
 ```bash
-cadgen snapshot path/to/robot.sdf review.png
+cadgen sdf snapshot path/to/robot.sdf review.png
 ```
 
-It accepts `.sdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+It accepts `.sdf` only (a format door, same `TARGET [OUT]` grammar as the rest). Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
 joints you do not name staying at the rest pose (the `"jointValues"` job field is the same
 thing in a packet). Robots are authored in metres and are framed on the robot scene scale
 automatically.

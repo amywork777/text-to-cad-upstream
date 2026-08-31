@@ -38,7 +38,7 @@ Do not place geometry, inertials, joint origins, link poses, mesh references, ph
 
 ## CAD Viewer Handoff
 
-After completing SRDF work that creates or modifies a `.srdf`, you must ALWAYS hand the explicit file path to `$cad-viewer` when that skill is installed. `$cad-viewer` must start CAD Viewer if it is not already running and return link(s) to the relevant created or updated file(s); include optional MoveIt2 controls in the handoff only when the user needs interactive IK or path-planning review. If `$cad-viewer` is unavailable or startup fails, report that instead of silently omitting the handoff.
+After completing SRDF work that creates or modifies a `.srdf`, you must ALWAYS hand the explicit file path to `$cad-viewer` when that skill is installed. `$cad-viewer` must start CAD Viewer if it is not already running and return link(s) to the relevant created or updated file(s). If `$cad-viewer` is unavailable or startup fails, report that instead of silently omitting the handoff.
 
 ## Required workflow
 
@@ -60,7 +60,7 @@ After completing SRDF work that creates or modifies a `.srdf`, you must ALWAYS h
 
 Run with the Python environment for the project or workspace. Treat `python` in examples as an interpreter placeholder; if bare `python` is unavailable, substitute `python3`, a project virtualenv interpreter, or the configured interpreter path. The validator uses only the Python standard library.
 
-From this skill directory, the validator shape is:
+The validator shape is:
 
 ```bash
 cadgen srdf validate path/to/robot.srdf
@@ -89,14 +89,14 @@ the CAD Viewer shows.
 cadgen snapshot path/to/robot.srdf review.png
 ```
 
-It accepts `.srdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+Hand it the `.srdf`; it routes by suffix and renders the paired URDF's geometry. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
 joints you do not name staying at the rest pose (the `"jointValues"` job field is the same
 thing in a packet). Robots are authored in metres and are framed on the robot scene scale
 automatically.
 
 Theme settings live under one `--theme`, mirroring the viewer's Theme tab. The default
 theme is `snapshot` — Workbench Light with the ground grid, origin axis and shadows
-removed, because in a still image those read as geometry. There is no `--display`: display
+removed, because in a still image those read as geometry. Leave `--display` off: display
 settings (mode, clip, exploded, edges) are CAD topology settings, and a robot carries none.
 
 Link meshes are resolved relative to the description, so they must be present: an

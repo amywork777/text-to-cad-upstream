@@ -119,7 +119,7 @@ other file deliberately with its own negation line or `git add -f`.
 ## Verify
 
 ```bash
-python src/plate.py                      # builds STEP/plate.step + its package
+python src/plate.py                      # builds STEP/plate.step + its .step.json sidecar
 python src/plate.py                      # "current" — the no-op gate works
 python src/plate_drawing.py              # builds DXF/plate_drawing.dxf
 cadgen step snapshot STEP/plate.step tmp/plate.png

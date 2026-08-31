@@ -126,8 +126,13 @@ makes the drawing stale on its own, with no `--force`.
 The face selection is a part-specific judgment call: pick the planar face(s)
 that define the cut profile.
 
+Never point `read_step` at a STEP this project GENERATES — that is a model
+whose input changes every time its sibling builds. Keep vendor files in an
+`imported/` directory beside the drawing (see the CAD skill's
+`step-generation.md`), and give the drawing its own stem:
+
 ```python
-"""DXF profile of <name>.step."""
+"""DXF profile of vendor_panel.step."""
 
 from __future__ import annotations
 
@@ -135,7 +140,7 @@ from pathlib import Path
 
 from cadgen import dxf, flatten, read_step
 
-_STEP_PATH = Path(__file__).with_name("<name>.step")
+_STEP_PATH = Path(__file__).parent / "imported" / "vendor_panel.step"
 
 
 @dxf

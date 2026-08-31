@@ -125,7 +125,7 @@ Copy this shape for new robots. It shows the ledger, ordering, a frame-only root
 </robot>
 ```
 
-Repository fixtures under `models/robots/` (for example `so101`, `juno`, `lyra`) are full worked examples of this contract.
+Repository fixtures under `models/robots/` (for example `so101`, `tom`, `openarm`) are full worked examples of this contract.
 
 ## Helper Scripts
 

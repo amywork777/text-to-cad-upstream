@@ -233,7 +233,8 @@ on implicit resolution by `inspect`, `snapshot`, or the Viewer.
 
 ## Viewer artifacts
 
-Every model run writes the hidden adjacent render package as the build output.
+Every model run keeps the render package (in the user-level store, keyed by
+the document's content hash) current as the build output.
 It powers CAD Viewer review, `$cad-viewer` workflows, and `cadgen step inspect`
 refs, and is not optional in the STEP workflow. Imported STEP/STP files get the
 same package on demand, per the previous section.

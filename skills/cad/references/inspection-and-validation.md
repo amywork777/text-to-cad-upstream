@@ -21,10 +21,9 @@ Accepted target forms:
 ```text
 path/to/entry
 path/to/entry.step
-path/to/entry.py
 ```
 
-A `<name>.py` generator target resolves to the same entry as its logical `<name>.step`, and keeps resolving to the generator entry even when a same-stem exported `.step` file exists beside it.
+Targets are documents: an extensionless `<name>` resolves to `<name>.step`, and a `.py` model script is refused by name (run `python <model>.py`, then inspect the STEP it wrote).
 
 Selector-backed queries (`refs --facts`, planes, measures) on generated assemblies resolve from the render package's per-component `.surf` files on demand; there is no separate topology sidecar to build or invalidate.
 
@@ -70,18 +69,19 @@ distinct from `bracket.step` (its export) and from `bracket.stl` (a mesh of it).
 1. Split it at the first `#`. The left side is the file prefix; the right side is the ref.
 2. Resolve the prefix to a real path. A bare stem is **not** a literal path suffix, so expand
    it before searching:
-   - `<name>` with no extension → look for `<name>.py`, then `<name>.stp.py`
+   - `<name>` with no extension → the model script `<name>.py`; its DOCUMENT (the sibling
+     `<name>.step` by default, or the decorator's `out=` target) is what the commands take
    - anything carrying a suffix (`.step`, `.stp`, `.stl`, `.3mf`, `.glb`, `.dxf`) → use as-is
 
    Match on **segment boundaries**, so `plate.stl` names `models/mesh/stl/plate.stl` and never
    `models/mesh/stl/mounting_plate.stl`.
-3. Pass the resolved path as the entry/input argument and the `#...` part as the ref, exactly
-   as you would for a bare ref.
+3. Pass the resolved document as the entry/input argument and the `#...` part as the ref,
+   exactly as you would for a bare ref.
 
 ```bash
 # received: bracket#o1.2.f1   ->  expand the bare stem, then search
-git ls-files '*/bracket.py' '*/bracket.stp.py'
-cadgen step inspect refs models/step/parts/bracket.py '#o1.2.f1'
+git ls-files '*/bracket.py'
+cadgen step inspect refs models/step/parts/bracket.step '#o1.2.f1'
 ```
 
 If the search returns more than one file the prefix was ambiguous — ask rather than guess; the
@@ -122,7 +122,7 @@ When several parts share a label -- two wheels, one `cast_rim:5spoke` -- each ge
 ref in tree order and the bare label refuses to resolve rather than guessing:
 
 ```text
-$ cadgen step snapshot motorbike.py --focus '#cast_rim:5spoke'
+$ cadgen step snapshot motorbike.step --focus '#cast_rim:5spoke'
 selection.focus label 'cast_rim:5spoke' matches 2 occurrences;
 use one of: #cast_rim:5spoke_1 (o1.7.2), #cast_rim:5spoke_2 (o1.14.2)
 ```
@@ -146,9 +146,9 @@ which renders as a hole in the world — reports `"ok": true` as well.
 Use `validate` for that question:
 
 ```bash
-cadgen step inspect validate models/part/part.py
-cadgen step inspect validate models/part/part.py --refs o1.2      # one subassembly
-cadgen step inspect validate models/panel/panel.py --allow-open   # surfaces intended
+cadgen step inspect validate models/part/part.step
+cadgen step inspect validate models/part/part.step --refs o1.2      # one subassembly
+cadgen step inspect validate models/panel/panel.step --allow-open   # surfaces intended
 ```
 
 It reports, per occurrence, any of `invalidTopology`, `openShell`,
