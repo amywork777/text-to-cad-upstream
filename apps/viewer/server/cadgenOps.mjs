@@ -41,6 +41,16 @@ const RAW_STEP_RE = /\.(step|stp)$/i;
 // treats contended as "generating" and attaches to the peer's progress.
 const IMPORT_LOCK_TIMEOUT_SECONDS = 5;
 
+// Kill an import child that has gone SILENT for this long — idleness, not wall
+// clock (ports develop's 06bf1b3b/dbeea4f3). A real STEP compile legitimately
+// runs for minutes, so a wall-clock cap would abort healthy builds; total
+// silence on both pipes is the signal that the child is wedged rather than
+// working. Without this the promise never settled, and because `importsInFlight`
+// is only cleared in .finally(), one hung child pinned that package to
+// "generating" for the life of the process. `<= 0` disables the watchdog.
+const CADGEN_IDLE_TIMEOUT_SECONDS = Number(process.env.VIEWER_CADGEN_IDLE_TIMEOUT ?? 300);
+const IDLE_POLL_MS = 250;
+
 const CLI_BUILD_HINT =
   "The viewer is a static visualization tool and does not run generators. "
   + "Build this model by running its script: python <source>.";
@@ -158,25 +168,58 @@ function runCadgenImport(resolver, candidate, { force = false } = {}) {
     });
     let stdout = "";
     let stderr = "";
+    // Every settle path goes through here so the watchdog can never outlive the
+    // child. Promise resolution is idempotent, so the kill below racing the
+    // `close` it provokes is harmless — the first answer wins.
+    let idleTimer = null;
+    const settle = (value) => {
+      if (idleTimer !== null) {
+        clearInterval(idleTimer);
+        idleTimer = null;
+      }
+      resolve(value);
+    };
+    let lastActivity = Date.now();
     child.stdout.on("data", (chunk) => {
+      lastActivity = Date.now();
       stdout += chunk;
     });
     child.stderr.on("data", (chunk) => {
+      // Output on EITHER pipe counts as liveness: `step compile` reports
+      // progress on stderr and prints its JSON result only at the end.
+      lastActivity = Date.now();
       stderr += chunk;
     });
+    if (CADGEN_IDLE_TIMEOUT_SECONDS > 0) {
+      const budgetMs = CADGEN_IDLE_TIMEOUT_SECONDS * 1000;
+      idleTimer = setInterval(() => {
+        const quietForMs = Date.now() - lastActivity;
+        if (quietForMs <= budgetMs) {
+          return;
+        }
+        child.kill("SIGKILL");
+        settle({
+          ok: false,
+          error: `cadgen step compile went silent for ${(quietForMs / 1000).toFixed(1)}s `
+            + "(no response and no output); killed",
+        });
+      }, IDLE_POLL_MS);
+      // Never hold the event loop open on the watchdog alone.
+      idleTimer.unref?.();
+    }
     child.on("error", (error) => {
       // ENOENT here means the resolved command vanished (uninstalled while
       // the server ran). Drop the cache so the next request re-probes.
       resolver.invalidate();
-      resolve({ ok: false, error: `could not run cadgen step compile: ${error.message}` });
+      settle({ ok: false, error: `could not run cadgen step compile: ${error.message}` });
     });
     child.on("close", (code) => {
       const payload = parseResultLine(stdout);
       if (payload) {
-        resolve(payload);
+        settle(payload);
         return;
       }
-      resolve({
+      settle({
         ok: false,
         error: (stderr || stdout || `cadgen step compile exited with code ${code}`).trim().slice(-500),
       });
