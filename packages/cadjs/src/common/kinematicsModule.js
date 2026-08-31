@@ -53,15 +53,23 @@ export function stepModuleFromKinematics(block) {
       unit: dof.kind === "revolute" ? "deg" : dof.kind === "coupling" ? "" : "mm"
     };
   }
-  // Every mated occurrence label becomes a feature resolved by NAME — the
-  // stable form the instance tree carries (labels canonical, Q1 of the plan).
+  // Every mated occurrence becomes a feature keyed by the authored label. It
+  // resolves by NAME (the stable form the instance tree carries) AND, when the
+  // build resolved one, by the occurrence id the sidecar recorded beside the
+  // label: id matching is what covers a SUBASSEMBLY, because a group is not a
+  // rendered part and so has no leaf name of its own, while an id matches its
+  // whole subtree by prefix. A mate on a group carries its parts either way.
   const features = {};
   for (const mate of kinematicsMates(block)) {
-    for (const ref of [mate.parent, mate.child]) {
+    for (const [ref, id] of [[mate.parent, mate.parentId], [mate.child, mate.childId]]) {
       const label = stripHash(ref);
-      if (label && !features[label]) {
-        features[label] = { names: [label] };
+      if (!label || features[label]) {
+        continue;
       }
+      const occurrenceId = stripHash(id);
+      features[label] = occurrenceId
+        ? { ref: `#${occurrenceId}`, names: [label] }
+        : { names: [label] };
     }
   }
   return {

@@ -101,16 +101,58 @@ def _axis_from_ref(index, ref: str, *, mate: str, source_ref: str) -> dict[str, 
     return {"origin": [float(v) for v in origin], "dir": [float(v) for v in direction]}
 
 
-def _occurrence_id_for_ref(index, ref: str, *, what: str, mate: str, source_ref: str) -> str:
+def _instance_tree_ids(descriptor: Mapping[str, Any]) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """The INSTANCE TREE's node ids and names — subassemblies included.
+
+    The flat selector index holds LEAF occurrences only, but mates target the
+    instance-tree namespace: a mate on a group occurrence is how "rigid groups
+    are free" (design/pose-animation-split.md), and ``_subtree_ids`` already
+    carries a group's whole subtree. So group nodes have to be resolvable, and
+    ``descriptor["assembly"]["root"]`` is where they live.
+    """
+    by_id: dict[str, str] = {}
+    by_name: dict[str, list[str]] = {}
+    root = (descriptor.get("assembly") or {}).get("root") if isinstance(descriptor.get("assembly"), Mapping) else None
+    stack = [root] if isinstance(root, Mapping) else []
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, Mapping):
+            continue
+        node_id = str(node.get("id") or "").strip()
+        if node_id:
+            by_id[node_id] = node_id
+            name = str(node.get("name") or "").strip()
+            if name:
+                by_name.setdefault(name, []).append(node_id)
+        stack.extend(node.get("children") or [])
+    return by_id, by_name
+
+
+def _occurrence_id_for_ref(
+    index, ref: str, *, what: str, mate: str, source_ref: str, tree: tuple[dict[str, str], dict[str, list[str]]]
+) -> str:
     selector = ref.lstrip("#")
     resolved = _lookup(index, selector)
-    if resolved is None or resolved[0] != "occurrence":
+    if resolved is not None and resolved[0] == "occurrence":
+        return str(resolved[1].get("id") or "")
+    by_id, by_name = tree
+    if selector in by_id:
+        return by_id[selector]
+    candidates = by_name.get(selector) or []
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
         raise _fail(
-            f"{source_ref} mate {mate!r}: {what} {ref!r} does not name an occurrence — "
-            "label the part in the model (cadgen.label_shape) or use its "
-            "occurrence id; `cadgen step inspect refs` lists both"
+            f"{source_ref} mate {mate!r}: {what} {ref!r} names {len(candidates)} occurrences "
+            f"({', '.join(candidates)}) — mate one of them by occurrence id, or give the "
+            "groups distinct labels"
         )
-    return str(resolved[1].get("id") or "")
+    raise _fail(
+        f"{source_ref} mate {mate!r}: {what} {ref!r} does not name an occurrence — "
+        "label the part or subassembly in the model (cadgen.label_shape, or a "
+        "Compound label) or use its occurrence id; `cadgen step inspect refs` "
+        "lists the leaf occurrences"
+    )
 
 
 def resolve_kinematics_block(
@@ -118,7 +160,8 @@ def resolve_kinematics_block(
 ) -> tuple[dict[str, Any], dict[str, str]]:
     """Validated declaration -> sidecar-ready block (axes as numbers), plus the
     mate-ref -> occurrence-id map the bake step reuses."""
-    index, _descriptor = _composed_index(package_dir, step_path=step_path, source_ref=source_ref)
+    index, descriptor = _composed_index(package_dir, step_path=step_path, source_ref=source_ref)
+    tree = _instance_tree_ids(descriptor)
     resolved = copy.deepcopy(dict(block))
     occurrence_ids: dict[str, str] = {}
     for mate in resolved.get("mates", []):
@@ -127,8 +170,13 @@ def resolve_kinematics_block(
             ref = str(mate.get(key))
             if ref not in occurrence_ids:
                 occurrence_ids[ref] = _occurrence_id_for_ref(
-                    index, ref, what=what, mate=name, source_ref=source_ref
+                    index, ref, what=what, mate=name, source_ref=source_ref, tree=tree
                 )
+            # The resolved instance-tree id rides the sidecar beside the
+            # authored label, for the same reason axes ride it as numbers: the
+            # viewer does arithmetic and id-prefix subtree matching, never
+            # topology or label resolution of its own.
+            mate[f"{key}Id"] = occurrence_ids[ref]
         axis = mate.get("axis") or {}
         if mate.get("kind") == "fastened":
             continue
