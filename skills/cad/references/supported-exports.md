@@ -61,15 +61,15 @@ A mesh door never writes a `.step` file. A generated model's STEP is the OUTPUT 
 
 ## Rendering a mesh file
 
-Each mesh format also has a `snapshot` verb, taking the same options as `cadgen step snapshot`:
+Each mesh format also has a `snapshot` verb, with the same `TARGET [OUT]` grammar `cadgen step snapshot` uses:
 
 ```bash
-cadgen stl snapshot --input STL/bracket.stl --output tmp/bracket_mesh.png
-cadgen 3mf snapshot --input 3MF/bracket.3mf --output tmp/bracket_3mf.png
-cadgen glb snapshot --input meshes/bracket.glb --output tmp/bracket_glb.png
+cadgen stl snapshot STL/bracket.stl tmp/bracket_mesh.png
+cadgen 3mf snapshot 3MF/bracket.3mf tmp/bracket_3mf.png
+cadgen glb snapshot meshes/bracket.glb tmp/bracket_glb.png
 ```
 
-A mesh carries no CAD topology, so these render shaded solid and do not offer `--focus`/`--hide`, `--display`, `--params`, or `--mode section` — a mesh has no occurrences, CAD edges, or kinematics for those to act on. `cadgen step snapshot` refuses a mesh input and names the door that takes it.
+A mesh carries no CAD topology, so these render shaded solid and do not HAVE `--focus`/`--hide`, `--display`, `--kinematics`, or `--mode section` — a mesh has no occurrences, CAD edges, or kinematics for those to act on, so they are absent from the command rather than refused by it. `cadgen step snapshot` refuses a mesh input and names the door that takes it.
 
 This is a review of the EXPORT, not of the model. Snapshot validation of the primary STEP is still what the required workflow means; render the mesh when the question is about the mesh (tessellation density, a tolerance change, what an external tool will receive).
 

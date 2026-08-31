@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import hashlib
 import io
 import json
-import re
 import subprocess
 import sys
 import tempfile
@@ -74,17 +74,17 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", kinematic
 
 add_repo_path("packages/cadgen/src")
 
-# The CLI itself is shared (cadgen.snapshot_cli); `cadgen step snapshot`
-# (cadgen.cli.step_snapshot) is the CAD entrypoint and the declaration of which kinds it
-# accepts. The skill shims are gone; these tests drive the shared implementation through
-# that cadgen verb directly.
+# Job resolution and the run loop are shared (cadgen.snapshot_cli);
+# `cadgen step snapshot` (cadgen.cli.step_snapshot) is the CAD entrypoint, a
+# GENERATED CLI over cadgen.step.snapshot. The skill shims are gone; these tests
+# drive the shared implementation through that cadgen verb directly.
 import cadgen.snapshot_cli as snapshot_main
 import cadgen.cli.step_snapshot as cad_snapshot_entry
 from cadgen.assets import browser_runtime_dir
+from cadgen._internal.snapshot_door import DOOR_KINDS, RETIRED_SNAPSHOT_FLAGS
 from cadgen.snapshot_cli import (
     SnapshotError,
     load_job_from_options,
-    parse_snapshot_args,
     resolve_render_job_packet,
     resolve_snapshot_route_file,
 )
@@ -93,13 +93,47 @@ from cadgen.snapshot_core import (
     resolve_output_target,
     snapshot_result,
 )
-from cadgen._internal.cli_from_function import result_payload
+from cadgen._internal.cli_from_function import emit, result_payload
 
 # The shim no longer names a runtime directory: cadgen.assets resolves it, finding the
 # repo's live source here and the packaged copy in an installed wheel.
 RUNTIME_DIR = browser_runtime_dir()
 RENDER_HTML_PATH = RUNTIME_DIR / "render.html"
-CAD_KINDS = snapshot_main.enabled_kinds(cad_snapshot_entry.KINDS)
+STEP_KINDS = DOOR_KINDS["step"]
+CAD_KINDS = snapshot_main.enabled_kinds(STEP_KINDS)
+
+
+def options_from_argv(argv, entry=None):
+    """The SnapshotOptions `cadgen step snapshot ARGV` hands the run loop.
+
+    Snapshot's parser is GENERATED from `cadgen.step.snapshot`'s signature, so
+    there is no argv-to-options function to call: the options object exists only
+    for as long as it takes the verb to pass it on. Driving the real command
+    module and intercepting that hand-off is what keeps these tests pointed at
+    the grammar that ships rather than at a parser rebuilt in the test file.
+    """
+    module = entry or cad_snapshot_entry
+    captured = {}
+
+    def capture(options, **kwargs):
+        captured["options"] = options
+        captured["kinds"] = kwargs.get("kinds")
+        return snapshot_result({"ok": True, "mode": "view", "outputs": []}, total_ms=0.0)
+
+    with mock.patch.object(snapshot_main, "run_snapshot", capture):
+        code = module.main(list(argv))
+    if "options" not in captured:
+        raise AssertionError(
+            f"`{module.DEFAULT_PROG} {' '.join(argv)}` exited {code} before the run started"
+        )
+    return captured["options"]
+
+
+def job_from_argv(argv, entry=None):
+    """One documented invocation, all the way to the render job it becomes."""
+    return load_job_from_options(
+        options_from_argv(argv, entry), stdin=_TtyStringIO(), cwd=Path.cwd()
+    )
 
 
 class _TtyStringIO(io.StringIO):
@@ -142,11 +176,9 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertEqual(["False", "False"], result.stdout.strip().splitlines())
 
     def test_shortcut_job_shape_stays_owned_by_python_cli(self) -> None:
-        options = parse_snapshot_args(
+        job = job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--display",
                 "wireframe",
@@ -155,8 +187,6 @@ class SnapshotCliTests(unittest.TestCase):
             ]
         )
 
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
-
         self.assertEqual(job["input"], "models/step/parts/cylindrical_cap.step")
         self.assertNotIn("workspaceRoot", job)
         self.assertNotIn("rootDir", job)
@@ -164,39 +194,50 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertEqual(job["display"], {"mode": "wireframe"})
         self.assertEqual(job["render"]["sizeProfile"], "simple")
 
-    def test_every_short_flag_the_help_advertises_actually_parses(self) -> None:
-        """`-i` was in the help beside `-o` and was rejected by the parser.
+    def test_the_target_and_output_are_positional(self) -> None:
+        """One grammar across the schema: `snapshot TARGET [OUT]` reads the same
+        way `build TARGET [OUT]` does, and there is nothing to spell twice."""
+        options = options_from_argv(["models/part.step", "tmp/part.png"])
+        self.assertEqual("models/part.step", options.input)
+        self.assertEqual("tmp/part.png", options.output)
 
-        Asserted against the help TEXT rather than a hand-written list of flags, so a
-        newly advertised short form cannot be added without being wired up."""
-        advertised = set(re.findall(r"/(-[a-zA-Z])\b", snapshot_main.help_text(kinds=CAD_KINDS)))
-        self.assertIn("-i", advertised, "the help no longer advertises -i; update this test")
-        for flag in sorted(advertised):
-            with self.subTest(flag=flag):
-                options = parse_snapshot_args([flag, "models/part.step"])
-                self.assertEqual(
-                    "models/part.step",
-                    options.input if flag == "-i" else options.output,
-                )
+    def test_a_retired_flag_teaches_its_replacement(self) -> None:
+        """Hard cutover. Each of these parsed before; each now exits 2 naming
+        what took its place, from a PRE-parse scan — a generated parser is
+        pristine, so a refusal cannot be a parser entry without also becoming a
+        line of `--help`."""
+        for argv, expected in (
+            (["--input", "models/part.step"], "positionally"),
+            (["-i", "models/part.step"], "positionally"),
+            (["--output", "tmp/o.png"], "second positional"),
+            (["-o", "tmp/o.png"], "second positional"),
+            (["--params", '{"jaw": 40}'], "--kinematics"),
+            (["--params=x", "models/part.step"], "--kinematics"),
+            (["--params-path", "models/part.step.js"], "kinematics is declared on the model"),
+        ):
+            with self.subTest(argv=" ".join(argv)):
+                errors = io.StringIO()
+                with contextlib.redirect_stderr(errors):
+                    code = cad_snapshot_entry.main(argv)
+                self.assertEqual(2, code)
+                self.assertIn(expected, errors.getvalue())
 
-    def test_short_and_long_input_spellings_agree(self) -> None:
-        self.assertEqual(
-            parse_snapshot_args(["--input", "models/part.step"]).input,
-            parse_snapshot_args(["-i", "models/part.step"]).input,
-        )
+    def test_no_retired_flag_is_advertised(self) -> None:
+        text = cad_snapshot_entry.build_parser().format_help()
+        for flag in RETIRED_SNAPSHOT_FLAGS:
+            if flag.startswith("--"):
+                with self.subTest(flag=flag):
+                    self.assertNotIn(flag, text)
 
-    def test_shortcut_focus_and_hide_flags_are_mutually_exclusive(self) -> None:
-        with self.assertRaisesRegex(SnapshotError, "--focus and --hide cannot be used"):
-            parse_snapshot_args(
-                [
-                    "--input",
-                    "models/assembly.step",
-                    "--output",
-                    "tmp/assembly.png",
-                    "--focus",
-                    "#o1.2",
-                    "--hide=#o1.3.1",
-                ]
+    def test_focus_and_hide_cannot_be_used_together(self) -> None:
+        from cadgen import step
+
+        with self.assertRaisesRegex(ValueError, "focus and hide cannot be used"):
+            step.snapshot(
+                Path("models/assembly.step"),
+                Path("tmp/assembly.png"),
+                focus=("#o1.2",),
+                hide=("#o1.3.1",),
             )
 
     def test_display_shortcut_accepts_cad_display_modes(self) -> None:
@@ -209,31 +250,25 @@ class SnapshotCliTests(unittest.TestCase):
             ("theme", {"mode": "rendered"}),
             ("wire", {"mode": "wireframe"}),
         ]:
-            options = parse_snapshot_args(
+            job = job_from_argv(
                 [
-                    "--input",
                     "models/step/parts/cylindrical_cap.step",
-                    "--output",
                     "tmp/cap.png",
                     "--display",
                     raw_mode,
                 ]
             )
-            job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
             self.assertEqual(job["display"], expected_display)
 
     def test_display_json_accepts_exploded_settings(self) -> None:
-        options = parse_snapshot_args(
+        job = job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--display",
                 '{"projection":"perspective","mode":"rendered","exploded":{"enabled":true,"amount":0.7}}',
             ]
         )
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
         self.assertEqual(
             job["display"],
             {
@@ -244,17 +279,14 @@ class SnapshotCliTests(unittest.TestCase):
         )
 
     def _display_job(self, display_json: str):
-        options = parse_snapshot_args(
+        return job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--display",
                 display_json,
             ]
         )
-        return load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
 
     def test_display_json_rejects_bad_projection_value(self) -> None:
         with self.assertRaisesRegex(SnapshotError, "projection must be orthographic or perspective"):
@@ -289,42 +321,34 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertEqual(self._display_job('{"mode":""}')["display"], {"mode": ""})
 
     def test_edge_settings_belong_to_display_json(self) -> None:
-        options = parse_snapshot_args(
+        job = job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--display",
                 '{"edges":{"enabled":false,"color":"#123456"}}',
             ]
         )
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
         self.assertEqual(job["display"], {"edges": {"enabled": False, "color": "#123456"}})
 
-        theme_options = parse_snapshot_args(
-            [
-                "--input",
-                "models/step/parts/cylindrical_cap.step",
-                "--output",
-                "tmp/cap.png",
-                "--theme",
-                '{"edges":{"enabled":false}}',
-            ]
-        )
         with self.assertRaisesRegex(SnapshotError, "unsupported keys: edges"):
-            load_job_from_options(theme_options, stdin=_TtyStringIO(), cwd=Path.cwd())
+            job_from_argv(
+                [
+                    "models/step/parts/cylindrical_cap.step",
+                    "tmp/cap.png",
+                    "--theme",
+                    '{"edges":{"enabled":false}}',
+                ]
+            )
 
     def test_theme_accepts_a_full_theme_preset_clone(self) -> None:
         # cloneThemePresetSettings() emits colorMode, projection and modeColors
         # alongside the five settings blocks. Rejecting any of them meant the
         # repo's own theme-clone output could not be passed back to
         # --theme without hand-stripping keys first.
-        options = parse_snapshot_args(
+        job = job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--theme",
                 json.dumps(
@@ -341,51 +365,43 @@ class SnapshotCliTests(unittest.TestCase):
                 ),
             ]
         )
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
         self.assertIn("modeColors", job["theme"])
 
     def test_display_shortcut_rejects_unknown_modes(self) -> None:
-        options = parse_snapshot_args(
-            [
-                "--input",
-                "models/step/parts/cylindrical_cap.step",
-                "--output",
-                "tmp/cap.png",
-                "--display",
-                "mist",
-            ]
-        )
         with self.assertRaisesRegex(SnapshotError, "Unsupported display mode"):
-            load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
+            job_from_argv(
+                [
+                    "models/step/parts/cylindrical_cap.step",
+                    "tmp/cap.png",
+                    "--display",
+                    "mist",
+                ]
+            )
 
     def test_display_shortcut_rejects_exploded_mode_alias(self) -> None:
-        options = parse_snapshot_args(
-            [
-                "--input",
-                "models/step/parts/cylindrical_cap.step",
-                "--output",
-                "tmp/cap.png",
-                "--display",
-                "exploded",
-            ]
-        )
         with self.assertRaisesRegex(SnapshotError, "Unsupported display mode"):
-            load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
+            job_from_argv(
+                [
+                    "models/step/parts/cylindrical_cap.step",
+                    "tmp/cap.png",
+                    "--display",
+                    "exploded",
+                ]
+            )
 
     def test_shortcut_focus_flags_apply_selection(self) -> None:
-        options = parse_snapshot_args(
+        # Repeatable rather than variadic: one ref per flag, so a ref can never
+        # be swallowed by the positional TARGET standing next to it.
+        job = job_from_argv(
             [
-                "--input",
                 "models/assembly.step",
-                "--output",
                 "tmp/assembly.png",
                 "--focus",
                 "#o1.2",
+                "--focus",
                 "#o1.3",
             ]
         )
-
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
 
         self.assertEqual(
             job["selection"],
@@ -718,16 +734,13 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertIsNone(kwargs["debug"])
 
     def test_debug_shortcut_flag_sets_job_debug_field(self) -> None:
-        options = parse_snapshot_args(
+        job = job_from_argv(
             [
-                "--input",
                 "models/step/parts/cylindrical_cap.step",
-                "--output",
                 "tmp/cap.png",
                 "--debug",
             ]
         )
-        job = load_job_from_options(options, stdin=_TtyStringIO(), cwd=Path.cwd())
         self.assertTrue(job["debug"])
 
     def test_render_job_surfaces_step_artifact_debug_when_requested(self) -> None:
@@ -1515,10 +1528,12 @@ class SnapshotCliTests(unittest.TestCase):
                 snapshot_main.ensure_step_topology_artifact = original_ensure
 
     def test_snapshot_root_flags_and_job_fields_are_removed(self) -> None:
-        with self.assertRaisesRegex(SnapshotError, "Unknown argument: --workspace-root"):
-            parse_snapshot_args(["--workspace-root", "/tmp"])
-        with self.assertRaisesRegex(SnapshotError, "Unknown argument: --root-dir"):
-            parse_snapshot_args(["--root-dir", "models"])
+        for flag, value in (("--workspace-root", "/tmp"), ("--root-dir", "models")):
+            with self.subTest(flag=flag):
+                errors = io.StringIO()
+                with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit):
+                    cad_snapshot_entry.build_parser().parse_args([flag, value])
+                self.assertIn("unrecognized arguments", errors.getvalue())
         with self.assertRaisesRegex(SnapshotError, "no longer accept workspaceRoot or rootDir"):
             resolve_render_job_packet(
                 {
@@ -1545,10 +1560,18 @@ class SnapshotCliTests(unittest.TestCase):
         )
 
     def test_removed_daemon_flags_stay_removed(self) -> None:
-        with self.assertRaisesRegex(SnapshotError, "daemon commands have been removed"):
-            parse_snapshot_args(["daemon"])
-        with self.assertRaisesRegex(SnapshotError, "--socket has been removed"):
-            parse_snapshot_args(["--socket", "snapshot.sock"])
+        """`--socket` is not a flag any more, and `daemon` is not a subcommand.
+
+        The generated parser has no room for either: `--socket` is unrecognized,
+        and a bare `daemon` reads as the TARGET positional and fails as a render
+        input that does not exist."""
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit):
+            cad_snapshot_entry.build_parser().parse_args(["--socket", "snapshot.sock"])
+        self.assertIn("unrecognized arguments", errors.getvalue())
+
+        options = options_from_argv(["daemon", "tmp/o.png"])
+        self.assertEqual("daemon", options.input)
 
     def test_runtime_routes_are_self_contained(self) -> None:
         self.assertEqual(
@@ -1870,11 +1893,19 @@ class StepPoseParameterTests(unittest.TestCase):
         finally:
             snapshot_main.ensure_step_topology_artifact = original
 
-    def test_params_path_flag_is_a_teaching_error(self) -> None:
-        with self.assertRaisesRegex(SnapshotError, "pose data is declared on the model"):
-            parse_snapshot_args(
-                ["--input", "models/part.step", "--params-path", "models/part.step.js"]
-            )
+    def test_pose_values_and_pose_names_both_reach_the_job(self) -> None:
+        """`--kinematics` takes either spelling, told apart by SHAPE.
+
+        A name cannot be resolved here — the declared names live in the model's
+        kinematics block, which only the renderer has loaded — so it travels
+        through as a string and `stepParameters` carries either form."""
+        values = job_from_argv(
+            ["models/part.step", "tmp/o.png", "--kinematics", '{"jaw": 40}']
+        )
+        self.assertEqual({"jaw": 40}, values["stepParameters"])
+
+        named = job_from_argv(["models/part.step", "tmp/o.png", "--kinematics", "open"])
+        self.assertEqual("open", named["stepParameters"])
 
     def test_pose_parameters_resolve_the_sidecar_url(self) -> None:
         self._step()
@@ -2071,13 +2102,17 @@ class ExactOutputContractTests(unittest.TestCase):
 
         stdout = io.StringIO()
         stderr = io.StringIO()
-        code = snapshot_main.run_snapshot_cli(
-            ["--input", "STEP/broken.step", "--output", "tmp/review.png"],
-            kinds=cad_snapshot_entry.KINDS,
-            cwd=self.root,
+        options = snapshot_main.SnapshotOptions(
+            input="STEP/broken.step", output="tmp/review.png"
+        )
+        code = emit(
+            lambda: snapshot_main.run_snapshot(
+                options, kinds=STEP_KINDS, cwd=self.root, stdin=_TtyStringIO()
+            ),
+            prog="cadgen step snapshot",
+            as_json=False,
             stdout=stdout,
             stderr=stderr,
-            stdin=_TtyStringIO(),
         )
         self.assertNotEqual(code, 0)
         self.assertFalse(self.target.exists(), "a failed run must leave nothing to read")

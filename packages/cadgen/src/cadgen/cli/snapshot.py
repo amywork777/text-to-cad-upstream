@@ -1,73 +1,43 @@
-"""``cadgen snapshot`` — render any supported input, and the target every door calls.
+"""``cadgen snapshot`` — render any supported input, routed by suffix.
 
-A snapshot door's entrypoint has always been one call to :func:`cadgen.snapshot_cli.
-run_snapshot_cli` with a declaration of which input kinds it accepts. That declaration
-lives here, keyed by FORMAT, so a door module is a name rather than a copy of the
-wiring — and ``cadgen snapshot`` with no restriction accepts every kind at once,
-routing by suffix.
+The polymorphic door: where a format door accepts only its own kinds, this one
+accepts every kind at once and lets the suffix decide, which is also what a
+mixed-format ``--job`` packet needs.
 
-One format, one door (design/format-doors.md). ``cadgen step snapshot`` used to also
-render ``.stl``/``.3mf``/``.glb``, which made the STEP door the door for four formats
-and left the mesh formats with a `build` door and no `snapshot` door of their own. The
-mesh arm moved to ``cadgen stl|3mf|glb snapshot`` verbatim; nothing about how a mesh
-renders changed, only which command owns it.
+Its verb is the UNION shape — the STEP surface plus ``joint_values`` — so the
+CLI is GENERATED like every other command in the schema
+(:mod:`cadgen._internal.cli_from_function`). Snapshot used to be the schema's
+one adapter, with a hand-written argv scanner here and a declared option
+surface a policy test pinned; nothing about a snapshot's arguments is written
+down twice any more.
 
-``runtime_dir`` is deliberately not passed: leaving it ``None`` lets ``cadgen.assets``
-resolve the browser runtime, which finds the repo's live source in a dev checkout and the
-packaged copy in an installed wheel. A skill pinning its own vendored path is exactly what
-this reorganization removes.
+The verb lives here rather than on a ``cadgen.snapshot`` namespace because
+there is no polymorphic FORMAT: `cadgen snapshot` is a routing convenience over
+the seven real doors, and the public namespaces stay one-per-format.
 """
 
 from __future__ import annotations
 
-import sys
+import argparse
 from collections.abc import Sequence
 
-from cadgen.snapshot_cli import option_names, run_snapshot_cli
+from cadgen._internal.cli_from_function import generated_main, generated_parser
+from cadgen._internal.snapshot_door import RETIRED_SNAPSHOT_FLAGS, polymorphic_snapshot_verb
 
-# Every snapshot command is an ADAPTER in the format-doors schema
-# (design/format-doors.md): its option surface is too rich to derive from a verb
-# signature, so it declares that surface instead and the signature-sync policy
-# test checks the declaration. No door adds flags of its own — they differ
-# only in which input kinds they accept — so there is one surface, here.
-OPTION_NAMES: tuple[str, ...] = option_names()
+DEFAULT_PROG = "cadgen snapshot"
+VERB = ("cadgen.cli.snapshot", "snapshot")
 
-# Which input kinds each format door's snapshot accepts. Unioned for the bare
-# `cadgen snapshot`. `srdf` has no snapshot door of its own (an SRDF's geometry
-# comes from the URDF beside it), but the polymorphic door still routes one.
-DOOR_KINDS: dict[str, tuple[str, ...]] = {
-    "step": ("step", "stp"),
-    "stl": ("stl",),
-    "3mf": ("3mf",),
-    "glb": ("glb",),
-    "dxf": ("dxf",),
-    "urdf": ("urdf",),
-    "srdf": ("srdf",),
-    "sdf": ("sdf",),
-}
-
-ALL_KINDS: tuple[str, ...] = tuple(
-    dict.fromkeys(kind for kinds in DOOR_KINDS.values() for kind in kinds)
-)
+#: Every kind at once. Which kinds each format door takes is
+#: :data:`cadgen._internal.snapshot_door.DOOR_KINDS`, beside the verbs it binds.
+snapshot = polymorphic_snapshot_verb()
 
 
-def run(
-    argv: Sequence[str] | None = None,
-    *,
-    kinds: Sequence[str] = ALL_KINDS,
-    prog: str = "cadgen snapshot",
-) -> int:
-    """Render one input. Format doors call this with their own ``kinds`` and ``prog``."""
-    return run_snapshot_cli(
-        list(sys.argv[1:] if argv is None else argv),
-        kinds=kinds,
-        runtime_dir=None,
-        prog=prog,
-    )
+def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
+    return generated_parser(VERB, prog=prog)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    return run(argv)
+def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
+    return generated_main(VERB, argv, prog=prog, retired=RETIRED_SNAPSHOT_FLAGS)
 
 
 if __name__ == "__main__":

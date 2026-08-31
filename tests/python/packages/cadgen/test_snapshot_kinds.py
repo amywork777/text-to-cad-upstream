@@ -24,16 +24,34 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("packages/cadgen/src")
 
-from cadgen.cli.snapshot import ALL_KINDS  # noqa: E402
-from cadgen.cli.snapshot import DOOR_KINDS as DECLARED_DOOR_KINDS  # noqa: E402
+from cadgen._internal.snapshot_door import ALL_KINDS  # noqa: E402
+from cadgen._internal.snapshot_door import DOOR_KINDS as DECLARED_DOOR_KINDS  # noqa: E402
 from cadgen.snapshot_cli import (  # noqa: E402
     KIND_RESOLVERS,
     SnapshotError,
     enabled_kinds,
-    help_text,
     input_kind,
     resolve_render_job_packet,
 )
+
+# The command module behind each door, so the help assertions below read the
+# text that actually ships rather than a parser rebuilt in the test.
+DOOR_COMMANDS = {
+    "step": "cadgen.cli.step_snapshot",
+    "stl": "cadgen.cli.stl_snapshot",
+    "3mf": "cadgen.cli.threemf_snapshot",
+    "glb": "cadgen.cli.glb_snapshot",
+    "dxf": "cadgen.cli.dxf_snapshot",
+    "urdf": "cadgen.cli.urdf_snapshot",
+    "sdf": "cadgen.cli.sdf_snapshot",
+}
+
+
+def door_help(door: str) -> str:
+    """One door's real ``--help``, generated from its verb's signature."""
+    import importlib
+
+    return importlib.import_module(DOOR_COMMANDS[door]).build_parser().format_help()
 
 # What each door declares. Written out rather than imported so a door that quietly
 # widens its inputs fails HERE rather than shipping; the declaration itself is
@@ -163,7 +181,11 @@ class MeshDoorSplit(_Gate):
             with self.subTest(format=fmt):
                 message = self._reject("step", filename)
                 self.assertIn("does not render", message)
-                self.assertIn(f"cadgen {fmt} snapshot", message)
+                # The whole point of naming the door is that the reader can
+                # RUN it, so the form quoted has to be the form that parses:
+                # snapshot takes its target and output positionally.
+                self.assertIn(f"cadgen {fmt} snapshot TARGET OUT", message)
+                self.assertNotIn("--input", message)
 
     def test_a_mesh_door_takes_its_own_format_and_no_other(self):
         for fmt in MESH_DOORS:
@@ -180,39 +202,66 @@ class MeshDoorSplit(_Gate):
     def test_a_mesh_door_advertises_its_own_format_only(self):
         for fmt in MESH_DOORS:
             with self.subTest(format=fmt):
-                text = help_text(kinds=enabled_kinds(DOOR_KINDS[fmt]))
+                text = door_help(fmt)
                 self.assertIn(f".{fmt}", text)
-                for absent in (".step", ".urdf", "--params", "--focus", "--display"):
+                for absent in (".step", ".urdf", "--kinematics", "--focus", "--display"):
                     self.assertNotIn(absent, text, f"{absent} is not a mesh door's business")
 
 
 class GeneratedHelpTests(unittest.TestCase):
+    """The help is the SIGNATURE now.
+
+    Each door's `--help` is derived from the verb it calls, so an option a
+    format cannot act on is not merely undocumented — it does not exist on that
+    command. The doors used to share one signature and one hand-written help
+    blob filtered per kind, which meant the filtering could disagree with the
+    parser: `cadgen stl snapshot --display solid` parsed fine and then errored.
+    """
+
     def test_help_describes_only_this_door(self):
-        dxf_help = help_text(kinds=enabled_kinds(DOOR_KINDS["dxf"]))
+        dxf_help = door_help("dxf")
         self.assertIn(".dxf", dxf_help)
-        for absent in (".step", ".urdf", "--params", "--focus"):
+        for absent in (".step", ".urdf", "--kinematics", "--focus"):
             self.assertNotIn(absent, dxf_help, f"{absent} is not this door's business")
 
     def test_step_only_options_appear_for_the_step_door(self):
-        step_help = help_text(kinds=enabled_kinds(DOOR_KINDS["step"]))
-        for present in ("--params", "--focus", "section", "--view-labels"):
+        step_help = door_help("step")
+        for present in ("--kinematics", "--focus", "section", "--view-labels"):
             self.assertIn(present, step_help)
 
     def test_theme_is_one_option_everywhere(self):
-        for door, kinds in DOOR_KINDS.items():
+        for door in DOOR_COMMANDS:
             with self.subTest(door=door):
-                text = help_text(kinds=enabled_kinds(kinds))
+                text = door_help(door)
                 self.assertIn("--theme", text)
                 self.assertNotIn("--appearance", text)
+
+    def test_every_door_takes_its_target_and_output_positionally(self):
+        # One grammar across the schema: `cadgen <fmt> build TARGET [OUT]` and
+        # `cadgen <fmt> snapshot TARGET [OUT]` read the same way.
+        for door in DOOR_COMMANDS:
+            with self.subTest(door=door):
+                text = door_help(door)
+                self.assertIn("[TARGET] [OUT]", text)
+                self.assertNotIn("--input", text)
+                self.assertNotIn("--output", text)
 
     def test_display_is_offered_only_where_it_does_something(self):
         # Display settings ARE STEP topology settings -- mode, clip, exploded and edges all
         # need occurrences and CAD edges -- and every non-STEP resolver rejected all four.
         # Advertising the flag everywhere meant advertising an option that only errors.
-        self.assertIn("--display", help_text(kinds=enabled_kinds(DOOR_KINDS["step"])))
-        for door in ("stl", "3mf", "glb", "dxf", "urdf", "srdf", "sdf"):
+        self.assertIn("--display", door_help("step"))
+        for door in ("stl", "3mf", "glb", "dxf", "urdf", "sdf"):
             with self.subTest(door=door):
-                self.assertNotIn("--display", help_text(kinds=enabled_kinds(DOOR_KINDS[door])))
+                self.assertNotIn("--display", door_help(door))
+
+    def test_joint_values_is_offered_only_to_the_robot_doors(self):
+        for door in ("urdf", "sdf"):
+            with self.subTest(door=door):
+                self.assertIn("--joint-values", door_help(door))
+        for door in ("step", "stl", "3mf", "glb", "dxf"):
+            with self.subTest(door=door):
+                self.assertNotIn("--joint-values", door_help(door))
 
 
 if __name__ == "__main__":

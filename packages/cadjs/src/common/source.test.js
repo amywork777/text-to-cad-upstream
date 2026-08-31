@@ -120,6 +120,88 @@ test("loadSource rejects STEP parameter options for non-STEP sources", async () 
   );
 });
 
+// `--kinematics` takes a declared pose NAME as well as {dof: value} JSON. The
+// CLI cannot tell one from the other — the declared names live in the model's
+// kinematics block — so a name arrives as a bare string and is resolved here.
+const HINGE_SIDECAR = {
+  kinematics: {
+    mates: [
+      {
+        name: "swing",
+        kind: "revolute",
+        parent: "#base",
+        child: "#flap",
+        axis: { origin: [0, 0, 0], dir: [0, 0, 1] },
+        limits: { value: [0, 120] }
+      }
+    ],
+    poses: { open: { swing: 90 }, ajar: { swing: 15 } }
+  }
+};
+
+function stubSidecarFetch(t, sidecarUrl, sidecar = HINGE_SIDECAR) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (requestUrl) => {
+    assert.equal(String(requestUrl), sidecarUrl);
+    return new Response(JSON.stringify(sidecar), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+}
+
+function poseJob(stepParameters, sidecarUrl) {
+  return {
+    kind: "step",
+    meshData: meshData(),
+    stepParameters,
+    resolved: { kind: "step", stepParameterUrl: sidecarUrl, inputPath: "/models/hinge.step" }
+  };
+}
+
+test("a kinematics pose NAME resolves against the model's declared poses", async (t) => {
+  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  stubSidecarFetch(t, sidecarUrl);
+
+  const source = await loadSource(poseJob("open", sidecarUrl));
+
+  assert.deepEqual(source.stepParameterSource.renderParameters.values, { swing: 90 });
+});
+
+test("a pose name the model does not declare names the ones it does", async (t) => {
+  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  stubSidecarFetch(t, sidecarUrl);
+
+  await assert.rejects(
+    () => loadSource(poseJob("shut", sidecarUrl)),
+    /Unknown kinematics pose: shut\. This model declares: open, ajar/
+  );
+});
+
+test("pose VALUES still pass straight through", async (t) => {
+  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  stubSidecarFetch(t, sidecarUrl);
+
+  const source = await loadSource(poseJob({ swing: 45 }, sidecarUrl));
+
+  assert.deepEqual(source.stepParameterSource.renderParameters.values, { swing: 45 });
+});
+
+test("refuses a pose name against a model that declares no poses", async (t) => {
+  const sidecarUrl = "/__cad/sidecar/hinge.step.cadgen.json";
+  stubSidecarFetch(t, sidecarUrl, {
+    kinematics: { ...HINGE_SIDECAR.kinematics, poses: {} }
+  });
+
+  await assert.rejects(
+    () => loadSource(poseJob("open", sidecarUrl)),
+    /This model declares no poses; pass \{dof: value\} JSON instead/
+  );
+});
+
 test("loadSource refuses a render asset cached for a different job source", async (t) => {
   const glbUrl = renderAssetUrl();
   const fetches = stubAssetFetch(t, glbUrl);

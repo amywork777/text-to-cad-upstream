@@ -122,7 +122,7 @@ When several parts share a label -- two wheels, one `cast_rim:5spoke` -- each ge
 ref in tree order and the bare label refuses to resolve rather than guessing:
 
 ```text
-$ snapshot -i motorbike.py --focus='#cast_rim:5spoke'
+$ cadgen step snapshot motorbike.py --focus '#cast_rim:5spoke'
 selection.focus label 'cast_rim:5spoke' matches 2 occurrences;
 use one of: #cast_rim:5spoke_1 (o1.7.2), #cast_rim:5spoke_2 (o1.14.2)
 ```

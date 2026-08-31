@@ -132,7 +132,16 @@ Snapshot renders stills; motion review is interactive in the viewer. For
 still evidence of a configuration, render at DOF values:
 
 ```bash
-cadgen step snapshot --input STEP/arm.step --output tmp/open.png --params '{"jaw": 40}'
+cadgen step snapshot STEP/arm.step tmp/open.png --kinematics '{"jaw": 40}'
+```
+
+`--kinematics` is named for the `kinematics=` block it drives, and takes
+either spelling: `{dof: value}` JSON, or the NAME of a pose the model
+declares under `poses`. A name is checked against the declaration, so a typo
+fails with the poses this model actually has:
+
+```bash
+cadgen step snapshot STEP/arm.step tmp/open.png --kinematics open
 ```
 
 Identify fixed pivots, link lengths, gear ratios, and joint limits BEFORE

@@ -72,7 +72,7 @@ Run with the project or workspace Python environment. Treat `python` in examples
 cadgen sdf validate path/to/model.sdf
 cadgen sdf validate path/to/model.sdf --strict
 cadgen sdf validate path/to/model.sdf --json
-cadgen sdf snapshot --input path/to/model.sdf --output review.png
+cadgen sdf snapshot path/to/model.sdf review.png
 ```
 
 The validator checks document shape, name scopes, pose/frame graphs, joints, geometry, mesh URIs, inertials, sensors, and plugins, and prints its findings plus a summary. One run validates ONE file: `--strict` treats warnings as failures and `--json` emits the machine-readable findings document. It exits nonzero if the target fails.
@@ -112,12 +112,13 @@ CLI and headless browser runtime every rendering skill uses — so a snapshot ma
 the CAD Viewer shows.
 
 ```bash
-cadgen snapshot --input path/to/robot.sdf --output review.png
+cadgen snapshot path/to/robot.sdf review.png
 ```
 
-It accepts `.sdf` only. Pose the robot with the job field `"jointValues"` (joint name to
-degrees, defaulting to the rest pose) rather than `--params`, which is STEP-only; robots
-are authored in metres and are framed on the robot scene scale automatically.
+It accepts `.sdf` only. Pose the robot with `--joint-values` — `{joint: degrees}` JSON,
+joints you do not name staying at the rest pose (the `"jointValues"` job field is the same
+thing in a packet). Robots are authored in metres and are framed on the robot scene scale
+automatically.
 
 Theme settings live under one `--theme`, mirroring the viewer's Theme tab. The default
 theme is `snapshot` — Workbench Light with the ground grid, origin axis and shadows
@@ -128,7 +129,9 @@ Link meshes are resolved relative to the description, so they must be present: a
 unhydrated Git LFS pointer fails as "No link mesh loaded for robot". Run
 `git lfs checkout <mesh dir>` first.
 
-Use `cadgen snapshot --help` for the complete current command interface.
+The grammar is `cadgen sdf snapshot TARGET [OUT] [flags]`, the same one every
+format door uses. Use `cadgen sdf snapshot --help` for the complete current
+interface — the flags a robot cannot act on are absent from it, not refused by it.
 
 ## References
 

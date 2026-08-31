@@ -1,32 +1,121 @@
-"""The public ``snapshot`` verb, once, for every format namespace that has one.
+"""The public ``snapshot`` verbs — MIRRORS, one signature per format shape.
 
-``cadgen.step.snapshot(...)``, ``cadgen.stl.snapshot(...)`` and the rest differ in
-exactly one thing — which input kinds they accept — so they are one function
-bound to different kinds rather than several copies of a fifteen-parameter
-signature agreeing (design/format-doors.md).
+Snapshot used to be the schema's one adapter: a hand-written parser whose
+option surface a policy test pinned by declaration. That exception is retired
+(user directive, 2026-08-30): every rich option is typed ``str | dict | None``
+— CLI-side one string (a saved name, inline JSON, or a path) interpreted by
+the loaders the verb already uses; library-side a real dict through the same
+parameter — so the signature IS the surface and ``cli_from_function`` derives
+the CLI exactly as it does for ``build`` and ``validate``.
 
-Snapshot is an ADAPTER, not a mirror: the camera/theme/display surface is not
-derivable from a signature, so the CLI keeps its hand-written parser and the
-signature-sync policy test checks the declared option surface instead. What this
-module adds is the missing third of the triple — the FUNCTION. `build` and
-`validate` have had one since the schema landed; snapshot was reachable only
-through argv, so nothing in Python could render without shelling out.
+Three signature shapes cover the seven doors honestly (the old shared
+signature advertised STEP-only options to every door and refused them at
+runtime):
+
+- STEP: the full surface — section mode, display, kinematics, focus/hide.
+- mesh (stl/3mf/glb) and dxf: view/list renders of untyped geometry.
+- robot (urdf/sdf): the mesh shape plus ``joint_values``.
+
+The polymorphic ``cadgen snapshot`` binds the UNION shape (STEP surface +
+``joint_values``) over every kind at once: a job packet may mix formats, and
+each input is still held to its own format's rules at resolve time.
 
 Import discipline: nothing here may pull in OCP/build123d, or the snapshot
-machinery itself, at module scope. A model script imports ``cadgen.step`` before
-its freshness gate runs, and this module rides along.
+machinery itself, at module scope. A model script imports ``cadgen.step``
+before its freshness gate runs, and this module rides along.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from cadgen.results import SnapshotResult
 
+# Which input kinds each format door's snapshot accepts. ``srdf`` has no door
+# of its own (an SRDF's geometry comes from the URDF beside it) but the
+# polymorphic door still routes one.
+DOOR_KINDS: dict[str, tuple[str, ...]] = {
+    "step": ("step", "stp"),
+    "stl": ("stl",),
+    "3mf": ("3mf",),
+    "glb": ("glb",),
+    "dxf": ("dxf",),
+    "urdf": ("urdf",),
+    "srdf": ("srdf",),
+    "sdf": ("sdf",),
+}
 
-def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
-    """The ``snapshot`` verb for one format door, accepting only its own kinds."""
+ALL_KINDS: tuple[str, ...] = tuple(
+    dict.fromkeys(kind for kinds in DOOR_KINDS.values() for kind in kinds)
+)
+
+
+def _run(
+    door_kinds: tuple[str, ...],
+    *,
+    target: Path | None,
+    out: Path | None,
+    job: Path | None,
+    mode: str,
+    camera: object,
+    theme: object,
+    display: object = None,
+    kinematics: object = None,
+    joint_values: object = None,
+    focus: tuple[str, ...] = (),
+    hide: tuple[str, ...] = (),
+    width: int | None,
+    height: int | None,
+    size_profile: str,
+    view_labels: bool,
+    debug: bool,
+) -> SnapshotResult:
+    # Imported here rather than at module scope: `cadgen.step` is on a model
+    # script's pre-gate path, and the snapshot machinery drags in the catalog,
+    # selector lookup and STEP targets.
+    import io
+
+    from cadgen.snapshot_cli import SnapshotOptions, run_snapshot
+
+    options = SnapshotOptions(
+        job=str(job) if job else "",
+        input=str(target) if target else "",
+        output=str(out) if out else "",
+        mode=mode,
+        width=width,
+        height=height,
+        size_profile=size_profile,
+        view_labels=view_labels,
+        debug=debug,
+    )
+    # `None` is "not given" for each of these, which is not the same as the
+    # default: the machinery distinguishes them through the `<name>_specified`
+    # flags, and a theme passed as its own default value must still count as
+    # a choice (it changes the size profile).
+    if theme is not None:
+        options.theme, options.theme_specified = theme, True
+    if display is not None:
+        options.display, options.display_specified = display, True
+    if camera is not None:
+        options.camera, options.camera_specified = camera, True
+    if kinematics is not None:
+        options.params, options.params_specified = kinematics, True
+    if joint_values is not None:
+        options.joint_values, options.joint_values_specified = joint_values, True
+    if focus:
+        options.focus = [str(value) for value in focus]
+    if hide:
+        options.hide = [str(value) for value in hide]
+    if options.focus and options.hide:
+        raise ValueError("focus and hide cannot be used in the same snapshot")
+    # An empty non-tty stream: the machinery reads a JSON packet off stdin when
+    # given neither job nor target, and a library caller has no stdin to offer.
+    return run_snapshot(options, kinds=door_kinds, stdin=io.StringIO())
+
+
+def step_snapshot_verb(door: str):
+    """The STEP-shaped ``snapshot`` verb: the full surface."""
+    kinds = DOOR_KINDS[door]
 
     def snapshot(
         target: Path | None = None,
@@ -34,15 +123,15 @@ def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
         *,
         job: Path | None = None,
         mode: str = "view",
-        camera: object = None,
-        theme: object = None,
-        display: object = None,
+        camera: str | dict | None = None,
+        theme: str | dict | None = None,
+        display: str | dict | None = None,
+        kinematics: str | dict | None = None,
+        focus: tuple[str, ...] = (),
+        hide: tuple[str, ...] = (),
         width: int | None = None,
         height: int | None = None,
         size_profile: str = "",
-        params: object = None,
-        focus: Sequence[str] | None = None,
-        hide: Sequence[str] | None = None,
         view_labels: bool = False,
         debug: bool = False,
     ) -> SnapshotResult:
@@ -50,71 +139,218 @@ def snapshot_door(door: str) -> Callable[..., SnapshotResult]:
 
         An explicit OUT is written exactly there and is cleared first, so a
         failed render leaves no file at all; a directory gets a generated
-        timestamped name inside it. Rendering is a read: nothing about the model
-        changes, though a STEP input whose render package is missing builds one.
+        timestamped name inside it. Rendering is a read: nothing about the
+        model changes, though a STEP input whose render package is missing
+        builds one.
 
-        target: the model to render. Omitted, JOB supplies the input(s).
-        out: destination image path, or a directory to generate a name in.
+        target: the model to render: a .step/.stp document or model script.
+        out: destination image path (written EXACTLY there, cleared first),
+            or a directory for a generated timestamped name.
         job: a render-job JSON file — one job, an array of them, or
             {"jobs": [...]}. When given it wins: target/out are ignored, and
             a missing job file raises FileNotFoundError.
         mode: view (default), section, or list.
-        camera: a preset, an "azimuth:elevation" pair, or a camera object.
-        theme: a saved theme name, a theme-settings object, or a path to a
-            theme JSON file. Defaults to the `snapshot` theme.
-        display: a display mode name, a display-settings object, or a path to a
-            display JSON file. STEP inputs only.
+        camera: a preset, an "azimuth:elevation" pair, or camera JSON.
+        theme: a saved theme id, theme-settings JSON, or a theme file path.
+        display: a display mode name, display-settings JSON, or a file path.
+        kinematics: pose values — a declared preset name or {dof: value}
+            JSON, validated against the model's kinematics declaration.
+        focus: occurrence ref rendered at full opacity (repeatable); the
+            rest of the assembly is ghosted in place.
+        hide: occurrence ref left out of the render (repeatable).
         width: output width in pixels, overriding the size profile.
         height: output height in pixels, overriding the size profile.
         size_profile: simple, diagnostic, labeled, assembly, presentation,
             or contact-sheet.
-        params: pose parameter values for the model's @step(pose=...) block.
-        focus: occurrence refs to render alone. STEP inputs only.
-        hide: occurrence refs to leave out. STEP inputs only.
         view_labels: burn the camera/view label into the image.
         debug: report how each input's artifact resolved.
         """
-        # Imported here rather than at module scope: `cadgen.step` is on a model
-        # script's pre-gate path, and the snapshot CLI drags in the catalog,
-        # selector lookup and STEP targets.
-        import io
-
-        from cadgen.cli.snapshot import DOOR_KINDS
-        from cadgen.snapshot_cli import SnapshotOptions, run_snapshot
-
-        options = SnapshotOptions(
-            job=str(job) if job else "",
-            input=str(target) if target else "",
-            output=str(out) if out else "",
-            mode=mode,
-            width=width,
-            height=height,
-            size_profile=size_profile,
-            view_labels=view_labels,
-            debug=debug,
+        return _run(
+            kinds,
+            target=target, out=out, job=job, mode=mode,
+            camera=camera, theme=theme, display=display, kinematics=kinematics,
+            focus=focus, hide=hide, width=width, height=height,
+            size_profile=size_profile, view_labels=view_labels, debug=debug,
         )
-        # `None` is "not given" for each of these, which is not the same as the
-        # default: the CLI distinguishes them through the `<name>_specified`
-        # flags, and a theme passed as its own default value must still count as
-        # a choice (it changes the size profile).
-        if theme is not None:
-            options.theme, options.theme_specified = theme, True
-        if display is not None:
-            options.display, options.display_specified = display, True
-        if camera is not None:
-            options.camera, options.camera_specified = camera, True
-        if params is not None:
-            options.params, options.params_specified = params, True
-        if focus:
-            options.focus = [str(value) for value in focus]
-        if hide:
-            options.hide = [str(value) for value in hide]
-        if options.focus and options.hide:
-            raise ValueError("focus and hide cannot be used in the same snapshot")
-        # An empty non-tty stream: the CLI reads a JSON packet off stdin when it
-        # was given neither --job nor --input, and a library caller has no stdin
-        # to offer. Reading nothing lands on the same "requires job or target"
-        # error rather than blocking on a terminal.
-        return run_snapshot(options, kinds=DOOR_KINDS[door], stdin=io.StringIO())
 
     return snapshot
+
+
+def mesh_snapshot_verb(door: str):
+    """The mesh/dxf-shaped verb: view/list renders of untyped geometry —
+    no display, kinematics, section mode, or selection (nothing to act on)."""
+    kinds = DOOR_KINDS[door]
+    suffixes = ", ".join(f".{kind}" for kind in kinds)
+
+    def snapshot(
+        target: Path | None = None,
+        out: Path | None = None,
+        *,
+        job: Path | None = None,
+        mode: str = "view",
+        camera: str | dict | None = None,
+        theme: str | dict | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        size_profile: str = "",
+        view_labels: bool = False,
+        debug: bool = False,
+    ) -> SnapshotResult:
+        """Render TARGET and report the files written.
+
+        An explicit OUT is written exactly there and is cleared first, so a
+        failed render leaves no file at all; a directory gets a generated
+        timestamped name inside it.
+
+        target: the file to render. It accepts: {suffixes}.
+        out: destination image path (written EXACTLY there, cleared first),
+            or a directory for a generated timestamped name.
+        job: a render-job JSON file — one job, an array of them, or
+            {"jobs": [...]}. When given it wins: target/out are ignored.
+        mode: view (default) or list.
+        camera: a preset, an "azimuth:elevation" pair, or camera JSON.
+        theme: a saved theme id, theme-settings JSON, or a theme file path.
+        width: output width in pixels, overriding the size profile.
+        height: output height in pixels, overriding the size profile.
+        size_profile: simple, diagnostic, labeled, assembly, presentation,
+            or contact-sheet.
+        view_labels: burn the camera/view label into the image.
+        debug: report how each input's artifact resolved.
+        """
+        return _run(
+            kinds,
+            target=target, out=out, job=job, mode=mode,
+            camera=camera, theme=theme, width=width, height=height,
+            size_profile=size_profile, view_labels=view_labels, debug=debug,
+        )
+
+    snapshot.__doc__ = snapshot.__doc__.replace("{suffixes}", suffixes)
+    return snapshot
+
+
+def robot_snapshot_verb(door: str):
+    """The robot-shaped verb: the mesh shape plus joint posing."""
+    kinds = DOOR_KINDS[door]
+    suffixes = ", ".join(f".{kind}" for kind in kinds)
+
+    def snapshot(
+        target: Path | None = None,
+        out: Path | None = None,
+        *,
+        job: Path | None = None,
+        mode: str = "view",
+        joint_values: str | dict | None = None,
+        camera: str | dict | None = None,
+        theme: str | dict | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        size_profile: str = "",
+        view_labels: bool = False,
+        debug: bool = False,
+    ) -> SnapshotResult:
+        """Render TARGET and report the files written.
+
+        An explicit OUT is written exactly there and is cleared first, so a
+        failed render leaves no file at all; a directory gets a generated
+        timestamped name inside it.
+
+        target: the robot description to render. It accepts: {suffixes}.
+        out: destination image path (written EXACTLY there, cleared first),
+            or a directory for a generated timestamped name.
+        job: a render-job JSON file — one job, an array of them, or
+            {"jobs": [...]}. When given it wins: target/out are ignored.
+        mode: view (default) or list.
+        joint_values: {joint: degrees} JSON posing the robot; joints not
+            named stay at the rest pose.
+        camera: a preset, an "azimuth:elevation" pair, or camera JSON.
+        theme: a saved theme id, theme-settings JSON, or a theme file path.
+        width: output width in pixels, overriding the size profile.
+        height: output height in pixels, overriding the size profile.
+        size_profile: simple, diagnostic, labeled, assembly, presentation,
+            or contact-sheet.
+        view_labels: burn the camera/view label into the image.
+        debug: report how each input's artifact resolved.
+        """
+        return _run(
+            kinds,
+            target=target, out=out, job=job, mode=mode,
+            joint_values=joint_values, camera=camera, theme=theme,
+            width=width, height=height, size_profile=size_profile,
+            view_labels=view_labels, debug=debug,
+        )
+
+    snapshot.__doc__ = snapshot.__doc__.replace("{suffixes}", suffixes)
+    return snapshot
+
+
+def polymorphic_snapshot_verb():
+    """The union shape over every kind: `cadgen snapshot` routes by suffix,
+    and a job packet may mix formats — each input is still held to its own
+    format's rules at resolve time."""
+
+    def snapshot(
+        target: Path | None = None,
+        out: Path | None = None,
+        *,
+        job: Path | None = None,
+        mode: str = "view",
+        camera: str | dict | None = None,
+        theme: str | dict | None = None,
+        display: str | dict | None = None,
+        kinematics: str | dict | None = None,
+        joint_values: str | dict | None = None,
+        focus: tuple[str, ...] = (),
+        hide: tuple[str, ...] = (),
+        width: int | None = None,
+        height: int | None = None,
+        size_profile: str = "",
+        view_labels: bool = False,
+        debug: bool = False,
+    ) -> SnapshotResult:
+        """Render any supported input, routed by suffix.
+
+        target: the file to render — STEP/STP, model script, STL/3MF/GLB,
+            DXF, or a robot description (URDF/SRDF/SDF).
+        out: destination image path (written EXACTLY there, cleared first),
+            or a directory for a generated timestamped name.
+        job: a render-job JSON file — one job, an array of them, or
+            {"jobs": [...]}; jobs may mix formats. When given it wins.
+        mode: view (default), section (STEP only), or list.
+        camera: a preset, an "azimuth:elevation" pair, or camera JSON.
+        theme: a saved theme id, theme-settings JSON, or a theme file path.
+        display: display settings (STEP inputs only).
+        kinematics: pose values for a STEP model's kinematics — a preset
+            name or {dof: value} JSON.
+        joint_values: {joint: degrees} JSON posing a robot description.
+        focus: occurrence ref rendered at full opacity (STEP only).
+        hide: occurrence ref left out of the render (STEP only).
+        width: output width in pixels, overriding the size profile.
+        height: output height in pixels, overriding the size profile.
+        size_profile: simple, diagnostic, labeled, assembly, presentation,
+            or contact-sheet.
+        view_labels: burn the camera/view label into the image.
+        debug: report how each input's artifact resolved.
+        """
+        return _run(
+            ALL_KINDS,
+            target=target, out=out, job=job, mode=mode,
+            camera=camera, theme=theme, display=display, kinematics=kinematics,
+            joint_values=joint_values, focus=focus, hide=hide,
+            width=width, height=height, size_profile=size_profile,
+            view_labels=view_labels, debug=debug,
+        )
+
+    return snapshot
+
+
+#: Teaching errors at the retired adapter flags (hard cutover): the generated
+#: parsers take TARGET/OUT positionally and the pose flag matches its
+#: decorator counterpart by name.
+RETIRED_SNAPSHOT_FLAGS: dict[str, str] = {
+    "--input": "snapshot takes the model positionally now: cadgen <fmt> snapshot TARGET [OUT] ...",
+    "-i": "snapshot takes the model positionally now: cadgen <fmt> snapshot TARGET [OUT] ...",
+    "--output": "the output is the second positional now: cadgen <fmt> snapshot TARGET OUT ...",
+    "-o": "the output is the second positional now: cadgen <fmt> snapshot TARGET OUT ...",
+    "--params": "--params was renamed: --kinematics takes a declared preset name or {dof: value} JSON",
+    "--params-path": "the .params.js sidecar mechanism is retired; kinematics is declared on the model (kinematics=) and posed with --kinematics",
+}

@@ -64,50 +64,34 @@ MIRRORS: dict[str, tuple[str, str]] = {
     "dxf build": ("cadgen.dxf", "build"),
     "sdf validate": ("cadgen.sdf", "validate"),
     "srdf validate": ("cadgen.srdf", "validate"),
+    # Snapshot was the schema's LAST adapter. Its rich options are typed
+    # `str | dict | None` — one string CLI-side, a real dict library-side — so
+    # there is nothing left to declare: the structural check below is the whole
+    # contract, and the seven doors differ by SIGNATURE rather than by a
+    # runtime kind gate on one shared surface.
+    "step snapshot": ("cadgen.step", "snapshot"),
+    "stl snapshot": ("cadgen.stl", "snapshot"),
+    "3mf snapshot": ("cadgen.threemf", "snapshot"),
+    "glb snapshot": ("cadgen.glb", "snapshot"),
+    "dxf snapshot": ("cadgen.dxf", "snapshot"),
+    "urdf snapshot": ("cadgen.urdf", "snapshot"),
+    "sdf snapshot": ("cadgen.sdf", "snapshot"),
+    # The polymorphic door's verb has no format namespace to live on: there is
+    # no polymorphic FORMAT, only a routing convenience over the seven real
+    # doors, so it is bound beside its command.
+    "snapshot": ("cadgen.cli.snapshot", "snapshot"),
 }
 
-# The shared snapshot surface, WRITTEN OUT rather than imported: a test that
-# derived this from the same place the command does would pass no matter what
-# either said. Adding a flag to the snapshot CLI has to fail here first.
-SNAPSHOT_OPTIONS = frozenset(
-    {
-        "job",
-        "input",
-        "output",
-        "mode",
-        "theme",
-        "display",
-        "camera",
-        "width",
-        "height",
-        "size_profile",
-        "params",
-        "focus",
-        "hide",
-        "view_labels",
-        "debug",
-        "json",
-    }
-)
-
 # Commands with a HAND-WRITTEN parser, and the option surface each one owns. An
-# adapter has no generated parser to compare against a signature — a snapshot's
-# camera/theme/display surface, and inspect's subcommand tree, are exactly what
-# disqualify them from mirror status — so the declaration IS the contract, and a
-# flag or subcommand that appears without being declared here fails.
+# adapter has no generated parser to compare against a signature — inspect's
+# subcommand tree is exactly what disqualifies it from mirror status — so the
+# declaration IS the contract, and a flag or subcommand that appears without
+# being declared here fails.
 #
 # For a parser with subcommands the surface is its top-level options plus the
 # subcommand names: pinning every leaf flag of `step inspect` would be a copy of
 # the CLI in a test file, which is churn rather than a guard.
 ADAPTERS: dict[str, frozenset[str]] = {
-    "step snapshot": SNAPSHOT_OPTIONS,
-    "stl snapshot": SNAPSHOT_OPTIONS,
-    "3mf snapshot": SNAPSHOT_OPTIONS,
-    "glb snapshot": SNAPSHOT_OPTIONS,
-    "dxf snapshot": SNAPSHOT_OPTIONS,
-    "urdf snapshot": SNAPSHOT_OPTIONS,
-    "sdf snapshot": SNAPSHOT_OPTIONS,
-    "snapshot": SNAPSHOT_OPTIONS,
     # The one validator that cannot be a mirror: `--packages NAME=PATH` is
     # repeatable, and a repeatable key/value map is outside the derivable set.
     "urdf validate": frozenset({"path", "strict", "packages", "verbose"}),
@@ -145,14 +129,11 @@ def _verb(target: tuple[str, str]):
 def _adapter_surface(module) -> frozenset[str]:
     """One adapter command's real option surface, read off the command itself.
 
-    Two shapes exist: an argparse command answers with its destinations (plus
-    its subcommand names, which is where a subcommand tree's meaning lives), and
-    a command that parses argv by hand — snapshot — declares ``OPTION_NAMES``.
+    Every adapter left is an argparse command, so it answers with its
+    destinations plus its subcommand names — which is where a subcommand tree's
+    meaning lives. There is no longer a command that parses argv by hand.
     """
-    parser_builder = getattr(module, "build_parser", None)
-    if parser_builder is None:
-        return frozenset(module.OPTION_NAMES)
-    parser = parser_builder()
+    parser = module.build_parser()
     names = set(parser_dests(parser)) - {JSON_FLAG_DEST}
     for action in parser._actions:  # noqa: SLF001 - argparse exposes no public view
         if action.nargs == argparse.PARSER:

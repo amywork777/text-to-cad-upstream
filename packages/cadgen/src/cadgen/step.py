@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from cadgen._internal.format_namespace import callable_namespace
-from cadgen._internal.snapshot_door import snapshot_door
+from cadgen._internal.snapshot_door import step_snapshot_verb
 from cadgen.results import BuildResult, InspectResult
 
 __all__ = ["build", "inspect", "snapshot"]
@@ -28,7 +28,7 @@ __all__ = ["build", "inspect", "snapshot"]
 #: ``cadgen step snapshot``'s verb: render a STEP/STP document, or the model
 #: script that builds one. Mesh inputs belong to their own doors
 #: (``cadgen.stl.snapshot`` and friends).
-snapshot = snapshot_door("step")
+snapshot = step_snapshot_verb("step")
 
 
 def build(

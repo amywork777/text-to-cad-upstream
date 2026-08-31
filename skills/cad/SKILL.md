@@ -97,21 +97,21 @@ sources and `.step.py`/`.dxf.py` naming fail with a pointer to
 
 Use the active project Python interpreter; treat `python` in examples as an interpreter placeholder. Every operational verb is a `cadgen` subcommand (warm-by-default; `python -m cadgen.cli <verb>` is the PATH-independent equivalent). Use `cadgen <verb> --help` for the complete current interface; reference docs show recommended workflows, not every flag. Install per `requirements.txt`; `cadgen doctor <skill-dir>` verifies the installed cadgen matches this skill's pin (docs drift silently on a mismatched install).
 
-**Snapshot inputs.** One format, one door. `cadgen step snapshot` renders `.step`/`.stp` and the model scripts that build them (`.py` declaring `@step`) — nothing else. A mesh file goes to its own door: `cadgen stl snapshot`, `cadgen 3mf snapshot`, `cadgen glb snapshot`. They take the identical options and render the same way; a mesh has no CAD topology, so the STEP-only options (`--focus`/`--hide`, `--display`, `--params`, `--mode section`) are not offered. Robot descriptions belong to the `urdf`/`srdf`/`sdf` skills. Each door refuses what is not its own, and names the door that takes it.
+**Snapshot inputs.** One format, one door, and the same `TARGET [OUT]` grammar `build` uses. `cadgen step snapshot` renders `.step`/`.stp` and the model scripts that build them (`.py` declaring `@step`) — nothing else. A mesh file goes to its own door: `cadgen stl snapshot`, `cadgen 3mf snapshot`, `cadgen glb snapshot`. A mesh has no CAD topology, so the STEP-only options (`--focus`/`--hide`, `--display`, `--kinematics`, `--mode section`) are not on those commands at all — check `--help` and the door tells you what it can do. Robot descriptions belong to the `urdf`/`srdf`/`sdf` skills. Each door refuses what is not its own, and names the door that takes it.
 
 ```bash
-cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
-cadgen stl snapshot  --input STL/bracket.stl   --output tmp/mesh.png
+cadgen step snapshot STEP/bracket.step tmp/review.png
+cadgen stl snapshot  STL/bracket.stl   tmp/mesh.png
 ```
 
 **Snapshot output.** The path you name is the path you get:
 
 ```bash
-cadgen step snapshot --input STEP/bracket.step --output tmp/review.png
+cadgen step snapshot STEP/bracket.step tmp/review.png
 # then Read tmp/review.png
 ```
 
-`--output` is written exactly as given (a relative path against the current working directory), cleared before the render and written atomically after it — so reuse one name while iterating, name the iterations (`tmp/before.png`, `tmp/after.png`) when you need to compare, and treat a missing file as the failure signal: there is never an older image at the path to mistake for output. A directory (`--output tmp/`) is the don't-care case and gets a generated timestamped name inside it, printed on the `saved snapshot:` line. The same rule applies per output in a JSON packet.
+OUT is written exactly as given (a relative path against the current working directory), cleared before the render and written atomically after it — so reuse one name while iterating, name the iterations (`tmp/before.png`, `tmp/after.png`) when you need to compare, and treat a missing file as the failure signal: there is never an older image at the path to mistake for output. A directory (`tmp/`) is the don't-care case and gets a generated timestamped name inside it, printed on the `saved snapshot:` line. The same rule applies per output in a JSON packet.
 
 **Theme and display.** Theme settings live under one `--theme`, display settings under one `--display` — the viewer's two tabs, one option each. The default theme is `snapshot`: Workbench Light with the ground grid and origin axis removed, because in a still image those read as geometry rather than as orientation. Pass `--theme workbench-light` for the viewer's own look. Projection is a theme trait honoured by every format, so a snapshot frames the same way the viewport does.
 

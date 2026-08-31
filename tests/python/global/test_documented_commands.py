@@ -99,19 +99,14 @@ def _split_command(argv: list[str]) -> tuple[str, list[str]] | None:
 def _parse(module, rest: list[str]) -> None:
     """Put the form through the command's real parser, or skip if it has none.
 
-    Two parser shapes exist. A generated or argparse command answers with
-    ``build_parser``; snapshot parses argv by hand and is reached through its own
-    entry. A command that builds its parser inside ``main()`` has nothing to call
-    without running it, so those forms are checked for existence only.
+    Every command in the schema — generated or argparse — answers with
+    ``build_parser``. A command that builds its parser inside ``main()`` has
+    nothing to call without running it, so those forms are checked for
+    existence only.
     """
     parser_builder = getattr(module, "build_parser", None)
     if parser_builder is not None:
         parser_builder().parse_args(rest)
-        return
-    if hasattr(module, "OPTION_NAMES"):
-        from cadgen.snapshot_cli import parse_snapshot_args
-
-        parse_snapshot_args(rest)
 
 
 class DocumentedCommands(unittest.TestCase):
@@ -148,7 +143,7 @@ class DocumentedCommands(unittest.TestCase):
 
 
 class DocumentedSnapshotOutputPaths(unittest.TestCase):
-    """`--output` means what it says, and every documented form relies on that.
+    """OUT means what it says, and every documented form relies on that.
 
     A snapshot used to append a datetimestamp to the filename it was asked for, so
     the docs had to teach a defensive workaround: read the path off the
@@ -156,7 +151,11 @@ class DocumentedSnapshotOutputPaths(unittest.TestCase):
     That workaround is now WRONG advice, and stale advice in a skill is a live
     defect — an agent copies what it reads. So the sweep checks two things: no
     document still teaches the timestamped filename, and every documented
-    `--output FILE` form is one whose file the reader may then open by name.
+    `snapshot TARGET OUT` form is one whose file the reader may then open by name.
+
+    The OUT is read off the command's OWN parser rather than by counting words,
+    so a doc written against a retired spelling cannot slip through as an
+    unrecognized form and quietly stop being checked.
     """
 
     RETIRED = (
@@ -164,31 +163,57 @@ class DocumentedSnapshotOutputPaths(unittest.TestCase):
         "_20260527T163012Z",
     )
 
-    def _snapshot_output_forms(self) -> list[tuple[Path, list[str]]]:
+    def _snapshot_output_forms(self) -> list[tuple[Path, list[str], str]]:
         forms = []
         for source, argv, _elided in _documented_forms():
             if "snapshot" not in argv:
                 continue
-            if "--output" in argv or "-o" in argv:
-                forms.append((source, argv))
+            split = _split_command(argv)
+            if split is None:
+                continue
+            name, rest = split
+            module = importlib.import_module(cli._COMMANDS[name][0])  # noqa: SLF001
+            out = getattr(module.build_parser().parse_args(rest), "out", None)
+            if out is not None:
+                forms.append((source, argv, str(out)))
         return forms
 
     def test_the_docs_still_show_snapshot_output_forms(self):
         self.assertGreater(len(self._snapshot_output_forms()), 1)
 
     def test_no_documented_output_is_a_directory(self):
-        """Every documented `--output` names a FILE, so what the doc shows is what
-        the reader gets. A directory would be the generate-a-name case, and a doc
+        """Every documented OUT names a FILE, so what the doc shows is what the
+        reader gets. A directory would be the generate-a-name case, and a doc
         that showed one while claiming an exact path would teach the wrong rule."""
-        for source, argv in self._snapshot_output_forms():
-            flag = "--output" if "--output" in argv else "-o"
-            value = argv[argv.index(flag) + 1]
+        for source, argv, value in self._snapshot_output_forms():
             with self.subTest(source=str(source), form=" ".join(argv)):
                 self.assertFalse(
                     value.endswith(("/", "\\")),
-                    f"{source} documents `--output {value}`, a directory, as if it named a file",
+                    f"{source} documents `{value}` as OUT, a directory, as if it named a file",
                 )
-                self.assertTrue(Path(value).suffix, f"{source}: `--output {value}` names no file")
+                self.assertTrue(Path(value).suffix, f"{source}: OUT `{value}` names no file")
+
+    def test_no_skill_still_documents_a_retired_snapshot_flag(self):
+        """The hard cutover, swept across the docs.
+
+        Each of these exits 2 with a teaching error naming its replacement, so a
+        doc that still shows one is teaching a command that cannot run."""
+        from cadgen._internal.snapshot_door import RETIRED_SNAPSHOT_FLAGS
+
+        for path in sorted(SKILLS.rglob("*.md")):
+            text = path.read_text(encoding="utf-8")
+            for line in text.splitlines():
+                if "snapshot" not in line:
+                    continue
+                for flag in RETIRED_SNAPSHOT_FLAGS:
+                    if not flag.startswith("--"):
+                        continue  # `-i`/`-o` are too short to match a doc line safely
+                    with self.subTest(source=str(path.relative_to(SKILLS.parent)), flag=flag):
+                        self.assertNotIn(
+                            f"snapshot {flag}",
+                            line,
+                            f"{flag} is retired: {RETIRED_SNAPSHOT_FLAGS[flag]}",
+                        )
 
     def test_no_skill_still_teaches_the_retired_timestamped_filename(self):
         for path in sorted(SKILLS.rglob("*.md")):

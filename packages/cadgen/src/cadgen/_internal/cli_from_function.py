@@ -79,12 +79,26 @@ def _resolve_annotation(annotation: Any, *, where: str) -> tuple[Any, bool]:
     if origin is typing.Union or origin is types.UnionType:
         args = typing.get_args(annotation)
         non_none = [arg for arg in args if arg is not type(None)]
+        # An OBJECT option: ``str | dict | None`` — CLI-side always one string
+        # (a saved name, inline JSON, or a path); the verb interprets it, and
+        # library callers pass real dicts through the same parameter.
+        if len(args) == 3 and set(non_none) == {str, dict}:
+            return str, True
         if len(args) != 2 or len(non_none) != 1:
             raise NotDerivable(
-                f"{where}: only ``X | None`` unions are derivable, got {annotation!r}"
+                f"{where}: only ``X | None`` and ``str | dict | None`` unions are "
+                f"derivable, got {annotation!r}"
             )
         return _scalar(non_none[0], where=where), True
     return _scalar(annotation, where=where), False
+
+
+def _repeatable(annotation: Any) -> bool:
+    """``tuple[str, ...]`` — a repeatable string flag (``--focus A --focus B``)."""
+    return (
+        typing.get_origin(annotation) is tuple
+        and typing.get_args(annotation) == (str, Ellipsis)
+    )
 
 
 _PARAM_HELP_RE = re.compile(r"^(?P<name>[a-z_][a-z0-9_]*): (?P<text>\S.*)$")
@@ -154,8 +168,25 @@ def cli_from_function(func: Callable[..., Any], *, prog: str) -> argparse.Argume
             raise NotDerivable(f"{where}: variadic parameter {name!r} is not derivable")
         if name not in hints:
             raise NotDerivable(f"{where}: parameter {name!r} has no annotation")
-        base, _optional = _resolve_annotation(hints[name], where=f"{where}.{name}")
         help_text = param_help.get(name)
+        if parameter.kind is parameter.KEYWORD_ONLY and _repeatable(hints[name]):
+            if parameter.default != ():
+                raise NotDerivable(
+                    f"{where}: repeatable flag {name!r} must default to an empty tuple"
+                )
+            parser.add_argument(
+                "--" + name.replace("_", "-"),
+                action="append",
+                default=None,
+                # The same metavar rule as a scalar flag. De-pluralizing it
+                # here read well for a `--tags TAG` and turned `--focus` into
+                # `FOCU`, so the repeatable-ness is stated in the help text
+                # instead, where it can be said in words.
+                metavar=name.rsplit("_", 1)[-1].upper(),
+                help=help_text,
+            )
+            continue
+        base, _optional = _resolve_annotation(hints[name], where=f"{where}.{name}")
         if parameter.kind is parameter.KEYWORD_ONLY:
             flag = "--" + name.replace("_", "-")
             if base is bool:
@@ -197,6 +228,9 @@ def _call_arguments(
     keywords: dict[str, Any] = {}
     for name, parameter in inspect.signature(func).parameters.items():
         value = getattr(namespace, name)
+        if parameter.default == () and isinstance(parameter.default, tuple):
+            # Repeatable flag: argparse appends into a list (None = never given).
+            value = tuple(value or ())
         if parameter.kind is parameter.KEYWORD_ONLY:
             keywords[name] = value
         else:
@@ -291,10 +325,20 @@ def run_cli(
     *,
     prog: str,
     stdout: Any | None = None,
+    retired: dict[str, str] | None = None,
 ) -> int:
-    """Parse ``argv`` against ``func``'s generated parser, call it, print the result."""
+    """Parse ``argv`` against ``func``'s generated parser, call it, print the result.
+
+    ``retired`` maps removed flags to teaching errors: a generated parser is
+    pristine, so hard-cutover refusals live in this pre-parse scan rather than
+    as parser entries that would show up in ``--help``."""
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    for flag, message in (retired or {}).items():
+        if any(token == flag or token.startswith(f"{flag}=") for token in tokens):
+            print(f"[{prog}] {message}", file=sys.stderr)
+            return 2
     parser = cli_from_function(func, prog=prog)
-    args = parser.parse_args(list(argv) if argv is not None else None)
+    args = parser.parse_args(tokens)
     positional, keywords = _call_arguments(func, args)
     return emit(
         lambda: func(*positional, **keywords),
@@ -322,6 +366,10 @@ def generated_parser(target: tuple[str, str], *, prog: str) -> argparse.Argument
 
 
 def generated_main(
-    target: tuple[str, str], argv: Sequence[str] | None, *, prog: str
+    target: tuple[str, str],
+    argv: Sequence[str] | None,
+    *,
+    prog: str,
+    retired: dict[str, str] | None = None,
 ) -> int:
-    return run_cli(_verb(target), argv, prog=prog)
+    return run_cli(_verb(target), argv, prog=prog, retired=retired)

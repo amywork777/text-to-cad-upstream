@@ -1,9 +1,13 @@
-"""The snapshot CLI itself: arguments, job resolution, and the run loop.
+"""Snapshot below the options boundary: job resolution and the run loop.
 
-Shared because six skills render. Each one is a declaration -- which input kinds it
-accepts, and where its bundled browser runtime lives -- over this one implementation:
+There is no parser here any more. Snapshot used to be the schema's one ADAPTER
+— a hand-written argv scanner plus a declared option surface a policy test
+pinned — and that exception is retired: the verbs in
+:mod:`cadgen._internal.snapshot_door` are MIRRORS, and their generated parsers
+hand this module a :class:`SnapshotOptions` already built. What remains is
+everything downstream of that:
 
-    run_snapshot_cli(argv, kinds=("step", "stp", "3mf", "glb", "stl"), runtime_dir=...)
+    run_snapshot(options, kinds=("step", "stp"), runtime_dir=...)
 
 It lives in cadgen rather than in the CAD skill because a skill may not import another
 skill's code (AGENTS.md), and the robot resolver alone is needed by three skills at once.
@@ -25,7 +29,6 @@ import os
 import re
 import sys
 from collections.abc import Callable, Mapping, Sequence
-import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -40,7 +43,6 @@ from cadgen.cli_logging import CliLogger
 from cadgen.coordination import PHASE_BROWSER, SNAPSHOT, ProgressReporter
 from cadgen.cli_progress import cli_progress_line
 from cadgen.results import SnapshotResult
-from cadgen._internal.cli_from_function import emit
 from cadgen.snapshot_core import (
     THEME_OPTION_KEYS,
     BatchSnapshotRenderer,
@@ -96,7 +98,6 @@ from cadgen.snapshot_core import (
     normalize_snapshot_job_packet,
     parse_camera_option,
     path_is_inside_or_equal,
-    positive_integer,
     render_resolved_job_packet,
     render_snapshot,
     resolve_mesh_render_job,
@@ -152,308 +153,48 @@ class SnapshotOptions:
     size_profile: str = ""
     params: object = None
     params_specified: bool = False
+    joint_values: object = None
+    joint_values_specified: bool = False
     focus: list[str] | None = None
     hide: list[str] | None = None
     view_labels: bool = False
     debug: bool = False
-    json: bool = False
-    help: bool = False
 
 
-# Bookkeeping, not options: `<name>_specified` records whether the user passed
-# the flag at all, and `help` is argparse's own.
-_NON_OPTION_FIELDS = frozenset({"help"})
+def parse_params_option(raw_params: object) -> dict[str, object] | str:
+    """``--kinematics`` in job form: a values object, or a PRESET NAME.
 
-
-def option_names() -> tuple[str, ...]:
-    """The option surface every snapshot command carries, one name per flag.
-
-    Snapshot is an ADAPTER in the format-doors schema (design/format-doors.md):
-    its camera/theme/display surface is exactly what makes it underivable from a
-    verb signature, so there is no generated parser to read the surface off.
-    This is what the signature-sync policy test checks its declaration against
-    instead — :class:`SnapshotOptions` is the surface, one field per flag.
+    Already an object when it came from a ``<format>.snapshot(kinematics={...})``
+    call rather than argv; see the note above parse_camera_option. From argv it
+    is one string, and the two spellings are told apart by shape rather than by
+    a second flag: text that opens with ``{`` is inline JSON, anything else is
+    the name of a pose the model DECLARES. Resolving that name needs the
+    kinematics declaration, which only the renderer has loaded, so the name
+    travels through unresolved and `stepParameters` carries either shape.
     """
-    return tuple(
-        field.name
-        for field in dataclasses.fields(SnapshotOptions)
-        if field.name not in _NON_OPTION_FIELDS and not field.name.endswith("_specified")
-    )
-
-
-
-
-
-
-# What each kind can do, for generated help. A skill's --help then describes THAT skill
-# rather than every format the shared implementation happens to carry -- the old single
-# blob documented STEP parameters and robot joint poses to every reader regardless of
-# which skill they were in.
-KIND_BLURBS: dict[str, str] = {
-    # `gen_step()` is retired; a model is a @step-decorated function in a .py.
-    "step": "a STEP document, or the @step model script that builds one",
-    "stp": "a STEP model",
-    "glb": "a mesh, rendered shaded solid",
-    "stl": "a mesh, rendered shaded solid",
-    "3mf": "a mesh, rendered shaded solid",
-    "dxf": "a drawing, rendered as its 3D flat pattern",
-    "urdf": "a robot description, assembled from its link meshes",
-    "srdf": "a robot description, assembled from its link meshes",
-    "sdf": "a robot description, assembled from its link meshes",
-}
-
-KIND_MODES: dict[str, frozenset[str]] = {
-    "step": frozenset(STEP_SUPPORTED_RENDER_MODES),
-    "stp": frozenset(STEP_SUPPORTED_RENDER_MODES),
-    "glb": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "stl": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "3mf": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "dxf": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "urdf": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "srdf": frozenset(MESH_SUPPORTED_RENDER_MODES),
-    "sdf": frozenset(MESH_SUPPORTED_RENDER_MODES),
-}
-
-_MODE_BLURBS = {
-    "view": "one still image per output (default)",
-    "section": "cutaway sweep",
-    "list": "part occurrence refs as JSON; writes no files",
-}
-
-_KIND_HELP_ORDER = ("step", "stp", "3mf", "glb", "stl", "dxf", "urdf", "srdf", "sdf")
-
-
-def help_text(*, kinds: frozenset[str] | None = None, prog: str = "cadgen snapshot") -> str:
-    """The help for THIS skill: only the inputs, modes and options it actually has."""
-    enabled = frozenset(KIND_RESOLVERS) | {"python"} if kinds is None else kinds
-    listed = [k for k in _KIND_HELP_ORDER if k in enabled]
-    has_step = "step" in enabled
-    modes = sorted({m for k in listed for m in KIND_MODES.get(k, frozenset())})
-    sample = KIND_LABELS.get(listed[0], "model").split(" / ")[0] if listed else "model"
-
-    lines = [
-        "Usage:",
-        # `prog` is already the whole command (`cadgen stl snapshot`), so it does
-        # not take a `python` in front of it; the line used to print one, which
-        # made the first thing a reader saw the one thing they could not run.
-        f"  {prog} --input models/part{sample} --output /tmp/part.png",
-        f"  {prog} --job render-job.json          # or --job - to read stdin",
-        "",
-        "Inputs",
-    ]
-    for kind in listed:
-        lines.append(f"  {KIND_LABELS[kind]:<18}{KIND_BLURBS.get(kind, '')}")
-    lines += [
-        "",
-        "Modes (--mode)",
-        *[f"  {mode:<18}{_MODE_BLURBS[mode]}" for mode in modes if mode in _MODE_BLURBS],
-        "",
-        "Options",
-        "  --input/-i PATH   the model to render",
-        "  --output/-o PATH  a file path is written EXACTLY there (a relative one against the",
-        "                    current directory) and is cleared first, so a failed render leaves",
-        "                    no file at all; a directory gets a generated timestamped name",
-        "                    inside it",
-        "  --job PATH        one render job, an array of them, or { \"jobs\": [...] }; - reads stdin",
-        "  --camera VALUE    a preset, an azimuth:elevation pair, or JSON with preset/position/target/up/zoom",
-        "  --theme VALUE     see Theme below",
-        *(["  --display VALUE   see Display below"] if has_step else []),
-        "  --size-profile ID simple, diagnostic, labeled, assembly, presentation, contact-sheet",
-        "  --width/--height  pixels, overriding the size profile",
-        "  --json            print the render result as JSON on stdout",
-    ]
-    if has_step:
-        lines += [
-            "  --focus/--hide REF  selector refs such as #o1.2; repeat the flag or list several refs",
-            "  --params JSON     pose parameter values (the model's @step(pose=...) block)",
-            "  --view-labels     burn the camera/view label into the image",
-            "  --debug           add a debug section to --json reporting how the artifact resolved",
-        ]
-    lines += [
-        "",
-        "Theme (--theme)  everything under the viewer's Theme tab, in one option.",
-        "  A saved theme name, inline JSON theme settings, or a path to a theme JSON file.",
-        f"  Default: {DEFAULT_RENDER_THEME_ID}. Projection is a theme trait (the workbench themes are",
-        "  orthographic; the presentation stage themes are perspective).",
-    ]
-    if has_step:
-        lines += [
-            "",
-            "Display (--display)  everything under the viewer's Display tab, in one option.",
-            "  A mode name (solid, rendered, transparent, unshaded, wireframe, hidden_edges,",
-            "  hidden_lines_removed), inline JSON display settings, or a JSON file path.",
-            "  Edge styling and the exploded view live here, e.g.",
-            '  {"mode":"rendered","exploded":{"amount":0.7},"edges":{"color":"#132232"}}.',
-            "  Exploded is one 0..1 slider; the layout is automatic.",
-        ]
-    lines += [
-        "",
-        # This used to say every output was saved with a timestamp before the
-        # extension. It has not been true since the declared path became the
-        # written path, and it contradicted --output six lines above it.
-        "The path you name is the path you get. Only a DIRECTORY output gets a",
-        "generated name, timestamped, and the `saved snapshot:` line reports it.",
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def parse_required_value(argv: Sequence[str], index: int, flag: str) -> str:
-    try:
-        value = argv[index + 1]
-    except IndexError as exc:
-        raise SnapshotError(f"{flag} requires a value") from exc
-    if not value or value.startswith("--"):
-        raise SnapshotError(f"{flag} requires a value")
-    return value
-
-
-def parse_required_values(argv: Sequence[str], index: int, flag: str) -> tuple[list[str], int]:
-    values: list[str] = []
-    cursor = index + 1
-    while cursor < len(argv):
-        value = argv[cursor]
-        if value.startswith("--"):
-            break
-        if value:
-            values.append(value)
-        cursor += 1
-    if not values:
-        raise SnapshotError(f"{flag} requires at least one value")
-    return values, cursor - index - 1
-
-
-def parse_snapshot_args(argv: Sequence[str]) -> SnapshotOptions:
-    if argv and argv[0] == "daemon":
-        raise SnapshotError("snapshot daemon commands have been removed; use a batch --job snapshot instead")
-
-    options = SnapshotOptions()
-    index = 0
-    while index < len(argv):
-        arg = argv[index]
-        if arg in {"--help", "-h"}:
-            options.help = True
-        elif arg == "--json":
-            options.json = True
-        elif arg == "--no-daemon":
-            raise SnapshotError("--no-daemon has been removed; snapshot no longer uses a daemon")
-        elif arg == "--socket" or arg.startswith("--socket="):
-            raise SnapshotError("--socket has been removed; snapshot no longer uses a daemon")
-        elif arg == "--view-labels":
-            options.view_labels = True
-        elif arg == "--debug":
-            options.debug = True
-        elif arg == "--job":
-            options.job = parse_required_value(argv, index, arg)
-            index += 1
-        elif arg.startswith("--job="):
-            options.job = arg[len("--job=") :]
-        elif arg in {"--input", "-i"}:
-            # `-i` is advertised in the help beside `-o`, so it has to parse. It did not,
-            # which made the documented spelling of the CLI's most-used flag an error.
-            options.input = parse_required_value(argv, index, arg)
-            index += 1
-        elif arg.startswith("--input="):
-            options.input = arg[len("--input=") :]
-        elif arg in {"--output", "-o"}:
-            options.output = parse_required_value(argv, index, arg)
-            index += 1
-        elif arg.startswith("--output="):
-            options.output = arg[len("--output=") :]
-        elif arg == "--mode":
-            options.mode = parse_required_value(argv, index, arg)
-            index += 1
-        elif arg.startswith("--mode="):
-            options.mode = arg[len("--mode=") :]
-        elif arg == "--theme":
-            options.theme = parse_required_value(argv, index, arg)
-            options.theme_specified = True
-            index += 1
-        elif arg.startswith("--theme="):
-            options.theme = arg[len("--theme=") :]
-            options.theme_specified = True
-        elif arg == "--display":
-            options.display = parse_required_value(argv, index, arg)
-            options.display_specified = True
-            index += 1
-        elif arg.startswith("--display="):
-            options.display = arg[len("--display=") :]
-            options.display_specified = True
-        elif arg == "--params":
-            options.params = parse_required_value(argv, index, arg)
-            options.params_specified = True
-            index += 1
-        elif arg.startswith("--params="):
-            options.params = arg[len("--params=") :]
-            options.params_specified = True
-        elif arg == "--params-path" or arg.startswith("--params-path="):
-            raise SnapshotError(
-                "--params-path is retired: pose data is declared on the model "
-                "(@step(pose=cadgen.pose(...))) and read from the package descriptor; "
-                "see skills/cad/references/kinematics.md"
-            )
-        elif arg == "--focus":
-            values, consumed = parse_required_values(argv, index, arg)
-            options.focus = [*(options.focus or []), *values]
-            index += consumed
-        elif arg.startswith("--focus="):
-            value = arg[len("--focus=") :]
-            if not value:
-                raise SnapshotError("--focus requires at least one value")
-            options.focus = [*(options.focus or []), value]
-        elif arg == "--hide":
-            values, consumed = parse_required_values(argv, index, arg)
-            options.hide = [*(options.hide or []), *values]
-            index += consumed
-        elif arg.startswith("--hide="):
-            value = arg[len("--hide=") :]
-            if not value:
-                raise SnapshotError("--hide requires at least one value")
-            options.hide = [*(options.hide or []), value]
-        elif arg == "--size-profile":
-            options.size_profile = parse_required_value(argv, index, arg)
-            index += 1
-        elif arg.startswith("--size-profile="):
-            options.size_profile = arg[len("--size-profile=") :]
-        elif arg == "--camera":
-            options.camera = parse_required_value(argv, index, arg)
-            options.camera_specified = True
-            index += 1
-        elif arg.startswith("--camera="):
-            options.camera = arg[len("--camera=") :]
-            options.camera_specified = True
-        elif arg == "--width":
-            options.width = positive_integer(parse_required_value(argv, index, arg), arg)
-            index += 1
-        elif arg.startswith("--width="):
-            options.width = positive_integer(arg[len("--width=") :], "--width")
-        elif arg == "--height":
-            options.height = positive_integer(parse_required_value(argv, index, arg), arg)
-            index += 1
-        elif arg.startswith("--height="):
-            options.height = positive_integer(arg[len("--height=") :], "--height")
-        else:
-            raise SnapshotError(f"Unknown argument: {arg}")
-        index += 1
-    if options.focus and options.hide:
-        raise SnapshotError("--focus and --hide cannot be used in the same snapshot command")
-    return options
-
-
-
-
-
-
-
-
-def parse_params_option(raw_params: object) -> dict[str, object]:
-    # Already an object when it came from a `<format>.snapshot(params={...})`
-    # call rather than argv; see the note above parse_camera_option.
     if is_plain_object(raw_params):
         return dict(raw_params)
-    parsed = load_json_text(str(raw_params or ""), "--params")
+    text = str(raw_params or "")
+    if not text.lstrip().startswith("{"):
+        return text
+    parsed = load_json_text(text, "--kinematics")
     if not is_plain_object(parsed):
-        raise SnapshotError("--params must be a STEP parameter JSON object")
+        raise SnapshotError("--kinematics must be a pose preset name or a JSON object")
+    return parsed
+
+
+def parse_joint_values_option(raw_joint_values: object) -> dict[str, object]:
+    """``--joint-values`` in job form: ``{joint: degrees}``.
+
+    A robot description declares no named poses — its articulation is the joint
+    list in the file — so unlike ``--kinematics`` there is no preset spelling to
+    tell apart, and anything that is not an object is an error.
+    """
+    if is_plain_object(raw_joint_values):
+        return dict(raw_joint_values)
+    parsed = load_json_text(str(raw_joint_values or ""), "--joint-values")
+    if not is_plain_object(parsed):
+        raise SnapshotError("--joint-values must be a {joint: degrees} JSON object")
     return parsed
 
 
@@ -491,6 +232,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.debug,
             options.size_profile,
             options.params_specified,
+            options.joint_values_specified,
             options.display_specified,
             options.theme_specified,
             options.camera_specified,
@@ -506,6 +248,8 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
         next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
     if options.params_specified:
         next_job["stepParameters"] = parse_params_option(options.params)
+    if options.joint_values_specified:
+        next_job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.display_specified:
         next_job["display"] = load_display_option(options.display, cwd=cwd)
     if options.camera_specified:
@@ -552,9 +296,9 @@ def load_job_from_options(
             return apply_option_overrides_to_payload(load_json_text(text, "stdin"), options, cwd=resolved_cwd)
 
     if not options.input:
-        raise SnapshotError("render requires --job, stdin JSON, or --input")
+        raise SnapshotError("render requires a TARGET, --job, or stdin JSON")
     if options.mode != "list" and not options.output:
-        raise SnapshotError("render shortcut requires --output for non-list modes")
+        raise SnapshotError("render requires an OUT path for non-list modes: snapshot TARGET OUT")
 
     output: dict[str, object] = {
         "path": options.output,
@@ -578,6 +322,8 @@ def load_job_from_options(
         job["display"] = load_display_option(options.display, cwd=resolved_cwd)
     if options.params_specified:
         job["stepParameters"] = parse_params_option(options.params)
+    if options.joint_values_specified:
+        job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.debug:
         job["debug"] = True
     merge_focus_hide_options(job, options)
@@ -1303,13 +1049,17 @@ KIND_RESOLVERS: dict[str, Callable[..., dict[str, object]]] = {
 KIND_ENABLES: dict[str, tuple[str, ...]] = {"step": ("step", "python")}
 
 
-# What each kind is called in help and in errors, in the order a reader wants them.
+# What each kind is called in errors, and the order a reader wants them listed
+# in. Help is the verb signature's business now; this survives because a refusal
+# still has to say what the door DOES take.
 KIND_LABELS: dict[str, str] = {
     "step": ".step / .step.py", "stp": ".stp", "python": ".step.py",
     "glb": ".glb", "stl": ".stl", "3mf": ".3mf",
     "dxf": ".dxf / .dxf.py",
     "urdf": ".urdf", "srdf": ".srdf", "sdf": ".sdf",
 }
+
+_KIND_HELP_ORDER = ("step", "stp", "3mf", "glb", "stl", "dxf", "urdf", "srdf", "sdf")
 
 
 def enabled_kinds(kinds: Sequence[str]) -> frozenset[str]:
@@ -1355,7 +1105,7 @@ def reject_unsupported_kind(kind: str, input_path: Path, enabled: frozenset[str]
         if name in enabled and name in KIND_LABELS
     )
     door = MESH_SNAPSHOT_DOORS.get(kind)
-    where = f" Mesh inputs have their own door: `{door} --input <file> --output <path>`." if door else ""
+    where = f" Mesh inputs have their own door: `{door} TARGET OUT`." if door else ""
     raise SnapshotError(
         f"snapshot does not render {label} inputs: {input_path}.{where} "
         f"It accepts: {accepted or '(nothing)'}."
@@ -1489,47 +1239,3 @@ def run_snapshot(
             options, kinds=kinds, runtime_dir=runtime_dir, cwd=cwd, stdin=stdin
         )
     )
-
-
-def run_snapshot_cli(
-    argv: Sequence[str],
-    *,
-    kinds: Sequence[str],
-    runtime_dir: Path | None = None,
-    prog: str = "cadgen snapshot",
-    cwd: Path | None = None,
-    stdout: Any = sys.stdout,
-    stderr: Any = sys.stderr,
-    stdin: Any = sys.stdin,
-) -> int:
-    """Run one snapshot door's CLI. ``kinds`` is what that door accepts.
-
-    The whole of a door's snapshot entrypoint is a call to this: everything else about
-    rendering -- arguments, job schema, theme, display, the browser -- is identical across
-    doors by construction rather than by several copies agreeing.
-
-    Printing is `cli_from_function.emit`, the same serializer every generated
-    `cadgen <format> <verb>` command prints through: one compact JSON line of the
-    Result under `--json`, its human lines otherwise, and `{"ok":false,"error":...}`
-    + exit 1 for a failure. Snapshot used to hand-roll all three.
-    """
-    try:
-        options = parse_snapshot_args(argv)
-        if options.help:
-            stdout.write(help_text(kinds=enabled_kinds(kinds), prog=prog))
-            return 0
-    except SnapshotError as exc:
-        # Argument errors precede the Result contract -- there is no result to
-        # serialize -- so they stay a plain line on stderr.
-        stderr.write(f"{exc}\n")
-        return 1
-    return emit(
-        lambda: run_snapshot(
-            options, kinds=kinds, runtime_dir=runtime_dir, cwd=cwd, stdin=stdin
-        ),
-        prog=prog,
-        as_json=options.json,
-        stdout=stdout,
-        stderr=stderr,
-    )
-
