@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Run the whole-aircraft gauntlet: render four views, compose four blind A/B sheets.
 
-    python render/gauntlet.py <stem> [--seed N]
+    python render/gauntlet.py <stem> --refs <dir-of-reference-photos> [--seed N]
 
 Renders top / head / side / fq of the full assembly with the presentation theme,
 pairs each against the matching reference photograph, and writes the sheets plus
 their keys. The keys are for the caller only -- the critic sees the sheet.
+
+The reference photographs are NOT in the repo (they are copyrighted press and
+walkaround shots), so `--refs` is required and names a directory holding the
+four `C_REF_*.jpg` crops. It used to be a hardcoded worktree scratchpad path,
+which stopped existing the moment that worktree was removed.
+
+Build the aircraft first: `python src/f14d.py`.
 """
 
 from __future__ import annotations
@@ -18,12 +25,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-REPO = PROJECT.parents[2]
 PY = sys.executable
-ENTRY = PROJECT / "f14d.step.py"
-REFS = Path("/private/tmp/claude-501/-Users-jakefitzgerald-robots-text-to-cad-"
-            "-claude-worktrees-f14d-tomcat-cad-b6e8ce/"
-            "0c13a035-c570-4b9c-a8a9-02cccf8212db/scratchpad/refs")
+TARGET = PROJECT / "STEP" / "f14d.step"
 
 # The C_ crops are the reference photographs cut down to the AIRCRAFT.  Judging
 # against the uncropped frames would compare a render stage to a flight deck and
@@ -42,17 +45,25 @@ def newest(pattern):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("stem")
+    ap.add_argument("--refs", required=True,
+                    help="directory holding the C_REF_*.jpg reference crops")
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
 
-    out = PROJECT / "render" / "gauntlet"
+    refs = Path(args.refs).expanduser().resolve()
+    if not refs.is_dir():
+        raise SystemExit(f"no reference directory at {refs}")
+    if not TARGET.is_file():
+        raise SystemExit(f"no {TARGET}; run `python src/f14d.py` first")
+
+    out = PROJECT / "tmp" / "gauntlet"
     out.mkdir(parents=True, exist_ok=True)
 
     rc = subprocess.run(
-        [PY, str(HERE / "shot.py"), str(ENTRY), args.stem,
+        [PY, str(HERE / "shot.py"), str(TARGET), args.stem,
          "--views", ",".join(v for v, _ in PAIRS),
          "--size", "assembly-large", "--outdir", str(out)],
-        cwd=str(REPO)).returncode
+        cwd=str(PROJECT)).returncode
     if rc != 0:
         return rc
 
@@ -62,9 +73,9 @@ def main():
             print(f"MISSING render for {view}")
             continue
         sheet = out / f"AB_{args.stem}_{view}.png"
-        subprocess.run([PY, str(HERE / "ab.py"), ours, str(REFS / ref),
+        subprocess.run([PY, str(HERE / "ab.py"), ours, str(refs / ref),
                         str(sheet), "--seed", str(args.seed + i)],
-                       cwd=str(REPO))
+                       cwd=str(PROJECT))
     print("\nsheets:")
     for view, _ in PAIRS:
         print("  ", out / f"AB_{args.stem}_{view}.png")

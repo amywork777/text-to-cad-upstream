@@ -403,7 +403,7 @@ test("composed package drives a per-occurrence override colour through the mater
   // baked path shaded.
   const descriptor = {
     occurrences: [
-      // linear black-ish grey, matching how raptor3 authors dark occurrence colours.
+      // linear black-ish grey, the way a dark-anodized part authors its occurrence colour.
       { id: "o1.1", name: "dark", component: "cA", transform: IDENTITY_4X4, color: [0.1, 0.095, 0.09, 1.0] }
     ]
   };

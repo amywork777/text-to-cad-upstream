@@ -19,8 +19,11 @@
 //
 // Usage:
 //   node packages/cadgen-js/bench/composePackageBench.mjs <package-dir> [--json]
-// where <package-dir> is a __cadgen__/models/<entry> directory (has
-// assembly.json + components/). Defaults to the warmed falcon_heavy package.
+// where <package-dir> is a render package directory (has assembly.json +
+// components/). Packages are content-addressed in the store, not beside the
+// model, so name one explicitly — print a model's package dir with:
+//   python -c "import pathlib; from cadgen.catalog import render_package_dir; \
+//              print(render_package_dir(pathlib.Path('<model>.step')))"
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
@@ -32,10 +35,6 @@ import { buildComposedPackageMeshData } from "../src/lib/assembly/meshData.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
-const DEFAULT_PACKAGE = path.join(
-  REPO_ROOT,
-  "models/renders/falcon_heavy/__cadgen__/models/falcon_heavy.step.py",
-);
 
 function sumPartBytes(meshData) {
   const parts = Array.isArray(meshData?.parts) ? meshData.parts : [];
@@ -54,7 +53,15 @@ function sumPartBytes(meshData) {
 async function main() {
   const args = process.argv.slice(2);
   const asJson = args.includes("--json");
-  const packageDir = path.resolve(args.find((a) => !a.startsWith("--")) || DEFAULT_PACKAGE);
+  const target = args.find((a) => !a.startsWith("--"));
+  if (!target) {
+    throw new Error(
+      "name a render package directory (one holding assembly.json + components/); " +
+        "there is no default — packages are content-addressed in the store, not " +
+        "beside the model",
+    );
+  }
+  const packageDir = path.resolve(target);
 
   const descriptor = JSON.parse(
     await readFile(path.join(packageDir, "assembly.json"), "utf8"),

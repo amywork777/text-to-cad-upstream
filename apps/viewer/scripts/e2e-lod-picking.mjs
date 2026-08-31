@@ -26,7 +26,7 @@
 //   node viewer/scripts/e2e-lod-picking.mjs --dir <models-root> [--url http://127.0.0.1:3245]
 //
 // Requires: a viewer serving <models-root>, playwright, and the mounting plate
-// built in the examples project (python models/examples/src/parts/mounting_plate.py).
+// built in the examples project (python models/examples/src/mounting_plate.py).
 
 import fs from "node:fs";
 import path from "node:path";

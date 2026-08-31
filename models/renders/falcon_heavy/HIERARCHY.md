@@ -2,12 +2,15 @@
 
 > **Educational, non-functional public-source reconstruction. Not suitable for manufacture, propulsion, testing, or operational engineering.**
 
-Generated from the live `gen_step()` compound trees by `gen_hierarchy.py`;
-numbered repeats are collapsed with `_NN` and a count. Labels carry their
+Captured from the live compound trees; the generator script that produced this
+file has been retired (see README.md). The part counts below are the current
+occurrence counts — `cadgen step inspect refs STEP/<model>.step --facts`
+re-derives them from a built artifact.
+Numbered repeats are collapsed with `_NN` and a count. Labels carry their
 geometry status (`__photogrammetric`, `__schematic`, `__decorative`,
 `__placeholder`, `__nonfunctional`) — see PROVENANCE.md for the key.
 
-## `falcon_heavy.step.py` — 2142 parts
+## `src/falcon_heavy.py` — 2142 parts
 
 ### center_core_group (693 parts)
 
@@ -324,7 +327,7 @@ geometry status (`__photogrammetric`, `__schematic`, `__decorative`,
 - `fairing_half_seam_270deg__photogrammetric`
 - `fairing_base_ring__schematic`
 
-## `falcon_heavy_cutaway.step.py` — 2164 parts
+## `src/falcon_heavy_cutaway.py` — 2164 parts
 
 ### center_core_group (693 parts)
 
@@ -656,7 +659,7 @@ geometry status (`__photogrammetric`, `__schematic`, `__decorative`,
 - `payload_placeholder__educational`
 - `separation_interface_block__schematic__no_internals`
 
-## `falcon_heavy_exploded.step.py` — 2144 parts
+## `src/falcon_heavy_exploded.py` — 2144 parts
 
 ### center_core_group (693 parts)
 

@@ -3,12 +3,16 @@
 
     .venv/bin/python models/renders/f14d/validate.py
 
+This is a HARNESS, not a model, which is why it sits at the project root rather
+than in ``src/`` (every ``.py`` directly under ``src/`` is a runnable model).
+
 Runs three things the visual gauntlet cannot:
 
 1. BILATERAL SYMMETRY.  Every leaf solid is matched against a partner whose
    centroid is its mirror in the XZ plane and whose volume agrees.  Centreline
    parts must be self-symmetric.  The worst mismatch is printed, not hidden
-   behind a pass/fail -- the brief asks for the number.
+   behind a pass/fail -- the brief asks for the number.  Nothing in cadgen
+   checks this; it is the only reason this file still exists.
 2. Per-solid validity and closure -- delegated to `inspect validate`, which
    checks topology, closure, orientation and self-intersection per occurrence.
 3. Part-vs-part interpenetration -- delegated to `inspect interfere`.
@@ -27,7 +31,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 PY = sys.executable
-ENTRY = HERE / "f14d.step.py"
+SRC = HERE / "src"
+ENTRY = SRC / "f14d.py"
+STEP = HERE / "STEP" / "f14d.step"
 
 SYM_TOL_MM = 1.0          # centroid mirror tolerance
 SYM_VOL_TOL = 0.005       # relative volume tolerance between mirrored partners
@@ -35,9 +41,15 @@ CENTRELINE_MM = 2.0       # |y| below this counts as a centreline part
 
 
 def load_entry(path):
+    """Import the model module WITHOUT building it.
+
+    Importing a `@step` script never builds; calling the decorated function
+    returns the shape.  `src/` goes on sys.path first so the script's own
+    ``from lib import ...`` resolves the same way it does when run directly.
+    """
+    sys.path.insert(0, str(path.parent))
     spec = importlib.util.spec_from_file_location(path.stem, path)
     mod = importlib.util.module_from_spec(spec)
-    sys.path.insert(0, str(path.parent))
     spec.loader.exec_module(mod)
     return mod
 
@@ -109,7 +121,7 @@ def main():
 
     print("\n=== bilateral symmetry ===")
     mod = load_entry(ENTRY)
-    items = leaves(mod.gen_step())
+    items = leaves(mod.f14d())
     print(f"leaf solids: {len(items)}")
     worst, worst_of, unmatched = symmetry(items)
     print(f"worst mirrored-centroid mismatch: {worst:.4f} mm"
@@ -126,7 +138,7 @@ def main():
 
     print("\n=== per-solid validity / closure / self-intersection ===")
     rc, out, err = run([PY, "-m", "cadgen.cli", "step", "inspect",
-                        "validate", str(ENTRY)])
+                        "validate", str(STEP)])
     print(out[:4000] or err[:2000])
     if rc != 0:
         ok = False
@@ -134,7 +146,7 @@ def main():
 
     print("\n=== part-vs-part interpenetration ===")
     rc, out, err = run([PY, "-m", "cadgen.cli", "step", "inspect",
-                        "interfere", str(ENTRY)])
+                        "interfere", str(STEP)])
     print(out[:4000] or err[:2000])
     if rc != 0:
         ok = False

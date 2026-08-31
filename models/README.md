@@ -10,16 +10,17 @@ text files.
 
 ```text
 models/
-├── step/                  STEP generator sources, one flat file per model
-│   ├── parts/             single-body generators (no `children=`)
-│   ├── assemblies/        multi-part generators (+ optional .params.js sidecar)
+├── examples/              demo parts and assemblies, as one cad-project
+│   ├── src/               @step model scripts (+ lib/ helpers, .anim.js)
+│   ├── STEP/              artifacts built by those scripts
+│   ├── STL/ 3MF/ GLB/     the mesh exports a few of them declare
+│   └── imported/          committed source STEPs (no script)
+├── step/
 │   └── mechanisms/        cad-project of imported, animated .step assemblies
-├── renders/               folder-per-model concept packages and experiments
-│   ├── f1/ hypercar/ moonwatch/ qdd_actuator/ raptor3/ starship-mechazilla/
-│   ├── raptor2/ merlin1d/ falcon_heavy/ starship/     (SpaceX reconstructions)
+├── renders/               concept packages, one cad-project each
+│   ├── f1/ f14d/ hypercar/ moonwatch/ motorbike/ qdd_actuator/
+│   ├── falcon_heavy/                                  (SpaceX reconstruction)
 │   └── juno/ lyra/                                    (robot descriptions)
-├── mesh/                  exported meshes, by format
-│   ├── stl/  3mf/  glb/
 ├── drawings/              2D DXF fixtures, as one cad-project
 │   ├── src/               @dxf model scripts (+ lib/ helpers)
 │   └── DXF/               drawings built by those scripts (+ imported/)
@@ -27,24 +28,28 @@ models/
     └── elrobot/ lekiwi/ openarm/ so101/ tom/
 ```
 
-**Where does a new model go?** If it is one self-contained `<name>.step.py`
-file, it belongs in `step/parts/` (single body) or `step/assemblies/`
-(multi-part). If it needs a folder of its own — helper modules, per-link
-generators, research/provenance docs, a `render/` config — it belongs in
-`renders/`. Robot fixtures imported from elsewhere go in `robots/`.
+**Where does a new model go?** If it is one self-contained model script, it
+belongs in the `examples/` cad-project: the script in `examples/src/`, its
+artifact declared into a format folder with `out=`. If it needs a folder of its
+own — helper modules, per-link generators, research/provenance docs, a
+`render/` config — it belongs in `renders/`. Robot fixtures imported from
+elsewhere go in `robots/`.
 
-Generated output (`__cadgen__/`, `.step` exports) is written on demand beside
-the sources and is gitignored — never commit it.
+Generated output (`.step`/`.stl`/`.3mf`/`.glb` exports and their `.step.json`
+sidecars) is gitignored — never commit it; a fresh clone regenerates by running
+the scripts.
 
 ## Directory Map
 
-- `step/`: STEP generator sources, split by shape:
-  - [step/parts/](step/parts/README.md): single-body `<name>.step.py`
-    generators — structured fixtures, compact build123d examples, and other
-    standalone demo parts.
-  - [step/assemblies/](step/assemblies/README.md): flat multi-part
-    `<name>.step.py` generators — one-shot concepts and standalone demo
-    assemblies, each a single file plus an optional `.params.js` sidecar.
+- [examples/](examples/src/README.md): the demo corpus as one cad-project —
+  every part and assembly is a `@step` model script directly under
+  `examples/src/` (shared helpers in `src/lib/`, `.anim.js` choreography beside
+  the scripts they belong to), and every artifact lands in a root-level format
+  folder. Two models (`planetary_gear_assembly`, `mars_rover_concept`) carry
+  typed mates and animation clips; a handful declare STL/3MF/GLB exports so the
+  mesh doors have fixtures. `examples/imported/import-smoke.step` is a
+  committed SOURCE, not an output.
+- `step/`:
   - [step/mechanisms/](step/mechanisms/README.md): a cad-project whose
     content is `imported/` — annotated mechanism STEPs, each with a
     new-format `.step.json` sidecar (kinematics + animation) and its
@@ -53,14 +58,12 @@ the sources and is gitignored — never commit it.
     STEP files belong — both keep STEP sources inside self-contained project
     folders.
 - [renders/](renders/README.md): large concept renders and related
-  experiments — every model that needs a folder of its own rather than a flat
-  generator file. All 12: the educational public-source SpaceX reconstruction
-  packages (`raptor2`, `merlin1d`, `falcon_heavy`, `starship`), the `f1`,
-  `hypercar`, `moonwatch`, `qdd_actuator`, `raptor3` and `starship-mechazilla`
-  concept packages, and the `juno`/`lyra` robot description packages.
-- [mesh/](mesh/README.md): exported `stl/`, `3mf/`, and `glb/` mesh artifacts —
-  durable exports from `step/parts/` and `step/assemblies/` kept as fixtures
-  for testing export/render behavior, organized by format.
+  experiments. Each is its OWN cad-project — `src/` for the model scripts and
+  their shared `lib/`, format folders for the artifacts — rather than a flat
+  folder of generators. All 9: the `f1`, `f14d`, `hypercar`, `moonwatch`,
+  `motorbike` and `qdd_actuator` concept packages, the educational
+  public-source `falcon_heavy` SpaceX reconstruction, and the `juno`/`lyra`
+  robot description packages.
 - [drawings/](drawings/src/README.md): small 2D DXF fixtures as one
   cad-project — `@dxf` model scripts in `src/`, their built drawings in `DXF/`
   (regenerate with `python models/drawings/src/<name>.py`; not committed), and

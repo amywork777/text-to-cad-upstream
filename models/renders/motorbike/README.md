@@ -9,25 +9,31 @@ wheels) treated as design intent. No logos, badges, or wordmarks.
 
 ## Layout
 
-- `_spec.py` — **single source of truth**: bike-frame coordinate conventions,
-  palette, hardpoints (axles, steering axis, engine pivot, shock mounts,
-  bodywork section tables). No builder restates a shared dimension.
-- `_lib.py` — shared geometry vocabulary (revolved wheel profiles, partial
-  annular fender bands, lofts along X and along a curved side-view path,
-  spline-swept tubes, coil springs between two points). API contracts were
-  probed before use; see the header notes.
-- Builder modules: `_wheels.py`, `_chassis.py`, `_frontend.py`,
-  `_drivetrain.py`, `_bodywork.py`, `_trim.py` — each exposes `build_*()`
-  returning labeled, colored shapes authored directly in the BIKE frame.
-- Part entries (each an individually buildable STEP): `frame`,
-  `center_stand`, `front_fork`, `handlebar`, `front_fender`, `front_wheel`,
-  `rear_wheel`, `engine`, `exhaust`, `rear_shock`, `leg_shield`,
-  `steering_cover`, `under_seat_body`, `rear_fender`, `seat`, `headlight`,
-  `tail_light`, `turn_signal` (instanced 4x), `mirror` (instanced 2x).
-- `motorbike.step.py` — full assembly: 23 labeled children composed at
-  identity, with native build123d joints recording the functional
-  relationships (steering, wheel spin, engine swing, stand pivot, rigid
-  mounts). Occurrence order is frozen; see its header.
+```
+motorbike/
+  src/        authored code — 20 model scripts + lib/ (see src/README.md)
+  STEP/       generated artifacts + their .step.json sidecars (not committed)
+  tmp/        snapshots and scratch (gitignored)
+```
+
+`src/README.md` is the model catalog: which script builds which artifact, what
+each `lib/` module owns, and the assembly's declared kinematics. Read it first.
+
+- `src/lib/spec.py` — **single source of truth**: bike-frame coordinate
+  conventions, palette, hardpoints (axles, steering axis, engine pivot, shock
+  mounts, bodywork section tables). No builder restates a shared dimension.
+- `src/lib/lib.py` — shared geometry vocabulary (revolved wheel profiles,
+  partial annular fender bands, lofts along X and along a curved side-view
+  path, spline-swept tubes, coil springs between two points). API contracts
+  were probed before use; see the header notes.
+- Builder modules `src/lib/{wheels,chassis,frontend,drivetrain,bodywork,trim}.py`
+  each expose `build_*()` returning labeled, colored shapes authored directly
+  in the BIKE frame.
+- 19 part entries under `src/`, each an individually buildable STEP.
+- `src/motorbike.py` — full assembly: 23 labeled children (46 rendered parts)
+  composed at identity, with native build123d joints recording the placement
+  relationships AND a `kinematics=` block of typed mates for the viewer.
+  Occurrence order is frozen; see its header.
 
 ## Coordinates
 
@@ -38,24 +44,21 @@ raked 27 deg, parameterized by `steer_point(t)`.
 ## Commands (run from this directory)
 
 ```bash
-PY=../../../.venv/bin/python
-$PY <entry>.py                       # a model script builds itself
-$PY <entry>.py                       # (the STEP is always written)
-$PY -m cadgen.cli step inspect refs <entry>.step.py --facts
-$PY -m cadgen.cli step inspect validate <entry>.step
-$PY -m cadgen.cli step inspect interfere motorbike.step.py
-$PY -m cadgen.cli step snapshot --input <entry>.step.py -o out.png
+python src/<entry>.py                                   # a model builds itself
+python src/<entry>.py                                   # unchanged: a no-op
+ls src/*.py | xargs -n1 -P4 python                      # everything, in parallel
+cadgen step inspect refs STEP/<entry>.step --facts
+cadgen step inspect validate STEP/<entry>.step
+cadgen step inspect interfere STEP/motorbike.step
+cadgen step snapshot STEP/<entry>.step tmp/<entry>.png
+cadgen step snapshot STEP/motorbike.step tmp/turned.png --kinematics turned_left
 ```
 
-Viewer links select the GENERATED entry — `?file=<name>.step.py`, e.g.
-`…/models/renders/motorbike?file=motorbike.step.py`. Do NOT keep exported
-`<name>.step` files inside this directory: a same-stem `.step` beside (or
-under, in any subfolder) its `.step.py` generator is owned by the generator,
-so the viewer reports the entry ready from the generator's render package
-while the entry's own asset URL points at an unbuilt import-cache path — the
-page freezes on the loading screen. Export with `gen --write` only when a
-standalone `.step` is needed, and keep it outside this tree (or export from
-the viewer's Save dialog).
+Snapshots are expensive (a headless browser each): batch several into one
+`--job` packet rather than running them in parallel.
+
+The CAD Viewer opened at this directory catalogs `STEP/`; model scripts never
+appear in it, so before anything is built the catalog is `src/`, not the viewer.
 
 ## Design notes
 
@@ -74,13 +77,20 @@ the viewer's Save dialog).
   defects.
 - Modeling rules honored: no 3D fillet after large booleans, rounded 2D
   profiles and lofts instead, booleans accumulated into single ops.
+- A leaf solid must never carry the same label as the group it sits in: a
+  `#<label>` mate ref resolves leaf-first, so the group's other children would
+  silently be left behind. That is why `trim.build_mirror` labels its shell
+  `mirror_shell:<side>` while the assembly labels the group `mirror:<side>`.
 
-## Verification (2026-08-15)
+## Verification (2026-08-31, cad-project migration)
 
-- All 20 entries build; `inspect validate` clean (46/46 assembly occurrences).
-- `inspect interfere`: no unintended clashes after the fixes above.
-- `inspect measure`: wheelbase 1190.0 mm exactly; both wheel transforms
-  identity after joint composition; fork axle and wheel axle coincide
-  (dz 0.0); tires touch z = 0; seat top 752.5 mm.
-- Snapshot review: side/iso/front/rear assembly views plus every part entry
-  rendered and visually audited (see hand-off notes in the session).
+- All 20 entries build from `src/`; every component content hash is identical
+  to the pre-migration flat-layout build, so the move, the `from lib import ...`
+  rewrite and the lazy `bd.` import idiom are geometry-neutral.
+- `inspect refs --facts`: assembly 46 occurrences / 845 faces / 2257 edges,
+  bounds (-808.0, -412.0, 0.0) → (814.3, 412.0, 974.5). Front axle x = +595,
+  rear axle x = -595 (wheelbase 1190.0 exactly); both tires touch z = 0.
+- Snapshot review: every one of the 20 entries rendered and read, plus the
+  assembly at iso / side / rear, and posed at `turned_left`, `stand_down` and
+  a wheel-spin + full-bump combination to confirm each mate drives exactly the
+  parts it names.

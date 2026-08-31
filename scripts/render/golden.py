@@ -22,9 +22,11 @@ import time
 from pathlib import Path
 
 FIXTURES = {
-    "planetary": "step/assemblies/planetary_gear_assembly.step.py",
-    "turbofan": "step/assemblies/cutaway_turbofan_engine.step.py",
-    "moonwatch": "renders/moonwatch/moonwatch.step.py",
+    "planetary": "examples/STEP/planetary_gear_assembly.step",
+    "turbofan": "examples/STEP/cutaway_turbofan_engine.step",
+    # A render project's artifacts live in its own format folder, and are NOT
+    # committed — build it first: `python models/renders/moonwatch/src/moonwatch.py`.
+    "moonwatch": "renders/moonwatch/STEP/moonwatch.step",
 }
 THEMES = ["workbench-light", "workbench-dark", "cinematic", "vibrant",
           "blue", "pink", "clay-sunrise", "terminal"]

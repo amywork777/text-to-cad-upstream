@@ -7,40 +7,49 @@ three-register dial, twisted lyre lugs, display caseback, flat three-link
 bracelet. Unbranded: no logos, no wordmarks, no caliber engraving — numerals
 and scale markings only.
 
-## Files
+## Layout
 
-- `_spec.py` — master dimensional spec + shared palette. **Single source of
-  truth**; no builder restates a shared dimension. Read its header for the
-  coordinate conventions (watch frame vs movement local frame).
-- `_finishing.py` — shared finishing vocabulary: `anglage_top`,
-  `safe_chamfer`/`safe_fillet` (retry ladders), `slotted_screw`, `jewel*`,
-  `snailing_cutter`, `geneva_stripes_cutter`, `perlage_cutter`,
-  `straight_grain_cutter`, `train_wheel`, `pinion`, `heart_cam`. Use
-  these — do not fork private
-  variants of the same vocabulary.
-- `finishing_sampler.step.py` — standing coupon exercising the vocabulary.
-- Cluster helpers: `_case.py`, `_dial.py`, `_mvt_base.py`, `_mvt_keyless.py`,
-  `_mvt_chrono.py`, `_bracelet.py` — each exposes `build_*()` returning
-  labeled, colored parts in the frame documented in `_spec.py`.
-- Entries: `case.step.py`, `dial.step.py`, `movement_base.step.py`,
-  `keyless_works.step.py`, `chrono_works.step.py`, `movement.step.py`,
-  `bracelet.step.py`, `moonwatch.step.py` (full watch).
-- `render/presentation_theme.json` — the ONLY appearance used for critic
-  comparisons (solid display, `presentation-large` size profile).
+```
+moonwatch/
+  src/            authored code — the only thing you edit
+    README.md     the model catalog + shared-code and articulation notes
+    *.py          one @step model per file (9 of them)
+    moonwatch.anim.js   choreography module, beside its model script
+    lib/          shared builders and the dimensional spec (never models)
+  STEP/           generated artifacts + their .step.json sidecars (gitignored)
+  render/         committed presentation JSON (themes + snapshot job template)
+  tmp/            snapshots and scratch (gitignored)
+```
+
+`ls src/*.py` IS the model catalog; see `src/README.md` for the table, the
+`lib/` inventory, and the kinematics/animation split.
+
+`render/presentation_theme.json` is the ONLY appearance used for critic
+comparisons (solid display, `presentation-large` size profile);
+`render/job_template.json` is the snapshot job skeleton (replace `REPLACE`).
 
 ## Commands (run from this directory)
 
 ```bash
-PY=/Users/jakefitzgerald/robots/text-to-cad/.venv/bin/python
-$PY <entry>.py                       # a model script builds itself
-$PY -m cadgen.cli step inspect refs <entry>.step --facts
-$PY -m cadgen.cli step inspect validate <entry>.step
-$PY -m cadgen.cli step snapshot --job <job.json>
+PY=../../../.venv/bin/python
+CADGEN=../../../.venv/bin/cadgen
+
+$PY src/<model>.py                                  # a model script builds itself
+ls src/*.py | xargs -n1 -P4 $PY                     # rebuild everything
+$CADGEN step inspect refs STEP/<model>.step --facts
+$CADGEN step inspect validate STEP/<model>.step
+$CADGEN step snapshot STEP/<model>.step tmp/<model>.png
+$CADGEN step snapshot STEP/moonwatch.step tmp/set.png --kinematics setting
+$CADGEN step snapshot --job <job.json>
 ```
 
-Parallel builders are fine now: the warm daemon runs a pool of worker processes and
-overflows to cold rather than queueing, so several builders no longer serialize behind
-one another. (It used to, which is why this said to avoid the daemon — now `CADGEN_DAEMON=1` — here.)
+`out=` on each decorator resolves relative to the SCRIPT, so every model writes
+to `../STEP/<name>.step` and the project relocates as a unit.
+
+Parallelize ACROSS models, never within one: the warm daemon runs a pool of
+worker processes and overflows to cold rather than queueing, so several
+builders no longer serialize behind one another. Snapshots each pay a headless
+browser — run them serially, or batch views into one `--job` packet.
 
 ## Modeling rules
 
@@ -56,6 +65,8 @@ one another. (It used to, which is why this said to avoid the daemon — now `CA
   boolean pairs. Never any brand text.
 - Every visible part: `label` + `color` set. Anglage-carrying parts use the
   spec palette; polished bevel reads come from geometry + the theme.
-- All entries must exit 0 under `scripts/gen`, pass `inspect validate`
-  (watertight, no self-intersection), and be snapshot-reviewed with the
-  presentation theme before hand-off.
+- Labels are the canonical refs for mates and animation targets, and they are
+  unique across the full assembly — keep them that way.
+- All models must exit 0, pass `inspect validate` (watertight, no
+  self-intersection), and be snapshot-reviewed with the presentation theme
+  before hand-off.

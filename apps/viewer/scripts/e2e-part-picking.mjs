@@ -28,9 +28,8 @@
 // Usage:
 //   node viewer/scripts/e2e-part-picking.mjs --dir <models-root> [--url http://127.0.0.1:3245]
 //
-// Requires: a viewer serving <models-root>; playwright; the part imported at
-// models-root/step/parts/cam_follower_roller.step (package built, e.g.
-// `cadgen step compile step/parts/cam_follower_roller.step`).
+// Requires: a viewer serving <models-root>; playwright; the part built in the
+// examples project (python models/examples/src/cam_follower_roller.py).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -41,8 +40,10 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const { PNG } = require("pngjs");
 
-const PART_FILE = "step/parts/cam_follower_roller.step";
-const PART_CID = "c384534572a08e23";
+const PART_FILE = "examples/STEP/cam_follower_roller.step";
+// The roller's single component cid (its tessellation-cache key prefix). Read it
+// back from the package descriptor if the model's geometry ever changes.
+const PART_CID = "9ba0d8efa0e308c1";
 const FACE_CONTIGUITY_MIN = 0.97;
 
 function parseArgs(argv) {
@@ -68,9 +69,9 @@ if (!args.dir || !path.isAbsolute(args.dir)) {
 if (!fs.existsSync(path.join(args.dir, PART_FILE))) {
   fail(`missing ${PART_FILE} under ${args.dir}`);
 }
-if (!fs.existsSync(path.join(args.dir, "step/parts/__cadgen__/models/cam_follower_roller.step/assembly.json"))) {
-  fail("cam_follower_roller has no render package — import it first (cadgen step compile)");
-}
+// No package check here: render packages are content-keyed in the user-level store
+// (~/.cache/cadgen/packages/<stepHash>-v<N>), not beside the artifact, and the viewer
+// resolves them on demand. Building the model script is what fills the store.
 
 // ---- cache staging: cold pass = this component's entries moved aside -------
 function meshCacheDir() {

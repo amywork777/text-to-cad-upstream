@@ -43,8 +43,8 @@ A ref copied from the CAD Viewer carries the file it came from, so it stays mean
 prompt that spans several files:
 
 ```text
-bracket#o1.2.f1               the generator models/step/parts/bracket.py
-imported_housing.step#o1.3    a raw STEP, models/step/imports/imported_housing.step
+bracket#o1.2.f1               the generator src/bracket.py
+imported_housing.step#o1.3    a raw STEP, STEP/imported/imported_housing.step
 mounting_plate.stl#           a whole mesh file
 ```
 
@@ -73,15 +73,15 @@ distinct from `bracket.step` (its export) and from `bracket.stl` (a mesh of it).
      `<name>.step` by default, or the decorator's `out=` target) is what the commands take
    - anything carrying a suffix (`.step`, `.stp`, `.stl`, `.3mf`, `.glb`, `.dxf`) → use as-is
 
-   Match on **segment boundaries**, so `plate.stl` names `models/mesh/stl/plate.stl` and never
-   `models/mesh/stl/mounting_plate.stl`.
+   Match on **segment boundaries**, so `plate.stl` names `STL/plate.stl` and never
+   `STL/mounting_plate.stl`.
 3. Pass the resolved document as the entry/input argument and the `#...` part as the ref,
    exactly as you would for a bare ref.
 
 ```bash
 # received: bracket#o1.2.f1   ->  expand the bare stem, then search
 git ls-files '*/bracket.py'
-cadgen step inspect refs models/step/parts/bracket.step '#o1.2.f1'
+cadgen step inspect refs STEP/bracket.step '#o1.2.f1'
 ```
 
 If the search returns more than one file the prefix was ambiguous — ask rather than guess; the
@@ -95,7 +95,7 @@ confident answer about geometry nobody asked about.
 
 ```text
 ref 'other_part#o1.2' names file 'other_part' but this command targets
-'models/step/parts/bracket'; pass the file as the entry argument and the '#...' part as the ref
+'STEP/bracket'; pass the file as the entry argument and the '#...' part as the ref
 ```
 
 Bare `#...` refs are unchanged and work everywhere they always did.

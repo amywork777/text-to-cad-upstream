@@ -173,15 +173,15 @@ class RefFileGuardTest(unittest.TestCase):
     user did not ask about.
     """
 
-    TARGET = "models/step/assemblies/motorcycle_shock_absorber"
+    TARGET = "models/examples/STEP/motorcycle_shock_absorber"
 
     def test_matching_prefixes_pass_in_every_spelling(self) -> None:
         for prefix in (
             "motorcycle_shock_absorber",
             "motorcycle_shock_absorber.py",
             "motorcycle_shock_absorber.step",
-            "assemblies/motorcycle_shock_absorber",
-            "models/step/assemblies/motorcycle_shock_absorber",
+            "STEP/motorcycle_shock_absorber",
+            "models/examples/STEP/motorcycle_shock_absorber",
         ):
             with self.subTest(prefix=prefix):
                 ensure_ref_file_matches(prefix, self.TARGET)

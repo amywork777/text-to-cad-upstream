@@ -1,76 +1,93 @@
 # Renders
 
 Large concept renders and related experiments — every model that needs a
-**folder of its own** rather than a single flat generator file. Each package
-keeps its own internal layout (`STEP/`, `3MF/`, `<name>_parts/`, `render/`,
-per-package `README.md`, provenance and research docs) and is self-contained.
+**folder of its own** rather than a single loose script.
 
-Flat single-file `<name>.step.py` generators live in
-[`../step/assemblies/`](../step/assemblies/README.md) (multi-part) and
-[`../step/parts/`](../step/parts/README.md) (single-body) instead.
+**Each folder here is its own cad-project**, in the layout the `$cad-project`
+skill defines: authored code in `src/` (one `@step` model per file, shared
+modules in `src/lib/`, animation modules beside their script), raw artifacts in
+format folders (`STEP/`, `3MF/`, ...), scratch in `tmp/`, and a `.gitignore`
+that keeps the artifacts out of the repo. A fresh clone has no `STEP/` at all;
+regenerate a project by running its scripts:
+
+```bash
+cd models/renders/<project>
+ls src/*.py | xargs -n1 -P4 python     # unchanged models no-op
+```
+
+Each project's `src/README.md` is its model catalog — which script builds which
+artifact — so start there rather than reading every file.
+
+Single-file model scripts — parts and assemblies alike — live in the
+[`../examples/`](../examples/src/README.md) cad-project instead.
 
 ## Concept packages
 
-- [f1/](f1/): open-wheel F1 car — modular `f1_parts/` build with a
-  parameter sidecar.
-- [hypercar/](hypercar/): mid-engine hypercar — modular
-  `hypercar_parts/` build, `render/` presentation theme, and a `.step.js`
-  sidecar.
+- [f1/](f1/src/README.md): open-wheel F1 car — a modular `lib/` build over one
+  shared surface vocabulary, plus `f1_stage.appearance.json`, the authored
+  presentation stage. Its DRS four-bar and rack-and-track-rod steering are
+  CLOSED loops, so both solves live in `f1.anim.js` rather than in typed mates.
+- [f14d/](f14d/src/README.md): Grumman F-14D Super Tomcat — one lofted airframe
+  skin with ten systems grouped on top of it, a staged teardown in
+  `f14d.anim.js`, and a `render/` suite of presentation configs and review
+  tooling.
+- [hypercar/](hypercar/src/README.md): mid-engine hypercar — modular `lib/`
+  build with a `render/` presentation theme.
 - [moonwatch/](moonwatch/README.md): chronograph wristwatch — shared finishing
-  vocabulary, per-cluster helpers, eight entry generators (`case`, `dial`,
+  vocabulary, per-cluster helpers, eight entry models (`case`, `dial`,
   `movement_base`, `keyless_works`, `chrono_works`, `movement`, `bracelet`,
   `moonwatch` for the full watch) plus a `finishing_sampler` coupon, and a
-  `render/` suite of presentation themes and animation job templates.
-- [motorbike/](motorbike/README.md): retro step-through scooter — `_spec.py`
-  hardpoint/palette source of truth, shared `_lib.py` geometry vocabulary, 19
-  part entries plus a 23-occurrence `motorbike` assembly with native steering,
-  wheel-spin, engine-swing, and stand-pivot joints.
-- [qdd_actuator/](qdd_actuator): quasi-direct-drive actuator with a parameter
-  sidecar.
-- [raptor3/](raptor3): Raptor 3 engine concept with a parameter sidecar.
-- [starship-mechazilla/](starship-mechazilla): launch mount, tower, ship,
-  super heavy booster, and full integrated stack — five entry generators, each
-  with its own animation sidecar.
+  `render/` suite of presentation themes and job templates.
+- [motorbike/](motorbike/README.md): retro step-through scooter — `lib/spec.py`
+  is the hardpoint/palette source of truth and `lib/lib.py` the shared geometry
+  vocabulary; 19 part models plus a 46-occurrence `motorbike` assembly with
+  typed mates for steering, wheel spin, engine swing and the stand pivot.
+- [qdd_actuator/](qdd_actuator/src/README.md): quasi-direct-drive actuator —
+  one virtual `drive` DOF gears the rotor, carrier, both ball cages and the
+  three planets through the 4.5:1 planetary reduction, with the exploded
+  teardown in `qdd_actuator.anim.js`.
 
-## SpaceX reconstruction packages
+## SpaceX reconstruction package
 
-> **Educational, non-functional public-source reconstructions. Not suitable
+> **Educational, non-functional public-source reconstruction. Not suitable
 > for manufacture, propulsion, testing, or operational engineering.**
 
-Museum/documentary-style CAD packages reconstructed exclusively from public
+A museum/documentary-style CAD package reconstructed exclusively from public
 sources; proprietary internals are deliberately excluded and hidden internals
-appear only as simplified translucent placeholder volumes. Each package's
+appear only as simplified translucent placeholder volumes. Its
 `PROVENANCE.md`, `DIMENSIONS.md`, and `RESEARCH.md` carry the source,
 confidence, and dimension tables.
 
-- [raptor2/](raptor2/README.md): Raptor 2 — exterior, schematic cutaway,
-  exploded view, and derived Raptor Vacuum generators, plus a `renders/` suite.
-- [starship/](starship/README.md): Starship / Super Heavy full stack (pinned
-  V2/Block 2) — booster, ship, stack, cutaway, and exploded generators reusing
-  the raptor2 engines as linked instanced subassemblies.
-- [merlin1d/](merlin1d/README.md): Merlin 1D — exterior, schematic cutaway,
-  and exploded generators (~260–275 named parts each).
 - [falcon_heavy/](falcon_heavy/README.md): Falcon Heavy full vehicle — three
   cores with 27 linked Merlin 1D instances, MVac-derivative second stage,
-  cutaway and exploded views (~2,150 named parts each).
-
-These packages cross-reference each other by sibling relative path
-(`../raptor2/`, `../merlin1d/`), so they must stay siblings in this directory.
+  cutaway and exploded views (~2,150 named parts each). The Merlin 1D library
+  is VENDORED into `src/lib/merlin_common.py`; the standalone Merlin 1D
+  package it came from no longer lives in this repo, so the vendored copy is
+  the source of truth.
 
 ## Robot description packages
 
-- [juno/](juno/README.md): Juno humanoid — full biped robot description with
-  per-link STEP generators, 3MF meshes, URDF/SRDF, and a parameter sidecar.
-- [lyra/](lyra/README.md): Lyra dexterous hand — five-digit robot hand with
-  per-link STEP generators, 3MF meshes, URDF/SRDF, and a parameter sidecar.
+- [juno/](juno/README.md): Juno humanoid — a 27-DOF biped: one model per link
+  emitting both a STEP part and the 3MF mesh the URDF references, plus the
+  authored `juno.urdf` / `juno.srdf`.
+- [lyra/](lyra/README.md): Lyra dexterous hand — a 16-DOF five-digit hand, the
+  same shape: per-link models with 3MF exports, authored `lyra.urdf` /
+  `lyra.srdf`, and named poses shared between the SRDF group states and the
+  STEP's kinematics presets.
 
 These two carry URDF/SRDF but live here rather than in `../robots/` because
 they are authored concept packages, not the imported robot fixtures that
-`../robots/` collects.
+`../robots/` collects. Their `3MF/` meshes are GENERATED and no longer
+committed — build the link models before loading either URDF.
 
-## Per-package `render/` folders
+## Kinematics, animation, and per-package `render/` folders
 
-Some packages keep a `render/` (or `renders/`) subfolder holding snapshot job
-templates and presentation-theme JSON. Those configs are committed; the
-generated PNG output beside them stays gitignored per the repo-wide media
-rules in `.gitignore`.
+A project's articulation is split three ways (see the `$cad` skill's
+`kinematics.md`): geometry parameters are the model function's signature,
+typed mates are pure data under the `@step` decorator's `kinematics=`, and
+choreography is a `.js` module named by `animation=`. The retired `.params.js`
+sidecars are gone from every package here.
+
+Some packages keep a `render/` subfolder holding presentation-theme JSON,
+snapshot job templates, and review tooling. Those configs are authored and
+committed; anything they generate goes to the project's `tmp/`.

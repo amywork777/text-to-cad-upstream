@@ -111,11 +111,13 @@ live under `scripts/`.
 
 Write test, sample, and durable CAD/robot-description artifacts under `models/`;
 do not create ad hoc artifact directories elsewhere. When you need a scratch
-project, create it under the fixture bucket it belongs in (for example
-`models/step/parts/my-test` for a standalone part), for example:
+project, create it under the fixture bucket it belongs in (a demo part or
+assembly belongs in the `models/examples/` cad-project — script in `src/`,
+artifact declared into a format folder), for example:
 
 ```bash
-mkdir -p models/step/parts/my-test
+$EDITOR models/examples/src/my_test.py     # @step(out="../STEP/my_test.step")
+python models/examples/src/my_test.py
 ```
 
 Then start your agent with `/path/to/text-to-cad` as the working directory and

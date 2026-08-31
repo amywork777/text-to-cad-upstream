@@ -34,15 +34,17 @@ test("format siblings stay distinct because the extension is kept", () => {
 });
 
 test("a genuinely colliding filename gains directory segments until it is unique", () => {
-  // The real collisions in the repo: super_heavy.step.py, sts3250.step, link_assembly.step.py.
+  // The shape of a real collision: one stem, two projects. Under the
+  // cad-project layout every project has its own STEP/ folder, so a shared
+  // part name collides on the folder above it.
   const suffixes = shortestUniquePathSuffixes([
-    "models/renders/starship/super_heavy.step.py",
-    "models/renders/falcon_heavy/super_heavy.step.py",
-    "models/step/parts/unique_part.step.py"
+    "models/renders/juno/STEP/palm.step",
+    "models/renders/lyra/STEP/palm.step",
+    "models/step/parts/unique_part.step"
   ]);
-  assert.equal(suffixes.get("models/renders/starship/super_heavy.step.py"), "starship/super_heavy");
-  assert.equal(suffixes.get("models/renders/falcon_heavy/super_heavy.step.py"), "falcon_heavy/super_heavy");
-  assert.equal(suffixes.get("models/step/parts/unique_part.step.py"), "unique_part");
+  assert.equal(suffixes.get("models/renders/juno/STEP/palm.step"), "juno/STEP/palm.step");
+  assert.equal(suffixes.get("models/renders/lyra/STEP/palm.step"), "lyra/STEP/palm.step");
+  assert.equal(suffixes.get("models/step/parts/unique_part.step"), "unique_part.step");
 });
 
 test("three-way collisions keep growing until unique", () => {

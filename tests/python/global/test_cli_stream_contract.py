@@ -21,7 +21,7 @@ from pathlib import Path
 from tests.python.support.paths import repo_path
 
 REPO = Path(repo_path("."))
-PART = "models/step/parts/cylindrical_spacer_sleeve.py"
+PART = "models/examples/src/cylindrical_spacer_sleeve.py"
 ROBOT = "models/robots/so101/so101.urdf"
 
 

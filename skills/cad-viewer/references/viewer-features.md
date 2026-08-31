@@ -23,7 +23,7 @@ Load this only when a task needs Viewer file-support details or UI control guida
 - Sidebars: the file sheet and the theme sidebar are mutually exclusive. Each navbar button toggles its own sidebar; opening one replaces the other, and closing one leaves nothing open.
 - Copied references carry their file: the Viewer prefixes every copied ref with the shortest
   path suffix that names that file uniquely (`bracket#o1.2.f1`, or
-  `starship/super_heavy#o1.3` where a filename is not unique), so a ref pasted into a prompt
+  `lyra/STEP/palm.step#o1.3` where a filename is not unique), so a ref pasted into a prompt
   still says which model it belongs to. A generated model shows as a bare stem — the common
   case, so it gets the shortest name — while everything else keeps its suffix (`bracket.step`,
   `plate.stl`, `plate.3mf`). That means a bare stem is NOT a literal path suffix, so resolving

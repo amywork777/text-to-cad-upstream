@@ -5,11 +5,17 @@
     python render/part.py nozzles --solo            # the part on its own
     python render/part.py wings,empennage --views top
 
-Writes a throwaway entry under `.review/<name>/` that composes only the modules
-asked for, so a builder can iterate without waiting for the whole aeroplane and
-without their artifact cache colliding with anyone else's.  The airframe skin is
-included by default because a part judged out of context is judged wrong -- a
-perfect nozzle at the wrong scale relative to the nacelle still fails.
+Writes a throwaway `@step` model under `tmp/review/<name>/` that composes only
+the modules asked for, so a builder can iterate without waiting for the whole
+aeroplane and without their artifact cache colliding with anyone else's.  The
+airframe skin is included by default because a part judged out of context is
+judged wrong -- a perfect nozzle at the wrong scale relative to the nacelle
+still fails.
+
+The generated entry lives OUTSIDE `src/` on purpose: every `.py` directly under
+`src/` is a real model of this project, and a scratch composition is not one.
+That is also why it carries the one `sys.path.insert` in the project -- it has
+to reach `src/` from `tmp/`, which the real models never have to do.
 """
 
 from __future__ import annotations
@@ -21,23 +27,24 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
-REPO = PROJECT.parents[2]
-PY = "/Users/jakefitzgerald/robots/text-to-cad/.venv/bin/python"
+SRC = PROJECT / "src"
+PY = sys.executable
 
 TEMPLATE = '''"""Auto-generated review entry -- do not edit; see render/part.py."""
 import sys
-from pathlib import Path
 
-sys.path.insert(0, {project!r})
+sys.path.insert(0, {src!r})
 
 from build123d import Compound
+
+from cadgen import step
 
 MODULES = {mods!r}
 
 
 def _load(name):
     try:
-        return __import__("f14_parts." + name, fromlist=["build"])
+        return __import__("lib." + name, fromlist=["build"])
     except Exception as exc:  # noqa: BLE001
         print("[review] skip %s: %s" % (name, exc), file=sys.stderr)
         return None
@@ -46,7 +53,8 @@ def _load(name):
 _LOADED = [(n, _load(n)) for n in MODULES]
 
 
-def gen_step():
+@step(out="{name}.step", kind="assembly")
+def {name}():
     kids = []
     for name, mod in _LOADED:
         if mod is None:
@@ -76,23 +84,24 @@ def main():
     name = "_".join(mods)
     full = mods if args.solo else (["airframe"] + [m for m in mods if m != "airframe"])
 
-    d = PROJECT / ".review" / name
+    d = PROJECT / "tmp" / "review" / name
     d.mkdir(parents=True, exist_ok=True)
-    entry = d / f"{name}.step.py"
-    entry.write_text(TEMPLATE.format(project=str(PROJECT), mods=full))
+    entry = d / f"{name}.py"
+    entry.write_text(TEMPLATE.format(src=str(SRC), mods=full, name=name))
 
     r = subprocess.run([PY, str(entry)],  # a model script builds itself
-                       cwd=str(REPO), capture_output=True, text=True)
+                       cwd=str(d), capture_output=True, text=True)
     sys.stderr.write(r.stderr)
     if r.returncode != 0:
         print(r.stdout)
         return r.returncode
 
     stem = args.stem or name
+    # shot.py takes the BUILT DOCUMENT, never the script.
     return subprocess.run(
-        [PY, str(HERE / "shot.py"), str(entry), stem,
+        [PY, str(HERE / "shot.py"), str(d / f"{name}.step"), stem,
          "--views", args.views, "--size", args.size, "--mode", args.mode,
-         "--outdir", str(d)], cwd=str(REPO)).returncode
+         "--outdir", str(d)], cwd=str(PROJECT)).returncode
 
 
 if __name__ == "__main__":
