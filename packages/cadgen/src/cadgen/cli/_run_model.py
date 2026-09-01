@@ -55,7 +55,7 @@ def run_model_argv(argv: Sequence[str], *, prog: str = "python <model>.py") -> i
         return None
 
     try:
-        source = source_from_path(script)  # raises the legacy teaching error itself
+        source = source_from_path(script)
         if source is None:
             raise ValueError(
                 f"{script.name} declares no CAD model — decorate one function with "
