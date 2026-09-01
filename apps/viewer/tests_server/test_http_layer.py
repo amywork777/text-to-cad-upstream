@@ -524,16 +524,12 @@ class RequestBodies(HttpLayerTestCase):
 
 class PortedRoutesAreDistinguishable(HttpLayerTestCase):
     def test_routes_awaiting_later_steps_answer_501_not_404_or_200(self):
-        # Shrinks as the port lands. The catalog and the asset/store routes are
-        # gone from this list because they now answer for real — see
-        # tests_server/test_scanner.py and tests_server/test_security.py.
+        # Shrinks as the port lands. The catalog, the asset and store routes,
+        # the artifact pair and the whole tess-cache family are gone from this
+        # list because they now answer for real — see test_scanner.py,
+        # test_security.py, test_artifact_status.py and test_tess_cache.py.
         for method, path, headers in [
-            ("GET", "/__cad/artifact?file=x.step", {}),
-            ("GET", "/__tess_cache/a.tess", {}),
-            ("POST", "/__cad/artifact?file=x.step", {"x-cadgen-viewer": "1"}),
             ("POST", "/__cad/reveal?file=/x.step", {"x-cadgen-viewer": "1"}),
-            ("POST", "/__tess_cache/batch", {"x-cadgen-viewer": "1"}),
-            ("POST", "/__tess_cache/a.tess", {"x-cadgen-viewer": "1"}),
         ]:
             with self.subTest(method=method, path=path):
                 status, _, body = self.fixture.request(method, path, headers=headers)

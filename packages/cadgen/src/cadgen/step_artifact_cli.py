@@ -4,6 +4,7 @@ import argparse
 from dataclasses import replace
 import json
 from pathlib import Path
+from typing import Callable
 
 from cadgen.cli_logging import CliLogger
 from cadgen._internal.cli_locking import (
@@ -23,7 +24,7 @@ from cadgen._internal.generation import (
     _produce_declared_mesh_exports,
     run_script_generator,
 )
-from cadgen.coordination import PHASE_GENERATE, STEP_PACKAGE, artifact_build
+from cadgen.coordination import PHASE_GENERATE, STEP_PACKAGE, ProgressEvent, artifact_build
 from cadgen.metadata import normalize_mesh_numeric
 from cadgen.catalog import render_package_dir
 from cadgen.render import relative_to_cwd
@@ -264,6 +265,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _fan_out_sink(
+    cli_sink: Callable[[ProgressEvent], None],
+    extra: Callable[[ProgressEvent], None] | None,
+) -> Callable[[ProgressEvent], None]:
+    """Deliver each event to the CLI line and to an in-process listener.
+
+    The listener is isolated: a caller whose sink raises (a viewer whose client
+    socket has gone away mid-build, say) must lose its progress, not the build.
+    """
+    if extra is None:
+        return cli_sink
+
+    def fan_out(event: ProgressEvent) -> None:
+        cli_sink(event)
+        try:
+            extra(event)
+        except Exception:  # noqa: BLE001 - reporting must never fail a build
+            pass
+
+    return fan_out
+
+
 def build_step_artifact(
     *,
     repo_root: Path,
@@ -276,6 +299,7 @@ def build_step_artifact(
     verbose: bool = False,
     logger: CliLogger | None = None,
     lock_timeout_s: float = 0.0,
+    sink: Callable[[ProgressEvent], None] | None = None,
 ) -> dict[str, object]:
     """Build the GLB/topology artifact for one STEP/.step.py and RETURN the result
     payload (the exact dict the CLI prints). This is the single source of truth,
@@ -291,7 +315,13 @@ def build_step_artifact(
     default: an agent asking for a build wants the build). A caller that must not block —
     the CAD Viewer's request path, which shares ONE serial warm worker across every model —
     passes a short one and gets ``{"ok": True, "contended": True}`` back, so it can report
-    the peer's run instead of occupying the worker until the peer finishes."""
+    the peer's run instead of occupying the worker until the peer finishes.
+
+    ``sink`` receives every :class:`ProgressEvent` alongside the CLI's own line, so an
+    in-process caller can watch the build as DATA rather than reading back the status
+    record the run happens to publish. The CAD Viewer's compile worker uses this: it is
+    what lets an import report its phase and counts live, instead of the viewer scraping
+    a file whose location depends on which producer wrote it."""
     repo_root = Path(repo_root).expanduser().resolve()
     step_path = Path(step).expanduser().resolve()
     from_generator = source_path is not None
@@ -383,7 +413,11 @@ def build_step_artifact(
         force=force,
         deadline_ms=deadline_ms(lock_timeout_s),
         on_wait=lock_wait_notice(logger, existing_spec.source_ref),
-        sink=progress_sink,
+        # The caller's sink runs ALONGSIDE the CLI line, never instead of it: a
+        # terminal watching this build still gets its bar when the viewer is
+        # also listening. A caller's sink must not be able to fail the build, so
+        # it is guarded here rather than trusted.
+        sink=_fan_out_sink(progress_sink, sink),
     ) as progress:
         if progress.contended:
             # A peer holds this model's lock and the caller asked not to wait it out. Not

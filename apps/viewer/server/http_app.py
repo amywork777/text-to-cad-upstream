@@ -18,11 +18,10 @@ No ``Access-Control-*`` headers are served, deliberately: their absence is what
 makes the same-origin policy block cross-origin reads and what makes that
 preflight fail. Do not add them.
 
-PORT STATUS: this module carries the routing table, both gates, ``serverInfo``,
-the static/SPA half, the catalog and the asset/store routes. The artifact-status
-machinery, reveal and the tessellation cache are wired in later steps of the
-port; each is registered here and answers 501 with a distinctive body until
-then, so a missing route can never be mistaken for a working one.
+PORT STATUS: reveal is the last route still awaiting its step. It is registered
+here and answers 501 with a distinctive body until then, so a missing route can
+never be mistaken for a working one — a placeholder that 404s or 200s would be
+indistinguishable from a route that works.
 """
 
 from __future__ import annotations
@@ -35,10 +34,12 @@ import time
 from pathlib import Path
 
 from .backend import ForbiddenAssetError, LocalAssetBackend
+from .cadgen_ops import create_cadgen_ops
 from .content_types import content_type_for_static_asset
 from .encoding import UriError, attachment_content_disposition, strict_decode_uri_component
 from .scanner import node_basename, path_relative
 from .store_paths import store_packages_dir
+from .tess_cache import read_tess_cache_batch, read_tess_cache_entry, write_tess_cache_entry
 
 __all__ = [
     "CadApp",
@@ -132,6 +133,7 @@ class CadApp:
         self.viewer_version = read_viewer_version()
         self.started_at = time.time()
         self.lock = threading.Lock()
+        self.ops = create_cadgen_ops(root_path)
 
     # --- server info ------------------------------------------------------
 
@@ -160,11 +162,11 @@ class CadApp:
     def step_import_available(self) -> bool:
         """Whether a foreign STEP can be imported.
 
-        Wired to a real ``cadgen`` probe in the cadgen-integration step. It must
-        stay a probe rather than becoming a constant ``True``: a viewer launched
-        by an interpreter without cadgen has to degrade to viewing-only.
+        A real probe, never a constant ``True``: a viewer launched by an
+        interpreter without cadgen has to degrade to viewing-only rather than
+        offer an import that cannot happen.
         """
-        return False
+        return self.ops.step_import_available()
 
     # --- gates ------------------------------------------------------------
 
@@ -342,11 +344,41 @@ class CadApp:
     def _handle_catalog(self, request, response):
         response.send_json(200, self.backend.read_catalog())
 
+    def _entry_ref_for_status(self, file_ref) -> str:
+        """The catalog URL for this ref, or ``""``.
+
+        A full catalog scan, and the client polls this route every 400ms during
+        a build. The scanner's content-hash memo is what keeps it off the hot
+        path; without that this would re-read every model in the root per tick.
+        """
+        catalog = self.backend.read_catalog()
+        entry = self.backend.catalog_entry_for_file_ref(catalog, file_ref)
+        return str((entry or {}).get("url") or "")
+
     def _handle_artifact_status(self, request, response, query):
-        self._not_ported(response, "GET /__cad/artifact")
+        """Always 200, even for state 'error'.
+
+        The status of an artifact is information, not an outcome: a client
+        polling for a badge should read the state out of the body, not out of
+        an HTTP failure it has to special-case.
+        """
+        file_ref = query.get("file") or ""
+        status = self.ops.artifact_status(file_ref)
+        response.send_json(200, {**status, "ref": self._entry_ref_for_status(file_ref)})
 
     def _handle_artifact_build(self, request, response, query):
-        self._not_ported(response, "POST /__cad/artifact")
+        file_ref = query.get("file") or ""
+        # Only the literal string "1" forces; anything else is a normal build.
+        result = self.ops.build_artifact(file_ref, force=query.get("force") == "1")
+        # Re-scanned AFTER the build, success or failure, and republished by the
+        # client — the import is precisely the event that changes what the
+        # catalog says about this entry.
+        payload = {
+            **result,
+            "ref": self._entry_ref_for_status(file_ref),
+            "catalog": self.backend.read_catalog(),
+        }
+        response.send_json(500 if result.get("ok") is False else 200, payload)
 
     def _handle_store_asset(self, request, response, query):
         """Render-package assets, confined to the store's ``packages/`` tier.
@@ -400,13 +432,33 @@ class CadApp:
         self._not_ported(response, "POST /__cad/reveal")
 
     def _handle_tess_get(self, request, response):
-        self._not_ported(response, "GET /__tess_cache/*")
+        """403 refused name, 404 miss, 200 hit.
+
+        The non-200 answers carry ONLY content-length: 0 — no content-type and
+        no cache-control. A miss is an ordinary outcome here, not an error page.
+        """
+        status, body = read_tess_cache_entry(request.path)
+        if status != 200:
+            response.send_empty(status)
+            return
+        response.send_bytes(200, body, "application/octet-stream")
 
     def _handle_tess_post(self, request, response):
-        self._not_ported(response, "POST /__tess_cache/*")
+        response.send_empty(write_tess_cache_entry(request.path, request.body()))
 
     def _handle_tess_batch(self, request, response):
-        self._not_ported(response, "POST /__tess_cache/batch")
+        """One round trip for a whole assembly's hit set.
+
+        A non-ok answer here permanently demotes the client's provider to
+        per-key GETs for the life of the page, so a malformed request must be a
+        clean 400 and everything else must be a valid container — misses
+        included, which ride as zero-length entries rather than errors.
+        """
+        container = read_tess_cache_batch(request.body())
+        if container is None:
+            response.send_json(400, {"error": "bad batch request"})
+            return
+        response.send_bytes(200, container, "application/octet-stream")
 
 
 def create_cad_app(*, root: str, host: str, port: int, dist_dir: str = "") -> CadApp:
