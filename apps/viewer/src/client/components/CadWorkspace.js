@@ -308,7 +308,8 @@ import {
 import { copyTextToClipboard, readTextFromClipboard } from "@/ui/clipboard";
 import {
   copyTargetsForFileAccessAsset,
-  fileAccessAssetsForEntry
+  fileAccessAssetsForEntry,
+  viewerDeepLinkForFileAccessAsset
 } from "@/workbench/fileAccessAssets";
 
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
@@ -6767,6 +6768,14 @@ export default function CadWorkspace({
       } else if (kind === "relativePath") {
         copyText = targets.relativePath;
         statusLabel = "Copied relative path";
+      } else if (kind === "link") {
+        // The link's origin is the one in the user's address bar — the URL they can
+        // actually paste — with the server's self-reported URL standing in only when
+        // there is no window to read it from.
+        const origin = (typeof window !== "undefined" && window.location?.origin) ||
+          String(viewerServerInfo?.url || "").trim();
+        copyText = viewerDeepLinkForFileAccessAsset(resolvedAsset, viewerServerInfo, { origin });
+        statusLabel = "Copied link";
       } else {
         copyText = targets.path;
         statusLabel = "Copied path";

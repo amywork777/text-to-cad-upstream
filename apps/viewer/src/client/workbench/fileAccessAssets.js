@@ -10,7 +10,7 @@ import {
   normalizeRelativePath as normalizedRelativePath,
   viewerRootRelativePath
 } from "./pathPresentation.js";
-import { fileKey } from "./sidebar.js";
+import { fileKey, normalizeCadFileQueryParam } from "./sidebar.js";
 
 function basenameFromFileRef(value) {
   const normalized = normalizedRelativePath(value);
@@ -96,4 +96,29 @@ export function copyTargetsForFileAccessAsset(asset, viewerServerInfo = {}) {
       basenameFromFileRef(relativePath || absolutePath),
     relativePath,
   };
+}
+
+// Copy Link renders only for an asset that carries a root-relative ref — without one
+// there is no `?file=` value to build, so the item does not appear for that entry.
+export function fileAccessAssetHasDeepLink(asset) {
+  return Boolean(normalizedRelativePath(asset?.rootRelativePath));
+}
+
+export function viewerDeepLinkForFileAccessAsset(asset, viewerServerInfo = {}, {
+  origin = "",
+} = {}) {
+  // A deep link is the URL the app itself lands on when this entry is selected: the
+  // bare origin plus `?file=<root-relative ref>`. The ref goes through the same
+  // normalization (normalizeCadFileQueryParam) and the same URLSearchParams
+  // serialization as writeCadParam, so a copied link and an app-navigated link are
+  // byte-identical for the same entry.
+  const { relativePath } = copyTargetsForFileAccessAsset(asset, viewerServerInfo);
+  const fileParam = normalizeCadFileQueryParam(relativePath);
+  const baseOrigin = String(origin || "").trim().replace(/\/+$/, "");
+  if (!fileParam || !baseOrigin) {
+    return "";
+  }
+  const params = new URLSearchParams();
+  params.set("file", fileParam);
+  return `${baseOrigin}/?${params.toString()}`;
 }

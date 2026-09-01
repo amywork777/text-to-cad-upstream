@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   copyTargetsForFileAccessAsset,
-  fileAccessAssetsForEntry
+  fileAccessAssetHasDeepLink,
+  fileAccessAssetsForEntry,
+  viewerDeepLinkForFileAccessAsset
 } from "./fileAccessAssets.js";
 
 const viewerServerInfo = {
@@ -102,4 +104,60 @@ test("copy targets fall back to the path basename when the asset has no filename
   }, viewerServerInfo);
 
   assert.equal(targets.filename, "robot-arm.step");
+});
+
+test("viewer deep link is the app-navigated URL for the entry", () => {
+  // writeCadParam serializes `?file=` through URLSearchParams, which encodes the
+  // path separators, so the copied link must carry the same `%2F` form — a copied
+  // link and an app-navigated link are byte-identical for the same entry.
+  const assets = fileAccessAssetsForEntry({
+    file: "examples/STEP/planetary_gear_assembly.step",
+  }, { viewerServerInfo });
+
+  const link = viewerDeepLinkForFileAccessAsset(assets.output, viewerServerInfo, {
+    origin: "http://127.0.0.1:3434",
+  });
+
+  assert.equal(link, "http://127.0.0.1:3434/?file=examples%2FSTEP%2Fplanetary_gear_assembly.step");
+});
+
+test("viewer deep link re-bases an absolute catalog path against the served root", () => {
+  const assets = fileAccessAssetsForEntry({
+    file: "/project/text-to-cad/models/cad/drawings/gasket_plate.dxf",
+  }, { viewerServerInfo });
+
+  const link = viewerDeepLinkForFileAccessAsset(assets.output, viewerServerInfo, {
+    origin: "http://127.0.0.1:3434",
+  });
+
+  assert.equal(link, "http://127.0.0.1:3434/?file=cad%2Fdrawings%2Fgasket_plate.dxf");
+});
+
+test("viewer deep link encodes the file param exactly as URLSearchParams does", () => {
+  // A space becomes `+` under URLSearchParams' form encoding — the same bytes the
+  // address bar shows after the app itself selects the entry.
+  const link = viewerDeepLinkForFileAccessAsset({
+    rootRelativePath: "parts/bracket rev2.step",
+  }, viewerServerInfo, { origin: "http://127.0.0.1:3434" });
+
+  assert.equal(link, "http://127.0.0.1:3434/?file=parts%2Fbracket+rev2.step");
+});
+
+test("viewer deep link requires a root-relative ref and an origin", () => {
+  assert.equal(fileAccessAssetHasDeepLink({ rootRelativePath: "cad/robot-arm.step" }), true);
+  // No derivable ref: the menu hides Copy Link, and the builder returns nothing.
+  assert.equal(fileAccessAssetHasDeepLink({ rootRelativePath: "" }), false);
+  assert.equal(fileAccessAssetHasDeepLink(null), false);
+  assert.equal(
+    viewerDeepLinkForFileAccessAsset({ rootRelativePath: "" }, viewerServerInfo, {
+      origin: "http://127.0.0.1:3434",
+    }),
+    ""
+  );
+  assert.equal(
+    viewerDeepLinkForFileAccessAsset({ rootRelativePath: "cad/robot-arm.step" }, viewerServerInfo, {
+      origin: "",
+    }),
+    ""
+  );
 });

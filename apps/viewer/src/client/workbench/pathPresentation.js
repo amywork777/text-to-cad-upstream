@@ -19,13 +19,25 @@ function stripQueryAndHash(value) {
   return cleanText(value).replace(/[?#].*$/, "");
 }
 
+function decodedPathname(pathname) {
+  try {
+    return decodeURIComponent(pathname);
+  } catch {
+    // A literal `%` that is not an escape sequence: the pathname already is the path.
+    return pathname;
+  }
+}
+
 function pathnameFromUrlOrPath(value) {
   const text = cleanText(value);
   if (!text) {
     return "";
   }
   try {
-    return new URL(text, "http://cad.local").pathname;
+    // `new URL(...).pathname` comes back percent-encoded, so decode it: a plain path
+    // with a space in it (or an encoded catalog URL) names a real file, and the ref
+    // this returns must carry the file's actual bytes, not an escape sequence.
+    return decodedPathname(new URL(text, "http://cad.local").pathname);
   } catch {
     return stripQueryAndHash(text);
   }

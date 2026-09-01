@@ -5,7 +5,10 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger
 } from "@/components/ui/context-menu";
-import { fileAccessAssetsForEntry } from "@/workbench/fileAccessAssets";
+import {
+  fileAccessAssetHasDeepLink,
+  fileAccessAssetsForEntry
+} from "@/workbench/fileAccessAssets";
 
 function ExplorerViewSection({
   entry,
@@ -73,6 +76,16 @@ function FileAccessSection({
             <span className="min-w-0 truncate">Copy Relative Path</span>
           </ContextMenuItem>
         </>
+      ) : null}
+      {canCopyFileAssetReference && fileAccessAssetHasDeepLink(asset) ? (
+        <ContextMenuItem
+          className="text-xs"
+          onSelect={() => {
+            onCopyFileAssetReference(entry, asset.asset, asset, "link");
+          }}
+        >
+          <span className="min-w-0 truncate">Copy Link</span>
+        </ContextMenuItem>
       ) : null}
     </>
   );
