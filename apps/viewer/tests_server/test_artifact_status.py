@@ -486,5 +486,111 @@ class InProcessRegistry(ArtifactStatusTestCase):
         self.assertGreater(snapshot["progress"]["updatedAt"], 0)
 
 
+class InvalidUtf8(ArtifactStatusTestCase):
+    """A byte that is not UTF-8 must not change the answer the client acts on.
+
+    Node read every one of these files with ``fs.readFileSync(path, "utf8")``,
+    which substitutes U+FFFD and carries on. The port decoded strictly, and
+    because ``UnicodeDecodeError`` is a ``ValueError`` it landed in the same
+    ``except`` clause as "the file is missing" — so one bad byte silently became
+    ABSENT, and absent is a DIFFERENT state, not a degraded one.
+
+    Product names in a STEP file are arbitrary bytes and flow into the package
+    descriptor, so these are real files, not hypothetical ones.
+    """
+
+    #: Latin-1 ``é``: a lone 0xE9 with no continuation byte, invalid as UTF-8.
+    BAD = b"\xe9"
+
+    def _corrupt(self, path, marker: bytes = b"NAME_HERE") -> None:
+        path = Path(path)
+        body = path.read_bytes()
+        self.assertIn(marker, body, "precondition: the fixture carries the marker")
+        path.write_bytes(body.replace(marker, self.BAD))
+
+    def test_a_descriptor_with_one_bad_byte_stays_ready(self):
+        # THE STATE CHANGE: ready -> needs-build. The viewer offered to rebuild
+        # a package that was already complete on disk.
+        step = self.tree.step()
+        package_dir = self.tree.package(step)
+        descriptor = package_dir / "assembly.json"
+        descriptor.write_bytes(
+            json.dumps(
+                {
+                    "kind": "assembly-package",
+                    "name": "NAME_HERE",
+                    "components": {"k0": {"surf": "c0.surf"}},
+                }
+            ).encode("utf-8")
+        )
+        self._corrupt(descriptor)
+        self.assertEqual(
+            artifact_status(step, str(self.tree.root)),
+            {"state": "ready"},
+            "an undecodable byte inside the descriptor must not read as NO descriptor",
+        )
+
+    def test_a_progress_record_with_one_bad_byte_stays_in_flight(self):
+        # THE OTHER STATE CHANGE: generating -> ready. The record is written by
+        # a peer build WHILE it runs, so a read can land on a torn multi-byte
+        # character; the client stopped attaching and called the model finished
+        # in the middle of someone else's build.
+        step = self.tree.step()
+        record = self.tree.record(store_paths.coordination_scope(step), label="NAME_HERE")
+        self._corrupt(record)
+        snapshot = build_progress_snapshot(step)
+        self.assertIsNotNone(snapshot, "an undecodable byte must not read as no build in flight")
+        self.assertTrue(snapshot["writing"])
+        self.assertEqual(snapshot["runId"], "run-1")
+
+    def test_no_backend_reader_opens_a_text_file_strictly(self):
+        """The sweep, as a rule rather than three cases.
+
+        ``scanner.py`` has always used ``errors="replace"``; while the status
+        readers did not, the SAME file was a valid sidecar to the catalog and a
+        missing one to the artifact route. A reader added later with Python's
+        default strictness would reopen exactly that split, so the check is
+        structural rather than a list of the three sites that had it.
+
+        Scoped to FILE reads: ``open`` for reading and ``read_text``. A bytes
+        decode is a separate judgement with its own local answer — ``encoding.py``
+        implements ``decodeURIComponent``, which is REQUIRED to throw on invalid
+        UTF-8, and ``compile_client`` decodes frames its own child just encoded.
+        """
+        import ast
+
+        allowed = {
+            # A shipped runtime asset with a single writer: this repo. A bad
+            # byte in it is a broken build to surface, not a state to degrade.
+            "natural_sort.py",
+        }
+        offenders = []
+        for path in sorted((APP_ROOT / "server").glob("*.py")):
+            if path.name in allowed:
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = ast.unparse(node.func)
+                if name != "open" and not name.endswith(".read_text"):
+                    continue
+                arguments = [ast.unparse(argument) for argument in node.args]
+                keywords = {keyword.arg: ast.unparse(keyword.value) for keyword in node.keywords}
+                mode = keywords.get("mode") or (arguments[1] if len(arguments) > 1 else "'r'")
+                if any(character in mode for character in "wax+"):
+                    continue  # a write, which has no decoding to get wrong
+                if "b" in mode:
+                    continue  # binary, which has no decoding at all
+                if keywords.get("errors"):
+                    continue
+                offenders.append(f"{path.name}:{node.lineno} {ast.unparse(node)}")
+        self.assertEqual(
+            offenders,
+            [],
+            "a backend reader of a shared text file must pass errors='replace', as Node did",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

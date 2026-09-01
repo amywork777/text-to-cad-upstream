@@ -92,10 +92,15 @@ def read_viewer_version() -> str:
     Exported for the launcher's reuse key (realpath(root) x version): both sides
     of that comparison must read the version the same way, and the bundled
     runtime's package.json is the one file that carries it.
+
+    ``errors="replace"``, as ``readFileSync(url, "utf8")`` did: a version this
+    process cannot read is a version the reuse key cannot match, which silently
+    spawns a second viewer instead of reusing the running one.
     """
     try:
         package_json = Path(__file__).resolve().parent.parent / "package.json"
-        return str(json.loads(package_json.read_text(encoding="utf-8")).get("version") or "")
+        text = package_json.read_text(encoding="utf-8", errors="replace")
+        return str(json.loads(text).get("version") or "")
     except Exception:  # noqa: BLE001 - a malformed package.json is not fatal
         return ""
 

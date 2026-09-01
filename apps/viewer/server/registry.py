@@ -126,7 +126,13 @@ def read_entries() -> list[dict]:
         if not name.startswith("viewer-") or not name.endswith(".json"):
             continue
         try:
-            with open(os.path.join(registry_dir(), name), encoding="utf-8") as handle:
+            # errors="replace", as `readFileSync(path, "utf8")` did. An entry is
+            # written by another live viewer and can be read mid-write; a torn
+            # multi-byte character should be judged as the JSON it decodes to,
+            # not raise a UnicodeDecodeError that lands in the same clause and
+            # makes every read failure indistinguishable.
+            path = os.path.join(registry_dir(), name)
+            with open(path, encoding="utf-8", errors="replace") as handle:
                 entry = json.load(handle)
         except (OSError, ValueError):
             continue  # skip corrupt entries

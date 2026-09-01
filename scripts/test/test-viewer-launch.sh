@@ -19,7 +19,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 HOST="127.0.0.1"
-RUNTIME="$REPO_ROOT/skills/cad-viewer/scripts/viewer"
+# VIEWER_RUNTIME_DIR points the smoke test at a runtime bundled somewhere else.
+# It is not decoration: bundling IN PLACE replaces the development symlink at
+# the default path with a real directory, so a developer who runs this script
+# has to repair their checkout with scripts/dev/setup-symlinks.sh afterwards.
+# Bundling into a scratch directory and naming it here costs nothing and leaves
+# the tree alone. CI always uses the default, because test.yml bundles in place
+# on a throwaway runner.
+RUNTIME="${VIEWER_RUNTIME_DIR:-$REPO_ROOT/skills/cad-viewer/scripts/viewer}"
 
 echo "==> CAD Viewer launch smoke test (\$PYTHON scripts/viewer/server/main.py)"
 
@@ -45,11 +52,65 @@ serve_root="$(mktemp -d)"
 # The server IS a Python process now: this is the interpreter that plays the
 # role of "the one that installed skills/cad-viewer/requirements.txt", which is
 # the only door cadgen comes through. There is no CADGEN_PYTHON any more.
-PYTHON="${VIEWER_PYTHON:-$REPO_ROOT/.venv/bin/python}"
-if [ ! -x "$PYTHON" ]; then
-  echo "FAIL: no interpreter at $PYTHON; set VIEWER_PYTHON." >&2
+#
+# Resolution FALLS BACK instead of demanding a repo venv, because there are two
+# venv-less callers and both are ordinary:
+#
+#   * GitHub Actions. .github/actions/setup-deps uses actions/setup-python and
+#     installs requirements-dev.txt into the interpreter on PATH; no .venv is
+#     ever created. Hard-requiring $REPO_ROOT/.venv/bin/python made this step
+#     fail before it started anything, on every pull request.
+#   * A lightweight worktree. CONTRIBUTING's recipe deliberately does not copy
+#     .venv, so a developer running this by hand hit the identical wall.
+#
+# Setting VIEWER_PYTHON in test.yml would have fixed only the first. The
+# fallback fixes both, and uses the same order scripts/test/common.sh already
+# uses for every other Python runner in this repo, so "which interpreter do the
+# tests use" has one answer.
+#
+# The first candidate that can import cadgen wins, and cadgen is REQUIRED: the
+# end-to-end import below is most of what this script proves, so a machine that
+# cannot run it should say so here in one line rather than 60 seconds later
+# inside a POST that returns ok:false. An explicit VIEWER_PYTHON is never
+# second-guessed — it is used, or the script fails naming it.
+pick_interpreter() {
+  local candidates=()
+  if [ -n "${VIEWER_PYTHON:-}" ]; then
+    candidates=("$VIEWER_PYTHON")
+  else
+    candidates=("$REPO_ROOT/.venv/bin/python" python3 python)
+  fi
+
+  local candidate resolved
+  FOUND_INTERPRETER=""
+  for candidate in "${candidates[@]}"; do
+    resolved="$(command -v "$candidate" 2>/dev/null || true)"
+    [ -n "$resolved" ] && [ -x "$resolved" ] || continue
+    [ -n "$FOUND_INTERPRETER" ] || FOUND_INTERPRETER="$resolved"
+    if "$resolved" -c 'import importlib.util, sys; sys.exit(0 if importlib.util.find_spec("cadgen") else 1)' \
+        >/dev/null 2>&1; then
+      PYTHON="$resolved"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! pick_interpreter; then
+  if [ -n "${VIEWER_PYTHON:-}" ]; then
+    echo "FAIL: VIEWER_PYTHON=$VIEWER_PYTHON cannot run, or cannot import cadgen." >&2
+  elif [ -z "$FOUND_INTERPRETER" ]; then
+    echo "FAIL: no Python interpreter found (tried $REPO_ROOT/.venv/bin/python, python3, python)." >&2
+    echo "      Set VIEWER_PYTHON to the one that installed requirements-dev.txt." >&2
+    exit 1
+  else
+    echo "FAIL: cadgen is not importable from $FOUND_INTERPRETER." >&2
+  fi
+  echo "      This test imports a real STEP end to end, so the launching interpreter" >&2
+  echo "      needs cadgen: pip install -r requirements-dev.txt, or set VIEWER_PYTHON." >&2
   exit 1
 fi
+echo "    interpreter: $PYTHON"
 # Cold: a smoke test spawns no build daemon.
 export CADGEN_DAEMON=0
 # Reveal must never open a file manager on a developer's desktop or a runner.

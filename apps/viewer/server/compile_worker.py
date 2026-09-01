@@ -66,6 +66,160 @@ import uuid
 # client treats contended exactly like attaching to a peer's progress.
 IMPORT_LOCK_TIMEOUT_SECONDS = 5.0
 
+# --- the cadgen API contract -------------------------------------------------
+#
+# It lives HERE, in the one module that calls cadgen at all, so there is a single
+# definition of what the Viewer needs from it. compile_client imports these names
+# to answer the availability probe; importing this module costs the server
+# nothing, because every cadgen import in it is inside a function body.
+#
+# WHAT WE NEED: ``build_step_artifact`` must take ``sink=``. Against a cadgen
+# that does not, every import raises ``build_step_artifact() got an unexpected
+# keyword argument 'sink'`` at the moment a user presses Import, after the probe
+# has already promised ``stepImportAvailable: true``.
+#
+# THE CHECK IS THE SIGNATURE, NOT THE VERSION, and that choice is load-bearing.
+# An editable install stamps its metadata version when it is installed, and this
+# repo does not bump VERSION during development — so every contributor's cadgen
+# reports the LAST RELEASE's number while its source is the working copy. A
+# version floor would therefore refuse the one install that definitely has the
+# feature, and CI (which installs requirements-dev.txt editable) would refuse it
+# too. The version below is for the MESSAGE and for requirements.txt; it is
+# never the gate.
+BUILD_MODULE = "cadgen.step_artifact_cli"
+BUILD_FUNCTION = "build_step_artifact"
+SINK_PARAMETER = "sink"
+
+#: The first RELEASE that carries the sink — 0.4.28 was the last one without it.
+#: Named in `apps/viewer/requirements.txt` and in the upgrade hint, so a user
+#: whose cadgen is genuinely too old is told a number they can act on.
+MINIMUM_CADGEN_VERSION = "0.4.29"
+
+# The document suffixes the import path accepts. cadgen's own CLI doors apply
+# the same rule from ``cadgen._internal.doors``; this states it locally rather
+# than importing a private module, because the server has ALREADY established
+# both of that door's invariants before a request reaches this process:
+#
+#   * suffix + existence: ``CadgenOps._is_raw_step_file`` (owns_step_path +
+#     os.path.exists) gates every call to ``client.compile``.
+#   * not a stale GENERATED document: ``resolve_artifact_verdict``'s
+#     ``generated`` flag gates the same call, and the viewer computes it with
+#     its own sidecar reader, which needs no cadgen at all.
+#
+# So the private import bought a re-check of things already checked, at the
+# price of a dependency on cadgen's internals that no release promises to keep.
+# The local check below keeps the defence and drops the coupling.
+DOCUMENT_SUFFIXES = (".step", ".stp")
+
+
+def installed_cadgen_version() -> str | None:
+    """The installed cadgen's version, or ``None`` when it has no metadata.
+
+    Metadata only: this reads the distribution's ``.dist-info`` and does NOT
+    import cadgen, which is what makes it safe to call from the server process.
+    ``None`` means cadgen is importable but not installed — a source tree on
+    ``PYTHONPATH``, which is how this repo's own test runners supply it.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("cadgen")
+    except PackageNotFoundError:
+        return None
+    except Exception:  # noqa: BLE001 - a metadata read that fails tells us nothing
+        return None
+
+
+def cadgen_supports_progress_sink() -> bool | None:
+    """Does the INSTALLED ``build_step_artifact`` take ``sink=``?
+
+    ``True``/``False``, or ``None`` when it cannot be answered — and ``None`` is
+    a real answer, not a failure: every unknown degrades to "assume usable", so
+    the probe can never falsely refuse an import. A definite ``False`` is the
+    only thing that turns the offer off, and ``_require_progress_sink`` in the
+    worker re-asks the same question of the real object before every compile.
+
+    Answered WITHOUT IMPORTING CADGEN, which is the whole difficulty: the server
+    process must never pull a ~300MB kernel install into itself just to decide
+    whether to show a button. So the module is located through the path finders
+    (``PathFinder`` searches the directories a spec names; it executes nothing)
+    and its source is read and parsed. ``inspect.signature`` would be simpler and
+    is what the worker uses — the worker has already imported cadgen by then.
+    """
+    import ast
+    import importlib.machinery
+    import importlib.util
+
+    try:
+        package, _, module_name = BUILD_MODULE.rpartition(".")
+        package_spec = importlib.util.find_spec(package)
+        locations = list(getattr(package_spec, "submodule_search_locations", None) or [])
+        if not locations:
+            return None
+        spec = importlib.machinery.PathFinder.find_spec(module_name, locations)
+        origin = getattr(spec, "origin", None)
+        if not origin or not str(origin).endswith(".py"):
+            # A zipped or bytecode-only install has no source to read. Unknown,
+            # so usable; the worker's runtime check is what covers it.
+            return None
+        with open(origin, "r", encoding="utf-8", errors="replace") as handle:
+            tree = ast.parse(handle.read(), filename=str(origin))
+    except Exception:  # noqa: BLE001 - any failure to look is an unknown answer
+        return None
+
+    definitions = (ast.FunctionDef, ast.AsyncFunctionDef)
+    for node in tree.body:
+        if isinstance(node, definitions) and node.name == BUILD_FUNCTION:
+            arguments = node.args
+            names = {
+                argument.arg
+                for argument in (*arguments.args, *arguments.kwonlyargs, *arguments.posonlyargs)
+            }
+            if arguments.kwarg is not None:
+                return None  # **kwargs swallows everything; the signature says nothing
+            return SINK_PARAMETER in names
+    # The function is not where we expect it. That is not "too old" — it is a
+    # cadgen this check does not understand, so it gets the benefit of the doubt.
+    return None
+
+
+def cadgen_too_old_message(found: str | None) -> str:
+    """The one actionable sentence for an installed-but-too-old cadgen.
+
+    Shaped like ``CADGEN_UNAVAILABLE`` in compile_client, because the client
+    treats the two the same way: the import is refused, viewing is untouched,
+    and the text says what to run.
+    """
+    have = f"has {found}" if found else "has an older one"
+    return (
+        f"importing a STEP file requires cadgen {MINIMUM_CADGEN_VERSION} or newer, and the "
+        f"Python running this Viewer {have}. Upgrade it (pip install --upgrade "
+        f"'cadgen>={MINIMUM_CADGEN_VERSION}'). Viewing existing models does not need cadgen."
+    )
+
+
+def _require_progress_sink(build) -> None:
+    """Refuse a cadgen too old to narrate its own build.
+
+    The server's probe normally answers this before a request is ever routed
+    here, by reading the same signature off disk. This asks the REAL object, one
+    step from the call, and it is the only check that survives everything the
+    static one cannot see: a zipped install with no source, a module moved to a
+    name this code does not know, a monkey-patched build function. Either way
+    the user gets the actionable sentence rather than ``build_step_artifact()
+    got an unexpected keyword argument 'sink'``.
+    """
+    import inspect
+
+    try:
+        parameters = inspect.signature(build).parameters
+    except (TypeError, ValueError):  # pragma: no cover - an unintrospectable callable
+        return
+    if any(p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()):
+        return  # **kwargs may well accept it; let the call be the judge
+    if SINK_PARAMETER not in parameters:
+        raise RuntimeError(cadgen_too_old_message(installed_cadgen_version()))
+
 
 class _FrameChannel:
     """Line-delimited JSON over the loopback socket back to the server."""
@@ -78,34 +232,54 @@ class _FrameChannel:
         self._sock.sendall(payload)
 
 
+def _document(document_path: str):
+    """The document this request names, or a ``ValueError``/``FileNotFoundError``.
+
+    See ``DOCUMENT_SUFFIXES``: this is deliberately the viewer's own check
+    rather than cadgen's private CLI door, because the server has already made
+    both of that door's guarantees before spawning us.
+    """
+    from pathlib import Path
+
+    path = Path(str(document_path)).expanduser()
+    if path.suffix.lower() not in DOCUMENT_SUFFIXES:
+        accepted = "/".join(DOCUMENT_SUFFIXES)
+        raise ValueError(f"the STEP import takes a {accepted} document: {document_path}")
+    resolved = path.resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"document does not exist: {document_path}")
+    return resolved
+
+
 def _compile(document_path: str, *, force: bool, request_id, channel: _FrameChannel) -> dict:
     """Call cadgen's compile path directly, narrating it as it goes.
 
     cadgen is imported HERE, on first use, so a spawned-but-unused worker stays
     small and a viewer whose interpreter has no cadgen still starts.
+
+    ``build_step_artifact`` rather than the public ``cadgen.step.compile`` verb,
+    because that verb hardcodes ``repo_root=Path.cwd()``: os.chdir is
+    process-global — unusable under a threading server — and cwd is the wrong
+    base anyway, since ``repo_root`` both names the build's display refs and
+    bounds the sibling-entry scan. It cannot take a base either: adding one
+    would add a ``--base`` flag to ``cadgen step compile`` (its parser is
+    MIRRORED from the signature), and a ``sink=`` parameter would disqualify the
+    verb from mirror status altogether, since a callable is outside the
+    derivable annotation set. ``build_step_artifact`` is the public,
+    non-underscored entry point the verb itself calls.
     """
     from pathlib import Path
 
-    from cadgen._internal.doors import document_target, require_current_document
     from cadgen.step_artifact_cli import build_step_artifact
+
+    _require_progress_sink(build_step_artifact)
 
     # One id for the whole run. The client's bar resets when runId changes,
     # because a ratio is only monotonic within a run — so this must be minted
     # once per request and never per event.
     run_id = uuid.uuid4().hex
 
-    # Both of ``cadgen.step.compile``'s gates, reproduced rather than called,
-    # because that function hardcodes ``repo_root=Path.cwd()`` and os.chdir is
-    # process-global — unusable under a threading server, and wrong for a worker
-    # serving many documents.
-    #
-    #   document_target refuses a .py by naming the run, and refuses any other
-    #   suffix by naming what the door takes.
-    #   require_current_document refuses a GENERATED document that has drifted
-    #   from its script. The viewer never routes generated documents here, but
-    #   the gate stays: it is the reason that routing rule exists.
-    document = document_target(document_path, suffixes=(".step", ".stp"))
-    require_current_document(document)
+    document = _document(document_path)
 
     def sink(event) -> None:
         channel.send({"id": request_id, "runId": run_id, "progress": event.progress_payload()})

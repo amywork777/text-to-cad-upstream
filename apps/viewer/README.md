@@ -60,9 +60,24 @@ python server/main.py --root <absolute dir> --host 127.0.0.1 --json
 
 `python` must be **3.11 or newer**: the server checks at startup and refuses
 below that, naming the version it needs, rather than starting and then failing
-on the first request. It must also have `cadgen` installed if you want STEP
-import; viewing needs nothing but the standard library. macOS still ships 3.9
-as `python3`, so on a Mac `VIEWER_PYTHON` usually has to name a newer one.
+on the first request. macOS still ships 3.9 as `python3`, so on a Mac
+`VIEWER_PYTHON` usually has to name a newer one.
+
+Viewing needs nothing but the standard library. STEP **import** needs cadgen,
+which `requirements.txt` declares:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+That is a floor (`cadgen>=…`) rather than a pin, and it is real: the import path
+calls cadgen's build entry point with a progress sink that older releases do not
+accept. What the running server checks is the installed **signature**, not the
+version — an editable checkout reports the last release's number whatever its
+source contains — so a cadgen that is absent OR too old degrades identically:
+`stepImportAvailable` is false, viewing is untouched, and the import is refused
+with the command that fixes it. See `MINIMUM_CADGEN_VERSION` and
+`cadgen_supports_progress_sink` in `server/compile_worker.py`.
 
 Dev needs no build first — it spawns that same `server/main.py` on an ephemeral
 port with `--api-only` and proxies `/__cad` and `/__tess_cache` to it, so there

@@ -138,10 +138,18 @@ def read_tess_cache_batch(body: bytes | None) -> bytes | None:
     length), never errors — one bad key in an assembly's hit set must not cost
     the whole round trip. ``None`` means the REQUEST was malformed, which the
     route answers 400.
+
+    ``errors="replace"``, matching ``Buffer.from(body).toString("utf8")``. That
+    is the same per-entry-miss rule applied to the bytes: a request carrying one
+    undecodable name still names its other components, and Node answered every
+    one of them. Strict decoding turned the whole batch into a 400, so a single
+    bad byte cost an assembly its entire tessellation round trip. The
+    substituted U+FFFD lands inside a JSON string, which parses, and the name it
+    forms then misses in the store like any other unknown key.
     """
     try:
-        parsed = json.loads(bytes(body or b"").decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
+        parsed = json.loads(bytes(body or b"").decode("utf-8", errors="replace"))
+    except ValueError:
         return None
     names = parsed.get("names") if isinstance(parsed, dict) else None
     if not isinstance(names, list) or len(names) > TESS_CACHE_BATCH_MAX_NAMES:

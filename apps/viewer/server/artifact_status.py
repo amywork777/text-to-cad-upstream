@@ -93,9 +93,18 @@ def _read_json(file_path):
     Arrays are excluded here (unlike the sidecar-existence test in the scanner),
     matching ``!Array.isArray`` in the JS. Every read error is ``None``: the
     records tier is evictable and a missing marker must degrade, never raise.
+
+    ``errors="replace"``, matching ``fs.readFileSync(path, "utf8")``, which
+    substitutes U+FFFD rather than throwing. Strictness here was not a matter of
+    taste: ``UnicodeDecodeError`` is a ``ValueError``, so one bad byte anywhere
+    in a marker was swallowed as "absent" and the CLIENT'S STATE CHANGED — a
+    ready model reported needs-build, offering to rebuild something already
+    built. Node replaced the byte, parsed the JSON around it and answered ready.
+    ``scanner.py`` already reads the same files with ``errors="replace"``, so
+    strictness also put this backend in disagreement with itself about one file.
     """
     try:
-        with open(file_path, "r", encoding="utf-8") as handle:
+        with open(file_path, "r", encoding="utf-8", errors="replace") as handle:
             parsed = json.load(handle)
     except (OSError, ValueError):
         return None

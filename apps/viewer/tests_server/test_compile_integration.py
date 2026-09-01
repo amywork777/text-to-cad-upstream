@@ -333,6 +333,112 @@ class SoftDependency(CompileTestCase):
         self.assertEqual(self.spawn_count(), 0)
 
 
+class OldCadgenIsUnavailable(CompileTestCase):
+    """An importable cadgen that is too old must degrade, never crash.
+
+    Availability used to be PRESENCE alone, which made this the worst of the
+    three possible states: the probe answered ``stepImportAvailable: true``, the
+    client showed an Import button, and then every single import failed with a
+    raw ``build_step_artifact() got an unexpected keyword argument 'sink'``. A
+    version the viewer cannot use is a cadgen it does not have.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        # The real probe, not the presence override — this is a test ABOUT the
+        # probe. Presence and capability are faked separately, because the two
+        # answers are what the probe combines, and because this suite also runs
+        # in the standalone repo, where cadgen is genuinely absent.
+        set_cadgen_probe_for_tests(None)
+        self._patch("_cadgen_present", lambda: True)
+        self._patch("installed_cadgen_version", lambda: "0.4.28")
+
+    def _patch(self, name, value):
+        original = getattr(compile_client_module, name)
+        setattr(compile_client_module, name, value)
+        self.addCleanup(setattr, compile_client_module, name, original)
+
+    def _supports(self, answer):
+        self._patch("cadgen_supports_progress_sink", lambda: answer)
+
+    def test_an_old_cadgen_reports_unavailable_rather_than_offering_the_import(self):
+        self._supports(False)
+        client = self.client()
+        self.assertFalse(client.available())
+        message = client.unavailable_message()
+        self.assertIn("or newer", message)
+        self.assertIn("pip install --upgrade", message)
+        self.assertIn("0.4.28", message, "the version it HAS is what makes the hint actionable")
+
+    def test_an_old_cadgen_refuses_the_compile_before_spawning_anything(self):
+        self._supports(False)
+        client = self.client()
+        result = client.compile(self.step("ok.step"))
+        self.assertFalse(result["ok"])
+        self.assertIn("requires cadgen", result["error"])
+        self.assertNotIn("unexpected keyword argument", result["error"])
+        self.assertEqual(self.spawn_count(), 0, "a cadgen the viewer cannot use costs no worker")
+
+    def test_the_status_card_names_the_upgrade_not_the_install(self):
+        self._supports(False)
+        registry = ProgressRegistry()
+        ops = CadgenOps(str(self.root), registry=registry, client=self.client(registry=registry))
+        self.step("ok.step")
+        status = ops.artifact_status("ok.step")
+        self.assertEqual(status["state"], "error")
+        self.assertIn("has not been imported yet", status["error"])
+        self.assertIn("pip install --upgrade", status["error"])
+
+    def test_only_a_definite_no_refuses_the_import(self):
+        # None is "could not tell" — a zipped install, a moved module. Refusing
+        # on an unknown would break working setups to guard against a broken
+        # one, so an unknown is usable and the worker re-asks the real object.
+        for answer in (True, None):
+            with self.subTest(answer=answer):
+                self._supports(answer)
+                self.assertTrue(self.client().available())
+
+    def test_the_repos_own_cadgen_answers_the_capability_probe_yes(self):
+        """The check must not refuse the install every contributor and CI has.
+
+        An editable install stamps its metadata version at install time and this
+        repo does not bump VERSION during development, so a version floor would
+        report the working copy as too old — the exact install that definitely
+        HAS the feature. This is the guard against reintroducing that.
+        """
+        import importlib.util
+
+        from server.compile_worker import cadgen_supports_progress_sink
+
+        if importlib.util.find_spec("cadgen") is None:
+            self.skipTest("no cadgen on this interpreter (the standalone repo's CI)")
+        self.assertIs(cadgen_supports_progress_sink(), True)
+
+    def test_the_worker_refuses_an_old_build_entry_point_instead_of_raising_TypeError(self):
+        """The backstop, asked of the REAL object one step from the call.
+
+        The static probe reads a file; this asks the function. It is what covers
+        everything the file cannot show — a zipped install, a module moved to a
+        name this code does not know — and the user gets the actionable sentence
+        either way, never cadgen's TypeError about an argument they have never
+        heard of.
+        """
+        from server import compile_worker
+
+        def old_build_step_artifact(*, repo_root, step, source_path=None, force=False):
+            raise AssertionError("must never be called")
+
+        with self.assertRaises(RuntimeError) as caught:
+            compile_worker._require_progress_sink(old_build_step_artifact)
+        self.assertIn("or newer", str(caught.exception))
+        self.assertIn("pip install --upgrade", str(caught.exception))
+
+        def current_build_step_artifact(*, repo_root, step, sink=None):
+            raise AssertionError("must never be called")
+
+        compile_worker._require_progress_sink(current_build_step_artifact)  # no raise
+
+
 class OpsWiring(CompileTestCase):
     def ops(self, **kwargs) -> CadgenOps:
         registry = ProgressRegistry()

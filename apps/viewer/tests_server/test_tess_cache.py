@@ -161,6 +161,25 @@ class BatchRequests(TessCacheTestCase):
         self.assertIsNone(read_tess_cache_batch(json.dumps({"names": ["a.tess"] * 4097}).encode()))
         self.assertIsNotNone(read_tess_cache_batch(json.dumps({"names": []}).encode()))
 
+    def test_one_undecodable_byte_is_a_per_entry_miss_not_a_400(self):
+        """``Buffer.from(body).toString("utf8")`` substitutes; it does not throw.
+
+        The per-entry-miss rule, applied to the BYTES. Strict decoding turned a
+        single bad byte anywhere in the request into a malformed-request 400, so
+        one component's name cost an assembly its entire tessellation round trip
+        and dropped it to one request per component for the life of the page.
+        Node answered every other name in the batch.
+        """
+        import struct
+
+        write_tess_cache_entry(self.route(f"{GOOD_KEY}.tess"), b"AAA")
+        body = json.dumps({"names": [f"{GOOD_KEY}.tess", "NAME_HERE.tess"]}).encode()
+        container = read_tess_cache_batch(body.replace(b"NAME_HERE", b"\xe9"))
+        self.assertIsNotNone(container, "a bad byte must not fail the whole batch")
+        # The header's third word is the entry count: the real hit, plus the
+        # substituted name as an ordinary miss.
+        self.assertEqual(struct.unpack_from("<I", container, 8)[0], 2)
+
 
 class BatchFramingMatchesTheAuthoritativeCodec(TessCacheTestCase):
     """The Python encoder's bytes must decode with the JS decoder that owns the format.

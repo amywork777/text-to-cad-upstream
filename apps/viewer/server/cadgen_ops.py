@@ -24,7 +24,7 @@ from .artifact_status import (
 )
 from .backend import require_contained
 from .build_progress import ProgressRegistry, build_progress_snapshot
-from .compile_client import CompileClient, cadgen_unavailable_message
+from .compile_client import CompileClient
 from .store_paths import render_package_dir
 
 __all__ = ["CLI_BUILD_HINT", "CadgenOps", "create_cadgen_ops"]
@@ -123,9 +123,15 @@ class CadgenOps:
                     "reason": status.get("reason"),
                     "stepImport": True,
                 }
+            # The reason, not a generic sentence: an installed-but-too-old
+            # cadgen has a DIFFERENT fix from an absent one, and this card is
+            # the only place the user is told either.
             return {
                 "state": ARTIFACT_STATE.ERROR,
-                "error": f"This STEP file has not been imported yet, and {cadgen_unavailable_message()}",
+                "error": (
+                    "This STEP file has not been imported yet, and "
+                    f"{self.client.unavailable_message()}"
+                ),
             }
 
         # No stale-render limbo exists under content keying: an edited file

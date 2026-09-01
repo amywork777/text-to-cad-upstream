@@ -52,13 +52,20 @@ import threading
 import time
 import uuid
 
+# The cadgen API contract lives in compile_worker, the one module that calls
+# cadgen. Importing it here costs nothing: every cadgen import in it is inside a
+# function body, so this pulls in no kernel and no CAD stack.
+from .compile_worker import (
+    cadgen_supports_progress_sink,
+    cadgen_too_old_message,
+    installed_cadgen_version,
+)
 from .store_paths import render_package_dir
 
 __all__ = [
     "ACQUIRE_TIMEOUT_SECONDS",
     "CADGEN_UNAVAILABLE",
     "CompileClient",
-    "cadgen_unavailable_message",
     "set_cadgen_probe_for_tests",
 ]
 
@@ -85,8 +92,18 @@ CADGEN_UNAVAILABLE = (
 _probe_override = None
 
 
-def cadgen_unavailable_message() -> str:
-    return CADGEN_UNAVAILABLE
+def _cadgen_present() -> bool:
+    """Is the cadgen distribution on this interpreter's path?
+
+    A top-level name only. It must NOT be widened to ``find_spec("cadgen.step")``
+    — see ``CompileClient.available``.
+    """
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec("cadgen") is not None
+    except Exception:  # noqa: BLE001 - a broken install is an unavailable one
+        return False
 
 
 def set_cadgen_probe_for_tests(probe) -> None:
@@ -174,47 +191,76 @@ class CompileClient:
         self._idle: list[_Worker] = []
         self._slots = threading.Semaphore(self._max_workers)
         self._crashes: dict[str, int] = {}
-        self._available_cache: bool | None = None
+        # Two fields, not one: the probe's ANSWER is itself ``None`` when cadgen
+        # is usable, so "usable" and "not asked yet" would be the same value.
+        self._probed = False
+        self._unavailable_reason: str | None = None
 
     # --- availability -----------------------------------------------------
 
     def available(self) -> bool:
-        """Is cadgen installed for the interpreter running this server?
+        """Can the interpreter running this server import a USABLE cadgen?
 
-        A PRESENCE probe, replacing a 15-second ``cadgen --help`` subprocess.
-        It answers whether the distribution is on the path; it does not prove
-        that its body executes, and it certainly does not prove the CAD kernel
-        imports. Nothing cheap can prove those — only a real compile can, and
-        when one fails the worker says so as a structured error, which is the
-        honest failure and the same one the CLI would give.
+        Two questions, both answered without importing cadgen and without
+        spawning anything, replacing a 15-second ``cadgen --help`` subprocess:
 
-        The probe must NOT be widened to ``find_spec("cadgen.step")``, however
-        tempting: ``find_spec`` on a DOTTED name imports the parent package to
-        search it, so asking about a submodule would execute ``cadgen/__init__``
-        inside the server process. Viewing a directory of models would then pull
-        in cadgen on the first ``/__cad/server`` request — exactly the coupling
-        this whole module keeps at arm's length, and precisely the kind of
-        accidental import ``tests_server/test_module_boundaries.py`` exists to
-        catch. A top-level name is resolved by the path finders alone and
-        imports nothing.
+        PRESENCE. Is the distribution on the path? The probe must NOT be widened
+        to ``find_spec("cadgen.step")``, however tempting: ``find_spec`` on a
+        DOTTED name imports the parent package to search it, so asking about a
+        submodule would execute ``cadgen/__init__`` inside the server process.
+        Viewing a directory of models would then pull in cadgen on the first
+        ``/__cad/server`` request — exactly the coupling this whole module keeps
+        at arm's length, and precisely the kind of accidental import
+        ``tests_server/test_module_boundaries.py`` exists to catch. A top-level
+        name is resolved by the path finders alone and imports nothing.
+
+        CAPABILITY. Does its ``build_step_artifact`` take the progress ``sink``
+        the worker installs? Availability used to be presence ALONE, which made
+        an importable-but-old cadgen the worst of the three states:
+        ``stepImportAvailable: true``, an Import button, and then a raw
+        ``build_step_artifact() got an unexpected keyword argument 'sink'`` on
+        every single import. Answering it here degrades an old cadgen exactly
+        the way a missing one already degrades — viewing untouched, the import
+        refused with a sentence naming the upgrade. It is the SIGNATURE that is
+        asked, read off disk, never a version number: see
+        ``compile_worker.cadgen_supports_progress_sink`` for why a version floor
+        is the wrong instrument. An unknown answer counts as usable, so this can
+        refuse an import only when it has actually seen the old signature.
+
+        Neither question proves cadgen's body executes, and neither proves the
+        CAD kernel imports. Nothing cheap can: only a real compile can, and when
+        one fails the worker says so as a structured error, which is the honest
+        failure and the same one the CLI would give.
         """
+        return self.unavailable_reason() is None
+
+    def unavailable_reason(self) -> str | None:
+        """``None`` when cadgen is usable, else the sentence saying why not."""
         if _probe_override is not None:
-            return bool(_probe_override())
-        if self._available_cache is None:
-            self._available_cache = self._probe_cadgen()
-        return self._available_cache
+            # The override answers PRESENCE, which is the only thing a test that
+            # says "no cadgen here" is trying to say. A test that wants the
+            # too-old answer patches ``installed_cadgen_version`` instead.
+            return None if _probe_override() else CADGEN_UNAVAILABLE
+        if not self._probed:
+            self._unavailable_reason = self._probe_cadgen()
+            self._probed = True
+        return self._unavailable_reason
+
+    def unavailable_message(self) -> str:
+        """The reason, or the missing-cadgen sentence if it has become usable."""
+        return self.unavailable_reason() or CADGEN_UNAVAILABLE
 
     @staticmethod
-    def _probe_cadgen() -> bool:
-        import importlib.util
-
-        try:
-            return importlib.util.find_spec("cadgen") is not None
-        except Exception:  # noqa: BLE001 - a broken install is an unavailable one
-            return False
+    def _probe_cadgen() -> str | None:
+        if not _cadgen_present():
+            return CADGEN_UNAVAILABLE
+        if cadgen_supports_progress_sink() is False:
+            return cadgen_too_old_message(installed_cadgen_version())
+        return None
 
     def invalidate(self) -> None:
-        self._available_cache = None
+        self._probed = False
+        self._unavailable_reason = None
 
     # --- worker lifecycle -------------------------------------------------
 
@@ -393,10 +439,12 @@ class CompileClient:
             return self._crashes.get(package_dir, 0)
 
     def _run(self, candidate: str, package_dir: str, *, force: bool) -> dict:
-        if not self.available():
+        unavailable = self.unavailable_reason()
+        if unavailable is not None:
             # Answer before spawning: a worker whose first import fails would
-            # report the same thing far more expensively.
-            return {"ok": False, "error": cadgen_unavailable_message()}
+            # report the same thing far more expensively — and one whose cadgen
+            # is merely too old would not fail until it had loaded the kernel.
+            return {"ok": False, "error": unavailable}
         if self._crash_count(package_dir) >= _CRASH_BREAKER_LIMIT:
             # A document that has killed two workers gets no more. Answering
             # directly keeps a poison file from consuming the pool forever.

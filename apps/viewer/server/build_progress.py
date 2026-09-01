@@ -97,9 +97,18 @@ def _read_fresh_record(record_path: str, now_ms: float):
 
     Returns ``(updated_at, record)`` so the caller can pick the fresher of two
     tiers without re-parsing.
+
+    ``errors="replace"``, matching the ``fs.readFileSync(path, "utf8")`` this
+    replaced. The record is written by a peer build WHILE IT RUNS, so a read can
+    legitimately land on a partial write; strict decoding turned a torn
+    multi-byte character into ``UnicodeDecodeError``, which is a ``ValueError``
+    and was swallowed as "no build in flight" — the client stopped showing the
+    peer's progress and reported the model ready mid-build. Replacing the byte
+    reproduces Node: the JSON around it still parses, or it does not and the
+    record is skipped for a reason that is actually about the JSON.
     """
     try:
-        with open(record_path, "r", encoding="utf-8") as handle:
+        with open(record_path, "r", encoding="utf-8", errors="replace") as handle:
             record = json.load(handle)
     except (OSError, ValueError):
         return None

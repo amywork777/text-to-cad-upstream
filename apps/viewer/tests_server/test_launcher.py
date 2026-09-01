@@ -420,7 +420,18 @@ class ListAndStop(LauncherFixture):
         code, stdout, _ = self.run_to_exit(["stop", "--port", str(port)])
         self.assertEqual(code, 0)
         self.assertIn("Stopped CAD Viewer", stdout)
-        self.assertIsNotNone(child.poll(), "the server process must have exited")
+        # A BOUNDED wait, not an instantaneous poll. `stop` returns as soon as
+        # the port stops ANSWERING, and main.py deliberately allows itself up to
+        # another 0.5s to leave after that (the os._exit fallback, so an
+        # in-flight stream cannot outlive the stop budget). Reading "the socket
+        # closed" as "the process is reaped" made this assertion a coin flip
+        # that any millisecond-scale change elsewhere in the server could tip.
+        # What the contract promises is that it exits, promptly — so wait for
+        # that, well inside the 3s `stop` itself budgets.
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:  # pragma: no cover - the failure this guards
+            self.fail("the server process must have exited after stop")
 
         code, stdout, _ = self.run_to_exit(["list"])
         self.assertIn("No CAD Viewer is running.", stdout)
