@@ -147,14 +147,23 @@ if [ -z "$PORT" ]; then
   exit 1
 fi
 
+# The launcher writes the {url,port,action} line only after the socket is bound and
+# listening with the app attached (pinned by tests_server/test_launcher.py
+# AnnounceIsConnectable: first request, no retry, 1s budget), so the FIRST request after
+# reading it answers 200. The two extra attempts are slack for a starved CI runner, not
+# cover for the launcher — a miss is printed so it cannot pass silently, and a launcher
+# that needed the retry fails the unit pin first.
 status=""
-for _ in $(seq 1 30); do
+attempt=0
+for _ in $(seq 1 3); do
+  attempt=$((attempt + 1))
   status="$(curl -s -o /dev/null -m 3 -w '%{http_code}' "http://$HOST:$PORT/" || true)"
   [ "$status" = "200" ] && break
+  echo "    warning: request $attempt after the announce returned ${status:-none}; retrying" >&2
   sleep 1
 done
 if [ "$status" != "200" ]; then
-  echo "FAIL: no 200 from http://$HOST:$PORT/ (last status: ${status:-none})" >&2
+  echo "FAIL: no 200 from http://$HOST:$PORT/ within $attempt requests (last status: ${status:-none})" >&2
   sed 's/^/    /' "$log" >&2
   exit 1
 fi

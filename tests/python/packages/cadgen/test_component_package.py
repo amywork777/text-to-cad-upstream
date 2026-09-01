@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from tests.python.support.cad_test_roots import IsolatedCadRoots
 from tests.python.support.paths import add_repo_path
 
 add_repo_path("packages/cadgen/src")
@@ -54,17 +55,10 @@ class ComponentPackageTests(unittest.TestCase):
     def setUp(self) -> None:
         # Isolate the shared component store: these tests assert exact
         # built/reused counts, which a populated user-level store would
-        # legitimately turn into store fetches.
-        import os
-
-        self._store_tmp = tempfile.TemporaryDirectory()
-        os.environ["CADGEN_CACHE_DIR"] = self._store_tmp.name
-
-    def tearDown(self) -> None:
-        import os
-
-        os.environ.pop("CADGEN_CACHE_DIR", None)
-        self._store_tmp.cleanup()
+        # legitimately turn into store fetches. The helper also RESTORES the
+        # previous CADGEN_CACHE_DIR; the set/pop this replaced dropped
+        # test-python.sh's per-run store for every test that ran after this class.
+        self._roots = IsolatedCadRoots(self, prefix="cad-component-package-")
 
     def test_build_from_compound_dedups_and_self_describes(self) -> None:
         compound = _demo_compound()

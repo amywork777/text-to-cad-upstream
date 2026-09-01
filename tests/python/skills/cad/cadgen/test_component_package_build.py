@@ -7,6 +7,16 @@ from unittest import mock
 import build123d
 
 from cadgen._internal import component_package as cp
+from tests.python.support.cad_test_roots import IsolatedCadRoots
+
+
+class _IsolatedStoreTests(unittest.TestCase):
+    """Base for tests that build a package: components hardlink into the shared
+    content-addressed store, so a populated ~/.cache/cadgen would turn the exact
+    ``components_built`` counts asserted below into store fetches."""
+
+    def setUp(self) -> None:
+        self._roots = IsolatedCadRoots(self, prefix="cad-package-build-")
 
 
 def _build_package_cp(compound, **kwargs):
@@ -76,7 +86,7 @@ class ComponentWorkerCountTests(unittest.TestCase):
             self.assertEqual(3, cp._component_build_worker_count(50))
 
 
-class OrphanComponentPruningTests(unittest.TestCase):
+class OrphanComponentPruningTests(_IsolatedStoreTests):
     def test_unreferenced_component_glbs_are_pruned(self) -> None:
         part = build123d.Box(10.0, 8.0, 4.0)
         part.label = "box"
@@ -101,7 +111,7 @@ class OrphanComponentPruningTests(unittest.TestCase):
                 self.assertTrue((package_dir / entry["surf"]).is_file())
 
 
-class PayloadUnreadableFallbackTests(unittest.TestCase):
+class PayloadUnreadableFallbackTests(_IsolatedStoreTests):
     def test_unreadable_payload_falls_back_to_in_process_original(self) -> None:
         # Vendor-STEP solids can serialize BREP entities BinTools cannot read
         # back; the build must fall back to the original in-process shape.

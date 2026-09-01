@@ -90,8 +90,11 @@ class LauncherFixture(unittest.TestCase):
         stdout, stderr = child.communicate(timeout=timeout)
         return child.returncode, stdout, stderr
 
-    def wait_for_url_line(self, child: subprocess.Popen, timeout: float = 30.0) -> str:
-        """Read stdout until the URL line appears.
+    def wait_for_url_line(self, child: subprocess.Popen, timeout: float = 30.0, *, marker: str = "{") -> str:
+        """Read stdout until the announce line appears and return everything so far.
+
+        ``marker`` is the line prefix that ends the read: the ``{url,port,action}``
+        JSON line by default, or ``CAD Viewer URL: `` for a launch without ``--json``.
 
         Reading LINE BY LINE off a live process is the point: the launcher must
         flush, because Python block-buffers a non-TTY stdout and this process
@@ -108,9 +111,9 @@ class LauncherFixture(unittest.TestCase):
                     break
                 continue
             lines.append(line)
-            if line.startswith("{"):
+            if line.startswith(marker):
                 return "".join(lines)
-        self.fail(f"no JSON line before timeout; got: {''.join(lines)!r} stderr={child.stderr.read()!r}")
+        self.fail(f"no {marker!r} line before timeout; got: {''.join(lines)!r} stderr={child.stderr.read()!r}")
         return ""
 
     @staticmethod
@@ -158,6 +161,56 @@ class ExplicitPort(LauncherFixture):
         self.assertIn('"action":"started"', line)
         self.assertIn('"port":3202', line)
         self.assertNotIn(", ", line)
+
+
+class AnnounceIsConnectable(LauncherFixture):
+    """The printed URL is connectable the instant it appears.
+
+    The cad-viewer skill tells an agent to read the URL the command prints and
+    fetch it; the launch smoke test does the same. Both are only sound if the
+    announce follows the bind: the socket must be bound and LISTENING (and the
+    real app attached) before either the human ``CAD Viewer URL:`` line or the
+    ``--json`` line is written, so the first request after reading the line
+    answers 200 with no retry, no sleep, and no grace period. The 1s socket
+    timeout is the pin: an announce printed before the bind refuses the
+    connection outright, and one printed before the app is attached (or before
+    ``serve_forever`` is reachable) leaves the request hanging past it.
+    """
+
+    ANNOUNCE_TO_200_BUDGET_SECONDS = 1.0
+
+    def _first_request_after(self, child: subprocess.Popen, marker: str, port: int) -> float:
+        stdout = self.wait_for_url_line(child, marker=marker)
+        announced = next(line for line in stdout.split("\n") if line.startswith(marker))
+        if marker == "{":
+            url = json.loads(announced)["url"]
+        else:
+            url = announced[len(marker):].strip()
+        self.assertEqual(url, f"http://127.0.0.1:{port}/")
+
+        started = time.monotonic()
+        # One attempt. The timeout bounds connect AND the response read.
+        with urllib.request.urlopen(f"{url}__cad/server", timeout=self.ANNOUNCE_TO_200_BUDGET_SECONDS) as response:
+            self.assertEqual(response.status, 200)
+            info = json.loads(response.read())
+        elapsed = time.monotonic() - started
+        self.assertEqual(info["port"], port)
+        self.assertLess(
+            elapsed,
+            self.ANNOUNCE_TO_200_BUDGET_SECONDS,
+            f"the announced URL took {elapsed:.3f}s to answer its first request",
+        )
+        return elapsed
+
+    def test_the_human_url_line_answers_the_first_request(self) -> None:
+        port = 3203
+        child = self.launch(["--dist", self.make_dist(), "--port", str(port)], cwd=self.make_root())
+        self._first_request_after(child, "CAD Viewer URL: ", port)
+
+    def test_the_json_line_answers_the_first_request(self) -> None:
+        port = 3204
+        child = self.launch(["--dist", self.make_dist(), "--port", str(port), "--json"], cwd=self.make_root())
+        self._first_request_after(child, "{", port)
 
 
 class RollAndReuse(LauncherFixture):

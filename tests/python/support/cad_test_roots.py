@@ -31,5 +31,25 @@ class IsolatedCadRoots:
         os.chdir(self.cad_root)
         testcase.addCleanup(lambda: os.chdir(previous_cwd))
 
+        # The package store is content-addressed and shared (~/.cache/cadgen unless
+        # CADGEN_CACHE_DIR says otherwise): fixtures that produce identical document bytes
+        # share a package key, so a populated developer store satisfies builds a test expects
+        # to RUN, turns "built" into "reused", and breaks "must not exist yet" preconditions.
+        # test-python.sh points the whole run at a fresh store; a direct `python -m unittest`
+        # does not. Give this test a store of its own either way, and RESTORE the previous
+        # value on cleanup (never pop it) so the runner's isolation outlives the test.
+        self.cache_dir = self.root / "cadgen-cache"
+        self.cache_dir.mkdir()
+        previous_cache_dir = os.environ.get("CADGEN_CACHE_DIR")
+        os.environ["CADGEN_CACHE_DIR"] = str(self.cache_dir)
+
+        def restore_cache_dir() -> None:
+            if previous_cache_dir is None:
+                os.environ.pop("CADGEN_CACHE_DIR", None)
+            else:
+                os.environ["CADGEN_CACHE_DIR"] = previous_cache_dir
+
+        testcase.addCleanup(restore_cache_dir)
+
     def temporary_cad_directory(self, *, prefix: str) -> tempfile.TemporaryDirectory[str]:
         return tempfile.TemporaryDirectory(prefix=prefix, dir=self.cad_root)

@@ -91,7 +91,10 @@ The launcher is unconditional and prints the URL it serves: a live instance
 already serving that realpath with the same code on disk is REUSED
 (`action:"reused"`); otherwise it binds the first free port from 3245 upward.
 `--new` forces a fresh instance of the same code; an explicit `--port` is
-strict. `main.py list` shows every running instance; `main.py stop --port <n>`
+strict. The URL line (and the `--json` line) is written only after the socket
+is bound and listening with the app attached, so the first request after
+reading it answers — no poll, no retry, no grace period; the launcher tests pin
+this. `main.py list` shows every running instance; `main.py stop --port <n>`
 ends one. Do not stop instances you did not start. Dev lives on Vite's
 port (5173, strict) and never enters the instance registry.
 
