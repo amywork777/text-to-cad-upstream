@@ -79,7 +79,7 @@ Avoid untraceable placement constants inside geometry calls. Put all meaningful 
 Use `AssemblyHelper` for generated assembly scripts. It keeps the LLM-facing code intent-focused while still using native build123d labels, `Joint` objects, and `Compound` assemblies.
 
 ```python
-from build123d import *
+from cadgen import build123d as bd, step
 from cadgen.assembly import AssemblyHelper
 
 base_height = 30.0
@@ -93,18 +93,18 @@ lid = asm.add(make_lid(), "lid")
 base_seat = asm.rigid_frame(
     base,
     "lid_seat",
-    Location((0, 0, base_height / 2)),
+    bd.Location((0, 0, base_height / 2)),
 )
 lid_underside = asm.rigid_frame(
     lid,
     "underside",
-    Location((0, 0, -lid_thickness / 2)),
+    bd.Location((0, 0, -lid_thickness / 2)),
 )
 
 asm.face_to_face(base_seat, lid_underside, offset=gasket_gap)
 
-@step
 
+@step
 def model():
     return asm.build()
 ```
