@@ -314,20 +314,21 @@ publishing a skill whose files are simply missing at runtime.
 Because the repository root is the plugin package, every source-only path on
 `main` is copied into every install. The publish job therefore trims the tree
 before committing it, after the bundle and all checks have run against the
-untrimmed tree. `models/`, `viewer/`, `tests/`, `docs/`, `packages/`, and
+untrimmed tree. `models/`, `apps/`, `tests/`, `packages/`, and
 `requirements-dev.txt` are removed, leaving `main` as close to just the plugin
-package as it can be.
+package as it can be. Root `docs/` (the hand-migration guides) is NOT trimmed:
+it ships, because the cad skill's migrations reference links to it by hosted URL.
 
 Nothing is lost, because each of those has a consumer that reads **source**
 rather than the published tree:
 
-- `viewer/` — the app source. Its built bundle + Python server ship inside the
-  cad-viewer skill (`skills/cad-viewer/scripts/viewer`, materialized by the
+- `apps/viewer/` — the app source. Its built client + Python server ship inside
+  the cad-viewer skill (`skills/cad-viewer/scripts/viewer`, materialized by the
   bundle before publish), and the `Sync CAD Viewer Repo` workflow mirrors the
   source into the standalone `earthtojake/cad-viewer` repo from the release
   source commit.
-- `docs/` and `packages/` — `Deploy Docs` builds and deploys from the release
-  source commit. `packages/` has no other published consumer: the cadgen wheel is
+- `apps/docs/` and `packages/` — `Deploy Docs` builds and deploys the site from
+  the release source commit. `packages/` has no other published consumer: the cadgen wheel is
   built and uploaded to PyPI BEFORE this trim, and published skills resolve cadgen
   from there at the pinned release version. The trim step fails the publish if a
   skill is found reaching into repo-root `packages/`.
@@ -458,11 +459,17 @@ to `develop`:
 gh workflow run deploy-docs.yml -f ref=develop
 ```
 
-It cannot deploy `main`. The docs app builds against repo-root `packages/`
-(`docs/tsconfig.json` maps `cadgen-js/*` to `../packages/cadgen-js/src/*`), and the
-publish tree drops both `docs/` and `packages/`. The workflow checks for them up
-front and fails with that explanation rather than an opaque module-resolution
-error inside `next build`.
+It cannot deploy `main`. The docs app lives at `apps/docs/` and builds against
+repo-root `packages/` (`apps/docs/tsconfig.json` maps `cadgen-js/*` to
+`../../packages/cadgen-js/src/*`), and the publish tree drops both `apps/` and
+`packages/`. The workflow checks for them up front and fails with that
+explanation rather than an opaque module-resolution error inside `next build`.
+
+The deploy runs the Vercel CLI from the repo root and takes the project root
+from the **Vercel project's Root Directory setting**, which lives in Vercel, not
+in this repo; it must read `apps/docs` (see `apps/docs/README.md`). No docs
+deploy has run since the site moved there, so the first post-move deploy is the
+one that proves the setting.
 
 To redeploy the site as it stood at a past release, use that release's source
 commit. Every publish commit records it as its second parent:
