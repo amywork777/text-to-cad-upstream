@@ -252,6 +252,27 @@ def _nurbs_surface_payload(surface, bin_out: _Bin) -> dict[str, Any]:
     return payload
 
 
+def _clamped_uv_bounds(face, surface) -> tuple[float, float, float, float]:
+    """Face UV bounds clamped into the surface's own parametric range.
+
+    ``BRepTools.UVBounds_s`` can return a bound a floating-point hair OUTSIDE
+    the surface's own domain (-0.0 against 0.0, or a few 1e-3 past a trimmed
+    span on vendor STEPs), and ``Geom_RectangularTrimmedSurface`` rejects that
+    outright instead of clamping. Clamp each bound in the non-periodic
+    directions; periodic directions wrap, so their windows may legitimately
+    extend past ``Bounds()`` and are left alone. Infinite domains (planes,
+    full cylinders) make the clamp a no-op."""
+    u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+    su0, su1, sv0, sv1 = surface.Bounds()
+    if not surface.IsUPeriodic():
+        u0 = min(max(u0, su0), su1)
+        u1 = min(max(u1, su0), su1)
+    if not surface.IsVPeriodic():
+        v0 = min(max(v0, sv0), sv1)
+        v1 = min(max(v1, sv0), sv1)
+    return u0, u1, v0, v1
+
+
 def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
     adaptor = BRepAdaptor_Surface(face)
     kind = adaptor.GetType()
@@ -351,7 +372,7 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
             ):
                 return _nurbs_surface_payload(nurbs, bin_out)
         try:
-            u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+            u0, u1, v0, v1 = _clamped_uv_bounds(face, surface)
             bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
             nurbs = GeomConvert.SurfaceToBSplineSurface_s(bounded)
             if nurbs.IsUPeriodic():
@@ -367,7 +388,7 @@ def _surface_payload(face, bin_out: _Bin) -> dict[str, Any]:
         from OCP.GeomAbs import GeomAbs_C1
         from OCP.GeomConvert import GeomConvert_ApproxSurface
 
-        u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+        u0, u1, v0, v1 = _clamped_uv_bounds(face, surface)
         bounded = Geom_RectangularTrimmedSurface(surface, u0, u1, v0, v1)
         approx = GeomConvert_ApproxSurface(
             bounded, 1e-4, GeomAbs_C1, GeomAbs_C1, 14, 14, 100, 0)
@@ -737,7 +758,15 @@ def extract_surface_component(
     faces: list[dict[str, Any]] = []
     for ordinal in range(1, face_map.Extent() + 1):
         face = TopoDS.Face_s(face_map.FindKey(ordinal))
-        u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
+        # Clamp the recorded window into the surface's own domain: UVBounds_s
+        # noise past a non-periodic domain edge (vendor STEPs: -0.0 vs 0.0,
+        # or a few 1e-6 past a trimmed span) would otherwise fail the
+        # coverage guard on a surface that fully covers the real face.
+        face_surface = BRep_Tool.Surface_s(face)
+        if face_surface is not None:
+            u0, u1, v0, v1 = _clamped_uv_bounds(face, face_surface)
+        else:
+            u0, u1, v0, v1 = BRepTools.UVBounds_s(face)
         adaptor = BRepAdaptor_Surface(face)
         entry: dict[str, Any] = {
             "ord": ordinal,

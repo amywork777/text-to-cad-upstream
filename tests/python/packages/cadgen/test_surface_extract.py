@@ -376,5 +376,82 @@ class SurfaceExtractTest(unittest.TestCase):
             read_surf(b"GLBX" + bytes(self.data[4:]))
 
 
+class ClampedUvBoundsTest(unittest.TestCase):
+    """UVBounds_s can return a bound a floating-point hair OUTSIDE the
+    surface's own domain (vendor STEPs: -0.0 vs 0.0, a few 1e-6 past a
+    trimmed span), and Geom_RectangularTrimmedSurface rejects that outright.
+    _clamped_uv_bounds must pull each non-periodic bound into the domain so
+    the trim construction — and the coverage guard downstream — accept faces
+    the surface fully covers (Waveshare ESP32 driver board regression)."""
+
+    def _bspline_patch(self):
+        # A non-periodic B-spline with the exact domain [0,1]x[0,0.015] from
+        # the reported failure (solid #194 face #101 had V 0.0150 vs 0.0180,
+        # solid #215 face #112 had U -0.0 vs 0.0).
+        from OCP.Geom import Geom_Plane, Geom_RectangularTrimmedSurface
+        from OCP.GeomConvert import GeomConvert
+        from OCP.gp import gp_Pln
+
+        trimmed = Geom_RectangularTrimmedSurface(
+            Geom_Plane(gp_Pln()), 0.0, 1.0, 0.0, 0.015)
+        return GeomConvert.SurfaceToBSplineSurface_s(trimmed)
+
+    def test_hairline_overshoot_is_clamped_and_trims(self) -> None:
+        from unittest import mock
+
+        from OCP.Geom import Geom_RectangularTrimmedSurface
+
+        from cadgen._internal import surface_extract
+
+        surface = self._bspline_patch()
+        raw = (-1e-17, 1.0, 0.0, 0.015 + 5e-6)
+
+        # The raw bounds are exactly what OCCT rejects.
+        with self.assertRaises(Exception):
+            Geom_RectangularTrimmedSurface(surface, *raw)
+
+        fake_tools = mock.Mock()
+        fake_tools.UVBounds_s.return_value = raw
+        with mock.patch.object(surface_extract, "BRepTools", fake_tools):
+            clamped = surface_extract._clamped_uv_bounds(object(), surface)
+
+        self.assertEqual((0.0, 1.0, 0.0, 0.015), clamped)
+        # And the clamped window constructs cleanly.
+        Geom_RectangularTrimmedSurface(surface, *clamped)
+
+    def test_interior_bounds_pass_through_unchanged(self) -> None:
+        from unittest import mock
+
+        from cadgen._internal import surface_extract
+
+        surface = self._bspline_patch()
+        raw = (0.25, 0.75, 0.001, 0.014)
+        fake_tools = mock.Mock()
+        fake_tools.UVBounds_s.return_value = raw
+        with mock.patch.object(surface_extract, "BRepTools", fake_tools):
+            clamped = surface_extract._clamped_uv_bounds(object(), surface)
+        self.assertEqual(raw, clamped)
+
+    def test_periodic_direction_is_left_alone(self) -> None:
+        # A periodic direction wraps: a window past Bounds() is legitimate
+        # there (booleans re-anchor pcurves whole periods away) and must not
+        # be clamped into one span.
+        from unittest import mock
+
+        from OCP.Geom import Geom_CylindricalSurface
+        from OCP.gp import gp_Ax3
+
+        from cadgen._internal import surface_extract
+
+        surface = Geom_CylindricalSurface(gp_Ax3(), 5.0)
+        self.assertTrue(surface.IsUPeriodic())
+        raw = (6.0, 7.0, -3.0, 3.0)  # u window a whole period out
+        fake_tools = mock.Mock()
+        fake_tools.UVBounds_s.return_value = raw
+        with mock.patch.object(surface_extract, "BRepTools", fake_tools):
+            clamped = surface_extract._clamped_uv_bounds(object(), surface)
+        self.assertEqual(raw, clamped)
+
+
 if __name__ == "__main__":
     unittest.main()
