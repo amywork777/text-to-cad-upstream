@@ -81,7 +81,6 @@ from cadgen.snapshot_core import (
     PRESENTATION_RENDER_WIDTH,
     RENDER_BROWSER_STARTUP_TIMEOUT_MS,
     RouteFileError,
-    SELECTION_SHAPED_JOB_KEYS,
     SETTINGS_KEY_HOMES,
     SIMPLE_RENDER_HEIGHT,
     SIMPLE_RENDER_WIDTH,
@@ -165,8 +164,8 @@ class SnapshotOptions:
     width: int | None = None
     height: int | None = None
     size_profile: str = ""
-    params: object = None
-    params_specified: bool = False
+    kinematics: object = None
+    kinematics_specified: bool = False
     joint_values: object = None
     joint_values_specified: bool = False
     focus: list[str] | None = None
@@ -175,7 +174,7 @@ class SnapshotOptions:
     debug: bool = False
 
 
-def parse_params_option(raw_params: object) -> dict[str, object] | str:
+def parse_kinematics_option(raw_kinematics: object) -> dict[str, object] | str:
     """``--kinematics`` in job form: a values object, or a PRESET NAME.
 
     Already an object when it came from a ``<format>.snapshot(kinematics={...})``
@@ -186,9 +185,9 @@ def parse_params_option(raw_params: object) -> dict[str, object] | str:
     kinematics declaration, which only the renderer has loaded, so the name
     travels through unresolved and the job's `kinematics` key carries either shape.
     """
-    if is_plain_object(raw_params):
-        return dict(raw_params)
-    text = str(raw_params or "")
+    if is_plain_object(raw_kinematics):
+        return dict(raw_kinematics)
+    text = str(raw_kinematics or "")
     if not text.lstrip().startswith("{"):
         return text
     parsed = load_json_text(text, "--kinematics")
@@ -245,7 +244,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.view_labels,
             options.debug,
             options.size_profile,
-            options.params_specified,
+            options.kinematics_specified,
             options.joint_values_specified,
             options.display_specified,
             options.theme_specified,
@@ -260,8 +259,8 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
         next_job["debug"] = True
     if options.theme_specified:
         next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
-    if options.params_specified:
-        next_job["kinematics"] = parse_params_option(options.params)
+    if options.kinematics_specified:
+        next_job["kinematics"] = parse_kinematics_option(options.kinematics)
     if options.joint_values_specified:
         next_job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.display_specified:
@@ -334,8 +333,8 @@ def load_job_from_options(
         job["render"]["sizeProfile"] = options.size_profile
     if options.display_specified:
         job["display"] = load_display_option(options.display, cwd=resolved_cwd)
-    if options.params_specified:
-        job["kinematics"] = parse_params_option(options.params)
+    if options.kinematics_specified:
+        job["kinematics"] = parse_kinematics_option(options.kinematics)
     if options.joint_values_specified:
         job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.debug:
@@ -697,27 +696,12 @@ def resolve_render_job(
     if not is_plain_object(raw_job):
         raise SnapshotError("render job must be an object")
     job = copy.deepcopy(raw_job)
-    if "params" in job:
-        raise SnapshotError("render jobs use kinematics; params is reserved for shortcut --kinematics parsing")
-    forbidden_root_fields = [field for field in ("workspaceRoot", "rootDir") if field in job]
-    if forbidden_root_fields:
-        raise SnapshotError(
-            "snapshot jobs no longer accept workspaceRoot or rootDir; pass a relative or absolute input path instead"
-        )
 
-    # Every other key must come from the closed job schema. Selection-shaped
-    # near-misses get the exact fix spelled out; anything else is named with
-    # the supported set so a typo fails here instead of rendering as if the
-    # key were absent.
+    # Every key must come from the closed job schema; anything else is named
+    # with the supported set so a typo fails here instead of rendering as if
+    # the key were absent.
     unknown_keys = sorted(set(job) - SUPPORTED_JOB_KEYS)
     if unknown_keys:
-        selection_shaped = [key for key in SELECTION_SHAPED_JOB_KEYS if key in unknown_keys]
-        if selection_shaped:
-            fields = ", ".join(f'"{key}": [...]' for key in selection_shaped)
-            raise SnapshotError(
-                f"render jobs take part selectors inside the selection object, not at top level; "
-                f"move {fields} into \"selection\": {{...}}"
-            )
         raise SnapshotError(
             f"unknown render job key(s): {', '.join(unknown_keys)}; "
             f"supported keys: {', '.join(sorted(SUPPORTED_JOB_KEYS))}"
@@ -796,8 +780,7 @@ def resolve_step_render_job(
     from cadgen._internal.doors import require_current_document
 
     require_current_document(input_path)
-    # Kinematics values drive the model's sidecar kinematics block. The retired
-    # sidecar-path key is rejected upfront in job normalization.
+    # Kinematics values drive the model's sidecar kinematics block.
     debug_enabled = bool(job.get("debug"))
     step_artifact_debug: dict[str, object] | None = {} if debug_enabled else None
     artifact = ensure_render_job_step_artifact(
@@ -858,7 +841,7 @@ def resolve_step_render_job(
     )
     if kinematics_block:
         # Typed mates are the ONE articulation mechanism: the page fetches the
-        # sidecar and folds --params DOF values through the shared FK
+        # sidecar and folds --kinematics DOF values through the shared FK
         # evaluator (cadgen-js kinematicsModule).
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
         # A pose NAME and every DOF id are validated HERE, against the
@@ -924,7 +907,7 @@ def resolve_drawing_render_job(
     job_count: int = 1,
     **_kind_context: object,
 ) -> dict[str, object]:
-    """Resolve a drawing input (`.dxf` or a `gen_dxf()` generator).
+    """Resolve a drawing input (`.dxf` or a `@dxf` model script).
 
     A drawing has no geometry of its own to render: what the viewport shows is
     the 3D flat pattern. There is no drawing package any more (design/
@@ -942,7 +925,7 @@ def resolve_drawing_render_job(
         )
     if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
-            "kinematics values require a STEP model; a drawing is parameterized by its gen_dxf() source"
+            "kinematics values require a STEP model; a drawing is parameterized by its @dxf source"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()

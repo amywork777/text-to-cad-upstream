@@ -841,9 +841,6 @@ def build_package_from_compound(
     _descriptor_tmp = package_dir / f".{DESCRIPTOR_NAME}{temp_suffix()}"
     _descriptor_tmp.write_text(json.dumps(descriptor))
     replace_atomic(_descriptor_tmp, package_dir / DESCRIPTOR_NAME)
-    # Sweep the retired topology.glb sidecar if an older build left one; nothing
-    # produces or reads it any more (selector topology comes from the .surf files).
-    (package_dir / "topology.glb").unlink(missing_ok=True)
 
     # Prune orphans: each package's components/ dir belongs to exactly ONE entry
     # (packages are self-contained; cross-model sharing was given up on purpose),
@@ -851,16 +848,6 @@ def build_package_from_compound(
     # an earlier geometry revision and accumulates without bound if kept. Writers
     # are serialized by the generation lock; readers re-resolve components from
     # the descriptor they load.
-    # Pre-rekey packages: STEP models now key by the STEP FILE, so a legacy
-    # sibling keyed by the generator entry (<name>.step.py) is dead weight
-    # from before the migration and can only shadow disk space.
-    if package_dir.name.lower().endswith((".step", ".stp")):
-        import shutil as _shutil
-
-        legacy = package_dir.with_name(f"{package_dir.name}.py")
-        if legacy.is_dir():
-            _shutil.rmtree(legacy, ignore_errors=True)
-
     referenced = {f"{cid}.surf" for cid in components} | {
         f"{cid}.brep" for cid in components
     }

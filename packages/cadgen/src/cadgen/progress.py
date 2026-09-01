@@ -1,6 +1,6 @@
 """What a CAD generator can say about its own progress.
 
-``gen_step()`` is called with no arguments and is usually the longest phase of a build --
+A ``@step`` entry is called with no arguments and is usually the longest phase of a build --
 ten minutes for the F-14, against two for meshing everything it produced. Until this module
 it had no way to say anything: the build reported "Building geometry" once, at the start,
 and then went silent until the generator returned. The viewer and the CLI both showed a
@@ -14,11 +14,13 @@ Two shapes, matching the two things a phase can honestly report::
 
     from cadgen.progress import report, track
 
-    def gen_step():
+    @step
+    def model():
         for name, module in track(SYSTEMS, label=lambda pair: pair[0]):
             ...                      # -> "Building geometry  4/13  engines"
 
-    def gen_step():
+    @step
+    def model():
         report("lofting the skin")   # -> "Building geometry  lofting the skin"
         ...
 

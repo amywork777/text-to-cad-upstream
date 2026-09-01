@@ -1042,10 +1042,9 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertEqual(packet["jobs"][0]["resolved"]["debug"], {"meshSource": {"kind": "stl"}})
 
     def test_render_job_rejects_top_level_selection_shaped_keys(self) -> None:
-        # "hide"/"focus" at top level were historically dropped without a word,
-        # so the render completed with nothing hidden. The rejection names the
-        # correct selection-object shape.
-        with self.assertRaisesRegex(SnapshotError, r'move "hide": \[\.\.\.\] into "selection"'):
+        # "hide"/"focus" belong inside the selection object; at top level they
+        # are unknown keys and fail through the ordinary closed-schema error.
+        with self.assertRaisesRegex(SnapshotError, r"unknown render job key\(s\): hide"):
             resolve_render_job_packet(
                 {
                     "input": "models/part.step",
@@ -1614,7 +1613,7 @@ class SnapshotCliTests(unittest.TestCase):
                 with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit):
                     cad_snapshot_entry.build_parser().parse_args([flag, value])
                 self.assertIn("unrecognized arguments", errors.getvalue())
-        with self.assertRaisesRegex(SnapshotError, "no longer accept workspaceRoot or rootDir"):
+        with self.assertRaisesRegex(SnapshotError, r"unknown render job key\(s\): workspaceRoot"):
             resolve_render_job_packet(
                 {
                     "input": "part.step",

@@ -4,12 +4,11 @@ They cannot share a constant -- one is Python, the other JavaScript -- so they a
 this test instead. It reads the viewer's own preset table and asserts the Python side
 knows the same ids.
 
-This is not hypothetical. `WORKBENCH_RENDER_THEME_IDS` held only the legacy id
-`"workbench"`, while the viewer's presets are `workbench-light` and `workbench-dark`. The
-browser resolves all three to the same theme (an explicit back-compat alias), so the
-PICTURE was right -- but that set also decides a render's default dimensions, so asking for
-the viewer's real preset by name rendered at 1200x900 where the legacy id rendered at
-1600x1200. Identical theme, different image, no warning.
+This is not hypothetical. `WORKBENCH_RENDER_THEME_IDS` once named an id the viewer's
+preset table did not, while missing the presets it did have (`workbench-light` and
+`workbench-dark`). The PICTURE was right -- but that set also decides a render's default
+dimensions, so asking for the viewer's real preset by name rendered at 1200x900 where the
+stale id rendered at 1600x1200. Identical theme, different image, no warning.
 """
 
 from __future__ import annotations
@@ -131,9 +130,10 @@ class ThemeParityTests(unittest.TestCase):
         )
 
     def test_it_claims_no_id_the_viewer_does_not_have(self):
-        # The legacy "workbench" alias is allowed; anything else would be a typo that
-        # silently changes a render's size.
-        unknown = WORKBENCH_RENDER_THEME_IDS - _preset_ids() - {"workbench", "snapshot"}
+        # An id the viewer cannot resolve would be a typo that silently changes
+        # a render's size. `snapshot` is the render-only theme, declared outside
+        # THEME_PRESETS by design.
+        unknown = WORKBENCH_RENDER_THEME_IDS - _preset_ids() - {"snapshot"}
         self.assertEqual(set(), unknown, f"unknown theme id(s): {sorted(unknown)}")
 
 

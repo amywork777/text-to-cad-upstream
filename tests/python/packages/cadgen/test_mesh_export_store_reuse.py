@@ -105,7 +105,7 @@ class MeshExportStoreReuseTest(unittest.TestCase):
             # Straight to the tessellator: the package is already keyed by these
             # bytes, so there is nothing to run, load or extract.
             self.assertIn(f"tessellate + write {fmt}", current.stderr)
-            self.assertNotIn("run gen_step", current.stderr)
+            self.assertNotIn("run step model", current.stderr)
             self.assertNotIn("extract exact geometry", current.stderr)
             self.assertNotIn("load STEP", current.stderr)
             self.assertTrue(step_file.with_suffix(f".{fmt}").is_file(), fmt)
@@ -125,7 +125,7 @@ class MeshExportStoreReuseTest(unittest.TestCase):
         # Nothing was rebuilt, re-exported, or otherwise touched.
         self.assertEqual(step_before, step_file.read_bytes())
         self.assertEqual(stl_before, step_file.with_suffix(".stl").read_bytes())
-        self.assertNotIn("run gen_step", stale.stderr)
+        self.assertNotIn("run step model", stale.stderr)
 
     def test_a_bare_door_needs_declarations_in_the_sidecar(self) -> None:
         # An imported document declares nothing, so there is no variant set to

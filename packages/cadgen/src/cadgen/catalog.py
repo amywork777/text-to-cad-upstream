@@ -387,7 +387,7 @@ def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> C
     metadata = parse_generator_metadata(resolved_script_path)
     if metadata is None:
         return None
-    if metadata.has_gen_dxf:
+    if metadata.format == "dxf":
         return _dxf_generator_source(resolved_script_path, metadata)
     if metadata.kind not in {"part", "assembly"}:
         raise CadSourceError(

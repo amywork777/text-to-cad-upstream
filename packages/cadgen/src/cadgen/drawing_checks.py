@@ -1,6 +1,6 @@
 """Deterministic DXF drawing validation.
 
-Validation happens IN generation, not after: every gen_dxf() build runs these
+Validation happens IN generation, not after: every @dxf build runs these
 checks on the in-memory ezdxf document before the drawing package (or any
 export) is written, and a build with error findings fails. The same checks run
 post-hoc on existing ``.dxf`` files via the model script's validation flags.

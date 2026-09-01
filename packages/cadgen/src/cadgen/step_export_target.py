@@ -12,7 +12,7 @@ Two callers share this module, and they offer different formats:
   (:data:`MESH_EXPORT_FORMATS`); a model's ``.step`` file is written by ``step.build``
   or the model script (``python <model>.py``) instead.
 
-Both accept an imported ``.step``/``.stp`` or a generated ``gen_step()`` Python source;
+Both accept an imported ``.step``/``.stp`` or a generated ``@step`` Python source;
 exports can never be stale: a model either passes the canonical freshness gate (closure
 included) and exports from its store render package, or it rebuilds from source.
 
@@ -91,14 +91,14 @@ def _resolve_spec_and_scene(
 ) -> tuple[EntrySpec, LoadedStepScene]:
     """Build the entry spec + an in-memory scene for the model.
 
-    Generated model (``--source-path`` given): run ``gen_step()`` in-process to build the
+    Generated model (``--source-path`` given): run the ``@step`` entry in-process to build the
     scene — generated models keep no on-disk STEP. Imported model: load the existing STEP
     and classify it via :func:`cadgen.step_artifact_cli.infer_entry_kind`.
     """
     if source_path is not None:
         source = source_from_path(source_path)
         if source is None:
-            raise RuntimeError(f"Python generator is not a gen_step() CAD source: {source_path}")
+            raise RuntimeError(f"Python generator is not a @step CAD source: {source_path}")
         spec = _entry_spec_from_source(source)
         if spec.step_path is None:
             raise RuntimeError(f"Generator defines no STEP output: {source_path}")
@@ -118,7 +118,7 @@ def _resolve_spec_and_scene(
         # length of the export.
         scene = run_script_generator(
             spec,
-            "gen_step",
+            "step",
             logger=logger,
             force=True,
             lock_intent="generate",
@@ -361,7 +361,7 @@ def _resolve_mesh_package(
     if source_path is not None:
         source = source_from_path(source_path)
         if source is None:
-            raise RuntimeError(f"Python generator is not a gen_step() CAD source: {source_path}")
+            raise RuntimeError(f"Python generator is not a @step CAD source: {source_path}")
         spec = _entry_spec_from_source(source)
         if spec.step_path is None:
             raise RuntimeError(f"Generator defines no STEP output: {source_path}")
@@ -380,7 +380,7 @@ def _resolve_mesh_package(
         # the writer lock, or a fully-current model reports `generating`.
         scene = run_script_generator(
             spec,
-            "gen_step",
+            "step",
             logger=logger,
             force=True,
             lock_intent="generate",
@@ -420,7 +420,7 @@ def _export_mesh_jobs(
     """Export every requested mesh job from ONE package: the store package
     when the model resolved current, else a one-shot temp package extracted
     from the scene. OCCT meshes nothing on either path (the GLB is Y-up glTF
-    for external tools, matching the retired native writer's convention).
+    for external tools: (x, y, z) -> (x, z, -y), mm -> m).
 
     Jobs against a STORE package are gated and recorded in the shared
     mesh-export ledger — the same one `@stl`/`@glb`/`@threemf` script runs
@@ -492,7 +492,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--repo-root", required=True, help="Repository/workspace root for relative metadata.")
     parser.add_argument("--step", required=True, help="Logical STEP path (generated) or on-disk STEP/STP (imported).")
-    parser.add_argument("--source-path", help="Python gen_step() generator (.step.py) for a generated model.")
+    parser.add_argument("--source-path", help="Python @step model script for a generated model.")
     parser.add_argument("--format", required=True, choices=tuple(FORMAT_SUFFIX), help="Output format.")
     parser.add_argument("--out", required=True, help="Destination file path for the exported model.")
     parser.add_argument(

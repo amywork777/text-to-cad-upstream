@@ -672,7 +672,7 @@ def _generate_step_outputs(
     if spec.source == "generated":
         preloaded_scene = run_script_generator(
             spec,
-            "gen_step",
+            "step",
             logger=logger,
             force=force,
             progress=progress,
@@ -1041,11 +1041,11 @@ def _validate_step_target(spec: EntrySpec, *, tool_name: str) -> None:
         raise ValueError(f"{tool_name} target has no STEP path: {spec.source_ref}")
     if spec.source == "generated":
         metadata = spec.generator_metadata
-        if metadata is None or not metadata.has_gen_step:
-            raise ValueError(f"{tool_name} target does not define gen_step(): {spec.source_ref}")
+        if metadata is None or metadata.format != "step":
+            raise ValueError(f"{tool_name} target is not a @step model: {spec.source_ref}")
         return
     raise ValueError(
-        f"{tool_name} builds gen_step() Python sources only: {spec.source_ref}. "
+        f"{tool_name} builds @step Python sources only: {spec.source_ref}. "
         "Imported STEP/STP files get render artifacts on demand (inspect, snapshot, CAD Viewer)."
     )
 
@@ -1054,8 +1054,8 @@ def _validate_dxf_target(spec: EntrySpec) -> None:
     metadata = spec.generator_metadata
     if spec.source != "generated" or spec.script_path is None or metadata is None:
         raise ValueError(f"dxf expected a generated Python source target: {spec.source_ref}")
-    if not metadata.has_gen_dxf:
-        raise ValueError(f"dxf target does not define gen_dxf(): {spec.source_ref}")
+    if metadata.format != "dxf":
+        raise ValueError(f"dxf target is not a @dxf model: {spec.source_ref}")
     if spec.dxf_path is None:
         raise ValueError(f"dxf target has no configured DXF output: {spec.source_ref}")
 
@@ -1103,7 +1103,7 @@ class _ContendedGeneration:
 
 def _run_with_spec_generation_status(
     spec: EntrySpec,
-    generator_name: str,
+    model_format: str,
     action: Callable[..., object],
     *,
     skip_if_current: Callable[[EntrySpec], bool] | None = None,
@@ -1128,10 +1128,10 @@ def _run_with_spec_generation_status(
     ``cadgen.step_artifact_cli``: 0 waits, and a positive value gives up and reports the peer
     instead. Same flag, same default, same meaning -- see :mod:`cadgen._internal.cli_locking`.
     """
-    kind = DRAWING_PACKAGE if generator_name == "gen_dxf" else STEP_PACKAGE
+    kind = DRAWING_PACKAGE if model_format == "dxf" else STEP_PACKAGE
     # No output dir means no lock, so there is nothing to wait on and no ref to name in a
     # notice -- and a spec that never reaches a lock is not required to have one.
-    output_dir = _spec_output_dir(spec, generator_name)
+    output_dir = _spec_output_dir(spec, model_format)
     with artifact_build(
         kind,
         output_dir,
@@ -1562,7 +1562,7 @@ def generate_step_targets(
 
         return _run_with_spec_generation_status(
             spec,
-            "gen_step",
+            "step",
             build,
             skip_if_current=_built_by_a_peer,
             progress_sink=progress_sink,
@@ -1651,9 +1651,9 @@ def generate_dxf_targets(
             selected_specs,
             action=lambda spec, progress_sink=None: _run_with_spec_generation_status(
                 spec,
-                "gen_dxf",
+                "dxf",
                 lambda tracked_spec, reporter: run_script_generator(
-                    tracked_spec, "gen_dxf", logger=logger, progress=reporter
+                    tracked_spec, "dxf", logger=logger, progress=reporter
                 ),
                 skip_if_current=_built_by_a_peer,
                 progress_sink=progress_sink,

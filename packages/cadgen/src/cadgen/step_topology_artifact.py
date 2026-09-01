@@ -365,7 +365,7 @@ def _scene_for_regeneration(
         # `generate` phase at all: the bar jumped straight to `collecting parts`.
         scene = run_script_generator(
             spec,
-            "gen_step",
+            "step",
             logger=logger,
             force=force,
             progress=progress,

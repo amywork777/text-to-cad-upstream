@@ -188,7 +188,7 @@ def _current_artifact_for_spec(spec: EntrySpec) -> StepTopologyArtifact | None:
     package_dir = render_package_dir(spec.entry_path)
     # A component-GLB package is a DIRECTORY, and validate_step_topology_artifact() gates on
     # `.is_file()` (step_targets.py) -- so routing a package through it always raised
-    # missing_glb, this whole fast path returned None, and EVERY build re-ran gen_step().
+    # missing_glb, this whole fast path returned None, and EVERY build re-ran the generator.
     # The descriptor comparison above (_package_descriptor_matches_spec) IS the package's
     # freshness gate; there is nothing further to validate. Packages carry no whole-assembly
     # selector topology either -- it is extracted on demand -- so require_selector cannot be
@@ -243,14 +243,14 @@ def _with_declared_exports(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m cadgen.step_artifact_cli",
-        description="Build the CAD Viewer render package for one STEP/STP file or gen_step() generator.",
+        description="Build the CAD Viewer render package for one STEP/STP file or @step model script.",
     )
     parser.add_argument("--repo-root", required=True, help="Repository/workspace root for relative STEP metadata.")
     parser.add_argument("--step", required=True, help="STEP/STP source file to process.")
     parser.add_argument(
         "--source-path",
         help=(
-            "Python gen_step() source for a generated model. Selects generator mode: the build "
+            "Python @step source for a generated model. Selects generator mode: the build "
             "runs the generator in-process and writes only the render package; the logical "
             "--step path need not exist on disk. Without it, --step must be an existing "
             "STEP/STP file (imported model)."
@@ -306,7 +306,7 @@ def build_step_artifact(
     callable in-process by a long-lived warm-OCCT worker AND wrapped by main();
     it raises on error (the CLI shell owns argv parsing + JSON stdout).
 
-    Passing ``source_path`` selects GENERATOR mode: the gen_step() source runs
+    Passing ``source_path`` selects GENERATOR mode: the @step source runs
     in-process and only the render package is written — the logical ``step``
     path never needs to exist on disk (STEP is exported on demand elsewhere).
     Without ``source_path``, ``step`` must be an existing imported STEP/STP file.
@@ -331,7 +331,7 @@ def build_step_artifact(
             raise FileNotFoundError(f"Python generator does not exist for logical STEP path: {script_path}")
         source = source_from_path(script_path)
         if source is None:
-            raise RuntimeError(f"Python generator is not a gen_step() CAD source: {script_path}")
+            raise RuntimeError(f"Python generator is not a @step CAD source: {script_path}")
         spec = _entry_spec_from_source(source)
         if spec.step_path is None or spec.step_path.resolve() != step_path:
             if spec.step_path is None:
@@ -452,7 +452,7 @@ def build_step_artifact(
         if from_generator:
             scene = run_script_generator(
                 existing_spec,
-                "gen_step",
+                "step",
                 logger=logger,
                 force=force,
                 progress=progress,

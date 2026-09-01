@@ -59,12 +59,11 @@ MESH_INPUT_KINDS = {"glb", "stl", "3mf"}
 MESH_SUPPORTED_RENDER_MODES = {"view", "list"}
 TOPOLOGY_DISPLAY_MODES = {"hidden_edges", "hidden_lines_removed"}
 # Every id that IS the workbench theme, because this set decides a render's default
-# dimensions (see default_render_size). With only the legacy "workbench" in it, asking for
-# the viewer's real preset by name -- `--theme workbench-light` -- fell through to the
-# non-workbench branch and silently rendered at 1200x900 instead of 1600x1200, despite
-# resolving to the identical theme in the browser. Pinned against the viewer's preset table
-# by tests/python/global/test_snapshot_viewer_theme_parity.py.
-WORKBENCH_RENDER_THEME_IDS = {"snapshot", "workbench", "workbench-light", "workbench-dark"}
+# dimensions (see default_render_size). A workbench preset missing from it silently
+# renders at 1200x900 instead of 1600x1200 despite resolving to the identical theme in
+# the browser. Pinned against the viewer's preset table by
+# tests/python/global/test_snapshot_viewer_theme_parity.py.
+WORKBENCH_RENDER_THEME_IDS = {"snapshot", "workbench-light", "workbench-dark"}
 SUPPORTED_JOB_KEYS = frozenset(
     {
         "input",
@@ -91,7 +90,6 @@ SUPPORTED_JOB_KEYS = frozenset(
         "timeoutSeconds",
     }
 )
-SELECTION_SHAPED_JOB_KEYS = ("hide", "focus", "refs")
 SUPPORTED_OUTPUT_KEYS = frozenset(
     {
         "path",
@@ -637,8 +635,8 @@ def normalize_common_job(
     job_count: int = 1,
 ) -> dict[str, object]:
     """Kind-independent job normalization shared by every input kind: the outputs
-    guard, render clip-stripping + scene-scale coercion, output-path resolution
-    with per-output camera defaults, and the common return shape.
+    guard, render scene-scale coercion, output-path resolution with per-output
+    camera defaults, and the common return shape.
     Kind resolvers run their capability checks first, then call this, so a
     STEP/mesh/robot job all normalize identically; the caller attaches its
     kind-specific ``resolved`` payload to the returned job.
@@ -677,8 +675,6 @@ def normalize_common_job(
         job["theme"] = load_theme_option(raw_theme, cwd=resolved_cwd)
 
     normalized_render = dict(job.get("render") if is_plain_object(job.get("render")) else {})
-    normalized_render.pop("clip", None)
-    normalized_render.pop("clipSettings", None)
     raw_scale = str(
         normalized_render.get("scale")
         or normalized_render.get("sceneScale")
@@ -751,8 +747,6 @@ def normalize_common_job(
             }
         )
 
-    job.pop("clip", None)
-    job.pop("clipSettings", None)
     return {
         **job,
         "mode": mode,

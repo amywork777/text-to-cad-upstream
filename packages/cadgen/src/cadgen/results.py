@@ -143,6 +143,13 @@ class SnapshotFile:
     #: What this output framed: the camera preset, ``azimuth:elevation`` pair, or
     #: view label the output declared. Empty when the job named none.
     view: str = ""
+    #: WHICH document this file rendered: the job's input path as given. Two
+    #: renders of one path are otherwise indistinguishable in the result, so a
+    #: stale render reads the same as a fresh one.
+    input: str = ""
+    #: The rendered document's content hash (the render-package store key).
+    #: Empty for inputs that render without a store package.
+    documentHash: str = ""
 
 
 @dataclass(frozen=True)

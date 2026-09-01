@@ -88,7 +88,7 @@ class EnvelopePathRuleStaysAbsoluteTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "POSIX"):
             _parse_path_field(
                 script_path=script,
-                function_name="gen_step",
+                function_name="model",
                 envelope=envelope,
                 field_name="step",
             )

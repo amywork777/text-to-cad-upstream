@@ -9,7 +9,7 @@ from its sibling ``.step.py`` loads it by path instead:
 
     _step = load_source_module(Path(__file__).with_name("bracket.step.py"))
 
-    def gen_dxf():
+    def drawing():
         return {"document": _step.build_dxf()}
 
 The loaded module is registered in ``sys.modules``, so the runtime source-closure

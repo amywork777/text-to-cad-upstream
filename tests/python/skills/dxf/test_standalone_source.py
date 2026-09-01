@@ -37,8 +37,7 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             metadata = parse_generator_metadata(script_path)
 
         assert metadata is not None
-        self.assertTrue(metadata.has_gen_dxf)
-        self.assertFalse(metadata.has_gen_step)
+        self.assertEqual("dxf", metadata.format)
         self.assertIsNone(metadata.kind)
 
     def test_metadata_ignores_deprecated_urdf_generators(self) -> None:

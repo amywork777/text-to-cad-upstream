@@ -8,7 +8,7 @@ OCCT location instead â€” O(1), sharing the prototype's underlying ``TShape`` â€
 and carries the assembly hierarchy (names, world placements) as an explicit
 occurrence-metadata tree that the render packager consumes directly.
 
-The returned compound can be a generator's whole ``gen_step`` shape or a child
+The returned compound can be a model's whole ``@step`` shape or a child
 nested anywhere inside a plain build123d compound tree: the packager splices
 nested instance compounds into the descriptor walk, remapping occurrence ids
 and accumulating world locations.

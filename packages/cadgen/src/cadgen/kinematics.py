@@ -554,9 +554,8 @@ def normalize_kinematics(value: object, *, where: str) -> KinematicsDef:
             str(name): _validated_pose_values(block, values, where=f"{where} poses[{name!r}]")
             for name, values in raw_poses.items()
         }
-    # ``at`` is the BAKE point, validated exactly as the retired ``pose=`` kwarg
-    # was — but it lives inside the one kinematics space rather than beside it,
-    # so a declaration is a single object at every surface.
+    # ``at`` is the BAKE point. It lives inside the one kinematics space rather
+    # than beside it, so a declaration is a single object at every surface.
     raw_at = value.get("at")
     at = None if raw_at is None else resolve_kinematics_at(block, raw_at, where=f"{where} kinematics")
     return KinematicsDef(block=block, at=at)

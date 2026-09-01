@@ -99,7 +99,7 @@ def _run(
     if camera is not None:
         options.camera, options.camera_specified = camera, True
     if kinematics is not None:
-        options.params, options.params_specified = kinematics, True
+        options.kinematics, options.kinematics_specified = kinematics, True
     if joint_values is not None:
         options.joint_values, options.joint_values_specified = joint_values, True
     if focus:

@@ -64,7 +64,7 @@ class MeshExportMetadataTest(unittest.TestCase):
             # Order neutrality covers the MODEL format too, not just the mesh
             # declarations: @stl above @step must not be mis-taken as the
             # model (the parser bug that hid behind mesh-only assertions).
-            self.assertTrue(metadata.has_gen_step)
+            self.assertEqual("step", metadata.format)
             self.assertEqual(metadata.out_target, "../STEP/widget.step")
             declared = {d.fmt: d for d in metadata.mesh_exports}
             self.assertEqual(set(declared), {"stl", "glb", "3mf"})
@@ -203,7 +203,7 @@ class MeshExportProductionTest(unittest.TestCase):
         before = declared.read_bytes()
         forced = self._run("-c", door, "STEP/widget.step", "--force", "--verbose")
         self.assertIn("wrote STL", forced.stdout)
-        self.assertNotIn("run gen_step", forced.stderr)
+        self.assertNotIn("run step model", forced.stderr)
         self.assertEqual(before, declared.read_bytes())
 
         # A door writes ONLY its own format: nothing here touches the .step or

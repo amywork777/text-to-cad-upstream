@@ -60,8 +60,8 @@ class EntrySpec:
         # (design/library-first-generation.md) key by the ARTIFACT: the package
         # must ride beside the .step wherever out= routed it,
         # so the viewer (artifacts-only catalog) finds it, and so provenance —
-        # not filenames — links artifact to source. Legacy imported entries and
-        # DXF drawings keep their existing keying.
+        # not filenames — links artifact to source. Imported STEP entries and
+        # DXF drawings keep their own keying.
         if (
             self.generator_metadata is not None
             and getattr(self.generator_metadata, "is_decorated", False)

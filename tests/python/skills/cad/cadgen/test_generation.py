@@ -666,9 +666,9 @@ class CadGenerationTests(unittest.TestCase):
         )
 
         spec = next(spec for spec in cad_generation.list_entry_specs() if spec.source_path == script_path)
-        scene = cad_generation.run_script_generator(spec, "gen_step")
+        scene = cad_generation.run_script_generator(spec, "step")
 
-        # gen_step builds the render scene in memory and writes no STEP by default.
+        # A @step run builds the render scene in memory and writes no STEP by default.
         self.assertEqual("part", spec.kind)
         self.assertIsNotNone(scene)
         self.assertFalse(script_path.with_suffix(".step").exists())
@@ -1013,7 +1013,7 @@ class CadGenerationTests(unittest.TestCase):
     def test_dxf_generation_rejects_source_without_dxf(self) -> None:
         script_path = self._generator_script("part")
 
-        with self.assertRaisesRegex(ValueError, "does not define gen_dxf\\(\\)"):
+        with self.assertRaisesRegex(ValueError, "is not a @dxf model"):
             cad_generation.generate_dxf_targets([str(script_path)])
 
     def test_dxf_output_override_retargets_single_generated_source(self) -> None:
@@ -1082,7 +1082,7 @@ class CadGenerationTests(unittest.TestCase):
         script_path = self._generator_script("flat", with_dxf=True, dxf_before_step=True)
         spec = next(spec for spec in cad_generation.list_entry_specs() if spec.cad_ref == self._cad_ref("flat"))
 
-        cad_generation.run_script_generator(spec, "gen_step")
+        cad_generation.run_script_generator(spec, "step")
 
         self.assertEqual("gen_step\n", script_path.with_suffix(".calls").read_text(encoding="utf-8"))
         self.assertFalse(script_path.with_suffix(".dxf").exists())
@@ -1222,7 +1222,7 @@ class CadGenerationTests(unittest.TestCase):
         # artifacts on demand (inspect/snapshot/viewer) or via cadgen import.
         step_path = self._write_step("source")
 
-        with self.assertRaisesRegex(ValueError, "builds gen_step\\(\\) Python sources only"):
+        with self.assertRaisesRegex(ValueError, "builds @step Python sources only"):
             cad_generation.generate_step_targets([str(step_path)])
 
     def test_step_cli_flags_apply_to_generated_python_targets(self) -> None:
