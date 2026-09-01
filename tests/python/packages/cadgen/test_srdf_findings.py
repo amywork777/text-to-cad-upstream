@@ -10,10 +10,10 @@ from __future__ import annotations
 import contextlib
 import io
 from pathlib import Path
-import tempfile
 import unittest
 
 from tests.python.support.paths import add_repo_path
+from tests.python.support.tmp_root import RetryingTemporaryDirectory
 
 add_repo_path("skills/srdf/scripts")
 
@@ -169,7 +169,10 @@ CASES = [
 
 class SrdfFindingsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self._tempdir = tempfile.TemporaryDirectory(prefix="tmp-srdf-findings-")
+        # Retrying: the first test here reads robot.urdf dozens of times right before
+        # tearDown unlinks it, and on the Windows runner the scanner's last look at the
+        # file can still be open at that instant (WinError 32, seen twice in CI).
+        self._tempdir = RetryingTemporaryDirectory(prefix="tmp-srdf-findings-")
         self.temp_root = Path(self._tempdir.name)
         (self.temp_root / "robot.urdf").write_text(URDF, encoding="utf-8")
 
