@@ -45,16 +45,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from cadgen.kinematics import (
-    KinematicsDef,
-    normalize_kinematics,
-    retired_pose_kwarg_message,
-)
-from cadgen.metadata import (
-    MeshExportDecl,
-    renamed_write_kwarg_message,
-    resolve_model_output_path,
-)
+from cadgen.kinematics import KinematicsDef, normalize_kinematics
+from cadgen.metadata import MeshExportDecl, resolve_model_output_path
 
 __all__ = [
     "step",
@@ -110,12 +102,6 @@ def registered_models() -> dict[Path, ModelDef]:
     return dict(_REGISTRY)
 
 
-def _legacy_naming_error(script_path: Path) -> RuntimeError:
-    from cadgen._internal.legacy_generators import legacy_naming_message
-
-    return RuntimeError(legacy_naming_message(script_path))
-
-
 def _script_path_of(func: Callable[..., Any]) -> Path:
     source = inspect.getsourcefile(func) or func.__code__.co_filename
     return Path(source).resolve()
@@ -146,11 +132,7 @@ def _register(defn: ModelDef) -> None:
     _REGISTRY[defn.script_path] = defn
 
 
-def _reject_renamed_kwargs(deco_name: str, kwargs: dict[str, Any]) -> None:
-    """``write=`` is gone (hard cutover). Name its replacement rather than
-    letting a stale model script die on a bare TypeError."""
-    if "write" in kwargs:
-        raise TypeError(renamed_write_kwarg_message(deco_name, kwargs["write"]))
+def _reject_unknown_kwargs(deco_name: str, kwargs: dict[str, Any]) -> None:
     if kwargs:
         unexpected = ", ".join(sorted(kwargs))
         raise TypeError(f"@{deco_name} got an unexpected keyword argument: {unexpected}")
@@ -189,9 +171,6 @@ def _decorator(
     def apply(func: Callable[..., Any]) -> Callable[..., Any]:
         _validate_signature(func, fmt=fmt)
         script_path = _script_path_of(func)
-        lowered = script_path.name.lower()
-        if lowered.endswith((".step.py", ".dxf.py")):
-            raise _legacy_naming_error(script_path)
         pending = tuple(getattr(func, "__cadgen_pending_mesh_exports__", ()))
         if pending and fmt != "step":
             names = ", ".join(f"@{_MESH_FMT_DECORATOR[d.fmt]}" for d in pending)
@@ -240,7 +219,7 @@ def step(
     mesh_angular_tolerance: float | None = None,
     kinematics: object = None,
     animation: str | None = None,
-    **renamed: Any,
+    **unsupported: Any,
 ):
     """Declare a STEP model. Usable bare (``@step``) or configured (``@step(...)``).
 
@@ -251,9 +230,7 @@ def step(
     text is copied into the sidecar. STEP is the only format with animation —
     mesh exports are static bakes.
     """
-    if "pose" in renamed:
-        raise TypeError(retired_pose_kwarg_message("step"))
-    _reject_renamed_kwargs("step", renamed)
+    _reject_unknown_kwargs("step", unsupported)
     decorator = _decorator(
         "step",
         out=out,
@@ -270,22 +247,17 @@ def dxf(
     func: Callable[..., Any] | None = None,
     *,
     out: str | None = None,
-    **renamed: Any,
+    **unsupported: Any,
 ):
     """Declare a DXF drawing. Usable bare (``@dxf``) or configured (``@dxf(...)``)."""
-    if "pose" in renamed:
-        raise TypeError(
-            f"{retired_pose_kwarg_message('dxf')} — and @dxf takes no kinematics "
-            "at all: a drawing is 2D geometry"
-        )
-    for retired in ("kinematics", "animation"):
-        if retired in renamed:
+    for elsewhere in ("kinematics", "animation"):
+        if elsewhere in unsupported:
             raise TypeError(
-                f"@dxf takes no {retired}=: a drawing is 2D geometry — kinematics "
+                f"@dxf takes no {elsewhere}=: a drawing is 2D geometry — kinematics "
                 "and its 'at' bake point live on @step and the mesh decorators, "
                 "and animation is @step-only"
             )
-    _reject_renamed_kwargs("dxf", renamed)
+    _reject_unknown_kwargs("dxf", unsupported)
     decorator = _decorator(
         "dxf", out=out, kind=None, mesh_tolerance=None, mesh_angular_tolerance=None
     )
@@ -325,17 +297,15 @@ def _mesh_export_decorator(deco_name: str, fmt: str):
         mesh_tolerance: float | None = None,
         mesh_angular_tolerance: float | None = None,
         kinematics: object = None,
-        **renamed: Any,
+        **unsupported: Any,
     ):
-        if "pose" in renamed:
-            raise TypeError(retired_pose_kwarg_message(deco_name))
-        if "animation" in renamed:
+        if "animation" in unsupported:
             raise TypeError(
                 f"@{deco_name} takes no animation=: mesh exports are static "
                 "bakes with no sidecar — animation is a STEP-x-viewer concern "
                 "and lives on @step only"
             )
-        _reject_renamed_kwargs(deco_name, renamed)
+        _reject_unknown_kwargs(deco_name, unsupported)
         if out is not None and not str(out).lower().endswith(suffix):
             raise ValueError(f"@{deco_name} out= must end with '{suffix}': {out!r}")
         kinematics_def = (
@@ -403,8 +373,7 @@ def _run_from_main(defn: ModelDef) -> int:
     argv = sys.argv[1:]
     _maybe_hint_eager_imports(defn)
 
-    # Warm handoff BEFORE any heavy import, mirroring the retired CLI shims.
-    # The daemon worker re-imports this module under a loader name (never
+    # Warm handoff BEFORE any heavy import. The daemon worker re-imports this module under a loader name (never
     # __main__), so the decorator over there only registers and the runner
     # calls the function — the documented double-import semantics.
     if os.environ.get("CADGEN_DAEMON") != "0" and not os.environ.get("CADGEN_DAEMON_CHILD"):

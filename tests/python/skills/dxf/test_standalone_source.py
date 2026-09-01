@@ -26,7 +26,7 @@ STANDALONE_DXF_SOURCE = textwrap.dedent(
 
 def _write_standalone_source(root: Path, stem: str = "outline") -> Path:
     script_path = root / f"{stem}.py"
-    script_path.write_text(STANDALONE_DXF_SOURCE + "\n")
+    script_path.write_text(STANDALONE_DXF_SOURCE + "\n", encoding="utf-8")
     return script_path
 
 
@@ -46,7 +46,7 @@ class StandaloneDxfSourceTests(unittest.TestCase):
         # authored XML artifacts, so a urdf-only file is not a CAD source.
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = Path(root) / "robot.py"
-            script_path.write_text("def gen_urdf():\n    return '<robot/>'\n")
+            script_path.write_text("def gen_urdf():\n    return '<robot/>'\n", encoding="utf-8")
             self.assertIsNone(parse_generator_metadata(script_path))
 
     def test_explicit_target_resolves_dxf_only_source(self) -> None:
@@ -116,15 +116,16 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             before = sibling.read_bytes()
 
             script_path.write_text(
-                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(50, 20)") + "\n"
+                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(50, 20)") + "\n",
+                encoding="utf-8",
             )
             cad_generation.generate_dxf_targets([str(script_path)])
             self.assertNotEqual(before, sibling.read_bytes())
 
-    def test_the_retired_ezdxf_contract_fails_with_a_teaching_error(self) -> None:
-        # Hard cutover (design/dxf-build123d.md): a drawing that returns an ezdxf
-        # document is not converted, warned about, or written — it is refused, and
-        # the refusal shows the contract that replaced it.
+    def test_an_ezdxf_document_return_fails_the_geometry_contract(self) -> None:
+        # A @dxf returns build123d 2D geometry. An ezdxf document is not that,
+        # so ordinary validation refuses it — nothing recognizes, converts, or
+        # explains what the value might once have meant.
         with temporary_directory(prefix="dxf-skill") as root:
             script_path = Path(root) / "legacy.py"
             script_path.write_text(
@@ -145,7 +146,7 @@ class StandaloneDxfSourceTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(TypeError, "That contract is removed"):
+            with self.assertRaisesRegex(TypeError, "build123d 2D geometry"):
                 cad_generation.generate_dxf_targets([str(script_path)])
             self.assertFalse(script_path.with_suffix(".dxf").exists())
 
@@ -165,7 +166,8 @@ class StandaloneDxfSourceTests(unittest.TestCase):
             rendered = sibling.read_bytes()
 
             script_path.write_text(
-                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(60, 20)") + "\n"
+                STANDALONE_DXF_SOURCE.replace("bd.Rectangle(40, 20)", "bd.Rectangle(60, 20)") + "\n",
+                encoding="utf-8",
             )
             self.assertFalse(dxf_output_current(script_path))
             self.assertEqual(rendered, sibling.read_bytes(), "a source edit must not touch the drawing")

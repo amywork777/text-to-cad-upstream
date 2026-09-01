@@ -214,15 +214,15 @@ class Manifest(unittest.TestCase):
             with self.subTest(module=module), self.assertRaises(ModuleNotFoundError):
                 importlib.import_module(module)
 
-    def test_a_deleted_command_teaches_rather_than_reporting_unknown(self):
-        # A hard cutover has to teach at the surface it removed: falling
-        # through to the command list would send a reader off to guess.
-        message = cli._RETIRED_COMMANDS["dxf build"]
-        self.assertIn("python <drawing>.py", message)
+    def test_a_name_that_is_not_a_door_raises_the_plain_attribute_error(self):
+        # No retired-surface recognition: `cadgen.dxf` has no `build` door, and
+        # the answer is Python's own error, not a note about history.
         dxf = importlib.import_module("cadgen.dxf")
         with self.assertRaises(AttributeError) as caught:
             dxf.build  # noqa: B018 - the attribute access IS the assertion
-        self.assertIn("python <drawing>.py", str(caught.exception))
+        message = str(caught.exception)
+        self.assertIn("build", message)
+        self.assertNotIn("was deleted", message)
 
 
 class SignatureSync(unittest.TestCase):

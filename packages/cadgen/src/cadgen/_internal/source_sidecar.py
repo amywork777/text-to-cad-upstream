@@ -21,15 +21,19 @@ A sidecar exists ONLY when the model NEEDS one: a kinematics section, an
 animation section, or declared mesh exports. A plain model — geometry and
 nothing else — writes no sidecar at all; its provenance and freshness ride
 the PROVENANCE RECORD in the evictable records tier (bottom of this module),
-which every generated build writes and every gate falls back to. Eviction
-costs one rebuild, never correctness. Imports write neither. One consequence
-is accepted by design: the JS authority (``viewer/server/artifactStatus.mjs``)
-reads only the sidecar file, so a plain generated model classifies as
-imported in the Viewer.
+which every generated build writes and every gate reads — the ONE home of
+source-derived identity. Eviction costs one rebuild, never correctness (an
+evicted record simply reads as an import until the next build re-records it).
+Imports write neither. The JS authority
+(``viewer/server/artifactStatus.mjs``) mirrors this: a sidecar at THIS schema
+is a fast yes, and the record decides everything else.
 
 Write ordering matters: the sidecar is written BEFORE the package lands at
 its content key, so a resolvable package never races a missing sidecar.
-Readers are lock-blind and tolerate a missing sidecar.
+Readers are lock-blind and tolerate a MISSING sidecar; a sidecar that is
+present must declare ``SOURCE_SIDECAR_SCHEMA_VERSION``, because reading
+sections out of a file written to a different shape is how a model silently
+loses its kinematics.
 """
 
 from __future__ import annotations
@@ -64,17 +68,53 @@ def source_sidecar_path(step_path: Path | str) -> Path:
     return artifact.with_name(artifact.name + SOURCE_SIDECAR_SUFFIX)
 
 
-def model_is_generated(step_path: Path | str) -> bool:
-    """Whether this artifact was produced by a model script (vs an import)."""
-    return source_sidecar_path(step_path).is_file()
+class SidecarSchemaError(ValueError):
+    """A sidecar file that is not at the schema this cadgen reads."""
 
 
-def read_source_sidecar(step_path: Path | str) -> dict[str, Any] | None:
+def _raw_source_sidecar(step_path: Path | str) -> dict[str, Any] | None:
+    """The sidecar's JSON with NO schema gate. Only the writer's no-op compare
+    and the schema gate itself may use this; every consumer of the SECTIONS
+    goes through :func:`read_source_sidecar`."""
     try:
         payload = json.loads(source_sidecar_path(step_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return payload if isinstance(payload, dict) else None
+
+
+def sidecar_schema_is_current(payload: Mapping[str, Any] | None) -> bool:
+    return bool(payload) and payload.get("schemaVersion") == SOURCE_SIDECAR_SCHEMA_VERSION
+
+
+def read_source_sidecar(step_path: Path | str) -> dict[str, Any] | None:
+    """The document's declarations, or ``None`` when it has no sidecar.
+
+    A sidecar that IS there must declare this schema: reading sections out of
+    a file written to a different shape is how a model silently loses its
+    kinematics. Missing/unreadable stays ``None`` (an import, or a plain model
+    that declares nothing); wrong schema is an error with the fix.
+    """
+    payload = _raw_source_sidecar(step_path)
+    if payload is None:
+        return None
+    if not sidecar_schema_is_current(payload):
+        found = payload.get("schemaVersion", "none")
+        artifact = Path(step_path)
+        raise SidecarSchemaError(
+            f"{source_sidecar_path(artifact).name}: unsupported sidecar schema {found} "
+            f"(expected {SOURCE_SIDECAR_SCHEMA_VERSION}) — rebuild the model "
+            f"(python {artifact.stem}.py) or re-annotate the document "
+            f"(cadgen step build)"
+        )
+    return payload
+
+
+def model_is_generated(step_path: Path | str) -> bool:
+    """Whether this artifact carries a sidecar this cadgen reads — the same
+    fast yes ``artifactStatus.mjs`` takes. Never raises: classification is not
+    a render, and the loud refusal belongs to the readers of the SECTIONS."""
+    return sidecar_schema_is_current(_raw_source_sidecar(step_path))
 
 
 # The sections that WARRANT a sidecar. Provenance alone does not: it also
@@ -103,7 +143,7 @@ def write_source_sidecar(step_path: Path | str, payload: Mapping[str, Any]) -> N
     body["schemaVersion"] = SOURCE_SIDECAR_SCHEMA_VERSION
     # A rewrite that changes nothing but the timestamp is pure churn — for
     # committed sidecars (imported/ projects) it dirties git on every no-op.
-    if read_source_sidecar(step_path) == body:
+    if _raw_source_sidecar(step_path) == body:
         return
     temp = target.with_name(f".{target.name}{temp_suffix()}")
     temp.write_text(json.dumps(body, sort_keys=True), encoding="utf-8")
@@ -224,16 +264,14 @@ def write_source_provenance_record(step_path: Path | str, payload: Mapping[str, 
 
 def read_source_provenance(step_path: Path | str) -> dict[str, Any] | None:
     """The document's source provenance, from the records tier — the ONE home
-    of source-derived identity now that sidecars carry declarations only.
-    Falls back to the sidecar for documents written by older schemas, else
-    ``None`` (an import, or an evicted record: one rebuild re-records)."""
+    of source-derived identity; sidecars carry declarations only.
+
+    ``None`` means the document has no record: an import, or an evicted one
+    (the records tier is swept by ``cadgen cache gc``). Both cost the same one
+    rebuild, which re-records — never an error.
+    """
     try:
         payload = json.loads(_provenance_record_path(step_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        payload = None
-    if isinstance(payload, dict):
-        return payload
-    sidecar = read_source_sidecar(step_path)
-    if sidecar is not None and sidecar.get("sourceKind"):
-        return sidecar
-    return None
+        return None
+    return payload if isinstance(payload, dict) else None

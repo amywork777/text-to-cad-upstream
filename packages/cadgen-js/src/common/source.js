@@ -382,16 +382,6 @@ export function packageSourceFromBaseUrl(baseUrl, descriptor) {
 
 export async function loadSource(input, options = {}) {
   const inputObject = isObject(input) ? input : {};
-  if (Object.prototype.hasOwnProperty.call(inputObject, "params")) {
-    throw new Error("Render source jobs use kinematics; params is no longer a shared render API field");
-  }
-  // The pose input is `kinematics` — the same word the CLI flag, the model's `kinematics=`
-  // declaration and its sidecar section use. It was `stepParameters`, which also names the
-  // compiled runtime object that buildModel takes, so one spelling meant two things
-  // depending on which side of loadSource you were standing on. Named, never aliased.
-  if (Object.prototype.hasOwnProperty.call(inputObject, "stepParameters")) {
-    throw new Error("stepParameters was renamed to kinematics: pass a pose preset name or {dof: value}");
-  }
   const resolved = isObject(inputObject.resolved) ? inputObject.resolved : {};
   const explicitMeshData = inputObject.meshData || options.meshData || (
     inputObject.vertices && inputObject.indices ? inputObject : null

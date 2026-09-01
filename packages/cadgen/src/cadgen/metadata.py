@@ -10,6 +10,14 @@ DEFAULT_MESH_TOLERANCE = 0.02
 DEFAULT_MESH_ANGULAR_TOLERANCE = 0.6
 
 
+class InvalidModelScriptError(ValueError):
+    """A script whose model DECLARATION is malformed in a way directory
+    discovery should skip-with-a-note rather than abort on (e.g. two models in
+    one file). Contract violations inside a single model (bad envelope fields,
+    bad decorator arguments) stay plain ValueErrors and DO abort, because an
+    explicitly-targeted build must fail loudly."""
+
+
 @dataclass(frozen=True)
 class MeshSettings:
     tolerance: float
@@ -179,7 +187,6 @@ def _match_mesh_export_decorators(
         if deco_name is None:
             continue
         fmt = _MESH_DECORATOR_FMT[deco_name]
-        _reject_renamed_write_kwarg(call_kwargs, deco_name, script_path=script_path)
         out = _decorator_string_kwarg(call_kwargs, "out", script_path=script_path)
         # Variants are allowed: the same format may be declared repeatedly at
         # different destinations (e.g. a draft and a print-quality STL). Only
@@ -248,36 +255,6 @@ def _match_model_decorator(
     return None
 
 
-#: What ``write=`` became, and why. The artifact destination now has ONE name
-#: across the whole surface: the decorator kwarg, the door functions'
-#: ``out=`` (``stl.build(target, out=...)``), and the CLIs' ``OUT`` positional.
-RENAMED_WRITE_KWARG_HINT = (
-    "write= was renamed to out=; the artifact destination has one name "
-    "everywhere — the decorator's out=, the door functions' out= "
-    "(stl.build(target, out=...)), and the CLIs' OUT positional"
-)
-
-
-def renamed_write_kwarg_message(deco_name: str, value: object = None) -> str:
-    """The teaching error for a decorator still passing ``write=``."""
-    suggestion = f'; use out={value!r}' if isinstance(value, str) and value.strip() else ""
-    return f"@{deco_name} {RENAMED_WRITE_KWARG_HINT}{suggestion}"
-
-
-def _reject_renamed_write_kwarg(
-    kwargs: dict[str, ast.expr], deco_name: str, *, script_path: Path
-) -> None:
-    """``write=`` is gone. A script that still uses it must be told the new
-    name, not left to a silently-ignored keyword."""
-    node = kwargs.get("write")
-    if node is None:
-        return
-    value = node.value if isinstance(node, ast.Constant) else None
-    raise ValueError(
-        f"{_display_path(script_path)} {renamed_write_kwarg_message(deco_name, value)}"
-    )
-
-
 def _decorator_string_kwarg(
     kwargs: dict[str, ast.expr], key: str, *, script_path: Path
 ) -> str | None:
@@ -332,31 +309,16 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
 
     decorator_names, module_aliases = _cadgen_decorator_aliases(tree)
     decorated: list[tuple[ast.FunctionDef, str, dict[str, ast.expr]]] = []
-    legacy_names: list[str] = []
     for node in tree.body:
         if not isinstance(node, ast.FunctionDef):
             continue
         match = _match_model_decorator(node, decorator_names, module_aliases)
         if match is not None:
             decorated.append((node, match[0], match[1]))
-        elif node.name in {"gen_step", "gen_dxf"}:
-            legacy_names.append(node.name)
-
-    if legacy_names:
-        # No backwards compatibility: the magic-name contract fails hard with
-        # the migration pointer (design/library-first-generation.md).
-        from cadgen._internal.legacy_generators import (
-            LegacyGeneratorError,
-            legacy_generator_message,
-        )
-
-        raise LegacyGeneratorError(legacy_generator_message(script_path, tuple(legacy_names)))
 
     if not decorated:
         return None
     if len(decorated) > 1:
-        from cadgen._internal.legacy_generators import InvalidModelScriptError
-
         joined = ", ".join(f"{fn.name}()" for fn, _, _ in decorated)
         raise InvalidModelScriptError(
             f"{_display_path(script_path)} defines more than one CAD model ({joined}); "
@@ -377,7 +339,6 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
             "defaults — the pipeline calls it with no arguments"
         )
 
-    _reject_renamed_write_kwarg(call_kwargs, fmt, script_path=script_path)
     out_target = _decorator_string_kwarg(call_kwargs, "out", script_path=script_path)
     kind: str | None = None
     # A @dxf return carries no static metadata: the drawing IS its geometry, and

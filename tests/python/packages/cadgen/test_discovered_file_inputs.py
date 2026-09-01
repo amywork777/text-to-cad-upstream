@@ -216,15 +216,11 @@ class DiscoveredFileInputTests(unittest.TestCase):
         self.assertEqual(before, artifact.stat().st_mtime_ns)
 
 
-class RetiredReaderTests(unittest.TestCase):
-    """`import_step` left a grave marker, not a bare AttributeError.
+class ReaderSurfaceTests(unittest.TestCase):
+    """`read_step` is the STEP reader. Names that are not on the surface get
+    Python's own AttributeError — no recognition of what a name once meant."""
 
-    Half-removing a public name tells the caller the name is wrong and nothing
-    about what is right — and here "what is right" carries the reason the rename
-    happened at all.
-    """
-
-    def test_both_surfaces_name_the_replacement(self) -> None:
+    def test_a_name_that_is_not_exported_gets_the_plain_error(self) -> None:
         import cadgen
         from cadgen import step_scene
 
@@ -233,8 +229,8 @@ class RetiredReaderTests(unittest.TestCase):
                 with self.assertRaises(AttributeError) as caught:
                     module.import_step
                 message = str(caught.exception)
-                self.assertIn("cadgen.read_step", message)
-                self.assertIn("build input", message)
+                self.assertIn("import_step", message)
+                self.assertNotIn("read_step", message)
 
     def test_an_unrelated_missing_name_keeps_the_plain_error(self) -> None:
         from cadgen import step_scene

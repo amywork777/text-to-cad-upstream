@@ -57,7 +57,6 @@ __all__ = [
     "couple",
     "normalize_kinematics",
     "kinematics_dof_ids",
-    "retired_pose_kwarg_message",
 ]
 
 # The closed section vocabulary of the kinematics dict. ``mates``/``couplings``/
@@ -384,14 +383,6 @@ def resolve_kinematics_at(
         return _validated_pose_values(block, at, where=where)
     raise _fail(
         f"{where} 'at' must be a preset name or a {{dof: value}} dict, got {type(at).__name__}"
-    )
-
-
-def retired_pose_kwarg_message(deco_name: str) -> str:
-    """The teaching error at the deleted ``pose=`` decorator kwarg."""
-    return (
-        f"@{deco_name} takes no pose=: pose= folded into the kinematics dict: "
-        "kinematics={**K, 'at': 'closed'}"
     )
 
 

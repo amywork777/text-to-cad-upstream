@@ -66,19 +66,6 @@ def __getattr__(name: str):
         from cadgen import kinematics
 
         return getattr(kinematics, name)
-    if name == "pose":
-        # Retired surface: cadgen.pose() was the params/features/joints/drivers/
-        # animations/module block. Teach the split, loudly.
-        def pose(*_args, **_kwargs):
-            raise ValueError(
-                "cadgen.pose() was removed. Kinematics is now typed mates: pass "
-                "kinematics={'mates': [cadgen.revolute(...)], 'couplings': [...], "
-                "'poses': {...}} on @step/@stl/@glb/@threemf, and put "
-                "choreography in a .js module declared via @step(animation="
-                "'<name>.anim.js'). See the cad skill's kinematics reference."
-            )
-
-        return pose
     if name == "build123d":
         # `from cadgen import build123d as bd` — the lazy transparent re-export.
         # Importing the submodule is cheap; the real build123d import happens on
@@ -119,10 +106,6 @@ def __getattr__(name: str):
         return {"report": report, "track": track}[name]
     if name == "__version__":
         return _resolve_version()
-    if name == "import_step":
-        from cadgen.step_scene import RETIRED_IMPORT_STEP_MESSAGE
-
-        raise AttributeError(RETIRED_IMPORT_STEP_MESSAGE)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

@@ -390,16 +390,7 @@ def _warn_unknown_children(root: ET.Element, result: FindingsReport) -> None:
             continue
         tag = child.tag
         if "}" in tag or ":" in tag:
-            # The retired tcad:/explorer: urdf link element deserves a specific
-            # nudge; other namespaced extensions pass through.
-            if _local_name(tag) == "urdf":
-                result.add(
-                    "warning",
-                    "deprecated_urdf_link",
-                    "the <tcad:urdf>/<explorer:urdf> metadata element is no longer used and is ignored",
-                    path="/robot",
-                    hint="SRDF pairs with the same-folder URDF whose robot name matches; remove the element.",
-                )
+            # Namespaced extension elements pass through untouched.
             continue
         if tag not in KNOWN_ROBOT_CHILDREN:
             result.add(

@@ -325,18 +325,9 @@ def run_cli(
     *,
     prog: str,
     stdout: Any | None = None,
-    retired: dict[str, str] | None = None,
 ) -> int:
-    """Parse ``argv`` against ``func``'s generated parser, call it, print the result.
-
-    ``retired`` maps removed flags to teaching errors: a generated parser is
-    pristine, so hard-cutover refusals live in this pre-parse scan rather than
-    as parser entries that would show up in ``--help``."""
+    """Parse ``argv`` against ``func``'s generated parser, call it, print the result."""
     tokens = list(argv) if argv is not None else sys.argv[1:]
-    for flag, message in (retired or {}).items():
-        if any(token == flag or token.startswith(f"{flag}=") for token in tokens):
-            print(f"[{prog}] {message}", file=sys.stderr)
-            return 2
     parser = cli_from_function(func, prog=prog)
     args = parser.parse_args(tokens)
     positional, keywords = _call_arguments(func, args)
@@ -370,6 +361,5 @@ def generated_main(
     argv: Sequence[str] | None,
     *,
     prog: str,
-    retired: dict[str, str] | None = None,
 ) -> int:
-    return run_cli(_verb(target), argv, prog=prog, retired=retired)
+    return run_cli(_verb(target), argv, prog=prog)

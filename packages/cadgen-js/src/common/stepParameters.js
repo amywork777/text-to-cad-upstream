@@ -29,18 +29,9 @@ function assertKnownParameterIds(definition, values, label) {
   }
 }
 
-const RETIRED_ANIMATION_KEYS = ["animate", "fps", "durationSeconds", "duration", "loop"];
-
 export function normalizeStepParameterRenderValues(definition, rawParams = {}) {
   if (!isObject(rawParams)) {
     throw new Error("STEP parameters must be a JSON object");
-  }
-  for (const key of RETIRED_ANIMATION_KEYS) {
-    if (Object.hasOwn(rawParams, key)) {
-      throw new Error(
-        `kinematics.${key} was removed: animated parameter sweeps no longer render; snapshot writes a single PNG at the given values`
-      );
-    }
   }
   const rawValues = rawParamsUseEnvelope(rawParams) ? rawParams.values : rawParams;
   if (!isObject(rawValues)) {

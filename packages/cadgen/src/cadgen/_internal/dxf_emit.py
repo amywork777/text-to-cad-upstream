@@ -97,45 +97,6 @@ class DxfDeterminismError(RuntimeError):
     """
 
 
-# --- the retired contract ------------------------------------------------------------
-# @dxf used to return an ezdxf document (bare or in a {"document": ...} envelope).
-# That contract is GONE, with no shim and no conversion: an old drawing fails here,
-# naming what to do instead. Detection is duck-typed because recognizing the old
-# return must not make the engine import ezdxf.
-
-_RETIRED_CONTRACT_MESSAGE = (
-    "{label}: @dxf returned an ezdxf {what}. That contract is removed.\n"
-    "A @dxf function returns build123d 2D geometry and the engine writes the DXF:\n"
-    "\n"
-    "    from cadgen import build123d as bd\n"
-    "    from cadgen import dxf\n"
-    "\n"
-    "    @dxf(out=\"../DXF/gasket.dxf\")\n"
-    "    def gasket(hole_d: float = 4.5):\n"
-    "        with bd.BuildSketch() as cut:\n"
-    "            bd.Rectangle(60, 40)\n"
-    "            bd.Circle(hole_d / 2, mode=bd.Mode.SUBTRACT)\n"
-    "        return cut.sketch          # bare shape -> the CUT layer\n"
-    "\n"
-    "Return {{\"CUT\": ..., \"ENGRAVE\": ...}} when a drawing genuinely has more than\n"
-    "one CAM operation. Text is bd.Text(...) outlines on a marking layer.\n"
-    "See skills/dxf/SKILL.md."
-)
-
-
-def _looks_like_ezdxf_document(value: object) -> bool:
-    return hasattr(value, "modelspace") and hasattr(value, "header")
-
-
-def _reject_retired_contract(result: object, *, label: str) -> None:
-    if _looks_like_ezdxf_document(result):
-        raise DxfContractError(_RETIRED_CONTRACT_MESSAGE.format(label=label, what="document"))
-    if isinstance(result, dict) and "document" in result:
-        raise DxfContractError(
-            _RETIRED_CONTRACT_MESSAGE.format(label=label, what='{"document": ...} envelope')
-        )
-
-
 # --- normalization -------------------------------------------------------------------
 
 
@@ -224,7 +185,6 @@ def normalize_layers(result: object, *, label: str) -> tuple[tuple[str, tuple["E
     Layer order is alphabetical and edge order is content-derived, so the
     emitted file is a pure function of the geometry.
     """
-    _reject_retired_contract(result, label=label)
     shape_type = _shape_type()
 
     if isinstance(result, dict):

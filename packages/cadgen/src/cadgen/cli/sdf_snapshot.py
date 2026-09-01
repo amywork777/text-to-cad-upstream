@@ -18,7 +18,6 @@ import argparse
 from collections.abc import Sequence
 
 from cadgen._internal.cli_from_function import generated_main, generated_parser
-from cadgen._internal.snapshot_door import RETIRED_SNAPSHOT_FLAGS
 
 DEFAULT_PROG = "cadgen sdf snapshot"
 VERB = ("cadgen.sdf", "snapshot")
@@ -29,7 +28,7 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None, *, prog: str = DEFAULT_PROG) -> int:
-    return generated_main(VERB, argv, prog=prog, retired=RETIRED_SNAPSHOT_FLAGS)
+    return generated_main(VERB, argv, prog=prog)
 
 
 if __name__ == "__main__":

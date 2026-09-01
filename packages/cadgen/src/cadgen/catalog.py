@@ -24,11 +24,8 @@ IGNORED_DISCOVERY_DIR_NAMES = {
     "site-packages",
     "venv",
 }
-# Cheap byte sniff before the AST parse: decorated model scripts import cadgen;
-# the legacy magic names stay listed so unmigrated sources still reach the
-# teaching error instead of silently vanishing from discovery.
-GENERATOR_NAME_MARKERS = (b"cadgen", b"gen_step", b"gen_dxf")
-DXF_GENERATOR_SUFFIX = ".dxf.py"
+# Cheap byte sniff before the AST parse: a decorated model script imports cadgen.
+GENERATOR_NAME_MARKERS = (b"cadgen",)
 
 
 class CadSourceError(ValueError):
@@ -342,25 +339,14 @@ def coordination_scope(entry_path: Path) -> Path:
 
 
 def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:
-    from cadgen._internal.legacy_generators import (
-        MIGRATION_DOC,
-        InvalidModelScriptError,
-        LegacyGeneratorError,
-    )
+    from cadgen.metadata import InvalidModelScriptError
 
     sources: list[CadSource] = []
-    legacy_count = 0
     for script_path in _iter_paths(root, "*.py"):
         if not _looks_like_generator_script(script_path):
             continue
         try:
             source = _read_python_source(script_path)
-        except LegacyGeneratorError:
-            # Unmigrated legacy generators are expected in bulk until the corpus
-            # migrates; discovery skips them quietly (one summary line below) while
-            # EXPLICIT targeting still raises the full teaching error.
-            legacy_count += 1
-            continue
         except (CadSourceError, InvalidModelScriptError, RuntimeError) as exc:
             # Directory discovery is resilient: an unparseable script or a
             # malformed model DECLARATION must not abort catalog-wide operations
@@ -371,40 +357,7 @@ def _iter_python_sources(root: Path) -> tuple[CadSource, ...]:
             continue
         if source is not None:
             sources.append(source)
-    if legacy_count:
-        print(
-            f"[cadgen] skipped {legacy_count} legacy generator(s) under {root} — "
-            f"see {MIGRATION_DOC}",
-            file=sys.stderr,
-        )
     return tuple(sources)
-
-
-def _generator_part_stem(script_path: Path) -> str:
-    """The part name a generator script produces, independent of the source extension.
-
-    A ``<name>.step.py`` entry generator and the legacy ``<name>.py`` both produce the logical
-    STEP ``<name>.step``; a ``<name>.dxf.py`` drawing generator produces the logical
-    ``<name>.dxf``. The derived artifact paths key off ``<name>`` either way —
-    ``.with_suffix('.step')`` would wrongly yield ``<name>.step.step`` for a ``.step.py``
-    source (and likewise for ``.dxf.py``).
-    """
-    name = script_path.name
-    if name.endswith(".step.py"):
-        return name[: -len(".step.py")]
-    if name.endswith(DXF_GENERATOR_SUFFIX):
-        return name[: -len(DXF_GENERATOR_SUFFIX)]
-    if name.endswith(".py"):
-        return name[: -len(".py")]
-    return script_path.stem
-
-
-def is_dxf_generator_path(script_path: Path | str) -> bool:
-    return str(script_path).lower().endswith(DXF_GENERATOR_SUFFIX)
-
-
-def _generator_sibling(script_path: Path, suffix: str) -> Path:
-    return script_path.with_name(_generator_part_stem(script_path) + suffix)
 
 
 def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadata) -> CadSource:
@@ -431,19 +384,6 @@ def _dxf_generator_source(resolved_script_path: Path, metadata: GeneratorMetadat
 
 def _read_python_source(script_path: Path, *, allow_dxf_only: bool = False) -> CadSource | None:
     resolved_script_path = script_path.resolve()
-    lowered = resolved_script_path.name.lower()
-    if lowered.endswith((".step.py", ".stp.py", DXF_GENERATOR_SUFFIX)):
-        # Retired naming (design/library-first-generation.md): model scripts are
-        # plain .py files. Sniff first so an unrelated legacy-suffixed file that
-        # defines no generator at all stays a non-source rather than an error.
-        if _looks_like_generator_script(resolved_script_path):
-            from cadgen._internal.legacy_generators import (
-                LegacyGeneratorError,
-                legacy_naming_message,
-            )
-
-            raise LegacyGeneratorError(legacy_naming_message(resolved_script_path))
-        return None
     metadata = parse_generator_metadata(resolved_script_path)
     if metadata is None:
         return None

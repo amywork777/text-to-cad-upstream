@@ -193,26 +193,24 @@ class DocumentedSnapshotOutputPaths(unittest.TestCase):
                 )
                 self.assertTrue(Path(value).suffix, f"{source}: OUT `{value}` names no file")
 
-    def test_no_skill_still_documents_a_retired_snapshot_flag(self):
-        """The hard cutover, swept across the docs.
+    #: Flags no snapshot door accepts. The generated parsers take TARGET/OUT
+    #: positionally and the pose flag is `--kinematics`, so a doc showing one of
+    #: these is teaching a command line argparse will reject.
+    NON_FLAGS = ("--input", "--output", "--params", "--params-path")
 
-        Each of these exits 2 with a teaching error naming its replacement, so a
-        doc that still shows one is teaching a command that cannot run."""
-        from cadgen._internal.snapshot_door import RETIRED_SNAPSHOT_FLAGS
-
+    def test_no_skill_documents_a_flag_the_snapshot_doors_do_not_take(self):
         for path in sorted(SKILLS.rglob("*.md")):
             text = path.read_text(encoding="utf-8")
             for line in text.splitlines():
                 if "snapshot" not in line:
                     continue
-                for flag in RETIRED_SNAPSHOT_FLAGS:
-                    if not flag.startswith("--"):
-                        continue  # `-i`/`-o` are too short to match a doc line safely
+                for flag in self.NON_FLAGS:
                     with self.subTest(source=str(path.relative_to(SKILLS.parent)), flag=flag):
                         self.assertNotIn(
                             f"snapshot {flag}",
                             line,
-                            f"{flag} is retired: {RETIRED_SNAPSHOT_FLAGS[flag]}",
+                            f"the snapshot doors take TARGET [OUT] positionally "
+                            f"and pose with --kinematics; {flag} is not a flag",
                         )
 
     def test_no_skill_still_teaches_the_retired_timestamped_filename(self):

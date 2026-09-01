@@ -95,7 +95,7 @@ class SrdfValidateCliTests(unittest.TestCase):
         self.assertIn("2 groups", output)
         self.assertIn("1 end effectors", output)
 
-    def test_retired_urdf_link_element_warns_but_passes(self) -> None:
+    def test_a_namespaced_extension_element_passes(self) -> None:
         srdf_path = self._write_pair(
             SAMPLE_SRDF.replace(
                 '<robot name="sample">',
@@ -105,7 +105,7 @@ class SrdfValidateCliTests(unittest.TestCase):
         exit_code, output = self._run(str(srdf_path))
         self.assertEqual(exit_code, 0)
         self.assertIn("OK", output)
-        self.assertIn("deprecated_urdf_link", output)
+        self.assertNotIn("deprecated", output)
 
     def test_missing_paired_urdf_fails(self) -> None:
         srdf_path = self._write("robot.srdf", SAMPLE_SRDF)

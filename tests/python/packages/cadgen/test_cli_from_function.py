@@ -135,8 +135,14 @@ class OutsideTheSubset(unittest.TestCase):
 
 class Serialization(unittest.TestCase):
     def test_json_carries_the_dataclass_with_paths_as_strings(self):
+        # A Path serializes as str(Path) -- the NATIVE spelling, backslashes and
+        # all on Windows -- so the expectation is built the same way rather than
+        # hardcoding the POSIX separator.
         payload = result_payload(Result(ok=True, path=Path("/a/b.stl"), items=(Path("/c.glb"),)))
-        self.assertEqual({"ok": True, "path": "/a/b.stl", "items": ["/c.glb"]}, payload)
+        self.assertEqual(
+            {"ok": True, "path": str(Path("/a/b.stl")), "items": [str(Path("/c.glb"))]},
+            payload,
+        )
 
     def test_run_cli_prints_one_json_line(self):
         out = io.StringIO()

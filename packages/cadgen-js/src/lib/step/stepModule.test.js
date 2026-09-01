@@ -257,7 +257,7 @@ test("STEP render parameters normalize static values from bare and envelope form
   });
 });
 
-test("STEP render parameters reject unknown ids and retired animation keys", () => {
+test("STEP render parameters reject every id the model does not declare", () => {
   const definition = normalizeStepModuleDefinition({
     manifest: {
       schemaVersion: 1,
@@ -271,9 +271,9 @@ test("STEP render parameters reject unknown ids and retired animation keys", () 
     () => normalizeStepParameterRenderValues(definition, { missing: 1 }),
     /Unknown STEP parameter/
   );
-  // Animated sweeps are deleted, not ignored: every retired envelope key
-  // fails loudly so an old recipe cannot silently render a still.
-  for (const retired of [
+  // No key is special-cased: anything that is not a declared DOF is simply an
+  // unknown parameter, so nothing can silently render as if it were honoured.
+  for (const unknown of [
     { animate: { drive: { from: 0, to: 360 } } },
     { fps: 4 },
     { durationSeconds: 2 },
@@ -281,8 +281,8 @@ test("STEP render parameters reject unknown ids and retired animation keys", () 
     { loop: false }
   ]) {
     assert.throws(
-      () => normalizeStepParameterRenderValues(definition, retired),
-      /was removed: animated parameter sweeps no longer render/
+      () => normalizeStepParameterRenderValues(definition, unknown),
+      /Unknown STEP parameter/
     );
   }
 });

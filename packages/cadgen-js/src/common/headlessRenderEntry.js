@@ -55,9 +55,6 @@ async function capturePreparedSource(source, job) {
 }
 
 export async function runHeadlessRenderJob(job) {
-  if (String(job.mode || "view").toLowerCase() === "orbit") {
-    throw new Error("orbit rendering was removed: snapshot writes PNG stills only");
-  }
   const loadStarted = performance.now();
   const source = await loadSource(job);
   headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);

@@ -77,10 +77,8 @@ SUPPORTED_JOB_KEYS = frozenset(
         "selection",
         # A STEP model's pose: a declared preset name, or {dof: value}. Named for the
         # thing it drives (the model's kinematics= declaration) and spelled the same as
-        # the --kinematics flag and the sidecar section. It was "stepParameters" until
-        # the rename, and RETIRED_JOB_KEYS teaches that.
+        # the --kinematics flag and the sidecar section.
         "kinematics",
-        "stepParametersPath",
         # A robot's pose. The STEP analogue is kinematics; a robot is posed by joint
         # angle, so it gets its own key rather than overloading one that means a sidecar.
         "jointValues",
@@ -94,17 +92,6 @@ SUPPORTED_JOB_KEYS = frozenset(
     }
 )
 SELECTION_SHAPED_JOB_KEYS = ("hide", "focus", "refs")
-# Job keys that WERE the schema and are not any more. Named individually rather than folded
-# into the generic "unknown key" list because the generic message tells a caller holding a
-# working recipe only that their key is gone, not what replaced it. No aliasing: the old key
-# is an error, and the error is the migration note.
-RETIRED_JOB_KEYS = {
-    "stepParameters": (
-        "stepParameters was renamed to kinematics: pose values are declared under "
-        '"kinematics" (a preset name, or {dof: value}), matching --kinematics and the '
-        "model's kinematics= declaration"
-    ),
-}
 SUPPORTED_OUTPUT_KEYS = frozenset(
     {
         "path",
@@ -670,8 +657,8 @@ def normalize_common_job(
         output_path_text = str((output.get("path") if is_plain_object(output) else output) or "")
         if output_path_text.strip().lower().endswith(".gif"):
             raise SnapshotError(
-                "GIF export was removed: snapshot renders PNG stills only; "
-                "name a .png output (animation now lives in the viewer, not in files)"
+                "snapshot renders PNG stills: name a .png output "
+                "(motion review lives in the CAD Viewer)"
             )
 
     # A job's own `theme` string gets the SAME treatment as the
@@ -800,21 +787,6 @@ def positive_integer(value: object, label: str) -> int:
     if parsed <= 0:
         raise SnapshotError(f"{label} must be a positive integer")
     return parsed
-def reject_animated_kinematics(value: object) -> None:
-    """Animated --params sweeps are deleted (with GIF export): fail loudly.
-
-    Snapshot renders one PNG at the given values; motion review lives in the
-    viewer. Every retired envelope key errors so an old sweep recipe cannot
-    silently render a still frame."""
-    if not is_plain_object(value):
-        return
-    for key in ("animate", "fps", "durationSeconds", "duration", "loop"):
-        if key in value:
-            raise SnapshotError(
-                f"kinematics.{key} was removed: animated parameter sweeps no "
-                "longer render; snapshot writes a single PNG at the given values"
-            )
-
 def resolve_mesh_render_job(
     job: dict[str, object],
     *,
@@ -844,10 +816,6 @@ def resolve_mesh_render_job(
     if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
             f"kinematics values require a STEP model; {label} mesh inputs are not parametric"
-        )
-    if job.get("stepParametersPath") is not None:
-        raise SnapshotError(
-            f"stepParametersPath requires a STEP model; {label} mesh inputs are not parametric"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()

@@ -343,15 +343,3 @@ def polymorphic_snapshot_verb():
 
     return snapshot
 
-
-#: Teaching errors at the retired adapter flags (hard cutover): the generated
-#: parsers take TARGET/OUT positionally and the pose flag matches its
-#: decorator counterpart by name.
-RETIRED_SNAPSHOT_FLAGS: dict[str, str] = {
-    "--input": "snapshot takes the model positionally now: cadgen <fmt> snapshot TARGET [OUT] ...",
-    "-i": "snapshot takes the model positionally now: cadgen <fmt> snapshot TARGET [OUT] ...",
-    "--output": "the output is the second positional now: cadgen <fmt> snapshot TARGET OUT ...",
-    "-o": "the output is the second positional now: cadgen <fmt> snapshot TARGET OUT ...",
-    "--params": "--params was renamed: --kinematics takes a declared preset name or {dof: value} JSON",
-    "--params-path": "the .params.js sidecar mechanism is retired; kinematics is declared on the model (kinematics=) and posed with --kinematics",
-}

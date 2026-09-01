@@ -28,12 +28,6 @@ const VIEWER_SKIPPED_DIRECTORIES = new Set([
   "__cadgen__", "__pycache__", "build", "coverage", "dist", "node_modules", "viewer",
 ]);
 
-export const DXF_GENERATOR_SUFFIX = ".dxf.py";
-
-export function isDxfGeneratorPath(filePath) {
-  return String(filePath || "").toLowerCase().endsWith(DXF_GENERATOR_SUFFIX);
-}
-
 function realpathOr(value) {
   try {
     return fs.realpathSync(value);

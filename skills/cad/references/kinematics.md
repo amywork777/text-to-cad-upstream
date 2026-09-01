@@ -196,14 +196,3 @@ Identify fixed pivots, link lengths, gear ratios, and joint limits BEFORE
 declaring mates; pivot every rotation about its hinge bore or mate face —
 never a bounding-box center. Convert visual concerns into `cadgen step
 inspect measure` checks before calling them fixed.
-
-## Migration from the retired pose framework
-
-`cadgen.pose(params/features/joints/drivers/animations/module)`, the `pose=`
-decorator kwarg, and the `.params.js` sidecars are all gone (hard cutover).
-`pose=` folded into the dict: `kinematics={**K, "at": "closed"}`. Otherwise:
-features+joints →
-mates (axes by selector ref); ratio drivers → `couplings`; params that moved
-geometry → mate DOFs; params that toggled styles/visibility → animation
-clips or viewer display settings; keyframe animations and escape-hatch
-modules → the `.anim.js` contract above.

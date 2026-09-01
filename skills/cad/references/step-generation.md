@@ -43,8 +43,9 @@ Rules the decorator enforces:
 - **Parameters must all have defaults** — the pipeline calls the function with
   no arguments; defaults are the authored values.
 - Options: `out=`, `kind="part"|"assembly"` (else inferred from the return),
-  `mesh_tolerance=`, `mesh_angular_tolerance=`. Envelope returns
-  (`{"shape": ..., "params": ..., "stl": ..., "3mf": ...}`) keep working.
+  `mesh_tolerance=`, `mesh_angular_tolerance=`. The return is a build123d
+  `Shape` or a `{"shape": ..., "stl": ..., "3mf": ..., "mesh_tolerance": ...,
+  "mesh_angular_tolerance": ...}` envelope — those are the only fields.
 
 **Imports:** `from cadgen import build123d as bd` is the canonical import — a
 lazy, transparent re-export (same names, same objects on first touch), so a
@@ -52,10 +53,6 @@ current model's re-run never pays the ~2.5s kernel import: the freshness gate
 and warm-daemon handoff fire before any `bd.` attribute resolves. Raw
 `import build123d` still works, just slower on re-runs (the decorator prints a
 one-line hint).
-
-Legacy `gen_step()`/`gen_dxf()` sources and `.step.py`/`.dxf.py` naming fail
-hard with a pointer to `migrating-generators.md` (codemod:
-`python -m cadgen.migrate <file>`).
 
 ## Generated vs imported STEP
 

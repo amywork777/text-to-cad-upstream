@@ -140,22 +140,13 @@ def _normalize_step_payload(
         return {"shape": result}
     if isinstance(result, dict):
         # stl / 3mf / mesh_tolerance / mesh_angular_tolerance are consumed via the static
-        # metadata path (per-generator STL/3MF outputs + mesh tolerances); keep allowing them.
-        # 'params' (the loose .params.js sidecar) is DELETED: articulation is declared as
-        # typed mates (kinematics= on the decorator) and travels in the sidecar.
+        # metadata path (per-generator STL/3MF outputs + mesh tolerances).
         allowed_fields = {"shape", "stl", "3mf", "mesh_tolerance", "mesh_angular_tolerance"}
         extra_fields = sorted(str(key) for key in result if key not in allowed_fields)
         if extra_fields:
             joined = ", ".join(extra_fields)
-            hint = (
-                " — the .params.js sidecar mechanism was replaced by typed mates: "
-                "declare kinematics= on @step and (for choreography) "
-                "animation='<name>.anim.js'; see the cad skill's kinematics reference"
-                if "params" in extra_fields
-                else ""
-            )
             raise TypeError(
-                f"{_display_path(script_path)} gen_step() envelope has unsupported field(s): {joined}{hint}"
+                f"{_display_path(script_path)} gen_step() envelope has unsupported field(s): {joined}"
             )
         if "shape" not in result:
             raise TypeError(

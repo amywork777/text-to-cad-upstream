@@ -16,6 +16,12 @@ import {
 } from "./kinematicsRuntime.js";
 import { normalizeStepModuleDefinition } from "./stepModule.js";
 
+// The sidecar schema this runtime reads. Mirrors cadgen's
+// source_sidecar.SOURCE_SIDECAR_SCHEMA_VERSION and the viewer's
+// packageContract.mjs; pinned across the three by
+// tests/python/global/test_render_contract_sync.py.
+export const SOURCE_SIDECAR_SCHEMA_VERSION = 5;
+
 function isObject(value) {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
@@ -93,38 +99,64 @@ export function stepModuleFromKinematics(block) {
   };
 }
 
+// Reading sections out of a sidecar written to a different shape is how a
+// model silently loses its kinematics, so the schema is checked before any
+// section is touched. The viewer surfaces this as the step-module / animation
+// load error.
+// The sidecar's own filename, whether the url is a plain path or the viewer's
+// `/__cad/asset?file=<path>` form (whose LAST path segment is "asset").
+function sidecarName(url) {
+  const text = String(url || "").split("#")[0];
+  const query = /[?&]file=([^&]+)/.exec(text);
+  const target = query ? decodeURIComponent(query[1]) : text.split("?")[0];
+  return target.replace(/\\/g, "/").split("/").filter(Boolean).pop() || "sidecar";
+}
+
+function sidecarSections(sidecar, url) {
+  const schemaVersion = sidecar?.schemaVersion;
+  if (schemaVersion !== SOURCE_SIDECAR_SCHEMA_VERSION) {
+    const name = sidecarName(url);
+    const model = name.replace(/\.(step|stp)\.json$/i, "");
+    throw new Error(
+      `${name}: unsupported sidecar schema ${schemaVersion ?? "none"} `
+      + `(expected ${SOURCE_SIDECAR_SCHEMA_VERSION}) — rebuild the model `
+      + `(python ${model}.py) or re-annotate the document (cadgen step build)`
+    );
+  }
+  return sidecar;
+}
+
+async function fetchSidecar(sidecarUrl) {
+  const url = String(sidecarUrl || "").trim();
+  if (!url) {
+    return null;
+  }
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) {
+    throw new Error(`Failed to load model sidecar: HTTP ${response.status}`);
+  }
+  return sidecarSections(await response.json(), url);
+}
+
 /** Fetch the model's sidecar (<name>.step.json) and compile its
  * kinematics section into a normalized step-module definition. Models with no
  * kinematics resolve to null (nothing to pose). The animation section is NOT
  * read here — the two systems stay independent end to end. */
 export async function loadKinematicsModuleDefinition(sidecarUrl, { cadPath = "" } = {}) {
-  const url = String(sidecarUrl || "").trim();
-  if (!url) {
+  const sidecar = await fetchSidecar(sidecarUrl);
+  if (!sidecar) {
     return null;
   }
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load model sidecar: HTTP ${response.status}`);
-  }
-  const sidecar = await response.json();
-  const raw = stepModuleFromKinematics(sidecar?.kinematics);
+  const raw = stepModuleFromKinematics(sidecar.kinematics);
   if (!raw) {
     return null;
   }
-  return normalizeStepModuleDefinition(raw, { url, cadPath });
+  return normalizeStepModuleDefinition(raw, { url: String(sidecarUrl).trim(), cadPath });
 }
 
 /** Fetch the sidecar's ANIMATION section: the copied .anim.js text, or "". */
 export async function loadAnimationSource(sidecarUrl) {
-  const url = String(sidecarUrl || "").trim();
-  if (!url) {
-    return "";
-  }
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Failed to load model sidecar: HTTP ${response.status}`);
-  }
-  const sidecar = await response.json();
+  const sidecar = await fetchSidecar(sidecarUrl);
   const clips = sidecar?.animation?.clips;
   return typeof clips === "string" ? clips : "";
 }

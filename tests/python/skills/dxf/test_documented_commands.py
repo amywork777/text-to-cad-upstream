@@ -263,20 +263,18 @@ class DocumentedCommandForms(_DrawingHarness):
         self.run_drawing("gasket.py", "-o", "out/custom.dxf")
         self.assertTrue((self.project / "out" / "custom.dxf").is_file())
 
-    def test_the_named_door_is_deleted_and_teaches_the_script_run(self) -> None:
-        """`cadgen dxf build` is gone: the .dxf IS the product.
-
-        A drawing has no derived state a door must materialize — the viewer
-        parses the file directly and snapshot meshes it on demand — so the one
-        door is running the script. The removed command teaches that rather
-        than reporting an unknown command.
-        """
+    def test_there_is_no_dxf_build_door(self) -> None:
+        """A drawing has no derived state a door must materialize — the viewer
+        parses the file directly and snapshot meshes it on demand — so `dxf
+        build` is simply not a command, and the dispatcher says so with the
+        command list."""
         completed = subprocess.run(
             [sys.executable, "-m", "cadgen.cli", "dxf", "build", "gasket.py"],
             cwd=str(self.project), env=self.environment, capture_output=True, text=True, timeout=600,
         )
         self.assertEqual(2, completed.returncode)
-        self.assertIn("python <drawing>.py", completed.stderr)
+        self.assertIn("unknown command", completed.stderr)
+        self.assertIn("dxf snapshot", completed.stderr)
 
     def test_no_undocumented_or_missing_flags(self) -> None:
         """SKILL.md's flag list is what the parser accepts, exactly.
@@ -315,7 +313,7 @@ class DocumentedCommandForms(_DrawingHarness):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout.strip(), "[]", "a generated drawing must validate clean")
 
-    def test_the_retired_contract_fails_and_says_what_to_do(self) -> None:
+    def test_an_ezdxf_return_fails_the_current_return_contract(self) -> None:
         (self.project / "legacy.py").write_text(
             textwrap.dedent(
                 """\
@@ -336,8 +334,10 @@ class DocumentedCommandForms(_DrawingHarness):
         completed = self.run_drawing("legacy.py", expect_success=False)
         self.assertNotEqual(completed.returncode, 0)
         output = completed.stdout + completed.stderr
-        self.assertIn("That contract is removed", output)
-        self.assertIn("skills/dxf/SKILL.md", output)
+        # Ordinary validation of the CURRENT contract — @dxf returns build123d
+        # 2D geometry — with no recognition of what the value used to mean.
+        self.assertIn("build123d geometry", output)
+        self.assertNotIn("removed", output)
         self.assertFalse((self.project / "legacy.dxf").exists())
 
 

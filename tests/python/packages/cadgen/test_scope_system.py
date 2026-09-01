@@ -292,9 +292,8 @@ class ComposeSeamTest(StoreIsolatedTest):
         finally:
             os.environ.pop("CADGEN_SCOPE_CACHE", None)
 
-    def test_child_entry_is_a_teaching_error(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "Compose by FUNCTION.*memo"):
-            compose.child_entry("child.py")
+    def test_compose_exposes_only_the_function_seam(self) -> None:
+        self.assertFalse(hasattr(compose, "child_entry"))
 
     def test_memo_function(self) -> None:
         calls = {"n": 0}

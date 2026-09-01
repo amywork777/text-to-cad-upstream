@@ -72,6 +72,16 @@ class RenderContractSyncTest(unittest.TestCase):
             _extract(r"^export const SOURCE_SIDECAR_SCHEMA_VERSION = (\d+);", contract),
             "SOURCE_SIDECAR_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
         )
+        self.assertEqual(
+            _extract(r"^SOURCE_SIDECAR_SCHEMA_VERSION = (\d+)$", sidecar_module),
+            _extract(
+                r"^export const SOURCE_SIDECAR_SCHEMA_VERSION = (\d+);",
+                ROOT / "packages/cadgen-js/src/common/kinematicsModule.js",
+            ),
+            "SOURCE_SIDECAR_SCHEMA_VERSION diverged between cadgen and the JS "
+            "kinematics loader — the loader REFUSES any other schema, so a "
+            "one-sided bump makes every model's kinematics fail to load",
+        )
 
     def test_provenance_record_constants_match_python(self) -> None:
         # The records tier is where generated-vs-imported actually lives at

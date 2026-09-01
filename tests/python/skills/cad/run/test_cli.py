@@ -103,7 +103,9 @@ class RunModelArgvTests(unittest.TestCase):
         code = runner.run_model_argv([str(script)])
         self.assertEqual(1, code)
 
-    def test_legacy_gen_step_gets_the_teaching_error(self) -> None:
+    def test_an_undecorated_function_is_simply_not_a_model(self) -> None:
+        """No retired-name recognition: a plain function named anything at all
+        is not a declaration, and the current-contract error says so."""
         script = self._write("old.py", "def gen_step():\n    return object()\n")
         import contextlib
         import io
@@ -112,9 +114,17 @@ class RunModelArgvTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             code = runner.run_model_argv([str(script)])
         self.assertEqual(1, code)
-        self.assertIn("migrating-generators.md", stderr.getvalue())
+        message = stderr.getvalue()
+        self.assertIn("declares no CAD model", message)
+        self.assertIn("@step", message)
+        self.assertNotIn("migrat", message)
 
-    def test_legacy_naming_gets_the_teaching_error(self) -> None:
+    def test_a_double_suffixed_filename_is_an_ordinary_model_script(self) -> None:
+        """Filenames carry no special meaning: `.step.py` is just a .py file.
+
+        The fixture returns a non-shape, so the run reaches — and fails at —
+        the ORDINARY geometry contract, which is the proof that the name was
+        never inspected."""
         script = self._write("old.step.py", STEP_MODEL)
         import contextlib
         import io
@@ -123,7 +133,9 @@ class RunModelArgvTests(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             code = runner.run_model_argv([str(script)])
         self.assertEqual(1, code)
-        self.assertIn("migrating-generators.md", stderr.getvalue())
+        message = stderr.getvalue()
+        self.assertIn("must be a build123d Shape", message)
+        self.assertNotIn("naming", message)
 
 
 if __name__ == "__main__":

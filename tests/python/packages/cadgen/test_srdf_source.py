@@ -41,7 +41,7 @@ class SrdfSourceTests(unittest.TestCase):
             self.assertEqual(source.group_states[0].joint_values_by_name["elbow"], 1.57)
             self.assertEqual(source.disabled_collision_pairs[0].reason, "Adjacent")
 
-    def test_retired_urdf_link_element_warns_deprecated(self) -> None:
+    def test_a_namespaced_extension_element_passes_through(self) -> None:
         legacy = SAMPLE_SRDF.replace(
             '<robot name="sample">',
             '<robot name="sample" xmlns:tcad="https://text-to-cad.dev/srdf">\n  <tcad:urdf path="robot.urdf"/>',
@@ -53,7 +53,9 @@ class SrdfSourceTests(unittest.TestCase):
             source, result = parse_srdf_file(srdf_path)
 
             self.assertIsNotNone(source)
-            self.assertIn("deprecated_urdf_link", {finding.code for finding in result.warnings})
+            # Namespaced extensions are not the SRDF contract's business: no
+            # finding names them, retired or otherwise.
+            self.assertEqual(set(), {finding.code for finding in result.warnings})
 
     def test_rejects_non_robot_root(self) -> None:
         with tempfile.TemporaryDirectory(prefix="tmp-srdf-source-") as tempdir:

@@ -73,9 +73,6 @@ def gasket(hole_d: float = 4.5):
   entities by geometric content, so an unchanged drawing rebuilds to an identical
   file, cold or warm, on any machine.
 
-Returning an ezdxf document is an error with a message pointing here. Nothing
-converts it.
-
 ## The three DXF workflows
 
 Copy the full generator template for the applicable workflow from

@@ -46,17 +46,17 @@ _COMMANDS: dict[str, tuple[str, str]] = {
     "step compile": ("cadgen.cli.step_compile", "make a STEP's render package current"),
     "step inspect": ("cadgen.cli.step_inspect", "inspect selector references in a STEP"),
     "step snapshot": ("cadgen.cli.step_snapshot", "render a STEP model to an image"),
-    # Mesh formats — one door each, replacing the retired `step export`. Their
-    # `snapshot` is the mesh arm `step snapshot` used to carry: one format, one
-    # door, so a mesh renders from the same command that writes it.
+    # Mesh formats — one door each: `build` writes the model's declared
+    # output(s), `snapshot` renders a mesh file. One format, one door.
     "stl build": ("cadgen.cli.stl_build", "write a model's STL output(s)"),
     "stl snapshot": ("cadgen.cli.stl_snapshot", "render an STL mesh to an image"),
     "3mf build": ("cadgen.cli.threemf_build", "write a model's 3MF output(s)"),
     "3mf snapshot": ("cadgen.cli.threemf_snapshot", "render a 3MF mesh to an image"),
     "glb build": ("cadgen.cli.glb_build", "write a model's GLB output(s)"),
     "glb snapshot": ("cadgen.cli.glb_snapshot", "render a GLB mesh to an image"),
-    # DXF. There is no `dxf build`: a .dxf has no derived state a door must
-    # materialize, so a drawing is made by running its script.
+    # DXF. A drawing has no derived state a door must materialize: the file is
+    # the product, made by running its script (python <drawing>.py), and
+    # `dxf snapshot` meshes it on demand.
     "dxf snapshot": ("cadgen.cli.dxf_snapshot", "render a DXF to an image"),
     # Robot descriptions
     "urdf validate": ("cadgen.cli.urdf_validate", "validate a URDF robot description"),
@@ -152,17 +152,6 @@ _DAEMON_TOOLS = {
     "glb build": "glb-build",
 }
 
-#: Commands that were DELETED, and what to run instead. A hard cutover has to
-#: teach at the surface it removed: falling through to "unknown command" would
-#: send a reader to the command list to guess.
-_RETIRED_COMMANDS: dict[str, str] = {
-    "dxf build": (
-        "`cadgen dxf build` was deleted: a .dxf has no derived state a door must "
-        "materialize — the file is the product, and `cadgen dxf snapshot` meshes it "
-        "on demand. Make a drawing by running its script: python <drawing>.py"
-    ),
-}
-
 def _run_via_daemon(tool: str, rest: list[str], prog: str) -> int | None:
     """Exit code when the daemon handled it, None to run in this process.
 
@@ -207,12 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.write(f"cadgen {__version__}\n")
         return 0
 
-    # Longest match first, so `step gen` beats a hypothetical `step`.
+    # Longest match first, so `step build` beats a hypothetical `step`.
     command, rest = " ".join(argv[:2]), argv[2:]
     entry = _COMMANDS.get(command)
-    if entry is None and command in _RETIRED_COMMANDS:
-        sys.stderr.write(f"cadgen: {_RETIRED_COMMANDS[command]}\n")
-        return 2
     if entry is None:
         command, rest = argv[0], argv[1:]
         entry = _COMMANDS.get(command)
@@ -231,8 +217,8 @@ def main(argv: list[str] | None = None) -> int:
     module_name, _ = entry
     module = importlib.import_module(module_name)
 
-    # Tell the parser which front door it was reached through, so `cadgen step gen --help`
-    # says "cadgen step gen" — every entrypoint is a cadgen verb now.
+    # Tell the parser which front door it was reached through, so
+    # `cadgen step build --help` says "cadgen step build".
     # Not every command has a parser to name (the daemon owns its own), hence
     # the signature check rather than a blanket keyword.
     import inspect  # only the dispatcher needs it; every skill shim imports this

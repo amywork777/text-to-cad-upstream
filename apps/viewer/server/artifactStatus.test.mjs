@@ -236,6 +236,20 @@ test("a declaring generated model classifies generated with or without its recor
   assert.equal(resolveArtifactVerdict(step, root).generated, true);
 });
 
+test("a sidecar at another schema is not a marker; the record still decides", (t) => {
+  // Classification takes a sidecar at THIS schema as a fast yes and nothing
+  // else. A file at any other schema is not a sidecar this viewer reads, so it
+  // is treated as absent — a badge must never raise, and loud refusal on a
+  // wrong-schema sidecar belongs to the RENDER path (the kinematics loader).
+  const root = tempRoot(t, "status-");
+  const step = writeStepPackage(root, "hinge.step", { generated: true });
+  fs.writeFileSync(`${step}.json`, JSON.stringify({ schemaVersion: 4, kinematics: {} }));
+  assert.equal(resolveArtifactVerdict(step, root).generated, true, "the record still says generated");
+
+  fs.rmSync(sourceProvenanceRecordPath(step));
+  assert.equal(resolveArtifactVerdict(step, root).generated, false, "nothing left that classifies");
+});
+
 test("an imported STEP classifies imported: no sidecar, no record", (t) => {
   const root = tempRoot(t, "status-");
   const step = writeStepPackage(root, "vendor.step");

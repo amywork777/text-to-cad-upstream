@@ -108,23 +108,6 @@ def _read_glb_chunks(path: Path) -> tuple[dict[str, Any], bytes]:
         raise ValueError(f"GLB JSON chunk is not an object: {_display_path(path)}")
     return gltf, binary_payload
 
-def _array_from_legacy_binary_view(binary_payload: bytes, view: Mapping[str, Any]) -> array:
-    dtype = str(view.get("dtype") or "")
-    typecode = "f" if dtype == "float32" else "I" if dtype == "uint32" else ""
-    if not typecode:
-        raise ValueError(f"Unsupported STEP topology buffer dtype: {dtype}")
-    byte_offset = int(view.get("byteOffset") or 0)
-    count = int(view.get("count") or 0)
-    item_size = int(view.get("itemSize") or array(typecode).itemsize)
-    byte_length = int(view.get("byteLength") or (count * item_size))
-    if byte_offset < 0 or byte_length < 0 or byte_offset + byte_length > len(binary_payload):
-        raise ValueError("STEP topology buffer view range is invalid")
-    values = array(typecode)
-    values.frombytes(binary_payload[byte_offset : byte_offset + byte_length])
-    if count >= 0 and len(values) > count:
-        del values[count:]
-    return values
-
 def normalize_step_edge_render_visibility_classes(value: object) -> tuple[str, ...]:
     if value is None:
         return STEP_EDGE_DEFAULT_RENDER_VISIBILITY_CLASSES
@@ -237,8 +220,7 @@ def read_step_topology_index_from_glb(glb_path: Path, *, entry_path: Path | None
     if entry_path is not None:
         from cadgen._internal.source_sidecar import read_source_provenance
 
-        # Sidecar when the model carries one (kinematics/animation/exports);
-        # else the records-tier provenance record a plain model's build wrote.
+        # The records-tier provenance record every generated build writes.
         sidecar = read_source_provenance(entry_path)
         if sidecar is not None:
             manifest["_sourceSidecar"] = sidecar

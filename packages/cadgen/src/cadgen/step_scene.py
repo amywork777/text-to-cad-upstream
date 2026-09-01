@@ -29,23 +29,11 @@ _LAZY_EXPORTS = {
 }
 
 
-RETIRED_IMPORT_STEP_MESSAGE = (
-    "cadgen.import_step is gone; use cadgen.read_step instead. Same shape, same "
-    "cache — and it records the file it read as a build input, so replacing the "
-    "STEP makes your model stale instead of leaving it reporting itself current "
-    "until someone passes --force. (build123d.import_step is unaffected.)"
-)
-
-
 def __getattr__(name: str):
     if name in _LAZY_EXPORTS:
         from cadgen._internal import step_scene as engine
 
         return getattr(engine, _LAZY_EXPORTS[name])
-    if name == "import_step":
-        # A grave marker, not a shim. Half-removing a name leaves a bare
-        # AttributeError, which says the name is wrong but not what is right.
-        raise AttributeError(RETIRED_IMPORT_STEP_MESSAGE)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

@@ -233,11 +233,11 @@ class KinematicsBuildTests(unittest.TestCase):
         self.assertEqual(0, self._build(posed))
         self.assertEqual(posed_bytes, posed.with_suffix(".step").read_bytes())
 
-    def test_the_old_pose_surface_teaches_the_split(self) -> None:
+    def test_the_root_exposes_no_pose_surface(self) -> None:
         import cadgen
 
-        with self.assertRaisesRegex(ValueError, "cadgen.pose\\(\\) was removed"):
-            cadgen.pose(params={})
+        with self.assertRaises(AttributeError):
+            cadgen.pose  # noqa: B018 - the attribute access IS the assertion
 
 
 if __name__ == "__main__":

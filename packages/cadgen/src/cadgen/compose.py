@@ -176,16 +176,6 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
         return result
 
 
-def child_entry(path=None):
-    """Retired surface: the path-addressed seam is gone (hard cutover)."""
-    raise RuntimeError(
-        "child_entry() was removed. Compose by FUNCTION: import the child's "
-        "model function and wrap it — `from part import gen_part; "
-        "_PART = memo(gen_part)` — importing links, memo caches. "
-        "(A path presumed one model per file; a function does not.)"
-    )
-
-
 def memo(fn):
     """Cache a function as a traced scope: a sibling model's imported entry
     function, or any expensive helper. The function must be pure given its

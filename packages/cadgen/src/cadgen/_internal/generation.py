@@ -228,10 +228,11 @@ def _manifest_source_sidecar(manifest: Mapping[str, object]) -> Mapping[str, obj
 
 
 def _artifact_source_kind_matches_spec(spec: EntrySpec, manifest: Mapping[str, object]) -> bool:
-    # The generated-marker is the source sidecar's existence (source_sidecar.py):
-    # the descriptor itself is STEP-pure and carries no sourceKind. An imported
-    # spec whose bytes resolve to a generated model's package is fine — content
-    # keying already guarantees the package IS these bytes' render.
+    # The generated-marker is the PROVENANCE RECORD every generated build writes
+    # (source_sidecar.py records tier): the descriptor itself is STEP-pure and
+    # carries no sourceKind. An imported spec whose bytes resolve to a generated
+    # model's package is fine — content keying already guarantees the package IS
+    # these bytes' render.
     generated = bool(_manifest_source_sidecar(manifest))
     if spec.source != "generated" and spec.step_path is not None and spec.step_path.is_file():
         return True

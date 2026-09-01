@@ -27,6 +27,13 @@ from cadgen._internal.cli_from_function import emit, result_payload  # noqa: E40
 from cadgen.results import SnapshotFile, SnapshotResult, SnapshotTimings  # noqa: E402
 from cadgen.snapshot_core import snapshot_result  # noqa: E402
 
+# A file path round-trips through pathlib, so it comes back in the NATIVE
+# spelling (backslashes on Windows). Expectations are built with the same
+# transform rather than hardcoding the POSIX separator.
+def native(posix_path: str) -> str:
+    return str(Path(posix_path))
+
+
 VIEW_RESULT = {
     "ok": True,
     "mode": "view",
@@ -50,7 +57,7 @@ class ResultShape(unittest.TestCase):
     def test_one_file_per_written_output(self) -> None:
         result = snapshot_result(VIEW_RESULT, total_ms=42.0)
         self.assertTrue(result.ok)
-        self.assertEqual([str(f.path) for f in result.files], ["/tmp/review.png"])
+        self.assertEqual([str(f.path) for f in result.files], [native("/tmp/review.png")])
         self.assertEqual(result.files[0].kind, "png")
         self.assertEqual(result.files[0].view, "ISO")
         self.assertEqual(result.warnings, ("one part had no material",))
@@ -84,7 +91,9 @@ class ResultShape(unittest.TestCase):
             ],
         }
         result = snapshot_result(packet, total_ms=5.0)
-        self.assertEqual([str(f.path) for f in result.files], ["/tmp/a.png", "/tmp/b.png"])
+        self.assertEqual(
+            [str(f.path) for f in result.files], [native("/tmp/a.png"), native("/tmp/b.png")]
+        )
         self.assertEqual(result.warnings, ("clamped",))
         self.assertEqual(result.timings.job_count, 2)
 
@@ -118,7 +127,7 @@ class JsonShape(unittest.TestCase):
         )
         self.assertEqual(
             payload["files"],
-            [{"path": "/tmp/review.png", "kind": "png", "view": "ISO"}],
+            [{"path": native("/tmp/review.png"), "kind": "png", "view": "ISO"}],
         )
         self.assertEqual(payload["timings"], {"job_count": 1, "total_ms": 42.0})
         self.assertEqual(payload["parts"], [])
@@ -144,7 +153,7 @@ class JsonShape(unittest.TestCase):
         printed = stdout.getvalue()
         self.assertEqual(len(printed.strip().splitlines()), 1)
         self.assertNotIn(", ", printed)  # compact separators
-        self.assertEqual(json.loads(printed)["files"][0]["path"], "/tmp/review.png")
+        self.assertEqual(json.loads(printed)["files"][0]["path"], native("/tmp/review.png"))
 
     def test_the_human_form_names_the_paths_and_the_warnings(self) -> None:
         stdout = io.StringIO()
@@ -156,7 +165,10 @@ class JsonShape(unittest.TestCase):
         )
         self.assertEqual(
             stdout.getvalue().splitlines(),
-            ["saved snapshot: /tmp/review.png", "warning: one part had no material"],
+            [
+                f"saved snapshot: {native('/tmp/review.png')}",
+                "warning: one part had no material",
+            ],
         )
 
     def test_list_mode_prints_the_inventory_and_nothing_else(self) -> None:

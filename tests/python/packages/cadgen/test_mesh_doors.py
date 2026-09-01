@@ -16,11 +16,19 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import unittest
 from pathlib import Path
 from unittest import mock
+
+
+def native(posix_path: str) -> str:
+    """A path the doors printed back: pathlib hands it out in the NATIVE
+    spelling, so expectations are built the same way instead of hardcoding the
+    POSIX separator."""
+    return str(Path(posix_path))
 
 from tests.python.support.paths import add_repo_path
 
@@ -111,7 +119,9 @@ class DoorArguments(unittest.TestCase):
         stderr = io.StringIO()
         with _engine(), contextlib.redirect_stderr(stderr):
             self.assertEqual(1, stl_build.main(["parts/sample.py"]))
-        self.assertIn("python parts/sample.py", stderr.getvalue())
+        # The teaching error prints the path in the NATIVE spelling, so that is
+        # what a Windows reader can paste back into a shell.
+        self.assertIn(f"python {os.path.join('parts', 'sample.py')}", stderr.getvalue())
 
     def test_tolerances_force_and_verbose_reach_the_engine(self):
         with _engine() as export:
@@ -192,7 +202,10 @@ class DoorResults(unittest.TestCase):
         with _engine(payload), contextlib.redirect_stdout(out):
             self.assertEqual(0, stl_build.main([str(self.document)]))
         self.assertEqual(
-            ["current STL: /abs/draft.stl", "wrote STL: /abs/print.stl"],
+            [
+                f"current STL: {native('/abs/draft.stl')}",
+                f"wrote STL: {native('/abs/print.stl')}",
+            ],
             out.getvalue().splitlines(),
         )
 
@@ -217,7 +230,7 @@ class DoorResults(unittest.TestCase):
                 "ok": True,
                 "files": [
                     {
-                        "path": "/abs/sample.3mf",
+                        "path": native("/abs/sample.3mf"),
                         "fmt": "3mf",
                         "skipped": False,
                         "mesh_tolerance": 0.005,

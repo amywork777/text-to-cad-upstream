@@ -81,7 +81,6 @@ from cadgen.snapshot_core import (
     PRESENTATION_RENDER_WIDTH,
     RENDER_BROWSER_STARTUP_TIMEOUT_MS,
     RouteFileError,
-    RETIRED_JOB_KEYS,
     SELECTION_SHAPED_JOB_KEYS,
     SETTINGS_KEY_HOMES,
     SIMPLE_RENDER_HEIGHT,
@@ -124,7 +123,6 @@ from cadgen.snapshot_core import (
     resolve_snapshot_route_file,
     route_file,
     snapshot_timestamp,
-    reject_animated_kinematics,
     validate_direct_settings_payload,
     validate_display_settings_values,
     with_snapshot_timeout,
@@ -701,19 +699,6 @@ def resolve_render_job(
     job = copy.deepcopy(raw_job)
     if "params" in job:
         raise SnapshotError("render jobs use kinematics; params is reserved for shortcut --kinematics parsing")
-    # A key that WAS the schema is named, not aliased. Reading `stepParameters` as
-    # `kinematics` would leave two spellings of one thing alive in every job file, and the
-    # whole point of the rename is that the CLI flag, the sidecar section and the job
-    # packet say the same word.
-    for retired_key, guidance in RETIRED_JOB_KEYS.items():
-        if retired_key in job:
-            raise SnapshotError(guidance)
-    if "paramsPath" in job or "stepParametersPath" in job:
-        raise SnapshotError(
-            "parameter sidecar paths are retired: kinematics is declared on the model "
-            "(@step(kinematics={...})) and read from its sidecar; "
-            "see skills/cad/references/kinematics.md"
-        )
     forbidden_root_fields = [field for field in ("workspaceRoot", "rootDir") if field in job]
     if forbidden_root_fields:
         raise SnapshotError(
@@ -805,7 +790,6 @@ def resolve_step_render_job(
     **_kind_context: object,
 ) -> dict[str, object]:
     has_param_render = has_kinematics_render_values(job.get("kinematics"))
-    reject_animated_kinematics(job.get("kinematics"))
     # A render is a READ. A document whose sidecar closure no longer re-hashes
     # is refused by naming the run rather than rebuilt here — putting a build
     # inside a render is exactly the coupling documents-only inputs remove.
@@ -877,9 +861,10 @@ def resolve_step_render_job(
         # sidecar and folds --params DOF values through the shared FK
         # evaluator (cadgen-js kinematicsModule).
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
-        # A pose NAME is validated HERE, against the declaration the CLI just
-        # loaded — a typo must fail as a clean CLI error, not as a stack trace
-        # out of the browser runtime (which repeats this check as a backstop).
+        # A pose NAME and every DOF id are validated HERE, against the
+        # declaration the CLI just loaded — a typo must fail as a clean CLI
+        # error, not as a stack trace out of the browser runtime (which repeats
+        # both checks as a backstop).
         preset = job.get("kinematics")
         if isinstance(preset, str) and preset.strip():
             poses = kinematics_block.get("poses")
@@ -892,6 +877,16 @@ def resolve_step_render_job(
                         if declared
                         else "This model declares no poses; pass {dof: value} JSON instead"
                     )
+                )
+        elif is_plain_object(preset):
+            from cadgen.kinematics import kinematics_dof_ids
+
+            dofs = set(kinematics_dof_ids(kinematics_block))
+            unknown = sorted(str(key) for key in preset if str(key) not in dofs)
+            if unknown:
+                raise SnapshotError(
+                    f"Unknown kinematics DOF(s): {', '.join(unknown)}. "
+                    f"This model declares: {', '.join(sorted(dofs)) or '(none)'}"
                 )
     elif has_param_render:
         raise SnapshotError(

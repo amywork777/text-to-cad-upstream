@@ -24,18 +24,8 @@ __all__ = ["snapshot"]
 #: ``cadgen dxf snapshot``'s verb: render a drawing as its 3D flat pattern.
 snapshot = mesh_snapshot_verb("dxf")
 
-#: The teaching error at the deleted verb, shared with the command dispatcher so
-#: `cadgen dxf build` and `cadgen.dxf.build` say the same thing.
-RETIRED_BUILD_MESSAGE = (
-    "`dxf build` was deleted: a .dxf has no derived state a door must "
-    "materialize — the file is the product, and snapshot meshes it on demand. "
-    "Make a drawing by running its script: python <drawing>.py"
-)
-
 
 def __getattr__(name: str):
-    if name == "build":
-        raise AttributeError(RETIRED_BUILD_MESSAGE)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 

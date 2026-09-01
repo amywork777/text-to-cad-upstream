@@ -23,6 +23,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { SOURCE_SIDECAR_SCHEMA_VERSION } from "./packageContract.mjs";
 import { renderPackageDir, sourceSidecarPath } from "./scanner.mjs";
 import { sourceProvenanceRecordPath } from "./storePaths.mjs";
 
@@ -41,7 +42,7 @@ export const ARTIFACT_STATE = Object.freeze({
   ERROR: "error",
 });
 
-// Codes the client may build on (mirror of the retired BUILDABLE_ARTIFACT_CODES).
+// Codes the client may build on.
 const BUILDABLE_CODES = new Set([
   "missing_glb", "missing_step_topology", "unsupported_step_topology",
   "missing_source_path", "missing_dxf_output",
@@ -61,24 +62,24 @@ function readJson(filePath) {
  * Was this document GENERATED (a declaration owns it) or IMPORTED (a foreign
  * file the viewer may offer to bring in)?
  *
- * The model-side sidecar used to answer this on its own, and stopped being able
- * to at schema 5: it now carries DECLARATIONS only, and is written only when the
- * model declares something (kinematics, animation, mesh exports). A plain
- * generated model has no sidecar, so sidecar-existence alone called every one of
- * them imported and offered a STEP-import button for a file whose real fix is
- * rerunning its script.
- *
- * The authority is the provenance RECORD, which every generated build writes:
+ * The AUTHORITY is the provenance RECORD, which every generated build writes:
  * <cache>/records/<sha256(abs artifact path)[:24]>.source.json. Present and
  * naming a sourceKind => generated; absent, unreadable, or empty => imported.
+ * The records tier is evictable (`cadgen cache gc` sweeps it), so "no record"
+ * is a routine state, not a fault: reading it must never raise. An evicted
+ * record costs one wrong badge until the next build re-records it.
  *
- * That fallback is deliberate, not defensive sloppiness. The records tier is
- * evictable (`cadgen cache gc` sweeps it), so "no record" is a routine state, not
- * a fault: reading it must never raise. An evicted record costs one wrong badge
- * until the next build re-records it — the same rebuild an eviction always costs.
+ * A model-side sidecar at THIS schema is a fast yes on top of that. The
+ * sidecar carries DECLARATIONS only and is written only when the model
+ * declares something (kinematics, animation, mesh exports), so its absence
+ * proves nothing — and a file at any other schema is not a sidecar this
+ * viewer reads, so classification treats it as absent and falls through to
+ * the record. (Loud refusal on a wrong-schema sidecar belongs to the RENDER
+ * path — cadgen-js kinematicsModule — not to a status badge.)
  */
 function isGeneratedDocument(stepPath) {
-  if (fs.existsSync(sourceSidecarPath(stepPath))) {
+  const sidecar = readJson(sourceSidecarPath(stepPath));
+  if (sidecar && sidecar.schemaVersion === SOURCE_SIDECAR_SCHEMA_VERSION) {
     return true;
   }
   const record = readJson(sourceProvenanceRecordPath(stepPath));

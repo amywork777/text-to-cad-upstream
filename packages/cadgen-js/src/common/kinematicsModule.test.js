@@ -1,47 +1,90 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { stepModuleFromKinematics } from "./kinematicsModule.js";
+import {
+  SOURCE_SIDECAR_SCHEMA_VERSION,
+  loadAnimationSource,
+  loadKinematicsModuleDefinition
+} from "./kinematicsModule.js";
 
-const LEAF_BLOCK = {
-  mates: [{
-    name: "swing", kind: "revolute", parent: "#base", child: "#arm",
-    axis: { origin: [0, 0, 6], dir: [0, 0, 1] }, limits: { value: [0, 90] }
-  }]
+const KINEMATICS = {
+  mates: [
+    {
+      name: "swing",
+      kind: "revolute",
+      parent: "#base",
+      child: "#flap",
+      axis: { origin: [0, 0, 0], dir: [0, 0, 1] },
+      limits: { value: [0, 120] }
+    }
+  ],
+  poses: { open: { swing: 90 } }
 };
 
-// The build records the resolved instance-tree id beside the authored label.
-const GROUP_BLOCK = {
-  mates: [{
-    name: "swing", kind: "revolute",
-    parent: "#base_group", parentId: "o1.1",
-    child: "#arm_group", childId: "o1.2",
-    axis: { origin: [0, 0, 6], dir: [0, 0, 1] }, limits: { value: [0, 90] }
-  }]
-};
+const SIDECAR_URL = "/__cad/asset?file=hinge.step.json";
 
-test("a mate with no resolved id resolves its occurrence by name alone", () => {
-  const { manifest } = stepModuleFromKinematics(LEAF_BLOCK);
-  assert.deepEqual(manifest.features.base, { names: ["base"] });
-  assert.deepEqual(manifest.features.arm, { names: ["arm"] });
+function stubSidecar(t, payload) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+}
+
+test("a current-schema sidecar compiles into a step-module definition", async (t) => {
+  stubSidecar(t, { schemaVersion: SOURCE_SIDECAR_SCHEMA_VERSION, kinematics: KINEMATICS });
+
+  const definition = await loadKinematicsModuleDefinition(SIDECAR_URL, { cadPath: "hinge.step" });
+
+  assert.ok(definition);
+  assert.deepEqual(Object.keys(definition.manifest.parameters), ["swing"]);
 });
 
-test("a mated SUBASSEMBLY resolves by occurrence id, which covers its subtree", () => {
-  // A group is not a rendered part, so it has no leaf name to match; the id
-  // ref is what makes every part beneath it ride the mate.
-  const { manifest } = stepModuleFromKinematics(GROUP_BLOCK);
-  assert.deepEqual(manifest.features.base_group, { ref: "#o1.1", names: ["base_group"] });
-  assert.deepEqual(manifest.features.arm_group, { ref: "#o1.2", names: ["arm_group"] });
+test("a sidecar at any other schema is refused with the current requirement", async (t) => {
+  // Reading sections out of a file written to a different shape is how a model
+  // silently loses its kinematics. The error states what is required now and
+  // how to get there — never what the file used to be.
+  stubSidecar(t, { schemaVersion: SOURCE_SIDECAR_SCHEMA_VERSION - 1, kinematics: KINEMATICS });
+
+  await assert.rejects(
+    () => loadKinematicsModuleDefinition(SIDECAR_URL, { cadPath: "hinge.step" }),
+    (error) => {
+      assert.match(error.message, /unsupported sidecar schema 4 \(expected 5\)/);
+      assert.match(error.message, /python hinge\.py/);
+      assert.match(error.message, /cadgen step build/);
+      return true;
+    }
+  );
 });
 
-test("features are keyed by the authored label, which is what the deltas name", () => {
-  const { manifest } = stepModuleFromKinematics(GROUP_BLOCK);
-  assert.deepEqual(Object.keys(manifest.features).sort(), ["arm_group", "base_group"]);
-  assert.equal(manifest.parameters.swing.unit, "deg");
-  assert.equal(manifest.parameters.swing.default, 0);
+test("a sidecar declaring no schema at all is refused the same way", async (t) => {
+  stubSidecar(t, { kinematics: KINEMATICS });
+
+  await assert.rejects(
+    () => loadKinematicsModuleDefinition(SIDECAR_URL),
+    /unsupported sidecar schema none \(expected 5\)/
+  );
 });
 
-test("a block with no mates compiles to nothing to pose", () => {
-  assert.equal(stepModuleFromKinematics({ mates: [] }), null);
-  assert.equal(stepModuleFromKinematics(null), null);
+test("the animation loader is gated on the same schema", async (t) => {
+  stubSidecar(t, { schemaVersion: 4, animation: { clips: "export default {};" } });
+
+  await assert.rejects(
+    () => loadAnimationSource(SIDECAR_URL),
+    /unsupported sidecar schema 4 \(expected 5\)/
+  );
+});
+
+test("a current-schema sidecar with no animation section yields no clips", async (t) => {
+  stubSidecar(t, { schemaVersion: SOURCE_SIDECAR_SCHEMA_VERSION, kinematics: KINEMATICS });
+
+  assert.equal(await loadAnimationSource(SIDECAR_URL), "");
+});
+
+test("no sidecar url means nothing to load", async () => {
+  assert.equal(await loadKinematicsModuleDefinition(""), null);
+  assert.equal(await loadAnimationSource(""), "");
 });

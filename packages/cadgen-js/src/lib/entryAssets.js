@@ -167,7 +167,3 @@ export function entryPoseUrl(entry) {
     ? normalizeString(entry?.poseUrl)
     : "";
 }
-
-export function entryHasLegacyParamsSidecar(entry) {
-  return Boolean(entry?.legacyParamsSidecar);
-}

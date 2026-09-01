@@ -62,7 +62,9 @@ def write_package(step_path, *, entry_kind="part", source_kind="step", kinematic
     if kinematics or animation:
         # Kinematics/animation (source-derived) ride the MODEL-SIDE sidecar,
         # never the descriptor.
-        sidecar = {"schemaVersion": 4, "sourceKind": "python"}
+        from cadgen._internal.source_sidecar import SOURCE_SIDECAR_SCHEMA_VERSION
+
+        sidecar = {"schemaVersion": SOURCE_SIDECAR_SCHEMA_VERSION}
         if kinematics:
             sidecar["kinematics"] = kinematics
         if animation:
@@ -81,7 +83,7 @@ add_repo_path("packages/cadgen/src")
 import cadgen.snapshot_cli as snapshot_main
 import cadgen.cli.step_snapshot as cad_snapshot_entry
 from cadgen.assets import browser_runtime_dir
-from cadgen._internal.snapshot_door import DOOR_KINDS, RETIRED_SNAPSHOT_FLAGS
+from cadgen._internal.snapshot_door import DOOR_KINDS
 from cadgen.snapshot_cli import (
     SnapshotError,
     load_job_from_options,
@@ -187,7 +189,9 @@ class SnapshotCliTests(unittest.TestCase):
             ]
         )
 
-        self.assertEqual(job["input"], "models/examples/STEP/cylindrical_cap.step")
+        # TARGET is a Path parameter on the generated parser, so it reaches the
+        # job in the NATIVE spelling; build the expectation the same way.
+        self.assertEqual(job["input"], str(Path("models/examples/STEP/cylindrical_cap.step")))
         self.assertNotIn("workspaceRoot", job)
         self.assertNotIn("rootDir", job)
         self.assertEqual(job["outputs"][0]["path"], "tmp/cap.png")
@@ -198,33 +202,37 @@ class SnapshotCliTests(unittest.TestCase):
         """One grammar across the schema: `snapshot TARGET [OUT]` reads the same
         way `build TARGET [OUT]` does, and there is nothing to spell twice."""
         options = options_from_argv(["models/part.step", "tmp/part.png"])
-        self.assertEqual("models/part.step", options.input)
-        self.assertEqual("tmp/part.png", options.output)
+        self.assertEqual(str(Path("models/part.step")), options.input)
+        self.assertEqual(str(Path("tmp/part.png")), options.output)
 
-    def test_a_retired_flag_teaches_its_replacement(self) -> None:
-        """Hard cutover. Each of these parsed before; each now exits 2 naming
-        what took its place, from a PRE-parse scan — a generated parser is
-        pristine, so a refusal cannot be a parser entry without also becoming a
-        line of `--help`."""
-        for argv, expected in (
-            (["--input", "models/part.step"], "positionally"),
-            (["-i", "models/part.step"], "positionally"),
-            (["--output", "tmp/o.png"], "second positional"),
-            (["-o", "tmp/o.png"], "second positional"),
-            (["--params", '{"jaw": 40}'], "--kinematics"),
-            (["--params=x", "models/part.step"], "--kinematics"),
-            (["--params-path", "models/part.step.js"], "kinematics is declared on the model"),
+    #: Flags the door does not have. The parser is GENERATED from the verb's
+    #: signature, so what it accepts is exactly what the verb takes — anything
+    #: else is argparse's own "unrecognized arguments", with no pre-parse scan
+    #: recognizing particular spellings.
+    NON_FLAGS = ("--input", "-i", "--output", "--params", "--params-path")
+
+    def test_a_flag_the_door_does_not_have_is_an_ordinary_parse_error(self) -> None:
+        for argv in (
+            ["--input", "models/part.step"],
+            ["-i", "models/part.step"],
+            ["--output", "tmp/o.png"],
+            ["--params", '{"jaw": 40}'],
+            ["--params=x", "models/part.step"],
+            ["--params-path", "models/part.step.js"],
         ):
             with self.subTest(argv=" ".join(argv)):
                 errors = io.StringIO()
-                with contextlib.redirect_stderr(errors):
-                    code = cad_snapshot_entry.main(argv)
-                self.assertEqual(2, code)
-                self.assertIn(expected, errors.getvalue())
+                with contextlib.redirect_stderr(errors), self.assertRaises(SystemExit) as caught:
+                    cad_snapshot_entry.main(argv)
+                self.assertEqual(2, caught.exception.code)
+                message = errors.getvalue()
+                self.assertIn("unrecognized arguments", message)
+                self.assertNotIn("renamed", message)
+                self.assertNotIn("retired", message)
 
-    def test_no_retired_flag_is_advertised(self) -> None:
+    def test_the_door_advertises_only_what_it_takes(self) -> None:
         text = cad_snapshot_entry.build_parser().format_help()
-        for flag in RETIRED_SNAPSHOT_FLAGS:
+        for flag in self.NON_FLAGS:
             if flag.startswith("--"):
                 with self.subTest(flag=flag):
                     self.assertNotIn(flag, text)
@@ -838,7 +846,10 @@ class SnapshotCliTests(unittest.TestCase):
         self.assertNotIn(data_url, printed)
         self.assertNotIn(svg_text, printed)
         # Everything a caller actually uses survives.
-        self.assertEqual([str(f.path) for f in typed.files], ["/tmp/a.png", "/tmp/b.svg"])
+        self.assertEqual(
+            [str(f.path) for f in typed.files],
+            [str(Path("/tmp/a.png")), str(Path("/tmp/b.svg"))],
+        )
         self.assertEqual([f.kind for f in typed.files], ["png", "svg"])
         self.assertEqual(typed.files[0].view, "ISO")
         # The caller's dict keeps its payload: write_output_payload reads the same object.
@@ -1117,10 +1128,10 @@ class SnapshotCliTests(unittest.TestCase):
                     cwd=root,
                 )
 
-    def test_render_job_rejects_step_parameters_path_for_mesh_input(self) -> None:
+    def test_render_job_rejects_a_key_outside_the_closed_schema(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
+            with self.assertRaisesRegex(SnapshotError, "unknown render job key"):
                 resolve_render_job_packet(
                     {
                         "input": "models/widget.glb",
@@ -1258,15 +1269,15 @@ class SnapshotCliTests(unittest.TestCase):
         # still under an animation-suggesting name.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = self._mesh_job_env(temporary_directory, "widget.glb", b"glTF")
-            with self.assertRaisesRegex(SnapshotError, "GIF export was removed"):
+            with self.assertRaisesRegex(SnapshotError, "snapshot renders PNG stills"):
                 resolve_render_job_packet(
                     {"input": "models/widget.glb", "outputs": [{"path": "tmp/spin.gif", "camera": "iso"}]},
                     cwd=root,
                 )
 
-    def test_render_job_rejects_animated_kinematics(self) -> None:
-        # Animated --params sweeps are deleted with GIF export: every retired
-        # envelope key is a teaching error, not a silently static render.
+    def test_render_job_rejects_a_kinematics_key_the_model_does_not_declare(self) -> None:
+        # Pose values name DECLARED DOFs. Anything else is an unknown parameter
+        # — no key is special-cased, so nothing renders silently static.
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory).resolve()
             models = root / "models"
@@ -1281,7 +1292,7 @@ class SnapshotCliTests(unittest.TestCase):
             original_ensure = snapshot_main.ensure_step_topology_artifact
             try:
                 snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
-                with self.assertRaisesRegex(SnapshotError, "kinematics.animate was removed"):
+                with self.assertRaisesRegex(SnapshotError, "[Uu]nknown"):
                     resolve_render_job_packet(
                         {
                             "input": "models/part.step",
@@ -1996,20 +2007,18 @@ class StepPoseParameterTests(unittest.TestCase):
         with self.assertRaisesRegex(SnapshotError, "declares no kinematics"):
             self._resolve(self._job(kinematics={"stroke": 1}))
 
-    def test_retired_job_keys_are_rejected_by_name(self) -> None:
+    def test_a_key_outside_the_closed_schema_is_named_with_the_supported_set(self) -> None:
+        """The job schema is closed, and that is the whole answer: a key it does
+        not have fails with the keys it does, whatever the key happens to be."""
         self._step()
-        for key in ("paramsPath", "stepParametersPath"):
-            with self.assertRaisesRegex(SnapshotError, "kinematics is declared on the model"):
-                self._resolve(self._job(**{key: "models/part.step.js"}))
-
-    def test_the_retired_step_parameters_key_teaches_the_rename(self) -> None:
-        """No aliasing. A packet written against the old vocabulary must say so
-        out loud, or two spellings of one key stay alive in every job file."""
-        self._step()
-        with self.assertRaisesRegex(
-            SnapshotError, "stepParameters was renamed to kinematics"
-        ):
-            self._resolve(self._job(stepParameters={"stroke": 1}))
+        for key in ("paramsPath", "stepParametersPath", "stepParameters"):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(SnapshotError, "unknown render job key") as caught:
+                    self._resolve(self._job(**{key: "models/part.step.js"}))
+                message = str(caught.exception)
+                self.assertIn("kinematics", message)  # named in the supported set
+                self.assertNotIn("renamed", message)
+                self.assertNotIn("retired", message)
 
 
 class ExactOutputContractTests(unittest.TestCase):

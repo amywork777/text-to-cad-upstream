@@ -22,7 +22,7 @@ from cadgen._internal.cli_errors import report_cli_error  # noqa: E402
 def _raise_from_model(model: Path) -> BaseException:
     """Run a throwaway generator from ``model`` so the traceback carries its frames."""
     namespace: dict[str, object] = {}
-    code = compile(model.read_text(), str(model), "exec")
+    code = compile(model.read_text(encoding="utf-8"), str(model), "exec")
     try:
         exec(code, namespace)  # noqa: S102 - the fixture IS a model source
         namespace["model"]()
@@ -44,7 +44,7 @@ class ReportCliErrorTest(unittest.TestCase):
             "\n"
             "\n"
             "def model():\n"
-            "    return _inner()\n"
+            "    return _inner()\n", encoding="utf-8"
         )
 
     def _report(self, exc, **kwargs) -> str:
@@ -74,7 +74,7 @@ class ReportCliErrorTest(unittest.TestCase):
             "\n"
             "\n"
             "def model():\n"
-            "    return normalize_mesh_numeric(-1, field_name='mesh_tolerance')\n"
+            "    return normalize_mesh_numeric(-1, field_name='mesh_tolerance')\n", encoding="utf-8"
         )
         text = self._report(_raise_from_model(self.model))
         self.assertIn("widget.py:5 in model", text, "the model's frame is kept")

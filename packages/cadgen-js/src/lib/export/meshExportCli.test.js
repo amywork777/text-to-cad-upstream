@@ -38,19 +38,32 @@ function makePackage(t) {
   return { root, packageDir };
 }
 
+// The mesh cache must land INSIDE the sandbox on every platform, or these
+// tests read (and pollute) the runner's real user cache. cadgenCacheRootDir
+// consults, in order: CADGEN_CACHE_DIR, then XDG_CACHE_HOME (POSIX) or
+// LOCALAPPDATA (Windows), then os.homedir()/.cache/cadgen. Blanking the first
+// three and pointing the home at the sandbox leaves ONE resolution -- the
+// platform default -- and puts it at <root>/.cache/cadgen on both. os.homedir()
+// reads HOME on POSIX and USERPROFILE on Windows, hence both.
+function sandboxEnv(root) {
+  return { HOME: root, USERPROFILE: root, LOCALAPPDATA: "" };
+}
+
+// Where the CLI's tessellation cache lands under sandboxEnv(root).
+function meshCacheDir(root) {
+  return path.join(root, ".cache", "cadgen", "meshes");
+}
+
 function runCli(cliArgs, env = {}) {
   return spawnSync(process.execPath, [CLI, ...cliArgs], {
     encoding: "utf-8",
-    // Blank the cache-root overrides so a sandboxed HOME really contains the
-    // store (the root resolves CADGEN_CACHE_DIR and XDG_CACHE_HOME first).
     env: { ...process.env, CADGEN_CACHE_DIR: "", XDG_CACHE_HOME: "", ...env },
   });
 }
 
 test("exports every format from one package, byte-deterministically", (t) => {
   const { root, packageDir } = makePackage(t);
-  // Redirect the cache into the sandbox (os.homedir() follows HOME).
-  const env = { HOME: root };
+  const env = sandboxEnv(root);
   let triangleCount = null;
   for (const format of ["stl", "glb", "3mf"]) {
     const out = path.join(root, `first.${format}`);
@@ -73,7 +86,7 @@ test("exports every format from one package, byte-deterministically", (t) => {
     assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
     assert.deepEqual(fs.readFileSync(again), fs.readFileSync(out), `${format} bytes differ`);
   }
-  const cacheEntries = fs.readdirSync(path.join(root, ".cache", "cadgen", "meshes"));
+  const cacheEntries = fs.readdirSync(meshCacheDir(root));
   assert.equal(cacheEntries.length, 1, "one unique component, one cache entry");
   assert.match(cacheEntries[0], /^c0-t\d+-l[0-9.e+-]+-a[0-9.e+-]+\.tess$/);
 });
@@ -83,7 +96,7 @@ test("every occurrence lands in the mesh: distinct transforms, distinct colors",
   const out = path.join(root, "pair.glb");
   const result = runCli(
     ["--package-dir", packageDir, "--format", "glb", "--out", out],
-    { HOME: root, CADGEN_MESH_CACHE: "0" },
+    { ...sandboxEnv(root), CADGEN_MESH_CACHE: "0" },
   );
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const bytes = fs.readFileSync(out);
@@ -110,14 +123,14 @@ test("every occurrence lands in the mesh: distinct transforms, distinct colors",
     assert.ok(Math.abs(channel - 0.5) < 0.004, `linear midtone must survive: ${channel}`);
   }
   // Cache disabled: no cache dir appears.
-  assert.equal(fs.existsSync(path.join(root, ".cache", "cadgen", "meshes")), false);
+  assert.equal(fs.existsSync(meshCacheDir(root)), false);
 });
 
 test("3MF displaycolor carries sRGB bytes, not the raw linear floats", (t) => {
   const { root, packageDir } = makePackage(t);
   const out = path.join(root, "colors.3mf");
   assert.equal(
-    runCli(["--package-dir", packageDir, "--format", "3mf", "--out", out], { HOME: root }).status,
+    runCli(["--package-dir", packageDir, "--format", "3mf", "--out", out], sandboxEnv(root)).status,
     0,
   );
   // Stored (uncompressed) zip entries, so the model XML is readable as-is.
@@ -132,7 +145,7 @@ test("cached and fresh tessellations export identical bytes", (t) => {
   const cold = path.join(root, "cold.stl");
   const warm = path.join(root, "warm.stl");
   const uncached = path.join(root, "uncached.stl");
-  const env = { HOME: root };
+  const env = sandboxEnv(root);
   const base = ["--package-dir", packageDir, "--format", "stl", "--name", "gear", "--out"];
   assert.equal(runCli([...base, cold], env).status, 0);
   assert.equal(runCli([...base, warm], env).status, 0);
@@ -144,7 +157,7 @@ test("cached and fresh tessellations export identical bytes", (t) => {
 
 test("tolerance overrides change the cache key and the mesh density", (t) => {
   const { root, packageDir } = makePackage(t);
-  const env = { HOME: root };
+  const env = sandboxEnv(root);
   const fine = path.join(root, "fine.stl");
   const coarse = path.join(root, "coarse.stl");
   assert.equal(
@@ -160,13 +173,13 @@ test("tolerance overrides change the cache key and the mesh density", (t) => {
   const triangles = (file) => fs.readFileSync(file).readUInt32LE(80);
   assert.ok(triangles(fine) > triangles(coarse),
     `finer tolerance must mean more triangles (${triangles(fine)} vs ${triangles(coarse)})`);
-  const cacheEntries = fs.readdirSync(path.join(root, ".cache", "cadgen", "meshes"));
+  const cacheEntries = fs.readdirSync(meshCacheDir(root));
   assert.equal(cacheEntries.length, 2, "distinct tolerances, distinct cache entries");
 });
 
 test("one invocation serializes every format from one tessellation", (t) => {
   const { root, packageDir } = makePackage(t);
-  const env = { HOME: root };
+  const env = sandboxEnv(root);
   const outs = { stl: path.join(root, "multi.stl"), glb: path.join(root, "multi.glb"), "3mf": path.join(root, "multi.3mf") };
   const result = runCli(
     ["--package-dir", packageDir, "--name", "gear",
@@ -205,7 +218,7 @@ test("failures are one JSON error line: bad args, bad package", (t) => {
     ["--package-dir", packageDir, "--format", "stl", "--out", path.join(root, "x.stl"),
       "--format", "glb", "--out", path.join(root, "x.stl")],
   ]) {
-    const result = runCli(cliArgs, { HOME: root });
+    const result = runCli(cliArgs, sandboxEnv(root));
     assert.equal(result.status, 1, cliArgs.join(" "));
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.ok, false);

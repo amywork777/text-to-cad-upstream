@@ -235,7 +235,9 @@ class DxfEmitContractTest(unittest.TestCase):
         mapping, _ = emit_dxf({"CUT": cut, "ENGRAVE": engrave}, label="rig")
         self.assertEqual(compound, mapping)
 
-    def test_ezdxf_document_return_raises_the_teaching_error(self) -> None:
+    def test_an_ezdxf_document_return_fails_the_geometry_contract(self) -> None:
+        """No recognition of what an ezdxf document once meant here: it is
+        simply not build123d 2D geometry, and ordinary validation says so."""
         import ezdxf
 
         from cadgen._internal.dxf_emit import DxfContractError, emit_dxf
@@ -244,9 +246,8 @@ class DxfEmitContractTest(unittest.TestCase):
             with self.assertRaises(DxfContractError) as caught:
                 emit_dxf(value, label="old_drawing.py")
             message = str(caught.exception)
-            self.assertIn("That contract is removed", message)
-            self.assertIn("from cadgen import build123d as bd", message)
-            self.assertIn("skills/dxf/SKILL.md", message)
+            self.assertIn("build123d", message)
+            self.assertNotIn("removed", message)
 
     def test_non_geometry_return_raises(self) -> None:
         from cadgen._internal.dxf_emit import DxfContractError, emit_dxf

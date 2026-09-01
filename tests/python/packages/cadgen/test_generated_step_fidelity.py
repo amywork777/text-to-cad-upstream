@@ -63,7 +63,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
 
     def _build_generated_package(self) -> tuple[Path, Path]:
         generator = self.temp_root / "colored.py"
-        generator.write_text(COLORED_ASSEMBLY_GENERATOR)
+        generator.write_text(COLORED_ASSEMBLY_GENERATOR, encoding="utf-8")
         logical_step = self.temp_root / "colored.step"
         payload = step_artifact_cli.build_step_artifact(
             repo_root=Path.cwd(),
@@ -75,7 +75,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
 
     def _descriptor(self, step_path: Path) -> dict:
         return json.loads(
-            (render_package_dir(step_path) / "assembly.json").read_text()
+            (render_package_dir(step_path) / "assembly.json").read_text(encoding="utf-8")
         )
 
     def test_generated_descriptor_records_occurrence_colors_and_pose(self) -> None:
@@ -112,7 +112,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         out = self.temp_root / "out" / "colored.step"
         out.parent.mkdir(parents=True, exist_ok=True)
         assemble_step_from_package(render_package_dir(logical_step), out)
-        text = out.read_text(errors="ignore")
+        text = out.read_text(encoding="utf-8", errors="ignore")
         self.assertIn(
             "COLOUR",
             text,
@@ -178,7 +178,7 @@ class GeneratedStepFidelityTests(unittest.TestCase):
         exported_dir.mkdir()
         exported = exported_dir / "colored.step"
         assemble_step_from_package(render_package_dir(logical_step), exported)
-        text = exported.read_text(errors="ignore")
+        text = exported.read_text(encoding="utf-8", errors="ignore")
         self.assertNotIn("cadgen:", text)
         self.assertNotIn("colored.py", text)
 

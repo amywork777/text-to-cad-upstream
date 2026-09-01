@@ -78,12 +78,6 @@ CASES = [
     ), "duplicate_name", "error"),
     # --- urdf pairing (same folder, matching robot name) ---
     ("no_paired_urdf", _srdf("", header='<robot name="other">\n'), "no_paired_urdf", "error"),
-    (
-        "deprecated_urdf_link",
-        _srdf("", header='<robot name="edge" xmlns:tcad="https://text-to-cad.dev/srdf">\n  <tcad:urdf path="robot.urdf"/>\n'),
-        "deprecated_urdf_link",
-        "warning",
-    ),
     # --- cross-validation against the URDF ---
     ("no_planning_groups", _srdf("", groups=""), "no_planning_groups", "error"),
     ("empty_group", _srdf('  <group name="empty"/>\n'), "empty_group", "error"),
