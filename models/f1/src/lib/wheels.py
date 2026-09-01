@@ -19,21 +19,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Cylinder,
-    Line,
-    Plane,
-    Pos,
-    Rot,
-    Sphere,
-    Spline,
-    Vector,
-    loft,
-    make_face,
-    revolve,
-)
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -89,7 +75,7 @@ def _band(r: float) -> float:
 # construction helpers — profiles are written as (axial y, radius) pairs
 # ==========================================================================
 
-_PROFILE_PLANE = Plane(origin=(0, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+_PROFILE_PLANE = bd.Plane(origin=(0, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
 
 
 def _rev(segments, arc: float = 360.0):
@@ -100,11 +86,11 @@ def _rev(segments, arc: float = 360.0):
     """
     curves = []
     for seg in segments:
-        curves.append(Line(seg[0], seg[1]) if len(seg) == 2 else Spline(*seg))
+        curves.append(bd.Line(seg[0], seg[1]) if len(seg) == 2 else bd.Spline(*seg))
     wire = curves[0]
     for c in curves[1:]:
         wire = wire + c
-    return revolve(_PROFILE_PLANE * make_face(wire), Axis.Y, arc)
+    return bd.revolve(_PROFILE_PLANE * bd.make_face(wire), bd.Axis.Y, arc)
 
 
 def _poly(pts):
@@ -128,7 +114,7 @@ def _ring(y0: float, y1: float, r0: float, r1: float, arc: float = 360.0):
 
 def _spin(shape, angle_deg: float):
     """Rotate about the axle (the local Y axis)."""
-    return Rot(0.0, angle_deg, 0.0) * shape
+    return bd.Rot(0.0, angle_deg, 0.0) * shape
 
 
 def _polar(radius: float, phi_deg: float, y: float = 0.0):
@@ -148,8 +134,8 @@ def _tangent(phi_deg: float):
 
 
 def _cyl(radius: float, length: float, center, axis):
-    d = Vector(axis).normalized()
-    return Plane(origin=Vector(center), z_dir=d) * Cylinder(radius, length)
+    d = bd.Vector(axis).normalized()
+    return bd.Plane(origin=bd.Vector(center), z_dir=d) * bd.Cylinder(radius, length)
 
 
 def _vol(s) -> float:
@@ -232,7 +218,7 @@ def _loft(sections, margin: float = 12.0):
     lo = [min(b[0][i] for b in boxes) - margin for i in range(3)]
     hi = [max(b[1][i] for b in boxes) + margin for i in range(3)]
     try:
-        out = loft(faces, ruled=False)
+        out = bd.loft(faces, ruled=False)
         if out is not None and out.is_valid and out.volume > 0:
             blo, bhi = surfaces.bbox(out)
             if all(blo[i] >= lo[i] and bhi[i] <= hi[i] for i in range(3)):
@@ -246,9 +232,9 @@ def _lofted(sections):
     """Loft superellipse sections given as (origin, x_dir, z_dir, hw, hh, n)."""
     faces = []
     for origin, x_dir, z_dir, hw, hh, n in sections:
-        plane = Plane(origin=Vector(origin), x_dir=Vector(x_dir), z_dir=Vector(z_dir))
+        plane = bd.Plane(origin=bd.Vector(origin), x_dir=bd.Vector(x_dir), z_dir=bd.Vector(z_dir))
         pts = surfaces.superellipse_pts(hw, hh, n, n, samples=26)
-        faces.append(plane * make_face(Spline(*pts, periodic=True)))
+        faces.append(plane * bd.make_face(bd.Spline(*pts, periodic=True)))
     return _loft(faces)
 
 
@@ -260,9 +246,9 @@ def _limb(p0, p1, law, thin=(1, 0, 0)):
     path in the upright is drawn: fat at the bearing root, waisted mid-span,
     slim at the joint.
     """
-    a, b = Vector(p0), Vector(p1)
+    a, b = bd.Vector(p0), bd.Vector(p1)
     ax = (b - a).normalized()
-    td = Vector(thin)
+    td = bd.Vector(thin)
     td = (td - ax * td.dot(ax)).normalized()
     wd = td.cross(ax)
     return _lofted(
@@ -277,12 +263,12 @@ def _pin_axis(p_in, p_out):
     thin axis of the wishbone that lands on it, and the suspension module's
     clevis straddles a boss it actually fits.
     """
-    n = (Vector(p_out) - Vector(p_in)).normalized()
-    ref = Vector(surfaces.FLOW)
+    n = (bd.Vector(p_out) - bd.Vector(p_in)).normalized()
+    ref = bd.Vector(surfaces.FLOW)
     if abs(ref.dot(n)) > 0.97:
-        ref = Vector(0, 0, 1)
+        ref = bd.Vector(0, 0, 1)
         if abs(ref.dot(n)) > 0.97:
-            ref = Vector(0, 1, 0)
+            ref = bd.Vector(0, 1, 0)
     x_dir = (ref - n * ref.dot(n)).normalized()
     return n.cross(x_dir)
 
@@ -429,7 +415,7 @@ def _rim(bh: float, clearances):
         plane = surfaces.plate_plane((rad, y_face, 0.0), (1, 0, 0), up=(0, 1, 0))
         plane = plane.rotated((0, 0, twist))
         pts = surfaces.rounded_plate_pts(thick, wide, min(thick, wide) * 0.34, samples=5)
-        faces.append(plane * make_face(Spline(*pts, periodic=True)))
+        faces.append(plane * bd.make_face(bd.Spline(*pts, periodic=True)))
     blade = _loft(faces)
     for i in range(N_SPOKE):
         part = part + _spin(blade, 360.0 * i / N_SPOKE + 18.0)
@@ -514,7 +500,7 @@ def _flute_face(bh: float, radius: float, spiral_deg: float, wide: float):
         _polar(radius, spiral_deg, yc), _radial(spiral_deg), up=(0, 1, 0)
     )
     pts = surfaces.rounded_plate_pts(wide, FLUTE_TOOL_H, wide * 0.48, samples=6)
-    return plane * make_face(Spline(*pts, periodic=True))
+    return plane * bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _cover(bh: float):
@@ -646,7 +632,7 @@ def _cal_face(phi: float, rc: float, axial: float, radial: float):
         _polar(rc, phi, DISC_Y), _tangent(phi), up=_radial(phi)
     )
     pts = surfaces.rounded_plate_pts(axial, radial, min(axial, radial) * 0.3, samples=5)
-    return plane * make_face(Spline(*pts, periodic=True))
+    return plane * bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _caliper(axle: str):
@@ -674,7 +660,7 @@ def _caliper(axle: str):
         plane = surfaces.plate_plane(
             _polar(r_out + 18.0, phi + d, DISC_Y), _tangent(phi + d), up=_radial(phi + d)
         )
-        windows.append(plane * Box(2 * half_ax + 20.0, 34.0, 15.0))
+        windows.append(plane * bd.Box(2 * half_ax + 20.0, 34.0, 15.0))
     body = _cut(body, windows)
 
     pots = None
@@ -754,9 +740,9 @@ def _duct(axle: str, bh: float):
     )
     bore = _lofted(
         [
-            (Vector(mouth) + Vector(22, 0, 10), (0, 1, 0), (1, 0, 0.32), 19.0, 40.0, 2.5),
+            (bd.Vector(mouth) + bd.Vector(22, 0, 10), (0, 1, 0), (1, 0, 0.32), 19.0, 40.0, 2.5),
             (mid, (0, 1, 0), (1, 0, 0.52), 19.0, 30.0, 2.6),
-            (Vector(root) - Vector(34, 0, -26), (0, 1, 0), (1, 0, 0.74), 17.0, 24.0, 2.8),
+            (bd.Vector(root) - bd.Vector(34, 0, -26), (0, 1, 0), (1, 0, 0.74), 17.0, 24.0, 2.8),
         ]
     )
     scoop = shell - bore
@@ -837,12 +823,12 @@ def _upright(axle: str, joints):
         part = part + _eye(pt, axis)
         # lightening scallops: milled into BOTH flanks of the waist, never
         # through it — a limb that a boolean severs is not a load path.
-        ax = (Vector(pt) - Vector(root)).normalized()
-        td = Vector(thin)
+        ax = (bd.Vector(pt) - bd.Vector(root)).normalized()
+        td = bd.Vector(thin)
         td = (td - ax * td.dot(ax)).normalized()
         waist = law[len(law) // 2]
         for t, rp in ((0.40, 14.0), (0.66, 11.0)):
-            mid = Vector(root) + (Vector(pt) - Vector(root)) * t
+            mid = bd.Vector(root) + (bd.Vector(pt) - bd.Vector(root)) * t
             for s in (-1.0, 1.0):
                 pockets.append(
                     _cyl(rp, 40.0, mid + td * (s * (waist[2] + 13.0)), td)
@@ -944,7 +930,7 @@ def _left_corner(axle: str):
     clearances = [
         _cyl(EYE_R + 3.0, EYE_L + 8.0, pt, axis) for pt, axis, _r, _l, _t in joints
     ]
-    clearances += [Pos(pt) * Sphere(EYE_R + 3.0) for pt, *_ in joints]
+    clearances += [bd.Pos(pt) * bd.Sphere(EYE_R + 3.0) for pt, *_ in joints]
     out.append((_rim(bh, clearances), "rim", spec.MAGNESIUM))
 
     cover, ring = _cover(bh)
@@ -976,7 +962,7 @@ def build_corner(corner: str):
     axle = _AXLE_OF[corner]
     front = axle == "f"
     x = spec.FRONT_AXLE_X if front else spec.REAR_AXLE_X
-    place = Pos(x, spec.FRONT_HUB_Y if front else spec.REAR_HUB_Y, spec.HUB_Z)
+    place = bd.Pos(x, spec.FRONT_HUB_Y if front else spec.REAR_HUB_Y, spec.HUB_Z)
     left = corner.endswith("l")
 
     kids = []

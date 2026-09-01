@@ -72,7 +72,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from build123d import Line, Plane, Spline, extrude, make_face
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -195,13 +195,13 @@ def _disc_face(center, normal, r, samples=20):
         (r * math.cos(2 * math.pi * i / samples), r * math.sin(2 * math.pi * i / samples))
         for i in range(samples)
     ]
-    return plane * make_face(Spline(*pts, periodic=True))
+    return plane * bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _dzus(center, normal, r=10.5, sink=1.6, proud=3.0):
     """One Dzus quarter-turn fastener head, sunk into the flange it holds."""
-    n = surfaces.Vector(normal).normalized()
-    c = surfaces.Vector(center)
+    n = bd.Vector(normal).normalized()
+    c = bd.Vector(center)
     return surfaces.loft_solid(
         [
             _disc_face(c - n * sink, n, r),
@@ -468,12 +468,12 @@ def _sill_cutter():
     top = [(x, sill_z(x)) for x in xs]
     x0, x1 = top[0][0], top[-1][0]
     prof = (
-        Spline(*top)
-        + Line(top[-1], (x1, 90.0))
-        + Line((x1, 90.0), (x0, 90.0))
-        + Line((x0, 90.0), top[0])
+        bd.Spline(*top)
+        + bd.Line(top[-1], (x1, 90.0))
+        + bd.Line((x1, 90.0), (x0, 90.0))
+        + bd.Line((x0, 90.0), top[0])
     )
-    return extrude(Plane.XZ * make_face(prof), amount=1300, both=True)
+    return bd.extrude(bd.Plane.XZ * bd.make_face(prof), amount=1300, both=True)
 
 
 # The first station is 1.6 mm INSIDE the skin, not on it. A bead whose root
@@ -687,7 +687,7 @@ def _sill_normal(x: float):
     """
     d = 40.0
     dy = (crease(x - d)[0] - crease(x + d)[0]) / (2.0 * d)
-    v = surfaces.Vector(-dy, _drop(x), -0.75 * _undercut(x))
+    v = bd.Vector(-dy, _drop(x), -0.75 * _undercut(x))
     return v.normalized()
 
 
@@ -742,7 +742,7 @@ def _dzus_row():
         y = _airbox_half_w(x) + 22.0
         z = surf_z(x, y)
         nz = surf_z(x, y + 12.0) - surf_z(x, y - 12.0)
-        nrm = surfaces.Vector(0.0, -nz / 24.0, 1.0).normalized()
+        nrm = bd.Vector(0.0, -nz / 24.0, 1.0).normalized()
         h = _dzus((x, y, z), nrm, r=9.0)
         heads += [h, surfaces.mirror_y(h)]
     return _fuse(heads[0], heads[1:])
@@ -1004,7 +1004,7 @@ def _pod_pts(x: float):
 def _tcam():
     """Dark lens + machined bezel on the pod's front face."""
     zc = _crown_z(-1660.0) - 12.0 + 10.0
-    axis = surfaces.Vector(1, 0, 0)
+    axis = bd.Vector(1, 0, 0)
     lens = surfaces.loft_solid(
         [
             _disc_face((-1662.0, 0.0, zc), axis, 10.0),

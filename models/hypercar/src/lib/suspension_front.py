@@ -26,30 +26,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Align,
-    Circle,
-    Cone,
-    Cylinder,
-    Helix,
-    Line,
-    Location,
-    Plane,
-    Polyline,
-    Pos,
-    Rectangle,
-    RectangleRounded,
-    RegularPolygon,
-    Rot,
-    Sphere,
-    Spline,
-    Vector,
-    extrude,
-    fillet,
-    loft,
-    make_face,
-    sweep,
-)
+from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib.context import group, style
@@ -91,8 +68,8 @@ _HP = {
 RACK_X, RACK_Z = 1470.0, 300.0
 ARB_X, ARB_Z = 1428.0, 520.0
 
-FWD = Vector(1, 0, 0)
-UPZ = Vector(0, 0, 1)
+FWD = bd.Vector(1, 0, 0)
+UPZ = bd.Vector(0, 0, 1)
 
 
 def _p(name, side):
@@ -101,7 +78,7 @@ def _p(name, side):
 
 
 def _v(p):
-    return Vector(*p) if not isinstance(p, Vector) else p
+    return bd.Vector(*p) if not isinstance(p, bd.Vector) else p
 
 
 def _mid(a, b, f=0.5):
@@ -120,9 +97,9 @@ def _plane_at(origin, normal, ref=(1, 0, 0)):
     x = _v(ref)
     x = x - z * x.dot(z)
     if x.length < 1e-6:
-        x = Vector(0, 0, 1) if abs(z.Z) < 0.9 else Vector(1, 0, 0)
+        x = bd.Vector(0, 0, 1) if abs(z.Z) < 0.9 else bd.Vector(1, 0, 0)
         x = x - z * x.dot(z)
-    return Plane(origin=_v(origin), x_dir=x.normalized(), z_dir=z)
+    return bd.Plane(origin=_v(origin), x_dir=x.normalized(), z_dir=z)
 
 
 def _seg(p0, p1, ref=(1, 0, 0)):
@@ -132,12 +109,12 @@ def _seg(p0, p1, ref=(1, 0, 0)):
 
 
 def _shift(pl, t):
-    return Plane(origin=pl.origin + pl.z_dir * t, x_dir=pl.x_dir, z_dir=pl.z_dir)
+    return bd.Plane(origin=pl.origin + pl.z_dir * t, x_dir=pl.x_dir, z_dir=pl.z_dir)
 
 
 def _rod(p0, p1, r, ref=(1, 0, 0)):
     pl, L = _seg(p0, p1, ref)
-    return pl * Cylinder(r, L, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    return pl * bd.Cylinder(r, L, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +140,7 @@ def _aero_sketch(chord, tc=0.34, le=0.32, trunc=0.92):
     up = [(chord * (le - t), chord * yt(t)) for t in xs]
     lo = [(chord * (le - t), -chord * yt(t)) for t in xs]
     pts = list(reversed(up)) + lo[1:]
-    return make_face(Spline(*pts) + Line(pts[-1], pts[0]))
+    return bd.make_face(bd.Spline(*pts) + bd.Line(pts[-1], pts[0]))
 
 
 def _aero_member(p0, p1, c0, c1, tc=0.34, t0=48.0, t1=20.0, stub=None,
@@ -185,7 +162,7 @@ def _aero_member(p0, p1, c0, c1, tc=0.34, t0=48.0, t1=20.0, stub=None,
     streamwise (+X) as the member allows.
     """
     pl, L = _seg(p0, p1)
-    out = [loft([
+    out = [bd.loft([
         _shift(pl, t0) * _aero_sketch(c0, tc, le),
         _shift(pl, L - t1) * _aero_sketch(c1, tc, le),
     ])]
@@ -195,14 +172,14 @@ def _aero_member(p0, p1, c0, c1, tc=0.34, t0=48.0, t1=20.0, stub=None,
     if stub is None:
         stub = 0.72 * 0.5 * c0 * tc
     if stub:
-        out.append(_shift(pl, 4.0) * Cone(
+        out.append(_shift(pl, 4.0) * bd.Cone(
             stub * 0.76, stub, t0 + 4.0,
-            align=(Align.CENTER, Align.CENTER, Align.MIN),
+            align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
         ))
         if stub1:
-            out.append(_shift(pl, L - t1 - 6.0) * Cone(
+            out.append(_shift(pl, L - t1 - 6.0) * bd.Cone(
                 stub, stub * 0.80, t1 + 2.0,
-                align=(Align.CENTER, Align.CENTER, Align.MIN),
+                align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
             ))
     return out
 
@@ -216,9 +193,9 @@ def _sph_joint(c, axis, tag, k=1.0):
     """Spherical bearing: bronze race, steel ball, titanium pin. 3 leaves."""
     R, W, BR = 15.5 * k, 17.0 * k, 10.4 * k
     pl = _plane_at(c, axis)
-    ring = extrude(pl * (Circle(R) - Circle(BR)), W / 2.0, both=True)
-    ball = Pos(*c) * Sphere(BR * 0.985)
-    pin = pl * Cylinder(5.4 * k, W + 27.0 * k)
+    ring = bd.extrude(pl * (bd.Circle(R) - bd.Circle(BR)), W / 2.0, both=True)
+    ball = bd.Pos(*c) * bd.Sphere(BR * 0.985)
+    pin = pl * bd.Cylinder(5.4 * k, W + 27.0 * k)
     return [
         style(ring, f"sph_race:{tag}", P.BRONZE),
         style(ball, f"sph_ball:{tag}", P.RIM),
@@ -231,14 +208,14 @@ def _rod_end(c, axis, shank_dir, tag, k=1.0, shank=52.0):
     out = _sph_joint(c, axis, tag, k)
     sd = _v(shank_dir).normalized()
     ps = _plane_at(c, sd)
-    body = ps * Cylinder(
-        11.0 * k, 24.0 * k, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    body = ps * bd.Cylinder(
+        11.0 * k, 24.0 * k, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
-    stem = _shift(ps, 20.0 * k) * Cylinder(
-        7.2 * k, shank - 20.0 * k, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    stem = _shift(ps, 20.0 * k) * bd.Cylinder(
+        7.2 * k, shank - 20.0 * k, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
-    nut = extrude(
-        _shift(ps, shank - 18.0 * k) * RegularPolygon(11.6 * k, 6), 13.0 * k
+    nut = bd.extrude(
+        _shift(ps, shank - 18.0 * k) * bd.RegularPolygon(11.6 * k, 6), 13.0 * k
     )
     out.append(style(body, f"rod_end_body:{tag}", P.ALUMINIUM))
     out.append(style(stem, f"rod_end_stem:{tag}", P.TITANIUM))
@@ -254,15 +231,15 @@ def _fork(c, axis, base, tag, colour=None, r_tip=20.0, r_base=14.0, t=7.0,
     L = d.length
     pl = _plane_at(c, axis, ref=d)
     sk = (
-        Circle(r_tip)
-        + Pos(L, 0) * Circle(r_base)
-        + Pos(L / 2.0, 0) * Rectangle(L, 1.55 * min(r_tip, r_base))
+        bd.Circle(r_tip)
+        + bd.Pos(L, 0) * bd.Circle(r_base)
+        + bd.Pos(L / 2.0, 0) * bd.Rectangle(L, 1.55 * min(r_tip, r_base))
     )
     if lighten and L > 40.0:
-        sk = sk - Pos(L * 0.56, 0) * Circle(0.42 * min(r_tip, r_base))
+        sk = sk - bd.Pos(L * 0.56, 0) * bd.Circle(0.42 * min(r_tip, r_base))
     out = []
     for i, off in enumerate((gap / 2.0, -gap / 2.0 - t)):
-        plate = extrude(_shift(pl, off) * sk, t)
+        plate = bd.extrude(_shift(pl, off) * sk, t)
         out.append(style(plate, f"clevis:{tag}_{i}", colour))
     return out
 
@@ -272,12 +249,12 @@ def _pad(c, axis, base, tag, colour=None, gap=19.0, t=7.0):
     colour = colour or P.TITANIUM
     d = _v(base) - _v(c)
     pl = _plane_at(base, axis, ref=d)
-    sk = RectangleRounded(gap + 2 * t + 24.0, 48.0, 9.0)
+    sk = bd.RectangleRounded(gap + 2 * t + 24.0, 48.0, 9.0)
     for dx in ((gap + 2 * t + 24.0) * 0.33, -(gap + 2 * t + 24.0) * 0.33):
         for dy in (15.0, -15.0):
-            sk = sk - Pos(dx, dy) * Circle(4.6)
-    plr = Plane(origin=pl.origin, x_dir=pl.z_dir, z_dir=pl.x_dir)
-    blk = extrude(plr * sk, 8.0, both=True)
+            sk = sk - bd.Pos(dx, dy) * bd.Circle(4.6)
+    plr = bd.Plane(origin=pl.origin, x_dir=pl.z_dir, z_dir=pl.x_dir)
+    blk = bd.extrude(plr * sk, 8.0, both=True)
     return [style(blk, f"mount_pad:{tag}", colour)]
 
 
@@ -308,14 +285,14 @@ def _wishbone(side, kind):
     parts = []
     for nm, pin in (("f", pf), ("r", pr)):
         parts += _aero_member(pin, po, c0, c1, tc, t0, t1, stub1=False)
-    parts.append(_plane_at(po, kp) * Cylinder(yoke_r, yoke_h))
+    parts.append(_plane_at(po, kp) * bd.Cylinder(yoke_r, yoke_h))
     for i, part in enumerate(parts):
         leaves.append(style(part, f"{kind}_arm:{tag}_{i}", P.ALUMINIUM))
 
     # inboard spherical bearings, pressed into the arm ends, in chassis clevises
     for nm, pin in (("f", pf), ("r", pr)):
         axis = (_v(pr) - _v(pf)).normalized()
-        inb = Vector(0, -side, 0)
+        inb = bd.Vector(0, -side, 0)
         inb = (inb - axis * inb.dot(axis)).normalized()
         base = _v(pin) + inb * 48.0
         leaves += _sph_joint(pin, axis, f"{tag}_{nm}")
@@ -325,15 +302,15 @@ def _wishbone(side, kind):
     # outboard ball joint into the upright: bronze race ring on each face of
     # the yoke, steel ball on the kingpin axis
     for s in (1, -1):
-        ring = extrude(
+        ring = bd.extrude(
             _plane_at(_v(po) + kp * (s * (yoke_h / 2.0 - 5.0)), kp)
-            * (Circle(yoke_r) - Circle(yoke_r - 9.0)),
+            * (bd.Circle(yoke_r) - bd.Circle(yoke_r - 9.0)),
             6.0 * s,
         )
         leaves.append(
             style(ring, f"{kind}_bj_race:{tag}_{'a' if s > 0 else 'b'}", P.BRONZE)
         )
-    stud = _plane_at(po, kp) * Cylinder(10.0, yoke_h + 14.0)
+    stud = _plane_at(po, kp) * bd.Cylinder(10.0, yoke_h + 14.0)
     leaves.append(style(stud, f"{kind}_bj_stud:{tag}", P.TITANIUM))
     return leaves
 
@@ -359,45 +336,45 @@ def _upright(side):
     O = _mid(lo, uo)
     kp = (_v(uo) - _v(lo)).normalized()
     n = kp.cross(FWD)                       # plate normal, outboard on the left
-    pl = Plane(origin=O, x_dir=(-1, 0, 0), z_dir=n)
+    pl = bd.Plane(origin=O, x_dir=(-1, 0, 0), z_dir=n)
 
     pts = [(-f, u) for (f, u) in _UP_OUTLINE]
-    face = make_face(Polyline(*pts, close=True))
+    face = bd.make_face(bd.Polyline(*pts, close=True))
     try:
-        face = fillet(face.vertices(), 15)
+        face = bd.fillet(face.vertices(), 15)
     except Exception:  # pragma: no cover
         pass
-    solid = extrude(pl * face, _UP_T, both=True)
+    solid = bd.extrude(pl * face, _UP_T, both=True)
 
     # bearing barrel around the hub axis (global Y)
     hub_y = side * 744.0
-    barrel = Pos(HX, hub_y, HZ) * Rot(-90, 0, 0) * Cylinder(52.0, 96.0)
+    barrel = bd.Pos(HX, hub_y, HZ) * bd.Rot(-90, 0, 0) * bd.Cylinder(52.0, 96.0)
     solid = solid + barrel
 
     # hub bore
-    bore = Pos(HX, side * 730.0, HZ) * Rot(-90, 0, 0) * Cylinder(33.0, 260.0)
+    bore = bd.Pos(HX, side * 730.0, HZ) * bd.Rot(-90, 0, 0) * bd.Cylinder(33.0, 260.0)
     solid = solid - bore
 
     # lightening pockets, both faces
     pockets = [
-        (Pos(0, 112) * RectangleRounded(44, 66, 15)),
-        (Pos(-1, 46) * RectangleRounded(30, 34, 12)),
-        (Pos(-26, -118) * RectangleRounded(38, 58, 13)),
-        (Pos(28, -118) * RectangleRounded(40, 58, 13)),
-        (Pos(0, -62) * RectangleRounded(84, 26, 11)),
+        (bd.Pos(0, 112) * bd.RectangleRounded(44, 66, 15)),
+        (bd.Pos(-1, 46) * bd.RectangleRounded(30, 34, 12)),
+        (bd.Pos(-26, -118) * bd.RectangleRounded(38, 58, 13)),
+        (bd.Pos(28, -118) * bd.RectangleRounded(40, 58, 13)),
+        (bd.Pos(0, -62) * bd.RectangleRounded(84, 26, 11)),
     ]
     for sk in pockets:
         for base in (_UP_T - _POCKET_D, -_UP_T - 3.0):
-            solid = solid - extrude(_shift(pl, base) * sk, _POCKET_D + 3.0)
+            solid = solid - bd.extrude(_shift(pl, base) * sk, _POCKET_D + 3.0)
 
     # steering arm reaching forward to the tie-rod ball
     to = _p("tie_out", side)
     root = (1362.0, side * 706.0, 344.0)
     pa, La = _seg(root, to, ref=(0, 0, 1))
-    arm = loft([
-        pa * RectangleRounded(78, 26, 11),
-        _shift(pa, La * 0.55) * RectangleRounded(46, 24, 10),
-        _shift(pa, La) * RectangleRounded(32, 22, 10),
+    arm = bd.loft([
+        pa * bd.RectangleRounded(78, 26, 11),
+        _shift(pa, La * 0.55) * bd.RectangleRounded(46, 24, 10),
+        _shift(pa, La) * bd.RectangleRounded(32, 22, 10),
     ])
     solid = solid + arm
 
@@ -405,18 +382,18 @@ def _upright(side):
 
     # bronze bearing retainer on the outboard face of the carrier barrel --
     # the warm ring the wheel spokes will frame
-    retainer = extrude(
-        Plane(origin=(HX, side * 786.0, HZ), x_dir=(1, 0, 0), z_dir=(0, side, 0))
-        * (Circle(52.0) - Circle(38.0)),
+    retainer = bd.extrude(
+        bd.Plane(origin=(HX, side * 786.0, HZ), x_dir=(1, 0, 0), z_dir=(0, side, 0))
+        * (bd.Circle(52.0) - bd.Circle(38.0)),
         7.0,
     )
     leaves.append(style(retainer, f"hub_retainer:{tag}", P.BRONZE_DARK))
 
     # wheel hub flange + bronze centre-lock collar
-    flange = Pos(HX, side * 788.0, HZ) * Rot(-90, 0, 0) * Cylinder(45.0, 16.0)
-    collar = extrude(
-        Plane(origin=(HX, side * 800.0, HZ), x_dir=(1, 0, 0), z_dir=(0, side, 0))
-        * RegularPolygon(31.0, 12),
+    flange = bd.Pos(HX, side * 788.0, HZ) * bd.Rot(-90, 0, 0) * bd.Cylinder(45.0, 16.0)
+    collar = bd.extrude(
+        bd.Plane(origin=(HX, side * 800.0, HZ), x_dir=(1, 0, 0), z_dir=(0, side, 0))
+        * bd.RegularPolygon(31.0, 12),
         22.0,
     )
     leaves.append(style(flange, f"hub_flange:{tag}", P.RIM))
@@ -449,92 +426,92 @@ def _rocker(side):
         "arb": (1288.0, _HP["rk_arb"][1] * side, _HP["rk_arb"][2]),
     }
     x0 = piv[0]
-    pl = Plane.YZ.offset(x0)
+    pl = bd.Plane.YZ.offset(x0)
 
-    pv = Vector(piv[1], piv[2], 0)
+    pv = bd.Vector(piv[1], piv[2], 0)
     dirs, tips = {}, {}
     for k, pt in lobes.items():
-        d = Vector(pt[1], pt[2], 0) - pv
+        d = bd.Vector(pt[1], pt[2], 0) - pv
         dirs[k] = d.normalized()
         tips[k] = pv + d + dirs[k] * 22.0
 
     # three-lobe crank: hub disc, three tapered arms, a round eye on each
-    sk = Pos(pv.X, pv.Y) * Circle(41.0)
+    sk = bd.Pos(pv.X, pv.Y) * bd.Circle(41.0)
     for k, pt in lobes.items():
-        c = Vector(pt[1], pt[2], 0)
+        c = bd.Vector(pt[1], pt[2], 0)
         d = dirs[k]
         L = (c - pv).length
         mid = pv + d * (L / 2.0)
         ang = math.degrees(math.atan2(d.Y, d.X))
-        sk = sk + Pos(c.X, c.Y) * Circle(25.0)
-        sk = sk + Location((mid.X, mid.Y, 0), (0, 0, ang)) * Rectangle(L, 37.0)
+        sk = sk + bd.Pos(c.X, c.Y) * bd.Circle(25.0)
+        sk = sk + bd.Location((mid.X, mid.Y, 0), (0, 0, ang)) * bd.Rectangle(L, 37.0)
     try:
-        sk = fillet(sk.vertices(), 13)
+        sk = bd.fillet(sk.vertices(), 13)
     except Exception:  # pragma: no cover
         pass
-    plate = extrude(pl * sk, _RK_T, both=True)
+    plate = bd.extrude(pl * sk, _RK_T, both=True)
 
     # pivot boss
-    boss = _plane_at(piv, FWD) * Cylinder(35.0, 58.0)
+    boss = _plane_at(piv, FWD) * bd.Cylinder(35.0, 58.0)
     plate = plate + boss
 
     # drilled lightening in each arm
     for k, pt in lobes.items():
-        c = Vector(pt[1], pt[2], 0)
+        c = bd.Vector(pt[1], pt[2], 0)
         d = dirs[k]
         hole = pv + d * ((c - pv).length * 0.60)
-        plate = plate - extrude(
-            _shift(pl, -_RK_T - 4.0) * (Pos(hole.X, hole.Y) * Circle(8.5)),
+        plate = plate - bd.extrude(
+            _shift(pl, -_RK_T - 4.0) * (bd.Pos(hole.X, hole.Y) * bd.Circle(8.5)),
             2 * _RK_T + 8.0,
         )
 
     # fork slots at each lobe
     for k, pt in lobes.items():
         d = dirs[k]
-        c = Vector(pt[1], pt[2], 0)
+        c = bd.Vector(pt[1], pt[2], 0)
         slot_c = c + d * 20.0
-        sk_slot = Location(
+        sk_slot = bd.Location(
             (slot_c.X, slot_c.Y, 0), (0, 0, math.degrees(math.atan2(d.Y, d.X)))
-        ) * Rectangle(92, 44)
-        plate = plate - extrude(_shift(pl, -_RK_SLOT / 2.0) * sk_slot, _RK_SLOT)
+        ) * bd.Rectangle(92, 44)
+        plate = plate - bd.extrude(_shift(pl, -_RK_SLOT / 2.0) * sk_slot, _RK_SLOT)
 
     # bores
-    plate = plate - _plane_at(piv, FWD) * Cylinder(15.0, 120.0)
+    plate = plate - _plane_at(piv, FWD) * bd.Cylinder(15.0, 120.0)
 
     leaves = [style(plate, f"rocker:{tag}", P.ALUMINIUM)]
 
-    shaft = _plane_at(piv, FWD) * Cylinder(14.0, 96.0)
+    shaft = _plane_at(piv, FWD) * bd.Cylinder(14.0, 96.0)
     leaves.append(style(shaft, f"rocker_shaft:{tag}", P.TITANIUM))
     for s in (1, -1):
-        nut = extrude(
+        nut = bd.extrude(
             _shift(_plane_at(piv, FWD), s * 48.0 - (7.0 if s < 0 else 0.0))
-            * RegularPolygon(19.0, 6),
+            * bd.RegularPolygon(19.0, 6),
             7.0,
         )
         leaves.append(style(nut, f"rocker_nut:{tag}_{'a' if s > 0 else 'b'}", P.BRONZE))
 
     # pedestal: two shear plates dropping to a chassis pad
     base = (x0, side * 118.0, 336.0)
-    bp = Vector(base[1], base[2], 0)
+    bp = bd.Vector(base[1], base[2], 0)
     L = (bp - pv).length
     ang = math.degrees(math.atan2((bp - pv).Y, (bp - pv).X))
     ped_sk = (
-        Pos(pv.X, pv.Y) * Circle(30.0)
-        + Pos(bp.X, bp.Y) * Circle(26.0)
-        + Location(((pv.X + bp.X) / 2, (pv.Y + bp.Y) / 2, 0), (0, 0, ang))
-        * Rectangle(L, 34)
+        bd.Pos(pv.X, pv.Y) * bd.Circle(30.0)
+        + bd.Pos(bp.X, bp.Y) * bd.Circle(26.0)
+        + bd.Location(((pv.X + bp.X) / 2, (pv.Y + bp.Y) / 2, 0), (0, 0, ang))
+        * bd.Rectangle(L, 34)
     )
-    ped_sk = ped_sk - Location(
+    ped_sk = ped_sk - bd.Location(
         ((pv.X + bp.X) / 2, (pv.Y + bp.Y) / 2, 0), (0, 0, ang)
-    ) * (Pos(0, 0) * Circle(11.0))
+    ) * (bd.Pos(0, 0) * bd.Circle(11.0))
     for i, off in enumerate((_RK_T + 13.0, -_RK_T - 24.0)):
-        pedestal = extrude(_shift(pl, off) * ped_sk, 11.0)
+        pedestal = bd.extrude(_shift(pl, off) * ped_sk, 11.0)
         leaves.append(style(pedestal, f"rocker_pedestal:{tag}_{i}", P.ALUMINIUM_DARK))
-    pad_sk = RectangleRounded(86.0, 72.0, 15.0)
+    pad_sk = bd.RectangleRounded(86.0, 72.0, 15.0)
     for dx, dy in ((29, 24), (-29, 24), (29, -24), (-29, -24)):
-        pad_sk = pad_sk - Pos(dx, dy) * Circle(6.0)
-    pad = extrude(
-        Plane(origin=(x0, side * 118.0, 322.0), x_dir=(1, 0, 0), z_dir=(0, 0, 1))
+        pad_sk = pad_sk - bd.Pos(dx, dy) * bd.Circle(6.0)
+    pad = bd.extrude(
+        bd.Plane(origin=(x0, side * 118.0, 322.0), x_dir=(1, 0, 0), z_dir=(0, 0, 1))
         * pad_sk,
         11.0,
         both=True,
@@ -560,11 +537,11 @@ def _coilover(side):
     t_body_end = L - 34.0
 
     leaves = []
-    shaft = _shift(pl, t_eye) * Cylinder(
-        9.5, t_p2 - t_eye + 26.0, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    shaft = _shift(pl, t_eye) * bd.Cylinder(
+        9.5, t_p2 - t_eye + 26.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
-    body = _shift(pl, t_p2 - 8.0) * Cylinder(
-        27.0, t_body_end - t_p2 + 8.0, align=(Align.CENTER, Align.CENTER, Align.MIN)
+    body = _shift(pl, t_p2 - 8.0) * bd.Cylinder(
+        27.0, t_body_end - t_p2 + 8.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     )
     leaves.append(style(shaft, f"damper_shaft:{tag}", P.RIM))
     leaves.append(style(body, f"damper_body:{tag}", P.STEEL_DARK))
@@ -583,9 +560,9 @@ def _coilover(side):
     leaves.append(style(bridge, f"damper_hose:{tag}", P.BRONZE_DARK))
 
     # perches -- the adjustable one is the bronze jewel of the assembly
-    p_low = extrude(_shift(pl, t_p1) * (Circle(45) - Circle(10.5)), 10.0)
-    p_high = extrude(_shift(pl, t_p2 - 17.0) * (Circle(45) - Circle(27.5)), 12.0)
-    knurl = extrude(_shift(pl, t_p2 - 5.0) * (RegularPolygon(31.0, 18) - Circle(27.5)), 12.0)
+    p_low = bd.extrude(_shift(pl, t_p1) * (bd.Circle(45) - bd.Circle(10.5)), 10.0)
+    p_high = bd.extrude(_shift(pl, t_p2 - 17.0) * (bd.Circle(45) - bd.Circle(27.5)), 12.0)
+    knurl = bd.extrude(_shift(pl, t_p2 - 5.0) * (bd.RegularPolygon(31.0, 18) - bd.Circle(27.5)), 12.0)
     leaves.append(style(p_low, f"spring_perch:{tag}_low", P.ALUMINIUM))
     leaves.append(style(p_high, f"spring_perch:{tag}_adj", P.BRONZE))
     leaves.append(style(knurl, f"spring_collar:{tag}", P.BRONZE_DARK))
@@ -593,9 +570,9 @@ def _coilover(side):
     # spring
     h = (t_p2 - 17.0) - (t_p1 + 10.0)
     turns = 7.5
-    hx = Helix(pitch=h / turns, height=h, radius=34.5)
-    sec = Plane(origin=hx @ 0, z_dir=hx % 0) * Circle(5.9)
-    coil = _shift(pl, t_p1 + 10.0) * sweep(sec, path=hx, is_frenet=True)
+    hx = bd.Helix(pitch=h / turns, height=h, radius=34.5)
+    sec = bd.Plane(origin=hx @ 0, z_dir=hx % 0) * bd.Circle(5.9)
+    coil = _shift(pl, t_p1 + 10.0) * bd.sweep(sec, path=hx, is_frenet=True)
     leaves.append(style(coil, f"spring:{tag}", P.RIM_DARK))
 
     # ends: rod end into the rocker fork, clevis at the chassis
@@ -637,9 +614,9 @@ def _steering_rack():
     tube = _rod((RACK_X, -258.0, RACK_Z), (RACK_X, 258.0, RACK_Z), 21.0, ref=ax)
     leaves.append(style(tube, "rack_tube:front", P.ALUMINIUM))
 
-    centre_sk = RectangleRounded(74.0, 56.0, 20.0) - Circle(9.0)
-    centre = extrude(
-        Plane(origin=(RACK_X, -132.0, RACK_Z), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
+    centre_sk = bd.RectangleRounded(74.0, 56.0, 20.0) - bd.Circle(9.0)
+    centre = bd.extrude(
+        bd.Plane(origin=(RACK_X, -132.0, RACK_Z), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
         * centre_sk,
         264.0,
     )
@@ -663,9 +640,9 @@ def _steering_rack():
                 24.0, ref=ax,
             )
             leaves.append(style(band, f"rack_band:{nm}_{int(dy)}", P.ALUMINIUM_DARK))
-        ear_sk = RectangleRounded(58.0, 88.0, 14.0) - Circle(8.0)
-        ear = extrude(
-            Plane(origin=(RACK_X, side * 148.0, RACK_Z), x_dir=(1, 0, 0),
+        ear_sk = bd.RectangleRounded(58.0, 88.0, 14.0) - bd.Circle(8.0)
+        ear = bd.extrude(
+            bd.Plane(origin=(RACK_X, side * 148.0, RACK_Z), x_dir=(1, 0, 0),
                   z_dir=(0, side, 0)) * ear_sk,
             16.0,
         )
@@ -708,9 +685,9 @@ def _anti_roll_bar():
     leaves.append(style(tube, "arb_bar:front", P.STEEL_DARK))
     for side in (1, -1):
         nm = "left" if side > 0 else "right"
-        blk_sk = RectangleRounded(56.0, 50.0, 12.0) - Circle(15.5)
-        blk = extrude(
-            Plane(origin=(ARB_X, side * 100.0, ARB_Z), x_dir=(1, 0, 0),
+        blk_sk = bd.RectangleRounded(56.0, 50.0, 12.0) - bd.Circle(15.5)
+        blk = bd.extrude(
+            bd.Plane(origin=(ARB_X, side * 100.0, ARB_Z), x_dir=(1, 0, 0),
                   z_dir=(0, side, 0)) * blk_sk,
             36.0,
         )
@@ -719,9 +696,9 @@ def _anti_roll_bar():
             (ARB_X, side * 98.0, ARB_Z), (ARB_X, side * 138.0, ARB_Z), 19.5, ref=(0, 0, 1)
         )
         leaves.append(style(strap, f"arb_bush:{nm}", P.BRONZE_DARK))
-        post_sk = RectangleRounded(34.0, 52.0, 10.0) - Circle(5.5)
-        stem = extrude(
-            Plane(origin=(ARB_X, side * 100.0, ARB_Z - 42.0), x_dir=(1, 0, 0),
+        post_sk = bd.RectangleRounded(34.0, 52.0, 10.0) - bd.Circle(5.5)
+        stem = bd.extrude(
+            bd.Plane(origin=(ARB_X, side * 100.0, ARB_Z - 42.0), x_dir=(1, 0, 0),
                   z_dir=(0, side, 0)) * post_sk,
             36.0,
         )
@@ -730,10 +707,10 @@ def _anti_roll_bar():
         a = _p("arb_end", side)
         b = _p("arb_tip", side)
         pa, La = _seg(a, b, ref=(0, 0, 1))
-        blade = loft([
-            pa * RectangleRounded(46, 26, 12),
-            _shift(pa, La * 0.5) * RectangleRounded(52, 15, 7),
-            _shift(pa, La) * RectangleRounded(40, 14, 6.8),
+        blade = bd.loft([
+            pa * bd.RectangleRounded(46, 26, 12),
+            _shift(pa, La * 0.5) * bd.RectangleRounded(52, 15, 7),
+            _shift(pa, La) * bd.RectangleRounded(40, 14, 6.8),
         ])
         leaves.append(style(blade, f"arb_blade:{nm}", P.ALUMINIUM))
     return leaves

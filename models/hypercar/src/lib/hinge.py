@@ -47,25 +47,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Align,
-    Axis,
-    Cylinder,
-    Helix,
-    Plane,
-    Polyline,
-    Pos,
-    RectangleRounded,
-    Rot,
-    extrude,
-    loft,
-    make_face,
-    mirror,
-    revolve,
-    sweep,
-)
-
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import surfaces as S
 from lib.context import group
@@ -127,7 +109,7 @@ _U = _unit(_sub(TOWER_TOP, TOWER_BASE))                     # local +Z
 _N = _unit(_sub((0.0, 1.0, 0.0), _mul(_U, _dot((0.0, 1.0, 0.0), _U))))   # local +X
 _V = _cross(_U, _N)                                         # local +Y (aft)
 
-_PL = Plane(origin=TOWER_BASE, x_dir=_N, z_dir=_U)
+_PL = bd.Plane(origin=TOWER_BASE, x_dir=_N, z_dir=_U)
 
 
 def _l2g(p):
@@ -252,11 +234,11 @@ def _surface_local_x(s):
 
 def _ring(pts):
     """Solid of revolution from a closed (radius, height) profile."""
-    return revolve(Plane.XZ * make_face(Polyline(*pts, close=True)), Axis.Z)
+    return bd.revolve(bd.Plane.XZ * bd.make_face(bd.Polyline(*pts, close=True)), bd.Axis.Z)
 
 
 def _sect(origin, x_dir, z_dir, w, h, r):
-    return Plane(origin=origin, x_dir=x_dir, z_dir=z_dir) * RectangleRounded(w, h, r)
+    return bd.Plane(origin=origin, x_dir=x_dir, z_dir=z_dir) * bd.RectangleRounded(w, h, r)
 
 
 def _blade(p0, p1, profile, bow=(0.0, 0.0, 0.0), ref=(1.0, 0.0, 0.0)):
@@ -277,7 +259,7 @@ def _blade(p0, p1, profile, bow=(0.0, 0.0, 0.0), ref=(1.0, 0.0, 0.0)):
         if _dot(xd, xd) < 1e-6:
             xd = _sub((0, 0, 1), _mul(tan, _dot((0, 0, 1), tan)))
         faces.append(_sect(pt, _unit(xd), tan, w, h, r))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _surface_plate(levels, out=16.0, into=7.0):
@@ -288,9 +270,9 @@ def _surface_plate(levels, out=16.0, into=7.0):
         outer = [(x, _flank_y(x, z) + out) for x in xs]
         inner = [(x, _flank_y(x, z) - into) for x in reversed(xs)]
         faces.append(
-            Plane.XY.offset(z) * make_face(Polyline(*(outer + inner), close=True))
+            bd.Plane.XY.offset(z) * bd.make_face(bd.Polyline(*(outer + inner), close=True))
         )
-    return loft(faces)
+    return bd.loft(faces)
 
 
 # ---------------------------------------------------------------------------
@@ -313,10 +295,10 @@ TWIST_PER_MM = DOOR_SWEEP_DEG / CARRIER_TRAVEL      # 0.2 deg/mm
 
 
 def _screw_core():
-    return Pos(0, 0, SCREW_Z0) * Cylinder(
+    return bd.Pos(0, 0, SCREW_Z0) * bd.Cylinder(
         radius=SCREW_CORE_R,
         height=SCREW_Z1 - SCREW_Z0,
-        align=(Align.CENTER, Align.CENTER, Align.MIN),
+        align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN),
     )
 
 
@@ -328,15 +310,15 @@ def _screw_thread(start):
     empty one.  A swept rib overlapping the core reads identically and always
     builds.
     """
-    path = Pos(0, 0, SCREW_Z0 - 22.0) * Rot(0, 0, 360.0 * start / SCREW_STARTS) * Helix(
+    path = bd.Pos(0, 0, SCREW_Z0 - 22.0) * bd.Rot(0, 0, 360.0 * start / SCREW_STARTS) * bd.Helix(
         pitch=SCREW_LEAD, height=SCREW_Z1 - SCREW_Z0 + 44.0, radius=SCREW_PITCH_R
     )
-    prof = make_face(
-        Polyline((-4.6, -6.8), (4.2, -4.0), (4.2, 4.0), (-4.6, 6.8), close=True)
+    prof = bd.make_face(
+        bd.Polyline((-4.6, -6.8), (4.2, -4.0), (4.2, 4.0), (-4.6, 6.8), close=True)
     )
     p0 = path @ 0
-    sec = Plane(origin=p0, x_dir=(p0.X, p0.Y, 0.0), z_dir=path % 0) * prof
-    return sweep(sec, path, is_frenet=True)
+    sec = bd.Plane(origin=p0, x_dir=(p0.X, p0.Y, 0.0), z_dir=path % 0) * prof
+    return bd.sweep(sec, path, is_frenet=True)
 
 
 def _rail_loft(phase, thick, width_fn, corner, z0=RAIL_Z0, z1=RAIL_Z1):
@@ -353,7 +335,7 @@ def _rail_loft(phase, thick, width_fn, corner, z0=RAIL_Z0, z1=RAIL_Z1):
                 thick, width_fn(f), corner,
             )
         )
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _rail(phase):
@@ -379,7 +361,7 @@ def _rail(phase):
 
 def _block(sections):
     """Machined housing: a loft of rounded-rectangle sections up the axis."""
-    return loft([
+    return bd.loft([
         _sect((0, 0, s), (1, 0, 0), (0, 0, 1), w, h, r) for s, w, h, r in sections
     ])
 
@@ -419,7 +401,7 @@ def _drive_motor():
         (0, 0), (21, 0), (21, 7), (18.5, 10), (18.5, 15), (21, 18), (21, 23),
         (18.5, 26), (18.5, 31), (21, 34), (21, 39), (16, 45), (0, 45),
     ])
-    return Plane(origin=(0, -44.0, 2.0), x_dir=(1, 0, 0), z_dir=(0, -1, 0)) * barrel
+    return bd.Plane(origin=(0, -44.0, 2.0), x_dir=(1, 0, 0), z_dir=(0, -1, 0)) * barrel
 
 
 # -- mounting arms ----------------------------------------------------------
@@ -453,12 +435,12 @@ def _mount_arm(stations, holes):
                 min(w, h) * 0.20,
             )
         )
-    arm = loft(faces)
+    arm = bd.loft(faces)
     for s, r in holes:
         x_in, x_out = _bracket_x(s)
-        cut = Plane(
+        cut = bd.Plane(
             origin=(0.5 * (x_in + x_out) - 4.0, 0.0, s), x_dir=(1, 0, 0), z_dir=(0, 1, 0)
-        ) * Cylinder(radius=r, height=260)
+        ) * bd.Cylinder(radius=r, height=260)
         arm = arm - cut
     return arm
 
@@ -524,11 +506,11 @@ def _carrier_collar():
     ])
     for th in (131.0, 311.0):
         a = math.radians(th)
-        cut = Plane(
+        cut = bd.Plane(
             origin=(0, 0, CARRIER_HOME_S),
             x_dir=(0, 0, 1),
             z_dir=(math.cos(a), math.sin(a), 0),
-        ) * Cylinder(radius=13.0, height=160)
+        ) * bd.Cylinder(radius=13.0, height=160)
         collar = collar - cut
     return collar
 
@@ -568,8 +550,8 @@ def _swing_arm():
     xd = _unit(_sub(d, _mul((1, 0, 0), _dot(d, (1, 0, 0)))))
     for t, ln in ((0.36, 26.0), (0.66, 20.0)):
         p = _add(_mul(PIV_ARM_C, 1 - t), _mul(PIV_ARM_D, t), (3.0, 0.0, 4.0))
-        cut = Plane(origin=p, x_dir=xd, z_dir=(1, 0, 0)) * RectangleRounded(ln, 13.0, 6.0)
-        arm = arm - (extrude(cut, amount=60) + extrude(cut, amount=-60))
+        cut = bd.Plane(origin=p, x_dir=xd, z_dir=(1, 0, 0)) * bd.RectangleRounded(ln, 13.0, 6.0)
+        arm = arm - (bd.extrude(cut, amount=60) + bd.extrude(cut, amount=-60))
     return arm
 
 
@@ -655,7 +637,7 @@ def _hardware(side):
     def loc(pos_g, dir_g):
         p = (pos_g[0], side * pos_g[1], pos_g[2])
         d = (dir_g[0], side * dir_g[1], dir_g[2])
-        return Plane(origin=p, z_dir=d).location
+        return bd.Plane(origin=p, z_dir=d).location
 
     bolt = style(_bolt_proto(), f"mount_bolt:{name}", P.BRONZE_DARK)
     shoe = style(_shoe_proto(), f"carrier_shoe:{name}", P.BRONZE)
@@ -687,8 +669,7 @@ CLIP_Y = 850.0
 
 
 def _clip_inboard(shape):
-    from build123d import Box, Pos
-    keep = Pos(0.0, 0.0, 0.0) * Box(6000.0, 2.0 * CLIP_Y, 6000.0)
+    keep = bd.Pos(0.0, 0.0, 0.0) * bd.Box(6000.0, 2.0 * CLIP_Y, 6000.0)
     return shape & keep
 
 
@@ -699,7 +680,7 @@ def build():
     left.append(_clip_inboard(_hardware(1)))
 
     right = [
-        style(_clip_inboard(mirror(sh, Plane.XZ)), f"{role}:right", col)
+        style(_clip_inboard(bd.mirror(sh, bd.Plane.XZ)), f"{role}:right", col)
         for sh, role, col in leaves
     ]
     right.append(_clip_inboard(_hardware(-1)))

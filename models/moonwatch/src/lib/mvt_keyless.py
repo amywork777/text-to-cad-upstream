@@ -33,16 +33,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Box,
-    Circle,
-    Color,
-    Cylinder,
-    Polygon,
-    Pos,
-    Rot,
-    extrude,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 from lib import finishing as F
@@ -106,7 +97,7 @@ _CROWN_TEETH = 12
 
 def _cyl(r, h, z0):
     """Cylinder spanning z [z0, z0 + h] (default centered primitive)."""
-    return Pos(0, 0, z0 + h / 2.0) * Cylinder(r, h)
+    return bd.Pos(0, 0, z0 + h / 2.0) * bd.Cylinder(r, h)
 
 
 def _fuse2d(pieces, clip_r=14.0):
@@ -118,12 +109,12 @@ def _fuse2d(pieces, clip_r=14.0):
     extrudes to nothing. The list-operand fuse (`first + [rest]`, as
     `F.train_wheel` uses) keeps a clean single face."""
     prof = pieces[0] + pieces[1:] if len(pieces) > 1 else pieces[0]
-    return prof & Circle(clip_r)
+    return prof & bd.Circle(clip_r)
 
 
 def _blob(circles, clip_r=14.0):
     """2D union of (x, y, r) circles."""
-    return _fuse2d([Pos(x, y) * Circle(r) for x, y, r in circles], clip_r)
+    return _fuse2d([bd.Pos(x, y) * bd.Circle(r) for x, y, r in circles], clip_r)
 
 
 def _chain(chains, extra=(), clip_r=14.0):
@@ -134,7 +125,7 @@ def _chain(chains, extra=(), clip_r=14.0):
     pieces = []
     for pts in chains:
         for i, (x, y, r) in enumerate(pts):
-            pieces.append(Pos(x, y) * Circle(r))
+            pieces.append(bd.Pos(x, y) * bd.Circle(r))
             if i == 0:
                 continue
             x0, y0, r0 = pts[i - 1]
@@ -144,7 +135,7 @@ def _chain(chains, extra=(), clip_r=14.0):
             px, py = -(y - y0) / d, (x - x0) / d
             # counterclockwise winding — a clockwise Polygon fuses as a
             # REVERSED face and shatters the union (measured)
-            pieces.append(Polygon(
+            pieces.append(bd.Polygon(
                 (x0 - px * r0, y0 - py * r0),
                 (x - px * r, y - py * r),
                 (x + px * r, y + py * r),
@@ -161,7 +152,7 @@ def _ang(frm, to):
 
 def _finish(part, label, color):
     part.label = label
-    part.color = Color(*color)
+    part.color = bd.Color(*color)
     return part
 
 
@@ -184,10 +175,10 @@ def _screw(head_d=S.SCREW_HEAD_DIAMETER, hh=0.32, shank=0.9,
     r = head_d / 2.0
     apex = min(hh / 2.0, 0.2 * r)
     top = apex - 0.038
-    s = s - Pos(0, 0, top + 0.5) * Box(head_d * 3, head_d * 3, 1.0)
+    s = s - bd.Pos(0, 0, top + 0.5) * bd.Box(head_d * 3, head_d * 3, 1.0)
     depth = min(0.16, hh * 0.5)
-    s = s - Pos(0, 0, top + 0.3 - depth) * Box(head_d * 2.2, slot_w, 0.6)
-    s.color = Color(*color)
+    s = s - bd.Pos(0, 0, top + 0.3 - depth) * bd.Box(head_d * 2.2, slot_w, 0.6)
+    s.color = bd.Color(*color)
     return s, top
 
 
@@ -197,8 +188,8 @@ def _dial_screw(x, y, bearing_z, **kw):
     the head bears on (the spring's dial-side surface)."""
     s, _top = _screw(**kw)
     hh = kw.get("hh", 0.32)
-    s = Rot(180, 0, 0) * s                    # apex down, shank up
-    return Pos(x, y, bearing_z - hh / 2.0) * s
+    s = bd.Rot(180, 0, 0) * s                    # apex down, shank up
+    return bd.Pos(x, y, bearing_z - hh / 2.0) * s
 
 
 # ---------------------------------------------------------------------------
@@ -224,32 +215,32 @@ def _crown_pinion(r_out, length, r_inner, n_teeth=_CROWN_TEETH,
     if bore_round is not None:
         cuts.append(_cyl(bore_round, length + 1.0, -0.5))
     if bore_square is not None:
-        cuts.append(Pos(0, 0, length / 2.0)
-                    * Box(bore_square, bore_square, length + 1.0))
+        cuts.append(bd.Pos(0, 0, length / 2.0)
+                    * bd.Box(bore_square, bore_square, length + 1.0))
     w = tooth_depth * 1.4142                  # V-groove half-diag = depth
     r_mid = (r_out + r_inner) / 2.0
     span = r_out - r_inner + 0.6
     for z_e in teeth_ends:
         for k in range(n_teeth):
-            tool = Pos(r_mid, 0, z_e) * Rot(45, 0, 0) * Box(span, w, w)
-            cuts.append(Rot(0, 0, 360.0 * k / n_teeth) * tool)
+            tool = bd.Pos(r_mid, 0, z_e) * bd.Rot(45, 0, 0) * bd.Box(span, w, w)
+            cuts.append(bd.Rot(0, 0, 360.0 * k / n_teeth) * tool)
     if side_teeth:
         w2 = 0.26
         zc, zspan = side_z
         for k in range(side_teeth):
-            tool = Pos(r_out, 0, zc) * Rot(0, 0, 45) * Box(w2, w2, zspan)
-            cuts.append(Rot(0, 0, 360.0 * (k + 0.5) / side_teeth) * tool)
+            tool = bd.Pos(r_out, 0, zc) * bd.Rot(0, 0, 45) * bd.Box(w2, w2, zspan)
+            cuts.append(bd.Rot(0, 0, 360.0 * (k + 0.5) / side_teeth) * tool)
     if groove is not None:
         zc, gw, neck_r = groove
-        ring = Pos(0, 0, zc - gw / 2.0) * extrude(
-            Circle(r_out + 0.3) - Circle(neck_r), amount=gw)
+        ring = bd.Pos(0, 0, zc - gw / 2.0) * bd.extrude(
+            bd.Circle(r_out + 0.3) - bd.Circle(neck_r), amount=gw)
         cuts.append(ring)
     return body - cuts
 
 
 def _stem_axis(part, x0=0.0):
     """Local +Z axis -> movement +X at the stem height."""
-    return Pos(_STEM_X0 + x0, 0, STEM_Z) * Rot(0, 90, 0) * part
+    return bd.Pos(_STEM_X0 + x0, 0, STEM_Z) * bd.Rot(0, 90, 0) * part
 
 
 # ---------------------------------------------------------------------------
@@ -263,15 +254,15 @@ def _stem_parts():
     segs, cuts, z = [], [], 0.0
     for kind, length, size in _STEM_SEGS:
         if kind == "square":
-            segs.append(Pos(0, 0, z + length / 2.0) * Box(size, size, length))
+            segs.append(bd.Pos(0, 0, z + length / 2.0) * bd.Box(size, size, length))
         else:
             segs.append(_cyl(size, length, z))
         if kind == "thread":
             # thread hint: three shallow annular grooves
             for i in range(3):
                 gz = z + 0.14 + i * 0.18
-                cuts.append(Pos(0, 0, gz) * extrude(
-                    Circle(size + 0.03) - Circle(size - 0.08), amount=0.08))
+                cuts.append(bd.Pos(0, 0, gz) * bd.extrude(
+                    bd.Circle(size + 0.03) - bd.Circle(size - 0.08), amount=0.08))
         z += length
     stem = segs[0] + segs[1:]
     stem = stem - cuts
@@ -309,7 +300,7 @@ def _lever_plate(prof, z_band, bevel):
     """Extrude a plan profile through `z_band` and bevel the DIAL-side
     (bottom, -Z) perimeter — that's the face the dial-side viewer sees."""
     z0, z1 = z_band
-    body = Pos(0, 0, z0) * extrude(prof, amount=z1 - z0)
+    body = bd.Pos(0, 0, z0) * bd.extrude(prof, amount=z1 - z0)
     body, _ = F.safe_chamfer(body, _edges_at_z(body, z0), bevel)
     return body
 
@@ -328,27 +319,27 @@ def _lever_parts():
     ))
     lever = _lever_plate(lever_prof, LEVER_Z, S.ANGLAGE_WIDTH_SMALL)
     # pin rising into the stem's setting groove (neck bottom ~ -0.89)
-    pin = Pos(_GROOVE_X, 0, 0) * _cyl(0.23, 0.96, -1.80)
-    boss = Pos(11.5, -2.5, 0) * _cyl(0.42, 0.10, z1)
+    pin = bd.Pos(_GROOVE_X, 0, 0) * _cyl(0.23, 0.96, -1.80)
+    boss = bd.Pos(11.5, -2.5, 0) * _cyl(0.42, 0.10, z1)
     lever = lever + [pin, boss]
     # two detent notches (winding / setting positions) for the spring blade
-    notches = [Pos(9.57, -3.82, 0) * _cyl(0.15, 1.0, -2.1),
-               Pos(9.23, -3.82, 0) * _cyl(0.15, 1.0, -2.1)]
+    notches = [bd.Pos(9.57, -3.82, 0) * _cyl(0.15, 1.0, -2.1),
+               bd.Pos(9.23, -3.82, 0) * _cyl(0.15, 1.0, -2.1)]
     lever = lever - notches
     parts.append(_finish(lever, "setting_lever", S.STEEL_LEVER))
 
     # yoke (return bar): slim lever from its pivot to a fork riding the
     # castle-wheel groove; raised finger pads straddle the groove neck
     fork_c = (_CASTLE_GROOVE[0], 0.0)
-    ring = Pos(*fork_c) * (Circle(1.05) - Circle(0.72))
-    opening = Pos(*fork_c) * Polygon((0, 0), (2.0, -0.9), (2.0, 0.9),
+    ring = bd.Pos(*fork_c) * (bd.Circle(1.05) - bd.Circle(0.72))
+    opening = bd.Pos(*fork_c) * bd.Polygon((0, 0), (2.0, -0.9), (2.0, 0.9),
                                      align=None)
     yoke_prof = _chain(
         (((8.7, 2.7, 0.55), (9.5, 1.8, 0.45), (10.0, 1.15, 0.40)),),
         extra=(ring - opening,))
     yoke = _lever_plate(yoke_prof, LEVER_Z, 0.10)
-    pads = [Pos(fork_c[0], sy, 0) * _cyl_box_pad() for sy in (0.80, -0.80)]
-    yoke = yoke + [Pos(8.7, 2.7, 0) * _cyl(0.30, 0.10, z1)] + pads
+    pads = [bd.Pos(fork_c[0], sy, 0) * _cyl_box_pad() for sy in (0.80, -0.80)]
+    yoke = yoke + [bd.Pos(8.7, 2.7, 0) * _cyl(0.30, 0.10, z1)] + pads
     parts.append(_finish(yoke, "yoke", S.STEEL_LEVER))
 
     # setting lever spring: flat blade plate, two screws, spring finger
@@ -361,14 +352,14 @@ def _lever_parts():
     ))
     # slit separating the blade from the plate body (reads as a spring);
     # kept strictly interior to the plate so the profile stays one face
-    slit = Polygon((10.35, -4.39), (9.62, -4.09), (9.62, -4.22),
+    slit = bd.Polygon((10.35, -4.39), (9.62, -4.09), (9.62, -4.22),
                    (10.35, -4.52), align=None)
     spring_prof = spring_prof - slit
     # screw holes
-    spring_prof = spring_prof - (Pos(8.8, -4.3) * Circle(0.38)
-                                 + Pos(12.4, -2.9) * Circle(0.38))
+    spring_prof = spring_prof - (bd.Pos(8.8, -4.3) * bd.Circle(0.38)
+                                 + bd.Pos(12.4, -2.9) * bd.Circle(0.38))
     spring = _lever_plate(spring_prof, SPRING_Z, 0.08)
-    riser = Pos(9.4, -3.82, 0) * _cyl(0.13, 0.38, sz1 - 0.02)
+    riser = bd.Pos(9.4, -3.82, 0) * _cyl(0.13, 0.38, sz1 - 0.02)
     spring = spring + riser
     parts.append(_finish(spring, "setting_lever_spring", S.STEEL_DARK))
 
@@ -382,7 +373,7 @@ def _cyl_box_pad():
     """Yoke fork finger pad: rises from the yoke plane into the castle
     groove (top z -0.95; groove neck half-width there ~0.55, pad inner
     face at |y| 0.59)."""
-    return Pos(0, 0, (-1.65 - 0.95) / 2.0) * Box(0.30, 0.42, 0.70)
+    return bd.Pos(0, 0, (-1.65 - 0.95) / 2.0) * bd.Box(0.30, 0.42, 0.70)
 
 
 # ---------------------------------------------------------------------------
@@ -398,7 +389,7 @@ def _motion_parts():
     # -3 deg seats the mesh at the measured minimum flank contact
     # (F.pinion leaves sit half a leaf-width off-axis)
     rot_c = _ang(ctr, mw) + 180.0 / S.CANNON_PINION_LEAVES - 3.0
-    leaves = Pos(0, 0, _CANNON_LEAF_Z[0]) * Rot(0, 0, rot_c) * F.pinion(
+    leaves = bd.Pos(0, 0, _CANNON_LEAF_Z[0]) * bd.Rot(0, 0, rot_c) * F.pinion(
         S.CANNON_PINION_LEAVES, CANNON_TIP_D,
         _CANNON_LEAF_Z[1] - _CANNON_LEAF_Z[0])
     pipe = _cyl(0.50, _CANNON_LEAF_Z[0] - _CANNON_PIPE_END, _CANNON_PIPE_END)
@@ -411,26 +402,26 @@ def _motion_parts():
     wheel = F.train_wheel(S.MINUTE_WHEEL_TEETH, MINUTE_TIP_D,
                           web_thickness=0.20, spoke_count=0,
                           tooth_depth_frac=MINUTE_TOOTH_FRAC)
-    wheel = wheel - Cylinder(0.30, 1.0)
-    wheel = Pos(mw[0], mw[1], _MINUTE_WEB_Z) * Rot(0, 0, rot_mw) * wheel
+    wheel = wheel - bd.Cylinder(0.30, 1.0)
+    wheel = bd.Pos(mw[0], mw[1], _MINUTE_WEB_Z) * bd.Rot(0, 0, rot_mw) * wheel
     parts.append(_finish(wheel, "minute_wheel", S.GILT))
 
     # minute pinion (riveted below the wheel): 10 leaves + arbor
     rot_mp = _ang(mw, ctr) + 180.0 / S.MINUTE_WHEEL_PINION
-    mp = Pos(mw[0], mw[1], _MINUTE_PINION_Z[0]) * Rot(0, 0, rot_mp) * F.pinion(
+    mp = bd.Pos(mw[0], mw[1], _MINUTE_PINION_Z[0]) * bd.Rot(0, 0, rot_mp) * F.pinion(
         S.MINUTE_WHEEL_PINION, MINUTE_PINION_TIP_D,
         _MINUTE_PINION_Z[1] - _MINUTE_PINION_Z[0])
-    arbor = Pos(mw[0], mw[1], 0) * _cyl(0.28, 0.83, -2.48)
+    arbor = bd.Pos(mw[0], mw[1], 0) * _cyl(0.28, 0.83, -2.48)
     parts.append(_finish(mp + arbor, "minute_wheel_pinion", S.STEEL_DARK))
 
     # hour wheel: 40 t gilt, pipe riding OVER the cannon pipe
     rot_h = _ang(ctr, mw)
     hw = F.train_wheel(S.HOUR_WHEEL_TEETH, HOUR_TIP_D, web_thickness=0.20,
                        spoke_count=0, tooth_depth_frac=HOUR_TOOTH_FRAC)
-    pipe = Pos(0, 0, (_HOUR_PIPE_END - _HOUR_WEB_Z) / 2.0 + 0.05) * Cylinder(
+    pipe = bd.Pos(0, 0, (_HOUR_PIPE_END - _HOUR_WEB_Z) / 2.0 + 0.05) * bd.Cylinder(
         0.85, _HOUR_WEB_Z - _HOUR_PIPE_END + 0.10)
-    hw = (hw + pipe) - Cylinder(0.56, 3.0)
-    hw = Pos(0, 0, _HOUR_WEB_Z) * Rot(0, 0, rot_h) * hw
+    hw = (hw + pipe) - bd.Cylinder(0.56, 3.0)
+    hw = bd.Pos(0, 0, _HOUR_WEB_Z) * bd.Rot(0, 0, rot_h) * hw
     parts.append(_finish(hw, "hour_wheel", S.GILT))
     return parts
 

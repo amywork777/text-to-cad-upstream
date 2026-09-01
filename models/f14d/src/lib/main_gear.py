@@ -61,9 +61,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Align, Axis, Box, Circle, Cylinder, Cone, Location,
-                       Plane, Polyline, Pos, Rot, Sphere, Spline, Vector,
-                       extrude, loft, make_face, mirror, revolve, sweep)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -81,10 +79,10 @@ _CT, _ST = math.cos(_TH), math.sin(_TH)
 
 #: unit vector that ``stance()`` maps onto world -Z.  The aircraft is pitched
 #: nose down, so "down" in this frame leans very slightly FORWARD.
-DOWN = Vector(_ST, 0.0, -_CT).normalized()
+DOWN = bd.Vector(_ST, 0.0, -_CT).normalized()
 UP = -DOWN
 #: unit vector that ``stance()`` maps onto world +X (level, aft).
-AFT = Vector(_CT, 0.0, _ST).normalized()
+AFT = bd.Vector(_CT, 0.0, _ST).normalized()
 
 
 def world_z(x, z):
@@ -162,7 +160,7 @@ def aperture():
 
 
 def _v(p):
-    return p if isinstance(p, Vector) else Vector(*p)
+    return p if isinstance(p, bd.Vector) else bd.Vector(*p)
 
 
 def _seg(p0, p1, r, r1=None):
@@ -170,49 +168,49 @@ def _seg(p0, p1, r, r1=None):
     a, b = _v(p0), _v(p1)
     d = b - a
     h = max(d.length, 1e-6)
-    pl = Plane(origin=a, z_dir=d)
-    al = (Align.CENTER, Align.CENTER, Align.MIN)
+    pl = bd.Plane(origin=a, z_dir=d)
+    al = (bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)
     if r1 is None or abs(r1 - r) < 1e-6:
-        return pl * Cylinder(radius=r, height=h, align=al)
-    return pl * Cone(bottom_radius=r, top_radius=r1, height=h, align=al)
+        return pl * bd.Cylinder(radius=r, height=h, align=al)
+    return pl * bd.Cone(bottom_radius=r, top_radius=r1, height=h, align=al)
 
 
 def _tube(pts, r):
     """A hydraulic/electrical run: circular section swept along a spline."""
     vs = [_v(p) for p in pts]
     try:
-        path = Spline(*vs)
-        pl = Plane(origin=vs[0], z_dir=path % 0.0)
-        return sweep(pl * Circle(r), path=path, is_frenet=True)
+        path = bd.Spline(*vs)
+        pl = bd.Plane(origin=vs[0], z_dir=path % 0.0)
+        return bd.sweep(pl * bd.Circle(r), path=path, is_frenet=True)
     except Exception:                                    # pragma: no cover
         out = _seg(vs[0], vs[1], r)
         for a, b in zip(vs[1:], vs[2:]):
-            out = out + _seg(a, b, r) + (Pos(*a) * Sphere(r))
+            out = out + _seg(a, b, r) + (bd.Pos(*a) * bd.Sphere(r))
         return out
 
 
 def _blk(x0, x1, y0, y1, z0, z1):
     """Axis-aligned block from two opposite corners."""
-    return Pos((x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0) * Box(
+    return bd.Pos((x0 + x1) / 2.0, (y0 + y1) / 2.0, (z0 + z1) / 2.0) * bd.Box(
         abs(x1 - x0), abs(y1 - y0), abs(z1 - z0))
 
 
 def _plate_xz(y_at, pts, thick):
     """Closed (x, z) polygon standing at ``y_at``, given ``thick`` toward +Y."""
-    pl = Plane(origin=(0, y_at, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
-    return extrude(pl * make_face(Polyline(*pts, close=True)), amount=-thick)
+    pl = bd.Plane(origin=(0, y_at, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    return bd.extrude(pl * bd.make_face(bd.Polyline(*pts, close=True)), amount=-thick)
 
 
 def _plate_yz(x_at, pts, thick):
     """Closed (y, z) polygon standing at ``x_at``, given ``thick`` toward +X."""
-    pl = Plane(origin=(x_at, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-    return extrude(pl * make_face(Polyline(*pts, close=True)), amount=thick)
+    pl = bd.Plane(origin=(x_at, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    return bd.extrude(pl * bd.make_face(bd.Polyline(*pts, close=True)), amount=thick)
 
 
 def _plate_xy(z_at, pts, thick):
     """Closed (x, y) polygon lying at ``z_at``, given ``thick`` toward +Z."""
-    pl = Plane(origin=(0, 0, z_at), x_dir=(1, 0, 0), z_dir=(0, 0, 1))
-    return extrude(pl * make_face(Polyline(*pts, close=True)), amount=thick)
+    pl = bd.Plane(origin=(0, 0, z_at), x_dir=(1, 0, 0), z_dir=(0, 0, 1))
+    return bd.extrude(pl * bd.make_face(bd.Polyline(*pts, close=True)), amount=thick)
 
 
 def _rect_xz(y_at, x0, x1, z0, z1, thick):
@@ -243,7 +241,7 @@ def _holes_y(y_at, spots, r, depth):
 
 def _leg_pt(t):
     """Point on the oleo centreline; t = 0 at the trunnion, 1 at the axle."""
-    return Vector(X_LEG_HI + (X_G - X_LEG_HI) * t,
+    return bd.Vector(X_LEG_HI + (X_G - X_LEG_HI) * t,
                   Y_LEG_HI + (Y_LEG_LO - Y_LEG_HI) * t,
                   Z_TRUN + (Z_AXLE - Z_TRUN) * t)
 
@@ -328,8 +326,8 @@ def _torque_links(sfx):
 
 
 _BRACE_LEG = _leg_off(0.615, out=72.0)
-_BRACE_TOP = Vector(10545.0, BAY_Y1 - 54.0, -430.0)
-_BRACE_KNEE = (_BRACE_LEG + _BRACE_TOP) * 0.5 + Vector(30.0, 0.0, -16.0)
+_BRACE_TOP = bd.Vector(10545.0, BAY_Y1 - 54.0, -430.0)
+_BRACE_KNEE = (_BRACE_LEG + _BRACE_TOP) * 0.5 + bd.Vector(30.0, 0.0, -16.0)
 
 
 def _side_brace(sfx):
@@ -340,7 +338,7 @@ def _side_brace(sfx):
         style(_seg(_BRACE_KNEE, _BRACE_LEG, 40.0, 34.0),
               f"mlg_side_brace_lower:{sfx}", P.GEAR_WHITE),
     ]
-    hinge = Vector(1, 0, 0) * 62.0
+    hinge = bd.Vector(1, 0, 0) * 62.0
     out.append(style(_seg(_BRACE_KNEE - hinge, _BRACE_KNEE + hinge, 34.0),
                      f"mlg_brace_knuckle:{sfx}", P.ALUM_DARK))
     out.append(style(_seg(_BRACE_TOP - hinge * 0.8, _BRACE_TOP + hinge * 0.8, 30.0),
@@ -351,17 +349,17 @@ def _side_brace(sfx):
                               _BRACE_TOP.Z - 44.0, BAY_Z + 2.0, 74.0),
                      f"mlg_brace_fitting:{sfx}", P.ALUM_DARK))
     # downlock: a short over-centre link and its return spring
-    lk0 = _BRACE_KNEE + Vector(-52.0, 0.0, 62.0)
+    lk0 = _BRACE_KNEE + bd.Vector(-52.0, 0.0, 62.0)
     lk1 = _leg_off(0.40, out=70.0)
     out.append(style(_seg(lk0, lk1, 20.0), f"mlg_downlock_link:{sfx}", P.ALUM_DARK))
-    out.append(style(_seg(_BRACE_KNEE + Vector(-8.0, 0.0, 34.0),
-                          lk1 + Vector(6.0, 0.0, -26.0), 13.0),
+    out.append(style(_seg(_BRACE_KNEE + bd.Vector(-8.0, 0.0, 34.0),
+                          lk1 + bd.Vector(6.0, 0.0, -26.0), 13.0),
                      f"mlg_downlock_spring:{sfx}", P.STEEL_BURN))
     return out
 
 
-_ACT_TOP = Vector(10150.0, 1430.0, -336.0)
-_ACT_MID = Vector(10362.0, 1404.0, -604.0)
+_ACT_TOP = bd.Vector(10150.0, 1430.0, -336.0)
+_ACT_MID = bd.Vector(10362.0, 1404.0, -604.0)
 _ACT_ROD = _leg_off(0.40, aft=-96.0, out=42.0)
 
 
@@ -369,10 +367,10 @@ def _retract_actuator(sfx):
     out = [
         style(_seg(_ACT_TOP, _ACT_MID, 54.0), f"mlg_retract_actuator:{sfx}", P.ALUM_DARK),
         style(_seg(_ACT_MID, _ACT_ROD, 28.0), f"mlg_retract_rod:{sfx}", P.OLEO_CHROME),
-        style(_seg(_ACT_MID + Vector(-16.0, 0, 20.0), _ACT_MID + Vector(6.0, 0, -8.0), 62.0),
+        style(_seg(_ACT_MID + bd.Vector(-16.0, 0, 20.0), _ACT_MID + bd.Vector(6.0, 0, -8.0), 62.0),
               f"mlg_actuator_gland:{sfx}", P.STEEL_DARK),
     ]
-    hinge = Vector(0, 54.0, 0)
+    hinge = bd.Vector(0, 54.0, 0)
     out.append(style(_seg(_ACT_TOP - hinge, _ACT_TOP + hinge, 26.0),
                      f"mlg_actuator_pin:{sfx}_bay", P.STEEL_DARK))
     out.append(style(_rect_yz(_ACT_TOP.X - 15.0, _ACT_TOP.Y - 74.0, _ACT_TOP.Y + 74.0,
@@ -461,21 +459,21 @@ def _wheel_frame(side, phi=0.0):
     ``(u, v)`` in the returned plane is (radius, axial-outboard), so the same
     2-D profile serves both sides and the pair comes out a true mirror.
     """
-    origin = Vector(X_G, side * Y_W, Z_AXLE)
-    axle = Vector(0.0, side, 0.0)
+    origin = bd.Vector(X_G, side * Y_W, Z_AXLE)
+    axle = bd.Vector(0.0, side, 0.0)
     rad = UP * math.cos(phi) + (AFT * side) * math.sin(phi)
-    return Plane(origin=origin, x_dir=rad, z_dir=rad.cross(axle))
+    return bd.Plane(origin=origin, x_dir=rad, z_dir=rad.cross(axle))
 
 
 def _wheel_axis(side):
-    return Axis(Vector(X_G, side * Y_W, Z_AXLE), Vector(0.0, side, 0.0))
+    return bd.Axis(bd.Vector(X_G, side * Y_W, Z_AXLE), bd.Vector(0.0, side, 0.0))
 
 
 def _ground_cutter(side):
     """Half space below the contact plane, exactly on world Z = 0."""
-    o = Vector(X_G, side * Y_W, Z_AXLE) + DOWN * R_CONTACT
-    pl = Plane(origin=o, x_dir=AFT * side, z_dir=DOWN)
-    return pl * Box(1600.0, 900.0, 900.0, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    o = bd.Vector(X_G, side * Y_W, Z_AXLE) + DOWN * R_CONTACT
+    pl = bd.Plane(origin=o, x_dir=AFT * side, z_dir=DOWN)
+    return pl * bd.Box(1600.0, 900.0, 900.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
 
 
 _BULGE = 0.105                       # sidewall growth at the contact patch
@@ -497,25 +495,25 @@ def _carcass_section(dphi):
 def _tyre(side, sfx):
     """Carcass + tread, deflected onto a flat patch with a sidewall bulge."""
     prof = _carcass_section(_SPREAD * 9.9)          # = undeflected section
-    face = _wheel_frame(side, math.radians(241.0)) * make_face(
-        Polyline(*prof, close=True))
-    body = revolve(face, axis=_wheel_axis(side), revolution_arc=238.0)
+    face = _wheel_frame(side, math.radians(241.0)) * bd.make_face(
+        bd.Polyline(*prof, close=True))
+    body = bd.revolve(face, axis=_wheel_axis(side), revolution_arc=238.0)
     faces = []
     n = 19
     for i in range(n):
         phi = math.radians(118.0 + 124.0 * i / (n - 1.0))
-        faces.append(_wheel_frame(side, phi) * make_face(
-            Polyline(*_carcass_section(phi - math.pi), close=True)))
-    carcass = body + loft(faces)
+        faces.append(_wheel_frame(side, phi) * bd.make_face(
+            bd.Polyline(*_carcass_section(phi - math.pi), close=True)))
+    carcass = body + bd.loft(faces)
 
-    tread = revolve(_wheel_frame(side, 0.0) * make_face(
-        Polyline(*_tread_profile(), close=True)),
+    tread = bd.revolve(_wheel_frame(side, 0.0) * bd.make_face(
+        bd.Polyline(*_tread_profile(), close=True)),
         axis=_wheel_axis(side), revolution_arc=360.0)
 
     # raised sidewall band (the moulded lettering ring).  A plain revolve, so
     # the contact bulge simply swallows it where the sidewall is loaded --
     # which is exactly what happens to the real one.
-    band = revolve(_wheel_frame(side, 0.0) * make_face(Polyline(
+    band = bd.revolve(_wheel_frame(side, 0.0) * bd.make_face(bd.Polyline(
         (344.0, 148.0), (350.0, 153.0), (372.0, 150.0), (376.0, 145.0),
         (376.0, -145.0), (372.0, -150.0), (350.0, -153.0), (344.0, -148.0),
         close=True)), axis=_wheel_axis(side), revolution_arc=360.0)
@@ -527,7 +525,7 @@ def _tyre(side, sfx):
 
 
 def _revolved(side, prof, arc=360.0, phi=0.0):
-    return revolve(_wheel_frame(side, phi) * make_face(Polyline(*prof, close=True)),
+    return bd.revolve(_wheel_frame(side, phi) * bd.make_face(bd.Polyline(*prof, close=True)),
                    axis=_wheel_axis(side), revolution_arc=arc)
 
 
@@ -776,7 +774,7 @@ def _bay_systems(sfx):
                           (9880.0, 830.0, BAY_Z - 140.0), 30.0),
                      f"mlg_air_bottle_valve:{sfx}", P.BRASS))
     # uplock: the hook that catches the leg when it is folded away forward
-    up = Vector(9700.0, ARCH_Y + 60.0, BAY_Z - 40.0)
+    up = bd.Vector(9700.0, ARCH_Y + 60.0, BAY_Z - 40.0)
     out.append(style(_blk(up.X - 70.0, up.X + 70.0, up.Y - 46.0, up.Y + 46.0,
                           BAY_Z - 150.0, BAY_Z), f"mlg_uplock_body:{sfx}", P.ALUM_DARK))
     out.append(style(_seg((up.X - 40.0, up.Y - 60.0, BAY_Z - 190.0),
@@ -858,8 +856,8 @@ _DOOR_X0, _DOOR_X1 = AP_X0 - 24.0, AP_X1 + 24.0
 
 def _hinged(shape, deg=DOOR_OPEN):
     """Swing a door body about the inboard hinge line (an axis along X)."""
-    return (Location((0.0, _HINGE_Y, _HINGE_Z)) * Rot(-deg, 0.0, 0.0)
-            * Location((0.0, -_HINGE_Y, -_HINGE_Z)) * shape)
+    return (bd.Location((0.0, _HINGE_Y, _HINGE_Z)) * bd.Rot(-deg, 0.0, 0.0)
+            * bd.Location((0.0, -_HINGE_Y, -_HINGE_Z)) * shape)
 
 
 def _door_pts(x_at, y0, y1, drop, n=7):
@@ -910,12 +908,12 @@ def _main_door(sfx):
     out.append(style(_hinged(_rect_xz(lug_y - 16.0, lug_x - 56.0, lug_x + 56.0,
                                       _skin(xm, lug_y) - 2.0, lug_z, 32.0)),
                      f"mlg_door_lug:{sfx}", P.ALUM_DARK))
-    rod_end = _hinged(Pos(lug_x, lug_y, lug_z - 26.0) * Sphere(1.0)).center()
-    base = Vector(10205.0, BAY_Y0 + 140.0, BAY_Z - 108.0)
+    rod_end = _hinged(bd.Pos(lug_x, lug_y, lug_z - 26.0) * bd.Sphere(1.0)).center()
+    base = bd.Vector(10205.0, BAY_Y0 + 140.0, BAY_Z - 108.0)
     mid = base + (rod_end - base) * 0.55
     out.append(style(_seg(base, mid, 40.0), f"mlg_door_actuator:{sfx}", P.ALUM_DARK))
     out.append(style(_seg(mid, rod_end, 21.0), f"mlg_door_act_rod:{sfx}", P.OLEO_CHROME))
-    out.append(style(_seg(base + Vector(0, -48.0, 0), base + Vector(0, 48.0, 0), 24.0),
+    out.append(style(_seg(base + bd.Vector(0, -48.0, 0), base + bd.Vector(0, 48.0, 0), 24.0),
                      f"mlg_door_act_pin:{sfx}", P.STEEL_DARK))
     out.append(style(_tube([
         (10900.0, BAY_Y0 + 40.0, BAY_Z - 66.0),
@@ -953,7 +951,7 @@ def _leg_door(sfx):
                          f"mlg_leg_door_rib:{sfx}_{i}", P.GEAR_WHITE))
     for i, (t, k) in enumerate(((0.36, 1), (0.62, 3))):
         p = _leg_off(t, out=70.0)
-        q = Vector(p.X, _LEGDOOR[k][0] - 36.0, _LEGDOOR[k][1])
+        q = bd.Vector(p.X, _LEGDOOR[k][0] - 36.0, _LEGDOOR[k][1])
         out.append(style(_seg(p, q, 26.0, 20.0), f"mlg_leg_door_arm:{sfx}_{i}", P.ALUM_DARK))
     return out
 
@@ -983,7 +981,7 @@ def _leaves(sfx):
 
 
 def _mirrored(shape):
-    m = mirror(shape, about=Plane.XZ)
+    m = bd.mirror(shape, about=bd.Plane.XZ)
     m.label = shape.label
     m.color = shape.color
     return m

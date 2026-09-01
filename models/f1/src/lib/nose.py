@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Cylinder, Pos
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -569,8 +569,8 @@ def _flange_fasteners():
         if oy * y + oz * (z - zc) < 0:
             oy, oz = -oy, -oz
         plane = surfaces.plate_plane((x, y, z), (0.0, oy, oz))
-        head = plane * Cylinder(3.6, 7.0)
-        boss = plane * Pos(0, 0, 2.6) * Cylinder(1.8, 3.4)
+        head = plane * bd.Cylinder(3.6, 7.0)
+        boss = plane * bd.Pos(0, 0, 2.6) * bd.Cylinder(1.8, 3.4)
         out.append(surfaces.styled(head + boss, f"flange_fastener_{k:02d}", spec.STEEL))
     return out
 
@@ -598,7 +598,7 @@ def _pylon_bolts():
     out = []
     for i, (x, rise) in enumerate(((1284.0, 2.6), (PYLON_X, 0.0), (1218.0, 2.6))):
         r = 5.2 - 0.8 * abs(i - 1)
-        out.append(Pos((x, PYLON_Y, PYLON_Z + rise + 1.6)) * Cylinder(r, 5.4))
+        out.append(bd.Pos((x, PYLON_Y, PYLON_Z + rise + 1.6)) * bd.Cylinder(r, 5.4))
     return out
 
 
@@ -628,8 +628,8 @@ def _camera_optics():
     bezel_plane = surfaces.plate_plane((1005.0, CAM_Y, CAM_Z), (1.0, 0.0, 0.0))
     lens_plane = surfaces.plate_plane((1009.0, CAM_Y, CAM_Z), (1.0, 0.0, 0.0))
     return (
-        bezel_plane * Cylinder(19.0, 14.0),
-        lens_plane * Cylinder(13.5, 12.0),
+        bezel_plane * bd.Cylinder(19.0, 14.0),
+        lens_plane * bd.Cylinder(13.5, 12.0),
     )
 
 

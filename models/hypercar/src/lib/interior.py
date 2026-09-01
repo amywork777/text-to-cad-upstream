@@ -21,24 +21,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Circle,
-    Cylinder,
-    Ellipse,
-    Plane,
-    Polyline,
-    Pos,
-    RectangleRounded,
-    Rot,
-    Spline,
-    extrude,
-    loft,
-    make_face,
-    mirror,
-    revolve,
-    sweep,
-)
+from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib.context import group, style
@@ -101,17 +84,17 @@ def _tab(table, s):
 
 def _spine(pts):
     """A curve in the car's XZ plane, sampled by normalised arc length."""
-    return Spline(*[(p[0], 0.0, p[1]) for p in pts])
+    return bd.Spline(*[(p[0], 0.0, p[1]) for p in pts])
 
 
 def _frame(edge, s):
     """Section plane at arc-length ``s``: local (u, v) = (lateral, surface out)."""
-    return Plane(origin=edge @ s, x_dir=(0, 1, 0), z_dir=edge % s)
+    return bd.Plane(origin=edge @ s, x_dir=(0, 1, 0), z_dir=edge % s)
 
 
 def _closed_face(run_a, run_b):
     """Face closed by two point runs that share their end points."""
-    return make_face(Spline(*run_a) + Spline(*run_b))
+    return bd.make_face(bd.Spline(*run_a) + bd.Spline(*run_b))
 
 
 def _face_from_runs(runs):
@@ -123,13 +106,13 @@ def _face_from_runs(runs):
     """
     edges = None
     for run in runs:
-        e = Polyline(*run) if len(run) == 2 else Spline(*run)
+        e = bd.Polyline(*run) if len(run) == 2 else bd.Spline(*run)
         edges = e if edges is None else edges + e
-    return make_face(edges)
+    return bd.make_face(edges)
 
 
 def _loft_stations(planes_and_faces):
-    return loft(planes_and_faces)
+    return bd.loft(planes_and_faces)
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +199,7 @@ def _sweep_sections(edge, s0, s1, n, fn):
         ls = i / n
         s = s0 + (s1 - s0) * ls
         faces.append(_frame(edge, s) * fn(s, ls))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _pad_window(ls, e=0.16, floor=0.10):
@@ -236,7 +219,7 @@ def _seat_pad(edge, span, frac, ph, n=16):
 def _slot_cutter(edge, s, u, w, h):
     plane = _frame(edge, s)
     return plane * (
-        Pos(u, 0, 0) * extrude(Plane.XZ * RectangleRounded(w, h, w * 0.44), 140, both=True)
+        bd.Pos(u, 0, 0) * bd.extrude(bd.Plane.XZ * bd.RectangleRounded(w, h, w * 0.44), 140, both=True)
     )
 
 
@@ -311,11 +294,11 @@ def _seat_parts():
     out.append((
         buckle_pl
         * (
-            Pos(0, 50, 0)
+            bd.Pos(0, 50, 0)
             * (
-                extrude(Plane.XZ * RectangleRounded(74, 92, 22), 12, both=True)
-                - Pos(0, 8, 0) * extrude(
-                    Plane.XZ * RectangleRounded(52, 68, 16), 12, both=True
+                bd.extrude(bd.Plane.XZ * bd.RectangleRounded(74, 92, 22), 12, both=True)
+                - bd.Pos(0, 8, 0) * bd.extrude(
+                    bd.Plane.XZ * bd.RectangleRounded(52, 68, 16), 12, both=True
                 )
             )
         ),
@@ -323,8 +306,8 @@ def _seat_parts():
         P.BRONZE,
     ))
     out.append((
-        buckle_pl * (Pos(0, 50, 0) * extrude(
-            Plane.XZ * RectangleRounded(50, 66, 15), 8, both=True
+        buckle_pl * (bd.Pos(0, 50, 0) * bd.extrude(
+            bd.Plane.XZ * bd.RectangleRounded(50, 66, 15), 8, both=True
         )),
         "harness_buckle_face",
         P.CARBON_GLOSS,
@@ -332,8 +315,8 @@ def _seat_parts():
 
     # machined rails carrying the shell down to the floor
     for i, ry in ((0, 138), (1, -138)):
-        rail = Pos(200, ry, FLOOR_TOP) * extrude(
-            RectangleRounded(470, 42, 18), 68
+        rail = bd.Pos(200, ry, FLOOR_TOP) * bd.extrude(
+            bd.RectangleRounded(470, 42, 18), 68
         )
         out.append((rail, f"seat_rail_{i}", P.ALUMINIUM_DARK))
     return out
@@ -346,7 +329,7 @@ def _seats():
         name = "left" if side > 0 else "right"
         for shape, label, colour in parts:
             kids.append(
-                style(Pos(0, side * SEAT_Y, 0) * shape, f"{label}:{name}", colour)
+                style(bd.Pos(0, side * SEAT_Y, 0) * shape, f"{label}:{name}", colour)
             )
     return kids
 
@@ -358,7 +341,7 @@ def _seats():
 
 def _steer_plane():
     t = math.radians(STEER_TILT)
-    return Plane(
+    return bd.Plane(
         origin=STEER_C, x_dir=(0, -1, 0), z_dir=(-math.cos(t), 0.0, math.sin(t))
     )
 
@@ -370,7 +353,7 @@ def _rim_path(a, b, n=40, flat=0.42):
         s = math.sin(th)
         v = b * (1.0 if s >= 0 else -1.0) * abs(s) ** flat
         pts.append((a * math.cos(th), v, 0.0))
-    return Spline(*pts, periodic=True)
+    return bd.Spline(*pts, periodic=True)
 
 
 def _blade(p0, p1, sec0, sec1, axis):
@@ -379,9 +362,9 @@ def _blade(p0, p1, sec0, sec1, axis):
         x_dir, z_dir = (0, 1, 0), (1, 0, 0)
     else:
         x_dir, z_dir = (1, 0, 0), (0, -1, 0)
-    f0 = Plane(origin=p0, x_dir=x_dir, z_dir=z_dir) * RectangleRounded(*sec0)
-    f1 = Plane(origin=p1, x_dir=x_dir, z_dir=z_dir) * RectangleRounded(*sec1)
-    return loft([f0, f1])
+    f0 = bd.Plane(origin=p0, x_dir=x_dir, z_dir=z_dir) * bd.RectangleRounded(*sec0)
+    f1 = bd.Plane(origin=p1, x_dir=x_dir, z_dir=z_dir) * bd.RectangleRounded(*sec1)
+    return bd.loft([f0, f1])
 
 
 def _steering():
@@ -389,13 +372,13 @@ def _steering():
     local = []
 
     path = _rim_path(RIM_A, RIM_B)
-    sec = Plane(origin=path @ 0, x_dir=(1, 0, 0), z_dir=path % 0) * RectangleRounded(
+    sec = bd.Plane(origin=path @ 0, x_dir=(1, 0, 0), z_dir=path % 0) * bd.RectangleRounded(
         36, 28, 13
     )
     # is_frenet=True does not close cleanly on this closed rim path -- the
     # Frenet frame does not return to its start orientation, leaving 8 free
     # edges and 8 non-manifold edges at the seam.  Parallel transport closes.
-    local.append((sweep(sec, path), "steering_rim", P.CARBON))
+    local.append((bd.sweep(sec, path), "steering_rim", P.CARBON))
 
     # spokes: 3 and 9 o'clock, plus 6 o'clock
     for sign in (1, -1):
@@ -408,7 +391,7 @@ def _steering():
             P.CARBON,
         ))
         local.append((
-            Pos(sign * 104, 0, 5) * extrude(RectangleRounded(58, 11, 5), 4),
+            bd.Pos(sign * 104, 0, 5) * bd.extrude(bd.RectangleRounded(58, 11, 5), 4),
             f"steering_spoke_inlay{'l' if sign > 0 else 'r'}",
             P.BRONZE,
         ))
@@ -422,15 +405,15 @@ def _steering():
     ))
 
     # hub jewellery
-    local.append((Pos(0, 0, -16) * Cylinder(64, 34), "steering_hub", P.ALUMINIUM_DARK))
+    local.append((bd.Pos(0, 0, -16) * bd.Cylinder(64, 34), "steering_hub", P.ALUMINIUM_DARK))
     local.append((
-        Cylinder(58, 10) - Cylinder(50, 14),
+        bd.Cylinder(58, 10) - bd.Cylinder(50, 14),
         "steering_hub_ring",
         P.BRONZE,
     ))
-    local.append((Pos(0, 0, 4) * Cylinder(50, 12), "steering_hub_pad", P.CARBON_GLOSS))
+    local.append((bd.Pos(0, 0, 4) * bd.Cylinder(50, 12), "steering_hub_pad", P.CARBON_GLOSS))
     local.append((
-        Pos(0, RIM_B - 4, 10) * extrude(RectangleRounded(30, 26, 8), 9),
+        bd.Pos(0, RIM_B - 4, 10) * bd.extrude(bd.RectangleRounded(30, 26, 8), 9),
         "steering_top_marker",
         P.BRONZE,
     ))
@@ -438,18 +421,18 @@ def _steering():
     # shift paddles behind the rim
     for sign in (1, -1):
         local.append((
-            Pos(sign * 86, 10, -54) * extrude(
-                RectangleRounded(24, 106, 11, rotation=sign * 8), 8
+            bd.Pos(sign * 86, 10, -54) * bd.extrude(
+                bd.RectangleRounded(24, 106, 11, rotation=sign * 8), 8
             ),
             f"shift_paddle:{'left' if sign > 0 else 'right'}",
             P.BRONZE,
         ))
 
     # column shroud running forward from the hub
-    shroud = loft([
-        Plane.XY.offset(-30) * Ellipse(72, 56),
-        Plane.XY.offset(-150) * Ellipse(56, 44),
-        Plane.XY.offset(-262) * Ellipse(42, 34),
+    shroud = bd.loft([
+        bd.Plane.XY.offset(-30) * bd.Ellipse(72, 56),
+        bd.Plane.XY.offset(-150) * bd.Ellipse(56, 44),
+        bd.Plane.XY.offset(-262) * bd.Ellipse(42, 34),
     ])
     local.append((shroud, "steering_column_shroud", P.CARBON))
 
@@ -495,8 +478,8 @@ def _dash_blade():
             (xc - 0.62 * c, zc - 0.74 * dn),
             rear,
         ]
-        faces.append(Plane.XZ.offset(-DASH_HALF_Y * ty) * _closed_face(top, bot))
-    return loft(faces)
+        faces.append(bd.Plane.XZ.offset(-DASH_HALF_Y * ty) * _closed_face(top, bot))
+    return bd.loft(faces)
 
 
 DASH_SKIN = 26.0
@@ -535,10 +518,10 @@ def _dash_core():
             face_run[0],
         ]
         faces.append(
-            Plane.XZ.offset(-DASH_HALF_Y * 0.93 * ty)
+            bd.Plane.XZ.offset(-DASH_HALF_Y * 0.93 * ty)
             * _closed_face(face_run + [lip], back_run)
         )
-    return loft(faces)
+    return bd.loft(faces)
 
 
 BINN_C = (648.0, 372.0, 744.0)
@@ -547,25 +530,25 @@ BINN_TILT = 20.0
 
 def _binnacle():
     t = math.radians(BINN_TILT)
-    plane = Plane(
+    plane = bd.Plane(
         origin=BINN_C, x_dir=(0, -1, 0), z_dir=(-math.cos(t), 0.0, math.sin(t))
     )
-    bezel = extrude(RectangleRounded(196, 80, 24), 11, both=True) - Pos(
+    bezel = bd.extrude(bd.RectangleRounded(196, 80, 24), 11, both=True) - bd.Pos(
         0, 0, 5
-    ) * extrude(RectangleRounded(176, 60, 17), 20)
-    rim = Pos(0, 0, 10) * (
-        extrude(RectangleRounded(196, 80, 24), 4)
-        - Pos(0, 0, -1) * extrude(RectangleRounded(184, 68, 20), 8)
+    ) * bd.extrude(bd.RectangleRounded(176, 60, 17), 20)
+    rim = bd.Pos(0, 0, 10) * (
+        bd.extrude(bd.RectangleRounded(196, 80, 24), 4)
+        - bd.Pos(0, 0, -1) * bd.extrude(bd.RectangleRounded(184, 68, 20), 8)
     )
-    screen = Pos(0, 0, 1) * extrude(RectangleRounded(174, 58, 16), 10)
+    screen = bd.Pos(0, 0, 1) * bd.extrude(bd.RectangleRounded(174, 58, 16), 10)
     out = [
         style(plane * bezel, "binnacle_bezel", P.CARBON_GLOSS),
         style(plane * rim, "binnacle_rim", P.BRONZE),
         style(plane * screen, "binnacle_screen", P.GLASS_DARK),
     ]
     for i, sy in ((0, 62), (1, -62)):
-        stalk = Pos(638.0, BINN_C[1] + sy, 690.0) * extrude(
-            RectangleRounded(12, 24, 5), 30
+        stalk = bd.Pos(638.0, BINN_C[1] + sy, 690.0) * bd.extrude(
+            bd.RectangleRounded(12, 24, 5), 30
         )
         out.append(style(stalk, f"binnacle_stalk_{i}", P.BRONZE_DARK))
     return out
@@ -609,24 +592,24 @@ def _console_at(x):
 def _console_face(x):
     zt, hw, hb = _console_at(x)
     zb = FLOOR_TOP - 2.0
-    crown = Spline(
+    crown = bd.Spline(
         (0.0, zt), (0.40 * hw, zt - 3.0), (0.76 * hw, zt - 13.0), (hw, zt - 31.0)
     )
-    side = Spline(
+    side = bd.Spline(
         (hw, zt - 31.0),
         (0.995 * hb, 0.55 * (zt - 31.0) + 0.45 * zb),
         (hb, zb + 92.0),
         (0.975 * hb, zb + 28.0),
         (0.88 * hb, zb),
     )
-    base = Polyline((0.88 * hb, zb), (0.0, zb))
+    base = bd.Polyline((0.88 * hb, zb), (0.0, zb))
     half = crown + side + base
-    return Plane.YZ.offset(x) * make_face(half + mirror(half, Plane.YZ))
+    return bd.Plane.YZ.offset(x) * bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
 
 
 def _console_body():
     xs = [700 - (700 + 545) * i / 16.0 for i in range(17)]
-    return loft([_console_face(x) for x in xs])
+    return bd.loft([_console_face(x) for x in xs])
 
 
 def _console_pinstripe(side):
@@ -635,32 +618,32 @@ def _console_pinstripe(side):
         x = 690 - (690 + 538) * i / 16.0
         zt, hw, _hb = _console_at(x)
         faces.append(
-            Plane.YZ.offset(x)
-            * (Pos(side * (hw - 1.5), zt - 29.5) * RectangleRounded(13, 8, 3.5))
+            bd.Plane.YZ.offset(x)
+            * (bd.Pos(side * (hw - 1.5), zt - 29.5) * bd.RectangleRounded(13, 8, 3.5))
         )
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _selector():
-    prof = Spline(
+    prof = bd.Spline(
         (33, 0), (35, 7), (30, 15), (14, 24), (12, 52),
         (16, 61), (24, 74), (25, 88), (20, 100), (7, 109),
     )
-    face = make_face(Polyline((0, 0), (33, 0)) + prof + Polyline((7, 109), (0, 111), (0, 0)))
-    return revolve(Plane.XZ * face, Axis.Z)
+    face = bd.make_face(bd.Polyline((0, 0), (33, 0)) + prof + bd.Polyline((7, 109), (0, 111), (0, 0)))
+    return bd.revolve(bd.Plane.XZ * face, bd.Axis.Z)
 
 
 def _knurl(radius, height):
-    prof = Spline(
+    prof = bd.Spline(
         (radius, 0), (radius + 2.0, 0.28 * height), (radius - 1.5, 0.55 * height),
         (radius + 1.5, 0.80 * height), (radius - 6.0, height),
     )
-    face = make_face(
-        Polyline((0, 0), (radius, 0))
+    face = bd.make_face(
+        bd.Polyline((0, 0), (radius, 0))
         + prof
-        + Polyline((radius - 6.0, height), (0, height), (0, 0))
+        + bd.Polyline((radius - 6.0, height), (0, height), (0, 0))
     )
-    return revolve(Plane.XZ * face, Axis.Z)
+    return bd.revolve(bd.Plane.XZ * face, bd.Axis.Z)
 
 
 def _console():
@@ -677,14 +660,14 @@ def _console():
     gate_z = _console_at(255)[0]
     kids.append(
         style(
-            Pos(255, 0, gate_z - 14.0) * extrude(RectangleRounded(168, 106, 26), 14),
+            bd.Pos(255, 0, gate_z - 14.0) * bd.extrude(bd.RectangleRounded(168, 106, 26), 14),
             "console_gate",
             P.BRONZE_DARK,
         )
     )
     kids.append(
         style(
-            Pos(240, 0, gate_z - 4.0) * (Rot(0, -12, 0) * _selector()),
+            bd.Pos(240, 0, gate_z - 4.0) * (bd.Rot(0, -12, 0) * _selector()),
             "drive_selector",
             P.BRONZE,
         )
@@ -694,14 +677,14 @@ def _console():
     for i, ry in ((0, 54), (1, -54)):
         kids.append(
             style(
-                Pos(430, ry, rot_z - 20.0) * _knurl(25, 26),
+                bd.Pos(430, ry, rot_z - 20.0) * _knurl(25, 26),
                 f"console_rotary_{i}",
                 P.BRONZE,
             )
         )
     start_z = _console_at(540)[0]
     kids.append(
-        style(Pos(540, 0, start_z - 12.0) * _knurl(20, 19), "start_button", P.BRONZE)
+        style(bd.Pos(540, 0, start_z - 12.0) * _knurl(20, 19), "start_button", P.BRONZE)
     )
     return kids
 
@@ -774,7 +757,7 @@ def _door_face(x, table):
         back,
         [back[-1], inner[0]],
     ]
-    return Plane.YZ.offset(x) * _face_from_runs(runs)
+    return bd.Plane.YZ.offset(x) * _face_from_runs(runs)
 
 
 def _door_pull():
@@ -784,16 +767,16 @@ def _door_pull():
         y, z = _door_pt(x, 0.4475, 0.4475, -34.0)
         w = 0.36 + 0.64 * _sm(min(i, 10 - i) / 1.6)
         faces.append(
-            Plane.YZ.offset(x)
-            * (Pos(y, z) * RectangleRounded(30 * w, 24 * w, 10 * w))
+            bd.Plane.YZ.offset(x)
+            * (bd.Pos(y, z) * bd.RectangleRounded(30 * w, 24 * w, 10 * w))
         )
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _door_cards():
     xs = _door_stations()
-    upper = loft([_door_face(x, DOOR_UPPER) for x in xs])
-    lower = loft([_door_face(x, DOOR_LOWER) for x in xs])
+    upper = bd.loft([_door_face(x, DOOR_UPPER) for x in xs])
+    lower = bd.loft([_door_face(x, DOOR_LOWER) for x in xs])
     pull = _door_pull()
     kids = []
     for side in (1, -1):
@@ -803,7 +786,7 @@ def _door_cards():
             (lower, "door_card_lower", P.CARBON),
             (pull, "door_pull", P.BRONZE),
         ):
-            piece = shape if side > 0 else mirror(shape, Plane.XZ)
+            piece = shape if side > 0 else bd.mirror(shape, bd.Plane.XZ)
             kids.append(style(piece, f"{label}:{name}", colour))
     return kids
 
@@ -826,15 +809,15 @@ def _floor_outline(inset=0.0):
     xs = [FLOOR_X0 - (FLOOR_X0 - FLOOR_X1) * i / 13.0 for i in range(14)]
     pts = [(x, _floor_edge(x) - inset) for x in xs]
     half = (
-        Polyline((FLOOR_X0, 0.0), pts[0])
-        + Spline(*pts)
-        + Polyline(pts[-1], (FLOOR_X1, 0.0))
+        bd.Polyline((FLOOR_X0, 0.0), pts[0])
+        + bd.Spline(*pts)
+        + bd.Polyline(pts[-1], (FLOOR_X1, 0.0))
     )
-    return make_face(half + mirror(half, Plane.XZ))
+    return bd.make_face(half + bd.mirror(half, bd.Plane.XZ))
 
 
 def _floor():
-    plate = extrude(Plane.XY.offset(FLOOR_BOT) * _floor_outline(), FLOOR_TOP - FLOOR_BOT)
+    plate = bd.extrude(bd.Plane.XY.offset(FLOOR_BOT) * _floor_outline(), FLOOR_TOP - FLOOR_BOT)
     kids = [style(plate, "cabin_floor", P.CARBON)]
 
     for side in (1, -1):
@@ -845,12 +828,12 @@ def _floor():
             y = _floor_edge(x)
             w = 44.0 * (0.30 + 0.70 * _sm(min(t, 1.0 - t) / 0.10))
             faces.append(
-                Plane.YZ.offset(x)
-                * (Pos(side * (y - 26.0), FLOOR_TOP + 2.0) * RectangleRounded(w, 9, 4))
+                bd.Plane.YZ.offset(x)
+                * (bd.Pos(side * (y - 26.0), FLOOR_TOP + 2.0) * bd.RectangleRounded(w, 9, 4))
             )
         kids.append(
             style(
-                loft(faces),
+                bd.loft(faces),
                 f"sill_scuff_plate:{'left' if side > 0 else 'right'}",
                 P.BRONZE,
             )
@@ -874,14 +857,14 @@ FAIRING = [
 
 
 def _fairing_face(x, hw, zt, zb):
-    half = Spline(
+    half = bd.Spline(
         (0.0, zt),
         (0.42 * hw, zt - 0.10 * (zt - zb)),
         (0.78 * hw, zt - 0.34 * (zt - zb)),
         (hw, zt - 0.70 * (zt - zb)),
         (0.94 * hw, zb),
-    ) + Polyline((0.94 * hw, zb), (0.0, zb))
-    return Plane.YZ.offset(x) * make_face(half + mirror(half, Plane.YZ))
+    ) + bd.Polyline((0.94 * hw, zb), (0.0, zb))
+    return bd.Plane.YZ.offset(x) * bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
 
 
 def _head_fairing():
@@ -895,38 +878,38 @@ def _head_fairing():
         a, b = FAIRING[k], FAIRING[k + 1]
         x, hw, zt, zb = (p + (q - p) * u for p, q in zip(a, b))
         faces.append(_fairing_face(x, hw, zt, zb))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _bulkhead():
-    half = Spline(
+    half = bd.Spline(
         (0.0, 792.0), (170.0, 806.0), (320.0, 842.0), (430.0, 846.0),
         (536.0, 806.0), (606.0, 704.0), (640.0, 540.0), (650.0, 380.0),
         (648.0, 304.0),
-    ) + Polyline((648.0, 304.0), (0.0, 304.0))
-    face = Plane.YZ.offset(BULKHEAD_X) * make_face(half + mirror(half, Plane.YZ))
-    kids = [style(extrude(face, 26.0), "rear_bulkhead", P.MONOCOQUE)]
+    ) + bd.Polyline((648.0, 304.0), (0.0, 304.0))
+    face = bd.Plane.YZ.offset(BULKHEAD_X) * bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
+    kids = [style(bd.extrude(face, 26.0), "rear_bulkhead", P.MONOCOQUE)]
 
     fairing = _head_fairing()
     for side in (1, -1):
         name = "left" if side > 0 else "right"
         kids.append(
-            style(Pos(0, side * SEAT_Y, 0) * fairing, f"head_fairing:{name}", P.CARBON)
+            style(bd.Pos(0, side * SEAT_Y, 0) * fairing, f"head_fairing:{name}", P.CARBON)
         )
 
-    strip = Pos(BULKHEAD_X + 24.0, 0.0, 700.0) * extrude(
-        Plane.YZ * RectangleRounded(300, 22, 9), 8
+    strip = bd.Pos(BULKHEAD_X + 24.0, 0.0, 700.0) * bd.extrude(
+        bd.Plane.YZ * bd.RectangleRounded(300, 22, 9), 8
     )
     kids.append(style(strip, "bulkhead_inlay", P.BRONZE))
 
     for i, y in ((0, 168), (1, -168)):
-        vent = Pos(BULKHEAD_X + 22.0, y, 560.0) * extrude(
-            Plane.YZ * RectangleRounded(150, 190, 34), 8
+        vent = bd.Pos(BULKHEAD_X + 22.0, y, 560.0) * bd.extrude(
+            bd.Plane.YZ * bd.RectangleRounded(150, 190, 34), 8
         )
         kids.append(style(vent, f"bulkhead_vent_{i}", P.CARBON_GLOSS))
-        ring = Pos(BULKHEAD_X + 26.0, y, 560.0) * (
-            extrude(Plane.YZ * RectangleRounded(164, 204, 40), 7)
-            - Pos(4, 0, 0) * extrude(Plane.YZ * RectangleRounded(146, 186, 33), 9)
+        ring = bd.Pos(BULKHEAD_X + 26.0, y, 560.0) * (
+            bd.extrude(bd.Plane.YZ * bd.RectangleRounded(164, 204, 40), 7)
+            - bd.Pos(4, 0, 0) * bd.extrude(bd.Plane.YZ * bd.RectangleRounded(146, 186, 33), 9)
         )
         kids.append(style(ring, f"bulkhead_vent_ring_{i}", P.BRONZE_DARK))
     return kids
@@ -942,12 +925,12 @@ PIVOT_Z = 566.0
 
 def _pedal(px, py, pz, w, h):
     t = math.radians(20.0)
-    plane = Plane(
+    plane = bd.Plane(
         origin=(px, py, pz), x_dir=(0, -1, 0), z_dir=(-math.cos(t), 0.0, math.sin(t))
     )
-    pad = extrude(RectangleRounded(w, h, 16), 14)
+    pad = bd.extrude(bd.RectangleRounded(w, h, 16), 14)
     for k in (-1, 0, 1):
-        pad = pad - Pos(0, k * h * 0.29, -4) * Cylinder(w * 0.17, 30)
+        pad = pad - bd.Pos(0, k * h * 0.29, -4) * bd.Cylinder(w * 0.17, 30)
     return plane * pad
 
 
@@ -955,10 +938,10 @@ def _pedal_arm(py, tip_x, tip_z):
     dx, dz = PIVOT_X - tip_x, PIVOT_Z - tip_z
     length = math.hypot(dx, dz)
     ang = math.degrees(math.atan2(dz, dx))
-    sk = Pos((tip_x + PIVOT_X) / 2.0, (tip_z + PIVOT_Z) / 2.0) * RectangleRounded(
+    sk = bd.Pos((tip_x + PIVOT_X) / 2.0, (tip_z + PIVOT_Z) / 2.0) * bd.RectangleRounded(
         length + 26.0, 28, 13, rotation=ang
     )
-    return Pos(0, py, 0) * extrude(Plane.XZ * sk, 9, both=True)
+    return bd.Pos(0, py, 0) * bd.extrude(bd.Plane.XZ * sk, 9, both=True)
 
 
 def _pedals():
@@ -973,22 +956,22 @@ def _pedals():
             style(_pedal_arm(py, px, pz + h * 0.42), f"pedal_arm:{name}", P.ALUMINIUM_DARK)
         )
 
-    bar = Pos(PIVOT_X, 330.0, PIVOT_Z) * (Rot(-90, 0, 0) * Cylinder(13, 216))
+    bar = bd.Pos(PIVOT_X, 330.0, PIVOT_Z) * (bd.Rot(-90, 0, 0) * bd.Cylinder(13, 216))
     kids.append(style(bar, "pedal_pivot_bar", P.BRONZE))
 
     t = math.radians(24.0)
-    rest_plane = Plane(
+    rest_plane = bd.Plane(
         origin=(918.0, 552.0, 402.0),
         x_dir=(0, -1, 0),
         z_dir=(-math.cos(t), 0.0, math.sin(t)),
     )
-    rest = extrude(RectangleRounded(112, 224, 26), 15)
+    rest = bd.extrude(bd.RectangleRounded(112, 224, 26), 15)
     for k in (-1.0, -0.34, 0.34, 1.0):
-        rest = rest - Pos(0, k * 74.0, -4) * Cylinder(17, 30)
+        rest = rest - bd.Pos(0, k * 74.0, -4) * bd.Cylinder(17, 30)
     kids.append(style(rest_plane * rest, "footrest", P.ALUMINIUM))
 
-    heel = Pos(866.0, 336.0, FLOOR_TOP - 1.0) * extrude(
-        RectangleRounded(200, 300, 42), 9
+    heel = bd.Pos(866.0, 336.0, FLOOR_TOP - 1.0) * bd.extrude(
+        bd.RectangleRounded(200, 300, 42), 9
     )
     kids.append(style(heel, "heel_plate", P.STEEL_DARK))
     return kids

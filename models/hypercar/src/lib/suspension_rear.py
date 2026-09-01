@@ -47,24 +47,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Circle,
-    Compound,
-    Cone,
-    Cylinder,
-    Helix,
-    Plane,
-    Pos,
-    Solid,
-    Sphere,
-    Spline,
-    Torus,
-    Vector,
-    Wire,
-    extrude,
-    make_hull,
-    sweep,
-)
+from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib.context import group, style
@@ -109,49 +92,49 @@ DL_BOT = (-1602.0, 366.0, 246.0)      # drop-link foot, on the lower rear leg
 
 
 def _V(p):
-    return p if isinstance(p, Vector) else Vector(p)
+    return p if isinstance(p, bd.Vector) else bd.Vector(p)
 
 
 def _mir(p, side):
     """Hard point for one side."""
-    return Vector(p[0], side * p[1], p[2])
+    return bd.Vector(p[0], side * p[1], p[2])
 
 
 def _u(v):
     v = _V(v)
     n = v.length
-    return v / n if n > 1e-12 else Vector(0, 0, 1)
+    return v / n if n > 1e-12 else bd.Vector(0, 0, 1)
 
 
 def _perp(axis, hint=(1, 0, 0)):
     """Unit vector perpendicular to `axis`, as close to `hint` as possible."""
     w = _u(axis)
-    for h in (_V(hint), Vector(0, 0, 1), Vector(1, 0, 0)):
+    for h in (_V(hint), bd.Vector(0, 0, 1), bd.Vector(1, 0, 0)):
         c = h - w * h.dot(w)
         if c.length > 1e-6:
             return _u(c)
-    return _u(Vector(0, 1, 0))
+    return _u(bd.Vector(0, 1, 0))
 
 
 def _frame(origin, axis, hint=(1, 0, 0)):
     """Plane whose +Z is `axis` and +X is the in-plane part of `hint`."""
-    return Plane(origin=_V(origin), x_dir=_perp(axis, hint), z_dir=_u(axis))
+    return bd.Plane(origin=_V(origin), x_dir=_perp(axis, hint), z_dir=_u(axis))
 
 
 def _cyl(center, axis, r, h, hint=(1, 0, 0)):
     """Cylinder radius r, length h, centred on `center`, axis along `axis`."""
-    return _frame(center, axis, hint) * Cylinder(radius=r, height=h)
+    return _frame(center, axis, hint) * bd.Cylinder(radius=r, height=h)
 
 
 def _cone(center, axis, r0, r1, h, hint=(1, 0, 0)):
-    return _frame(center, axis, hint) * Cone(
+    return _frame(center, axis, hint) * bd.Cone(
         bottom_radius=r0, top_radius=r1, height=h
     )
 
 
 def _ball(center, r):
     c = _V(center)
-    return Pos(c.X, c.Y, c.Z) * Sphere(radius=r)
+    return bd.Pos(c.X, c.Y, c.Z) * bd.Sphere(radius=r)
 
 
 def _span(p0, p1):
@@ -172,7 +155,7 @@ def _one(shape):
     solids = []
     for s in shape:
         solids.extend(s.solids())
-    return Compound(solids)
+    return bd.Compound(solids)
 
 
 def _leaf(shape, label, colour, alpha=1.0):
@@ -221,7 +204,7 @@ def _af_wire(chord, thick=0.30, n=16, le=0.40, cut=0.92, camber=0.0):
         ups.append((x, yc + h))
         los.append((x, yc - h))
     pts = list(reversed(los[1:])) + ups
-    return Wire([Spline(*pts, periodic=True).edge()])
+    return bd.Wire([bd.Spline(*pts, periodic=True).edge()])
 
 
 def _strut(p0, p1, chords, thick=0.32, hint=(1, 0, 0), ts=None,
@@ -247,8 +230,8 @@ def _strut(p0, p1, chords, thick=0.32, hint=(1, 0, 0), ts=None,
         ts = [i / n for i in range(len(chords))]
     if thicks is None:
         thicks = [thick] * len(chords)
-    bd = _u(bow_dir) if bow_dir is not None else c
-    ctrl = (a + b) * 0.5 + bd * (bow * 2.0)
+    bow_v = _u(bow_dir) if bow_dir is not None else c
+    ctrl = (a + b) * 0.5 + bow_v * (bow * 2.0)
 
     def _pos(t):
         return a * ((1.0 - t) ** 2) + ctrl * (2.0 * (1.0 - t) * t) + b * (t * t)
@@ -270,9 +253,9 @@ def _strut(p0, p1, chords, thick=0.32, hint=(1, 0, 0), ts=None,
             ang = math.radians(twist) * t
             yd = tg.cross(xd)
             xd = _u(xd * math.cos(ang) + yd * math.sin(ang))
-        pl = Plane(origin=_pos(t), x_dir=xd, z_dir=tg)
+        pl = bd.Plane(origin=_pos(t), x_dir=xd, z_dir=tg)
         wires.append(pl * _af_wire(ch, th, camber=camber))
-    return Solid.make_loft(wires, ruled=len(wires) == 2)
+    return bd.Solid.make_loft(wires, ruled=len(wires) == 2)
 
 
 def _resample(face, n=88):
@@ -300,7 +283,7 @@ def _resample(face, n=88):
         pts.reverse()
     k = min(range(n), key=lambda i: abs(math.atan2(pts[i][1] - cy, pts[i][0] - cx)))
     pts = pts[k:] + pts[:k]
-    return Wire([Spline(*pts, periodic=True).edge()])
+    return bd.Wire([bd.Spline(*pts, periodic=True).edge()])
 
 
 def _rod_end(center, axis, r_out=20.0, w=26.0, r_ball=13.0, hint=(1, 0, 0)):
@@ -320,7 +303,7 @@ def _rod_end(center, axis, r_out=20.0, w=26.0, r_ball=13.0, hint=(1, 0, 0)):
 def _rocker_plane(side):
     p, a, b = _mir(RK_P, side), _mir(PR_A, side), _mir(RK_B, side)
     n = _u((a - p).cross(b - p))
-    pl = Plane(origin=p, x_dir=_u(a - p), z_dir=n)
+    pl = bd.Plane(origin=p, x_dir=_u(a - p), z_dir=n)
 
     def local(q):
         d = _V(q) - p
@@ -336,8 +319,8 @@ _PLATE_CROWN = ((-1.0, 1.00), (-0.70, 0.28), (0.0, 0.0),
 def _hull_face(lobes, shrink=0.0):
     edges = []
     for (u, v, r) in lobes:
-        edges += (Pos(u, v) * Circle(max(r - shrink, 2.0))).edges()
-    return make_hull(edges)
+        edges += (bd.Pos(u, v) * bd.Circle(max(r - shrink, 2.0))).edges()
+    return bd.make_hull(edges)
 
 
 def _hull_plate(lobes, thick, crown=0.0):
@@ -345,12 +328,12 @@ def _hull_plate(lobes, thick, crown=0.0):
     slab: the perimeter falls away over `crown` mm, so the rim carries a
     continuous highlight all the way round."""
     if crown <= 0.0:
-        return extrude(_hull_face(lobes), amount=thick * 0.5, both=True)
+        return bd.extrude(_hull_face(lobes), amount=thick * 0.5, both=True)
     wires = []
     for (f, k) in _PLATE_CROWN:
         w = _resample(_hull_face(lobes, crown * k), n=40)
-        wires.append(Pos(0.0, 0.0, f * thick * 0.5) * w)
-    return Solid.make_loft(wires, ruled=False)
+        wires.append(bd.Pos(0.0, 0.0, f * thick * 0.5) * w)
+    return bd.Solid.make_loft(wires, ruled=False)
 
 
 # ---------------------------------------------------------------------------
@@ -392,11 +375,11 @@ def _lower_wishbone(side):
     body = body + [
         _cyl(itf, piv, 27.0, 62.0, hint=yh),
         _cyl(itr, piv, 27.0, 62.0, hint=yh),
-        _cyl(bj + Vector(0, 0, 14.0), (0, 0, 1), 37.0, 72.0),
-        _ball(bj + Vector(0, 0, 8.0), 39.0),
+        _cyl(bj + bd.Vector(0, 0, 14.0), (0, 0, 1), 37.0, 72.0),
+        _ball(bj + bd.Vector(0, 0, 8.0), 39.0),
         # pushrod foot boss and drop-link lug, both on the rear leg
-        _cone(_mir(PR_F, side) + Vector(0, 0, -22.0), (0, 0, 1), 34.0, 24.0, 44.0),
-        _cone(_mir(DL_BOT, side) + Vector(0, 0, -20.0), (0, 0, 1), 30.0, 21.0, 40.0),
+        _cone(_mir(PR_F, side) + bd.Vector(0, 0, -22.0), (0, 0, 1), 34.0, 24.0, 44.0),
+        _cone(_mir(DL_BOT, side) + bd.Vector(0, 0, -20.0), (0, 0, 1), 30.0, 21.0, 40.0),
     ]
     body = body - [_cyl(pt, piv, 15.0, 74.0, hint=yh) for pt in (itf, itr)]
 
@@ -418,7 +401,7 @@ def _lower_wishbone(side):
                 )
             )
     out.append(
-        _leaf(_cyl(bj + Vector(0, 0, -34.0), (0, 0, 1), 26.0, 15.0),
+        _leaf(_cyl(bj + bd.Vector(0, 0, -34.0), (0, 0, 1), 26.0, 15.0),
               f"lower_balljoint_cap:{_sn(side)}", P.BRONZE)
     )
     return out
@@ -443,8 +426,8 @@ def _upper_wishbone(side):
     body = body + [
         _cyl(itf, piv, 23.0, 52.0, hint=yh),
         _cyl(itr, piv, 23.0, 52.0, hint=yh),
-        _cyl(bj + Vector(0, 0, -12.0), (0, 0, 1), 31.0, 60.0),
-        _ball(bj + Vector(0, 0, -6.0), 33.0),
+        _cyl(bj + bd.Vector(0, 0, -12.0), (0, 0, 1), 31.0, 60.0),
+        _ball(bj + bd.Vector(0, 0, -6.0), 33.0),
     ]
     body = body - [_cyl(pt, piv, 13.0, 64.0, hint=yh) for pt in (itf, itr)]
 
@@ -466,7 +449,7 @@ def _upper_wishbone(side):
                 )
             )
     out.append(
-        _leaf(_cyl(bj + Vector(0, 0, 30.0), (0, 0, 1), 22.0, 13.0),
+        _leaf(_cyl(bj + bd.Vector(0, 0, 30.0), (0, 0, 1), 22.0, 13.0),
               f"upper_balljoint_cap:{_sn(side)}", P.BRONZE)
     )
     return out
@@ -506,7 +489,7 @@ _UP_FACES = {}
 
 def _up_plane(side):
     """local (u, v) -> global (x, side*_UP_Y, -v); extrudes along +/-Y."""
-    return Plane(origin=(0.0, side * _UP_Y, 0.0), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
+    return bd.Plane(origin=(0.0, side * _UP_Y, 0.0), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
 
 
 def _upright_outline(shrink=0.0, weighted=False):
@@ -519,11 +502,11 @@ def _upright_outline(shrink=0.0, weighted=False):
     edges = []
     for (x, z, r, w) in _UP_LOBES:
         d = shrink * (w if weighted else 1.0)
-        edges += (Pos(x, -z) * Circle(max(r - d, 3.0))).edges()
-    face = make_hull(edges)
+        edges += (bd.Pos(x, -z) * bd.Circle(max(r - d, 3.0))).edges()
+    face = bd.make_hull(edges)
     for (x, z, r, w) in _UP_SCALLOPS:
         d = shrink * (w if weighted else 1.0)
-        face = face - Pos(x, -z) * Circle(r + d)
+        face = face - bd.Pos(x, -z) * bd.Circle(r + d)
     _UP_FACES[key] = face
     return face
 
@@ -534,10 +517,10 @@ def _upright_shell(side):
     wires = []
     for (f, k) in _UP_STATIONS:
         w = _resample(_upright_outline(_UP_CROWN * k, weighted=True), n=56)
-        pl = Plane(origin=(0.0, side * _UP_Y + f * half, 0.0),
+        pl = bd.Plane(origin=(0.0, side * _UP_Y + f * half, 0.0),
                    x_dir=(1, 0, 0), z_dir=(0, 1, 0))
         wires.append(pl * w)
-    return Solid.make_loft(wires, ruled=False)
+    return bd.Solid.make_loft(wires, ruled=False)
 
 
 def _upright(side):
@@ -551,14 +534,14 @@ def _upright(side):
     # Every plate-side cut goes in one pass: the crowned shell is a heavy spline
     # surface and each separate boolean against it re-solves the whole thing.
     inner = _upright_outline(_UP_RAIL_W)
-    pocket = pl * extrude(inner, amount=_UP_RAIL_T, both=True)
-    pocket = pocket - pl * extrude(inner, amount=_UP_WEB_T * 0.5, both=True)
+    pocket = pl * bd.extrude(inner, amount=_UP_RAIL_T, both=True)
+    pocket = pocket - pl * bd.extrude(inner, amount=_UP_WEB_T * 0.5, both=True)
     toe = _mir(TOE_O, side)
     body = body - [
         pocket,
         # pierced web
-        _cyl(Vector(-1350.0, side * _UP_Y, 274.0), yax, 21.0, 220.0),
-        _cyl(Vector(-1352.0, side * _UP_Y, 492.0), yax, 22.0, 220.0),
+        _cyl(bd.Vector(-1350.0, side * _UP_Y, 274.0), yax, 21.0, 220.0),
+        _cyl(bd.Vector(-1352.0, side * _UP_Y, 492.0), yax, 22.0, 220.0),
         # toe-link clevis: bore plus a central slot for the rod end
         _cyl(toe, yax, 31.0, 34.0),
         _cyl(toe, yax, 13.5, 200.0),
@@ -566,19 +549,19 @@ def _upright(side):
 
     # bearing carrier, added after the pocket so the pocket cannot eat it
     body = body + [
-        _cyl(Vector(hub.X, side * 728.0, hub.Z), yax, 76.0, 132.0),
-        _cyl(Vector(hub.X, side * 798.0, hub.Z), yax, 60.0, 34.0),
-        _cyl(Vector(hub.X, side * 654.0, hub.Z), yax, 52.0, 26.0),
+        _cyl(bd.Vector(hub.X, side * 728.0, hub.Z), yax, 76.0, 132.0),
+        _cyl(bd.Vector(hub.X, side * 798.0, hub.Z), yax, 60.0, 34.0),
+        _cyl(bd.Vector(hub.X, side * 654.0, hub.Z), yax, 52.0, 26.0),
     ]
     body = body - [
-        _cyl(Vector(hub.X, side * 818.0, hub.Z), yax, 51.0, 20.0),
-        _cyl(Vector(hub.X, side * 640.0, hub.Z), yax, 40.0, 22.0),
+        _cyl(bd.Vector(hub.X, side * 818.0, hub.Z), yax, 51.0, 20.0),
+        _cyl(bd.Vector(hub.X, side * 640.0, hub.Z), yax, 40.0, 22.0),
     ]
 
     return [
         _leaf(body, f"upright:{_sn(side)}", P.ALUMINIUM_DARK),
         _leaf(
-            _cyl(Vector(hub.X, side * 816.0, hub.Z), yax, 34.0, 28.0),
+            _cyl(bd.Vector(hub.X, side * 816.0, hub.Z), yax, 34.0, 28.0),
             f"hub_spigot:{_sn(side)}",
             P.STEEL_DARK,
         ),
@@ -621,8 +604,8 @@ def _rocker(side):
     plate = _hull_plate(
         [(0.0, 0.0, 36.0), (ua, va, 30.0), (ub, vb, 32.0)], 26.0, crown=6.5
     )
-    plate = plate - extrude(
-        Pos(0.54 * ua + 0.10 * ub, 0.30 * vb + 0.22 * va) * Circle(21.0),
+    plate = plate - bd.extrude(
+        bd.Pos(0.54 * ua + 0.10 * ub, 0.30 * vb + 0.22 * va) * bd.Circle(21.0),
         amount=40.0, both=True,
     )
     body = pl * plate
@@ -645,7 +628,7 @@ def _rocker(side):
         ear2d = _hull_plate(
             [(0.0, 0.0, 40.0), (ua2, va2, 23.0)], 19.0, crown=5.0
         )
-        ear = Plane(origin=pl.origin + n * (s * 34.0),
+        ear = bd.Plane(origin=pl.origin + n * (s * 34.0),
                     x_dir=pl.x_dir, z_dir=n) * ear2d
         fork = fork + ear
     fork = fork - _cyl(p, n, 20.0, 120.0)
@@ -664,17 +647,17 @@ def _rocker(side):
 def _spring(start, axis, height, radius, wire_r, turns):
     """Coil spring swept along a real helix (falls back to stacked rings)."""
     try:
-        path = _frame(start, axis) * Helix(
+        path = _frame(start, axis) * bd.Helix(
             pitch=height / turns, height=height, radius=radius
         )
-        sec = Plane(origin=path @ 0, z_dir=path % 0) * Circle(wire_r)
-        return sweep(sec, path=path, is_frenet=True)
+        sec = bd.Plane(origin=path @ 0, z_dir=path % 0) * bd.Circle(wire_r)
+        return bd.sweep(sec, path=path, is_frenet=True)
     except Exception:                              # pragma: no cover
         out = None
         n = int(turns) + 1
         for i in range(n):
             c = _V(start) + _u(axis) * (height * (i + 0.5) / n)
-            ring = _frame(c, axis) * Torus(
+            ring = _frame(c, axis) * bd.Torus(
                 major_radius=radius, minor_radius=wire_r
             )
             out = ring if out is None else out + ring
@@ -795,9 +778,9 @@ def _arb():
            (ARB_X, 150.0, ARB_Z + 2.0)]
         + pts[4:]
     )
-    t0 = _u(Vector(*pts[1]) - Vector(*pts[0]))
-    t1 = _u(Vector(*pts[-1]) - Vector(*pts[-2]))
-    path = Spline(*pts, tangents=(t0, t1))
+    t0 = _u(bd.Vector(*pts[1]) - bd.Vector(*pts[0]))
+    t1 = _u(bd.Vector(*pts[-1]) - bd.Vector(*pts[-2]))
+    path = bd.Spline(*pts, tangents=(t0, t1))
 
     # the torsion span is constant -- that is what a torsion bar IS -- but the
     # lever arms swell into the bends and then draw down to a slim tip, so the
@@ -805,16 +788,16 @@ def _arb():
     law = [(0.00, 12.5), (0.055, 16.4), (0.17, 18.0), (0.34, 18.4),
            (0.50, 18.4), (0.66, 18.4), (0.83, 18.0), (0.945, 16.4),
            (1.00, 12.5)]
-    secs = [Plane(origin=path @ t, z_dir=path % t) * Circle(r) for (t, r) in law]
+    secs = [bd.Plane(origin=path @ t, z_dir=path % t) * bd.Circle(r) for (t, r) in law]
 
-    out = [_leaf(sweep(secs, path=path, multisection=True, is_frenet=True),
+    out = [_leaf(bd.sweep(secs, path=path, multisection=True, is_frenet=True),
                  "arb_bar:centre", P.STEEL_DARK)]
     for side in (1, -1):
         sn = _sn(side)
-        m = _cyl(Vector(ARB_X, side * 196.0, ARB_Z + 2.0), (0, 1, 0), 34.0, 50.0)
-        m = m + _cyl(Vector(ARB_X, side * 196.0, ARB_Z + 44.0), (0, 1, 0),
+        m = _cyl(bd.Vector(ARB_X, side * 196.0, ARB_Z + 2.0), (0, 1, 0), 34.0, 50.0)
+        m = m + _cyl(bd.Vector(ARB_X, side * 196.0, ARB_Z + 44.0), (0, 1, 0),
                      22.0, 46.0)
-        m = m - _cyl(Vector(ARB_X, side * 196.0, ARB_Z + 2.0), (0, 1, 0),
+        m = m - _cyl(bd.Vector(ARB_X, side * 196.0, ARB_Z + 2.0), (0, 1, 0),
                      18.6, 60.0)
         out.append(_leaf(m, f"arb_mount:{sn}", P.ALUMINIUM_DARK))
         out.append(

@@ -31,16 +31,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Box,
-    Compound,
-    Plane,
-    Pos,
-    Solid,
-    Spline,
-    Vector,
-    make_face,
-)
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -236,29 +227,29 @@ def _surface_y(x, z, table=_CASING):
 
 
 def _v(p):
-    if isinstance(p, Vector):
+    if isinstance(p, bd.Vector):
         return p
-    return Vector(p[0], p[1], p[2])
+    return bd.Vector(p[0], p[1], p[2])
 
 
 def _cyl(p0, p1, r):
     a, b = _v(p0), _v(p1)
     d = b - a
-    return Solid.make_cylinder(r, d.length, Plane(origin=a, z_dir=d))
+    return bd.Solid.make_cylinder(r, d.length, bd.Plane(origin=a, z_dir=d))
 
 
 def _cone(p0, p1, r0, r1):
     a, b = _v(p0), _v(p1)
     d = b - a
-    return Solid.make_cone(r0, r1, d.length, Plane(origin=a, z_dir=d))
+    return bd.Solid.make_cone(r0, r1, d.length, bd.Plane(origin=a, z_dir=d))
 
 
 def _ball(p, r):
-    return Solid.make_sphere(r, Plane(origin=_v(p)))
+    return bd.Solid.make_sphere(r, bd.Plane(origin=_v(p)))
 
 
 def _rbox(cx, cy, cz, lx, ly, lz):
-    return Pos(cx, cy, cz) * Box(lx, ly, lz)
+    return bd.Pos(cx, cy, cz) * bd.Box(lx, ly, lz)
 
 
 def _rrect_pts(length, height, corner, arc=5, edge=4):
@@ -294,12 +285,12 @@ def _rrect_pts(length, height, corner, arc=5, edge=4):
 
 def _plate_face(plane, length, height, corner, arc=5, edge=4):
     pts = _rrect_pts(length, height, corner, arc, edge)
-    return plane * make_face(Spline(*pts, periodic=True))
+    return plane * bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _y_plane(cx, y, cz):
     """Plane normal to Y with local u along +X and v along +Z."""
-    return Plane(origin=(cx, y, cz), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    return bd.Plane(origin=(cx, y, cz), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
 
 
 def _y_prism(stations, corner=18.0):
@@ -316,7 +307,7 @@ def _y_prism(stations, corner=18.0):
 
 def _x_plane(x, cy, cz):
     """Plane normal to X with local u along +Y and v along +Z."""
-    return Plane(origin=(x, cy, cz), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    return bd.Plane(origin=(x, cy, cz), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
 
 
 def _x_prism(stations, corner=10.0):
@@ -347,7 +338,7 @@ def _one(out):
             solids.extend(s.solids())
         if len(solids) == 1:
             return solids[0]
-        return Compound(children=solids)
+        return bd.Compound(children=solids)
     return out
 
 
@@ -956,7 +947,7 @@ def _ds(t):
 def _driveshaft_set():
     """Inner tripod housing, tapered shaft, open outer CV, hub stub."""
     n = _v(_DS_U)
-    e1 = Vector(1, 0, 0)
+    e1 = bd.Vector(1, 0, 0)
     e2 = n.cross(e1).normalized()
 
     def ring(t, radius, a):

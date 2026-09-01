@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from build123d import Location
+from cadgen import build123d as bd
 
 from lib import body as B
 from lib import geometry as G
@@ -28,7 +28,7 @@ def stance(shape):
     EVERY part module builds in the waterline frame and applies this same
     transform, so parts stay attached to the skin when the stance is tuned.
     """
-    return Location((0, 0, G.WATERLINE), (0, G.GROUND_PITCH, 0)) * shape
+    return bd.Location((0, 0, G.WATERLINE), (0, G.GROUND_PITCH, 0)) * shape
 
 
 def _collect_cutters():

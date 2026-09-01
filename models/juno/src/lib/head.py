@@ -18,20 +18,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Cone,
-    Cylinder,
-    GeomType,
-    Pos,
-    RectangleRounded,
-    Rot,
-    chamfer,
-    fillet,
-    loft,
-    scale,
-)
+from cadgen import build123d as bd
 
 from .juno_lib import (
     ACCENT_COLOR,
@@ -52,7 +39,7 @@ HEAD_CTR = (7.0, 0.0, 89.0)
 def _try_fillet(solid, edges, radius):
     for r in (radius, radius * 0.6, radius * 0.35):
         try:
-            return fillet(edges, r)
+            return bd.fillet(edges, r)
         except Exception:
             continue
     return solid
@@ -61,7 +48,7 @@ def _try_fillet(solid, edges, radius):
 def _try_chamfer(solid, edges, length):
     for c in (length, length * 0.5):
         try:
-            return chamfer(edges, c)
+            return bd.chamfer(edges, c)
         except Exception:
             continue
     return solid
@@ -84,8 +71,8 @@ def _helmet_loft():
     ]
     profiles = []
     for z, xc, d, w, rf in sections:
-        profiles.append(Pos(xc, 0, z) * RectangleRounded(d, w, rf * min(d, w)))
-    return loft(profiles)
+        profiles.append(bd.Pos(xc, 0, z) * bd.RectangleRounded(d, w, rf * min(d, w)))
+    return bd.loft(profiles)
 
 
 def build_head():
@@ -93,32 +80,32 @@ def build_head():
     helmet = _helmet_loft()
 
     # Soften jaw line and dome the crown.
-    helmet = _try_fillet(helmet, helmet.edges().group_by(Axis.Z)[0], 5.0)
-    helmet = _try_fillet(helmet, helmet.edges().group_by(Axis.Z)[-1], 9.0)
+    helmet = _try_fillet(helmet, helmet.edges().group_by(bd.Axis.Z)[0], 5.0)
+    helmet = _try_fillet(helmet, helmet.edges().group_by(bd.Axis.Z)[-1], 9.0)
 
     # Concentric inflated copy (~2 mm proud) for surface-following slabs.
-    big = scale(helmet, by=1.032)
+    big = bd.scale(helmet, by=1.032)
 
     # --- aluminum ear pods (dia 36, head z~88, outer face head y=+-67) ---
     pods, buttons = [], []
     for s in (1.0, -1.0):
-        rot = Rot(-90, 0, 0) if s > 0 else Rot(90, 0, 0)
-        pod = Pos(-7.0, s * 58.5, -1.0) * rot * Cylinder(radius=18.0, height=17.0)
+        rot = bd.Rot(-90, 0, 0) if s > 0 else bd.Rot(90, 0, 0)
+        pod = bd.Pos(-7.0, s * 58.5, -1.0) * rot * bd.Cylinder(radius=18.0, height=17.0)
         outer = [
             e
-            for e in pod.edges().filter_by(GeomType.CIRCLE)
+            for e in pod.edges().filter_by(bd.GeomType.CIRCLE)
             if abs(e.arc_center.Y) > 66.0
         ]
         pod = _try_chamfer(pod, outer, 2.2)
         helmet -= pod
         pods.append(pod)
-        btn = Pos(-7.0, s * 67.8, -1.0) * rot * Cylinder(radius=7.0, height=1.6)
+        btn = bd.Pos(-7.0, s * 67.8, -1.0) * rot * bd.Cylinder(radius=7.0, height=1.6)
         buttons.append(btn)
 
     # --- tiny camera dots below the visor (head z=51, y=+-13) ---
     dots = []
     for s in (1.0, -1.0):
-        dot = Pos(53.0, s * 13.0, -38.0) * Rot(0, 90, 0) * Cylinder(
+        dot = bd.Pos(53.0, s * 13.0, -38.0) * bd.Rot(0, 90, 0) * bd.Cylinder(
             radius=2.8, height=12.0
         )
         helmet -= dot
@@ -129,34 +116,34 @@ def build_head():
     # raked gently rear-down 4 deg, rear wrap edge raked 15 deg (wraps farther
     # back at the temples), corner edges filleted for a sporty
     # rounded-trapezoid side profile.
-    bot_half = Pos(60.0, 0, -32.0) * Rot(0, 6, 0) * Pos(0, 0, 150.0) * Box(
+    bot_half = bd.Pos(60.0, 0, -32.0) * bd.Rot(0, 6, 0) * bd.Pos(0, 0, 150.0) * bd.Box(
         360.0, 300.0, 300.0
     )
-    top_half = Pos(60.0, 0, 28.0) * Rot(0, -4, 0) * Pos(0, 0, -150.0) * Box(
+    top_half = bd.Pos(60.0, 0, 28.0) * bd.Rot(0, -4, 0) * bd.Pos(0, 0, -150.0) * bd.Box(
         360.0, 300.0, 300.0
     )
-    rear_half = Pos(13.0, 0, 0) * Rot(0, -15, 0) * Pos(150.0, 0, 0) * Box(
+    rear_half = bd.Pos(13.0, 0, 0) * bd.Rot(0, -15, 0) * bd.Pos(150.0, 0, 0) * bd.Box(
         300.0, 320.0, 360.0
     )
     visor_tool = bot_half & top_half & rear_half
     corner_edges = [
         e
-        for e in visor_tool.edges().filter_by(Axis.Y)
+        for e in visor_tool.edges().filter_by(bd.Axis.Y)
         if abs(e.center().X) < 45.0 and abs(e.center().Z) < 80.0
     ]
     visor_tool = _try_fillet(visor_tool, corner_edges, 12.0)
     visor = (big & visor_tool) - helmet
 
     # --- graphite chin sensor bar: head z 29..45, |y| <= 26, front ---
-    chin_tool = Pos(53.0, 0, -52.0) * Box(60.0, 52.0, 16.0)
-    chin_tool = _try_fillet(chin_tool, chin_tool.edges().filter_by(Axis.X), 5.0)
+    chin_tool = bd.Pos(53.0, 0, -52.0) * bd.Box(60.0, 52.0, 16.0)
+    chin_tool = _try_fillet(chin_tool, chin_tool.edges().filter_by(bd.Axis.X), 5.0)
     chin = (big & chin_tool) - helmet
 
     # --- graphite rear vent louvers: three strips, head z 76..118 ---
     louvers = []
     for zc in (-8.0, 8.0, 24.0):
-        tool = Pos(-71.0, 0, zc) * Box(60.0, 220.0, 10.0)
-        tool = _try_fillet(tool, tool.edges().filter_by(Axis.Y), 4.0)
+        tool = bd.Pos(-71.0, 0, zc) * bd.Box(60.0, 220.0, 10.0)
+        tool = _try_fillet(tool, tool.edges().filter_by(bd.Axis.Y), 4.0)
         louvers.append((big & tool) - helmet)
 
     # --- cute pixelated cyan eyes on the visor (Anki Cozmo style) ---
@@ -164,7 +151,7 @@ def build_head():
     # between the visor outer copy (`big`, 1.032x) and a slightly larger copy
     # (`big_eye`), clipped to a small +X-facing square column. This makes the
     # tiles follow the curved screen and sit ~1.3 mm proud with exact contact.
-    big_eye = scale(helmet, by=1.055)
+    big_eye = bd.scale(helmet, by=1.055)
     EYE_PITCH = 4.4          # tile center-to-center
     EYE_TILE = 3.6          # tile size (gaps read as the dark "screen" grid)
     EYE_Z = 6.0            # local z of the eye block (head z ~95)
@@ -182,26 +169,26 @@ def build_head():
         for c, r in eye_mask:
             ty = yc + (c - 1.5) * EYE_PITCH
             tz = EYE_Z + (r - 1.5) * EYE_PITCH
-            tool = Pos(70.0, ty, tz) * Box(120.0, EYE_TILE, EYE_TILE)
-            tool = _try_fillet(tool, tool.edges().filter_by(Axis.X), 0.9)
+            tool = bd.Pos(70.0, ty, tz) * bd.Box(120.0, EYE_TILE, EYE_TILE)
+            tool = _try_fillet(tool, tool.edges().filter_by(bd.Axis.X), 0.9)
             tile = (big_eye & tool) - big
             eye_tiles.append((tile, f"head_eye_{tag}_{c}{r}"))
 
     # --- graphite neck guard: frustum head z 12..20 under the jaw ---
-    guard = Pos(-3.0, 0, -73.0) * Cone(
+    guard = bd.Pos(-3.0, 0, -73.0) * bd.Cone(
         bottom_radius=33.0, top_radius=42.0, height=8.0
     )
     guard = _try_chamfer(
         guard,
         [
             e
-            for e in guard.edges().filter_by(GeomType.CIRCLE)
+            for e in guard.edges().filter_by(bd.GeomType.CIRCLE)
             if e.arc_center.Z < -76.0
         ],
         1.2,
     )
 
-    at = Pos(*HEAD_CTR)
+    at = bd.Pos(*HEAD_CTR)
     children = [
         styled(at * helmet, "head_shell", SHELL_COLOR),
         styled(at * visor, "head_visor", VISOR_COLOR),

@@ -34,17 +34,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left
 
-from build123d import (
-    Axis,
-    Cylinder,
-    Plane,
-    Pos,
-    Rot,
-    Spline,
-    loft,
-    make_face,
-    mirror,
-)
+from cadgen import build123d as bd
 
 # ---------------------------------------------------------------------------
 # package / hard points
@@ -383,17 +373,17 @@ def _mirrored_face(bands, x):
         if i == last:
             tangents = (tangents[0] if tangents else None, (-1, 0))
         if tangents and tangents[0] and tangents[1]:
-            edges.append(Spline(*pts, tangents=tangents))
+            edges.append(bd.Spline(*pts, tangents=tangents))
         elif tangents and tangents[0]:
-            edges.append(Spline(*pts, tangents=(tangents[0], _dir(pts[-2], pts[-1]))))
+            edges.append(bd.Spline(*pts, tangents=(tangents[0], _dir(pts[-2], pts[-1]))))
         elif tangents and tangents[1]:
-            edges.append(Spline(*pts, tangents=(_dir(pts[0], pts[1]), tangents[1])))
+            edges.append(bd.Spline(*pts, tangents=(_dir(pts[0], pts[1]), tangents[1])))
         else:
-            edges.append(Spline(*pts))
+            edges.append(bd.Spline(*pts))
     half = edges[0]
     for e in edges[1:]:
         half = half + e
-    return Plane.YZ.offset(x) * make_face(half + mirror(half, Plane.YZ))
+    return bd.Plane.YZ.offset(x) * bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
 
 
 def _dir(a, b):
@@ -423,11 +413,11 @@ CANOPY_STATIONS = [
 
 
 def body_master():
-    return loft([body_section_face(x) for x in BODY_STATIONS])
+    return bd.loft([body_section_face(x) for x in BODY_STATIONS])
 
 
 def canopy_master():
-    return loft([canopy_section_face(x) for x in CANOPY_STATIONS])
+    return bd.loft([canopy_section_face(x) for x in CANOPY_STATIONS])
 
 
 # ---------------------------------------------------------------------------
@@ -446,8 +436,8 @@ def arch_cutter(x, z, radius, side):
     """
     length = ARCH_OUTER_Y - ARCH_INNER_Y
     y_mid = side * (ARCH_INNER_Y + length / 2.0)
-    cyl = Rot(-90, 0, 0) * Cylinder(radius=radius, height=length)
-    return Pos(x, y_mid, z) * cyl
+    cyl = bd.Rot(-90, 0, 0) * bd.Cylinder(radius=radius, height=length)
+    return bd.Pos(x, y_mid, z) * cyl
 
 
 def arch_cutters():
@@ -518,11 +508,11 @@ GLASS_T = 9.0
 
 
 def body_master_inner(d=BODY_SKIN_T):
-    return loft([body_section_face_inset(x, d) for x in BODY_STATIONS])
+    return bd.loft([body_section_face_inset(x, d) for x in BODY_STATIONS])
 
 
 def canopy_master_inner(d=GLASS_T):
-    return loft([canopy_section_face_inset(x, d) for x in CANOPY_STATIONS])
+    return bd.loft([canopy_section_face_inset(x, d) for x in CANOPY_STATIONS])
 
 
 def body_solid():
@@ -600,8 +590,7 @@ _BIG = 4000.0
 
 
 def slab(x0, x1, y0, y1, z0, z1):
-    from build123d import Box, Pos
-    return Pos((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2) * Box(
+    return bd.Pos((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2) * bd.Box(
         x1 - x0, y1 - y0, z1 - z0
     )
 
@@ -614,13 +603,11 @@ def canopy_footprint_prism(margin=0.0):
     door drives a shelf straight up through the windscreen.  This prism is what
     separates the two.
     """
-    from build123d import Plane, Polyline, Pos, extrude, make_face
-
     xs = [x for x in CANOPY_STATIONS]
     half = [(x, CANOPY_HW(x) + margin) for x in xs]
     pts = half + [(x, -y) for (x, y) in reversed(half)]
-    face = Plane.XY * make_face(Polyline(*pts, pts[0]))
-    return Pos(0, 0, -600.0) * extrude(face, amount=2600.0)
+    face = bd.Plane.XY * bd.make_face(bd.Polyline(*pts, pts[0]))
+    return bd.Pos(0, 0, -600.0) * bd.extrude(face, amount=2600.0)
 
 
 def panel_regions():
@@ -696,9 +683,8 @@ _ROOF_HALF = [(160.0, 0.0), (110.0, 250.0), (40.0, 396.0), (-90.0, 470.0),
 
 
 def _plan_prism(points, z0=_DLO_Z0, z1=_DLO_Z1):
-    from build123d import Plane, Polyline, Pos, extrude, make_face
-    face = Plane.XY * make_face(Polyline(*points, points[0]))
-    return Pos(0, 0, z0) * extrude(face, amount=(z1 - z0))
+    face = bd.Plane.XY * bd.make_face(bd.Polyline(*points, points[0]))
+    return bd.Pos(0, 0, z0) * bd.extrude(face, amount=(z1 - z0))
 
 
 def _offset_curve(curve, dx):
@@ -749,13 +735,11 @@ def underfloor_prism(drop=12.0):
     curve and subtracted from every other panel region.  Without it the hood
     and deck panels each pick up a stray slab of floor.
     """
-    from build123d import Plane, Polyline, extrude, make_face
-
     xs = [x for x in BODY_STATIONS]
     top = [(x, SILL_Z(x) - drop) for x in xs]
     pts = top + [(xs[-1], -600.0), (xs[0], -600.0), top[0]]
-    face = Plane.XZ * make_face(Polyline(*pts))
-    return extrude(face, amount=-_BIG) + extrude(face, amount=_BIG)
+    face = bd.Plane.XZ * bd.make_face(bd.Polyline(*pts))
+    return bd.extrude(face, amount=-_BIG) + bd.extrude(face, amount=_BIG)
 
 
 # -- lamp lenses ------------------------------------------------------------
@@ -768,8 +752,6 @@ def underfloor_prism(drop=12.0):
 
 def headlight_lens_regions():
     """One slim blade per side, raked back off the fender crest."""
-    from build123d import Plane, Polyline, Pos, Rot, extrude, make_face
-
     plan = [
         (2286.0, 300.0), (2210.0, 520.0), (2090.0, 700.0), (1946.0, 812.0),
         (1898.0, 742.0), (2036.0, 620.0), (2150.0, 452.0), (2236.0, 252.0),
@@ -777,21 +759,19 @@ def headlight_lens_regions():
     out = {}
     for s, nm in ((1, "left"), (-1, "right")):
         pts = [(x, s * y) for (x, y) in plan]
-        face = Plane.XY * make_face(Polyline(*pts, pts[0]))
-        out[f"headlight_lens:{nm}"] = Pos(0, 0, 300.0) * extrude(face, amount=460.0)
+        face = bd.Plane.XY * bd.make_face(bd.Polyline(*pts, pts[0]))
+        out[f"headlight_lens:{nm}"] = bd.Pos(0, 0, 300.0) * bd.extrude(face, amount=460.0)
     return out
 
 
 def taillight_lens_regions():
     """A single slim bar across the tail, plus a return down each haunch."""
-    from build123d import Plane, Polyline, Pos, extrude, make_face
-
     prof = [
         (-2404.0, 712.0), (-2300.0, 726.0), (-2180.0, 730.0),
         (-2180.0, 668.0), (-2300.0, 664.0), (-2404.0, 650.0),
     ]
-    face = Plane.XZ * make_face(Polyline(*prof, prof[0]))
-    bar = extrude(face, amount=-1100.0) + extrude(face, amount=1100.0)
+    face = bd.Plane.XZ * bd.make_face(bd.Polyline(*prof, prof[0]))
+    bar = bd.extrude(face, amount=-1100.0) + bd.extrude(face, amount=1100.0)
     return {"taillight_lens": bar}
 
 

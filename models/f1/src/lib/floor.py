@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Cylinder, Plane, Pos, Vector, make_face
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -559,7 +559,7 @@ def _vane(stations):
             camber_pos=st.get("camber_pos", 0.42),
             te_thickness=st.get("te"),
         )
-        faces.append(st["plane"] * make_face(wire))
+        faces.append(st["plane"] * bd.make_face(wire))
     return surfaces.loft_solid(faces)
 
 
@@ -570,7 +570,7 @@ def _vane_plane(le, yaw_deg=0.0, tilt_deg=0.0):
     the section so a vane's upper edge can follow a rising floor surface.
     """
     ca, sa = math.cos(math.radians(tilt_deg)), math.sin(math.radians(tilt_deg))
-    plane = Plane(origin=Vector(le), x_dir=(-ca, 0.0, sa), z_dir=(sa, 0.0, ca))
+    plane = bd.Plane(origin=bd.Vector(le), x_dir=(-ca, 0.0, sa), z_dir=(sa, 0.0, ca))
     if yaw_deg:
         # NOTE the sign: the section's local +x runs REARWARD, so a positive
         # rotation about world Z swings the trailing edge INBOARD.  Negating
@@ -693,7 +693,7 @@ def _plank():
         # the customary circular wear plugs, recessed into the plank's underside
         z = _keel_bot(px) - spec.PLANK_T + 1.5
         try:
-            solid = surfaces.cut(solid, Pos(px, 0.0, z) * Cylinder(34.0, 7.0))
+            solid = surfaces.cut(solid, bd.Pos(px, 0.0, z) * bd.Cylinder(34.0, 7.0))
         except Exception:
             pass
     return solid

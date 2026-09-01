@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Box, Cylinder, Pos, Torus
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -212,7 +212,7 @@ def _blade_stack(stations, ruled: bool = False):
     collar where it enters a pod. Same blade family as `surfaces.blade_face`, so it
     still speaks the car's structural vocabulary.
     """
-    pts = [surfaces.Vector(*st[0]) for st in stations]
+    pts = [bd.Vector(*st[0]) for st in stations]
     faces = []
     for i, (_, chord, tr) in enumerate(stations):
         if i == 0:
@@ -326,7 +326,7 @@ def _mirror_housing():
         )
     shell = surfaces.body_loft(faces)
     n = _unit(GLASS_N)
-    cutter = surfaces.plate_plane(_v(GLASS_C, n, 150.0), n) * Box(420.0, 420.0, 300.0)
+    cutter = surfaces.plate_plane(_v(GLASS_C, n, 150.0), n) * bd.Box(420.0, 420.0, 300.0)
     shell = surfaces.cut(shell, cutter)
     # A real pocket for the bezel. Left to simply overlap the shell, the bezel's
     # curved flank meets the rolled rim at a shallow angle and the two meshes
@@ -414,10 +414,10 @@ def _sensor_corner(bh: float):
             (at(196.0, 26.0), 34.0, 0.62),
         )
     )
-    body = surfaces.plate_plane(c, aim) * Cylinder(12.5, 40.0)
+    body = surfaces.plate_plane(c, aim) * bd.Cylinder(12.5, 40.0)
     pod = surfaces.fuse_all(body, [bracket])
-    bezel = surfaces.plate_plane(_v(c, aim, 20.0), aim) * Cylinder(14.0, 6.0)
-    lens = surfaces.plate_plane(_v(c, aim, 22.8), aim) * Cylinder(10.4, 4.6)
+    bezel = surfaces.plate_plane(_v(c, aim, 20.0), aim) * bd.Cylinder(14.0, 6.0)
+    lens = surfaces.plate_plane(_v(c, aim, 22.8), aim) * bd.Cylinder(10.4, 4.6)
     return (
         (_solid(surfaces.fuse_all(pod, [bezel])), "tyre_sensor_pod", spec.ANODIZED),
         (_solid(lens), "tyre_sensor_lens", spec.GLASS),
@@ -430,7 +430,7 @@ def _tyre_sensors():
         ("f", spec.FRONT_AXLE_X, spec.FRONT_HUB_Y),
         ("r", spec.REAR_AXLE_X, spec.REAR_HUB_Y),
     ):
-        place = Pos(x_axle, hub_y, spec.HUB_Z)
+        place = bd.Pos(x_axle, hub_y, spec.HUB_Z)
         for shape, label, color in _sensor_corner(RIM_HW[axle]):
             bodies += surfaces.pair(_solid(place * shape), f"{label}_{axle}", color)
     return bodies
@@ -478,11 +478,11 @@ def _pitot_mast():
 
 def _dzus_recess(center, normal):
     """(dish, head) — the dish is sunk, the head sits flush inside it."""
-    outer = surfaces.plate_plane(_v(center, normal, -4.6), normal) * Cylinder(9.8, 9.0)
-    pocket = surfaces.plate_plane(_v(center, normal, -2.4), normal) * Cylinder(7.4, 6.0)
+    outer = surfaces.plate_plane(_v(center, normal, -4.6), normal) * bd.Cylinder(9.8, 9.0)
+    pocket = surfaces.plate_plane(_v(center, normal, -2.4), normal) * bd.Cylinder(7.4, 6.0)
     dish = surfaces.cut(outer, pocket)
-    head = surfaces.plate_plane(_v(center, normal, -3.4), normal) * Cylinder(7.0, 2.2)
-    slot = surfaces.plate_plane(_v(center, normal, -2.5), normal) * Box(16.0, 2.2, 1.4)
+    head = surfaces.plate_plane(_v(center, normal, -3.4), normal) * bd.Cylinder(7.0, 2.2)
+    slot = surfaces.plate_plane(_v(center, normal, -2.5), normal) * bd.Box(16.0, 2.2, 1.4)
     return dish, surfaces.cut(head, slot)
 
 
@@ -526,7 +526,7 @@ def _tow_eye(center, boss_l, boss_h, major, minor, out_dy, n):
              (24.0, 0.60 * boss_l, 0.56 * boss_h, 0.16 * boss_h)),
         ),
     )
-    loop = surfaces.plate_plane(_v(center, n, out_dy), (0, 0, 1)) * Torus(major, minor)
+    loop = surfaces.plate_plane(_v(center, n, out_dy), (0, 0, 1)) * bd.Torus(major, minor)
     return boss, loop
 
 
@@ -534,11 +534,11 @@ def _front_jack():
     axis = _unit((0.32, 0.0, -0.95))
     plane = surfaces.plate_plane(JACK_F, axis)
     socket = surfaces.cut(
-        plane * Cylinder(15.0, 36.0),
-        surfaces.plate_plane(_v(JACK_F, axis, 7.0), axis) * Cylinder(9.0, 32.0),
+        plane * bd.Cylinder(15.0, 36.0),
+        surfaces.plate_plane(_v(JACK_F, axis, 7.0), axis) * bd.Cylinder(9.0, 32.0),
     )
     mouth = surfaces.plate_plane(_v(JACK_F, axis, 13.0), axis)
-    ring = surfaces.cut(mouth * Cylinder(11.6, 5.0), mouth * Cylinder(8.8, 7.0))
+    ring = surfaces.cut(mouth * bd.Cylinder(11.6, 5.0), mouth * bd.Cylinder(8.8, 7.0))
     return socket, ring
 
 
@@ -549,7 +549,7 @@ def _rear_jack():
         ((-9.0, 84.0, 62.0, 14.0), (0.0, 80.0, 58.0, 13.0),
          (9.0, 70.0, 50.0, 12.0)),
     )
-    bar = surfaces.plate_plane((JACK_R_X, 0.0, JACK_R_Z), (0, 1, 0)) * Cylinder(9.0, 70.0)
+    bar = surfaces.plate_plane((JACK_R_X, 0.0, JACK_R_Z), (0, 1, 0)) * bd.Cylinder(9.0, 70.0)
     return bracket, bar
 
 
@@ -567,8 +567,8 @@ def _side_camera():
     )
     shell = surfaces.fuse_all(pod, [_blade_stack(_CAM_STALK)])
     x0, _, _, cy, cz = _SIDE_CAM[0]
-    bezel = surfaces.plate_plane((x0 - 3.0, cy, cz), (1, 0, 0)) * Cylinder(15.5, 16.0)
-    lens = surfaces.plate_plane((x0 + 3.5, cy, cz), (1, 0, 0)) * Cylinder(11.0, 8.0)
+    bezel = surfaces.plate_plane((x0 - 3.0, cy, cz), (1, 0, 0)) * bd.Cylinder(15.5, 16.0)
+    lens = surfaces.plate_plane((x0 + 3.5, cy, cz), (1, 0, 0)) * bd.Cylinder(11.0, 8.0)
     return surfaces.fuse_all(shell, [bezel]), lens
 
 

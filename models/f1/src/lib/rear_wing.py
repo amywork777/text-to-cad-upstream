@@ -36,20 +36,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Cylinder,
-    Location,
-    Plane,
-    Pos,
-    Rotation,
-    Sphere,
-    Spline,
-    Vector,
-    extrude,
-    make_face,
-)
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -57,7 +44,7 @@ from . import spec, surfaces
 # derived datums
 # ==========================================================================
 
-_PIV = Vector(*spec.DRS_PIVOT)
+_PIV = bd.Vector(*spec.DRS_PIVOT)
 _FLAP_TW0 = spec.RW_FLAP_INCIDENCE_CLOSED_DEG
 _FLAP_PIVOT_OFF = 32.0  # pivot sits this far aft of the flap LE, on its chord
 
@@ -76,13 +63,13 @@ _EP_OUT_Y = spec.RW_HALF_SPAN + 16.0  # outer face; nothing goes past +24
 def _chord_dir(twist_deg: float):
     """Unit vector LE -> TE in the car x-z plane for a section at `twist_deg`."""
     a = math.radians(twist_deg)
-    return Vector(-math.cos(a), 0.0, math.sin(a))
+    return bd.Vector(-math.cos(a), 0.0, math.sin(a))
 
 
 def _up_dir(twist_deg: float):
     """Unit section normal ("up" in the section's own frame)."""
     a = math.radians(twist_deg)
-    return Vector(math.sin(a), 0.0, math.cos(a))
+    return bd.Vector(math.sin(a), 0.0, math.cos(a))
 
 
 # --------------------------------------------------------------------------
@@ -101,14 +88,14 @@ def _up_dir(twist_deg: float):
 # --------------------------------------------------------------------------
 
 
-def _section_plane(origin, twist_deg: float) -> Plane:
+def _section_plane(origin, twist_deg: float) -> bd.Plane:
     """Local +x = chord LE->TE, local +y = section normal, normal = car Y.
 
     Positive `twist_deg` lifts the trailing edge (more downforce), matching the
     sign convention stated in spec.py.
     """
-    return Plane(
-        origin=Vector(*origin), x_dir=_chord_dir(twist_deg), z_dir=Vector(0, 1, 0)
+    return bd.Plane(
+        origin=bd.Vector(*origin), x_dir=_chord_dir(twist_deg), z_dir=bd.Vector(0, 1, 0)
     )
 
 
@@ -121,7 +108,7 @@ def _afoil_face(st: dict):
         samples=st.get("samples", 37),
         te_thickness=st.get("te"),
     )
-    return _section_plane(st["le"], st.get("twist", 0.0)) * make_face(wire)
+    return _section_plane(st["le"], st.get("twist", 0.0)) * bd.make_face(wire)
 
 
 def _wing(stations, ruled: bool = False):
@@ -393,13 +380,13 @@ def _louvre_cutters():
         # long axis stated explicitly: Plane.rotated() works in WORLD axes and
         # would tip the slot straight out of the endplate's own plane
         t = math.radians(10.0 - 2.6 * i)
-        plane = Plane(
+        plane = bd.Plane(
             origin=(x, 0.5 * (_EP_IN_Y + _EP_OUT_Y), z),
             x_dir=(-math.cos(t), 0.0, math.sin(t)),
             z_dir=(0, 1, 0),
         )
-        face = plane * make_face(Spline(*pts, periodic=True))
-        cutters.append(extrude(face, amount=40.0, both=True))
+        face = plane * bd.make_face(bd.Spline(*pts, periodic=True))
+        cutters.append(bd.extrude(face, amount=40.0, both=True))
         x -= 2.2  # follow the trailing edge, which rakes aft going down
         z -= 33.5
         length *= 0.935
@@ -576,8 +563,8 @@ def _pylon_neck():
 
 def _pylon_shoe():
     """Machined foot clamping the pylon to the rear crash structure."""
-    body = Pos((-3906.0, 0.0, 366.0)) * Rotation(0, 6, 0) * Box(150.0, 44.0, 26.0)
-    return surfaces.safe_fillet(body, body.edges().filter_by(Axis.X), (6.0, 4.0, 2.0))
+    body = bd.Pos((-3906.0, 0.0, 366.0)) * bd.Rotation(0, 6, 0) * bd.Box(150.0, 44.0, 26.0)
+    return surfaces.safe_fillet(body, body.edges().filter_by(bd.Axis.X), (6.0, 4.0, 2.0))
 
 
 # ==========================================================================
@@ -632,9 +619,9 @@ def _beam_element(upper: bool):
 # ==========================================================================
 
 
-def _plane_y(y: float) -> Plane:
+def _plane_y(y: float) -> bd.Plane:
     """Plane normal to Y: local +x = car -X (rearward), local +y = car +Z."""
-    return Plane(origin=(0.0, y, 0.0), x_dir=(-1, 0, 0), z_dir=(0, 1, 0))
+    return bd.Plane(origin=(0.0, y, 0.0), x_dir=(-1, 0, 0), z_dir=(0, 1, 0))
 
 
 def _uv(pts):
@@ -651,7 +638,7 @@ def _tip_rib(y_in: float = _MAIN_TIP_Y - 5.0, y_out: float = _RIB_OUT_Y):
     c = st["chord"]
 
     def on(u_frac, v):
-        p = Vector(lx, 0.0, lz) + cd * (c * u_frac) + ud * v
+        p = bd.Vector(lx, 0.0, lz) + cd * (c * u_frac) + ud * v
         return (p.X, p.Z)
 
     prof = [
@@ -691,7 +678,7 @@ def _tip_tie():
     """
     st = _main_station(_MAIN_TIP_Y, roll=False)
     lx, _, lz = st["le"]
-    te = Vector(lx, 0.0, lz) + _chord_dir(st["twist"]) * (st["chord"] * 0.90)
+    te = bd.Vector(lx, 0.0, lz) + _chord_dir(st["twist"]) * (st["chord"] * 0.90)
     return surfaces.blade_member(
         (te.X + 4.0, _MAIN_TIP_Y - 4.0, te.Z),
         (te.X + 18.0, _EP_IN_Y + 8.0, te.Z + 4.0),
@@ -707,9 +694,9 @@ def _tip_tie():
 def _y_cylinder(x: float, y0: float, y1: float, z: float, r: float):
     """Cylinder about the Y axis, spanning y0..y1 at station (x, z)."""
     return (
-        Location((x, 0.5 * (y0 + y1), z))
-        * Rotation(-90, 0, 0)
-        * Cylinder(r, abs(y1 - y0))
+        bd.Location((x, 0.5 * (y0 + y1), z))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(r, abs(y1 - y0))
     )
 
 
@@ -720,13 +707,13 @@ def _pivot_boss(y0: float, y1: float, r: float):
 def _drs_lug():
     """Blade hanging from the flap's underside to spec.DRS_LUG_CLOSED."""
     a = math.radians(spec.DRS_LUG_ANGLE_CLOSED_DEG)
-    root = Vector(
+    root = bd.Vector(
         spec.DRS_PIVOT[0] + 9.0 * math.cos(a),
         spec.DRS_LINK_Y,
         spec.DRS_PIVOT[2] + 9.0 * math.sin(a),
     )
-    tip = Vector(*spec.DRS_LUG_CLOSED)
-    mid = root + (tip - root) * 0.55 + Vector(-3.0, 0.0, 3.0)
+    tip = bd.Vector(*spec.DRS_LUG_CLOSED)
+    mid = root + (tip - root) * 0.55 + bd.Vector(-3.0, 0.0, 3.0)
     return surfaces.blade_path(
         [root, mid, tip], [30.0, 24.0, 18.0], thickness_ratio=0.34, samples=21
     )
@@ -734,9 +721,9 @@ def _drs_lug():
 
 def _lug_eye():
     return (
-        Location(spec.DRS_LUG_CLOSED)
-        * Rotation(-90, 0, 0)
-        * Cylinder(10.0, 15.0)
+        bd.Location(spec.DRS_LUG_CLOSED)
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(10.0, 15.0)
     )
 
 
@@ -744,9 +731,9 @@ def _lug_eye():
 # DRS ACTUATOR — the jewellery
 # ==========================================================================
 
-_CP = Vector(*spec.DRS_CRANK_PIVOT)
-_CE = Vector(*spec.DRS_CRANK_END_CLOSED)
-_LUG = Vector(*spec.DRS_LUG_CLOSED)
+_CP = bd.Vector(*spec.DRS_CRANK_PIVOT)
+_CE = bd.Vector(*spec.DRS_CRANK_END_CLOSED)
+_LUG = bd.Vector(*spec.DRS_LUG_CLOSED)
 
 
 def _bellcrank():
@@ -792,7 +779,7 @@ def _bellcrank():
     for deg, r, rad in ((118.0, 41.0, 6.0), (118.0, 27.0, 7.5),
                         (205.0, 23.0, 6.5), (318.0, 27.0, 6.0)):
         cx, cz = polar(deg, r)
-        cut = Location((cx, spec.DRS_LINK_Y, cz)) * Rotation(-90, 0, 0) * Cylinder(rad, 60.0)
+        cut = bd.Location((cx, spec.DRS_LINK_Y, cz)) * bd.Rotation(-90, 0, 0) * bd.Cylinder(rad, 60.0)
         try:
             out = crank - cut
             if out is not None and out.is_valid:
@@ -804,23 +791,23 @@ def _bellcrank():
 
 def _crank_hub():
     return (
-        Location((_CP.X, spec.DRS_LINK_Y, _CP.Z))
-        * Rotation(-90, 0, 0)
-        * Cylinder(15.0, 30.0)
+        bd.Location((_CP.X, spec.DRS_LINK_Y, _CP.Z))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(15.0, 30.0)
     )
 
 
 def _crank_accent_ring():
     """THE accent on the whole rear wing: one vermillion ring on the bearing."""
     outer = (
-        Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
-        * Rotation(-90, 0, 0)
-        * Cylinder(14.6, 3.0)
+        bd.Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(14.6, 3.0)
     )
     bore = (
-        Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
-        * Rotation(-90, 0, 0)
-        * Cylinder(10.4, 9.0)
+        bd.Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(10.4, 9.0)
     )
     try:
         ring = outer - bore
@@ -839,14 +826,14 @@ def _link_rod():
     return surfaces.blade_member(a, b, 15.0, 15.0, thickness_ratio=0.62, samples=21)
 
 
-def _rod_end(center: Vector, toward: Vector):
+def _rod_end(center: bd.Vector, toward: bd.Vector):
     """Spherical rod end: polished ball in an anodized housing."""
     d = (toward - center).normalized()
     housing_a = center - d * 4.0
     housing_b = center + d * 17.0
     housing = surfaces.blade_member(housing_a, housing_b, 20.0, 13.0,
                                thickness_ratio=0.70, samples=17)
-    ball = Location(tuple(center)) * Sphere(6.4)
+    ball = bd.Location(tuple(center)) * bd.Sphere(6.4)
     return housing, ball
 
 
@@ -857,32 +844,32 @@ def _actuator_body():
     the endplate's raked leading edge passes x = -3880 at this height, and an
     actuator ahead of that line would poke out of the front of the plate.
     """
-    axis_a = Vector(-3920.0, 494.0, 740.0)
-    axis_b = Vector(-3998.0, 494.0, 724.0)
+    axis_a = bd.Vector(-3920.0, 494.0, 740.0)
+    axis_b = bd.Vector(-3998.0, 494.0, 724.0)
     body = surfaces.blade_member(axis_a, axis_b, 58.0, 46.0, thickness_ratio=0.86,
                             samples=25)
     cap_a = (
-        Location(tuple(axis_a + (axis_a - axis_b).normalized() * 3.0))
-        * Rotation(-90, 0, 0)
-        * Cylinder(19.0, 26.0)
+        bd.Location(tuple(axis_a + (axis_a - axis_b).normalized() * 3.0))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(19.0, 26.0)
     )
     cap_b = (
-        Location(tuple(axis_b + (axis_b - axis_a).normalized() * 2.0))
-        * Rotation(-90, 0, 0)
-        * Cylinder(16.0, 24.0)
+        bd.Location(tuple(axis_b + (axis_b - axis_a).normalized() * 2.0))
+        * bd.Rotation(-90, 0, 0)
+        * bd.Cylinder(16.0, 24.0)
     )
     # short pushrod from the actuator to the bellcrank's lower arm
     a2 = math.radians(spec.DRS_CRANK_ANGLE_CLOSED_DEG - 140.0)
-    lower_arm = Vector(_CP.X + 21.0 * math.cos(a2), spec.DRS_LINK_Y,
+    lower_arm = bd.Vector(_CP.X + 21.0 * math.cos(a2), spec.DRS_LINK_Y,
                        _CP.Z + 21.0 * math.sin(a2))
-    ram = surfaces.blade_member(Vector(-3930.0, 486.0, 744.0), lower_arm,
+    ram = surfaces.blade_member(bd.Vector(-3930.0, 486.0, 744.0), lower_arm,
                            13.0, 11.0, thickness_ratio=0.72, samples=17)
     return body, cap_a, cap_b, ram
 
 
 def _actuator_mount():
-    plate = Location((-3958.0, 512.0, 734.0)) * Rotation(0, 8, 0) * Box(120.0, 12.0, 74.0)
-    return surfaces.safe_fillet(plate, plate.edges().filter_by(Axis.Y), (10.0, 6.0, 3.0))
+    plate = bd.Location((-3958.0, 512.0, 734.0)) * bd.Rotation(0, 8, 0) * bd.Box(120.0, 12.0, 74.0)
+    return surfaces.safe_fillet(plate, plate.edges().filter_by(bd.Axis.Y), (10.0, 6.0, 3.0))
 
 
 # ==========================================================================

@@ -39,10 +39,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Face, Line, Location, Plane, Solid, Spline, Vector,
-                       Wire, loft, make_face)
-
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -162,7 +159,7 @@ BELLY = _belly
 
 
 def _V(p):
-    return p if isinstance(p, Vector) else Vector(*p)
+    return p if isinstance(p, bd.Vector) else bd.Vector(*p)
 
 
 def _face3(pts):
@@ -180,14 +177,14 @@ def _face3(pts):
         vs.append(v)
     while len(vs) > 3 and (vs[0] - vs[-1]).length < 1.0e-6:
         vs.pop()
-    edges = [Line(vs[i], vs[(i + 1) % len(vs)]).edge() for i in range(len(vs))]
-    wire = Wire(edges)
+    edges = [bd.Line(vs[i], vs[(i + 1) % len(vs)]).edge() for i in range(len(vs))]
+    wire = bd.Wire(edges)
     # Face(), not make_face(): this build123d's make_face returns a Sketch
     # compound, which loft() tolerates but Solid.extrude() refuses outright.
     try:
-        return Face(wire)
+        return bd.Face(wire)
     except Exception:  # noqa: BLE001
-        return make_face(wire)
+        return bd.make_face(wire)
 
 
 def _call(v, *args):
@@ -197,13 +194,13 @@ def _call(v, *args):
 def _rod(p0, p1, r):
     a, b = _V(p0), _V(p1)
     d = b - a
-    return Solid.make_cylinder(r, d.length, Plane(origin=a, z_dir=d.normalized()))
+    return bd.Solid.make_cylinder(r, d.length, bd.Plane(origin=a, z_dir=d.normalized()))
 
 
 def _cone(p0, p1, r0, r1):
     a, b = _V(p0), _V(p1)
     d = b - a
-    return Solid.make_cone(r0, r1, d.length, Plane(origin=a, z_dir=d.normalized()))
+    return bd.Solid.make_cone(r0, r1, d.length, bd.Plane(origin=a, z_dir=d.normalized()))
 
 
 def _scribe(sampler, path, w=SCRIBE_W, out=SCRIBE_OUT, inn=-SCRIBE_D):
@@ -241,7 +238,7 @@ def _scribe(sampler, path, w=SCRIBE_W, out=SCRIBE_OUT, inn=-SCRIBE_D):
         faces.append(_face3(quad))
     if len(faces) < 2:
         return None
-    return loft(faces, ruled=True)
+    return bd.loft(faces, ruled=True)
 
 
 def _patch(sampler, us, v0, v1, out, inn, nv=7):
@@ -268,7 +265,7 @@ def _patch(sampler, us, v0, v1, out, inn, nv=7):
         faces.append(_face3(outer + list(reversed(inner))))
     if len(faces) < 2:
         return None
-    return loft(faces, ruled=True)
+    return bd.loft(faces, ruled=True)
 
 
 def _ring_groove(x, w=SCRIBE_W, depth=SCRIBE_D, out=SCRIBE_OUT):
@@ -297,12 +294,12 @@ def _ring_groove(x, w=SCRIBE_W, depth=SCRIBE_D, out=SCRIBE_OUT):
         outer.append((x, pts[i][0] + ny * out, pts[i][1] + nz * out))
         inner.append((x, pts[i][0] - ny * depth, pts[i][1] - nz * depth))
     try:
-        so = Solid.extrude(_face3(outer), Vector(w, 0, 0))
-        si = Solid.extrude(_face3(inner), Vector(w, 0, 0))
+        so = bd.Solid.extrude(_face3(outer), bd.Vector(w, 0, 0))
+        si = bd.Solid.extrude(_face3(inner), bd.Vector(w, 0, 0))
         ring = so - si
     except Exception:  # noqa: BLE001
         return None
-    return Location((-0.5 * w, 0, 0)) * ring
+    return bd.Location((-0.5 * w, 0, 0)) * ring
 
 
 def _rect_panel(sampler, u0, u1, v0, v1, w=SCRIBE_W, out=SCRIBE_OUT,
@@ -339,7 +336,7 @@ def _fasteners(sampler, path, radius=FASTENER_R, proud=FASTENER_PROUD):
     for u, v in path:
         p, n = sampler(u, v)
         c = _V(p) - _V(n) * (radius - proud)
-        out.append(Location((c.X, c.Y, c.Z)))
+        out.append(bd.Location((c.X, c.Y, c.Z)))
     return out
 
 
@@ -349,13 +346,13 @@ def _blade(chord, thick, tip_chord, tip_thick, height, sweep, root=-30.0):
     t = biconvex_points(tip_thick / tip_chord, tip_chord, n=20)
     f0 = _face3([(px, py, root) for px, py in b])
     f1 = _face3([(px + sweep, py, height) for px, py in t])
-    return loft([f0, f1], ruled=True)
+    return bd.loft([f0, f1], ruled=True)
 
 
 def _dome(point, normal, radius, proud):
     """A sphere buried so exactly ``proud`` of it stands off the surface."""
     c = _V(point) - _V(normal) * (radius - proud)
-    return Location((c.X, c.Y, c.Z)) * Solid.make_sphere(radius)
+    return bd.Location((c.X, c.Y, c.Z)) * bd.Solid.make_sphere(radius)
 
 
 def _lin(a, b, n):
@@ -366,7 +363,7 @@ def _lens(sampler, u, v, r_long, r_short, proud, depth=26.0):
     """A flush light lens / static port: a shallow conformal disc."""
     p, n = sampler(u, v)
     p, n = _V(p), _V(n)
-    ref = Vector(0, 0, 1) if abs(n.Z) < 0.9 else Vector(1, 0, 0)
+    ref = bd.Vector(0, 0, 1) if abs(n.Z) < 0.9 else bd.Vector(1, 0, 0)
     e1 = n.cross(ref).normalized()
     e2 = n.cross(e1).normalized()
     base = p - n * depth
@@ -374,7 +371,7 @@ def _lens(sampler, u, v, r_long, r_short, proud, depth=26.0):
     for i in range(24):
         a = 2.0 * math.pi * i / 24
         poly.append(base + e1 * (r_long * math.cos(a)) + e2 * (r_short * math.sin(a)))
-    return Solid.extrude(_face3(poly), n * (depth + proud))
+    return bd.Solid.extrude(_face3(poly), n * (depth + proud))
 
 
 # ===========================================================================
@@ -434,16 +431,16 @@ def _pod_section(x, n=37):
         skin = SEC.surfaces(x, y)[1]
         if skin is None:
             skin = SEC.surfaces(x, 0.0)[1]
-        top.append(Vector(x, y, skin + POD_UP))
-        bot.append(Vector(x, y, skin - h * depth(y)))
-    wire = Wire([Spline(*top).edge(), Line(top[-1], bot[-1]).edge(),
-                 Spline(*list(reversed(bot))).edge(), Line(bot[0], top[0]).edge()])
-    return Face(wire)
+        top.append(bd.Vector(x, y, skin + POD_UP))
+        bot.append(bd.Vector(x, y, skin - h * depth(y)))
+    wire = bd.Wire([bd.Spline(*top).edge(), bd.Line(top[-1], bot[-1]).edge(),
+                 bd.Spline(*list(reversed(bot))).edge(), bd.Line(bot[0], top[0]).edge()])
+    return bd.Face(wire)
 
 
 def _chin_housing():
     xs = _lin(POD_X0, POD_X1, 24)
-    return loft([_pod_section(x) for x in xs], ruled=False)
+    return bd.loft([_pod_section(x) for x in xs], ruled=False)
 
 
 def _pod_window(side, kind):
@@ -457,13 +454,13 @@ def _pod_window(side, kind):
     yp, keel, h = _pod_lobe_axis(x)
     z = keel - 0.55 * h
     tilt = math.radians(24.0)
-    axis = Vector(-math.cos(tilt), 0.0, -math.sin(tilt))
-    c = Vector(x, side * yp, z)
+    axis = bd.Vector(-math.cos(tilt), 0.0, -math.sin(tilt))
+    c = bd.Vector(x, side * yp, z)
     r_glass, r_bezel = (74.0, 96.0) if kind == "irst" else (92.0, 112.0)
-    glass = Solid.make_cylinder(
-        r_glass, 46.0, Plane(origin=c - axis * 6.0, z_dir=axis))
-    bezel = Solid.make_cone(
-        r_bezel, r_bezel - 10.0, 54.0, Plane(origin=c - axis * 40.0, z_dir=axis))
+    glass = bd.Solid.make_cylinder(
+        r_glass, 46.0, bd.Plane(origin=c - axis * 6.0, z_dir=axis))
+    bezel = bd.Solid.make_cone(
+        r_bezel, r_bezel - 10.0, 54.0, bd.Plane(origin=c - axis * 40.0, z_dir=axis))
     return glass, bezel
 
 
@@ -532,11 +529,11 @@ def refuel_probe():
     p0, n0 = _flank(PROBE_X0 + 155.0, PROBE_Z + 0.012 * M, side)
     p0, n0 = _V(p0), _V(n0)
     mouth = p0 + n0 * (swell(0.14, 0.55) - 16.0)
-    recess = _rod(mouth - Vector(70.0, 0, 0), mouth + Vector(150.0, 0, 0), 58.0)
+    recess = _rod(mouth - bd.Vector(70.0, 0, 0), mouth + bd.Vector(150.0, 0, 0), 58.0)
     kids.append(P.style(recess, "refuel_probe_recess:stbd", P.WIRE_LOOM))
-    head = _cone(mouth + Vector(96.0, 0, 0), mouth + Vector(-8.0, 0, 0), 40.0, 30.0)
+    head = _cone(mouth + bd.Vector(96.0, 0, 0), mouth + bd.Vector(-8.0, 0, 0), 40.0, 30.0)
     kids.append(P.style(head, "refuel_probe_head:stbd", P.STEEL_DARK))
-    nozzle = _rod(mouth + Vector(6.0, 0, 0), mouth + Vector(-34.0, 0, 0), 17.0)
+    nozzle = _rod(mouth + bd.Vector(6.0, 0, 0), mouth + bd.Vector(-34.0, 0, 0), 17.0)
     kids.append(P.style(nozzle, "refuel_probe_nozzle:stbd", P.OLEO_CHROME))
     return kids
 
@@ -583,9 +580,9 @@ def gun():
                     lambda fu, fv: _gun_swell(0.10 + 0.42 * fu, 0.5 * (fv + 0.5)) - 26.0,
                     -46.0, nv=5)
     kids.append(P.style(trough, "gun_blast_trough:port", P.EXHAUST_SOOT))
-    muzzle = _rod(face + Vector(-40.0, 0, 0), face + Vector(210.0, 0, 0), 62.0)
+    muzzle = _rod(face + bd.Vector(-40.0, 0, 0), face + bd.Vector(210.0, 0, 0), 62.0)
     kids.append(P.style(muzzle, "gun_muzzle_port:port", P.WIRE_LOOM))
-    barrels = _rod(face + Vector(-6.0, 0, 0), face + Vector(180.0, 0, 0), 46.0)
+    barrels = _rod(face + bd.Vector(-6.0, 0, 0), face + bd.Vector(180.0, 0, 0), 46.0)
     kids.append(P.style(barrels, "gun_barrel_cluster:port", P.STEEL_DARK))
 
     # gun-gas purge louvres: a dark slot with proud slats over it
@@ -637,7 +634,7 @@ def air_data():
                         "aoa_probe_base:port", P.ALUM_DARK))
     kids.append(P.style(_cone(p + n * 40.0, p + n * 106.0, 33.0, 20.0),
                         "aoa_probe_cone:port", P.ALUMINIUM))
-    vane = _rod(p + n * 96.0 + Vector(-52.0, 0, 0), p + n * 96.0 + Vector(30.0, 0, 0),
+    vane = _rod(p + n * 96.0 + bd.Vector(-52.0, 0, 0), p + n * 96.0 + bd.Vector(30.0, 0, 0),
                 8.0)
     kids.append(P.style(vane, "aoa_probe_vane:port", P.STEEL_DARK))
 
@@ -647,7 +644,7 @@ def air_data():
     kids.append(P.style(_cone(p - n * 20.0, p + n * 74.0, 34.0, 22.0),
                         "pitot_strut:stbd", P.ALUM_DARK))
     tip = p + n * 74.0
-    kids.append(P.style(_cone(tip + Vector(120.0, 0, 0), tip + Vector(-190.0, 0, 0),
+    kids.append(P.style(_cone(tip + bd.Vector(120.0, 0, 0), tip + bd.Vector(-190.0, 0, 0),
                               22.0, 15.0),
                         "pitot_head:stbd", P.OLEO_CHROME))
 
@@ -658,7 +655,7 @@ def air_data():
     kids.append(P.style(_cone(p - n * 18.0, p + n * 88.0, 26.0, 18.0),
                         "tat_probe_mast:stbd", P.ALUM_DARK))
     head = p + n * 84.0
-    kids.append(P.style(_rod(head + Vector(52.0, 0, 0), head + Vector(-86.0, 0, 0),
+    kids.append(P.style(_rod(head + bd.Vector(52.0, 0, 0), head + bd.Vector(-86.0, 0, 0),
                              17.0),
                         "tat_probe_head:stbd", P.OLEO_CHROME))
 
@@ -692,9 +689,9 @@ def aerials():
         p, _ = (DECK(x, y) if surf == "deck" else BELLY(x, y))
         blade = _blade(c, t, tc, tt, h, sw)
         if surf == "deck":
-            loc = Location((p[0] - 0.5 * c, p[1], p[2]))
+            loc = bd.Location((p[0] - 0.5 * c, p[1], p[2]))
         else:
-            loc = Location((p[0] - 0.5 * c, p[1], p[2]), (180.0, 0.0, 0.0))
+            loc = bd.Location((p[0] - 0.5 * c, p[1], p[2]), (180.0, 0.0, 0.0))
         kids.append(P.style(loc * blade, f"blade_aerial_{name}", P.DIELECTRIC))
 
     # Flush dielectric panels: the UHF/IFF apertures.  Flat 5 mm-proud plates so
@@ -907,12 +904,12 @@ def boarding():
     for i, hx in enumerate((4.680 * M, 5.180 * M)):
         p, n = _flank(hx, 0.845 * M, 1)
         p, n = _V(p), _V(n)
-        bar = _rod(p + n * 34.0 + Vector(-95.0, 0, 0),
-                   p + n * 34.0 + Vector(95.0, 0, 0), 13.0)
+        bar = _rod(p + n * 34.0 + bd.Vector(-95.0, 0, 0),
+                   p + n * 34.0 + bd.Vector(95.0, 0, 0), 13.0)
         kids.append(P.style(bar, f"grab_handle:port_{i:02d}", P.ALUM_DARK))
         for k, dx in enumerate((-92.0, 92.0)):
-            post = _rod(p - n * 12.0 + Vector(dx, 0, 0),
-                        p + n * 34.0 + Vector(dx, 0, 0), 12.0)
+            post = _rod(p - n * 12.0 + bd.Vector(dx, 0, 0),
+                        p + n * 34.0 + bd.Vector(dx, 0, 0), 12.0)
             kids.append(P.style(post, f"grab_handle_post:port_{i:02d}{k}",
                                 P.ALUM_DARK))
     return kids
@@ -960,7 +957,7 @@ def wicks():
             y = G.lerp(G.Y_WING_ROOT, tip_y, f)
             x, z = _wing_te(y)
             items.append((proto_wing,
-                          Location((x, side * y, z), (0.0, 0.0, side * -7.0)),
+                          bd.Location((x, side * y, z), (0.0, 0.0, side * -7.0)),
                           f"static_wick_wing:{tag}_{i:02d}"))
     proto_fin = P.style(_wick_proto(64.0), "static_wick_fin", P.STEEL_DARK)
     tip_y = G.Y_FIN + G.FIN_HEIGHT * math.sin(math.radians(G.FIN_CANT))
@@ -969,7 +966,7 @@ def wicks():
     for side, tag in ((1, "port"), (-1, "stbd")):
         for i, dx in enumerate((0.0, -340.0)):
             items.append((proto_fin,
-                          Location((tip_te + dx, side * tip_y, tip_z),
+                          bd.Location((tip_te + dx, side * tip_y, tip_z),
                                    (0.0, 0.0, side * -5.0)),
                           f"static_wick_fin:{tag}_{i:02d}"))
     return compound_from_instances("static_wicks", items)
@@ -1087,7 +1084,7 @@ def fasteners():
         rows.append((BELLY, [(fx - 26.0, y)
                              for y in _lin(-BELLY_HALF, BELLY_HALF, 9)]))
 
-    proto = P.style(Solid.make_sphere(FASTENER_R), "fastener", P.PANEL_DARK)
+    proto = P.style(bd.Solid.make_sphere(FASTENER_R), "fastener", P.PANEL_DARK)
     items = []
     for smp, path in rows:
         for loc in _fasteners(smp, path):

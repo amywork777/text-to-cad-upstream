@@ -32,9 +32,6 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Axis, Box, Line, Location, Plane, Solid, Spline, Vector,
-                       Wire, make_face)
-
 # Only for the compound-unwrapping fallback in _revolve; see its docstring.
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeRevol
 from OCP.Standard import Standard_TypeMismatch
@@ -43,7 +40,7 @@ from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt
 
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -164,8 +161,8 @@ def _profile_face(outer, inner):
     and the edge overlay has nothing spurious to draw.
     """
     def contour(pts):
-        vs = [Vector(x, 0.0, r) for x, r in pts]
-        return (Spline(*vs).edge() if len(vs) > 2 else Line(vs[0], vs[-1]).edge()), vs
+        vs = [bd.Vector(x, 0.0, r) for x, r in pts]
+        return (bd.Spline(*vs).edge() if len(vs) > 2 else bd.Line(vs[0], vs[-1]).edge()), vs
 
     e_out, vo = contour(outer)
     e_in, vi = contour(inner)
@@ -175,11 +172,11 @@ def _profile_face(outer, inner):
     # already closed there.
     edges = [e_out]
     if (vo[-1] - vi[-1]).length > 1e-6:
-        edges.append(Line(vo[-1], vi[-1]).edge())
+        edges.append(bd.Line(vo[-1], vi[-1]).edge())
     edges.append(e_in)
     if (vi[0] - vo[0]).length > 1e-6:
-        edges.append(Line(vi[0], vo[0]).edge())
-    return make_face(Wire(edges))
+        edges.append(bd.Line(vi[0], vo[0]).edge())
+    return bd.make_face(bd.Wire(edges))
 
 
 def _revolve(outer, inner, arc=360.0):
@@ -200,7 +197,7 @@ def _revolve(outer, inner, arc=360.0):
     """
     face = _profile_face(outer, inner)
     try:
-        solid = Solid.revolve(face, arc, Axis.X)
+        solid = bd.Solid.revolve(face, arc, bd.Axis.X)
     except Standard_TypeMismatch:
         builder = BRepPrimAPI_MakeRevol(
             face.wrapped,
@@ -220,9 +217,9 @@ def _revolve(outer, inner, arc=360.0):
             raise RuntimeError(
                 f"revolve produced {len(found)} solids, expected exactly 1"
             )
-        solid = Solid(found[0])
+        solid = bd.Solid(found[0])
     if arc < 359.9:
-        solid = Location((0, 0, 0), (-0.5 * arc, 0, 0)) * solid
+        solid = bd.Location((0, 0, 0), (-0.5 * arc, 0, 0)) * solid
     return solid
 
 
@@ -233,11 +230,11 @@ def _band(x0, x1, r_out, r_in):
 
 def _rod(p0, p1, radius):
     """A cylinder between two meridional points (x, r), in the +Z meridian."""
-    a = Vector(p0[0], 0.0, p0[1])
-    b = Vector(p1[0], 0.0, p1[1])
+    a = bd.Vector(p0[0], 0.0, p0[1])
+    b = bd.Vector(p1[0], 0.0, p1[1])
     d = b - a
-    return Solid.make_cylinder(radius, d.length,
-                               Plane(origin=a, z_dir=d.normalized()))
+    return bd.Solid.make_cylinder(radius, d.length,
+                               bd.Plane(origin=a, z_dir=d.normalized()))
 
 
 # ---------------------------------------------------------------------------
@@ -356,7 +353,7 @@ def _drive_link():
     prototype is ONE leaf and the instance ring stays one occurrence per link.
     """
     rod = _rod((18664.0, 660.0), (18856.0, 630.0), 9.0)
-    aft = Location((18854.0, 0.0, 620.0)) * Box(36.0, 20.0, 34.0)
+    aft = bd.Location((18854.0, 0.0, 620.0)) * bd.Box(36.0, 20.0, 34.0)
     return rod + aft
 
 
@@ -367,7 +364,7 @@ def _actuator_body():
 def _actuator_rod():
     """Piston out of the actuator into the sync ring, plus its trunnion."""
     piston = _rod((18534.0, R_ACT), (18628.0, 664.0), 16.0)
-    lug = Location((18624.0, 0.0, 664.0)) * Box(38.0, 26.0, 44.0)
+    lug = bd.Location((18624.0, 0.0, 664.0)) * bd.Box(38.0, 26.0, 44.0)
     return piston + lug
 
 
@@ -384,7 +381,7 @@ def _turbine_strut():
     which is what an engine 0.75 m down a black hole should look like.  They
     stop short of the axis so there is no hub.
     """
-    return Location((18382.0, 0.0, 212.0)) * Box(14.0, 11.0, 188.0)
+    return bd.Location((18382.0, 0.0, 212.0)) * bd.Box(14.0, 11.0, 188.0)
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +399,7 @@ def _both(make, role, colour):
     """
     out = []
     for side, tag in SIDES:
-        shape = Location((0.0, side * Y_NAC, 0.0)) * make()
+        shape = bd.Location((0.0, side * Y_NAC, 0.0)) * make()
         out.append(P.style(shape, f"{role}:{tag}", colour))
     return out
 
@@ -417,9 +414,9 @@ def _ring(proto, role, colour, angles, name=None):
     P.style(proto, role, colour)
     items = []
     for side, tag in SIDES:
-        base = Location((0.0, side * Y_NAC, 0.0))
+        base = bd.Location((0.0, side * Y_NAC, 0.0))
         for i, a in enumerate(angles):
-            items.append((proto, base * Location((0, 0, 0), (a, 0.0, 0.0)),
+            items.append((proto, base * bd.Location((0, 0, 0), (a, 0.0, 0.0)),
                           f"{role}:{tag}_{i:02d}"))
     return compound_from_instances(name or f"{role}_ring", items)
 

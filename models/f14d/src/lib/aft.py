@@ -27,8 +27,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Box, Compound, Cone, Cylinder, Face, Line, Plane,
-                       Sphere, Spline, Vector, Wire, extrude, loft)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -114,16 +113,16 @@ def _solid(part):
     solids = part.solids() if hasattr(part, "solids") else [part]
     if len(solids) == 1:
         return solids[0]
-    return Compound(obj=list(solids))
+    return bd.Compound(obj=list(solids))
 
 
 def _band_wire(outer, inner):
     """Closed planar wire round a band: outer curve, two ends, inner curve."""
-    edges = [Spline(*outer).edge(),
-             Line(outer[-1], inner[-1]).edge(),
-             Spline(*inner).edge(),
-             Line(inner[0], outer[0]).edge()]
-    return Wire(edges)
+    edges = [bd.Spline(*outer).edge(),
+             bd.Line(outer[-1], inner[-1]).edge(),
+             bd.Spline(*inner).edge(),
+             bd.Line(inner[0], outer[0]).edge()]
+    return bd.Wire(edges)
 
 
 def _corner_inset(x, x0, x1, corner):
@@ -176,10 +175,10 @@ def _panel(x0, x1, ylo, yhi, sign=1, depth=DOOR_T, drop=0.0, corner=0.0,
         for i in range(ny):
             y = a + (b - a) * i / (ny - 1)
             z = _surf(x, y, sign) + sign * drop
-            outer.append(Vector(x, y, z))
-            inner.append(Vector(x, y, z - sign * depth))
-        faces.append(Face(_band_wire(outer, inner)))
-    return _solid(loft(faces, ruled=True))
+            outer.append(bd.Vector(x, y, z))
+            inner.append(bd.Vector(x, y, z - sign * depth))
+        faces.append(bd.Face(_band_wire(outer, inner)))
+    return _solid(bd.loft(faces, ruled=True))
 
 
 def _round_rect(x0, x1, ylo, yhi, corner, nx=6, arc=4):
@@ -225,10 +224,10 @@ def _prism(outline, z_lo, z_hi):
     the skin, which took minutes; a polyhedral prism cuts in seconds and gives
     the bay the flat floor and square walls a real bay has anyway.
     """
-    pts = [Vector(x, y, z_lo) for x, y in outline]
+    pts = [bd.Vector(x, y, z_lo) for x, y in outline]
     n = len(pts)
-    face = Face(Wire([Line(pts[i], pts[(i + 1) % n]).edge() for i in range(n)]))
-    return _solid(extrude(face, amount=z_hi - z_lo, dir=(0, 0, 1)))
+    face = bd.Face(bd.Wire([bd.Line(pts[i], pts[(i + 1) % n]).edge() for i in range(n)]))
+    return _solid(bd.extrude(face, amount=z_hi - z_lo, dir=(0, 0, 1)))
 
 
 def _surf_range(x0, x1, ylo, yhi, sign, nx=7, ny=9):
@@ -256,14 +255,14 @@ def _ribbon(path, sign=1, width=11.0, proud=3.0, sink=30.0, along="x"):
         z = _surf(x, y, sign)
         zo, zi = z + sign * proud, z - sign * sink
         if along == "x":
-            pts = [Vector(x, y - 0.5 * width, zo), Vector(x, y + 0.5 * width, zo),
-                   Vector(x, y + 0.5 * width, zi), Vector(x, y - 0.5 * width, zi)]
+            pts = [bd.Vector(x, y - 0.5 * width, zo), bd.Vector(x, y + 0.5 * width, zo),
+                   bd.Vector(x, y + 0.5 * width, zi), bd.Vector(x, y - 0.5 * width, zi)]
         else:
-            pts = [Vector(x - 0.5 * width, y, zo), Vector(x + 0.5 * width, y, zo),
-                   Vector(x + 0.5 * width, y, zi), Vector(x - 0.5 * width, y, zi)]
-        faces.append(Face(Wire([Line(pts[i], pts[(i + 1) % 4]).edge()
+            pts = [bd.Vector(x - 0.5 * width, y, zo), bd.Vector(x + 0.5 * width, y, zo),
+                   bd.Vector(x + 0.5 * width, y, zi), bd.Vector(x - 0.5 * width, y, zi)]
+        faces.append(bd.Face(bd.Wire([bd.Line(pts[i], pts[(i + 1) % 4]).edge()
                                 for i in range(4)])))
-    return _solid(loft(faces, ruled=True))
+    return _solid(bd.loft(faces, ruled=True))
 
 
 def _line_x(y, x0, x1, sign=1, n=12, **kw):
@@ -278,11 +277,11 @@ def _line_y(x, y0, y1, sign=1, n=14, **kw):
 
 def _rod(p0, p1, r0, r1=None):
     """A straight rod or tapered strut between two points."""
-    d = Vector(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
+    d = bd.Vector(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2])
     length = d.length
     mid = ((p0[0] + p1[0]) * 0.5, (p0[1] + p1[1]) * 0.5, (p0[2] + p1[2]) * 0.5)
-    shape = Cylinder(r0, length) if r1 is None else Cone(r0, r1, length)
-    return Plane(origin=Vector(*mid), z_dir=d) * shape
+    shape = bd.Cylinder(r0, length) if r1 is None else bd.Cone(r0, r1, length)
+    return bd.Plane(origin=bd.Vector(*mid), z_dir=d) * shape
 
 
 def _domes(points, sign=1, r=8.0, proud=2.6):
@@ -295,8 +294,8 @@ def _domes(points, sign=1, r=8.0, proud=2.6):
     out = []
     for x, y in points:
         z = _surf(x, y, sign) + sign * (proud - r)
-        out.append(place(Sphere(r), x, y, z))
-    return Compound(obj=out)
+        out.append(place(bd.Sphere(r), x, y, z))
+    return bd.Compound(obj=out)
 
 
 def _row_x(y, x0, x1, pitch, sign=1):
@@ -393,7 +392,7 @@ def _brake_gear(x0, x1, ylo, yhi, sign, label):
     for i in range(3):
         y = ylo(hinge_x) + span * (0.14 + 0.36 * i)
         z = bay_z(hinge_x, y)
-        lug = place(Box(96.0, 20.0, 108.0), hinge_x, y, z + sign * 40.0)
+        lug = place(bd.Box(96.0, 20.0, 108.0), hinge_x, y, z + sign * 40.0)
         kids.append(P.style(lug, f"{label}_hinge_lug:{i}", P.ALUM_DARK))
         pin = _rod((hinge_x, y - 62.0, z + sign * 74.0),
                    (hinge_x, y + 62.0, z + sign * 74.0), 15.0)
@@ -410,7 +409,7 @@ def _brake_gear(x0, x1, ylo, yhi, sign, label):
         rod = _rod((0.62 * xa + 0.38 * xb, y, 0.62 * za + 0.38 * zb),
                    (xb, y, zb), 21.0)
         kids.append(P.style(rod, f"{label}_ram_piston:{i}", P.OLEO_CHROME))
-        clevis = place(Box(56.0, 46.0, 40.0), xb, y, zb)
+        clevis = place(bd.Box(56.0, 46.0, 40.0), xb, y, zb)
         kids.append(P.style(clevis, f"{label}_ram_clevis:{i}", P.ALUM_DARK))
     return kids
 
@@ -527,11 +526,11 @@ def _hook_trough():
         ins = _corner_inset(x, X_TROUGH_FWD, X_TROUGH_AFT, 90.0)
         w = max(Y_TROUGH - ins, 40.0)
         roof = _trough_roof(x)
-        pts = [Vector(x, -w, roof), Vector(x, w, roof),
-               Vector(x, w, roof - 0.900 * M), Vector(x, -w, roof - 0.900 * M)]
-        faces.append(Face(Wire([Line(pts[i], pts[(i + 1) % 4]).edge()
+        pts = [bd.Vector(x, -w, roof), bd.Vector(x, w, roof),
+               bd.Vector(x, w, roof - 0.900 * M), bd.Vector(x, -w, roof - 0.900 * M)]
+        faces.append(bd.Face(bd.Wire([bd.Line(pts[i], pts[(i + 1) % 4]).edge()
                                 for i in range(4)])))
-    return _solid(loft(faces, ruled=True))
+    return _solid(bd.loft(faces, ruled=True))
 
 
 def _hook_shoe(x_root, z_root):
@@ -539,15 +538,15 @@ def _hook_shoe(x_root, z_root):
     prof = [(0.000, 0.062), (0.150, 0.076), (0.268, 0.058), (0.322, 0.006),
             (0.300, -0.062), (0.238, -0.098), (0.196, -0.052),
             (0.120, -0.030), (0.052, -0.048), (0.000, -0.060)]
-    pts = [Vector(x_root + a * M, 0.0, z_root + b * M) for a, b in prof]
+    pts = [bd.Vector(x_root + a * M, 0.0, z_root + b * M) for a, b in prof]
     half = 0.088 * M
     faces = []
     for y in (-half, half):
-        ring = [Vector(p.X, y, p.Z) for p in pts]
-        edges = [Line(ring[i], ring[(i + 1) % len(ring)]).edge()
+        ring = [bd.Vector(p.X, y, p.Z) for p in pts]
+        edges = [bd.Line(ring[i], ring[(i + 1) % len(ring)]).edge()
                  for i in range(len(ring))]
-        faces.append(Face(Wire(edges)))
-    return _solid(loft(faces, ruled=True))
+        faces.append(bd.Face(bd.Wire(edges)))
+    return _solid(bd.loft(faces, ruled=True))
 
 
 def _tailhook():
@@ -558,7 +557,7 @@ def _tailhook():
 
     # pivot: two lugs on the trough roof and the pin through them
     for i, side in enumerate((1, -1)):
-        lug = place(Box(180.0, 26.0, 150.0), X_HOOK_PIVOT - 30.0,
+        lug = place(bd.Box(180.0, 26.0, 150.0), X_HOOK_PIVOT - 30.0,
                     side * 106.0, Z_HOOK_PIVOT + 40.0)
         kids.append(P.style(lug, f"tailhook_pivot_lug:{'port' if side > 0 else 'stbd'}",
                             P.ALUM_DARK))
@@ -606,7 +605,7 @@ def _tailhook():
         tag = "port" if side > 0 else "stbd"
         y = side * 0.325 * M
         z = _surf(18.180 * M, y, -1)
-        pad = place(Sphere(0.115 * M), 18.180 * M, y, z + 0.086 * M)
+        pad = place(bd.Sphere(0.115 * M), 18.180 * M, y, z + 0.086 * M)
         kids.append(P.style(pad, f"hook_bumper:{tag}", P.RUBBER))
     return kids
 
@@ -631,10 +630,10 @@ def _fairing(x0, x1, y_mid, half_w, proud, sign=-1, nx=9, ny=13):
             y = y_mid + w * u
             z = _surf(x, y, sign)
             lift = h * math.sqrt(max(1.0 - u * u, 0.0))
-            outer.append(Vector(x, y, z + sign * lift))
-            inner.append(Vector(x, y, z - sign * 60.0))
-        faces.append(Face(_band_wire(outer, inner)))
-    return _solid(loft(faces, ruled=True))
+            outer.append(bd.Vector(x, y, z + sign * lift))
+            inner.append(bd.Vector(x, y, z - sign * 60.0))
+        faces.append(bd.Face(_band_wire(outer, inner)))
+    return _solid(bd.loft(faces, ruled=True))
 
 
 def _ventral():
@@ -688,8 +687,8 @@ def _panel_lines():
                              sign=-1, n=16))
         belly.append(_line_x(side * 0.700 * M, 15.720 * M, 18.220 * M,
                              sign=-1, n=10))
-    kids = [P.style(Compound(obj=deck), "panel_lines_deck", P.PANEL_DARK),
-            P.style(Compound(obj=belly), "panel_lines_belly", P.PANEL_DARK)]
+    kids = [P.style(bd.Compound(obj=deck), "panel_lines_deck", P.PANEL_DARK),
+            P.style(bd.Compound(obj=belly), "panel_lines_belly", P.PANEL_DARK)]
 
     rows = []
     for side in (1, -1):

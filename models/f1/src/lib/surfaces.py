@@ -19,32 +19,11 @@ import copy
 import math
 from typing import Iterable, Sequence
 
-from build123d import (
-    Axis,
-    Color,
-    Compound,
-    Edge,
-    Face,
-    Line,
-    Location,
-    Plane,
-    Pos,
-    Rotation,
-    Shape,
-    Solid,
-    Spline,
-    Vector,
-    Wire,
-    chamfer,
-    fillet,
-    loft,
-    make_face,
-    mirror,
-)
+from cadgen import build123d as bd
 
 from . import spec
 
-FLOW = Vector(-1, 0, 0)  # local flow direction: air runs toward -X
+FLOW = bd.Vector(-1, 0, 0)  # local flow direction: air runs toward -X
 
 
 # ==========================================================================
@@ -66,11 +45,11 @@ def as_body(shape):
         parts = [s for s in shape if s is not None and getattr(s, "wrapped", None)]
         if not parts:
             return None
-        return parts[0] if len(parts) == 1 else Compound(children=parts)
+        return parts[0] if len(parts) == 1 else bd.Compound(children=parts)
     return shape
 
 
-def styled(shape, label: str, color: Color):
+def styled(shape, label: str, color: bd.Color):
     """Label + colour one body. Every exported solid must go through this."""
     shape = as_body(shape)
     if shape is None:
@@ -80,20 +59,20 @@ def styled(shape, label: str, color: Color):
     return shape
 
 
-def group(label: str, children: Iterable) -> Compound:
+def group(label: str, children: Iterable) -> bd.Compound:
     """Bundle labelled bodies into one labelled compound (a part)."""
     kids = [c for c in children if c is not None]
-    comp = Compound(children=kids)
+    comp = bd.Compound(children=kids)
     comp.label = label
     return comp
 
 
 def mirror_y(shape):
     """Mirror a shape across the car centreline plane (y = 0)."""
-    return mirror(shape, about=Plane.XZ)
+    return bd.mirror(shape, about=bd.Plane.XZ)
 
 
-def pair(shape, label: str, color: Color | None = None):
+def pair(shape, label: str, color: bd.Color | None = None):
     """Build the left body and its mirrored right twin as two labelled bodies.
 
     The input must be modelled on the LEFT (+Y) side.
@@ -131,7 +110,7 @@ def safe_fillet(part, edges, ladder: Sequence[float] = spec.FILLET_LADDER):
         return part
     for r in ladder:
         try:
-            out = fillet(edge_list, r)
+            out = bd.fillet(edge_list, r)
             if out is not None and out.is_valid:
                 return out
         except Exception:
@@ -149,9 +128,9 @@ def safe_chamfer(part, edges, length: float, length2: float | None = None):
     for scale in (1.0, 0.6, 0.35, 0.15):
         try:
             if length2 is not None:
-                out = chamfer(edge_list, length * scale, length2 * scale)
+                out = bd.chamfer(edge_list, length * scale, length2 * scale)
             else:
-                out = chamfer(edge_list, length * scale)
+                out = bd.chamfer(edge_list, length * scale)
             if out is not None and out.is_valid:
                 return out
         except Exception:
@@ -197,9 +176,9 @@ def repair(shape, precision: float = 1e-4, max_tolerance: float = 1e-2):
         fixer.SetPrecision(precision)
         fixer.SetMaxTolerance(max_tolerance)
         fixer.Perform()
-        healed = Shape.cast(fixer.Shape())
+        healed = bd.Shape.cast(fixer.Shape())
         if healed is None:
-            solids = Solid(fixer.Shape()).solids()
+            solids = bd.Solid(fixer.Shape()).solids()
             healed = solids[0] if solids else None
         if healed is not None and is_valid_shape(healed):
             healed.label = getattr(shape, "label", "") or ""
@@ -246,7 +225,7 @@ def obox(shape):
     return v[:3], v[3:]
 
 
-def _sections_box(faces: Sequence[Face]):
+def _sections_box(faces: Sequence[bd.Face]):
     lo = [float("inf")] * 3
     hi = [float("-inf")] * 3
     for f in faces:
@@ -257,7 +236,7 @@ def _sections_box(faces: Sequence[Face]):
     return lo, hi
 
 
-def loft_escaped(solid, faces: Sequence[Face], margin_frac: float = 0.06) -> bool:
+def loft_escaped(solid, faces: Sequence[bd.Face], margin_frac: float = 0.06) -> bool:
     """True if a lofted solid strays outside the box of its own sections.
 
     A smooth loft is allowed to bow slightly between stations, so the test
@@ -279,7 +258,7 @@ def loft_escaped(solid, faces: Sequence[Face], margin_frac: float = 0.06) -> boo
     return False
 
 
-def loft_solid(faces: Sequence[Face], ruled: bool = False):
+def loft_solid(faces: Sequence[bd.Face], ruled: bool = False):
     """Loft a section stack; fall back to ruled if the smooth loft misbehaves.
 
     Two independent failure modes, and only the first is loud:
@@ -311,7 +290,7 @@ def loft_solid(faces: Sequence[Face], ruled: bool = False):
     if len(fs) < 2:
         raise ValueError("loft_solid needs at least two sections")
     try:
-        out = loft(fs, ruled=ruled)
+        out = bd.loft(fs, ruled=ruled)
         if (
             out is not None
             and out.is_valid
@@ -322,13 +301,13 @@ def loft_solid(faces: Sequence[Face], ruled: bool = False):
     except Exception:
         pass
     try:
-        return loft(fs, ruled=True)
+        return bd.loft(fs, ruled=True)
     except Exception:
         pass
     return _segmented_ruled_loft(fs)
 
 
-def _segmented_ruled_loft(fs: Sequence[Face]):
+def _segmented_ruled_loft(fs: Sequence[bd.Face]):
     """Ruled loft as a fuse of adjacent-pair lofts.
 
     Each section is rebuilt from its own wire for its two lofts: OCC's builders
@@ -337,7 +316,7 @@ def _segmented_ruled_loft(fs: Sequence[Face]):
     """
     out = None
     for i in range(len(fs) - 1):
-        seg = loft([copy.deepcopy(fs[i]), copy.deepcopy(fs[i + 1])], ruled=True)
+        seg = bd.loft([copy.deepcopy(fs[i]), copy.deepcopy(fs[i + 1])], ruled=True)
         out = seg if out is None else out + seg
     return out
 
@@ -410,9 +389,9 @@ def airfoil_profile(
     """Closed planar wire of one airfoil section, in local 2D coords."""
     te = spec.TE_THICKNESS if te_thickness is None else te_thickness
     upper, lower = _naca_points(chord, thickness, camber, camber_pos, samples, te)
-    top = Spline(*upper)
-    bot = Spline(*lower)
-    tail = Line(top @ 1, bot @ 1)
+    top = bd.Spline(*upper)
+    bot = bd.Spline(*lower)
+    tail = bd.Line(top @ 1, bot @ 1)
     return top + tail + bot
 
 
@@ -438,9 +417,9 @@ def section_plane(origin, twist_deg: float = 0.0, sweep_deg: float = 0.0):
     ct, st = math.cos(t), math.sin(t)
     cs, ss = math.cos(s), math.sin(s)
     # pitch the chord line about the span axis, then yaw the whole frame
-    x_dir = Vector(-ct * cs, -ct * ss, st)
-    normal = Vector(-ss, cs, 0.0)
-    return Plane(origin=Vector(*origin), x_dir=x_dir, z_dir=normal)
+    x_dir = bd.Vector(-ct * cs, -ct * ss, st)
+    normal = bd.Vector(-ss, cs, 0.0)
+    return bd.Plane(origin=bd.Vector(*origin), x_dir=x_dir, z_dir=normal)
 
 
 def airfoil_face(
@@ -453,7 +432,7 @@ def airfoil_face(
     sweep_deg: float = 0.0,
     te_thickness: float | None = None,
     samples: int = 37,
-) -> Face:
+) -> bd.Face:
     """One airfoil section placed in car coordinates.
 
     `origin` is the LEADING EDGE point (x, y, z). The section is rotated about
@@ -468,7 +447,7 @@ def airfoil_face(
         te_thickness=te_thickness,
     )
     plane = section_plane(origin, twist_deg=twist_deg, sweep_deg=sweep_deg)
-    return plane * make_face(wire)
+    return plane * bd.make_face(wire)
 
 
 def wing_element(stations: Sequence[dict], ruled: bool = False):
@@ -516,20 +495,20 @@ def blade_profile(chord: float, thickness_ratio: float = 0.30, samples: int = 25
     upper, lower = _naca_points(
         chord, thickness_ratio, 0.0, 0.4, samples, spec.TE_THICKNESS
     )
-    top = Spline(*upper)
-    bot = Spline(*lower)
-    tail = Line(top @ 1, bot @ 1)
+    top = bd.Spline(*upper)
+    bot = bd.Spline(*lower)
+    tail = bd.Line(top @ 1, bot @ 1)
     return top + tail + bot
 
 
-def _ortho_basis(axis: Vector, prefer: Vector = FLOW):
+def _ortho_basis(axis: bd.Vector, prefer: bd.Vector = FLOW):
     """Frame whose normal is `axis` and whose local +x hugs the flow."""
-    n = Vector(axis).normalized()
-    ref = Vector(prefer)
+    n = bd.Vector(axis).normalized()
+    ref = bd.Vector(prefer)
     if abs(ref.dot(n)) > 0.97:
-        ref = Vector(0, 0, 1)
+        ref = bd.Vector(0, 0, 1)
         if abs(ref.dot(n)) > 0.97:
-            ref = Vector(0, 1, 0)
+            ref = bd.Vector(0, 1, 0)
     x_dir = (ref - n * ref.dot(n)).normalized()
     return n, x_dir
 
@@ -541,24 +520,24 @@ def blade_face(
     thickness_ratio: float = 0.30,
     roll_deg: float = 0.0,
     samples: int = 25,
-) -> Face:
+) -> bd.Face:
     """One blade section normal to `axis`, centred on the member centreline.
 
     The section's quarter-chord sits on `center`, which is what makes a
     tapered member's centreline read straight.
     """
-    n, x_dir = _ortho_basis(Vector(axis))
+    n, x_dir = _ortho_basis(bd.Vector(axis))
     if roll_deg:
         # Rodrigues about the MEMBER AXIS, so a rolled section stays normal to
         # its own path. `Plane.rotated()` would roll about world Z instead and
         # tip the section out of the member — same trap as section_plane().
         r = math.radians(roll_deg)
         x_dir = (x_dir * math.cos(r) + n.cross(x_dir) * math.sin(r)).normalized()
-    plane = Plane(origin=Vector(center), x_dir=x_dir, z_dir=n)
+    plane = bd.Plane(origin=bd.Vector(center), x_dir=x_dir, z_dir=n)
     wire = blade_profile(chord, thickness_ratio=thickness_ratio, samples=samples)
-    face = make_face(wire)
+    face = bd.make_face(wire)
     # centre the section on its quarter-chord point
-    face = Location((-0.25 * chord, 0, 0)) * face
+    face = bd.Location((-0.25 * chord, 0, 0)) * face
     return plane * face
 
 
@@ -572,7 +551,7 @@ def blade_member(
     samples: int = 25,
 ):
     """A straight tapered blade from p0 to p1 — the suspension vocabulary."""
-    a, b = Vector(p0), Vector(p1)
+    a, b = bd.Vector(p0), bd.Vector(p1)
     axis = b - a
     c1 = chord0 if chord1 is None else chord1
     f0 = blade_face(a, axis, chord0, thickness_ratio, roll_deg, samples)
@@ -583,7 +562,7 @@ def blade_member(
 def blade_path(points: Sequence, chords: Sequence[float], thickness_ratio: float = 0.30,
                roll_deg: float = 0.0, samples: int = 25):
     """A curved blade through a polyline of centreline points."""
-    pts = [Vector(p) for p in points]
+    pts = [bd.Vector(p) for p in points]
     faces = []
     for i, p in enumerate(pts):
         if i == 0:
@@ -603,13 +582,13 @@ def blade_path(points: Sequence, chords: Sequence[float], thickness_ratio: float
 # ==========================================================================
 
 
-def section_face(x: float, pts_yz: Sequence[Sequence[float]], periodic: bool = True) -> Face:
+def section_face(x: float, pts_yz: Sequence[Sequence[float]], periodic: bool = True) -> bd.Face:
     """A closed bodywork cross-section at station x, from (y, z) points.
 
     The plane at station x has local +x = car +Y and local +y = car +Z, so the
     points you write read exactly like a front-view sketch.
     """
-    plane = Plane(origin=(x, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    plane = bd.Plane(origin=(x, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
     pts = [(float(p[0]), float(p[1])) for p in pts_yz]
     if periodic:
         if (
@@ -617,29 +596,29 @@ def section_face(x: float, pts_yz: Sequence[Sequence[float]], periodic: bool = T
             and abs(pts[0][1] - pts[-1][1]) < 1e-9
         ):
             pts = pts[:-1]
-        wire = Spline(*pts, periodic=True)
-        return plane * make_face(wire)
-    curve = Spline(*pts)
-    closing = Line(curve @ 1, curve @ 0)
-    return plane * make_face(curve + closing)
+        wire = bd.Spline(*pts, periodic=True)
+        return plane * bd.make_face(wire)
+    curve = bd.Spline(*pts)
+    closing = bd.Line(curve @ 1, curve @ 0)
+    return plane * bd.make_face(curve + closing)
 
 
-def half_section_face(x: float, pts_yz: Sequence[Sequence[float]]) -> Face:
+def half_section_face(x: float, pts_yz: Sequence[Sequence[float]]) -> bd.Face:
     """Closed section from a LEFT-side outline, mirrored across the centreline.
 
     `pts_yz` runs from the centreline bottom (y=0) out and over the top back to
     the centreline (y=0). The centreline closure is a straight line, which is
     what keeps a symmetric body's spine crisp instead of dimpled.
     """
-    plane = Plane(origin=(x, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    plane = bd.Plane(origin=(x, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
     pts = [(float(p[0]), float(p[1])) for p in pts_yz]
     right = [(-y, z) for (y, z) in reversed(pts[1:-1])]
     outline = pts + right
-    wire = Spline(*outline, periodic=True)
-    return plane * make_face(wire)
+    wire = bd.Spline(*outline, periodic=True)
+    return plane * bd.make_face(wire)
 
 
-def body_loft(sections: Sequence[Face], ruled: bool = False):
+def body_loft(sections: Sequence[bd.Face], ruled: bool = False):
     """Loft sculpted bodywork through a station stack."""
     return loft_solid(sections, ruled=ruled)
 
@@ -707,27 +686,25 @@ def swept_plate(
     """
     faces = []
     for st in stations:
-        wire = Spline(*st["pts"], periodic=True)
-        faces.append(st["plane"] * make_face(wire))
+        wire = bd.Spline(*st["pts"], periodic=True)
+        faces.append(st["plane"] * bd.make_face(wire))
     return loft_solid(faces, ruled=ruled)
 
 
 def plate_plane(origin, normal, up=(0, 0, 1)):
     """Plane for a plate section: local +x along flow-ish, +y toward `up`."""
-    n = Vector(normal).normalized()
-    u = Vector(up)
+    n = bd.Vector(normal).normalized()
+    u = bd.Vector(up)
     if abs(u.dot(n)) > 0.97:
-        u = Vector(1, 0, 0)
+        u = bd.Vector(1, 0, 0)
     y_dir = (u - n * u.dot(n)).normalized()
     x_dir = y_dir.cross(n).normalized()
-    return Plane(origin=Vector(origin), x_dir=x_dir, z_dir=n)
+    return bd.Plane(origin=bd.Vector(origin), x_dir=x_dir, z_dir=n)
 
 
-def accent_stripe_solid(base_solid, plane: Plane, thickness: float):
+def accent_stripe_solid(base_solid, plane: bd.Plane, thickness: float):
     """Intersect a body with a thin slab to make a flush accent stripe."""
-    from build123d import Box
-
-    slab = plane * Box(4000, 4000, thickness)
+    slab = plane * bd.Box(4000, 4000, thickness)
     try:
         return base_solid & slab
     except Exception:

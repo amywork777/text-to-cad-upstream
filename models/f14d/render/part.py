@@ -35,9 +35,7 @@ import sys
 
 sys.path.insert(0, {src!r})
 
-from build123d import Compound
-
-from cadgen import step
+from cadgen import build123d as bd, step
 
 MODULES = {mods!r}
 
@@ -65,7 +63,7 @@ def {name}():
             print("[review] build failed %s: %s" % (name, exc), file=sys.stderr)
     if not kids:
         raise RuntimeError("nothing built")
-    return Compound(children=kids, label="review")
+    return bd.Compound(children=kids, label="review")
 '''
 
 

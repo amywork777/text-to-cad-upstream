@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Axis, Face, Location, Plane, Solid, Spline, Vector,
-                       Vertex, Wire, loft)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -24,17 +23,17 @@ def _wire_at(x, n=52):
     top, bot = SEC.section_curves(x, n)
     if len(top) < 4:
         return None
-    tp = [Vector(x, y, z) for y, z in top]
-    bp = [Vector(x, y, z) for y, z in bot]
-    upper = Spline(*tp)
-    lower = Spline(*bp)
-    return Wire([upper.edge(), lower.edge()])
+    tp = [bd.Vector(x, y, z) for y, z in top]
+    bp = [bd.Vector(x, y, z) for y, z in bot]
+    upper = bd.Spline(*tp)
+    lower = bd.Spline(*bp)
+    return bd.Wire([upper.edge(), lower.edge()])
 
 
 def skin_sections(n=52, stations=None):
     """Every section wire, plus the nose vertex, in loft order."""
     xs = stations if stations is not None else SEC.stations()
-    out = [Vertex(0.0, 0.0, SEC.surfaces(0.0, 0.0)[0])]
+    out = [bd.Vertex(0.0, 0.0, SEC.surfaces(0.0, 0.0)[0])]
     for x in xs:
         if x <= 1e-6:
             continue
@@ -47,8 +46,8 @@ def skin_sections(n=52, stations=None):
 def build_skin(n=52, ruled=False):
     """The airframe skin as one solid."""
     secs = skin_sections(n)
-    faces = [s if isinstance(s, Vertex) else Face(s) for s in secs]
-    return loft(faces, ruled=ruled)
+    faces = [s if isinstance(s, bd.Vertex) else bd.Face(s) for s in secs]
+    return bd.loft(faces, ruled=ruled)
 
 
 if __name__ == "__main__":

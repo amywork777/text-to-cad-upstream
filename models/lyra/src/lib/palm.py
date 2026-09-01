@@ -16,18 +16,7 @@ Articulation clearances baked into the shape:
 
 from __future__ import annotations
 
-from build123d import (
-    Axis,
-    Box,
-    Plane,
-    Polyline,
-    Pos,
-    Rot,
-    RectangleRounded,
-    extrude,
-    loft,
-    make_face,
-)
+from cadgen import build123d as bd
 
 from .chain import FINGERS, MCP_ORIGIN_MM, THUMB_CMC_ORIGIN_MM
 from .digits import (
@@ -92,8 +81,8 @@ PLATE_PTS = [
 
 def _outline_solid(pts, y0, depth):
     pts3 = [(x, y0, z) for x, z in pts]
-    face = make_face(Polyline(*pts3, close=True))
-    return extrude(face, amount=depth, dir=(0, 1, 0))
+    face = bd.make_face(bd.Polyline(*pts3, close=True))
+    return bd.extrude(face, amount=depth, dir=(0, 1, 0))
 
 
 def _slot_gap(finger: str) -> float:
@@ -105,19 +94,19 @@ def _knuckle_cuts(solid):
     for finger in FINGERS:
         kx, _, kz = MCP_ORIGIN_MM[finger]
         gap = _slot_gap(finger)
-        solid -= Pos(kx, 0.5, kz + 2.0) * Box(gap, 29.0, 26.0)
-        solid -= Pos(kx, 0, kz) * xcyl(MCP_PIN_R + 0.4, 26.0)
+        solid -= bd.Pos(kx, 0.5, kz + 2.0) * bd.Box(gap, 29.0, 26.0)
+        solid -= bd.Pos(kx, 0, kz) * xcyl(MCP_PIN_R + 0.4, 26.0)
     return solid
 
 
 def _thumb_relief(solid):
     """Turned clearance around the thumb turret for the yawing base clevis."""
     disc_z0 = CZ - TB_TANG_H / 2.0
-    return solid - Pos(CX, CY, disc_z0 + 5.6) * zcyl(TURRET_RELIEF_R, 11.6)
+    return solid - bd.Pos(CX, CY, disc_z0 + 5.6) * zcyl(TURRET_RELIEF_R, 11.6)
 
 
 def _wrist_flange():
-    flange = Pos(0, 0, 3.0) * zcyl(23.0, 6.0)
+    flange = bd.Pos(0, 0, 3.0) * zcyl(23.0, 6.0)
     flange = safe_chamfer(flange, flange.edges(), 1.2)
     heads = []
     for i in range(6):
@@ -125,9 +114,9 @@ def _wrist_flange():
 
         a = 2.0 * pi * i / 6.0
         bx, by = 16.5 * cos(a), 16.5 * sin(a)
-        flange -= Pos(bx, by, 1.5) * zcyl(3.6, 3.0)
-        flange -= Pos(bx, by, 3.0) * zcyl(2.3, 8.0)
-        head = Pos(bx, by, 1.4) * zcyl(3.3, 2.2)
+        flange -= bd.Pos(bx, by, 1.5) * zcyl(3.6, 3.0)
+        flange -= bd.Pos(bx, by, 3.0) * zcyl(2.3, 8.0)
+        head = bd.Pos(bx, by, 1.4) * zcyl(3.3, 2.2)
         head = safe_chamfer(head, head.edges(), 0.5)
         heads.append(styled(head, f"flange_bolt_{i}", GRAPHITE_COLOR))
     return styled(flange, "wrist_flange", ALU_COLOR), heads
@@ -135,29 +124,29 @@ def _wrist_flange():
 
 def _carpal_core():
     try:
-        f1 = Plane.XY.offset(6.0) * RectangleRounded(40.0, 17.5, 7.0)
-        f2 = Plane.XY.offset(33.0) * RectangleRounded(50.0, 19.0, 8.0)
-        carpal = loft([f1, f2])
+        f1 = bd.Plane.XY.offset(6.0) * bd.RectangleRounded(40.0, 17.5, 7.0)
+        f2 = bd.Plane.XY.offset(33.0) * bd.RectangleRounded(50.0, 19.0, 8.0)
+        carpal = bd.loft([f1, f2])
     except Exception:
-        carpal = Pos(0, 0, 19.5) * Box(46.0, 18.2, 27.0)
-        carpal = safe_fillet(carpal, carpal.edges().filter_by(Axis.Z), 7.0)
+        carpal = bd.Pos(0, 0, 19.5) * bd.Box(46.0, 18.2, 27.0)
+        carpal = safe_fillet(carpal, carpal.edges().filter_by(bd.Axis.Z), 7.0)
     return styled(carpal, "carpal_core", GRAPHITE_COLOR)
 
 
 def _palm_core():
     core = _outline_solid(CORE_PTS, -SLAB_HALF_Y, 2 * SLAB_HALF_Y)
-    core = safe_fillet(core, core.edges().filter_by(Axis.Y), 2.2)
+    core = safe_fillet(core, core.edges().filter_by(bd.Axis.Y), 2.2)
 
     # Knuckle lobe crowns (cut by the clevis slots into cheek arcs).
     for finger in FINGERS:
         kx, _, kz = MCP_ORIGIN_MM[finger]
         s = FINGER_SCALE[finger]
-        core += Pos(kx, 0, kz) * xcyl(PALM_LOBE_R * s, _slot_gap(finger) + 7.0)
+        core += bd.Pos(kx, 0, kz) * xcyl(PALM_LOBE_R * s, _slot_gap(finger) + 7.0)
 
     # Thumb turret pedestal (bored for the spindle), merged into the
     # radial-palmar corner.
     disc_z0 = CZ - TB_TANG_H / 2.0
-    pedestal = Pos(CX, CY, disc_z0 - 3.4) * (zcyl(TURRET_R, 6.4) - zcyl(SPINDLE_R + 0.7, 9.0))
+    pedestal = bd.Pos(CX, CY, disc_z0 - 3.4) * (zcyl(TURRET_R, 6.4) - zcyl(SPINDLE_R + 0.7, 9.0))
     pedestal = safe_chamfer(pedestal, pedestal.edges(), 1.0)
     core += pedestal
 
@@ -168,9 +157,9 @@ def _palm_core():
 
 def _dorsal_cover():
     cover = _outline_solid(COVER_PTS, COVER_Y0, COVER_Y1 - COVER_Y0)
-    cover = safe_fillet(cover, cover.edges().filter_by(Axis.Y), 2.0)
+    cover = safe_fillet(cover, cover.edges().filter_by(bd.Axis.Y), 2.0)
     try:
-        outer = cover.faces().sort_by(Axis.Y)[0]
+        outer = cover.faces().sort_by(bd.Axis.Y)[0]
         cover = safe_chamfer(cover, outer.edges(), 1.0)
     except Exception:
         pass
@@ -185,7 +174,7 @@ def _dorsal_cover():
         mx, mz = (ax + bx) / 2.0, (az + bz) / 2.0
         ang = degrees(atan2(bx - ax, bz - az))
         glen = hypot(bx - ax, bz - az)
-        groove = Pos(mx, COVER_Y0 + 0.25, mz) * Rot(0, ang, 0) * Box(1.6, 1.0, glen)
+        groove = bd.Pos(mx, COVER_Y0 + 0.25, mz) * bd.Rot(0, ang, 0) * bd.Box(1.6, 1.0, glen)
         try:
             cover -= groove
         except Exception:
@@ -197,26 +186,26 @@ def _dorsal_cover():
 
 def _palmar_plate():
     plate = _outline_solid(PLATE_PTS, PLATE_Y0, PLATE_Y1 - PLATE_Y0)
-    plate = safe_fillet(plate, plate.edges().filter_by(Axis.Y), 2.0)
+    plate = safe_fillet(plate, plate.edges().filter_by(bd.Axis.Y), 2.0)
     try:
-        outer = plate.faces().sort_by(Axis.Y)[-1]
+        outer = plate.faces().sort_by(bd.Axis.Y)[-1]
         plate = safe_chamfer(plate, outer.edges(), 0.8)
     except Exception:
         pass
     # Pocket for the tactile pad (pad sits 0.4 into the plate).
-    plate -= Pos(0, PLATE_Y1, 65.0) * Box(46.4, 2.0, 30.4)
+    plate -= bd.Pos(0, PLATE_Y1, 65.0) * bd.Box(46.4, 2.0, 30.4)
     plate = _knuckle_cuts(plate)
     plate = _thumb_relief(plate)
     return styled(plate, "palmar_plate", PEARL_COLOR)
 
 
 def _palm_pad():
-    pad = Pos(0, PLATE_Y1 - 0.4 + 0.85, 65.0) * Box(46.0, 1.7, 30.0)
-    pad = safe_fillet(pad, pad.edges().filter_by(Axis.Y), 5.0)
+    pad = bd.Pos(0, PLATE_Y1 - 0.4 + 0.85, 65.0) * bd.Box(46.0, 1.7, 30.0)
+    pad = safe_fillet(pad, pad.edges().filter_by(bd.Axis.Y), 5.0)
     # Tactile zone split grooves (2 x 2 sensor array read as fine lines).
     for cut in (
-        Pos(0, PLATE_Y1 + 1.3, 65.0) * Box(1.2, 1.0, 30.5),
-        Pos(0, PLATE_Y1 + 1.3, 65.0) * Box(46.5, 1.0, 1.2),
+        bd.Pos(0, PLATE_Y1 + 1.3, 65.0) * bd.Box(1.2, 1.0, 30.5),
+        bd.Pos(0, PLATE_Y1 + 1.3, 65.0) * bd.Box(46.5, 1.0, 1.2),
     ):
         try:
             pad -= cut
@@ -227,8 +216,8 @@ def _palm_pad():
 
 
 def _palm_sensor():
-    ring = Pos(0, PLATE_Y1 + 0.3, 87.0) * (ycyl(5.0, 0.6) - ycyl(4.0, 3.0))
-    lens = Pos(0, PLATE_Y1 + 0.2, 87.0) * ycyl(3.9, 0.8)
+    ring = bd.Pos(0, PLATE_Y1 + 0.3, 87.0) * (ycyl(5.0, 0.6) - ycyl(4.0, 3.0))
+    lens = bd.Pos(0, PLATE_Y1 + 0.2, 87.0) * ycyl(3.9, 0.8)
     return [
         styled(ring, "palm_sensor_ring", AMBER_COLOR),
         styled(lens, "palm_sensor_lens", SENSOR_COLOR),
@@ -240,10 +229,10 @@ def _tensioners():
     out = []
     for i, dx in enumerate((-12.0, -6.0, 0.0, 6.0, 12.0)):
         face_y = -(8.75 + 0.75 * (20.0 - 6.0) / 27.0)
-        dial = Pos(dx, face_y - 1.1, 20.0) * ycyl(2.6, 2.4)
+        dial = bd.Pos(dx, face_y - 1.1, 20.0) * ycyl(2.6, 2.4)
         dial = safe_chamfer(dial, dial.edges(), 0.5)
         out.append(styled(dial, f"tensioner_dial_{i}", ALU_COLOR))
-        dot = Pos(dx, face_y - 2.5, 20.0) * ycyl(1.0, 0.7)
+        dot = bd.Pos(dx, face_y - 2.5, 20.0) * ycyl(1.0, 0.7)
         out.append(styled(dot, f"tensioner_dot_{i}", AMBER_COLOR))
     return out
 
@@ -255,14 +244,14 @@ def _knuckle_hardware():
         kx, _, kz = MCP_ORIGIN_MM[finger]
         out.append(
             styled(
-                Pos(kx, 0, kz) * pin("x", MCP_PIN_R, MCP_PIN_LEN),
+                bd.Pos(kx, 0, kz) * pin("x", MCP_PIN_R, MCP_PIN_LEN),
                 f"{finger}_mcp_pin",
                 ALU_COLOR,
             )
         )
     for finger, xr in (("index", 38.2), ("pinky", -37.2)):
         kx, _, kz = MCP_ORIGIN_MM[finger]
-        rim = Pos(xr, 0, kz) * (xcyl(4.6, 1.2) - xcyl(MCP_PIN_R + 0.4, 3.0))
+        rim = bd.Pos(xr, 0, kz) * (xcyl(4.6, 1.2) - xcyl(MCP_PIN_R + 0.4, 3.0))
         out.append(styled(rim, f"{finger}_mcp_rim", ALU_COLOR))
     return out
 
@@ -271,12 +260,12 @@ def _turret_hardware():
     """Bearing collar + spindle/cap for the thumb CMC turret (palm side)."""
     disc_z0 = CZ - TB_TANG_H / 2.0
     disc_z1 = CZ + TB_TANG_H / 2.0
-    collar = Pos(CX, CY, disc_z0 - 0.95) * (zcyl(TURRET_R + 0.7, 1.5) - zcyl(TB_TANG_R + 0.8, 3.0))
+    collar = bd.Pos(CX, CY, disc_z0 - 0.95) * (zcyl(TURRET_R + 0.7, 1.5) - zcyl(TB_TANG_R + 0.8, 3.0))
     collar = safe_chamfer(collar, collar.edges(), 0.4)
-    spindle = Pos(CX, CY, (disc_z0 - 5.0 + disc_z1 + 0.4) / 2.0) * zcyl(
+    spindle = bd.Pos(CX, CY, (disc_z0 - 5.0 + disc_z1 + 0.4) / 2.0) * zcyl(
         SPINDLE_R, disc_z1 + 0.4 - (disc_z0 - 5.0)
     )
-    cap = Pos(CX, CY, disc_z1 + 0.4 + 0.8) * zcyl(4.8, 1.6)
+    cap = bd.Pos(CX, CY, disc_z1 + 0.4 + 0.8) * zcyl(4.8, 1.6)
     cap = safe_chamfer(cap, cap.edges(), 0.5)
     spindle += cap
     return [

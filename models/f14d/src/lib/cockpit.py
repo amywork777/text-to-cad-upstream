@@ -37,9 +37,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from build123d import (Compound, Edge, Face, Location, Plane, Pos, Rectangle,
-                       RectangleRounded, Solid, Spline, Vector, Wire, extrude,
-                       loft)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import palette as P
@@ -208,15 +206,15 @@ def _face(x, runs):
     end and the loop closes.  Every station of one loft must produce the SAME
     edge count or the surface twists, so run structure is fixed per solid.
     """
-    pts = [[Vector(x, y, z) for y, z in run] for run in runs]
+    pts = [[bd.Vector(x, y, z) for y, z in run] for run in runs]
     edges = []
     for k, run in enumerate(pts):
-        edges.append(Edge.make_line(run[0], run[1]) if len(run) == 2
-                     else Spline(*run).edge())
+        edges.append(bd.Edge.make_line(run[0], run[1]) if len(run) == 2
+                     else bd.Spline(*run).edge())
         nxt = pts[(k + 1) % len(pts)][0]
         if (nxt - run[-1]).length > 1e-7:
-            edges.append(Edge.make_line(run[-1], nxt))
-    return Face(Wire(edges))
+            edges.append(bd.Edge.make_line(run[-1], nxt))
+    return bd.Face(bd.Wire(edges))
 
 
 def _poly_runs(pts):
@@ -241,7 +239,7 @@ def _band(x0, x1, y_lo, y_hi, thick, dz=0.0, nx=16, ny=26):
         outer = [(y, SURF(x, y) + dz) for y in ys]
         inner = _offset_in(outer, thick)
         faces.append(_face(x, [outer, list(reversed(inner))]))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _plug(x0, x1, y_fn, z_bot, z_cap, gap, nx=9, ny=20):
@@ -254,7 +252,7 @@ def _plug(x0, x1, y_fn, z_bot, z_cap, gap, nx=9, ny=20):
         zb = z_bot(x)
         top = [(y, min(SURF(x, y) - gap, z_cap)) for y in _cos(-w, w, ny)]
         faces.append(_face(x, [top, [(w, zb), (-w, zb)]]))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _box(x0, x1, y0, y1, z0, z1, r=0.0, axis="z"):
@@ -270,27 +268,27 @@ def _box(x0, x1, y0, y1, z0, z1, r=0.0, axis="z"):
     dx, dy, dz = x1 - x0, y1 - y0, z1 - z0
     c = (0.5 * (x0 + x1), 0.5 * (y0 + y1), 0.5 * (z0 + z1))
     if axis == "z":
-        sk = RectangleRounded(dx, dy, r) if r > 1e-6 else Rectangle(dx, dy)
-        s = extrude(sk, amount=dz / 2, both=True)
+        sk = bd.RectangleRounded(dx, dy, r) if r > 1e-6 else bd.Rectangle(dx, dy)
+        s = bd.extrude(sk, amount=dz / 2, both=True)
     elif axis == "x":
-        sk = RectangleRounded(dy, dz, r) if r > 1e-6 else Rectangle(dy, dz)
-        s = extrude(Plane.YZ * sk, amount=dx / 2, both=True)
+        sk = bd.RectangleRounded(dy, dz, r) if r > 1e-6 else bd.Rectangle(dy, dz)
+        s = bd.extrude(bd.Plane.YZ * sk, amount=dx / 2, both=True)
     else:
-        sk = RectangleRounded(dz, dx, r) if r > 1e-6 else Rectangle(dz, dx)
-        s = extrude(Plane.ZX * sk, amount=dy / 2, both=True)
-    return Pos(*c) * s
+        sk = bd.RectangleRounded(dz, dx, r) if r > 1e-6 else bd.Rectangle(dz, dx)
+        s = bd.extrude(bd.Plane.ZX * sk, amount=dy / 2, both=True)
+    return bd.Pos(*c) * s
 
 
 def _rod(p0, p1, r):
-    a, b = Vector(*p0), Vector(*p1)
+    a, b = bd.Vector(*p0), bd.Vector(*p1)
     d = b - a
-    return Solid.make_cylinder(r, d.length, Plane(origin=a, z_dir=d))
+    return bd.Solid.make_cylinder(r, d.length, bd.Plane(origin=a, z_dir=d))
 
 
 def _disc(centre, r, t, normal=(1, 0, 0)):
-    c = Vector(*centre)
-    n = Vector(*normal).normalized()
-    return Solid.make_cylinder(r, t, Plane(origin=c - n * (t * 0.5), z_dir=n))
+    c = bd.Vector(*centre)
+    n = bd.Vector(*normal).normalized()
+    return bd.Solid.make_cylinder(r, t, bd.Plane(origin=c - n * (t * 0.5), z_dir=n))
 
 
 def _fuse(parts):
@@ -307,7 +305,7 @@ def _fuse(parts):
     for p in parts[1:]:
         out = out + p
     if isinstance(out, (list, tuple)) or type(out).__name__ == "ShapeList":
-        return Compound(list(out))
+        return bd.Compound(list(out))
     return out
 
 
@@ -317,7 +315,7 @@ def _striped(p0, p1, r, n=7):
     Returns (yellow, black).  Both halves straddle the centreline, so each
     solid keeps a mirror partner in the symmetry audit.
     """
-    a, b = Vector(*p0), Vector(*p1)
+    a, b = bd.Vector(*p0), bd.Vector(*p1)
     yel, blk = [], []
     for i in range(n):
         s = a + (b - a) * (i / n)
@@ -399,7 +397,7 @@ def build_skin_cutter():
         pts = _cut_section(x)
         runs = [[pts[i], pts[(i + 1) % len(pts)]] for i in range(len(pts))]
         faces.append(_face(x, runs))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 #: Cutter solids for the airframe skin, in the WATERLINE frame (pre-``stance``).
@@ -427,7 +425,7 @@ def _rail(side):
         if side < 0:
             pts = list(reversed(pts))
         faces.append(_face(x, _poly_runs(pts)))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _seal(side):
@@ -442,7 +440,7 @@ def _seal(side):
         if side < 0:
             pts = list(reversed(pts))
         faces.append(_face(x, [[pts[i], pts[(i + 1) % 4]] for i in range(4)]))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _bow(x0, x1, thick, ny=24):
@@ -463,7 +461,7 @@ def _ws_bow_solid():
         w, sz = W_RAIL(x), SILL(x)
         top = [(y, SURF(x, y) + RAIL_PROUD) for y in _cos(-w, w, 20)]
         faces.append(_face(x, [top, [(w, sz), (-w, sz)]]))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _canopy_glass():
@@ -499,16 +497,16 @@ def _ws_flat():
     xa, xb = X_WS_GLASS[0] + 6, X_WS_GLASS[1] - 4
     ya, yb = W_DIV(xa), W_DIV(xb)
     za, zb = SURF(xa, ya), SURF(xb, yb)
-    a = Vector(xa, -ya, za)
-    b = Vector(xa, ya, za)
-    c = Vector(xb, yb, zb)
-    d = Vector(xb, -yb, zb)
-    face = Face(Wire([Edge.make_line(a, b), Edge.make_line(b, c),
-                      Edge.make_line(c, d), Edge.make_line(d, a)]))
+    a = bd.Vector(xa, -ya, za)
+    b = bd.Vector(xa, ya, za)
+    c = bd.Vector(xb, yb, zb)
+    d = bd.Vector(xb, -yb, zb)
+    face = bd.Face(bd.Wire([bd.Edge.make_line(a, b), bd.Edge.make_line(b, c),
+                      bd.Edge.make_line(c, d), bd.Edge.make_line(d, a)]))
     n = (b - a).cross(c - b).normalized()
     if n.Z > 0:
         n = -n
-    return extrude(face, amount=WS_FLAT_T, dir=n)
+    return bd.extrude(face, amount=WS_FLAT_T, dir=n)
 
 
 # ---------------------------------------------------------------------------
@@ -527,7 +525,7 @@ def _tub_shell():
             pts = [(-w, z0), (w, z0), (w, zt), (-w, zt)]
             faces.append(_face(x, [[pts[i], pts[(i + 1) % 4]]
                                    for i in range(4)]))
-        return loft(faces)
+        return bd.loft(faces)
     return prism(3.0, 3.0, -2.0) - prism(30.0, 30.0, 60.0)
 
 
@@ -548,7 +546,7 @@ def _console(side, x0, x1):
         if side < 0:
             pts = list(reversed(pts))
         faces.append(_face(x, [[pts[i], pts[(i + 1) % 4]] for i in range(4)]))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _console_panels(side, x0, x1, n=5):
@@ -579,7 +577,7 @@ def _panel(x_face, half_w, z0, z1, rake=-12.0):
     """
     p = _box(-30, 30, -half_w, half_w, -0.5 * (z1 - z0), 0.5 * (z1 - z0),
              r=24, axis="x")
-    return Location((x_face, 0, 0.5 * (z0 + z1)), (0, rake, 0)) * p
+    return bd.Location((x_face, 0, 0.5 * (z0 + z1)), (0, rake, 0)) * p
 
 
 def _panel_faces(x_face, z_mid, items, rake=-12.0, depth=32.0):
@@ -588,7 +586,7 @@ def _panel_faces(x_face, z_mid, items, rake=-12.0, depth=32.0):
     ``items`` are (y, z, kind, size) in the panel's own plane, mirrored about
     y=0 so the fused leaf stays bilaterally symmetric.
     """
-    loc = Location((x_face, 0, z_mid), (0, rake, 0))
+    loc = bd.Location((x_face, 0, z_mid), (0, rake, 0))
     out = []
     for y, z, kind, s in items:
         if kind == "dial":
@@ -611,7 +609,7 @@ def _seat(x_base, tag):
     the seat back.  The whole seat carries the recline, so pan, back, headbox
     and rails stay square to each other the way the real structure is.
     """
-    loc = Location((x_base, 0, SEAT_BASE_Z), (0, SEAT_RECLINE, 0))
+    loc = bd.Location((x_base, 0, SEAT_BASE_Z), (0, SEAT_RECLINE, 0))
     out = []
 
     def add(shape, label, colour, alpha=1.0):
@@ -695,7 +693,7 @@ def _hud():
     out.append(P.style(_box(x0 + 16, x1 - 8, -128, 128, 1096, 1112, r=14),
                        "hud_hood", P.STEEL_DARK))
     comb = _box(-8, 8, -124, 124, -60, 60, r=14, axis="x")
-    out.append(P.style(Location((4204, 0, 1146), (0, -24, 0)) * comb,
+    out.append(P.style(bd.Location((4204, 0, 1146), (0, -24, 0)) * comb,
                        "hud_combiner", P.HUD_GLASS, P.HUD_ALPHA))
     for s in (1, -1):
         out.append(P.style(_box(4186, 4222, s * 118, s * 134, 1100, 1200,
@@ -709,7 +707,7 @@ def _mirror(x_mid, y, z, tag, yaw=0.0):
     """Rear-view mirror: housing plus its reflective face."""
     body = _box(-34, 10, -52, 52, -38, 38, r=14, axis="x")
     glass = _box(-40, -32, -44, 44, -30, 30, r=10, axis="x")
-    loc = Location((x_mid, y, z), (0, -22, yaw))
+    loc = bd.Location((x_mid, y, z), (0, -22, yaw))
     return [P.style(loc * body, f"mirror_housing:{tag}", P.CANOPY_FRAME),
             P.style(loc * glass, f"mirror_glass:{tag}", MIRROR_FACE)]
 
@@ -722,14 +720,14 @@ def _canopy_mechanism():
     RIO, where it reads through the aft glass.
     """
     out = []
-    a = Vector(X_OPEN_AFT - 40, 0, 780)
-    b = Vector(X_OPEN_AFT - 210, 0, 1220)
+    a = bd.Vector(X_OPEN_AFT - 40, 0, 780)
+    b = bd.Vector(X_OPEN_AFT - 210, 0, 1220)
     d = (b - a).normalized()
     out.append(P.style(_rod(tuple(a), tuple(a + d * 300), 56),
                        "canopy_actuator_cylinder", P.ALUM_DARK))
     out.append(P.style(_rod(tuple(a + d * 290), tuple(b - d * 40), 27),
                        "canopy_actuator_rod", P.OLEO_CHROME))
-    out.append(P.style(Pos(*(b - d * 22)) * _box(-38, 38, -32, 32, -32, 32,
+    out.append(P.style(bd.Pos(*(b - d * 22)) * _box(-38, 38, -32, 32, -32, 32,
                                                  r=10, axis="x"),
                        "canopy_actuator_clevis", P.STEEL_DARK))
     out.append(P.style(_box(X_OPEN_AFT - 96, X_OPEN_AFT - 10, -76, 76,
@@ -859,7 +857,7 @@ def _interior():
     # --- stick, throttles, RIO hand controller ----------------------------
     out.append(P.style(_rod((4664, 0, 290), (4640, 0, 600), 26),
                        "control_stick_column", P.COCKPIT_BLACK))
-    out.append(P.style(Location((4630, 0, 668), (0, -8, 0))
+    out.append(P.style(bd.Location((4630, 0, 668), (0, -8, 0))
                        * _box(-42, 42, -36, 36, -70, 70, r=26),
                        "control_stick_grip", P.HANDLE_BLACK))
     out.append(P.style(_box(4356, 4606, 190, 300, 700, 762, r=18),
@@ -867,7 +865,7 @@ def _interior():
     thr = []
     for i, dy in enumerate((214, 268)):
         thr.append(_rod((4430 + 16 * i, dy, 752), (4588, dy, 818), 18))
-        thr.append(Pos(4588, dy, 824) * Solid.make_sphere(29))
+        thr.append(bd.Pos(4588, dy, 824) * bd.Solid.make_sphere(29))
     out.append(P.style(_fuse(thr), "throttle_levers:port", P.HANDLE_BLACK))
     out.append(P.style(_box(5820, 5990, -300, -190, 700, 762, r=18),
                        "rio_hand_controller:stbd", P.COCKPIT_BLACK))

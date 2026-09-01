@@ -13,21 +13,7 @@ from __future__ import annotations
 
 import traceback
 
-from build123d import (
-    Axis,
-    Box,
-    Compound,
-    Cylinder,
-    GeomType,
-    Plane,
-    Pos,
-    RectangleRounded,
-    Rot,
-    chamfer,
-    fillet,
-    loft,
-    mirror,
-)
+from cadgen import build123d as bd
 
 from .juno_lib import (
     ACCENT_COLOR,
@@ -63,7 +49,7 @@ def _try_fillet(shape, edges, radius):
     try:
         edges = list(edges)
         if edges:
-            return _solo(fillet(edges, radius))
+            return _solo(bd.fillet(edges, radius))
     except Exception:
         pass
     return shape
@@ -73,18 +59,18 @@ def _try_chamfer(shape, edges, length):
     try:
         edges = list(edges)
         if edges:
-            return _solo(chamfer(edges, length))
+            return _solo(bd.chamfer(edges, length))
     except Exception:
         pass
     return shape
 
 
 def _cyl_y(radius, length, center=(0.0, 0.0, 0.0)):
-    return Pos(*center) * Rot(-90, 0, 0) * Cylinder(radius, length)
+    return bd.Pos(*center) * bd.Rot(-90, 0, 0) * bd.Cylinder(radius, length)
 
 
 def _cyl_x(radius, length, center=(0.0, 0.0, 0.0)):
-    return Pos(*center) * Rot(0, 90, 0) * Cylinder(radius, length)
+    return bd.Pos(*center) * bd.Rot(0, 90, 0) * bd.Cylinder(radius, length)
 
 
 def _loft_z(specs):
@@ -93,10 +79,10 @@ def _loft_z(specs):
     specs: iterable of (z, x_size, y_size, x_center, y_center, corner_r).
     """
     faces = [
-        Pos(xc, yc, z) * RectangleRounded(w, d, r)
+        bd.Pos(xc, yc, z) * bd.RectangleRounded(w, d, r)
         for (z, w, d, xc, yc, r) in specs
     ]
-    return _solo(loft(faces))
+    return _solo(bd.loft(faces))
 
 
 def _loft_x(specs):
@@ -105,10 +91,10 @@ def _loft_x(specs):
     specs: iterable of (x, y_size, z_size, z_center, corner_r).
     """
     faces = [
-        Plane.YZ.offset(x) * Pos(0, zc, 0) * RectangleRounded(wy, hz, r)
+        bd.Plane.YZ.offset(x) * bd.Pos(0, zc, 0) * bd.RectangleRounded(wy, hz, r)
         for (x, wy, hz, zc, r) in specs
     ]
-    return _solo(loft(faces))
+    return _solo(bd.loft(faces))
 
 
 def _rim_chamfer(shape, radius, length):
@@ -116,7 +102,7 @@ def _rim_chamfer(shape, radius, length):
     try:
         edges = [
             e
-            for e in shape.edges().filter_by(GeomType.CIRCLE)
+            for e in shape.edges().filter_by(bd.GeomType.CIRCLE)
             if abs(e.radius - radius) < 0.6
         ]
         return _try_chamfer(shape, edges, length)
@@ -129,7 +115,7 @@ def _yoke_fillet(shape, z_lo, z_hi, radius):
     try:
         edges = [
             e
-            for e in shape.edges().filter_by(Axis.Z)
+            for e in shape.edges().filter_by(bd.Axis.Z)
             if z_lo < e.center().Z < z_hi and e.length > 20
         ]
         return _try_fillet(shape, edges, radius)
@@ -140,7 +126,7 @@ def _yoke_fillet(shape, z_lo, z_hi, radius):
 def _mirror_children(children):
     out = []
     for c in children:
-        m = mirror(c, about=Plane.XZ)
+        m = bd.mirror(c, about=bd.Plane.XZ)
         if m.volume < 0:  # reversed orientation from the mirror
             try:
                 m = m.fix()
@@ -151,7 +137,7 @@ def _mirror_children(children):
 
 
 def _fallback(label, size):
-    return [styled(Box(*size), f"{label}_fallback", STRUCT_COLOR)]
+    return [styled(bd.Box(*size), f"{label}_fallback", STRUCT_COLOR)]
 
 
 # ----------------------------------------------------------------- thigh
@@ -191,7 +177,7 @@ def _thigh_children():
         ]
     )
     shell = shell - core
-    shell = shell - (Pos(0, 0, -140.5) * Box(320, 320, 3))  # panel reveal
+    shell = shell - (bd.Pos(0, 0, -140.5) * bd.Box(320, 320, 3))  # panel reveal
     panels = _solids_over(shell)[:2]
     tags = ("upper", "lower")
     for sol, tag in zip(panels, tags):
@@ -200,9 +186,9 @@ def _thigh_children():
 
     # Knee fork (locked): yoke + twin plates, inner faces y=+-38, outer
     # y=+-48, spanning z -225..-324, bored dia 56 on the knee axis.
-    fork = Pos(0, 0, -241) * Box(58, 96, 32)
+    fork = bd.Pos(0, 0, -241) * bd.Box(58, 96, 32)
     for s in (1.0, -1.0):
-        fork = fork + Pos(0, s * 43, -273) * Box(60, 10, 34)
+        fork = fork + bd.Pos(0, s * 43, -273) * bd.Box(60, 10, 34)
         fork = fork + _cyl_y(34, 10, (0, s * 43, KNEE_Z))
     fork = _solo(fork - _cyl_y(28, 120, (0, 0, KNEE_Z)))
     # relief arch so the shin's knee can (dia 92, |y|<=33) swings clear
@@ -270,7 +256,7 @@ def _shin_children():
         ]
     )
     guard = guard - core
-    guard = guard - (Pos(0, 0, -145.5) * Box(320, 320, 3))
+    guard = guard - (bd.Pos(0, 0, -145.5) * bd.Box(320, 320, 3))
     panels = _solids_over(guard)[:2]
     for sol, tag in zip(panels, ("upper", "lower")):
         sol = _try_chamfer(sol, sol.edges(), 0.5)
@@ -278,9 +264,9 @@ def _shin_children():
 
     # Ankle fork (locked): plates inner y=+-26, outer y=+-34, bored dia 40
     # on the ankle-pitch axis through (0,0,-290).
-    fork = Pos(0, 0, -241) * Box(46, 68, 28)
+    fork = bd.Pos(0, 0, -241) * bd.Box(46, 68, 28)
     for s in (1.0, -1.0):
-        fork = fork + Pos(0, s * 30, -270.5) * Box(54, 8, 39)
+        fork = fork + bd.Pos(0, s * 30, -270.5) * bd.Box(54, 8, 39)
         fork = fork + _cyl_y(27, 8, (0, s * 30, ANKLE_Z))
     fork = _solo(fork - _cyl_y(20, 100, (0, 0, ANKLE_Z)))
     fork = _yoke_fillet(fork, -256, -226, 7.0)
@@ -327,11 +313,11 @@ def _foot_children():
     )
     sole = sole - roll_clear
     # toe-up wedge over the last ~30 mm (cut line (82,-26) -> (113,-20.4))
-    sole = sole - (Pos(96.5, 0, -29.46) * Rot(0, -10.3, 0) * Box(44, 96, 12))
+    sole = sole - (bd.Pos(96.5, 0, -29.46) * bd.Rot(0, -10.3, 0) * bd.Box(44, 96, 12))
     # small heel kick (cut line (-58,-26) -> (-69,-22.5))
-    sole = sole - (Pos(-63, 0, -29.66) * Rot(0, 17.65, 0) * Box(24, 96, 10))
+    sole = sole - (bd.Pos(-63, 0, -29.66) * bd.Rot(0, 17.65, 0) * bd.Box(24, 96, 10))
     for gx in (-54.0, -36.0, -18.0, 36.0, 54.0, 72.0):  # tread grooves
-        sole = sole - (Pos(gx, 0, -25.8) * Box(4.5, 100, 4.5))
+        sole = sole - (bd.Pos(gx, 0, -25.8) * bd.Box(4.5, 100, 4.5))
     ch.append(styled(_solo(sole), "sole", RUBBER_COLOR))
 
     # Sneaker-like wedge upper (ice-gray), lofted along X. Heights raised
@@ -357,11 +343,11 @@ def _foot_children():
     # domed around the roll axis, tied by side rails outside the keep-clear.
     saddle = None
     for s in (1.0, -1.0):
-        plate = Pos(27 * s, 0, -1) * Box(10, 62, 14)
+        plate = bd.Pos(27 * s, 0, -1) * bd.Box(10, 62, 14)
         plate = plate + _cyl_x(19, 10, (27 * s, 0, 0))
         saddle = plate if saddle is None else saddle + plate
-        saddle = saddle + Pos(0, s * 27.75, -2) * Box(64, 6.5, 12)
-    saddle = saddle & (Pos(0, 0, 4) * Box(80, 90, 24))  # clip to z -8..16
+        saddle = saddle + bd.Pos(0, s * 27.75, -2) * bd.Box(64, 6.5, 12)
+    saddle = saddle & (bd.Pos(0, 0, 4) * bd.Box(80, 90, 24))  # clip to z -8..16
     saddle = _solo(saddle)
     saddle = _try_chamfer(saddle, saddle.edges(), 0.8)
     ch.append(styled(saddle, "roll_saddle", STRUCT_COLOR))

@@ -36,22 +36,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Compound,
-    Cylinder,
-    FilletPolyline,
-    Location,
-    Part,
-    Plane,
-    Polyline,
-    RegularPolygon,
-    Solid,
-    Spline,
-    loft,
-    make_face,
-    revolve,
-)
+from cadgen import build123d as bd
 
 
 from lib import surfaces as S
@@ -73,11 +58,11 @@ def _chain_wire(chain):
     """Close a (radius, axial) chain into a planar wire on Plane.XY."""
     edges = []
     for kind, pts in chain:
-        edges.append(Spline(*pts) if kind == "spline" else Polyline(*pts))
+        edges.append(bd.Spline(*pts) if kind == "spline" else bd.Polyline(*pts))
     first = chain[0][1][0]
     last = chain[-1][1][-1]
     if (abs(first[0] - last[0]) + abs(first[1] - last[1])) > 1e-9:
-        edges.append(Polyline(last, first))
+        edges.append(bd.Polyline(last, first))
     wire = edges[0]
     for e in edges[1:]:
         wire = wire + e
@@ -91,11 +76,11 @@ def _chain_face(chain):
     ``Plane.XZ``, which sends (u, v) -> (u, 0, v): exactly the half-plane
     ``revolve(..., Axis.Z)`` wants.
     """
-    return Plane.XZ * make_face(_chain_wire(chain))
+    return bd.Plane.XZ * bd.make_face(_chain_wire(chain))
 
 
 def _ring(chain):
-    return revolve(_chain_face(chain), Axis.Z)
+    return bd.revolve(_chain_face(chain), bd.Axis.Z)
 
 
 def _loop(pts):
@@ -406,14 +391,14 @@ def _hub_disc(sp):
 def _centre_lock(sp):
     """Bronze centre-lock nut -- the single warm accent on the wheel."""
     a0 = sp.a_hub
-    ring = Location((0, 0, a0 + 16.0)) * Cylinder(radius=56.0, height=6.0)
-    body = loft([
-        Plane.XY.offset(a0 + 15.0) * RegularPolygon(50.0, 6),
-        Plane.XY.offset(a0 + 32.0) * RegularPolygon(50.0, 6),
-        Plane.XY.offset(a0 + 38.0) * RegularPolygon(44.0, 6),
-        Plane.XY.offset(a0 + 42.0) * RegularPolygon(34.0, 6),
+    ring = bd.Location((0, 0, a0 + 16.0)) * bd.Cylinder(radius=56.0, height=6.0)
+    body = bd.loft([
+        bd.Plane.XY.offset(a0 + 15.0) * bd.RegularPolygon(50.0, 6),
+        bd.Plane.XY.offset(a0 + 32.0) * bd.RegularPolygon(50.0, 6),
+        bd.Plane.XY.offset(a0 + 38.0) * bd.RegularPolygon(44.0, 6),
+        bd.Plane.XY.offset(a0 + 42.0) * bd.RegularPolygon(34.0, 6),
     ])
-    boss = Location((0, 0, a0 + 41.5)) * Cylinder(radius=18.0, height=7.0)
+    boss = bd.Location((0, 0, a0 + 41.5)) * bd.Cylinder(radius=18.0, height=7.0)
     return ring, body, boss
 
 
@@ -432,7 +417,7 @@ def _blade_section(chord, thick, flat):
     rim so the blade ends as a broad paddle, not a wedge.
     """
     hc, ht = chord / 2.0, thick / 2.0
-    return make_face(FilletPolyline(
+    return bd.make_face(bd.FilletPolyline(
         (-hc, -0.10 * thick),           # leading edge
         (-flat * hc, ht),
         (flat * hc, ht),                # outboard flat
@@ -470,10 +455,10 @@ def _blade(sp):
         # (phi, 0, rake): the FIRST component turns the section about the
         # plane's normal -- the radial direction -- which is blade pitch.  The
         # third turns it about the wheel axis, which rakes the tip back.
-        pl = Plane(origin=(r, 0.0, a), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+        pl = bd.Plane(origin=(r, 0.0, a), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
         pl = pl.rotated((phi, 0.0, sp.rake * t))
         sections.append(pl * _blade_section(chord, thick, 0.56 + 0.20 * t))
-    return loft(sections)
+    return bd.loft(sections)
 
 
 # ---------------------------------------------------------------------------
@@ -524,9 +509,9 @@ def _section_samples(x):
     if hit is None:
         top, flank, under = S.body_section_bands(key * _SECTION_STEP)
         edges = (
-            Spline(*top, tangents=((1, 0), _tangent2(top[-2], top[-1]))),
-            Spline(*flank),
-            Spline(*under, tangents=(_tangent2(under[0], under[1]), (-1, 0))),
+            bd.Spline(*top, tangents=((1, 0), _tangent2(top[-2], top[-1]))),
+            bd.Spline(*flank),
+            bd.Spline(*under, tangents=(_tangent2(under[0], under[1]), (-1, 0))),
         )
         hit = []
         for e in edges:
@@ -691,13 +676,13 @@ def _arch_flare(sp, side):
     faces = []
     for th, bl, pr in zip(thetas, b_lip, proud):
         ct, st = math.cos(th), math.sin(th)
-        plane = Plane(
+        plane = bd.Plane(
             origin=(sp.hub_x, side * sp.hub_y, sp.hub_z),
             x_dir=(ct, 0.0, st),
             z_dir=(-side * st, 0.0, side * ct),
         )
-        faces.append(plane * make_face(_chain_wire(_flare_profile(sp, th, bl, pr))))
-    return loft(faces)
+        faces.append(plane * bd.make_face(_chain_wire(_flare_profile(sp, th, bl, pr))))
+    return bd.loft(faces)
 
 
 # ---------------------------------------------------------------------------
@@ -732,7 +717,7 @@ def _corners():
             name = f"{sp.name}_{'left' if side > 0 else 'right'}"
             rx = (-90.0 + sp.camber) if side > 0 else (90.0 - sp.camber)
             hub_z = S.FRONT_HUB_Z if sp is FRONT else S.REAR_HUB_Z
-            out.append((sp, name, Location((x, side * y0, hub_z), (rx, 0, 0))))
+            out.append((sp, name, bd.Location((x, side * y0, hub_z), (rx, 0, 0))))
     return out
 
 
@@ -762,10 +747,10 @@ def _bake(shape):
     out = downcast(transformed.Shape())
     kind = out.ShapeType()
     if kind == TopAbs_COMPOUND:
-        return Compound(out)
+        return bd.Compound(out)
     if kind == TopAbs_SOLID:
-        return Solid(out)
-    return Part(out)
+        return bd.Solid(out)
+    return bd.Part(out)
 
 
 def build():
@@ -793,7 +778,7 @@ def build():
             placed.color = leaf.color
             kids.append(placed)
         for k in range(sp.n_spokes):
-            spin = Location((0, 0, 0), (0, 0, 360.0 * k / sp.n_spokes))
+            spin = bd.Location((0, 0, 0), (0, 0, 360.0 * k / sp.n_spokes))
             blade = _bake((base * spin) * _blade(sp))
             kids.append(style(blade, f"spoke:{name}_{k}", P.ALUMINIUM_DARK))
         corner_groups.append(group(f"wheel:{name}", kids))

@@ -43,25 +43,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Circle,
-    Cone,
-    Compound,
-    Cylinder,
-    Location,
-    Plane,
-    Polyline,
-    Pos,
-    Rot,
-    extrude,
-    fillet,
-    make_face,
-    revolve,
-)
-
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import surfaces as S
 from lib import palette as P
@@ -209,12 +191,12 @@ REAR = Axle(
 
 def _cyl(radius, z0, z1, x=0.0, y=0.0):
     """Cylinder spanning z0..z1 (``Cylinder`` itself is centred on its origin)."""
-    return Pos(x, y, (z0 + z1) / 2.0) * Cylinder(radius=radius, height=abs(z1 - z0))
+    return bd.Pos(x, y, (z0 + z1) / 2.0) * bd.Cylinder(radius=radius, height=abs(z1 - z0))
 
 
 def _ring(r_out, r_in, z0, z1):
     """Annular slab between two Z planes."""
-    return Pos(0, 0, z0) * extrude(Circle(r_out) - Circle(r_in), amount=z1 - z0)
+    return bd.Pos(0, 0, z0) * bd.extrude(bd.Circle(r_out) - bd.Circle(r_in), amount=z1 - z0)
 
 
 def _polar(r, deg):
@@ -224,10 +206,10 @@ def _polar(r, deg):
 
 def _radial_cyl(radius, r0, r1, z, deg):
     """Cylinder whose axis runs radially outward at ``deg``, from r0 to r1."""
-    body = Location(((r0 + r1) / 2.0, 0, z), (0, 90, 0)) * Cylinder(
+    body = bd.Location(((r0 + r1) / 2.0, 0, z), (0, 90, 0)) * bd.Cylinder(
         radius=radius, height=abs(r1 - r0)
     )
-    return Rot(0, 0, deg) * body
+    return bd.Rot(0, 0, deg) * body
 
 
 def _half_space(p1, p2, keep, size=700.0):
@@ -244,12 +226,12 @@ def _half_space(p1, p2, keep, size=700.0):
     cx = (p1[0] + p2[0]) / 2.0 - nx * size / 2.0
     cy = (p1[1] + p2[1]) / 2.0 - ny * size / 2.0
     deg = math.degrees(math.atan2(ny, nx))
-    return Location((cx, cy, 0), (0, 0, deg)) * Box(size, size, 500.0)
+    return bd.Location((cx, cy, 0), (0, 0, deg)) * bd.Box(size, size, 500.0)
 
 
 def _try_fillet(sketch, radius):
     try:
-        return fillet(sketch.vertices(), radius)
+        return bd.fillet(sketch.vertices(), radius)
     except Exception:  # pragma: no cover - kernel dependent
         return sketch
 
@@ -263,9 +245,9 @@ def _arc_solid(r_in, r_out, z0, z1, arc, centre_deg=0.0):
 
 def _arc_profile(points, arc, centre_deg=0.0):
     """Sector swept from an arbitrary closed (r, z) profile."""
-    face = make_face(Polyline(*points, close=True))
-    solid = revolve(Plane.XZ * face, axis=Axis.Z, revolution_arc=arc)
-    return Rot(0, 0, centre_deg - arc / 2.0) * solid
+    face = bd.make_face(bd.Polyline(*points, close=True))
+    solid = bd.revolve(bd.Plane.XZ * face, axis=bd.Axis.Z, revolution_arc=arc)
+    return bd.Rot(0, 0, centre_deg - arc / 2.0) * solid
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +273,7 @@ def _drill_cutter(ax):
         for k in range(per):
             t = k / (per - 1.0)
             x, y = _polar(r0 + (r1 - r0) * t, base + sweep * (t - 0.5))
-            tools.append(Pos(x, y, 0) * Cylinder(radius=3.9, height=depth))
+            tools.append(bd.Pos(x, y, 0) * bd.Cylinder(radius=3.9, height=depth))
     return tools
 
 
@@ -302,21 +284,21 @@ def _edge_chamfer(ax):
     for sign in (1, -1):
         z_face = sign * (half + 0.6)
         z_back = sign * (half - 2.6)
-        face = make_face(
-            Polyline(
+        face = bd.make_face(
+            bd.Polyline(
                 (ax.R - 2.6, z_face),
                 (ax.R + 3.0, z_face),
                 (ax.R + 3.0, z_back),
                 close=True,
             )
         )
-        out.append(revolve(Plane.XZ * face, axis=Axis.Z, revolution_arc=360))
+        out.append(bd.revolve(bd.Plane.XZ * face, axis=bd.Axis.Z, revolution_arc=360))
     return out
 
 
 def _vane(ax, r0, half_in, half_out):
-    face = make_face(
-        Polyline(
+    face = bd.make_face(
+        bd.Polyline(
             (r0, -half_in),
             (ax.R, -half_out),
             (ax.R, half_out),
@@ -324,7 +306,7 @@ def _vane(ax, r0, half_in, half_out):
             close=True,
         )
     )
-    return Pos(0, 0, -ax.gap / 2.0) * extrude(face, amount=ax.gap)
+    return bd.Pos(0, 0, -ax.gap / 2.0) * bd.extrude(face, amount=ax.gap)
 
 
 def _band(ax, r_in, r_out):
@@ -366,14 +348,14 @@ def _disc_leaves(ax):
         a = k * pitch
         leaves.append(
             style(
-                Rot(0, 0, a) * long_proto,
+                bd.Rot(0, 0, a) * long_proto,
                 f"disc_vane_long:{ax.name}_{k:02d}",
                 P.CARBON,
             )
         )
         leaves.append(
             style(
-                Rot(0, 0, a + pitch / 2.0) * short_proto,
+                bd.Rot(0, 0, a + pitch / 2.0) * short_proto,
                 f"disc_vane_short:{ax.name}_{k:02d}",
                 P.CARBON,
             )
@@ -392,8 +374,8 @@ def _hat(ax):
     z_d0 = -ax.T / 2.0                      # against the disc's inboard plate
     z_d1 = z_d0 - 9.0
 
-    profile = make_face(
-        Polyline(
+    profile = bd.make_face(
+        bd.Polyline(
             (ax.hat_bore, z_face),
             (ax.hat_wall_o, z_face),
             (ax.hat_wall_o, z_d0),
@@ -406,7 +388,7 @@ def _hat(ax):
         )
     )
     profile = _try_fillet(profile, 4.0)
-    hat = revolve(Plane.XZ * profile, axis=Axis.Z, revolution_arc=360)
+    hat = bd.revolve(bd.Plane.XZ * profile, axis=bd.Axis.Z, revolution_arc=360)
 
     z_mid = (z_d0 + z_in) / 2.0
     cuts = [
@@ -436,11 +418,11 @@ def _bobbins(ax):
     for k in range(12):
         x, y = _polar(ax.bobbin_r, 15.0 + k * 30.0)
         out.append(
-            style(Pos(x, y, 0) * shank, f"disc_bobbin:{ax.name}_{k:02d}", P.BRONZE)
+            style(bd.Pos(x, y, 0) * shank, f"disc_bobbin:{ax.name}_{k:02d}", P.BRONZE)
         )
         out.append(
             style(
-                Pos(x, y, 0) * head,
+                bd.Pos(x, y, 0) * head,
                 f"disc_bobbin_head:{ax.name}_{k:02d}",
                 P.BRONZE_DARK,
             )
@@ -455,8 +437,8 @@ def _bobbins(ax):
 
 def _hub(ax):
     z_face = ax.hub_face_z - 10.0           # the hat's inner flange seats here
-    profile = make_face(
-        Polyline(
+    profile = bd.make_face(
+        bd.Polyline(
             (26.0, z_face),
             (ax.carrier_r, z_face),
             (ax.carrier_r, -30.0),
@@ -468,7 +450,7 @@ def _hub(ax):
         )
     )
     profile = _try_fillet(profile, 5.0)
-    carrier = revolve(Plane.XZ * profile, axis=Axis.Z, revolution_arc=360)
+    carrier = bd.revolve(bd.Plane.XZ * profile, axis=bd.Axis.Z, revolution_arc=360)
 
     leaves = [
         style(carrier, f"hub_carrier:{ax.name}", P.ALUMINIUM_DARK),
@@ -502,8 +484,8 @@ def _hub(ax):
 
 def _caliper(ax):
     a, b = ax.half_w, ax.mouth
-    profile = make_face(
-        Polyline(
+    profile = bd.make_face(
+        bd.Polyline(
             (ax.cal_ri, -a),
             (ax.cal_ro, -a),
             (ax.cal_ro, a),
@@ -516,8 +498,8 @@ def _caliper(ax):
         )
     )
     profile = _try_fillet(profile, 4.0)
-    body = revolve(Plane.XZ * profile, axis=Axis.Z, revolution_arc=ax.cal_arc)
-    body = Rot(0, 0, -ax.cal_arc / 2.0) * body
+    body = bd.revolve(bd.Plane.XZ * profile, axis=bd.Axis.Z, revolution_arc=ax.cal_arc)
+    body = bd.Rot(0, 0, -ax.cal_arc / 2.0) * body
 
     # piston bosses standing proud of each leg (fused before the ends are
     # necked, so a bore that reaches past the taper gets trimmed flush)
@@ -527,8 +509,8 @@ def _caliper(ax):
         x, y = _polar(r_boss, theta)
         for sign in (1, -1):
             bosses.append(
-                Pos(x, y, sign * (a + 1.0))
-                * Cone(
+                bd.Pos(x, y, sign * (a + 1.0))
+                * bd.Cone(
                     bottom_radius=bore if sign > 0 else bore - 3.5,
                     top_radius=bore - 3.5 if sign > 0 else bore,
                     height=6.0,
@@ -659,7 +641,7 @@ def _backing_shroud(ax):
 
 def _caliper_bracket(ax):
     """Machined arm tying the caliper ears back to the hub carrier."""
-    sketch = Circle(86.0)
+    sketch = bd.Circle(86.0)
     for sign in (1, -1):
         ea = sign * ax.ear_ang
         n = (-math.sin(math.radians(ea)), math.cos(math.radians(ea)))
@@ -668,10 +650,10 @@ def _caliper_bracket(ax):
         p_b = _polar(84.0, ea + 26.0)
         p_c = (ex + 22.0 * n[0], ey + 22.0 * n[1])
         p_d = (ex - 22.0 * n[0], ey - 22.0 * n[1])
-        sketch = sketch + make_face(Polyline(p_a, p_d, p_c, p_b, close=True))
-        sketch = sketch + Pos(ex, ey) * Circle(21.0)
+        sketch = sketch + bd.make_face(bd.Polyline(p_a, p_d, p_c, p_b, close=True))
+        sketch = sketch + bd.Pos(ex, ey) * bd.Circle(21.0)
 
-    plate = Pos(0, 0, ax.brk_z0) * extrude(sketch, amount=ax.brk_z1 - ax.brk_z0)
+    plate = bd.Pos(0, 0, ax.brk_z0) * bd.extrude(sketch, amount=ax.brk_z1 - ax.brk_z0)
     leaves = [style(plate, f"caliper_bracket:{ax.name}", P.ALUMINIUM_DARK)]
     for sign in (1, -1):
         x, y = _polar(ax.ear_r, sign * ax.ear_ang)
@@ -692,11 +674,11 @@ def _caliper_bracket(ax):
 
 def _rotor_prototype(ax):
     kids = _disc_leaves(ax) + [_hat(ax)] + _bobbins(ax) + _hub(ax)
-    return Compound(children=kids, label=f"brake_rotor_{ax.name}")
+    return bd.Compound(children=kids, label=f"brake_rotor_{ax.name}")
 
 
 def _caliper_prototype(ax):
-    return Compound(children=_caliper(ax), label=f"brake_caliper_{ax.name}")
+    return bd.Compound(children=_caliper(ax), label=f"brake_caliper_{ax.name}")
 
 
 def _corner_locations():
@@ -716,9 +698,9 @@ def _corner_locations():
         name = "{}_{}".format(
             "front" if front else "rear", "left" if side > 0 else "right"
         )
-        base = Location((x, y, z), (-90 if side > 0 else 90, 0, 0))
+        base = bd.Location((x, y, z), (-90 if side > 0 else 90, 0, 0))
         clock = -ax.clock if side > 0 else ax.clock
-        out.append((ax, name, base, base * Rot(0, 0, clock)))
+        out.append((ax, name, base, base * bd.Rot(0, 0, clock)))
     return out
 
 

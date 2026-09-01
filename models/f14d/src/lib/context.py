@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Compound, Location, Plane, Vector
+from cadgen import build123d as bd
 
 from lib.palette import srgb, style  # noqa: F401  (re-export)
 
@@ -22,7 +22,7 @@ def group(label, children):
     kids = [c for c in children if c is not None]
     if not kids:
         raise RuntimeError(f"group {label!r} has no children")
-    return Compound(children=kids, label=label)
+    return bd.Compound(children=kids, label=label)
 
 
 def mirror_pair(build_one, label_base, sides=(1, -1)):
@@ -43,7 +43,7 @@ def mirror_pair(build_one, label_base, sides=(1, -1)):
 
 
 def place(shape, x=0.0, y=0.0, z=0.0, rx=0.0, ry=0.0, rz=0.0):
-    return Location((x, y, z), (rx, ry, rz)) * shape
+    return bd.Location((x, y, z), (rx, ry, rz)) * shape
 
 
 def frame(origin, x_dir, z_dir):
@@ -55,7 +55,7 @@ def frame(origin, x_dir, z_dir):
     aerofoil 'twist' comes out as a yaw that slides the section out of its own
     station.  See references/build123d-modeling.md.
     """
-    return Plane(origin=Vector(*origin), x_dir=Vector(*x_dir), z_dir=Vector(*z_dir))
+    return bd.Plane(origin=bd.Vector(*origin), x_dir=bd.Vector(*x_dir), z_dir=bd.Vector(*z_dir))
 
 
 def section_frame(origin, sweep_deg=0.0, twist_deg=0.0, side=1):
@@ -67,9 +67,9 @@ def section_frame(origin, sweep_deg=0.0, twist_deg=0.0, side=1):
     """
     t = math.radians(twist_deg)
     s = math.radians(sweep_deg)
-    x_dir = Vector(math.cos(t) * math.cos(s), -side * math.cos(t) * math.sin(s), -math.sin(t))
-    normal = Vector(math.sin(s), side * math.cos(s), 0.0)
-    return Plane(origin=Vector(*origin), x_dir=x_dir, z_dir=normal)
+    x_dir = bd.Vector(math.cos(t) * math.cos(s), -side * math.cos(t) * math.sin(s), -math.sin(t))
+    normal = bd.Vector(math.sin(s), side * math.cos(s), 0.0)
+    return bd.Plane(origin=bd.Vector(*origin), x_dir=x_dir, z_dir=normal)
 
 
 # ---------------------------------------------------------------------------

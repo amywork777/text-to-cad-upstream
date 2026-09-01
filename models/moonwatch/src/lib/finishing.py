@@ -12,28 +12,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    BuildLine,
-    BuildSketch,
-    Circle,
-    Color,
-    Cone,
-    Cylinder,
-    Mode,
-    Part,
-    Plane,
-    Polygon,
-    Pos,
-    Rot,
-    Sphere,
-    Spline,
-    chamfer,
-    extrude,
-    fillet,
-    make_face,
-    revolve,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 
@@ -45,7 +24,7 @@ from lib import spec as S
 # see a bevel should apply it before booleans where possible.
 # ---------------------------------------------------------------------------
 
-def safe_chamfer(part: Part, edges, length: float, min_length: float = 0.04):
+def safe_chamfer(part: bd.Part, edges, length: float, min_length: float = 0.04):
     """Chamfer `edges`, retrying at 0.7x steps down to min_length; on total
     failure returns the part unchanged. Returns (part, applied_length|None)."""
     width = length
@@ -54,7 +33,7 @@ def safe_chamfer(part: Part, edges, length: float, min_length: float = 0.04):
         return part, None
     while width >= min_length:
         try:
-            result = chamfer(edge_list, length=width)
+            result = bd.chamfer(edge_list, length=width)
             if result.volume > 0:
                 return result, width
         except Exception:
@@ -64,7 +43,7 @@ def safe_chamfer(part: Part, edges, length: float, min_length: float = 0.04):
     return part, None
 
 
-def safe_fillet(part: Part, edges, radius: float, min_radius: float = 0.04):
+def safe_fillet(part: bd.Part, edges, radius: float, min_radius: float = 0.04):
     """Fillet with the same retry ladder as safe_chamfer."""
     r = radius
     edge_list = list(edges)
@@ -72,7 +51,7 @@ def safe_fillet(part: Part, edges, radius: float, min_radius: float = 0.04):
         return part, None
     while r >= min_radius:
         try:
-            result = fillet(edge_list, radius=r)
+            result = bd.fillet(edge_list, radius=r)
             if result.volume > 0:
                 return result, r
         except Exception:
@@ -81,7 +60,7 @@ def safe_fillet(part: Part, edges, radius: float, min_radius: float = 0.04):
     return part, None
 
 
-def anglage_top(part: Part, width: float = S.ANGLAGE_WIDTH, z_tol: float = 1e-4):
+def anglage_top(part: bd.Part, width: float = S.ANGLAGE_WIDTH, z_tol: float = 1e-4):
     """Polished 45-degree bevel along every edge of the part's top face
     perimeter (the classic bridge/lever anglage). Selects edges belonging to
     the highest planar region. Returns (part, applied|None)."""
@@ -108,7 +87,7 @@ def slotted_screw(
     slot_depth: float = S.SCREW_SLOT_DEPTH,
     color: tuple = S.BLUED,
     domed: bool = True,
-) -> Part:
+) -> bd.Part:
     """Polished slotted screw, head top at z=0, shank hanging below.
 
     The head is a short cylinder with (optionally) a domed top, a chamfered
@@ -119,12 +98,12 @@ def slotted_screw(
         shank_diameter = head_diameter * 0.55
     r = head_diameter / 2.0
 
-    head = Cylinder(r, head_height, align=(None, None, None))
-    head = Pos(0, 0, -head_height / 2) * head
+    head = bd.Cylinder(r, head_height, align=(None, None, None))
+    head = bd.Pos(0, 0, -head_height / 2) * head
     if domed:
         dome_r = r * 2.6
-        dome = Sphere(dome_r)
-        dome = Pos(0, 0, -math.sqrt(dome_r**2 - r**2)) * dome
+        dome = bd.Sphere(dome_r)
+        dome = bd.Pos(0, 0, -math.sqrt(dome_r**2 - r**2)) * dome
         head = head & dome
     # chamfered lower rim so the head sits in a screw sink with a light ring
     head, _ = safe_chamfer(
@@ -133,23 +112,21 @@ def slotted_screw(
         0.05,
     )
 
-    slot_bar = Pos(0, 0, -slot_depth / 2 + 0.001) * _box(
+    slot_bar = bd.Pos(0, 0, -slot_depth / 2 + 0.001) * _box(
         head_diameter * 1.2, slot_width, slot_depth + 0.002
     )
     head = head - slot_bar
 
-    shank = Pos(0, 0, -head_height - shank_length / 2) * Cylinder(
+    shank = bd.Pos(0, 0, -head_height - shank_length / 2) * bd.Cylinder(
         shank_diameter / 2, shank_length, align=(None, None, None)
     )
     screw = head + shank
-    screw.color = Color(*color)
+    screw.color = bd.Color(*color)
     return screw
 
 
-def _box(x: float, y: float, z: float) -> Part:
-    from build123d import Box
-
-    return Box(x, y, z, align=(None, None, None))
+def _box(x: float, y: float, z: float) -> bd.Part:
+    return bd.Box(x, y, z, align=(None, None, None))
 
 
 # ---------------------------------------------------------------------------
@@ -161,16 +138,16 @@ def jewel(
     thickness: float = 0.4,
     domed: bool = True,
     color: tuple = S.RUBY,
-) -> Part:
+) -> bd.Part:
     """Ruby jewel disk, top surface at z=0. Slightly domed top face."""
     r = diameter / 2.0
-    body = Pos(0, 0, -thickness / 2) * Cylinder(r, thickness, align=(None, None, None))
+    body = bd.Pos(0, 0, -thickness / 2) * bd.Cylinder(r, thickness, align=(None, None, None))
     if domed:
         dome_r = r * 3.2
-        dome = Pos(0, 0, -math.sqrt(dome_r**2 - r**2)) * Sphere(dome_r)
+        dome = bd.Pos(0, 0, -math.sqrt(dome_r**2 - r**2)) * bd.Sphere(dome_r)
         body = body & dome
-        body = Pos(0, 0, 0.06) * body
-    body.color = Color(*color)
+        body = bd.Pos(0, 0, 0.06) * body
+    body.color = bd.Color(*color)
     return body
 
 
@@ -179,7 +156,7 @@ def jewel_countersink_cut(
     depth: float = S.JEWEL_COUNTERSINK_DEPTH,
     through_diameter: float | None = None,
     through_depth: float = 3.0,
-) -> Part:
+) -> bd.Part:
     """Cutter for a polished jewel countersink: a shallow cone-walled recess
     plus the jewel seat bore. Subtract from a plate/bridge with the target
     surface at z=0 (cut extends downward)."""
@@ -187,11 +164,11 @@ def jewel_countersink_cut(
         through_diameter = S.JEWEL_DIAMETER - 0.1
     r_top = diameter / 2.0
     r_seat = S.JEWEL_DIAMETER / 2.0 + 0.05
-    cone = Pos(0, 0, -depth / 2 + 0.001) * Cone(
+    cone = bd.Pos(0, 0, -depth / 2 + 0.001) * bd.Cone(
         r_top, r_seat, depth, align=(None, None, None)
     )
-    seat = Pos(0, 0, -depth - 0.35) * Cylinder(r_seat, 0.75, align=(None, None, None))
-    bore = Pos(0, 0, -through_depth / 2) * Cylinder(
+    seat = bd.Pos(0, 0, -depth - 0.35) * bd.Cylinder(r_seat, 0.75, align=(None, None, None))
+    bore = bd.Pos(0, 0, -through_depth / 2) * bd.Cylinder(
         through_diameter / 2, through_depth, align=(None, None, None)
     )
     return cone + seat + bore
@@ -200,11 +177,11 @@ def jewel_countersink_cut(
 def jeweled_bearing(
     surface_z: float = 0.0,
     jewel_diameter: float = S.JEWEL_DIAMETER,
-) -> Part:
+) -> bd.Part:
     """Jewel positioned for a countersink cut made with jewel_countersink_cut
     at the same XY: returns the ruby sitting just below the surface."""
     j = jewel(jewel_diameter)
-    return Pos(0, 0, surface_z - S.JEWEL_COUNTERSINK_DEPTH - 0.02) * j
+    return bd.Pos(0, 0, surface_z - S.JEWEL_COUNTERSINK_DEPTH - 0.02) * j
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +194,7 @@ def snailing_cutter(
     pitch: float = S.SNAIL_PITCH,
     groove_depth: float = 0.06,
     groove_width: float | None = None,
-) -> Part:
+) -> bd.Part:
     """Concentric V-groove cutter for snailed wheels/subdials. Subtract with
     the finished surface at z=0; grooves cut downward.
 
@@ -232,10 +209,10 @@ def snailing_cutter(
     r = max(inner_diameter / 2.0 + pitch, pitch)
     while r < outer_diameter / 2.0:
         w = groove_width / 2.0
-        profile = Plane.XZ * Polygon(
+        profile = bd.Plane.XZ * bd.Polygon(
             (r - w, 0.02), (r + w, 0.02), (r, -groove_depth), align=None
         )
-        rings.append(revolve(profile, Axis.Z))
+        rings.append(bd.revolve(profile, bd.Axis.Z))
         r += pitch
     if not rings:
         return _box(0.001, 0.001, 0.001)
@@ -248,7 +225,7 @@ def geneva_stripes_cutter(
     pitch: float = S.GENEVA_STRIPE_PITCH,
     depth: float = 0.055,
     arc_radius: float = 60.0,
-) -> Part:
+) -> bd.Part:
     """Geneva striping cutter covering a span_x x span_y region centered at
     the origin. Subtract with the striped surface at z=0.
 
@@ -272,8 +249,8 @@ def geneva_stripes_cutter(
         x = x0 + i * pitch
         sign = 1.0 if i % 2 == 0 else -1.0
         piece = _box(band_w, span_y * 1.3, 1.0)
-        piece = Rot(0, sign * tilt_deg, 0) * piece
-        piece = Pos(x, 0, 0.5 - drop) * piece
+        piece = bd.Rot(0, sign * tilt_deg, 0) * piece
+        piece = bd.Pos(x, 0, 0.5 - drop) * piece
         pieces.append(piece)
     return pieces[0] + pieces[1:]
 
@@ -303,7 +280,7 @@ def perlage_cutter(
     # kept just above/below z=0), then cheap translated copies. Full
     # spheres are ~15 mm radius and all overlap far below the surface,
     # which couples every tool into one giant boolean — measured minutes.
-    proto = Pos(0, 0, sphere_r - depth) * Sphere(sphere_r) & Cylinder(
+    proto = bd.Pos(0, 0, sphere_r - depth) * bd.Sphere(sphere_r) & bd.Cylinder(
         r_stamp + 0.02, 2 * depth + 0.2, align=(None, None, None)
     )
     nx = int(span_x / step) + 2
@@ -313,7 +290,7 @@ def perlage_cutter(
         for i in range(nx):
             x = -span_x / 2 + i * step + (step / 2 if j % 2 else 0)
             y = -span_y / 2 + j * row_step
-            stamps.append(Pos(x, y, 0) * proto)
+            stamps.append(bd.Pos(x, y, 0) * proto)
     return stamps
 
 
@@ -330,7 +307,7 @@ def train_wheel(
     hub_diameter: float | None = None,
     color: tuple = S.GILT,
     tooth_depth_frac: float = 0.12,
-) -> Part:
+) -> bd.Part:
     """Gilded going-train wheel: toothed ring, thin rim, crossed-out web
     with `spoke_count` arms, centered at origin, mid-plane z=0.
 
@@ -348,35 +325,35 @@ def train_wheel(
     # sketch space (2D booleans are cheap at any tooth count), one extrude
     tooth_w = 2 * math.pi * r_root / tooth_count * 0.36
     tip_r = tooth_w * 0.24
-    tooth_2d = Polygon(
+    tooth_2d = bd.Polygon(
         (r_root - 0.05, -tooth_w / 2),
         (r_root - 0.05, tooth_w / 2),
         (r_o - tip_r, tip_r),
         (r_o - tip_r, -tip_r),
         align=None,
-    ) + Pos(r_o - tip_r, 0) * Circle(tip_r)
-    profile = Circle(r_root) + [
-        Rot(0, 0, 360.0 * k / tooth_count) * tooth_2d for k in range(tooth_count)
+    ) + bd.Pos(r_o - tip_r, 0) * bd.Circle(tip_r)
+    profile = bd.Circle(r_root) + [
+        bd.Rot(0, 0, 360.0 * k / tooth_count) * tooth_2d for k in range(tooth_count)
     ]
-    wheel = extrude(profile, amount=web_thickness / 2, both=True)
+    wheel = bd.extrude(profile, amount=web_thickness / 2, both=True)
 
     # cross out the web: keep rim ring + spokes + hub (spoke_count=0 keeps
     # a full web, e.g. for snailed ratchet wheels)
     if spoke_count > 0:
-        cut_ring = Cylinder(
+        cut_ring = bd.Cylinder(
             rim_inner, web_thickness + 0.02, align=(None, None, None)
-        ) - Cylinder(
+        ) - bd.Cylinder(
             hub_diameter / 2 + 0.4, web_thickness + 0.04, align=(None, None, None)
         )
         spokes = None
         spoke_w = max(0.5, outer_diameter * 0.045)
         for k in range(spoke_count):
             ang = 360.0 * k / spoke_count
-            s = Rot(0, 0, ang) * _box(rim_inner * 2.05, spoke_w, web_thickness + 0.06)
+            s = bd.Rot(0, 0, ang) * _box(rim_inner * 2.05, spoke_w, web_thickness + 0.06)
             spokes = s if spokes is None else spokes + s
         wheel = wheel - (cut_ring - spokes)
 
-    wheel.color = Color(*color)
+    wheel.color = bd.Color(*color)
     return wheel
 
 
@@ -385,21 +362,21 @@ def pinion(
     outer_diameter: float,
     length: float,
     color: tuple = S.STEEL_DARK,
-) -> Part:
+) -> bd.Part:
     """Polished-steel pinion with `leaf_count` rounded leaves, axis Z,
     mid-plane z=0."""
     r_o = outer_diameter / 2.0
     r_root = r_o * 0.62
-    body = Cylinder(r_root, length, align=(None, None, None))
+    body = bd.Cylinder(r_root, length, align=(None, None, None))
     leaf_w = 2 * math.pi * r_root / leaf_count * 0.5
-    proto = Pos(r_root * 0.75, 0, 0) * _box(
+    proto = bd.Pos(r_root * 0.75, 0, 0) * _box(
         r_o - r_root * 0.4, leaf_w, length
-    ) + Pos(r_o - leaf_w / 4, 0, 0) * Cylinder(
+    ) + bd.Pos(r_o - leaf_w / 4, 0, 0) * bd.Cylinder(
         leaf_w / 2, length, align=(None, None, None)
     )
-    leaves = [Rot(0, 0, 360.0 * k / leaf_count) * proto for k in range(leaf_count)]
+    leaves = [bd.Rot(0, 0, 360.0 * k / leaf_count) * proto for k in range(leaf_count)]
     p = body + leaves
-    p.color = Color(*color)
+    p.color = bd.Color(*color)
     return p
 
 
@@ -412,7 +389,7 @@ def heart_cam(
     thickness: float = 0.5,
     bore: float = 0.5,
     color: tuple = S.STEEL_BRIGHT,
-) -> Part:
+) -> bd.Part:
     """Classic polished heart-shaped reset cam, point at +Y, axis Z,
     bottom at z=0. The heart spiral profile is drawn with splines so the
     hammer face reads as a continuous polished curve."""
@@ -424,15 +401,15 @@ def heart_cam(
         (0.42 * r, -0.55 * r),
         (0.0, -0.78 * r),
     ]
-    with BuildSketch() as sk:
-        with BuildLine():
-            Spline(*pts_right)
-            Spline((0.0, -0.78 * r), (-0.42 * r, -0.55 * r), (-0.52 * r, 0.0),
+    with bd.BuildSketch() as sk:
+        with bd.BuildLine():
+            bd.Spline(*pts_right)
+            bd.Spline((0.0, -0.78 * r), (-0.42 * r, -0.55 * r), (-0.52 * r, 0.0),
                    (-0.36 * r, 0.55 * r), (0.0, r))
-        make_face()
-        Circle(bore / 2, mode=Mode.SUBTRACT)
-    cam = extrude(sk.sketch, amount=thickness)
-    cam.color = Color(*color)
+        bd.make_face()
+        bd.Circle(bore / 2, mode=bd.Mode.SUBTRACT)
+    cam = bd.extrude(sk.sketch, amount=thickness)
+    cam.color = bd.Color(*color)
     return cam
 
 
@@ -474,13 +451,13 @@ def straight_grain_cutter(
     length = (span_x if along_x else span_y) * 1.15
     across = span_y if along_x else span_x
     w = pitch * 0.5
-    proto = Plane.XZ * Polygon((-w, 0.02), (w, 0.02), (0.0, -depth), align=None)
-    proto = extrude(proto, amount=length / 2, both=True)
+    proto = bd.Plane.XZ * bd.Polygon((-w, 0.02), (w, 0.02), (0.0, -depth), align=None)
+    proto = bd.extrude(proto, amount=length / 2, both=True)
     if along_x:
-        proto = Rot(0, 0, 90) * proto  # groove axis along X
+        proto = bd.Rot(0, 0, 90) * proto  # groove axis along X
     n = int(across / pitch) + 2
     tools = []
     for i in range(n):
         off = -across / 2 + i * pitch
-        tools.append(Pos(0, off, 0) * proto if along_x else Pos(off, 0, 0) * proto)
+        tools.append(bd.Pos(0, off, 0) * proto if along_x else bd.Pos(off, 0, 0) * proto)
     return tools

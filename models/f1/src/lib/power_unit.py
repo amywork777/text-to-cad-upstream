@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Plane, Spline, Vector, make_face
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -77,7 +77,7 @@ def _circle_pts(r: float, n: int = 26):
 
 def _frames(points, up=(0.0, 0.0, 1.0)):
     """Rotation-minimising planes along a centreline (local +y hugs `up`)."""
-    pts = [Vector(*p) for p in points]
+    pts = [bd.Vector(*p) for p in points]
     n = len(pts)
     tans = []
     for i in range(n):
@@ -88,16 +88,16 @@ def _frames(points, up=(0.0, 0.0, 1.0)):
         else:
             t = pts[i + 1] - pts[i - 1]
         tans.append(t.normalized())
-    ref = Vector(*up)
+    ref = bd.Vector(*up)
     if abs(ref.dot(tans[0])) > 0.95:
-        ref = Vector(1, 0, 0)
+        ref = bd.Vector(1, 0, 0)
     planes = []
     for p, t in zip(pts, tans):
         r = ref - t * ref.dot(t)
         if r.length < 1e-6:
-            r = Vector(1, 0, 0) - t * t.X
+            r = bd.Vector(1, 0, 0) - t * t.X
         r = r.normalized()
-        planes.append(Plane(origin=p, x_dir=r.cross(t).normalized(), z_dir=t))
+        planes.append(bd.Plane(origin=p, x_dir=r.cross(t).normalized(), z_dir=t))
         ref = r
     return planes
 
@@ -110,7 +110,7 @@ def _catmull(points, radii, step: float = 9.0):
     into a bag of balloons. Densifying first and lofting RULED keeps the
     surface bounded by its own stations and still reads smooth.
     """
-    P = [Vector(*p) for p in points]
+    P = [bd.Vector(*p) for p in points]
     R = [float(r) for r in radii]
     ext = [P[0] + (P[0] - P[1])] + P + [P[-1] + (P[-1] - P[-2])]
     op, orr = [], []
@@ -139,7 +139,7 @@ def _tube(points, radii, samples: int = 26, step: float = 9.0):
     if step:
         points, radii = _catmull(points, radii, step)
     planes = _frames(points)
-    faces = [pl * make_face(Spline(*_circle_pts(r, samples), periodic=True))
+    faces = [pl * bd.make_face(bd.Spline(*_circle_pts(r, samples), periodic=True))
              for pl, r in zip(planes, radii)]
     return surfaces.loft_solid(faces, ruled=not step)
 
@@ -189,14 +189,14 @@ def _fuse(base, extras):
 
 def _ring(center, axis, r_in, r_out, half_len, n=30):
     """Machined collar / clamp band about an axis."""
-    a = Vector(*axis).normalized()
-    c = Vector(*center)
+    a = bd.Vector(*axis).normalized()
+    c = bd.Vector(*center)
     faces = []
     for s in (-half_len, half_len):
         pl = _frames([c + a * (s * 1.0), c + a * (s + 1.0)])[0]
         outer = _circle_pts(r_out, n)
         inner = list(reversed(_circle_pts(r_in, n)))
-        faces.append(pl * make_face(Spline(*(outer + inner), periodic=True)))
+        faces.append(pl * bd.make_face(bd.Spline(*(outer + inner), periodic=True)))
     return surfaces.loft_solid(faces, ruled=True)
 
 
@@ -216,12 +216,12 @@ def _volute(cx, cz, r_wheel, wrap_deg, theta_end, hand,
         th = math.radians(theta_start + hand * wrap_deg * f)
         hv = h0 + (h1 - h0) * f
         hu = w0 + (w1 - w0) * f
-        rad = Vector(0.0, math.cos(th), math.sin(th))
-        origin = Vector(cx, 0.0, cz) + rad * (r_wheel + gap + hv)
-        tang = Vector(1, 0, 0).cross(rad) * hand
-        pl = Plane(origin=origin, x_dir=(1, 0, 0), z_dir=tang)
+        rad = bd.Vector(0.0, math.cos(th), math.sin(th))
+        origin = bd.Vector(cx, 0.0, cz) + rad * (r_wheel + gap + hv)
+        tang = bd.Vector(1, 0, 0).cross(rad) * hand
+        pl = bd.Plane(origin=origin, x_dir=(1, 0, 0), z_dir=tang)
         pts = surfaces.superellipse_pts(hu, hv, n_top=2.8, n_bot=2.8, samples=26)
-        faces.append(pl * make_face(Spline(*pts, periodic=True)))
+        faces.append(pl * bd.make_face(bd.Spline(*pts, periodic=True)))
         if i == n:
             end = (origin, tang, hu, hv)
     solid = surfaces.loft_solid(faces, ruled=False)
@@ -390,7 +390,7 @@ def _deck_rail(side):
     n = 11
     for i in range(n):
         x = -2206.0 - 392.0 * i / (n - 1)
-        p0 = Vector(*_bank_pt(x, 190.0, 70.0, side))
+        p0 = bd.Vector(*_bank_pt(x, 190.0, 70.0, side))
         studs.append(_tube([p0 - _v_dir(side) * 14.0, p0 + _v_dir(side) * 13.0],
                            [11.0, 9.5], samples=16, step=0.0))
     return surfaces.styled(_fuse(rail, studs), f"head_joint_rail:{side}",
@@ -453,11 +453,11 @@ V_RAIL = 56.0
 
 
 def _u_dir(side=1.0):
-    return Vector(0.0, side * SB, CB)
+    return bd.Vector(0.0, side * SB, CB)
 
 
 def _v_dir(side=1.0):
-    return Vector(0.0, side * CB, -SB)
+    return bd.Vector(0.0, side * CB, -SB)
 
 
 def _bank_pt(x, d, v, side=1.0):
@@ -510,7 +510,7 @@ def _head(side):
         for d, v, r0, r1, ln in ((D_PORT_EX, V_PORT_EX, 34.0, 30.0, 16.0),
                                  (D_PORT_IN, V_PORT_IN, 36.0, 32.0, 14.0)):
             sgn = 1.0 if v > 0 else -1.0
-            p = Vector(*_bank_pt(xc, d, v - sgn * 6.0, side))
+            p = bd.Vector(*_bank_pt(xc, d, v - sgn * 6.0, side))
             q = p + _v_dir(side) * (sgn * (ln + 6.0))
             bosses.append(_tube([p, q], [r0, r1], samples=20))
     return surfaces.styled(_fuse(head, bosses), f"cylinder_head:{side}",
@@ -526,7 +526,7 @@ def _cam_cover(side):
     for i in range(n):
         x = HEAD_X0 - 16 + (HEAD_X1 - HEAD_X0 + 32) * i / (n - 1)
         for v in (34.0, -34.0):
-            p = Vector(*_bank_pt(x, D_COVER1 - 16.0, v, side))
+            p = bd.Vector(*_bank_pt(x, D_COVER1 - 16.0, v, side))
             q = p + _u_dir(side) * 22.0
             studs.append(_tube([p, q], [9.5, 8.0], samples=16))
     return surfaces.styled(_fuse(cover, studs), f"cam_cover:{side}", spec.ANODIZED)
@@ -543,7 +543,7 @@ def build_heads():
         kids += [h, c]
         # spark-plug / coil towers down the crown of each cover
         for i, xc in enumerate(CYL_X):
-            p0 = Vector(*_bank_pt(xc, D_COVER1 - 12.0, 0.0, side))
+            p0 = bd.Vector(*_bank_pt(xc, D_COVER1 - 12.0, 0.0, side))
             u = _u_dir(side)
             tower = _tube([p0, p0 + u * 14.0, p0 + u * 20.0, p0 + u * 46.0,
                            p0 + u * 52.0],
@@ -555,8 +555,8 @@ def build_heads():
         rail = _tube(rail_pts, [12.0, 12.0], samples=20)
         inj = []
         for xc in CYL_X:
-            a = Vector(*_bank_pt(xc, D_RAIL, V_RAIL, side))
-            b = Vector(*_bank_pt(xc, D_PORT_EX + 26.0, V_PORT_EX - 6.0, side))
+            a = bd.Vector(*_bank_pt(xc, D_RAIL, V_RAIL, side))
+            b = bd.Vector(*_bank_pt(xc, D_PORT_EX + 26.0, V_PORT_EX - 6.0, side))
             inj.append(_tube([a, a + (b - a) * 0.55, b], [9.0, 7.5, 7.0],
                              samples=16))
         kids.append(surfaces.styled(_fuse(rail, inj), f"fuel_rail:{tag}", spec.ALLOY))

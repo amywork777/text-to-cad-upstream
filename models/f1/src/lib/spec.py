@@ -65,7 +65,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Color
+from cadgen import build123d as bd
 
 # ==========================================================================
 # PACKAGE — overall vehicle
@@ -341,42 +341,42 @@ SHOULDER_LINE = (
 # highlight do the work and keeps the shoulder line readable.
 # ==========================================================================
 
-RED = Color(0.520, 0.043, 0.038)  # the bodywork red — deep, slightly warm
-RED_DEEP = Color(0.240, 0.022, 0.020)  # shadowed / inner face of a red panel
+RED = bd.Color(0.520, 0.043, 0.038)  # the bodywork red — deep, slightly warm
+RED_DEEP = bd.Color(0.240, 0.022, 0.020)  # shadowed / inner face of a red panel
 
-CARBON = Color(0.072, 0.078, 0.088)  # primary structural carbon, near black
+CARBON = bd.Color(0.072, 0.078, 0.088)  # primary structural carbon, near black
 CARBON_GLOSS = RED  # painted outer bodywork skin — SEE ABOVE
-CARBON_WEAVE = Color(0.118, 0.108, 0.106)  # exposed twill, warmed toward the red
-CARBON_MATTE = Color(0.088, 0.090, 0.096)  # matte underfloor / inner surfaces
+CARBON_WEAVE = bd.Color(0.118, 0.108, 0.106)  # exposed twill, warmed toward the red
+CARBON_MATTE = bd.Color(0.088, 0.090, 0.096)  # matte underfloor / inner surfaces
 
 # Exposed metal is deliberately GUNMETAL, not bright. At 0.56/0.70 the
 # suspension and halo were the brightest objects in every view and pulled the
 # eye straight off the bodywork — the car read as a white linkage diagram
 # wearing a black shell. Real machined titanium under studio light is much
 # darker than intuition suggests. Keep metals below the accent in value.
-TITANIUM = Color(0.395, 0.408, 0.430)  # machined uprights, wishbone tips
-ALLOY = Color(0.545, 0.558, 0.578)  # bright machined aluminium
-ANODIZED = Color(0.235, 0.255, 0.285)  # dark anodized brackets and clevises
-INCONEL = Color(0.318, 0.278, 0.238)  # heat-tinted exhaust / turbine
-MAGNESIUM = Color(0.400, 0.398, 0.386)  # cast gearbox / engine block
-STEEL = Color(0.470, 0.480, 0.500)  # fasteners, Dzus, pins
-COPPER = Color(0.520, 0.330, 0.205)  # coolers, bus bars
-GOLD_FOIL = Color(0.640, 0.520, 0.255)  # heat-shield foil, sparingly
+TITANIUM = bd.Color(0.395, 0.408, 0.430)  # machined uprights, wishbone tips
+ALLOY = bd.Color(0.545, 0.558, 0.578)  # bright machined aluminium
+ANODIZED = bd.Color(0.235, 0.255, 0.285)  # dark anodized brackets and clevises
+INCONEL = bd.Color(0.318, 0.278, 0.238)  # heat-tinted exhaust / turbine
+MAGNESIUM = bd.Color(0.400, 0.398, 0.386)  # cast gearbox / engine block
+STEEL = bd.Color(0.470, 0.480, 0.500)  # fasteners, Dzus, pins
+COPPER = bd.Color(0.520, 0.330, 0.205)  # coolers, bus bars
+GOLD_FOIL = bd.Color(0.640, 0.520, 0.255)  # heat-shield foil, sparingly
 
 # The accent was vermillion when the body was black. On a red car vermillion
 # goes muddy — two reds a few steps apart read as a printing error, not a
 # stripe. A warm chalk white is the classic answer: it reads crisply on the
 # red skin AND on the black carbon, so the same accent still ties the whole
 # car together, which was the point of having exactly one.
-ACCENT = Color(0.910, 0.892, 0.862)  # warm chalk white — THE accent
-ACCENT_DEEP = Color(0.560, 0.545, 0.520)  # shadowed side of the accent
+ACCENT = bd.Color(0.910, 0.892, 0.862)  # warm chalk white — THE accent
+ACCENT_DEEP = bd.Color(0.560, 0.545, 0.520)  # shadowed side of the accent
 
-RUBBER = Color(0.052, 0.052, 0.056)  # slick tread
-RUBBER_SIDEWALL = Color(0.068, 0.068, 0.072)
-CARBON_DISC = Color(0.140, 0.132, 0.126)  # carbon brake disc
-GLASS = Color(0.030, 0.055, 0.090)  # mirror glass, camera lenses
-SEAT = Color(0.078, 0.080, 0.086)
-BELT = Color(0.120, 0.122, 0.130)
+RUBBER = bd.Color(0.052, 0.052, 0.056)  # slick tread
+RUBBER_SIDEWALL = bd.Color(0.068, 0.068, 0.072)
+CARBON_DISC = bd.Color(0.140, 0.132, 0.126)  # carbon brake disc
+GLASS = bd.Color(0.030, 0.055, 0.090)  # mirror glass, camera lenses
+SEAT = bd.Color(0.078, 0.080, 0.086)
+BELT = bd.Color(0.120, 0.122, 0.130)
 
 # ==========================================================================
 # DERIVED CASCADE HELPERS

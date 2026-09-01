@@ -51,8 +51,6 @@ def build_front_fork():
 
 
 def build_handlebar():
-    from build123d import Vector
-
     top = S.steer_point(S.STEM_TOP_T)
     collar = L.axis_cylinder(
         _leg_center(S.STEM_TOP_T - 12.0, 0.0), S.STEER_DIR, 21.0, 58.0,
@@ -71,8 +69,8 @@ def build_handlebar():
     bar = L.paint(bar, "handlebar", "steel", color=S.FRAME_BLACK)
 
     # grips along the outer bar tangent, mirrored per side
-    end_prev = Vector(bar_pts_right[-2])
-    end = Vector(bar_pts_right[-1])
+    end_prev = bd.Vector(bar_pts_right[-2])
+    end = bd.Vector(bar_pts_right[-1])
     grip_dir = (end - end_prev).normalized()
     k = S.GRIP_LEN / 2 - 4.0
     grip_base = (

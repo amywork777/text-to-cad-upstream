@@ -50,10 +50,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Face, Line, Location, Solid, Spline, Vector, Vertex,
-                       Wire, loft)
-
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -287,22 +284,22 @@ def _wire(upper, lower, y, side, nose=True):
     edges = []
     if nose:
         k = NOSE_K
-        edges.append(Spline(*to3(list(reversed(lower[:k + 1]))
+        edges.append(bd.Spline(*to3(list(reversed(lower[:k + 1]))
                                  + upper[1:k + 1])).edge())
         up_tail, lo_tail = upper[k:], lower[k:]
     else:
         a, b = to3([lower[0], upper[0]])
-        edges.append(Line(a, b).edge())
+        edges.append(bd.Line(a, b).edge())
         up_tail, lo_tail = upper, lower
-    edges.append(Spline(*to3(up_tail)).edge())
+    edges.append(bd.Spline(*to3(up_tail)).edge())
     a, b = to3([upper[-1], lower[-1]])
-    edges.append(Line(a, b).edge())
-    edges.append(Spline(*to3(list(reversed(lo_tail)))).edge())
-    return Wire(edges)
+    edges.append(bd.Line(a, b).edge())
+    edges.append(bd.Spline(*to3(list(reversed(lo_tail)))).edge())
+    return bd.Wire(edges)
 
 
 def _face(upper, lower, y, side, nose=True):
-    return Face(_wire(upper, lower, y, side, nose))
+    return bd.Face(_wire(upper, lower, y, side, nose))
 
 
 def _panel_face(y, side, u0=None, u1=None, tscale=1.0):
@@ -318,8 +315,8 @@ def _panel_face(y, side, u0=None, u1=None, tscale=1.0):
 
 def _poly_face(y, side, pts):
     p3 = _to3d(pts, y, side)
-    edges = [Line(p3[i], p3[(i + 1) % len(p3)]).edge() for i in range(len(p3))]
-    return Face(Wire(edges))
+    edges = [bd.Line(p3[i], p3[(i + 1) % len(p3)]).edge() for i in range(len(p3))]
+    return bd.Face(bd.Wire(edges))
 
 
 def _rect_face(y, side, u0, u1, v0, v1):
@@ -335,7 +332,7 @@ def _box_loft(y0, y1, side, u0, u1, v0, v1):
     def at(y):
         return _rect_face(y, side, _val(u0, y), _val(u1, y),
                           _val(v0, y), _val(v1, y))
-    return loft([at(y0), at(y1)], ruled=True)
+    return bd.loft([at(y0), at(y1)], ruled=True)
 
 
 def _surface_run(y, u0, u1, upper, offset, coarse=0):
@@ -361,7 +358,7 @@ def _skin_loft(y0, y1, side, u0, u1, upper, offset, out, coarse=0):
         sign = 1.0 if upper else -1.0
         return _poly_face(y, side, run + [(run[-1][0], run[-1][1] + sign * out),
                                           (run[0][0], run[0][1] + sign * out)])
-    return loft([at(y0), at(y1)], ruled=True)
+    return bd.loft([at(y0), at(y1)], ruled=True)
 
 
 def _panel_slab(y0, y1, side, u0, u1, upper, depth):
@@ -370,7 +367,7 @@ def _panel_slab(y0, y1, side, u0, u1, upper, depth):
         top = _surface_run(y, u0, u1, upper, 0.0)
         bot = _surface_run(y, u0, u1, upper, depth)
         return _poly_face(y, side, top + list(reversed(bot)))
-    return loft([at(y0), at(y1)], ruled=True)
+    return bd.loft([at(y0), at(y1)], ruled=True)
 
 
 def _pod(y, side, f0, f1, drop, half_w, upper=False):
@@ -381,7 +378,7 @@ def _pod(y, side, f0, f1, drop, half_w, upper=False):
     up, lo = _airfoil(y)
     surf = up if upper else lo
     u0, u1 = _frac(y, f0), _frac(y, f1)
-    span = Vector(0.0, float(side), 0.0)
+    span = bd.Vector(0.0, float(side), 0.0)
     updir = _up_dir(y, side)
     sign = 1.0 if upper else -1.0
     faces = []
@@ -390,15 +387,15 @@ def _pod(y, side, f0, f1, drop, half_w, upper=False):
         centre = _to3d([(u, _v_at(surf, u))], y, side)[0]
         shape = math.sin(math.pi * s ** 0.72) ** 0.55
         if s <= 0.0 or s >= 1.0 or shape < 1e-3:
-            faces.append(Vertex(centre.X, centre.Y, centre.Z))
+            faces.append(bd.Vertex(centre.X, centre.Y, centre.Z))
             continue
         a, b, m = half_w * shape, drop * shape, 26
         ring = [centre + span * (a * math.cos(2.0 * math.pi * j / m))
                 + updir * (sign * b * math.sin(2.0 * math.pi * j / m))
                 for j in range(m)]
-        faces.append(Face(Wire([Line(ring[j], ring[(j + 1) % m]).edge()
+        faces.append(bd.Face(bd.Wire([bd.Line(ring[j], ring[(j + 1) % m]).edge()
                                 for j in range(m)])))
-    return loft(faces, ruled=False)
+    return bd.loft(faces, ruled=False)
 
 
 # ---------------------------------------------------------------------------
@@ -414,7 +411,7 @@ def _groove_span(side, line, y0, y1, upper):
         v0, v1 = ((v - GROOVE_D, v + GROOVE_OUT) if upper
                   else (v - GROOVE_OUT, v + GROOVE_D))
         return _rect_face(y, side, u - 0.5 * GROOVE_W, u + 0.5 * GROOVE_W, v0, v1)
-    return loft([at(y0), at(y1)], ruled=True)
+    return bd.loft([at(y0), at(y1)], ruled=True)
 
 
 def _groove_chord(side, y, u0, u1, upper):
@@ -468,7 +465,7 @@ def _grid(side):
 
 def _rivets(side):
     """Additive fastener domes -- never boolean cuts, per the brief."""
-    proto = Solid.make_sphere(RIVET_R)
+    proto = bd.Solid.make_sphere(RIVET_R)
     P.style(proto, "wing_fastener", RIVET_GREY)
     y_in, y_out = Y_ROOT + 180.0, SLAT_Y1 - 120.0
     fwd = _straight(y_in, y_out, FRONT_SPAR)
@@ -484,7 +481,7 @@ def _rivets(side):
                    + _up_dir(y, side) * ((-1.0 if upper else 1.0)
                                          * (RIVET_R - RIVET_H)))
             n += 1
-            inst.append((proto, Location((pos.X, pos.Y, pos.Z)),
+            inst.append((proto, bd.Location((pos.X, pos.Y, pos.Z)),
                          f"fastener_{n:03d}"))
             y += RIVET_PITCH
     out = compound_from_instances(f"wing_fasteners_{_sd(side)}", inst)
@@ -509,7 +506,7 @@ def _segments(y0, y1, count, gap):
 def _slats(side):
     out = []
     for i, (ya, yb) in enumerate(_segments(SLAT_Y0, SLAT_Y1, N_SLAT, GAP), 1):
-        body = loft([_panel_face(ya, side, u1=_frac(ya, SLAT_FRAC)),
+        body = bd.loft([_panel_face(ya, side, u1=_frac(ya, SLAT_FRAC)),
                      _panel_face(yb, side, u1=_frac(yb, SLAT_FRAC))], ruled=True)
         out.append(P.style(body, f"wing_slat:{_sd(side)}_{i}", SLAT_GREY))
     return out
@@ -527,7 +524,7 @@ def _le_structure(side):
         shift = lambda pts: [(u + CORE_SHIFT, v)                   # noqa: E731
                              for u, v in _slice(pts, None, cut)]
         return _face(shift(upper), shift(lower), y, side)
-    return P.style(loft([at(SLAT_Y0 - GAP), at(SLAT_Y1 + GAP)], ruled=True),
+    return P.style(bd.loft([at(SLAT_Y0 - GAP), at(SLAT_Y1 + GAP)], ruled=True),
                    f"wing_le_structure:{_sd(side)}", CORE_GREY)
 
 
@@ -562,7 +559,7 @@ def _slat_tracks(side):
 def _flaps(side):
     out = []
     for i, (ya, yb) in enumerate(_segments(FLAP_Y0, FLAP_Y1, N_FLAP, GAP), 1):
-        body = loft([_panel_face(ya, side, u0=_frac(ya, FLAP_FRAC)),
+        body = bd.loft([_panel_face(ya, side, u0=_frac(ya, FLAP_FRAC)),
                      _panel_face(yb, side, u0=_frac(yb, FLAP_FRAC))], ruled=True)
         out.append(P.style(body, f"wing_flap:{_sd(side)}_{i}", FLAP_GREY))
     return out
@@ -600,7 +597,7 @@ def _tip_cluster(side):
             ("wingtip_housing", TIP_LENS_AFT, TIP_WHITE_FWD, WING_GREY),
             ("wingtip_taillight", TIP_WHITE_FWD, None, P.LIGHT_WHITE)):
         cut = lambda y, f: None if f is None else _frac(y, f)       # noqa: E731
-        body = loft([_panel_face(y0, side, cut(y0, f0), cut(y0, f1)),
+        body = bd.loft([_panel_face(y0, side, cut(y0, f0), cut(y0, f1)),
                      _panel_face(y1, side, cut(y1, f0), cut(y1, f1),
                                  tscale=TIP_BLUNT)], ruled=True)
         out.append(P.style(body, f"{name}:{_sd(side)}", hexcol))
@@ -614,7 +611,7 @@ def _tip_cluster(side):
 
 def _panel(side):
     y_cap = Y_TIP - TIP_CAP
-    full = loft([_panel_face(Y_STUB, side), _panel_face(y_cap, side)], ruled=True)
+    full = bd.loft([_panel_face(Y_STUB, side), _panel_face(y_cap, side)], ruled=True)
 
     big = 900.0
     # The nose comes off in one piece over the whole slat run; the leading-edge

@@ -30,22 +30,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Circle,
-    Color,
-    Cone,
-    Cylinder,
-    Part,
-    Plane,
-    Polygon,
-    Pos,
-    Rot,
-    Sphere,
-    extrude,
-    revolve,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 from lib import finishing as F
@@ -127,8 +112,7 @@ def _stroke_pts(spine, n_per=5, cap_pts=5):
 
 def _one_face(obj):
     """Normalize a make_face/offset result to a single Face."""
-    from build123d import Face
-    if isinstance(obj, Face):
+    if isinstance(obj, bd.Face):
         return obj
     faces = obj.faces()
     if len(faces) != 1:
@@ -222,9 +206,8 @@ class _Outline:
     def face(self, delta=0.0):
         f = self._faces.get(delta)
         if f is None:
-            from build123d import Spline, make_face
             pts = self._dense if delta == 0.0 else self._offset_pts(delta)
-            f = _one_face(make_face(Spline(*pts, periodic=True)))
+            f = _one_face(bd.make_face(bd.Spline(*pts, periodic=True)))
             self._faces[delta] = f
         return f
 
@@ -377,11 +360,11 @@ _ARBOR_R = 0.30
 
 def _cyl(r, h, z0):
     """Cylinder spanning z [z0, z0 + h] (default centered primitive)."""
-    return Pos(0, 0, z0 + h / 2.0) * Cylinder(r, h)
+    return bd.Pos(0, 0, z0 + h / 2.0) * bd.Cylinder(r, h)
 
 
 def _ring(ri, ro, h, z0):
-    return Pos(0, 0, z0) * extrude(Circle(ro) - Circle(ri), amount=h)
+    return bd.Pos(0, 0, z0) * bd.extrude(bd.Circle(ro) - bd.Circle(ri), amount=h)
 
 
 def _blob(circles, clip_r, cutouts=()):
@@ -392,11 +375,11 @@ def _blob(circles, clip_r, cutouts=()):
     lobe, its `& Circle` clip returned silently EMPTY, and the cock shipped
     with no striping cut at all — same failure class as the keyless-entry
     defect)."""
-    discs = [Pos(x, y) * Circle(r) for x, y, r in circles]
+    discs = [bd.Pos(x, y) * bd.Circle(r) for x, y, r in circles]
     prof = discs[0] + discs[1:] if len(discs) > 1 else discs[0]
-    prof = prof & Circle(clip_r)
+    prof = prof & bd.Circle(clip_r)
     for x, y, r in cutouts:
-        prof = prof - Pos(x, y) * Circle(r)
+        prof = prof - bd.Pos(x, y) * bd.Circle(r)
     return prof
 
 
@@ -406,7 +389,7 @@ def _ang(frm, to):
 
 def _finish(part, label, color):
     part.label = label
-    part.color = Color(*color)
+    part.color = bd.Color(*color)
     return part
 
 
@@ -477,11 +460,11 @@ def _screw(head_d=S.SCREW_HEAD_DIAMETER, hh=0.34, shank=0.8,
         slot_w = 0.20 * head_d                # 0.26 at the 1.3 spec head
     ch = min(0.09, 0.30 * hh, 0.25 * r)       # bright 45-deg rim chamfer
     depth = min(0.22, hh - 0.06)              # 0.22 at the 0.34 spec head
-    head = _cyl(r, hh - ch, -hh) + Pos(0, 0, -ch / 2) * Cone(r, r - ch, ch)
+    head = _cyl(r, hh - ch, -hh) + bd.Pos(0, 0, -ch / 2) * bd.Cone(r, r - ch, ch)
     shank_p = _cyl(0.275 * head_d, shank + 0.05, -hh - shank)
-    slot = Rot(0, 0, slot_angle) * Box(head_d + 0.6, slot_w, 2 * depth)
+    slot = bd.Rot(0, 0, slot_angle) * bd.Box(head_d + 0.6, slot_w, 2 * depth)
     s = (head + shank_p) - slot
-    s.color = Color(*color)
+    s.color = bd.Color(*color)
     return s
 
 
@@ -491,7 +474,7 @@ def _place_screw(x, y, surface_z, proud=0.06, slot_angle=None, **kw):
     every slot points its own way, none of them animated/parametric."""
     if slot_angle is None:
         slot_angle = (x * 47.9 + y * 83.3) * 57.29578 % 180.0
-    return Pos(x, y, surface_z + proud) * _screw(slot_angle=slot_angle, **kw)
+    return bd.Pos(x, y, surface_z + proud) * _screw(slot_angle=slot_angle, **kw)
 
 
 def _sink_tool(cone_r=0.97, wall_r=0.72, cone_z=0.20, seat_z=0.60, bore_r=0.45):
@@ -503,7 +486,7 @@ def _sink_tool(cone_r=0.97, wall_r=0.72, cone_z=0.20, seat_z=0.60, bore_r=0.45):
     inverted (raw-OCC-datum bug), so at any parameterization its
     opening bulges widest just under the rim — it cannot produce the
     countersink-ring read of a real jewel setting."""
-    tool = (Pos(0, 0, -cone_z / 2 + 0.001) * Cone(wall_r, cone_r, cone_z)
+    tool = (bd.Pos(0, 0, -cone_z / 2 + 0.001) * bd.Cone(wall_r, cone_r, cone_z)
             + _cyl(wall_r, seat_z, -seat_z))
     return tool + _cyl(bore_r, 3.0, -3.0)
 
@@ -523,7 +506,7 @@ def _ruby_disc(r=0.46, t=0.30, ch=0.05, hole_r=0.14):
     chamfer.)"""
     h = 0.14
     c = (h * h - r * r) / (2.0 * h)          # sphere center z (below rim)
-    dome = Pos(0, 0, c) * Sphere(h - c) & _cyl(r, h + 0.05, 0.0)
+    dome = bd.Pos(0, 0, c) * bd.Sphere(h - c) & _cyl(r, h + 0.05, 0.0)
     body = _cyl(r, t, -t) + dome
     if hole_r > 0:
         body = body - _cyl(hole_r, t + 0.3, -t - 0.1)
@@ -538,7 +521,7 @@ def _grain(span_l, span_w, cx, cy, z_top, angle, clip=None):
     the tools are fused and intersected with it first — REQUIRED wherever
     overshoot would carve internal voids (recess floors inside a thicker
     solid) or nick a polished anglage bevel (grain stays off bevels)."""
-    tools = [Pos(cx, cy, z_top) * Rot(0, 0, angle) * t
+    tools = [bd.Pos(cx, cy, z_top) * bd.Rot(0, 0, angle) * t
              for t in F.straight_grain_cutter(span_l, span_w)]
     if clip is None:
         return tools
@@ -557,8 +540,8 @@ def _window_cutter(od, frac):
     ring = _cyl(rim_inner, 1.2, -0.6) - _cyl(hub / 2.0 + 0.4, 1.4, -0.7)
     spokes = []
     for k in range(5):
-        sp = Rot(0, 0, 72.0 * k) * (Pos(rim_inner * 1.025, spoke_w / 2.0, 0)
-                                    * Box(rim_inner * 2.05, spoke_w, 1.6))
+        sp = bd.Rot(0, 0, 72.0 * k) * (bd.Pos(rim_inner * 1.025, spoke_w / 2.0, 0)
+                                    * bd.Box(rim_inner * 2.05, spoke_w, 1.6))
         spokes.append(sp)
     return ring - spokes
 
@@ -602,10 +585,9 @@ def _bevel_extrude(outline, z0, z1, w):
     (wall, wall, inward offset): fusing a straight extrude with a separate
     cap returned EMPTY on the barrel outline — OCC BOP glue failure on the
     coincident spline-bounded face pair (probe-verified)."""
-    from build123d import loft
     f = outline.face(0.0)
-    return loft([Pos(0, 0, z0) * f, Pos(0, 0, z1 - w) * f,
-                 Pos(0, 0, z1) * outline.face(-w)], ruled=True)
+    return bd.loft([bd.Pos(0, 0, z0) * f, bd.Pos(0, 0, z1 - w) * f,
+                 bd.Pos(0, 0, z1) * outline.face(-w)], ruled=True)
 
 
 def _cap(outline, z1, w):
@@ -617,9 +599,8 @@ def _cap(outline, z1, w):
     primary path; outline rim corners carry explicit rounding points where
     a sharp corner made the ruled surface fold (barrel,
     BRepCheck-verified)."""
-    from build123d import loft
-    return loft([Pos(0, 0, z1 - w) * outline.face(0.0),
-                 Pos(0, 0, z1) * outline.face(-w)], ruled=True)
+    return bd.loft([bd.Pos(0, 0, z1 - w) * outline.face(0.0),
+                 bd.Pos(0, 0, z1) * outline.face(-w)], ruled=True)
 
 
 def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
@@ -646,36 +627,36 @@ def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
     if boss_xy:
         adds = []
         for x, y in boss_xy:
-            adds.append(Pos(x, y, 0) * (
+            adds.append(bd.Pos(x, y, 0) * (
                 _cyl(_BOSS_R, z1 - z0, z0)
-                + Pos(0, 0, z1 + _BOSS_H / 2) * Cone(_BOSS_R, _BOSS_R - _BOSS_H,
+                + bd.Pos(0, 0, z1 + _BOSS_H / 2) * bd.Cone(_BOSS_R, _BOSS_R - _BOSS_H,
                                                      _BOSS_H)))
         body = body + adds
 
     cuts = list(extra_cuts)
     for x, y, r in cutouts:
         # wheel-reveal cutout with its own 45-deg anglage ring at the rim
-        cuts.append(Pos(x, y, 0) * (
+        cuts.append(bd.Pos(x, y, 0) * (
             _cyl(r, z1 - z0 + 1.0, z0 - 0.5)
-            + Pos(0, 0, z1 - bevel_w / 2) * Cone(r, r + bevel_w, bevel_w)))
+            + bd.Pos(0, 0, z1 - bevel_w / 2) * bd.Cone(r, r + bevel_w, bevel_w)))
     recess_tools = []
     for x, y, r, d in recesses:
         # shallow machined pocket: floor at z1 - d, beveled rim like a cutout
-        tool = Pos(x, y, 0) * (
+        tool = bd.Pos(x, y, 0) * (
             _cyl(r, d + 1.0, z1 - d)
-            + Pos(0, 0, z1 - bevel_w / 2) * Cone(r, r + bevel_w, bevel_w))
+            + bd.Pos(0, 0, z1 - bevel_w / 2) * bd.Cone(r, r + bevel_w, bevel_w))
         recess_tools.append(tool)
         cuts.append(tool)
     for x, y in jewel_xy:
-        cuts.append(Pos(x, y, z1) * _sink_tool(**(jewel_sink_kw or {})))
+        cuts.append(bd.Pos(x, y, z1) * _sink_tool(**(jewel_sink_kw or {})))
     for x, y in boss_xy:
-        cuts.append(Pos(x, y, z1 + _BOSS_H) * _sink_tool(**(boss_sink_kw or {})))
+        cuts.append(bd.Pos(x, y, z1 + _BOSS_H) * _sink_tool(**(boss_sink_kw or {})))
     for x, y in screw_xy:
         # sink hugs the 1.3 head (0.07 ring + 0.13 flare): the old 1.75/2.1
         # flare read as one 2.2 mm "screw" blob at macro
-        sink = _cyl(0.72, 0.30, -0.30) + Pos(0, 0, -0.05) * Cone(0.72, 0.85, 0.10)
-        cuts.append(Pos(x, y, z1) * sink
-                    + Pos(x, y, 0) * _cyl(0.45, z1 - z0 + 1.0, z0 - 0.5))
+        sink = _cyl(0.72, 0.30, -0.30) + bd.Pos(0, 0, -0.05) * bd.Cone(0.72, 0.85, 0.10)
+        cuts.append(bd.Pos(x, y, z1) * sink
+                    + bd.Pos(x, y, 0) * _cyl(0.45, z1 - z0 + 1.0, z0 - 0.5))
 
     shadow = None
     if stripe:
@@ -692,21 +673,21 @@ def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
         m = bevel_w + 0.02
         inset = outline.face(-m)
         for x, y, r in cutouts:
-            inset = inset - Pos(x, y) * Circle(r + m)
+            inset = inset - bd.Pos(x, y) * bd.Circle(r + m)
         for x, y, r, _d in recesses:
             # keep the grooves off the pocket rim bevel AND the pocket floor
             # (the 0.4 V's are deeper than the shallow floors)
-            inset = inset - Pos(x, y) * Circle(r + m)
+            inset = inset - bd.Pos(x, y) * bd.Circle(r + m)
         for x, y in boss_xy:
-            inset = inset - Pos(x, y) * Circle(_BOSS_R + 0.05)
+            inset = inset - bd.Pos(x, y) * bd.Circle(_BOSS_R + 0.05)
         for x, y in jewel_xy:
             # keep the stripe grooves off the polished sink cone: the 0.4-deep
             # V's are deeper than the 0.2 cone and would scallop its rim
-            inset = inset - Pos(x, y) * Circle(
+            inset = inset - bd.Pos(x, y) * bd.Circle(
                 (jewel_sink_kw or {}).get("cone_r", 0.97) + 0.15)
         # band must reach below the deepest V (0.3 clipped the 0.4 grooves
         # into flat-bottomed slots, killing the facet read)
-        band = Pos(0, 0, z1 - depth - 0.1) * extrude(inset, amount=depth + 0.2)
+        band = bd.Pos(0, 0, z1 - depth - 0.1) * bd.extrude(inset, amount=depth + 0.2)
         # two-tone assist: thin skins over alternate V bands, same profile
         # as the cutter so they lie exactly on the striped facets
         w2 = 1.85 / 2.0
@@ -714,15 +695,15 @@ def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
         r, k = 3.1, 0        # first snailing_cutter ring at inner/2 + pitch
         while r < outline.max_r + 1.0:
             if k % 2 == 0:
-                hexp = Plane.XZ * Polygon(
+                hexp = bd.Plane.XZ * bd.Polygon(
                     (r - w2, 0.02), (r, -depth), (r + w2, 0.02),
                     (r + w2, 0.055), (r, -depth + 0.035), (r - w2, 0.055),
                     align=None)
-                shells.append(revolve(hexp, Axis.Z))
+                shells.append(bd.revolve(hexp, bd.Axis.Z))
             r += S.GENEVA_STRIPE_PITCH
             k += 1
         if shells:
-            skin = (Pos(0, 0, z1) * (shells[0] + shells[1:])) & band
+            skin = (bd.Pos(0, 0, z1) * (shells[0] + shells[1:])) & band
             # the clip can return a mixed-dimension compound (stray faces
             # along coincident boundaries); keep only the solids. NOTE: do
             # not re-wrap as Part(solid.wrapped) — that reports volume 0 on
@@ -736,7 +717,7 @@ def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
                 else:                      # Solid - [tools] -> ShapeList
                     pieces = [s for shp in trimmed for s in shp.solids()]
                 shadow = [s for s in pieces if s.volume > 1e-6] or None
-        cuts.append((Pos(0, 0, z1) * rings) & band)
+        cuts.append((bd.Pos(0, 0, z1) * rings) & band)
 
     # polished anglage ribbon: the body's OWN 45-deg cap translated UP by
     # d = 0.07 * sqrt(2) and clipped back to z1 — a 45-deg cone translated
@@ -751,25 +732,25 @@ def _bridge(outline, z0, z1, jewel_xy, screw_xy, cutouts=(), recesses=(),
     # cut void so it cannot interpenetrate the bridge (its own cut tool
     # would erase it if it went through the shared `cuts` subtraction).
     rib_d = 0.07 * math.sqrt(2.0)
-    clip = Pos(0, 0, z1 - (bevel_w + 1.0) / 2) * Box(
+    clip = bd.Pos(0, 0, z1 - (bevel_w + 1.0) / 2) * bd.Box(
         2 * outline.max_r + 4.0, 2 * outline.max_r + 4.0, bevel_w + 1.0)
-    outer = (Pos(0, 0, rib_d) * _cap(outline, z1, bevel_w)) & clip
+    outer = (bd.Pos(0, 0, rib_d) * _cap(outline, z1, bevel_w)) & clip
     ribs = [outer - ([body] + cuts)]
     for x, y, r in cutouts:
-        ribs.append(Pos(x, y, z1 - bevel_w / 2) * (
-            Cone(r, r + bevel_w, bevel_w)
-            - Cone(r - rib_d, r + bevel_w - rib_d, bevel_w)))
+        ribs.append(bd.Pos(x, y, z1 - bevel_w / 2) * (
+            bd.Cone(r, r + bevel_w, bevel_w)
+            - bd.Cone(r - rib_d, r + bevel_w - rib_d, bevel_w)))
     if recesses:
         # pocket-rim ribbons: same shell-in-the-void construction as the
         # cutout rims, but clipped to the plan silhouette (a pocket may
         # breach the outer wall) and carved by sibling pockets (merged
         # moats) so no ribbon arc floats over open air
-        prism = Pos(0, 0, z1 - bevel_w - 0.2) * extrude(
+        prism = bd.Pos(0, 0, z1 - bevel_w - 0.2) * bd.extrude(
             outline.face(-bevel_w), amount=bevel_w + 0.4)
         for i, (x, y, r, d) in enumerate(recesses):
-            ring = Pos(x, y, z1 - bevel_w / 2) * (
-                Cone(r, r + bevel_w, bevel_w)
-                - Cone(r - rib_d, r + bevel_w - rib_d, bevel_w))
+            ring = bd.Pos(x, y, z1 - bevel_w / 2) * (
+                bd.Cone(r, r + bevel_w, bevel_w)
+                - bd.Cone(r - rib_d, r + bevel_w - rib_d, bevel_w))
             ring = ring & prism
             others = [t for j, t in enumerate(recess_tools) if j != i]
             if others:
@@ -798,30 +779,30 @@ def _plate_parts():
     # bosses/pillars where bridges land (heights limited by wheel clearances)
     # + a crescent platform under the balance-cock foot (relieved around the
     # balance rim sweep so the wheel spins free below the cock)
-    foot_prof = ((Pos(-0.9, -12.3) * Circle(1.9)) & Circle(13.4)
-                 - Pos(lx, ly) * Circle(4.95))
+    foot_prof = ((bd.Pos(-0.9, -12.3) * bd.Circle(1.9)) & bd.Circle(13.4)
+                 - bd.Pos(lx, ly) * bd.Circle(4.95))
     bosses = [
-        Pos(-7.65, 9.59, 0) * _cyl(1.1, 1.38, 0),
-        Pos(11.2, 3.4, 0) * _cyl(1.1, 1.80, 0),
-        Pos(-11.03, -4.26, 0) * _cyl(1.0, 1.25, 0),
-        Pos(-11.2, 2.15, 0) * _cyl(1.0, 1.26, 0),
-        Pos(-5.9, -8.9, 0) * _cyl(0.8, 1.55, 0),
-        extrude(foot_prof, amount=2.70),
+        bd.Pos(-7.65, 9.59, 0) * _cyl(1.1, 1.38, 0),
+        bd.Pos(11.2, 3.4, 0) * _cyl(1.1, 1.80, 0),
+        bd.Pos(-11.03, -4.26, 0) * _cyl(1.0, 1.25, 0),
+        bd.Pos(-11.2, 2.15, 0) * _cyl(1.0, 1.26, 0),
+        bd.Pos(-5.9, -8.9, 0) * _cyl(0.8, 1.55, 0),
+        bd.extrude(foot_prof, amount=2.70),
     ]
     plate = plate + bosses
     cuts = [
-        Pos(bx, by, 0) * _cyl(6.4, 0.55, -0.35),          # barrel recess
-        Pos(lx, ly, 0) * _cyl(5.3, 0.50, -0.30),          # balance recess
+        bd.Pos(bx, by, 0) * _cyl(6.4, 0.55, -0.35),          # barrel recess
+        bd.Pos(lx, ly, 0) * _cyl(5.3, 0.50, -0.30),          # balance recess
         _cyl(0.9, 3.0, -1.6),                              # center bore
-        Pos(bx, by, 0) * _cyl(0.75, 3.0, -1.6),            # barrel arbor bore
+        bd.Pos(bx, by, 0) * _cyl(0.75, 3.0, -1.6),            # barrel arbor bore
         # radial stem bore at 3 o'clock (keyless builder finishes it)
-        Pos(12.2, 0, S.STEM_AXIS_Z_LOCAL) * Rot(0, 90, 0) * Cylinder(0.5, 3.2),
+        bd.Pos(12.2, 0, S.STEM_AXIS_Z_LOCAL) * bd.Rot(0, 90, 0) * bd.Cylinder(0.5, 3.2),
     ]
     # lower train/balance jewels: countersinks open to the dial side
     lower = [S.CENTER_WHEEL_POS, S.THIRD_WHEEL_POS, S.FOURTH_WHEEL_POS,
              S.ESCAPE_WHEEL_POS, S.PALLET_FORK_POS, S.BALANCE_POS]
     for x, y in lower:
-        cuts.append(Pos(x, y, -S.PLATE_THICKNESS) * Rot(180, 0, 0) * _sink_tool())
+        cuts.append(bd.Pos(x, y, -S.PLATE_THICKNESS) * bd.Rot(180, 0, 0) * _sink_tool())
 
     # perlage over every open bridge-side field (hex grid, keep-out filtered;
     # stamps dropped 0.033 so the helper's z>=0-clipped lens actually bites)
@@ -841,13 +822,13 @@ def _plate_parts():
                 continue
             if any(math.hypot(x - kx, y - ky) < kr for kx, ky, kr in keep_out):
                 continue
-            cuts.append(Pos(x, y, -0.033) * proto)
+            cuts.append(bd.Pos(x, y, -0.033) * proto)
     # directional satin grain on the two recess floors — the big perlage
     # keep-out fields that read as blank glossy copper through the bridge
     # gaps. Tools are fused + clipped INSIDE each recess wall (radius a hair
     # under the recess cut) so nothing carves voids in the surrounding solid.
     for cx, cy, rr, zf in ((bx, by, 6.32, -0.35), (lx, ly, 5.22, -0.30)):
-        gclip = Pos(cx, cy, 0) * _cyl(rr, 0.6, zf - 0.3)
+        gclip = bd.Pos(cx, cy, 0) * _cyl(rr, 0.6, zf - 0.3)
         cuts.extend(_grain(2 * rr + 0.5, 2 * rr + 0.5, cx, cy, zf,
                            _ang((cx, cy), (0.0, 0.0)), clip=gclip))
     plate = plate - cuts
@@ -859,13 +840,13 @@ def _plate_parts():
         # the dial-side shock ring + cap jewel stack sits below it) — drops
         # deepened 0.06 with the 0.14 dome so each apex keeps its old z
         drop = 0.21 if name == "balance" else 0.11
-        ruby = (Pos(x, y, -S.PLATE_THICKNESS) * Rot(180, 0, 0)
-                * Pos(0, 0, -drop) * _ruby_disc())
+        ruby = (bd.Pos(x, y, -S.PLATE_THICKNESS) * bd.Rot(180, 0, 0)
+                * bd.Pos(0, 0, -drop) * _ruby_disc())
         parts.append(_finish(ruby, f"plate_jewel:{name}", S.RUBY))
     # Incabloc-style polished setting hint at the balance, dial side
-    ring = Pos(lx, ly, 0) * _ring(0.65, 1.2, 0.18, -1.68)
+    ring = bd.Pos(lx, ly, 0) * _ring(0.65, 1.2, 0.18, -1.68)
     parts.append(_finish(ring, "balance_lower_shock_ring", S.STEEL_BRIGHT))
-    cap = Pos(lx, ly, 0) * _cyl(0.5, 0.2, -1.58)
+    cap = bd.Pos(lx, ly, 0) * _cyl(0.5, 0.2, -1.58)
     parts.append(_finish(cap, "balance_lower_cap_jewel", S.RUBY_BRIGHT))
     return parts
 
@@ -879,27 +860,27 @@ def _barrel_parts():
     bx, by = S.BARREL_POS
     rot_flange = _ang(S.BARREL_POS, S.CENTER_WHEEL_POS)
 
-    flange = Rot(0, 0, rot_flange) * F.train_wheel(
+    flange = bd.Rot(0, 0, rot_flange) * F.train_wheel(
         S.BARREL_TEETH, _BARREL_GEAR_D, web_thickness=0.30, spoke_count=0,
         tooth_depth_frac=0.12, color=S.BRASS_MOVEMENT)
     drum = (
         _cyl(6.0, _DRUM_Z[1] - _DRUM_Z[0], _DRUM_Z[0])
         - _cyl(5.5, 1.2, _DRUM_Z[0] + 0.15)
-        + Pos(0, 0, (_FLANGE_Z[0] + _FLANGE_Z[1]) / 2.0) * flange
+        + bd.Pos(0, 0, (_FLANGE_Z[0] + _FLANGE_Z[1]) / 2.0) * flange
     )
     drum = drum - [_cyl(0.85, 3.0, 0.2), _cyl(5.44, 1.2, 0.9)]
-    drum = Pos(bx, by, 0) * drum
+    drum = bd.Pos(bx, by, 0) * drum
     parts.append(_finish(drum, "barrel_drum", S.BRASS_MOVEMENT))
 
     lid = _cyl(5.42, 0.15, 1.45) - _cyl(0.85, 1.0, 1.2)
-    parts.append(_finish(Pos(bx, by, 0) * lid, "barrel_lid", S.BRASS_MOVEMENT))
+    parts.append(_finish(bd.Pos(bx, by, 0) * lid, "barrel_lid", S.BRASS_MOVEMENT))
 
-    coils = Pos(2.65, -0.05, 0) * Box(3.9, 0.1, 0.6) * 0 if False else None
-    coils = Pos(0, 0, 1.0) * Box(3.9, 0.1, 0.6)
-    coils = Pos(2.68, 0, 0) * coils  # radial tie keeping the coils one solid
+    coils = bd.Pos(2.65, -0.05, 0) * bd.Box(3.9, 0.1, 0.6) * 0 if False else None
+    coils = bd.Pos(0, 0, 1.0) * bd.Box(3.9, 0.1, 0.6)
+    coils = bd.Pos(2.68, 0, 0) * coils  # radial tie keeping the coils one solid
     for r in (0.8, 1.7, 2.6, 3.5, 4.4):
         coils = coils + _ring(r, r + 0.16, 0.6, 0.7)
-    parts.append(_finish(Pos(bx, by, 0) * coils, "mainspring", S.STEEL_DARK))
+    parts.append(_finish(bd.Pos(bx, by, 0) * coils, "mainspring", S.STEEL_DARK))
 
     # raised polished winding square: proud of the ratchet wheel with a
     # chamfered crown, wide enough (1.70; half-diagonal 1.20 clears the
@@ -907,7 +888,7 @@ def _barrel_parts():
     # blued ratchet screw — head Ø1.3 seated IN a Ø1.44 counterbore with a
     # bright flared rim, top 0.04 proud of the square, instead of the old
     # dome perched loose on the square top
-    square = Pos(0, 0, (2.80 + RATCHET_SQUARE_TOP_Z) / 2.0) * Box(
+    square = bd.Pos(0, 0, (2.80 + RATCHET_SQUARE_TOP_Z) / 2.0) * bd.Box(
         1.70, 1.70, RATCHET_SQUARE_TOP_Z - 2.80)
     square, _ = F.safe_chamfer(
         square,
@@ -925,9 +906,9 @@ def _barrel_parts():
         # RATCHET_SQUARE_TOP_Z + 0.04, hh 0.34), flare cone = the bright
         # machined rim ring of a real screw sink
         _cyl(0.72, 0.6, RATCHET_SQUARE_TOP_Z - 0.32),
-        Pos(0, 0, RATCHET_SQUARE_TOP_Z - 0.05) * Cone(0.72, 0.85, 0.10),
+        bd.Pos(0, 0, RATCHET_SQUARE_TOP_Z - 0.05) * bd.Cone(0.72, 0.85, 0.10),
     ]
-    parts.append(_finish(Pos(bx, by, 0) * arbor, "barrel_arbor", S.STEEL_DARK))
+    parts.append(_finish(bd.Pos(bx, by, 0) * arbor, "barrel_arbor", S.STEEL_DARK))
     return parts
 
 
@@ -941,15 +922,15 @@ def _train_parts():
     def wheel(label, teeth, dia, pos, z_mid, partner, frac, thick=0.18, bore=0.34):
         w = F.train_wheel(teeth, dia, web_thickness=thick, tooth_depth_frac=frac)
         w = w - [_window_cutter(dia, frac), _cyl(bore, 2.0, -1.0)]
-        w = Pos(pos[0], pos[1], z_mid) * Rot(0, 0, _ang(pos, partner)) * w
+        w = bd.Pos(pos[0], pos[1], z_mid) * bd.Rot(0, 0, _ang(pos, partner)) * w
         parts.append(_finish(w, label, S.GILT))
 
     def pinion(label, leaves, dia, pos, z_band, partner, arbor_top=2.18):
         p = F.pinion(leaves, dia, z_band[1] - z_band[0])  # spans z [0, L]
         rot = _ang(pos, partner) + 180.0 / leaves
-        body = (Pos(0, 0, z_band[0]) * Rot(0, 0, rot) * p
+        body = (bd.Pos(0, 0, z_band[0]) * bd.Rot(0, 0, rot) * p
                 + _cyl(_ARBOR_R, arbor_top + 1.28, -1.28))
-        parts.append(_finish(Pos(pos[0], pos[1], 0) * body, label, S.STEEL_DARK))
+        parts.append(_finish(bd.Pos(pos[0], pos[1], 0) * body, label, S.STEEL_DARK))
 
     cw, tw, fw, ew = (S.CENTER_WHEEL_POS, S.THIRD_WHEEL_POS,
                       S.FOURTH_WHEEL_POS, S.ESCAPE_WHEEL_POS)
@@ -976,9 +957,9 @@ def _bridge_parts():
 
     # barrel bridge -------------------------------------------------------
     extra = [
-        Pos(cwx, cwy, 0) * _cyl(0.6, 1.4, z1 - 0.9),      # crown-wheel screw bore
-        Pos(3.74, 3.87, 0) * _cyl(0.3, 1.2, z1 - 0.7),    # click screw bore
-        Pos(5.3, 4.6, 0) * _cyl(0.26, 1.2, z1 - 0.7),     # click-spring screw bore
+        bd.Pos(cwx, cwy, 0) * _cyl(0.6, 1.4, z1 - 0.9),      # crown-wheel screw bore
+        bd.Pos(3.74, 3.87, 0) * _cyl(0.3, 1.2, z1 - 0.7),    # click screw bore
+        bd.Pos(5.3, 4.6, 0) * _cyl(0.26, 1.2, z1 - 0.7),     # click-spring screw bore
     ]
     zb = z1 + _BOSS_H                     # polished jewel-table top
     # barrel sink cut flush into the striped top (no table: the ratchet wheel
@@ -1001,7 +982,7 @@ def _bridge_parts():
     # minus arbor bore left a 0.025 shell perched at the surface); top z1-0.10
     # stays under the winding square's z2.80 base
     ruby = _ring(0.70, 1.03, 0.20, z1 - 0.30)
-    parts.append(_finish(Pos(bx, by, 0) * ruby, "bridge_jewel:barrel", S.RUBY))
+    parts.append(_finish(bd.Pos(bx, by, 0) * ruby, "bridge_jewel:barrel", S.RUBY))
 
     # train bridge --------------------------------------------------------
     train_jewels = [S.CENTER_WHEEL_POS, S.THIRD_WHEEL_POS,
@@ -1020,9 +1001,9 @@ def _bridge_parts():
     # — the ruby/gold/dark-moat/polished-cone concentric read of the
     # reference, now with a point highlight on each stone
     for (x, y), name in zip(train_jewels, ("center", "third", "fourth", "escape")):
-        parts.append(_finish(Pos(x, y, zb - 0.12) * _ruby_disc(),
+        parts.append(_finish(bd.Pos(x, y, zb - 0.12) * _ruby_disc(),
                              f"bridge_jewel:{name}", S.RUBY))
-        chaton = Pos(x, y, 0) * _ring(0.47, 0.70, 0.32, zb - 0.42)
+        chaton = bd.Pos(x, y, 0) * _ring(0.47, 0.70, 0.32, zb - 0.42)
         parts.append(_finish(chaton, f"chaton:{name}", S.BRASS_MOVEMENT))
 
     # bridge screws (shanks stay inside the bridge bore: longer ones hung
@@ -1039,13 +1020,13 @@ def _bridge_parts():
     # ratchet wheel + raised winding square + blued screw ------------------
     ratchet = F.train_wheel(48, S.RATCHET_WHEEL_DIAMETER, web_thickness=0.26,
                             spoke_count=0, tooth_depth_frac=0.06)
-    ratchet = ratchet - Pos(0, 0, 0.13) * F.snailing_cutter(9.2, 2.2)
+    ratchet = ratchet - bd.Pos(0, 0, 0.13) * F.snailing_cutter(9.2, 2.2)
     beak_gap = _ang(S.BARREL_POS, (2.52, 4.9)) + 3.75
-    ratchet = Pos(bx, by, (RATCHET_Z0 + RATCHET_TOP_Z) / 2.0) * Rot(0, 0, beak_gap) * ratchet
+    ratchet = bd.Pos(bx, by, (RATCHET_Z0 + RATCHET_TOP_Z) / 2.0) * bd.Rot(0, 0, beak_gap) * ratchet
     # square hole cut AFTER the mesh-phasing rotation so it stays aligned
     # with the arbor's raised winding square (they clashed when the hole
     # rotated with the wheel); 1.80 clears the widened 1.70 square
-    ratchet = ratchet - Pos(bx, by, 3.0) * Box(1.80, 1.80, 1.0)
+    ratchet = ratchet - bd.Pos(bx, by, 3.0) * bd.Box(1.80, 1.80, 1.0)
     parts.append(_finish(ratchet, "ratchet_wheel", S.GILT))
     parts.append(_finish(
         _place_screw(bx, by, RATCHET_SQUARE_TOP_Z, proud=0.04, head_d=1.3,
@@ -1055,14 +1036,14 @@ def _bridge_parts():
     # crown wheel + recessed polished steel core --------------------------
     crown = F.train_wheel(30, S.CROWN_WHEEL_DIAMETER, web_thickness=0.24,
                           spoke_count=0, tooth_depth_frac=0.08)
-    crown = crown - [Pos(0, 0, 0.12) * F.snailing_cutter(5.6, 1.8),
+    crown = crown - [bd.Pos(0, 0, 0.12) * F.snailing_cutter(5.6, 1.8),
                      _cyl(0.62, 1.0, -0.5),
                      _cyl(1.35, 0.4, 0.02)]     # core recess in the snailed top
-    parts.append(_finish(Pos(cwx, cwy, 2.99) * crown, "crown_wheel", S.GILT))
+    parts.append(_finish(bd.Pos(cwx, cwy, 2.99) * crown, "crown_wheel", S.GILT))
     # polished core is a slotless disc; the screw read comes from a separate
     # spec-sized head (the old 2.2 slotted-dome core was the outsized "screw"
     # the blind critic flagged)
-    core = Pos(cwx, cwy, 0) * (_cyl(1.24, 0.14, 3.01) - _cyl(0.40, 1.0, 2.8))
+    core = bd.Pos(cwx, cwy, 0) * (_cyl(1.24, 0.14, 3.01) - _cyl(0.40, 1.0, 2.8))
     parts.append(_finish(core, "crown_wheel_core", S.STEEL_BRIGHT))
     parts.append(_finish(
         _place_screw(cwx, cwy, 3.15, proud=0.04, head_d=1.3, hh=0.30, shank=1.0),
@@ -1082,17 +1063,17 @@ def _bridge_parts():
             click_pts.append((xa + (xb - xa) * t, ya + (yb - ya) * t,
                               ra + (rb - ra) * tt))
     click_prof = _blob(click_pts, 14.0)
-    click = Pos(0, 0, 2.9) * extrude(click_prof, amount=0.16)
+    click = bd.Pos(0, 0, 2.9) * bd.extrude(click_prof, amount=0.16)
     click, _ = F.anglage_top(click, 0.06)
     # pivot bore + a shallow spot-face (counterbore Ø = head Ø + 0.14) so the
     # Ø1.0 screw head shows a machined ring gap instead of lying loose on top
     # + straight satin grain along the beak->tail axis, clipped 0.12 inside
     # the outline so it never nicks the anglage bevel
-    grain_clip = Pos(0, 0, 2.98) * extrude(
+    grain_clip = bd.Pos(0, 0, 2.98) * bd.extrude(
         _blob([(x, y, max(r - 0.12, 0.08)) for x, y, r in click_pts], 14.0),
         amount=0.30)
-    click = click - ([Pos(3.74, 3.87, 0) * _cyl(0.3, 1.0, 2.6),
-                      Pos(3.74, 3.87, 0) * _cyl(0.57, 0.5, 3.00)]
+    click = click - ([bd.Pos(3.74, 3.87, 0) * _cyl(0.3, 1.0, 2.6),
+                      bd.Pos(3.74, 3.87, 0) * _cyl(0.57, 0.5, 3.00)]
                      + _grain(3.2, 2.0, 3.63, 4.01, 3.06,
                               _ang((2.52, 4.90), (4.75, 3.12)),
                               clip=grain_clip))
@@ -1111,12 +1092,12 @@ def _bridge_parts():
         x = (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t ** 2 * p2[0]
         y = (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t ** 2 * p2[1]
         blade.append((x, y, 0.09))
-    spring_prof = _blob(blade, 14.0) + Pos(5.3, 4.6) * Circle(0.62)
-    spring = Pos(0, 0, 2.9) * extrude(spring_prof, amount=0.14)
+    spring_prof = _blob(blade, 14.0) + bd.Pos(5.3, 4.6) * bd.Circle(0.62)
+    spring = bd.Pos(0, 0, 2.9) * bd.extrude(spring_prof, amount=0.14)
     # screw bore + spot-face + satin grain along the blade axis (no anglage
     # on the spring, so the unclipped tools only cut where they overlap)
-    spring = spring - ([Pos(5.3, 4.6, 0) * _cyl(0.26, 1.0, 2.6),
-                        Pos(5.3, 4.6, 0) * _cyl(0.52, 0.5, 2.99)]
+    spring = spring - ([bd.Pos(5.3, 4.6, 0) * _cyl(0.26, 1.0, 2.6),
+                        bd.Pos(5.3, 4.6, 0) * _cyl(0.52, 0.5, 2.99)]
                        + _grain(2.4, 1.4, 5.18, 3.95, 3.04,
                                 _ang((5.3, 4.6), (4.98, 3.28))))
     parts.append(_finish(spring, "click_spring", S.STEEL_LEVER))
@@ -1134,21 +1115,21 @@ def _escape_wheel():
     # inner chord sunk to r1.55 so every tooth overlaps the rim band (a
     # chord at exactly r1.70 touched the rim at ONE point -> 15 disjoint
     # tooth solids, caught by inspect validate)
-    tooth = Polygon((1.55, 0.30), (1.55, -0.05), (2.30, -0.45), (2.62, -0.55),
+    tooth = bd.Polygon((1.55, 0.30), (1.55, -0.05), (2.30, -0.45), (2.62, -0.55),
                     (2.70, -0.30), (2.48, -0.12), (2.02, 0.24), align=None)
-    prof = Circle(1.70) + [Rot(0, 0, 360.0 * k / S.ESCAPE_WHEEL_TEETH) * tooth
+    prof = bd.Circle(1.70) + [bd.Rot(0, 0, 360.0 * k / S.ESCAPE_WHEEL_TEETH) * tooth
                            for k in range(S.ESCAPE_WHEEL_TEETH)]
-    prof = prof - (Circle(1.42) - Circle(0.5))
+    prof = prof - (bd.Circle(1.42) - bd.Circle(0.5))
     spokes = None
     for k in range(4):
-        sp = Rot(0, 0, 45 + 90 * k) * Polygon(
+        sp = bd.Rot(0, 0, 45 + 90 * k) * bd.Polygon(
             (-1.5, -0.14), (1.5, -0.14), (1.5, 0.14), (-1.5, 0.14), align=None)
         spokes = sp if spokes is None else spokes + sp
-    prof = prof + (spokes & Circle(1.6))
-    wheel = extrude(prof, amount=0.18)          # spans z [0, 0.18]
+    prof = prof + (spokes & bd.Circle(1.6))
+    wheel = bd.extrude(prof, amount=0.18)          # spans z [0, 0.18]
     wheel = wheel - _cyl(0.33, 1.0, -0.4)
     ex, ey = S.ESCAPE_WHEEL_POS
-    wheel = Pos(ex, ey, _EW_Z - 0.09) * Rot(0, 0, 7.0) * wheel
+    wheel = bd.Pos(ex, ey, _EW_Z - 0.09) * bd.Rot(0, 0, 7.0) * wheel
     return _finish(wheel, "escape_wheel", S.GILT)
 
 
@@ -1183,31 +1164,31 @@ def _pallet_parts():
         circles.append((x, y, 0.24))
     prof = _blob(circles, 14.0)
     nx, ny = along(4.15)
-    prof = prof - Pos(nx, ny) * Circle(0.18)
-    fork = Pos(0, 0, _FORK_Z[0]) * extrude(prof, amount=_FORK_Z[1] - _FORK_Z[0])
+    prof = prof - bd.Pos(nx, ny) * bd.Circle(0.18)
+    fork = bd.Pos(0, 0, _FORK_Z[0]) * bd.extrude(prof, amount=_FORK_Z[1] - _FORK_Z[0])
     fork, _ = F.anglage_top(fork, 0.05)
 
     stone_cuts, stone_parts = [], []
     for sx, sy, name, ax in stones:
-        slab = Pos(sx, sy, 1.17) * Rot(0, 0, ax) * Box(0.6, 0.24, 0.34)
-        pad = Pos(sx, sy, 1.30) * Rot(0, 0, ax) * Box(0.66, 0.30, 0.44)
+        slab = bd.Pos(sx, sy, 1.17) * bd.Rot(0, 0, ax) * bd.Box(0.6, 0.24, 0.34)
+        pad = bd.Pos(sx, sy, 1.30) * bd.Rot(0, 0, ax) * bd.Box(0.66, 0.30, 0.44)
         stone_cuts.append(pad)
         stone_parts.append(_finish(slab, f"pallet_stone:{name}", S.RUBY_BRIGHT))
     # satin grain along the fork's long (pivot->horns) axis on the exposed
     # top, clipped 0.12 inside the outline to stay off the anglage bevel
-    grain_clip = Pos(0, 0, _FORK_Z[0]) * extrude(
+    grain_clip = bd.Pos(0, 0, _FORK_Z[0]) * bd.extrude(
         _blob([(x, y, max(r - 0.12, 0.06)) for x, y, r in circles], 14.0),
         amount=0.30)
     fork = fork - (stone_cuts
-                   + [Pos(pp[0], pp[1], 0) * _cyl(0.21, 1.0, 0.9)]
+                   + [bd.Pos(pp[0], pp[1], 0) * _cyl(0.21, 1.0, 0.9)]
                    + _grain(9.0, 9.0, pp[0], pp[1], _FORK_Z[1],
                             _ang(pp, bal), clip=grain_clip))
     gx, gy = along(3.6)
-    fork = fork + Pos(gx, gy, 0) * _cyl(0.07, 0.18, 1.13)   # guard pin
+    fork = fork + bd.Pos(gx, gy, 0) * _cyl(0.07, 0.18, 1.13)   # guard pin
     parts.append(_finish(fork, "pallet_fork", S.STEEL_BRIGHT))
     parts.extend(stone_parts)
 
-    arbor = Pos(pp[0], pp[1], 0) * _cyl(0.2, 2.72, -1.28)
+    arbor = bd.Pos(pp[0], pp[1], 0) * _cyl(0.2, 2.72, -1.28)
     parts.append(_finish(arbor, "pallet_arbor", S.STEEL_DARK))
 
     # pallet bridge: small striped copper cock, 1 jewel, 1 blued screw
@@ -1222,10 +1203,10 @@ def _pallet_parts():
     parts.append(_finish(pb, "pallet_bridge", S.COPPER_GOLD))
     _add_shadow(parts, pb_shadow, "pallet_bridge")
     _add_anglage(parts, pb_rib, "pallet_bridge")
-    ruby = Pos(pp[0], pp[1], pbz1 - 0.04) * _ruby_disc(r=0.36, t=0.16, ch=0.04,
+    ruby = bd.Pos(pp[0], pp[1], pbz1 - 0.04) * _ruby_disc(r=0.36, t=0.16, ch=0.04,
                                                        hole_r=0.10)
     parts.append(_finish(ruby, "bridge_jewel:pallet", S.RUBY))
-    chaton = Pos(pp[0], pp[1], 0) * _ring(0.37, 0.50, 0.14, pbz1 - 0.22)
+    chaton = bd.Pos(pp[0], pp[1], 0) * _ring(0.37, 0.50, 0.14, pbz1 - 0.22)
     parts.append(_finish(chaton, "chaton:pallet", S.BRASS_MOVEMENT))
     x, y = BRIDGE_SCREW_POSITIONS["pallet_bridge"]
     parts.append(_finish(_place_screw(x, y, pbz1, shank=0.6),
@@ -1245,9 +1226,9 @@ def _balance_parts():
     z_rim0, z_rim1 = BALANCE_RIM_Z
 
     rim = _ring(4.1, 4.8, z_rim1 - z_rim0, z_rim0)
-    arms = Pos(0, 0, 2.14) * Rot(0, 0, 30) * Box(8.5, 0.85, 0.2)
+    arms = bd.Pos(0, 0, 2.14) * bd.Rot(0, 0, 30) * bd.Box(8.5, 0.85, 0.2)
     hub = _cyl(0.65, z_rim1 - z_rim0, z_rim0)
-    slits = [Rot(0, 0, 120 + 180 * k) * Pos(4.45, 0, 2.225) * Box(0.9, 0.12, 0.6)
+    slits = [bd.Rot(0, 0, 120 + 180 * k) * bd.Pos(4.45, 0, 2.225) * bd.Box(0.9, 0.12, 0.6)
              for k in range(2)]
     wheel = (rim + arms + hub) - (slits + [_cyl(0.28, 1.0, 1.8)])
     # polished catch on the rim's top edges + GILT (train-wheel champagne):
@@ -1258,13 +1239,13 @@ def _balance_parts():
          if abs(e.bounding_box().max.Z - z_rim1) < 1e-6
          and abs(e.bounding_box().min.Z - z_rim1) < 1e-6],
         0.08)
-    parts.append(_finish(Pos(lx, ly, 0) * wheel, "balance_wheel", S.GILT))
+    parts.append(_finish(bd.Pos(lx, ly, 0) * wheel, "balance_wheel", S.GILT))
 
     for k in range(16):
         a = 11.25 + k * 22.5
-        s = (Pos(4.85, 0, 2.225) * Rot(0, 90, 0) * Cylinder(0.16, 0.30)
-             + Pos(5.03, 0, 2.225) * Rot(0, 90, 0) * Cylinder(0.22, 0.14))
-        s = Pos(lx, ly, 0) * Rot(0, 0, a) * s
+        s = (bd.Pos(4.85, 0, 2.225) * bd.Rot(0, 90, 0) * bd.Cylinder(0.16, 0.30)
+             + bd.Pos(5.03, 0, 2.225) * bd.Rot(0, 90, 0) * bd.Cylinder(0.22, 0.14))
+        s = bd.Pos(lx, ly, 0) * bd.Rot(0, 0, a) * s
         parts.append(_finish(s, f"timing_screw:{k}", S.BRASS_MOVEMENT))
 
     # staff + safety/impulse rollers + collet
@@ -1275,10 +1256,10 @@ def _balance_parts():
              + _cyl(0.55, 0.13, 1.05)          # impulse roller
              + _cyl(0.35, 0.10, 1.18)          # safety roller
              + _cyl(0.375, 0.22, 2.46))        # collet
-    staff = Pos(lx, ly, 0) * staff
-    staff = staff - Pos(pinx, piny, 0) * _cyl(0.10, 0.8, 1.0)
+    staff = bd.Pos(lx, ly, 0) * staff
+    staff = staff - bd.Pos(pinx, piny, 0) * _cyl(0.10, 0.8, 1.0)
     parts.append(_finish(staff, "balance_staff", S.STEEL_DARK))
-    pin = Pos(pinx, piny, 0) * _cyl(0.09, 0.42, 1.05)
+    pin = bd.Pos(pinx, piny, 0) * _cyl(0.09, 0.42, 1.05)
     parts.append(_finish(pin, "impulse_jewel", S.RUBY_BRIGHT))
 
     # hairspring: 12-coil Archimedean band ending at the stud angle (-40 deg).
@@ -1295,24 +1276,24 @@ def _balance_parts():
         a = phi0 + th
         outer.append(((r + width) * math.cos(a), (r + width) * math.sin(a)))
         inner.append((r * math.cos(a), r * math.sin(a)))
-    poly = Polygon(*(outer + list(reversed(inner))), align=None)
-    spring = Pos(lx, ly, 2.50) * extrude(poly, amount=0.16)
+    poly = bd.Polygon(*(outer + list(reversed(inner))), align=None)
+    spring = bd.Pos(lx, ly, 2.50) * bd.extrude(poly, amount=0.16)
     parts.append(_finish(spring, "hairspring", S.STEEL_DARK))
 
     # stud: steel pin dropping from the stud holder to the spring's outer end
     cz0, cz1 = COCK_Z
     sx = lx + 2.85 * math.cos(math.radians(-40))
     sy = ly + 2.85 * math.sin(math.radians(-40))
-    stud = Pos(sx, sy, 0) * (_cyl(0.15, cz1 - 2.34, 2.34) + _cyl(0.22, 0.20, 2.42))
+    stud = bd.Pos(sx, sy, 0) * (_cyl(0.15, cz1 - 2.34, 2.34) + _cyl(0.22, 0.20, 2.42))
     parts.append(_finish(stud, "hairspring_stud", S.STEEL_DARK))
 
     # balance cock ---------------------------------------------------------
     bootx = lx + 2.85 * math.cos(math.radians(-95))
     booty = ly + 2.85 * math.sin(math.radians(-95))
     extra = [
-        Pos(lx, ly, 0) * _cyl(1.28, 1.2, cz0 - 0.3),        # shock-setting seat
-        Pos(bootx, booty, 0) * _cyl(0.17, 1.2, cz0 - 0.3),  # regulator boot bore
-        Pos(sx, sy, 0) * _cyl(0.18, 1.2, cz0 - 0.3),        # stud bore
+        bd.Pos(lx, ly, 0) * _cyl(1.28, 1.2, cz0 - 0.3),        # shock-setting seat
+        bd.Pos(bootx, booty, 0) * _cyl(0.17, 1.2, cz0 - 0.3),  # regulator boot bore
+        bd.Pos(sx, sy, 0) * _cyl(0.18, 1.2, cz0 - 0.3),        # stud bore
     ]
     cock, cock_shadow, cock_rib = _bridge(BALANCE_COCK_OUTLINE,
                                           cz0, cz1, [],
@@ -1328,10 +1309,10 @@ def _balance_parts():
     # stud holder: small polished plate on the cock's side lobe, clamping
     # the stud with its own tiny blued screw
     holder2d = _blob(((sx, sy, 0.45), (1.45, -9.20, 0.42), (1.12, -8.98, 0.52)), 14.0)
-    holder = Pos(0, 0, cz1) * extrude(holder2d, amount=0.12)
+    holder = bd.Pos(0, 0, cz1) * bd.extrude(holder2d, amount=0.12)
     holder, _ = F.anglage_top(holder, 0.05)
-    holder = holder - [Pos(1.12, -8.98, 0) * _cyl(0.14, 1.0, cz1 - 0.4),
-                       Pos(1.12, -8.98, 0) * _cyl(0.47, 0.5, cz1 + 0.07)]
+    holder = holder - [bd.Pos(1.12, -8.98, 0) * _cyl(0.14, 1.0, cz1 - 0.4),
+                       bd.Pos(1.12, -8.98, 0) * _cyl(0.47, 0.5, cz1 + 0.07)]
     parts.append(_finish(holder, "stud_holder", S.STEEL_LEVER))
     parts.append(_finish(
         _place_screw(1.12, -8.98, cz1 + 0.12, proud=0.03, head_d=0.8, hh=0.2,
@@ -1342,12 +1323,12 @@ def _balance_parts():
     # whole stack sunk ~0.1 vs the first pass (the bezel topped 0.13 proud of
     # the cock and the domed cap bead bulged through the lyre; the cap is now
     # a flat 0.9-dia disc, no pivot hole: cap jewels are blind)
-    bezel = Pos(lx, ly, 0) * (_ring(0.85, 1.25, 0.56, 2.72)
-                              - Pos(0, 0, 3.28) * Cone(1.3, 0.9, 0.16))
+    bezel = bd.Pos(lx, ly, 0) * (_ring(0.85, 1.25, 0.56, 2.72)
+                              - bd.Pos(0, 0, 3.28) * bd.Cone(1.3, 0.9, 0.16))
     parts.append(_finish(bezel, "shock_bezel", S.STEEL_BRIGHT))
-    gold = Pos(lx, ly, 0) * _ring(0.48, 0.83, 0.36, 2.84)   # top 3.20, under lyre
+    gold = bd.Pos(lx, ly, 0) * _ring(0.48, 0.83, 0.36, 2.84)   # top 3.20, under lyre
     parts.append(_finish(gold, "shock_chaton", S.BRASS_MOVEMENT))
-    cap = Pos(lx, ly, 3.18) * _ruby_disc(r=0.45, t=0.24, hole_r=0.0)
+    cap = bd.Pos(lx, ly, 3.18) * _ruby_disc(r=0.45, t=0.24, hole_r=0.0)
     parts.append(_finish(cap, "shock_cap_jewel", S.RUBY_BRIGHT))
     # lyre spring: crisp wire form — thin outer arc ring, three radial arms
     # into a small hub ring circling the cap jewel dome, two feet flanking the
@@ -1355,35 +1336,35 @@ def _balance_parts():
     # macro). One multi-operand 2D fuse, gap wedge subtracted LAST.
     # z 3.20..3.29 stays inside COCK_SHOCK_TOP_Z = 3.4.
     gap_a = -40.0
-    outer_ring = Circle(1.06) - Circle(0.95)
-    hub_ring = Circle(0.64) - Circle(0.50)
-    arm2d = Polygon((0.50, -0.055), (1.00, -0.055), (1.00, 0.055),
+    outer_ring = bd.Circle(1.06) - bd.Circle(0.95)
+    hub_ring = bd.Circle(0.64) - bd.Circle(0.50)
+    arm2d = bd.Polygon((0.50, -0.055), (1.00, -0.055), (1.00, 0.055),
                     (0.50, 0.055), align=None)
     lyre2d = outer_ring + (
         [hub_ring]
-        + [Rot(0, 0, gap_a + da) * arm2d for da in (90.0, 180.0, 270.0)]
-        + [Rot(0, 0, gap_a + s) * Pos(0.94, 0) * Circle(0.12)
+        + [bd.Rot(0, 0, gap_a + da) * arm2d for da in (90.0, 180.0, 270.0)]
+        + [bd.Rot(0, 0, gap_a + s) * bd.Pos(0.94, 0) * bd.Circle(0.12)
            for s in (14.0, -14.0)])
-    lyre2d = lyre2d - Rot(0, 0, gap_a) * Polygon(
+    lyre2d = lyre2d - bd.Rot(0, 0, gap_a) * bd.Polygon(
         (0.0, 0.0), (2.4, -0.55), (2.4, 0.55), align=None)
-    lyre = Pos(lx, ly, 3.20) * extrude(lyre2d, amount=0.09)
+    lyre = bd.Pos(lx, ly, 3.20) * bd.extrude(lyre2d, amount=0.09)
     parts.append(_finish(lyre, "shock_lyre_spring", S.STEEL_BRIGHT))
 
     # regulator: black-polished ring + tapered index lever + boot through
     # the cock (curb pins gripping the hairspring's outer coil)
     tail_a = -95.0
-    reg2d = Pos(lx, ly) * (Circle(1.72) - Circle(1.36))
-    tail = Polygon((-0.27, 1.42), (0.27, 1.42), (0.10, 4.05), (-0.10, 4.05),
+    reg2d = bd.Pos(lx, ly) * (bd.Circle(1.72) - bd.Circle(1.36))
+    tail = bd.Polygon((-0.27, 1.42), (0.27, 1.42), (0.10, 4.05), (-0.10, 4.05),
                    align=None)
-    tip = Polygon((-0.10, 4.05), (0.10, 4.05), (0.0, 4.55), align=None)
-    reg2d = reg2d + Pos(lx, ly) * Rot(0, 0, tail_a - 90) * (tail + tip)
-    reg = Pos(0, 0, cz1 + 0.01) * extrude(reg2d, amount=0.08)
+    tip = bd.Polygon((-0.10, 4.05), (0.10, 4.05), (0.0, 4.55), align=None)
+    reg2d = reg2d + bd.Pos(lx, ly) * bd.Rot(0, 0, tail_a - 90) * (tail + tip)
+    reg = bd.Pos(0, 0, cz1 + 0.01) * bd.extrude(reg2d, amount=0.08)
     # satin grain along the index lever's long axis (field starts outside
     # the r1.72 ring so the black-polished ring stays mirror-clean)
     gx = lx + 3.2 * math.cos(math.radians(tail_a))
     gy = ly + 3.2 * math.sin(math.radians(tail_a))
     reg = reg - _grain(2.8, 0.9, gx, gy, cz1 + 0.09, tail_a)
-    boot = Pos(bootx, booty, 0) * _cyl(0.14, 0.82, 2.50)
+    boot = bd.Pos(bootx, booty, 0) * _cyl(0.14, 0.82, 2.50)
     parts.append(_finish(reg + boot, "regulator", S.STEEL_DARK))
     return parts
 

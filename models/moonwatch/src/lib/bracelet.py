@@ -71,26 +71,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Box,
-    CenterArc,
-    Circle,
-    Color,
-    Compound,
-    Cylinder,
-    Part,
-    Plane,
-    Polygon,
-    Polyline,
-    Pos,
-    RectangleRounded,
-    Rot,
-    ThreePointArc,
-    extrude,
-    loft,
-    make_face,
-    sweep,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 from lib import finishing as F
@@ -180,7 +161,7 @@ CLASP_HALF_W = S.CLASP_WIDTH / 2.0
 
 def _prism_x(profile2d, half_width):
     """Extrude a YZ-plane sketch symmetrically along X."""
-    return extrude(Plane.YZ * profile2d, amount=half_width, both=True)
+    return bd.extrude(bd.Plane.YZ * profile2d, amount=half_width, both=True)
 
 
 def _crowned_face(xa, xb, z_top, z_bot, s_top, bev, s_bot=0.0, rnd=(False, False)):
@@ -205,7 +186,7 @@ def _crowned_face(xa, xb, z_top, z_bot, s_top, bev, s_bot=0.0, rnd=(False, False
     k = 1.0 - math.sqrt(0.5)  # 45-degree midpoint pull-in of a corner round
     xc = (xa + xb) / 2.0
     z_sh = z_top - s_top
-    top = ThreePointArc((xb - bb, z_sh), (xc, z_top), (xa + ba, z_sh))
+    top = bd.ThreePointArc((xb - bb, z_sh), (xc, z_top), (xa + ba, z_sh))
 
     def corner(x_wall, b, rounded, sgn):
         """Top corner from the crown-arc end down onto the side wall;
@@ -213,30 +194,30 @@ def _crowned_face(xa, xb, z_top, z_bot, s_top, bev, s_bot=0.0, rnd=(False, False
         p_arc = (x_wall + sgn * b, z_sh)
         p_wall = (x_wall, z_sh - b)
         if rounded:
-            return ThreePointArc(
+            return bd.ThreePointArc(
                 p_arc, (x_wall + sgn * b * k, z_sh - b * k), p_wall
             )
-        return Polyline(p_arc, p_wall)
+        return bd.Polyline(p_arc, p_wall)
 
     if s_bot > 0.0:
-        left = Polyline(
+        left = bd.Polyline(
             (xa, z_sh - ba),
             (xa, z_bot + s_bot + ba),
             (xa + ba, z_bot + s_bot),
         )
-        bottom = ThreePointArc(
+        bottom = bd.ThreePointArc(
             (xa + ba, z_bot + s_bot), (xc, z_bot), (xb - bb, z_bot + s_bot)
         )
-        right = Polyline(
+        right = bd.Polyline(
             (xb - bb, z_bot + s_bot),
             (xb, z_bot + s_bot + bb),
             (xb, z_sh - bb),
         )
     else:
-        left = Polyline((xa, z_sh - ba), (xa, z_bot))
-        bottom = Polyline((xa, z_bot), (xb, z_bot))
-        right = Polyline((xb, z_bot), (xb, z_sh - bb))
-    return make_face(
+        left = bd.Polyline((xa, z_sh - ba), (xa, z_bot))
+        bottom = bd.Polyline((xa, z_bot), (xb, z_bot))
+        right = bd.Polyline((xb, z_bot), (xb, z_sh - bb))
+    return bd.make_face(
         top
         + corner(xa, ba, ra, +1.0)
         + left
@@ -262,18 +243,18 @@ def _plan_prism(xa0, xb0, xa1, xb1, y0, y1, bev=BEVEL, rnd=(False, False)):
     """
 
     def section(xa, xb, y):
-        plane = Plane(origin=(0, y, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+        plane = bd.Plane(origin=(0, y, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
         return plane * _crowned_face(
             xa, xb, CROWN_APEX, -CROWN_APEX, CROWN_SAG, bev,
             s_bot=CROWN_SAG_BOT, rnd=rnd,
         )
 
-    return loft([section(xa0, xb0, y0), section(xa1, xb1, y1)], ruled=True)
+    return bd.loft([section(xa0, xb0, y0), section(xa1, xb1, y1)], ruled=True)
 
 
 def _xcyl(r, length, y, z, x_mid=0.0):
     """Cylinder along the X axis at (y, z)."""
-    return Pos(x_mid, y, z) * Rot(0, 90, 0) * Cylinder(r, length)
+    return bd.Pos(x_mid, y, z) * bd.Rot(0, 90, 0) * bd.Cylinder(r, length)
 
 
 def _crown_cap(half_w, length, s_top=CROWN_SAG, bev=BEVEL):
@@ -281,9 +262,9 @@ def _crown_cap(half_w, length, s_top=CROWN_SAG, bev=BEVEL):
     at local z = 0 and 45-degree bevel facets at x = +/-half_w, side
     walls dropping far below — bakes the crown + top edge breaks into a
     body whose plan is not a `_plan_prism` trapezoid (end link)."""
-    plane = Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    plane = bd.Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
     face = plane * _crowned_face(-half_w, half_w, 0.0, -12.0, s_top, bev)
-    return extrude(face, amount=length, both=True)
+    return bd.extrude(face, amount=length, both=True)
 
 
 def _crown_drop(u, half_chord, sag):
@@ -321,14 +302,14 @@ def _grain_field(x_lo, x_hi, y_lo, y_hi, crown_xc, half_chord, sag, z_apex,
         along_x=False,
     )
     xm, ym = (x_lo + x_hi) / 2.0, (y_lo + y_hi) / 2.0
-    place = Pos(xm, ym, z_apex) * Rot(0, 0, skew_deg)
+    place = bd.Pos(xm, ym, z_apex) * bd.Rot(0, 0, skew_deg)
     out = []
     for i, tool in enumerate(tools):
         off = -span_x / 2.0 + i * GRAIN_PITCH  # helper's groove offsets
         if off > span_x / 2.0 + 1e-9:
             continue  # helper over-emits +2 rows past the far edge
         drop = _crown_drop(xm + off - crown_xc, half_chord, sag)
-        out.append(place * Pos(0, 0, -drop) * tool)
+        out.append(place * bd.Pos(0, 0, -drop) * tool)
     return out
 
 
@@ -344,8 +325,8 @@ def _reveal_face(xa, xb, y, drop, bev, z_apex=CROWN_APEX, sag=CROWN_SAG):
     z_ap = z_apex - drop
     z_sh = z_ap - sag
     xc = (xa + xb) / 2.0
-    arc = ThreePointArc((xb - bb, z_sh), (xc, z_ap), (xa + ba, z_sh))
-    lid = Polyline(
+    arc = bd.ThreePointArc((xb - bb, z_sh), (xc, z_ap), (xa + ba, z_sh))
+    lid = bd.Polyline(
         (xa + ba, z_sh),
         (xa - 0.3, z_sh),
         (xa - 0.3, 3.0),
@@ -353,8 +334,8 @@ def _reveal_face(xa, xb, y, drop, bev, z_apex=CROWN_APEX, sag=CROWN_SAG):
         (xb + 0.3, z_sh),
         (xb - bb, z_sh),
     )
-    plane = Plane(origin=(0, y, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
-    return plane * make_face(arc + lid)
+    plane = bd.Plane(origin=(0, y, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    return plane * bd.make_face(arc + lid)
 
 
 def _reveal_cutter(xa, xb, axis_y, direction, edge, depth, run, bev=BEVEL,
@@ -389,7 +370,7 @@ def _reveal_cutter(xa, xb, axis_y, direction, edge, depth, run, bev=BEVEL,
             break
     if run > 0.0:
         pts.append((pts[-1][0] - run, depth))
-    return loft(
+    return bd.loft(
         [
             _reveal_face(xa, xb, axis_y - direction * u, d, bev, z_apex, sag)
             for u, d in pts
@@ -400,8 +381,8 @@ def _reveal_cutter(xa, xb, axis_y, direction, edge, depth, run, bev=BEVEL,
 
 def _stadium_side(pitch):
     """Side (YZ) profile: rect between the two pin axes + both end discs."""
-    rect = Polygon((0, -T2), (pitch, -T2), (pitch, T2), (0, T2), align=None)
-    return rect + Circle(EYE_R) + Pos(pitch, 0) * Circle(EYE_R)
+    rect = bd.Polygon((0, -T2), (pitch, -T2), (pitch, T2), (0, T2), align=None)
+    return rect + bd.Circle(EYE_R) + bd.Pos(pitch, 0) * bd.Circle(EYE_R)
 
 
 def _chamfer_link(part):
@@ -456,7 +437,7 @@ def _make_link(
         (0.0, -1.0, near, xn0, xn1, tilt_near),
         (pitch, 1.0, far, xf0, xf1, -tilt_far),
     ):
-        place = Pos(0, axis_y, 0) * Rot(tilt, 0, 0)
+        place = bd.Pos(0, axis_y, 0) * bd.Rot(tilt, 0, 0)
         if kind == "eye":
             cut = place * _reveal_cutter(
                 x0, x1, 0.0, direction, SHUT_EDGE, EYE_ROLL_DEPTH, SHUT_RUN,
@@ -464,13 +445,13 @@ def _make_link(
             )
             # clamp horizontal in the ROW frame (the bore is too), so the
             # tilted crown-following deck stays above the bore roof
-            cut = cut & (Pos(0, axis_y, FLOOR_Z_MIN + 3.0) * Box(26.0, 8.0, 6.0))
+            cut = cut & (bd.Pos(0, axis_y, FLOOR_Z_MIN + 3.0) * bd.Box(26.0, 8.0, 6.0))
         else:
             # full-height end wall SHUT_EDGE past the axis (slab away from
             # the body), its top rolled over the same quarter-round; the
             # roll overruns the slab by 0.05 so no faces coincide
             cut = place * (
-                Pos(0, direction * (0.27 - SHUT_EDGE), 0) * Box(30.0, 0.54, 3.6)
+                bd.Pos(0, direction * (0.27 - SHUT_EDGE), 0) * bd.Box(30.0, 0.54, 3.6)
                 + _reveal_cutter(
                     x0, x1, 0.0, direction, SHUT_EDGE, ROLL_R, 0.05, bev=bev
                 )
@@ -497,7 +478,7 @@ def _make_link(
     )
     body = body - tools
     body = _chamfer_link(body)
-    body.color = Color(*color)
+    body.color = bd.Color(*color)
     return body
 
 
@@ -542,14 +523,14 @@ def make_pin(length):
     Ends are flat discs with only a 0.05 edge break, sitting near-flush
     in the bore — a 0.18 end chamfer on the 0.9 radius read as a pointed
     cone tip recessed in the bore at macro scale."""
-    pin = Rot(0, 90, 0) * Cylinder(PIN_R, length)
+    pin = bd.Rot(0, 90, 0) * bd.Cylinder(PIN_R, length)
     ends = [
         e
         for e in pin.edges()
         if (e.bounding_box().max.X - e.bounding_box().min.X) < 0.01
     ]
     pin, _ = F.safe_chamfer(pin, ends, 0.05)
-    pin.color = Color(*S.STEEL_DARK)
+    pin.color = bd.Color(*S.STEEL_DARK)
     return pin
 
 
@@ -570,7 +551,7 @@ def make_spring_bar():
         if (e.bounding_box().max.X - e.bounding_box().min.X) < 0.01
     ]
     bar, _ = F.safe_chamfer(bar, ends, 0.2)
-    bar.color = Color(*S.STEEL_DARK)
+    bar.color = bd.Color(*S.STEEL_DARK)
     return bar
 
 
@@ -589,7 +570,7 @@ def make_end_link():
     slope = (top_nose - top_tail) / (24.8 - nose_y)
     slope_deg = math.degrees(math.atan(slope))
 
-    prof = Polygon(
+    prof = bd.Polygon(
         (nose_y, bot_nose),
         (nose_y, top_nose),
         (24.8, top_tail),
@@ -597,14 +578,14 @@ def make_end_link():
         (jy, 1.6),    # eye (r 1.10, top 3.70) no longer carries the tail
         (24.8, bot_tail),
         align=None,
-    ) + Pos(jy, jz) * Circle(EYE_R)
+    ) + bd.Pos(jy, jz) * bd.Circle(EYE_R)
 
     half_w = END_LINK_WIDTH / 2.0
     # crown + 45-degree top edge bevels baked in, pitched to follow the
     # nose->tail top slope so the crown runs the full link length
     cap = (
-        Pos(0, nose_y, top_nose)
-        * Rot(-slope_deg, 0, 0)
+        bd.Pos(0, nose_y, top_nose)
+        * bd.Rot(-slope_deg, 0, 0)
         * _crown_cap(half_w, 14.0)
     )
     body = _prism_x(prof, half_w) & cap
@@ -622,16 +603,16 @@ def make_end_link():
         g = LINK_GAP / 2.0
         r = R_LAT
         k = 1.0 - math.sqrt(0.5)
-        prof = make_face(
-            Polyline((-g - r, 0.8), (-g - r, 0.0))
-            + ThreePointArc((-g - r, 0.0), (-g - r * k, -r * k), (-g, -r))
-            + Polyline((-g, -r), (-g, -0.34), (g, -0.34), (g, -r))
-            + ThreePointArc((g, -r), (g + r * k, -r * k), (g + r, 0.0))
-            + Polyline((g + r, 0.0), (g + r, 0.8), (-g - r, 0.8))
+        prof = bd.make_face(
+            bd.Polyline((-g - r, 0.8), (-g - r, 0.0))
+            + bd.ThreePointArc((-g - r, 0.0), (-g - r * k, -r * k), (-g, -r))
+            + bd.Polyline((-g, -r), (-g, -0.34), (g, -0.34), (g, -r))
+            + bd.ThreePointArc((g, -r), (g + r * k, -r * k), (g + r, 0.0))
+            + bd.Polyline((g + r, 0.0), (g + r, 0.8), (-g - r, 0.8))
         )
-        plane = Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
-        prism = extrude(plane * prof, amount=2.3, both=True)
-        return Pos(x, y_mid, z_top) * Rot(-slope_deg, 0, 0) * prism
+        plane = bd.Plane(origin=(0, 0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+        prism = bd.extrude(plane * prof, amount=2.3, both=True)
+        return bd.Pos(x, y_mid, z_top) * bd.Rot(-slope_deg, 0, 0) * prism
 
     # joint-1 rolled shoulder: the same vocabulary as the row joints — the
     # tail deck rolls over a ROLL_R quarter-round whose vertical-tangent
@@ -642,18 +623,18 @@ def make_end_link():
     # clamped at z >= 3.62 (bore roof at the shutline is 3.55) so it
     # cannot pinhole into the pin bore.
     tail_roll = (
-        Pos(0, jy, jz)
-        * Rot(-DRAPE_DELTA0 / 2.0, 0, 0)
+        bd.Pos(0, jy, jz)
+        * bd.Rot(-DRAPE_DELTA0 / 2.0, 0, 0)
         * _reveal_cutter(
             -half_w, half_w, 0.0, 1.0, SHUT_EDGE, EYE_ROLL_DEPTH, 0.40,
             bev=BEVEL, z_apex=3.95 - jz,
         )
-    ) & (Pos(0, jy, 3.62 + 3.0) * Box(26.0, 8.0, 6.0))
+    ) & (bd.Pos(0, jy, 3.62 + 3.0) * bd.Box(26.0, 8.0, 6.0))
 
     tools = [
-        Cylinder(NOSE_HUG_R, 20.0, align=(None, None, None)),  # case-hugging nose arc
+        bd.Cylinder(NOSE_HUG_R, 20.0, align=(None, None, None)),  # case-hugging nose arc
         _xcyl(S.SPRING_BAR_DIAMETER / 2.0 + 0.1, 30.0, S.SPRING_BAR_Y, S.SPRING_BAR_Z),
-        Pos(0, 23.05, 1.7) * Box(16.6, 3.7, 2.4),    # hollow back (centered)
+        bd.Pos(0, 23.05, 1.7) * bd.Box(16.6, 3.7, 2.4),    # hollow back (centered)
         _xcyl(RECESS_R, 2 * slot_half, jy, jz),      # center-link recess slot
         _xcyl(BORE_R, 30.0, jy, jz),                 # pin bore
         groove(cw1 / 2.0 + LINK_GAP / 2.0),
@@ -700,7 +681,7 @@ def make_end_link():
         math.sqrt(NOSE_HUG_R * NOSE_HUG_R - out_lo * out_lo)
         - nose_y + GRAIN_INSET
     )
-    frame = Pos(0, nose_y, top_nose) * Rot(-slope_deg, 0, 0)
+    frame = bd.Pos(0, nose_y, top_nose) * bd.Rot(-slope_deg, 0, 0)
     grain = (
         _grain_field(-band_in, band_in, y_nose_c, y_roll,
                      0.0, half_w - BEVEL, CROWN_SAG, 0.0)
@@ -710,7 +691,7 @@ def make_end_link():
                        0.0, half_w - BEVEL, CROWN_SAG, 0.0)
     )
     body = body - [frame * t for t in grain]
-    body.color = Color(*S.BRACELET_OUTER)
+    body.color = bd.Color(*S.BRACELET_OUTER)
     return body
 
 
@@ -723,8 +704,8 @@ def _band(r_out, r_in, phi0_deg, phi1_deg, half_w):
     center (clasp-local YZ), extruded across X."""
     zc = T2 - CLASP_R
     p0, p1 = math.radians(phi0_deg), math.radians(phi1_deg)
-    ann = Pos(0, zc) * (Circle(r_out) - Circle(r_in))
-    wedge = Polygon(
+    ann = bd.Pos(0, zc) * (bd.Circle(r_out) - bd.Circle(r_in))
+    wedge = bd.Polygon(
         (0, zc),
         (200.0 * math.sin(p0), zc + 200.0 * math.cos(p0)),
         (200.0 * math.sin(p1), zc + 200.0 * math.cos(p1)),
@@ -762,19 +743,19 @@ def _crowned_band(r_out, r_in, phi0_deg, phi1_deg, half_w, s_top, bev,
         for i in range(int(span / GRAIN_PITCH) + 1):
             u = -span / 2.0 + i * GRAIN_PITCH
             z_i = t / 2.0 - _crown_drop(u, half_chord, s_top)
-            notches.append(Polygon(
+            notches.append(bd.Polygon(
                 (u - w, z_i + 0.02), (u + w, z_i + 0.02),
                 (u, z_i - GRAIN_DEPTH), align=None,
             ))
         face = face - notches
-    path = Plane.YZ * CenterArc(
+    path = bd.Plane.YZ * bd.CenterArc(
         (0, zc), r_mid,
         start_angle=90.0 - phi1_deg,
         arc_size=phi1_deg - phi0_deg,
     )
-    plane = Plane(origin=path @ 0, x_dir=(1, 0, 0), z_dir=path % 0)
+    plane = bd.Plane(origin=path @ 0, x_dir=(1, 0, 0), z_dir=path % 0)
     section = plane * face
-    return sweep(section, path=path)
+    return bd.sweep(section, path=path)
 
 
 def _arc_point(phi_deg, radius):
@@ -803,8 +784,8 @@ def make_clasp():
         CLASP_R, CLASP_R - CLASP_PLATE_T, 1.0, 31.0, CLASP_HALF_W,
         CROWN_SAG, BEVEL, grain=True,
     )
-    plan = extrude(
-        Pos(0, 18.3) * RectangleRounded(S.CLASP_WIDTH, 35.0, 3.0),
+    plan = bd.extrude(
+        bd.Pos(0, 18.3) * bd.RectangleRounded(S.CLASP_WIDTH, 35.0, 3.0),
         amount=40.0, both=True,
     )
     plate = plate & plan
@@ -812,7 +793,7 @@ def make_clasp():
         _xcyl(RECESS_R, 40.0, 0.0, 0.0),          # hinge relief at the strap joint
         _xcyl(1.6, 40.0, y_push, z_push),         # pusher through-holes
     ]
-    tab_prof = Circle(EYE_R) + Polygon(
+    tab_prof = bd.Circle(EYE_R) + bd.Polygon(
         (0, -T2), (3.5, -T2), (3.5, T2), (0, T2), align=None
     )
     tab = _prism_x(tab_prof, 2.65) - _xcyl(BORE_R, 30.0, 0.0, 0.0)
@@ -828,7 +809,7 @@ def make_clasp():
         and e.length > 0.6
     ]
     body, _ = F.safe_chamfer(body, short_edges, 0.12)
-    body.color = Color(*S.BRACELET_OUTER)
+    body.color = bd.Color(*S.BRACELET_OUTER)
     parts.append((body, "clasp_body"))
 
     # --- inner cover plate (folded closed under the outer plate) ------------
@@ -836,12 +817,12 @@ def make_clasp():
     # the outer plate); no post chamfer
     cover = _crowned_band(CLASP_R - 2.3, CLASP_R - 3.5, 4.0, 29.5, 7.0,
                           0.18, 0.10, grain=True)
-    cover.color = Color(*S.BRACELET_OUTER)
+    cover.color = bd.Color(*S.BRACELET_OUTER)
     parts.append((cover, "clasp_cover"))
 
     # --- internal spring blade ----------------------------------------------
     blade = _band(CLASP_R - 2.06, CLASP_R - 2.24, 8.0, 20.0, 2.0)
-    blade.color = Color(*S.STEEL_DARK)
+    blade.color = bd.Color(*S.STEEL_DARK)
     parts.append((blade, "clasp_spring_blade"))
 
     # --- flank pushers -------------------------------------------------------
@@ -856,7 +837,7 @@ def make_clasp():
             if (e.bounding_box().max.X - e.bounding_box().min.X) < 0.01
         ]
         push, _ = F.safe_chamfer(push, ends, 0.3)
-        push.color = Color(*S.BRACELET_CENTER)
+        push.color = bd.Color(*S.BRACELET_CENTER)
         parts.append((push, f"clasp_pusher_{side}"))
 
     # --- fold hinge knuckle --------------------------------------------------
@@ -868,7 +849,7 @@ def make_clasp():
         if (e.bounding_box().max.X - e.bounding_box().min.X) < 0.01
     ]
     knuckle, _ = F.safe_chamfer(knuckle, ends, 0.15)
-    knuckle.color = Color(*S.STEEL_DARK)
+    knuckle.color = bd.Color(*S.STEEL_DARK)
     parts.append((knuckle, "clasp_hinge_knuckle"))
 
     # --- flip-lock bow (polished stirrup hugging the outer plate) -----------
@@ -876,8 +857,8 @@ def make_clasp():
     # strictly inside the window plan) still need a break
     bow = _crowned_band(CLASP_R + 0.66, CLASP_R + 0.06, 20.6, 30.4, 4.5, 0.15, 0.08)
     y_w, _zw = _arc_point(25.5, CLASP_R + 0.45)
-    window = extrude(
-        Pos(0, y_w) * RectangleRounded(7.0, 9.8, 2.2), amount=60.0, both=True
+    window = bd.extrude(
+        bd.Pos(0, y_w) * bd.RectangleRounded(7.0, 9.8, 2.2), amount=60.0, both=True
     )
     bow = bow - window
 
@@ -890,7 +871,7 @@ def make_clasp():
         )
 
     bow, _ = F.safe_chamfer(bow, [e for e in bow.edges() if _in_window(e)], 0.08)
-    bow.color = Color(*S.BRACELET_CENTER)
+    bow.color = bd.Color(*S.BRACELET_CENTER)
     parts.append((bow, "clasp_flip_lock"))
 
     return parts
@@ -948,7 +929,7 @@ def _build_strap(side):
     joints = _joint_chain(angles)
     # clasp chord continues the drape arc one more increment (6 side)
     clasp_pitch = angles[-1] + DRAPE_DELTA1
-    flip = Rot(0, 0, 180) if side == "6" else None
+    flip = bd.Rot(0, 0, 180) if side == "6" else None
 
     def world(p):
         return (flip * p) if flip is not None else p
@@ -963,7 +944,7 @@ def _build_strap(side):
         terminal = side == "12" and i == n - 1
         th = angles[i]
         jy, jz = joints[i]
-        place = Pos(0, jy, jz) * Rot(-th, 0, 0)
+        place = bd.Pos(0, jy, jz) * bd.Rot(-th, 0, 0)
         # joint-bisector half-angles: previous body is the end link (0 deg);
         # past the last row sits the clasp (6 side) or nothing (12 side)
         th_prev = angles[i - 1] if i > 0 else 0.0
@@ -981,12 +962,12 @@ def _build_strap(side):
 
     for k, (jy, jz) in enumerate(joints, start=1):
         pin = make_pin(_joint_width(k, n) - 0.10)
-        parts.append((world(Pos(0, jy, jz) * pin), f"pin_{side}_j{k}"))
+        parts.append((world(bd.Pos(0, jy, jz) * pin), f"pin_{side}_j{k}"))
 
     clasp_parts = []
     if side == "6":
         jy, jz = joints[-1]
-        place = Pos(0, jy, jz) * Rot(-clasp_pitch, 0, 0)
+        place = bd.Pos(0, jy, jz) * bd.Rot(-clasp_pitch, 0, 0)
         for part, label in make_clasp():
             clasp_parts.append((world(place * part), label))
     return parts, clasp_parts
@@ -1000,19 +981,19 @@ def build_bracelet():
     def compound(pairs, label):
         kids = []
         for part, name in pairs:
-            if not isinstance(part, Part):
+            if not isinstance(part, bd.Part):
                 # some boolean/chamfer chains return a bare Compound; the
                 # per-component STEP/GLB export only colors Part/Sketch/
                 # Curve leaves ("Unknown Compound type, color not set"),
                 # which silently drops the finish contrast
-                solid = Part(part.wrapped)
+                solid = bd.Part(part.wrapped)
                 solid.color = part.color
                 part = solid
             part.label = name
             kids.append(part)
-        return Compound(children=kids, label=label)
+        return bd.Compound(children=kids, label=label)
 
-    return Compound(
+    return bd.Compound(
         children=[
             compound(strap12, "strap_12"),
             compound(strap6, "strap_6"),

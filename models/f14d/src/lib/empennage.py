@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Compound, Face, Location, Plane, Polyline, Solid,
-                       Spline, Vector, Vertex, Wire, loft, scale)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import palette as P
@@ -117,9 +116,9 @@ def _split(pts, n):
 
 
 def _sec_face(plane, upper, lower):
-    up = [plane.from_local_coords(Vector(x, y, 0)) for x, y in upper]
-    lo = [plane.from_local_coords(Vector(x, y, 0)) for x, y in lower]
-    return Face(Wire([Spline(*up).edge(), Spline(*lo).edge()]))
+    up = [plane.from_local_coords(bd.Vector(x, y, 0)) for x, y in upper]
+    lo = [plane.from_local_coords(bd.Vector(x, y, 0)) for x, y in lower]
+    return bd.Face(bd.Wire([bd.Spline(*up).edge(), bd.Spline(*lo).edge()]))
 
 
 def _aerofoil_face(plane, pts, n):
@@ -128,9 +127,9 @@ def _aerofoil_face(plane, pts, n):
 
 
 def _rect_face(plane, x0, x1, y0, y1):
-    pts = [plane.from_local_coords(Vector(a, b, 0))
+    pts = [plane.from_local_coords(bd.Vector(a, b, 0))
            for a, b in ((x0, y0), (x1, y0), (x1, y1), (x0, y1))]
-    return Face(Wire(Polyline(*pts, close=True).edges()))
+    return bd.Face(bd.Wire(bd.Polyline(*pts, close=True).edges()))
 
 
 def _skin_top(x, y):
@@ -212,7 +211,7 @@ def _fin_plane(h, side):
 
 def _fin_world(x, h, yt, side):
     """World point at station ``x``, height ``h``, ``yt`` off the fin plane."""
-    return Vector(x,
+    return bd.Vector(x,
                   side * (G.Y_FIN + h * FIN_TAN) + yt * FIN_COS,
                   G.FIN_ROOT_Z + h - yt * side * FIN_SIN)
 
@@ -242,7 +241,7 @@ def _fin_loft(side):
         c = _fin_chord(t)
         pts = naca4_points(_fin_thick(t) / c, c, n=FIN_N)
         faces.append(_aerofoil_face(_fin_plane(h, side), pts, FIN_N))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _hinge_prism(side, h_lo, h_hi, x_off, half_thk=0.6 * M):
@@ -255,8 +254,8 @@ def _hinge_prism(side, h_lo, h_hi, x_off, half_thk=0.6 * M):
     faces = []
     for yt in (-half_thk, half_thk):
         pts = [_fin_world(x, h, yt, side) for x, h in corners]
-        faces.append(Face(Wire(Polyline(*pts, close=True).edges())))
-    return loft(faces)
+        faces.append(bd.Face(bd.Wire(bd.Polyline(*pts, close=True).edges())))
+    return bd.loft(faces)
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +275,7 @@ def _chord_station_slab(sections, width, out, into, face_sign):
         y0 = face_sign * (ht - into)
         y1 = face_sign * (ht + out)
         faces.append(_rect_face(plane, xc - 0.5 * width, xc + 0.5 * width, y0, y1))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _fin_chord_slab(side, f_chord, h0, h1, width, out, into, face_sign, n=5):
@@ -309,7 +308,7 @@ def _fin_rib_slab(side, h, f0, f1, width, out, into, face_sign, n=8):
                    (0.0, FIN_COS, -side * FIN_SIN), (1.0, 0.0, 0.0))
         faces.append(_rect_face(pl, face_sign * (ht - into), face_sign * (ht + out),
                                 -0.5 * width, 0.5 * width))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 # ---------------------------------------------------------------------------
@@ -358,11 +357,11 @@ def _hinge_fairings(side):
         c = _fin_chord(t)
         x = _fin_hinge_x(t)
         ht = _naca_half(_fin_thick(t) / c, c, (x - _fin_le(t)) / c)
-        pod = scale(Solid.make_sphere(1.0),
+        pod = bd.scale(bd.Solid.make_sphere(1.0),
                     by=(0.135 * M, ht + 0.021 * M, 0.062 * M))
-        pl = Plane(origin=_fin_world(x + 0.020 * M, h, 0.0, side),
-                   x_dir=Vector(1.0, 0.0, 0.0),
-                   z_dir=Vector(0.0, side * FIN_SIN, FIN_COS))
+        pl = bd.Plane(origin=_fin_world(x + 0.020 * M, h, 0.0, side),
+                   x_dir=bd.Vector(1.0, 0.0, 0.0),
+                   z_dir=bd.Vector(0.0, side * FIN_SIN, FIN_COS))
         out.append(P.style(pl.location * pod, f"rudder_hinge_{i:02d}", P.JOLLY_BLACK))
     return group("rudder_hinges", out)
 
@@ -428,10 +427,10 @@ def _fin_fairing(side):
             if z0 is None:
                 z0 = G.FIN_ROOT_Z
             dt, db = _fair_offsets(abs(dy), rise, reach, wall, u)
-            top.append(Vector(x, y, z0 + dt))
-            bot.append(Vector(x, y, z0 + db))
-        faces.append(Face(Wire([Spline(*top).edge(), Spline(*bot).edge()])))
-    return P.style(loft(faces), "fin_root_fairing", P.JOLLY_BLACK)
+            top.append(bd.Vector(x, y, z0 + dt))
+            bot.append(bd.Vector(x, y, z0 + db))
+        faces.append(bd.Face(bd.Wire([bd.Spline(*top).edge(), bd.Spline(*bot).edge()])))
+    return P.style(bd.loft(faces), "fin_root_fairing", P.JOLLY_BLACK)
 
 
 # ---------------------------------------------------------------------------
@@ -449,7 +448,7 @@ def _tip_pod(side, x0, x1, half_w_fn, up_fn, dn_fn, n=13):
     """
     y_tip = side * (G.Y_FIN + G.FIN_HEIGHT * FIN_TAN)
     z_tip = G.FIN_ROOT_Z + G.FIN_HEIGHT
-    secs = [Vertex(*_fin_world(x0, G.FIN_HEIGHT, 0.0, side).to_tuple())]
+    secs = [bd.Vertex(*_fin_world(x0, G.FIN_HEIGHT, 0.0, side).to_tuple())]
     for i in range(1, n - 1):
         x = G.lerp(x0, x1, i / (n - 1))
         w, hu, hd = half_w_fn(x), up_fn(x), dn_fn(x)
@@ -459,12 +458,12 @@ def _tip_pod(side, x0, x1, half_w_fn, up_fn, dn_fn, n=13):
         for k in range(15):
             a = math.pi * k / 14
             up.append(pl.from_local_coords(
-                Vector(w * math.cos(a), hu * math.sin(a), 0)))
+                bd.Vector(w * math.cos(a), hu * math.sin(a), 0)))
             lo.append(pl.from_local_coords(
-                Vector(w * math.cos(a), -hd * math.sin(a), 0)))
-        secs.append(Face(Wire([Spline(*up).edge(), Spline(*lo).edge()])))
-    secs.append(Vertex(*_fin_world(x1, G.FIN_HEIGHT, 0.0, side).to_tuple()))
-    return loft(secs)
+                bd.Vector(w * math.cos(a), -hd * math.sin(a), 0)))
+        secs.append(bd.Face(bd.Wire([bd.Spline(*up).edge(), bd.Spline(*lo).edge()])))
+    secs.append(bd.Vertex(*_fin_world(x1, G.FIN_HEIGHT, 0.0, side).to_tuple()))
+    return bd.loft(secs)
 
 
 def _fin_tip(side):
@@ -516,18 +515,18 @@ def _fin_tip(side):
     kids.append(P.style(aft, "fin_tip_rwr_aft", P.DIELECTRIC))
 
     # fuel vent standing off the cap, and the anti-collision lens beside it
-    vent_pl = Plane(origin=_fin_world(x_te - 0.36 * M, G.FIN_HEIGHT + 0.052 * M,
+    vent_pl = bd.Plane(origin=_fin_world(x_te - 0.36 * M, G.FIN_HEIGHT + 0.052 * M,
                                       0.0, side),
-                    x_dir=Vector(1.0, 0.0, 0.0),
-                    z_dir=Vector(0.0, side * FIN_SIN, FIN_COS))
-    vent = scale(Solid.make_sphere(1.0), by=(0.115 * M, 0.026 * M, 0.030 * M))
+                    x_dir=bd.Vector(1.0, 0.0, 0.0),
+                    z_dir=bd.Vector(0.0, side * FIN_SIN, FIN_COS))
+    vent = bd.scale(bd.Solid.make_sphere(1.0), by=(0.115 * M, 0.026 * M, 0.030 * M))
     kids.append(P.style(vent_pl.location * vent, "fin_vent", P.ALUM_DARK))
 
-    lens_pl = Plane(origin=_fin_world(x_le + 0.62 * M, G.FIN_HEIGHT + 0.036 * M,
+    lens_pl = bd.Plane(origin=_fin_world(x_le + 0.62 * M, G.FIN_HEIGHT + 0.036 * M,
                                       0.0, side),
-                    x_dir=Vector(1.0, 0.0, 0.0),
-                    z_dir=Vector(0.0, side * FIN_SIN, FIN_COS))
-    lens = scale(Solid.make_sphere(1.0), by=(0.072 * M, 0.036 * M, 0.026 * M))
+                    x_dir=bd.Vector(1.0, 0.0, 0.0),
+                    z_dir=bd.Vector(0.0, side * FIN_SIN, FIN_COS))
+    lens = bd.scale(bd.Solid.make_sphere(1.0), by=(0.072 * M, 0.036 * M, 0.026 * M))
     kids.append(P.style(lens_pl.location * lens, "fin_light_white", P.LIGHT_WHITE))
 
     return group("fin_tip", kids)
@@ -546,7 +545,7 @@ def _formation_strip(side):
 
 def _fin_fasteners(side):
     """Fastener rows following the fin spars, as additive domes."""
-    proto = Solid.make_sphere(FASTENER_R)
+    proto = bd.Solid.make_sphere(FASTENER_R)
     solids = []
     for f in SPARS:
         for sgn in (1, -1):
@@ -557,14 +556,14 @@ def _fin_fasteners(side):
                 xc = (f * c) + 0.030 * M
                 ht = _naca_half(_fin_thick(t) / c, c, xc / c)
                 pl = _fin_plane(h, side)
-                p = pl.from_local_coords(Vector(xc, sgn * (ht - FASTENER_SINK), 0))
-                solids.append(Location(p) * proto)
+                p = pl.from_local_coords(bd.Vector(xc, sgn * (ht - FASTENER_SINK), 0))
+                solids.append(bd.Location(p) * proto)
                 h += 0.115 * M
     # ONE leaf holding every dome.  Compound(obj=[...]) without children= is
     # exactly the collapse-to-one-occurrence behaviour wanted here: a fastener
     # row is one painted feature, not two hundred assembly parts, and two
     # hundred coloured leaves would swamp the render package.
-    return P.style(Compound(solids), "fin_fasteners", P.JOLLY_BLACK)
+    return P.style(bd.Compound(solids), "fin_fasteners", P.JOLLY_BLACK)
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +655,7 @@ def _stab_ht(s, f):
 
 
 def _stabilator(side):
-    body = loft(_stab_sections(side))
+    body = bd.loft(_stab_sections(side))
     tools = []
     for f in (0.135, 0.640):
         secs = []
@@ -688,17 +687,17 @@ def _stab_fairing(side):
         x = G.lerp(x0, x1, i / (n - 1))
         yc = side * (_skin_edge_y(x, Z_STAB) - 0.62 * b0)
         if i in (0, n - 1):
-            secs.append(Vertex(x, yc, Z_STAB))
+            secs.append(bd.Vertex(x, yc, Z_STAB))
             continue
         f = prof(x)
         b, c = b0 * f, c0 * f
         up, lo = [], []
         for k in range(17):
             a = math.pi * k / 16
-            up.append(Vector(x, yc + side * b * math.cos(a), Z_STAB + c * math.sin(a)))
-            lo.append(Vector(x, yc + side * b * math.cos(a), Z_STAB - c * math.sin(a)))
-        secs.append(Face(Wire([Spline(*up).edge(), Spline(*lo).edge()])))
-    return P.style(loft(secs), "stab_pivot_fairing", P.GREY_DARK)
+            up.append(bd.Vector(x, yc + side * b * math.cos(a), Z_STAB + c * math.sin(a)))
+            lo.append(bd.Vector(x, yc + side * b * math.cos(a), Z_STAB - c * math.sin(a)))
+        secs.append(bd.Face(bd.Wire([bd.Spline(*up).edge(), bd.Spline(*lo).edge()])))
+    return P.style(bd.loft(secs), "stab_pivot_fairing", P.GREY_DARK)
 
 
 # ---------------------------------------------------------------------------
@@ -741,7 +740,7 @@ def _ventral(side):
             thk *= math.sqrt(max(0.0, 1.0 - (0.975 * q) ** 2))
         pts = biconvex_points(thk / c, c, n=VENT_N, le_round=0.04)
         faces.append(_aerofoil_face(_vent_plane(h, side), pts, VENT_N))
-    return P.style(loft(faces), "ventral_fin", P.JOLLY_BLACK)
+    return P.style(bd.loft(faces), "ventral_fin", P.JOLLY_BLACK)
 
 
 def _ventral_fairing(side):
@@ -778,13 +777,13 @@ def _ventral_fairing(side):
                 delta = ri * (1.0 - math.sqrt(max(0.0, 1.0 - s * s)))
             edge = 0.014 * M + 0.040 * M * (1.0 - fade)
             lower = -delta + edge * (1.0 - G.clamp((d_max - d) / max(r, 1.0), 0.0, 1.0))
-            top.append(Vector(x, y, z0 + sink))
-            bot.append(Vector(x, y, z0 + lower))
+            top.append(bd.Vector(x, y, z0 + sink))
+            bot.append(bd.Vector(x, y, z0 + lower))
         # collapse the two curves onto each other at the outer edge
-        bot[0] = Vector(bot[0].X, bot[0].Y, top[0].Z)
-        bot[-1] = Vector(bot[-1].X, bot[-1].Y, top[-1].Z)
-        faces.append(Face(Wire([Spline(*top).edge(), Spline(*bot).edge()])))
-    return P.style(loft(faces), "ventral_fairing", P.JOLLY_BLACK)
+        bot[0] = bd.Vector(bot[0].X, bot[0].Y, top[0].Z)
+        bot[-1] = bd.Vector(bot[-1].X, bot[-1].Y, top[-1].Z)
+        faces.append(bd.Face(bd.Wire([bd.Spline(*top).edge(), bd.Spline(*bot).edge()])))
+    return P.style(bd.loft(faces), "ventral_fairing", P.JOLLY_BLACK)
 
 
 # ---------------------------------------------------------------------------

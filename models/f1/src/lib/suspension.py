@@ -23,16 +23,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Cylinder,
-    Plane,
-    Pos,
-    Sphere,
-    Spline,
-    Vector,
-    extrude,
-    make_face,
-)
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -41,29 +32,29 @@ from . import spec, surfaces
 # ==========================================================================
 
 
-def _p(t) -> Vector:
-    if isinstance(t, Vector):
+def _p(t) -> bd.Vector:
+    if isinstance(t, bd.Vector):
         return t
-    return Vector(float(t[0]), float(t[1]), float(t[2]))
+    return bd.Vector(float(t[0]), float(t[1]), float(t[2]))
 
 
-def _unit(v) -> Vector:
-    return Vector(v).normalized()
+def _unit(v) -> bd.Vector:
+    return bd.Vector(v).normalized()
 
 
-def _perp(axis, ref) -> Vector:
+def _perp(axis, ref) -> bd.Vector:
     """Component of `ref` perpendicular to `axis`, normalised."""
     n = _unit(axis)
-    r = Vector(ref)
+    r = bd.Vector(ref)
     r = r - n * r.dot(n)
     if r.length < 1e-6:
-        r = Vector(0, 0, 1) if abs(n.Z) < 0.9 else Vector(1, 0, 0)
+        r = bd.Vector(0, 0, 1) if abs(n.Z) < 0.9 else bd.Vector(1, 0, 0)
         r = r - n * r.dot(n)
     return r.normalized()
 
 
-def ey_of(ax, ex) -> Vector:
-    return Vector(ax).cross(Vector(ex))
+def ey_of(ax, ex) -> bd.Vector:
+    return bd.Vector(ax).cross(bd.Vector(ex))
 
 
 def _blade_dirs(axis, roll_deg: float = 0.0):
@@ -73,11 +64,11 @@ def _blade_dirs(axis, roll_deg: float = 0.0):
     which way the blade is thin.
     """
     n = _unit(axis)
-    ref = Vector(surfaces.FLOW)
+    ref = bd.Vector(surfaces.FLOW)
     if abs(ref.dot(n)) > 0.97:
-        ref = Vector(0, 0, 1)
+        ref = bd.Vector(0, 0, 1)
         if abs(ref.dot(n)) > 0.97:
-            ref = Vector(0, 1, 0)
+            ref = bd.Vector(0, 1, 0)
     xd = (ref - n * ref.dot(n)).normalized()
     yd = n.cross(xd)
     a = math.radians(roll_deg)
@@ -118,7 +109,7 @@ def _fuse(parts):
         if res is None or _vol(res) < floor:
             for d in _NUDGES:
                 try:
-                    cand = out + Pos(d) * q
+                    cand = out + bd.Pos(d) * q
                 except Exception:
                     continue
                 if _vol(cand) >= floor:
@@ -141,7 +132,7 @@ def _cut(base, tools):
         if res is None or _vol(res) < 1e-6:
             for d in _NUDGES:
                 try:
-                    cand = base - Pos(d) * t
+                    cand = base - bd.Pos(d) * t
                 except Exception:
                     continue
                 if _vol(cand) > 1e-6:
@@ -162,17 +153,17 @@ def _dedupe(pts, eps=1e-4):
     return out
 
 
-def _face(plane: Plane, pts):
-    return plane * make_face(Spline(*_dedupe(pts), periodic=True))
+def _face(plane: bd.Plane, pts):
+    return plane * bd.make_face(bd.Spline(*_dedupe(pts), periodic=True))
 
 
-def _plate(plane: Plane, pts, thick: float):
+def _plate(plane: bd.Plane, pts, thick: float):
     """Rounded plate: a 2D outline in `plane`, extruded symmetrically."""
-    return extrude(_face(plane, pts), thick / 2.0, both=True)
+    return bd.extrude(_face(plane, pts), thick / 2.0, both=True)
 
 
 def _cyl(center, axis, r: float, h: float):
-    return Plane(origin=_p(center), z_dir=_unit(axis)) * Cylinder(r, h)
+    return bd.Plane(origin=_p(center), z_dir=_unit(axis)) * bd.Cylinder(r, h)
 
 
 def _shaft(p0, p1, r: float):
@@ -181,7 +172,7 @@ def _shaft(p0, p1, r: float):
 
 
 def _ball(c, r: float):
-    return Pos(_p(c)) * Sphere(r)
+    return bd.Pos(_p(c)) * bd.Sphere(r)
 
 
 def _beam(p0, p1, stations, thin=(0, 0, 1), n_top: float = 2.4, n_bot: float = 2.4,
@@ -202,7 +193,7 @@ def _beam(p0, p1, stations, thin=(0, 0, 1), n_top: float = 2.4, n_bot: float = 2
         t, hw, ht = st[0], st[1], st[2]
         nt = st[3] if len(st) > 3 else n_top
         nb = st[4] if len(st) > 4 else n_bot
-        pl = Plane(origin=a + (b - a) * t, x_dir=wd, z_dir=ax)
+        pl = bd.Plane(origin=a + (b - a) * t, x_dir=wd, z_dir=ax)
         faces.append(_face(pl, surfaces.superellipse_pts(hw, ht, nt, nb, samples=26)))
     return surfaces.loft_solid(faces, ruled=ruled)
 
@@ -347,9 +338,9 @@ def _leg(p_in, p_out, c_root: float, c_tip: float, t_max: float, t_tip: float,
     reading as a full aerofoil from above.
     """
     a, b = _p(p_in), _p(p_out)
-    bd = _perp(b - a, bow_dir)
+    bow_v = _perp(b - a, bow_dir)
     ts = (0.0, 0.055, peak, 0.40, 0.62, 0.80, 0.90, 0.965, 1.0)
-    pts = [a + (b - a) * t + bd * (bow * math.sin(math.pi * t)) for t in ts]
+    pts = [a + (b - a) * t + bow_v * (bow * math.sin(math.pi * t)) for t in ts]
     faces = []
     for i, t in enumerate(ts):
         c = surfaces.taper(c_root, c_tip, t, ease)
@@ -390,7 +381,7 @@ def _fork_boss(pt, axis, open_dir, od: float = 22.0, width: float = 25.0,
     )
     rs = r * 0.64
     slot = _plate(
-        Plane(origin=P + ex * throat, x_dir=ex, z_dir=ax),
+        bd.Plane(origin=P + ex * throat, x_dir=ex, z_dir=ax),
         _hull2((0.0, 0.0), rs, (r * reach, 0.0), rs, n=11),
         gap,
     )
@@ -415,10 +406,10 @@ def _blade_rod(p0, p1, c_end: float, c_mid: float, tr: float,
     a, b = _p(p0), _p(p1)
     u = (b - a).normalized()
     q0, q1 = a + u * shank, b - u * shank
-    bd = _perp(u, bow_dir)
+    bow_v = _perp(u, bow_dir)
     pts, chords = [], []
     for t, k in zip(_ROD_TS, _ROD_KS):
-        pts.append(q0 + (q1 - q0) * t + bd * (bow * math.sin(math.pi * t)))
+        pts.append(q0 + (q1 - q0) * t + bow_v * (bow * math.sin(math.pi * t)))
         chords.append(c_end + (c_mid - c_end) * k)
     blade = surfaces.blade_path(pts, chords, thickness_ratio=tr, roll_deg=roll)
     h0, b0 = _rod_end(a, u, eye0, shank=shank + 4.0, neck=neck)
@@ -443,7 +434,7 @@ def _clevis(pt, out_dir, jaw_axis, gap: float = FORK_GAP, jaw_r: float = 10.0,
     outline = _hull2((0.0, 0.0), jaw_r, (-reach, 0.0), base_r, n=11)
     parts = []
     for sgn in (1.0, -1.0):
-        parts.append(_plate(Plane(origin=P + ja * (sgn * off), x_dir=ex, z_dir=ja), outline, jaw_t))
+        parts.append(_plate(bd.Plane(origin=P + ja * (sgn * off), x_dir=ex, z_dir=ja), outline, jaw_t))
     parts.append(
         _beam(
             P - ex * (reach * 0.42),
@@ -496,7 +487,7 @@ def _rocker(pivot, axis, p_rod, p_damper, lug_deg: float, lug_r: float,
     d_hi = max(d_rod, d_dmp) + 30.0
 
     def plane_at(d):
-        return Plane(origin=P + ax * d, x_dir=ex, z_dir=ax)
+        return bd.Plane(origin=P + ax * d, x_dir=ex, z_dir=ax)
 
     def arm(d, uv, eye_r, hole_a, hole_b, extra=None):
         pl = plane_at(d)
@@ -534,8 +525,8 @@ def _rocker(pivot, axis, p_rod, p_damper, lug_deg: float, lug_r: float,
         thin=ex, n_top=2.0, n_bot=2.0,
     )
     strut = _beam(
-        P + ax * d_rod + Vector(ex * uv_rod[0] + ey * uv_rod[1]) * 0.54,
-        P + ax * d_dmp + Vector(ex * uv_dmp[0] + ey * uv_dmp[1]) * 0.54,
+        P + ax * d_rod + bd.Vector(ex * uv_rod[0] + ey * uv_rod[1]) * 0.54,
+        P + ax * d_dmp + bd.Vector(ex * uv_dmp[0] + ey * uv_dmp[1]) * 0.54,
         [(0.0, 11.0, 8.5), (0.5, 8.5, 7.0), (1.0, 11.0, 8.5)], thin=ax,
     )
 
@@ -572,7 +563,7 @@ def _rocker_carrier(pivot, axis, span, inboard, hub_r: float = 21.0):
                            ((foot[0] * 0.30, 34.0), 11.0)], n=12)
     ears = []
     for s in (d_lo - 15.0, d_hi + 15.0):
-        pl = Plane(origin=P + ax * s, x_dir=ex, z_dir=ax)
+        pl = bd.Plane(origin=P + ax * s, x_dir=ex, z_dir=ax)
         ears.append(_plate(pl, outline, 12.0))
     anchor = ex * foot[0] + ey_of(ax, ex) * foot[1]
     rail = _beam(
@@ -661,7 +652,7 @@ def _arb(tube_x, z, half_span: float, blade_len: float, blade_y: float,
     )
     tube = tube - _shaft((tube_x, -half_span - 4, z), (tube_x, half_span + 4, z), 6.4)
 
-    thin = Vector(0, math.sin(math.radians(roll_deg)), math.cos(math.radians(roll_deg)))
+    thin = bd.Vector(0, math.sin(math.radians(roll_deg)), math.cos(math.radians(roll_deg)))
     blade = _beam(
         (tube_x + sgn * 20.0, blade_y, z), (tip_x, blade_y, z),
         [(0.0, 21.0, 3.9), (0.35, 20.0, 3.4), (0.78, 18.0, 3.0), (1.0, 15.0, 3.9)],
@@ -669,12 +660,12 @@ def _arb(tube_x, z, half_span: float, blade_len: float, blade_y: float,
     )
     adj_c = (tube_x + sgn * 19.0, blade_y, z)
     adjuster = _fuse([
-        _plate(Plane(origin=_p(adj_c), x_dir=(0, 0, 1), z_dir=(1, 0, 0)),
+        _plate(bd.Plane(origin=_p(adj_c), x_dir=(0, 0, 1), z_dir=(1, 0, 0)),
                _scallop_pts(13.0, 2.0, 12, samples=96), 5.5),
         _cyl((tube_x + sgn * 7.5, blade_y, z), (1, 0, 0), 11.4, 15.0),
     ])
     # pillow block: a side-view profile around the tube, extruded across it
-    mpl = Plane(origin=(tube_x, mount_y, z), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    mpl = bd.Plane(origin=(tube_x, mount_y, z), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
     mount = _cut(
         _plate(mpl, _hull_discs([((0.0, 0.0), 16.5), ((-13.0, 36.0), 8.5),
                                  ((13.0, 36.0), 8.5)], n=11), 28.0),
@@ -740,10 +731,10 @@ def _front_left():
         lower,
         _beam(root_f, _p(PO), [(0.0, 24.0, 9.5), (0.5, 16.0, 8.0), (1.0, 11.5, 7.0)],
               thin=(0, 1, 0), n_top=2.5, n_bot=2.5),
-        _beam(root_a + Vector(0, 0, 2.0), _p(PO), [(0.0, 12.5, 6.0), (1.0, 10.0, 6.5)],
+        _beam(root_a + bd.Vector(0, 0, 2.0), _p(PO), [(0.0, 12.5, 6.0), (1.0, 10.0, 6.5)],
               thin=(0, 1, 0), n_top=2.5, n_bot=2.5),
     ])
-    po_jaw = Vector(1, 0, 0)
+    po_jaw = bd.Vector(1, 0, 0)
     po_fork, po_slot = _fork_boss(PO, po_jaw, _p(PI) - _p(PO),
                                   od=22.0, width=25.0, gap=13.0, throat=4.0)
     lower = _fuse([lower, po_fork])

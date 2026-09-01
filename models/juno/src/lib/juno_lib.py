@@ -18,20 +18,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Axis,
-    Box,
-    Color,
-    Compound,
-    Cylinder,
-    Location,
-    Plane,
-    Pos,
-    Rot,
-    Vector,
-    chamfer,
-    fillet,
-)
+from cadgen import build123d as bd
 
 # Palette: warm porcelain + graphite + aluminum, with a coral accent on
 # small repeated functional details (hub caps, bumpers, vents). No logos.
@@ -43,30 +30,30 @@ RUBBER = (0.08, 0.08, 0.09)     # sole / grip rubber
 ACCENT = (0.93, 0.38, 0.16)     # coral-orange accent details
 EYE = (0.32, 0.90, 0.98)        # bright cyan display "pixels" (Anki-style)
 
-SHELL_COLOR = Color(*SHELL)
-STRUCT_COLOR = Color(*STRUCT)
-ALU_COLOR = Color(*ALU)
-VISOR_COLOR = Color(*VISOR)
-RUBBER_COLOR = Color(*RUBBER)
-ACCENT_COLOR = Color(*ACCENT)
-EYE_COLOR = Color(*EYE)
+SHELL_COLOR = bd.Color(*SHELL)
+STRUCT_COLOR = bd.Color(*STRUCT)
+ALU_COLOR = bd.Color(*ALU)
+VISOR_COLOR = bd.Color(*VISOR)
+RUBBER_COLOR = bd.Color(*RUBBER)
+ACCENT_COLOR = bd.Color(*ACCENT)
+EYE_COLOR = bd.Color(*EYE)
 
 
-def styled(solid, label: str, color: Color):
+def styled(solid, label: str, color: bd.Color):
     solid.label = label
     solid.color = color
     return solid
 
 
-def part_compound(label: str, children) -> Compound:
-    comp = Compound(children=list(children))
+def part_compound(label: str, children) -> bd.Compound:
+    comp = bd.Compound(children=list(children))
     comp.label = label
     return comp
 
 
-def joint_plane(origin, axis_dir, x_ref) -> Location:
-    return Plane(
-        origin=Vector(origin), x_dir=Vector(x_ref), z_dir=Vector(axis_dir)
+def joint_plane(origin, axis_dir, x_ref) -> bd.Location:
+    return bd.Plane(
+        origin=bd.Vector(origin), x_dir=bd.Vector(x_ref), z_dir=bd.Vector(axis_dir)
     ).location
 
 
@@ -92,8 +79,8 @@ def revolute_attach(
     the parent's p_xref direction about the shared axis.
     """
     j_p_world = parent.location * joint_plane(p_origin, p_axis, p_xref)
-    z_tip = (j_p_world * Pos(0, 0, 1)).position
-    axis_world = Axis(j_p_world.position, z_tip - j_p_world.position)
+    z_tip = (j_p_world * bd.Pos(0, 0, 1)).position
+    axis_world = bd.Axis(j_p_world.position, z_tip - j_p_world.position)
     f_parent = asm.revolute_frame(
         parent, f"{name}_axis", axis_world, angular_range=(-360.0, 360.0)
     )
@@ -109,15 +96,15 @@ def revolute_attach(
     asm.revolute(f_parent, f_child, angle=angle_deg, label=name)
 
 
-def _axis_rot(axis_dir) -> Rot:
+def _axis_rot(axis_dir) -> bd.Rot:
     """Rotation taking +Z to axis_dir (for placing cylinders along a joint axis)."""
-    d = Vector(axis_dir).normalized()
+    d = bd.Vector(axis_dir).normalized()
     if abs(d.Z) > 0.999:
-        return Rot(0, 0, 0) if d.Z > 0 else Rot(180, 0, 0)
+        return bd.Rot(0, 0, 0) if d.Z > 0 else bd.Rot(180, 0, 0)
     if abs(d.Y) > 0.999:
-        return Rot(-90, 0, 0) if d.Y > 0 else Rot(90, 0, 0)
+        return bd.Rot(-90, 0, 0) if d.Y > 0 else bd.Rot(90, 0, 0)
     if abs(d.X) > 0.999:
-        return Rot(0, 90, 0) if d.X > 0 else Rot(0, -90, 0)
+        return bd.Rot(0, 90, 0) if d.X > 0 else bd.Rot(0, -90, 0)
     raise ValueError("actuator axis must be a principal axis")
 
 
@@ -138,24 +125,24 @@ def actuator_solids(
     """
     r = diameter / 2.0
     rot = _axis_rot(axis)
-    at = Pos(*center) * rot
+    at = bd.Pos(*center) * rot
     solids = []
 
     can_len = length * 0.78
-    can = at * Cylinder(radius=r, height=can_len)
-    can = fillet(can.edges(), min(2.2, r * 0.08))
+    can = at * bd.Cylinder(radius=r, height=can_len)
+    can = bd.fillet(can.edges(), min(2.2, r * 0.08))
     solids.append(styled(can, f"{name}_can", STRUCT_COLOR))
 
     cap_len = (length - can_len) / 2.0
     rim_r = r * 0.92
     for sign, tag in ((1.0, "out"), (-1.0, "in")):
-        cap = at * Pos(0, 0, sign * (can_len / 2.0 + cap_len / 2.0)) * Cylinder(
+        cap = at * bd.Pos(0, 0, sign * (can_len / 2.0 + cap_len / 2.0)) * bd.Cylinder(
             radius=rim_r, height=cap_len
         )
-        cap = chamfer(cap.edges(), min(1.2, cap_len * 0.3))
+        cap = bd.chamfer(cap.edges(), min(1.2, cap_len * 0.3))
         solids.append(styled(cap, f"{name}_cap_{tag}", ALU_COLOR))
 
-    hub = at * Pos(0, 0, length / 2.0 + 1.0) * Cylinder(radius=r * 0.45, height=2.0)
+    hub = at * bd.Pos(0, 0, length / 2.0 + 1.0) * bd.Cylinder(radius=r * 0.45, height=2.0)
     solids.append(styled(hub, f"{name}_hub", ACCENT_COLOR))
 
     if bolts and diameter >= 56.0:
@@ -163,16 +150,16 @@ def actuator_solids(
         bc_r = rim_r * 0.74
         for i in range(n):
             a = 2.0 * math.pi * i / n
-            bolt = at * Pos(
+            bolt = at * bd.Pos(
                 bc_r * math.cos(a), bc_r * math.sin(a), length / 2.0 + 0.6
-            ) * Cylinder(radius=1.6, height=1.2)
+            ) * bd.Cylinder(radius=1.6, height=1.2)
             solids.append(styled(bolt, f"{name}_bolt_{i}", STRUCT_COLOR))
     return solids
 
 
 def rounded_box(
     label: str,
-    color: Color,
+    color: bd.Color,
     size,
     *,
     center=(0.0, 0.0, 0.0),
@@ -181,11 +168,11 @@ def rounded_box(
 ):
     """Box with filleted edges along the given axes ("z", "xz", "xyz"...)."""
     sx, sy, sz = size
-    box = Pos(*center) * Box(sx, sy, sz)
+    box = bd.Pos(*center) * bd.Box(sx, sy, sz)
     edges = []
-    for ax_name, ax in (("x", Axis.X), ("y", Axis.Y), ("z", Axis.Z)):
+    for ax_name, ax in (("x", bd.Axis.X), ("y", bd.Axis.Y), ("z", bd.Axis.Z)):
         if ax_name in axes:
             edges.extend(box.edges().filter_by(ax))
     if edges:
-        box = fillet(edges, min(radius, min(sx, sy, sz) / 2.0 - 0.4))
+        box = bd.fillet(edges, min(radius, min(sx, sy, sz) / 2.0 - 0.4))
     return styled(box, label, color)

@@ -39,9 +39,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Align, Axis, Box, Compound, Cylinder, Face, Location,
-                       Plane, Polyline, Pos, Sphere, Vector, Wire, extrude,
-                       revolve)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -69,7 +67,7 @@ def ground_z(x):
 
 def _ground_normal():
     """World +Z expressed in the waterline frame."""
-    return Vector(-math.sin(_T), 0.0, math.cos(_T))
+    return bd.Vector(-math.sin(_T), 0.0, math.cos(_T))
 
 
 def _skin_z(x, y):
@@ -85,36 +83,36 @@ def _skin_z(x, y):
 
 def _rod(p0, p1, r):
     """Solid cylinder from p0 to p1."""
-    v = Vector(*p1) - Vector(*p0)
-    return (Plane(origin=Vector(*p0), z_dir=v)
-            * Cylinder(r, v.length, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+    v = bd.Vector(*p1) - bd.Vector(*p0)
+    return (bd.Plane(origin=bd.Vector(*p0), z_dir=v)
+            * bd.Cylinder(r, v.length, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)))
 
 
 def _tube(p0, p1, ro, ri):
     """Hollow cylinder; the bore overshoots both ends so no face is coplanar."""
-    v = Vector(*p1) - Vector(*p0)
+    v = bd.Vector(*p1) - bd.Vector(*p0)
     u = v.normalized()
-    outer = (Plane(origin=Vector(*p0), z_dir=v)
-             * Cylinder(ro, v.length, align=(Align.CENTER, Align.CENTER, Align.MIN)))
-    bore = (Plane(origin=Vector(*p0) - u * 2.0, z_dir=v)
-            * Cylinder(ri, v.length + 4.0, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+    outer = (bd.Plane(origin=bd.Vector(*p0), z_dir=v)
+             * bd.Cylinder(ro, v.length, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)))
+    bore = (bd.Plane(origin=bd.Vector(*p0) - u * 2.0, z_dir=v)
+            * bd.Cylinder(ri, v.length + 4.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)))
     return outer - bore
 
 
 def _beam(p0, p1, w, t, x_dir=(0, 1, 0)):
     """Rectangular beam p0->p1; ``w`` across x_dir, ``t`` across the third axis."""
-    v = Vector(*p1) - Vector(*p0)
+    v = bd.Vector(*p1) - bd.Vector(*p0)
     u = v.normalized()
-    xd = Vector(*x_dir)
+    xd = bd.Vector(*x_dir)
     xd = xd - u * xd.dot(u)
     if xd.length < 1e-6:
-        xd = Vector(1, 0, 0) - u * Vector(1, 0, 0).dot(u)
-    return (Plane(origin=Vector(*p0), z_dir=v, x_dir=xd)
-            * Box(w, t, v.length, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+        xd = bd.Vector(1, 0, 0) - u * bd.Vector(1, 0, 0).dot(u)
+    return (bd.Plane(origin=bd.Vector(*p0), z_dir=v, x_dir=xd)
+            * bd.Box(w, t, v.length, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)))
 
 
 def _blk(c, dx, dy, dz):
-    return Pos(*c) * Box(dx, dy, dz)
+    return bd.Pos(*c) * bd.Box(dx, dy, dz)
 
 
 def _pipe(pts, r):
@@ -126,14 +124,14 @@ def _pipe(pts, r):
     cost ~30 s of build time to produce the same image.
     """
     segs = [_rod(pts[i], pts[i + 1], r) for i in range(len(pts) - 1)]
-    knuckles = [Pos(*p) * Sphere(r) for p in pts[1:-1]]
-    return Compound(segs + knuckles)
+    knuckles = [bd.Pos(*p) * bd.Sphere(r) for p in pts[1:-1]]
+    return bd.Compound(segs + knuckles)
 
 
 def _plate_face(pts):
     """Closed planar face through 3D points."""
-    poly = Polyline(*[Vector(*p) for p in pts], close=True)
-    return Face(Wire(poly.edges()))
+    poly = bd.Polyline(*[bd.Vector(*p) for p in pts], close=True)
+    return bd.Face(bd.Wire(poly.edges()))
 
 
 def _rot_x(pt, hy, hz, deg):
@@ -146,16 +144,16 @@ def _rot_x(pt, hy, hz, deg):
 
 def _hinge_loc(hy, hz, deg):
     """Location that rotates a shape about the hinge line at (hy, hz)."""
-    return (Location((0, hy, hz)) * Location((0, 0, 0), (deg, 0, 0))
-            * Location((0, -hy, -hz)))
+    return (bd.Location((0, hy, hz)) * bd.Location((0, 0, 0), (deg, 0, 0))
+            * bd.Location((0, -hy, -hz)))
 
 
 def _half_space(p, n, side):
     """Vertical-plane cutter: removes everything on the +n side of the plane
     through ``p``.  ``n`` is given for the port side and mirrored by ``side``."""
-    nn = Vector(n[0], side * n[1], 0.0).normalized()
-    return (Plane(origin=Vector(p[0], side * p[1], 0.0), z_dir=nn)
-            * Box(3000, 3000, 2000, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+    nn = bd.Vector(n[0], side * n[1], 0.0).normalized()
+    return (bd.Plane(origin=bd.Vector(p[0], side * p[1], 0.0), z_dir=nn)
+            * bd.Box(3000, 3000, 2000, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN)))
 
 
 # ---------------------------------------------------------------------------
@@ -227,7 +225,7 @@ def bay_cutter():
     ]
     z0, z1 = -900.0, BAY_ROOF + 4.0
     face = _plate_face([(x, y, z0) for x, y in plan])
-    return extrude(face, z1 - z0, dir=(0, 0, 1))
+    return bd.extrude(face, z1 - z0, dir=(0, 0, 1))
 
 
 # ---------------------------------------------------------------------------
@@ -242,8 +240,8 @@ def _ground_cutter():
     deg -- so the contact patch is cut on the tilted plane.  Cutting on a flat
     z-plane instead would leave one tyre edge 2.4 mm proud of the deck.
     """
-    pl = Plane(origin=Vector(X_AXLE, 0, Z_GROUND), z_dir=_ground_normal())
-    return pl * Box(1600, 1600, 1400, align=(Align.CENTER, Align.CENTER, Align.MAX))
+    pl = bd.Plane(origin=bd.Vector(X_AXLE, 0, Z_GROUND), z_dir=_ground_normal())
+    return pl * bd.Box(1600, 1600, 1400, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MAX))
 
 
 def _crown(y):
@@ -287,7 +285,7 @@ def _revolved(profile, axis):
     """Revolve a (radius, axial) profile.  The profile lives in the XY plane
     with x = radius, y = axial, so Axis.Y sweeps it into a wheel."""
     face = _plate_face([(r, a, 0.0) for r, a in profile])
-    return revolve(face, axis)
+    return bd.revolve(face, axis)
 
 
 def _tyre_solid():
@@ -299,25 +297,25 @@ def _tyre_solid():
     thing is then cut on the deck plane, so the patch comes out flat AND wider
     than the tread.
     """
-    tyre = _revolved(_TYRE_PROFILE, Axis.Y)
+    tyre = _revolved(_TYRE_PROFILE, bd.Axis.Y)
     a, b = 142.0, 101.0
     n = 33
     half = [(a * math.cos(math.pi * i / (n - 1)),
              b * math.sin(math.pi * i / (n - 1)), 0.0) for i in range(n)]
-    bulge = revolve(_plate_face(half), Axis.X)
+    bulge = bd.revolve(_plate_face(half), bd.Axis.X)
     z_contact = -(R_TYRE - TYRE_FLAT)
-    return tyre + (Pos(0, 0, z_contact + 30.0) * bulge)
+    return tyre + (bd.Pos(0, 0, z_contact + 30.0) * bulge)
 
 
 def _rim_solid():
-    rim = _revolved(_RIM_PROFILE, Axis.Y)
-    bore = Plane.XZ * Cylinder(42.0, 260.0)
+    rim = _revolved(_RIM_PROFILE, bd.Axis.Y)
+    bore = bd.Plane.XZ * bd.Cylinder(42.0, 260.0)
     pockets = []
     for i in range(5):
         a = math.radians(90.0 + 72.0 * i)
         for sgn in (1, -1):
-            pockets.append(Pos(92.0 * math.cos(a), sgn * 82.0, 92.0 * math.sin(a))
-                           * (Plane.XZ * Cylinder(30.0, 40.0)))
+            pockets.append(bd.Pos(92.0 * math.cos(a), sgn * 82.0, 92.0 * math.sin(a))
+                           * (bd.Plane.XZ * bd.Cylinder(30.0, 40.0)))
     return rim - ([bore] + pockets)
 
 
@@ -326,15 +324,15 @@ def _wheels():
     out = []
     for side in (1, -1):
         tag = "port" if side > 0 else "stbd"
-        base = Location((X_AXLE, side * Y_WHEEL, Z_AXLE))
+        base = bd.Location((X_AXLE, side * Y_WHEEL, Z_AXLE))
         tyre = (base * _tyre_solid()) - cut
         out.append(P.style(tyre, f"nose_tyre:{tag}", P.TYRE))
         rim = (base * _rim_solid()) - cut
         out.append(P.style(rim, f"nose_wheel_rim:{tag}", P.ALUMINIUM))
-        cap = base * (Pos(0, side * 92.0, 0) * (Plane.XZ * Cylinder(50.0, 26.0)))
+        cap = base * (bd.Pos(0, side * 92.0, 0) * (bd.Plane.XZ * bd.Cylinder(50.0, 26.0)))
         out.append(P.style(cap, f"nose_hub_cap:{tag}", P.ALUM_DARK))
         # inflation valve, poking through the outer wheel face
-        stem = base * (Pos(0, side * 100.0, 118.0) * (Plane.XZ * Cylinder(9.0, 46.0)))
+        stem = base * (bd.Pos(0, side * 100.0, 118.0) * (bd.Plane.XZ * bd.Cylinder(9.0, 46.0)))
         out.append(P.style(stem, f"nose_valve_stem:{tag}", P.BRASS))
 
     axle = _rod((X_AXLE, -(Y_WHEEL + 110.0), Z_AXLE),
@@ -625,7 +623,7 @@ def _bay_shell():
         yw = side * BAY_Y
         bottom = [(x, yw, _skin_z(x, abs(yw)) + 2.0) for x in xs]
         top = [(x, yw, BAY_ROOF) for x in reversed(xs)]
-        wall = extrude(_plate_face(bottom + top), 12.0, dir=(0, 1, 0), both=True)
+        wall = bd.extrude(_plate_face(bottom + top), 12.0, dir=(0, 1, 0), both=True)
         out.append(P.style(wall, f"nose_bay_wall:{tag}", P.BAY_GREEN))
         # sill rail along the door line
         rail = [(x, yw, _skin_z(x, abs(yw)) + 26.0) for x in xs]
@@ -635,7 +633,7 @@ def _bay_shell():
     for x, tag in ((BAY_X0, "fwd"), (BAY_X1, "aft")):
         bottom = [(x, y, _skin_z(x, y) + 2.0) for y in ys]
         top = [(x, y, BAY_ROOF) for y in reversed(ys)]
-        bulk = extrude(_plate_face(bottom + top), 13.0, dir=(1, 0, 0), both=True)
+        bulk = bd.extrude(_plate_face(bottom + top), 13.0, dir=(1, 0, 0), both=True)
         out.append(P.style(bulk, f"nose_bay_bulkhead:{tag}", P.BAY_GREEN))
     return out
 
@@ -768,7 +766,7 @@ def _door_band(x0, x1, y0, y1, thick, x_ref, side, dz=0.0, n=13):
     ys = [y0 + (y1 - y0) * i / (n - 1) for i in range(n)]
     outer = [(x0, side * y, _skin_z(x_ref, y) + dz) for y in ys]
     inner = [(x0, side * y, _skin_z(x_ref, y) + dz + thick) for y in reversed(ys)]
-    return extrude(_plate_face(outer + inner), x1 - x0, dir=(1, 0, 0))
+    return bd.extrude(_plate_face(outer + inner), x1 - x0, dir=(1, 0, 0))
 
 
 def _one_door(side, x0, x1, name, open_deg, bevel):
@@ -852,9 +850,9 @@ def _one_door(side, x0, x1, name, open_deg, bevel):
     for j, yr in enumerate((y_out - 20.0, y_in + 14.0)):
         zr = _skin_z(x_ref, yr)
         n_riv = max(6, int((x1 - x0) / 58.0))
-        heads = [Pos(x0 + 24 + (x1 - x0 - 48) * i / (n_riv - 1), side * yr, zr)
-                 * Sphere(6.5) for i in range(n_riv)]
-        kids.append(P.style(loc * Compound(heads),
+        heads = [bd.Pos(x0 + 24 + (x1 - x0 - 48) * i / (n_riv - 1), side * yr, zr)
+                 * bd.Sphere(6.5) for i in range(n_riv)]
+        kids.append(P.style(loc * bd.Compound(heads),
                             f"nose_door_fasteners:{name}_{tag}{j + 1}", P.PANEL_DARK))
 
     # placards on the inner face

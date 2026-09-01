@@ -33,24 +33,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from build123d import (
-    Align,
-    Box,
-    Cylinder,
-    Line,
-    Location,
-    Plane,
-    Polyline,
-    Pos,
-    RectangleRounded,
-    Spline,
-    Vector,
-    extrude,
-    loft,
-    make_face,
-)
-
-from cadgen import compound_from_instances
+from cadgen import build123d as bd, compound_from_instances
 
 from lib import surfaces as S
 from lib.context import group, style
@@ -78,13 +61,13 @@ def _outline(x_quarter):
     pts = []
     for i, band in enumerate(bands):
         if i == 0 and last == 0:
-            edge = Spline(*band, tangents=((1, 0), (-1, 0)))
+            edge = bd.Spline(*band, tangents=((1, 0), (-1, 0)))
         elif i == 0:
-            edge = Spline(*band, tangents=((1, 0), S._dir(band[-2], band[-1])))
+            edge = bd.Spline(*band, tangents=((1, 0), S._dir(band[-2], band[-1])))
         elif i == last:
-            edge = Spline(*band, tangents=(S._dir(band[0], band[1]), (-1, 0)))
+            edge = bd.Spline(*band, tangents=(S._dir(band[0], band[1]), (-1, 0)))
         else:
-            edge = Spline(*band)
+            edge = bd.Spline(*band)
         for k in range(_OUTLINE_SAMPLES + 1):
             if i and k == 0:
                 continue
@@ -137,10 +120,10 @@ def _surf(x, z, side=1):
     """3D point + outward unit normal on the FLANK."""
     dydx, dydz = _slopes(x, z)
     y = _flank_y(x, z)
-    n = Vector(-dydx, 1.0, -dydz).normalized()
+    n = bd.Vector(-dydx, 1.0, -dydz).normalized()
     if side < 0:
-        return Vector(x, -y, z), Vector(n.X, -n.Y, n.Z)
-    return Vector(x, y, z), n
+        return bd.Vector(x, -y, z), bd.Vector(n.X, -n.Y, n.Z)
+    return bd.Vector(x, y, z), n
 
 
 def _top_surf(x, y):
@@ -148,8 +131,8 @@ def _top_surf(x, y):
     dzdx = (_top_z(x + _D, y) - _top_z(x - _D, y)) / (2.0 * _D)
     dzdy = (_top_z(x, y + _D) - _top_z(x, y - _D)) / (2.0 * _D)
     return (
-        Vector(x, y, _top_z(x, y)),
-        Vector(-dzdx, -dzdy, 1.0).normalized(),
+        bd.Vector(x, y, _top_z(x, y)),
+        bd.Vector(-dzdx, -dzdy, 1.0).normalized(),
     )
 
 
@@ -197,12 +180,12 @@ def _slat(half_w, half_h, power=3.0, n=36):
             half_w * math.copysign(abs(c) ** (2.0 / power), c),
             half_h * math.copysign(abs(s) ** (2.0 / power), s),
         ))
-    return make_face(Spline(*pts, periodic=True))
+    return bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _quad_face(pts_yz, x):
     """Closed 4-point face in the station plane at ``x`` (points are (y, z))."""
-    return Plane.YZ.offset(x) * make_face(Polyline(*pts_yz, pts_yz[0]))
+    return bd.Plane.YZ.offset(x) * bd.make_face(bd.Polyline(*pts_yz, pts_yz[0]))
 
 
 # ---------------------------------------------------------------------------
@@ -252,25 +235,25 @@ def _pod_section(u):
 
 def _pod_axis(side):
     """Chord direction of the head: toed out a little, nose up a little."""
-    return Vector(1.0, side * 0.10, 0.045).normalized()
+    return bd.Vector(1.0, side * 0.10, 0.045).normalized()
 
 
 def _glass_frame(side):
     """Plane of the mirror glass: raked aft-inboard and tipped down."""
-    n = Vector(-1.0, side * -0.40, -0.13).normalized()
+    n = bd.Vector(-1.0, side * -0.40, -0.13).normalized()
     a = _pod_axis(side)
-    centre = Vector(MIRROR_X, side * MIRROR_Y, MIRROR_Z)
+    centre = bd.Vector(MIRROR_X, side * MIRROR_Y, MIRROR_Z)
     origin = centre - a * (0.5 * MIRROR_CHORD - 27.0)
-    up = Vector(0, 0, 1)
+    up = bd.Vector(0, 0, 1)
     xd = (up.cross(n)).normalized()
-    return Plane(origin=origin, x_dir=xd, z_dir=n)
+    return bd.Plane(origin=origin, x_dir=xd, z_dir=n)
 
 
 def _mirror_head(side):
     a = _pod_axis(side)
-    centre = Vector(MIRROR_X, side * MIRROR_Y, MIRROR_Z)
+    centre = bd.Vector(MIRROR_X, side * MIRROR_Y, MIRROR_Z)
     nose = centre + a * (0.5 * MIRROR_CHORD)
-    yd = Vector(0, 1, 0)
+    yd = bd.Vector(0, 1, 0)
     xd = (yd - a * yd.dot(a)).normalized()
 
     secs = []
@@ -278,9 +261,9 @@ def _mirror_head(side):
         t = (i / (_POD_STATIONS - 1.0)) ** 1.25
         u = _POD_U0 + (1.0 - _POD_U0) * t
         hw, hh = _pod_section(u)
-        pl = Plane(origin=nose - a * (u * MIRROR_CHORD), x_dir=xd, z_dir=a)
+        pl = bd.Plane(origin=nose - a * (u * MIRROR_CHORD), x_dir=xd, z_dir=a)
         secs.append((pl * _slat(round(hw, 3), round(hh, 3), 2.5)).faces()[0])
-    return loft(secs)
+    return bd.loft(secs)
 
 
 def _mirror(side):
@@ -291,19 +274,19 @@ def _mirror(side):
     gp = _glass_frame(side)
 
     # rake the trailing face off, then sink a pocket into it
-    facet = gp * Box(520, 520, 520, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    pocket = gp * Pos(0, 0, -13.0) * extrude(
-        RectangleRounded(92.0, 40.0, 12.0), amount=14.0)
+    facet = gp * bd.Box(520, 520, 520, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+    pocket = gp * bd.Pos(0, 0, -13.0) * bd.extrude(
+        bd.RectangleRounded(92.0, 40.0, 12.0), amount=14.0)
     housing = (pod - facet) - pocket
     kids.append(style(housing, f"mirror_housing:{name}", P.BODY))
 
-    bezel_face = (Pos(0, 0, 0) * RectangleRounded(92.0, 40.0, 12.0)
-                  - Pos(0, 0, 0) * RectangleRounded(82.0, 31.0, 8.4))
-    bezel = gp * Pos(0, 0, -4.6) * extrude(bezel_face, amount=4.6)
+    bezel_face = (bd.Pos(0, 0, 0) * bd.RectangleRounded(92.0, 40.0, 12.0)
+                  - bd.Pos(0, 0, 0) * bd.RectangleRounded(82.0, 31.0, 8.4))
+    bezel = gp * bd.Pos(0, 0, -4.6) * bd.extrude(bezel_face, amount=4.6)
     kids.append(style(bezel, f"mirror_bezel:{name}", P.BRONZE))
 
-    glass = gp * Pos(0, 0, -9.0) * extrude(
-        RectangleRounded(81.0, 30.0, 8.0), amount=4.2)
+    glass = gp * bd.Pos(0, 0, -9.0) * bd.extrude(
+        bd.RectangleRounded(81.0, 30.0, 8.0), amount=4.2)
     kids.append(style(glass, f"mirror_glass:{name}", P.ALUMINIUM))
 
     # ---- stalk: a second aerofoil growing out of the door skin -------------
@@ -312,31 +295,31 @@ def _mirror(side):
     # a blade standing off the door, and from the side it nearly disappears --
     # the pod appears to be cantilevered on nothing.
     root_p, root_n = _surf(466.0, 712.0, side)
-    w1 = root_p + root_n * 30.0 + Vector(6.0, 0, 20.0)
-    w2 = Vector(516.0, side * (abs(root_p.Y) + 76.0), 768.0)
-    tip = Vector(MIRROR_X - 30.0, side * (MIRROR_Y - 44.0), MIRROR_Z - 7.0)
-    path = Spline(root_p - root_n * 24.0, w1, w2, tip)
+    w1 = root_p + root_n * 30.0 + bd.Vector(6.0, 0, 20.0)
+    w2 = bd.Vector(516.0, side * (abs(root_p.Y) + 76.0), 768.0)
+    tip = bd.Vector(MIRROR_X - 30.0, side * (MIRROR_Y - 44.0), MIRROR_Z - 7.0)
+    path = bd.Spline(root_p - root_n * 24.0, w1, w2, tip)
 
     n_st = 15
     secs = []
     for i in range(n_st + 1):
         t = i / n_st
         p = path @ t
-        d = Vector(path % t).normalized()
-        xd = Vector(1, 0, 0)
+        d = bd.Vector(path % t).normalized()
+        xd = bd.Vector(1, 0, 0)
         xd = (xd - d * xd.dot(d)).normalized()
         chord = 86.0 - 28.0 * t ** 1.35
         thick = 15.5 - 4.5 * t ** 1.2
-        pl = Plane(origin=p, x_dir=xd, z_dir=d)
+        pl = bd.Plane(origin=p, x_dir=xd, z_dir=d)
         secs.append((pl * _slat(round(chord / 2.0, 3),
                                 round(thick / 2.0, 3), 2.9)).faces()[0])
-    kids.append(style(loft(secs), f"mirror_stalk:{name}", P.CARBON))
+    kids.append(style(bd.loft(secs), f"mirror_stalk:{name}", P.CARBON))
 
     # a machined pad terminates the stalk INTO the door instead of letting it
     # merge with the paint at an undefined edge
-    pad_pl = Plane(origin=root_p + root_n * 0.5, x_dir=Vector(0, 0, 1).cross(
+    pad_pl = bd.Plane(origin=root_p + root_n * 0.5, x_dir=bd.Vector(0, 0, 1).cross(
         root_n).normalized() * -1.0, z_dir=root_n)
-    pad = pad_pl * extrude(_slat(52.0, 19.0, 3.0), amount=-4.5)
+    pad = pad_pl * bd.extrude(_slat(52.0, 19.0, 3.0), amount=-4.5)
     kids.append(style(pad, f"mirror_base:{name}", P.CARBON))
 
     return kids
@@ -389,12 +372,12 @@ def _strip_face(z, x_far, x_near, off_a, off_b, side, n=6):
         outer.append(_off_xy(x, z, off_a, side))
         inner.append(_off_xy(x, z, off_b, side))
     wire = (
-        Spline(*outer)
-        + Line(outer[-1], inner[-1])
-        + Spline(*list(reversed(inner)))
-        + Line(inner[0], outer[0])
+        bd.Spline(*outer)
+        + bd.Line(outer[-1], inner[-1])
+        + bd.Spline(*list(reversed(inner)))
+        + bd.Line(inner[0], outer[0])
     )
-    return Plane.XY.offset(z) * make_face(wire)
+    return bd.Plane.XY.offset(z) * bd.make_face(wire)
 
 
 def _gill_slab(spec, z0, z1, inset, off_a, off_b, side, nz=11):
@@ -403,7 +386,7 @@ def _gill_slab(spec, z0, z1, inset, off_a, off_b, side, nz=11):
         z = z0 + (z1 - z0) * i / nz
         faces.append(_strip_face(z, spec.far(z) + inset, spec.near(z) - inset,
                                  off_a, off_b, side))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 _BLADE_CHORD = 10.6
@@ -429,7 +412,7 @@ def _gill_blade(spec, z, side, n=5):
         x = x0 + (x1 - x0) * i / n
         pts = [_off_yz(x, z + dz, 0.6 + dn, side) for dn, dz in corners]
         faces.append(_quad_face(pts, x))
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _gill(spec, side):
@@ -507,9 +490,9 @@ def _ext_blade(dx, side, n=8):
         y = side * (EXT_Y - hy + 2.0 * hy * i / n)
         zc = _top_z(x, y) - EXT_DROP
         pts = [(x + du, zc + dv) for du, dv in corners]
-        face = Plane.XZ.offset(-y) * make_face(Polyline(*pts, pts[0]))
+        face = bd.Plane.XZ.offset(-y) * bd.make_face(bd.Polyline(*pts, pts[0]))
         faces.append(face)
-    return loft(faces)
+    return bd.loft(faces)
 
 
 def _ext_plenum(side, n=9):
@@ -524,8 +507,8 @@ def _ext_plenum(side, n=9):
             (EXT_X - hx, zc + 8.0), (EXT_X + hx, zc + 8.0),
             (EXT_X + hx, zc - 8.0), (EXT_X - hx, zc - 8.0),
         ]
-        faces.append(Plane.XZ.offset(-y) * make_face(Polyline(*pts, pts[0])))
-    return loft(faces)
+        faces.append(bd.Plane.XZ.offset(-y) * bd.make_face(bd.Polyline(*pts, pts[0])))
+    return bd.loft(faces)
 
 
 def _extractor(side):
@@ -553,7 +536,7 @@ def _chevron(a, b, g):
         (-a, -(b - g)),
         (-a, -b),
     ]
-    return make_face(Polyline(*pts, pts[0]))
+    return bd.make_face(bd.Polyline(*pts, pts[0]))
 
 
 def _nose_badge():
@@ -564,13 +547,13 @@ def _nose_badge():
     everywhere across the crown of the nose instead of lifting at its corners.
     """
     p, n = _top_surf(2228.0, 0.0)
-    xd = Vector(1, 0, 0)
+    xd = bd.Vector(1, 0, 0)
     xd = (xd - n * xd.dot(n)).normalized()
-    pl = Plane(origin=p - n * 4.0, x_dir=xd, z_dir=n)
+    pl = bd.Plane(origin=p - n * 4.0, x_dir=xd, z_dir=n)
 
-    mark = pl * extrude(_chevron(33.0, 23.0, 9.0), amount=6.8)
-    bar = pl * Pos(-30.0, 0.0, 0.0) * extrude(
-        RectangleRounded(4.2, 104.0, 2.0), amount=6.2)
+    mark = pl * bd.extrude(_chevron(33.0, 23.0, 9.0), amount=6.8)
+    bar = pl * bd.Pos(-30.0, 0.0, 0.0) * bd.extrude(
+        bd.RectangleRounded(4.2, 104.0, 2.0), amount=6.2)
     return [
         style(mark, "badge_mark:nose", P.BRONZE),
         style(bar, "badge_underscore:nose", P.BRONZE),
@@ -585,13 +568,13 @@ def _tail_badge():
     it reads as a raised milled panel rather than a stuck-on plate -- and it is
     deep enough to give the emblem a body of its own.
     """
-    pl = Plane(origin=(S.TAIL_X + 2.0, 0.0, 790.0),
+    pl = bd.Plane(origin=(S.TAIL_X + 2.0, 0.0, 790.0),
                x_dir=(0, 0, 1), z_dir=(-1, 0, 0))
-    pad = pl * extrude(RectangleRounded(74.0, 206.0, 30.0), amount=4.0)
-    mark = pl * Pos(16.0, 0.0, 3.6) * extrude(
+    pad = pl * bd.extrude(bd.RectangleRounded(74.0, 206.0, 30.0), amount=4.0)
+    mark = pl * bd.Pos(16.0, 0.0, 3.6) * bd.extrude(
         _chevron(27.0, 19.0, 9.0), amount=2.6)
-    bar = pl * Pos(-19.0, 0.0, 3.6) * extrude(
-        RectangleRounded(4.2, 150.0, 2.0), amount=2.2)
+    bar = pl * bd.Pos(-19.0, 0.0, 3.6) * bd.extrude(
+        bd.RectangleRounded(4.2, 150.0, 2.0), amount=2.2)
     return [
         style(pad, "badge_pad:tail", P.BODY),
         style(mark, "badge_mark:tail", P.BRONZE),
@@ -615,18 +598,18 @@ def _fuel_filler():
     proud of the dish -- are what make it read as machined at any distance.
     """
     p, n = _surf(FILLER_X, FILLER_Z, 1)
-    xd = Vector(1, 0, 0)
+    xd = bd.Vector(1, 0, 0)
     xd = (xd - n * xd.dot(n)).normalized()
-    pl = Plane(origin=p, x_dir=xd, z_dir=n)
+    pl = bd.Plane(origin=p, x_dir=xd, z_dir=n)
 
     def disc(r, z0, h):
-        return pl * Pos(0, 0, z0) * Cylinder(
-            r, h, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        return pl * bd.Pos(0, 0, z0) * bd.Cylinder(
+            r, h, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
 
     flange = disc(55.0, -6.0, 7.7) - disc(45.5, -7.0, 10.0)
     dish = disc(45.5, -6.0, 6.5)
-    latch = pl * Pos(0, 17.0, 0.4) * extrude(
-        RectangleRounded(64.0, 12.5, 5.6), amount=3.0)
+    latch = pl * bd.Pos(0, 17.0, 0.4) * bd.extrude(
+        bd.RectangleRounded(64.0, 12.5, 5.6), amount=3.0)
     pip = disc(9.5, 0.4, 2.0)
     return [
         style(flange, "fuel_filler_flange:left", P.BRONZE),
@@ -648,11 +631,11 @@ FASTENERS = [
 
 
 def _fastener_proto():
-    flange = Pos(0, 0, -1.4) * Cylinder(
-        11.2, 3.0, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    head = Pos(0, 0, 1.3) * Cylinder(
-        8.2, 1.5, align=(Align.CENTER, Align.CENTER, Align.MIN))
-    slot = Pos(0, 0, 2.4) * Box(13.6, 2.6, 1.2)
+    flange = bd.Pos(0, 0, -1.4) * bd.Cylinder(
+        11.2, 3.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+    head = bd.Pos(0, 0, 1.3) * bd.Cylinder(
+        8.2, 1.5, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
+    slot = bd.Pos(0, 0, 2.4) * bd.Box(13.6, 2.6, 1.2)
     return group("quarter_turn", [
         style(flange, "fastener_flange", P.BRONZE),
         style(head, "fastener_head", P.BRONZE_DARK),
@@ -665,9 +648,9 @@ def _fasteners():
     inst = []
     for i, (x, y) in enumerate(FASTENERS):
         p, n = _top_surf(x, y)
-        xd = Vector(1, 0, 0)
+        xd = bd.Vector(1, 0, 0)
         xd = (xd - n * xd.dot(n)).normalized()
-        pl = Plane(origin=p, x_dir=xd, z_dir=n)
+        pl = bd.Plane(origin=p, x_dir=xd, z_dir=n)
         nm = "left" if y > 0 else "right"
         inst.append((proto, pl.location, f"quarter_turn:{nm}_{i // 2}"))
     return compound_from_instances("quarter_turns", inst)

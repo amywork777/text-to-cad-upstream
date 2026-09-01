@@ -38,17 +38,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Box,
-    Circle,
-    Color,
-    Cone,
-    Cylinder,
-    Polygon,
-    Pos,
-    Rot,
-    extrude,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 from lib import finishing as F
@@ -207,13 +197,13 @@ _BRIDGE_STUD_BASE = _BRIDGE_TOP + 0.07
 
 def _cyl(r, h, z0):
     """Cylinder spanning z [z0, z0 + h] (default centered primitive)."""
-    return Pos(0, 0, z0 + h / 2.0) * Cylinder(r, h)
+    return bd.Pos(0, 0, z0 + h / 2.0) * bd.Cylinder(r, h)
 
 
 def _fuse2d(pieces, clip_r=13.4):
     """ONE multi-operand sketch fuse + regularizing clip."""
     prof = pieces[0] + pieces[1:] if len(pieces) > 1 else pieces[0]
-    return prof & Circle(clip_r)
+    return prof & bd.Circle(clip_r)
 
 
 def _chain(chains, extra=(), cuts2d=(), clip_r=13.4):
@@ -223,7 +213,7 @@ def _chain(chains, extra=(), cuts2d=(), clip_r=13.4):
     pieces = []
     for pts in chains:
         for i, (x, y, r) in enumerate(pts):
-            pieces.append(Pos(x, y) * Circle(r))
+            pieces.append(bd.Pos(x, y) * bd.Circle(r))
             if i == 0:
                 continue
             x0, y0, r0 = pts[i - 1]
@@ -231,7 +221,7 @@ def _chain(chains, extra=(), cuts2d=(), clip_r=13.4):
             if d < 1e-6:
                 continue
             px, py = -(y - y0) / d, (x - x0) / d
-            pieces.append(Polygon(
+            pieces.append(bd.Polygon(
                 (x0 - px * r0, y0 - py * r0),
                 (x - px * r, y - py * r),
                 (x + px * r, y + py * r),
@@ -256,7 +246,7 @@ def _pol(cx, cy, r, deg):
 
 def _finish(part, label, color):
     part.label = label
-    part.color = Color(*color)
+    part.color = bd.Color(*color)
     return part
 
 
@@ -281,7 +271,7 @@ def _lever(profile, z_band, label, anglage=S.ANGLAGE_WIDTH_SMALL,
     perimeters OCC returns a positive-volume chamfer whose skinny faces are
     BOP self-intersecting (probe-verified on the reset/brake levers) — so
     each width is also gated on `_bop_clean` and stepped down on failure."""
-    body = Pos(0, 0, z_band[0]) * extrude(profile, amount=z_band[1] - z_band[0])
+    body = bd.Pos(0, 0, z_band[0]) * bd.extrude(profile, amount=z_band[1] - z_band[0])
     w = anglage
     while w >= 0.04:
         trial, applied = F.anglage_top(body, w)
@@ -301,10 +291,10 @@ def _screw_head(head_d=1.1, hh=0.24, slot_angle=0.0, color=S.BLUED):
     r = head_d / 2.0
     ch = min(0.07, 0.30 * hh)
     depth = min(0.16, hh - 0.06)
-    head = _cyl(r, hh - ch, -hh) + Pos(0, 0, -ch / 2) * Cone(r, r - ch, ch)
-    slot = Rot(0, 0, slot_angle) * Box(head_d + 0.5, 0.2 * head_d, 2 * depth)
+    head = _cyl(r, hh - ch, -hh) + bd.Pos(0, 0, -ch / 2) * bd.Cone(r, r - ch, ch)
+    slot = bd.Rot(0, 0, slot_angle) * bd.Box(head_d + 0.5, 0.2 * head_d, 2 * depth)
     s = head - slot
-    s.color = Color(*color)
+    s.color = bd.Color(*color)
     return s
 
 
@@ -318,11 +308,11 @@ def _stud_and_screw(parts, x, y, base_z, lever_z0, lever_z1, label,
     post = _cyl(min(shaft_r - 0.06, 0.32), lever_z0 - 0.02 - base_z, base_z)
     shoulder = _cyl(shaft_r + 0.14, collar_h, lever_z0 - 0.02 - collar_h)
     shaft = _cyl(shaft_r, (lever_z1 + 0.02) - base_z, base_z)
-    stud = Pos(x, y, 0) * (post + [shoulder, shaft])
+    stud = bd.Pos(x, y, 0) * (post + [shoulder, shaft])
     parts.append(_finish(stud, f"stud:{label}", S.STEEL_DARK))
     slot = (x * 47.9 + y * 83.3) * 57.29578 % 180.0
     hh = 0.24
-    head = Pos(x, y, lever_z1 + 0.02 + hh) * _screw_head(
+    head = bd.Pos(x, y, lever_z1 + 0.02 + hh) * _screw_head(
         head_d=head_d, hh=hh, slot_angle=slot)
     parts.append(_finish(head, f"screw:{label}", S.BLUED))
 
@@ -338,8 +328,8 @@ def _window_cutter(od, frac):
     ring = _cyl(rim_inner, 1.2, -0.6) - _cyl(hub / 2.0 + 0.4, 1.4, -0.7)
     spokes = []
     for k in range(5):
-        sp = Rot(0, 0, 72.0 * k) * (Pos(rim_inner * 1.025, spoke_w / 2.0, 0)
-                                    * Box(rim_inner * 2.05, spoke_w, 1.6))
+        sp = bd.Rot(0, 0, 72.0 * k) * (bd.Pos(rim_inner * 1.025, spoke_w / 2.0, 0)
+                                    * bd.Box(rim_inner * 2.05, spoke_w, 1.6))
         spokes.append(sp)
     return ring - spokes
 
@@ -359,7 +349,7 @@ def _gilt_wheel(teeth, tip_r, pos, z_band, mesh_toward, frac=0.08,
     w = w - cuts
     if rot is None:
         rot = _ang(pos, mesh_toward) if mesh_toward is not None else 0.0
-    return Pos(pos[0], pos[1], (z_band[0] + z_band[1]) / 2.0) * Rot(0, 0, rot) * w
+    return bd.Pos(pos[0], pos[1], (z_band[0] + z_band[1]) / 2.0) * bd.Rot(0, 0, rot) * w
 
 
 # ---------------------------------------------------------------------------
@@ -377,14 +367,14 @@ def _column_wheel_parts():
         a = STAR_PHASE + k * pitch
         pts.append(_pol(0, 0, STAR_ROOT_R, a))
         pts.append(_pol(0, 0, STAR_TIP_R, a + 0.75 * pitch))
-    star2d = Polygon(*pts, align=None) + [Circle(STAR_ROOT_R + 0.01)]
-    star = Pos(0, 0, STAR_Z[0]) * extrude(star2d, amount=STAR_Z[1] - STAR_Z[0])
+    star2d = bd.Polygon(*pts, align=None) + [bd.Circle(STAR_ROOT_R + 0.01)]
+    star = bd.Pos(0, 0, STAR_Z[0]) * bd.extrude(star2d, amount=STAR_Z[1] - STAR_Z[0])
 
     # 7 upright polished columns: clean radial wedge prisms (straight
     # flanks — bulged flanks read as melted blobs at macro, round-1 render)
     # with 45-deg chamfered tops baked in (taper cap — OCC chamfer on these
     # rings is the segfault class)
-    wedge2d = Polygon(
+    wedge2d = bd.Polygon(
         _pol(0, 0, COL_R_IN, -COL_HALF_DEG),
         _pol(0, 0, COL_R_OUT, -COL_HALF_DEG),
         _pol(0, 0, COL_R_OUT * 1.006, 0.0),
@@ -395,10 +385,10 @@ def _column_wheel_parts():
     )
     ch = 0.14
     h = COLUMN_Z[1] - COLUMN_Z[0]
-    proto = (Pos(0, 0, COLUMN_Z[0]) * extrude(wedge2d, amount=h - ch)
-             + extrude(Pos(0, 0, COLUMN_Z[1] - ch) * wedge2d, amount=ch,
+    proto = (bd.Pos(0, 0, COLUMN_Z[0]) * bd.extrude(wedge2d, amount=h - ch)
+             + bd.extrude(bd.Pos(0, 0, COLUMN_Z[1] - ch) * wedge2d, amount=ch,
                        taper=45))
-    cols = [Rot(0, 0, COL_PHASE + k * COL_PITCH) * proto
+    cols = [bd.Rot(0, 0, COL_PHASE + k * COL_PITCH) * proto
             for k in range(S.COLUMN_COUNT)]
     # ONE fused body with the star + hub pedestal/core (disjoint solids fused
     # pairwise decay to ShapeList; a real column wheel is one machined piece)
@@ -407,19 +397,19 @@ def _column_wheel_parts():
         _cyl(0.95, 3.56 - STAR_Z[1], STAR_Z[1] - 0.01),   # core: 0.02 under cap
     ])
     body = body - _cyl(0.35, 2.0, 2.5)
-    body = Pos(CWX, CWY, 0) * body
+    body = bd.Pos(CWX, CWY, 0) * body
     parts.append(_finish(body, "column_wheel", S.STEEL_LEVER))
 
     # polished cap disk inside the column ring (large, chamfered rim — the
     # cap + big slotted screw dominate the center in the reference macro)
-    cap = (_cyl(1.16, 0.12, 3.58) + Pos(0, 0, 3.58 + 0.12 + 0.035) *
-           Cone(1.16, 1.09, 0.07)) - _cyl(0.34, 1.0, 3.4)
-    parts.append(_finish(Pos(CWX, CWY, 0) * cap, "column_wheel_cap",
+    cap = (_cyl(1.16, 0.12, 3.58) + bd.Pos(0, 0, 3.58 + 0.12 + 0.035) *
+           bd.Cone(1.16, 1.09, 0.07)) - _cyl(0.34, 1.0, 3.4)
+    parts.append(_finish(bd.Pos(CWX, CWY, 0) * cap, "column_wheel_cap",
                          S.STEEL_BRIGHT))
     hh = 0.20
-    head = Pos(CWX, CWY, 3.78 + hh) * _screw_head(head_d=1.25, hh=hh,
+    head = bd.Pos(CWX, CWY, 3.78 + hh) * _screw_head(head_d=1.25, hh=hh,
                                                   slot_angle=63.0)
-    core = Pos(CWX, CWY, 0) * _cyl(0.33, 3.80 - 3.3, 3.3)
+    core = bd.Pos(CWX, CWY, 0) * _cyl(0.33, 3.80 - 3.3, 3.3)
     parts.append(_finish(head + core, "screw:column_wheel", S.BLUED))
     return parts
 
@@ -437,7 +427,7 @@ def _runner_parts():
     # heart cam: low point (bottom lobe) faces the hammer-A pad; tip away
     cam_rot = _ang((0, 0), HAMMER_PIVOT) + 90.0   # default bottom at -90 deg
     cam = F.heart_cam(diameter=3.2, thickness=CAM_Z[1] - CAM_Z[0], bore=0.62)
-    cam = Pos(0, 0, CAM_Z[0]) * Rot(0, 0, cam_rot) * cam
+    cam = bd.Pos(0, 0, CAM_Z[0]) * bd.Rot(0, 0, cam_rot) * cam
     parts.append(_finish(cam, "chrono_runner_heart_cam", S.STEEL_BRIGHT))
 
     # arbor: hovers over the center jewel table (probe-measured top 2.933 in
@@ -452,9 +442,9 @@ def _runner_parts():
     # minute-recorder drive finger, dropped BELOW the cam (3.18..3.30, over
     # the wheel top 3.14): the chronograph bridge now owns the band above
     finger2d = _chain([[(0.0, 0.0, 0.34), (1.55, -0.45, 0.17)]], clip_r=3.0)
-    finger = (Pos(0, 0, 3.18)
-              * Rot(0, 0, _ang((0, 0), (MRX, MRY)) + 14)
-              * extrude(finger2d, amount=0.12))
+    finger = (bd.Pos(0, 0, 3.18)
+              * bd.Rot(0, 0, _ang((0, 0), (MRX, MRY)) + 14)
+              * bd.extrude(finger2d, amount=0.12))
     arbor = arbor + finger
     parts.append(_finish(arbor, "chrono_runner_arbor", S.STEEL_DARK))
     return parts
@@ -478,7 +468,7 @@ def _minute_recorder_parts():
     # heart cam: low point faces the hammer-B pad
     cam_rot = _ang((MRX, MRY), HAMMER_PIVOT) + 90.0
     cam = F.heart_cam(diameter=2.6, thickness=CAM_Z[1] - CAM_Z[0], bore=0.74)
-    cam = Pos(MRX, MRY, CAM_Z[0]) * Rot(0, 0, cam_rot) * cam
+    cam = bd.Pos(MRX, MRY, CAM_Z[0]) * bd.Rot(0, 0, cam_rot) * cam
     parts.append(_finish(cam, "minute_recorder_heart_cam", S.STEEL_BRIGHT))
 
     # recorder post: planted in the plate, shoulder under the wheel, collet
@@ -487,7 +477,7 @@ def _minute_recorder_parts():
     post = (_cyl(0.55, 1.2, _GAP) + _cyl(0.36, 3.62 - _GAP, _GAP)
             + _cyl(0.42, 0.05, 3.60)
             + _cyl(0.10, 3.92 - 3.60, 3.60))
-    parts.append(_finish(Pos(MRX, MRY, 0) * post, "minute_recorder_post",
+    parts.append(_finish(bd.Pos(MRX, MRY, 0) * post, "minute_recorder_post",
                          S.STEEL_DARK))
 
     # polished jumper: pivoted detent, V-nose seated in the tooth gap at
@@ -497,7 +487,7 @@ def _minute_recorder_parts():
     apex = _pol(MRX, MRY, MINUTE_REC_TIP_R - 0.16, nose_az)
     heel_l = _pol(MRX, MRY, MINUTE_REC_TIP_R + 0.28, nose_az - 8.5)
     heel_r = _pol(MRX, MRY, MINUTE_REC_TIP_R + 0.28, nose_az + 8.5)
-    nose2d = Polygon(heel_r, apex, heel_l, align=None)
+    nose2d = bd.Polygon(heel_r, apex, heel_l, align=None)
     heel_mid = _pol(MRX, MRY, MINUTE_REC_TIP_R + 0.34, nose_az)
     prof = _chain(
         [[(JUMPER_PIVOT[0], JUMPER_PIVOT[1], 0.50),
@@ -507,7 +497,7 @@ def _minute_recorder_parts():
           (10.45, -3.55, 0.24)]],
         extra=[nose2d])
     jumper = _lever(prof, (LEVER_Z[0], LEVER_Z[0] + 0.14), "minute_jumper",
-                    cuts=[Pos(JUMPER_PIVOT[0], JUMPER_PIVOT[1], 0)
+                    cuts=[bd.Pos(JUMPER_PIVOT[0], JUMPER_PIVOT[1], 0)
                           * _cyl(0.42, 1.0, 2.8)])
     parts.append(jumper)
     _stud_and_screw(parts, JUMPER_PIVOT[0], JUMPER_PIVOT[1], _GAP,
@@ -522,7 +512,7 @@ def _minute_recorder_parts():
     spring = _lever(blade, (LEVER_Z[0] + 0.02, LEVER_Z[0] + 0.14),
                     "minute_jumper_spring", anglage=0.04,
                     color=S.STEEL_DARK,
-                    cuts=[Pos(JUMPER_SPRING_STUD[0], JUMPER_SPRING_STUD[1], 0)
+                    cuts=[bd.Pos(JUMPER_SPRING_STUD[0], JUMPER_SPRING_STUD[1], 0)
                           * _cyl(0.30, 1.0, 2.8)])
     parts.append(spring)
     _stud_and_screw(parts, JUMPER_SPRING_STUD[0], JUMPER_SPRING_STUD[1], _GAP,
@@ -543,7 +533,7 @@ def _hour_recorder_parts():
     parts.append(_finish(wheel, "hour_recorder_wheel", S.GILT))
 
     cam = F.heart_cam(diameter=2.8, thickness=0.36, bore=0.74)
-    cam = Pos(HRX, HRY, -2.50) * Rot(0, 0, 235.0) * cam
+    cam = bd.Pos(HRX, HRY, -2.50) * bd.Rot(0, 0, 235.0) * cam
     parts.append(_finish(cam, "hour_recorder_heart_cam", S.STEEL_BRIGHT))
 
     # post: shaft through wheel (bore 0.38) and cam (bore 0.37), seat collar
@@ -552,19 +542,19 @@ def _hour_recorder_parts():
     post = (_cyl(0.36, 1.03, -2.55)              # shaft -2.55..-1.52
             + _cyl(0.55, 0.10, -1.62)            # seat under the plate
             + _cyl(0.42, 0.06, -2.58))           # collet under the cam
-    post = Pos(HRX, HRY, 0) * post
+    post = bd.Pos(HRX, HRY, 0) * post
     parts.append(_finish(post, "hour_recorder_post", S.STEEL_DARK))
 
     # friction spring: three-arm spring washer bearing on the wheel hub
     arms = []
     for k in range(3):
         a0 = 15.0 + 120.0 * k
-        arms.append(Polygon(
+        arms.append(bd.Polygon(
             _pol(0, 0, 0.52, a0), _pol(0, 0, 1.55, a0 + 34.0),
             _pol(0, 0, 1.55, a0 + 48.0), _pol(0, 0, 0.52, a0 + 22.0),
             align=None))
-    ring2d = _fuse2d([Circle(0.62) - Circle(0.40)] + arms, clip_r=2.0)
-    spring = Pos(HRX, HRY, -1.82) * extrude(ring2d, amount=0.10)
+    ring2d = _fuse2d([bd.Circle(0.62) - bd.Circle(0.40)] + arms, clip_r=2.0)
+    spring = bd.Pos(HRX, HRY, -1.82) * bd.extrude(ring2d, amount=0.10)
     parts.append(_finish(spring, "hour_recorder_friction_spring",
                          S.STEEL_DARK))
     return parts
@@ -584,7 +574,7 @@ def _clutch_parts():
     # arbor with a retaining collar over the swinging arm's ring boss and a
     # turned pivot up into the coupling cock's jewel (replaces the old bare
     # retaining screw head: the cock caps this pivot properly now)
-    arbor = Pos(FWX, FWY, 0) * (_cyl(0.32, 3.42 - 2.95, 2.95)
+    arbor = bd.Pos(FWX, FWY, 0) * (_cyl(0.32, 3.42 - 2.95, 2.95)
                                 + _cyl(0.42, 0.06, 3.40)
                                 + _cyl(0.10, 3.92 - 3.42, 3.42))
     parts.append(_finish(arbor, "clutch_driving_arbor", S.STEEL_DARK))
@@ -604,13 +594,13 @@ def _clutch_parts():
          [(CPX, CPY, 0.85), (6.7, -2.9, 0.45), (7.6, -1.3, 0.36),
           (8.0, -0.1, 0.30), (plate_end[0], plate_end[1], 0.30)]])
     arm = _lever(prof, CLUTCH_Z, "clutch_arm",
-                 cuts=[Pos(FWX, FWY, 0) * _cyl(0.34, 1.0, 3.0),
-                       Pos(CPX, CPY, 0) * _cyl(0.32, 1.0, 3.0)])
-    riser = Pos(plate_end[0], plate_end[1], 0) * _cyl(
+                 cuts=[bd.Pos(FWX, FWY, 0) * _cyl(0.34, 1.0, 3.0),
+                       bd.Pos(CPX, CPY, 0) * _cyl(0.32, 1.0, 3.0)])
+    riser = bd.Pos(plate_end[0], plate_end[1], 0) * _cyl(
         0.30, 3.62 - CLUTCH_Z[0], CLUTCH_Z[0])
     beak2d = _chain([[(plate_end[0], plate_end[1], 0.28),
                       (beak_tip[0], beak_tip[1], 0.26)]])
-    beak = Pos(0, 0, 3.42) * extrude(beak2d, amount=0.20)
+    beak = bd.Pos(0, 0, 3.42) * bd.extrude(beak2d, amount=0.20)
     arm = arm + [riser, beak]
     parts.append(_finish(arm, "clutch_arm", S.STEEL_LEVER))
 
@@ -618,10 +608,10 @@ def _clutch_parts():
     cpl = _gilt_wheel(92, COUPLING_TIP_R, (CPX, CPY), WHEEL_Z, (0.0, 0.0),
                       frac=0.06, bore=0.32)
     parts.append(_finish(cpl, "coupling_wheel", S.GILT))
-    stud = Pos(CPX, CPY, 0) * (_cyl(0.30, CLUTCH_Z[1] - 2.90 + 0.02, 2.90)
+    stud = bd.Pos(CPX, CPY, 0) * (_cyl(0.30, CLUTCH_Z[1] - 2.90 + 0.02, 2.90)
                                + _cyl(0.44, 0.04, 2.90))
     parts.append(_finish(stud, "stud:coupling_wheel", S.STEEL_DARK))
-    head = Pos(CPX, CPY, CLUTCH_Z[1] + 0.02 + 0.20) * _screw_head(
+    head = bd.Pos(CPX, CPY, CLUTCH_Z[1] + 0.02 + 0.20) * _screw_head(
         head_d=1.0, hh=0.20, slot_angle=41.0)
     parts.append(_finish(head, "screw:coupling_wheel", S.BLUED))
 
@@ -632,7 +622,7 @@ def _clutch_parts():
                      (-8.12, -2.83, 0.09)]])
     spring = _lever(blade, (CLUTCH_Z[0] + 0.02, CLUTCH_Z[0] + 0.14),
                     "clutch_spring", anglage=0.04, color=S.STEEL_DARK,
-                    cuts=[Pos(sx, sy, 0) * _cyl(0.30, 1.0, 3.0)])
+                    cuts=[bd.Pos(sx, sy, 0) * _cyl(0.30, 1.0, 3.0)])
     parts.append(spring)
     _stud_and_screw(parts, sx, sy, _BRIDGE_STUD_BASE,
                     CLUTCH_Z[0] + 0.02, CLUTCH_Z[0] + 0.14,
@@ -665,11 +655,11 @@ def _hammer_parts():
           (feeler_tip[0], feeler_tip[1], 0.26)],
          [(hx, hy, 0.78), (7.7, -1.15, 0.42)]])    # reset tail
     zmid = (HAMMER_Z[0] + HAMMER_Z[1]) / 2.0
-    face_cut_a = Rot(0, 0, az_a) * Pos(1.28 - 4.0, 0, zmid) * Box(8, 10, 1.0)
-    face_cut_b = (Pos(MRX, MRY, 0) * Rot(0, 0, az_b)
-                  * Pos(1.04 - 4.0, 0, zmid) * Box(8, 10, 1.0))
+    face_cut_a = bd.Rot(0, 0, az_a) * bd.Pos(1.28 - 4.0, 0, zmid) * bd.Box(8, 10, 1.0)
+    face_cut_b = (bd.Pos(MRX, MRY, 0) * bd.Rot(0, 0, az_b)
+                  * bd.Pos(1.04 - 4.0, 0, zmid) * bd.Box(8, 10, 1.0))
     yoke = _lever(prof, HAMMER_Z, "hammer_yoke", color=S.STEEL_BRIGHT,
-                  cuts=[Pos(hx, hy, 0) * _cyl(0.42, 1.0, 3.2),
+                  cuts=[bd.Pos(hx, hy, 0) * _cyl(0.42, 1.0, 3.2),
                         face_cut_a, face_cut_b])
     parts.append(yoke)
     _stud_and_screw(parts, hx, hy, _GAP, HAMMER_Z[0], HAMMER_Z[1],
@@ -693,14 +683,14 @@ def _operating_parts():
     ux, uy = (apex[0] - base[0]) / d, (apex[1] - base[1]) / d
     heel_a = (base[0] - 0.24 * uy, base[1] + 0.24 * ux)
     heel_b = (base[0] + 0.24 * uy, base[1] - 0.24 * ux)
-    nose2d = Polygon(apex, heel_a, heel_b, align=None)   # CCW
+    nose2d = bd.Polygon(apex, heel_a, heel_b, align=None)   # CCW
 
     prof = _chain(
         [[(pad[0], pad[1], 0.65), (11.15, 6.2, 0.50), (px, py, 0.75),
           (11.15, 4.0, 0.40), (base[0], base[1], 0.26)]],
         extra=[nose2d])
     lever = _lever(prof, OPER_Z, "operating_lever",
-                   cuts=[Pos(px, py, 0) * _cyl(0.42, 1.0, 2.8)])
+                   cuts=[bd.Pos(px, py, 0) * _cyl(0.42, 1.0, 2.8)])
     parts.append(lever)
     _stud_and_screw(parts, px, py, _BRIDGE_STUD_BASE, OPER_Z[0], OPER_Z[1],
                     "operating_lever", head_d=1.2)
@@ -713,7 +703,7 @@ def _operating_parts():
                      (11.346, 3.182, 0.09)]])
     spring = _lever(blade, (3.20, 3.32), "operating_spring", anglage=0.04,
                     color=S.STEEL_DARK,
-                    cuts=[Pos(sx, sy, 0) * _cyl(0.30, 1.0, 2.8)])
+                    cuts=[bd.Pos(sx, sy, 0) * _cyl(0.30, 1.0, 2.8)])
     parts.append(spring)
     _stud_and_screw(parts, sx, sy, _BRIDGE_STUD_BASE, 3.20, 3.32,
                     "operating_spring", shaft_r=0.28, head_d=0.9)
@@ -731,7 +721,7 @@ def _reset_parts():
           (8.9, -4.6, 0.48), (8.3, -3.2, 0.38), (8.1, -2.55, 0.33),
           (7.953, -1.878, 0.30)]])
     lever = _lever(prof, RESET_Z, "reset_lever",
-                   cuts=[Pos(px, py, 0) * _cyl(0.42, 1.0, 3.2)])
+                   cuts=[bd.Pos(px, py, 0) * _cyl(0.42, 1.0, 3.2)])
     parts.append(lever)
     _stud_and_screw(parts, px, py, _GAP, RESET_Z[0], RESET_Z[1],
                     "reset_lever", head_d=1.2)
@@ -741,7 +731,7 @@ def _reset_parts():
                      (10.815, -6.212, 0.09)]])
     spring = _lever(blade, (RESET_Z[0] + 0.02, RESET_Z[0] + 0.14),
                     "reset_spring", anglage=0.04, color=S.STEEL_DARK,
-                    cuts=[Pos(sx, sy, 0) * _cyl(0.30, 1.0, 3.2)])
+                    cuts=[bd.Pos(sx, sy, 0) * _cyl(0.30, 1.0, 3.2)])
     parts.append(spring)
     _stud_and_screw(parts, sx, sy, _GAP, RESET_Z[0] + 0.02, RESET_Z[0] + 0.14,
                     "reset_spring", shaft_r=0.28, head_d=0.9)
@@ -758,9 +748,9 @@ def _brake_parts():
         [[(pad[0], pad[1], 0.42), (-3.2, 2.65, 0.45), (px, py, 0.62),
           (-4.75, 2.35, 0.40), (-4.95, 2.20, 0.35)]])
     brake_z = (3.02, 3.18)
-    pad_boss = Pos(pad[0], pad[1], 0) * _cyl(0.42, brake_z[0] - 2.98, 2.98)
+    pad_boss = bd.Pos(pad[0], pad[1], 0) * _cyl(0.42, brake_z[0] - 2.98, 2.98)
     lever = _lever(prof, brake_z, "brake_lever",
-                   cuts=[Pos(px, py, 0) * _cyl(0.42, 1.0, 2.8)])
+                   cuts=[bd.Pos(px, py, 0) * _cyl(0.42, 1.0, 2.8)])
     lever = lever + pad_boss
     parts.append(_finish(lever, "brake_lever", S.STEEL_LEVER))
 
@@ -772,7 +762,7 @@ def _brake_parts():
                      (-5.13, 2.70, 0.09)]])
     spring = _lever(blade, (3.04, 3.16), "brake_spring", anglage=0.04,
                     color=S.STEEL_DARK,
-                    cuts=[Pos(sx, sy, 0) * _cyl(0.30, 1.0, 2.8)])
+                    cuts=[bd.Pos(sx, sy, 0) * _cyl(0.30, 1.0, 2.8)])
     parts.append(spring)
     _stud_and_screw(parts, sx, sy, _BRIDGE_STUD_BASE, 3.04, 3.16,
                     "brake_spring", shaft_r=0.28, head_d=0.9)
@@ -788,7 +778,7 @@ def _trim_skins(shadow, screw_xy, z1):
     each screw from every skin solid and re-split."""
     if not shadow:
         return shadow
-    tools = [Pos(x, y, 0) * _cyl(0.90, 1.0, z1 - 0.6) for x, y in screw_xy]
+    tools = [bd.Pos(x, y, 0) * _cyl(0.90, 1.0, z1 - 0.6) for x, y in screw_xy]
     out = []
     for s in shadow:
         t = s - tools
@@ -815,7 +805,7 @@ def _chrono_bridge_parts():
         jewel_sink_kw=_CHRONO_SINK_KW)
     # full-height turned feet through wheel-free plate (bottom face of the
     # plate is un-beveled, so the 0.02 weld overlap fuses cleanly)
-    feet = [Pos(x, y, 0) * _cyl(r, (z0 + 0.02) - bz, bz)
+    feet = [bd.Pos(x, y, 0) * _cyl(r, (z0 + 0.02) - bz, bz)
             for x, y, r, bz in CHRONO_BRIDGE_FEET]
     body = body + feet
     parts.append(_finish(body, "chrono_bridge", S.COPPER_GOLD))
@@ -831,9 +821,9 @@ def _chrono_bridge_parts():
     # coupling pivots (r0.10) rise into the ruby's 0.12 bore.
     jewels = (((0.0, 0.0), "chrono_runner"), ((MRX, MRY), "minute_recorder"))
     for (x, y), name in jewels:
-        ruby = Pos(x, y, z1 - 0.11) * M._ruby_disc(r=0.42, t=0.16, hole_r=0.12)
+        ruby = bd.Pos(x, y, z1 - 0.11) * M._ruby_disc(r=0.42, t=0.16, hole_r=0.12)
         parts.append(_finish(ruby, f"bridge_jewel:{name}", S.RUBY))
-        chaton = Pos(x, y, 0) * M._ring(0.43, 0.64, 0.18, z1 - 0.28)
+        chaton = bd.Pos(x, y, 0) * M._ring(0.43, 0.64, 0.18, z1 - 0.28)
         parts.append(_finish(chaton, f"chaton:{name}", S.BRASS_MOVEMENT))
     for (x, y), name in zip(CHRONO_BRIDGE_SCREWS, ("east", "south", "west")):
         parts.append(_finish(
@@ -850,17 +840,17 @@ def _chrono_bridge_parts():
     # first, then re-cut one continuous r0.45 screw bore through plate +
     # foot (pre-boring the foot left coincident bore walls at the weld —
     # BOP-self-intersecting, probe-verified)
-    foot = Pos(sx, sy, 0) * _cyl(
+    foot = bd.Pos(sx, sy, 0) * _cyl(
         0.60, (z0 + 0.02) - _BRIDGE_STUD_BASE, _BRIDGE_STUD_BASE)
-    body2 = (body2 + foot) - Pos(sx, sy, 0) * _cyl(
+    body2 = (body2 + foot) - bd.Pos(sx, sy, 0) * _cyl(
         0.45, (z1 + 0.1) - (_BRIDGE_STUD_BASE - 0.2), _BRIDGE_STUD_BASE - 0.2)
     parts.append(_finish(body2, "coupling_bridge", S.COPPER_GOLD))
     shadow2 = _trim_skins(shadow2, [COUPLING_COCK_SCREW], z1)
     M._add_shadow(parts, shadow2, "coupling_bridge")
     M._add_anglage(parts, ribbon2, "coupling_bridge")
-    ruby = Pos(FWX, FWY, z1 - 0.11) * M._ruby_disc(r=0.42, t=0.16, hole_r=0.12)
+    ruby = bd.Pos(FWX, FWY, z1 - 0.11) * M._ruby_disc(r=0.42, t=0.16, hole_r=0.12)
     parts.append(_finish(ruby, "bridge_jewel:coupling", S.RUBY))
-    chaton = Pos(FWX, FWY, 0) * M._ring(0.43, 0.64, 0.18, z1 - 0.28)
+    chaton = bd.Pos(FWX, FWY, 0) * M._ring(0.43, 0.64, 0.18, z1 - 0.28)
     parts.append(_finish(chaton, "chaton:coupling", S.BRASS_MOVEMENT))
     parts.append(_finish(
         M._place_screw(sx, sy, z1, proud=0.04, shank=0.70),
@@ -884,11 +874,10 @@ def build_chrono():
 
     # Per-component export drops the color of bare-`Compound` leaves --
     # coerce every leaf to Part and reattach label/color.
-    from build123d import Compound, Part
     out = []
     for p in parts:
-        if isinstance(p, Compound) and not isinstance(p, Part):
-            q = Part(p.wrapped)
+        if isinstance(p, bd.Compound) and not isinstance(p, bd.Part):
+            q = bd.Part(p.wrapped)
             q.label, q.color = p.label, p.color
             p = q
         out.append(p)

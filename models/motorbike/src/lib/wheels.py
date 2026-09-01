@@ -33,9 +33,7 @@ def _tire(axle, od, width, color):
         (bead_r, half_w - 8.0),
     ]
     # chamfered-shoulder carcass profile, closed as a face
-    from build123d import Polyline
-
-    wire = Polyline(*pts, close=True)
+    wire = bd.Polyline(*pts, close=True)
     carcass = _revolved(bd.Face(wire), axle)
     # two circumferential tread grooves
     grooves = [
@@ -52,9 +50,7 @@ def _spoke(axle, angle_deg, r_in, r_out, w_in, w_out, thickness):
         x_dir=(cos(radians(angle_deg)), 0.0, sin(radians(angle_deg))),
         z_dir=(0, 1, 0),
     )
-    from build123d import Polyline
-
-    wire = Polyline(
+    wire = bd.Polyline(
         (r_in, -w_in / 2), (r_out, -w_out / 2), (r_out, w_out / 2), (r_in, w_in / 2),
         close=True,
     )

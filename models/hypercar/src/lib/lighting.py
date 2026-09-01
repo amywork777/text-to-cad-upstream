@@ -66,21 +66,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from build123d import (
-    Align,
-    Box,
-    Cone,
-    Cylinder,
-    Line,
-    Plane,
-    Pos,
-    Spline,
-    Torus,
-    Vector,
-    extrude,
-    loft,
-    make_face,
-)
+from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib.context import group, style
@@ -108,13 +94,13 @@ def _outline(x_quarter):
     pts = []
     for i, band in enumerate(bands):
         if i == 0 and last == 0:
-            edge = Spline(*band, tangents=((1, 0), (-1, 0)))
+            edge = bd.Spline(*band, tangents=((1, 0), (-1, 0)))
         elif i == 0:
-            edge = Spline(*band, tangents=((1, 0), S._dir(band[-2], band[-1])))
+            edge = bd.Spline(*band, tangents=((1, 0), S._dir(band[-2], band[-1])))
         elif i == last:
-            edge = Spline(*band, tangents=(S._dir(band[0], band[1]), (-1, 0)))
+            edge = bd.Spline(*band, tangents=(S._dir(band[0], band[1]), (-1, 0)))
         else:
-            edge = Spline(*band)
+            edge = bd.Spline(*band)
         for k in range(_OUTLINE_SAMPLES + 1):
             if i and k == 0:
                 continue
@@ -151,10 +137,10 @@ def _surf(x, z, side=1):
     """3D point + outward unit normal on the flank."""
     dydx, dydz = _slopes(x, z)
     y = _flank_y(x, z)
-    n = Vector(-dydx, 1.0, -dydz).normalized()
+    n = bd.Vector(-dydx, 1.0, -dydz).normalized()
     if side < 0:
-        return Vector(x, -y, z), Vector(n.X, -n.Y, n.Z)
-    return Vector(x, y, z), n
+        return bd.Vector(x, -y, z), bd.Vector(n.X, -n.Y, n.Z)
+    return bd.Vector(x, y, z), n
 
 
 def _n2d(a, b):
@@ -202,12 +188,12 @@ def _crest_frame(x, side=1, d=5.0):
     y0, z0, my, mz = _crest_raw(round(x * 4.0))
     ya, za, _, _ = _crest_raw(round((x - d) * 4.0))
     yb, zb, _, _ = _crest_raw(round((x + d) * 4.0))
-    t = Vector(2.0 * d, yb - ya, zb - za).normalized()
-    m = Vector(0.0, my, mz)
+    t = bd.Vector(2.0 * d, yb - ya, zb - za).normalized()
+    m = bd.Vector(0.0, my, mz)
     n = (m - t * m.dot(t)).normalized()
     if side < 0:
-        return Vector(x, -y0, z0), Vector(n.X, -n.Y, n.Z)
-    return Vector(x, y0, z0), n
+        return bd.Vector(x, -y0, z0), bd.Vector(n.X, -n.Y, n.Z)
+    return bd.Vector(x, y0, z0), n
 
 
 def _top_pt(x, t):
@@ -235,12 +221,12 @@ def _top_frame(x, t, side=1, dt=0.014, dx=5.0):
     yb, zb = _top_pt(x, min(t + dt, 1.0))
     y1, z1 = _top_pt(x - dx, t)
     y2, z2 = _top_pt(x + dx, t)
-    u = Vector(2.0 * dx, y2 - y1, z2 - z1)      # surface direction, forward
-    v = Vector(0.0, yb - ya, zb - za)           # surface direction, outboard
+    u = bd.Vector(2.0 * dx, y2 - y1, z2 - z1)      # surface direction, forward
+    v = bd.Vector(0.0, yb - ya, zb - za)           # surface direction, outboard
     n = u.cross(v).normalized()
     if side < 0:
-        return Vector(x, -y0, z0), Vector(n.X, -n.Y, n.Z)
-    return Vector(x, y0, z0), n
+        return bd.Vector(x, -y0, z0), bd.Vector(n.X, -n.Y, n.Z)
+    return bd.Vector(x, y0, z0), n
 
 
 def _off_yz(x, z, off, side=1):
@@ -327,7 +313,7 @@ def _slat(half_w, half_h, power, n=40):
             half_w * math.copysign(abs(c) ** (2.0 / power), c),
             half_h * math.copysign(abs(s) ** (2.0 / power), s),
         ))
-    return make_face(Spline(*pts, periodic=True))
+    return bd.make_face(bd.Spline(*pts, periodic=True))
 
 
 def _blade(pts, nrms, depth, height, off, scale=None, power=3.2):
@@ -353,11 +339,11 @@ def _blade(pts, nrms, depth, height, off, scale=None, power=3.2):
         f = 1.0 if scale is None else scale(i / (m - 1))
         w = depth * (0.42 + 0.58 * f)
         h = height * f
-        pl = Plane(origin=p + nv * (off - w / 2.0), x_dir=xd, z_dir=t)
+        pl = bd.Plane(origin=p + nv * (off - w / 2.0), x_dir=xd, z_dir=t)
         secs.append(
             (pl * _slat(round(w / 2.0, 3), round(h / 2.0, 3), power)).faces()[0]
         )
-    return loft(secs)
+    return bd.loft(secs)
 
 
 def _flank_panel(stations, z_lo, z_hi, off_a, off_b, side, nz=14):
@@ -371,13 +357,13 @@ def _flank_panel(stations, z_lo, z_hi, off_a, off_b, side, nz=14):
             outer.append(_off_yz(x, z, off_a, side))
             inner.append(_off_yz(x, z, off_b, side))
         wire = (
-            Spline(*outer)
-            + Line(outer[-1], inner[-1])
-            + Spline(*list(reversed(inner)))
-            + Line(inner[0], outer[0])
+            bd.Spline(*outer)
+            + bd.Line(outer[-1], inner[-1])
+            + bd.Spline(*list(reversed(inner)))
+            + bd.Line(inner[0], outer[0])
         )
-        faces.append(Plane.YZ.offset(x) * make_face(wire))
-    return loft(faces)
+        faces.append(bd.Plane.YZ.offset(x) * bd.make_face(wire))
+    return bd.loft(faces)
 
 
 # ---------------------------------------------------------------------------
@@ -481,23 +467,23 @@ def _projector(x, side, r_out, kids):
     p, n = _surf(x, z, side)
     tag = f"{int(x)}_{'left' if side > 0 else 'right'}"
 
-    barrel = Plane(origin=p + n * -34.0, z_dir=n) * Cylinder(
-        r_out + 3.5, 32.0, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    barrel = bd.Plane(origin=p + n * -34.0, z_dir=n) * bd.Cylinder(
+        r_out + 3.5, 32.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
     kids.append(style(barrel, f"projector_barrel:{tag}", P.ALUMINIUM_DARK))
 
-    cup = Plane(origin=p + n * -24.0, z_dir=n) * Cone(
+    cup = bd.Plane(origin=p + n * -24.0, z_dir=n) * bd.Cone(
         0.38 * r_out, r_out, 22.0,
-        align=(Align.CENTER, Align.CENTER, Align.MIN))
+        align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
     kids.append(style(cup, f"projector_cup:{tag}", P.ALUMINIUM))
 
     # A sphere here shows only a 4 mm crown once it is packaged flush, which
     # reads as a dark hole.  A disc face brought to the lens plane reads as
     # what it is: a lit module, ringed in bronze.
-    lens = Plane(origin=p + n * -11.0, z_dir=n) * Cylinder(
-        0.74 * r_out, 11.0, align=(Align.CENTER, Align.CENTER, Align.MIN))
+    lens = bd.Plane(origin=p + n * -11.0, z_dir=n) * bd.Cylinder(
+        0.74 * r_out, 11.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
     kids.append(style(lens, f"projector_lens:{tag}", P.LAMP_HOT))
 
-    ring = Plane(origin=p + n * -1.8, z_dir=n) * Torus(r_out + 1.4, 2.1)
+    ring = bd.Plane(origin=p + n * -1.8, z_dir=n) * bd.Torus(r_out + 1.4, 2.1)
     kids.append(style(ring, f"projector_ring:{tag}", P.BRONZE))
 
 
@@ -765,23 +751,23 @@ def _tail_profile(side, grow=0.0, lift=0.0, n=30):
         hi.append((side * y, zc + max(TAIL_HALF_H * f + lift, 3.0)))
         lo.append((side * y, zc - max(TAIL_HALF_H * f + grow, 3.0)))
     wire = (
-        Spline(*hi)
-        + Line(hi[-1], lo[-1])
-        + Spline(*list(reversed(lo)))
-        + Line(lo[0], hi[0])
+        bd.Spline(*hi)
+        + bd.Line(hi[-1], lo[-1])
+        + bd.Spline(*list(reversed(lo)))
+        + bd.Line(lo[0], hi[0])
     )
-    return Plane.YZ.offset(TAIL_X) * make_face(wire)
+    return bd.Plane.YZ.offset(TAIL_X) * bd.make_face(wire)
 
 
 def _tail_slab(side, grow, x0, depth, lift=None):
     face = _tail_profile(side, grow, grow if lift is None else lift)
-    return Pos(x0 - TAIL_X, 0, 0) * extrude(face, amount=depth, dir=(1, 0, 0))
+    return bd.Pos(x0 - TAIL_X, 0, 0) * bd.extrude(face, amount=depth, dir=(1, 0, 0))
 
 
 def _tail_ring(side, g_out, g_in, x0, depth, lift_out=0.0, lift_in=6.0):
     face = (_tail_profile(side, g_out, lift_out)
             - _tail_profile(side, g_in, lift_in))
-    return Pos(x0 - TAIL_X, 0, 0) * extrude(face, amount=depth, dir=(1, 0, 0))
+    return bd.Pos(x0 - TAIL_X, 0, 0) * bd.extrude(face, amount=depth, dir=(1, 0, 0))
 
 
 def _tail_bar_face(side, n=26):
@@ -801,20 +787,20 @@ def _tail_bar_face(side, n=26):
         hi.append((side * y, zb + 7.0))
         lo.append((side * y, zb))
     wire = (
-        Spline(*hi)
-        + Line(hi[-1], lo[-1])
-        + Spline(*list(reversed(lo)))
-        + Line(lo[0], hi[0])
+        bd.Spline(*hi)
+        + bd.Line(hi[-1], lo[-1])
+        + bd.Spline(*list(reversed(lo)))
+        + bd.Line(lo[0], hi[0])
     )
-    return Plane.YZ.offset(TAIL_X) * make_face(wire)
+    return bd.Plane.YZ.offset(TAIL_X) * bd.make_face(wire)
 
 
 def _rear():
     kids = []
 
     dense = _rear_path()
-    pts = [Vector(TAIL_X, y, z) for y, z in dense]
-    nrms = [Vector(-1, 0, 0)] * len(pts)
+    pts = [bd.Vector(TAIL_X, y, z) for y, z in dense]
+    nrms = [bd.Vector(-1, 0, 0)] * len(pts)
 
     trough = _blade(pts, nrms, 28.0, 26.0, -4.0, _rear_scale)
     kids.append(style(trough, "tail_trough:centre", P.CARBON))
@@ -841,10 +827,10 @@ def _rear():
             f = 0.17 + 0.83 * (4.0 * s * (1.0 - s)) ** 0.42
             h = max(13.0, 2.0 * TAIL_HALF_H * f - 20.0)
             zc = _tail_z(y) - TAIL_DROP + 3.0
-            fin = Pos(TAIL_X + 15.0, side * y, zc) * Box(32.0, 4.2, h)
+            fin = bd.Pos(TAIL_X + 15.0, side * y, zc) * bd.Box(32.0, 4.2, h)
             kids.append(style(fin, f"tail_fin:{name}_{i}", P.LAMP_RED_HOT))
 
-        bar = Pos(-0.5, 0, 0) * extrude(
+        bar = bd.Pos(-0.5, 0, 0) * bd.extrude(
             _tail_bar_face(side), amount=18.0, dir=(1, 0, 0))
         kids.append(style(bar, f"tail_bar:{name}", P.LAMP_RED_HOT))
 

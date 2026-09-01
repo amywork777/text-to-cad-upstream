@@ -43,8 +43,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (Box, Location, Plane, Polygon, Rectangle,
-                       RectangleRounded, Solid, Vector, extrude, loft)
+from cadgen import build123d as bd
 
 from lib import geometry as G
 from lib import sections as SEC
@@ -221,12 +220,12 @@ def _sec_face(st, off, side=1, off_h=None):
     if off_h is None:
         off_h = off
     ang = math.radians(rake)
-    pl = Plane(origin=Vector(x, side * y, z), x_dir=Vector(0, 1, 0),
-               z_dir=Vector(math.cos(ang), 0.0, math.sin(ang)))
+    pl = bd.Plane(origin=bd.Vector(x, side * y, z), x_dir=bd.Vector(0, 1, 0),
+               z_dir=bd.Vector(math.cos(ang), 0.0, math.sin(ang)))
     w = 2.0 * (a + off)
     h = 2.0 * (b / math.cos(ang) + off_h)
     rr = max(1.0, min(r + min(off, off_h), 0.4995 * min(w, h)))
-    return (pl.location * RectangleRounded(w, h, rr)).faces()[0]
+    return (pl.location * bd.RectangleRounded(w, h, rr)).faces()[0]
 
 
 def _duct_samples(s0, s1, n):
@@ -235,8 +234,8 @@ def _duct_samples(s0, s1, n):
 
 def _duct_shell(s0, s1, n, off_out, off_in, side):
     sts = _duct_samples(s0, s1, n)
-    outer = loft([_sec_face(st, off_out, side) for st in sts])
-    inner = loft([_sec_face(st, off_in, side) for st in sts])
+    outer = bd.loft([_sec_face(st, off_out, side) for st in sts])
+    inner = bd.loft([_sec_face(st, off_in, side) for st in sts])
     return outer - inner
 
 
@@ -247,12 +246,12 @@ def _duct_shell(s0, s1, n, off_out, off_in, side):
 
 def _prism_y(pts, y0, y1):
     """Extrude an (x, z) polygon laterally from y0 to y1."""
-    pl = Plane(origin=(0, y0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
-    face = (pl.location * Polygon(*pts, align=None)).faces()[0]
-    sol = extrude(face, amount=abs(y1 - y0))
+    pl = bd.Plane(origin=(0, y0, 0), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+    face = (pl.location * bd.Polygon(*pts, align=None)).faces()[0]
+    sol = bd.extrude(face, amount=abs(y1 - y0))
     bb = sol.bounding_box()
     lo = min(y0, y1)
-    return Location((0.0, lo - bb.min.Y, 0.0)) * sol
+    return bd.Location((0.0, lo - bb.min.Y, 0.0)) * sol
 
 
 def _slot_outline():
@@ -301,21 +300,21 @@ def _nose_chop(side):
     y_c, r_lat, r_ver, z_c = G.nacelle(x_ref)
     infl = 115.0
     pts = _superellipse(r_lat + infl, r_ver + infl, 3.6)
-    pl = Plane(origin=(6.050 * M, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-    face = (pl.location * Polygon(*[(y, z) for y, z in pts], align=None)).faces()[0]
-    face = Location((0.0, side * y_c, z_c)) * face
-    prism = extrude(face, amount=0.900 * M)
+    pl = bd.Plane(origin=(6.050 * M, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    face = (pl.location * bd.Polygon(*[(y, z) for y, z in pts], align=None)).faces()[0]
+    face = bd.Location((0.0, side * y_c, z_c)) * face
+    prism = bd.extrude(face, amount=0.900 * M)
     bb = prism.bounding_box()
-    prism = Location((6.050 * M - bb.min.X, 0, 0)) * prism
+    prism = bd.Location((6.050 * M - bb.min.X, 0, 0)) * prism
     # keep it outboard of the inner cowl wall
-    keep = Box(1.400 * M, 1.400 * M, 2.000 * M)
-    keep = Location((6.700 * M, side * (G.Y_INLET_INNER + 0.700 * M), z_c)) * keep
+    keep = bd.Box(1.400 * M, 1.400 * M, 2.000 * M)
+    keep = bd.Location((6.700 * M, side * (G.Y_INLET_INNER + 0.700 * M), z_c)) * keep
     prism = prism & keep
     # ... and forward of the lip plane
     ang = math.radians(RAKE)
-    pl_r = Plane(origin=Vector(X_CAP, side * Y_CAP, Z_CAP), x_dir=Vector(0, 1, 0),
-                 z_dir=Vector(math.cos(ang), 0.0, math.sin(ang)))
-    aft = extrude((pl_r.location * Rectangle(6.0 * M, 6.0 * M)).faces()[0],
+    pl_r = bd.Plane(origin=bd.Vector(X_CAP, side * Y_CAP, Z_CAP), x_dir=bd.Vector(0, 1, 0),
+                 z_dir=bd.Vector(math.cos(ang), 0.0, math.sin(ang)))
+    aft = bd.extrude((pl_r.location * bd.Rectangle(6.0 * M, 6.0 * M)).faces()[0],
                   amount=4.0 * M)
     return prism - aft
 
@@ -323,7 +322,7 @@ def _nose_chop(side):
 def _duct_cavity(side):
     """The capture envelope, run aft and morphed toward the engine face."""
     sts = [duct_station(-60.0)] + _duct_samples(0.0, S_DUCT + 0.30 * M, 15)
-    return loft([_sec_face(st, 0.0, side) for st in sts])
+    return bd.loft([_sec_face(st, 0.0, side) for st in sts])
 
 
 #: A ``skin_y`` step larger than this between adjacent groove samples is not a
@@ -369,12 +368,12 @@ def _cowl_groove(x, side, z0, z1, width=11.0, depth=5.0, n=22):
     if len(pts_out) < 3:
         return None
     poly = pts_out + list(reversed(pts_in))
-    pl = Plane(origin=(x - 0.5 * width, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-    face = (pl.location * Polygon(*[(side * y, z) for y, z in poly],
+    pl = bd.Plane(origin=(x - 0.5 * width, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    face = (pl.location * bd.Polygon(*[(side * y, z) for y, z in poly],
                                   align=None)).faces()[0]
-    sol = extrude(face, amount=width)
+    sol = bd.extrude(face, amount=width)
     bb = sol.bounding_box()
-    return Location((x - 0.5 * width - bb.min.X, 0, 0)) * sol
+    return bd.Location((x - 0.5 * width - bb.min.X, 0, 0)) * sol
 
 
 def _side_cutter(side):
@@ -419,7 +418,7 @@ def _lip(side):
     st[0] = st0[0] + 55.0
     outer.append(_sec_face(tuple(st), 2.0 * r, side, off_h=2.0 * rh))
     inner.append(_sec_face(tuple(st), -3.0, side))
-    return loft(outer) - loft(inner)
+    return bd.loft(outer) - bd.loft(inner)
 
 
 def _duct_liner(side):
@@ -438,7 +437,7 @@ def _duct_liner(side):
 def _duct_cap(side):
     st = duct_station(S_DUCT)
     face = _sec_face(st, -T_DUCT + 16.0, side)
-    return extrude(face, amount=-40.0)
+    return bd.extrude(face, amount=-40.0)
 
 
 def _bore(x_or_s, off=0.0):
@@ -454,16 +453,16 @@ def _ramp(side, s0, s1, drop, thick=36.0, inset=13.0):
     x0 = duct_station(s0)[0]
     x1 = duct_station(s1)[0]
     w = 2.0 * max(60.0, a - r - inset)
-    box = Box(x1 - x0, w, thick)
-    return Location((0.5 * (x0 + x1), side * y, z + b - drop - 0.5 * thick)) * box
+    box = bd.Box(x1 - x0, w, thick)
+    return bd.Location((0.5 * (x0 + x1), side * y, z + b - drop - 0.5 * thick)) * box
 
 
 def _bleed_panel(side, s0, s1):
     y, z, a, b, r = _bore(0.5 * (s0 + s1))
     x0, x1 = duct_station(s0)[0], duct_station(s1)[0]
     w = 2.0 * max(50.0, a - r - 26.0)
-    box = Box(x1 - x0, w, 22.0)
-    return Location((0.5 * (x0 + x1), side * y, z + b - 44.0)) * box
+    box = bd.Box(x1 - x0, w, 22.0)
+    return bd.Location((0.5 * (x0 + x1), side * y, z + b - 44.0)) * box
 
 
 def _perforations(side, s0, s1):
@@ -472,15 +471,15 @@ def _perforations(side, s0, s1):
     y, z, a, b, r = _bore(0.5 * (s0 + s1))
     x0, x1 = duct_station(s0)[0], duct_station(s1)[0]
     w = 2.0 * max(50.0, a - r - 34.0)
-    proto = P.style(Solid.make_cylinder(7.0, 4.0), "bleed_hole", P.RUBBER)
-    proto = Location((0, 0, 0), (0, 90, 0)) * proto
+    proto = P.style(bd.Solid.make_cylinder(7.0, 4.0), "bleed_hole", P.RUBBER)
+    proto = bd.Location((0, 0, 0), (0, 90, 0)) * proto
     cols, rows = 9, 6
     inst = []
     for i in range(cols):
         for j in range(rows):
             px = G.lerp(x0 + 26.0, x1 - 26.0, i / (cols - 1))
             py = G.lerp(-0.5 * w, 0.5 * w, j / (rows - 1))
-            inst.append((proto, Location((px, side * y + py,
+            inst.append((proto, bd.Location((px, side * y + py,
                                           z + b - 34.0)), f"h{i}_{j}"))
     return compound_from_instances(f"bleed_perf_{'p' if side > 0 else 's'}", inst)
 
@@ -563,8 +562,8 @@ def _surface_plate(side, x0, x1, z0, z1, out=2.5, thick=14.0):
     nx, ny = side * (-dy / ln), side * (dx / ln)
     cx = 0.5 * (x0 + x1) + nx * out
     cy = side * 0.5 * (y0 + y1) + ny * out
-    box = Box(ln, thick, abs(z1 - z0))
-    return Location((cx, cy, zm), (0, 0, math.degrees(math.atan2(dy, dx)))) * box
+    box = bd.Box(ln, thick, abs(z1 - z0))
+    return bd.Location((cx, cy, zm), (0, 0, math.degrees(math.atan2(dy, dx)))) * box
 
 
 def _louvres(side):
@@ -581,14 +580,14 @@ def _louvres(side):
 def _fasteners(side, x, z_lo, z_hi, count):
     if compound_from_instances is None:
         return None
-    proto = P.style(Solid.make_sphere(8.5), "fastener", P.ALUM_DARK)
+    proto = P.style(bd.Solid.make_sphere(8.5), "fastener", P.ALUM_DARK)
     inst = []
     for i in range(count):
         z = G.lerp(z_lo, z_hi, i / (count - 1))
         y = skin_y(x, z)
         if y is None:
             continue
-        inst.append((proto, Location((x, side * (y - 3.0), z)), f"f{i}"))
+        inst.append((proto, bd.Location((x, side * (y - 3.0), z)), f"f{i}"))
     if len(inst) < 2:
         return None
     return compound_from_instances(
@@ -646,8 +645,8 @@ def _side_parts(side):
     # excess duct air overboard here, and the panel is a landmark in top view
     y_c = _nac(7.900 * M)[0]
     z_top = SEC.surfaces(7.900 * M, side * y_c)[0]
-    top = Box(0.560 * M, 0.300 * M, 18.0)
-    top = Location((7.900 * M, side * y_c, z_top - 6.0)) * top
+    top = bd.Box(0.560 * M, 0.300 * M, 18.0)
+    top = bd.Location((7.900 * M, side * y_c, z_top - 6.0)) * top
     kids.append(P.style(top, f"duct_bypass_door:{tag}", P.PANEL_DARK))
 
     for x in (6.980 * M, 7.640 * M):

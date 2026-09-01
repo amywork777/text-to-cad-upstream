@@ -117,10 +117,8 @@ def build_exhaust():
     muffler_len = S.MUFFLER_X1 - S.MUFFLER_X0
     muffler_center = ((S.MUFFLER_X0 + S.MUFFLER_X1) / 2, S.MUFFLER_Y, S.MUFFLER_Z)
     can = L.axis_cylinder(muffler_center, (1, 0, 0), S.MUFFLER_R, muffler_len)
-    from build123d import Sphere
-
-    cap_front = Sphere(S.MUFFLER_R).moved(bd.Location((S.MUFFLER_X0, S.MUFFLER_Y, S.MUFFLER_Z)))
-    cap_rear = Sphere(S.MUFFLER_R).moved(bd.Location((S.MUFFLER_X1, S.MUFFLER_Y, S.MUFFLER_Z)))
+    cap_front = bd.Sphere(S.MUFFLER_R).moved(bd.Location((S.MUFFLER_X0, S.MUFFLER_Y, S.MUFFLER_Z)))
+    cap_rear = bd.Sphere(S.MUFFLER_R).moved(bd.Location((S.MUFFLER_X1, S.MUFFLER_Y, S.MUFFLER_Z)))
     tip = L.axis_cylinder(
         (S.MUFFLER_X1 - 22.0, S.MUFFLER_Y, S.MUFFLER_Z), (1, 0, 0), 12.0, 60.0,
     )
@@ -131,9 +129,7 @@ def build_exhaust():
 def build_rear_shock():
     """Compact coilover between SHOCK_LOWER and SHOCK_UPPER, authored in place."""
     lower, upper = S.SHOCK_LOWER, S.SHOCK_UPPER
-    from build123d import Vector
-
-    start, end = Vector(lower), Vector(upper)
+    start, end = bd.Vector(lower), bd.Vector(upper)
     axis = (end - start).normalized()
     length = (end - start).length
     plane = bd.Plane(origin=start, z_dir=axis)

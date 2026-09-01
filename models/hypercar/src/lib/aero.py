@@ -29,18 +29,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Line,
-    Plane,
-    Polyline,
-    Pos,
-    Rot,
-    Spline,
-    extrude,
-    loft,
-    make_face,
-    mirror,
-)
+from cadgen import build123d as bd
 
 from lib import palette as P
 from lib import surfaces as S
@@ -114,8 +103,8 @@ def _resample(ctrl, n):
 
 def _closed_face(pts, plane):
     """A face from a smooth closed outline: one spline plus a closing line."""
-    wire = Spline(*pts) + Line(pts[-1], pts[0])
-    return plane * make_face(wire)
+    wire = bd.Spline(*pts) + bd.Line(pts[-1], pts[0])
+    return plane * bd.make_face(wire)
 
 
 def _plan_offset(pts, d):
@@ -136,35 +125,35 @@ def _xz_band(xs, flo, fhi, half_y=1500.0):
     lo = [(x, flo(x)) for x in xs]
     hi = [(x, fhi(x)) for x in reversed(xs)]
     wire = (
-        Spline(*lo)
-        + Line(lo[-1], hi[0])
-        + Spline(*hi)
-        + Line(hi[-1], lo[0])
+        bd.Spline(*lo)
+        + bd.Line(lo[-1], hi[0])
+        + bd.Spline(*hi)
+        + bd.Line(hi[-1], lo[0])
     )
-    face = Plane.XZ * make_face(wire)
-    return extrude(face, amount=-half_y) + extrude(face, amount=half_y)
+    face = bd.Plane.XZ * bd.make_face(wire)
+    return bd.extrude(face, amount=-half_y) + bd.extrude(face, amount=half_y)
 
 
 def _plan_face(xs, fy, z, grow=0.0):
     lo = [(x, -fy(x) - grow) for x in xs]
     hi = [(x, fy(x) + grow) for x in reversed(xs)]
     wire = (
-        Spline(*lo)
-        + Line(lo[-1], hi[0])
-        + Spline(*hi)
-        + Line(hi[-1], lo[0])
+        bd.Spline(*lo)
+        + bd.Line(lo[-1], hi[0])
+        + bd.Spline(*hi)
+        + bd.Line(hi[-1], lo[0])
     )
-    return Plane.XY.offset(z) * make_face(wire)
+    return bd.Plane.XY.offset(z) * bd.make_face(wire)
 
 
 def _plan_prism(xs, fy, z0=-300.0, z1=900.0):
     """Vertical prism whose plan half-width is a smooth function of X."""
-    return extrude(_plan_face(xs, fy, z0), amount=z1 - z0)
+    return bd.extrude(_plan_face(xs, fy, z0), amount=z1 - z0)
 
 
 def _plan_loft(xs, fy, layers):
     """Prism whose half-width also varies with Z: layers = [(z, grow), ...]."""
-    return loft([_plan_face(xs, fy, z, g) for z, g in layers], ruled=True)
+    return bd.loft([_plan_face(xs, fy, z, g) for z, g in layers], ruled=True)
 
 
 def _span(a, b, n):
@@ -237,11 +226,11 @@ def _splitter_blade():
     out = _splitter_outline()
     # four plan slices: a small under-chamfer, a near-vertical edge band, then
     # a long chamfer off the top so the blade reads as a knife, not a plank
-    prism = loft([
-        _closed_face(_plan_offset(out, -22.0), Plane.XY.offset(66.0)),
-        _closed_face(_plan_offset(out, 0.0), Plane.XY.offset(116.0)),
-        _closed_face(_plan_offset(out, 2.0), Plane.XY.offset(158.0)),
-        _closed_face(_plan_offset(out, -44.0), Plane.XY.offset(238.0)),
+    prism = bd.loft([
+        _closed_face(_plan_offset(out, -22.0), bd.Plane.XY.offset(66.0)),
+        _closed_face(_plan_offset(out, 0.0), bd.Plane.XY.offset(116.0)),
+        _closed_face(_plan_offset(out, 2.0), bd.Plane.XY.offset(158.0)),
+        _closed_face(_plan_offset(out, -44.0), bd.Plane.XY.offset(238.0)),
     ], ruled=True)
     return (band & prism) - _nose_body()
 
@@ -264,8 +253,8 @@ def _turning_vane(x0, x1, top, inset, thick):
     band = _xz_band(xs, lambda x: 128.0, top)
     lo = [(x, SP_Y(x) - inset - thick) for x in xs]
     hi = [(x, SP_Y(x) - inset) for x in reversed(xs)]
-    wire = Spline(*lo) + Line(lo[-1], hi[0]) + Spline(*hi) + Line(hi[-1], lo[0])
-    prism = extrude(Plane.XY.offset(60.0) * make_face(wire), amount=420.0)
+    wire = bd.Spline(*lo) + bd.Line(lo[-1], hi[0]) + bd.Spline(*hi) + bd.Line(hi[-1], lo[0])
+    prism = bd.extrude(bd.Plane.XY.offset(60.0) * bd.make_face(wire), amount=420.0)
     return (band & prism) - _nose_body()
 
 
@@ -287,20 +276,20 @@ DIVE_Y0 = 400.0
 
 
 def _dive_plane(plan, z0, cant, thick):
-    wire = Spline(*plan) + Line(plan[-1], plan[0])
-    blade = extrude(Plane.XY * make_face(wire), amount=thick)
+    wire = bd.Spline(*plan) + bd.Line(plan[-1], plan[0])
+    blade = bd.extrude(bd.Plane.XY * bd.make_face(wire), amount=thick)
     return (
-        Pos(0, DIVE_Y0, z0)
-        * Rot(cant, 0, 0)
-        * Pos(0, -DIVE_Y0, -thick / 2.0)
+        bd.Pos(0, DIVE_Y0, z0)
+        * bd.Rot(cant, 0, 0)
+        * bd.Pos(0, -DIVE_Y0, -thick / 2.0)
         * blade
     ) - _nose_body()
 
 
 def _dive_fence(y, thick):
-    wire = Spline(*_DIVE_FENCE) + Line(_DIVE_FENCE[-1], _DIVE_FENCE[0])
-    face = Plane.XZ.offset(-y) * make_face(wire)
-    return extrude(face, amount=thick / 2.0) + extrude(face, amount=-thick / 2.0)
+    wire = bd.Spline(*_DIVE_FENCE) + bd.Line(_DIVE_FENCE[-1], _DIVE_FENCE[0])
+    face = bd.Plane.XZ.offset(-y) * bd.make_face(wire)
+    return bd.extrude(face, amount=thick / 2.0) + bd.extrude(face, amount=-thick / 2.0)
 
 
 def _splitter():
@@ -315,7 +304,7 @@ def _splitter():
                   f"turning_vane:left_{tag}", P.CARBON_GLOSS)
         )
         kids.append(
-            style(mirror(_turning_vane(x0, x1, top, 9.0, 15.0), Plane.XZ),
+            style(bd.mirror(_turning_vane(x0, x1, top, 9.0, 15.0), bd.Plane.XZ),
                   f"turning_vane:right_{tag}", P.CARBON_GLOSS)
         )
 
@@ -328,13 +317,13 @@ def _splitter():
                   f"dive_plane:left_{tag}", P.CARBON_GLOSS)
         )
         kids.append(
-            style(mirror(_dive_plane(plan, z0, cant, t), Plane.XZ),
+            style(bd.mirror(_dive_plane(plan, z0, cant, t), bd.Plane.XZ),
                   f"dive_plane:right_{tag}", P.CARBON_GLOSS)
         )
 
     kids.append(style(_dive_fence(866.0, 14.0), "canard_fence:left", P.CARBON))
     kids.append(
-        style(mirror(_dive_fence(866.0, 14.0), Plane.XZ),
+        style(bd.mirror(_dive_fence(866.0, 14.0), bd.Plane.XZ),
               "canard_fence:right", P.CARBON)
     )
     return kids
@@ -476,8 +465,8 @@ def _wing_profile(y, n=38):
 def _wing_face(y):
     up, lo = _wing_profile(y)
     pts = list(reversed(up)) + lo[1:]
-    wire = Spline(*pts) + Line(pts[-1], pts[0])
-    return Plane.XZ.offset(-y) * make_face(wire)
+    wire = bd.Spline(*pts) + bd.Line(pts[-1], pts[0])
+    return bd.Plane.XZ.offset(-y) * bd.make_face(wire)
 
 
 _WING_STATIONS = [
@@ -487,7 +476,7 @@ _WING_STATIONS = [
 
 
 def _wing_element():
-    return loft([_wing_face(y) for y in _WING_STATIONS])
+    return bd.loft([_wing_face(y) for y in _WING_STATIONS])
 
 
 def _gurney_face(y, height=22.0, width=9.0, sink=6.0):
@@ -504,11 +493,11 @@ def _gurney_face(y, height=22.0, width=9.0, sink=6.0):
         (te[0] + nx * height, te[1] + nz * height),
         (fw[0] + nx * height, fw[1] + nz * height),
     ]
-    return Plane.XZ.offset(-y) * make_face(Polyline(*pts, pts[0]))
+    return bd.Plane.XZ.offset(-y) * bd.make_face(bd.Polyline(*pts, pts[0]))
 
 
 def _gurney():
-    return loft([_gurney_face(y) for y in _WING_STATIONS], ruled=True)
+    return bd.loft([_gurney_face(y) for y in _WING_STATIONS], ruled=True)
 
 
 # Built from three edges, not one closed spline: a single spline rounds every
@@ -526,9 +515,9 @@ _EP_BOT = [
 
 
 def _endplate(wing):
-    wire = Spline(*_EP_TOP) + Line(_EP_TOP[-1], _EP_BOT[0]) + Spline(*_EP_BOT)
-    face = Plane.XZ.offset(-816.0) * make_face(wire)
-    plate = extrude(face, amount=6.0) + extrude(face, amount=-6.0)
+    wire = bd.Spline(*_EP_TOP) + bd.Line(_EP_TOP[-1], _EP_BOT[0]) + bd.Spline(*_EP_BOT)
+    face = bd.Plane.XZ.offset(-816.0) * bd.make_face(wire)
+    plate = bd.extrude(face, amount=6.0) + bd.extrude(face, amount=-6.0)
     return plate - wing
 
 
@@ -570,12 +559,12 @@ def _pylon_face(y, shrink):
         inner.append((p[0] - nx * w, p[1] - nz * w))
     inner.reverse()
     wire = (
-        Spline(*outer)
-        + Line(outer[-1], inner[0])
-        + Spline(*inner)
-        + Line(inner[-1], outer[0])
+        bd.Spline(*outer)
+        + bd.Line(outer[-1], inner[0])
+        + bd.Spline(*inner)
+        + bd.Line(inner[-1], outer[0])
     )
-    return Plane.XZ.offset(-y) * make_face(wire)
+    return bd.Plane.XZ.offset(-y) * bd.make_face(wire)
 
 
 def _pylon(side, wing):
@@ -585,7 +574,7 @@ def _pylon(side, wing):
     ] + [
         _pylon_face(y0 + dy, sh) for dy, sh in _PYLON_LAYERS[1:]
     ]
-    strut = loft(faces, ruled=True)
+    strut = bd.loft(faces, ruled=True)
     return (strut - _tail_body()) - wing
 
 
@@ -595,7 +584,7 @@ def _rear_wing():
     kids.append(style(_gurney(), "wing_gurney", P.CARBON))
     kids.append(style(_endplate(wing), "wing_endplate:left", P.CARBON))
     kids.append(
-        style(mirror(_endplate(wing), Plane.XZ), "wing_endplate:right", P.CARBON)
+        style(bd.mirror(_endplate(wing), bd.Plane.XZ), "wing_endplate:right", P.CARBON)
     )
     for side, nm in ((1, "left"), (-1, "right")):
         kids.append(style(_pylon(side, wing), f"swan_neck:{nm}", P.CARBON_GLOSS))

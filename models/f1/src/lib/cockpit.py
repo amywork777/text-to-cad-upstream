@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Circle, Plane, Spline, Vector, make_face
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -34,7 +34,7 @@ def _sec(plane, pts):
     p = [(float(a), float(b)) for a, b in pts]
     if abs(p[0][0] - p[-1][0]) < 1e-9 and abs(p[0][1] - p[-1][1]) < 1e-9:
         p = p[:-1]
-    return plane * make_face(Spline(*p, periodic=True))
+    return plane * bd.make_face(bd.Spline(*p, periodic=True))
 
 
 def _prism_estimate(faces):
@@ -126,7 +126,7 @@ def _resample(rows, n):
 
 def _disc_stack(plane, rings):
     """Loft circles: rings = [(offset_along_normal, radius), ...]. Ruled."""
-    return _ruled([plane.offset(o) * Circle(r) for o, r in rings])
+    return _ruled([plane.offset(o) * bd.Circle(r) for o, r in rings])
 
 
 def _rbox(plane, length, height, depth, corner, taper=0.94):
@@ -209,7 +209,7 @@ def _sweep(path, sec_at, up=(0, 0, 1), samples=None, smooth=True):
 
     `up` is either a fixed vector or a callable taking the station point.
     """
-    pts = [Vector(*p) for p in
+    pts = [bd.Vector(*p) for p in
            (_resample([tuple(q) for q in path], samples) if samples else path)]
     faces = []
     n = len(pts)
@@ -312,7 +312,7 @@ def _seat_normal(x, y):
     e = 5.0
     fx = (seat_surface(x + e, y) - seat_surface(x - e, y)) / (2 * e)
     fy = (seat_surface(x, y + e) - seat_surface(x, y - e)) / (2 * e)
-    return Vector(-fx, -fy, 1.0).normalized()
+    return bd.Vector(-fx, -fy, 1.0).normalized()
 
 
 _TROUGH_F = (0.0, 0.40, 0.72, 1.0)
@@ -397,9 +397,9 @@ def _seat_stations(x_min=None):
 
 def _belt_slot(origin, normal, length, height, corner, reach=64.0):
     """Through-cutter for a webbing slot, normal to the local seat surface."""
-    n = Vector(normal).normalized()
+    n = bd.Vector(normal).normalized()
     up = (0, 0, 1) if abs(n.Z) < 0.9 else (1, 0, 0)
-    o = Vector(origin)
+    o = bd.Vector(origin)
     pts = surfaces.rounded_plate_pts(length, height, corner)
     return _ruled([
         _sec(surfaces.plate_plane(o - n * reach, n, up), pts),
@@ -462,7 +462,7 @@ def _hr_point(theta):
 
 
 def _hr_outward(theta):
-    return Vector(-_HR_A * math.cos(theta), _HR_B * math.sin(theta),
+    return bd.Vector(-_HR_A * math.cos(theta), _HR_B * math.sin(theta),
                   0.0).normalized()
 
 
@@ -512,8 +512,8 @@ def _headrest():
             th = math.radians(a_deg) * side_s
             x, y = _hr_point(th)
             out = _hr_outward(th)
-            base = Vector(x, y, 596.0 + dz) + out * 7.0
-            pl = Plane(origin=base, x_dir=(0, 0, 1), z_dir=out)
+            base = bd.Vector(x, y, 596.0 + dz) + out * 7.0
+            pl = bd.Plane(origin=base, x_dir=(0, 0, 1), z_dir=out)
             bodies.append(surfaces.styled(
                 _disc_stack(pl, ((0.0, 14.0), (5.0, 14.0), (6.4, 11.0),
                                  (12.0, 10.5), (13.4, 7.0))),
@@ -532,11 +532,11 @@ def _headrest():
 #    cockpit reads the whole button layout instead of the wheel's edge.
 # ==========================================================================
 
-_W_C = Vector(-640.0, 0.0, 560.0)
+_W_C = bd.Vector(-640.0, 0.0, 560.0)
 _W_TILT = math.radians(22.0)
-_W_UP = Vector(math.sin(_W_TILT), 0.0, math.cos(_W_TILT))
-_W_N = Vector(-math.cos(_W_TILT), 0.0, math.sin(_W_TILT))  # toward the driver
-_W_LAT = Vector(0.0, -1.0, 0.0)  # driver's right
+_W_UP = bd.Vector(math.sin(_W_TILT), 0.0, math.cos(_W_TILT))
+_W_N = bd.Vector(-math.cos(_W_TILT), 0.0, math.sin(_W_TILT))  # toward the driver
+_W_LAT = bd.Vector(0.0, -1.0, 0.0)  # driver's right
 
 
 def _wpt(u, v, c=0.0):
@@ -544,7 +544,7 @@ def _wpt(u, v, c=0.0):
 
 
 def _wplane(c=0.0, u=0.0, v=0.0):
-    return Plane(origin=_wpt(u, v, c), x_dir=_W_LAT, z_dir=_W_N)
+    return bd.Plane(origin=_wpt(u, v, c), x_dir=_W_LAT, z_dir=_W_N)
 
 
 # A machined shield: wide flat top, straight flanks, tapered base. Crisp.
@@ -582,7 +582,7 @@ def _rotary(pl, r, lobes):
     ])
     cap = _disc_stack(pl.offset(11.5),
                       ((0.0, r * 0.90), (3.0, r * 0.86), (4.2, r * 0.70)))
-    mark_pl = Plane(origin=pl.offset(15.5).origin + pl.x_dir * (r * 0.34),
+    mark_pl = bd.Plane(origin=pl.offset(15.5).origin + pl.x_dir * (r * 0.34),
                     x_dir=pl.x_dir, z_dir=pl.z_dir)
     return [
         surfaces.styled(body, "wheel_rotary_knurl", spec.ANODIZED),
@@ -693,7 +693,7 @@ def _steering_wheel():
         for u, v, c in ((26.0 * side, 2.0, -30.0), (22.0 * side, -46.0, -27.0)):
             bodies.append(surfaces.styled(
                 _disc_stack(
-                    Plane(origin=_wpt(u, v, c) - _W_LAT * (9.0 * side),
+                    bd.Plane(origin=_wpt(u, v, c) - _W_LAT * (9.0 * side),
                           x_dir=_W_UP, z_dir=_W_LAT * side),
                     ((0.0, 5.0), (3.0, 6.6), (15.0, 6.6), (18.0, 5.0))),
                 "wheel_paddle_pivot", spec.ALLOY))
@@ -730,7 +730,7 @@ def _steering_wheel():
 # ==========================================================================
 
 _PEDAL_Y = 95.0
-_PEDAL_N = Vector(-math.cos(math.radians(34.0)), 0.0,
+_PEDAL_N = bd.Vector(-math.cos(math.radians(34.0)), 0.0,
                   math.sin(math.radians(34.0))).normalized()
 
 
@@ -748,7 +748,7 @@ def _pedal_set(side, label):
             o = (pl.origin + pl.x_dir * (col * 15.0)
                  + pl.y_dir * (-40.5 + 27.0 * row) - pl.z_dir * 8.0)
             hole = _disc_stack(
-                Plane(origin=o, x_dir=pl.x_dir, z_dir=pl.z_dir),
+                bd.Plane(origin=o, x_dir=pl.x_dir, z_dir=pl.z_dir),
                 ((0.0, 7.0), (24.0, 7.0)))
             try:
                 cut = plate - hole
@@ -760,7 +760,7 @@ def _pedal_set(side, label):
 
     for v in (-52.0, -26.0, 0.0, 26.0, 52.0):
         bodies.append(surfaces.styled(
-            _rbox(Plane(origin=pl.offset(7.0).origin + pl.y_dir * v,
+            _rbox(bd.Plane(origin=pl.offset(7.0).origin + pl.y_dir * v,
                         x_dir=pl.x_dir, z_dir=pl.z_dir),
                   56.0, 5.2, 2.6, 2.4, taper=0.78),
             "pedal_tread_%s" % label, spec.TITANIUM))
@@ -773,12 +773,12 @@ def _pedal_set(side, label):
                up=(1, 0, 0), samples=11),
         "pedal_arm_%s" % label, spec.CARBON))
     bodies.append(surfaces.styled(
-        _disc_stack(Plane(origin=(-548.0, y - 15.0 * side, 402.0),
+        _disc_stack(bd.Plane(origin=(-548.0, y - 15.0 * side, 402.0),
                           x_dir=(0, 0, 1), z_dir=(0, side, 0)),
                     ((0.0, 6.5), (3.5, 10.0), (26.0, 10.0), (29.5, 6.5))),
         "pedal_pivot_%s" % label, spec.TITANIUM))
     bodies.append(surfaces.styled(
-        _rbox(Plane(origin=(-566.0, y - 11.0 * side, 316.0),
+        _rbox(bd.Plane(origin=(-566.0, y - 11.0 * side, 316.0),
                     x_dir=(1, 0, 0), z_dir=(0, side, 0)),
               44.0, 22.0, 20.0, 7.0, taper=0.86),
         "pedal_clevis_%s" % label, spec.ANODIZED))
@@ -791,13 +791,13 @@ def _pedal_set(side, label):
         "pedal_pushrod_%s" % label, spec.STEEL))
 
     bodies.append(surfaces.styled(
-        _disc_stack(Plane(origin=(-462.0, y, 300.0), x_dir=(0, 1, 0),
+        _disc_stack(bd.Plane(origin=(-462.0, y, 300.0), x_dir=(0, 1, 0),
                           z_dir=(1, 0, -0.17)),
                     ((0.0, 10.0), (5.0, 16.0), (12.0, 17.0), (62.0, 17.0),
                      (68.0, 13.0), (72.0, 10.0))),
         "master_cylinder_%s" % label, spec.ANODIZED))
     bodies.append(surfaces.styled(
-        _disc_stack(Plane(origin=(-412.0, y, 318.0), x_dir=(1, 0, 0),
+        _disc_stack(bd.Plane(origin=(-412.0, y, 318.0), x_dir=(1, 0, 0),
                           z_dir=(0, 0, 1)),
                     ((0.0, 7.0), (5.0, 12.0), (34.0, 13.0), (39.0, 10.0),
                      (42.0, 7.0))),
@@ -842,8 +842,8 @@ def _webbing(path, width, label):
 
 def _adjuster(path, frac, width):
     i = max(1, min(len(path) - 2, int(round(frac * (len(path) - 1)))))
-    p = Vector(*path[i])
-    tan = Vector(*path[i + 1]) - Vector(*path[i - 1])
+    p = bd.Vector(*path[i])
+    tan = bd.Vector(*path[i + 1]) - bd.Vector(*path[i - 1])
     n = _seat_normal(p.X, p.Y)
     return surfaces.styled(
         _rbox(surfaces.plate_plane(p - n * 4.0, tan, n), width + 12.0, 16.0, 9.5,
@@ -877,8 +877,8 @@ def _belts():
             "harness_anchor", spec.ANODIZED))
 
     bn = _seat_normal(_BUCKLE_X, 0.0)
-    bp = Plane(origin=(_BUCKLE_X, 0.0, bz - 12.0),
-               x_dir=Vector(0, 1, 0).cross(bn).normalized(), z_dir=bn)
+    bp = bd.Plane(origin=(_BUCKLE_X, 0.0, bz - 12.0),
+               x_dir=bd.Vector(0, 1, 0).cross(bn).normalized(), z_dir=bn)
     bodies.append(surfaces.styled(
         _disc_stack(bp, ((0.0, 34.0), (4.0, 38.0), (14.0, 38.0), (18.0, 34.0),
                          (20.0, 30.0))),
@@ -929,11 +929,11 @@ def _furniture():
         "steering_column_lower", spec.CARBON))
     for x in (-322.0, -300.0):
         bodies.append(surfaces.styled(
-            _rbox(Plane(origin=(x, -15.0, 520.0), x_dir=(0, 0, 1),
+            _rbox(bd.Plane(origin=(x, -15.0, 520.0), x_dir=(0, 0, 1),
                         z_dir=(0, 1, 0)), 30.0, 34.0, 30.0, 9.0, taper=0.84),
             "column_uj_yoke", spec.ALLOY))
     bodies.append(surfaces.styled(
-        _disc_stack(Plane(origin=(-311.0, -22.0, 520.0), x_dir=(1, 0, 0),
+        _disc_stack(bd.Plane(origin=(-311.0, -22.0, 520.0), x_dir=(1, 0, 0),
                           z_dir=(0, 1, 0)),
                     ((0.0, 6.0), (3.0, 7.5), (41.0, 7.5), (44.0, 6.0))),
         "column_uj_cross", spec.STEEL))
@@ -962,7 +962,7 @@ def _furniture():
                up=(1, 0, 0)),
         "drink_bottle_strap", spec.BELT))
     bodies.append(surfaces.styled(
-        _rbox(Plane(origin=(-746.0, 206.0, _BOTTLE_CZ), x_dir=(1, 0, 0),
+        _rbox(bd.Plane(origin=(-746.0, 206.0, _BOTTLE_CZ), x_dir=(1, 0, 0),
                     z_dir=(0, 1, 0)), 74.0, 116.0, 9.0, 16.0, taper=0.9),
         "drink_bottle_bracket", spec.ANODIZED))
 
@@ -977,7 +977,7 @@ def _furniture():
         "heel_rest", spec.CARBON_MATTE))
     for x, z in ((-650.0, 266.0), (-686.0, 254.0), (-722.0, 242.0)):
         bodies.append(surfaces.styled(
-            _rbox(Plane(origin=(x, 0.0, z), x_dir=(0, 1, 0), z_dir=(0, 0, 1)),
+            _rbox(bd.Plane(origin=(x, 0.0, z), x_dir=(0, 1, 0), z_dir=(0, 0, 1)),
                   208.0, 11.0, 3.6, 4.4, taper=0.78),
             "heel_rest_tread", spec.TITANIUM))
 
@@ -992,7 +992,7 @@ def _furniture():
         "electronics_box", spec.CARBON_MATTE))
     for y in (-50.0, 0.0, 50.0):
         bodies.append(surfaces.styled(
-            _disc_stack(Plane(origin=(-546.0, y, 236.0), x_dir=(0, 1, 0),
+            _disc_stack(bd.Plane(origin=(-546.0, y, 236.0), x_dir=(0, 1, 0),
                               z_dir=(-1, 0, 0)),
                         ((0.0, 11.0), (6.0, 11.0), (8.0, 8.5), (15.0, 8.5))),
             "electronics_connector", spec.ANODIZED))

@@ -14,7 +14,7 @@ only leaf occurrences carry colour.  Use :func:`style` on every leaf.
 
 from __future__ import annotations
 
-from build123d import Color
+from cadgen import build123d as bd
 
 
 def _to_linear(channel_8bit):
@@ -28,7 +28,7 @@ def srgb(hex_string, alpha=1.0):
     if len(h) == 3:
         h = "".join(ch * 2 for ch in h)
     r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
-    return Color(_to_linear(r), _to_linear(g), _to_linear(b), alpha)
+    return bd.Color(_to_linear(r), _to_linear(g), _to_linear(b), alpha)
 
 
 # ---------------------------------------------------------------------------

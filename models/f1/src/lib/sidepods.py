@@ -47,7 +47,7 @@ from __future__ import annotations
 import math
 from functools import lru_cache
 
-from build123d import Pos, Box
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 

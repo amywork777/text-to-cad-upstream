@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Cylinder, Location, Plane, Pos, Vector, make_face
+from cadgen import build123d as bd
 
 from . import spec, surfaces
 
@@ -71,28 +71,28 @@ def _frame(pts, i):
     n = len(pts)
     a = pts[max(i - 1, 0)]
     b = pts[min(i + 1, n - 1)]
-    return Vector(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalized()
+    return bd.Vector(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalized()
 
 
-def _chord_dir(t: Vector) -> Vector:
+def _chord_dir(t: bd.Vector) -> bd.Vector:
     """Section long axis: vertical where the loop runs fore/aft, along X where
     it runs across. Blended off the tangent's own plan angle so the frame never
     snaps — which is exactly what `surfaces._ortho_basis` would do here."""
     plan = math.hypot(t.X, t.Y)
     s = abs(t.Y) / plan if plan > 1e-9 else 1.0
-    raw = Vector(0, 0, -1) * (1.0 - s) + Vector(-1, 0, 0) * s
+    raw = bd.Vector(0, 0, -1) * (1.0 - s) + bd.Vector(-1, 0, 0) * s
     cd = raw - t * raw.dot(t)
     if cd.length < 1e-6:
-        cd = Vector(0, 0, -1) - t * Vector(0, 0, -1).dot(t)
+        cd = bd.Vector(0, 0, -1) - t * bd.Vector(0, 0, -1).dot(t)
     return cd.normalized()
 
 
-def _section(p, t: Vector, cd: Vector, chord: float, tr: float, te: float):
+def _section(p, t: bd.Vector, cd: bd.Vector, chord: float, tr: float, te: float):
     wire = surfaces.airfoil_profile(
         chord, thickness=tr, camber=0.0, samples=27, te_thickness=te
     )
-    face = Location((-0.5 * chord, 0, 0)) * make_face(wire)
-    return Plane(origin=Vector(p), x_dir=cd, z_dir=t) * face
+    face = bd.Location((-0.5 * chord, 0, 0)) * bd.make_face(wire)
+    return bd.Plane(origin=bd.Vector(p), x_dir=cd, z_dir=t) * face
 
 
 def _loop_solid():
@@ -111,7 +111,7 @@ def _spine_stripe():
     for i, (x, y, z, chord, _, _) in enumerate(st):
         t = _frame(st, i)
         cd = _chord_dir(t)
-        le = Vector(x, y, z) - cd * (0.5 * chord)
+        le = bd.Vector(x, y, z) - cd * (0.5 * chord)
         k = 1.0 if 1 < i < len(st) - 2 else 0.5
         secs.append(
             {
@@ -147,7 +147,7 @@ def _lug(spec_tuple):
 def _studs(tag: str, points, r: float = 8.5, h: float = 17.0):
     out = []
     for i, p in enumerate(points):
-        boss = Pos(p) * Cylinder(r, h)
+        boss = bd.Pos(p) * bd.Cylinder(r, h)
         out += surfaces.pair(boss, f"halo_stud_{tag}{i}", spec.STEEL)
     return out
 

@@ -20,25 +20,7 @@ from __future__ import annotations
 import math
 from bisect import bisect_left
 
-from build123d import (
-    Axis,
-    Circle,
-    Cylinder,
-    Line,
-    Location,
-    Plane,
-    Polyline,
-    Pos,
-    RectangleRounded,
-    Rot,
-    Spline,
-    Vector,
-    loft,
-    make_face,
-    mirror,
-    revolve,
-    sweep,
-)
+from cadgen import build123d as bd
 
 import cadgen
 
@@ -73,8 +55,8 @@ TUBE_R = 19.0
 # primaries per side bunch into a mouth behind the gearbox and the taper aims
 # directly at the tip exit, so from every angle the exhaust reads as one line
 # instead of a cone plus a bent pipe.
-COLL_M = Vector(-2090.0, 300.0, 496.0)          # mouth centre (|y|)
-COLL_N = Vector(-0.9623, -0.1750, 0.2086)       # unit axis (y flips per side)
+COLL_M = bd.Vector(-2090.0, 300.0, 496.0)          # mouth centre (|y|)
+COLL_N = bd.Vector(-0.9623, -0.1750, 0.2086)       # unit axis (y flips per side)
 COLL_END_T = 196.0                              # megaphone ends here
 TIP_T = 297.0                                   # ...tip exit here
 
@@ -111,7 +93,7 @@ def _bank_xz(s, d, w):
 
 def _bank_plane(s, d, w, y):
     x, z = _bank_xz(s, d, w)
-    return Plane(origin=(x, y, z), x_dir=(s * CA, 0.0, -SA), z_dir=(0.0, -s, 0.0))
+    return bd.Plane(origin=(x, y, z), x_dir=(s * CA, 0.0, -SA), z_dir=(0.0, -s, 0.0))
 
 
 def _bank_loft(s, stations, ruled=True):
@@ -122,26 +104,26 @@ def _bank_loft(s, stations, ruled=True):
     faces = []
     for (y, w0, w1, d0, d1, r) in stations:
         pl = _bank_plane(s, 0.5 * (d0 + d1), 0.5 * (w0 + w1), y)
-        faces.append(pl * RectangleRounded(w1 - w0, d1 - d0, r))
-    return loft(faces, ruled=ruled)
+        faces.append(pl * bd.RectangleRounded(w1 - w0, d1 - d0, r))
+    return bd.loft(faces, ruled=ruled)
 
 
 def _xz_loft(stations, ruled=True):
     """Rounded-rect XZ sections lofted along Y.  ``(y, xc, zc, w, h, r)``."""
     faces = []
     for (y, xc, zc, w, h, r) in stations:
-        pl = Plane(origin=(xc, y, zc), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
-        faces.append(pl * RectangleRounded(w, h, r))
-    return loft(faces, ruled=ruled)
+        pl = bd.Plane(origin=(xc, y, zc), x_dir=(1, 0, 0), z_dir=(0, -1, 0))
+        faces.append(pl * bd.RectangleRounded(w, h, r))
+    return bd.loft(faces, ruled=ruled)
 
 
 def _yz_loft(stations, ruled=True):
     """Rounded-rect YZ sections lofted along X.  ``(x, yc, zc, w, h, r)``."""
     faces = []
     for (x, yc, zc, w, h, r) in stations:
-        pl = Plane(origin=(x, yc, zc), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-        faces.append(pl * RectangleRounded(w, h, r))
-    return loft(faces, ruled=ruled)
+        pl = bd.Plane(origin=(x, yc, zc), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+        faces.append(pl * bd.RectangleRounded(w, h, r))
+    return bd.loft(faces, ruled=ruled)
 
 
 def _catmull(xs, vs, x):
@@ -184,16 +166,16 @@ def _resample(keys, count):
 def _x_loft(stations, ruled=False):
     """Circles lofted along X.  ``(x, y, z, r)``."""
     faces = [
-        Plane(origin=(x, y, z), x_dir=(0, 1, 0), z_dir=(1, 0, 0)) * Circle(r)
+        bd.Plane(origin=(x, y, z), x_dir=(0, 1, 0), z_dir=(1, 0, 0)) * bd.Circle(r)
         for (x, y, z, r) in stations
     ]
-    return loft(faces, ruled=ruled)
+    return bd.loft(faces, ruled=ruled)
 
 
 def _turned(points, close_axis=True):
     """Solid of revolution from a (radius, height) polyline about Z."""
-    wire = Polyline(*points, close=close_axis)
-    return revolve(Plane.XZ * make_face(wire), Axis.Z)
+    wire = bd.Polyline(*points, close=close_axis)
+    return bd.revolve(bd.Plane.XZ * bd.make_face(wire), bd.Axis.Z)
 
 
 def _smooth_path(ctrl, samples=10):
@@ -204,7 +186,7 @@ def _smooth_path(ctrl, samples=10):
     swept tube shows that ripple as a corrugated surface.  Resampling at even
     arc length first is what makes the primaries read as drawn tube.
     """
-    pts = [Vector(*c) for c in ctrl]
+    pts = [bd.Vector(*c) for c in ctrl]
     ext = [pts[0] + (pts[0] - pts[1])] + pts + [pts[-1] + (pts[-1] - pts[-2])]
     dense = []
     for i in range(len(pts) - 1):
@@ -236,12 +218,12 @@ def _smooth_path(ctrl, samples=10):
 
 def _tube(points, radius, t0, t1):
     """Round tube swept along a smooth, evenly sampled spline."""
-    path = Spline(*_smooth_path(points), tangents=(t0, t1))
-    section = Plane(origin=Vector(*points[0]), z_dir=Vector(*t0)) * Circle(radius)
+    path = bd.Spline(*_smooth_path(points), tangents=(t0, t1))
+    section = bd.Plane(origin=bd.Vector(*points[0]), z_dir=bd.Vector(*t0)) * bd.Circle(radius)
     # is_frenet=True: the corrected-Frenet frame produces an inverted solid on
     # the tighter rear runners here (negative volume), so keep the true Frenet
     # frame and keep the path smooth instead.
-    return sweep(section, path, is_frenet=True)
+    return bd.sweep(section, path, is_frenet=True)
 
 
 # ---------------------------------------------------------------------------
@@ -315,11 +297,11 @@ def _plenum_face(y, k, kz):
     def sc(pts):
         return [(u * k, 660.0 + (v - 660.0) * kz) for (u, v) in pts]
 
-    side = Spline(*sc(_PLENUM_SIDE), tangents=((1, 0), _PLENUM_TANGENT))
-    crown = Spline(*sc(_PLENUM_CROWN), tangents=(_PLENUM_TANGENT, (-1, 0)))
+    side = bd.Spline(*sc(_PLENUM_SIDE), tangents=((1, 0), _PLENUM_TANGENT))
+    crown = bd.Spline(*sc(_PLENUM_CROWN), tangents=(_PLENUM_TANGENT, (-1, 0)))
     half = side + crown
-    face = make_face(half + mirror(half, Plane.YZ))
-    return Pos(X_E, 0, 0) * (Plane.XZ.offset(-y) * face)
+    face = bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
+    return bd.Pos(X_E, 0, 0) * (bd.Plane.XZ.offset(-y) * face)
 
 
 def _plenum():
@@ -331,7 +313,7 @@ def _plenum():
     """
     ends = [(298.0, 1.0, 1.0), (305.0, 0.90, 0.93), (310.0, 0.64, 0.78)]
     stations = [(-y, k, kz) for (y, k, kz) in reversed(ends)] + ends
-    return loft([_plenum_face(*st) for st in stations], ruled=True)
+    return bd.loft([_plenum_face(*st) for st in stations], ruled=True)
 
 
 def _spine():
@@ -346,25 +328,25 @@ def _spine():
 
 def _stack_proto():
     """Trumpet: flared bell, rolled lip, tapered inner throat."""
-    outer = Spline(
+    outer = bd.Spline(
         (30.0, 0.0), (30.6, 14.0), (33.0, 27.0), (38.4, 39.0), (46.0, 49.0),
         tangents=((0, 1), (0.66, 0.75)),
     )
-    lip_a = Spline(
+    lip_a = bd.Spline(
         (46.0, 49.0), (48.6, 52.6), (46.6, 55.4),
         tangents=((0.66, 0.75), (-0.92, -0.39)),
     )
-    lip_b = Spline(
+    lip_b = bd.Spline(
         (46.6, 55.4), (43.8, 52.8), (42.8, 48.6),
         tangents=((-0.92, -0.39), (-0.22, -0.98)),
     )
-    inner = Spline(
+    inner = bd.Spline(
         (42.8, 48.6), (35.4, 37.0), (29.2, 23.0), (26.9, 9.0), (26.8, 0.0),
         tangents=((-0.22, -0.98), (0, -1)),
     )
-    base = Line((26.8, 0.0), (30.0, 0.0))
+    base = bd.Line((26.8, 0.0), (30.0, 0.0))
     wire = outer + lip_a + lip_b + inner + base
-    return Pos(0, 0, 60.0) * revolve(Plane.XZ * make_face(wire), Axis.Z)
+    return bd.Pos(0, 0, 60.0) * bd.revolve(bd.Plane.XZ * bd.make_face(wire), bd.Axis.Z)
 
 
 def _throttle_proto():
@@ -386,7 +368,7 @@ def _intake_row(s, proto, kind, colour):
     style(proto, f"{kind}:{tag}", colour)
     x = X_E + s * ITB_U
     inst = [
-        (proto, Location((x, y, ITB_Z), (0.0, s * ITB_TILT, 0.0)),
+        (proto, bd.Location((x, y, ITB_Z), (0.0, s * ITB_TILT, 0.0)),
          f"{kind}:{tag}_{i + 1}")
         for i, y in enumerate(Y_CYL)
     ]
@@ -399,7 +381,7 @@ def _oil_cap():
         (20.0, 19.0), (0.0, 19.0),
     ])
     x, z = _bank_xz(-1, 380.0, 8.0)
-    return Location((x, -206.0, z), (0.0, -V_ANGLE, 0.0)) * solid
+    return bd.Location((x, -206.0, z), (0.0, -V_ANGLE, 0.0)) * solid
 
 
 def _cover_bolts():
@@ -417,7 +399,7 @@ def _cover_bolts():
                 n += 1
                 inst.append((
                     proto,
-                    Location((x, y, z), (0.0, s * V_ANGLE, 0.0)),
+                    bd.Location((x, y, z), (0.0, s * V_ANGLE, 0.0)),
                     f"cam_cover_bolt:{tag}_{n}",
                 ))
     return cadgen.compound_from_instances("cam_cover_bolts", inst)
@@ -429,9 +411,9 @@ def _cover_bolts():
 
 
 def _mouth_frame(sy):
-    centre = Vector(COLL_M.X, sy * COLL_M.Y, COLL_M.Z)
-    n = Vector(COLL_N.X, sy * COLL_N.Y, COLL_N.Z).normalized()
-    u = n.cross(Vector(0, 0, 1)).normalized()
+    centre = bd.Vector(COLL_M.X, sy * COLL_M.Y, COLL_M.Z)
+    n = bd.Vector(COLL_N.X, sy * COLL_N.Y, COLL_N.Z).normalized()
+    u = n.cross(bd.Vector(0, 0, 1)).normalized()
     v = n.cross(u).normalized()
     return centre, n, u, v
 
@@ -444,7 +426,7 @@ def _axis_point(sy, t):
 def _axis_plane(sy, t):
     centre, n, _u, _v = _mouth_frame(sy)
     o = centre + n * t
-    return Plane(origin=(o.X, o.Y, o.Z), z_dir=(n.X, n.Y, n.Z))
+    return bd.Plane(origin=(o.X, o.Y, o.Z), z_dir=(n.X, n.Y, n.Z))
 
 
 def _mouth_point(sy, angle_deg, radius=38.0):
@@ -479,8 +461,8 @@ def _front_primary(sy, j):
     y0 = sy * (54.0 + 108.0 * j)
     run = 444.0 + 52.0 * j
     px, pz = _bank_xz(1, PORT_D, PORT_W)
-    t0 = Vector(0.72 * CA, sy * 0.62, -0.72 * SA).normalized()
-    p0 = Vector(px, y0, pz)
+    t0 = bd.Vector(0.72 * CA, sy * 0.62, -0.72 * SA).normalized()
+    p0 = bd.Vector(px, y0, pz)
     p1 = p0 + t0 * 60.0
     p2 = (-1236.0, sy * (0.34 * abs(y0) + 0.66 * run), 528.0)
     p3 = (-1292.0, sy * run, 494.0)
@@ -506,7 +488,7 @@ def _port_bosses():
         for i, y in enumerate(Y_CYL):
             inst.append((
                 proto,
-                Location((x, y, z), (0.0, s_ * 120.0, 0.0)),
+                bd.Location((x, y, z), (0.0, s_ * 120.0, 0.0)),
                 f"exhaust_port_boss:{tag}_{i + 1}",
             ))
     return cadgen.compound_from_instances("exhaust_port_bosses", inst)
@@ -514,22 +496,22 @@ def _port_bosses():
 
 def _megaphone(sy):
     """6-into-1 collector tapering straight at the tip."""
-    return loft([
-        _axis_plane(sy, t) * Circle(r)
+    return bd.loft([
+        _axis_plane(sy, t) * bd.Circle(r)
         for (t, r) in ((0.0, 64.0), (22.0, 63.0), (64.0, 55.0), (112.0, 45.0),
                        (158.0, 38.0), (COLL_END_T, 35.0))
     ], ruled=False)
 
 
 def _tip(sy):
-    outer = loft([
-        _axis_plane(sy, t) * Circle(r)
+    outer = bd.loft([
+        _axis_plane(sy, t) * bd.Circle(r)
         for (t, r) in ((COLL_END_T, 41.0), (COLL_END_T + 16.0, 49.0),
                        (COLL_END_T + 44.0, 55.0), (TIP_T - 9.0, 56.0),
                        (TIP_T, 56.0))
     ], ruled=False)
-    bore = loft([
-        _axis_plane(sy, t) * Circle(r)
+    bore = bd.loft([
+        _axis_plane(sy, t) * bd.Circle(r)
         for (t, r) in ((COLL_END_T - 14.0, 28.0), (COLL_END_T + 40.0, 41.0),
                        (TIP_T + 14.0, 48.0))
     ], ruled=False)
@@ -537,9 +519,9 @@ def _tip(sy):
 
 
 def _tip_plug(sy):
-    return loft([
-        _axis_plane(sy, TIP_T - 34.0) * Circle(36.0),
-        _axis_plane(sy, TIP_T - 22.0) * Circle(38.0),
+    return bd.loft([
+        _axis_plane(sy, TIP_T - 34.0) * bd.Circle(36.0),
+        _axis_plane(sy, TIP_T - 22.0) * bd.Circle(38.0),
     ], ruled=True)
 
 
@@ -550,10 +532,10 @@ def _tip_plug(sy):
 
 def _revolved_along_y(points, sy, x, z):
     """Revolve a (radius, Y) polyline and stand it on the Y axis."""
-    solid = Rot(-90, 0, 0) * _turned(points)
+    solid = bd.Rot(-90, 0, 0) * _turned(points)
     if sy < 0:
-        solid = Rot(0, 0, 180) * solid
-    return Pos(x, 0.0, z) * solid
+        solid = bd.Rot(0, 0, 180) * solid
+    return bd.Pos(x, 0.0, z) * solid
 
 
 _FINAL_DRIVE_KEYS = [
@@ -626,7 +608,7 @@ def _drive_boss(sy):
 
 
 def _output_boss(sy):
-    return Pos(-1352.0, sy * 386.0, 400.0) * Rot(-90, 0, 0) * Cylinder(
+    return bd.Pos(-1352.0, sy * 386.0, 400.0) * bd.Rot(-90, 0, 0) * bd.Cylinder(
         radius=64.0, height=52.0)
 
 

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import Cylinder, Plane, Pos, RectangleRounded, Rot, Spline, extrude, make_face
+from cadgen import build123d as bd
 
 from lib import palette as P
 from lib import surfaces as S
@@ -49,9 +49,9 @@ def _side_intake_solid():
     # (half-width is about 950 here) instead of outside the car.
     out = []
     for y0 in (700.0, -1220.0):
-        wire = Spline(*prof, prof[0])
-        block = extrude(Plane.XZ * make_face(wire), amount=-520.0)
-        out.append(Pos(0, y0, 0) * block)
+        wire = bd.Spline(*prof, prof[0])
+        block = bd.extrude(bd.Plane.XZ * bd.make_face(wire), amount=-520.0)
+        out.append(bd.Pos(0, y0, 0) * block)
     return out
 
 
@@ -67,8 +67,8 @@ def _front_apertures():
     ducts = []
 
     def prism(y, z, w, h, r, depth, x_start=2330.0):
-        face = Plane.YZ.offset(x_start) * Pos(y, z, 0) * RectangleRounded(w, h, r)
-        return extrude(face, amount=-depth)
+        face = bd.Plane.YZ.offset(x_start) * bd.Pos(y, z, 0) * bd.RectangleRounded(w, h, r)
+        return bd.extrude(face, amount=-depth)
 
     # central slot, low and wide -- the car's "mouth"
     cutters.append(prism(0.0, 268.0, 900.0, 132.0, 44.0, 520.0))
@@ -82,8 +82,8 @@ def _front_apertures():
     # bonnet extractor: air that comes in the nose has to leave, and the
     # outlet gives the hood surface an event instead of a dead flat panel
     for side in (1, -1):
-        face = Plane.XY.offset(900.0) * Pos(1560.0, side * 330.0, 0) * RectangleRounded(420.0, 190.0, 54.0)
-        cutters.append(extrude(face, amount=-460.0))
+        face = bd.Plane.XY.offset(900.0) * bd.Pos(1560.0, side * 330.0, 0) * bd.RectangleRounded(420.0, 190.0, 54.0)
+        cutters.append(bd.extrude(face, amount=-460.0))
     return cutters, ducts
 
 
@@ -103,8 +103,8 @@ def _wheelhouse_liners():
         for side, nm in ((1, "left"), (-1, "right")):
             length = S.ARCH_OUTER_Y - S.ARCH_INNER_Y
             y_mid = side * (S.ARCH_INNER_Y + length / 2.0)
-            outer = Pos(x, y_mid, z) * (Rot(-90, 0, 0) * Cylinder(radius=r + 16.0, height=length))
-            inner = Pos(x, y_mid, z) * (Rot(-90, 0, 0) * Cylinder(radius=r, height=length + 4.0))
+            outer = bd.Pos(x, y_mid, z) * (bd.Rot(-90, 0, 0) * bd.Cylinder(radius=r + 16.0, height=length))
+            inner = bd.Pos(x, y_mid, z) * (bd.Rot(-90, 0, 0) * bd.Cylinder(radius=r, height=length + 4.0))
             band = (outer - inner) & inner_volume
             if band.solids():
                 liners.append(style(band, f"wheelhouse_liner:{end}_{nm}", P.BODY_DARK))

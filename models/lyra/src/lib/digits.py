@@ -27,7 +27,7 @@ washers, and the pivot pin; the child owns the bored tang barrel.
 
 from __future__ import annotations
 
-from build123d import Axis, Box, Cone, Pos, Rot, Sphere
+from cadgen import build123d as bd
 
 from .chain import (
     SEGMENT_MM,
@@ -83,23 +83,23 @@ def _finger_fork(z, gap, cheek_t, lobe_r, pin_r, rim_r, body_d):
     fork = None
     for sx in (1.0, -1.0):
         xc = sx * (half + cheek_t / 2.0)
-        plate = Pos(xc, 0.2, z - 6.0) * Box(cheek_t, body_d, 12.0)
-        lobe = Pos(xc, 0, z) * xcyl(lobe_r, cheek_t)
+        plate = bd.Pos(xc, 0.2, z - 6.0) * bd.Box(cheek_t, body_d, 12.0)
+        lobe = bd.Pos(xc, 0, z) * xcyl(lobe_r, cheek_t)
         cheek = plate + lobe
         fork = cheek if fork is None else fork + cheek
     fork = safe_chamfer(
-        fork, [e for e in fork.edges().filter_by(Axis.X)], 0.8
+        fork, [e for e in fork.edges().filter_by(bd.Axis.X)], 0.8
     )
-    fork -= Pos(0, 0, z) * xcyl(pin_r + 0.4, gap + 2 * cheek_t + 8.0)
+    fork -= bd.Pos(0, 0, z) * xcyl(pin_r + 0.4, gap + 2 * cheek_t + 8.0)
     rims = []
     for sx in (1.0, -1.0):
         xr = sx * (half + cheek_t + RIM_T / 2.0)
-        rim = Pos(xr, 0, z) * (
+        rim = bd.Pos(xr, 0, z) * (
             xcyl(rim_r, RIM_T) - xcyl(pin_r + 0.4, RIM_T + 2.0)
         )
         rims.append(rim)
     pin_len = gap + 2 * cheek_t + 2 * RIM_T + 1.2
-    pivot = Pos(0, 0, z) * pin("x", pin_r, pin_len)
+    pivot = bd.Pos(0, 0, z) * pin("x", pin_r, pin_len)
     return fork, rims, pivot
 
 
@@ -129,11 +129,11 @@ def _finger_phalanx(
 
     # Graphite spine: tang barrel + center bar + fork crossbar + clevis.
     core = _bored_xbarrel(tang_r, tang_w, bore_r)
-    bar = Pos(0, y_shift, (4.5 * s + length - 9.0 * s) / 2.0) * Box(
+    bar = bd.Pos(0, y_shift, (4.5 * s + length - 9.0 * s) / 2.0) * bd.Box(
         bar_w, bar_w, length - 9.0 * s - 4.5 * s
     )
     core += bar
-    crossbar = Pos(0, 0.2, length - 11.0 * s) * Box(
+    crossbar = bd.Pos(0, 0.2, length - 11.0 * s) * bd.Box(
         fork_gap + 2 * cheek_t, bar_w, 4.0 * s
     )
     core += crossbar
@@ -143,22 +143,22 @@ def _finger_phalanx(
     core += fork
 
     # Pearl composite shell tube around the spine.
-    tube = Pos(0, y_shift, (tube_z0 + tube_z1) / 2.0) * Box(
+    tube = bd.Pos(0, y_shift, (tube_z0 + tube_z1) / 2.0) * bd.Box(
         body_w, body_d, tube_z1 - tube_z0
     )
-    tube = safe_fillet(tube, tube.edges().filter_by(Axis.Z), min(2.6, body_w / 4.5))
-    tube -= Pos(0, y_shift, (tube_z0 + tube_z1) / 2.0) * Box(
+    tube = safe_fillet(tube, tube.edges().filter_by(bd.Axis.Z), min(2.6, body_w / 4.5))
+    tube -= bd.Pos(0, y_shift, (tube_z0 + tube_z1) / 2.0) * bd.Box(
         chan_w, chan_w, tube_z1 - tube_z0 + 4.0
     )
     tube = safe_chamfer(
-        tube, [e for e in tube.edges().filter_by(Axis.X)], 0.7
+        tube, [e for e in tube.edges().filter_by(bd.Axis.X)], 0.7
     )
 
     # Soft-touch tactile strip on the palmar tube face.
-    pad = Pos(0, y_shift + body_d / 2.0 + 0.5, (tube_z0 + tube_z1) / 2.0) * Box(
+    pad = bd.Pos(0, y_shift + body_d / 2.0 + 0.5, (tube_z0 + tube_z1) / 2.0) * bd.Box(
         body_w - 4.0 * s, 1.6, max((tube_z1 - tube_z0) * 0.72, 2.5)
     )
-    pad = safe_fillet(pad, pad.edges().filter_by(Axis.Y), min(1.8 * s, 2.0))
+    pad = safe_fillet(pad, pad.edges().filter_by(bd.Axis.Y), min(1.8 * s, 2.0))
 
     solids = [
         styled(core, f"{label_prefix}_spine", GRAPHITE_COLOR),
@@ -208,15 +208,15 @@ def build_finger_distal(finger: str):
     tang = _bored_xbarrel(DIST_TANG_R * s, DIST_TANG_W * s, DIST_BORE_R * s)
     collar_r = 4.0 * s
     collar_len = cone_z0 + 0.5 - 4.4
-    tang += Pos(0, 0.4 * s, 4.4 + collar_len / 2.0) * zcyl(collar_r, collar_len)
+    tang += bd.Pos(0, 0.4 * s, 4.4 + collar_len / 2.0) * zcyl(collar_r, collar_len)
 
     cone_h = tip_c - cone_z0
-    body = Pos(0, 0.4 * s, cone_z0 + cone_h / 2.0) * Cone(
+    body = bd.Pos(0, 0.4 * s, cone_z0 + cone_h / 2.0) * bd.Cone(
         bottom_radius=5.3 * s, top_radius=tip_r, height=cone_h
     )
-    body += Pos(0, 0.4 * s, tip_c) * Sphere(tip_r)
+    body += bd.Pos(0, 0.4 * s, tip_c) * bd.Sphere(tip_r)
     # Seat the pearl body on the collar shoulder (face contact, no overlap).
-    body -= Pos(0, 0.4 * s, (cone_z0 + 0.5) / 2.0) * zcyl(collar_r + 0.05, cone_z0 + 0.5)
+    body -= bd.Pos(0, 0.4 * s, (cone_z0 + 0.5) / 2.0) * zcyl(collar_r + 0.05, cone_z0 + 0.5)
 
     # Soft-touch fingertip pad: split a palmar cap off the body with a
     # boolean sphere so the seam is face-to-face with no overlap.
@@ -224,7 +224,7 @@ def build_finger_distal(finger: str):
     # the apex and dorsal face stay pearl.
     pad = None
     try:
-        zone = Pos(0, 3.6 * s, tip_c + 0.2) * Sphere(4.7 * s)
+        zone = bd.Pos(0, 3.6 * s, tip_c + 0.2) * bd.Sphere(4.7 * s)
         cap = body & zone
         if cap.volume > 1.0:
             body = body - zone
@@ -262,23 +262,23 @@ def _thumb_fork(x, gap, cheek_t, lobe_r, pin_r, rim_r, body_d):
     fork = None
     for sy in (1.0, -1.0):
         yc = sy * (half + cheek_t / 2.0)
-        plate = Pos(x - 6.0, yc, 0.2) * Box(12.0, cheek_t, body_d)
-        lobe = Pos(x, yc, 0) * ycyl(lobe_r, cheek_t)
+        plate = bd.Pos(x - 6.0, yc, 0.2) * bd.Box(12.0, cheek_t, body_d)
+        lobe = bd.Pos(x, yc, 0) * ycyl(lobe_r, cheek_t)
         cheek = plate + lobe
         fork = cheek if fork is None else fork + cheek
     fork = safe_chamfer(
-        fork, [e for e in fork.edges().filter_by(Axis.Y)], 0.8
+        fork, [e for e in fork.edges().filter_by(bd.Axis.Y)], 0.8
     )
-    fork -= Pos(x, 0, 0) * ycyl(pin_r + 0.4, gap + 2 * cheek_t + 8.0)
+    fork -= bd.Pos(x, 0, 0) * ycyl(pin_r + 0.4, gap + 2 * cheek_t + 8.0)
     rims = []
     for sy in (1.0, -1.0):
         yr = sy * (half + cheek_t + RIM_T / 2.0)
-        rim = Pos(x, yr, 0) * (
+        rim = bd.Pos(x, yr, 0) * (
             ycyl(rim_r, RIM_T) - ycyl(pin_r + 0.4, RIM_T + 2.0)
         )
         rims.append(rim)
     pin_len = gap + 2 * cheek_t + 2 * RIM_T + 1.2
-    pivot = Pos(x, 0, 0) * pin("y", pin_r, pin_len)
+    pivot = bd.Pos(x, 0, 0) * pin("y", pin_r, pin_len)
     return fork, rims, pivot
 
 
@@ -306,33 +306,33 @@ def _thumb_phalanx(
     chan_w = bar_w + 0.5
 
     core = _bored_ybarrel(tang_r, tang_w, bore_r)
-    bar = Pos((4.5 + length - 9.0) / 2.0, 0, z_shift) * Box(
+    bar = bd.Pos((4.5 + length - 9.0) / 2.0, 0, z_shift) * bd.Box(
         length - 9.0 - 4.5, bar_w, bar_w
     )
     core += bar
     # Fork cheeks are stacked in Y, so the crossbar spans the Y width.
-    crossbar = Pos(length - 11.0, 0, 0.2) * Box(4.0, fork_gap + 2 * cheek_t, bar_w)
+    crossbar = bd.Pos(length - 11.0, 0, 0.2) * bd.Box(4.0, fork_gap + 2 * cheek_t, bar_w)
     core += crossbar
     fork, rims, pivot = _thumb_fork(
         length, fork_gap, cheek_t, lobe_r, pin_r, rim_r, body_d
     )
     core += fork
 
-    tube = Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift) * Box(
+    tube = bd.Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift) * bd.Box(
         tube_x1 - tube_x0, body_w, body_d
     )
-    tube = safe_fillet(tube, tube.edges().filter_by(Axis.X), min(2.6, body_w / 4.5))
-    tube -= Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift) * Box(
+    tube = safe_fillet(tube, tube.edges().filter_by(bd.Axis.X), min(2.6, body_w / 4.5))
+    tube -= bd.Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift) * bd.Box(
         tube_x1 - tube_x0 + 4.0, chan_w, chan_w
     )
     tube = safe_chamfer(
-        tube, [e for e in tube.edges().filter_by(Axis.Y)], 0.7
+        tube, [e for e in tube.edges().filter_by(bd.Axis.Y)], 0.7
     )
 
-    pad = Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift + body_d / 2.0 + 0.5) * Box(
+    pad = bd.Pos((tube_x0 + tube_x1) / 2.0, 0, z_shift + body_d / 2.0 + 0.5) * bd.Box(
         max((tube_x1 - tube_x0) * 0.72, 2.5), body_w - 4.0, 1.6
     )
-    pad = safe_fillet(pad, pad.edges().filter_by(Axis.Z), 1.8)
+    pad = safe_fillet(pad, pad.edges().filter_by(bd.Axis.Z), 1.8)
 
     solids = [
         styled(core, f"{label_prefix}_spine", GRAPHITE_COLOR),
@@ -349,8 +349,8 @@ def build_thumb_base():
     """CMC turret tang (spins about +Z on the palm spindle) + flex clevis."""
     disc = zcyl(TB_TANG_R, TB_TANG_H) - zcyl(TB_BORE_R, TB_TANG_H + 4.0)
     disc = safe_chamfer(disc, disc.edges(), 0.8)
-    neck = Pos(8.6, 0, 0) * Box(8.6, 12.6, 9.0)
-    neck = safe_fillet(neck, neck.edges().filter_by(Axis.Z), 2.0)
+    neck = bd.Pos(8.6, 0, 0) * bd.Box(8.6, 12.6, 9.0)
+    neck = safe_fillet(neck, neck.edges().filter_by(bd.Axis.Z), 2.0)
     core = disc + neck
     fork, rims, pivot = _thumb_fork(
         THUMB_BASE_LEN_MM, TM_TANG_W + 0.6, 2.6, T_PROX_LOBE_R, 2.5, 4.5, 11.0
@@ -394,18 +394,18 @@ def build_thumb_distal():
     tang = _bored_ybarrel(TD_TANG_R, TD_TANG_W, TD_BORE_R)
     collar_r = 4.0
     collar_len = cone_x0 + 0.5 - 4.4
-    tang += Pos(4.4 + collar_len / 2.0, 0, 0.4) * xcyl(collar_r, collar_len)
+    tang += bd.Pos(4.4 + collar_len / 2.0, 0, 0.4) * xcyl(collar_r, collar_len)
 
     cone_h = tip_c - cone_x0
-    body = Pos(cone_x0 + cone_h / 2.0, 0, 0.4) * Rot(0, 90, 0) * Cone(
+    body = bd.Pos(cone_x0 + cone_h / 2.0, 0, 0.4) * bd.Rot(0, 90, 0) * bd.Cone(
         bottom_radius=5.4, top_radius=tip_r, height=cone_h
     )
-    body += Pos(tip_c, 0, 0.4) * Sphere(tip_r)
-    body -= Pos((cone_x0 + 0.5) / 2.0, 0, 0.4) * xcyl(collar_r + 0.05, cone_x0 + 0.5)
+    body += bd.Pos(tip_c, 0, 0.4) * bd.Sphere(tip_r)
+    body -= bd.Pos((cone_x0 + 0.5) / 2.0, 0, 0.4) * xcyl(collar_r + 0.05, cone_x0 + 0.5)
 
     pad = None
     try:
-        zone = Pos(tip_c + 0.2, 0, 3.4) * Sphere(5.0)
+        zone = bd.Pos(tip_c + 0.2, 0, 3.4) * bd.Sphere(5.0)
         cap = body & zone
         if cap.volume > 1.0:
             body = body - zone

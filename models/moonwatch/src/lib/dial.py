@@ -26,20 +26,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Circle,
-    Color,
-    Cone,
-    Cylinder,
-    Plane,
-    Polygon,
-    Pos,
-    Rectangle,
-    Rot,
-    Sphere,
-    Text,
-    extrude,
-)
+from cadgen import build123d as bd
 
 from lib import spec as S
 from lib import finishing as F
@@ -117,15 +104,15 @@ def _fuse(shapes):
 # ---------------------------------------------------------------------------
 
 def build_dial_plate():
-    base = Pos(0, 0, (DIAL_TOP + DIAL_BOT) / 2.0) * Cylinder(
+    base = bd.Pos(0, 0, (DIAL_TOP + DIAL_BOT) / 2.0) * bd.Cylinder(
         DIAL_R, S.DIAL_THICKNESS
     )
 
     cutters = []
 
     # outer step: drop the minute-track ring below the main lacquer surface
-    annulus = Cylinder(DIAL_R + 1.0, 1.0) - Cylinder(STEP_R, 1.2)
-    cutters.append(Pos(0, 0, STEP_TOP + 0.5) * annulus)
+    annulus = bd.Cylinder(DIAL_R + 1.0, 1.0) - bd.Cylinder(STEP_R, 1.2)
+    cutters.append(bd.Pos(0, 0, STEP_TOP + 0.5) * annulus)
 
     # subdial recesses: one revolved-step cut per register — a 45-degree
     # chamfered rim (the bright ring that telegraphs depth head-on), a
@@ -133,21 +120,21 @@ def build_dial_plate():
     # floor disc (build_register_floors); plus the hand hole
     for cx, cy in REGISTERS.values():
         cutters.append(
-            Pos(cx, cy, DIAL_TOP - RIM_CHAMFER / 2.0)
-            * Cone(RECESS_R, RECESS_R + RIM_CHAMFER, RIM_CHAMFER)
+            bd.Pos(cx, cy, DIAL_TOP - RIM_CHAMFER / 2.0)
+            * bd.Cone(RECESS_R, RECESS_R + RIM_CHAMFER, RIM_CHAMFER)
         )
         cutters.append(
-            Pos(cx, cy, DIAL_TOP + 0.25) * Cylinder(RECESS_R + RIM_CHAMFER, 0.5)
+            bd.Pos(cx, cy, DIAL_TOP + 0.25) * bd.Cylinder(RECESS_R + RIM_CHAMFER, 0.5)
         )
-        cutters.append(Pos(cx, cy, POCKET_FLOOR + 0.5) * Cylinder(RECESS_R, 1.0))
-        cutters.append(Pos(cx, cy, DIAL_TOP - 0.3) * Cylinder(0.25, 2.0))
+        cutters.append(bd.Pos(cx, cy, POCKET_FLOOR + 0.5) * bd.Cylinder(RECESS_R, 1.0))
+        cutters.append(bd.Pos(cx, cy, DIAL_TOP - 0.3) * bd.Cylinder(0.25, 2.0))
 
     # center post hole (cannon pinion / chrono staff)
-    cutters.append(Pos(0, 0, DIAL_TOP - 0.3) * Cylinder(0.75, 2.0))
+    cutters.append(bd.Pos(0, 0, DIAL_TOP - 0.3) * bd.Cylinder(0.75, 2.0))
 
     dial = base - cutters
     dial.label = "dial_plate"
-    dial.color = Color(*S.DIAL_BLACK)
+    dial.color = bd.Color(*S.DIAL_BLACK)
     return dial
 
 
@@ -160,15 +147,15 @@ def build_register_floors():
     )
     floors = []
     for role, (cx, cy) in REGISTERS.items():
-        disc = Pos(cx, cy, (POCKET_FLOOR + RECESS_FLOOR) / 2.0) * Cylinder(
+        disc = bd.Pos(cx, cy, (POCKET_FLOOR + RECESS_FLOOR) / 2.0) * bd.Cylinder(
             RECESS_R + 0.03, FLOOR_THICK  # 0.03 embeds into the pocket wall
         )
         disc = disc - [
-            Pos(cx, cy, RECESS_FLOOR) * snail,
-            Pos(cx, cy, RECESS_FLOOR - 0.5) * Cylinder(0.25, 2.0),
+            bd.Pos(cx, cy, RECESS_FLOOR) * snail,
+            bd.Pos(cx, cy, RECESS_FLOOR - 0.5) * bd.Cylinder(0.25, 2.0),
         ]
         disc.label = f"subdial_floor:{role}"
-        disc.color = Color(0.033, 0.033, 0.039, 1.0)  # ~12% under DIAL_BLACK
+        disc.color = bd.Color(0.033, 0.033, 0.039, 1.0)  # ~12% under DIAL_BLACK
         floors.append(disc)
     return floors
 
@@ -177,9 +164,9 @@ def build_dial_feet():
     feet = []
     for name, angle in (("upper", 45.0), ("lower", 225.0)):
         x, y = _cw(angle, 12.9)
-        foot = Pos(x, y, DIAL_BOT - 0.7) * Cylinder(0.5, 1.4)
+        foot = bd.Pos(x, y, DIAL_BOT - 0.7) * bd.Cylinder(0.5, 1.4)
         foot.label = f"dial_foot:{name}"
-        foot.color = Color(*S.BRASS_MOVEMENT)
+        foot.color = bd.Color(*S.BRASS_MOVEMENT)
         feet.append(foot)
     return feet
 
@@ -201,16 +188,16 @@ def build_indices():
             r_in = INDEX_R_IN
         r_mid = (r_in + INDEX_R_OUT) / 2.0
         length = INDEX_R_OUT - r_in
-        loc = Rot(0, 0, -h * 30.0) * Pos(0, r_mid)
-        frame_out.append(loc * Rectangle(1.05, length))
-        frame_in.append(loc * Rectangle(0.67, length - 0.38))
-        lume_in.append(loc * Rectangle(0.61, length - 0.44))
+        loc = bd.Rot(0, 0, -h * 30.0) * bd.Pos(0, r_mid)
+        frame_out.append(loc * bd.Rectangle(1.05, length))
+        frame_in.append(loc * bd.Rectangle(0.67, length - 0.38))
+        lume_in.append(loc * bd.Rectangle(0.61, length - 0.44))
 
     for dx in (-0.72, 0.72):  # doubled baton at 12
-        loc = Pos(dx, INDEX_R_MID)
-        frame_out.append(loc * Rectangle(0.85, INDEX_LEN))
-        frame_in.append(loc * Rectangle(0.49, INDEX_LEN - 0.38))
-        lume_in.append(loc * Rectangle(0.43, INDEX_LEN - 0.44))
+        loc = bd.Pos(dx, INDEX_R_MID)
+        frame_out.append(loc * bd.Rectangle(0.85, INDEX_LEN))
+        frame_in.append(loc * bd.Rectangle(0.49, INDEX_LEN - 0.38))
+        lume_in.append(loc * bd.Rectangle(0.43, INDEX_LEN - 0.44))
 
     # polished-steel picture-frame batons, bevels built constructively:
     # - straight prism up to (rim - chamfer)
@@ -221,36 +208,36 @@ def build_indices():
     rim = DIAL_TOP + INDEX_RAISE
     outer_sk = _fuse(frame_out)
     inner_sk = _fuse(frame_in)
-    body = Pos(0, 0, z0) * extrude(
+    body = bd.Pos(0, 0, z0) * bd.extrude(
         outer_sk, INDEX_EMBED + INDEX_RAISE - INDEX_CHAMFER
     )
-    cap = Pos(0, 0, rim - INDEX_CHAMFER) * extrude(
+    cap = bd.Pos(0, 0, rim - INDEX_CHAMFER) * bd.extrude(
         outer_sk, INDEX_CHAMFER, taper=45
     )
-    pocket = Pos(0, 0, z0 - 0.1) * extrude(
+    pocket = bd.Pos(0, 0, z0 - 0.1) * bd.extrude(
         inner_sk, INDEX_EMBED + INDEX_RAISE + 0.2
     )
-    rim_bevel = Pos(0, 0, rim - INDEX_RIM_BEVEL) * extrude(
+    rim_bevel = bd.Pos(0, 0, rim - INDEX_RIM_BEVEL) * bd.extrude(
         inner_sk, INDEX_RIM_BEVEL + 0.05, taper=-45
     )
     frames = (body + cap) - [pocket, rim_bevel]
     frames.label = "index_frame:batons"
-    frames.color = Color(*S.STEEL_BRIGHT)
+    frames.color = bd.Color(*S.STEEL_BRIGHT)
     frames.cad_material = dict(POLISHED_FURNITURE)
 
     lume_sk = _fuse(lume_in)
-    lume = Pos(0, 0, z0) * extrude(
+    lume = bd.Pos(0, 0, z0) * bd.extrude(
         lume_sk, INDEX_EMBED + INDEX_RAISE - INDEX_LUME_DROP
     )
 
     # two lume dots outboard of the doubled 12 baton, on the track ring
-    dot_sk = _fuse([Pos(dx, 16.85) * Circle(0.38) for dx in (-0.72, 0.72)])
-    dots = Pos(0, 0, STEP_TOP - INDEX_EMBED) * extrude(
+    dot_sk = _fuse([bd.Pos(dx, 16.85) * bd.Circle(0.38) for dx in (-0.72, 0.72)])
+    dots = bd.Pos(0, 0, STEP_TOP - INDEX_EMBED) * bd.extrude(
         dot_sk, INDEX_EMBED + INDEX_RAISE + 0.02
     )
     lume = lume + dots
     lume.label = "index_lume"
-    lume.color = Color(*S.LUME)
+    lume.color = bd.Color(*S.LUME)
     return [frames, lume]
 
 
@@ -267,16 +254,16 @@ def build_minute_track():
         else:  # 1/5 subdivision tick
             w, length = 0.085, 0.75
         ticks.append(
-            Rot(0, 0, -a)
-            * Pos(0, TRACK_OUTER_R - length / 2.0)
-            * Rectangle(w, length)
+            bd.Rot(0, 0, -a)
+            * bd.Pos(0, TRACK_OUTER_R - length / 2.0)
+            * bd.Rectangle(w, length)
         )
     sk = _fuse(ticks)
-    track = Pos(0, 0, STEP_TOP - PRINT_EMBED) * extrude(
+    track = bd.Pos(0, 0, STEP_TOP - PRINT_EMBED) * bd.extrude(
         sk, PRINT_EMBED + PRINT_RAISE
     )
     track.label = "minute_track"
-    track.color = Color(*S.DIAL_PRINT)
+    track.color = bd.Color(*S.DIAL_PRINT)
     return track
 
 
@@ -304,18 +291,18 @@ def build_register_print(role: str):
             w, length, r_mid = 0.10, 0.85, 3.425
         else:
             w, length, r_mid = 0.065, 0.50, 3.60
-        shapes.append(Rot(0, 0, -a) * Pos(0, r_mid) * Rectangle(w, length))
+        shapes.append(bd.Rot(0, 0, -a) * bd.Pos(0, r_mid) * bd.Rectangle(w, length))
 
     for txt, a in _REGISTER_NUMERALS[role]:
         x, y = _cw(a, 2.3)
-        shapes.append(Pos(x, y) * Text(txt, font_size=1.5, font="Arial"))
+        shapes.append(bd.Pos(x, y) * bd.Text(txt, font_size=1.5, font="Arial"))
 
     cx, cy = REGISTERS[role]
-    body = Pos(cx, cy, RECESS_FLOOR - PRINT_EMBED) * extrude(
+    body = bd.Pos(cx, cy, RECESS_FLOOR - PRINT_EMBED) * bd.extrude(
         _fuse(shapes), PRINT_EMBED + PRINT_RAISE
     )
     body.label = f"subdial_print:{role}"
-    body.color = Color(*S.DIAL_PRINT)
+    body.color = bd.Color(*S.DIAL_PRINT)
     return body
 
 
@@ -328,87 +315,87 @@ def _roof(half_width: float, ridge_height: float, length: float = 25.0):
     falling to z=0 at |x|=half_width. Intersect with a plan extrusion to
     give a hand blade its diamond section — two beveled facets meeting in
     a longitudinal ridge, thin knife edges at the sides."""
-    profile = Plane.XZ * Polygon(
+    profile = bd.Plane.XZ * bd.Polygon(
         (-half_width, 0.0), (half_width, 0.0), (0.0, ridge_height), align=None
     )
-    return extrude(profile, amount=length, both=True)
+    return bd.extrude(profile, amount=length, both=True)
 
 
 def _faceted_blade(plan_sk, roof_half: float, ridge_h: float, z0: float):
     """Extrude a plan sketch and intersect with the facet roof; base at z0."""
-    return Pos(0, 0, z0) * (extrude(plan_sk, ridge_h) & _roof(roof_half, ridge_h))
+    return bd.Pos(0, 0, z0) * (bd.extrude(plan_sk, ridge_h) & _roof(roof_half, ridge_h))
 
 
 def _domed_cap(radius: float, z_bottom: float, z_shoulder: float, dome_r: float):
     """Turned polished cap: cylinder with a spherical dome that meets the
     cylindrical wall exactly at z_shoulder (screw-head dome construction)."""
     h = z_shoulder - z_bottom
-    cyl = Pos(0, 0, z_bottom + h / 2.0) * Cylinder(radius, h)
+    cyl = bd.Pos(0, 0, z_bottom + h / 2.0) * bd.Cylinder(radius, h)
     center_z = z_shoulder - math.sqrt(dome_r**2 - radius**2)
-    return cyl & (Pos(0, 0, center_z) * Sphere(dome_r))
+    return cyl & (bd.Pos(0, 0, center_z) * bd.Sphere(dome_r))
 
 
 def build_hands():
     parts = []
 
     # ---- hour hand: thin tapered diamond-section blade, lume window ----
-    hour_plan = Polygon(
+    hour_plan = bd.Polygon(
         (-0.60, -2.4), (0.60, -2.4), (0.60, 1.6),
         (0.32, 11.2), (0.14, S.HAND_HOUR_LENGTH),        # 12.0 reach
         (-0.14, S.HAND_HOUR_LENGTH), (-0.32, 11.2), (-0.60, 1.6),
         align=None,
     )
-    hour_window = Pos(0, 7.1) * Rectangle(0.52, 5.4)     # y 4.4..9.8
+    hour_window = bd.Pos(0, 7.1) * bd.Rectangle(0.52, 5.4)     # y 4.4..9.8
     hour = _faceted_blade(hour_plan - hour_window, 0.75, 0.22, 8.45)
-    hour = Rot(0, 0, -HOUR_ANGLE) * hour
+    hour = bd.Rot(0, 0, -HOUR_ANGLE) * hour
     # polished-steel blade: the facet ridge splits it into two mirror bevels
     # and the through-cut lume window leaves raised rails either side of the
     # recessed fill (rail tops ~0.14 above base vs 0.10 lume)
     hour.label = "hand:hour"
-    hour.color = Color(*S.DIAL_PRINT)
+    hour.color = bd.Color(*S.DIAL_PRINT)
 
-    hour_lume = Pos(0, 0, 8.45) * extrude(Pos(0, 7.1) * Rectangle(0.46, 5.34), 0.10)
-    hour_lume = Rot(0, 0, -HOUR_ANGLE) * hour_lume
+    hour_lume = bd.Pos(0, 0, 8.45) * bd.extrude(bd.Pos(0, 7.1) * bd.Rectangle(0.46, 5.34), 0.10)
+    hour_lume = bd.Rot(0, 0, -HOUR_ANGLE) * hour_lume
     hour_lume.label = "hand:hour_lume"
-    hour_lume.color = Color(*S.LUME)
+    hour_lume.color = bd.Color(*S.LUME)
 
-    hour_hub = Pos(0, 0, 8.47) * Cylinder(1.15, 0.20) + Pos(0, 0, 8.63) * Cylinder(
+    hour_hub = bd.Pos(0, 0, 8.47) * bd.Cylinder(1.15, 0.20) + bd.Pos(0, 0, 8.63) * bd.Cylinder(
         0.72, 0.12
     )
     hour_hub.label = "hub:hour"
-    hour_hub.color = Color(*S.STEEL_BRIGHT)
+    hour_hub.color = bd.Color(*S.STEEL_BRIGHT)
     parts += [hour, hour_lume, hour_hub]
 
     # ---- minute hand: longer, slimmer blade above the hour hand ----
-    minute_plan = Polygon(
+    minute_plan = bd.Polygon(
         (-0.52, -2.6), (0.52, -2.6), (0.52, 1.6),
         (0.26, 15.6), (0.11, S.HAND_MINUTE_LENGTH),      # 16.6 reach
         (-0.11, S.HAND_MINUTE_LENGTH), (-0.26, 15.6), (-0.52, 1.6),
         align=None,
     )
-    minute_window = Pos(0, 9.6) * Rectangle(0.38, 8.4)   # y 5.4..13.8
+    minute_window = bd.Pos(0, 9.6) * bd.Rectangle(0.38, 8.4)   # y 5.4..13.8
     minute = _faceted_blade(minute_plan - minute_window, 0.65, 0.20, 8.73)
-    minute = Rot(0, 0, -MINUTE_ANGLE) * minute
+    minute = bd.Rot(0, 0, -MINUTE_ANGLE) * minute
     minute.label = "hand:minute"
-    minute.color = Color(*S.DIAL_PRINT)
+    minute.color = bd.Color(*S.DIAL_PRINT)
 
-    minute_lume = Pos(0, 0, 8.73) * extrude(
-        Pos(0, 9.6) * Rectangle(0.32, 8.34), 0.08
+    minute_lume = bd.Pos(0, 0, 8.73) * bd.extrude(
+        bd.Pos(0, 9.6) * bd.Rectangle(0.32, 8.34), 0.08
     )
-    minute_lume = Rot(0, 0, -MINUTE_ANGLE) * minute_lume
+    minute_lume = bd.Rot(0, 0, -MINUTE_ANGLE) * minute_lume
     minute_lume.label = "hand:minute_lume"
-    minute_lume.color = Color(*S.LUME)
+    minute_lume.color = bd.Color(*S.LUME)
 
     # cannon-pinion cap under the chrono hand: turned two-step collar
-    minute_hub = Pos(0, 0, 8.79) * Cylinder(0.95, 0.16) + Pos(0, 0, 8.915) * Cylinder(
+    minute_hub = bd.Pos(0, 0, 8.79) * bd.Cylinder(0.95, 0.16) + bd.Pos(0, 0, 8.915) * bd.Cylinder(
         0.55, 0.09
     )
     minute_hub.label = "hub:minute"
-    minute_hub.color = Color(*S.STEEL_BRIGHT)
+    minute_hub.color = bd.Color(*S.STEEL_BRIGHT)
     parts += [minute, minute_lume, minute_hub]
 
     # ---- chronograph seconds: needle blade + tapered teardrop tail ----
-    needle = Polygon(
+    needle = bd.Polygon(
         (0.17, -1.2), (0.13, 0.0),
         (0.045, S.HAND_CHRONO_LENGTH - 0.3),             # 18.0 reach
         (0.018, S.HAND_CHRONO_LENGTH), (-0.018, S.HAND_CHRONO_LENGTH),
@@ -416,19 +403,19 @@ def build_hands():
         (-0.13, 0.0), (-0.17, -1.2),
         align=None,
     )
-    teardrop = Polygon(
+    teardrop = bd.Polygon(
         (-0.42, -3.5), (0.42, -3.5), (0.135, -0.8), (-0.135, -0.8), align=None
-    ) + Pos(0, -3.85) * Circle(0.5)
+    ) + bd.Pos(0, -3.85) * bd.Circle(0.5)
     chrono = _faceted_blade(needle + teardrop, 0.62, 0.16, 8.99)
-    chrono = Rot(0, 0, -CHRONO_ANGLE) * chrono
+    chrono = bd.Rot(0, 0, -CHRONO_ANGLE) * chrono
     chrono.label = "hand:chrono_seconds"
-    chrono.color = Color(*S.DIAL_PRINT)
+    chrono.color = bd.Color(*S.DIAL_PRINT)
     parts.append(chrono)
 
     # polished domed cap over the chrono staff — top of the center stack
     cap = _domed_cap(0.72, 8.97, 9.13, 2.0)
     cap.label = "hand:chrono_cap"
-    cap.color = Color(*S.STEEL_BRIGHT)
+    cap.color = bd.Color(*S.STEEL_BRIGHT)
     parts.append(cap)
 
     # ---- register hands: tiny faceted blades on turned hubs ----
@@ -438,7 +425,7 @@ def build_hands():
         "seconds": SMALL_SECONDS_ANGLE,
     }
     for role, angle in register_angles.items():
-        plan = Polygon(
+        plan = bd.Polygon(
             (0.10, -0.9), (0.075, 0.0),
             (0.03, S.HAND_SUBDIAL_LENGTH),               # 3.6 reach
             (-0.03, S.HAND_SUBDIAL_LENGTH),
@@ -448,12 +435,12 @@ def build_hands():
         # dropped with the deepened counters: ride just above the 7.85 floors
         # (floor print tops at 7.87), still well below the 8.35 main surface
         blade = _faceted_blade(plan, 0.13, 0.10, 7.95)
-        hub = Pos(0, 0, 7.97) * Cylinder(0.40, 0.16)
+        hub = bd.Pos(0, 0, 7.97) * bd.Cylinder(0.40, 0.16)
         hand = blade + hub
         cx, cy = REGISTERS[role]
-        hand = Pos(cx, cy, 0) * (Rot(0, 0, -angle) * hand)
+        hand = bd.Pos(cx, cy, 0) * (bd.Rot(0, 0, -angle) * hand)
         hand.label = f"hand:sub_{role}"
-        hand.color = Color(*S.DIAL_PRINT)
+        hand.color = bd.Color(*S.DIAL_PRINT)
         parts.append(hand)
 
     return parts

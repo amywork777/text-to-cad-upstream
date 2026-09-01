@@ -54,19 +54,7 @@ from __future__ import annotations
 
 import math
 
-from build123d import (
-    Compound,
-    Cylinder,
-    Plane,
-    Pos,
-    RectangleRounded,
-    Rot,
-    Spline,
-    Vector,
-    loft,
-    make_face,
-    mirror,
-)
+from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib import palette as P
@@ -149,18 +137,18 @@ def _face(bands, x):
         t0 = (1.0, 0.0) if i == 0 else None
         t1 = (-1.0, 0.0) if i == last else None
         if t0 and t1:
-            e = Spline(*pts, tangents=(t0, t1))
+            e = bd.Spline(*pts, tangents=(t0, t1))
         elif t0:
-            e = Spline(*pts, tangents=(t0, _dir(pts[-2], pts[-1])))
+            e = bd.Spline(*pts, tangents=(t0, _dir(pts[-2], pts[-1])))
         elif t1:
-            e = Spline(*pts, tangents=(_dir(pts[0], pts[1]), t1))
+            e = bd.Spline(*pts, tangents=(_dir(pts[0], pts[1]), t1))
         else:
-            e = Spline(*pts)
+            e = bd.Spline(*pts)
         edges.append(e)
     half = edges[0]
     for e in edges[1:]:
         half = half + e
-    return Plane.YZ.offset(x) * make_face(half + mirror(half, Plane.YZ))
+    return bd.Plane.YZ.offset(x) * bd.make_face(half + bd.mirror(half, bd.Plane.YZ))
 
 
 def _box(x, inset=0.0):
@@ -398,19 +386,19 @@ def _monocoque():
     # valid and they all carry the same 6-edge topology.  With 24 dense
     # stations the ruled result is visually indistinguishable, and the tub is
     # structure rather than a show surface.
-    tub = loft([_tub_section(x) for x in TUB_STATIONS], ruled=True)
+    tub = bd.loft([_tub_section(x) for x in TUB_STATIONS], ruled=True)
 
     for xs in (BULK_BASE_X, FIRE_BASE_X):
-        tub += loft([_end_base_section(x, BASE_INSET) for x in xs])
+        tub += bd.loft([_end_base_section(x, BASE_INSET) for x in xs])
 
     tub += _block([(z, cx, 0.0, d, 2.0 * hy, r)
                    for (z, cx, d, hy, r) in BULK_WALL])
 
     hoop = _block([(z, cx, 0.0, d, 2.0 * hy, r)
                    for (z, cx, d, hy, r) in FIRE_WALL])
-    hoop -= loft([
-        Plane.YZ.offset(xx) * Pos(0.0, 686.0)
-        * RectangleRounded(748.0, 274.0, 30.0)
+    hoop -= bd.loft([
+        bd.Plane.YZ.offset(xx) * bd.Pos(0.0, 686.0)
+        * bd.RectangleRounded(748.0, 274.0, 30.0)
         for xx in (-640.0, -910.0)
     ])
     tub += hoop
@@ -423,7 +411,7 @@ def _monocoque():
     # input.  Losing the tunnel is not an option -- it is the cockpit floor
     # spine -- so hand it back as its own piece and let _tub_solid() keep it
     # unfused.
-    tunnel = loft([_tunnel_section(x) for x in (770.0, 380.0, 0.0, -380.0, -770.0)])
+    tunnel = bd.loft([_tunnel_section(x) for x in (770.0, 380.0, 0.0, -380.0, -770.0)])
     try:
         tub += tunnel
         tunnel = None
@@ -431,8 +419,8 @@ def _monocoque():
         pass
 
     for side in (1, -1):                       # bulkhead access apertures
-        tub -= Pos(774.0, side * 336.0, 344.0) * (
-            Rot(0, 90, 0) * Cylinder(radius=94.0, height=260.0)
+        tub -= bd.Pos(774.0, side * 336.0, 344.0) * (
+            bd.Rot(0, 90, 0) * bd.Cylinder(radius=94.0, height=260.0)
         )
     return [tub] if tunnel is None else [tub, tunnel]
 
@@ -443,9 +431,9 @@ def _monocoque():
 
 
 def _straight(p0, p1, r):
-    a, b = Vector(*p0), Vector(*p1)
+    a, b = bd.Vector(*p0), bd.Vector(*p1)
     d = b - a
-    return Plane(origin=(a + b) * 0.5, z_dir=d) * Cylinder(radius=r, height=d.length)
+    return bd.Plane(origin=(a + b) * 0.5, z_dir=d) * bd.Cylinder(radius=r, height=d.length)
 
 
 def _node(p, r):
@@ -467,8 +455,8 @@ def _node(p, r):
 
 def _block(sections):
     """Machined billet: loft of rounded rects given as (z, cx, cy, lx, ly, r)."""
-    return loft([
-        Plane.XY.offset(z) * Pos(cx, cy) * RectangleRounded(lx, ly, rr)
+    return bd.loft([
+        bd.Plane.XY.offset(z) * bd.Pos(cx, cy) * bd.RectangleRounded(lx, ly, rr)
         for (z, cx, cy, lx, ly, rr) in sections
     ])
 
@@ -479,15 +467,15 @@ def _longeron(stations, side=1):
     Four continuous edges down its length.  This is the member that carries the
     car's spine forward and aft of the tub, so it is a box, not a tube.
     """
-    return loft([
-        Plane.YZ.offset(x) * Pos(side * cy, cz) * RectangleRounded(ly, lz, r)
+    return bd.loft([
+        bd.Plane.YZ.offset(x) * bd.Pos(side * cy, cz) * bd.RectangleRounded(ly, lz, r)
         for (x, cy, cz, ly, lz, r) in stations
     ])
 
 
 def _plate_yz(x0, x1, cy, cz, ly, lz, r):
-    return loft([
-        Plane.YZ.offset(xx) * Pos(cy, cz) * RectangleRounded(ly, lz, r)
+    return bd.loft([
+        bd.Plane.YZ.offset(xx) * bd.Pos(cy, cz) * bd.RectangleRounded(ly, lz, r)
         for xx in (x0, x1)
     ])
 
@@ -499,17 +487,17 @@ def _cone(stations):
     straight down the car, so the crash structures extend the spine instead of
     capping it with a soft lump.
     """
-    return loft([
-        Plane.YZ.offset(x) * Pos(cy, cz) * RectangleRounded(w, h, r)
+    return bd.loft([
+        bd.Plane.YZ.offset(x) * bd.Pos(cy, cz) * bd.RectangleRounded(w, h, r)
         for (x, cy, cz, w, h, r) in stations
     ])
 
 
 def _beam(stations):
     """Bumper beam swept across Y: (x, y, z, lx, lz, r) sections."""
-    return loft([
-        Plane(origin=(x, y, z), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
-        * RectangleRounded(lx, lz, r)
+    return bd.loft([
+        bd.Plane(origin=(x, y, z), x_dir=(1, 0, 0), z_dir=(0, 1, 0))
+        * bd.RectangleRounded(lx, lz, r)
         for (x, y, z, lx, lz, r) in stations
     ])
 
@@ -581,7 +569,7 @@ def _front_subframe():
             (614, 1354, side * 364, 94, 132, 9),
         ]), f"front_damper_tower:{tag}", P.ALUMINIUM_DARK))
         kids.append(style(
-            Pos(1354, side * 364, 596) * (Rot(-90, 0, 0) * Cylinder(24.0, 194.0)),
+            bd.Pos(1354, side * 364, 596) * (bd.Rot(-90, 0, 0) * bd.Cylinder(24.0, 194.0)),
             f"front_rocker_pin:{tag}", P.BRONZE_DARK))
 
         # suspension pickup rails
@@ -600,7 +588,7 @@ def _front_subframe():
                 _plate_yz(812, 836, side * yy, zz, 116, 104, 8),
                 f"front_mount_pad_{i}:{tag}", P.ALUMINIUM))
             kids.append(style(
-                Pos(840, side * yy, zz) * (Rot(0, 90, 0) * Cylinder(17.0, 22.0)),
+                bd.Pos(840, side * yy, zz) * (bd.Rot(0, 90, 0) * bd.Cylinder(17.0, 22.0)),
                 f"front_mount_bolt_{i}:{tag}", P.BRONZE))
 
     # cross members
@@ -615,7 +603,7 @@ def _front_subframe():
         "steering_rack_body:centre", P.ALUMINIUM))
     for side in (1, -1):
         kids.append(style(
-            Pos(1190, side * 300, 300) * (Rot(-90, 0, 0) * Cylinder(41.0, 62.0)),
+            bd.Pos(1190, side * 300, 300) * (bd.Rot(-90, 0, 0) * bd.Cylinder(41.0, 62.0)),
             f"steering_rack_clamp:{'left' if side > 0 else 'right'}",
             P.ALUMINIUM_DARK))
     kids.append(style(
@@ -687,7 +675,7 @@ def _rear_subframe():
             (790, -1354, side * 362, 92, 130, 9),
         ]), f"rear_damper_tower:{tag}", P.ALUMINIUM_DARK))
         kids.append(style(
-            Pos(-1354, side * 362, 772) * (Rot(-90, 0, 0) * Cylinder(24.0, 190.0)),
+            bd.Pos(-1354, side * 362, 772) * (bd.Rot(-90, 0, 0) * bd.Cylinder(24.0, 190.0)),
             f"rear_rocker_pin:{tag}", P.BRONZE_DARK))
 
         kids.append(style(_block([
@@ -704,7 +692,7 @@ def _rear_subframe():
                 _plate_yz(-812, -838, side * yy, zz, 118, 106, 8),
                 f"rear_mount_pad_{i}:{tag}", P.ALUMINIUM))
             kids.append(style(
-                Pos(-842, side * yy, zz) * (Rot(0, 90, 0) * Cylinder(17.0, 22.0)),
+                bd.Pos(-842, side * yy, zz) * (bd.Rot(0, 90, 0) * bd.Cylinder(17.0, 22.0)),
                 f"rear_mount_bolt_{i}:{tag}", P.BRONZE))
 
         # engine mounts hanging off the firewall
@@ -713,7 +701,7 @@ def _rear_subframe():
                 _plate_yz(-816, -874, side * yy, zz, 104, 96, 8),
                 f"engine_mount_pad_{i}:{tag}", P.ALUMINIUM))
             kids.append(style(
-                Pos(-878, side * yy, zz) * (Rot(0, 90, 0) * Cylinder(15.0, 20.0)),
+                bd.Pos(-878, side * yy, zz) * (bd.Rot(0, 90, 0) * bd.Cylinder(15.0, 20.0)),
                 f"engine_mount_bolt_{i}:{tag}", P.BRONZE))
 
     kids.append(style(
@@ -790,12 +778,12 @@ def _cockpit_rails():
             inner = IN_Y(x) + 60.0
             outer = OUT_Y(x) - 54.0
             secs.append(
-                Plane.YZ.offset(x)
-                * Pos(side * (inner + 0.40 * (outer - inner)),
+                bd.Plane.YZ.offset(x)
+                * bd.Pos(side * (inner + 0.40 * (outer - inner)),
                       SILL_TOP(x) + 1.0)
-                * RectangleRounded(0.80 * (outer - inner), 22.0, 4.0)
+                * bd.RectangleRounded(0.80 * (outer - inner), 22.0, 4.0)
             )
-        out.append(style(loft(secs),
+        out.append(style(bd.loft(secs),
                          f"cockpit_rail:{'left' if side > 0 else 'right'}",
                          P.ALUMINIUM_DARK))
     return out
@@ -819,11 +807,11 @@ def _chine_strakes():
         for x in xs:
             cy, cz = chine_yz(x)
             secs.append(
-                Plane.YZ.offset(x)
-                * Pos(side * (cy - 18.0), cz - 8.0)
-                * RectangleRounded(54.0, 26.0, 4.0)
+                bd.Plane.YZ.offset(x)
+                * bd.Pos(side * (cy - 18.0), cz - 8.0)
+                * bd.RectangleRounded(54.0, 26.0, 4.0)
             )
-        out.append(style(loft(secs),
+        out.append(style(bd.loft(secs),
                          f"chine_strake:{'left' if side > 0 else 'right'}",
                          P.CARBON))
     return out
@@ -838,12 +826,12 @@ def _tub_details():
         for i, (xx, zz) in enumerate(((540.0, 300.0), (-560.0, 308.0))):
             fy = _rocker_face_y(xx, zz)
             kids.append(style(
-                Pos(xx, side * (fy - 14.0), zz)
-                * (Rot(-90, 0, 0) * Cylinder(radius=44.0, height=40.0)),
+                bd.Pos(xx, side * (fy - 14.0), zz)
+                * (bd.Rot(-90, 0, 0) * bd.Cylinder(radius=44.0, height=40.0)),
                 f"jacking_pad_{i}:{tag}", P.ALUMINIUM_DARK))
             kids.append(style(
-                Pos(xx, side * (fy + 4.0), zz)
-                * (Rot(-90, 0, 0) * Cylinder(radius=16.0, height=24.0)),
+                bd.Pos(xx, side * (fy + 4.0), zz)
+                * (bd.Rot(-90, 0, 0) * bd.Cylinder(radius=16.0, height=24.0)),
                 f"jacking_boss_{i}:{tag}", P.BRONZE_DARK))
         # harness / seat-belt anchor rail on the inner rocker face
         kids.append(style(_block([
