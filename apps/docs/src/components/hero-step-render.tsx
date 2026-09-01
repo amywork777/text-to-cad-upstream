@@ -21,7 +21,7 @@ import {
   packageSourceFromBaseUrl,
   stepParameterRuntime,
 } from "cadgen-js/common/source.js";
-import { cloneThemeSettings } from "cadgen-js/common/themeSettings.js";
+import { cloneThemePresetSettings } from "cadgen-js/common/themeSettings.js";
 
 // The hero renders the planetary gear STEP the way every cadgen-js client
 // renders a STEP: the model's render package (exact surfaces, tessellated in
@@ -82,7 +82,7 @@ function currentPreviewScheme(): PreviewScheme {
 
 function buildWorkbenchTheme(scheme: PreviewScheme) {
   const palette = STEP_PREVIEW_PALETTES[scheme];
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const materials =
     theme.materials && typeof theme.materials === "object"
       ? theme.materials

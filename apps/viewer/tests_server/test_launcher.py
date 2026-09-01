@@ -566,9 +566,17 @@ class ListAndStop(LauncherFixture):
         self.assertIn("1 CAD Viewer running:", stdout)
         # The launch smoke test greps for this exact two-space-separated token.
         self.assertIn(f"port {port}", stdout)
-        # os.getcwd() answers with the PHYSICAL path (macOS's /var is a symlink
-        # to /private/var), so the registry records the realpath spelling.
-        self.assertIn(f"serving  {os.path.realpath(root)}", stdout)
+        # The registry records os.getcwd()'s spelling of the root, which is the
+        # PHYSICAL path on macOS (/var is a symlink to /private/var) and the 8.3
+        # short form on Windows when TEMP is spelled that way (RUNNER~1). Resolve
+        # both sides rather than pinning one platform's spelling.
+        serving = [
+            line.split("serving", 1)[1].strip()
+            for line in stdout.splitlines()
+            if line.strip().startswith("serving  ")
+        ]
+        self.assertEqual(len(serving), 1, stdout)
+        self.assertEqual(os.path.realpath(serving[0]), os.path.realpath(root))
 
         code, stdout, _ = self.run_to_exit(["list", "--json"])
         entries = json.loads(stdout.strip())

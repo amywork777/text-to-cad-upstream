@@ -265,12 +265,23 @@ class ContentKeying(unittest.TestCase):
         )
 
     def test_the_hash_memo_notices_a_content_change(self):
-        # A stale hit would need an edit preserving BOTH mtime_ns and size.
+        # The memo is keyed on (mtime_ns, size): a stale hit would need an edit
+        # preserving BOTH. Back-to-back same-size writes DO preserve both on
+        # Windows, whose file times advance in ~15ms ticks, so the edit is
+        # stamped forward explicitly -- the memo must honour mtime, not just size.
         path = os.path.join(self.tmp.name, "a.step")
-        Path(path).write_text("one\n", encoding="utf-8")
+        Path(path).write_bytes(b"one\n")
         first = store_paths.artifact_file_hash(path)
-        Path(path).write_text("two\n", encoding="utf-8")
-        self.assertNotEqual(store_paths.artifact_file_hash(path), first)
+        stat = os.stat(path)
+        later = (stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000)
+        Path(path).write_bytes(b"two\n")
+        os.utime(path, ns=later)
+        second = store_paths.artifact_file_hash(path)
+        self.assertNotEqual(second, first)
+        # And a size change at an UNCHANGED mtime is noticed too.
+        Path(path).write_bytes(b"three\n")
+        os.utime(path, ns=later)
+        self.assertNotEqual(store_paths.artifact_file_hash(path), second)
 
     def test_a_missing_file_hashes_to_none_rather_than_raising(self):
         self.assertIsNone(store_paths.artifact_file_hash(os.path.join(self.tmp.name, "gone.step")))

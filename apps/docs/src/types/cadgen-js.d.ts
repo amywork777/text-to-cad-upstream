@@ -112,7 +112,7 @@ declare module "cadgen-js/common/source.js" {
 }
 
 declare module "cadgen-js/common/themeSettings.js" {
-  export function cloneThemeSettings(themeId: string): Record<
+  export function cloneThemePresetSettings(presetId: string): Record<
     string,
     unknown
   > & {

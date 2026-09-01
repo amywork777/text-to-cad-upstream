@@ -42,6 +42,10 @@ run_python_unittest() {
     fi
   done
 
+  # Not `-m unittest "${test_files[@]}"`: that names a failed import after the last
+  # dotted component only, so the several test_cli.py files here all fail as
+  # `_FailedTest.test_cli`. unittest_files.py loads each file under its full dotted
+  # path relative to the repo root and names an import failure by that path + file.
   PYTHONPATH="$python_path${PYTHONPATH:+:$PYTHONPATH}" \
-    "$PYTHON_BIN" -m unittest "${test_files[@]}"
+    "$PYTHON_BIN" "$SCRIPT_DIR/unittest_files.py" --top "$REPO_ROOT" "${test_files[@]}"
 }
