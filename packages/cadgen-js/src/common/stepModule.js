@@ -273,10 +273,6 @@ export function normalizeStepModuleDefinition(rawModule, { url = "", cadPath = "
   };
 }
 
-// loadStepModuleDefinition (URL-import of a loose .params.js sidecar) is
-// retired: pose definitions come from the package descriptor via
-// kinematicsModule.loadKinematicsModuleDefinition — typed mates only.
-
 export function normalizeStepModuleParameterValues(definition, values = {}) {
   const parameterMap = definition?.parameterMap || {};
   return Object.fromEntries(
@@ -318,9 +314,8 @@ export function stepModuleParameterValuesAtZeroState(definition, values = {}) {
   ));
 }
 
-// Zero state is a POSE question now: every DOF at its default. Playback used to
-// be half of the answer, back when clips drove parameter values; it no longer
-// touches them, so it has no say here.
+// Zero state is a POSE question: every DOF at its default. Playback drives
+// choreography, never parameter values, so it has no say here.
 export function stepModuleRuntimeAtZeroState(definition, runtimeState = {}) {
   return stepModuleParameterValuesAtZeroState(definition, runtimeState?.parameterValues);
 }

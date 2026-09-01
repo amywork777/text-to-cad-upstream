@@ -160,9 +160,8 @@ export function entryHasDxf(entry) {
 
 export function entryPoseUrl(entry) {
   // The descriptor URL for a model whose package declares a pose block — the
-  // single source of viewer params/animations (loose .params.js sidecars are
-  // retired; the block is authored on the decorator and travels in the
-  // package).
+  // single source of viewer params/animations. The block is authored on the
+  // decorator and travels in the package.
   return entrySourceFormat(entry) === RENDER_FORMAT.STEP
     ? normalizeString(entry?.poseUrl)
     : "";

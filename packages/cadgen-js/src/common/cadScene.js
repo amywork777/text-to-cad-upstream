@@ -1454,8 +1454,8 @@ export function effectiveBoundsFromRecords(THREE, records, fallbackBounds = null
       continue;
     }
     // record.partBounds is world-space at rest pose: composed packages fold the
-    // occurrence transform into part.bounds and legacy meshDatas bake vertices,
-    // so re-applying baseTransform here would double it. Only the world-space
+    // occurrence transform into part.bounds and baked meshDatas carry world
+    // vertices, so re-applying baseTransform here would double it. Only the world-space
     // post-transforms — the module-effect delta and the exploded-view offset —
     // move the bounds, composed in render order.
     const effectMatrix = composeDisplayRecordEffectMatrix(THREE, record);

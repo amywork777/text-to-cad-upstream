@@ -206,10 +206,9 @@ export function packageMeshToStl({ primitives }, { name = "model" } = {}) {
   return meshToBinaryStl({ positions }, { name });
 }
 
-// glTF is Y-up and meter-scaled; packages are Z-up CAD millimetres. Same
-// conventions the retired native GLB writer used: (x, y, z) -> (x, z, -y) (a
-// proper rotation — winding and outwardness untouched) and mm -> m on
-// positions only.
+// glTF is Y-up and meter-scaled; packages are Z-up CAD millimetres:
+// (x, y, z) -> (x, z, -y) (a proper rotation — winding and outwardness
+// untouched) and mm -> m on positions only.
 const CAD_TO_GLB_SCALE = 0.001;
 
 function yUpPrimitives(primitives) {
