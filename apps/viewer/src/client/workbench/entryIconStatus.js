@@ -95,19 +95,3 @@ export function entryIconStatus(entry, {
     statusLabel
   };
 }
-
-export function entryStepSourceKind(entry) {
-  const artifactSourceKind = String(entry?.artifact?.sourceKind || "").trim().toLowerCase();
-  if (artifactSourceKind === "python") {
-    return artifactSourceKind;
-  }
-  const sourceKind = String(entry?.sourceKind || entry?.stepSourceKind || "").trim().toLowerCase();
-  if (sourceKind === "python") {
-    return sourceKind;
-  }
-  return "";
-}
-
-export function entryIsPythonBackedStep(entry) {
-  return entryStepSourceKind(entry) === "python";
-}

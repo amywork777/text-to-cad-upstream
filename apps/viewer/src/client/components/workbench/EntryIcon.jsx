@@ -1,7 +1,6 @@
 import {
   Bot,
   Box,
-  Code,
   DraftingCompass,
   FileBox,
   LoaderCircle,
@@ -12,8 +11,7 @@ import {
 import { cn } from "@/ui/utils";
 import {
   ENTRY_ICON_KIND,
-  entryIconKind,
-  isCodeDerivedEntry
+  entryIconKind
 } from "@/workbench/entryIconKind";
 
 // One icon table for every surface that lists files — the sidebar, the
@@ -36,39 +34,16 @@ export function entryIconComponent(entry, sourceFormat, status) {
   return ENTRY_ICON_COMPONENTS[entryIconKind(entry, { sourceFormat, status })] || Box;
 }
 
-// A file's icon says what it IS; the badge says where it came from. A generated
-// model therefore carries the icon of the imported file it stands in for, with a
-// small code mark in the corner.
+// A file's icon says what it IS — nothing more. How the file came to exist (a
+// model script ran, or someone dropped a foreign document in the directory) is
+// not a property of the file the viewer shows, so no badge encodes it.
 export default function EntryIcon({
   entry,
   sourceFormat = "",
   status = {},
   className,
-  badgeClassName,
   spinning = false
 }) {
   const Icon = entryIconComponent(entry, sourceFormat, status);
-  const codeDerived = isCodeDerivedEntry(entry);
-
-  const glyph = (
-    <Icon className={cn(className, spinning && "animate-spin")} aria-hidden="true" />
-  );
-  if (!codeDerived) {
-    return glyph;
-  }
-
-  return (
-    <span className="relative inline-flex shrink-0 items-center justify-center" aria-hidden="true">
-      {glyph}
-      <span
-        className={cn(
-          "absolute -bottom-1 -right-1 flex size-2.5 items-center justify-center rounded-[3px]",
-          "border border-sidebar bg-sidebar text-sidebar-foreground shadow-sm",
-          badgeClassName
-        )}
-      >
-        <Code className="size-2" strokeWidth={2.5} />
-      </span>
-    </span>
-  );
+  return <Icon className={cn(className, spinning && "animate-spin")} aria-hidden="true" />;
 }

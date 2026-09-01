@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/sidebar";
 import { cn } from "@/ui/utils";
 import { entryIconStatus } from "@/workbench/entryIconStatus";
-import { isCodeDerivedEntry } from "@/workbench/entryIconKind";
 import {
   fileKey,
   listSidebarItems,
@@ -82,7 +81,6 @@ function FileEntryButton({
   });
   const title = [
     label,
-    isCodeDerivedEntry(entry) ? "Python-backed" : "",
     status.statusLabel,
     entry?.kind,
     String(entry?.file || "")
@@ -105,15 +103,13 @@ function FileEntryButton({
       }}
       tooltip={label}
     >
-      <span className="relative flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
-        <EntryIcon
-          entry={entry}
-          sourceFormat={sourceFormat}
-          status={status}
-          className="size-4"
-          spinning={status.loading}
-        />
-      </span>
+      <EntryIcon
+        entry={entry}
+        sourceFormat={sourceFormat}
+        status={status}
+        className="size-4 shrink-0"
+        spinning={status.loading}
+      />
       <span className="block min-w-0 flex-1 max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
     </SidebarMenuButton>
   );

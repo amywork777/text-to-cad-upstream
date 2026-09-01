@@ -74,11 +74,7 @@ test("the breadcrumb tail of a generated model reads as the file on disk", () =>
   const selectedEntry = {
     file: "watches/moonwatch.step",
     kind: "assembly",
-    sourceKind: "python",
-    source: {
-      file: "watches/src/moonwatch.py",
-      sourcePath: "watches/src/moonwatch.py"
-    }
+    sourceUrl: "/watches/moonwatch.step.json"
   };
   const tree = buildSidebarDirectoryTree([selectedEntry], { rootName: "models" });
 

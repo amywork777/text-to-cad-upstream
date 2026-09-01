@@ -117,9 +117,6 @@ function absolutizeEntry(entry, { rootPath, scanRepoRoot }) {
       next[key] = localAssetUrlForPath(assetPath, queryValue(entry[key], "v"));
     }
   }
-  if (entry.source) {
-    next.source = absolutizeKeyed(entry.source, scanRepoRoot, ["file", "path", "sourcePath"]);
-  }
   if (entry.artifact) {
     next.artifact = absolutizeKeyed(entry.artifact, scanRepoRoot, ["stepPath", "packagePath", "sourcePath", "cadPath"]);
   }

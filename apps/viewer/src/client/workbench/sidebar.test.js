@@ -68,14 +68,11 @@ import {
   shouldCadWorkspaceDefaultFileSettingsOpen
 } from "./breakpoints.js";
 import {
-  entryIconStatus,
-  entryIsPythonBackedStep,
-  entryStepSourceKind
+  entryIconStatus
 } from "./entryIconStatus.js";
 import {
   ENTRY_ICON_KIND,
-  entryIconKind,
-  isCodeDerivedEntry
+  entryIconKind
 } from "./entryIconKind.js";
 import {
   COLOR_SCHEME_STORAGE_KEY
@@ -198,11 +195,9 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     entryIconStatus({
       file: "benchmarks/generated.step",
       kind: "part",
-      sourceKind: "python",
       artifact: {
         ok: false,
-        error: "missing_glb",
-        sourceKind: "python"
+        error: "missing_glb"
       }
     }, {
       sourceFormat: "step",
@@ -258,7 +253,6 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
     entryIconStatus({
       file: "benchmarks/generated.step",
       kind: "part",
-      sourceKind: "python",
       artifact: {
         ok: false,
         error: "missing_glb"
@@ -280,72 +274,13 @@ test("entryIconStatus marks buildable STEP artifacts as generating in production
   );
 });
 
-test("entryStepSourceKind only exposes Python generators for source badges", () => {
-  assert.equal(
-    entryStepSourceKind({
-      kind: "part",
-      file: "parts/raw.step",
-      sourceKind: "step"
-    }),
-    ""
-  );
-  assert.equal(
-    entryIsPythonBackedStep({
-      kind: "part",
-      file: "parts/raw.step",
-      sourceKind: "step"
-    }),
-    false
-  );
-  assert.equal(
-    entryIsPythonBackedStep({
-      kind: "assembly",
-      file: "parts/generated.step",
-      sourceKind: "python"
-    }),
-    true
-  );
-  assert.equal(
-    entryStepSourceKind({
-      kind: "part",
-      file: "parts/stale.step",
-      artifact: { ok: false, sourceKind: "python" }
-    }),
-    "python"
-  );
-  assert.equal(
-    entryIsPythonBackedStep({
-      kind: "part",
-      file: "parts/stale.step",
-      artifact: { ok: false, sourceKind: "python" }
-    }),
-    true
-  );
-  assert.equal(
-    entryStepSourceKind({
-      kind: "part",
-      file: "parts/legacy.step"
-    }),
-    ""
-  );
-  assert.equal(
-    entryIsPythonBackedStep({
-      kind: "dxf",
-      file: "drawings/profile.dxf"
-    }),
-    false
-  );
-});
-
 test("entryIconStatus treats active generator runs as loading and suppresses artifact warnings", () => {
   const entry = {
     file: "robots/tom/tom.step",
     kind: "assembly",
-    sourceKind: "python",
     artifact: {
       ok: false,
-      error: "missing_glb",
-      sourceKind: "python"
+      error: "missing_glb"
     }
   };
 
@@ -379,22 +314,21 @@ test("entryIconStatus treats active generator runs as loading and suppresses art
   );
 });
 
-test("a generated model takes the icon of the imported file it stands in for", () => {
+test("how a model was produced changes nothing about its icon", () => {
   const generatedAssembly = {
-    file: "mechanisms/table.step.py",
+    file: "mechanisms/table.step",
     kind: "assembly",
-    sourceKind: "python",
-    source: { sourcePath: "mechanisms/table.step.py" }
+    sourceUrl: "/mechanisms/table.step.json"
   };
   const importedAssembly = { file: "mechanisms/table.step", kind: "assembly" };
   const generatedPart = {
-    file: "parts/bracket.step.py",
+    file: "parts/bracket.step",
     kind: "part",
-    source: { sourcePath: "parts/bracket.step.py" }
+    sourceUrl: "/parts/bracket.step.json"
   };
   const importedPart = { file: "parts/bracket.step", kind: "part" };
 
-  // Generated and imported read alike; the code badge carries the difference.
+  // Generated and imported read exactly alike: nothing distinguishes them.
   assert.equal(
     entryIconKind(generatedAssembly, { sourceFormat: "step" }),
     entryIconKind(importedAssembly, { sourceFormat: "step" })
@@ -412,14 +346,6 @@ test("a STEP part and a STEP assembly share one file icon", () => {
   const assembly = entryIconKind({ file: "b.step", kind: "assembly" }, { sourceFormat: "step" });
   assert.equal(part, assembly);
   assert.equal(part, ENTRY_ICON_KIND.STEP);
-});
-
-test("isCodeDerivedEntry marks generator-backed files and nothing else", () => {
-  assert.equal(isCodeDerivedEntry({ file: "a.step.py", kind: "assembly" }), true);
-  assert.equal(isCodeDerivedEntry({ file: "a.dxf.py", kind: "dxf" }), true);
-  assert.equal(isCodeDerivedEntry({ kind: "part", sourceKind: "python" }), true);
-  assert.equal(isCodeDerivedEntry({ file: "a.step", kind: "assembly" }), false);
-  assert.equal(isCodeDerivedEntry({ file: "a.dxf", kind: "dxf" }), false);
 });
 
 test("entryIconKind gives STEP, STL, 3MF, and GLB distinct file explorer icons", () => {
@@ -631,47 +557,28 @@ test("filenameLabelForEntry shows canonical step, stl, 3mf, glb, dxf, urdf, srdf
 
 });
 
-test("filenameLabelForEntry names the file on disk, never the script that generated it", () => {
-  // A generated model is an artifact and is presented as one. Recorded provenance --
-  // `sourcePath`, `source.sourcePath`, `source.file` -- drives freshness gates and status
-  // badges; it never renames the file. `moonwatch.step` reads as `moonwatch.step`.
+test("filenameLabelForEntry names the file on disk, whatever else an entry carries", () => {
+  // A model is an artifact and is presented as one: the label is the basename of the
+  // entry's own path, and no other field on the entry can rename it. `moonwatch.step`
+  // reads as `moonwatch.step`, whether a script wrote it or someone dropped it there.
   assert.equal(
-    filenameLabelForEntry({
-      file: "simple/spur_gear_blank.step",
-      kind: "part",
-      sourceKind: "python",
-      sourcePath: "simple/src/spur_gear_blank.py"
-    }),
+    filenameLabelForEntry({ file: "simple/spur_gear_blank.step", kind: "part" }),
     "spur_gear_blank.step"
   );
   assert.equal(
     filenameLabelForEntry({
       file: "watches/moonwatch.step",
       kind: "assembly",
-      sourceKind: "python",
-      source: {
-        file: "watches/src/moonwatch.py",
-        sourcePath: "watches/src/moonwatch.py"
-      }
+      sourceUrl: "/watches/moonwatch.step.json"
     }),
     "moonwatch.step"
   );
   assert.equal(
-    filenameLabelForEntry({
-      file: "drawings/mars_rover_concept.dxf",
-      kind: "dxf",
-      sourceKind: "python",
-      source: { path: "drawings/src/mars_rover_concept.py" }
-    }),
+    filenameLabelForEntry({ file: "drawings/mars_rover_concept.dxf", kind: "dxf" }),
     "mars_rover_concept.dxf"
   );
-  // An imported STEP was never affected and still reads as itself.
   assert.equal(
-    filenameLabelForEntry({
-      file: "imports/widget.step",
-      kind: "part",
-      sourceKind: "step"
-    }),
+    filenameLabelForEntry({ file: "imports/widget.step", kind: "part" }),
     "widget.step"
   );
 });
@@ -780,20 +687,17 @@ test("buildSidebarDirectoryTree lists CAD files in their exact source directory"
 
 test("catalog rows for generated models read as their artifacts, in the artifact's folder", () => {
   // Post-migration the script lives in `models/watches/src/`; the artifact lives in
-  // `models/watches/`. Labelling the row from the script both renamed the file and would
-  // have implied the wrong folder.
+  // `models/watches/`. The catalog rows ARE the artifacts and are placed by their own
+  // paths, so a script elsewhere in the tree cannot pull a row into the wrong folder.
   const tree = buildSidebarDirectoryTree([
     {
       file: "watches/moonwatch.step",
       kind: "assembly",
-      sourceKind: "python",
-      source: { file: "watches/src/moonwatch.py", sourcePath: "watches/src/moonwatch.py" }
+      sourceUrl: "/watches/moonwatch.step.json"
     },
     {
       file: "watches/mars_rover_concept.step",
-      kind: "assembly",
-      sourceKind: "python",
-      sourcePath: "watches/src/mars_rover_concept.py"
+      kind: "assembly"
     }
   ]);
 

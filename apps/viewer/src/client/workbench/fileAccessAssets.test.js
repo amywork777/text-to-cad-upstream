@@ -15,7 +15,6 @@ const viewerServerInfo = {
 test("file access assets always include output filename", () => {
   const assets = fileAccessAssetsForEntry({
     file: "assemblies/robot-arm/robot-arm.step",
-    sourceKind: "step",
   });
 
   assert.deepEqual(assets.output, {
@@ -44,50 +43,19 @@ test("file access assets include generated artifact URLs when present", () => {
   });
 });
 
-test("a Python-backed entry offers no source asset and keeps its on-disk output name", () => {
-  // There is no same-stem `.py` beside a generated STEP -- model scripts live in `src/` --
-  // and the viewer never presents an artifact under its generator's name anyway.
-  const assets = fileAccessAssetsForEntry({
-    file: "assemblies/robot-arm/robot-arm.step",
-    sourceKind: "python",
-  });
+test("file access assets are ARTIFACTS ONLY -- there is never a third source asset", () => {
+  // A model script is not a file the viewer offers: scripts live in `src/`, not
+  // beside their output, and the viewer never presents an artifact under a
+  // generator's name. The asset set is the same two entries for every file.
+  const step = fileAccessAssetsForEntry({ file: "generated/robot.step" });
+  assert.equal(step.source, undefined);
+  assert.deepEqual(Object.keys(step).sort(), ["artifact", "output"]);
+  assert.equal(step.output.filename, "robot.step");
 
-  assert.equal(assets.source, undefined);
-  assert.equal(assets.output.filename, "robot-arm.step");
-  assert.equal(assets.output.label, "robot-arm.step");
-});
-
-test("recorded generator provenance never becomes a file access asset", () => {
-  // The sidecar still records where the artifact came from; that is machine-side
-  // provenance for freshness gates, not a file the UI offers or names.
-  const assets = fileAccessAssetsForEntry({
-    file: "generated/robot.step",
-    sourceKind: "python",
-    source: {
-      file: "generated/src/robot_module.py",
-      sourcePath: "generated/src/robot_module.py",
-    },
-  });
-
-  assert.equal(assets.source, undefined);
-  assert.deepEqual(Object.keys(assets).sort(), ["artifact", "output"]);
-  assert.equal(assets.output.filename, "robot.step");
-});
-
-test("a Python-backed URDF still names the URDF it is", () => {
-  const assets = fileAccessAssetsForEntry({
-    file: "robots/tom/tom.urdf",
-    kind: "urdf",
-    sourceKind: "python",
-    source: {
-      file: "robots/tom/src/tom.py",
-      sourcePath: "robots/tom/src/tom.py",
-    },
-  });
-
-  assert.equal(assets.source, undefined);
-  assert.equal(assets.output.filename, "tom.urdf");
-  assert.equal(assets.output.rootRelativePath, "robots/tom/tom.urdf");
+  const urdf = fileAccessAssetsForEntry({ file: "robots/tom/tom.urdf", kind: "urdf" });
+  assert.equal(urdf.source, undefined);
+  assert.equal(urdf.output.filename, "tom.urdf");
+  assert.equal(urdf.output.rootRelativePath, "robots/tom/tom.urdf");
 });
 
 test("file access download URLs target the requested asset", () => {

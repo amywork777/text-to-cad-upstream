@@ -41,10 +41,6 @@ function pathDetail(label, value, viewerServerInfo = {}, anchorFile = "", option
   return detail(label, displayPath(value, viewerServerInfo, anchorFile), options);
 }
 
-function sourceKindLabel(value) {
-  return cleanText(value).toLowerCase() === "python" ? "python" : "step";
-}
-
 function ownProperty(object, key) {
   return Object.prototype.hasOwnProperty.call(object || {}, key);
 }
@@ -227,11 +223,9 @@ function stepSourceStatusLevel(stepStatus) {
   return FILE_STATUS_LEVELS.WARNING;
 }
 
-function stepSourceStatusMessage(stepStatus, stepSourceStatus) {
+function stepSourceStatusMessage(stepStatus) {
   if (stepStatus?.missing) {
-    return sourceKindLabel(stepSourceStatus?.sourceKind) === "python"
-      ? "STEP file was not generated for this Python script; only the render package is available."
-      : "STEP file is missing from the directory.";
+    return "STEP file is missing from the directory.";
   }
   return cleanText(stepStatus?.message) || "STEP file is missing from the directory.";
 }
@@ -270,7 +264,6 @@ export function stepFileStatusItems({
         pathDetail("STEP file", artifact.stepPath || artifact.sourcePath || entry?.file, viewerServerInfo, entry?.file),
         pathDetail("Render package", artifact.packagePath, viewerServerInfo, entry?.file),
         pathDetail("CAD path", artifact.cadPath, viewerServerInfo, entry?.file),
-        detail("Source kind", artifact.sourceKind),
         detail("Artifact hash", artifact.artifactHash, { mono: true }),
         detail("Current hash", artifact.currentHash, { mono: true }),
         detail("Raw message", artifact.message)
@@ -286,11 +279,9 @@ export function stepFileStatusItems({
       source: "step-source-status",
       code: cleanText(stepStatus.status) || "missing",
       title: stepSourceStatusTitle(stepStatus),
-      message: stepSourceStatusMessage(stepStatus, stepSourceStatus),
+      message: stepSourceStatusMessage(stepStatus),
       details: [
-        pathDetail("STEP file", stepSourceStatus?.stepPath || stepSourceStatus?.file, viewerServerInfo, entry?.file),
-        detail("Source kind", stepSourceStatus?.sourceKind),
-        pathDetail("Python source", stepSourceStatus?.sourcePath, viewerServerInfo, entry?.file)
+        pathDetail("STEP file", stepSourceStatus?.stepPath || stepSourceStatus?.file, viewerServerInfo, entry?.file)
       ].filter(Boolean)
     });
   }

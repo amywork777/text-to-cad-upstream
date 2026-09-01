@@ -6,23 +6,6 @@ import {
 
 export { ENTRY_ICON_KIND };
 
-// Whether an entry's geometry is produced by running a generator script — a
-// `.step.py` or `.dxf.py`, or a catalog entry marked sourceKind "python".
-//
-// This does NOT change which icon the entry gets: a generated model shows the
-// same icon as the imported file it stands in for, so a `.step.py` assembly and
-// an imported `.step` assembly read alike in the file list. Being code-derived
-// is carried by the small badge in the icon's bottom-right corner instead.
-export function isCodeDerivedEntry(entry) {
-  if (String(entry?.sourceKind || "").trim().toLowerCase() === "python") {
-    return true;
-  }
-  const sourcePath = String(
-    entry?.source?.sourcePath || entry?.source?.file || entry?.file || ""
-  ).toLowerCase();
-  return sourcePath.endsWith(".step.py") || sourcePath.endsWith(".dxf.py");
-}
-
 // An entry names its format twice — the catalog's `kind` and the resolved source format —
 // and they can disagree (an `.srdf` entry whose source format resolves to the robot family,
 // a `.gltf` that normalizes to GLB). The old cascade tested BOTH at every rung, so the
@@ -35,8 +18,7 @@ const ICON_KIND_PRECEDENCE = [
   ENTRY_ICON_KIND.THREE_MF_MESH,
   ENTRY_ICON_KIND.GLB_MESH,
   // STEP family: one icon for the format. Part vs assembly is structure, not file type,
-  // and the tree already shows it. Generated and imported share it too; the code badge
-  // carries that difference. Also the fallback for anything unrecognised.
+  // and the tree already shows it. Also the fallback for anything unrecognised.
   ENTRY_ICON_KIND.STEP
 ];
 

@@ -382,8 +382,7 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
     return {};
   }
   // Everything SOURCE-derived rides the model-side sidecar
-  // (<name>.step.json); its existence is the generated-vs-imported
-  // marker. The store descriptor is STEP-pure.
+  // (<name>.step.json). The store descriptor is STEP-pure.
   let sidecar = null;
   if (sourcePath) {
     try {
@@ -400,12 +399,11 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
       hasSelector: false,
       hasDisplayEdges: false,
     },
-    // The sidecar NAMES its own source kind: "python" for a model script's
-    // artifact, "step" for a document `cadgen step build` re-emitted (which
-    // carries kinematics/animation but no Python behind it).
-    sourceKind: sidecar ? String(sidecar.sourceKind || "python") : "step",
-    sourcePath: String(sidecar?.sourcePath ?? ""),
-    sourceHash: String(sidecar?.sourceHash ?? ""),
+    // Whether a sidecar EXISTS is the only thing the catalog asks of it: the
+    // sidecar's declarations (kinematics, animation) are fetched by the client,
+    // so the entry has to name its URL. What produced the document — a model
+    // script or an import — is not a catalog fact and is never published.
+    hasSourceSidecar: Boolean(sidecar),
     stepHash: String(descriptor.stepHash ?? ""),
     kinematics: sidecar && typeof sidecar.kinematics === "object" && sidecar.kinematics ? sidecar.kinematics : null,
     animation: sidecar && typeof sidecar.animation === "object" && sidecar.animation ? sidecar.animation : null,
@@ -413,44 +411,23 @@ export function readStepCatalogMetadata(packageDir, sourcePath = null) {
 }
 
 function createStepEntry(repoRoot, rootPath, sourcePath, extension) {
-  // Catalog entries are ARTIFACTS (the .step/.stp file); whether the model is
-  // python-backed comes from the package descriptor's provenance, never from
-  // sibling filenames (design/library-first-generation.md).
+  // Catalog entries are ARTIFACTS (the .step/.stp file). The catalog says what
+  // a file IS and where its render data lives; it never classifies a document
+  // by what produced it, and it never names a generator script.
   const packageDir = storeRenderPackageDir(sourcePath);
   const metadata = readStepCatalogMetadata(packageDir, sourcePath);
   const topology = metadata.topology;
   const descriptorStats = packageDescriptorStats(packageDir);
-  const topologyIndex = topology && topology.index && typeof topology.index === "object" ? topology.index : topology;
   const poseBlock = metadata.kinematics || metadata.animation || null;
   const entryRef = repoRelativePath(rootPath, sourcePath);
-  const sourceHash = String(metadata.sourceHash || "").trim();
-  const generated = metadata.sourceKind === "python";
   const entry = {
     file: entryRef,
     kind: stepKindFromTopology(topology),
     url: storeAssetUrl(packageDir, descriptorStats),
     hash: descriptorStats ? sha256File(path.join(packageDir, "assembly.json"), descriptorStats) : "",
     bytes: descriptorStats ? Number(descriptorStats.size) : 0,
-    sourceKind: generated ? "python" : "step",
   };
-  if (generated) {
-    // sourcePath is recorded relative to the STEP file by generation.
-    const sourcePathRel = String(metadata.sourcePath || "").trim();
-    const resolvedSource = sourcePathRel
-      ? path.resolve(path.dirname(sourcePath), sourcePathRel)
-      : null;
-    if (resolvedSource && fileStats(resolvedSource)) {
-      const source = {
-        file: repoRelativePath(rootPath, resolvedSource),
-        sourcePath: repoRelativePath(rootPath, resolvedSource),
-      };
-      if (sourceHash) {
-        source.sourceHash = sourceHash;
-      }
-      entry.source = source;
-    }
-  }
-  if (generated) {
+  if (metadata.hasSourceSidecar) {
     // The model-side sidecar (served by the ordinary asset route — it lives
     // in the root) carries mates and pose; the client merge point fetches it.
     entry.sourceUrl = assetUrlForPath(repoRoot, sourceSidecarPath(sourcePath));

@@ -16,8 +16,7 @@ test("stepArtifactCanGenerate allows buildable STEP artifact warnings", () => {
       file: "parts/bracket.step",
       artifact: {
         ok: false,
-        error: code,
-        sourceKind: "python"
+        error: code
       }
     }, RENDER_FORMAT.STEP), true, code);
   }

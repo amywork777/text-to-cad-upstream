@@ -31,7 +31,7 @@ const STEP_PACKAGE_KIND = "assembly-package";
 const STEP_DESCRIPTOR_NAME = "assembly.json";
 
 // Artifacts only (design/library-first-generation.md): model scripts are not
-// status subjects — python-backedness is descriptor provenance, not naming.
+// status subjects.
 const STEP_ENTRY_RE = /\.(step|stp)$/i;
 const RAW_STEP_RE = /\.(step|stp)$/i;
 
@@ -57,17 +57,32 @@ function readJson(filePath) {
   }
 }
 
-// --- generated vs imported ---------------------------------------------------
+// --- the import gate ----------------------------------------------------------
 /**
  * Was this document GENERATED (a declaration owns it) or IMPORTED (a foreign
  * file the viewer may offer to bring in)?
+ *
+ * This answers EXACTLY ONE question, and it is not a display question: may the
+ * viewer spawn `cadgen step compile` on this document? Nothing about how a file
+ * came to exist reaches the catalog, the file explorer, or any status card — a
+ * generated model and an imported one are the same kind of thing to look at.
+ *
+ * The gate exists because that CLI door is not neutral about generated
+ * documents: `cadgen.step.compile` calls `require_current_document`, which
+ * re-hashes a generated model's recorded source closure and REFUSES a document
+ * that is stale relative to its script. Routing generated documents through it
+ * would therefore make the viewer's ability to render depend on source code it
+ * must never consult — the tie that "generated outputs are detached" forbids.
+ * Imports are foreign files with no closure to check, so the door is safe for
+ * exactly the documents this predicate says no to.
  *
  * The AUTHORITY is the provenance RECORD, which every generated build writes:
  * <cache>/records/<sha256(abs artifact path)[:24]>.source.json. Present and
  * naming a sourceKind => generated; absent, unreadable, or empty => imported.
  * The records tier is evictable (`cadgen cache gc` sweeps it), so "no record"
  * is a routine state, not a fault: reading it must never raise. An evicted
- * record costs one wrong badge until the next build re-records it.
+ * record costs one offer to compile a document the CLI may then refuse as
+ * stale, until the next build re-records it.
  *
  * A model-side sidecar at THIS schema is a fast yes on top of that. The
  * sidecar carries DECLARATIONS only and is written only when the model
@@ -75,7 +90,7 @@ function readJson(filePath) {
  * proves nothing — and a file at any other schema is not a sidecar this
  * viewer reads, so classification treats it as absent and falls through to
  * the record. (Loud refusal on a wrong-schema sidecar belongs to the RENDER
- * path — cadgen-js kinematicsModule — not to a status badge.)
+ * path — cadgen-js kinematicsModule — not here.)
  */
 function isGeneratedDocument(stepPath) {
   const sidecar = readJson(sourceSidecarPath(stepPath));
@@ -110,7 +125,8 @@ function resolveCandidate(fileRef, rootDir) {
 
 // --- freshness verdicts ------------------------------------------------------
 function validateStep(stepPath) {
-  // Generated-vs-imported comes from cadgen's own provenance bookkeeping (the
+  // The import gate (see isGeneratedDocument): server-internal, never part of
+  // any client payload. It comes from cadgen's own provenance bookkeeping (the
   // records tier, with the model-side sidecar as a fast yes), never from a
   // descriptor field: the store descriptor is a pure function of the STEP bytes.
   //

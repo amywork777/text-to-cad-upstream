@@ -34,8 +34,6 @@ test("stepFileStatusItems treats missing STEP source files as warnings", () => {
     stepSourceStatus: {
       file: "models/step/parts/cylindrical_cap.step",
       stepPath: "models/step/parts/cylindrical_cap.step",
-      sourceKind: "python",
-      sourcePath: "models/step/parts/cylindrical_cap.py",
       step: {
         ok: false,
         status: "missing",
@@ -51,15 +49,10 @@ test("stepFileStatusItems treats missing STEP source files as warnings", () => {
   assert.equal(items.length, 1);
   assert.equal(items[0].level, FILE_STATUS_LEVELS.WARNING);
   assert.equal(items[0].title, "STEP file missing");
-  assert.equal(
-    items[0].message,
-    "STEP file was not generated for this Python script; only the render package is available."
-  );
-  assert.deepEqual(items[0].details.map((item) => item.label), [
-    "STEP file",
-    "Source kind",
-    "Python source"
-  ]);
+  // One message and one detail, whatever produced the document: the card reports
+  // the file that is missing, never a script that might have written it.
+  assert.equal(items[0].message, "STEP file is missing from the directory.");
+  assert.deepEqual(items[0].details.map((item) => item.label), ["STEP file"]);
 });
 
 test("stepFileStatusItems marks missing STEP artifacts as errors", () => {
@@ -71,7 +64,6 @@ test("stepFileStatusItems marks missing STEP artifacts as errors", () => {
         ok: false,
         error: "missing_glb",
         stale: false,
-        sourceKind: "python",
         stepPath: "models/tom/STEP/tom.step",
         packagePath: "models/tom/STEP/__cadgen__/models/tom.step",
         artifactHash: "",
@@ -101,7 +93,6 @@ test("stepFileStatusItems reads artifact warnings from current-file status", () 
       artifact: {
         ok: false,
         error: "missing_glb",
-        sourceKind: "step",
         stepPath: "models/tom/STEP/tom.step",
         packagePath: "models/tom/STEP/__cadgen__/models/tom.step"
       },
@@ -357,7 +348,6 @@ test("formatFileStatusItemForAgent copies status items with details", () => {
       artifact: {
         ok: false,
         error: "missing_glb",
-        sourceKind: "step",
         stepPath: "models/step/parts/part.step",
         packagePath: "models/step/parts/pkg/part.step",
         artifactHash: "old-hash",
@@ -380,7 +370,6 @@ test("formatFileStatusItemForAgent copies status items with details", () => {
     "- Code: missing_glb",
     "- STEP file: step/parts/part.step",
     "- Render package: step/parts/pkg/part.step",
-    "- Source kind: step",
     "- Artifact hash: old-hash",
     "- Current hash: new-hash"
   ].join("\n"));

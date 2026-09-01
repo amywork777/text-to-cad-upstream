@@ -259,10 +259,12 @@ export function createCadgenOps(rootDir, { cadgenProbeForTests = null } = {}) {
       // exists or names the CLI.
       const verdict = resolveArtifactVerdict(fileRef, rootDir);
       if (verdict.rawStep && !verdict.generated) {
-        // A STEP file carries no cadgen metadata of any kind: a bare .step is
-        // simply importable, whatever produced it. (Generated-ness lives only
-        // in the package's source sidecar; regeneration is the model script's
-        // job and restores pose/mates/provenance whenever it runs.)
+        // A foreign .step is simply importable. A GENERATED one is not routed
+        // through this door — not because it looks different in the UI (it does
+        // not), but because `cadgen step compile` refuses a document that is
+        // stale relative to its script, and the viewer must never make
+        // rendering depend on source code. Regeneration is the model script's
+        // job and restores pose/mates/provenance whenever it runs.
         if (resolver.available()) {
           return { state: "needs-build", reason: status.reason, stepImport: true };
         }

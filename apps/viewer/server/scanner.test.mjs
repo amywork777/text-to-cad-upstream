@@ -98,21 +98,39 @@ test("a sidecar kinematics section is exposed as poseUrl; sidecars only teach", 
   const root = tmpRoot(t);
   const stepPath = write(root, "gripper.step", "ISO-10303-21;\ngripper\n");
   // The store descriptor is STEP-pure; kinematics (and all source-derived
-  // state) rides the MODEL-SIDE sidecar, whose existence marks the model
-  // generated.
+  // state) rides the MODEL-SIDE sidecar. The catalog asks only whether that
+  // sidecar EXISTS, so it can hand the client its URL -- never what produced
+  // the document.
   writeStorePackage(stepPath, { kind: "assembly-package" });
   write(root, "gripper.step.json", JSON.stringify({
     schemaVersion: 4,
-    sourceKind: "python",
     kinematics: { mates: [{ name: "jaw", kind: "slider", parent: "#body", child: "#jaw",
       axis: { origin: [0, 0, 0], dir: [1, 0, 0] }, limits: { value: [0, 40] } }] },
     animation: { clips: "export const clips = {};\n" }
   }));
   const entry = scanCadDirectory(root).entries.find((e) => e.file === "gripper.step");
-  assert.equal(entry.sourceKind, "python");
+  assert.equal(entry.sourceKind, undefined, "the catalog publishes no provenance kind");
+  assert.equal(entry.source, undefined, "the catalog never names a generator script");
   assert.ok(entry.poseUrl.includes(".step.json"));
   assert.ok(entry.sourceUrl.includes(".step.json"));
   assert.equal(entry.poseHatchUrl, undefined);
+
+  // A re-emitted document (`cadgen step build`) has a sidecar with no Python
+  // behind it, and its declarations reach the client exactly the same way. The
+  // catalog used to withhold sourceUrl from these, so a re-emitted assembly's
+  // mates never loaded — the classification was not just noise, it was wrong.
+  const reemittedPath = write(root, "hinge.step", "ISO-10303-21;\nhinge\n");
+  writeStorePackage(reemittedPath, { kind: "assembly-package" });
+  write(root, "hinge.step.json", JSON.stringify({
+    schemaVersion: 4,
+    sourceKind: "step",
+    kinematics: { mates: [{ name: "pin", kind: "revolute", parent: "#a", child: "#b",
+      axis: { origin: [0, 0, 0], dir: [0, 0, 1] }, limits: { value: [0, 90] } }] }
+  }));
+  const reemitted = scanCadDirectory(root).entries.find((e) => e.file === "hinge.step");
+  assert.ok(reemitted.sourceUrl.includes(".step.json"));
+  assert.ok(reemitted.poseUrl.includes(".step.json"));
+  assert.equal(reemitted.sourceKind, undefined);
 
   // A loose .params.js beside a model is inert bytes: never loaded, never
   // even remarked on (the retired-sidecar teaching path is gone).

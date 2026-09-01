@@ -11,23 +11,11 @@ import {
   stepArtifactStatusMessage
 } from "./fileStatusItems.js";
 import { failedStepArtifact } from "./stepArtifactStatus.js";
-import { entryStepSourceKind } from "./entryIconStatus.js";
 import { fileKey } from "./sidebar.js";
 
-// The command to rebuild an entry by hand, shown on build-failure cards.
-//
-// This was eight format checks that all returned "" except one — every branch but imported
-// STEP existed only to say "nothing to run here". The command now lives on the registry row
-// and the only rule left is the one that is genuinely about the ENTRY rather than the
-// format: a generator-backed STEP is rebuilt by the viewer, so telling the user to run the
-// importer against it would be wrong.
-export function buildCadCommand(fileRef, entry = null) {
-  if (entryStepSourceKind(entry) === "python") {
-    return "";
-  }
-  return rebuildCommandForEntry(entrySourceFormat(entry), fileRef);
-}
-
+// The command to rebuild an entry by hand, shown on build-failure cards, comes
+// straight off the format's registry row: it acts on the document that is
+// there, so how that document came to exist does not change it.
 export function buildViewerMeshAlert(entry, hasMeshData, loadError, artifact = null) {
   const fileRef = fileKey(entry);
   if (!fileRef) {
@@ -35,7 +23,7 @@ export function buildViewerMeshAlert(entry, hasMeshData, loadError, artifact = n
   }
 
   const sourceFormat = entrySourceFormat(entry);
-  const command = buildCadCommand(fileRef, entry);
+  const command = rebuildCommandForEntry(sourceFormat, fileRef);
   // A format the viewer does not build is its own asset: there is nothing to rebuild, so
   // the only useful advice is "is the file there?". That is `artifactManaged`, not a list
   // of the three mesh formats — a fourth would have inherited the wrong advice.

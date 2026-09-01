@@ -1,37 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildCadCommand,
   buildViewerMeshAlert
 } from "./viewerAlerts.js";
 import { RENDER_FORMAT } from "cadgen-js/lib/fileFormats.js";
 import { rebuildCommandForEntry } from "cadgen-js/lib/renderCapabilities.js";
-
-test("buildCadCommand returns portable rebuild commands for generated CAD assets", () => {
-  assert.equal(
-    buildCadCommand("fun/part.step", { file: "fun/part.step", kind: "step" }),
-    rebuildCommandForEntry(RENDER_FORMAT.STEP, "fun/part.step")
-  );
-  assert.equal(
-    buildCadCommand("fun/generated.step", {
-      file: "fun/generated.step",
-      kind: "step",
-      sourceKind: "python",
-      source: { file: "fun/generated.py" }
-    }),
-    ""
-  );
-  assert.equal(buildCadCommand("flat/panel.dxf", { file: "flat/panel.dxf", kind: "dxf" }), "");
-  assert.equal(buildCadCommand("robots/arm.urdf", { file: "robots/arm.urdf", kind: "urdf" }), "");
-  assert.equal(
-    buildCadCommand("robots/arm.srdf", { file: "robots/arm.srdf", kind: "srdf" }),
-    ""
-  );
-  assert.equal(
-    buildCadCommand("meshes/part.glb", { file: "meshes/part.glb", kind: "glb" }),
-    ""
-  );
-});
 
 test("buildViewerMeshAlert reports missing sidecar meshes without rebuild commands", () => {
   assert.deepEqual(
@@ -143,29 +116,6 @@ test("buildViewerMeshAlert reports STEP artifact errors only when no mesh render
       message: "GLB parser failed",
       resolution: "Try reloading the page. If the problem persists, rebuild the render assets for this entry.",
       command: rebuildCommandForEntry(RENDER_FORMAT.STEP, "fun/renderable-stale.step")
-    }
-  );
-
-  assert.deepEqual(
-    buildViewerMeshAlert({
-      file: "fun/generated.step",
-      kind: "part",
-      sourceKind: "python",
-      source: { file: "fun/generated.py" },
-      artifact: {
-        ok: false,
-        error: "missing_glb",
-        sourceKind: "python",
-        message: "GLB artifact is missing."
-      }
-    }, false, ""),
-    {
-      severity: "error",
-      compact: true,
-      summary: "STEP artifact missing",
-      title: "STEP artifact missing",
-      message: "Generated GLB is missing.",
-      command: ""
     }
   );
 
