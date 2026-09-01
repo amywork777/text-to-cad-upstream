@@ -15,8 +15,9 @@ the `$cad` skill; drawings are `$dxf`.
 
 **Where the project lives**: in a workspace that is more than CAD — a
 monorepo, an app with models on the side — put the project inside the
-directory that holds the workspace's models (`models/`, for example; use the
-workspace's existing home for CAD if it has one), never loose at the root.
+directory that holds the workspace's models (`models/`, for example, or
+`cad/`, `hardware/` — whatever the workspace already uses as its home for
+CAD; `models/` is only the conventional name), never loose at the root.
 In an empty or bare workspace, the CAD project IS the workspace: lay out
 `src/` and the format folders at the root.
 
@@ -192,5 +193,6 @@ Note the `*` forms: ignoring the directory itself (`/STEP/`) would make the
 Copy `references/project-template.md` — the full tree with a working example
 model, drawing, lib module, README, and .gitignore to create verbatim. Then
 verify the loop end to end: `python src/<first-model>.py`, snapshot it, and
-confirm the format folder gained the artifact. Living exemplars ship in
-this repo under `models/` (the `examples/` and `thang010146/` projects).
+confirm the format folder gained the artifact. The template ends with the
+finished tree — what the project looks like after that first build, imported
+source and sidecar included — so there is nothing else to go and look at.

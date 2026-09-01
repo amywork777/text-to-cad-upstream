@@ -125,8 +125,6 @@ Copy this shape for new robots. It shows the ledger, ordering, a frame-only root
 </robot>
 ```
 
-Repository fixtures under `models/` (for example `so101`, `lekiwi`, `openarm`) are full worked examples of this contract.
-
 ## Helper Scripts
 
 Direct authoring does not mean freehand numbers. Write a throwaway script whenever:

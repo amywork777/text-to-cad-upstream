@@ -3,10 +3,11 @@
 Boundary law (packages/README.md and each package's README): apps import
 packages; packages never import apps; cadgen-js is framework-free — no
 React, no app or workflow state. Ships-alone law: cadgen (the built PyPI
-distribution) and the CAD Viewer (mirrored unchanged to the standalone
-earthtojake/cad-viewer repo) each work in isolation outside this repo, so
-their markdown must not refer to anything outside the package. Prose
-drifts; this does not.
+distribution), the CAD Viewer (mirrored unchanged to the standalone
+earthtojake/cad-viewer repo) and every skill (installed by plugin installers
+that clone the published tree — which has no models/, apps/, packages/ or
+tests/) each work in isolation outside this repo, so their markdown must not
+refer to anything outside the package. Prose drifts; this does not.
 """
 
 from __future__ import annotations
@@ -100,10 +101,17 @@ class PackagesNeverImportApps(unittest.TestCase):
 #   - apps/viewer mirrors UNCHANGED into the standalone earthtojake/cad-viewer
 #     repo (its own packages/cadgen-js symlink dereferences into a vendored
 #     copy; nothing rewrites paths on the way out).
-# A repo-relative path in either one's markdown ships broken. Each root
-# forbids the path families that only mean something inside this repo; a
-# package may name its own files, its bundled/vendored dependencies, and the
-# concepts of its dependencies — never the repo's layout.
+#   - skills/ installs standalone: the Skills CLI, Claude Code and Codex
+#     each clone the PUBLISHED tree, which carries no models/, apps/,
+#     packages/, tests/ or repo scripts — so a skill that points at this
+#     repo's example projects (models/examples, models/thang010146) or says
+#     "in this repo" makes a promise the installed skill cannot keep.
+# A repo-relative path in any of them ships broken. Each root forbids the
+# path families that only mean something inside this repo; a package may
+# name its own files, its bundled/vendored dependencies, and the concepts of
+# its dependencies — never the repo's layout. `models/` itself stays legal in
+# skills: it is the conventional example of a USER workspace's model
+# directory ("the project's `models/` directory"), never this repo's.
 _MD_BOUNDARY = r"(?<![\w./@-])"
 _MD_ISOLATION_ROOTS: dict[str, tuple[str, ...]] = {
     # cadgen ships with no repo around it at all: nothing repo-relative.
@@ -133,12 +141,40 @@ _MD_ISOLATION_ROOTS: dict[str, tuple[str, ...]] = {
         r"CONTRIBUTING\.md",
         r"\.github/",
     ),
+    # Skills own their scripts/<tool> entrypoints; the repo's scripts/
+    # families, its venv and its dev manifests are not theirs to name.
+    "skills": (
+        r"apps/",
+        r"packages/",
+        r"tests/",
+        r"scripts/(?:bundle|dev|test|release|install|github-workflows)/",
+        r"\.venv",
+        r"requirements-dev",
+        r"AGENTS\.md",
+        r"CONTRIBUTING\.md",
+        r"\.github/",
+    ),
+}
+# Phrases forbidden anywhere in a line, boundary or not: this repo's example
+# projects (a `.../models/thang010146/STEP` path hides `models/` behind a
+# slash, so the bounded families above would miss it) and the words that
+# only make sense from inside the checkout.
+_MD_UNBOUNDED_PHRASES: dict[str, tuple[str, ...]] = {
+    "skills": (
+        r"models/(?:examples|thang010146)",
+        r"thang010146",
+        r"[Tt]his repo(?:sitory)?\b",
+        r"[Rr]epository fixtures",
+    ),
 }
 _MD_SKIPPED_DIRS = {"node_modules", "dist", "dist-verify", ".vite", "tmp", "__pycache__"}
 _URL_RE = re.compile(r"https?://\S+")
 
 
 def _markdown_files(root: Path):
+    # rglob's ** never descends into symlinked directories, so a skill's dev
+    # symlink into apps/ (skills/cad-viewer/scripts/viewer) is not rescanned
+    # under the skills rules; the viewer's own root already covers it.
     for path in sorted(root.rglob("*.md")):
         if _MD_SKIPPED_DIRS.intersection(path.parts):
             continue
@@ -153,23 +189,35 @@ class PackagedMarkdownShipsAlone(unittest.TestCase):
         for root_rel, families in _MD_ISOLATION_ROOTS.items():
             root = repo_path(root_rel)
             pattern = re.compile(_MD_BOUNDARY + "(?:" + "|".join(families) + ")")
+            phrases = _MD_UNBOUNDED_PHRASES.get(root_rel, ())
+            phrase_pattern = re.compile("|".join(phrases)) if phrases else None
             for path in _markdown_files(root):
                 text = path.read_text(encoding="utf-8", errors="replace")
                 for lineno, line in enumerate(text.splitlines(), 1):
+                    # URLs are exempt from the path families (a GitHub link
+                    # may legally spell docs/ or main/) but not from the
+                    # phrases: `?file=thang010146/...` is still this repo's
+                    # example project.
                     scannable = _URL_RE.sub("", line)
-                    match = pattern.search(scannable)
+                    match = pattern.search(scannable) or (
+                        phrase_pattern and phrase_pattern.search(line)
+                    )
                     if match:
                         rel = path.relative_to(repo_path("."))
                         offenders.append(f"{rel}:{lineno}: {line.strip()[:100]}")
         self.assertEqual(
             offenders,
             [],
-            "Ships-alone law: cadgen installs from PyPI and apps/viewer "
-            "mirrors unchanged into earthtojake/cad-viewer, so their markdown "
-            "must be true and actionable with this repo gone. Name the "
-            "bundled thing ('the cadgen-js runtime bundled at build time'), "
-            "not the repo path to its source; move repo-development guidance "
-            "to CONTRIBUTING.md; delete what serves neither audience.\n"
+            "Ships-alone law: cadgen installs from PyPI, apps/viewer "
+            "mirrors unchanged into earthtojake/cad-viewer, and skills "
+            "install from the published tree (no models/, apps/, packages/, "
+            "tests/), so their markdown must be true and actionable with "
+            "this repo gone. Name the bundled thing ('the cadgen-js runtime "
+            "bundled at build time'), not the repo path to its source; give "
+            "a skill a self-contained exemplar in its references/, not a "
+            "pointer at this repo's example projects; move repo-development "
+            "guidance to CONTRIBUTING.md; delete what serves neither "
+            "audience.\n"
             + "\n".join(offenders),
         )
 

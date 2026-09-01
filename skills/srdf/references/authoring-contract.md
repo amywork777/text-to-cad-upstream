@@ -65,8 +65,6 @@ Every `link`, `joint`, `base_link`, `tip_link`, `parent_link`, and group-state j
 </robot>
 ```
 
-Repository fixtures under `models/` (for example `so101/so101.srdf`, `openarm/openarm-bimanual.srdf`) are full worked examples.
-
 ## Helper Scripts
 
 Adjacent-pair lists, subgroup unions for many-jointed robots, and degree-to-radian tables are computations: derive them with a short throwaway script over the URDF rather than by hand when the robot has more than a handful of joints. The script is scaffolding; the checked-in `.srdf` remains canonical.

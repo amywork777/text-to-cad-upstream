@@ -72,7 +72,7 @@ both reuse and rolling.
 The page is the bare origin, and `file=` selects one artifact inside the served root:
 
 ```text
-http://127.0.0.1:3245/?file=thang010146/STEP/gear_rack_gripper.step
+http://127.0.0.1:3245/?file=gripper/STEP/gear_rack_gripper.step
 ```
 
 The `file=` value is relative to the served directory. Nothing about the
@@ -85,7 +85,7 @@ user can switch files without a new link. Launch from the directory the user
 thinks of as their model workspace — typically the project's `models/`
 directory, or the nearest common parent of the files you were asked to review —
 and put the rest of the path in `file=`. Launching from the artifact's own deep
-folder (`cd .../models/thang010146/STEP`, `?file=gear_rack_gripper.step`) opens
+folder (`cd .../models/gripper/STEP`, `?file=gear_rack_gripper.step`) opens
 the same model but hides the rest of the project, which is almost never what
 the user wants.
 
@@ -113,7 +113,7 @@ package. The Viewer calls cadgen's compile entry point directly, in a worker it
 owns, so progress and errors come back as data — the import reports live
 progress frames while it compiles. cadgen has to be importable by the
 interpreter running the Viewer, and new enough for the compile entry point —
-there is no search, no `CADGEN_PYTHON`, and no `.venv` probing; a cadgen that
+there is no search, no `CADGEN_PYTHON`, and no virtualenv probing; a cadgen that
 is absent or too old makes the Viewer say exactly that (naming the upgrade)
 and keep viewing. When an agent is doing the work there is nothing to run first:
 every cadgen door makes the package it needs on demand, so just use the file
