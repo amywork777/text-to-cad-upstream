@@ -1,11 +1,13 @@
 name: Deploy Docs
 
-# Deploys the docs site from a SOURCE ref, never from main.
+# Deploys the docs site from a SOURCE ref, not from main.
 #
-# The docs app is a website, not something anyone installs, and it builds against
-# repo-root packages/: apps/docs/tsconfig.json maps cadgen-js/* to ../../packages/cadgen-js/src/*.
-# Both apps/ and packages/ are therefore trimmed out of the publish tree, so main
-# cannot build this.
+# The docs app is a website, not something anyone installs. It builds against
+# repo-root packages/ (apps/docs/tsconfig.json maps cadgen-js/* to
+# ../../packages/cadgen-js/src/*), so it needs a full source tree. main carries
+# one since the publish trim stopped at models/, but the site is still deployed
+# from the commit the release was cut from: that is the tree the docs describe,
+# and publish commits from before the trim change have no apps/ at all.
 #
 # Releases pass the release SOURCE commit (release-pr's source_sha), which already
 # carries the bumped VERSION and the stamped apps/docs/package.json that the site header
@@ -16,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Source ref to deploy — develop, or a release source commit (git rev-parse <tag>^2). Never main.
+        description: Source ref to deploy — develop, or a release source commit (git rev-parse <tag>^2). Not main.
         required: true
         default: develop
         type: string
@@ -46,8 +48,9 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      # A publish-layout ref has neither, and the failure would otherwise surface
-      # as an opaque module-resolution error deep in `next build`.
+      # A publish commit from before the trim stopped at models/ has neither, and
+      # the failure would otherwise surface as an opaque module-resolution error
+      # deep in `next build`.
       - name: Check this ref can build the docs site
         run: |
           missing=""
@@ -55,7 +58,7 @@ jobs:
           [ -d packages/cadgen-js/src ] || missing="$missing packages/cadgen-js/src"
           if [ -n "$missing" ]; then
             echo "This ref cannot build the docs site; missing:$missing" >&2
-            echo "main is the publish branch and drops apps/ and packages/." >&2
+            echo "This looks like a publish commit from before main carried apps/ and packages/." >&2
             echo "Deploy from a source ref instead — develop, or a release source" >&2
             echo "commit: git rev-parse <tag>^2" >&2
             exit 1

@@ -13,6 +13,8 @@ Use these durable entrypoints for normal work:
 | Run docs checks | `scripts/test/test-docs.sh` |
 | Check canonical release version | `scripts/release/check-version.sh` |
 | Pin cadgen to PyPI in a publish tree | `scripts/release/pin-cadgen-requirements.sh` |
+| Shape a bundled checkout into the publish tree (drop `models/`, dereference dev symlinks) | `scripts/release/prepare-publish-tree.sh` |
+| Verify the publish tree before it is committed | `scripts/github-workflows/check-publish-tree.sh` |
 | Install local skills into agents | `scripts/install/install-skills.sh --agent codex` |
 | Uninstall local skill links | `scripts/install/uninstall-skills.sh --agent codex` |
 
@@ -74,9 +76,10 @@ lives in `tests/python/global/test_plugin_manifests.py`.
 
 The CAD Viewer runtime (built client + stdlib-only Python server) is bundled INTO the cad-viewer
 skill at `skills/cad-viewer/scripts/viewer` by `bundle-cad-viewer.sh`. On develop
-that path stays a development symlink to `apps/viewer/` and the 16 MB Vite output is
+that path stays a development symlink to `apps/viewer/` and the Vite output is
 never committed; CI and the publish job bundle first, so the publish tree carries
-the real runtime and the trim step refuses to publish without it.
+the real runtime and `scripts/github-workflows/check-publish-tree.sh` refuses to
+publish without it.
 
 ## Dev
 

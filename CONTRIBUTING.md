@@ -311,29 +311,49 @@ preserves them verbatim, and Codex `plugin add` drops them with no error at all,
 publishing a skill whose files are simply missing at runtime.
 `scripts/github-workflows/check-builds.sh` is the gate that enforces this.
 
-Because the repository root is the plugin package, every source-only path on
-`main` is copied into every install. The publish job therefore trims the tree
-before committing it, after the bundle and all checks have run against the
-untrimmed tree. `models/`, `apps/`, `tests/`, `packages/`, and
-`requirements-dev.txt` are removed, leaving `main` as close to just the plugin
-package as it can be. Root `docs/` (the hand-migration guides) is NOT trimmed:
-it ships, because the cad skill's migrations reference links to it by hosted URL.
+`main` is `develop` with the skill bundles materialized, versions stamped, skill
+requirements pinned to the release, and ONLY `models/` removed. The publish job
+(`.github/workflows/release.yml`) produces it in this order, after the bundle and
+every check have run against the untrimmed tree: `scripts/release/prepare-publish-tree.sh`
+drops `models/` and dereferences the one development symlink the bundle leaves in
+place (`apps/viewer/packages/cadgen-js` becomes a real copy of the package
+source); `scripts/release/pin-cadgen-requirements.sh` rewrites every skill's
+`cadgen` line to `cadgen==<VERSION>`; `scripts/github-workflows/check-publish-tree.sh`
+asserts the result over exactly the paths `git add -A` will stage; then the
+publish commit is written. Root `docs/` (the hand-migration guides) ships too,
+because the cad skill's migration references link to it by hosted URL.
 
-Nothing is lost, because each of those has a consumer that reads **source**
-rather than the published tree:
+What that means for what you find on `main`:
 
-- `apps/viewer/` — the app source. Its built client + Python server ship inside
-  the cad-viewer skill (`skills/cad-viewer/scripts/viewer`, materialized by the
-  bundle before publish), and the `Sync CAD Viewer Repo` workflow mirrors the
-  source into the standalone `earthtojake/cad-viewer` repo from the release
-  source commit.
-- `apps/docs/` and `packages/` — `Deploy Docs` builds and deploys the site from
-  the release source commit. `packages/` has no other published consumer: the cadgen wheel is
-  built and uploaded to PyPI BEFORE this trim, and published skills resolve cadgen
-  from there at the pinned release version. The trim step fails the publish if a
-  skill is found reaching into repo-root `packages/`.
-- `models/`, `tests/`, `requirements-dev.txt` — source-only, with no consumer
-  outside a source checkout.
+- `apps/`, `packages/`, `tests/`, and `requirements-dev.txt` are present. They
+  used to be trimmed; they no longer are, because the source behind a release
+  should be discoverable on the default branch and together they are ~15 MB with
+  no LFS objects. `models/` is the fixture corpus, the one root whose absence
+  buys anything, and the only one removed.
+- `apps/viewer/` (the CAD Viewer SOURCE) and `skills/cad-viewer/scripts/viewer`
+  (the BUNDLED runtime: built client + Python server, materialized by
+  `bundle-cad-viewer.sh`) both exist. The skill needs the runtime with no install
+  step; the source is there to read, and to keep `main` a faithful snapshot of
+  `develop`. The standalone `earthtojake/cad-viewer` mirror is still synced from
+  the release SOURCE commit, not from `main`.
+- `tests/` ships without its `models/` fixtures, so it is readable, not runnable,
+  on `main`. Run the suites from a `develop` checkout.
+- `packages/` being present is NOT permission for a skill to import from it. The
+  ships-alone law stands: the Skills CLI installs `skills/<name>` alone, plugin
+  installers copy the whole tree, and neither runs an editable install, so a
+  skill that reached into `../../../packages/` would work on `main` and break
+  on the first `npx skills add`. `check-publish-tree.sh` fails the publish on any
+  such reference; `tests/python/global/test_skill_self_containment.py` and
+  `test_package_boundaries.py` hold the same law on `develop`.
+- No symlink, anywhere. The dev layout's two symlinks are both materialized
+  (`skills/cad-viewer/scripts/viewer` by the bundle,
+  `apps/viewer/packages/cadgen-js` by `prepare-publish-tree.sh`), and
+  `check-publish-tree.sh` refuses any that remains.
+- No LFS-tracked path except the README demo media under `assets/`. Installers
+  clone without git-lfs and receive pointer files, so an LFS-tracked skill fixture
+  or runtime asset would ship broken; `check-publish-tree.sh` fails on any LFS
+  path outside `assets/`. The three gifs stay LFS-tracked because they are 17-26
+  MB each and GitHub renders LFS media in the README regardless.
 
 `main` is publish-only: do not open PRs to `main` or push it directly. The `Test`
 workflow runs on `develop` and PRs to `develop`: it starts from the symlink
@@ -459,10 +479,13 @@ to `develop`:
 gh workflow run deploy-docs.yml -f ref=develop
 ```
 
-It cannot deploy `main`. The docs app lives at `apps/docs/` and builds against
-repo-root `packages/` (`apps/docs/tsconfig.json` maps `cadgen-js/*` to
-`../../packages/cadgen-js/src/*`), and the publish tree drops both `apps/` and
-`packages/`. The workflow checks for them up front and fails with that
+Deploy from a source ref, not `main`. The docs app lives at `apps/docs/` and
+builds against repo-root `packages/` (`apps/docs/tsconfig.json` maps
+`cadgen-js/*` to `../../packages/cadgen-js/src/*`). `main` carries both since
+the publish trim stopped at `models/`, but the site is built from the commit the
+release was cut from (the one `git rev-parse <tag>^2` recovers), and publish
+commits from before that change have no `apps/` at all. The workflow checks for
+`apps/docs` and `packages/cadgen-js/src` up front and fails with that
 explanation rather than an opaque module-resolution error inside `next build`.
 
 The deploy runs the Vercel CLI from the repo root and takes the project root

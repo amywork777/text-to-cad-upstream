@@ -14,9 +14,10 @@ set -euo pipefail
 # never contain one, so the copy is verified symlink-free before it is reported
 # as good.
 #
-# Run this against a SOURCE ref (develop or a release source commit), never main:
-# the publish tree drops apps/ entirely, because it is source and what installs
-# is the bundled runtime under skills/cad-viewer. What lands in packages/ is
+# Run this against a SOURCE ref (develop or a release source commit), not main:
+# there the apps/viewer/packages/cadgen-js symlink has already been replaced by a
+# copy (scripts/release/prepare-publish-tree.sh), and publish commits from before
+# that change carry no apps/ at all. What lands in packages/ is
 # whatever apps/viewer/packages/ holds -- normally the development symlinks, which
 # dereference to the live package sources.
 
@@ -44,8 +45,8 @@ Usage:
 Copies apps/viewer/ into a standalone cad-viewer git checkout, dereferencing the
 apps/viewer/packages/* development symlinks into real vendored copies.
 
-Run it from a source checkout (develop or a release source commit). main is the
-publish branch and carries no apps/viewer/ at all, so it cannot be a sync source.
+Run it from a source checkout (develop or a release source commit), not from
+the publish branch main.
 
 Default target:
   ../cad-viewer   (relative paths resolve against this repo's root)
@@ -132,7 +133,7 @@ require_command diff
 VIEWER_DIR="$SOURCE_REPO_ROOT/apps/viewer"
 if [ ! -e "$VIEWER_DIR/package.json" ]; then
   echo "No apps/viewer/ in this checkout: $VIEWER_DIR" >&2
-  echo "main is the publish branch and drops apps/ from the published tree." >&2
+  echo "Publish commits from before main carried apps/ have no viewer source." >&2
   echo "Sync from a source ref instead (develop, or a release source commit)." >&2
   exit 1
 fi
@@ -237,17 +238,16 @@ build_copy() {
   rsync -a --copy-links "${RSYNC_RULES[@]}" "$VIEWER_DIR/" "$destination/"
 }
 
-# The symlink layout is the expected one. Real directories mean bundle.sh has run
-# in this checkout, so apps/viewer/packages holds the bundle output instead of the live
-# sources -- a smaller tree (cadgen-js ships without its own tests), which would show
-# up as drift against a mirror synced normally. Say so rather than letting it look
-# like real drift.
+# The symlink layout is the expected one. A real directory means
+# scripts/release/prepare-publish-tree.sh has run in this checkout (a publish
+# tree), so apps/viewer/packages holds a dereferenced copy rather than the live
+# sources; say so rather than letting any difference look like real drift.
 warn_on_bundled_layout() {
   local package_name
   for package_name in "${REQUIRED_PACKAGES[@]}"; do
     if [ ! -L "$VIEWER_DIR/packages/$package_name" ]; then
-      echo "Note: apps/viewer/packages holds real directories, so bundle.sh has run here and"
-      echo "      this copies the bundle output rather than the live package sources."
+      echo "Note: apps/viewer/packages holds real directories (a prepared publish tree), so"
+      echo "      this copies that dereferenced copy rather than the live package sources."
       echo "      Run scripts/dev/setup-symlinks.sh to restore the development layout."
       return
     fi

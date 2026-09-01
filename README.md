@@ -82,8 +82,11 @@ robot description files, simulation, and local review.
 
 ## 💻 Installation
 
-For production use, install or clone from `main`; that branch contains the
-generated skill outputs needed by provider installers.
+For production use, install or clone from `main`. It is the published snapshot
+of `develop`: the same source with the skill bundles materialized (the CAD
+Viewer runtime inside the cad-viewer skill), versions stamped, skill
+requirements pinned to the release, and `models/` (the fixture corpus) omitted.
+Develop against `develop`, never `main`.
 
 ### Skills
 

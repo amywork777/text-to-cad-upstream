@@ -6,10 +6,13 @@ name: Sync CAD Viewer Repo
 # releases rather than in-flight develop work. Dispatch it manually for an
 # out-of-band sync or a dry run.
 #
-# It mirrors from the release SOURCE commit, not from main: the publish tree
-# drops apps/ (it is source, and what installs is the bundled runtime under
-# skills/cad-viewer), while the mirror is a source repo. Pointing this at main
-# fails fast on the missing apps/viewer/package.json.
+# It mirrors from the release SOURCE commit, not from main. main carries
+# apps/viewer/ too since the publish trim stopped at models/, but there the
+# apps/viewer/packages/cadgen-js symlink has already been replaced by a copy
+# (scripts/release/prepare-publish-tree.sh); the mirror is a source repo and
+# does that dereference itself, from the live package source. Publish commits
+# from before that change have no apps/ at all and fail fast on the missing
+# apps/viewer/package.json.
 #
 # The mirror is a straight copy with the apps/viewer/packages/* symlinks dereferenced;
 # nothing rewrites paths on the way out. apps/viewer/ is kept self-contained instead,
@@ -20,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: Source ref to mirror from — develop or a release source commit, never main.
+        description: Source ref to mirror from — develop or a release source commit, not main.
         required: true
         default: develop
         type: string

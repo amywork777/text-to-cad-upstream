@@ -32,8 +32,14 @@ a version number. `bump=none` publishes `base_branch` as it stands and is also
 how you resume a failed publish; it is never a release setting.
 
 The standalone `Deploy Docs` workflow redeploys the docs site without running a
-release. It deploys a source ref (defaulting to `develop`), never `main`: the
-publish tree drops `apps/` and `packages/`, which the docs app builds against.
+release. It deploys a source ref (defaulting to `develop`), not `main`: the site
+is built from the commit a release was cut from.
+`main` is `develop` with the skill bundles materialized, versions stamped, skill
+requirements pinned, and ONLY `models/` removed — `apps/`, `packages/`, and
+`tests/` ship (source discoverability), and `packages/` being present is not
+permission for a skill to import from it; `scripts/github-workflows/check-publish-tree.sh`
+enforces the contract (no symlink, no LFS path outside `assets/`, no skill
+reaching into a repo root) before the publish commit.
 The CAD Viewer is a local-filesystem app with no hosted deployment: the
 cad-viewer skill bundles the built client + Python server, and each release mirrors
 `apps/viewer/` into the standalone `earthtojake/cad-viewer` repo through the
