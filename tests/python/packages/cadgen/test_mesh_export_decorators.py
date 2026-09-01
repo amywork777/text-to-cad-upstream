@@ -49,7 +49,7 @@ class MeshExportMetadataTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             script = Path(tmp) / "model.py"
-            script.write_text(body)
+            script.write_text(body, encoding="utf-8")
             return parse_generator_metadata(script)
 
     def test_declarations_parse_and_order_is_neutral(self) -> None:
@@ -149,7 +149,7 @@ class MeshExportProductionTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.project = Path(self._tmp.name).resolve()
         (self.project / "src").mkdir()
-        (self.project / "src" / "widget.py").write_text(MODEL)
+        (self.project / "src" / "widget.py").write_text(MODEL, encoding="utf-8")
         self.env = dict(os.environ)
         self.env.update({
             "CADGEN_DAEMON": "0",
@@ -223,7 +223,8 @@ class MeshExportProductionTest(unittest.TestCase):
                 '@stl(out="../STL/widget.stl")',
                 '@stl(out="../STL/widget_draft.stl", mesh_tolerance=2e-2)\n'
                 '@stl(out="../STL/widget_print.stl", mesh_tolerance=2e-4)',
-            )
+            ),
+            encoding="utf-8",
         )
         self._run("src/widget.py")
         draft = self.project / "STL" / "widget_draft.stl"

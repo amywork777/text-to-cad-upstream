@@ -571,5 +571,84 @@ class TransformArithmeticTest(unittest.TestCase):
         self.assertIsNone(assembly_lookup.transform_bbox(assembly_lookup._matrix(None), {"min": [0, 0, 0]}))
 
 
+def _nested_compound() -> Compound:
+    """A branch with two parts under it, beside a loose part.
+
+    Flat fixtures cannot exercise a group at all: `o1.1`, `o1.2` are leaves there. This
+    one has a real interior node, which is what the viewer copies, what a kinematics mate
+    names, and what `inspect` now accepts.
+    """
+    left = Pos(0, 0, 0) * Box(2, 2, 2)
+    left.label = "bar_left"
+    right = Pos(4, 0, 0) * Box(2, 2, 2)
+    right.label = "bar_right"
+    branch = Compound(children=[left, right])
+    branch.label = "bar_pair"
+    post = Pos(0, 0, 10) * Box(2, 2, 2)
+    post.label = "post"
+    assembly = Compound(children=[branch, post])
+    assembly.label = "nested"
+    return assembly
+
+
+class AssemblyGroupNodesTest(unittest.TestCase):
+    """The instance tree's INTERIOR nodes, which the occurrences table does not hold.
+
+    The table is leaves only, because only a leaf owns geometry -- so a subassembly's
+    NAME, the thing a person recognises the branch by, lives in the descriptor's
+    `assembly` tree and nowhere else a selector index could reach.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="assembly-groups-")
+        self.addCleanup(self._tmp.cleanup)
+        self.package_dir = Path(self._tmp.name) / "__cadgen__" / "models" / "nested.py"
+        with exclusive(write_lock_path(self.package_dir)):
+            component_package.build_package_from_compound(
+                _nested_compound(), package_dir=self.package_dir, root_name="nested"
+            )
+        self.descriptor = component_package.read_package_descriptor(self.package_dir)
+        self.assertIsInstance(self.descriptor, dict, "fixture package has no descriptor")
+
+    def test_interior_nodes_are_reported_with_their_labels(self) -> None:
+        nodes = assembly_lookup.assembly_group_nodes(self.descriptor)
+        names = {node_id: entry["name"] for node_id, entry in nodes.items()}
+        self.assertIn("o1.1", names, f"the branch is missing from {sorted(nodes)}")
+        self.assertEqual("bar_pair", names["o1.1"])
+        self.assertEqual(2, nodes["o1.1"]["childCount"])
+        # Leaves are NOT interior nodes: their rows are in the occurrences table.
+        leaf_ids = {str(row["id"]) for row in self.descriptor["occurrences"]}
+        self.assertFalse(leaf_ids & set(nodes), "a leaf was reported as a group")
+
+    def test_no_interior_node_carries_a_transform_today(self) -> None:
+        # Pins the reason `inspect frame` reports a group's EXTENT rather than a matrix:
+        # group placement is baked into each leaf's absolute transform, so the descriptor
+        # writes no node transform and there is nothing to read. If a packager ever
+        # records one, this fails and the frame payload starts carrying it -- which is
+        # exactly the moment to notice.
+        nodes = assembly_lookup.assembly_group_nodes(self.descriptor)
+        self.assertTrue(nodes)
+        self.assertFalse(
+            [node_id for node_id, entry in nodes.items() if "transform" in entry],
+            "a subassembly node now records a transform; teach frame to report it",
+        )
+
+    def test_the_merged_index_carries_the_group_nodes(self) -> None:
+        manifest = {
+            "stats": {"occurrenceCount": 1, "shapeCount": 3},
+            "tables": {"occurrenceColumns": ["id", "name", "bbox"]},
+            "occurrences": [["o1", "nested.step", None]],
+        }
+        merged = assembly_lookup.merge_assembly_occurrences(
+            lookup.build_selector_index(manifest), self.descriptor, self.package_dir
+        )
+        self.assertEqual("bar_pair", merged.group_nodes["o1.1"]["name"])
+        # And the count stays a LEAF count: a group resolves by expanding to leaves that
+        # are already in it.
+        self.assertEqual(
+            len(merged.occurrence_by_id), int(lookup.entry_summary(merged)["occurrenceCount"])
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

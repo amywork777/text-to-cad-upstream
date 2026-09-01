@@ -33,7 +33,7 @@ ROOT = REPO_ROOT
 
 class TopologySchemaVersionMirrorTest(unittest.TestCase):
     def test_python_and_js_declare_the_same_topology_schema_version(self) -> None:
-        source = (ROOT / "packages/cadgen-js/src/common/stepTopology.mjs").read_text()
+        source = (ROOT / "packages/cadgen-js/src/common/stepTopology.mjs").read_text(encoding="utf-8")
         match = re.search(r"STEP_TOPOLOGY_SCHEMA_VERSION\s*=\s*(\d+)", source)
         self.assertIsNotNone(match, "cadgen-js must declare STEP_TOPOLOGY_SCHEMA_VERSION")
         self.assertEqual(
@@ -55,7 +55,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
     def test_no_separate_payload_version_has_reappeared(self) -> None:
         source = (
             ROOT / "packages/cadgen/src/cadgen/_internal/component_package.py"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         self.assertNotIn(
             "COMPONENT_PAYLOAD_VERSION",
             source,
@@ -69,7 +69,7 @@ class PackageVersionIsOneNumberPerFileTypeTest(unittest.TestCase):
         # STEP model on next open. The gate lives in the store KEY salt now
         # (storePaths.mjs), not in a descriptor check: a version bump orphans
         # old packages by key.
-        source = (ROOT / "apps/viewer/server/storePaths.mjs").read_text()
+        source = (ROOT / "apps/viewer/server/storePaths.mjs").read_text(encoding="utf-8")
         # DXF is absent by design: a generated drawing's render IS the sibling
         # .dxf the client parses, so there is no artifact to gate.
         for constant in (
@@ -97,14 +97,14 @@ class DeadVersionsStayDeadTest(unittest.TestCase):
         ):
             self.assertNotIn(
                 "DXF_RENDER_SCHEMA_VERSION",
-                (ROOT / relative).read_text(),
+                (ROOT / relative).read_text(encoding="utf-8"),
                 f"{relative} stamped a version nothing ever read",
             )
 
     def test_viewer_server_info_schema_version_is_gone(self) -> None:
         self.assertNotIn(
             "VIEWER_SERVER_INFO_SCHEMA_VERSION",
-            (ROOT / "apps/viewer/server/httpApp.mjs").read_text(),
+            (ROOT / "apps/viewer/server/httpApp.mjs").read_text(encoding="utf-8"),
         )
 
     def test_the_gltf_container_version_is_declared_once(self) -> None:
@@ -113,7 +113,7 @@ class DeadVersionsStayDeadTest(unittest.TestCase):
         declarations = [
             path
             for path in (ROOT / "packages/cadgen/src/cadgen/_internal").glob("*.py")
-            if re.search(r"^GLB_VERSION\s*=", path.read_text(), re.MULTILINE)
+            if re.search(r"^GLB_VERSION\s*=", path.read_text(encoding="utf-8"), re.MULTILINE)
         ]
         self.assertEqual(
             ["glb_topology.py"],

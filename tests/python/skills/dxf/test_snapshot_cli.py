@@ -1,3 +1,4 @@
+import json
 import subprocess
 import sys
 import unittest
@@ -39,7 +40,14 @@ class DxfSnapshotCliTests(unittest.TestCase):
                 out = Path(cmd[cmd.index("--out") + 1])
                 out.parent.mkdir(parents=True, exist_ok=True)
                 out.write_bytes(b"glTF")
-                return mock.Mock(returncode=0, stdout='{"ok": true, "path": "%s"}' % out, stderr="")
+                # json.dumps, not %s: a Windows path interpolated raw into a
+                # JSON string literal produces invalid escapes ("\\U", "\\c")
+                # and the caller's json.loads silently fell back to "no payload".
+                return mock.Mock(
+                    returncode=0,
+                    stdout=json.dumps({"ok": True, "path": str(out)}),
+                    stderr="",
+                )
 
             with mock.patch("subprocess.run", side_effect=fake_run):
                 resolved = snapshot.drawing_mesh_path(dxf, force=False)

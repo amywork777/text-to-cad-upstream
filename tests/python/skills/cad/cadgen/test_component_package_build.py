@@ -98,7 +98,7 @@ class OrphanComponentPruningTests(unittest.TestCase):
 
             self.assertFalse(orphan.exists())
             self.assertEqual(1, stats["components_pruned"])
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
             for entry in descriptor["components"].values():
                 self.assertTrue((package_dir / entry["surf"]).is_file())
 
@@ -134,7 +134,7 @@ class PayloadUnreadableFallbackTests(unittest.TestCase):
             self.assertEqual(1, stats["components_built"])
             import json
 
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
             (cid_entry,) = descriptor["components"].values()
             self.assertTrue((package_dir / cid_entry["surf"]).is_file())
 

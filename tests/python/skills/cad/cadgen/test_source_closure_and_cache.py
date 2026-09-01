@@ -214,7 +214,7 @@ class UserSiteIsNotModelCodeTest(unittest.TestCase):
     def test_a_model_beside_the_repo_is_still_first_party(self) -> None:
         with temporary_directory(prefix="closure-model") as root:
             model = Path(root) / "widget.py"
-            model.write_text("from build123d import Box\n")
+            model.write_text("from build123d import Box\n", encoding="utf-8")
             self.assertTrue(cad_source_hash.is_first_party_source_file(model))
 
 

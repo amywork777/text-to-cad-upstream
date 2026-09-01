@@ -172,7 +172,7 @@ class GenerationLockBehaviourTest(unittest.TestCase):
         ]
         for proc in procs:
             self.assertEqual(0, proc.wait(timeout=60), "a contending build process failed")
-        self._assert_no_interleaving(log.read_text())
+        self._assert_no_interleaving(log.read_text(encoding="utf-8"))
 
     def test_killed_holder_releases_the_lock(self):
         ready = self.root / "ready"

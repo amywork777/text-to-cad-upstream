@@ -77,10 +77,10 @@ class CacheRootSyncTest(unittest.TestCase):
         # appear in both files.
         for needle in ("CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"):
             for path in (CADJS_FS, VIEWER_COPY):
-                self.assertIn(needle, path.read_text(), f"{needle} missing from {path.name}")
+                self.assertIn(needle, path.read_text(encoding="utf-8"), f"{needle} missing from {path.name}")
 
     def test_tessellator_version_matches_between_python_and_js(self) -> None:
-        match = re.search(r"^export const TESSELLATION_VERSION = (\d+);", TESSELLATE_JS.read_text(), re.MULTILINE)
+        match = re.search(r"^export const TESSELLATION_VERSION = (\d+);", TESSELLATE_JS.read_text(encoding="utf-8"), re.MULTILINE)
         assert match, "TESSELLATION_VERSION not found in tessellate.js"
         self.assertEqual(
             int(match.group(1)),
@@ -93,7 +93,7 @@ class CacheRootSyncTest(unittest.TestCase):
     def test_key_scheme_carries_the_version_salt(self) -> None:
         # Policy: the key must salt the algorithm version. Grep-level pin so a
         # JS-side refactor cannot drop it without failing a Python-side gate.
-        cache_js = (ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellationCache.js").read_text()
+        cache_js = (ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellationCache.js").read_text(encoding="utf-8")
         self.assertIn("-t${TESSELLATION_VERSION}-", cache_js)
 
 

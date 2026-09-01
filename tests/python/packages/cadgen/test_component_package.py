@@ -78,7 +78,7 @@ class ComponentPackageTests(unittest.TestCase):
             self.assertEqual(stats["components_built"], 2)
             self.assertEqual(stats["components_reused"], 0)
 
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
             self.assertEqual(descriptor["kind"], component_package.PACKAGE_KIND)
             # No version field inside the artifact: the store KEY carries the
             # cache scheme (cache_schema.CACHE_SCHEMA_VERSION).
@@ -159,7 +159,7 @@ class ComponentPackageTests(unittest.TestCase):
             self.assertTrue(component_package.assembly_package_current(step_path))
 
             # Deleting a referenced component artifact invalidates the package.
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
             first = next(iter(descriptor["components"].values()))
             (package_dir / first["surf"]).unlink()
             self.assertFalse(component_package.assembly_package_current(step_path))
@@ -179,7 +179,7 @@ class ComponentPackageTests(unittest.TestCase):
                 compound, package_dir=pkg_b, root_name="demo", provenance=provenance, force=True
             )
 
-            descriptor_a = json.loads((pkg_a / "assembly.json").read_text())
+            descriptor_a = json.loads((pkg_a / "assembly.json").read_text(encoding="utf-8"))
             cid, entry = next(iter(descriptor_a["components"].items()))
             surf = (pkg_a / entry["surf"]).resolve()
             # No source provenance leaks into a clean component artifact.
@@ -189,12 +189,12 @@ class ComponentPackageTests(unittest.TestCase):
 
             # Same geometry -> byte-identical component artifact
             # (content-addressable by file).
-            surf_b = (pkg_b / json.loads((pkg_b / "assembly.json").read_text())["components"][cid]["surf"]).resolve()
+            surf_b = (pkg_b / json.loads((pkg_b / "assembly.json").read_text(encoding="utf-8"))["components"][cid]["surf"]).resolve()
             self.assertEqual(surf.read_bytes(), surf_b.read_bytes())
 
             # The model-level STEP provenance lives on the descriptor instead
             # (source-derived provenance rides the source sidecar, not here).
-            descriptor = json.loads((pkg_a / "assembly.json").read_text())
+            descriptor = json.loads((pkg_a / "assembly.json").read_text(encoding="utf-8"))
             self.assertEqual("abc", descriptor.get("stepHash"))
 
 
@@ -213,7 +213,7 @@ class ComponentPackageTests(unittest.TestCase):
             _build_package(
                 compound, package_dir=package_dir, root_name="demo"
             )
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
 
             for cid, entry in descriptor["components"].items():
                 index, _ = read_surf((package_dir / entry["surf"]).read_bytes())
@@ -256,7 +256,7 @@ class ComponentPackageTests(unittest.TestCase):
             _build_package(
                 compound, package_dir=package_dir, root_name="demo"
             )
-            descriptor = json.loads((package_dir / "assembly.json").read_text())
+            descriptor = json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
 
             # Occurrences are the LEAVES: loose (o1.1) + the sub-assembly's two parts (o1.2.1/.2).
             self.assertEqual(["o1.1", "o1.2.1", "o1.2.2"], [o["id"] for o in descriptor["occurrences"]])

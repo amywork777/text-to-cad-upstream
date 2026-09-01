@@ -159,10 +159,10 @@ class PackagePortabilityTest(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory(prefix="cadport-")
         cls.root = Path(cls._tmp.name) / "project"
         (cls.root / "parts").mkdir(parents=True)
-        (cls.root / "parts" / "bolt.py").write_text(CHILD)
-        (cls.root / "widget.py").write_text(PART)
-        (cls.root / "rig.py").write_text(ASSEMBLY)
-        (cls.root / "sheet.py").write_text(DRAWING)
+        (cls.root / "parts" / "bolt.py").write_text(CHILD, encoding="utf-8")
+        (cls.root / "widget.py").write_text(PART, encoding="utf-8")
+        (cls.root / "rig.py").write_text(ASSEMBLY, encoding="utf-8")
+        (cls.root / "sheet.py").write_text(DRAWING, encoding="utf-8")
         cls._build(cls.root)
 
     @classmethod
@@ -257,7 +257,7 @@ class PackagePortabilityTest(unittest.TestCase):
 
     def test_recorded_paths_are_relative_and_stay_inside_the_project(self) -> None:
         for descriptor_path in [p for p in package_files(self.root) if p.name.endswith(".json")]:
-            descriptor = json.loads(descriptor_path.read_text())
+            descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
             recorded = [
                 *([descriptor["sourcePath"]] if "sourcePath" in descriptor else []),
                 *descriptor.get("sourceClosureFiles", []),
@@ -297,7 +297,7 @@ class PackagePortabilityTest(unittest.TestCase):
         for path in run_state:
             if not path.name.endswith(".json"):
                 continue
-            record = json.loads(path.read_text())
+            record = json.loads(path.read_text(encoding="utf-8"))
             with self.subTest(record=path.name):
                 self.assertEqual({"pid", "host"}, {"pid", "host"} & set(record))
                 for key, value in record.items():
@@ -373,7 +373,7 @@ class RecordedPathHelpersTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="cadrel-") as temp_dir:
             root = Path(temp_dir)
             dependency = root / "elsewhere.py"
-            dependency.write_text("X = 1\n")
+            dependency.write_text("X = 1\n", encoding="utf-8")
             with unittest.mock.patch.object(os.path, "relpath", _across_drives):
                 self.assertEqual(
                     dependency.resolve().as_posix(),
@@ -416,7 +416,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
         finally:
             os.chdir(previous)
         descriptor = json.loads(
-            (render_package_dir(step) / "assembly.json").read_text()
+            (render_package_dir(step) / "assembly.json").read_text(encoding="utf-8")
         )
         # The descriptor is a pure function of the STEP bytes — no timestamp
         # to excuse (generatedAt rides the source sidecar now).
@@ -428,7 +428,7 @@ class DescriptorIsIndependentOfTheWorkingDirectoryTest(unittest.TestCase):
             root = Path(temp_dir)
             project = root / "project"
             project.mkdir()
-            (project / "widget.py").write_text(PART)
+            (project / "widget.py").write_text(PART, encoding="utf-8")
 
             from_inside = self._descriptor_built_from(project, project)
             from_above = self._descriptor_built_from(root, project)

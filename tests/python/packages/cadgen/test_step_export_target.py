@@ -68,7 +68,7 @@ class StepExportTargetTests(unittest.TestCase):
 
     def _write_box_generator(self) -> Path:
         generator = self.temp_root / "box.py"
-        generator.write_text(BOX_GENERATOR)
+        generator.write_text(BOX_GENERATOR, encoding="utf-8")
         return generator
 
     def test_export_generated_step_py_all_formats(self) -> None:

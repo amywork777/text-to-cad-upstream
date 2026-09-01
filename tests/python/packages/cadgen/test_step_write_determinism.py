@@ -114,6 +114,25 @@ class StepWriteDeterminismTest(unittest.TestCase):
             self.assertIn("SURFACE_STYLE_RENDERING_WITH_PROPERTIES(", text)
             self.assertIn("SURFACE_STYLE_TRANSPARENT(", text)
 
+    def test_the_written_file_never_carries_platform_line_endings(self) -> None:
+        """The written bytes are the store key, so they must not depend on the OS.
+
+        The style-tail canonicalization reads the file OCCT wrote and writes it
+        back. Doing that through ``Path.read_text``/``Path.write_text`` used the
+        default universal-newline translation, which on Windows expanded every
+        "\\n" OCCT emitted into "\\r\\n" -- so one model keyed two different
+        packages depending on which machine built it, and the text applier
+        disagreed byte-for-byte with the in-model applier (which never touches
+        the file). Runs on every platform and only ever failed on one, which is
+        the point: the assertion IS the cross-platform contract.
+        """
+        from cadgen.step_export import export_build123d_step_file
+
+        with tempfile.TemporaryDirectory(prefix="step-eol-") as tmp:
+            out = Path(tmp) / "eol.step"
+            export_build123d_step_file(_build_assembly(), out)
+            self.assertNotIn(b"\r\n", out.read_bytes())
+
     def _write_with(self, applier: str, path: Path, **rig_kwargs) -> bytes:
         """Export the rig with the style-tail permutation applied in `text` or
         in `model`."""

@@ -48,7 +48,7 @@ def _write_model(root: Path, size: float) -> Path:
             block = Solid.make_box(SIZE, SIZE, SIZE)
             block.label = "block"
             return block
-        """))
+        """), encoding="utf-8")
     return entry
 
 

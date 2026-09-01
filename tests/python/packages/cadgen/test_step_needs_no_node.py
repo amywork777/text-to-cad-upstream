@@ -64,7 +64,7 @@ class StepBuildsWithoutNodeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             model = root / "block.py"
-            model.write_text(_MODEL)
+            model.write_text(_MODEL, encoding="utf-8")
 
             env = dict(os.environ)
             # Not an executable, so cad_node_executable() raises NodeUnavailable rather than

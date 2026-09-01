@@ -149,7 +149,7 @@ class ProjectIsolation(unittest.TestCase):
         deadline = time.monotonic() + SPAWN_WAIT_SECONDS
         while time.monotonic() < deadline:
             if cls.server.poll() is not None:
-                raise RuntimeError(f"daemon exited during startup:\n{cls.log_path.read_text()}")
+                raise RuntimeError(f"daemon exited during startup:\n{cls.log_path.read_text(encoding='utf-8')}")
             try:
                 probe = transport.connect(address, _authkey())
             except (OSError, RuntimeError):
@@ -157,7 +157,7 @@ class ProjectIsolation(unittest.TestCase):
                 continue
             probe.close()
             return
-        raise RuntimeError(f"daemon address never appeared:\n{cls.log_path.read_text()}")
+        raise RuntimeError(f"daemon address never appeared:\n{cls.log_path.read_text(encoding='utf-8')}")
 
     def _env(self, address: str) -> dict[str, str]:
         return {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": address}

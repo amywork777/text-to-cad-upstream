@@ -63,7 +63,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.generator = self.root / "widget.py"
-        self.generator.write_text(COUNTING_GENERATOR)
+        self.generator.write_text(COUNTING_GENERATOR, encoding="utf-8")
         self.calls = self.root / "gen_calls.log"
 
     def _build(self, *extra):
@@ -86,7 +86,7 @@ class StepArtifactSkipTest(unittest.TestCase):
         return json.loads(proc.stdout.strip().splitlines()[-1])
 
     def _generator_runs(self):
-        return len(self.calls.read_text().splitlines()) if self.calls.is_file() else 0
+        return len(self.calls.read_text(encoding="utf-8").splitlines()) if self.calls.is_file() else 0
 
     def test_second_build_of_a_current_package_is_skipped(self):
         first = self._build()
@@ -112,7 +112,7 @@ class StepArtifactSkipTest(unittest.TestCase):
 
     def test_edited_generator_invalidates_the_package(self):
         self._build()
-        self.generator.write_text(COUNTING_GENERATOR.replace("12.0", "14.0"))
+        self.generator.write_text(COUNTING_GENERATOR.replace("12.0", "14.0"), encoding="utf-8")
         rebuilt = self._build()
         self.assertFalse(rebuilt.get("skipped"), "an edited generator must rebuild")
         self.assertEqual(2, self._generator_runs())

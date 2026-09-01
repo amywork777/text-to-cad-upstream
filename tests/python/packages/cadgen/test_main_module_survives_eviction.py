@@ -114,7 +114,12 @@ class DirectRunEngagesThePoolTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="cadgen-pool-probe-") as tmp:
             root = pathlib.Path(tmp)
             script = root / "pool_probe.py"
-            script.write_text(_MODEL)
+            # encoding= is not optional: _MODEL's docstrings carry em dashes,
+            # and write_text without one uses the locale encoding (cp1252 on a
+            # Windows runner) while the child reads the file as UTF-8 -- the run
+            # died with a SyntaxError about a stray 0x97 byte, not the KeyError
+            # this test is about.
+            script.write_text(_MODEL, encoding="utf-8")
             # A private store, so the components really are missing and the pool
             # really does engage; a warm shared store would reuse them all and
             # quietly skip the code under test.

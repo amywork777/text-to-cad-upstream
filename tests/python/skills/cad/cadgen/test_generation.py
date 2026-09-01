@@ -231,7 +231,7 @@ class CadGenerationTests(unittest.TestCase):
             descriptor_path.is_file(),
             "imported STEP --kind assembly --force must write assembly.json (not a silent no-op)",
         )
-        descriptor = json.loads(descriptor_path.read_text())
+        descriptor = json.loads(descriptor_path.read_text(encoding="utf-8"))
         self.assertEqual("assembly-package", descriptor["kind"])
         self.assertEqual("assembly", descriptor.get("entryKind"))
         components = descriptor["components"]
@@ -1283,7 +1283,7 @@ class CadGenerationTests(unittest.TestCase):
                     "    return None",
                 ]
             )
-            + "\n"
+            + "\n", encoding="utf-8"
         )
 
         with self.assertRaisesRegex(ValueError, "must return a build123d shape or a \\{'shape': \\.\\.\\.\\} envelope"):

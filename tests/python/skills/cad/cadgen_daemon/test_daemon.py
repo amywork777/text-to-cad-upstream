@@ -111,7 +111,7 @@ class CadgenDaemonTests(unittest.TestCase):
         deadline = time.monotonic() + SPAWN_WAIT_SECONDS
         while time.monotonic() < deadline:
             if cls.server.poll() is not None:
-                raise RuntimeError(f"daemon exited during startup:\n{cls.log_path.read_text()}")
+                raise RuntimeError(f"daemon exited during startup:\n{cls.log_path.read_text(encoding='utf-8')}")
             try:
                 probe = transport.connect(str(cls.address), _authkey())
             except (OSError, RuntimeError):
@@ -120,7 +120,7 @@ class CadgenDaemonTests(unittest.TestCase):
             probe.close()
             break
         else:
-            raise RuntimeError(f"daemon address never appeared:\n{cls.log_path.read_text()}")
+            raise RuntimeError(f"daemon address never appeared:\n{cls.log_path.read_text(encoding='utf-8')}")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -209,13 +209,13 @@ class CadgenDaemonTests(unittest.TestCase):
 
         deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
-            if "killing worker" in self.log_path.read_text():
+            if "killing worker" in self.log_path.read_text(encoding="utf-8"):
                 break
             time.sleep(0.2)
         else:
             self.fail(
                 "watchdog never killed the orphaned job's worker:\n"
-                f"{self.log_path.read_text()}"
+                f"{self.log_path.read_text(encoding='utf-8')}"
             )
 
         # The supervisor survived, which is the point of moving work into workers.
@@ -233,7 +233,7 @@ class CadgenDaemonTests(unittest.TestCase):
             exit_code = daemon_client.run_via_daemon(
                 "run", ["box_orphan.py"], str(self.model_dir)
             )
-        self.assertEqual(exit_code, 0, self.log_path.read_text())
+        self.assertEqual(exit_code, 0, self.log_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

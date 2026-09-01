@@ -862,5 +862,200 @@ class InspectRefsTests(unittest.TestCase):
         self.assertEqual([2.0, 0.0, 0.0], result["alignment"]["translationVector"])
         self.assertEqual(2.0, result["alignment"]["transformTranslationDelta"]["3"])
 
+
+class GroupOccurrenceRefTests(unittest.TestCase):
+    """A ref naming a SUBASSEMBLY, which no selector row carries.
+
+    One document, two occurrence namespaces: the instance tree, and the flat selector
+    rows that are its LEAVES, because only a leaf owns geometry. `o1.1` below is an
+    interior node -- the viewer copies it, `snapshot --focus` takes it, a kinematics mate
+    poses it -- and `inspect` used to refuse it as "did not resolve", which reads as "no
+    such branch" rather than "that branch has no row of its own".
+
+    An occurrence id IS its path through the tree, so a group is an id prefix, which is
+    how kinematicsModule.js and cadScene.js resolve one. The shared derivation lives in
+    cadgen.occurrence_groups, alongside snapshot's use of it.
+    """
+
+    CAD_REF = "tmp-groups/nested"
+
+    # Three leaves under two branches: o1.1 groups two parts, o1.2 stands alone. The
+    # boxes are placed apart so a group's union extent is checkable and cannot be
+    # confused with any single member's.
+    LEAVES = (
+        # id, name, bbox min, bbox max, translation
+        ("o1.1.1", "BarLeft", [0.0, 0.0, 0.0], [2.0, 2.0, 2.0], [0.0, 0.0, 0.0]),
+        ("o1.1.2", "BarRight", [4.0, 0.0, 0.0], [6.0, 2.0, 2.0], [4.0, 0.0, 0.0]),
+        ("o1.2", "Post", [0.0, 0.0, 10.0], [2.0, 2.0, 12.0], [0.0, 0.0, 10.0]),
+    )
+
+    def _manifest(self) -> dict[str, object]:
+        occurrences = []
+        shapes = []
+        for index, (occ_id, name, low, high, translation) in enumerate(self.LEAVES):
+            occurrences.append([
+                occ_id,
+                occ_id.lstrip("o"),
+                name,
+                name,
+                occ_id.rpartition(".")[0] or None,
+                [1, 0, 0, translation[0], 0, 1, 0, translation[1], 0, 0, 1, translation[2], 0, 0, 0, 1],
+                {"min": low, "max": high},
+                index, 1, 0, 0, 0, 0, 0, 0,
+            ])
+            shapes.append([
+                f"{occ_id}.s1", occ_id, 1, "solid",
+                {"min": low, "max": high},
+                [(low[axis] + high[axis]) / 2 for axis in range(3)],
+                24.0, 8.0, 0, 0, 0, 0, 0, 0,
+            ])
+        return {
+            "schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION,
+            "profile": "refs",
+            "cadPath": self.CAD_REF,
+            "stepPath": f"{self.CAD_REF}.step",
+            "stepHash": "step-hash-groups",
+            "entryKind": "assembly",
+            "bbox": {"min": [0.0, 0.0, 0.0], "max": [6.0, 2.0, 12.0]},
+            "stats": {
+                "occurrenceCount": len(self.LEAVES),
+                "leafOccurrenceCount": len(self.LEAVES),
+                "shapeCount": len(self.LEAVES),
+                "faceCount": 0,
+                "edgeCount": 0,
+                "vertexCount": 0,
+            },
+            "tables": {
+                "occurrenceColumns": [
+                    "id", "path", "name", "sourceName", "parentId", "transform", "bbox",
+                    "shapeStart", "shapeCount", "faceStart", "faceCount",
+                    "edgeStart", "edgeCount", "vertexStart", "vertexCount",
+                ],
+                "shapeColumns": [
+                    "id", "occurrenceId", "ordinal", "kind", "bbox", "center", "area",
+                    "volume", "faceStart", "faceCount", "edgeStart", "edgeCount",
+                    "vertexStart", "vertexCount",
+                ],
+                "faceColumns": [],
+                "edgeColumns": [],
+                "vertexColumns": [],
+            },
+            "occurrences": occurrences,
+            "shapes": shapes,
+            "faces": [],
+            "edges": [],
+            "vertices": [],
+        }
+
+    def _provider(self):
+        manifest = self._manifest()
+
+        def provider(cad_path, profile):
+            if cad_path != self.CAD_REF:
+                return None
+            return refs_inspect.EntryContext(
+                cad_path=cad_path,
+                kind="assembly",
+                source_path=Path(f"{cad_path}.step"),
+                step_path=Path(f"{cad_path}.step"),
+                manifest=manifest,
+                selector_index=refs_inspect.lookup.build_selector_index(manifest),
+            )
+
+        return provider
+
+    def test_refs_expands_a_group_to_the_parts_beneath_it(self) -> None:
+        result = refs_inspect.inspect_cad_refs(
+            self.CAD_REF, "#o1.1", context_provider=self._provider()
+        )
+
+        self.assertTrue(result["ok"], result.get("errors"))
+        selections = result["tokens"][0]["selections"]
+        self.assertEqual(
+            ["o1.1.1", "o1.1.2"],
+            [selection["normalizedSelector"] for selection in selections],
+        )
+        # Each one says where it came from, so a reader can tell two parts reported
+        # because a group was named from two parts they asked for individually.
+        self.assertEqual({"o1.1"}, {selection["fromGroup"] for selection in selections})
+        self.assertEqual({"resolved"}, {selection["status"] for selection in selections})
+
+    def test_a_leaf_ref_still_answers_for_itself(self) -> None:
+        result = refs_inspect.inspect_cad_refs(
+            self.CAD_REF, "#o1.1.2", context_provider=self._provider()
+        )
+
+        self.assertTrue(result["ok"], result.get("errors"))
+        selections = result["tokens"][0]["selections"]
+        self.assertEqual(["o1.1.2"], [item["normalizedSelector"] for item in selections])
+        self.assertNotIn("fromGroup", selections[0])
+
+    def test_the_reported_counts_stay_leaf_based(self) -> None:
+        # Accepting group refs must not start counting interior nodes: `occurrenceCount`
+        # is what this index can resolve to geometry, and a group resolves by expanding
+        # to leaves that are already counted.
+        result = refs_inspect.inspect_cad_refs(
+            self.CAD_REF, "#o1.1", facts=True, context_provider=self._provider()
+        )
+
+        summary = result["tokens"][0]["summary"]
+        self.assertEqual(len(self.LEAVES), summary["occurrenceCount"])
+
+    def test_frame_answers_for_the_branch(self) -> None:
+        result = refs_inspect.inspect_target_frame(
+            self.CAD_REF, "#o1.1", context_provider=self._provider()
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("group", result["occurrenceKind"])
+        self.assertEqual(["o1.1.1", "o1.1.2"], result["members"])
+        frame = result["frame"]
+        # The branch's own extent: both bars, not either one.
+        self.assertEqual({"min": [0.0, 0.0, 0.0], "max": [6.0, 2.0, 2.0]}, frame["bbox"])
+        self.assertEqual([3.0, 1.0, 1.0], frame["center"])
+        # A subassembly node carries no transform of its own -- group placement is baked
+        # into each leaf's absolute transform -- so none is invented for it.
+        self.assertNotIn("translation", frame)
+
+    def test_measure_uses_the_whole_branch(self) -> None:
+        result = refs_inspect.measure_targets(
+            self.CAD_REF, "#o1.1", "#o1.2", axis="z", context_provider=self._provider()
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual("group", result["from"]["occurrenceKind"])
+        self.assertEqual(1.0, result["from"]["coordinate"])
+        self.assertEqual(11.0, result["to"]["coordinate"])
+        self.assertEqual(10.0, result["measurement"]["signedDistance"])
+
+    def test_an_unknown_ref_names_what_does_exist(self) -> None:
+        result = refs_inspect.inspect_cad_refs(
+            self.CAD_REF, "#o1.9", context_provider=self._provider()
+        )
+
+        self.assertFalse(result["ok"])
+        message = result["errors"][0]["message"]
+        self.assertIn("did not resolve", message)
+        self.assertIn("o1 does exist, and holds: o1.1, o1.2", message)
+
+    def test_an_entity_ref_under_a_group_is_not_expanded(self) -> None:
+        # `o1.1.f1` would be face 1 of a subassembly, and face numbering is per
+        # occurrence -- expanding it to each part's f1 would answer about four different
+        # faces as though they were one. It stays an unresolved ref, with the hint.
+        result = refs_inspect.inspect_cad_refs(
+            self.CAD_REF, "#o1.1.f1", context_provider=self._provider()
+        )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(1, len(result["tokens"][0]["selections"]))
+
+    def test_frame_on_an_unknown_ref_fails_with_the_hint(self) -> None:
+        with self.assertRaises(refs_inspect.CadRefError) as raised:
+            refs_inspect.inspect_target_frame(
+                self.CAD_REF, "#o1.1.9", context_provider=self._provider()
+            )
+        self.assertIn("o1.1 does exist, and holds: o1.1.1, o1.1.2", str(raised.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

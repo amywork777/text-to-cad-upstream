@@ -27,7 +27,7 @@ class ResolveModelOutputPathTest(unittest.TestCase):
         self.root = Path(self._tmp.name).resolve()
         (self.root / "src").mkdir()
         self.script = self.root / "src" / "bracket.py"
-        self.script.write_text("# model\n")
+        self.script.write_text("# model\n", encoding="utf-8")
 
     def test_the_default_is_the_sibling_stem(self) -> None:
         self.assertEqual(

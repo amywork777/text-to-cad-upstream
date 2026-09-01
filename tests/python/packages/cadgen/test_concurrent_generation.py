@@ -48,7 +48,7 @@ class ConcurrentGenerationTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
         self.generator = self.root / "widget.py"
-        self.generator.write_text(BOX_GENERATOR)
+        self.generator.write_text(BOX_GENERATOR, encoding="utf-8")
 
     def _run_contenders(self, count):
         script = _BUILDER.format(src=_CADGEN_SRC, target=f"{self.generator}={self.root / 'widget.step'}")

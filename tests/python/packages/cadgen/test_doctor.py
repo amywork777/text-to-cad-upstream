@@ -39,7 +39,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_unpinned_requirements_is_the_dev_checkout_and_passes(self) -> None:
         with TemporaryDirectory() as tmp:
-            (Path(tmp) / "requirements.txt").write_text("cadgen[snapshot]\n")
+            (Path(tmp) / "requirements.txt").write_text("cadgen[snapshot]\n", encoding="utf-8")
             code, out, _ = _run([tmp])
         self.assertEqual(code, 0)
         self.assertIn("unpinned", out)
@@ -47,7 +47,7 @@ class DoctorTests(unittest.TestCase):
     def test_matching_pin_passes_and_names_the_file(self) -> None:
         with TemporaryDirectory() as tmp:
             req = Path(tmp) / "requirements.txt"
-            req.write_text(f"cadgen=={cadgen.__version__}\n")
+            req.write_text(f"cadgen=={cadgen.__version__}\n", encoding="utf-8")
             code, out, _ = _run([str(req)])
         self.assertEqual(code, 0)
         self.assertIn("OK", out)
@@ -55,7 +55,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_mismatch_exits_3_with_the_install_instruction(self) -> None:
         with TemporaryDirectory() as tmp:
-            (Path(tmp) / "requirements.txt").write_text("cadgen==0.0.0.dev0\n")
+            (Path(tmp) / "requirements.txt").write_text("cadgen==0.0.0.dev0\n", encoding="utf-8")
             code, _, err = _run([tmp])
         self.assertEqual(code, 3)
         self.assertIn("MISMATCH", err)
@@ -63,7 +63,7 @@ class DoctorTests(unittest.TestCase):
 
     def test_extras_form_of_the_pin_is_read(self) -> None:
         with TemporaryDirectory() as tmp:
-            (Path(tmp) / "requirements.txt").write_text(f"cadgen[snapshot]=={cadgen.__version__}\n")
+            (Path(tmp) / "requirements.txt").write_text(f"cadgen[snapshot]=={cadgen.__version__}\n", encoding="utf-8")
             code, out, _ = _run([tmp])
         self.assertEqual(code, 0)
         self.assertIn("OK", out)

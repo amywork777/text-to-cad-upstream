@@ -60,10 +60,25 @@ class TessellationCacheRouteTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory(prefix="tess-cache-")
         self.addCleanup(self._tmp.cleanup)
         self.home = Path(self._tmp.name)
-        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home), "CADGEN_CACHE_DIR": "", "XDG_CACHE_HOME": ""})
+        # Every root override cleared and the home pointed at the sandbox, so
+        # cache_root() takes its LAST branch (~/.cache/cadgen) on both platforms
+        # and lands inside the temp dir. LOCALAPPDATA has to go too: on Windows
+        # it is consulted BEFORE the home, so leaving it set wrote the runner's
+        # real user cache. USERPROFILE likewise -- Path.home() reads HOME on
+        # POSIX and USERPROFILE on Windows.
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "HOME": str(self.home),
+                "USERPROFILE": str(self.home),
+                "CADGEN_CACHE_DIR": "",
+                "XDG_CACHE_HOME": "",
+                "LOCALAPPDATA": "",
+            },
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
-        # Path.home() reads HOME on POSIX; guard the assumption this suite rests on.
+        # Guard the assumption this suite rests on: nothing it writes escapes.
         self.assertEqual(Path.home(), self.home)
 
     def route(self, name: str) -> str:

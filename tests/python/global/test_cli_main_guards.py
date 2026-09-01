@@ -27,7 +27,7 @@ class CliMainGuardTest(unittest.TestCase):
         for path in sorted(CLI_DIR.rglob("*.py")):
             if path.name == "__main__.py":  # executed directly by -m on the package
                 continue
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
             if not MAIN_DEF.search(text):
                 continue
             checked += 1

@@ -54,7 +54,7 @@ class CompoundFromInstancesTests(unittest.TestCase):
             linear_deflection=0.5,
             angular_deflection=0.4,
         )
-        return json.loads((package_dir / "assembly.json").read_text())
+        return json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
 
     def test_nested_instance_compound_matches_moved_composition(self) -> None:
         proto = _engine_prototype()

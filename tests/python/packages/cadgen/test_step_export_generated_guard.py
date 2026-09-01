@@ -44,7 +44,7 @@ class GeneratedStepExportGuardTest(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(self.enterContext(__import__("tempfile").TemporaryDirectory()))
         self.existing = self.tmp / "part.step"
-        self.existing.write_text("ISO-10303-21;\n-- stale geometry from the previous build\n")
+        self.existing.write_text("ISO-10303-21;\n-- stale geometry from the previous build\n", encoding="utf-8")
         self.out = self.tmp / "out.step"
 
     def test_a_generated_entry_refuses_to_copy_its_own_previous_output(self) -> None:
@@ -64,7 +64,7 @@ class GeneratedStepExportGuardTest(unittest.TestCase):
         spec = _Spec("imported", self.existing)
         result = _export_scene("step", spec, _SceneWithoutGeneratorOutput(), self.out, logger=mock.Mock())
         self.assertEqual(self.out, result)
-        self.assertIn("stale geometry", self.out.read_text())
+        self.assertIn("stale geometry", self.out.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

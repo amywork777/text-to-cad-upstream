@@ -35,7 +35,7 @@ class PinScriptPresenceTest(unittest.TestCase):
         self.assertTrue(os.access(SCRIPT, os.X_OK), f"{SCRIPT} is not executable")
 
     def test_release_workflow_runs_it_before_the_publish_commit(self):
-        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn("scripts/release/pin-cadgen-requirements.sh", workflow)
         pin_at = workflow.index("scripts/release/pin-cadgen-requirements.sh")
         commit_at = workflow.index("Commit publish result")
@@ -52,7 +52,7 @@ class PinScriptPresenceTest(unittest.TestCase):
         """
         checked = 0
         for req in sorted(REPO_ROOT.glob("skills/*/requirements.txt")):
-            text = req.read_text()
+            text = req.read_text(encoding="utf-8")
             if "cadgen" not in text:
                 continue
             checked += 1
@@ -72,14 +72,14 @@ class PinScriptBehaviourTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.root = Path(self._tmp.name)
-        (self.root / "VERSION").write_text("9.9.9\n")
+        (self.root / "VERSION").write_text("9.9.9\n", encoding="utf-8")
         (self.root / "scripts" / "release").mkdir(parents=True)
         shutil.copy2(SCRIPT, self.root / "scripts" / "release" / SCRIPT.name)
 
     def _write(self, rel: str, body: str) -> Path:
         path = self.root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body)
+        path.write_text(body, encoding="utf-8")
         return path
 
     def _run(self, *args):
@@ -94,7 +94,7 @@ class PinScriptBehaviourTest(unittest.TestCase):
         target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\nplaywright\n")
         result = self._run()
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual("cadgen==9.9.9\nplaywright\n", target.read_text())
+        self.assertEqual("cadgen==9.9.9\nplaywright\n", target.read_text(encoding="utf-8"))
 
     def test_extras_survive_pinning(self):
         """`cadgen[snapshot]==X`, not `cadgen==X`.
@@ -105,12 +105,12 @@ class PinScriptBehaviourTest(unittest.TestCase):
         """
         target = self._write("skills/urdf/requirements.txt", f"{UNPINNED_EXTRAS}\n")
         self._run()
-        self.assertEqual("cadgen[snapshot]==9.9.9\n", target.read_text())
+        self.assertEqual("cadgen[snapshot]==9.9.9\n", target.read_text(encoding="utf-8"))
 
     def test_preserves_sibling_requirements(self):
         target = self._write("skills/dxf/requirements.txt", f"{UNPINNED}\nezdxf\nshapely\n")
         self._run()
-        self.assertEqual("cadgen==9.9.9\nezdxf\nshapely\n", target.read_text())
+        self.assertEqual("cadgen==9.9.9\nezdxf\nshapely\n", target.read_text(encoding="utf-8"))
 
     def test_pins_every_manifest_it_finds(self):
         a = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
@@ -118,21 +118,21 @@ class PinScriptBehaviourTest(unittest.TestCase):
         c = self._write("skills/dxf/requirements.txt", f"{UNPINNED}\n")
         self._run()
         for path in (a, b, c):
-            self.assertEqual("cadgen==9.9.9\n", path.read_text(), path)
+            self.assertEqual("cadgen==9.9.9\n", path.read_text(encoding="utf-8"), path)
 
     def test_is_idempotent(self):
         target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         self._run()
         second = self._run()
         self.assertEqual(0, second.returncode)
-        self.assertEqual("cadgen==9.9.9\n", target.read_text())
+        self.assertEqual("cadgen==9.9.9\n", target.read_text(encoding="utf-8"))
 
     def test_check_mode_reports_without_writing(self):
         target = self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         result = self._run("--check")
         self.assertEqual(1, result.returncode, "unpinned requirements must fail --check")
         self.assertIn("would pin", result.stdout)
-        self.assertEqual(f"{UNPINNED}\n", target.read_text(), "--check must not write")
+        self.assertEqual(f"{UNPINNED}\n", target.read_text(encoding="utf-8"), "--check must not write")
 
     def test_check_mode_passes_once_pinned(self):
         self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
@@ -143,11 +143,11 @@ class PinScriptBehaviourTest(unittest.TestCase):
         vendored = self._write("node_modules/pkg/requirements.txt", f"{UNPINNED}\n")
         models = self._write("models/requirements.txt", f"{UNPINNED}\n")
         self._run()
-        self.assertEqual(f"{UNPINNED}\n", vendored.read_text(), "node_modules must be skipped")
-        self.assertEqual(f"{UNPINNED}\n", models.read_text(), "models must be skipped")
+        self.assertEqual(f"{UNPINNED}\n", vendored.read_text(encoding="utf-8"), "node_modules must be skipped")
+        self.assertEqual(f"{UNPINNED}\n", models.read_text(encoding="utf-8"), "models must be skipped")
 
     def test_missing_version_is_an_error(self):
-        (self.root / "VERSION").write_text("\n")
+        (self.root / "VERSION").write_text("\n", encoding="utf-8")
         self._write("skills/cad/requirements.txt", f"{UNPINNED}\n")
         result = self._run()
         self.assertEqual(1, result.returncode)

@@ -198,7 +198,7 @@ class _Daemon:
         Looks for a completed job (`gen [...] -> exit 0`), not just the daemon's startup
         line: a daemon can be running while the client still fell back to cold.
         """
-        return self.log.is_file() and "-> exit" in self.log.read_text(errors="replace")
+        return self.log.is_file() and "-> exit" in self.log.read_text(encoding="utf-8", errors="replace")
 
 
 # The whole harness compares a WARM run against a cold one, so it needs a daemon to
@@ -216,7 +216,7 @@ class WarmOutputEquivalence(unittest.TestCase):
     def _tree(self, name: str, source: str) -> pathlib.Path:
         tmp = pathlib.Path(tempfile.mkdtemp(prefix="tmp-warm-eq-")).resolve()
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        (tmp / name).write_text(source)
+        (tmp / name).write_text(source, encoding="utf-8")
         return tmp
 
     def _cold(self, name: str, source: str, argv: list[str]):

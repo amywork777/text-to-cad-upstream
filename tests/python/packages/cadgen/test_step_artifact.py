@@ -35,7 +35,7 @@ class BuildStepArtifactTests(unittest.TestCase):
 
     def _materialize_imported_step(self) -> Path:
         generator = self.temp_root / "box.py"
-        generator.write_text(BOX_GENERATOR)
+        generator.write_text(BOX_GENERATOR, encoding="utf-8")
         imported_step = self.temp_root / "imported.step"
         step_export_target.export_model_to_path(
             repo_root=Path.cwd(),
