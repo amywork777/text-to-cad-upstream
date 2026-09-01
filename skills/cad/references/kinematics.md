@@ -17,7 +17,8 @@ There are THREE systems with different lifecycles, deliberately independent:
   `@step(animation="<name>.anim.js")`, whose TEXT is copied into the same
   sidecar. It targets occurrences directly and knows nothing about mates.
   Editing kinematics or animation never re-keys a render package and never
-  dirties an export.
+  dirties an export — but the `.anim.js` IS a build input: editing it makes
+  the model stale, and the next run refreshes the sidecar's copy.
 
 ## Kinematics: typed mates
 

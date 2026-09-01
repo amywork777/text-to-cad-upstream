@@ -102,20 +102,40 @@ def _load_generator_module(script_path: Path) -> object:
     return module
 
 
-def _resolve_declared_kinematics(
-    defn: object, *, script_path: Path
-) -> tuple[dict | None, dict | None, str | None]:
+@dataclass(frozen=True)
+class _DeclaredKinematics:
+    """What the decorator declared, resolved for the build: the kinematics
+    block, the bake pose, the animation module's TEXT, and the files those
+    declarations were read from (``inputs``)."""
+
+    block: dict | None
+    bake_pose: dict | None
+    animation_source: str | None
+    inputs: tuple[Path, ...]
+
+
+def _resolve_declared_kinematics(defn: object, *, script_path: Path) -> _DeclaredKinematics:
     """The model's kinematics block, bake pose, and animation module TEXT.
 
     The block comes validated from the decoration-time normalizer; axis refs
     resolve against real geometry later in the package build. The animation
     path is an authoring-time input only: its text is read HERE and copied
-    into the sidecar, so no generated file ever references the source tree."""
+    into the sidecar, so no generated file ever references the source tree.
+
+    The animation file is also a FRESHNESS INPUT, returned in ``inputs`` so the
+    caller folds it into the source closure exactly like a vendor STEP read
+    through ``cadgen.read_step``. The sidecar carries a COPY of the module's
+    text, and the documented way to ship an edited clip is to re-run the
+    model — which only works if the edit makes the model stale. Without this
+    the ``.anim.js`` sat outside the gate: the model stayed ``current``, the
+    stale copy shipped, and the viewer kept playing the old clip through any
+    number of reloads."""
     kinematics_def = getattr(defn, "kinematics", None)
     block = dict(kinematics_def.block) if kinematics_def is not None else None
     bake_pose = dict(getattr(defn, "bake_pose", None) or {}) or None
     animation = getattr(defn, "animation", None)
     animation_source: str | None = None
+    inputs: list[Path] = []
     if animation:
         candidate = Path(animation)
         resolved = (candidate if candidate.is_absolute() else script_path.parent / candidate).resolve()
@@ -126,7 +146,10 @@ def _resolve_declared_kinematics(
                 "file must exist — there is no convention discovery)"
             )
         animation_source = resolved.read_text(encoding="utf-8")
-    return block, bake_pose, animation_source
+        inputs.append(resolved)
+    return _DeclaredKinematics(
+        block=block, bake_pose=bake_pose, animation_source=animation_source, inputs=tuple(inputs)
+    )
 
 
 def _normalize_step_payload(
@@ -472,6 +495,14 @@ def _run_script_generator_inner(
         envelope = _normalize_step_payload(raw_payload, script_path=spec.script_path)
         if spec.step_path is None:
             raise RuntimeError(f"{spec.source_ref} has no configured STEP output")
+        # Kinematics + bake pose + animation text (validated at decoration);
+        # they ride the scene into the sidecar exactly like provenance does.
+        # Resolved BEFORE the closure is captured, because the declared
+        # animation file is one of its inputs: the sidecar ships a copy of
+        # that file's text, so an edit to it must make the model stale.
+        declared = _resolve_declared_kinematics(
+            getattr(generator, "__cadgen_model__", None), script_path=spec.script_path
+        )
         # Record paths relative to the model folder so the descriptor stays
         # portable. The base is the GENERATOR's folder, never the output's:
         # with an explicit `--write <path>` the step_path moves to the output
@@ -483,7 +514,7 @@ def _run_script_generator_inner(
             spec.script_path,
             base=spec.script_path.parent,
             executed_files=executed_files,
-            discovered_inputs=read_files,
+            discovered_inputs=[*read_files, *declared.inputs],
         )
         generated_scene = _write_shape_step_payload(
             envelope,
@@ -492,15 +523,10 @@ def _run_script_generator_inner(
             logger=logger,
             entry_kind=_shape_payload_entry_kind(envelope.get("shape"), fallback=spec.kind),
         )
-        # Kinematics + bake pose + animation text (validated at decoration);
-        # ride the scene into the sidecar exactly like provenance does.
-        kinematics_block, bake_pose, animation_source = _resolve_declared_kinematics(
-            getattr(generator, "__cadgen_model__", None), script_path=spec.script_path
-        )
-        if kinematics_block:
-            generated_scene.kinematics = kinematics_block
-            generated_scene.bake_pose = bake_pose
-        generated_scene.animation_source = animation_source
+        if declared.block:
+            generated_scene.kinematics = declared.block
+            generated_scene.bake_pose = declared.bake_pose
+        generated_scene.animation_source = declared.animation_source
     elif model_format == "dxf":
         from cadgen._internal.dxf_output import record_dxf_output
 

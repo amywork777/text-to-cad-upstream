@@ -216,6 +216,110 @@ class DiscoveredFileInputTests(unittest.TestCase):
         self.assertEqual(before, artifact.stat().st_mtime_ns)
 
 
+_ANIMATED_MODEL = '''import cadgen
+from cadgen import label_shape, step
+from cadgen import build123d as bd
+
+KINEMATICS = {
+    "mates": [
+        cadgen.revolute("swing", parent="#base", child="#arm",
+                        origin=(0, 0, 6), direction=(0, 0, 1), limits=(0, 90)),
+    ],
+}
+
+
+@step(kind="assembly", kinematics=KINEMATICS, animation="hinge.anim.js")
+def hinge():
+    base = label_shape(bd.Box(20, 20, 4), "base")
+    arm = label_shape(bd.Pos(10, 0, 6) * bd.Box(16, 4, 4), "arm")
+    return bd.Compound(children=[base, arm])
+'''
+
+
+def _clip(label: str) -> str:
+    return f'export const clips = {{ demo: {{ label: "{label}", duration: 2, update(t, m) {{}} }} }};\n'
+
+
+class DeclaredAnimationInputTests(unittest.TestCase):
+    """The file `@step(animation=...)` names is a freshness input too.
+
+    The sidecar carries a COPY of the animation module's text, and the
+    documented way to ship an edited clip is to re-run the model. That only
+    holds if the edit makes the model stale. It did not: the file was read
+    AFTER the closure was captured, so the model reported ``current``, the
+    stale copy shipped, and the viewer played the old clip through any number
+    of reloads. Same shape as the vendor-STEP hole above, same fix — the
+    declared file joins the closure, byte-hashed.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="declared-animation-")
+        self.addCleanup(self._tmp.cleanup)
+        self.project = Path(self._tmp.name).resolve()
+        self.environment = dict(os.environ)
+        self.environment.update(
+            {
+                "CADGEN_DAEMON": "0",
+                "CADGEN_COMPONENT_WORKERS": "1",
+                "CADGEN_CACHE_DIR": str(self.project / "store"),
+                "PYTHONPATH": str(CADGEN_SRC),
+            }
+        )
+        (self.project / "hinge.py").write_text(_ANIMATED_MODEL, encoding="utf-8")
+        self.animation = self.project / "hinge.anim.js"
+        self.animation.write_text(_clip("Showcase"), encoding="utf-8")
+
+    def _run(self, *args: str) -> str:
+        import json
+
+        completed = subprocess.run(
+            [sys.executable, str(self.project / "hinge.py"), "--json", *args],
+            cwd=str(self.project),
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        return json.loads(completed.stdout.strip().splitlines()[-1])["outcome"]
+
+    def _sidecar_clip(self) -> str:
+        import json
+
+        sidecar = json.loads((self.project / "hinge.step.json").read_text(encoding="utf-8"))
+        return sidecar["animation"]["clips"]
+
+    def test_editing_the_animation_rebuilds_and_ships_the_new_clip(self) -> None:
+        self.assertEqual(self._run(), "built")
+        self.assertEqual(self._run(), "current")
+        self.assertEqual(self._sidecar_clip(), _clip("Showcase"))
+
+        self.animation.write_text(_clip("Showcase EDITED"), encoding="utf-8")
+        self.assertEqual(self._run(), "built", "an edited clip must make the model stale")
+        self.assertEqual(self._sidecar_clip(), _clip("Showcase EDITED"))
+        self.assertEqual(self._run(), "current")
+
+    def test_a_touch_with_identical_bytes_stays_a_no_op(self) -> None:
+        self.assertEqual(self._run(), "built")
+        payload = self.animation.read_bytes()
+        self.animation.unlink()
+        self.animation.write_bytes(payload)
+        self.assertEqual(self._run(), "current", "the input is the file's content, not its mtime")
+
+    def test_force_still_rebuilds_a_current_model(self) -> None:
+        self.assertEqual(self._run(), "built")
+        self.assertEqual(self._run("--force"), "built")
+
+    def test_the_animation_file_is_recorded_in_the_closure(self) -> None:
+        import json
+
+        self._run()
+        records = list((self.project / "store" / "records").glob("*.source.json"))
+        self.assertEqual(len(records), 1, records)
+        recorded = json.loads(records[0].read_text(encoding="utf-8"))
+        self.assertEqual(sorted(recorded["sourceClosureFiles"]), ["hinge.anim.js", "hinge.py"])
+
+
 class ReaderSurfaceTests(unittest.TestCase):
     """`read_step` is the STEP reader. Names that are not on the surface get
     Python's own AttributeError — no recognition of what a name once meant."""
