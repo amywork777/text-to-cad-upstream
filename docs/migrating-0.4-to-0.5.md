@@ -134,6 +134,31 @@ reporting itself current after that STEP was replaced, and only `--force` got
 the truth back. `read_step` declares the file: its path and content hash join
 the model's closure, and the next run's gate re-hashes it.
 
+**The flatten projection helpers are gone.** v0.4's `cadgen.flatten` sampled
+wires into point lists, unioned polygons in shapely, and emitted polylines.
+v0.5 replaced that pipeline with exact OCC operations on the real faces, and
+the sampling-era helpers were removed with it — a drawing built on them fails
+with `AttributeError` at the point of emission:
+
+| Removed (0.4) | Replacement (0.5) |
+| --- | --- |
+| `flatten.union_projected_faces` | `flatten.union_faces(flatten.flatten_faces(faces))` — exact OCC union of flattened faces |
+| `flatten.project_face_polygon` | `flatten.flatten_face(face)` — lays the real face into XY; arcs stay arcs |
+| `flatten.project_wire_points` | None. Nothing samples wires any more; return the flattened face itself |
+| `flatten.add_shapely_geometry` | None. A `@dxf` function returns build123d 2D geometry; the engine writes the DXF |
+| `flatten.add_ring` | Model the ring as geometry: an outer face with the inner contour as a hole |
+| `flatten.add_circle_polyline` | Model the circle: `bd.Circle(r)` exports as a DXF `CIRCLE`, not a chord run |
+| `cadgen.step_scene.import_step` | `cadgen.read_step` (see above) |
+
+`flatten.flat_pattern(part, coordinate=..., kerf=...)` is the one-call form:
+selection + flatten + union + optional kerf offset. Know its limit — it selects
+the planar faces at ONE coordinate, so it unfolds a flat plate but **not a
+folded bracket**. Unfolding a multi-panel part is now the caller's job: select
+each panel's faces with `flatten.planar_faces(...)` per plane, flatten each
+with its own placement (distributing that bend's allowance yourself), and fuse
+with `flatten.union_faces(...)`. A worked multi-plane example lives in the dxf
+skill's `references/generator-templates.md`.
+
 ### 2. Convert the generator into a decorated model
 
 This is the structural change. A v0.4 source had a magic `gen_step()` /
