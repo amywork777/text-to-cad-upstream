@@ -158,6 +158,144 @@ class OpMemoTest(unittest.TestCase):
             os.environ.pop("CADGEN_OP_MEMO_DISK", None)
 
 
+def _memo_outcome(fn):
+    """What a caller observes: the result's volume, or the exception class."""
+    try:
+        return ("ok", round(fn().volume, 6))
+    except Exception as exc:  # noqa: BLE001 - the exception IS the observation
+        return ("raised", type(exc).__name__)
+
+
+class OpMemoAttributeParityTest(unittest.TestCase):
+    """A memo hit must hand back the wrapper build123d would have built, not a
+    bare one. build123d derives a result's Python-level attributes from the
+    call (``_bool_op`` copies ``self``'s ``topo_parent``/label/color onto its
+    result and builds anytree children for a multi-solid compound) and
+    downstream code steers on them: ``bd.chamfer(edges, …)`` chamfers
+    ``edges[0].topo_parent``. The juno shin was chamfered on a disk hit and not
+    on a cold run because the disk tier reconstructed ``cls(topods)`` with
+    ``topo_parent=None`` while a miss preserved the live attributes — the
+    package hash changed with every run against a warm disk tier."""
+
+    def setUp(self):
+        import tempfile
+
+        op_memo.install()
+        op_memo.clear()
+        self._tmp = tempfile.TemporaryDirectory()
+        os.environ["CADGEN_OP_MEMO"] = "1"
+        self._prev_store = os.environ.get("CADGEN_CACHE_DIR")
+        os.environ["CADGEN_CACHE_DIR"] = self._tmp.name
+
+    def tearDown(self):
+        op_memo.clear()
+        os.environ.pop("CADGEN_OP_MEMO", None)
+        if self._prev_store is None:
+            os.environ.pop("CADGEN_CACHE_DIR", None)
+        else:
+            os.environ["CADGEN_CACHE_DIR"] = self._prev_store
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _bored_plate():
+        """A bool op whose result inherits topo_parent/label/color from self."""
+        from build123d.topology import Part, Solid
+
+        root = Part(children=[Solid.make_box(20, 20, 8)])
+        plate = root.solids()[0]  # topo_parent is root (get_shape_list)
+        plate.label = "plate"
+        plate.color = (0.2, 0.4, 0.6, 1.0)
+        return root, plate, plate.cut(Solid.make_cylinder(3, 12))
+
+    def test_a_disk_hit_replays_attributes_against_the_current_call(self):
+        first_root, first_plate, first = self._bored_plate()
+        self.assertIs(first.topo_parent, first_root)
+        op_memo.clear()  # a fresh process: memory gone, disk kept
+        disk_hits = op_memo.stats()["disk_hits"]
+        second_root, second_plate, second = self._bored_plate()
+        self.assertGreater(op_memo.stats()["disk_hits"], disk_hits)
+        self.assertIs(second.topo_parent, second_root, "topo_parent must be THIS call's root")
+        self.assertEqual(second.label, "plate")
+        self.assertEqual(tuple(second.color), tuple(first.color))
+        self.assertIs(second._color, second_plate._color, "copied by reference, as copy_attributes_to does")
+
+    def test_a_warm_hit_does_not_leak_the_recording_call_objects(self):
+        first_root, _plate, first = self._bored_plate()
+        hits = op_memo.stats()["hits"]
+        second_root, _plate2, second = self._bored_plate()
+        self.assertGreater(op_memo.stats()["hits"], hits)
+        self.assertIs(second.topo_parent, second_root)
+        self.assertIsNot(second.topo_parent, first_root, "a hit used to clone the recording result's dict")
+
+    def test_children_are_rebuilt_onto_the_reconstruction(self):
+        """No memoized op in build123d 0.11 returns a compound WITH anytree
+        children (a split bool result has solids but no children), so this
+        exercises the recipe directly: children map positionally onto the
+        reconstruction's top-level sub-shapes, carry their attributes, and
+        parent onto the reconstruction — never onto the recording result."""
+        from build123d.geometry import Location
+        from build123d.topology import Part, Solid
+        from build123d.topology.shape_core import get_top_level_topods_shapes
+
+        base = Solid.make_box(20, 20, 8)
+        base.label = "base"
+        left, right = Solid.make_box(5, 5, 5), Solid.make_box(5, 5, 5).moved(Location((10, 0, 0)))
+        left.label, right.label = "left", "right"
+        left.topo_parent = right.topo_parent = base  # as copy_attributes_to would leave them
+        result = Part(children=[left, right])
+        result.label = "pair"
+
+        stored = op_memo._freeze_result(result, [base])
+        thawed = op_memo._thaw_result(stored, [base])
+        self.assertEqual(thawed.label, "pair")
+        self.assertEqual([c.label for c in thawed.children], ["left", "right"])
+        for child, top in zip(thawed.children, get_top_level_topods_shapes(thawed.wrapped)):
+            self.assertTrue(child.wrapped.IsSame(top), "children wrap the reconstruction's own sub-shapes")
+            self.assertIs(child.parent, thawed)
+            self.assertIs(child.topo_parent, base)
+        self.assertIsNot(thawed.children[0], left)
+        self.assertEqual(_digest(thawed), _digest(result))
+
+    def test_chamfer_steered_by_topo_parent_is_cache_state_independent(self):
+        """The juno pattern: chamfer edges taken from a solid whose topo_parent
+        is an unrelated root. Whatever build123d does with it un-memoized is
+        what a cold miss AND a disk hit must do."""
+        from build123d import chamfer
+        from build123d.topology import Part, Solid
+
+        def build():
+            root = Part(children=[Solid.make_box(20, 20, 8)])
+            core = root.solids()[0]
+            core = core.cut(Solid.make_cylinder(3, 12)).solids()[0]
+            edges = core.edges().filter_by(lambda e: e.length > 15)
+            return chamfer(list(edges), 0.5)
+
+        os.environ["CADGEN_OP_MEMO"] = "0"
+        truth = _memo_outcome(build)
+        os.environ["CADGEN_OP_MEMO"] = "1"
+        self.assertEqual(_memo_outcome(build), truth, "cold miss differs from un-memoized")
+        op_memo.clear()
+        self.assertEqual(_memo_outcome(build), truth, "disk hit differs from un-memoized")
+        self.assertEqual(_memo_outcome(build), truth, "warm hit differs from un-memoized")
+
+    def test_a_result_with_inexpressible_attributes_is_not_cached(self):
+        """An attribute reachable from no argument of the call cannot be replayed
+        on a hit, so the result must not be stored (the op simply runs uncached)."""
+        from build123d.topology import Solid
+
+        result = Solid.make_box(20, 20, 8)
+        result.topo_parent = Solid.make_box(1, 1, 1)
+        with self.assertRaises(op_memo._Unkeyable):
+            op_memo._freeze_result(result, [])
+        # Reachable through an argument: stored, and replayed against THAT argument.
+        holder = Solid.make_box(2, 2, 2)
+        holder.topo_parent = result.topo_parent
+        stored = op_memo._freeze_result(result, [holder])
+        other = Solid.make_box(2, 2, 2)
+        other.topo_parent = Solid.make_box(3, 3, 3)
+        self.assertIs(op_memo._thaw_result(stored, [other]).topo_parent, other.topo_parent)
+
+
 class ComponentStoreTest(unittest.TestCase):
     def setUp(self):
         import tempfile

@@ -48,6 +48,21 @@ class RootExports(unittest.TestCase):
         marked = [ln for ln in proc.stdout.splitlines() if ln.startswith("HEAVY:")]
         self.assertEqual(["HEAVY:"], marked, "importing cadgen pulled in the CAD stack")
 
+    def test_model_body_helpers_do_not_import_the_cad_stack(self):
+        """`from cadgen import compound_from_instances` / `from cadgen import flatten`
+        sit in a model's MODULE BODY, so the modules behind them must defer the
+        kernel the way `cadgen.build123d` does — or every such model pays the
+        ~2.5s import before the @step freshness gate can say `current`."""
+        code = (
+            "import sys, cadgen.instances, cadgen.flatten;"
+            "from cadgen import compound_from_instances, flatten;"
+            f"print('HEAVY:' + ','.join(m for m in {HEAVY!r} if m in sys.modules))"
+        )
+        proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        marked = [ln for ln in proc.stdout.splitlines() if ln.startswith("HEAVY:")]
+        self.assertEqual(["HEAVY:"], marked, "cadgen.instances/cadgen.flatten imported the kernel at module scope")
+
 
 if __name__ == "__main__":
     unittest.main()

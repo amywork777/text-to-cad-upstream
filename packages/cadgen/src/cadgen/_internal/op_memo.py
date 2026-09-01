@@ -22,10 +22,17 @@ Scope and placement:
   memoized per TShape, combined with the shape's location matrix. Fresh
   rebuilds of identical geometry serialize byte-identically (verified in the
   design doc's Phase 0 spike), so keys hit across full re-executions.
-- Cache hits return a shallow copy of the stored build123d object: a fresh
-  wrapper sharing the same immutable TShape. Callers must not mutate cached
-  TShapes (the same discipline validity.py and interference.py already
-  document); triangulation attachment is tolerated.
+- Every consumer — the missing caller, a warm in-memory hit, a disk hit —
+  receives the SAME reconstruction: a fresh wrapper read back from the
+  canonical bytes, with its Python-level attributes (``topo_parent``,
+  ``label``, ``_color``, ``joints``, anytree children, ...) replayed from an
+  ATTRIBUTE RECIPE recorded against the call's shape arguments (see
+  ``_StoredShape``). build123d derives those attributes from the inputs
+  (``_bool_op`` copies ``self``'s onto the result; ``chamfer`` constructs a
+  bare one), and downstream code steers on them — ``bd.chamfer(edges, …)``
+  targets ``edges[0].topo_parent`` — so a hit that reconstructed a bare
+  wrapper while a miss preserved the live one made geometry depend on cache
+  state (the juno shin chamfered on a disk hit and not on a cold run).
 
 Kill switch: ``CADGEN_OP_MEMO=0`` (and ``CADGEN_OP_MEMO_DISK=0`` for just the
 disk tier).
@@ -47,7 +54,7 @@ from collections import OrderedDict
 from cadgen._internal.atomic_replace import replace_atomic
 
 # Salt: bump _OP_MEMO_VERSION whenever keying or hit semantics change.
-_OP_MEMO_VERSION = 2
+_OP_MEMO_VERSION = 3
 
 _lock = threading.RLock()
 _cache: OrderedDict[tuple, object] = OrderedDict()
@@ -72,7 +79,7 @@ def _enabled() -> bool:
 
 
 def _capacity() -> int:
-    # Entries are canonical BREP bytes plus a geometry-free wrapper template,
+    # Entries are canonical BREP bytes plus a JSON attribute recipe,
     # so a large cache is cheap — and a cap below a model's op count makes
     # every run thrash the disk tier (the moonwatch alone has ~6k keyable
     # ops, which is how the old 4096 default was caught).
@@ -276,8 +283,7 @@ def _disk_put(key: tuple, stored) -> None:
     try:
         import json
 
-        cls = type(stored.template)
-        header = json.dumps({"cls": f"{cls.__module__}.{cls.__qualname__}"})
+        header = json.dumps({"cls": stored.cls_path, "recipe": stored.recipe}, separators=(",", ":"))
         path = _disk_path(key)
         tmp = f"{path}.{os.getpid()}.tmp"
         with open(tmp, "wb") as fh:
@@ -310,16 +316,18 @@ def _disk_get(key: tuple):
             return None
         with open(path, "rb") as fh:
             header, _, brep = fh.read().partition(b"\n")
-        cls = _resolve_shape_class(json.loads(header.decode("utf-8"))["cls"])
-        template = cls(_downcast(_read_brep(brep)))
-        return _StoredShape(template, brep)
+        meta = json.loads(header.decode("utf-8"))
+        # Resolve the class now so a foreign entry fails here (falls back to
+        # executing the op) rather than at thaw.
+        _resolve_shape_class(meta["cls"])
+        return _StoredShape(meta["cls"], brep, meta["recipe"])
     except Exception:
         _stats["errors"] += 1
         return None
 
 
 class _StoredShape:
-    """A cached op result: canonical BREP bytes + a wrapper template.
+    """A cached op result: class path + canonical BREP bytes + attribute recipe.
 
     Cache correctness rests on CANONICAL RECONSTRUCTION. Cached shapes cannot
     be handed out live: downstream consumers mutate them (booleans and lofts
@@ -339,17 +347,36 @@ class _StoredShape:
     not cached and the caller gets the original, exactly as un-memoized
     execution would.
 
+    The bytes are only half of a build123d result. The wrapper's Python-level
+    attributes are the other half, and they are NOT a function of the bytes:
+    ``_bool_op`` copies ``self``'s ``topo_parent``/``label``/``_color``/
+    ``joints`` onto its result and builds anytree children for a multi-solid
+    compound, while ``chamfer`` returns a bare ``self.__class__(shape)``.
+    Downstream code steers on them (``bd.chamfer(edges, …)`` targets
+    ``edges[0].topo_parent``; the packager walks ``children``). So the entry
+    also carries an ATTRIBUTE RECIPE: every attribute of the live result,
+    encoded either as a literal or as a reference INTO THE CALL'S SHAPE
+    ARGUMENTS ("the same object as argument 0's ``topo_parent``"), plus one
+    recipe per anytree child, keyed to the reconstruction's top-level
+    sub-shapes in order. Thawing replays the recipe against the CURRENT call's
+    arguments, so a miss, a warm hit and a disk hit hand back wrappers that
+    are indistinguishable from one another and from un-memoized execution. A
+    result whose attributes cannot be expressed that way (a ``topo_parent``
+    reachable from no argument, non-empty joints of unknown origin, nested
+    children) is Unkeyable: the op runs uncached, as it always could.
+
     Relative to memo-OFF execution, canonicalization may change the exact
     bytes of some leaf components (geometrically identical). That is an
     accepted, versioned change: content addressing absorbs it as a one-time
     re-key, per the no-backwards-compatibility policy.
     """
 
-    __slots__ = ("template", "brep")
+    __slots__ = ("cls_path", "brep", "recipe")
 
-    def __init__(self, template, brep: bytes):
-        self.template = template
+    def __init__(self, cls_path: str, brep: bytes, recipe: dict):
+        self.cls_path = cls_path
         self.brep = brep
+        self.recipe = recipe
 
 
 def _write_brep(wrapped) -> bytes:
@@ -385,48 +412,270 @@ def _downcast(wrapped):
     return downcast(wrapped)
 
 
-def _clone_wrapper(template):
-    """A plain attribute-level shallow copy of a build123d wrapper.
-
-    Deliberately NOT ``copy.copy``: build123d's ``__copy__`` deep-copies the
-    geometry (``BRepBuilderAPI_Copy``) before sharing the TShape back in, so
-    going through it costs a full geometry copy that the caller immediately
-    replaces — it was the dominant per-hit cost on movement-class models."""
-    clone = object.__new__(type(template))
-    clone.__dict__.update(template.__dict__)
-    return clone
+def _class_path(cls) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
 
 
-def _freeze_result(result):
+def _is_shape(value) -> bool:
+    # A build123d Shape: has a TopoDS under `wrapped`. Vector/Axis/Location also
+    # carry a `wrapped` (gp_*), and must not count — they have no `_wrapped`.
+    return hasattr(value, "_wrapped") and getattr(value, "_wrapped", None) is not None
+
+
+def _shape_args(key_args: tuple, kwargs: dict) -> list:
+    """The call's shape arguments in a stable order: positional (recursing into
+    lists/tuples, e.g. ``_bool_op``'s tool tuples and chamfer's edge lists),
+    then keyword by name. Recipe references index into this list, so the
+    flattening must be identical on the miss that records and the hit that
+    replays — it is, because both see the same call signature."""
+    found: list = []
+
+    def walk(value) -> None:
+        if _is_shape(value):
+            found.append(value)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                walk(item)
+
+    for arg in key_args:
+        walk(arg)
+    for _name, value in sorted(kwargs.items()):
+        walk(value)
+    return found
+
+
+# Attributes anytree keeps on a node. Children are recorded as their own
+# recipes; a parent link is only ever the result itself (for its children).
+_ANYTREE_CHILDREN = "_NodeMixin__children"
+_ANYTREE_PARENT = "_NodeMixin__parent"
+_MISSING = object()
+
+
+def _encode_attr(name: str, value, shape_args: list, owner) -> list:
+    """One attribute of a live result as a JSON-safe recipe entry."""
+    if value is None or isinstance(value, (bool, int, str)):
+        return ["lit", value]
+    if isinstance(value, float):
+        return ["float", struct.pack("<d", value).hex()]
+    for index, shape in enumerate(shape_args):
+        if value is shape:
+            return ["arg", index]
+    for index, shape in enumerate(shape_args):
+        if getattr(shape, name, _MISSING) is value:
+            return ["arg_attr", index, name]
+    if name == "joints" and isinstance(value, dict):
+        if not value:
+            return ["lit_joints"]
+        # copy_attributes_to deep-copies the base's joints and re-parents them
+        # onto the result; recognize exactly that shape of origin.
+        for index, shape in enumerate(shape_args):
+            source = getattr(shape, "joints", None)
+            if (
+                isinstance(source, dict)
+                and set(source) == set(value)
+                and all(getattr(joint, "parent", None) is owner for joint in value.values())
+            ):
+                return ["arg_joints", index]
+        raise _Unkeyable("joints of unknown origin")
+    from build123d.geometry import Color
+
+    if isinstance(value, Color):
+        return ["color", [struct.pack("<d", float(c)).hex() for c in value]]
+    raise _Unkeyable(f"unstorable result attribute {name!r} ({type(value).__name__})")
+
+
+def _attrs_recipe(node, shape_args: list, *, parent) -> list:
+    """Recipe for every attribute of ``node`` except its geometry and anytree
+    links. ``parent`` is the result that owns ``node`` as a child (None for the
+    result itself); a parent link pointing anywhere else is unstorable."""
+    entries: list = []
+    for name, value in node.__dict__.items():
+        if name == "_wrapped" or name == _ANYTREE_CHILDREN:
+            continue
+        if name == _ANYTREE_PARENT:
+            if value is not None and value is not parent:
+                raise _Unkeyable("result has a foreign anytree parent")
+            continue
+        entries.append([name, _encode_attr(name, value, shape_args, node)])
+    return entries
+
+
+def _attribute_recipe(result, shape_args: list, reconstruction) -> dict:
+    """The full recipe: the result's attributes plus one per anytree child.
+
+    Children are matched positionally to the top-level sub-shapes of the
+    result — the order ``make_composite`` built them in — and must be the same
+    TopoDS sub-shapes; BinTools preserves compound order, so the k-th top-level
+    shape of the reconstruction is the k-th child's geometry on thaw."""
+    from build123d.topology.shape_core import get_top_level_topods_shapes
+
+    recipe = {"attrs": _attrs_recipe(result, shape_args, parent=None)}
+    children = list(getattr(result, "children", ()) or ())
+    if children:
+        tops = get_top_level_topods_shapes(result.wrapped)
+        # The enumerator dispatches on the Python class, so the raw read-back
+        # must be downcast (a TopoDS_Shape-typed compound counts as ONE shape).
+        if len(tops) != len(children) or len(get_top_level_topods_shapes(_downcast(reconstruction))) != len(children):
+            raise _Unkeyable("children do not map onto the top-level sub-shapes")
+        specs = []
+        for child, top in zip(children, tops):
+            if not _is_shape(child) or not child.wrapped.IsSame(top):
+                raise _Unkeyable("child is not the matching top-level sub-shape")
+            if list(getattr(child, "children", ()) or ()):
+                raise _Unkeyable("nested children")
+            specs.append(
+                {"cls": _class_path(type(child)), "attrs": _attrs_recipe(child, shape_args, parent=result)}
+            )
+        recipe["children"] = specs
+    return recipe
+
+
+def _decode_attr(entry: list, shape_args: list):
+    kind = entry[0]
+    if kind == "lit":
+        return entry[1]
+    if kind == "float":
+        return struct.unpack("<d", bytes.fromhex(entry[1]))[0]
+    if kind == "arg":
+        return shape_args[entry[1]]
+    if kind == "arg_attr":
+        return getattr(shape_args[entry[1]], entry[2])
+    if kind == "lit_joints":
+        return {}
+    if kind == "color":
+        from build123d.geometry import Color
+
+        return Color(*(struct.unpack("<d", bytes.fromhex(c))[0] for c in entry[1]))
+    raise ValueError(f"unknown recipe entry {kind!r}")
+
+
+def _apply_attrs(node, entries: list, shape_args: list) -> None:
+    import copy
+
+    for name, entry in entries:
+        if entry[0] == "arg_joints":
+            node.joints = copy.deepcopy(shape_args[entry[1]].joints)
+            for joint in node.joints.values():
+                joint.parent = node
+            continue
+        setattr(node, name, _decode_attr(entry, shape_args))
+
+
+def _freeze_result(result, shape_args: list):
     """Convert an op result into its stored form, verifying its bytes read
-    back. Raises _Unkeyable when the result cannot be cached."""
+    back and its attributes are expressible. Raises _Unkeyable when the result
+    cannot be cached."""
     if isinstance(result, (tuple, list)):
-        return ("seq", type(result), tuple(_freeze_result(r) for r in result))
-    if hasattr(result, "wrapped") and result.wrapped is not None:
+        return ("seq", type(result), tuple(_freeze_result(r, shape_args) for r in result))
+    if _is_shape(result):
         data = _write_brep(result.wrapped)
-        # Prove the bytes read back before anything is stored, then DROP the
-        # geometry from the template: it is never read (thaw installs a fresh
-        # reconstruction on every clone), and holding a live shape per entry
-        # made a large cache expensive instead of cheap.
-        _read_brep(data)
-        template = _clone_wrapper(result)
-        template._wrapped = None
-        return _StoredShape(template, data)
+        # Prove the bytes read back before anything is stored.
+        reconstruction = _read_brep(data)
+        recipe = _attribute_recipe(result, shape_args, reconstruction)
+        return _StoredShape(_class_path(type(result)), data, recipe)
     if result is None or isinstance(result, (bool, int, float, str, bytes)):
         return result
     raise _Unkeyable(f"unstorable result type: {type(result).__name__}")
 
 
-def _thaw_result(stored):
-    """Produce a fresh, independent reconstruction of a stored result."""
+def _thaw_result(stored, shape_args: list):
+    """Produce a fresh, independent reconstruction of a stored result, with its
+    attributes replayed against this call's arguments."""
     if isinstance(stored, tuple) and stored and stored[0] == "seq":
         _, seq_type, items = stored
-        return seq_type(_thaw_result(item) for item in items)
+        return seq_type(_thaw_result(item, shape_args) for item in items)
     if isinstance(stored, _StoredShape):
-        clone = _clone_wrapper(stored.template)
-        clone.wrapped = _downcast(_read_brep(stored.brep))
+        cls = _resolve_shape_class(stored.cls_path)
+        clone = cls(_downcast(_read_brep(stored.brep)))
+        _apply_attrs(clone, stored.recipe["attrs"], shape_args)
+        specs = stored.recipe.get("children")
+        if specs:
+            from build123d.topology.shape_core import get_top_level_topods_shapes
+
+            tops = get_top_level_topods_shapes(clone.wrapped)
+            if len(tops) != len(specs):
+                raise ValueError("reconstruction has a different top-level shape count")
+            children = []
+            for spec, top in zip(specs, tops):
+                child = _resolve_shape_class(spec["cls"])(_downcast(top))
+                _apply_attrs(child, spec["attrs"], shape_args)
+                children.append(child)
+            clone.children = children
         return clone
     return stored
+
+
+def _rewrapped(shape, topods):
+    """A wrapper sharing ``shape``'s attributes over a different TopoDS."""
+    clone = object.__new__(type(shape))
+    clone.__dict__.update(shape.__dict__)
+    clone.wrapped = _downcast(topods)
+    return clone
+
+
+def _protect_inputs(op_name: str, args: tuple, kwargs: dict, *, is_classmethod: bool):
+    """The arguments a MISS runs the real op on, arranged so it leaves the
+    caller's objects in the same state a HIT does.
+
+    A hit never runs OCCT, so the inputs come back untouched. A miss runs the
+    real op, and OCCT algorithms modify their INPUT sub-shapes in place
+    (booleans bump tool tolerances, ``hollow``/``extrude``/``make_loft`` fix up
+    what they consume). A model that feeds a solid to a boolean as a tool and
+    ALSO emits that solid as its own part — the juno cores, cut out of their
+    shells — therefore serialized different component bytes on a cold run than
+    on a warm one, and the package hash changed with the cache state.
+
+    - Booleans: ``SetNonDestructive`` makes the algorithm copy what it would
+      have modified (the result carries the bumped tolerances either way; the
+      inputs never do). Native, and far cheaper than copying the operands.
+    - Every other op runs on exact copies (``BRepBuilderAPI_Copy``). An
+      instance op's other shape arguments are sub-shapes of ``self`` (the
+      edges to fillet, the faces to hollow), so they are mapped THROUGH the
+      copier onto the copy — a standalone copy would orphan them. A shape the
+      copier does not know is foreign to ``self`` and is passed as given, so
+      the op fails exactly as it would un-memoized. Factory classmethods take
+      standalone profiles, copied one by one.
+
+    Uniform rather than probe-based (fillet and chamfer happened not to modify
+    their inputs on OCCT 7.8) so the guarantee does not rot with a kernel
+    upgrade; the copy is a small fraction of the op it precedes, and only a
+    miss pays it."""
+    if op_name == "bool_op":
+        operation = args[3] if len(args) > 3 else kwargs.get("operation")
+        setter = getattr(operation, "SetNonDestructive", None)
+        if setter is not None:
+            setter(True)
+        return args, kwargs
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+
+    if is_classmethod:
+
+        def protect(value):
+            if _is_shape(value):
+                return _rewrapped(value, BRepBuilderAPI_Copy(value.wrapped).Shape())
+            if isinstance(value, (list, tuple)):
+                return type(value)(protect(item) for item in value)
+            return value
+
+        return (args[0], *(protect(arg) for arg in args[1:])), {k: protect(v) for k, v in kwargs.items()}
+
+    owner = args[0]
+    if not _is_shape(owner):
+        return args, kwargs
+    copier = BRepBuilderAPI_Copy(owner.wrapped)
+
+    def protect(value):
+        if _is_shape(value):
+            mapped = copier.ModifiedShape(value.wrapped)
+            return value if mapped.IsNull() else _rewrapped(value, mapped)
+        if isinstance(value, (list, tuple)):
+            return type(value)(protect(item) for item in value)
+        return value
+
+    return (
+        (_rewrapped(owner, copier.Shape()), *(protect(arg) for arg in args[1:])),
+        {k: protect(v) for k, v in kwargs.items()},
+    )
 
 
 def _memoized(op_name: str, fn, *, is_classmethod: bool):
@@ -441,6 +690,7 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
             # be part of the key but not hashed as a shape.
             key_args = ((args[0].__name__,) + args[1:]) if is_classmethod else args
             key = _build_key(op_name, key_args, kwargs)
+            shape_args = _shape_args(key_args, kwargs)
         except _Unkeyable:
             _stats["unkeyable"] += 1
             return fn(*args, **kwargs)
@@ -450,13 +700,25 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
 
         cached = _lookup(key)
         if cached is not None:
-            _stats["hits"] += 1
-            return _thaw_result(cached)
+            try:
+                value = _thaw_result(cached, shape_args)
+            except Exception:
+                # An entry this process cannot replay (foreign class, shape
+                # count drift) is treated as a miss and overwritten below.
+                _stats["errors"] += 1
+            else:
+                _stats["hits"] += 1
+                return value
 
-        result = fn(*args, **kwargs)
+        try:
+            run_args, run_kwargs = _protect_inputs(op_name, args, kwargs, is_classmethod=is_classmethod)
+        except Exception:
+            _stats["errors"] += 1
+            run_args, run_kwargs = args, kwargs
+        result = fn(*run_args, **run_kwargs)
         _stats["misses"] += 1
         try:
-            stored = _freeze_result(result)
+            stored = _freeze_result(result, shape_args)
         except _Unkeyable:
             _stats["unstorable"] += 1
             return result
@@ -466,7 +728,11 @@ def _memoized(op_name: str, fn, *, is_classmethod: bool):
         _store(key, stored)
         # The caller gets the same canonical reconstruction a future hit
         # would: package output must not depend on cache state.
-        return _thaw_result(stored)
+        try:
+            return _thaw_result(stored, shape_args)
+        except Exception:
+            _stats["errors"] += 1
+            return result
 
     wrapper.__op_memo__ = True
     return wrapper

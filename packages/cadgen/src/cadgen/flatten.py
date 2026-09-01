@@ -24,7 +24,10 @@ from __future__ import annotations
 import math
 from typing import Iterable, Sequence
 
-import build123d
+# The lazy proxy, not the kernel: `from cadgen import flatten` sits in a drawing
+# script's module body, and every use below is attribute-style (`build123d.Plane`),
+# so the real ~2.5s import happens on the first call, never on import.
+import cadgen.build123d as build123d
 
 
 # A projected contour smaller than this is sampling debris, not a cut path.

@@ -16,9 +16,15 @@ and accumulating world locations.
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
-from build123d import Compound, Location
+if TYPE_CHECKING:
+    from build123d import Compound, Location
+
+# No kernel import at module scope: `from cadgen import compound_from_instances` sits
+# in a model's module body, which must stay featherweight so the @step gate and the
+# warm-daemon handoff run before the ~2.5s build123d import (see cadgen.build123d).
+# The annotations above are postponed strings; the one runtime use imports locally.
 
 
 def compound_from_instances(
@@ -36,6 +42,7 @@ def compound_from_instances(
     """
     if not instances:
         raise RuntimeError(f"assembly {name!r} has no instances")
+    from build123d import Compound
     from OCP.TopoDS import TopoDS_Builder, TopoDS_Compound
 
     builder = TopoDS_Builder()
