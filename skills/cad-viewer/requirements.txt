@@ -3,5 +3,6 @@
 # compile foreign STEP imports — there is no discovery and no CADGEN_PYTHON any
 # more, so this file is the only door it comes through.
 # The server still starts without it: viewing works, and imports answer with an
-# install hint.
+# install hint (or an upgrade hint naming the version, when the installed
+# cadgen is too old for the compile entry point).
 cadgen

@@ -22,8 +22,10 @@ The Viewer ships INSIDE THIS SKILL, under `scripts/viewer/` — the prebuilt
 client bundle plus a stdlib-only Python server. There is nothing to install for
 the Viewer itself: the one requirement is the Python (>= 3.11) that installed
 this skill's `requirements.txt`. That same interpreter is where cadgen comes
-from, and importing a raw foreign STEP is the only thing that needs it; without
-cadgen, imports answer with an install hint and viewing is unaffected.
+from, and importing a raw foreign STEP is the only thing that needs it; a
+missing cadgen answers imports with an install hint, an installed-but-too-old
+cadgen answers with an upgrade hint naming the version to install, and viewing
+is unaffected either way.
 
 ## Start Viewer
 
@@ -106,10 +108,12 @@ the CAD skill); the Viewer will not build them.
 Raw `.step`/`.stp` files ARE importable from the Viewer: an unimported STEP
 reports `needs-build` and the in-Viewer import writes the standard render
 package. The Viewer calls cadgen's compile entry point directly, in a worker it
-owns, so progress and errors come back as data. cadgen has to be importable by
-the interpreter running the Viewer — there is no search, no `CADGEN_PYTHON`,
-and no `.venv` probing; absent cadgen the Viewer says exactly that and keeps
-viewing. When an agent is doing the work there is nothing to run first:
+owns, so progress and errors come back as data — the import reports live
+progress frames while it compiles. cadgen has to be importable by the
+interpreter running the Viewer, and new enough for the compile entry point —
+there is no search, no `CADGEN_PYTHON`, and no `.venv` probing; a cadgen that
+is absent or too old makes the Viewer say exactly that (naming the upgrade)
+and keep viewing. When an agent is doing the work there is nothing to run first:
 every cadgen door makes the package it needs on demand, so just use the file
 and return the link.
 
