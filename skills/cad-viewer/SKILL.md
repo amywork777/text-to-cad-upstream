@@ -46,12 +46,12 @@ running from elsewhere. `python` must be the interpreter you installed
 `requirements.txt` into — the server IS that interpreter, and it is the only
 place cadgen is looked for.)
 
-**Always pass an absolute `--root`.** The Viewer runs from an arbitrary working
-directory — usually wherever the skill happens to be installed, not the model
-directory — so a relative one resolves against the wrong place. Omitting it
-falls back to the current directory, and when that lands inside the Viewer's
-own files the launcher refuses rather than serving them, so a bare launch from
-this skill directory exits 2 asking for `--root`.
+**Always pass an absolute `--root`.** It defaults to the current directory —
+running the script never changes the directory to wherever the script lives — so
+a launch from the model directory would serve the right thing by accident. Name
+it anyway: the root decides what the catalog SCANS (a project root drags in
+`node_modules`, `.git` and build output) and it is the instance REUSE key, so an
+ambient one can hand back a Viewer serving somewhere else.
 
 Flags: `--json` prints the machine-readable last stdout line
 (`{"url", "port", "action": "started"|"reused"}`) — always pass it and take the

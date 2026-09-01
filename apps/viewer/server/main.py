@@ -254,36 +254,16 @@ def _path_inside(candidate: str, container: str) -> bool:
 
 
 def resolve_directory_root(*, root: str = "", env=None, cwd: str | None = None) -> str:
-    """The directory this Viewer serves.
+    """The directory this Viewer serves: ``--root``, else the cwd.
 
-    ``--root``, else where the USER invoked it, rejecting anything inside the
-    viewer app itself so a launch from the source tree never serves the source
-    tree. ``INIT_CWD`` is npm's "where npm was invoked" and is still read: an
-    agent may invoke through an npm-shaped wrapper, and dropping it would
-    silently change what a bare launch serves.
-
-    The refusal is a footgun guard, not a boundary: an explicit ``--root``
-    naming the viewer app is accepted without complaint.
-
-    Returns "" when every candidate lands inside the viewer app — the caller
-    must then demand an explicit ``--root``. Falling back to the cwd here (as
-    this did, in both this port and the JS backend before it) handed back the
-    very directory the loop had just rejected, so the guard only worked when it
-    was not needed. It matters most where the app is a SKILL BUNDLE: an agent
-    launching the bundled server from the skill directory would otherwise serve
-    the skill.
+    No special cases. Serving the app's own directory is a legitimate thing to
+    ask for — it is how you look at the Viewer's own fixtures, and refusing it
+    would block launching from inside a skill bundle. Callers that must not
+    inherit an arbitrary cwd say so by passing ``--root``; the cad-viewer skill
+    instructs exactly that.
     """
-    env = os.environ if env is None else env
     cwd = os.getcwd() if cwd is None else cwd
-    if root:
-        return os.path.abspath(os.path.join(cwd, root))
-    for candidate in (env.get("INIT_CWD"), cwd):
-        if not candidate:
-            continue
-        resolved = os.path.abspath(candidate)
-        if resolved != VIEWER_ROOT and not _path_inside(resolved, VIEWER_ROOT):
-            return resolved
-    return ""
+    return os.path.abspath(os.path.join(cwd, root) if root else cwd)
 
 
 def resolve_dist_dir(explicit: str) -> str:
@@ -558,10 +538,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     directory = resolve_directory_root(root=args["root"])
-    if not directory:
-        _err("refusing to serve the CAD Viewer's own directory\n")
-        _err("name the directory of CAD artifacts to serve: --root <dir>\n")
-        return 2
     if not os.path.isdir(directory):
         # Booting a viewer whose root does not exist would answer every request
         # with a 404 that looks like a missing model rather than a missing root.

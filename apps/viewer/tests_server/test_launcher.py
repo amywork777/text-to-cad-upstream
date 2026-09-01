@@ -9,8 +9,7 @@ would silently pass the buffering bug that hangs the real launch.
 
 Every launch redirects TMPDIR so the registry is private — the real one is
 shared with the viewer the developer is using, and reuse and reaping are both
-destructive. ``VIEWER_DISABLE_NATIVE_REVEAL`` is set for the same reason a
-headless run must never pop a file manager.
+destructive.
 """
 
 from __future__ import annotations
@@ -57,10 +56,6 @@ class LauncherFixture(unittest.TestCase):
                 "TMPDIR": self.registry_home,
                 "TEMP": self.registry_home,
                 "TMP": self.registry_home,
-                "VIEWER_DISABLE_NATIVE_REVEAL": "1",
-                # A launch must not inherit the developer's INIT_CWD and serve
-                # somewhere the test never named.
-                "INIT_CWD": self._tmp.name,
             }
         )
         env.update(overrides)
@@ -515,22 +510,21 @@ class ArgumentGrammar(unittest.TestCase):
         resolved = self.main_module.resolve_directory_root(root=str(APP_ROOT))
         self.assertEqual(resolved, str(APP_ROOT))
 
-    def test_the_cwd_fallback_refuses_the_viewer_app_itself(self) -> None:
-        resolved = self.main_module.resolve_directory_root(
-            root="", env={"INIT_CWD": str(APP_ROOT)}, cwd=str(APP_ROOT.parent)
-        )
-        self.assertNotEqual(resolved, str(APP_ROOT))
-
-    def test_it_refuses_rather_than_serving_the_app_when_every_candidate_is_inside(self) -> None:
-        # The guard used to reject these candidates and then return the cwd
-        # anyway, so it only held when a candidate outside the app existed. In a
-        # skill bundle that meant an agent launching from the skill directory
-        # served the skill.
+    def test_the_cwd_is_served_even_inside_the_app(self) -> None:
+        # No special cases: --root else the cwd. Serving the app's own
+        # directory is legitimate, and refusing it would block launching from
+        # inside a skill bundle.
         for cwd in (str(APP_ROOT), str(APP_ROOT / "server")):
             with self.subTest(cwd=cwd):
                 self.assertEqual(
-                    self.main_module.resolve_directory_root(root="", env={}, cwd=cwd), ""
+                    self.main_module.resolve_directory_root(root="", env={}, cwd=cwd), cwd
                 )
+
+    def test_a_relative_root_resolves_against_the_cwd(self) -> None:
+        self.assertEqual(
+            self.main_module.resolve_directory_root(root="models", env={}, cwd="/tmp"),
+            os.path.join("/tmp", "models"),
+        )
 
     def test_an_explicit_root_still_wins_from_inside_the_app(self) -> None:
         target = str(APP_ROOT.parent)
