@@ -173,10 +173,15 @@ test("static viewer: packages render, edits badge stale, no cadgen degrades clea
 // not depend on a warm daemon), and the resulting package renders. Skips
 // cleanly where no project cadgen exists (the mirrored cad-viewer repo runs
 // this suite standalone).
-const IMPORT_FIXTURE = path.resolve(VIEWER_ROOT, "..", "models", "step", "parts", "cam_follower_roller.step");
+// VIEWER_ROOT is apps/viewer, so the repo root is TWO levels up. Both of these
+// pointed one level short and at the pre-migration corpus layout, which made
+// the skip predicate silently true and took this whole e2e out of service —
+// the exact coverage that would have caught a broken cadgen resolve.
+const REPO_ROOT = path.resolve(VIEWER_ROOT, "..", "..");
+const IMPORT_FIXTURE = path.resolve(REPO_ROOT, "models", "examples", "STEP", "cam_follower_roller.step");
 const REPO_PYTHON = process.platform === "win32"
-  ? path.resolve(VIEWER_ROOT, "..", ".venv", "Scripts", "python.exe")
-  : path.resolve(VIEWER_ROOT, "..", ".venv", "bin", "python");
+  ? path.resolve(REPO_ROOT, ".venv", "Scripts", "python.exe")
+  : path.resolve(REPO_ROOT, ".venv", "bin", "python");
 const cadgenPresent = fs.existsSync(REPO_PYTHON);
 
 test(
