@@ -109,18 +109,20 @@ export function buildPackageMeshPrimitives(descriptor, componentTessellations, o
       linearRgbToHex(entry?.color),
     ]),
   );
-  const groups = new Map(); // colorHex -> { positions: number[], normals: number[] }
-  const groupFor = (colorHex) => {
-    let group = groups.get(colorHex);
-    if (!group) groups.set(colorHex, (group = { positions: [], normals: [] }));
-    return group;
-  };
 
+  // Pass 1 — resolve every (occurrence x face range) into a placement job and
+  // count the floats each colour group needs. Pass 2 then writes into
+  // preallocated Float32Arrays: growing plain JS arrays here used to hit V8's
+  // fast-elements backing-store cap (~2^27 elements, "invalid array length")
+  // on large single-colour assemblies. Rounding is unchanged — every value was
+  // already converted to float32 at primitive build, and nothing reads a value
+  // back after writing it.
+  const jobs = [];
+  const groupSizes = new Map(); // colorHex -> float count
   for (const occurrence of descriptor.occurrences || []) {
     const cid = String(occurrence.component || "");
     const tessellation = componentTessellations.get(cid);
     if (!tessellation) continue;
-    const { positions, normals, indices, faceRanges } = tessellation;
     const occurrenceColor = linearRgbToHex(occurrence.color);
     const componentColor = componentColors.get(cid) || null;
     const partColor = linearRgbToHex(tessellation.partColor) || null;
@@ -135,59 +137,77 @@ export function buildPackageMeshPrimitives(descriptor, componentTessellations, o
     const mirrored = !identity && determinant3(transform) < 0;
     const nm = identity ? null : normalMatrix3(transform);
 
-    for (const range of faceRanges || []) {
-      const faceColor = linearRgbToHex(range.color);
-      const group = groupFor(faceColor || fallback);
-      const out = group.positions;
-      const outNormals = group.normals;
-      for (let k = range.indexStart; k < range.indexStart + range.indexCount; k += 3) {
-        // Mirroring flips winding so recomputed facet normals stay outward.
-        const order = mirrored ? [0, 2, 1] : [0, 1, 2];
-        for (const corner of order) {
-          const v = indices[k + corner];
-          const x = positions[v * 3];
-          const y = positions[v * 3 + 1];
-          const z = positions[v * 3 + 2];
-          const base = out.length;
-          out.length = base + 3;
-          if (identity) {
-            out[base] = x;
-            out[base + 1] = y;
-            out[base + 2] = z;
-          } else {
-            transformPoint(transform, x, y, z, out, base);
-          }
-          const nx = normals[v * 3];
-          const ny = normals[v * 3 + 1];
-          const nz = normals[v * 3 + 2];
-          const nBase = outNormals.length;
-          outNormals.length = nBase + 3;
-          let tx = nx;
-          let ty = ny;
-          let tz = nz;
-          // The TRUE inverse-transpose (det-divided, not the adjugate) maps
-          // reflected surfaces' outward normals correctly with no extra
-          // mirrored-case negation; only the winding needs the flip above.
-          if (nm) {
-            tx = nm[0] * nx + nm[1] * ny + nm[2] * nz;
-            ty = nm[3] * nx + nm[4] * ny + nm[5] * nz;
-            tz = nm[6] * nx + nm[7] * ny + nm[8] * nz;
-          }
-          const length = Math.hypot(tx, ty, tz) || 1;
-          outNormals[nBase] = tx / length;
-          outNormals[nBase + 1] = ty / length;
-          outNormals[nBase + 2] = tz / length;
+    for (const range of tessellation.faceRanges || []) {
+      const indexCount = Number(range.indexCount) || 0;
+      const triangles = Math.max(0, Math.ceil(indexCount / 3));
+      if (!triangles) continue;
+      const color = linearRgbToHex(range.color) || fallback;
+      groupSizes.set(color, (groupSizes.get(color) || 0) + triangles * 9);
+      jobs.push({ tessellation, range, color, transform: identity ? null : transform, mirrored, nm });
+    }
+  }
+
+  const groups = new Map(); // colorHex -> { positions: Float32Array, normals: Float32Array, offset }
+  for (const [color, floatCount] of groupSizes) {
+    groups.set(color, {
+      positions: new Float32Array(floatCount),
+      normals: new Float32Array(floatCount),
+      offset: 0,
+    });
+  }
+
+  for (const job of jobs) {
+    const { positions, normals, indices } = job.tessellation;
+    const { range, transform, mirrored, nm } = job;
+    const group = groups.get(job.color);
+    const out = group.positions;
+    const outNormals = group.normals;
+    let base = group.offset;
+    // Mirroring flips winding so recomputed facet normals stay outward.
+    const order = mirrored ? [0, 2, 1] : [0, 1, 2];
+    for (let k = range.indexStart; k < range.indexStart + range.indexCount; k += 3) {
+      for (const corner of order) {
+        const v = indices[k + corner];
+        const x = positions[v * 3];
+        const y = positions[v * 3 + 1];
+        const z = positions[v * 3 + 2];
+        if (transform === null) {
+          out[base] = x;
+          out[base + 1] = y;
+          out[base + 2] = z;
+        } else {
+          transformPoint(transform, x, y, z, out, base);
         }
+        const nx = normals[v * 3];
+        const ny = normals[v * 3 + 1];
+        const nz = normals[v * 3 + 2];
+        let tx = nx;
+        let ty = ny;
+        let tz = nz;
+        // The TRUE inverse-transpose (det-divided, not the adjugate) maps
+        // reflected surfaces' outward normals correctly with no extra
+        // mirrored-case negation; only the winding needs the flip above.
+        if (nm) {
+          tx = nm[0] * nx + nm[1] * ny + nm[2] * nz;
+          ty = nm[3] * nx + nm[4] * ny + nm[5] * nz;
+          tz = nm[6] * nx + nm[7] * ny + nm[8] * nz;
+        }
+        const length = Math.hypot(tx, ty, tz) || 1;
+        outNormals[base] = tx / length;
+        outNormals[base + 1] = ty / length;
+        outNormals[base + 2] = tz / length;
+        base += 3;
       }
     }
+    group.offset = base;
   }
 
   const primitives = [...groups.entries()]
     .sort(([a], [b]) => (a < b ? -1 : 1)) // deterministic order
     .map(([color, group]) => ({
       color,
-      positions: Float32Array.from(group.positions),
-      normals: Float32Array.from(group.normals),
+      positions: group.positions,
+      normals: group.normals,
     }))
     .filter((primitive) => primitive.positions.length >= 9);
   const triangleCount = primitives.reduce((sum, p) => sum + p.positions.length / 9, 0);

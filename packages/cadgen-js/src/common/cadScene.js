@@ -1032,7 +1032,9 @@ export function applyMaterialSettingsToRecord(THREE, record, materialSettings, {
     materialSettings,
     fallbackColor: materialSettings?.defaultColor || baseTheme?.surface || DEFAULT_THEME.surface,
     fillIndex: record.fillIndex || 0,
-    forceFill: forceFill || !record.hasSourceColor
+    // A record carrying vertex colours is never force-filled: the fill would ride
+    // material.color and MULTIPLY the ramp.
+    forceFill: forceFill || (!record.hasSourceColor && !record.hasVertexColors)
   });
   record.material.vertexColors = hasVertexColors;
   if (wireframeMode) {

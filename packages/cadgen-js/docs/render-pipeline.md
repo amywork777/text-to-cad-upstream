@@ -148,6 +148,14 @@ when needed, reapplies material/selection/clip/STEP parameter state, and returns
 the same model API. `model.dispose()` releases model-owned scene objects and
 STEP parameter cleanup hooks.
 
+Source colors: a GLB's material base colors and its `COLOR_0` vertex attribute
+both count as source colors (`lib/render/glbMeshData.js`). A vertex-colored
+part renders on a white base so the ramp shows unmixed — an FEA result or scan
+heatmap keeps its colors even when the file declares no materials at all — and
+`overrideSourceColors` in the theme still replaces both kinds with theme fills.
+Package components carry no vertex colors; their coloring is the descriptor's
+occurrence/component/face colors.
+
 `fitCameraToModel(THREE, camera, bounds, options)` is the shared orthographic
 camera framing helper used by interactive rendering.
 

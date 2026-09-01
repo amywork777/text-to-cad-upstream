@@ -463,6 +463,10 @@ function buildMeshDataFromGltf(THREE, gltf) {
         return;
       }
       descriptor.colorsAttribute = object.geometry.getAttribute?.("color") || null;
+      // COLOR_0 is a source colour too: a vertex-coloured GLB with no (or a default
+      // white) material must still render its ramp, so the part flags itself even
+      // when no material declared a colour.
+      descriptor.hasSourceColors = descriptor.hasSourceColors || Boolean(descriptor.colorsAttribute);
       descriptors.push(descriptor);
       totalVertexCount += descriptor.vertexCount;
       totalIndexCount += descriptor.triangleCount * 3;
@@ -515,7 +519,7 @@ function buildMeshDataFromGltf(THREE, gltf) {
     edge_indices: new Uint32Array(0),
     bounds: boundsFromAccumulator(output.bounds),
     parts,
-    has_source_colors: colorSet.size > 0,
+    has_source_colors: colorSet.size > 0 || descriptors.some((d) => d.colorsAttribute),
     sourceColor: colorSet.size === 1 ? [...colorSet][0] : "",
   };
 }

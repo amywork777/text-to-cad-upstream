@@ -25,18 +25,21 @@ function makeOccurrenceGlb({
   upAxis = null,
   stepTopology = false,
   materialBaseColor = null,
-  materialExtras = null
+  materialExtras = null,
+  vertexColors = null
 } = {}) {
   const positions = floatBuffer([
     0, 0, 0,
     0.001, 0, 0,
     0, 0.001, 0
   ]);
+  const colors = Array.isArray(vertexColors) ? floatBuffer(vertexColors) : Buffer.alloc(0);
   const indices = uint32Buffer([0, 1, 2]);
-  const binary = pad4(Buffer.concat([positions, indices]));
+  const binary = pad4(Buffer.concat([positions, colors, indices]));
   const primitive = {
     attributes: {
-      POSITION: 0
+      POSITION: 0,
+      ...(colors.length ? { COLOR_0: 2 } : {})
     },
     indices: 1,
     mode: 4,
@@ -104,10 +107,20 @@ function makeOccurrenceGlb({
       },
       {
         buffer: 0,
-        byteOffset: positions.length,
+        byteOffset: positions.length + colors.length,
         byteLength: indices.length,
         target: 34963
-      }
+      },
+      ...(colors.length
+        ? [
+            {
+              buffer: 0,
+              byteOffset: positions.length,
+              byteLength: colors.length,
+              target: 34962
+            }
+          ]
+        : [])
     ],
     accessors: [
       {
@@ -127,7 +140,18 @@ function makeOccurrenceGlb({
         type: "SCALAR",
         min: [0],
         max: [2]
-      }
+      },
+      ...(colors.length
+        ? [
+            {
+              bufferView: 2,
+              byteOffset: 0,
+              componentType: 5126,
+              count: 3,
+              type: "VEC3"
+            }
+          ]
+        : [])
     ]
   };
   const json = pad4(Buffer.from(JSON.stringify(gltf), "utf8"), 0x20);
@@ -525,6 +549,36 @@ test("STEP GLB mesh data honors explicit source material metadata", async () => 
   assert.equal(meshData.sourceColor, "#dddddd");
   assert.equal(meshData.parts[0].color, "#dddddd");
   assert.equal(meshData.parts[0].hasSourceColors, true);
+});
+
+test("plain GLB COLOR_0 vertex colors are source colors", async () => {
+  // No materials at all: the ramp must still survive as per-vertex source
+  // colors instead of collapsing to the theme fill (the FEA-ramp regression).
+  const ramp = [1, 0, 0, 0.5, 0, 0.5, 0, 0, 1];
+  const meshData = await buildMeshDataFromGlbBuffer(makeOccurrenceGlb({
+    cadExtras: false,
+    vertexColors: ramp
+  }));
+
+  assert.equal(meshData.has_source_colors, true);
+  assert.equal(meshData.parts[0].hasSourceColors, true);
+  // No material declared a color, so the whole-mesh source color stays empty.
+  assert.equal(meshData.parts[0].color, "");
+  assert.equal(meshData.colors.length, meshData.vertices.length);
+  assert.deepEqual([...meshData.colors], ramp);
+});
+
+test("a material color alongside COLOR_0 keeps vertex colors flowing", async () => {
+  const ramp = [1, 0, 0, 0.5, 0, 0.5, 0, 0, 1];
+  const meshData = await buildMeshDataFromGlbBuffer(makeOccurrenceGlb({
+    cadExtras: false,
+    vertexColors: ramp,
+    materialBaseColor: [1, 1, 1, 1]
+  }));
+
+  assert.equal(meshData.has_source_colors, true);
+  assert.equal(meshData.parts[0].hasSourceColors, true);
+  assert.deepEqual([...meshData.colors], ramp);
 });
 
 test("STEP GLB mesh data preserves loaded material metadata on single-primitive meshes", async () => {

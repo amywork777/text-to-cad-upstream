@@ -56,6 +56,19 @@ test("camera JSON preset overrides merge onto the preset defaults", () => {
   assert.equal(spec.hasExplicitZoom, true);
 });
 
+test("an explicit camera object without a preset is named custom", () => {
+  const custom = normalizeCameraSpec({ direction: [1, 1, 1], up: [0, 0, 1], zoom: 1.2 });
+  assert.equal(custom.name, "custom");
+  // The default preset still supplies fallbacks, silently, without lending its name.
+  assert.equal(custom.preset, "iso");
+
+  const preset = normalizeCameraSpec({ preset: "front", zoom: 2 });
+  assert.equal(preset.name, "front");
+
+  const named = normalizeCameraSpec({ name: "hero", direction: [1, 0, 0] });
+  assert.equal(named.name, "hero");
+});
+
 test("explicit camera state passes through resolved snapshots", () => {
   const snapshot = resolveCameraSnapshot({
     position: [10, 20, 30],

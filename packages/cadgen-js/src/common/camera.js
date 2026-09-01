@@ -200,9 +200,12 @@ export function normalizeCameraSpec(rawCamera = DEFAULT_CAMERA_PRESET, {
     strict
   }) || preset.up || [...WORLD_UP];
   const hasExplicitZoom = Object.prototype.hasOwnProperty.call(source, "zoom");
+  // The preset still supplies direction/up fallbacks below, but it names the
+  // camera only when the caller actually asked for it: an explicit
+  // {direction, up, zoom} camera is "custom", not the default preset's name.
   return {
     sourceKind: "object",
-    name: String(source.name || preset.name || "custom"),
+    name: String(source.name || (source.preset != null ? preset.name : "") || "custom"),
     preset: preset.name,
     direction,
     position,
