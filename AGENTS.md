@@ -35,7 +35,7 @@ The standalone `Deploy Docs` workflow redeploys the docs site without running a
 release. It deploys a source ref (defaulting to `develop`), never `main`: the
 publish tree drops `apps/` and `packages/`, which the docs app builds against.
 The CAD Viewer is a local-filesystem app with no hosted deployment: the
-cad-viewer skill bundles the built client + JS server, and each release mirrors
+cad-viewer skill bundles the built client + Python server, and each release mirrors
 `apps/viewer/` into the standalone `earthtojake/cad-viewer` repo through the
 `Sync CAD Viewer Repo` workflow (which `Release` calls after publishing and which
 can also be dispatched on its own; it reads the release SOURCE commit, because
@@ -187,7 +187,11 @@ when touching shared surfaces or before handoff:
 - Generated runtime freshness: `scripts/bundle/bundle.sh --check`
 - CAD Viewer or `packages/cadgen-js`:
   `npm --prefix packages/cadgen-js test`,
-  `npm --prefix apps/viewer run test`, `npm --prefix apps/viewer run build`
+  `npm --prefix apps/viewer run test`, `npm --prefix apps/viewer run build`.
+  The Viewer is two languages and `npm run test` covers only one of them — the
+  Python backend's suite is `apps/viewer/tests_server`, run by
+  `scripts/test/test-python.sh`. Touching `apps/viewer/server/` means running
+  that, not just the JS.
 - Docs site: `npm --prefix apps/docs run check`
 - Targeted Python tests: `./.venv/bin/python -m unittest <changed test paths>`
 

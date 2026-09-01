@@ -146,8 +146,9 @@ is gone. cadgen now carries the JavaScript it executes as well as the Python.
 Canonical source directories are:
 
 - `skills/*` for skill instructions, references, and the thin entrypoints.
-- `apps/viewer/` for the CAD Viewer app (client + JS server). Its
-  built client ships inside the cadgen wheel.
+- `apps/viewer/` for the CAD Viewer app — the React client (`src/`) AND its
+  stdlib-only Python backend (`server/`). Its built client + server ship
+  inside the cad-viewer skill; cadgen ships no viewer.
 - `packages/*` for the shared runtimes. `packages/cadgen` is the published
   distribution; `packages/cadgen-js` is its JS build input.
 
@@ -200,10 +201,13 @@ PYTHONPATH=<worktree>/packages/cadgen/src \
 ```
 
 For `npm run dev`, set `VIEWER_PYTHON` the same way — it defaults to `python3`,
-which is right for the standalone mirror and usually wrong here, and a dev
-backend that cannot import cadgen views fine but cannot import STEP. The dev
-plugin logs the interpreter it resolved and warns when `stepImportAvailable` is
-false, so the degradation announces itself at startup:
+which is right for the standalone mirror and usually wrong here for two separate
+reasons. On macOS `python3` is still 3.9, which is BELOW the server's floor and
+is refused at startup with a message naming the version and this variable. And
+even at a supported version, a dev backend that cannot import cadgen views fine
+but cannot import STEP. The dev plugin logs the interpreter it resolved and
+warns when `stepImportAvailable` is false, so both degradations announce
+themselves at startup:
 
 ```bash
 VIEWER_PYTHON=<main>/.venv/bin/python \
@@ -211,9 +215,29 @@ PYTHONPATH=<worktree>/packages/cadgen/src \
 npm --prefix <worktree>/apps/viewer run dev
 ```
 
+`npm run dev` needs no `npm run build` first: the plugin spawns the backend with
+`--api-only`, and Vite serves the client. Production is the opposite — no built
+`dist/`, no start.
+
 The backend's own tests live at `apps/viewer/tests_server/` (outside `server/`,
-so the skill bundle's `server/` rsync never sees them). Run them from the app
-root: `python -m unittest discover -s tests_server -t .`
+so the skill bundle's `server/` rsync never sees them), and `npm run test`
+does NOT collect them — it covers `src/` and `scripts/` only. In this repo
+`scripts/test/test-python.sh` runs them, on Linux through `test.sh` and directly
+in the Windows CI job; run that, or the app-root command it wraps:
+
+```bash
+cd apps/viewer && python -m unittest discover -s tests_server -t .
+```
+
+The runner passes `VIEWER_REQUIRE_CADGEN_PARITY=1`, which promotes
+`test_store_paths.AgreesWithCadgen` from "skip when cadgen is absent" to a hard
+failure. That class is what compares the viewer's store-key derivations against
+cadgen's, value for value, and it replaced ~190 lines of literal pins in
+`tests/python/global/test_render_contract_sync.py`; without the flag it would
+run in no automated configuration anywhere, because the only other runner is the
+standalone mirror's CI, which has no cadgen by design.
+`test_render_contract_sync.TheCrossLanguageGuardsActuallyRun` is what keeps that
+wiring from being removed again.
 
 Launcher reuse keys on realpath(root) × version, so another checkout's
 instance can never be handed back for a worktree's root.
@@ -288,7 +312,7 @@ package as it can be.
 Nothing is lost, because each of those has a consumer that reads **source**
 rather than the published tree:
 
-- `viewer/` — the app source. Its built bundle + JS server ship inside the
+- `viewer/` — the app source. Its built bundle + Python server ship inside the
   cad-viewer skill (`skills/cad-viewer/scripts/viewer`, materialized by the
   bundle before publish), and the `Sync CAD Viewer Repo` workflow mirrors the
   source into the standalone `earthtojake/cad-viewer` repo from the release
@@ -489,7 +513,8 @@ Use path-targeted validation. Common checks from the repo root:
 scripts/test/test.sh
 scripts/dev/setup-symlinks.sh --check
 scripts/release/check-version.sh
-npm --prefix apps/viewer run test
+npm --prefix apps/viewer run test        # the Viewer's CLIENT half only
+scripts/test/test-python.sh              # includes the Viewer's BACKEND suite
 npm --prefix apps/docs run check
 ```
 
@@ -504,8 +529,11 @@ repo-local Python runtime, for example:
 ./.venv/bin/python -m unittest tests/python/skills/urdf/test_cli.py
 ```
 
-Python tests live under `tests/python/`, grouped by tested surface:
-`skills/<skill>`, `packages/<package>`, `viewer/<service>`, and `global`.
+Repo-owned Python tests live under `tests/python/`, grouped by tested surface:
+`skills/<skill>`, `packages/<package>`, and `global`. The CAD Viewer backend is
+the exception and lives with the app it ships with, at `apps/viewer/tests_server/`,
+because `apps/viewer` mirrors out of this repo whole and must carry its own
+suite. `scripts/test/test-python.sh` runs both.
 
 For fast CAD Viewer source iteration, run the root viewer app in dev mode. Do
 not run the packaged viewer from an installed cadgen while modifying Viewer

@@ -4,14 +4,22 @@ The CAD Viewer client never reads filesystem paths. It talks to HTTP routes unde
 `/__cad/*` and to catalog URLs, and a backend on the other side resolves those to
 files. The viewer is a local-filesystem app, so there is exactly one backend.
 
-That backend is **pure JS**: `server/`, dependency-free Node (>= 22). It owns
-everything the viewer does — the catalog scan, path containment, asset serving, the
-SPA, artifact status, the STEP import bridge, the native reveal dialog, the instance
-registry. The viewer is a STATIC VISUALIZATION TOOL: its render path runs no Python.
-It renders artifacts that exist — render packages, sibling `.dxf` files — and the
-CLIs own generation and export. The one build-shaped thing it does is importing a
-raw foreign STEP, which spawns `cadgen step compile` as a child process (below); cadgen
-is a soft dependency, needed only for that.
+That backend is **stdlib-only Python**: `server/`, no web framework and no third-party
+import, on an interpreter of **3.11 or newer**. It owns everything the viewer does —
+the catalog scan, path containment, asset serving, the SPA, artifact status, the STEP
+import bridge, the native reveal dialog, the instance registry. The viewer is a STATIC
+VISUALIZATION TOOL: its render path runs no CAD kernel. It renders artifacts that
+exist — render packages, sibling `.dxf` files — and the CLIs own generation and
+export. The one build-shaped thing it does is importing a raw foreign STEP, which
+calls cadgen's compile entry point in a worker process (below).
+
+`cadgen` is a SOFT dependency, needed only for that import: nothing under `server/`
+imports it at module scope (`tests_server/test_module_boundaries.py` is the fence), so
+with no cadgen installed the viewer still scans, serves and renders, and only imports
+answer with a hint. The version floor is checked at startup rather than discovered on
+the first request — macOS ships 3.9 as `python3`, and on 3.9 the server booted, printed
+its URL, and then failed the catalog with a raw `TypeError`. It now refuses to start,
+naming the version it needs and how to select another interpreter.
 
 ## Where it runs
 
@@ -20,18 +28,21 @@ is a bug. It is one implementation reached two ways, not two code paths — dev
 adds a proxy hop and nothing else:
 
 - **Dev** (`npm run dev`) — Vite serves the client from source with HMR and spawns
-  `server/main.py --ephemeral --no-registry`, proxying `/__cad` and `/__tess_cache`
-  to it. `VIEWER_PYTHON` chooses the interpreter (default `python3`);
+  `server/main.py --ephemeral --no-registry --api-only`, proxying `/__cad` and
+  `/__tess_cache` to it. `VIEWER_PYTHON` chooses the interpreter (default `python3`);
   `VIEWER_BACKEND_URL` attaches to a backend you started yourself instead, which is
   how you put a debugger on it. Dev lives on Vite's canonical port (5173), is strict
   about it (taken port → pick another with `--port`), and never enters the instance
   registry — `--no-registry` is what guarantees that, and it is correctness rather
   than tidiness: a registered dev backend would be REUSED by a later real launch on
-  the same root, handing an agent a URL served by Vite's proxy target.
+  the same root, handing an agent a URL served by Vite's proxy target. `--api-only`
+  is why dev needs no build first: Vite owns the client here, so this process serves
+  only the two API prefixes and the SPA routes answer 404. (`dist/` is gitignored, so
+  requiring one made `npm run dev` fail on every fresh clone.)
 - **Production** (`npm run build`, then `python server/main.py`) — one process serves
-  the built `dist/` and the API. The cad-viewer agent skill ships the same files
-  (built dist + this server) and starts them the same way; cadgen ships no viewer at
-  all.
+  the built `dist/` and the API, and a missing `dist/` is a hard refusal naming the
+  build. The cad-viewer agent skill ships the same files (built dist + this server)
+  and starts them the same way; cadgen ships no viewer at all.
 
 ## Launching (unconditional, Jupyter-style)
 
@@ -77,23 +88,23 @@ already known to exist.
 absolutization, the guarded path resolvers); `server/scanner.py` holds the catalog
 scan; `server/cadgen_ops.py` holds the cadgen delegation:
 
-```js
-backend.resolveRoot()                     // the served root, resolved once
-backend.readCatalog()                     // scan -> schema v4 entries
-backend.assetPathForFileRef(fileRef)      // guarded path for bytes we will send
-backend.containedPathForFileRef(fileRef)  // guarded path for bytes we will not
-backend.catalogEntryForFileRef(catalog, fileRef)
-ops.artifactStatus(fileRef)               // JS freshness verdict + advisory progress
-ops.buildArtifact(fileRef, { force })     // spawns `cadgen step compile` for a raw STEP; else a CLI hint
+```python
+backend.resolve_root()                        # the served root, resolved once
+backend.read_catalog()                        # scan -> schema v4 entries
+backend.asset_path_for_file_ref(file_ref)     # guarded path for bytes we will send
+backend.contained_path_for_file_ref(file_ref) # guarded path for bytes we will not
+backend.catalog_entry_for_file_ref(catalog, file_ref)
+ops.artifact_status(file_ref)                 # freshness verdict + advisory progress
+ops.build_artifact(file_ref, force=False)     # compiles a raw STEP via cadgen; else a CLI hint
 ```
 
-`readCatalog()` scans the served root and returns schema v4 entries whose `file`
+`read_catalog()` scans the served root and returns schema v4 entries whose `file`
 values are absolute paths plus `rootRelativeFile` values for URL navigation. Nothing
 is written to `catalog.json` or any hidden catalog cache.
 
-The two path resolvers differ by one question. `assetPathForFileRef` answers "may the
+The two path resolvers differ by one question. `asset_path_for_file_ref` answers "may the
 server send this file's contents", so it also applies the served-asset extension
-filter, which excludes a model script. `containedPathForFileRef` applies the
+filter, which excludes a model script. `contained_path_for_file_ref` applies the
 root and hidden-path rules WITHOUT that filter, for callers that transfer no bytes —
 `reveal` is the one that matters. Both throw on anything outside the root.
 
@@ -108,7 +119,7 @@ problem and are not refused as a class (the catalog absolutizes every entry's
 `file` and the client sends exactly that back); an absolute ref that LANDS
 outside is.
 
-## Artifact status (JS-only), and where builds live
+## Artifact status (file reads only), and where builds live
 
 Artifact STATUS has exactly one authority: `server/artifact_status.py`, pure file
 reads in this process — package existence, schema version, payload files, the
@@ -129,8 +140,14 @@ The viewer takes no action on that state — it never contends for the generatio
 lock — so the kernel-lock rules in `cadgen/coordination/lock.py` are not being
 re-inferred here; a killed build's badge simply ages out within seconds.
 
-Constants the JS authority mirrors from cadgen (the package schema version) are
-pinned cross-language by a sync test in the repo where cadgen is developed.
+This authority mirrors cadgen's store layout — the cache schema version, the
+package and record directories, the path-key derivation — in `server/store_paths.py`,
+a deliberate duplicate so that merely VIEWING never requires cadgen. The duplicate is
+paid for by `tests_server/test_store_paths.py`, which asks both implementations the
+same questions over a matrix of environment states and requires identical answers. It
+skips where cadgen is absent (here, by design); set `VIEWER_REQUIRE_CADGEN_PARITY=1`
+and an absent cadgen becomes a failure instead, which is how the workbench that
+develops both sides runs it.
 
 `/__cad/server` reports `stepArtifactGenerationAvailable: false`, always: the
 capability does not exist in the viewer by design. `stepImportAvailable` reports
@@ -203,8 +220,8 @@ every producer.
 
 `~/.cache/cadgen` (or `$CADGEN_CACHE_DIR`, or the platform cache dir —
 `$XDG_CACHE_HOME`/`%LOCALAPPDATA%`; one resolution rule in cadgen's
-`_internal/cache_paths.py`, mirrored by `cadgenCacheRootDir` in the JS store
-modules and sync-tested) holds everything CONTENT-ADDRESSED and DISPOSABLE:
+`_internal/cache_paths.py`, mirrored by `cadgen_cache_root_dir` in `server/store_paths.py`
+and equality-tested against it) holds everything CONTENT-ADDRESSED and DISPOSABLE:
 the component store, the kernel-op memo, and this mesh cache. Deleting any of
 it costs a rebuild, never correctness. The model's own folder holds everything
 meaningful: the artifact and its store package
@@ -221,7 +238,7 @@ to `reveal`.
 `reveal` opens the asset in the platform file manager (`open -R` / `explorer /select,`
 / `xdg-open` on the containing folder) and answers 501 where no file manager is known
 or when `VIEWER_DISABLE_NATIVE_REVEAL=1`. Because it transfers no bytes it resolves
-through `containedPathForFileRef`, so a model script can be revealed even
+through `contained_path_for_file_ref`, so a model script can be revealed even
 though it is never streamed. `asset=output` resolves the catalog entry file itself;
 `asset=source` resolves optional source code — the model script the source sidecar
 names for a generated STEP file.

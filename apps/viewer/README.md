@@ -58,11 +58,17 @@ npm run build
 python server/main.py --root <absolute dir> --host 127.0.0.1 --json
 ```
 
-`python` must be an interpreter that has `cadgen` installed if you want STEP
-import; viewing needs nothing but the standard library. Dev spawns that same
-`server/main.py` on an ephemeral port and proxies `/__cad` and `/__tess_cache`
-to it, so there is one implementation, not two — set `VIEWER_PYTHON` to choose
-the interpreter, or `VIEWER_BACKEND_URL` to attach to one you started yourself.
+`python` must be **3.11 or newer**: the server checks at startup and refuses
+below that, naming the version it needs, rather than starting and then failing
+on the first request. It must also have `cadgen` installed if you want STEP
+import; viewing needs nothing but the standard library. macOS still ships 3.9
+as `python3`, so on a Mac `VIEWER_PYTHON` usually has to name a newer one.
+
+Dev needs no build first — it spawns that same `server/main.py` on an ephemeral
+port with `--api-only` and proxies `/__cad` and `/__tess_cache` to it, so there
+is one implementation, not two, and Vite owns the client. Set `VIEWER_PYTHON`
+to choose the interpreter, or `VIEWER_BACKEND_URL` to attach to one you started
+yourself. Production does need the build, and refuses to start without it.
 
 The launcher is unconditional and prints the URL it serves: a live instance
 already serving that realpath at this version is REUSED (`action:"reused"`);
@@ -100,6 +106,7 @@ server/     # stdlib-only Python backend: scanner.py (catalog),
             #   (store layout, mirroring cadgen — equality-tested),
             #   compile_client/compile_worker.py (the cadgen import path),
             #   tess_cache.py, registry.py + main.py (the launcher)
+tests_server/ # the backend's suite — unittest, NOT collected by `npm run test`
 src/client/ # React app: CadWorkspace (state root), CadViewer (scene +
             #   effects application), workbench/ (tabs, sections, session
             #   state, playback), render/ (viewport)
@@ -113,6 +120,18 @@ dist/       # built client (gitignored)
 
 ## Testing
 
-`npm run test` from this directory (node:test suites beside the code).
+Two suites, one per language, both run from this directory:
+
+```bash
+npm run test                                   # client + app tooling (node:test, beside the code)
+python -m unittest discover -s tests_server -t .   # the backend (stdlib unittest)
+```
+
+Neither covers the other, so running only one leaves half the app unchecked.
+`VIEWER_DISABLE_NATIVE_REVEAL=1` keeps a headless run from opening a file
+manager. The backend suite's cadgen equality guard skips where cadgen is absent;
+`VIEWER_REQUIRE_CADGEN_PARITY=1` turns that skip into a failure, for anywhere
+cadgen is expected to be present.
+
 Headless UI verification uses Playwright with `--use-angle=metal` —
 the default software WebGL renderer is not what users see.

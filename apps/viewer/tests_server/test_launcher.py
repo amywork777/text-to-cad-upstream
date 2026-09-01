@@ -15,13 +15,16 @@ headless run must never pop a file manager.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -230,6 +233,140 @@ class RollAndReuse(LauncherFixture):
             self.assertEqual(json.loads(r.read())["port"], payload["port"])
 
 
+class ApiOnly(LauncherFixture):
+    """`npm run dev` must work on a checkout that has never been built.
+
+    dist/ is gitignored, so a fresh clone has none — and the dev server does not
+    need one, because Vite serves the client and proxies only the API here.
+    Requiring a build made `npm run dev` fail on first contact, reported through
+    the proxy as a backend that died at startup.
+    """
+
+    def test_it_serves_the_api_with_no_dist_anywhere(self) -> None:
+        # No --dist, and --api-only never consults the fallback either, so a
+        # built checkout cannot mask the regression this pins.
+        child = self.launch(
+            ["--root", self.make_root(), "--json", "--ephemeral", "--no-registry", "--api-only"]
+        )
+        stdout = self.wait_for_url_line(child)
+        port = self.json_line(stdout)["port"]
+        self.assertIn("Starting CAD Viewer API at ", stdout)
+
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__cad/server", timeout=5) as response:
+            self.assertEqual(json.loads(response.read())["port"], port)
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__cad/catalog", timeout=5) as response:
+            self.assertIn("entries", json.loads(response.read()))
+
+        # The client is Vite's job in this mode, so the SPA routes are a plain
+        # 404 rather than a boot failure.
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=5)
+        self.assertEqual(caught.exception.code, 404)
+
+    def test_without_it_a_missing_client_still_refuses_to_start(self) -> None:
+        # The exemption must be exactly as wide as --api-only: a PRODUCTION launch
+        # with no built client stays a hard, named failure.
+        #
+        # Run from a copy of server/ so VIEWER_ROOT — and therefore the dist
+        # fallback — lands in a directory with no dist/. Skipping when the
+        # developer's own checkout happens to be built would mean skipping in CI
+        # too, which builds the client before it runs the tests.
+        staged = os.path.join(self._tmp.name, "staged-app")
+        shutil.copytree(os.path.join(str(APP_ROOT), "server"), os.path.join(staged, "server"))
+        self.assertFalse(os.path.exists(os.path.join(staged, "dist")))
+
+        child = subprocess.Popen(
+            [sys.executable, os.path.join(staged, "server", "main.py"), "--root", self.make_root()],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self.env(),
+        )
+        self._children.append(child)
+        _, stderr = child.communicate(timeout=30)
+        self.assertEqual(child.returncode, 1)
+        self.assertIn("No built CAD Viewer client found", stderr)
+        self.assertIn("--api-only", stderr, "the refusal must name the dev-mode escape")
+
+    def test_the_staged_copy_starts_once_it_is_given_a_client(self) -> None:
+        # Control for the test above: same staged tree, same command, plus a
+        # dist. Without this, a refusal caused by the copy being broken in some
+        # unrelated way would read as the dist check working.
+        staged = os.path.join(self._tmp.name, "staged-app-with-dist")
+        shutil.copytree(os.path.join(str(APP_ROOT), "server"), os.path.join(staged, "server"))
+        os.makedirs(os.path.join(staged, "dist"))
+        Path(staged, "dist", "index.html").write_text("<html>viewer</html>", encoding="utf-8")
+
+        child = subprocess.Popen(
+            [
+                sys.executable,
+                os.path.join(staged, "server", "main.py"),
+                "--root",
+                self.make_root(),
+                "--json",
+                "--ephemeral",
+                "--no-registry",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=self.env(),
+        )
+        self._children.append(child)
+        self.assertEqual(self.json_line(self.wait_for_url_line(child))["action"], "started")
+
+
+class InterpreterFloor(unittest.TestCase):
+    """The floor is enforced at startup, not discovered on the first request.
+
+    macOS ships 3.9 as `python3` — the default the dev server spawns — and on
+    3.9 this server used to boot, print the URL contract, and then answer the
+    catalog with a raw ``realpath() got an unexpected keyword argument
+    'strict'``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if str(APP_ROOT) not in sys.path:
+            sys.path.insert(0, str(APP_ROOT))
+        from server import main as main_module
+
+        cls.main_module = main_module
+
+    def test_the_interpreter_running_this_suite_is_accepted(self) -> None:
+        self.assertEqual(self.main_module.unsupported_python_message(), "")
+
+    def test_an_interpreter_below_the_floor_is_named_along_with_the_way_out(self) -> None:
+        message = self.main_module.unsupported_python_message(
+            version_info=(3, 9, 6, "final", 0), executable="/usr/bin/python3"
+        )
+        self.assertIn("3.11", message, "the message must name the version required")
+        self.assertIn("3.9.6", message, "and the version actually running")
+        self.assertIn("/usr/bin/python3", message, "and WHICH interpreter that was")
+        self.assertIn("VIEWER_PYTHON", message, "and how to point dev at another one")
+
+    def test_the_guard_parses_and_fires_under_an_interpreter_that_predates_the_floor(self) -> None:
+        # The refusal is worthless if the module cannot be PARSED by the
+        # interpreter it is refusing: a SyntaxError anywhere above the guard
+        # replaces the friendly message with a traceback. Parse everything up to
+        # and including the guard against 3.9's grammar.
+        source = (APP_ROOT / "server" / "main.py").read_text(encoding="utf-8")
+        guard, marker, _ = source.partition("_UNSUPPORTED_PYTHON = unsupported_python_message()")
+        self.assertTrue(marker, "the startup guard moved; update this test")
+        ast.parse(guard + marker, filename="main.py", feature_version=(3, 9))
+
+        # ...and check the guard itself trips for every version below the floor.
+        for version in ((3, 9, 6), (3, 10, 14), (2, 7, 18)):
+            self.assertNotEqual(
+                self.main_module.unsupported_python_message(version_info=version), "", str(version)
+            )
+        self.assertEqual(
+            self.main_module.unsupported_python_message(version_info=(3, 11, 0)),
+            "",
+            "3.11 is the floor, not the first version above it",
+        )
+
+
 class Refusals(LauncherFixture):
     def test_a_missing_root_refuses_before_binding(self) -> None:
         dist = self.make_dist()
@@ -342,6 +479,21 @@ class ArgumentGrammar(unittest.TestCase):
         args = self.parse_args(["--port"])
         self.assertEqual(args["port"], 3245)
         self.assertTrue(args["port_explicit"])
+
+    def test_the_three_dev_flags_default_off_and_are_independent(self) -> None:
+        defaults = self.parse_args([])
+        for flag in ("ephemeral", "no_registry", "api_only"):
+            self.assertFalse(defaults[flag], flag)
+        for argument, key in (
+            ("--ephemeral", "ephemeral"),
+            ("--no-registry", "no_registry"),
+            ("--api-only", "api_only"),
+        ):
+            args = self.parse_args([argument])
+            self.assertTrue(args[key], argument)
+            others = {"ephemeral", "no_registry", "api_only"} - {key}
+            for other in others:
+                self.assertFalse(args[other], f"{argument} must not imply --{other}")
 
     def test_repeated_flags_take_the_last_value(self) -> None:
         self.assertEqual(self.parse_args(["--root", "/a", "--root", "/b"])["root"], "/b")

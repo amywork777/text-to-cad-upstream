@@ -97,10 +97,14 @@ function resolveDirectoryRoot() {
 // spawns the backend on an ephemeral port, reads the port off its
 // {url,port,action} line, and hands it to the proxy in the server block.
 //
-// The backend runs --ephemeral --no-registry. --no-registry is a CORRECTNESS
-// requirement, not tidiness: a registered dev backend would be found by a later
-// `main.py --root <same dir>` reuse lookup at the same version, handing an agent
-// a URL served by Vite's proxy target instead of a real Viewer.
+// The backend runs --ephemeral --no-registry --api-only. --no-registry is a
+// CORRECTNESS requirement, not tidiness: a registered dev backend would be
+// found by a later `main.py --root <same dir>` reuse lookup at the same
+// version, handing an agent a URL served by Vite's proxy target instead of a
+// real Viewer. --api-only is what makes dev work on a checkout that has never
+// been built: Vite serves the client here, so this backend needs no dist/ —
+// and dist/ is gitignored, so without it `npm run dev` failed on every fresh
+// clone with a complaint about a missing build.
 //
 // VIEWER_PYTHON names the interpreter, defaulting to python3 — right for the
 // standalone repo, usually WRONG in a checkout where the interpreter carrying
@@ -135,13 +139,23 @@ async function startDevBackend() {
       "127.0.0.1",
       "--ephemeral",
       "--no-registry",
+      "--api-only",
       "--json",
     ],
     { stdio: ["ignore", "pipe", "inherit"] },
   );
-  child.once("exit", (code) => {
+  // The backend's stderr is INHERITED, so whatever it printed is already above
+  // this line. Say only what the exit code cannot: which interpreter ran, so a
+  // version or import failure is attributable. Guessing at a cause here was
+  // actively harmful — it used to blame a missing cadgen for every exit,
+  // including the ones that had nothing to do with cadgen.
+  child.once("exit", (code, signal) => {
+    if (signal === "SIGTERM") {
+      return; // our own teardown, below
+    }
     console.error(
-      `CAD Viewer backend exited (${code}). Set VIEWER_PYTHON to an interpreter that has cadgen installed.`,
+      `CAD Viewer backend (${python}) exited ${code === null ? `on ${signal}` : `with code ${code}`}. ` +
+        "Its error is printed above; VIEWER_PYTHON selects the interpreter.",
     );
   });
   // Vite's own exit is the only teardown that always runs; a killed dev server

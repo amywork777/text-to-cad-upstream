@@ -32,9 +32,18 @@ from server.tess_cache import (  # noqa: E402
     write_tess_cache_entry,
 )
 
-REPO_ROOT = APP_ROOT.parent.parent
-CADGEN_JS_CODEC = REPO_ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellationCache.js"
 GOOD_KEY = "c0ffee-t1-l1.500000e-3-a3.500000e-1"
+
+# The authoritative codec, INSIDE this app. cadgen-js is vendored at
+# packages/cadgen-js — a link in a development checkout, a real tree wherever
+# the app ships — so this one path resolves in every layout.
+#
+# It used to be computed from APP_ROOT.parent.parent, which is a path in the
+# workbench this app is developed in and does not exist where the app ships.
+# The test was @skipUnless that file existed, so in the standalone repo — the
+# one place the backend suite actually ran — it silently skipped, and the
+# encoder's framing was checked nowhere at all.
+CADGEN_JS_CODEC = APP_ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellationCache.js"
 
 
 class TessCacheTestCase(unittest.TestCase):
@@ -153,9 +162,31 @@ class BatchRequests(TessCacheTestCase):
         self.assertIsNotNone(read_tess_cache_batch(json.dumps({"names": []}).encode()))
 
 
-@unittest.skipUnless(shutil.which("node") and CADGEN_JS_CODEC.is_file(), "needs node + cadgen-js")
 class BatchFramingMatchesTheAuthoritativeCodec(TessCacheTestCase):
-    """The Python encoder's bytes must decode with the JS decoder that owns the format."""
+    """The Python encoder's bytes must decode with the JS decoder that owns the format.
+
+    Neither precondition is allowed to make this disappear quietly. A missing
+    codec is a FAILURE — cadgen-js ships with the app, so its absence means the
+    tree is broken, not that this machine is unusual. A missing `node` is a
+    failure too: the client is a JavaScript app, so anywhere this suite runs
+    can run its decoder. Skipping on either is how the check went dead the
+    first time.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not CADGEN_JS_CODEC.is_file():
+            raise AssertionError(
+                f"the authoritative tessellation-cache codec is missing: {CADGEN_JS_CODEC}. "
+                "cadgen-js is vendored at packages/cadgen-js and ships with this app; "
+                "without it the Python encoder's framing is verified by nothing."
+            )
+        if not shutil.which("node"):
+            raise AssertionError(
+                "node is not on PATH, so the authoritative decoder cannot be run. The client "
+                "is a JavaScript app — anywhere this suite runs, node is installable and "
+                "required; this check must not be skipped."
+            )
 
     def decode_with_node(self, container: bytes):
         script = f"""

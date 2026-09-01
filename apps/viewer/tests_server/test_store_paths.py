@@ -18,6 +18,11 @@ cadgen is queried in a SUBPROCESS on purpose. Importing it here would put
 ``cadgen`` in ``sys.modules`` for the whole run and silently defeat
 ``test_module_boundaries``'s check that importing the server package does not
 pull the kernel in.
+
+Where it runs: anywhere cadgen is importable. Where it MUST run: set
+``VIEWER_REQUIRE_CADGEN_PARITY=1`` and an absent cadgen fails instead of
+skipping — that is how the workbench developing both sides keeps a guard that
+was traded for a set of literal pins from quietly never executing.
 """
 
 from __future__ import annotations
@@ -105,12 +110,35 @@ def _cadgen_is_importable() -> bool:
     )
 
 
-@unittest.skipUnless(
-    _cadgen_is_importable(),
-    "cadgen is not importable — this equality guard is a development-time check, and the "
-    "server itself must keep working without it",
-)
+# The one environment where this guard is REQUIRED rather than opportunistic.
+#
+# Skipping is right where cadgen is legitimately absent — the app ships alone,
+# and its own CI installs no CAD kernel to check against. But a guard that only
+# ever skips is a deleted guard, and this one replaced a set of literal pins
+# that used to run on every change. So the workbench that develops both sides
+# sets VIEWER_REQUIRE_CADGEN_PARITY=1, and there an unimportable cadgen is a
+# FAILURE naming what to install rather than a quiet skip.
+_PARITY_REQUIRED = os.environ.get("VIEWER_REQUIRE_CADGEN_PARITY", "").strip() not in ("", "0")
+
+
 class AgreesWithCadgen(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        if _cadgen_is_importable():
+            return
+        reason = (
+            f"cadgen is not importable by {sys.executable}. This equality guard is the only "
+            "thing comparing the viewer's store-key derivations against cadgen's; the server "
+            "itself keeps working without cadgen, which is why it is skippable at all."
+        )
+        if _PARITY_REQUIRED:
+            raise AssertionError(
+                f"VIEWER_REQUIRE_CADGEN_PARITY is set, but {reason} Install cadgen into this "
+                "interpreter, or put its source on PYTHONPATH — a skip here means a "
+                "cross-language store-key mirror went unchecked."
+            )
+        raise unittest.SkipTest(reason)
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

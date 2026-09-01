@@ -17,6 +17,11 @@ Also the instance manager: ``main.py list [--json]`` shows every running Viewer
 because the registry the server writes is the only source of truth. Dev never
 registers (``--no-registry``): the registry is bundled instances only.
 
+Three flags exist for the dev server and nowhere else: ``--ephemeral`` (bind any
+free port), ``--no-registry`` (stay out of reuse), and ``--api-only`` (serve the
+two API prefixes and nothing else, because Vite owns the client — this is what
+lets ``npm run dev`` work on a checkout that has never been built).
+
 A Viewer serves ONE directory, given by ``--root`` and defaulting to the
 invoking directory. The page is always the bare origin; ``?file=`` selects a
 file inside that root. To serve a second directory, just launch again with that
@@ -50,6 +55,62 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+# --- interpreter floor ---------------------------------------------------
+#
+# Checked HERE, at import, before a single request can arrive. macOS still
+# ships Python 3.9 as `python3` — which is also the default this app's dev
+# server spawns — and on 3.9 the server BOOTS, prints the URL contract, and
+# then answers the very first catalog request with a raw
+# `realpath() got an unexpected keyword argument 'strict'`. A tool that starts
+# and then fails on first contact is worse than one that refuses to start, so
+# it refuses to start.
+#
+# The floor is 3.11, not the 3.10 today's code strictly needs (`strict=` landed
+# in 3.10): 3.11 is what cadgen's own metadata requires and what the skill
+# documents, and one number that is true everywhere beats three that drift.
+# Everything in this block is deliberately 3.9-parseable, or the refusal would
+# itself be a SyntaxError.
+MINIMUM_PYTHON = (3, 11)
+
+
+def unsupported_python_message(version_info=None, executable: str = "") -> str:
+    """The refusal text for an interpreter below the floor; ``""`` when it is fine.
+
+    Split from the check so it can be asserted on from a test run, which by
+    construction runs on an interpreter that is ABOVE the floor.
+    """
+    version_info = sys.version_info if version_info is None else version_info
+    if tuple(version_info)[:2] >= MINIMUM_PYTHON:
+        return ""
+    required = ".".join(str(part) for part in MINIMUM_PYTHON)
+    running = ".".join(str(part) for part in tuple(version_info)[:3])
+    newer = "python3.{}".format(MINIMUM_PYTHON[1])
+    return (
+        "CAD Viewer needs Python {required} or newer. This interpreter is {running}:\n"
+        "    {executable}\n"
+        "\n"
+        "Run the server with a newer one:\n"
+        "    {newer} server/main.py --root <absolute dir>\n"
+        "For `npm run dev`, name it with VIEWER_PYTHON:\n"
+        "    VIEWER_PYTHON={newer} npm run dev\n"
+        "\n"
+        "macOS ships {running_major} as `python3`; install a newer interpreter with\n"
+        "Homebrew (`brew install python@3.13`), pyenv, or python.org.\n"
+    ).format(
+        required=required,
+        running=running,
+        executable=executable or sys.executable,
+        newer=newer,
+        running_major=".".join(str(part) for part in tuple(version_info)[:2]),
+    )
+
+
+_UNSUPPORTED_PYTHON = unsupported_python_message()
+if _UNSUPPORTED_PYTHON:
+    sys.stderr.write(_UNSUPPORTED_PYTHON)
+    sys.stderr.flush()
+    raise SystemExit(1)
 
 # The one legal sys.path insert: this file's own directory's parent, so
 # `server.*` imports resolve when main.py is run as a script. It is inside the
@@ -122,9 +183,10 @@ def parse_args(argv: list[str]) -> dict:
         "json": False,
         "open": False,
         "fresh": False,
-        # Additive flags, both for dev (see vite.config.mjs).
+        # Additive flags, all three for dev (see vite.config.mjs).
         "ephemeral": False,
         "no_registry": False,
+        "api_only": False,
     }
     index = 0
     while index < len(argv):
@@ -161,6 +223,8 @@ def parse_args(argv: list[str]) -> dict:
             args["ephemeral"] = True
         elif arg == "--no-registry":
             args["no_registry"] = True
+        elif arg == "--api-only":
+            args["api_only"] = True
         # Unknown args tolerated, matching the old launcher.
         index += 1
     if not (0 < args["port"] <= 65535):
@@ -464,11 +528,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
     # Checked AFTER the reuse lookup, so a reuse succeeds with no --dist.
-    dist_dir = resolve_dist_dir(args["dist"])
-    if not dist_dir:
+    #
+    # --api-only exempts the check because in dev the CLIENT COMES FROM VITE:
+    # this process serves only /__cad and /__tess_cache, and requiring a built
+    # dist/ made `npm run dev` fail on any checkout that had not run
+    # `npm run build` first — dist/ is gitignored, so that is every fresh
+    # clone. The dist routes still answer 404 in that mode, which is what they
+    # already do for an empty dist_dir.
+    dist_dir = "" if args["api_only"] else resolve_dist_dir(args["dist"])
+    if not dist_dir and not args["api_only"]:
         _err(
-            "No built CAD Viewer client found. Build one with "
-            "`npm --prefix apps/viewer run build` or point --dist at a dist directory.\n"
+            "No built CAD Viewer client found. Build one with `npm run build` "
+            "in the CAD Viewer app directory, or point --dist at a dist directory. "
+            "(--api-only serves the API alone, for a dev server that supplies its own client.)\n"
         )
         return 1
 
@@ -506,7 +578,8 @@ def main(argv: list[str] | None = None) -> int:
     server.RequestHandlerClass = make_handler_class(app)
 
     url = f"http://{host}:{port}/"
-    _out(f"Starting CAD Viewer at {url} (serving {directory})\n")
+    started = "Starting CAD Viewer API" if args["api_only"] else "Starting CAD Viewer"
+    _out(f"{started} at {url} (serving {directory})\n")
     _out(f"CAD Viewer URL: {url}\n")
     if args["json"]:
         _out(f"{_compact_json({'url': url, 'port': port, 'action': 'started'})}\n")

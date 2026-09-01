@@ -93,8 +93,13 @@ jobs:
 
       # The backend is Python and mirrors with the app, so the mirror has to be
       # able to validate it too — otherwise the standalone repo ships a server
-      # its own CI never runs. The suites are stdlib-only and skip the cadgen
-      # equality guard when cadgen is absent, which it is here by design.
+      # its own CI never runs. This is the SECOND runner, not the only one:
+      # scripts/test/test-python.sh runs the same suite on every pull request
+      # here, which is what catches a break before a release rather than after.
+      # What is unique to this run is the no-cadgen configuration — the suites
+      # are stdlib-only, and the cadgen equality guard skips here by design
+      # (VIEWER_REQUIRE_CADGEN_PARITY is deliberately NOT set), so a server that
+      # had quietly acquired a hard cadgen dependency fails right here.
       # VIEWER_DISABLE_NATIVE_REVEAL keeps a headless runner from trying to
       # open a file manager.
       - name: Run mirror backend tests
