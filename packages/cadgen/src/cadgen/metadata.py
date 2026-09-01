@@ -20,8 +20,8 @@ class GeneratorMetadata:
     kind: str
     display_name: str | None
     generator_names: tuple[str, ...]
-    has_gen_step: bool
-    has_gen_dxf: bool
+    # The decorator kind this model script declares: "step" (@step) or "dxf" (@dxf).
+    format: str
     mesh_tolerance: float | None
     mesh_angular_tolerance: float | None
     # Library-first fields (design/library-first-generation.md): the @step/@dxf
@@ -56,7 +56,6 @@ class MeshExportDecl:
 
 STEP_ENVELOPE_FIELDS = {
     "shape",
-    "params",
     "stl",
     "3mf",
     "mesh_tolerance",
@@ -341,8 +340,7 @@ def parse_generator_metadata(script_path: Path) -> GeneratorMetadata | None:
         kind=kind,
         display_name=display_name,
         generator_names=(function.name,),
-        has_gen_step=fmt == "step",
-        has_gen_dxf=fmt == "dxf",
+        format=fmt,
         mesh_tolerance=_decorator_numeric_kwarg(call_kwargs, "mesh_tolerance", script_path=script_path),
         mesh_angular_tolerance=_decorator_numeric_kwarg(
             call_kwargs, "mesh_angular_tolerance", script_path=script_path
@@ -378,7 +376,7 @@ def _parse_step_return_metadata(
     )
     if "shape" not in envelope:
         raise ValueError(
-            f"{_display_path(script_path)} gen_step() envelope must define 'shape'"
+            f"{_display_path(script_path)} @step envelope must define 'shape'"
         )
     return (
         "assembly"
@@ -553,8 +551,10 @@ def _reject_unsupported_fields(
     extra_fields = sorted(key for key in envelope if key not in allowed_fields)
     if extra_fields:
         joined = ", ".join(extra_fields)
+        supported = ", ".join(sorted(allowed_fields))
         raise ValueError(
-            f"{_display_path(script_path)} {function_name}() envelope has unsupported field(s): {joined}"
+            f"{_display_path(script_path)} {function_name}() envelope has unsupported "
+            f"field(s): {joined}; supported fields: {supported}"
         )
 
 

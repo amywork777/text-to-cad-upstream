@@ -51,6 +51,46 @@ class CompoundAssemblyGenerationTests(unittest.TestCase):
                 script_path=Path("assembly.py"),
             )
 
+    def test_step_payload_rejects_unknown_params_field(self) -> None:
+        # 'params' is not an envelope field. It fails through the ordinary
+        # closed-vocabulary error naming the supported set — no retired-name
+        # special case.
+        with self.assertRaisesRegex(
+            TypeError, r"unsupported field\(s\): params.*supported fields:"
+        ):
+            generation._normalize_step_payload(
+                {"shape": object(), "params": "tom.params.js"},
+                script_path=Path("assembly.py"),
+            )
+
+    def test_static_metadata_rejects_unknown_params_field(self) -> None:
+        # The static parser validates against the SAME vocabulary as the runtime
+        # (STEP_ENVELOPE_FIELDS): 'params' must fail at parse time with the same
+        # closed-vocabulary error.
+        from cadgen.metadata import STEP_ENVELOPE_FIELDS
+
+        self.assertNotIn("params", STEP_ENVELOPE_FIELDS)
+        with tempfile.TemporaryDirectory(prefix="cadgen-params-field-") as tempdir:
+            script_path = Path(tempdir) / "assembly.py"
+            script_path.write_text(
+                "\n".join(
+                    [
+                        "from cadgen import step",
+                        "",
+                        "@step",
+                        "def model():",
+                        "    return {'shape': object(), 'params': 'tom.params.js'}",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError, r"unsupported field\(s\): params.*supported fields:"
+            ):
+                parse_generator_metadata(script_path)
+
     def test_shape_assembly_mates_attribute_round_trips_to_scene(self) -> None:
         # Mates set on the returned compound survive STEP-scene export onto
         # scene.assembly_mates with canonical m{n} ids — the replacement for the
