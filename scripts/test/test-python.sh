@@ -56,7 +56,6 @@ run_viewer_backend_suite() {
     cd "$REPO_ROOT/apps/viewer"
     PYTHONPATH="$REPO_ROOT/packages/cadgen/src${PYTHONPATH:+:$PYTHONPATH}" \
       VIEWER_REQUIRE_CADGEN_PARITY=1 \
-      VIEWER_DISABLE_NATIVE_REVEAL=1 \
       "$PYTHON_BIN" -m unittest discover -s tests_server -t .
   )
 }

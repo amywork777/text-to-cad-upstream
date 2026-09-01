@@ -309,8 +309,7 @@ import { copyTextToClipboard, readTextFromClipboard } from "@/ui/clipboard";
 import { triggerUrlDownload } from "@/ui/download";
 import {
   copyTargetsForFileAccessAsset,
-  downloadUrlForFileAsset,
-  openUrlForFileAsset
+  downloadUrlForFileAsset
 } from "@/workbench/fileAccessAssets";
 
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
@@ -1026,16 +1025,6 @@ function useThrottledValue(value, intervalMs, resetKey = "") {
   return throttledValue;
 }
 
-async function readResponseError(response, fallback) {
-  try {
-    const payload = await response.json();
-    const error = String(payload?.error || payload?.message || fallback).trim();
-    return error || fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 // Hide an entry's render assets (url/hash/bytes/assets) so the viewer treats it as "not yet
 // renderable" — used while its render artifact is missing/stale/building or has failed, so the
 // viewer shows a loading/error state and never renders a stale cache. Once the artifact is ready
@@ -1118,7 +1107,6 @@ export default function CadWorkspace({
   const [copyStatus, setCopyStatus] = useState("");
   const [stepUpdateInProgress, setStepUpdateInProgress] = useState(false);
   const [screenshotStatus, setScreenshotStatus] = useState("");
-  const [fileAccessBusyKey, setFileAccessBusyKey] = useState("");
   const [persistenceStatus, setPersistenceStatus] = useState("");
   const [viewerLayoutMode, setViewerLayoutMode] = useState(readViewerLayoutMode);
   const [sidebarOpen, setSidebarOpen] = useState(() => (
@@ -1435,7 +1423,6 @@ export default function CadWorkspace({
     ? viewerServerInfo.stepArtifactGenerationAvailable !== false
     : true;
   const fileAccessBackend = viewerServerInfo ? (viewerServerBackend || "local-fs") : "";
-  const fileRevealAvailable = fileAccessBackend === "local-fs";
   const filePathCopyAvailable = fileAccessBackend === "local-fs" && Boolean(
     viewerServerInfo?.rootPath
   );
@@ -6824,39 +6811,6 @@ export default function CadWorkspace({
     }
   }, [viewerServerInfo]);
 
-  const handleRevealFileAsset = useCallback(async (entry, asset = "output", assetInfo = null) => {
-    const fileRef = entry ? fileKey(entry) : "";
-    const assetKind = String(asset || "output").trim() || "output";
-    if (!fileRef || !fileRevealAvailable || typeof window === "undefined") {
-      return;
-    }
-    const revealUrl = openUrlForFileAsset(fileRef, assetKind);
-    const busyKey = `${fileRef}:${assetKind}`;
-    setCopyStatus("");
-    setScreenshotStatus("");
-
-    setFileAccessBusyKey(busyKey);
-    try {
-      const response = await fetch(revealUrl, {
-        method: "POST",
-        cache: "no-store",
-        // Any custom header forces a CORS preflight, which the backend does not answer
-        // cross-origin -- that is what stops a hostile page POSTing to the viewer.
-        headers: { "x-cadgen-viewer": "1" },
-      });
-      if (!response.ok) {
-        throw new Error(await readResponseError(
-          response,
-          `Failed to reveal file: ${response.status} ${response.statusText}`
-        ));
-      }
-    } catch (error) {
-      setCopyStatus(error instanceof Error ? error.message : "Failed to reveal file");
-    } finally {
-      setFileAccessBusyKey((current) => (current === busyKey ? "" : current));
-    }
-  }, [fileRevealAvailable]);
-
   const handleDrawingStrokesChange = useCallback((nextStrokes) => {
     const normalized = cloneDrawingStrokes(nextStrokes);
     const current = drawingStrokesRef.current;
@@ -7264,12 +7218,9 @@ export default function CadWorkspace({
           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
           filenameLoadActivity={filenameLoadActivity}
           selectedStepSourceStatus={selectedStepSourceStatus}
-          canRevealFileAssets={fileRevealAvailable}
           canCopyFileAssetLinks={fileLinkCopyAvailable}
           canCopyFileAssetPaths={filePathCopyAvailable}
-          fileAccessBusyKey={fileAccessBusyKey}
           onDownloadFileAsset={handleDownloadFileAsset}
-          onRevealFileAsset={handleRevealFileAsset}
           onRevealInExplorerView={handleRevealEntryInExplorerView}
           onCopyFileAssetReference={handleCopyFileAssetReference}
           fileSheetKind={selectedFileSheetHasSections ? selectedFileSheetKind : ""}
@@ -7299,12 +7250,9 @@ export default function CadWorkspace({
               activeStepArtifactGenerationFile={activeStepArtifactGenerationFiles}
               loadingFiles={viewerLoadingFiles}
               stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-              canRevealFileAssets={fileRevealAvailable}
               canCopyFileAssetLinks={fileLinkCopyAvailable}
               canCopyFileAssetPaths={filePathCopyAvailable}
-              fileAccessBusyKey={fileAccessBusyKey}
               onDownloadFileAsset={handleDownloadFileAsset}
-              onRevealFileAsset={handleRevealFileAsset}
               onRevealInExplorerView={handleRevealEntryInExplorerView}
               onCopyFileAssetReference={handleCopyFileAssetReference}
               catalogHydrated={catalogHydrated}
@@ -7354,7 +7302,6 @@ export default function CadWorkspace({
                 handleEnterPreviewMode={handleEnterPreviewMode}
                 handleExitPreviewMode={handleExitPreviewMode}
                 handleScreenshotCopy={handleScreenshotCopy}
-                fileAccessBusyKey={fileAccessBusyKey}
               />
 
               {!previewMode && !selectedEntry && !missingFileRef && !fileParamSelectionPending ? (
@@ -7459,9 +7406,6 @@ export default function CadWorkspace({
                 }}
                 fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
-                localFileOpenAvailable={fileRevealAvailable}
-                fileAccessBusyKey={fileAccessBusyKey}
-                onOpenFileAsset={handleRevealFileAsset}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
                 themeTabs={themeTabs}
@@ -7496,9 +7440,6 @@ export default function CadWorkspace({
                 } : null}
                 fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
-                localFileOpenAvailable={fileRevealAvailable}
-                fileAccessBusyKey={fileAccessBusyKey}
-                onOpenFileAsset={handleRevealFileAsset}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
                 themeTabs={themeTabs}
@@ -7520,9 +7461,6 @@ export default function CadWorkspace({
                 onStartResize={handleStartFileSheetResize}
                 fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
-                localFileOpenAvailable={fileRevealAvailable}
-                fileAccessBusyKey={fileAccessBusyKey}
-                onOpenFileAsset={handleRevealFileAsset}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
                 themeTabs={[
@@ -7573,9 +7511,6 @@ export default function CadWorkspace({
                 onStartResize={handleStartFileSheetResize}
                 fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
-                localFileOpenAvailable={fileRevealAvailable}
-                fileAccessBusyKey={fileAccessBusyKey}
-                onOpenFileAsset={handleRevealFileAsset}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
                 themeTabs={themeTabs}

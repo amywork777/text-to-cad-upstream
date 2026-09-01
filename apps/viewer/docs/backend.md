@@ -7,7 +7,7 @@ files. The viewer is a local-filesystem app, so there is exactly one backend.
 That backend is **stdlib-only Python**: `server/`, no web framework and no third-party
 import, on an interpreter of **3.11 or newer**. It owns everything the viewer does —
 the catalog scan, path containment, asset serving, the SPA, artifact status, the STEP
-import bridge, the native reveal dialog, the instance registry. The viewer is a STATIC
+import bridge, the instance registry. The viewer is a STATIC
 VISUALIZATION TOOL: its render path runs no CAD kernel. It renders artifacts that
 exist — render packages, sibling `.dxf` files — and the CLIs own generation and
 export. The one build-shaped thing it does is importing a raw foreign STEP, which
@@ -85,14 +85,13 @@ already known to exist.
 ## Interface
 
 `server/backend.py` holds `LocalAssetBackend` (root containment, catalog
-absolutization, the guarded path resolvers); `server/scanner.py` holds the catalog
+absolutization, the guarded path resolver); `server/scanner.py` holds the catalog
 scan; `server/cadgen_ops.py` holds the cadgen delegation:
 
 ```python
 backend.resolve_root()                        # the served root, resolved once
 backend.read_catalog()                        # scan -> schema v4 entries
 backend.asset_path_for_file_ref(file_ref)     # guarded path for bytes we will send
-backend.contained_path_for_file_ref(file_ref) # guarded path for bytes we will not
 backend.catalog_entry_for_file_ref(catalog, file_ref)
 ops.artifact_status(file_ref)                 # freshness verdict + advisory progress
 ops.build_artifact(file_ref, force=False)     # compiles a raw STEP via cadgen; else a CLI hint
@@ -102,11 +101,9 @@ ops.build_artifact(file_ref, force=False)     # compiles a raw STEP via cadgen; 
 values are absolute paths plus `rootRelativeFile` values for URL navigation. Nothing
 is written to `catalog.json` or any hidden catalog cache.
 
-The two path resolvers differ by one question. `asset_path_for_file_ref` answers "may the
-server send this file's contents", so it also applies the served-asset extension
-filter, which excludes a model script. `contained_path_for_file_ref` applies the
-root and hidden-path rules WITHOUT that filter, for callers that transfer no bytes —
-`reveal` is the one that matters. Both throw on anything outside the root.
+`asset_path_for_file_ref` answers "may the server send this file's contents", so on
+top of the root and hidden-path rules it applies the served-asset extension filter,
+which excludes a model script. It throws on anything outside the root.
 
 The outside-the-root half of that is `require_contained(root, candidate)`, and it
 is ONE function on purpose: the artifact routes call it too, because "refused
@@ -199,8 +196,6 @@ every producer.
 - `GET /__cad/download?file=...&asset=output|source`
 - `GET /__cad/artifact?file=...` (status)
 - `POST /__cad/artifact?file=...` (build; `&force=1` to rebuild)
-- `POST /__cad/reveal?file=...` (the client also sends `&asset=...`, which the
-  server ignores: reveal always targets the entry itself)
 - `GET /__tess_cache/<key>.tess`, `POST /__tess_cache/<key>.tess`,
   `POST /__tess_cache/batch` — the shared component-tessellation cache
   (`<cache root>/meshes`, the same store the export CLI and the snapshot host
@@ -231,17 +226,12 @@ Version bumps orphan whole cache generations by design; `cadgen cache info` /
 automatically.
 
 `download` streams asset bytes. It serves OUTPUTS only — the artifacts the viewer may
-have to regenerate — and never source code: a model script (`.py`) is not in the served-asset
-extension set, so `asset=source` is not offered for download and the UI wires it only
-to `reveal`.
+have to regenerate — and never source code: a model script (`.py`) is not in the
+served-asset extension set, so it is not reachable through any route.
 
-`reveal` opens the asset in the platform file manager (`open -R` / `explorer /select,`
-/ `xdg-open` on the containing folder) and answers 501 where no file manager is known
-or when `VIEWER_DISABLE_NATIVE_REVEAL=1`. Because it transfers no bytes it resolves
-through `contained_path_for_file_ref`, so a model script can be revealed even
-though it is never streamed. `asset=output` resolves the catalog entry file itself;
-`asset=source` resolves optional source code — the model script the source sidecar
-names for a generated STEP file.
+No route hands a path to a desktop program. The server answers with bytes and JSON;
+it never spawns a file manager or any other GUI application on the user's machine,
+and a route that did would be a new class of thing for this backend to be.
 
 **Every POST must send `x-cadgen-viewer: 1`.** The value carries no meaning — a custom
 header is what forces a browser to preflight a cross-origin request, and the backend

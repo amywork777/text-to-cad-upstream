@@ -87,18 +87,6 @@ export function downloadUrlForFileAsset(fileRef, asset = "output", baseUrl = "")
   }
 }
 
-export function openUrlForFileAsset(fileRef, asset = "output", baseUrl = "") {
-  const path = `/__cad/reveal?file=${encodeURIComponent(fileRef)}&asset=${encodeURIComponent(asset || "output")}`;
-  if (!baseUrl) {
-    return path;
-  }
-  try {
-    return new URL(path, baseUrl).toString();
-  } catch {
-    return path;
-  }
-}
-
 export function copyTargetsForFileAccessAsset(asset, viewerServerInfo = {}) {
   // A path relative to the served directory IS a path relative to the root: they are
   // the same directory now, so the old re-basing between them is gone.

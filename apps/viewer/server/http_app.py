@@ -32,7 +32,6 @@ from .backend import ForbiddenAssetError, LocalAssetBackend
 from .cadgen_ops import create_cadgen_ops
 from .content_types import content_type_for_static_asset
 from .encoding import UriError, attachment_content_disposition, strict_decode_uri_component
-from .reveal import reveal_path
 from .scanner import node_basename, path_relative
 from .store_paths import store_packages_dir
 from .tess_cache import read_tess_cache_batch, read_tess_cache_entry, write_tess_cache_entry
@@ -306,8 +305,6 @@ class CadApp:
             try:
                 if pathname == "/__cad/artifact":
                     self._handle_artifact_build(request, response, query)
-                elif pathname == "/__cad/reveal":
-                    self._handle_reveal(request, response, query)
                 elif pathname == TESS_CACHE_BATCH_PATH:
                     # Matched BEFORE the prefix branch: /__tess_cache/batch
                     # matches both.
@@ -436,31 +433,6 @@ class CadApp:
             attachment_content_disposition(node_basename(candidate)) if download else None
         )
         response.stream_file(candidate, stat_result, content_type, disposition=disposition)
-
-    def _handle_reveal(self, request, response, query):
-        """Show the entry in the OS file manager.
-
-        Resolution goes through ``contained_path_for_file_ref``, NOT the asset
-        resolver: no bytes are sent, so there is no served-extension filter and
-        a ``.py`` model script resolves here and nowhere else.
-
-        The client appends ``&asset=artifact|output`` to this URL and the server
-        IGNORES it. Reveal always targets the entry itself — the old
-        ``asset=source`` branch that redirected to the generating script was
-        deliberately deleted and must not come back.
-        """
-        target = self.backend.contained_path_for_file_ref(query.get("file") or "")
-        if not target or not os.path.exists(target):
-            response.send_json(404, {"ok": False, "error": "Not found"})
-            return
-        result = reveal_path(target)
-        if result.get("unsupported"):
-            response.send_json(501, {"ok": False, "error": "Revealing files is not supported here"})
-            return
-        if not result.get("ok"):
-            response.send_json(500, {"ok": False, "error": result.get("error") or "Reveal failed"})
-            return
-        response.send_json(200, {"ok": True, "path": target})
 
     def _handle_tess_get(self, request, response):
         """403 refused name, 404 miss, 200 hit.

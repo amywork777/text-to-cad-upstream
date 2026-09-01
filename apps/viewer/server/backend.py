@@ -1,18 +1,15 @@
 """The local-filesystem backend: root resolution, catalog absolutization, and
-the two guarded path resolvers.
+the guarded path resolver.
 
 The viewer serves ONE directory, fixed when the process starts. Requests never
 name a directory — a page URL is just the origin, and ``?file=`` names a file
 inside this root — so the containment check is unconditional.
 
-TWO RESOLVERS, DELIBERATELY DIFFERENT
--------------------------------------
-``asset_path_for_file_ref`` is for bytes we will SEND, so it additionally
-requires the path to be a served CAD asset. ``contained_path_for_file_ref`` is
-for bytes we will NOT send (reveal only) and has no extension filter, which is
-why a ``.py`` model script resolves there and nowhere else.
+``asset_path_for_file_ref`` is for bytes we will SEND, so on top of containment
+it requires the path to be a served CAD asset — which is why a ``.py`` model
+script never resolves through it.
 
-Both funnel through ``_reject_outside_root``, whose two jobs produce two
+It funnels through ``_reject_outside_root``, whose two jobs produce two
 DIFFERENT statuses: a path outside the root RAISES (403 Forbidden), while a
 path inside it with a hidden root-relative component returns ``True`` and the
 caller answers ``None`` (404 Not found). Only ROOT-RELATIVE components are
@@ -44,7 +41,6 @@ from .content_types import content_type_for_path
 from .encoding import UriError, local_asset_url_for_path, strict_decode_uri_component
 from .scanner import (
     CAD_CATALOG_SCHEMA_VERSION,
-    is_hidden_name,
     is_served_cad_asset,
     node_basename,
     path_is_inside,
@@ -264,17 +260,6 @@ class LocalAssetBackend:
             return None
         candidate = os.path.abspath(normalized)
         if not is_served_cad_asset(candidate):
-            return None
-        if self._reject_outside_root(candidate):
-            return None
-        return candidate
-
-    def contained_path_for_file_ref(self, file_ref) -> str | None:
-        normalized = normalized_file_ref(file_ref)
-        if not normalized or not os.path.isabs(normalized):
-            return None
-        candidate = os.path.abspath(normalized)
-        if is_hidden_name(node_basename(candidate)):
             return None
         if self._reject_outside_root(candidate):
             return None

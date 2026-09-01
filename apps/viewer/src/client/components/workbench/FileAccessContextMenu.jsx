@@ -30,11 +30,8 @@ function ExplorerViewSection({
 function FileAccessSection({
   entry,
   asset,
-  canRevealFileAssets,
   canCopyFileAssetLinks,
   canCopyFileAssetPaths,
-  busyKey = "",
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference
 }) {
@@ -42,23 +39,10 @@ function FileAccessSection({
     return null;
   }
 
-  const key = `${asset.fileRef}:${asset.asset}`;
-  const revealBusy = busyKey === key;
   const canCopyFileAssetReference = typeof onCopyFileAssetReference === "function";
 
   return (
     <>
-      {canRevealFileAssets ? (
-        <ContextMenuItem
-          className="text-xs"
-          disabled={revealBusy}
-          onSelect={() => {
-            onRevealFileAsset(entry, asset.asset, asset);
-          }}
-        >
-          <span className="min-w-0 truncate">Reveal in Folder</span>
-        </ContextMenuItem>
-      ) : null}
       <ExplorerViewSection
         entry={entry}
         onRevealInExplorerView={onRevealInExplorerView}
@@ -107,12 +91,9 @@ function FileAccessSection({
 
 export default function FileAccessContextMenu({
   entry,
-  canRevealFileAssets = false,
   canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  busyKey = "",
   onDownloadFileAsset,
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   children
@@ -144,11 +125,8 @@ export default function FileAccessContextMenu({
           <FileAccessSection
             entry={entry}
             asset={assets.output}
-            canRevealFileAssets={canRevealFileAssets && typeof onRevealFileAsset === "function"}
             canCopyFileAssetLinks={canCopyFileAssetLinks}
             canCopyFileAssetPaths={canCopyFileAssetPaths}
-            busyKey={busyKey}
-            onRevealFileAsset={onRevealFileAsset}
             onRevealInExplorerView={onRevealInExplorerView}
             onCopyFileAssetReference={onCopyFileAssetReference}
           />

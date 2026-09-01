@@ -134,8 +134,7 @@ function DesktopFloatingToolBar({
   drawingStrokes,
   handleEnterPreviewMode,
   handleScreenshotCopy,
-  selectedEntry,
-  fileAccessBusyKey = ""
+  selectedEntry
 }) {
   // What this format can do, from the one capability table — never re-derived from
   // its identity, so a new format inherits the toolbar by declaring a row.

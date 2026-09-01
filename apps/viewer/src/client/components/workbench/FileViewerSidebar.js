@@ -53,12 +53,9 @@ function FileEntryButton({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canRevealFileAssets = false,
   canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  fileAccessBusyKey = "",
   onDownloadFileAsset,
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   nested = false
@@ -117,12 +114,9 @@ function FileEntryButton({
   return (
     <FileAccessContextMenu
       entry={entry}
-      canRevealFileAssets={canRevealFileAssets}
       canCopyFileAssetLinks={canCopyFileAssetLinks}
       canCopyFileAssetPaths={canCopyFileAssetPaths}
-      busyKey={fileAccessBusyKey}
       onDownloadFileAsset={onDownloadFileAsset}
-      onRevealFileAsset={onRevealFileAsset}
       onRevealInExplorerView={onRevealInExplorerView}
       onCopyFileAssetReference={onCopyFileAssetReference}
     >
@@ -147,12 +141,9 @@ function DirectoryNode({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canRevealFileAssets = false,
   canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  fileAccessBusyKey = "",
   onDownloadFileAsset,
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   nested = false
@@ -214,12 +205,9 @@ function DirectoryNode({
                     activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                     stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                    canRevealFileAssets={canRevealFileAssets}
                     canCopyFileAssetLinks={canCopyFileAssetLinks}
                     canCopyFileAssetPaths={canCopyFileAssetPaths}
-                    fileAccessBusyKey={fileAccessBusyKey}
                     onDownloadFileAsset={onDownloadFileAsset}
-                    onRevealFileAsset={onRevealFileAsset}
                     onRevealInExplorerView={onRevealInExplorerView}
                     onCopyFileAssetReference={onCopyFileAssetReference}
                     nested={true}
@@ -241,12 +229,9 @@ function DirectoryNode({
                     activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                     stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                    canRevealFileAssets={canRevealFileAssets}
                     canCopyFileAssetLinks={canCopyFileAssetLinks}
                     canCopyFileAssetPaths={canCopyFileAssetPaths}
-                    fileAccessBusyKey={fileAccessBusyKey}
                     onDownloadFileAsset={onDownloadFileAsset}
-                    onRevealFileAsset={onRevealFileAsset}
                     onRevealInExplorerView={onRevealInExplorerView}
                     onCopyFileAssetReference={onCopyFileAssetReference}
                     nested={true}
@@ -301,12 +286,9 @@ function FileViewerContents({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canRevealFileAssets = false,
   canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  fileAccessBusyKey = "",
   onDownloadFileAsset,
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   catalogHydrated = false,
@@ -360,12 +342,9 @@ function FileViewerContents({
                           activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                          canRevealFileAssets={canRevealFileAssets}
                           canCopyFileAssetLinks={canCopyFileAssetLinks}
                           canCopyFileAssetPaths={canCopyFileAssetPaths}
-                          fileAccessBusyKey={fileAccessBusyKey}
                           onDownloadFileAsset={onDownloadFileAsset}
-                          onRevealFileAsset={onRevealFileAsset}
                           onRevealInExplorerView={onRevealInExplorerView}
                           onCopyFileAssetReference={onCopyFileAssetReference}
                         />
@@ -386,12 +365,9 @@ function FileViewerContents({
                           activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                          canRevealFileAssets={canRevealFileAssets}
                           canCopyFileAssetLinks={canCopyFileAssetLinks}
                           canCopyFileAssetPaths={canCopyFileAssetPaths}
-                          fileAccessBusyKey={fileAccessBusyKey}
                           onDownloadFileAsset={onDownloadFileAsset}
-                          onRevealFileAsset={onRevealFileAsset}
                           onRevealInExplorerView={onRevealInExplorerView}
                           onCopyFileAssetReference={onCopyFileAssetReference}
                         />
@@ -436,12 +412,9 @@ export default function FileViewerSidebar({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canRevealFileAssets = false,
   canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  fileAccessBusyKey = "",
   onDownloadFileAsset,
-  onRevealFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   catalogHydrated = false,
@@ -475,12 +448,9 @@ export default function FileViewerSidebar({
       activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
       stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-      canRevealFileAssets={canRevealFileAssets}
       canCopyFileAssetLinks={canCopyFileAssetLinks}
       canCopyFileAssetPaths={canCopyFileAssetPaths}
-      fileAccessBusyKey={fileAccessBusyKey}
       onDownloadFileAsset={onDownloadFileAsset}
-      onRevealFileAsset={onRevealFileAsset}
       onRevealInExplorerView={onRevealInExplorerView}
       onCopyFileAssetReference={onCopyFileAssetReference}
       catalogHydrated={catalogHydrated}

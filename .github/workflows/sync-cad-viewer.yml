@@ -100,12 +100,8 @@ jobs:
       # are stdlib-only, and the cadgen equality guard skips here by design
       # (VIEWER_REQUIRE_CADGEN_PARITY is deliberately NOT set), so a server that
       # had quietly acquired a hard cadgen dependency fails right here.
-      # VIEWER_DISABLE_NATIVE_REVEAL keeps a headless runner from trying to
-      # open a file manager.
       - name: Run mirror backend tests
         working-directory: ${{ runner.temp }}/cad-viewer
-        env:
-          VIEWER_DISABLE_NATIVE_REVEAL: "1"
         run: python3 -m unittest discover -s tests_server -t .
 
       - name: Build the mirror

@@ -493,7 +493,8 @@ class HeaderContract(HttpLayerTestCase):
 class KeepAlive(HttpLayerTestCase):
     """The highest-risk framing detail in the port.
 
-    ``/__cad/artifact`` and ``/__cad/reveal`` never read their request bodies.
+    ``POST /__cad/artifact`` never reads its request body — every parameter
+    rides the query string, so a body sent with it goes unread.
     Node discards them harmlessly; an HTTP/1.1 handler that leaves
     content-length bytes in the buffer mis-parses the NEXT request on that
     connection. It never shows up in single-request tests — only as intermittent
@@ -568,7 +569,6 @@ class EveryRouteAnswersForReal(HttpLayerTestCase):
             ("GET", "/__cad/catalog", {}),
             ("GET", "/__cad/artifact?file=x.step", {}),
             ("POST", "/__cad/artifact?file=x.step", {"x-cadgen-viewer": "1"}),
-            ("POST", "/__cad/reveal?file=/x.step", {"x-cadgen-viewer": "1"}),
             ("GET", "/__cad/asset?file=/x.step", {}),
             ("GET", "/__cad/store?file=x", {}),
             ("GET", "/__tess_cache/a.tess", {}),

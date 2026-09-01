@@ -4,8 +4,7 @@ import test from "node:test";
 import {
   copyTargetsForFileAccessAsset,
   downloadUrlForFileAsset,
-  fileAccessAssetsForEntry,
-  openUrlForFileAsset
+  fileAccessAssetsForEntry
 } from "./fileAccessAssets.js";
 
 const viewerServerInfo = {
@@ -66,17 +65,6 @@ test("file access download URLs target the requested asset", () => {
   assert.equal(
     downloadUrlForFileAsset("assemblies/robot arm.step", "output", "https://cad.example.test/viewer"),
     "https://cad.example.test/__cad/download?file=assemblies%2Frobot%20arm.step&asset=output"
-  );
-});
-
-test("file access open URLs target the local reveal endpoint", () => {
-  assert.equal(
-    openUrlForFileAsset("assemblies/robot arm.step", "artifact"),
-    "/__cad/reveal?file=assemblies%2Frobot%20arm.step&asset=artifact"
-  );
-  assert.equal(
-    openUrlForFileAsset("assemblies/robot arm.step", "output", "http://127.0.0.1:4179/viewer"),
-    "http://127.0.0.1:4179/__cad/reveal?file=assemblies%2Frobot%20arm.step&asset=output"
   );
 });
 

@@ -109,8 +109,8 @@ is never handed back by mistake.
 - **Vite's transform cache can outlive HMR and hard reloads.** If a source
   edit does not show up, restart the dev server and delete
   `node_modules/.vite`.
-- Never invoke the export/reveal routes from automation — they open native
-  save-as dialogs and Finder windows.
+- Never invoke the export routes from automation — they open native save-as
+  dialogs.
 
 ## The shape of the app
 
@@ -143,8 +143,7 @@ python -m unittest discover -s tests_server -t .   # the backend (stdlib unittes
 ```
 
 Neither covers the other, so running only one leaves half the app unchecked.
-`VIEWER_DISABLE_NATIVE_REVEAL=1` keeps a headless run from opening a file
-manager. The backend suite's cadgen equality guard skips where cadgen is absent;
+The backend suite's cadgen equality guard skips where cadgen is absent;
 `VIEWER_REQUIRE_CADGEN_PARITY=1` turns that skip into a failure, for anywhere
 cadgen is expected to be present.
 
