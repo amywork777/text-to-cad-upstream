@@ -5,7 +5,7 @@ Load this only when a task needs Viewer file-support details or UI control guida
 ## Supported Files
 
 - `.step`, `.stp`: STEP/STP review through their render packages; supports assembly trees, part hide/show, inspect/focus, face/edge/vertex/part selection, copied `#...` CAD references, display modes, clip planes, and live pose sliders and animation clips when the model's sidecar declares kinematics or animation.
-- `.stl`, `.3mf`, `.glb`: mesh viewing with orbit/pan/zoom, screenshots, theme controls, and solid/wireframe display where available. Measure snaps to triangle vertices only (two clicks, distance in mm) — not STEP faces/edges.
+- `.stl`, `.3mf`, `.glb`: mesh viewing with orbit/pan/zoom, screenshots, theme controls, and solid/wireframe display where available. Measure snaps to triangle vertices only (two clicks, distance in mm) — not STEP faces/edges. A plain GLB's `COLOR_0` vertex colors render as source colors, exactly like authored material colors.
 - `.dxf`: read-only 3D flat-pattern viewing. The drawing file is parsed directly and rendered client-side — no render artifact exists for a `.dxf`, so generated and imported drawings alike render straight from their own bytes.
 - `.urdf`: robot link/mesh viewing with movable joint sliders, reset pose, and copied joint values.
 - `.srdf`: paired-URDF viewing with planning groups, group-state presets, and joint controls.
