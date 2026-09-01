@@ -273,7 +273,7 @@ test("file session state stores display settings", () => {
         clip: {
           enabled: true,
           axis: "z",
-          offset: 0.4
+          offsets: { z: 0.4 }
         }
       }
     }

@@ -4,7 +4,7 @@ import test from "node:test";
 import * as THREE from "three";
 
 import {
-  cloneThemeSettings,
+  cloneThemePresetSettings,
   normalizeThemeSettings,
   resolveThemeSettingsForColorMode
 } from "./themeSettings.js";
@@ -61,21 +61,21 @@ test("shared render options preserve explicit caller-owned values without defaul
 
 test("theme resolution uses saved theme ids or direct theme settings", () => {
   assert.deepEqual(
-    resolveThemeSettings({}, { defaultThemeId: "workbench" }),
-    normalizeThemeSettings(cloneThemeSettings("workbench"))
+    resolveThemeSettings({}, { defaultThemeId: "workbench-light" }),
+    normalizeThemeSettings(cloneThemePresetSettings("workbench-light"))
   );
   assert.deepEqual(
-    resolveThemeSettings({ theme: "dark" }, { defaultThemeId: "workbench" }),
-    resolveThemeSettingsForColorMode(cloneThemeSettings("dark"), { prefersDark: false })
+    resolveThemeSettings({ theme: "workbench-dark" }, { defaultThemeId: "workbench-light" }),
+    resolveThemeSettingsForColorMode(cloneThemePresetSettings("workbench-dark"), { prefersDark: false })
   );
   assert.deepEqual(
     resolveThemeJobConfig({
       theme: {
         materials: { defaultColor: "#123456" }
       }
-    }, { defaultThemeId: "workbench" }),
+    }, { defaultThemeId: "workbench-light" }),
     {
-      themeId: "workbench",
+      themeId: "workbench-light",
       settings: { materials: { defaultColor: "#123456" } }
     }
   );
@@ -145,10 +145,12 @@ test("grid floors use theme line opacity and density for snapshots", () => {
     normalizeThemeSettings({
       floor: {
         mode: "grid",
-        gridCenterColor: "#123456",
-        gridCellColor: "#abcdef",
-        gridOpacity: 0.37,
-        gridDensity: 2
+        grid: {
+          centerColor: "#123456",
+          cellColor: "#abcdef",
+          opacity: 0.37,
+          density: 2
+        }
       }
     }),
     RENDER_SCENE_SCALE.CAD,
@@ -203,7 +205,7 @@ test("resolveThemeSettings applies colorMode to object themes", () => {
   // colorMode was previously honoured only for saved-theme-id STRINGS, which
   // made it an accepted-but-inert key in theme JSON: "light" and "dark"
   // produced byte-identical renders.
-  const base = normalizeThemeSettings(cloneThemeSettings("workbench"));
+  const base = normalizeThemeSettings(cloneThemePresetSettings("workbench-light"));
   const withModes = {
     ...base,
     modeColors: {
@@ -227,7 +229,7 @@ test("resolveThemeSettings is the identity for settings without modeColors", () 
   // The safety property of applying colorMode unconditionally: when no explicit
   // modeColors block is supplied, normalizeThemeModeColors derives it from the
   // settings themselves, so re-applying it must not alter anything.
-  const settings = normalizeThemeSettings(cloneThemeSettings("workbench"));
+  const settings = normalizeThemeSettings(cloneThemePresetSettings("workbench-light"));
   const explicit = { ...settings, background: { ...settings.background, solidColor: "#123456" } };
   delete explicit.modeColors;
 

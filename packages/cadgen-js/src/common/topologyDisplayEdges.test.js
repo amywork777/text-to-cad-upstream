@@ -12,7 +12,7 @@ import {
 
 function runtimeWithEdges(edges, options = {}) {
   return {
-    schemaVersion: options.schemaVersion,
+    surfaceEdgeRendering: options.surfaceEdgeRendering,
     edges,
     proxy: {
       edgePositions: new Float32Array([
@@ -43,7 +43,7 @@ test("classified topology display edges expose v2 availability", () => {
   assert.equal(hasTopologyDisplayEdgeClassification(runtimeWithEdges([])), true);
   assert.equal(hasTopologyDisplayEdgeClassification(runtimeWithEdges([{ relevance: 1 }])), true);
   assert.equal(shouldUseTopologyDisplayEdges(runtimeWithEdges([{ relevance: 1 }])), true);
-  assert.equal(shouldUseTopologyDisplayEdges(runtimeWithEdges([{ relevance: 1 }], { schemaVersion: 3 })), false);
+  assert.equal(shouldUseTopologyDisplayEdges(runtimeWithEdges([{ relevance: 1 }], { surfaceEdgeRendering: true })), false);
 });
 
 test("topology display edges use every valid proxy segment", () => {

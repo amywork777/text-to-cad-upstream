@@ -13,6 +13,7 @@ import { normalizeStepModuleDefinition } from "cadgen-js/common/stepModule.js";
 // the STEP side used to reach them through a pass-through shim that only differed by a
 // label string. If a store ever needs its own parsing, that is a real fork worth seeing.
 const definition = normalizeStepModuleDefinition({
+  schemaVersion: 1,
   parameters: {
     frame: { type: "number", min: 0, max: 150, step: 1, default: 0 },
     lift: { type: "number", min: 0, max: 1, step: 0.01, default: 0 },

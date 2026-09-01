@@ -32,19 +32,13 @@ function resolveGridStyle(viewerTheme = {}, floorSettings = {}) {
   const gridSettings = floorSettings?.grid || {};
   return {
     centerColor: gridSettings?.centerColor
-      || floorSettings?.gridCenterColor
-      || floorSettings?.gridCenter
       || viewerTheme?.gridCenter
       || BASE_VIEWER_THEME.gridCenter,
     cellColor: gridSettings?.cellColor
-      || floorSettings?.gridCellColor
-      || floorSettings?.gridCell
       || viewerTheme?.gridCell
       || BASE_VIEWER_THEME.gridCell,
     opacity: Number.isFinite(Number(gridSettings?.opacity))
       ? clamp(Number(gridSettings.opacity), 0, 1)
-      : Number.isFinite(Number(floorSettings?.gridOpacity))
-      ? clamp(Number(floorSettings.gridOpacity), 0, 1)
       : (viewerTheme?.gridOpacity ?? BASE_VIEWER_THEME.gridOpacity)
   };
 }
@@ -65,7 +59,7 @@ export function niceGridStep(minimumStep) {
 }
 
 export function buildGridConfig(radius, sceneScaleMode, floorSettings = {}) {
-  const gridDensity = normalizeGridDensity(floorSettings?.grid?.density ?? floorSettings?.gridDensity);
+  const gridDensity = normalizeGridDensity(floorSettings?.grid?.density);
   const safeRadius = clampSceneModelRadius(radius, sceneScaleMode);
   const targetVisibleCells = GRID_TARGET_VISIBLE_CELLS * gridDensity;
   const cellSize = (safeRadius * 2 * DEFAULT_AUTO_ZOOM_PADDING) / targetVisibleCells;

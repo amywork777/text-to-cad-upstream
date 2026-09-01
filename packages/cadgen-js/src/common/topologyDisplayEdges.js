@@ -293,7 +293,6 @@ export function hasTopologyDisplayEdgeClassification(selectorRuntime) {
 
 export function shouldUseTopologyDisplayEdges(selectorRuntime) {
   return !selectorRuntime?.surfaceEdgeRendering &&
-    Number(selectorRuntime?.schemaVersion || 0) < 3 &&
     hasTopologyDisplayEdgeProxy(selectorRuntime);
 }
 

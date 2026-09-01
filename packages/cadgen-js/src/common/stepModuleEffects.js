@@ -38,18 +38,15 @@ export function buildPartTransformMatrix(THREE, transform) {
   return matrix;
 }
 
-export function displayTransformForPart(meshData, part, renderPartsIndividually = true) {
+export function displayTransformForPart(meshData, part) {
   // Composed packages declare partTransformsBaked: false — their shared component
   // geometry is occurrence-local, so the occurrence transform must be applied no
-  // matter which render mode is active. Legacy meshDatas leave the flag undefined
-  // (vertices world-baked), where per-part transforms only apply in individual mode.
+  // matter which render mode is active. Baked meshDatas (partTransformsBaked: true)
+  // carry world-space vertices, so parts place with no extra transform.
   if (meshData?.partTransformsBaked === false) {
     return part?.transform || null;
   }
-  if (!renderPartsIndividually || meshData?.partTransformsBaked === true) {
-    return null;
-  }
-  return part?.transform || null;
+  return null;
 }
 
 function normalizeStepModulePoint(value, fallback = [0, 0, 0]) {

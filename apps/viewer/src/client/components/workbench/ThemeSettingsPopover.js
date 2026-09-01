@@ -710,7 +710,6 @@ function ClipSubsection({
     const resolvedOffset = Number.isFinite(numericOffset) ? numericOffset : 0;
     setClip({
       axis,
-      offset: resolvedOffset,
       offsets: { [axis]: resolvedOffset },
       enabled: resolvedOffset > 0
     });

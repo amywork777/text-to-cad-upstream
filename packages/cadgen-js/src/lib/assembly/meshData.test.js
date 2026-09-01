@@ -338,7 +338,18 @@ test("composed package renders occurrences over shared component geometry (no ba
           0, 0, 0, 1
         ]
       }
-    ]
+    ],
+    assembly: {
+      root: {
+        id: "o1",
+        name: "demo",
+        nodeType: "assembly",
+        children: [
+          { id: "o1.1", name: "part_a", nodeType: "part", children: [] },
+          { id: "o1.2", name: "part_b", nodeType: "part", children: [] }
+        ]
+      }
+    }
   };
   const componentMeshData = unitTriangleComponentMeshData();
   const composed = buildComposedPackageMeshData(descriptor, { cA: componentMeshData });
@@ -383,7 +394,18 @@ test("composed package flags a mirrored occurrence (rendered DoubleSide, geometr
           0, 0, 0, 1
         ]
       }
-    ]
+    ],
+    assembly: {
+      root: {
+        id: "o1",
+        name: "demo",
+        nodeType: "assembly",
+        children: [
+          { id: "o1.1", name: "plain", nodeType: "part", children: [] },
+          { id: "o1.2", name: "mirror", nodeType: "part", children: [] }
+        ]
+      }
+    }
   };
   const componentMeshData = unitTriangleComponentMeshData();
   const composed = buildComposedPackageMeshData(descriptor, { cA: componentMeshData });
@@ -405,7 +427,15 @@ test("composed package drives a per-occurrence override colour through the mater
     occurrences: [
       // linear black-ish grey, the way a dark-anodized part authors its occurrence colour.
       { id: "o1.1", name: "dark", component: "cA", transform: IDENTITY_4X4, color: [0.1, 0.095, 0.09, 1.0] }
-    ]
+    ],
+    assembly: {
+      root: {
+        id: "o1",
+        name: "demo",
+        nodeType: "assembly",
+        children: [{ id: "o1.1", name: "dark", nodeType: "part", children: [] }]
+      }
+    }
   };
   const composed = buildComposedPackageMeshData(descriptor, { cA: unitTriangleComponentMeshData() });
   const part = composed.parts[0];
@@ -424,7 +454,18 @@ test("composed package mesh records missing components instead of throwing", () 
     occurrences: [
       { id: "o1.1", name: "present", component: "cA", transform: IDENTITY_4X4 },
       { id: "o1.2", name: "absent", component: "cMissing", transform: IDENTITY_4X4 }
-    ]
+    ],
+    assembly: {
+      root: {
+        id: "o1",
+        name: "demo",
+        nodeType: "assembly",
+        children: [
+          { id: "o1.1", name: "present", nodeType: "part", children: [] },
+          { id: "o1.2", name: "absent", nodeType: "part", children: [] }
+        ]
+      }
+    }
   };
   const composed = buildComposedPackageMeshData(descriptor, { cA: unitTriangleComponentMeshData() });
   assert.equal(composed.parts.length, 1);
@@ -446,8 +487,19 @@ test("single-component part carries NO assemblyRoot so the viewer renders a topo
   assert.equal(part.parts.length, 1, "the single component still composes a render part");
   assert.equal(part.assemblyRoot, null, "a part has no assembly structure tree");
 
-  // An assembly with the same single occurrence DOES synthesize a root (structure tree).
-  const assemblyDescriptor = { ...partDescriptor, entryKind: "assembly" };
+  // An assembly with the same single occurrence keeps its recorded structure tree.
+  const assemblyDescriptor = {
+    ...partDescriptor,
+    entryKind: "assembly",
+    assembly: {
+      root: {
+        id: "o1",
+        name: "bracket",
+        nodeType: "assembly",
+        children: [{ id: "o1.1", name: "bracket", nodeType: "part", children: [] }]
+      }
+    }
+  };
   const assembly = buildComposedPackageMeshData(assemblyDescriptor, { cA: unitTriangleComponentMeshData() });
   assert.ok(assembly.assemblyRoot, "an assembly keeps its structure tree");
   assert.equal(assembly.assemblyRoot.nodeType, "assembly");

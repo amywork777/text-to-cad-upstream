@@ -162,7 +162,7 @@ function displayEdgeRowsCanUseSelectorClasses(displayEdgeRuntime, selectorRuntim
 }
 
 function runtimeUsesSurfaceOwnedEdges(runtime) {
-  return Boolean(runtime?.surfaceEdgeRendering || Number(runtime?.schemaVersion || 0) >= 3);
+  return Boolean(runtime?.surfaceEdgeRendering);
 }
 
 export function displayEdgeRuntimeWithSelectorVisibilityClasses(displayEdgeRuntime, selectorRuntime) {

@@ -126,7 +126,7 @@ test("model runtime helpers build and sync STEP clip planes", () => {
   const directPlane = buildStepClipPlane(THREE, {
     enabled: true,
     axis: "x",
-    offset: 0.5
+    offsets: { x: 0.5 }
   }, runtime.modelBounds, runtime.modelGroup.position);
   assertNear(directPlane.normal.x, 1, "direct plane normal");
   assertNear(directPlane.constant, -7, "direct plane constant");
@@ -134,7 +134,7 @@ test("model runtime helpers build and sync STEP clip planes", () => {
   syncRuntimeStepClipPlane(runtime, {
     enabled: true,
     axis: "x",
-    offset: 0.5
+    offsets: { x: 0.5 }
   });
 
   assert.equal(runtime.renderer.localClippingEnabled, true);

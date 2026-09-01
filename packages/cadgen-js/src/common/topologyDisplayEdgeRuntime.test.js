@@ -168,7 +168,7 @@ test("shouldRenderTopologyDisplayEdges gates CAD topology overlays", () => {
   assert.equal(shouldRenderTopologyDisplayEdges({
     edgesVisible: true,
     cadEdgeSource: true,
-    selectorRuntime: { schemaVersion: 3, surfaceEdgeRendering: true, edges: [] }
+    selectorRuntime: { surfaceEdgeRendering: true, edges: [] }
   }), false);
 });
 

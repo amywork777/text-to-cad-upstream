@@ -15,7 +15,7 @@ import {
   DEFAULT_DISPLAY_EDGE_SETTINGS
 } from "./displaySettings.js";
 import {
-  cloneThemeSettings
+  cloneThemePresetSettings
 } from "./themeSettings.js";
 import {
   PART_SELECTED_HIGHLIGHT_BLEND,
@@ -257,7 +257,7 @@ test("applyPartVisualState highlights and ghosts identically to the viewer path"
 });
 
 test("buildModel renders solid part records and updates theme without rebuilding geometry", () => {
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const scene = buildModel(THREE, sampleMeshData(), {
     theme,
     renderPartsIndividually: true
@@ -326,7 +326,7 @@ test("buildModel keeps source-mesh color buffers immutable across material refre
       }
     ]
   };
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const scene = buildModel(THREE, meshData, {
     theme,
     renderPartsIndividually: true
@@ -356,7 +356,7 @@ test("buildModel keeps source-mesh color buffers immutable across material refre
 
 test("buildModel selection can focus and hide subassembly occurrence descendants", () => {
   const focused = buildModel(THREE, nestedAssemblyMeshData(), {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true,
     selection: {
       focus: ["#o1.2"]
@@ -371,7 +371,7 @@ test("buildModel selection can focus and hide subassembly occurrence descendants
   focused.dispose();
 
   const hidden = buildModel(THREE, nestedAssemblyMeshData(), {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true,
     selection: {
       hide: ["o1.2"]
@@ -405,7 +405,7 @@ test("buildModel renders STEP surface-owned edges from mesh attributes without l
     2, 3, 0
   ]);
   const scene = buildModel(THREE, meshData, {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     displayMode: CAD_DISPLAY_MODE.SOLID,
     renderPartsIndividually: true
   });
@@ -438,7 +438,7 @@ test("buildModel rebuilds surface edge shader materials when edge theme settings
     1, 2, 0,
     1, 2, 0
   ]);
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const scene = buildModel(THREE, meshData, {
     theme,
     displayMode: CAD_DISPLAY_MODE.SOLID,
@@ -503,12 +503,12 @@ test("buildModel reuses cached geometry for posed wrappers with the same geometr
     }))
   };
   const scene = buildModel(THREE, posedMeshData, {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true
   });
   const firstGeometry = scene.displayRecords[0].mesh.geometry;
   const movedScene = buildModel(THREE, movedMeshData, {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true
   });
 
@@ -518,7 +518,7 @@ test("buildModel reuses cached geometry for posed wrappers with the same geometr
 });
 
 test("buildModel wireframe mode keeps a translucent surface and wire edges", () => {
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const scene = buildModel(THREE, sampleMeshData(), {
     theme,
     displayMode: CAD_DISPLAY_MODE.WIREFRAME,
@@ -534,7 +534,7 @@ test("buildModel wireframe mode keeps a translucent surface and wire edges", () 
 });
 
 test("buildModel display modes control edges, transparency, and flat surfaces", () => {
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const renderedScene = buildModel(THREE, sampleMeshData(), {
     theme,
     displayMode: CAD_DISPLAY_MODE.RENDERED,
@@ -582,7 +582,7 @@ test("buildModel applies source part opacity from GLB material metadata", () => 
     : part
   );
   const scene = buildModel(THREE, meshData, {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true
   });
 
@@ -606,7 +606,7 @@ test("buildModel uses part records when only source opacity differs", () => {
     hasSourceColors: true
   }));
   const scene = buildModel(THREE, meshData, {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: false
   });
 
@@ -621,7 +621,7 @@ test("buildModel uses part records when only source opacity differs", () => {
 });
 
 test("buildModel ignores deprecated mesh edge detail and keeps wireframe all-edge mode", () => {
-  const baseTheme = cloneThemeSettings("workbench");
+  const baseTheme = cloneThemePresetSettings("workbench-light");
   const deprecatedDetailScene = buildModel(THREE, squareMeshData(), {
     theme: {
       ...baseTheme,
@@ -647,7 +647,7 @@ test("buildModel ignores deprecated mesh edge detail and keeps wireframe all-edg
 
 test("buildModel creates screen-space edges from declarative edge rendering options", () => {
   const scene = buildModel(THREE, squareMeshData(), {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     displayMode: CAD_DISPLAY_MODE.SOLID,
     edgeRendering: {
       mode: "screen-space",
@@ -666,7 +666,7 @@ test("buildModel creates screen-space edges from declarative edge rendering opti
 });
 
 test("buildModel can render silhouette contours without derived mesh edges", () => {
-  const theme = cloneThemeSettings("workbench");
+  const theme = cloneThemePresetSettings("workbench-light");
   const scene = buildModel(THREE, sampleMeshData(), {
     theme: {
       ...theme,
@@ -690,7 +690,7 @@ test("buildModel can render silhouette contours without derived mesh edges", () 
 
 test("buildModel applies selection, clipping, and STEP parameter effects", () => {
   const scene = buildModel(THREE, sampleMeshData(), {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true,
     selection: {
       selectedPartIds: ["left"],
@@ -699,7 +699,7 @@ test("buildModel applies selection, clipping, and STEP parameter effects", () =>
     clip: {
       enabled: true,
       axis: "x",
-      offset: 0.5
+      offsets: { x: 0.5 }
     },
     stepParameters: {
       definition: {
@@ -736,7 +736,7 @@ test("buildModel applies selection, clipping, and STEP parameter effects", () =>
 test("buildModel can apply STEP parameter effects while deferring setup lifecycle", () => {
   let setupCalls = 0;
   const scene = buildModel(THREE, sampleMeshData(), {
-    theme: cloneThemeSettings("workbench"),
+    theme: cloneThemePresetSettings("workbench-light"),
     renderPartsIndividually: true,
     parameterSetup: false,
     stepParameters: {

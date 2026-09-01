@@ -282,7 +282,7 @@ function shapeSourceColor(THREE, sourceColor, materialSettings = {}, { applyTint
   const shaped = (sourceColor || new THREE.Color("#ffffff")).clone();
   const tintStrength = clamp(Number(materialSettings.tintStrength) || 0, 0, 1);
   if (applyTint && tintStrength > 0) {
-    const tintColor = new THREE.Color(materialSettings.defaultColor || materialSettings.tintColor || "#ffffff");
+    const tintColor = new THREE.Color(materialSettings.defaultColor || "#ffffff");
     if (materialSettings.tintMode === "blend") {
       shaped.lerp(tintColor, tintStrength);
     } else {
@@ -1977,7 +1977,7 @@ function buildDisplayRecords(THREE, runtime, meshData, settings) {
         part,
         geometryEntry,
         fillIndex: partFillIndexMap.get(part) ?? records.length,
-        baseTransform: displayTransformForPart(meshData, part, settings.renderPartsIndividually === true)
+        baseTransform: displayTransformForPart(meshData, part)
       });
     }
   }

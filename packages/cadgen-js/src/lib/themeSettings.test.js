@@ -22,8 +22,7 @@ import {
   themeSettingsSupportsSystemColorMode,
   SNAPSHOT_THEME_ID,
   normalizeThemePresetId,
-  getThemePresetById,
-  cloneThemeSettings
+  getThemePresetById
 } from "./themeSettings.js";
 
 const WORKBENCH_FILL_COLORS = Object.freeze([
@@ -80,9 +79,10 @@ test("workbench ships as split light and dark presets", () => {
   assert.equal(THEME_PRESETS[1]?.id, "workbench-dark");
   assert.equal(THEME_PRESETS[1]?.label, "Dark");
   assert.equal(getThemePresetIdForSettings(DEFAULT_THEME_SETTINGS), "workbench-light");
-  assert.deepEqual(cloneThemePresetSettings("light"), cloneThemePresetSettings("workbench-light"));
-  assert.deepEqual(cloneThemePresetSettings("workbench"), cloneThemePresetSettings("workbench-light"));
-  assert.deepEqual(cloneThemePresetSettings("dark"), cloneThemePresetSettings("workbench-dark"));
+  // Only the preset ids themselves resolve; anything else falls to the default.
+  assert.equal(normalizeThemePresetId("workbench"), "");
+  assert.equal(normalizeThemePresetId("light"), "");
+  assert.equal(normalizeThemePresetId("dark"), "");
 });
 
 test("workbench-light preset uses neutral material treatment while preserving source colors", () => {
@@ -393,22 +393,25 @@ test("floor grid settings normalize as theme-owned controls", () => {
     floor: {
       mode: "grid",
       color: "#101820",
-      gridCenter: "#123",
-      gridCellColor: "#456789",
-      gridOpacity: 2,
-      gridDensity: 99
+      grid: {
+        centerColor: "#123",
+        cellColor: "#456789",
+        opacity: 2,
+        density: 99
+      }
     }
   });
 
   assert.equal(normalized.floor.mode, THEME_FLOOR_MODES.GRID);
-  assert.equal(normalized.floor.gridCenterColor, "#112233");
-  assert.equal(normalized.floor.gridCellColor, "#456789");
-  assert.equal(normalized.floor.gridOpacity, 1);
-  assert.equal(normalized.floor.gridDensity, MAX_FLOOR_GRID_DENSITY);
+  assert.equal(normalized.floor.grid.centerColor, "#112233");
+  assert.equal(normalized.floor.grid.cellColor, "#456789");
+  assert.equal(normalized.floor.grid.opacity, 1);
+  assert.equal(normalized.floor.grid.density, MAX_FLOOR_GRID_DENSITY);
 
+  // Grid colors derive from the floor color, so they differ from the neutral defaults.
   const fallback = normalizeThemeSettings({ floor: { color: "#111111" } });
-  assert.notEqual(fallback.floor.gridCenterColor, DEFAULT_FLOOR_GRID_SETTINGS.gridCenterColor);
-  assert.equal(fallback.floor.gridOpacity, DEFAULT_FLOOR_GRID_SETTINGS.gridOpacity);
+  assert.notEqual(fallback.floor.grid.centerColor, DEFAULT_FLOOR_GRID_SETTINGS.centerColor);
+  assert.equal(fallback.floor.grid.opacity, DEFAULT_FLOOR_GRID_SETTINGS.opacity);
 });
 
 test("disabled color cycling preserves palettes without rotating fills", () => {
@@ -469,10 +472,11 @@ test("no built-in preset declares a system color mode", () => {
   assert.equal(themeSettingsSupportsSystemColorMode(cloneThemePresetSettings("terminal")), false);
 });
 
-test("normalizeThemeSettings migrates legacy tint color into default color", () => {
+test("normalizeThemeSettings reads only defaultColor and emits no tintColor field", () => {
   const normalized = normalizeThemeSettings({
     materials: {
-      tintColor: "#abc123"
+      defaultColor: "#abc123",
+      tintColor: "#ff0000"
     }
   });
 
@@ -495,8 +499,8 @@ test("the snapshot theme is Workbench Light without the scene furniture", () => 
   // and origin axis are orientation you can ignore in a live viewport, and geometry-shaped
   // contrast in a still image: straight low-contrast lines crossing the model, at the same
   // weight as a real silhouette edge.
-  const snapshot = cloneThemeSettings(SNAPSHOT_THEME_ID);
-  const light = cloneThemeSettings("workbench-light");
+  const snapshot = cloneThemePresetSettings(SNAPSHOT_THEME_ID);
+  const light = cloneThemePresetSettings("workbench-light");
 
   assert.equal(light.floor.grid.enabled, true, "workbench-light is the one WITH a grid");
   assert.equal(light.floor.axis.enabled, true);

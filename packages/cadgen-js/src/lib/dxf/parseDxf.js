@@ -310,8 +310,7 @@ function parseArcEntity(records) {
     ],
     radius,
     startAngleDeg,
-    sweepAngleDeg,
-    endAngleDeg: startAngleDeg + sweepAngleDeg
+    sweepAngleDeg
   };
 }
 
@@ -796,8 +795,8 @@ function transformGeometry({ lines, arcs, circles }, transform) {
       ...arc,
       center: transformPoint(arc.center, transform),
       radius: arc.radius * scale,
-      startAngle: arc.startAngle + rotationDeg,
-      endAngle: arc.endAngle + rotationDeg,
+      // A rotation shifts where the arc starts; its sweep is rotation-invariant.
+      startAngleDeg: arc.startAngleDeg + rotationDeg,
     })),
     circles: (circles || []).map((circle) => ({
       ...circle,

@@ -34,15 +34,11 @@ export function normalizeStepClipSettings(value = null) {
     ? String(source.axis).toLowerCase()
     : DEFAULT_STEP_CLIP_SETTINGS.axis;
   const sourceOffsets = source.offsets && typeof source.offsets === "object" ? source.offsets : {};
-  const legacyOffset = normalizeNumber(source.offset, DEFAULT_STEP_CLIP_SETTINGS.offset);
   const offsets = Object.fromEntries(
     STEP_CLIP_AXES.map((clipAxis) => [
       clipAxis,
       clamp(
-        normalizeNumber(
-          sourceOffsets[clipAxis],
-          clipAxis === axis ? legacyOffset : DEFAULT_STEP_CLIP_OFFSETS[clipAxis]
-        ),
+        normalizeNumber(sourceOffsets[clipAxis], DEFAULT_STEP_CLIP_OFFSETS[clipAxis]),
         0,
         1
       )
@@ -105,25 +101,20 @@ export function buildStepClipPatch(settings, patch) {
   const current = normalizeStepClipSettings(settings);
   const rawPatch = patch && typeof patch === "object" ? patch : {};
   const hasExplicitEnabled = Object.prototype.hasOwnProperty.call(rawPatch, "enabled");
-  const hasOffsetPatch = Object.prototype.hasOwnProperty.call(rawPatch, "offset") ||
-    (rawPatch.offsets && typeof rawPatch.offsets === "object");
+  const hasOffsetPatch = Boolean(rawPatch.offsets && typeof rawPatch.offsets === "object");
   const patchedAxis = STEP_CLIP_AXES.includes(String(rawPatch.axis || "").toLowerCase())
     ? String(rawPatch.axis).toLowerCase()
     : current.axis;
   const offsets = {
     ...current.offsets,
-    ...(rawPatch.offsets && typeof rawPatch.offsets === "object" ? rawPatch.offsets : {})
+    ...(hasOffsetPatch ? rawPatch.offsets : {})
   };
-  if (Object.prototype.hasOwnProperty.call(rawPatch, "offset")) {
-    offsets[patchedAxis] = rawPatch.offset;
-  }
   const activeOffset = clamp(normalizeNumber(offsets[patchedAxis], 0), 0, 1);
   return normalizeStepClipSettings({
     ...current,
     ...rawPatch,
     ...(!hasExplicitEnabled && hasOffsetPatch ? { enabled: activeOffset > ACTIVE_CLIP_OFFSET_EPSILON } : {}),
     axis: patchedAxis,
-    offsets,
-    offset: offsets[patchedAxis]
+    offsets
   });
 }

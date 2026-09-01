@@ -32,7 +32,7 @@ test("display settings normalize mode and clip independently from theme settings
     clip: {
       enabled: true,
       axis: "z",
-      offset: 0.4,
+      offsets: { z: 0.4 },
       invert: true
     }
   }), {
@@ -150,7 +150,7 @@ test("display mode policies describe edge and surface behavior", () => {
 
 test("display settings compare after normalization", () => {
   assert.equal(displaySettingsEqual(
-    { mode: "wireframe", clip: { enabled: true, axis: "x", offset: 0.5 } },
+    { mode: "wireframe", clip: { enabled: true, axis: "x", offsets: { x: 0.5 } } },
     { mode: CAD_DISPLAY_MODE.WIREFRAME, clip: { enabled: true, axis: "x", offsets: { x: 0.5 } } }
   ), true);
   assert.equal(displaySettingsEqual(

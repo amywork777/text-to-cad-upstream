@@ -238,19 +238,15 @@ export const FLOOR_AXIS_RADIUS_MULTIPLE = 1000;
 
 export const DEFAULT_FLOOR_GRID_SETTINGS = Object.freeze({
   enabled: true,
-  gridCenterColor: "#6b7280",
-  gridCellColor: "#cbd5e1",
-  gridOpacity: 0.18,
-  gridDensity: 1,
   centerColor: "#6b7280",
   cellColor: "#cbd5e1",
   opacity: 0.18,
   density: 1
 });
 
-// The interactive viewer has always rendered soft fill and rim directionals
-// from its structural defaults. Themes that predate the fill/rim settings
-// must normalize to these exact values so their lighting stays identical.
+// The viewer's soft fill and rim directionals. Partial theme JSON (an inline
+// `--theme {...}` object) normalizes absent fill/rim blocks to these exact
+// structural defaults.
 export const DEFAULT_FILL_LIGHT_SETTINGS = Object.freeze({
   enabled: true,
   color: "#6b7f95",
@@ -266,9 +262,6 @@ export const DEFAULT_RIM_LIGHT_SETTINGS = Object.freeze({
 
 function normalizeFloorMode(value, fallback = THEME_FLOOR_MODES.STAGE) {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "glass") {
-    return THEME_FLOOR_MODES.STAGE;
-  }
   return Object.values(THEME_FLOOR_MODES).includes(normalized)
     ? normalized
     : fallback;
@@ -443,21 +436,13 @@ function createFloorGridSettings(floorColor, options = {}) {
     MAX_FLOOR_GRID_DENSITY
   );
   return {
-    gridCenterColor: centerColor,
-    gridCellColor: cellColor,
-    gridOpacity: opacity,
-    gridDensity: density,
     grid: {
       enabled,
       centerColor,
       cellColor,
       opacity,
       density
-    },
-    centerColor,
-    cellColor,
-    opacity,
-    density
+    }
   };
 }
 
@@ -1200,16 +1185,13 @@ const WORKBENCH_DARK_THEME_PRESET_SETTINGS = withThemeColorMode(
   WORKBENCH_DARK_BAKED_SETTINGS,
   THEME_COLOR_MODES.DARK
 );
-// Back-compat: the migration fallback and any "workbench" id resolve to light.
-const WORKBENCH_THEME_SETTINGS = WORKBENCH_LIGHT_THEME_PRESET_SETTINGS;
 
 // Cinematic: a filmic product-shot stage. Warm charcoal backdrop with a soft
 // radial falloff, satin PBR finish with studio-HDRI reflections, a warm key
 // with cool rim separation, an amber spot glow pooling on a faintly gridded
 // glossy floor. Colors follow a warm silver / copper grade; source part
-// colors pass through with a gentle contrast lift. Distinct from the legacy
-// CINEMATIC_THEME_SETTINGS above, which survives only to seed the Workbench
-// presets and the stored-settings migration matchers.
+// colors pass through with a gentle contrast lift. Distinct from
+// CINEMATIC_THEME_SETTINGS above, which exists to seed the Workbench presets.
 const CINEMATIC_FILL_COLORS = Object.freeze([
   "#c9c2bb",
   "#c98d55",
@@ -1534,12 +1516,6 @@ export const THEME_PRESETS = Object.freeze([
   }
 ]);
 
-const THEME_PRESET_ID_ALIASES = Object.freeze({
-  workbench: "workbench-light",
-  light: "workbench-light",
-  dark: "workbench-dark"
-});
-
 // --- render-only themes -------------------------------------------------------------
 // Themes that exist for HEADLESS SNAPSHOTS and are deliberately absent from THEME_PRESETS,
 // which is what the viewer's theme picker lists. A snapshot is usually read by an agent
@@ -1676,7 +1652,7 @@ export function normalizeThemeSettings(value = {}) {
     ? source.lighting
     : {};
   const normalizedDefaultColor = normalizeColor(
-    materials.defaultColor || materials.tintColor,
+    materials.defaultColor,
     DEFAULT_THEME_SETTINGS.materials.defaultColor
   );
   const fillColors = normalizeThemeFillColors(materials.fillColors, normalizedDefaultColor);
@@ -1688,23 +1664,17 @@ export function normalizeThemeSettings(value = {}) {
   const axis = floor.axis && typeof floor.axis === "object" && !Array.isArray(floor.axis)
     ? floor.axis
     : {};
-  const fallbackGridSettings = createFloorGridSettings(normalizedFloorColor);
-  const normalizedGridCenterColor = normalizeColor(
-    grid.centerColor ?? floor.gridCenterColor ?? floor.gridCenter,
-    fallbackGridSettings.centerColor
-  );
-  const normalizedGridCellColor = normalizeColor(
-    grid.cellColor ?? floor.gridCellColor ?? floor.gridCell,
-    fallbackGridSettings.cellColor
-  );
+  const fallbackGridSettings = createFloorGridSettings(normalizedFloorColor).grid;
+  const normalizedGridCenterColor = normalizeColor(grid.centerColor, fallbackGridSettings.centerColor);
+  const normalizedGridCellColor = normalizeColor(grid.cellColor, fallbackGridSettings.cellColor);
   const normalizedGridOpacity = normalizeNumber(
-    grid.opacity ?? floor.gridOpacity,
+    grid.opacity,
     fallbackGridSettings.opacity,
     0,
     1
   );
   const normalizedGridDensity = normalizeNumber(
-    grid.density ?? floor.gridDensity,
+    grid.density,
     fallbackGridSettings.density,
     MIN_FLOOR_GRID_DENSITY,
     MAX_FLOOR_GRID_DENSITY
@@ -1717,8 +1687,8 @@ export function normalizeThemeSettings(value = {}) {
   const normalized = {
     colorMode,
     // The camera projection is a theme trait: presentation stages read best in
-    // perspective, engineering canvases in orthographic. Themes that predate
-    // the setting normalize to the historical orthographic default.
+    // perspective, engineering canvases in orthographic. Absent projections
+    // normalize to the orthographic default.
     projection: normalizeCameraProjection(
       source.projection,
       DEFAULT_THEME_SETTINGS?.projection || CAMERA_PROJECTION.ORTHOGRAPHIC
@@ -1783,10 +1753,6 @@ export function normalizeThemeSettings(value = {}) {
       reflectivity: normalizeNumber(floor.reflectivity, DEFAULT_THEME_SETTINGS.floor?.reflectivity ?? 0.12, 0, 1),
       shadowOpacity: normalizeNumber(floor.shadowOpacity, DEFAULT_THEME_SETTINGS.floor?.shadowOpacity ?? 0.45, 0, 1),
       horizonBlend: normalizeNumber(floor.horizonBlend, DEFAULT_THEME_SETTINGS.floor?.horizonBlend ?? 0, 0, 1),
-      gridCenterColor: normalizedGridCenterColor,
-      gridCellColor: normalizedGridCellColor,
-      gridOpacity: normalizedGridOpacity,
-      gridDensity: normalizedGridDensity,
       grid: {
         enabled: normalizeBoolean(grid.enabled, normalizedFloorMode === THEME_FLOOR_MODES.GRID),
         centerColor: normalizedGridCenterColor,
@@ -1906,13 +1872,12 @@ function cloneNormalizedThemeSettings(value = DEFAULT_THEME_SETTINGS) {
 
 export function normalizeThemePresetId(presetId) {
   const normalized = String(presetId || "").trim();
-  const canonical = THEME_PRESET_ID_ALIASES[normalized] || normalized;
-  if (THEME_PRESETS.some((preset) => preset.id === canonical)) {
-    return canonical;
+  if (THEME_PRESETS.some((preset) => preset.id === normalized)) {
+    return normalized;
   }
   // Render-only ids normalize too, so a snapshot can name one. They are excluded from the
   // picker by not being in THEME_PRESETS, not by failing to resolve.
-  return RENDER_ONLY_THEME_PRESETS.some((preset) => preset.id === canonical) ? canonical : "";
+  return RENDER_ONLY_THEME_PRESETS.some((preset) => preset.id === normalized) ? normalized : "";
 }
 
 export function getThemePresetById(presetId) {
@@ -1924,10 +1889,6 @@ export function getThemePresetById(presetId) {
 
 export function cloneThemePresetSettings(presetId) {
   return cloneNormalizedThemeSettings(getThemePresetById(presetId).settings);
-}
-
-export function cloneThemeSettings(themeId) {
-  return cloneThemePresetSettings(themeId);
 }
 
 export function getThemePresetIdForSettings(themeSettings) {
@@ -2000,10 +1961,6 @@ function dominantBackgroundLuminance(themeSettings = {}) {
 export function inferThemeSettingsSceneTone(themeSettings, options = {}) {
   const normalized = resolveThemeSettingsForColorMode(themeSettings, options);
   return dominantBackgroundLuminance(normalized) >= 0.3 ? "light" : "dark";
-}
-
-export function inferThemeSceneTone(themeSettings) {
-  return inferThemeSettingsSceneTone(themeSettings);
 }
 
 // The dominant backdrop color as a hex value, for UI chrome that tints toward

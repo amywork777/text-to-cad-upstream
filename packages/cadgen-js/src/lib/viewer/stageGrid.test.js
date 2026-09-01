@@ -128,10 +128,12 @@ test("updateGridHelper creates, reuses, and disposes runtime grid helpers", () =
     {
       disposeSceneObject,
       floorSettings: {
-        gridCenterColor: "#333333",
-        gridCellColor: "#444444",
-        gridOpacity: 0.5,
-        gridDensity: 1.5
+        grid: {
+          centerColor: "#333333",
+          cellColor: "#444444",
+          opacity: 0.5,
+          density: 1.5
+        }
       }
     }
   );

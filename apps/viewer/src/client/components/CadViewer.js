@@ -4138,7 +4138,7 @@ const CadViewer = forwardRef(function CadViewer({
       if (!part) {
         continue;
       }
-      record.baseTransform = displayTransformForPart(meshData, part, effectiveRenderPartsIndividually);
+      record.baseTransform = displayTransformForPart(meshData, part);
       record.partBounds = part.bounds;
       record.partCenter = readBoundsCenter(runtime.THREE, part.bounds);
       applyDisplayRecordTransform(runtime.THREE, record, runtime.modelRadius || 1);

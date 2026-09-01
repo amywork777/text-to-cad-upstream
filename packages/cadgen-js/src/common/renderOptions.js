@@ -8,9 +8,11 @@ import {
   resolveCameraView
 } from "./camera.js";
 import {
-  cloneThemeSettings,
+  cloneThemePresetSettings,
+  DEFAULT_FILL_LIGHT_SETTINGS,
   DEFAULT_FLOOR_AXIS_SETTINGS,
   DEFAULT_FLOOR_GRID_SETTINGS,
+  DEFAULT_RIM_LIGHT_SETTINGS,
   FLOOR_AXIS_RADIUS_MULTIPLE,
   getEnvironmentPresetById,
   MAX_FLOOR_GRID_DENSITY,
@@ -110,7 +112,7 @@ export function inferRenderSceneScale({
     : RENDER_SCENE_SCALE.CAD;
 }
 
-export function resolveThemeJobConfig(job = {}, { defaultThemeId = "workbench" } = {}) {
+export function resolveThemeJobConfig(job = {}, { defaultThemeId = "workbench-light" } = {}) {
   if (typeof job.theme === "string") {
     return {
       themeId: job.theme,
@@ -129,9 +131,9 @@ export function resolveThemeJobConfig(job = {}, { defaultThemeId = "workbench" }
   };
 }
 
-export function resolveThemeSettings(job = {}, { defaultThemeId = "workbench" } = {}) {
+export function resolveThemeSettings(job = {}, { defaultThemeId = "workbench-light" } = {}) {
   const theme = resolveThemeJobConfig(job, { defaultThemeId });
-  const themeSettings = cloneThemeSettings(theme.themeId || defaultThemeId);
+  const themeSettings = cloneThemePresetSettings(theme.themeId || defaultThemeId);
   const normalized = normalizeThemeSettings(theme.settings || themeSettings);
   // Applied for object themes too, not just saved-theme-id strings.
   // resolveThemeSettingsForColorMode is the ONLY consumer of colorMode, so
@@ -295,29 +297,30 @@ export function applyLighting(scene, themeSettings) {
   directional.castShadow = true;
   addIfEnabled(directional, lighting.directional?.enabled !== false);
 
-  // Fill and rim mirror the interactive viewer's soft secondary directionals;
-  // normalized themes always carry them, legacy raw settings simply omit them.
+  // Fill and rim mirror the interactive viewer's soft secondary directionals.
+  // Theme settings arrive NORMALIZED (normalizeThemeSettings always carries
+  // fill/rim); the fallbacks here are the same structural defaults.
   const fill = new THREE.DirectionalLight(
-    lighting.fill?.color || "#6b7f95",
-    toFiniteNumber(lighting.fill?.intensity, 0)
+    lighting.fill?.color || DEFAULT_FILL_LIGHT_SETTINGS.color,
+    toFiniteNumber(lighting.fill?.intensity, DEFAULT_FILL_LIGHT_SETTINGS.intensity)
   );
   fill.position.set(
-    toFiniteNumber(lighting.fill?.position?.x, 120),
-    toFiniteNumber(lighting.fill?.position?.y, 80),
-    toFiniteNumber(lighting.fill?.position?.z, 210)
+    toFiniteNumber(lighting.fill?.position?.x, DEFAULT_FILL_LIGHT_SETTINGS.position.x),
+    toFiniteNumber(lighting.fill?.position?.y, DEFAULT_FILL_LIGHT_SETTINGS.position.y),
+    toFiniteNumber(lighting.fill?.position?.z, DEFAULT_FILL_LIGHT_SETTINGS.position.z)
   );
-  addIfEnabled(fill, lighting.fill?.enabled === true);
+  addIfEnabled(fill, lighting.fill?.enabled !== false);
 
   const rim = new THREE.DirectionalLight(
-    lighting.rim?.color || "#6db6e8",
-    toFiniteNumber(lighting.rim?.intensity, 0)
+    lighting.rim?.color || DEFAULT_RIM_LIGHT_SETTINGS.color,
+    toFiniteNumber(lighting.rim?.intensity, DEFAULT_RIM_LIGHT_SETTINGS.intensity)
   );
   rim.position.set(
-    toFiniteNumber(lighting.rim?.position?.x, -260),
-    toFiniteNumber(lighting.rim?.position?.y, 240),
-    toFiniteNumber(lighting.rim?.position?.z, 180)
+    toFiniteNumber(lighting.rim?.position?.x, DEFAULT_RIM_LIGHT_SETTINGS.position.x),
+    toFiniteNumber(lighting.rim?.position?.y, DEFAULT_RIM_LIGHT_SETTINGS.position.y),
+    toFiniteNumber(lighting.rim?.position?.z, DEFAULT_RIM_LIGHT_SETTINGS.position.z)
   );
-  addIfEnabled(rim, lighting.rim?.enabled === true);
+  addIfEnabled(rim, lighting.rim?.enabled !== false);
 
   const spot = new THREE.SpotLight(
     lighting.spot?.color || "#ffffff",
@@ -384,21 +387,21 @@ export function addFloor(scene, bounds, themeSettings, sceneScale, settingsBySca
   const gridSize = Math.max(radius * 3, settings.minFloorSize);
   if (gridEnabled) {
     const gridDensity = clamp(
-      toFiniteNumber(gridSettings.density ?? floor.gridDensity, DEFAULT_FLOOR_GRID_SETTINGS.gridDensity),
+      toFiniteNumber(gridSettings.density, DEFAULT_FLOOR_GRID_SETTINGS.density),
       MIN_FLOOR_GRID_DENSITY,
       MAX_FLOOR_GRID_DENSITY
     );
     const grid = new THREE.GridHelper(
       gridSize,
       Math.max(8, Math.round(28 * gridDensity)),
-      gridSettings.centerColor || floor.gridCenterColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCenterColor,
-      gridSettings.cellColor || floor.gridCellColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.gridCellColor
+      gridSettings.centerColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.centerColor,
+      gridSettings.cellColor || floor.color || DEFAULT_FLOOR_GRID_SETTINGS.cellColor
     );
     const materials = Array.isArray(grid.material) ? grid.material : [grid.material];
     for (const material of materials) {
       material.transparent = true;
       material.opacity = clamp(
-        toFiniteNumber(gridSettings.opacity ?? floor.gridOpacity, DEFAULT_FLOOR_GRID_SETTINGS.gridOpacity),
+        toFiniteNumber(gridSettings.opacity, DEFAULT_FLOOR_GRID_SETTINGS.opacity),
         0,
         1
       );
@@ -422,8 +425,7 @@ export function addFloor(scene, bounds, themeSettings, sceneScale, settingsBySca
       new THREE.LineBasicMaterial({
         color: axisSettings.color
           || gridSettings.centerColor
-          || floor.gridCenterColor
-          || DEFAULT_FLOOR_GRID_SETTINGS.gridCenterColor,
+          || DEFAULT_FLOOR_GRID_SETTINGS.centerColor,
         transparent: true,
         opacity: clamp(toFiniteNumber(axisSettings.opacity, DEFAULT_FLOOR_AXIS_SETTINGS.opacity), 0, 1),
         depthWrite: false,

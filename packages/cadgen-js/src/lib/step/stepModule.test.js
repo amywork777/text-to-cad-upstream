@@ -180,9 +180,9 @@ test("STEP module display transforms respect baked assembly part transforms", ()
   ];
   const part = { id: "o1.2", transform };
 
-  assert.equal(displayTransformForPart({ partTransformsBaked: true }, part, true), null);
-  assert.equal(displayTransformForPart({}, part, false), null);
-  assert.deepEqual(displayTransformForPart({}, part, true), transform);
+  assert.equal(displayTransformForPart({ partTransformsBaked: true }, part), null);
+  assert.equal(displayTransformForPart({}, part), null);
+  assert.deepEqual(displayTransformForPart({ partTransformsBaked: false }, part), transform);
 });
 
 test("STEP module effects report only non-identity transforms", () => {

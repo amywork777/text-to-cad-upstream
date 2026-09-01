@@ -38,31 +38,16 @@ function sampleArc(target, arc, elevation, requested) {
   if (!Number.isFinite(radius) || radius <= 0) {
     return;
   }
-  // parseDxf and drawing_render.py both emit startAngleDeg/sweepAngleDeg.
-  // Reading only startAngle/endAngle left start and end at 0 for every real
-  // arc, so sweep came out 0, the wrap below turned it into a full turn, and
-  // each arc was drawn as a complete circle.
-  const start = Number(arc.startAngleDeg ?? arc.startAngle ?? arc.start_angle ?? 0);
-  if (!Number.isFinite(start)) {
+  // parseDxf and drawing_render.py both emit startAngleDeg/sweepAngleDeg:
+  // degrees, counter-clockwise as DXF stores them, with a signed sweep
+  // (bulge arcs sweep clockwise as a negative value).
+  const start = Number(arc.startAngleDeg);
+  const sweepDeg = Number(arc.sweepAngleDeg);
+  if (!Number.isFinite(start) || !Number.isFinite(sweepDeg) || sweepDeg === 0) {
     return;
   }
-  // Angles arrive in degrees, counter-clockwise, as DXF stores them.
   const startRadians = (start * Math.PI) / 180;
-  let sweep;
-  const sweepDeg = Number(arc.sweepAngleDeg ?? arc.sweep_angle_deg);
-  if (Number.isFinite(sweepDeg) && sweepDeg !== 0) {
-    // Both producers guarantee a non-zero sweep in (0, 360].
-    sweep = (sweepDeg * Math.PI) / 180;
-  } else {
-    const end = Number(arc.endAngle ?? arc.end_angle ?? 0);
-    if (!Number.isFinite(end)) {
-      return;
-    }
-    sweep = ((end - start) * Math.PI) / 180;
-  }
-  if (sweep <= 0) {
-    sweep += Math.PI * 2;
-  }
+  const sweep = (sweepDeg * Math.PI) / 180;
   const steps = arcSegmentCount(sweep, requested);
   let previous = null;
   for (let index = 0; index <= steps; index += 1) {
@@ -78,7 +63,7 @@ function sampleArc(target, arc, elevation, requested) {
 function sampleCircle(target, circle, elevation, requested) {
   sampleArc(
     target,
-    { center: circle.center, radius: circle.radius, startAngle: 0, endAngle: 360 },
+    { center: circle.center, radius: circle.radius, startAngleDeg: 0, sweepAngleDeg: 360 },
     elevation,
     requested
   );

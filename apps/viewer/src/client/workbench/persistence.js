@@ -15,7 +15,7 @@ import { isCadWorkspaceCompactFileSheetViewport } from "./breakpoints.js";
 import { DRAWING_TOOL, RENDER_FORMAT, TAB_TOOL_MODE } from "./constants.js";
 
 export { THEME_STORAGE_KEY };
-export const THEME_STORAGE_VERSION = 12;
+export const THEME_STORAGE_VERSION = 13;
 
 export const CAD_DIRECTORY_SESSION_STORAGE_VERSION = 1;
 export const CAD_DIRECTORY_SESSION_STORAGE_KEY = `cad-viewer:directory-session:v${CAD_DIRECTORY_SESSION_STORAGE_VERSION}`;

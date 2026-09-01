@@ -78,7 +78,7 @@ export function shapeSourceColor(THREE, sourceColor, materialSettings = {}, { ap
   const shaped = (sourceColor || new THREE.Color("#ffffff")).clone();
   const tintStrength = clamp(Number(materialSettings.tintStrength) || 0, 0, 1);
   if (applyTint && tintStrength > 0) {
-    const tintColor = createSafeColor(THREE, materialSettings.defaultColor || materialSettings.tintColor, "#ffffff");
+    const tintColor = createSafeColor(THREE, materialSettings.defaultColor, "#ffffff");
     if (materialSettings.tintMode === "blend") {
       shaped.lerp(tintColor, tintStrength);
     } else {

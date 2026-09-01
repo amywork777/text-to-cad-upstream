@@ -374,9 +374,9 @@ function componentMeshDataFor(componentMeshDataByCid, cid) {
 /**
  * Compose a renderable meshData from an assembly-package descriptor plus a map of
  * already-parsed component meshDatas (one per unique component cid, each from
- * buildMeshDataFromGlbBuffer on its component GLB). Each occurrence's transform is
- * baked into the copied vertices/normals (partTransformsBaked: true), so the result
- * is drop-in for the same renderer path the monolithic .step.glb uses.
+ * buildMeshDataFromGlbBuffer on its component GLB). Component geometry stays in its
+ * own local frame and each occurrence places it by transform at render time
+ * (partTransformsBaked: false); nothing is baked into world space.
  *
  * Output parts carry occurrenceId = the assembly occurrence id and componentId =
  * the source component cid; sourcePartRanges keep the COMPONENT-LOCAL occurrenceId +
@@ -621,39 +621,13 @@ function buildPackageAssemblyRoot(descriptor, parts) {
   }
   const partList = Array.isArray(parts) ? parts : [];
   const partById = new Map(partList.map((part) => [String(part.id), part]));
-  // Preferred: the nested hierarchy the descriptor records (subassembly grouping over leaves),
+  // The nested hierarchy the descriptor records (subassembly grouping over leaves),
   // so the structure tree can drill into / isolate subassemblies just like a monolithic STEP.
+  // Every assembly descriptor carries it (component_package.py writes assembly.root
+  // whenever the entry is not a single-component part).
   const descriptorRoot = descriptor?.assembly?.root;
-  if (descriptorRoot && typeof descriptorRoot === "object") {
-    return enrichPackageAssemblyNode(descriptorRoot, partById);
+  if (!descriptorRoot || typeof descriptorRoot !== "object") {
+    throw new Error("Assembly package descriptor has no assembly.root hierarchy");
   }
-  // Fallback (legacy descriptor without a hierarchy): a flat root over the placed parts.
-  if (!partList.length) {
-    return null;
-  }
-  const children = partList.map((part) => ({
-    id: part.id,
-    occurrenceId: part.occurrenceId,
-    componentId: part.componentId,
-    name: part.name,
-    label: part.label,
-    nodeType: "part",
-    transform: part.transform,
-    bounds: part.bounds,
-    sourceBounds: part.sourceBounds,
-    color: part.color,
-    leafPartIds: [part.id],
-    children: []
-  }));
-  const rootName = String(descriptor?.rootName || "").trim() || "assembly";
-  return {
-    id: rootName,
-    name: rootName,
-    label: rootName,
-    nodeType: "assembly",
-    transform: [...IDENTITY_TRANSFORM],
-    bounds: mergeBounds(children.map((child) => child.bounds)),
-    leafPartIds: children.map((child) => child.id),
-    children
-  };
+  return enrichPackageAssemblyNode(descriptorRoot, partById);
 }

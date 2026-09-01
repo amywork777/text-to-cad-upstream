@@ -226,7 +226,9 @@ export function normalizeStepModuleDefinition(rawModule, { url = "", cadPath = "
     throw new Error("STEP runtime module must export an object");
   }
   const manifest = isObject(rawModule.manifest) ? rawModule.manifest : rawModule;
-  const schemaVersion = Number(manifest.schemaVersion || rawModule.schemaVersion || 1);
+  // The manifest must declare its schema. An unversioned module is refused, not
+  // grandfathered: NaN/0 never equals the supported version.
+  const schemaVersion = Number(manifest.schemaVersion);
   if (schemaVersion !== STEP_MODULE_SCHEMA_VERSION) {
     throw new Error(`Unsupported STEP runtime module schemaVersion ${schemaVersion || "unknown"}`);
   }
