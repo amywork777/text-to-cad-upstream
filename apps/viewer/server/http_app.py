@@ -44,6 +44,8 @@ __all__ = [
     "hostname_only",
     "host_is_allowed",
     "read_viewer_version",
+    "newest_mtime_ns",
+    "identity_token",
     "create_cad_app",
 ]
 
@@ -88,7 +90,7 @@ def host_is_allowed(host_header, bound_host) -> bool:
 def read_viewer_version() -> str:
     """``package.json``'s version, ``""`` on any failure.
 
-    Exported for the launcher's reuse key (realpath(root) x version): both sides
+    One half of the launcher's reuse key (see ``identity_token``): both sides
     of that comparison must read the version the same way, and the bundled
     runtime's package.json is the one file that carries it.
 
@@ -102,6 +104,57 @@ def read_viewer_version() -> str:
         return str(json.loads(text).get("version") or "")
     except Exception:  # noqa: BLE001 - a malformed package.json is not fatal
         return ""
+
+
+def newest_mtime_ns(base_dir, *, suffix: str = "") -> int:
+    """The newest ``st_mtime_ns`` under ``base_dir`` (``suffix``-filtered), 0 when empty.
+
+    ``__pycache__`` is skipped — a byte-identical tree must not read newer
+    because an interpreter recompiled it. Unreadable files count as absent:
+    a freshness signal must never stop a viewer from starting.
+    """
+    newest = 0
+    for dirpath, dirnames, filenames in os.walk(base_dir):
+        dirnames[:] = [name for name in dirnames if name != "__pycache__"]
+        for filename in filenames:
+            if suffix and not filename.endswith(suffix):
+                continue
+            try:
+                mtime = os.stat(os.path.join(dirpath, filename)).st_mtime_ns
+            except OSError:
+                continue
+            newest = max(newest, mtime)
+    return newest
+
+
+def identity_token() -> str:
+    """This code's identity: the viewer version SALTED with its files' newest mtime.
+
+    The daemon's shape (``compute_version_token`` in cadgen/daemon/client.py):
+    ``<version>:<newest mtime_ns>``, over BOTH halves of the app — ``server/``'s
+    ``.py`` files and the built ``dist/`` beside it. The version alone is
+    frozen between releases, so in a checkout it made reuse source-blind: a
+    ``git pull`` followed by a launch reused a resident server running last
+    week's code. The mtime salt ends that — a pull or rebuild changes the
+    token, the resident's recorded token no longer matches, and a fresh
+    instance starts. In a published bundle the files never change after
+    install, so the token is constant and behavior is exactly version-keyed
+    reuse.
+
+    Computed identically at announce time (``/__cad/server``), registry write,
+    and the reuse probe — but the running server ANSWERS with the token it
+    computed at its own start (held on ``CadApp``), never a re-read: a re-read
+    would let a stale resident claim freshness after a pull.
+
+    The walk covers ~20 server files and ~25 dist files: well under a
+    millisecond, paid once per launch.
+    """
+    app_root = Path(__file__).resolve().parent.parent
+    newest = max(
+        newest_mtime_ns(app_root / "server", suffix=".py"),
+        newest_mtime_ns(app_root / "dist"),
+    )
+    return f"{read_viewer_version()}:{newest}"
 
 
 def _is_ascii_digits(value: str) -> bool:
@@ -131,6 +184,9 @@ class CadApp:
         # never re-resolve at request time.
         self.dist_dir = os.path.abspath(dist_dir) if dist_dir else ""
         self.viewer_version = read_viewer_version()
+        # Computed ONCE, at start: the identity this instance announces and
+        # registers is the identity of the code it is actually running.
+        self.identity_token = identity_token()
         self.started_at = time.time()
         self.lock = threading.Lock()
         self.ops = create_cadgen_ops(root_path)
@@ -141,6 +197,10 @@ class CadApp:
         return {
             "app": "cad-viewer",
             "viewerVersion": self.viewer_version,
+            # The start-time token, NOT identity_token() re-evaluated: a
+            # resident answering a reuse probe must report the code it runs,
+            # not the code now on disk.
+            "identityToken": self.identity_token,
             "serverMode": "serve",
             "serverFeatures": LOCAL_SERVER_FEATURES,
             "backend": "local-fs",

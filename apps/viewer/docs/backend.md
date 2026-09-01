@@ -50,18 +50,26 @@ Running `main.py` from a directory always ends with the URL of a live, correct
 Viewer for that directory. Order of operations:
 
 1. **Reuse**: unless `--new` (or an explicit `--port`) is given, the launcher looks for
-   a registry entry whose `realpath(served directory)` and viewer version match, identity-probed
-   (`/__cad/server` must answer as the recorded pid). On a match it prints that URL
-   with `action:"reused"` and exits 0. The key is never the port or the pid — keying
-   reuse on the port was the old source-blind-reuse bug.
+   a registry entry whose `realpath(served directory)` and identity token match,
+   identity-probed (`/__cad/server` must answer as the recorded pid). The token is the
+   viewer version SALTED with the newest mtime across `server/`'s `.py` files and the
+   built `dist/` (`identity_token` in `server/http_app.py`, the shape of cadgen's
+   daemon token), recorded at the instance's START — so in a checkout a `git pull` or
+   rebuild changes the token and a stale resident simply fails the match, while in a
+   published bundle the files never change and this is exactly version-keyed reuse.
+   On a match it prints that URL with `action:"reused"` and exits 0. The key is never
+   the port or the pid — keying reuse on the port was the old source-blind-reuse bug,
+   and keying it on the bare version was its dev-checkout remnant.
 2. **Roll**: otherwise it binds the first free port from 3245 upward (binding IS the
    probe; a lost race just moves to the next candidate) and prints `action:"started"`.
 3. **Strict `--port`**: an explicit port is a demand — taken means exit 1, naming the
    holder when the registry knows it. No reuse, no rolling.
 
 The printed URL (and `--json`'s `{url,port,action}` line) is the whole contract; the
-port is an output of launch. Iterating on server code from a checkout? `--new` is the
-escape from reuse — a running instance keeps executing the code it started with.
+port is an output of launch. A running instance keeps executing the code it started
+with — the mtime salt means an edited/pulled/rebuilt checkout starts fresh on the next
+launch without asking; `--new` remains the escape for forcing a second instance of the
+SAME code.
 
 Deliberately NOT adopted from the Jupyter model it parallels: **no auth token** (this
 server executes nothing and serves read-only inside one root; the Host-header

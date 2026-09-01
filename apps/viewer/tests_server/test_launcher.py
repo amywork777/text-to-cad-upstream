@@ -180,8 +180,9 @@ class RollAndReuse(LauncherFixture):
         first = self.launch(["--dist", dist, "--json"], cwd=root)
         a = self.json_line(self.wait_for_url_line(first))
 
-        # Reuse: same realpath(served dir) x version -> the existing URL, exit 0,
-        # no spawn. Note NO --dist: the dist check happens after the reuse lookup.
+        # Reuse: same realpath(served dir) x identity token -> the existing URL,
+        # exit 0, no spawn. Note NO --dist: the dist check happens after the
+        # reuse lookup.
         code, stdout, _ = self.run_to_exit(["--json"], cwd=root)
         self.assertEqual(code, 0)
         self.assertEqual(
@@ -233,6 +234,141 @@ class RollAndReuse(LauncherFixture):
         self.assertIn(f":{payload['port']}/", payload["url"])
         with urllib.request.urlopen(f"http://127.0.0.1:{payload['port']}/__cad/server", timeout=5) as r:
             self.assertEqual(json.loads(r.read())["port"], payload["port"])
+
+
+class IdentityToken(LauncherFixture):
+    """Reuse identity is the version SALTED with the app files' newest mtime.
+
+    The version alone is frozen between releases, so in a checkout a `git pull`
+    followed by a launch reused a resident server running last week's code.
+    With the salt, a resident whose code has since changed on disk fails the
+    match, a fresh instance starts, and the old one is left alone.
+
+    Everything runs against a STAGED copy of server/ + its own dist, so
+    touching mtimes never dirties the real checkout — whose developer may have
+    a live viewer keyed on those very files.
+    """
+
+    def stage_app(self) -> str:
+        staged = os.path.join(self._tmp.name, "staged-identity")
+        shutil.copytree(os.path.join(str(APP_ROOT), "server"), os.path.join(staged, "server"))
+        os.makedirs(os.path.join(staged, "dist"))
+        Path(staged, "dist", "index.html").write_text("<html>viewer</html>", encoding="utf-8")
+        # read_viewer_version reads the package.json beside server/; give the
+        # staged app one so the token's version half is real.
+        Path(staged, "package.json").write_text('{"version":"9.9.9-staged"}', encoding="utf-8")
+        return staged
+
+    def launch_staged(self, staged: str, root: str) -> subprocess.Popen:
+        child = subprocess.Popen(
+            [sys.executable, os.path.join(staged, "server", "main.py"), "--json"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=root,
+            env=self.env(),
+        )
+        self._children.append(child)
+        return child
+
+    @staticmethod
+    def server_info(port: int) -> dict:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/__cad/server", timeout=5) as response:
+            return json.loads(response.read())
+
+    def test_a_stale_resident_fails_the_match_and_is_left_alone(self) -> None:
+        staged = self.stage_app()
+        root = self.make_root()
+        first = self.launch_staged(staged, root)
+        a = self.json_line(self.wait_for_url_line(first))
+        self.assertEqual(a["action"], "started")
+
+        # Same code on disk -> reused, exactly as before the salt existed.
+        relaunch = self.launch_staged(staged, root)
+        reused_stdout, _ = relaunch.communicate(timeout=30)
+        self.assertEqual(self.json_line(reused_stdout)["action"], "reused")
+
+        token_at_start = self.server_info(a["port"])["identityToken"]
+        self.assertIn("9.9.9-staged:", token_at_start, "the token is version:mtime")
+
+        # A pull: a server source's mtime moves forward.
+        future = time.time() + 60
+        os.utime(os.path.join(staged, "server", "scanner.py"), (future, future))
+
+        # The resident answers with the token computed AT ITS OWN START —
+        # never a re-read, which would let a stale server claim freshness.
+        self.assertEqual(self.server_info(a["port"])["identityToken"], token_at_start)
+
+        # The next launch computes a token the resident's entry no longer
+        # matches: a NEW instance starts, and the old one is left alone.
+        second = self.launch_staged(staged, root)
+        b = self.json_line(self.wait_for_url_line(second))
+        self.assertEqual(b["action"], "started")
+        self.assertNotEqual(b["port"], a["port"])
+        self.assertNotEqual(self.server_info(b["port"])["identityToken"], token_at_start)
+        self.assertEqual(
+            self.server_info(a["port"])["pid"], first.pid, "the stale resident keeps running"
+        )
+
+        # The dist is the other half of the app: a rebuilt client re-keys too.
+        os.utime(os.path.join(staged, "dist", "index.html"), (future + 60, future + 60))
+        third = self.launch_staged(staged, root)
+        c = self.json_line(self.wait_for_url_line(third))
+        self.assertEqual(c["action"], "started", "a rebuilt dist must not reuse the old client")
+        self.assertNotIn(c["port"], (a["port"], b["port"]))
+
+
+class DistFreshnessWarning(unittest.TestCase):
+    """The dev-only staleness guard: one stderr line, detection only.
+
+    Exists because a stale locally-built client manufactured a false bug
+    report (a pose-preset 'bug' that was just an old bundle). Tested at the
+    function: the launch path calls it once, right before binding.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if str(APP_ROOT) not in sys.path:
+            sys.path.insert(0, str(APP_ROOT))
+        from server import main as main_module
+
+        cls.main_module = main_module
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.dist = os.path.join(self._tmp.name, "dist")
+        os.makedirs(self.dist)
+        Path(self.dist, "index.html").write_text("<html>viewer</html>", encoding="utf-8")
+
+    def _warning_output(self) -> str:
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.main_module.warn_when_dist_is_stale(self.dist)
+        return stderr.getvalue()
+
+    def _make_src(self, mtime: float) -> None:
+        src = os.path.join(self._tmp.name, "src")
+        os.makedirs(src)
+        source = Path(src, "App.jsx")
+        source.write_text("export default null\n", encoding="utf-8")
+        os.utime(source, (mtime, mtime))
+
+    def test_a_source_newer_than_the_dist_warns_and_names_the_rebuild(self) -> None:
+        self._make_src(time.time() + 60)
+        self.assertEqual(
+            self._warning_output(),
+            "dist/ is older than the client sources — rebuild with `npm run build`\n",
+        )
+
+    def test_a_current_dist_is_silent(self) -> None:
+        self._make_src(time.time() - 3600)
+        self.assertEqual(self._warning_output(), "")
+
+    def test_structurally_silent_without_client_sources(self) -> None:
+        # A published bundle ships dist/ with no src/ beside it: nothing to
+        # compare, no walk, no warning — by construction, not by tuning.
+        self.assertEqual(self._warning_output(), "")
 
 
 class ApiOnly(LauncherFixture):

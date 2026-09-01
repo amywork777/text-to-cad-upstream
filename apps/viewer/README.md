@@ -88,17 +88,23 @@ to choose the interpreter, or `VIEWER_BACKEND_URL` to attach to one you started
 yourself. Production does need the build, and refuses to start without it.
 
 The launcher is unconditional and prints the URL it serves: a live instance
-already serving that realpath at this version is REUSED (`action:"reused"`);
-otherwise it binds the first free port from 3245 upward. `--new` forces a
-fresh instance (needed when testing server-code changes — a reused instance
-runs the code it started with); an explicit `--port` is strict.
-`main.py list` shows every running instance; `main.py stop --port <n>`
+already serving that realpath with the same code on disk is REUSED
+(`action:"reused"`); otherwise it binds the first free port from 3245 upward.
+`--new` forces a fresh instance of the same code; an explicit `--port` is
+strict. `main.py list` shows every running instance; `main.py stop --port <n>`
 ends one. Do not stop instances you did not start. Dev lives on Vite's
 port (5173, strict) and never enters the instance registry.
 
-Reuse keys on realpath(served directory) × version, so an instance serving a
-different directory — or the same directory from another copy of the app —
-is never handed back by mistake.
+Reuse keys on realpath(served directory) × an identity token — the viewer
+version salted with the newest mtime across `server/`'s `.py` files and the
+built `dist/` (`identity_token` in `server/http_app.py`) — so an instance
+serving a different directory, the same directory from another copy of the
+app, or code that has since been edited, pulled, or rebuilt is never handed
+back by mistake. In a published bundle the files never change after install,
+so the token reduces to version-keyed reuse there. In a checkout, a server
+that finds client sources (`src/`) beside the `dist/` it serves also warns
+once on stderr when any source is newer than the build — detection only; it
+keeps serving.
 
 ## Behaviours worth knowing before concluding something is broken
 

@@ -71,8 +71,15 @@ def entry_path(pid) -> str:
     return os.path.join(registry_dir(), f"viewer-{int(pid)}.json")
 
 
-def register(*, host, port, root: str = "", viewer_version: str = "", started_at=None) -> str:
-    """Announce this process. Returns the entry path, or ``""`` on any failure."""
+def register(*, host, port, root: str = "", viewer_version: str = "", token: str = "", started_at=None) -> str:
+    """Announce this process. Returns the entry path, or ``""`` on any failure.
+
+    ``token`` is the launcher's reuse identity (version salted with the app
+    files' newest mtime — ``identity_token`` in http_app.py), recorded at
+    START time so a later reuse probe compares against the code this instance
+    is actually running. ``version`` stays alongside it for the human `list`
+    printout.
+    """
     import time
 
     directory = _ensure_registry_dir()
@@ -84,6 +91,7 @@ def register(*, host, port, root: str = "", viewer_version: str = "", started_at
         "host": str(host),
         "port": int(port),
         "version": str(viewer_version or ""),
+        "token": str(token or ""),
         "root": str(root or ""),
         "packageDir": _PACKAGE_DIR,
         "startedAt": float(time.time() if started_at is None else started_at),

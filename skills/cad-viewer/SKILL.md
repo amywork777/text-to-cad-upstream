@@ -31,7 +31,10 @@ is unaffected either way.
 
 Launching is unconditional: the command below always ends with the URL of a
 live Viewer for the launch directory. If one is already running for that
-directory at this Viewer version, its URL is returned (`"action": "reused"`);
+directory with the same Viewer code on disk (the reuse key is
+realpath(directory) x an identity token — the version salted with the app
+files' newest mtime, so a rebuilt or updated Viewer never hands back a stale
+instance), its URL is returned (`"action": "reused"`);
 otherwise a new server starts on the first free port from `3245` upward
 (`"action": "started"`). Never pick or reason about ports — read the URL the
 command prints. Each instance serves ONE directory — the directory it is
@@ -60,9 +63,8 @@ inside this skill's directory: that serves the skill, not the models.
 
 Flags: `--json` prints the machine-readable last stdout line
 (`{"url", "port", "action": "started"|"reused"}`) — always pass it and take the
-URL from there. `--new` forces a fresh instance instead of reusing. `--open`
-opens the URL in the platform browser (for humans; leave it off in agent
-flows). An explicit `--port <n>` is strict — "this port or fail" — and disables
+URL from there. `--new` forces a fresh instance instead of reusing. An
+explicit `--port <n>` is strict — "this port or fail" — and disables
 both reuse and rolling.
 
 ## URL shape

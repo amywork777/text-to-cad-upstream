@@ -213,7 +213,7 @@ class ServerInfo(HttpLayerTestCase):
         _, _, body = self.fixture.request("GET", "/__cad/server")
         text = body.decode("utf-8")
         order = [
-            '"app"', '"viewerVersion"', '"serverMode"', '"serverFeatures"', '"backend"',
+            '"app"', '"viewerVersion"', '"identityToken"', '"serverMode"', '"serverFeatures"', '"backend"',
             '"rootPath"', '"rootName"', '"port"', '"pid"',
             '"stepArtifactGenerationAvailable"', '"stepImportAvailable"',
             '"packageDir"', '"startedAt"', '"url"',

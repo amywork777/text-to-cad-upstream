@@ -84,7 +84,8 @@ class _PidServer:
 class RegisterAndUnregister(RegistrySandbox):
     def test_register_writes_a_complete_entry_and_unregister_removes_it(self) -> None:
         target = registry.register(
-            host="127.0.0.1", port=39876, root="/tmp/models", viewer_version="1.2.3"
+            host="127.0.0.1", port=39876, root="/tmp/models", viewer_version="1.2.3",
+            token="1.2.3:42",
         )
         self.assertTrue(target, "registry dir must be writable in a temp sandbox")
         self.addCleanup(registry.unregister)
@@ -95,6 +96,10 @@ class RegisterAndUnregister(RegistrySandbox):
         self.assertEqual(entry["host"], "127.0.0.1")
         self.assertEqual(entry["port"], 39876)
         self.assertEqual(entry["version"], "1.2.3")
+        # The reuse identity, recorded at START time: the launcher compares a
+        # freshly computed token against this, so a pull/rebuild after this
+        # instance started fails the match and a fresh instance starts.
+        self.assertEqual(entry["token"], "1.2.3:42")
         self.assertEqual(entry["root"], "/tmp/models")
         self.assertIsInstance(entry["startedAt"], float)
         self.assertTrue(entry["packageDir"])

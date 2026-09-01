@@ -3,8 +3,9 @@
 
 Launching is UNCONDITIONAL, Jupyter-style: running ``main.py`` from a directory
 always ends with the URL of a live, correct Viewer for that directory. If an
-identity-probed instance already serves ``realpath(cwd)`` at this viewer
-version, its URL is printed with ``action:"reused"`` and nothing is spawned
+identity-probed instance already serves ``realpath(cwd)`` at this identity
+token (version salted with the app files' newest mtime — see
+``identity_token``), its URL is printed with ``action:"reused"`` and nothing is spawned
 (``--new`` skips the lookup); otherwise the server binds the first free port
 from 3245 upward and prints ``action:"started"``. An EXPLICIT ``--port`` stays
 strict — it exits 1 when taken — because then the port was the ask. The printed
@@ -50,12 +51,9 @@ import json
 import os
 import signal
 import socket
-import subprocess
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 # --- interpreter floor ---------------------------------------------------
@@ -124,7 +122,7 @@ if _APP_ROOT not in sys.path:
 
 from server import registry  # noqa: E402
 from server.handler import CadHTTPServer, make_handler_class  # noqa: E402
-from server.http_app import create_cad_app, read_viewer_version  # noqa: E402
+from server.http_app import create_cad_app, identity_token, newest_mtime_ns  # noqa: E402
 
 DEFAULT_VIEWER_HOST = "127.0.0.1"
 DEFAULT_VIEWER_PORT = 3245
@@ -182,7 +180,6 @@ def parse_args(argv: list[str]) -> dict:
         "port_explicit": False,
         "dist": "",
         "json": False,
-        "open": False,
         "fresh": False,
         # Additive flags, all three for dev (see vite.config.mjs).
         "ephemeral": False,
@@ -215,8 +212,6 @@ def parse_args(argv: list[str]) -> dict:
             args["dist"] = (argv[index] if index < len(argv) else "") or ""
         elif arg == "--json":
             args["json"] = True
-        elif arg == "--open":
-            args["open"] = True
         elif arg == "--new":
             args["fresh"] = True
         elif arg == "--ephemeral":
@@ -298,38 +293,27 @@ def port_is_free(host: str, port: int) -> bool:
         probe.close()
 
 
-def _open_when_ready(url: str, host: str, port: int, timeout_seconds: float = 2.0) -> None:
-    probe = f"http://{host}:{port}/__cad/server"
-    deadline = time.monotonic() + timeout_seconds
-    while True:
-        try:
-            with urllib.request.urlopen(probe, timeout=0.25) as response:  # noqa: S310 - loopback only
-                if 200 <= response.status < 300:
-                    break
-        except (urllib.error.URLError, OSError, TimeoutError):
-            pass  # keep polling
-        if time.monotonic() >= deadline:
-            _err(f"Viewer did not answer within {int(timeout_seconds)}s; not opening a browser.\n")
-            return
-        time.sleep(0.1)
-    try:
-        if sys.platform == "darwin":
-            command = ["open", url]
-        elif sys.platform.startswith("win"):
-            # `start` is a cmd builtin, not an executable. The empty string is
-            # the window title, which start would otherwise take from the URL.
-            command = ["cmd", "/c", "start", "", url]
-        else:
-            command = ["xdg-open", url]
-        subprocess.Popen(  # noqa: S603 - argument vector, never a shell
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=not sys.platform.startswith("win"),
-            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0) if sys.platform.startswith("win") else 0,
-        )
-    except OSError as error:
-        _err(f"Could not open a browser: {error}\n")
+def warn_when_dist_is_stale(dist_dir: str) -> None:
+    """One stderr line when the built client is older than the client sources.
+
+    A DETECTION, never a refusal: startup stays unopinionated and the stale
+    bundle still serves. This exists because a stale locally-built client
+    manufactured a false bug report from a sibling project — a pose-preset
+    "bug" that was just an old bundle — and nothing at startup said so.
+
+    Structurally impossible in a published bundle: the check looks for the
+    app's ``src/`` tree BESIDE the served dist, which exists only in checkouts
+    — the skill bundle and the mirrored repo ship ``dist/`` without sources,
+    so there is nothing to compare and the walk never happens. The cost in a
+    checkout is one mtime walk of src/ (~150 files, well under a millisecond).
+    """
+    if not dist_dir:
+        return
+    src_dir = os.path.join(os.path.dirname(dist_dir), "src")
+    if not os.path.isdir(src_dir):
+        return  # published bundles ship no client sources: nothing to compare
+    if newest_mtime_ns(src_dir) > newest_mtime_ns(dist_dir):
+        _err("dist/ is older than the client sources — rebuild with `npm run build`\n")
 
 
 def _realpath_or(candidate) -> str:
@@ -339,17 +323,24 @@ def _realpath_or(candidate) -> str:
         return str(candidate or "")
 
 
-def find_reusable(directory: str, viewer_version: str) -> dict | None:
-    """The reuse key: realpath(root) x viewer version, over identity-probed entries.
+def find_reusable(directory: str, token: str) -> dict | None:
+    """The reuse key: realpath(root) x identity token, over identity-probed entries.
 
     Never port, never pid — keying on the port was the old source-blind reuse
     bug, and pid-liveness is the probe's job. Dev instances never register, so
     nothing here can hand back a Vite proxy target.
+
+    The token is the version SALTED with the app files' newest mtime (see
+    ``identity_token`` in http_app.py). The entry's token was recorded when
+    that instance STARTED, so an instance running last week's code — the
+    version number is frozen between releases — fails the match after a
+    ``git pull`` or rebuild, and a fresh launch starts fresh instead of
+    reusing stale resident code.
     """
     root_real = _realpath_or(directory)
     for entry in registry.live_entries():  # probes pids, reaps stale files
-        if _realpath_or(entry.get("root")) == root_real and str(entry.get("version") or "") == str(
-            viewer_version or ""
+        if _realpath_or(entry.get("root")) == root_real and str(entry.get("token") or "") == str(
+            token or ""
         ):
             return entry
     return None
@@ -504,7 +495,6 @@ selects an artifact inside that directory.
   --dist DIR      built client to serve (default: the app's own dist/)
   --new           force a fresh instance instead of reusing a live one
   --json          announce the instance as JSON on stdout
-  --open          open the URL in a browser
   --ephemeral     never reuse, never register (dev backends)
   --no-registry   do not write the instance registry
   --api-only      serve only /__cad and /__tess_cache (Vite owns the client)
@@ -544,20 +534,17 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # Reuse before spawn: a live, identity-probed instance already serving this
-    # realpath(root) at this viewer version IS the requested viewer. Explicit
+    # realpath(root) at this identity token IS the requested viewer. Explicit
     # --port opts out (you asked for a port, not a viewer), --new forces fresh.
     # Ephemeral dev backends never reuse and never register.
     if not args["fresh"] and not args["port_explicit"] and not args["ephemeral"]:
-        held = find_reusable(directory, read_viewer_version())
+        held = find_reusable(directory, identity_token())
         if held:
             url = f"http://{held.get('host') or DEFAULT_VIEWER_HOST}:{held['port']}/"
             _out(f"Reusing CAD Viewer at {url} (serving {held.get('root')}, pid {held['pid']})\n")
             _out(f"CAD Viewer URL: {url}\n")
             if args["json"]:
                 _out(f"{_compact_json({'url': url, 'port': held['port'], 'action': 'reused'})}\n")
-            if args["open"]:
-                # Awaited here: this process exits immediately afterwards.
-                _open_when_ready(url, held.get("host") or DEFAULT_VIEWER_HOST, held["port"])
             return 0
 
     # Checked AFTER the reuse lookup, so a reuse succeeds with no --dist.
@@ -596,6 +583,8 @@ def main(argv: list[str] | None = None) -> int:
                 _err(f"Port {port} on {host} is already in use. Rerun without --port to take any free port.\n")
             return 1
 
+    warn_when_dist_is_stale(dist_dir)
+
     try:
         server = _bind(host, port, args)
     except OSError as error:
@@ -622,8 +611,15 @@ def main(argv: list[str] | None = None) -> int:
     # dev backend would be REUSED by a later real launch on the same root,
     # handing an agent a URL served by Vite's proxy target.
     if not args["no_registry"]:
+        # The token is the one the app computed AT ITS OWN START (CadApp
+        # holds it), never re-read from disk here: a re-read would let a
+        # stale resident claim freshness after a pull.
         registry.register(
-            host=host, port=port, root=directory, viewer_version=app.server_info()["viewerVersion"]
+            host=host,
+            port=port,
+            root=directory,
+            viewer_version=app.viewer_version,
+            token=app.identity_token,
         )
 
         import atexit  # noqa: PLC0415
@@ -644,9 +640,6 @@ def main(argv: list[str] | None = None) -> int:
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
-
-    if args["open"]:
-        threading.Thread(target=_open_when_ready, args=(url, host, port), daemon=True).start()
 
     try:
         server.serve_forever()

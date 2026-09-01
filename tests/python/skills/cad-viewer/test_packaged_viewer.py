@@ -35,8 +35,9 @@ class PackagedViewerLayoutTests(unittest.TestCase):
 
     def test_package_json_still_carries_the_version(self):
         # npm starts nothing any more, but the file stays: the release workflow
-        # refuses to publish without it, and its .version is what the launcher's
-        # reuse key (realpath(root) x version) compares.
+        # refuses to publish without it, and its .version is the version half
+        # of the launcher's reuse key (realpath(root) x identity token, the
+        # version salted with the app files' newest mtime).
         self.assertTrue((VIEWER_APP / "package.json").is_file())
         package = json.loads((VIEWER_APP / "package.json").read_text(encoding="utf-8"))
         self.assertTrue(package.get("version"), "the runtime package.json must carry a version")
