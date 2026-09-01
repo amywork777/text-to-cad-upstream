@@ -329,6 +329,7 @@ def run_script_generator(
     force: bool = False,
     progress: object | None = None,
     lock_intent: str = "write",
+    model_prints_to_stdout: bool = False,
 ) -> LoadedStepScene | None:
     """Run a model script's decorated entry (``@step``/``@dxf``) and return its scene.
 
@@ -336,6 +337,15 @@ def run_script_generator(
     (``"write"``, the default) or merely occupy its generator (``"generate"`` -- an export,
     a topology extraction, an interference check). See :func:`_track_spec_generation`:
     getting this wrong makes an export look like a build to the CAD Viewer.
+
+    ``model_prints_to_stdout`` decides where the MODEL's own ``print()`` output
+    lands. The CLI contract is "stdout carries the result; stderr carries
+    progress" — and when a generator runs as a subroutine of another verb
+    (``inspect``, ``snapshot``, a mesh export), its prints ahead of the verb's
+    JSON broke every ``| jq`` pipeline. So the default routes them to stderr
+    with the rest of the progress; only the direct build flows (``cadgen step
+    build``, ``python model.py``), where the model's stdout is the user's own
+    channel, pass True.
 
     Closure capture is deterministic in every process shape: first-party modules
     are evicted from ``sys.modules`` BEFORE the generator loads (so its full
@@ -367,13 +377,19 @@ def run_script_generator(
             # The phase opens INSIDE the lock: before this it opened first, so a run queued
             # behind a peer reported "building geometry" for the whole time it was waiting.
             resolve_progress(active).phase(PHASE_GENERATE)
-            return _run_script_generator_inner(
-                spec,
-                model_format,
-                logger=logger,
-                force=force,
-                progress=active,
+            redirect = (
+                contextlib.nullcontext()
+                if model_prints_to_stdout
+                else contextlib.redirect_stdout(sys.stderr)
             )
+            with redirect:
+                return _run_script_generator_inner(
+                    spec,
+                    model_format,
+                    logger=logger,
+                    force=force,
+                    progress=active,
+                )
 
 
 @contextlib.contextmanager

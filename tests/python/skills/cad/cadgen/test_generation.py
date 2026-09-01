@@ -649,6 +649,45 @@ class CadGenerationTests(unittest.TestCase):
 
         self.assertEqual(("model",), spec.generator_metadata.generator_names)
 
+    def test_subroutine_generator_prints_go_to_stderr_not_stdout(self) -> None:
+        # The CLI contract is "stdout carries the result; stderr carries
+        # progress". When a generator runs as a SUBROUTINE of another verb
+        # (inspect/snapshot/export), its own print() ahead of the verb's JSON
+        # broke every `| jq` pipeline — the documented `2>/dev/null` then read
+        # as a parse error on a successful inspection. Default: stderr.
+        script_path = self.temp_root / "printing_part.py"
+        script_path.write_text(
+            "\n".join(
+                [
+                    "from cadgen import step",
+                    "@step",
+                    "def model():",
+                    "    import build123d",
+                    "    print('printing_part: 1 box placed')",
+                    "    return build123d.Box(1, 1, 1)",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        spec = next(spec for spec in cad_generation.list_entry_specs() if spec.source_path == script_path)
+
+        captured_out, captured_err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
+            scene = cad_generation.run_script_generator(spec, "step")
+        self.assertIsNotNone(scene)
+        self.assertNotIn("printing_part: 1 box placed", captured_out.getvalue())
+        self.assertIn("printing_part: 1 box placed", captured_err.getvalue())
+
+        # The direct build flows own stdout and say so explicitly.
+        captured_out, captured_err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(captured_out), contextlib.redirect_stderr(captured_err):
+            scene = cad_generation.run_script_generator(
+                spec, "step", model_prints_to_stdout=True
+            )
+        self.assertIsNotNone(scene)
+        self.assertIn("printing_part: 1 box placed", captured_out.getvalue())
+
     def test_bare_shape_return_is_supported_for_step_generation(self) -> None:
         script_path = self.temp_root / "bare_part.py"
         script_path.write_text(

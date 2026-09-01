@@ -676,6 +676,9 @@ def _generate_step_outputs(
             logger=logger,
             force=force,
             progress=progress,
+            # The direct build flow: the model's own prints are the user's
+            # stdout channel here (and pinned by test).
+            model_prints_to_stdout=True,
         )
         spec = _effective_step_spec_for_scene(spec, preloaded_scene)
         if spec.step_path is not None:
@@ -1653,7 +1656,11 @@ def generate_dxf_targets(
                 spec,
                 "dxf",
                 lambda tracked_spec, reporter: run_script_generator(
-                    tracked_spec, "dxf", logger=logger, progress=reporter
+                    tracked_spec,
+                    "dxf",
+                    logger=logger,
+                    progress=reporter,
+                    model_prints_to_stdout=True,
                 ),
                 skip_if_current=_built_by_a_peer,
                 progress_sink=progress_sink,
