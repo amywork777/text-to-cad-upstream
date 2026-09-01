@@ -149,12 +149,16 @@ step "Re-emit the document through the build door"
   || { cat "$WORK/reemit.log" >&2; fail "step build produced no STEP document"; }
 echo "   re-emitted a document to a new document"
 
+# Running the script above already wrote the STL the model DECLARES. This is
+# the other half: the ad-hoc door, taking a document and an explicit OUT. It
+# needs that OUT because the written document carries no trace of the model's
+# declarations — generated files hold no metadata.
 step "Export it through a format door"
 rm -f "$EMPTY/models/probe.stl"
-"$VENV/bin/cadgen" stl build models/probe.py >"$WORK/stl.log" 2>&1 \
+"$VENV/bin/cadgen" stl build models/probe.step models/probe.stl >"$WORK/stl.log" 2>&1 \
   || { cat "$WORK/stl.log" >&2; fail "cadgen stl build"; }
 [ -s "$EMPTY/models/probe.stl" ] \
   || { cat "$WORK/stl.log" >&2; fail "stl build produced no mesh"; }
-echo "   wrote the declared STL"
+echo "   wrote an STL from the document"
 
 printf '\nInstalled-mode checks passed.\n'
