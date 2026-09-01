@@ -38,7 +38,9 @@ class ServerFixture:
             self.dist = os.path.join(self.tmp.name, "dist")
             os.makedirs(os.path.join(self.dist, "assets"))
             Path(self.dist, "index.html").write_text("<!doctype html><title>cad</title>", encoding="utf-8")
-            Path(self.dist, "assets", "app.js").write_text("export const x = 1;\n", encoding="utf-8")
+            # Bytes, not text mode: the body is asserted byte-exact, and text
+            # mode would write \r\n on Windows.
+            Path(self.dist, "assets", "app.js").write_bytes(b"export const x = 1;\n")
             Path(self.dist, "favicon.ico").write_bytes(b"\x00\x00\x01\x00")
             Path(self.dist, "weird.xyz").write_text("unknown extension", encoding="utf-8")
         self.app = create_cad_app(root=self.root, host=host, port=0, dist_dir=self.dist)

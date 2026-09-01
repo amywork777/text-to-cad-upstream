@@ -43,6 +43,19 @@ from server.backend import LocalAssetBackend  # noqa: E402
 from server.scanner import scan_cad_directory  # noqa: E402
 from server.store_paths import CACHE_SCHEMA_VERSION, store_packages_dir  # noqa: E402
 
+# Characters NTFS refuses in a filename. POSIX writes every fixture name below;
+# Windows skips exactly the names its filesystem cannot represent, and the
+# golden comparison drops those rows on Windows only. The names stay in the
+# fixture and the golden — they are the point of the coverage on POSIX.
+_NTFS_FORBIDDEN = set('*?"<>|:') | {chr(code) for code in range(32)}
+
+
+def _name_can_exist_here(name: str) -> bool:
+    if os.name != "nt":
+        return True
+    return not (_NTFS_FORBIDDEN & set(name))
+
+
 def _build_fixture(root: str, cache: str) -> None:
     os.makedirs(os.path.join(cache, "packages"), exist_ok=True)
     os.environ["CADGEN_CACHE_DIR"] = cache
@@ -50,10 +63,9 @@ def _build_fixture(root: str, cache: str) -> None:
     def write(rel, text):
         path = os.path.join(root, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        if isinstance(text, bytes):
-            Path(path).write_bytes(text)
-        else:
-            Path(path).write_text(text, encoding="utf-8")
+        # Bytes, never text mode, so the content is identical on every
+        # platform instead of gaining \r\n on Windows.
+        Path(path).write_bytes(text if isinstance(text, bytes) else text.encode("utf-8"))
         return path
 
     def package(rel, descriptor, *, raw=None, as_dir=False):
@@ -155,6 +167,8 @@ def _build_fixture(root: str, cache: str) -> None:
         "1­2.stl", "ß.stl", "Ⅻ.stl", "Ａ.stl", "１.stl",
         "\U0001f642.stl",
     ):
+        if not _name_can_exist_here(name):
+            continue
         write(os.path.join("sortcases", name), f"content of {name}\n")
 
     # --- walk rules -------------------------------------------------------
@@ -236,6 +250,12 @@ class CatalogShapeSnapshot(unittest.TestCase):
     def test_the_catalog_matches_the_golden_shape(self):
         actual = _shape(scan_cad_directory(self.root)["entries"])
         expected = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+        # The golden is captured on POSIX; on Windows the fixture cannot write
+        # names NTFS forbids, so exactly those rows are dropped from the
+        # expectation. Everything else — order included — is still pinned.
+        expected = [
+            row for row in expected if _name_can_exist_here(row[0].rsplit("/", 1)[-1])
+        ]
         if actual == expected:
             return
         actual_files = [row[0] for row in actual]
@@ -274,6 +294,16 @@ class CatalogShapeSnapshot(unittest.TestCase):
         self.assertGreaterEqual(sum(1 for e in entries if e["hash"] == ""), 4)
         self.assertTrue(any(e["file"].startswith("library/") for e in entries))
         self.assertTrue(any(e["file"].startswith("deep/") for e in entries))
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "NTFS forbids '*' in filenames, so the punctuation sort case cannot exist on Windows",
+    )
+    def test_the_punctuation_stress_name_is_present_on_posix(self):
+        # Guards the Windows-only golden filter above from ever masking this
+        # name where the platform CAN represent it.
+        files = [e["file"] for e in scan_cad_directory(self.root)["entries"]]
+        self.assertIn("sortcases/a b(c)*d~e._-!'.stl", files)
 
 
 if __name__ == "__main__":

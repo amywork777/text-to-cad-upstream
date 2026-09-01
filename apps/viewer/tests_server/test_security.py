@@ -113,7 +113,9 @@ class AttackFixture:
     def write(self, rel: str, text: str) -> str:
         path = os.path.join(self.root, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        Path(path).write_text(text, encoding="utf-8")
+        # Bytes, not text mode: served bodies are asserted byte-exact, and
+        # text mode would write \r\n on Windows.
+        Path(path).write_bytes(text.encode("utf-8"))
         return path
 
     def close(self):
@@ -250,7 +252,13 @@ class C_UnicodeAndCase(SecurityTestCase):
         # /ROOT is a genuinely different directory.
         ref = os.path.join(self.fixture.base, "ROOT", "ok.step")
         status, _, body = self.fixture.asset(ref)
-        self.assertDenied(status, body, {403, 404})
+        if os.name == "nt":
+            # On NTFS base/ROOT IS the served root — ntpath.realpath resolves
+            # to the on-disk casing — so serving it is correct, not a leak.
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"public step\n")
+        else:
+            self.assertDenied(status, body, {403, 404})
 
     def test_an_nfc_nfd_spelling_is_never_a_403(self):
         # A normalisation-insensitive filesystem (macOS) serves it, a
@@ -343,11 +351,18 @@ class F_NullBytesAndControlCharacters(SecurityTestCase):
 
     def test_crlf_in_a_filename_cannot_inject_a_header(self):
         name = "a\r\nX-Evil: 1.step"
-        self.fixture.write(name.replace("\r\n", "_"), "x")
+        if os.name != "nt":
+            # The benign sibling is incidental; on NTFS its ':' would silently
+            # create an alternate data stream instead of this file.
+            self.fixture.write(name.replace("\r\n", "_"), "x")
         status, headers, _ = self.fixture.asset(os.path.join(self.fixture.root, name))
         self.assertIn(status, {403, 404})
         self.assertNotIn("x-evil", {k.lower() for k in headers})
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "NTFS forbids control characters (and ':') in filenames, so this name can only exist on POSIX",
+    )
     def test_a_download_filename_with_crlf_is_scrubbed_in_both_forms(self):
         raw_name = "a\r\nX-Evil: 1.step"
         path = os.path.join(self.fixture.root, raw_name)
@@ -483,7 +498,7 @@ class J_HiddenPaths(SecurityTestCase):
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         hidden_root = os.path.join(tmp, ".models")
         os.makedirs(hidden_root)
-        Path(hidden_root, "ok.step").write_text("visible\n", encoding="utf-8")
+        Path(hidden_root, "ok.step").write_bytes(b"visible\n")
         app = create_cad_app(root=hidden_root, host="127.0.0.1", port=0, dist_dir="")
         server = handler_module.serve(app, "127.0.0.1", 0)
         port = server.server_address[1]

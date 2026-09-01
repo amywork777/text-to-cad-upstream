@@ -208,8 +208,11 @@ class BatchFramingMatchesTheAuthoritativeCodec(TessCacheTestCase):
             )
 
     def decode_with_node(self, container: bytes):
+        # The import specifier is a file:// URL, never a bare absolute path: a
+        # Windows path like D:\...\tessellationCache.js parses as a URL with
+        # scheme "d:", which node's ESM loader refuses outright.
         script = f"""
-        import {{ decodeTessellationCacheBatch }} from {json.dumps(str(CADGEN_JS_CODEC))};
+        import {{ decodeTessellationCacheBatch }} from {json.dumps(CADGEN_JS_CODEC.as_uri())};
         const bytes = Uint8Array.from(JSON.parse(process.argv[1]));
         const entries = decodeTessellationCacheBatch(bytes);
         process.stdout.write(JSON.stringify(
@@ -219,8 +222,9 @@ class BatchFramingMatchesTheAuthoritativeCodec(TessCacheTestCase):
             ["node", "--input-type=module", "--eval", script, "--", json.dumps(list(container))],
             capture_output=True,
             text=True,
-            check=True,
         )
+        if result.returncode != 0:
+            self.fail(f"the authoritative decoder failed (exit {result.returncode}):\n{result.stderr}")
         return json.loads(result.stdout)
 
     def test_hit_miss_and_refusal_decode_in_order(self):

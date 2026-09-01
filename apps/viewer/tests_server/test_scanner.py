@@ -69,7 +69,9 @@ class ScannerTestCase(unittest.TestCase):
     def write(self, rel: str, text: str) -> str:
         path = os.path.join(self.root, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        Path(path).write_text(text, encoding="utf-8")
+        # Bytes, not text mode: several tests assert byte counts and served
+        # bodies exactly, and text mode would write \r\n on Windows.
+        Path(path).write_bytes(text.encode("utf-8"))
         return path
 
     def package(self, rel: str, descriptor, *, raw: str | None = None) -> str:
@@ -153,6 +155,10 @@ class EntryShape(ScannerTestCase):
         self.write("sub dir/arm.urdf", '<robot name="a"/>')
         self.assertEqual(self.files(), ["sub dir/arm.urdf"])
 
+    @unittest.skipIf(
+        os.name == "nt",
+        "'*' is not a legal NTFS filename character; this URL-encoding corpus exists only on POSIX",
+    )
     def test_the_v_token_and_url_encoding(self):
         self.write("a b(c)*d~e.stl", "x")
         entry = self.entry("a b(c)*d~e.stl")
