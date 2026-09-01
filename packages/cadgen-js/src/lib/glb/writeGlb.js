@@ -232,7 +232,23 @@ export function writeGlb(mesh, options = {}) {
     weldDecimals = 5,
     encoder = null,
     occurrenceIdPrefix = null,
+    upAxis = "y",
   } = options;
+
+  // WHICH SPACE the caller's positions are in, declared rather than guessed. glTF's
+  // own convention is Y-up, so "y" is the default and the value a spec-conformant
+  // writer wants; "z" says these bytes were pre-rotated into CAD Z-up before they got
+  // here (bin/dxf-mesh.mjs does exactly that) and a CAD reader must NOT rotate again.
+  //
+  // The reader used to infer this from the presence of a `cadOccurrenceId` extra, which
+  // is written on every node by both presets and so answered "already CAD space" for
+  // files that are plainly Y-up — every model loaded on its side, correctly sized. An
+  // identity namespace cannot also carry orientation; the writer knows the space, so
+  // the writer states it.
+  const upAxis_ = String(upAxis).trim().toLowerCase();
+  if (upAxis_ !== "y" && upAxis_ !== "z") {
+    throw new Error(`writeGlb: upAxis must be "y" (glTF) or "z" (CAD), got ${JSON.stringify(upAxis)}`);
+  }
 
   // Namespace for cadOccurrenceId. Defaults to the source kind so ids survive a model
   // rename; falls back to the sanitized name only when neither is given.
@@ -509,6 +525,11 @@ export function writeGlb(mesh, options = {}) {
         ),
         cadSourceKind: options.sourceKind || "mesh",
         cadUnits: units,
+        // The DECLARED coordinate space of this node's positions. Read back by
+        // render/glbMeshData.js to decide whether the Y-up -> CAD Z-up correction is
+        // owed; absent (a foreign GLB, or one written before this field existed) the
+        // reader falls back to the glTF spec and converts.
+        cadUpAxis: upAxis_,
       },
     };
     if (nodeScale) {

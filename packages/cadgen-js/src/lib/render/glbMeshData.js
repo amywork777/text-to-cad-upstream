@@ -159,15 +159,34 @@ function cadOccurrenceIdForObject(object) {
   return /^o\d+(?:\.\d+)*$/.test(objectName) ? objectName : "";
 }
 
-function sceneHasCadOccurrenceIds(scene) {
-  let found = false;
+/**
+ * The coordinate space this GLB DECLARES, or "" when it declares none.
+ *
+ * `cadUpAxis` is written into node extras by `glb/writeGlb.js` (GLTFLoader copies extras
+ * into `userData`), so a cadgen-written GLB says outright whether its positions are glTF
+ * Y-up or already CAD Z-up. That replaces an inference that was not merely weak but FALSE:
+ * the old test was "does any node carry a cadOccurrenceId", and both writer presets stamp
+ * that id on every node they write, in BOTH spaces — packageMeshExport writes Y-up, and
+ * bin/dxf-mesh.mjs writes Z-up. So the proxy answered "already CAD space" for every file
+ * cadgen produced, the Y-up correction was skipped, and models rendered at the right size
+ * rotated -90 degrees about X — on their side.
+ *
+ * Returns the first declaration found; a GLB mixing spaces across nodes is not a thing any
+ * writer produces, and the alternative (per-node spaces) would have to be plumbed through
+ * every primitive rather than decided once for the file.
+ */
+function declaredCadUpAxis(scene) {
+  let declared = "";
   scene?.traverse?.((object) => {
-    if (found) {
+    if (declared) {
       return;
     }
-    found = Boolean(String(object?.userData?.cadOccurrenceId || "").trim());
+    const raw = String(object?.userData?.cadUpAxis || "").trim().toLowerCase();
+    if (raw === "y" || raw === "z") {
+      declared = raw;
+    }
   });
-  return found;
+  return declared;
 }
 
 function cadVectorFromGlbVector(vector, convertYUpToCad) {
@@ -397,7 +416,18 @@ function buildMeshDataFromGltf(THREE, gltf) {
   const rawMaterials = Array.isArray(gltf?.parser?.json?.materials) ? gltf.parser.json.materials : [];
   const rootCorrection = buildGlbCadRootCorrection(THREE, gltf?.scene);
   const hasStepTopology = !!gltf?.parser?.json?.extensions?.STEP_topology;
-  const convertYUpToCad = !hasStepTopology && !sceneHasCadOccurrenceIds(gltf?.scene) && !rootCorrection;
+  // Honour a declaration; fall back to the glTF SPEC when there is none.
+  //
+  // `declared` is what the writer said (see declaredCadUpAxis). Files that predate the
+  // field — every GLB already on disk, and every foreign one — declare nothing and take
+  // the fallback: glTF is Y-up by definition, so an undeclared file is converted unless
+  // it carries STEP topology, whose payload is authored in CAD space already.
+  //
+  // `rootCorrection` vetoes in BOTH branches. It exists only when the file itself carries
+  // an explicit build123d axis-correction node, which the loader inverts and applies to
+  // the geometry; rotating on top of that would correct twice.
+  const declared = declaredCadUpAxis(gltf?.scene);
+  const convertYUpToCad = !rootCorrection && (declared ? declared === "y" : !hasStepTopology);
   const descriptors = [];
   const colorSet = new Set();
   let totalVertexCount = 0;

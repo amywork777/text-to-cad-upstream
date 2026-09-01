@@ -165,6 +165,70 @@ class RenderContractSyncTest(unittest.TestCase):
                 "generated model as imported",
             )
 
+    def test_viewer_reads_the_progress_record_a_live_build_publishes(self) -> None:
+        # THE equality the build badge depends on: the file a producer publishes its
+        # progress into and the file the viewer polls must be one file. They are derived
+        # on opposite sides of the language boundary — cadgen from
+        # coordination.paths.status_path(coordination_scope(model)), the viewer from
+        # storePaths.coordinationScope(model) — from the MODEL path, never the package
+        # dir, because a rebuild changes the content key mid-build.
+        #
+        # When they disagreed the whole chain still worked and the user saw nothing: the
+        # record was written (to the packages/ tier, under the content hash), the reader
+        # looked (in the locks/ tier, under the path key), found nothing every poll, and
+        # the overlay fell back to an indeterminate bar with no phase and no counts. So
+        # this asks the REAL reader for the record a REAL producer is holding open.
+        from cadgen.catalog import coordination_scope
+        from cadgen.coordination import PHASE_COMPONENTS, STEP_PACKAGE, artifact_build
+
+        with tempfile.TemporaryDirectory() as workspace:
+            cache_dir = Path(workspace) / "store"
+            artifact = Path(workspace) / "nested dir" / "wídget.step"
+            artifact.parent.mkdir(parents=True)
+            artifact.write_text("ISO-10303-21;\n", encoding="utf-8")
+
+            env = {
+                k: v
+                for k, v in os.environ.items()
+                if k not in {"CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"}
+            }
+            env["CADGEN_CACHE_DIR"] = str(cache_dir)
+            from cadgen._internal.node_runtime import cad_node_executable
+
+            module_url = (ROOT / "apps/viewer/server/cadgenOps.mjs").resolve().as_uri()
+            script = (
+                f"import({module_url!r}).then(m => process.stdout.write(JSON.stringify("
+                f"m.buildProgressSnapshot({str(artifact)!r}))))"
+            )
+            with mock.patch.dict(os.environ, {"CADGEN_CACHE_DIR": str(cache_dir)}):
+                with artifact_build(STEP_PACKAGE, coordination_scope(artifact)) as run:
+                    run.phase(PHASE_COMPONENTS, total=37, detail="c0ffee")
+                    run.advance(3)
+                    # Read from OUTSIDE the process holding the lock, exactly as the
+                    # viewer's poll does.
+                    result = subprocess.run(
+                        [str(cad_node_executable()), "--input-type=module", "-e", script],
+                        capture_output=True,
+                        text=True,
+                        env=env,
+                        check=True,
+                    )
+
+            snapshot = json.loads(result.stdout.strip() or "null")
+            self.assertIsNotNone(
+                snapshot,
+                "the viewer found NO progress record for a build that is holding the "
+                "model's lock and publishing phases — the producer and the reader are "
+                "deriving different paths, so every poll answers a bare "
+                '{"state":"generating"} with no bar',
+            )
+            self.assertTrue(snapshot["writing"])
+            self.assertTrue(snapshot["runId"], "a live record must name its run")
+            self.assertEqual(snapshot["progress"]["phase"], PHASE_COMPONENTS)
+            self.assertEqual(snapshot["progress"]["total"], 37)
+            self.assertEqual(snapshot["progress"]["done"], 3)
+            self.assertEqual(snapshot["progress"]["detail"], "c0ffee")
+
     def test_viewer_classifier_reads_a_record_cadgen_wrote(self) -> None:
         # End to end across the language boundary: cadgen writes the record,
         # the viewer's status authority reads it back as generated. Nothing here

@@ -67,10 +67,24 @@ test("buildMeshDataFromGlbBuffer decodes a meshopt-compressed render artifact", 
   // transform would show up here as bounds of ±32767. The loader also converts glTF metres
   // to CAD millimetres (GLB_CAD_UNIT_SCALE), so the 1-unit cube lands at 1000 mm; asserting
   // the scaled value pins that conversion at the same time.
+  //
+  // The unit cube spans 0..1 in the writer's frame, and writeGlb declares that frame as
+  // glTF Y-up (its default), so the loader also applies the Y-up -> CAD Z-up correction
+  // (x, y, z) -> (x, -z, y): the corner at the CAD origin keeps X and Z positive and puts
+  // Y NEGATIVE. Asserting 0..1000 on all three axes only passed while that correction was
+  // being wrongly skipped for any file carrying occurrence ids.
   const { min, max } = meshData.bounds;
+  const expectedMin = [0, -1000, 0];
+  const expectedMax = [1000, 0, 1000];
   for (let axis = 0; axis < 3; axis += 1) {
-    assert.ok(Math.abs(min[axis] - 0) < 1, `min[${axis}] ${min[axis]} should be ~0 mm`);
-    assert.ok(Math.abs(max[axis] - 1000) < 1, `max[${axis}] ${max[axis]} should be ~1000 mm`);
+    assert.ok(
+      Math.abs(min[axis] - expectedMin[axis]) < 1,
+      `min[${axis}] ${min[axis]} should be ~${expectedMin[axis]} mm`
+    );
+    assert.ok(
+      Math.abs(max[axis] - expectedMax[axis]) < 1,
+      `max[${axis}] ${max[axis]} should be ~${expectedMax[axis]} mm`
+    );
   }
 });
 

@@ -162,6 +162,26 @@ test("multiple primitives become one node each, with occurrence ids", async () =
   assert.equal(new Set(colors).size, 3, `expected 3 distinct materials, got ${colors}`);
 });
 
+test("every node DECLARES its coordinate space, defaulting to the glTF convention", async () => {
+  const yUp = await parseGlb(writeGlb({ primitives: [{ positions: cubeSoup() }] }, { preset: "export" }));
+  assert.deepEqual(
+    collectMeshes(yUp).map((m) => m.userData?.cadUpAxis),
+    ["y"],
+    "an unstated space is glTF's own: Y-up"
+  );
+  const zUp = await parseGlb(
+    writeGlb({ primitives: [{ positions: cubeSoup() }] }, { preset: "export", upAxis: "z" })
+  );
+  assert.deepEqual(collectMeshes(zUp).map((m) => m.userData?.cadUpAxis), ["z"]);
+});
+
+test("an unknown upAxis is refused rather than written as a space nobody reads", () => {
+  assert.throws(
+    () => writeGlb({ primitives: [{ positions: cubeSoup() }] }, { preset: "export", upAxis: "x" }),
+    /upAxis must be "y" \(glTF\) or "z" \(CAD\)/u
+  );
+});
+
 test("a small primitive indexes in UNSIGNED_SHORT", async () => {
   const bytes = writeGlb({ primitives: [{ positions: cubeSoup() }] }, { preset: "export" });
   const gltf = await parseGlb(bytes);

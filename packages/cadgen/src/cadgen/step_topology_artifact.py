@@ -23,7 +23,7 @@ from cadgen._internal.generation import (
     relative_to_cwd,
     run_script_generator,
 )
-from cadgen.catalog import render_package_dir
+from cadgen.catalog import coordination_scope, render_package_dir
 from cadgen._internal.step_scene import LoadedStepScene, load_step_scene_cached
 from cadgen.step_artifact_cli import infer_entry_kind
 from cadgen.step_targets import (
@@ -164,8 +164,15 @@ def _ensure_step_topology_artifact(
         # write that followed was completely uncoordinated. A viewer polling during that
         # window read "no build in flight", found the package stale, and started a SECOND
         # full build into the same directory.
+        #
+        # Locks and progress key by the MODEL PATH, never by the content-keyed package
+        # dir: a rebuild changes the content key mid-build, so the package dir does not
+        # identify the run, and readers (the viewer's progress poller, a peer CLI) derive
+        # the record from the model path they hold and could not know the new key in
+        # advance. This is also what makes the generator's own lock, taken through
+        # generation_runner._spec_output_dir, re-entrant with this one.
         with artifact_build(
-            STEP_PACKAGE, render_package_dir(spec.entry_path), sink=sink
+            STEP_PACKAGE, coordination_scope(spec.entry_path), sink=sink
         ) as run:
             spec, scene = _scene_for_regeneration(
                 spec, logger=logger, force=force, progress=run

@@ -288,7 +288,7 @@ def _emit(
     spec = _build_entry_spec(Path.cwd().resolve(), scene.step_path, scene, kind=kind)
     from dataclasses import replace as _replace
 
-    from cadgen.catalog import render_package_dir
+    from cadgen.catalog import coordination_scope
     from cadgen.cli_progress import cli_progress_line
     from cadgen.coordination import STEP_PACKAGE, artifact_build
 
@@ -299,11 +299,18 @@ def _emit(
     # The write lock is required at the package mutation boundary — the package
     # writer asserts it — and it is what makes a concurrent re-emit of the same
     # output safe rather than two processes racing on one content key.
+    #
+    # Keyed by the MODEL PATH, never by the content-keyed package dir. The line above
+    # says why in this producer's own terms: a re-emit's content key does not exist
+    # until the document has been written, so a package-keyed lock is taken on an
+    # identity the run does not have yet and abandons the moment it does — two
+    # concurrent re-emits of one output would not exclude each other, and the progress
+    # record would land where no reader (the viewer polls locks/<pathkey>) looks.
     with cli_progress_line(
         spec.source_ref, logger=logger, fallback="Building..."
     ) as progress_sink, artifact_build(
         STEP_PACKAGE,
-        render_package_dir(spec.entry_path) if spec.entry_path else None,
+        coordination_scope(spec.entry_path) if spec.entry_path else None,
         force=True,
         sink=progress_sink,
     ):
