@@ -188,6 +188,15 @@ Joints › `Group state`, and Animation › `Clip`, which reframes the transport
 and the time/speed rows beneath it. Pass `stacked` for those and for nothing
 else; a second stacked select in one group means one of them is not primary.
 
+**A built-in state is not a list entry.** When a select mixes one built-in
+selection with the artifact's own items — Animation › `Clip` leads with the
+transport's idle state, then the authored clips — the built-in entry is
+labelled for the state it puts the control in (`No clip`), not with a name an
+author could also use (`Rest`), and it stays ungrouped at the top while the
+authored items sit under a group heading (`Clips`). Two entries that read alike
+but mean different things is the failure this prevents: a robot's pose preset
+named `rest` beside a transport entry named `Rest`.
+
 ### Repeated item groups — `FileSheetItemGroup`
 
 When one section holds the same controls repeated per item — a drawing's bends,

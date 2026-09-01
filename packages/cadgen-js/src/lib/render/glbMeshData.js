@@ -1,3 +1,9 @@
+// Named imports, never `import("three")`: a namespace import of three defeats
+// Rollup's tree-shaking and drags the whole renderer (~730 kB) into every
+// bundle that reaches this module -- which includes the GLB and surf WORKERS,
+// where nothing else needs three at all. Three classes are all this file uses.
+import { Matrix3, Matrix4, Vector3 } from "three";
+
 const GLB_CAD_UNIT_SCALE = 1000;
 const CAD_EDGE_BARYCENTRIC_ATTRIBUTE_NAMES = Object.freeze([
   "_cad_edge_barycentric",
@@ -137,13 +143,13 @@ function isBuild123dAxisCorrectionMatrix(matrix) {
   return expected.every((value, index) => Math.abs(Number(elements[index]) - value) < 1e-6);
 }
 
-function buildGlbCadRootCorrection(THREE, scene) {
+function buildGlbCadRootCorrection(scene) {
   scene?.updateWorldMatrix?.(true, true);
   const children = Array.isArray(scene?.children) ? scene.children : [];
   if (children.length !== 1 || !isBuild123dAxisCorrectionMatrix(children[0]?.matrixWorld)) {
     return null;
   }
-  return new THREE.Matrix4().copy(children[0].matrixWorld).invert();
+  return new Matrix4().copy(children[0].matrixWorld).invert();
 }
 
 function cadOccurrenceIdForObject(object) {
@@ -233,7 +239,6 @@ function countPrimitiveOutputVertices(positions, indexAttribute, sourceStart, tr
 }
 
 function inspectGlbPrimitive(
-  THREE,
   mesh,
   group,
   material,
@@ -253,11 +258,11 @@ function inspectGlbPrimitive(
   const matrixWorld = mesh.matrixWorld
     ? (
       rootCorrection
-        ? new THREE.Matrix4().multiplyMatrices(rootCorrection, mesh.matrixWorld)
-        : new THREE.Matrix4().copy(mesh.matrixWorld)
+        ? new Matrix4().multiplyMatrices(rootCorrection, mesh.matrixWorld)
+        : new Matrix4().copy(mesh.matrixWorld)
     )
     : null;
-  const normalMatrix = matrixWorld ? new THREE.Matrix3().getNormalMatrix(matrixWorld) : null;
+  const normalMatrix = matrixWorld ? new Matrix3().getNormalMatrix(matrixWorld) : null;
   const normals = geometry.getAttribute("normal");
   const surfaceEdgeBarycentric = geometryAttributeByName(geometry, CAD_EDGE_BARYCENTRIC_ATTRIBUTE_NAMES);
   const surfaceEdgeClass = geometryAttributeByName(geometry, CAD_EDGE_CLASS_ATTRIBUTE_NAMES);
@@ -308,10 +313,10 @@ function inspectGlbPrimitive(
   };
 }
 
-function writeGlbPrimitive(THREE, descriptor, output, offsets) {
+function writeGlbPrimitive(descriptor, output, offsets) {
   const partBounds = createBoundsAccumulator();
-  const positionVector = new THREE.Vector3();
-  const normalVector = new THREE.Vector3();
+  const positionVector = new Vector3();
+  const normalVector = new Vector3();
   const vertexOffset = offsets.vertexOffset;
   const triangleOffset = Math.floor(offsets.indexOffset / 3);
   let localVertexCount = 0;
@@ -411,10 +416,10 @@ function writeGlbPrimitive(THREE, descriptor, output, offsets) {
   return part;
 }
 
-function buildMeshDataFromGltf(THREE, gltf) {
+function buildMeshDataFromGltf(gltf) {
   const declaredMaterials = Array.isArray(gltf?.parser?.json?.materials) && gltf.parser.json.materials.length > 0;
   const rawMaterials = Array.isArray(gltf?.parser?.json?.materials) ? gltf.parser.json.materials : [];
-  const rootCorrection = buildGlbCadRootCorrection(THREE, gltf?.scene);
+  const rootCorrection = buildGlbCadRootCorrection(gltf?.scene);
   const hasStepTopology = !!gltf?.parser?.json?.extensions?.STEP_topology;
   // Honour a declaration; fall back to the glTF SPEC when there is none.
   //
@@ -445,7 +450,6 @@ function buildMeshDataFromGltf(THREE, gltf) {
       : [null];
     groups.forEach((group, primitiveIndex) => {
       const descriptor = inspectGlbPrimitive(
-        THREE,
         object,
         group,
         materialForGroup(object.material, group),
@@ -506,7 +510,7 @@ function buildMeshDataFromGltf(THREE, gltf) {
     indexOffset: 0,
   };
   for (const descriptor of descriptors) {
-    parts.push(writeGlbPrimitive(THREE, descriptor, output, offsets));
+    parts.push(writeGlbPrimitive(descriptor, output, offsets));
   }
   const colors = colorsOut || new Float32Array(0);
   return {
@@ -544,7 +548,10 @@ let meshoptDecoderPromise = null;
 
 function loadMeshoptDecoder() {
   if (!meshoptDecoderPromise) {
-    meshoptDecoderPromise = import("meshoptimizer")
+    // The decoder subpath, not the package root: the root re-exports the encoder,
+    // simplifier and clusterizer too, each carrying its own embedded wasm (~120 kB
+    // together, ~30 kB for the decoder alone), and a namespace import keeps them all.
+    meshoptDecoderPromise = import("meshoptimizer/decoder")
       .then(async ({ MeshoptDecoder }) => {
         await MeshoptDecoder.ready;
         return MeshoptDecoder;
@@ -557,11 +564,10 @@ function loadMeshoptDecoder() {
 }
 
 export async function buildMeshDataFromGlbBuffer(buffer) {
-  const [THREE, { GLTFLoader }, decoder] = await Promise.all([
-    import("three"),
+  const [{ GLTFLoader }, decoder] = await Promise.all([
     import("three/examples/jsm/loaders/GLTFLoader.js"),
     loadMeshoptDecoder(),
   ]);
   const gltf = await parseGlb(GLTFLoader, decoder, buffer);
-  return buildMeshDataFromGltf(THREE, gltf);
+  return buildMeshDataFromGltf(gltf);
 }

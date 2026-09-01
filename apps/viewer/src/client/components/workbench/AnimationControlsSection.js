@@ -6,6 +6,7 @@ import {
   REST_CLIP_ID
 } from "cadgen-js/common/animationClock";
 import { useAnimationClock } from "@/workbench/animationClockStore";
+import { animationClipOptions } from "@/workbench/animationClipOptions";
 import { Button } from "../ui/button";
 import { Slider } from "../ui/slider";
 import {
@@ -82,8 +83,8 @@ export default function AnimationControlsSection({ runtime = null }) {
   const error = String(runtime?.error || "").trim();
   const activeClip = clips.find((clip) => clip.id === runtime?.activeClipId) || null;
   const duration = Math.max(Number(activeClip?.duration) || 1, 0.001);
-  // Rest is a selection, not a missing one: with no clip active the model shows
-  // whatever the Pose tab set and the evaluator never runs.
+  // "No clip" is a selection, not a missing one: with no clip active the model
+  // shows whatever the Pose tab set and the evaluator never runs.
   const atRest = !activeClip;
   if (!animationControlsHaveContent(runtime)) {
     return null;
@@ -103,8 +104,10 @@ export default function AnimationControlsSection({ runtime = null }) {
         // a name (viewer/docs/settings-ui.md), and the group is the transport.
         <FileSheetSubsection title="Playback">
           {/* The section's primary control: which clip is selected reframes the
-              transport and the time/speed rows beneath it. "Rest" leaves the
-              model wherever pose put it. */}
+              transport and the time/speed rows beneath it. The built-in "No clip"
+              entry is the transport's idle state -- the model stays wherever the
+              Pose tab put it -- and sits apart from the authored clips, which are
+              grouped under their own heading (see workbench/animationClipOptions). */}
           <FileSheetSelectRow
             stacked
             label="Clip"
@@ -113,10 +116,7 @@ export default function AnimationControlsSection({ runtime = null }) {
               runtime?.onClipSelect?.(nextValue === REST_CLIP_ID ? "" : nextValue);
             }}
             ariaLabel="Animation clip"
-            options={[
-              { value: REST_CLIP_ID, label: "Rest" },
-              ...clips.map((clip) => ({ value: clip.id, label: clip.label }))
-            ]}
+            options={animationClipOptions(clips)}
           />
           {/* "Restart" is deliberately not called "Reset": it returns playback to
               zero, where the Pose tab's Reset returns the DOFs to their defaults. */}
