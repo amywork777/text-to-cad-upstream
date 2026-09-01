@@ -64,7 +64,7 @@ function fail(message) {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.dir || !path.isAbsolute(args.dir)) {
-  fail("--dir must be the absolute directory the viewer SERVES (its --root)");
+  fail("--dir must be the absolute directory the viewer SERVES (its launch cwd)");
 }
 if (!fs.existsSync(path.join(args.dir, PART_FILE))) {
   fail(`missing ${PART_FILE} under ${args.dir}`);

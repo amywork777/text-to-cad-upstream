@@ -602,11 +602,12 @@ EOF
 Identical hash lists mean identical geometry. Written DXF bytes are pure
 drawing content with no identity comments, so a rename changes nothing there.
 
-**View.** The CAD Viewer's backend is pure JS and needs no Python. Launch the
-bundled server, pointing `--root` at an absolute directory:
+**View.** The CAD Viewer's backend is stdlib-only Python. Launch the bundled
+server from the directory to serve — there is no directory flag, the cwd IS
+the served directory:
 
 ```bash
-python <viewer>/server/main.py --root /absolute/path/to/project --host 127.0.0.1 --json
+cd /absolute/path/to/project && python <viewer>/server/main.py --host 127.0.0.1 --json
 ```
 
 It serves one directory, fixed at start, and reuses a live instance already

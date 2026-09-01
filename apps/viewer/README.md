@@ -51,11 +51,13 @@ npm run dev -- --host 127.0.0.1
 # open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
-Prod (the shipped bundle — build the client first, then run the server):
+Prod (the shipped bundle — build the client first, then run the server FROM
+the directory to serve; there is no directory flag, the cwd IS the served
+directory):
 
 ```bash
 npm run build
-python server/main.py --root <absolute dir> --host 127.0.0.1 --json
+cd <the directory to serve> && python <path to>/server/main.py --host 127.0.0.1 --json
 ```
 
 `python` must be **3.11 or newer**: the server checks at startup and refuses
@@ -94,15 +96,15 @@ runs the code it started with); an explicit `--port` is strict.
 ends one. Do not stop instances you did not start. Dev lives on Vite's
 port (5173, strict) and never enters the instance registry.
 
-Reuse keys on realpath(root) × version, so an instance serving a
+Reuse keys on realpath(served directory) × version, so an instance serving a
 different directory — or the same directory from another copy of the app —
 is never handed back by mistake.
 
 ## Behaviours worth knowing before concluding something is broken
 
 - **The catalog scan skips dot-directories.** A buildable entry under
-  `.review/` (or any dotted path) never appears, even with `--root`
-  pointed straight at it.
+  `.review/` (or any dotted path) never appears, even when the server is
+  launched from inside it.
 - **Verify a link by loading the page**, never by curling `/__cad/asset` —
   that route serves raw files; generated entries render through a
   different route, so probing it 404s whether or not anything is wrong.

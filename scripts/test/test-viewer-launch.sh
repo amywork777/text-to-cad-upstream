@@ -116,7 +116,10 @@ export CADGEN_DAEMON=0
 # Isolated store: content keying would otherwise resolve the fixture against
 # the developer's real cache and skip the import this smoke test exists to run.
 export CADGEN_CACHE_DIR="$(mktemp -d)"
-"$PYTHON" "$RUNTIME/server/main.py" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
+# The launcher has no directory flag: the cwd IS the served directory, so the
+# launch cd's there first — exactly as SKILL.md instructs. `exec` makes the
+# subshell BECOME the python process, so $! is the server's pid.
+(cd "$serve_root" && exec "$PYTHON" "$RUNTIME/server/main.py" --host "$HOST" --json) > "$log" 2>&1 &
 server_pid=$!
 disown "$server_pid" 2>/dev/null || true
 
@@ -165,9 +168,9 @@ if [ "$api" != "200" ]; then
   exit 1
 fi
 
-# Launch idempotence: relaunching the same root at the same version must REUSE the
-# running viewer (same port, action:"reused"), not spawn a second instance.
-reuse_json="$("$PYTHON" "$RUNTIME/server/main.py" --root "$serve_root" --host "$HOST" --json | grep '^{' | tail -1)"
+# Launch idempotence: relaunching from the same directory at the same version must
+# REUSE the running viewer (same port, action:"reused"), not spawn a second instance.
+reuse_json="$(cd "$serve_root" && "$PYTHON" "$RUNTIME/server/main.py" --host "$HOST" --json | grep '^{' | tail -1)"
 if ! printf '%s' "$reuse_json" | grep -q '"action":"reused"'; then
   echo "FAIL: relaunching the same root did not reuse the running viewer: $reuse_json" >&2
   exit 1

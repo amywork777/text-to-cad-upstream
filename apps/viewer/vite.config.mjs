@@ -99,9 +99,9 @@ function resolveDirectoryRoot() {
 //
 // The backend runs --ephemeral --no-registry --api-only. --no-registry is a
 // CORRECTNESS requirement, not tidiness: a registered dev backend would be
-// found by a later `main.py --root <same dir>` reuse lookup at the same
-// version, handing an agent a URL served by Vite's proxy target instead of a
-// real Viewer. --api-only is what makes dev work on a checkout that has never
+// found by a later `main.py` launch from the same directory (reuse keys on the
+// served realpath at the same version), handing an agent a URL served by
+// Vite's proxy target instead of a real Viewer. --api-only is what makes dev work on a checkout that has never
 // been built: Vite serves the client here, so this backend needs no dist/ —
 // and dist/ is gitignored, so without it `npm run dev` failed on every fresh
 // clone with a complaint about a missing build.
@@ -129,12 +129,14 @@ async function startDevBackend() {
   }
 
   const python = process.env.VIEWER_PYTHON || "python3";
+  // The backend has no directory flag: its cwd IS the directory it serves. Dev
+  // still decides which directory that is (scripts/directoryRoot.mjs reads
+  // INIT_CWD, which npm sets for `npm run dev`); the hand-off is the child's
+  // cwd rather than an argument.
   const child = spawn(
     python,
     [
       path.join(viewerAppRoot, "server", "main.py"),
-      "--root",
-      directoryRoot,
       "--host",
       "127.0.0.1",
       "--ephemeral",
@@ -142,7 +144,7 @@ async function startDevBackend() {
       "--api-only",
       "--json",
     ],
-    { stdio: ["ignore", "pipe", "inherit"] },
+    { cwd: directoryRoot, stdio: ["ignore", "pipe", "inherit"] },
   );
   // The backend's stderr is INHERITED, so whatever it printed is already above
   // this line. Say only what the exit code cannot: which interpreter ran, so a

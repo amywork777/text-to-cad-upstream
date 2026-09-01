@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # The viewer is a standalone app: cadgen does not ship or launch it. What the
 # skill needs is the built SPA plus the stdlib-only Python server, laid out so
-#   <the interpreter that installed requirements.txt> scripts/viewer/server/main.py --root <abs>
+#   cd <dir to serve> && <the interpreter that installed requirements.txt> <skill>/scripts/viewer/server/main.py
 # works with NO install step for the viewer itself (the client is prebuilt, the
 # server imports nothing outside the standard library). Node is needed to BUILD
 # the client, never to run it.

@@ -42,8 +42,13 @@ class PackagedViewerLayoutTests(unittest.TestCase):
         self.assertTrue(package.get("version"), "the runtime package.json must carry a version")
 
     def test_skill_md_documents_the_start_command_and_default_port(self):
+        # The launcher has no directory flag: the cwd IS the served directory,
+        # so the documented command cd's into the workspace first and names
+        # main.py by absolute path.
         skill_md = (VIEWER_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("python scripts/viewer/server/main.py --root", skill_md)
+        self.assertIn("scripts/viewer/server/main.py --host 127.0.0.1 --json", skill_md)
+        self.assertIn("cd /absolute/project/models", skill_md)
+        self.assertNotIn("--root", skill_md, "the retired directory flag must not be documented")
         self.assertIn("3245", skill_md)
 
     def test_skill_md_no_longer_advertises_the_retired_npm_door(self):

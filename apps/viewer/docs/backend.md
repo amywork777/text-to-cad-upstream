@@ -46,11 +46,11 @@ adds a proxy hop and nothing else:
 
 ## Launching (unconditional, Jupyter-style)
 
-`main.py --root <dir>` always ends with the URL of a live, correct Viewer for that
-directory. Order of operations:
+Running `main.py` from a directory always ends with the URL of a live, correct
+Viewer for that directory. Order of operations:
 
 1. **Reuse**: unless `--new` (or an explicit `--port`) is given, the launcher looks for
-   a registry entry whose `realpath(root)` and viewer version match, identity-probed
+   a registry entry whose `realpath(served directory)` and viewer version match, identity-probed
    (`/__cad/server` must answer as the recorded pid). On a match it prints that URL
    with `action:"reused"` and exits 0. The key is never the port or the pid — keying
    reuse on the port was the old source-blind-reuse bug.
@@ -71,11 +71,13 @@ port-squatter, which is stronger than an authenticated endpoint).
 
 ## One root per instance
 
-An instance serves ONE directory, given by `--root` at startup and defaulting to the
-invoking directory. Requests never name a directory: there is no `?dir=` param, and
+An instance serves ONE directory: the one it is launched from. There is no flag
+for it — the cwd IS the served directory, so the caller chooses what to serve by
+choosing where to run (dev hands the choice down the same way, as the spawned
+backend's cwd). Requests never name a directory: there is no `?dir=` param, and
 `?file=` is always resolved inside the served root. Anything resolving outside that
 root is refused, unconditionally. Serving a second directory means launching again
-with that root (reuse-or-start makes it idempotent); `python server/main.py list`
+from it (reuse-or-start makes it idempotent); `python server/main.py list`
 reports which root each running instance holds (and `stop --port <n>` ends one).
 
 The root is resolved and checked once, in `LocalAssetBackend`'s constructor

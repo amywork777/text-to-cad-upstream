@@ -15,6 +15,8 @@ destructive.
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -69,19 +71,22 @@ class LauncherFixture(unittest.TestCase):
     def make_root(self) -> str:
         return tempfile.mkdtemp(dir=self._tmp.name, prefix="cad-root-")
 
-    def launch(self, args: list[str], **env_overrides) -> subprocess.Popen:
+    def launch(self, args: list[str], cwd: str | None = None, **env_overrides) -> subprocess.Popen:
+        # The launcher has no directory flag: the cwd IS the served directory,
+        # so fixtures choose what a launch serves by choosing its cwd.
         child = subprocess.Popen(
             [sys.executable, str(MAIN), *args],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=cwd,
             env=self.env(**env_overrides),
         )
         self._children.append(child)
         return child
 
-    def run_to_exit(self, args: list[str], timeout: float = 30.0, **env_overrides):
-        child = self.launch(args, **env_overrides)
+    def run_to_exit(self, args: list[str], timeout: float = 30.0, cwd: str | None = None, **env_overrides):
+        child = self.launch(args, cwd=cwd, **env_overrides)
         stdout, stderr = child.communicate(timeout=timeout)
         return child.returncode, stdout, stderr
 
@@ -122,7 +127,7 @@ class ExplicitPort(LauncherFixture):
         root = self.make_root()
         # Below the roll base, so it can never collide with a rolled instance.
         port = 3201
-        child = self.launch(["--root", root, "--dist", dist, "--port", str(port), "--json"])
+        child = self.launch(["--dist", dist, "--port", str(port), "--json"], cwd=root)
         stdout = self.wait_for_url_line(child)
 
         self.assertIn(f"Starting CAD Viewer at http://127.0.0.1:{port}/ (serving ", stdout)
@@ -139,7 +144,7 @@ class ExplicitPort(LauncherFixture):
         self.assertEqual(info["pid"], child.pid, "the registry probe compares this pid")
 
         # An explicit port is a demand: refuse when taken, never roll, never reuse.
-        code, _, stderr = self.run_to_exit(["--root", root, "--dist", dist, "--port", str(port)])
+        code, _, stderr = self.run_to_exit(["--dist", dist, "--port", str(port)], cwd=root)
         self.assertEqual(code, 1)
         self.assertRegex(stderr, r"already")
 
@@ -147,7 +152,7 @@ class ExplicitPort(LauncherFixture):
         # The launch smoke test greps for the literal '"action":"started"'.
         # Python's default json.dumps separators would break it.
         dist = self.make_dist()
-        child = self.launch(["--root", self.make_root(), "--dist", dist, "--port", "3202", "--json"])
+        child = self.launch(["--dist", dist, "--port", "3202", "--json"], cwd=self.make_root())
         stdout = self.wait_for_url_line(child)
         line = next(line for line in stdout.split("\n") if line.startswith("{"))
         self.assertIn('"action":"started"', line)
@@ -158,13 +163,13 @@ class ExplicitPort(LauncherFixture):
 class RollAndReuse(LauncherFixture):
     def test_default_launch_rolls_and_a_second_root_rolls_past_the_first(self) -> None:
         dist = self.make_dist()
-        first = self.launch(["--root", self.make_root(), "--dist", dist, "--json"])
+        first = self.launch(["--dist", dist, "--json"], cwd=self.make_root())
         a = self.json_line(self.wait_for_url_line(first))
         self.assertEqual(a["action"], "started")
         self.assertGreaterEqual(a["port"], 3245, "rolled port must be >= the base")
 
-        # Different root, no reuse match -> its own instance on another port.
-        second = self.launch(["--root", self.make_root(), "--dist", dist, "--json"])
+        # Different directory, no reuse match -> its own instance on another port.
+        second = self.launch(["--dist", dist, "--json"], cwd=self.make_root())
         b = self.json_line(self.wait_for_url_line(second))
         self.assertEqual(b["action"], "started")
         self.assertNotEqual(b["port"], a["port"], "an occupied candidate is rolled past, not refused")
@@ -172,38 +177,40 @@ class RollAndReuse(LauncherFixture):
     def test_same_root_reuses_and_new_forces_a_fresh_instance(self) -> None:
         dist = self.make_dist()
         root = self.make_root()
-        first = self.launch(["--root", root, "--dist", dist, "--json"])
+        first = self.launch(["--dist", dist, "--json"], cwd=root)
         a = self.json_line(self.wait_for_url_line(first))
 
-        # Reuse: same realpath(root) x version -> the existing URL, exit 0, no
-        # spawn. Note NO --dist: the dist check happens after the reuse lookup.
-        code, stdout, _ = self.run_to_exit(["--root", root, "--json"])
+        # Reuse: same realpath(served dir) x version -> the existing URL, exit 0,
+        # no spawn. Note NO --dist: the dist check happens after the reuse lookup.
+        code, stdout, _ = self.run_to_exit(["--json"], cwd=root)
         self.assertEqual(code, 0)
         self.assertEqual(
             self.json_line(stdout), {"url": a["url"], "port": a["port"], "action": "reused"}
         )
         self.assertRegex(stdout, r"Reusing CAD Viewer at ")
 
-        # Reuse must also work through a symlinked spelling of the same root.
+        # Reuse must also work when launched from a symlinked spelling of the
+        # same directory (the reuse key is the realpath).
         alias_parent = tempfile.mkdtemp(dir=self._tmp.name, prefix="cad-alias-")
         alias = os.path.join(alias_parent, "link")
         os.symlink(root, alias)
-        code, stdout, _ = self.run_to_exit(["--root", alias, "--json"])
+        code, stdout, _ = self.run_to_exit(["--json"], cwd=alias)
         self.assertEqual(code, 0)
         self.assertEqual(self.json_line(stdout)["action"], "reused")
 
         # --new bypasses the lookup and starts a second instance.
-        fresh = self.launch(["--root", root, "--dist", dist, "--json", "--new"])
+        fresh = self.launch(["--dist", dist, "--json", "--new"], cwd=root)
         c = self.json_line(self.wait_for_url_line(fresh))
         self.assertEqual(c["action"], "started")
         self.assertNotEqual(c["port"], a["port"])
 
     def test_a_no_registry_instance_is_never_reused(self) -> None:
-        # The dev backend runs --no-registry precisely so a later real launch on
-        # the same root starts fresh instead of handing back a Vite proxy target.
+        # The dev backend runs --no-registry precisely so a later real launch
+        # from the same directory starts fresh instead of handing back a Vite
+        # proxy target.
         dist = self.make_dist()
         root = self.make_root()
-        dev = self.launch(["--root", root, "--dist", dist, "--json", "--ephemeral", "--no-registry"])
+        dev = self.launch(["--dist", dist, "--json", "--ephemeral", "--no-registry"], cwd=root)
         a = self.json_line(self.wait_for_url_line(dev))
         self.assertEqual(a["action"], "started")
 
@@ -211,7 +218,7 @@ class RollAndReuse(LauncherFixture):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(stdout.strip()), [], "a --no-registry instance must not be listed")
 
-        real = self.launch(["--root", root, "--dist", dist, "--json"])
+        real = self.launch(["--dist", dist, "--json"], cwd=root)
         b = self.json_line(self.wait_for_url_line(real))
         self.assertEqual(b["action"], "started", "must start fresh, not reuse the dev backend")
         self.assertNotEqual(b["port"], a["port"])
@@ -220,7 +227,7 @@ class RollAndReuse(LauncherFixture):
         # --ephemeral exists because `--port 0` means STRICT 3245 (Number(0) is
         # falsy but still sets portExplicit), so it could not be overloaded.
         dist = self.make_dist()
-        child = self.launch(["--root", self.make_root(), "--dist", dist, "--json", "--ephemeral"])
+        child = self.launch(["--dist", dist, "--json", "--ephemeral"], cwd=self.make_root())
         payload = self.json_line(self.wait_for_url_line(child))
         self.assertGreater(payload["port"], 0)
         self.assertIn(f":{payload['port']}/", payload["url"])
@@ -241,7 +248,7 @@ class ApiOnly(LauncherFixture):
         # No --dist, and --api-only never consults the fallback either, so a
         # built checkout cannot mask the regression this pins.
         child = self.launch(
-            ["--root", self.make_root(), "--json", "--ephemeral", "--no-registry", "--api-only"]
+            ["--json", "--ephemeral", "--no-registry", "--api-only"], cwd=self.make_root()
         )
         stdout = self.wait_for_url_line(child)
         port = self.json_line(stdout)["port"]
@@ -271,10 +278,11 @@ class ApiOnly(LauncherFixture):
         self.assertFalse(os.path.exists(os.path.join(staged, "dist")))
 
         child = subprocess.Popen(
-            [sys.executable, os.path.join(staged, "server", "main.py"), "--root", self.make_root()],
+            [sys.executable, os.path.join(staged, "server", "main.py")],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=self.make_root(),
             env=self.env(),
         )
         self._children.append(child)
@@ -296,8 +304,6 @@ class ApiOnly(LauncherFixture):
             [
                 sys.executable,
                 os.path.join(staged, "server", "main.py"),
-                "--root",
-                self.make_root(),
                 "--json",
                 "--ephemeral",
                 "--no-registry",
@@ -305,6 +311,7 @@ class ApiOnly(LauncherFixture):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=self.make_root(),
             env=self.env(),
         )
         self._children.append(child)
@@ -363,13 +370,32 @@ class InterpreterFloor(unittest.TestCase):
 
 
 class Refusals(LauncherFixture):
-    def test_a_missing_root_refuses_before_binding(self) -> None:
+    @unittest.skipIf(os.name == "nt", "Windows refuses to delete a process's cwd")
+    def test_a_cwd_deleted_underfoot_refuses_before_binding(self) -> None:
+        # The served directory is the cwd, and a cwd always exists — unless it
+        # was deleted underneath the shell, in which case os.getcwd() raises.
+        # That must surface as a clean one-line refusal, not a traceback:
+        # booting anyway would answer every request with a 404 that looks like
+        # a missing model rather than a missing directory. In-process rather
+        # than a subprocess because Popen(cwd=...) refuses a missing directory
+        # in the PARENT, so a child can never be started inside one.
+        if str(APP_ROOT) not in sys.path:
+            sys.path.insert(0, str(APP_ROOT))
+        from server import main as main_module
+
         dist = self.make_dist()
-        code, _, stderr = self.run_to_exit(
-            ["--root", "/nonexistent-root-xyz", "--dist", dist, "--port", "3999"]
-        )
+        doomed = tempfile.mkdtemp(dir=self._tmp.name, prefix="cad-doomed-")
+        held = os.getcwd()
+        os.chdir(doomed)
+        try:
+            os.rmdir(doomed)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = main_module.main(["--dist", dist, "--port", "3999"])
+        finally:
+            os.chdir(held)
         self.assertEqual(code, 1)
-        self.assertRegex(stderr, r"root is not a directory")
+        self.assertIn("no longer exists", stderr.getvalue())
 
     def test_dist_resolution_falls_back_and_then_gives_up(self) -> None:
         # Tested at the function rather than through a launch, because the
@@ -395,7 +421,7 @@ class ListAndStop(LauncherFixture):
     def test_list_reports_a_running_instance_and_stop_terminates_it(self) -> None:
         dist = self.make_dist()
         root = self.make_root()
-        child = self.launch(["--root", root, "--dist", dist, "--json"])
+        child = self.launch(["--dist", dist, "--json"], cwd=root)
         started = self.json_line(self.wait_for_url_line(child))
         port = started["port"]
 
@@ -404,7 +430,9 @@ class ListAndStop(LauncherFixture):
         self.assertIn("1 CAD Viewer running:", stdout)
         # The launch smoke test greps for this exact two-space-separated token.
         self.assertIn(f"port {port}", stdout)
-        self.assertIn(f"serving  {root}", stdout)
+        # os.getcwd() answers with the PHYSICAL path (macOS's /var is a symlink
+        # to /private/var), so the registry records the realpath spelling.
+        self.assertIn(f"serving  {os.path.realpath(root)}", stdout)
 
         code, stdout, _ = self.run_to_exit(["list", "--json"])
         entries = json.loads(stdout.strip())
@@ -459,10 +487,12 @@ class ArgumentGrammar(unittest.TestCase):
         cls.parse_args = staticmethod(main_module.parse_args)
         cls.main_module = main_module
 
-    def test_unknown_arguments_are_tolerated(self) -> None:
+    def test_parsing_continues_past_an_unknown_and_records_the_first(self) -> None:
         # This is why the launcher cannot use argparse: argparse errors here.
-        args = self.parse_args(["--root", "/x", "--totally-unknown", "value", "--json"])
-        self.assertEqual(args["root"], "/x")
+        # parse_args records the refusal (main exits 2 on it) but keeps parsing,
+        # so the refusal message can be exact while later flags still land.
+        args = self.parse_args(["--totally-unknown", "value", "--json"])
+        self.assertEqual(args["unknown"], "--totally-unknown")
         self.assertTrue(args["json"])
 
     def test_port_zero_and_garbage_both_mean_strict_default(self) -> None:
@@ -502,36 +532,21 @@ class ArgumentGrammar(unittest.TestCase):
                 self.assertFalse(args[other], f"{argument} must not imply --{other}")
 
     def test_repeated_flags_take_the_last_value(self) -> None:
-        self.assertEqual(self.parse_args(["--root", "/a", "--root", "/b"])["root"], "/b")
+        self.assertEqual(self.parse_args(["--host", "a", "--host", "b"])["host"], "b")
 
-    def test_explicit_root_is_taken_verbatim_even_inside_the_viewer_app(self) -> None:
-        # The viewer-app refusal is a footgun guard on the CWD fallback, never a
-        # boundary: an explicit --root is accepted without complaint.
-        resolved = self.main_module.resolve_directory_root(root=str(APP_ROOT))
-        self.assertEqual(resolved, str(APP_ROOT))
-
-    def test_the_cwd_is_served_even_inside_the_app(self) -> None:
-        # No special cases: --root else the cwd. Serving the app's own
-        # directory is legitimate, and refusing it would block launching from
+    def test_the_served_directory_is_the_cwd_with_no_special_cases(self) -> None:
+        # No flag, no environment variable: the cwd IS the served directory,
+        # even inside the app itself — serving the Viewer's own directory is
+        # legitimate (its fixtures), and refusing it would block launching from
         # inside a skill bundle.
         for cwd in (str(APP_ROOT), str(APP_ROOT / "server")):
             with self.subTest(cwd=cwd):
-                self.assertEqual(
-                    self.main_module.resolve_directory_root(root="", env={}, cwd=cwd), cwd
-                )
-
-    def test_a_relative_root_resolves_against_the_cwd(self) -> None:
-        self.assertEqual(
-            self.main_module.resolve_directory_root(root="models", env={}, cwd="/tmp"),
-            os.path.join("/tmp", "models"),
-        )
-
-    def test_an_explicit_root_still_wins_from_inside_the_app(self) -> None:
-        target = str(APP_ROOT.parent)
-        self.assertEqual(
-            self.main_module.resolve_directory_root(root=target, env={}, cwd=str(APP_ROOT)),
-            target,
-        )
+                held = os.getcwd()
+                os.chdir(cwd)
+                try:
+                    self.assertEqual(self.main_module.served_directory(), cwd)
+                finally:
+                    os.chdir(held)
 
 
 class ArgumentSurface(unittest.TestCase):
@@ -539,8 +554,8 @@ class ArgumentSurface(unittest.TestCase):
     a tolerated typo silently changes what it serves.
 
     Both were real: `main.py --help` used to fall through the parser and boot an
-    instance, and `--dir <path>` (the wrong spelling of --root) started a viewer
-    on the invocation directory and served an empty catalog while looking fine.
+    instance, and a misspelled flag started a viewer on the invocation directory
+    and served an empty catalog while looking fine.
     """
 
     def _run(self, *argv: str) -> subprocess.CompletedProcess:
@@ -555,7 +570,8 @@ class ArgumentSurface(unittest.TestCase):
         result = self._run("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("usage: python server/main.py", result.stdout)
-        self.assertIn("--root", result.stdout)
+        self.assertIn("--host", result.stdout)
+        self.assertNotIn("--root", result.stdout, "the launcher has no directory flag")
         self.assertEqual(result.stderr, "")
 
     def test_short_help_is_the_same_answer(self) -> None:
@@ -567,6 +583,14 @@ class ArgumentSurface(unittest.TestCase):
         # The FIRST unknown token, not the value that trailed it.
         self.assertIn("unknown argument: --dir", result.stderr)
         self.assertNotIn("/tmp", result.stderr.splitlines()[0])
+
+    def test_the_retired_root_flag_is_refused_not_silently_dropped(self) -> None:
+        # The served directory is the cwd now. An old-style `--root <dir>`
+        # invocation must refuse rather than boot a viewer serving the wrong
+        # directory (the cwd) while looking successful.
+        result = self._run("--root", "/tmp")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unknown argument: --root", result.stderr)
 
 
 if __name__ == "__main__":

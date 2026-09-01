@@ -56,7 +56,7 @@ function fail(message) {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.dir || !path.isAbsolute(args.dir)) {
-  fail("--dir must be the absolute directory the viewer SERVES (its --root)");
+  fail("--dir must be the absolute directory the viewer SERVES (its launch cwd)");
 }
 // --dir is the served root; the plate may sit at models/... under a repo root
 // or directly under a models root. ?file= resolves against the SERVED root,

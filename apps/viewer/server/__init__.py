@@ -1,9 +1,10 @@
 """CAD Viewer backend.
 
 A stdlib-only Python HTTP server for the built React client in ``dist/``. It is
-launched directly — there is nothing to pip install for the server itself:
+launched directly, from the directory it should serve (the cwd IS the served
+directory) — there is nothing to pip install for the server itself:
 
-    <python> server/main.py --root /absolute/dir
+    cd /absolute/dir && <python> <path to>/server/main.py
 
 ``cadgen`` is imported LAZILY, and only on the STEP-import path. Nothing in this
 package may import it at module scope: viewing a directory of existing models

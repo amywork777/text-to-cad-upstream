@@ -200,7 +200,7 @@ async function main() {
     page.on("pageerror", onPageError);
     page.on("console", onConsole);
 
-    // The viewer under test must already be serving modelsRoot (--root): the URL carries
+    // The viewer under test must already be serving modelsRoot (its launch cwd): the URL carries
     // only the file, because a request cannot name its own directory.
     const url = `${args.url}?file=${encodeURIComponent(fixture.file)}`;
     await page.goto(url, { waitUntil: "domcontentloaded" });

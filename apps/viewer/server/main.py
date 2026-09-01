@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Single-port CAD Viewer server and instance manager.
 
-Launching is UNCONDITIONAL, Jupyter-style: ``main.py --root <dir>`` always ends
-with the URL of a live, correct Viewer for that directory. If an
-identity-probed instance already serves ``realpath(root)`` at this viewer
+Launching is UNCONDITIONAL, Jupyter-style: running ``main.py`` from a directory
+always ends with the URL of a live, correct Viewer for that directory. If an
+identity-probed instance already serves ``realpath(cwd)`` at this viewer
 version, its URL is printed with ``action:"reused"`` and nothing is spawned
 (``--new`` skips the lookup); otherwise the server binds the first free port
 from 3245 upward and prints ``action:"started"``. An EXPLICIT ``--port`` stays
@@ -22,17 +22,19 @@ free port), ``--no-registry`` (stay out of reuse), and ``--api-only`` (serve the
 two API prefixes and nothing else, because Vite owns the client — this is what
 lets ``npm run dev`` work on a checkout that has never been built).
 
-A Viewer serves ONE directory, given by ``--root`` and defaulting to the
-invoking directory. The page is always the bare origin; ``?file=`` selects a
-file inside that root. To serve a second directory, just launch again with that
-root.
+A Viewer serves ONE directory: the one it is launched from. There is no flag
+for it — the cwd IS the served directory, so the caller chooses what to serve
+by choosing where to run. The page is always the bare origin; ``?file=``
+selects a file inside that directory. To serve a second directory, just launch
+again from it.
 
 cadgen is NOT required to start: without it the viewer serves packaged models
 read-only and importing a foreign STEP answers with an install hint.
 
 Launch is::
 
-    <the interpreter that installed requirements.txt> server/main.py --root <abs>
+    cd <the directory to serve>
+    <the interpreter that installed requirements.txt> <path to>/server/main.py
 
 There is no interpreter discovery, and deliberately so: the previous backend
 searched ``$CADGEN_PYTHON``, ``PATH``, and ``<servedRoot>/.venv/bin/python``,
@@ -91,7 +93,7 @@ def unsupported_python_message(version_info=None, executable: str = "") -> str:
         "    {executable}\n"
         "\n"
         "Run the server with a newer one:\n"
-        "    {newer} server/main.py --root <absolute dir>\n"
+        "    {newer} server/main.py\n"
         "For `npm run dev`, name it with VIEWER_PYTHON:\n"
         "    VIEWER_PYTHON={newer} npm run dev\n"
         "\n"
@@ -178,7 +180,6 @@ def parse_args(argv: list[str]) -> dict:
         # Explicit --port means "this port or fail"; the default means "any free
         # port from the base" and enables the reuse lookup + roll.
         "port_explicit": False,
-        "root": "",
         "dist": "",
         "json": False,
         "open": False,
@@ -209,9 +210,6 @@ def parse_args(argv: list[str]) -> dict:
                 parsed = 0
             args["port"] = parsed or args["port"]
             args["port_explicit"] = True
-        elif arg == "--root":
-            index += 1
-            args["root"] = (argv[index] if index < len(argv) else "") or ""
         elif arg == "--dist":
             index += 1
             args["dist"] = (argv[index] if index < len(argv) else "") or ""
@@ -231,10 +229,11 @@ def parse_args(argv: list[str]) -> dict:
             args["help"] = True
         else:
             # An unknown argument is a REFUSAL, not a shrug. Tolerating them
-            # meant a typo silently changed what the viewer did: `--dir <path>`
-            # instead of `--root <path>` started a viewer on the wrong
-            # directory and served an empty catalog, and `--help` started a
-            # server instead of answering.
+            # meant a typo silently changed what the viewer did: a misspelled
+            # flag started a viewer on the wrong directory and served an empty
+            # catalog, and `--help` started a server instead of answering.
+            # This also catches the retired `--root <dir>`: the served
+            # directory is the cwd now, chosen by launching from it.
             # The FIRST unknown is the useful one: `--dir /tmp` should name
             # --dir, not the path that followed it.
             if not args["unknown"]:
@@ -253,17 +252,22 @@ def _path_inside(candidate: str, container: str) -> bool:
     )
 
 
-def resolve_directory_root(*, root: str = "", env=None, cwd: str | None = None) -> str:
-    """The directory this Viewer serves: ``--root``, else the cwd.
+def served_directory() -> str:
+    """The directory this Viewer serves: the cwd, full stop.
 
-    No special cases. Serving the app's own directory is a legitimate thing to
-    ask for — it is how you look at the Viewer's own fixtures, and refusing it
-    would block launching from inside a skill bundle. Callers that must not
-    inherit an arbitrary cwd say so by passing ``--root``; the cad-viewer skill
-    instructs exactly that.
+    No flag, no environment variable, no special cases. Serving the app's own
+    directory is a legitimate thing to ask for — it is how you look at the
+    Viewer's own fixtures — so nothing here has opinions about where you stand.
+    Callers choose what to serve by choosing where to launch; the cad-viewer
+    skill instructs exactly that (cd into the model workspace first).
+
+    ``os.getcwd()`` can fail: a cwd deleted underneath the shell raises
+    ``FileNotFoundError``. That is surfaced as a clean refusal by ``main`` —
+    booting a viewer for a directory that no longer exists would answer every
+    request with a 404 that looks like a missing model rather than a missing
+    directory.
     """
-    cwd = os.getcwd() if cwd is None else cwd
-    return os.path.abspath(os.path.join(cwd, root) if root else cwd)
+    return os.path.abspath(os.getcwd())
 
 
 def resolve_dist_dir(explicit: str) -> str:
@@ -494,14 +498,14 @@ def _bind(host: str, port: int, args: dict) -> CadHTTPServer:
             port += 1
 
 
-USAGE = """usage: python server/main.py [--root DIR] [--host HOST] [--port N] [--new]
+USAGE = """usage: python server/main.py [--host HOST] [--port N] [--new]
        python server/main.py list
        python server/main.py stop --port N | --pid N
 
-Serve ONE directory of CAD artifacts. The page is always the bare origin;
-`?file=` selects an artifact inside the root.
+Serve ONE directory of CAD artifacts: the directory you run it from. There is
+no flag for it — cd there first. The page is always the bare origin; `?file=`
+selects an artifact inside that directory.
 
-  --root DIR      the directory to serve (default: where you invoked it)
   --host HOST     bind address (default: 127.0.0.1)
   --port N        strict: this port or fail. Default rolls from 3245 upward.
   --dist DIR      built client to serve (default: the app's own dist/)
@@ -537,11 +541,13 @@ def main(argv: list[str] | None = None) -> int:
         _err("run with --help for the arguments this launcher takes\n")
         return 2
 
-    directory = resolve_directory_root(root=args["root"])
-    if not os.path.isdir(directory):
-        # Booting a viewer whose root does not exist would answer every request
-        # with a 404 that looks like a missing model rather than a missing root.
-        _err(f"CAD Viewer root is not a directory: {directory}\n")
+    try:
+        directory = served_directory()
+    except OSError as error:
+        # A cwd deleted underneath the shell. Booting a viewer for a directory
+        # that no longer exists would answer every request with a 404 that
+        # looks like a missing model rather than a missing directory.
+        _err(f"CAD Viewer cannot serve the current directory — it no longer exists ({error}).\n")
         return 1
 
     # Reuse before spawn: a live, identity-probed instance already serving this

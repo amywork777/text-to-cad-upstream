@@ -189,14 +189,16 @@ and deliberately lives here.
 
 Launching from a lightweight worktree. The server IS the Python process now, so
 the interpreter you launch with is the only place cadgen is looked for — there
-is no `CADGEN_PYTHON` hand-down any more. Use the primary checkout's venv with
-the WORKTREE's cadgen sources on `PYTHONPATH`, or the worktree exercises the
-main checkout's cadgen:
+is no `CADGEN_PYTHON` hand-down any more. The served directory is the cwd (there
+is no directory flag), so `cd` into the worktree's `models/` first. Use the
+primary checkout's venv with the WORKTREE's cadgen sources on `PYTHONPATH`, or
+the worktree exercises the main checkout's cadgen:
 
 ```bash
+cd <worktree>/models && \
 PYTHONPATH=<worktree>/packages/cadgen/src \
 <main>/.venv/bin/python <worktree>/apps/viewer/server/main.py \
-  --root <worktree>/models --dist <worktree>/apps/viewer/dist \
+  --dist <worktree>/apps/viewer/dist \
   --host 127.0.0.1 --json
 ```
 
