@@ -260,7 +260,6 @@ def build_step_topology_index_manifest(
         "bbox",
         "stats",
         "edgeRendering",
-        "mesh",
     ):
         value = manifest.get(key)
         if value is not None:

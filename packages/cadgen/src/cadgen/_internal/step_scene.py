@@ -64,7 +64,6 @@ from cadgen._internal.glb_topology import (
     step_edge_surface_class_code,
     step_topology_capabilities,
 )
-from cadgen.metadata import MeshSettings
 from cadgen.selector_types import SelectorBundle, SelectorProfile
 from cadgen._internal.step_hash import step_file_hash
 

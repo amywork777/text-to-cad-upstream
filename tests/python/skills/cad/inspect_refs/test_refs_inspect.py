@@ -415,21 +415,6 @@ class InspectRefsTests(unittest.TestCase):
             "visibilityClassCounts": {"feature": 1},
             "generatedVisibilityClassCounts": {"feature": 1},
         }
-        mesh = {
-            "linearDeflection": 0.006,
-            "angularDeflection": 0.2,
-            "relative": True,
-            "resolution": {
-                "profile": "extra-fine",
-                "hints": {
-                    "effectiveComplexityScore": 2,
-                    "curvaturePressureScore": 2,
-                    "leafOccurrenceCount": 1,
-                    "occurrenceFaceCount": 2,
-                    "occurrenceEdgeCount": 2,
-                },
-            },
-        }
         topology_manifest = {"schemaVersion": STEP_TOPOLOGY_SCHEMA_VERSION, **manifest}
         source_kind = str(topology_manifest.get("sourceKind") or "step").strip().lower()
         source_path = resolved_step_path.with_suffix(".py") if source_kind == "python" else resolved_step_path
@@ -437,7 +422,6 @@ class InspectRefsTests(unittest.TestCase):
         topology_manifest.setdefault("sourcePath", self._manifest_path(source_path))
         topology_manifest.setdefault("stepPath", self._manifest_path(resolved_step_path))
         topology_manifest.setdefault("edgeRendering", edge_rendering)
-        topology_manifest.setdefault("mesh", mesh)
         selector_topology_manifest = {
             key: value for key, value in topology_manifest.items() if key not in strip_selector_keys
         }

@@ -14,10 +14,15 @@ the descriptor shape, the ``.surf`` container (``SURF_VERSION``), the
 embedded topology tables, component serialization — one number, one
 signal, one regeneration.
 
-Stdlib-only on purpose: the viewer's JS mirror is ``CACHE_SCHEMA_VERSION``
+Stdlib-only on purpose: the viewer's mirror is ``CACHE_SCHEMA_VERSION``
 in ``apps/viewer/server/store_paths.py``, pinned against this literal by
 ``tests/python/global/test_render_contract_sync.py`` so a one-sided bump
 cannot ship.
 """
 
-CACHE_SCHEMA_VERSION = 16
+# 17: the descriptor's ``mesh`` section is gone. A render package stores
+# surfaces, not triangles, so the deflection numbers it recorded described a
+# mesher this package no longer contains, and the adaptive ``resolution``
+# beside them was the input to a decision the descriptor already records the
+# output of (``edgeRendering.visibilityClasses``).
+CACHE_SCHEMA_VERSION = 17

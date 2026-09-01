@@ -195,6 +195,46 @@ test("GLB is Y-up and meter-scaled: CAD mm (x, y, z) lands at (x, z, -y)/1000", 
   assert.deepEqual(positionAccessor.max, [0.0010000000474974513, 0, 0]);
 });
 
+test("an exported GLB round-trips through the viewer's loader back to the CAD it came from", async () => {
+  // The writer test above pins the bytes; this pins the WHOLE loop, which is where the
+  // "GLBs render on their side" bug lived. The exported file was always a conformant
+  // Y-up one — the reader inferred its space from cadOccurrenceId (stamped on every node
+  // cadgen writes), decided it was already CAD, skipped the -90-degrees-about-X
+  // correction, and put a flat plate on its edge at the right size.
+  //
+  // A 40 x 20 x 4 mm plate: the giveaway is which axis carries the 4 mm.
+  const plate = {
+    // Two triangles of the plate's top face plus one of a side wall: enough for the
+    // bounding box to have a distinct extent on all three CAD axes.
+    positions: new Float32Array([
+      0, 0, 4, 40, 0, 4, 40, 20, 4,
+      0, 0, 4, 40, 20, 4, 0, 20, 4,
+      0, 0, 0, 40, 0, 0, 40, 0, 4,
+    ]),
+    normals: new Float32Array([
+      0, 0, 1, 0, 0, 1, 0, 0, 1,
+      0, 0, 1, 0, 0, 1, 0, 0, 1,
+      0, -1, 0, 0, -1, 0, 0, -1, 0,
+    ]),
+    indices: new Uint32Array([0, 1, 2, 3, 4, 5, 6, 7, 8]),
+    faceRanges: [{ ord: 0, color: null, indexStart: 0, indexCount: 9 }],
+    partColor: null,
+  };
+  const descriptor = descriptorWith([{ id: "o1", component: "c0", transform: IDENTITY }]);
+  const mesh = buildPackageMeshPrimitives(descriptor, new Map([["c0", plate]]));
+  const bytes = packageMeshToGlb(mesh, { name: "plate" });
+
+  const { buildMeshDataFromGlbBuffer } = await import("../render/glbMeshData.js");
+  const meshData = await buildMeshDataFromGlbBuffer(
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+  );
+  const size = [0, 1, 2].map((axis) => meshData.bounds.max[axis] - meshData.bounds.min[axis]);
+  size.forEach((value, axis) => assert.ok(
+    Math.abs(value - [40, 20, 4][axis]) < 1e-3,
+    `axis ${axis}: ${value} mm, expected ${[40, 20, 4][axis]} mm — the plate came back rotated`,
+  ));
+});
+
 test("STL: valid binary envelope, colorless, deterministic", () => {
   const descriptor = descriptorWith([{ id: "o1", component: "c0", transform: IDENTITY }]);
   const mesh = buildPackageMeshPrimitives(descriptor, new Map([["c0", triangleTessellation()]]));

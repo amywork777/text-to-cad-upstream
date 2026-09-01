@@ -137,7 +137,11 @@ try {
   }
   const glb = writeGlb(
     { primitives, name, units: "mm" },
-    { preset: "export", sourceKind: "dxf", occurrenceIdPrefix: "dxf" },
+    // upAxis: "z" — the positions above went through dxfSoupToGlbPositions, which
+    // rotates the mesher's Y-up frame into CAD Z-up. This file is therefore NOT in the
+    // glTF convention, and the declaration is what keeps the sheet lying flat instead of
+    // being rotated a second time by the viewer's Y-up correction.
+    { preset: "export", sourceKind: "dxf", occurrenceIdPrefix: "dxf", upAxis: "z" },
   );
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const temporary = `${outPath}.${process.pid}.tmp`;

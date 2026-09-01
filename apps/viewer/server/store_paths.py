@@ -66,7 +66,7 @@ __all__ = [
 # (``<hash>-v<N>``), so a bump orphans old artifacts BY NAME and everything
 # regenerates on demand. No artifact records a version inside itself: a package
 # that resolves at all is current-scheme by construction.
-CACHE_SCHEMA_VERSION = 16
+CACHE_SCHEMA_VERSION = 17
 
 # The source sidecar sits beside the model at ``<name>.step.json`` and carries
 # the model's DECLARATIONS. APPENDED to the artifact's whole name, so

@@ -22,6 +22,7 @@ function uint32Buffer(values) {
 
 function makeOccurrenceGlb({
   cadExtras = true,
+  upAxis = null,
   stepTopology = false,
   materialBaseColor = null,
   materialExtras = null
@@ -62,7 +63,14 @@ function makeOccurrenceGlb({
       {
         name: "leaf",
         mesh: 0,
-        ...(cadExtras ? { extras: { cadOccurrenceId: "o1.2" } } : {})
+        ...(cadExtras || upAxis
+          ? {
+              extras: {
+                ...(cadExtras ? { cadOccurrenceId: "o1.2" } : {}),
+                ...(upAxis ? { cadUpAxis: upAxis } : {})
+              }
+            }
+          : {})
       }
     ],
     meshes: [
@@ -401,6 +409,23 @@ function makeIndexedMaterialOccurrenceGlb({
   return glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength);
 }
 
+/** The fixture triangle is 1mm along +X and 1mm along glTF's +Y (out of the sheet). */
+const Y_UP_UNCONVERTED = [
+  0, 0, 0,
+  1, 0, 0,
+  0, 1, 0
+];
+/** The same triangle after the Y-up -> CAD Z-up correction: (x, y, z) -> (x, -z, y). */
+const CONVERTED_TO_CAD = [
+  0, 0, 0,
+  1, 0, 0,
+  0, 0, 1
+];
+
+function cadVertices(meshData) {
+  return Array.from(meshData.vertices, (value) => (Object.is(value, -0) ? 0 : value));
+}
+
 test("GLB mesh data preserves cadOccurrenceId node extras", async () => {
   const meshData = await buildMeshDataFromGlbBuffer(makeOccurrenceGlb());
 
@@ -408,11 +433,10 @@ test("GLB mesh data preserves cadOccurrenceId node extras", async () => {
   assert.equal(meshData.parts[0].id, "o1.2");
   assert.equal(meshData.parts[0].occurrenceId, "o1.2");
   assert.equal(meshData.parts[0].primitiveIndex, 0);
-  assert.deepEqual(Array.from(meshData.vertices, (value) => Object.is(value, -0) ? 0 : value), [
-    0, 0, 0,
-    1, 0, 0,
-    0, 1, 0
-  ]);
+  // An occurrence id is an identity NAMESPACE and says NOTHING about orientation. It was
+  // once read as "already CAD space", which skipped the correction for every GLB cadgen
+  // wrote (both presets stamp the id) and rendered them on their side.
+  assert.deepEqual(cadVertices(meshData), CONVERTED_TO_CAD);
 });
 
 test("native GLB mesh data converts Y-up meters to CAD Z-up millimeters", async () => {
@@ -421,11 +445,32 @@ test("native GLB mesh data converts Y-up meters to CAD Z-up millimeters", async 
   assert.equal(meshData.parts.length, 1);
   assert.equal(meshData.parts[0].id, "glb:0");
   assert.equal(meshData.parts[0].label, "leaf");
-  assert.deepEqual(Array.from(meshData.vertices, (value) => Object.is(value, -0) ? 0 : value), [
-    0, 0, 0,
-    1, 0, 0,
-    0, 0, 1
-  ]);
+  assert.deepEqual(cadVertices(meshData), CONVERTED_TO_CAD);
+});
+
+test("a GLB DECLARING glTF Y-up is converted, occurrence ids or not", async () => {
+  // The regression: an inferred coordinate space. Both of these carry cadOccurrenceId,
+  // which used to veto the correction; the declaration is what the reader must obey.
+  const declared = await buildMeshDataFromGlbBuffer(makeOccurrenceGlb({ upAxis: "y" }));
+  assert.deepEqual(cadVertices(declared), CONVERTED_TO_CAD);
+  const declaredWithoutIds = await buildMeshDataFromGlbBuffer(
+    makeOccurrenceGlb({ upAxis: "y", cadExtras: false })
+  );
+  assert.deepEqual(cadVertices(declaredWithoutIds), CONVERTED_TO_CAD);
+});
+
+test("a GLB DECLARING CAD Z-up is left alone", async () => {
+  // bin/dxf-mesh.mjs pre-rotates its positions, so correcting again would stand the
+  // drawing on its edge. Only the declaration distinguishes it from the file above.
+  const meshData = await buildMeshDataFromGlbBuffer(makeOccurrenceGlb({ upAxis: "z" }));
+  assert.deepEqual(cadVertices(meshData), Y_UP_UNCONVERTED);
+});
+
+test("STEP topology still means CAD space when nothing is declared", async () => {
+  const meshData = await buildMeshDataFromGlbBuffer(
+    makeOccurrenceGlb({ stepTopology: true })
+  );
+  assert.deepEqual(cadVertices(meshData), Y_UP_UNCONVERTED);
 });
 
 test("STEP GLB mesh data ignores generated default material colors", async () => {

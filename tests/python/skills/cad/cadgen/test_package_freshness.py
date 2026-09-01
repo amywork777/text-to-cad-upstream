@@ -178,11 +178,6 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
         return {
             "kind": PACKAGE_KIND,
             "components": {"abc": {"glb": "components/abc.glb"}},
-            "mesh": {
-                "linearDeflection": options.chord_tolerance,
-                "angularDeflection": options.angle_tolerance,
-                "relative": options.relative,
-            },
             "edgeRendering": {"visibilityClasses": list(options.edge_visibility_classes)},
         }
 
@@ -200,6 +195,22 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
 
     def test_a_well_formed_package_descriptor_is_current(self) -> None:
         self.assertTrue(self._match(self._descriptor(self.options)))
+
+    def test_edge_visibility_classes_are_the_one_remaining_option_gate(self) -> None:
+        # A package built feature-edges-only cannot serve a request for the
+        # full class set: the classes are baked into the components. This is
+        # what is left of the options comparison now that the descriptor
+        # records no mesh settings — those numbers reached no tessellator, so
+        # a mismatch could only ever trigger a rebuild that rewrote them.
+        descriptor = self._descriptor(self.options)
+        descriptor["edgeRendering"] = {"visibilityClasses": ["feature"]}
+        self.assertFalse(self._match(descriptor))
+
+    def test_descriptor_carries_no_mesh_section(self) -> None:
+        # Guards the schema-17 shape at the WRITE site: a render package stores
+        # surfaces, and the client tessellates them with the JS tessellator's
+        # own relative tolerances.
+        self.assertNotIn("mesh", self._descriptor(self.options))
 
     def test_schema_gating_lives_in_the_package_key(self) -> None:
         # The store key is <hash>-v<CACHE_SCHEMA_VERSION>: a version bump

@@ -26,7 +26,7 @@ from cadgen._internal.generation import (
 )
 from cadgen.coordination import PHASE_GENERATE, STEP_PACKAGE, ProgressEvent, artifact_build
 from cadgen.metadata import normalize_mesh_numeric
-from cadgen.catalog import render_package_dir
+from cadgen.catalog import coordination_scope, render_package_dir
 from cadgen.render import relative_to_cwd
 from cadgen._internal.step_scene import LoadedStepScene, load_step_scene, step_file_hash
 from cadgen.catalog import iter_cad_sources, source_from_path
@@ -401,14 +401,26 @@ def build_step_artifact(
     # behind one used to wake up and redo the full generator+mesh the holder had just
     # finished. Measured before this: two processes 0.3s apart on a cold package both ran
     # gen_step(), the second for a further 2.5s after waiting 2.67s for the lock.
+    #
+    # Coordination keys by the MODEL PATH, never by the content-keyed package dir. A
+    # rebuild changes the document's content key mid-build, so a package-keyed lock does
+    # not exclude two runs of one model, and no reader could know the new key in advance:
+    # the viewer's progress reader derives its record path from the model path it is
+    # polling (apps/viewer/server/store_paths.py coordination_scope). Keying the build here
+    # by the package dir put the progress record in packages/ under the content hash while
+    # the viewer watched locks/ under the path key, so every poll of a viewer-started
+    # import found nothing and the overlay fell back to a bare indeterminate bar.
+    # `package_dir` stays because the RESULT payloads name the package; only the
+    # coordination identity is path-keyed.
     package_dir = render_package_dir(existing_spec.entry_path) if existing_spec.entry_path else None
+    scope = coordination_scope(existing_spec.entry_path) if existing_spec.entry_path else None
     # This builds exactly what a model-script run builds, and reported nothing while doing it:
     # the sidecar went to the viewer and a terminal caller watched a silent process.
     with cli_progress_line(
         existing_spec.source_ref, logger=logger, fallback="Building..."
     ) as progress_sink, artifact_build(
         STEP_PACKAGE,
-        package_dir,
+        scope,
         is_current=lambda: _current_artifact_for_spec(existing_spec) is not None,
         force=force,
         deadline_ms=deadline_ms(lock_timeout_s),

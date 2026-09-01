@@ -11,8 +11,6 @@ from OCP.TopExp import TopExp
 from OCP.TopTools import TopTools_IndexedMapOfShape
 from OCP.TopoDS import TopoDS
 
-from cadgen.metadata import MeshSettings
-
 from cadgen._internal.step_scene_package import load_step_scene_cached
 from cadgen._internal.step_scene_geometry import _bbox_from_points, _bbox_from_shape, _merge_bbox, _transform_bbox
 from cadgen._internal.step_scene_loader import _located_shape, _selector_id
@@ -251,11 +249,11 @@ def _scene_mesh_resolution_hints(scene: LoadedStepScene) -> dict[str, Any]:
         + (float(prototype_curved_face_count) * 0.8)
         + (float(prototype_curved_edge_count) * 0.4)
     )
-    # The diagonal is computed UNCONDITIONALLY: the meter-scale deflection floor
-    # in adaptive_mesh_resolution_from_hints depends on it, and the scenes that
-    # need the floor most (thousands of occurrence faces, e.g. a full launch
-    # stack) are exactly the ones a face-count guard would skip. The cost is
-    # small: _bbox_from_shape uses BRepBndLib without tessellation per unique
+    # The diagonal is computed UNCONDITIONALLY: ``scale_factor`` below is the
+    # only thing size contributes to the profile, and the scenes where size
+    # matters most (thousands of occurrence faces, e.g. a full launch stack)
+    # are exactly the ones a face-count guard would skip. The cost is small:
+    # _bbox_from_shape uses BRepBndLib without tessellation per unique
     # prototype, plus an 8-corner transform per leaf occurrence.
     prototype_boxes = {
         key: _bbox_from_shape(shape, tight=False)
@@ -296,12 +294,21 @@ def _scene_mesh_resolution_hints(scene: LoadedStepScene) -> dict[str, Any]:
 
 
 def adaptive_mesh_resolution_from_hints(hints: dict[str, Any]) -> AdaptiveMeshResolution:
-    # PROVENANCE ONLY: the ``settings`` numbers below reach no tessellator. The
-    # one tessellator is JS (packages/cadgen-js/src/lib/surf/tessellate.js) and
-    # takes RELATIVE tolerances of its own; these ride into the package
-    # descriptor's mesh section and drive the freshness comparison, nothing
-    # else. The scale-floor note further down describes the historical OCCT
-    # mesher's cost, not a cost anything pays today.
+    """Classify a scene's topology into a render ``profile``.
+
+    The profile is the ONE thing this resolver still decides, and it decides it
+    for edge rendering: ``_edge_visibility_classes_for_resolution`` turns
+    profile + hints into the visibility classes the package is built with, so a
+    scene that lands on ``coarse-assembly`` renders feature edges only. It
+    decides nothing about tessellation — the one tessellator is JS
+    (``packages/cadgen-js/src/lib/surf/tessellate.js``) and takes relative
+    tolerances of its own.
+
+    The thresholds below are therefore a complexity ladder, not a quality
+    ladder: each rung says "this much topology", and only the top two rungs
+    have a consequence today. They stay graded past that point because the
+    profile name rides into the render decision and reads as an ordered scale.
+    """
     effective_score = float(hints["effectiveComplexityScore"])
     curvature_pressure = float(hints["curvaturePressureScore"])
     leaf_count = int(hints["leafOccurrenceCount"])
@@ -310,7 +317,6 @@ def adaptive_mesh_resolution_from_hints(hints: dict[str, Any]) -> AdaptiveMeshRe
 
     if face_count >= 20000 or edge_count >= 55000 or effective_score >= 45000 or curvature_pressure >= 45000:
         profile = "large-topology"
-        settings = MeshSettings(tolerance=0.025, angular_tolerance=0.75)
     elif (
         face_count >= 8000
         or edge_count >= 22000
@@ -319,7 +325,6 @@ def adaptive_mesh_resolution_from_hints(hints: dict[str, Any]) -> AdaptiveMeshRe
         or (leaf_count >= 80 and effective_score >= 22000)
     ):
         profile = "coarse-assembly"
-        settings = MeshSettings(tolerance=0.02, angular_tolerance=0.6)
     elif (
         face_count >= 2500
         or edge_count >= 8000
@@ -329,40 +334,14 @@ def adaptive_mesh_resolution_from_hints(hints: dict[str, Any]) -> AdaptiveMeshRe
         or (leaf_count >= 24 and effective_score >= 3500)
     ):
         profile = "balanced-assembly"
-        settings = MeshSettings(tolerance=0.016, angular_tolerance=0.5)
     elif face_count >= 800 or edge_count >= 2500 or effective_score >= 1800 or curvature_pressure >= 3500:
         profile = "medium"
-        settings = MeshSettings(tolerance=0.014, angular_tolerance=0.45)
     elif face_count >= 180 or edge_count >= 600 or effective_score >= 450 or curvature_pressure >= 900:
         profile = "fine"
-        settings = MeshSettings(tolerance=0.008, angular_tolerance=0.3)
     else:
         profile = "extra-fine"
-        settings = MeshSettings(tolerance=0.006, angular_tolerance=0.2)
 
-    hints = dict(hints)
-    # The absolute profile tolerances above are tuned for desk-scale parts.
-    # Past that envelope, floor the linear deflection proportionally to the
-    # model diagonal (~0.03% of diag) so meter-scale models do not tessellate
-    # at micron-class chord error (multi-minute meshes, quarter-GB packages).
-    # Angular deflection stays per-profile; it is scale-invariant.
-    raw_diagonal = hints.get("bboxDiag")
-    diagonal = float(raw_diagonal) if isinstance(raw_diagonal, (int, float)) else 0.0
-    if diagonal > 500.0:
-        scale_floor = round(diagonal * 3.0e-4, 3)
-        if scale_floor > settings.tolerance:
-            # When the linear floor engages, curvature quality must ride on the
-            # ANGULAR deflection (scale-invariant): a coarse profile pairs the
-            # floor with angular 0.6-0.75 rad, which would leave small
-            # high-curvature parts (engine bells in a full stack) visibly
-            # polygonal. Clamp angular so cylinders keep >=~18 segments.
-            settings = MeshSettings(
-                tolerance=scale_floor,
-                angular_tolerance=min(settings.angular_tolerance, 0.35),
-            )
-            hints["scaleFloorTolerance"] = scale_floor
-    hints["profile"] = profile
-    return AdaptiveMeshResolution(settings=settings, profile=profile, hints=hints)
+    return AdaptiveMeshResolution(profile=profile, hints=hints)
 
 
 def adaptive_mesh_resolution_for_scene(scene: LoadedStepScene) -> AdaptiveMeshResolution:

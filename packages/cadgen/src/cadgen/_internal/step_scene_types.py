@@ -7,28 +7,25 @@ from pathlib import Path
 from typing import Any
 
 from cadgen._internal.glb_topology import STEP_EDGE_DEFAULT_RENDER_VISIBILITY_CLASSES
-from cadgen._internal.tessellation import TESSELLATOR_ANGLE_TOLERANCE
-from cadgen._internal.tessellation import TESSELLATOR_CHORD_TOLERANCE
-from cadgen.metadata import MeshSettings
-
 
 ColorRGBA = tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
 class SelectorOptions:
-    # RELATIVE to the component diagonal, not millimetres: the one tessellator
-    # is JS (packages/cadgen-js/src/lib/surf/tessellate.js) and takes relative
-    # tolerances. "deflection" was the OCCT word for the absolute quantity this
-    # package no longer produces.
-    chord_tolerance: float = TESSELLATOR_CHORD_TOLERANCE
-    angle_tolerance: float = TESSELLATOR_ANGLE_TOLERANCE
-    relative: bool = True
+    """How a build extracts a package's topology.
+
+    Carries no mesh tolerance. A render package is tessellation-free — it
+    stores surfaces (``.surf``) and the client meshes them — so the only
+    option here with a consequence is which edge classes get built.
+    ``--mesh-tolerance`` belongs to the mesh EXPORT path (``MeshExportJob``),
+    which never reads this.
+    """
+
     edge_deflection: float | None = None
     edge_deflection_ratio: float = 0.00075
     max_edge_points: int = 96
     digits: int | None = 6
-    mesh_resolution: dict[str, Any] | None = None
     edge_visibility_classes: tuple[str, ...] = STEP_EDGE_DEFAULT_RENDER_VISIBILITY_CLASSES
 
 
@@ -68,7 +65,16 @@ class LoadedStepScene:
 
 @dataclass(frozen=True)
 class AdaptiveMeshResolution:
-    settings: MeshSettings
+    """What the scene's topology says about how to RENDER it.
+
+    Not tessellation settings: there is one tessellator, it is JS, and it takes
+    its own relative tolerances. What survives here is the classification —
+    ``profile`` plus the ``hints`` it was computed from — because
+    ``_edge_visibility_classes_for_resolution`` turns the pair into the edge
+    classes a package actually renders. The absolute deflection numbers this
+    once carried reached no mesher and are gone.
+    """
+
     profile: str
     hints: dict[str, Any]
 

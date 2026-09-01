@@ -206,7 +206,10 @@ class StorePackages(ScannerTestCase):
         self.write("p.step", "x\n")
         self.package("p.step", {"kind": "assembly-package", "components": {}})
         entry = self.entry("p.step")
-        self.assertRegex(entry["url"], r"^/__cad/store\?file=[0-9a-f]{64}-v16&v=")
+        self.assertRegex(
+            entry["url"],
+            rf"^/__cad/store\?file=[0-9a-f]{{64}}-v{CACHE_SCHEMA_VERSION}&v=",
+        )
 
     def test_hash_and_bytes_describe_assembly_json_not_the_step(self):
         self.write("p.step", "a much longer step body than the descriptor\n")

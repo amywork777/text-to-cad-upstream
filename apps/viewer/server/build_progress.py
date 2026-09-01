@@ -13,12 +13,12 @@ another viewer — has no in-process channel, so those stay file-based.
 THE DEFECT THIS FIXES
 ---------------------
 A peer publishes its record at ``status_path(output_dir)``, and the two
-producers pass DIFFERENT output dirs:
+producers used to pass DIFFERENT output dirs:
 
-* a model-script run passes ``coordination_scope(entry_path)``, the model-path
+* a model-script run passed ``coordination_scope(entry_path)``, the model-path
   keyed ``locks/`` tier;
 * ``cadgen step compile`` — and the re-emit, and the on-demand topology
-  rebuild — pass ``render_package_dir(entry_path)``, the CONTENT-keyed
+  rebuild — passed ``render_package_dir(entry_path)``, the CONTENT-keyed
   ``packages/`` tier.
 
 The Node reader derived only the locks spelling. So a script run's progress
@@ -26,23 +26,31 @@ appeared and a COMPILE's never did — which is the viewer's own import, the cas
 where a bar matters most, and it is why an import only ever showed an
 indeterminate badge. This reader derives BOTH and takes whichever is fresher.
 
+cadgen has since closed the same gap from the PRODUCER side: all three of those
+call sites now key by ``coordination_scope`` too, pinned by
+``tests/python/packages/cadgen/test_build_progress_path.py``, which also asserts
+a current build leaves NO record outside the locks tier. Both fixes are worth
+having and neither subsumes the other — see below.
+
 WHY THE PACKAGES TIER STAYS, NOW THAT OUR OWN BUILDS REPORT IN PROCESS
 ----------------------------------------------------------------------
 Reading a second tier is a DECLARED departure from the Node backend on a route
 the client polls every 400ms, so it owes an argument. The registry above covers
 builds this server runs — which is most of them, and none of them need a file
-read at all — but not the one case the extra read exists for.
+read at all — but not the case the extra read exists for.
 
-When our worker cannot take the package's write lock it answers ``contended``,
+When our worker cannot take the model's write lock it answers ``contended``,
 ``build_artifact`` turns that into ``generating``, and the client stops POSTing
-and ATTACHES: it polls this route for someone else's bar. The peer holding that
-lock is by construction a ``build_step_artifact`` caller — another viewer's
-worker, or a ``cadgen step compile`` in a terminal — and every one of those
-publishes at ``status_path(render_package_dir(...))``, the packages tier. Read
-only the locks tier and ``contended`` tells the client to attach to a bar that
-can never appear. So the second read is what makes ``contended`` mean anything,
-and it costs one ``open()`` of a usually-absent file per poll, paid only for
-``.step`` entries and only while we are not building them ourselves.
+and ATTACHES: it polls this route for someone else's bar. That peer is by
+construction a ``build_step_artifact`` caller — another viewer's worker, or a
+``cadgen step compile`` in a terminal — and cadgen is a SEPARATELY INSTALLED
+distribution, so the peer's version is not this tree's version. A peer on a
+cadgen that predates the producer-side fix still publishes to the packages
+tier, and reading only the locks tier would tell the client to attach to a bar
+that can never appear. So the second read is what keeps ``contended`` meaningful
+against any peer, and it costs one ``open()`` of a usually-absent file per poll,
+paid only for ``.step`` entries and only while we are not building them
+ourselves.
 
 DELIBERATELY SCHEMA-BLIND AND RUN-ATTRIBUTION-FREE
 --------------------------------------------------

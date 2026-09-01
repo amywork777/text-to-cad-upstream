@@ -234,7 +234,10 @@ function yUpPrimitives(primitives) {
 export function packageMeshToGlb({ primitives }, { name = "model" } = {}) {
   return writeGlb(
     { primitives: yUpPrimitives(primitives) },
-    { preset: "export", name, sourceKind: "step", units: "m" },
+    // upAxis: "y" states what yUpPrimitives just produced. It changes no geometry —
+    // these bytes stay the spec-conformant Y-up metres they always were — it only stops
+    // the CAD reader from having to guess, which it used to get wrong.
+    { preset: "export", name, sourceKind: "step", units: "m", upAxis: "y" },
   );
 }
 
