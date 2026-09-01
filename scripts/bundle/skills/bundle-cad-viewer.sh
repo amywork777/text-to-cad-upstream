@@ -42,16 +42,17 @@ usage() {
 Usage:
   scripts/bundle/bundle-skill.sh cad-viewer [--check] [--clean] [--no-build]
 
-Bundles the self-contained CAD Viewer runtime (built client + JS server) used
-by skills/cad-viewer. Client sourcemaps are included so installed skill
-runtimes can be debugged from browser DevTools.
+Bundles the self-contained CAD Viewer runtime (built client + stdlib Python
+server) used by skills/cad-viewer. Client sourcemaps are NOT bundled: they were
+17MB of a 22MB runtime, and debugging Viewer source happens in this repo (or
+the cad-viewer mirror), not inside an installed skill.
 
 Options:
   --check     Bundle into tmp/ and fail if skills/cad-viewer/scripts/viewer is
               stale. Skipped while the path is a development symlink.
   --clean     Remove temporary check directories first.
   --no-build  Reuse the current apps/viewer/dist instead of rebuilding the viewer.
-              The existing dist must already include client sourcemaps.
+              Any *.map files in it are excluded from the bundle.
   --print-outputs
               Print the repo-relative generated output paths, then exit.
   -h, --help  Show this help.
@@ -112,31 +113,20 @@ run_viewer_build() {
   require_command node
   package_manager="$(resolve_viewer_package_manager)"
   require_command "$package_manager"
-  # Sourcemaps ship on purpose: an installed runtime is debuggable from DevTools.
+  # A plain production build: no sourcemaps. The bundle used to ship them "so
+  # installed runtimes are debuggable from DevTools", which cost 17MB of a 22MB
+  # runtime for a debugging session that has never happened outside this repo.
+  # The rsync below also excludes *.map, so a dist built WITH maps (npm run
+  # build -- --sourcemap true, for local debugging) still bundles clean.
   case "$package_manager" in
-    pnpm) CI=true pnpm --dir "$VIEWER_DIR" run build --sourcemap true ;;
-    npm)  npm --prefix "$VIEWER_DIR" run build -- --sourcemap true ;;
+    pnpm) CI=true pnpm --dir "$VIEWER_DIR" run build ;;
+    npm)  npm --prefix "$VIEWER_DIR" run build ;;
     *)
       echo "Unsupported CAD Viewer package manager: $package_manager" >&2
       echo "Set CAD_VIEWER_PACKAGE_MANAGER to pnpm or npm." >&2
       exit 1
       ;;
   esac
-}
-
-require_client_sourcemaps() {
-  local dist_dir="$1"
-  local map_count
-  if [ ! -d "$dist_dir/assets" ]; then
-    echo "Missing Viewer dist assets directory: $dist_dir/assets" >&2
-    exit 1
-  fi
-  map_count="$(find "$dist_dir/assets" -type f -name '*.map' | wc -l | tr -d '[:space:]')"
-  if [ "$map_count" -eq 0 ]; then
-    echo "Missing Viewer client sourcemaps in $dist_dir/assets." >&2
-    echo "Run scripts/bundle/bundle-skill.sh cad-viewer without --no-build to regenerate apps/viewer/dist with sourcemaps." >&2
-    exit 1
-  fi
 }
 
 # The file stays even though npm starts nothing any more: the release workflow
@@ -173,7 +163,7 @@ build_runtime() {
   rm -rf "$target_dir"
   mkdir -p "$target_dir"
 
-  rsync -a --delete "$VIEWER_DIR/dist/" "$target_dir/dist/"
+  rsync -a --delete --exclude "*.map" "$VIEWER_DIR/dist/" "$target_dir/dist/"
   # The server is plain stdlib-only Python source, copied verbatim (tests live
   # in apps/viewer/tests_server/, outside this tree, so no test excludes are
   # needed). The __pycache__ excludes are LOAD-BEARING: check_runtime compares
@@ -233,10 +223,9 @@ fi
 
 if [ ! -f "$VIEWER_DIR/dist/index.html" ]; then
   echo "Missing viewer production bundle: $VIEWER_DIR/dist/index.html" >&2
-  echo "Build it (drop --no-build, or run npm --prefix apps/viewer run build -- --sourcemap true)." >&2
+  echo "Build it (drop --no-build, or run npm --prefix apps/viewer run build)." >&2
   exit 1
 fi
-require_client_sourcemaps "$VIEWER_DIR/dist"
 
 if [ "$MODE" = "check" ]; then
   build_runtime "$CHECK_DIR"
