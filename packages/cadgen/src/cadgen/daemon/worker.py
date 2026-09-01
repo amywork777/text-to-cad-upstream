@@ -33,7 +33,29 @@ import tempfile
 import traceback
 
 # Same registry the supervisor validates against; imported rather than duplicated.
+from cadgen.daemon.client import FORWARDED_ENV_VARS
 from cadgen.daemon.server import _TOOL_IMPORTS, _evict_first_party_modules
+
+
+def _apply_request_env(request: dict) -> None:
+    """Apply the requesting CLIENT's cache-resolution environment for this job.
+
+    A worker inherits the environment of whichever build spawned the DAEMON, so
+    without this the first build's cache root became every later build's,
+    across projects. ``cache_paths.cache_root()`` documents ONE resolution rule
+    ($CADGEN_CACHE_DIR, else the platform convention, else ~/.cache/cadgen);
+    the daemon must not add a hidden second one. A var absent from the request
+    is DELETED — unset for the client means unset for the job — which also
+    clears a var a previous job's model code exported at import time."""
+    env = request.get("env")
+    if not isinstance(env, dict):
+        return
+    for name in FORWARDED_ENV_VARS:
+        value = env.get(name)
+        if isinstance(value, str):
+            os.environ[name] = value
+        else:
+            os.environ.pop(name, None)
 
 
 def _emit(frame: dict) -> None:
@@ -226,10 +248,12 @@ def serve() -> int:
         if kind == "ping":
             _emit({"pong": os.getpid()})
         elif kind == "invoke":
+            _apply_request_env(request)
             _emit({"result": _invoke(request), "pid": os.getpid()})
         elif kind == "shutdown":
             return 0
         else:
+            _apply_request_env(request)
             _emit({"exit": _run(request), "pid": os.getpid()})
     return 0
 

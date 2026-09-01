@@ -333,6 +333,7 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
             "module": module,
             "args": args,
             "repo_root": request.get("repo_root"),
+            "env": request.get("env"),
         })
         result = None
         for frame in worker.frames():
@@ -414,6 +415,7 @@ def _handle_request(
             "prog": request.get("prog"),
             "argv": [str(a) for a in argv],
             "cwd": request.get("cwd"),
+            "env": request.get("env"),
         })
         for frame in worker.frames():
             if "exit" in frame:

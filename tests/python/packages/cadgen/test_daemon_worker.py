@@ -165,5 +165,59 @@ class Allowlist(unittest.TestCase):
                 self.assertIn("argv", inspect.signature(entry).parameters)
 
 
+class RequestEnvironment(unittest.TestCase):
+    """Cache resolution is per-CLIENT, never per-daemon.
+
+    A worker inherits the environment of whichever build spawned the daemon, so
+    a model that exported XDG_CACHE_HOME at import time relocated the cache for
+    every other project on the machine until the daemon recycled. The client
+    now ships its cache-resolution env with each request and the worker applies
+    it per job — including DELETING a var the client does not have."""
+
+    def setUp(self) -> None:
+        from cadgen.daemon.client import FORWARDED_ENV_VARS
+
+        self.vars = FORWARDED_ENV_VARS
+        snapshot = {name: os.environ.get(name) for name in self.vars}
+
+        def restore() -> None:
+            for name, value in snapshot.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
+        self.addCleanup(restore)
+
+    def test_request_values_are_applied(self) -> None:
+        worker._apply_request_env(
+            {"env": {"CADGEN_CACHE_DIR": "/tmp/per-client-cache"}}
+        )
+        self.assertEqual(os.environ.get("CADGEN_CACHE_DIR"), "/tmp/per-client-cache")
+
+    def test_vars_absent_from_the_request_are_deleted(self) -> None:
+        # The daemon-inherited (or previous-job-exported) value must not leak
+        # into a job whose client does not have it set.
+        os.environ["XDG_CACHE_HOME"] = "/some/other/projects/.cache"
+        os.environ["CADGEN_CACHE_DIR"] = "/some/other/override"
+        worker._apply_request_env({"env": {}})
+        self.assertNotIn("XDG_CACHE_HOME", os.environ)
+        self.assertNotIn("CADGEN_CACHE_DIR", os.environ)
+
+    def test_a_request_without_env_changes_nothing(self) -> None:
+        os.environ["XDG_CACHE_HOME"] = "/kept/.cache"
+        worker._apply_request_env({})
+        self.assertEqual(os.environ.get("XDG_CACHE_HOME"), "/kept/.cache")
+
+    def test_client_payloads_carry_the_forwarded_env(self) -> None:
+        from cadgen.daemon import client
+
+        os.environ["CADGEN_CACHE_DIR"] = "/tmp/mine"
+        os.environ.pop("XDG_CACHE_HOME", None)
+        env = client.forwarded_env()
+        self.assertEqual(env.get("CADGEN_CACHE_DIR"), "/tmp/mine")
+        self.assertNotIn("XDG_CACHE_HOME", env)
+
+
 if __name__ == "__main__":
     unittest.main()

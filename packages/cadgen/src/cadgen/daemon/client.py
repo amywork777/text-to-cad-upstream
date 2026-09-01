@@ -45,6 +45,20 @@ _RESTART = object()
 # A frame did not arrive in time, as distinct from the channel closing.
 _TIMED_OUT = object()
 
+# Cache resolution is per-CLIENT, never per-daemon. A worker inherits the
+# environment of whichever build spawned the daemon, so without forwarding
+# these the first build's cache root silently became every later build's,
+# across projects (a model that set XDG_CACHE_HOME at import relocated the
+# cache for every other project on the machine until the daemon recycled).
+# They travel with every request and the worker applies them per JOB —
+# a name absent here means "unset for this job" (see worker._apply_request_env).
+FORWARDED_ENV_VARS = ("CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA")
+
+
+def forwarded_env() -> dict[str, str]:
+    """The requesting process's cache-resolution environment, for the payload."""
+    return {name: os.environ[name] for name in FORWARDED_ENV_VARS if name in os.environ}
+
 
 def daemon_supported() -> bool:
     """Whether this platform can reach a daemon at all.
@@ -139,6 +153,7 @@ def run_via_daemon(
         "prog": str(prog) if prog else None,
         "argv": argv,
         "cwd": str(cwd) if cwd else os.getcwd(),
+        "env": forwarded_env(),
         "token": compute_version_token(),
     }
     address = daemon_address()
@@ -315,6 +330,7 @@ def invoke(module: str, args, repo_root: str) -> dict | None:
         "module": str(module),
         "args": [str(arg) for arg in args],
         "repo_root": str(repo_root) if repo_root else os.getcwd(),
+        "env": forwarded_env(),
         "token": compute_version_token(),
     }
     address = daemon_address()
