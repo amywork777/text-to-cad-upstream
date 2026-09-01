@@ -17,11 +17,6 @@ user's own browser, so two gates defend against that specifically:
 No ``Access-Control-*`` headers are served, deliberately: their absence is what
 makes the same-origin policy block cross-origin reads and what makes that
 preflight fail. Do not add them.
-
-PORT STATUS: reveal is the last route still awaiting its step. It is registered
-here and answers 501 with a distinctive body until then, so a missing route can
-never be mistaken for a working one — a placeholder that 404s or 200s would be
-indistinguishable from a route that works.
 """
 
 from __future__ import annotations
@@ -37,6 +32,7 @@ from .backend import ForbiddenAssetError, LocalAssetBackend
 from .cadgen_ops import create_cadgen_ops
 from .content_types import content_type_for_static_asset
 from .encoding import UriError, attachment_content_disposition, strict_decode_uri_component
+from .reveal import reveal_path
 from .scanner import node_basename, path_relative
 from .store_paths import store_packages_dir
 from .tess_cache import read_tess_cache_batch, read_tess_cache_entry, write_tess_cache_entry
@@ -249,18 +245,6 @@ class CadApp:
         if not self._serve_file(response, index_html, content_type_for_static_asset(index_html)):
             response.send_plain(404, "Not found")
 
-    # --- routes still to be ported ----------------------------------------
-
-    @staticmethod
-    def _not_ported(response, name: str) -> None:
-        """Answer 501 with a distinctive body.
-
-        A placeholder that 404s or 200s would be indistinguishable from a
-        working route; 501 with the route name in it cannot be mistaken for
-        either while the port is in flight.
-        """
-        response.send_json(501, {"ok": False, "error": f"route not yet ported: {name}"})
-
     # --- dispatch ---------------------------------------------------------
 
     def handle(self, request, response) -> None:
@@ -429,7 +413,29 @@ class CadApp:
         response.stream_file(candidate, stat_result, content_type, disposition=disposition)
 
     def _handle_reveal(self, request, response, query):
-        self._not_ported(response, "POST /__cad/reveal")
+        """Show the entry in the OS file manager.
+
+        Resolution goes through ``contained_path_for_file_ref``, NOT the asset
+        resolver: no bytes are sent, so there is no served-extension filter and
+        a ``.py`` model script resolves here and nowhere else.
+
+        The client appends ``&asset=artifact|output`` to this URL and the server
+        IGNORES it. Reveal always targets the entry itself — the old
+        ``asset=source`` branch that redirected to the generating script was
+        deliberately deleted and must not come back.
+        """
+        target = self.backend.contained_path_for_file_ref(query.get("file") or "")
+        if not target or not os.path.exists(target):
+            response.send_json(404, {"ok": False, "error": "Not found"})
+            return
+        result = reveal_path(target)
+        if result.get("unsupported"):
+            response.send_json(501, {"ok": False, "error": "Revealing files is not supported here"})
+            return
+        if not result.get("ok"):
+            response.send_json(500, {"ok": False, "error": result.get("error") or "Reveal failed"})
+            return
+        response.send_json(200, {"ok": True, "path": target})
 
     def _handle_tess_get(self, request, response):
         """403 refused name, 404 miss, 200 hit.

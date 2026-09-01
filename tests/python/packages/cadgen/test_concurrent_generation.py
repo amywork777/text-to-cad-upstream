@@ -88,12 +88,12 @@ class ConcurrentGenerationTest(unittest.TestCase):
         descriptor = package / "assembly.json"
         self.assertTrue(descriptor.is_file(), "no descriptor after concurrent builds")
         # The viewer's freshness gate must accept the package the race produced.
-        # The one authority is JS (apps/viewer/server/artifactStatus.mjs), asked
+        # The one authority is the Viewer (apps/viewer/server/artifact_status.py), asked
         # through the node shim.
-        from tests.python.support.js_status import js_artifact_status
+        from tests.python.support.viewer_status import viewer_artifact_status
 
         self.assertEqual(
-            "ready", js_artifact_status(self.root / "widget.step", self.root)["state"]
+            "ready", viewer_artifact_status(self.root / "widget.step", self.root)["state"]
         )
 
     def test_second_run_after_completion_is_a_plain_no_op(self):

@@ -522,19 +522,25 @@ class RequestBodies(HttpLayerTestCase):
         self.assertIn(b"request body too large", raw)
 
 
-class PortedRoutesAreDistinguishable(HttpLayerTestCase):
-    def test_routes_awaiting_later_steps_answer_501_not_404_or_200(self):
-        # Shrinks as the port lands. The catalog, the asset and store routes,
-        # the artifact pair and the whole tess-cache family are gone from this
-        # list because they now answer for real — see test_scanner.py,
-        # test_security.py, test_artifact_status.py and test_tess_cache.py.
+class EveryRouteAnswersForReal(HttpLayerTestCase):
+    def test_no_route_reports_itself_as_unported(self):
+        # This class used to list the routes still awaiting their step, each
+        # answering 501 with a distinctive body so a missing route could never
+        # be mistaken for a working one. The list is empty: the assertion now
+        # runs the other way, and no route may ever reintroduce that marker.
         for method, path, headers in [
+            ("GET", "/__cad/server", {}),
+            ("GET", "/__cad/catalog", {}),
+            ("GET", "/__cad/artifact?file=x.step", {}),
+            ("POST", "/__cad/artifact?file=x.step", {"x-cadgen-viewer": "1"}),
             ("POST", "/__cad/reveal?file=/x.step", {"x-cadgen-viewer": "1"}),
+            ("GET", "/__cad/asset?file=/x.step", {}),
+            ("GET", "/__cad/store?file=x", {}),
+            ("GET", "/__tess_cache/a.tess", {}),
         ]:
             with self.subTest(method=method, path=path):
-                status, _, body = self.fixture.request(method, path, headers=headers)
-                self.assertEqual(status, 501, body)
-                self.assertIn(b"not yet ported", body)
+                _, _, body = self.fixture.request(method, path, headers=headers)
+                self.assertNotIn(b"not yet ported", body)
 
 
 if __name__ == "__main__":

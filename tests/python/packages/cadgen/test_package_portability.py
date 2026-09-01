@@ -314,11 +314,11 @@ class PackagePortabilityTest(unittest.TestCase):
         self._noop_pass(moved)
         self.assertEqual(before, mtimes(moved), "moving the project rebuilt its packages")
 
-        from tests.python.support.js_status import js_artifact_status
+        from tests.python.support.viewer_status import viewer_artifact_status
 
         for name, root_arg, source_arg in self._validators(moved):
             with self.subTest(entry=name):
-                self.assertEqual("ready", js_artifact_status(source_arg, root_arg)["state"])
+                self.assertEqual("ready", viewer_artifact_status(source_arg, root_arg)["state"])
 
     def test_renaming_the_project_folder_rebuilds_nothing(self) -> None:
         # The folder name is part of every path a descriptor could have recorded, so this is

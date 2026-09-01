@@ -19,11 +19,11 @@ robot-description, or DXF files in CAD Viewer and hand back live review links. T
 ## Setup
 
 The Viewer ships INSIDE THIS SKILL, under `scripts/viewer/` — the prebuilt
-client bundle plus its dependency-free JS server. There is nothing to install
-for VIEWING: the one requirement is Node.js (>= 22) on `PATH`. Importing a raw
-foreign STEP additionally needs cadgen (the CAD skill's requirements install
-it); without cadgen, imports answer with an install hint and viewing is
-unaffected.
+client bundle plus a stdlib-only Python server. There is nothing to install for
+the Viewer itself: the one requirement is the Python (>= 3.11) that installed
+this skill's `requirements.txt`. That same interpreter is where cadgen comes
+from, and importing a raw foreign STEP is the only thing that needs it; without
+cadgen, imports answer with an install hint and viewing is unaffected.
 
 ## Start Viewer
 
@@ -38,12 +38,13 @@ for the life of the process.
 > The base port `3245` is `0xCAD` — "CAD" in hexadecimal.
 
 ```bash
-node scripts/viewer/server/main.mjs --root /absolute/project/models --host 127.0.0.1 --json
+python scripts/viewer/server/main.py --root /absolute/project/models --host 127.0.0.1 --json
 ```
 
-(Relative to this skill directory; use the absolute path to `main.mjs` when
-running from elsewhere. `npm --prefix scripts/viewer run start -- --root ...`
-is equivalent, but npm is not required.)
+(Relative to this skill directory; use the absolute path to `main.py` when
+running from elsewhere. `python` must be the interpreter you installed
+`requirements.txt` into — the server IS that interpreter, and it is the only
+place cadgen is looked for.)
 
 **Always pass an absolute `--root`.** The Viewer runs from an arbitrary working
 directory — usually wherever the skill happens to be installed, not the model
@@ -83,12 +84,13 @@ URL it prints is the truth. In sandboxed agent environments, local binding
 failures such as `EPERM`/`EACCES` can still occur; rerun with the needed
 permission/escalation.
 
-`node scripts/viewer/server/main.mjs list` shows every running instance with the
-root it serves; `node scripts/viewer/server/main.mjs stop --port <n>` ends one.
+`python scripts/viewer/server/main.py list` shows every running instance with
+the root it serves; `python scripts/viewer/server/main.py stop --port <n>` ends
+one.
 To review a directory outside the current root, just launch again with that
 root — reuse-or-start makes the second launch cheap and correct.
 
-## Generation is the CAD skill's job; imports spawn cadgen
+## Generation is the CAD skill's job; imports call cadgen
 
 The Viewer is a static visualization tool: it renders artifacts that already
 exist. Generated models must be built first by running their model script (see
@@ -96,9 +98,11 @@ the CAD skill); the Viewer will not build them.
 
 Raw `.step`/`.stp` files ARE importable from the Viewer: an unimported STEP
 reports `needs-build` and the in-Viewer import writes the standard render
-package. This needs a runnable cadgen (`CADGEN_PYTHON`, a `cadgen` on PATH, or
-a `.venv` in the served root); absent cadgen the Viewer says exactly that and
-keeps viewing. When an agent is doing the work there is nothing to run first:
+package. The Viewer calls cadgen's compile entry point directly, in a worker it
+owns, so progress and errors come back as data. cadgen has to be importable by
+the interpreter running the Viewer — there is no search, no `CADGEN_PYTHON`,
+and no `.venv` probing; absent cadgen the Viewer says exactly that and keeps
+viewing. When an agent is doing the work there is nothing to run first:
 every cadgen door makes the package it needs on demand, so just use the file
 and return the link.
 

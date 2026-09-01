@@ -14,7 +14,7 @@ everything and one command (``cadgen cache``) can reason about all of it:
 
 The JS mirror is ``cadgenCacheRootDir`` in
 ``packages/cadgen-js/src/lib/surf/tessellationCacheFs.mjs`` (and its deliberate
-inline copy in ``viewer/server/tessCache.mjs``);
+independent Python implementation in ``apps/viewer/server/tess_cache.py``);
 ``tests/python/global/test_cache_root_sync.py`` pins the languages together.
 
 Everything under the root is content-addressed and BEST-EFFORT: deleting any

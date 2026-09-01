@@ -31,7 +31,7 @@ class Registry(unittest.TestCase):
 
     def test_viewer_is_not_registered(self):
         # The CAD Viewer left cadgen with the cadgen/viewer split (2026-08-28):
-        # it starts via `node viewer/server/main.mjs` (or the cad-viewer skill's
+        # it starts via `python apps/viewer/server/main.py` (or the cad-viewer skill's
         # bundled copy), never through this dispatcher.
         self.assertNotIn("viewer", cli._COMMANDS)
 

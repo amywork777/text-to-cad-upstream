@@ -30,8 +30,10 @@ DRY_RUN=0
 MODE="write"
 
 # Packages that must be present under apps/viewer/packages for the mirror to install.
-# The viewer's one in-repo dependency is cadgen-js ("cadgen-js": "file:./packages/cadgen-js"), and
-# the Python backend is gone, so cadgen-js is the whole list.
+# The viewer's one in-repo NPM dependency is cadgen-js ("cadgen-js":
+# "file:./packages/cadgen-js"), bundled into the client at build time. The Python
+# backend takes cadgen from PyPI as an ordinary dependency (never a path dep, never
+# editable), so it needs nothing mirrored — cadgen-js is the whole list.
 REQUIRED_PACKAGES=(cadgen-js)
 
 usage() {

@@ -5,10 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// server/ is Python now and has no JS tests; its suites live in tests_server/
+// and run under `python -m unittest discover -s tests_server -t .`.
 const defaultTestRoots = [
   path.join(packageRoot, "src"),
   path.join(packageRoot, "scripts"),
-  path.join(packageRoot, "server"),
 ];
 
 function collectTests(dir, tests = []) {

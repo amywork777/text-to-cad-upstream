@@ -21,14 +21,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 HOST="127.0.0.1"
 RUNTIME="$REPO_ROOT/skills/cad-viewer/scripts/viewer"
 
-echo "==> CAD Viewer launch smoke test (node scripts/viewer/server/main.mjs)"
+echo "==> CAD Viewer launch smoke test (\$PYTHON scripts/viewer/server/main.py)"
 
 if [ -L "$RUNTIME" ]; then
   # A symlinked runtime would smoke-test viewer/ instead of the bundle output.
   echo "FAIL: $RUNTIME is still the development symlink; bundle first." >&2
   exit 1
 fi
-if [ ! -f "$RUNTIME/server/main.mjs" ]; then
+if [ ! -f "$RUNTIME/server/main.py" ]; then
   echo "FAIL: no bundled CAD Viewer runtime at $RUNTIME" >&2
   echo "      Run scripts/bundle/bundle.sh first (test.yml bundles before this step)." >&2
   exit 1
@@ -42,15 +42,22 @@ fi
 
 log="$(mktemp)"
 serve_root="$(mktemp -d)"
-# The import e2e below spawns `cadgen step build` from the server. The bundled
-# runtime carries no Python; hand it the repo's interpreter explicitly (the
-# soft-dependency contract), cold (no daemon spawned by a smoke test).
-export CADGEN_PYTHON="$REPO_ROOT/.venv/bin/python"
+# The server IS a Python process now: this is the interpreter that plays the
+# role of "the one that installed skills/cad-viewer/requirements.txt", which is
+# the only door cadgen comes through. There is no CADGEN_PYTHON any more.
+PYTHON="${VIEWER_PYTHON:-$REPO_ROOT/.venv/bin/python}"
+if [ ! -x "$PYTHON" ]; then
+  echo "FAIL: no interpreter at $PYTHON; set VIEWER_PYTHON." >&2
+  exit 1
+fi
+# Cold: a smoke test spawns no build daemon.
 export CADGEN_DAEMON=0
+# Reveal must never open a file manager on a developer's desktop or a runner.
+export VIEWER_DISABLE_NATIVE_REVEAL=1
 # Isolated store: content keying would otherwise resolve the fixture against
 # the developer's real cache and skip the import this smoke test exists to run.
 export CADGEN_CACHE_DIR="$(mktemp -d)"
-node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
+"$PYTHON" "$RUNTIME/server/main.py" --root "$serve_root" --host "$HOST" --json > "$log" 2>&1 &
 server_pid=$!
 disown "$server_pid" 2>/dev/null || true
 
@@ -101,7 +108,7 @@ fi
 
 # Launch idempotence: relaunching the same root at the same version must REUSE the
 # running viewer (same port, action:"reused"), not spawn a second instance.
-reuse_json="$(node "$RUNTIME/server/main.mjs" --root "$serve_root" --host "$HOST" --json | grep '^{' | tail -1)"
+reuse_json="$("$PYTHON" "$RUNTIME/server/main.py" --root "$serve_root" --host "$HOST" --json | grep '^{' | tail -1)"
 if ! printf '%s' "$reuse_json" | grep -q '"action":"reused"'; then
   echo "FAIL: relaunching the same root did not reuse the running viewer: $reuse_json" >&2
   exit 1
@@ -112,11 +119,11 @@ if ! printf '%s' "$reuse_json" | grep -q "\"port\":$PORT"; then
 fi
 
 # End-to-end import FROM THE BUNDLE: a raw STEP in the served root goes
-# needs-build -> POST build (spawns `cadgen step build`) -> ready with a real
-# package. The bundled runtime has no Python of its own; the smoke run
-# provides the repo venv via CADGEN_PYTHON (set at server launch above,
-# see the env block) — the same soft-dependency contract users get. The
-# fixture is deliberately non-LFS (CI checks out without LFS).
+# needs-build -> POST build (cadgen's compile entry point, called in the
+# server's own worker) -> ready with a real package. cadgen reaches the server
+# only by being importable from $PYTHON — the same soft-dependency contract
+# users get from requirements.txt. The fixture is deliberately non-LFS (CI
+# checks out without LFS).
 FIXTURE="$REPO_ROOT/models/examples/imported/import-smoke.step"
 if ! head -1 "$FIXTURE" | grep -q "ISO-10303-21"; then
   echo "FAIL: import fixture is not STEP text (LFS pointer?): $FIXTURE" >&2
@@ -152,12 +159,12 @@ fi
 
 # The instance-manager side of the same entrypoint: list must show this server,
 # stop must end it.
-if ! node "$RUNTIME/server/main.mjs" list | grep -q "port $PORT"; then
-  echo "FAIL: 'main.mjs list' did not report the running viewer" >&2
+if ! "$PYTHON" "$RUNTIME/server/main.py" list | grep -q "port $PORT"; then
+  echo "FAIL: 'main.py list' did not report the running viewer" >&2
   exit 1
 fi
-if ! node "$RUNTIME/server/main.mjs" stop --port "$PORT" | grep -q "Stopped CAD Viewer"; then
-  echo "FAIL: 'main.mjs stop --port $PORT' did not stop the viewer" >&2
+if ! "$PYTHON" "$RUNTIME/server/main.py" stop --port "$PORT" | grep -q "Stopped CAD Viewer"; then
+  echo "FAIL: 'main.py stop --port $PORT' did not stop the viewer" >&2
   exit 1
 fi
 

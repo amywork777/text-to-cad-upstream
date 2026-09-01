@@ -5,11 +5,11 @@ set -euo pipefail
 # (skills/cad-viewer/scripts/viewer).
 #
 # The viewer is a standalone app: cadgen does not ship or launch it. What the
-# skill needs is exactly what a wheel used to carry — the built SPA plus the
-# dependency-free JS server — laid out so
-#   node scripts/viewer/server/main.mjs --root <abs>
-# works with NO install step (the client is prebuilt, the server has zero npm
-# dependencies; Node >= 22 is the one requirement, which cadgen already has).
+# skill needs is the built SPA plus the stdlib-only Python server, laid out so
+#   <the interpreter that installed requirements.txt> scripts/viewer/server/main.py --root <abs>
+# works with NO install step for the viewer itself (the client is prebuilt, the
+# server imports nothing outside the standard library). Node is needed to BUILD
+# the client, never to run it.
 #
 # On develop, skills/cad-viewer/scripts/viewer is a SYMLINK to apps/viewer/ (the dev
 # layout, managed by scripts/dev/setup-symlinks.sh); this bundler replaces it
@@ -17,9 +17,11 @@ set -euo pipefail
 # survive (installer semantics: Codex silently drops symlinks — see
 # check-builds.sh).
 #
-# The runtime ships NO dependencies: dist/ + server/ only. Importing a foreign
-# STEP spawns `cadgen step build` (a soft dependency resolved at request time —
-# see server/cadgenResolve.mjs); viewing needs nothing beyond Node.
+# The runtime ships NO vendored dependencies: dist/ + server/ only. Importing a
+# foreign STEP imports cadgen IN-PROCESS, in a worker the server owns — a soft
+# dependency of the LAUNCHING INTERPRETER, declared in the skill's
+# requirements.txt. There is no interpreter discovery: viewing works without
+# cadgen, and imports answer with an install hint.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
@@ -106,6 +108,8 @@ resolve_viewer_package_manager() {
 
 run_viewer_build() {
   local package_manager
+  # Node builds the client; it is not a runtime requirement of the bundle.
+  require_command node
   package_manager="$(resolve_viewer_package_manager)"
   require_command "$package_manager"
   # Sourcemaps ship on purpose: an installed runtime is debuggable from DevTools.
@@ -135,6 +139,9 @@ require_client_sourcemaps() {
   fi
 }
 
+# The file stays even though npm starts nothing any more: the release workflow
+# refuses to publish without it, test_packaged_viewer requires it, and its
+# .version is what the launcher's reuse key compares.
 write_runtime_package_json() {
   local target_dir="$1"
   cat > "$target_dir/package.json" <<EOF
@@ -142,10 +149,7 @@ write_runtime_package_json() {
   "name": "cad-viewer-runtime",
   "private": true,
   "type": "module",
-  "version": "$RELEASE_VERSION",
-  "scripts": {
-    "start": "node server/main.mjs"
-  }
+  "version": "$RELEASE_VERSION"
 }
 EOF
 }
@@ -155,6 +159,9 @@ write_runtime_gitignore() {
   cat > "$target_dir/.gitignore" <<'EOF'
 node_modules
 tmp
+__pycache__/
+*.pyc
+*.pyo
 
 !dist
 !dist/**
@@ -167,8 +174,15 @@ build_runtime() {
   mkdir -p "$target_dir"
 
   rsync -a --delete "$VIEWER_DIR/dist/" "$target_dir/dist/"
-  # The server is plain dependency-free Node source, copied verbatim minus tests.
-  rsync -a --delete --exclude "*.test.mjs" "$VIEWER_DIR/server/" "$target_dir/server/"
+  # The server is plain stdlib-only Python source, copied verbatim (tests live
+  # in apps/viewer/tests_server/, outside this tree, so no test excludes are
+  # needed). The __pycache__ excludes are LOAD-BEARING: check_runtime compares
+  # trees with `diff -qr`, so bytecode appearing in one tree the first time
+  # anyone runs the server from a checkout would fail CI for a reason unrelated
+  # to any change.
+  rsync -a --delete \
+    --exclude "__pycache__" --exclude "*.pyc" --exclude "*.pyo" \
+    "$VIEWER_DIR/server/" "$target_dir/server/"
 
   write_runtime_package_json "$target_dir"
   write_runtime_gitignore "$target_dir"
@@ -179,7 +193,14 @@ check_runtime() {
     echo "CAD Viewer runtime is in development symlink layout; production runtime diff is checked post-bundle in CI."
     return
   fi
-  if ! diff -qr "$CHECK_DIR" "$RUNTIME_DIR" >/tmp/cad-viewer-runtime-diff.txt; then
+  # Python bytecode is excluded from BOTH sides, not just the rsync. Running
+  # the server from the checked-in runtime writes __pycache__ into it, so a
+  # bare `diff -qr` reports "Only in <runtime>: __pycache__" and the check goes
+  # nondeterministic the first time anyone launches the bundle locally — CI
+  # then fails for a reason unrelated to any change. The runtime .gitignore
+  # keeps the same files out of the publish tree.
+  if ! diff -qr -x '__pycache__' -x '*.pyc' -x '*.pyo' \
+      "$CHECK_DIR" "$RUNTIME_DIR" >/tmp/cad-viewer-runtime-diff.txt; then
     cat /tmp/cad-viewer-runtime-diff.txt >&2
     echo "" >&2
     echo "CAD Viewer runtime is stale." >&2
@@ -190,7 +211,6 @@ check_runtime() {
 }
 
 require_command rsync
-require_command node
 if [ ! -f "$VIEWER_DIR/package.json" ]; then
   echo "Missing viewer app: $VIEWER_DIR" >&2
   exit 1

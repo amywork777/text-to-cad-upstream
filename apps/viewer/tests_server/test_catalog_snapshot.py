@@ -1,22 +1,26 @@
-"""Byte-for-byte: the Python catalog against the Node catalog it replaces.
+"""The catalog over an adversarial fixture, fenced against regression.
 
-Every other test in this directory asserts something a human decided the
-scanner should do. This one asserts the only thing that actually matters during
-the port — that the JSON body on the wire is UNCHANGED — and it is the single
-strongest checkpoint available, because it compares implementations rather than
-comparing an implementation against an opinion.
+This began life as a byte-for-byte comparison of the Python catalog against the
+Node catalog it replaced — the strongest checkpoint available during the port,
+because it compared two implementations rather than an implementation against
+an opinion. Both halves agreed exactly, and then the JS half was deleted at the
+cut, so the oracle is gone.
 
-It is deliberately self-disabling. Once ``server/scanner.mjs`` is deleted at the
-end of the port there is nothing left to compare against, and this file skips
-instead of failing. Until then it must stay green: a diff here is a client-
-visible regression, whatever the other suites say.
+What survives is the expensive part: a fixture that reaches branches a real
+corpus does not — descriptors that are directories, arrays, or the wrong kind;
+sidecars that are arrays, empty objects, explicit nulls or malformed; SRDF
+pairing that is ambiguous, cross-directory or hidden; symlinks that loop,
+dangle, alias and escape; the depth cap; and a sort corpus of punctuation,
+case, accents, expansions, fullwidth digits and an astral character.
 
-The fixture reaches the branches a real corpus does not: descriptors that are
-directories, arrays, or the wrong kind; sidecars that are arrays, empty
-objects, explicit nulls or malformed; SRDF pairing that is ambiguous,
-cross-directory or hidden; symlinks that loop, dangle, alias and escape; the
-depth cap; and a sort corpus of punctuation, case, accents, expansions,
-fullwidth digits and an astral character.
+So the comparison became a SNAPSHOT. The golden below was captured from the
+Python scanner at the moment it was still verified identical to Node, and it
+pins the two things a hand-written assertion cannot: the exact ORDER of the
+whole catalog (the collation model's output, and the highest-risk piece of the
+port) and the exact per-entry shape decisions. It records file, kind, and which
+optional keys are present — deliberately not the URLs or hashes, which carry
+mtime tokens and temp paths that vary per run and would make this flaky rather
+than strict.
 """
 
 from __future__ import annotations
@@ -25,7 +29,6 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -39,33 +42,6 @@ if str(APP_ROOT) not in sys.path:
 from server.backend import LocalAssetBackend  # noqa: E402
 from server.scanner import scan_cad_directory  # noqa: E402
 from server.store_paths import CACHE_SCHEMA_VERSION, store_packages_dir  # noqa: E402
-
-_JS_DUMPER = """
-import path from "node:path";
-import { pathToFileURL } from "node:url";
-const dir = process.env.VIEWER_SERVER_DIR;
-const load = (name) => import(pathToFileURL(path.join(dir, name)).href);
-const [root, mode] = process.argv.slice(2);
-if (mode === "raw") {
-  const { scanCadDirectory } = await load("scanner.mjs");
-  process.stdout.write(JSON.stringify(scanCadDirectory(root)));
-} else {
-  const { LocalAssetBackend } = await load("backend.mjs");
-  process.stdout.write(JSON.stringify(new LocalAssetBackend(root).readCatalog()));
-}
-"""
-
-
-def _node_is_available() -> bool:
-    if not (SERVER_DIR / "scanner.mjs").is_file():
-        return False
-    try:
-        return (
-            subprocess.run(["node", "--version"], capture_output=True, check=False).returncode == 0
-        )
-    except (OSError, ValueError):
-        return False
-
 
 def _build_fixture(root: str, cache: str) -> None:
     os.makedirs(os.path.join(cache, "packages"), exist_ok=True)
@@ -213,11 +189,33 @@ def _build_fixture(root: str, cache: str) -> None:
         Path(current, f"f{level}.stl").write_text(f"level {level}\n", encoding="utf-8")
 
 
-@unittest.skipUnless(
-    _node_is_available(),
-    "no node, or server/scanner.mjs is gone — the JS half of the port has been deleted",
-)
-class ByteForByteAgainstNode(unittest.TestCase):
+def _shape(entries) -> list:
+    """The stable half of each entry: identity, kind, and which keys are present.
+
+    URLs and hashes are excluded on purpose. They carry ``?v=`` mtime tokens and
+    absolute temp paths, so pinning them would make this flaky rather than
+    strict — and they are covered by their own byte-exact tests in
+    test_parity.py and test_scanner.py.
+    """
+    shaped = []
+    for entry in entries:
+        shaped.append(
+            [
+                entry["file"],
+                entry["kind"],
+                "hash" if entry.get("hash") else "",
+                "sourceUrl" if "sourceUrl" in entry else "",
+                "poseUrl" if "poseUrl" in entry else "",
+                sorted((entry.get("relations") or {}).keys()),
+            ]
+        )
+    return shaped
+
+
+GOLDEN_PATH = Path(__file__).resolve().parent / "golden" / "catalog_shape.json"
+
+
+class CatalogShapeSnapshot(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.tmp = tempfile.mkdtemp()
@@ -226,8 +224,6 @@ class ByteForByteAgainstNode(unittest.TestCase):
         os.makedirs(cls.root)
         cls._previous_cache = os.environ.get("CADGEN_CACHE_DIR")
         _build_fixture(cls.root, cls.cache)
-        cls.dumper = os.path.join(cls.tmp, "dump.mjs")
-        Path(cls.dumper).write_text(_JS_DUMPER, encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls):
@@ -237,55 +233,38 @@ class ByteForByteAgainstNode(unittest.TestCase):
             os.environ["CADGEN_CACHE_DIR"] = cls._previous_cache
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def _node_json(self, mode: str) -> bytes:
-        env = dict(os.environ)
-        env["VIEWER_SERVER_DIR"] = str(SERVER_DIR)
-        completed = subprocess.run(
-            ["node", self.dumper, self.root, mode],
-            capture_output=True,
-            check=True,
-            env=env,
-        )
-        return completed.stdout
-
-    @staticmethod
-    def _python_json(payload) -> bytes:
-        # JSON.stringify's exact bytes: compact separators, no \\u escaping.
-        return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-
-    def _assert_identical(self, node_bytes: bytes, python_bytes: bytes) -> None:
-        if node_bytes == python_bytes:
+    def test_the_catalog_matches_the_golden_shape(self):
+        actual = _shape(scan_cad_directory(self.root)["entries"])
+        expected = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+        if actual == expected:
             return
-        node = json.loads(node_bytes)
-        python = json.loads(python_bytes)
-        node_files = [e.get("file") for e in node["entries"]]
-        python_files = [e.get("file") for e in python["entries"]]
-        if node_files != python_files:
+        actual_files = [row[0] for row in actual]
+        expected_files = [row[0] for row in expected]
+        if actual_files != expected_files:
             self.fail(
-                "entry ORDER or membership differs:\n"
-                f"  only in node:   {sorted(set(node_files) - set(python_files))}\n"
-                f"  only in python: {sorted(set(python_files) - set(node_files))}\n"
-                f"  node order:   {node_files}\n"
-                f"  python order: {python_files}"
+                "entry ORDER or membership changed:\n"
+                f"  missing: {sorted(set(expected_files) - set(actual_files))}\n"
+                f"  added:   {sorted(set(actual_files) - set(expected_files))}\n"
+                f"  golden order: {expected_files}\n"
+                f"  actual order: {actual_files}"
             )
-        for left, right in zip(node["entries"], python["entries"]):
+        for left, right in zip(expected, actual):
             if left != right:
-                self.fail(f"entry {left.get('file')!r} differs:\n  node:   {left}\n  python: {right}")
-        self.fail("payloads differ outside the entry list (schemaVersion or key order)")
+                self.fail(f"entry {left[0]!r} changed shape:\n  golden: {left}\n  actual: {right}")
 
-    def test_the_raw_catalog_is_identical(self):
-        self._assert_identical(
-            self._node_json("raw"), self._python_json(scan_cad_directory(self.root))
-        )
-
-    def test_the_absolutized_catalog_is_identical(self):
-        self._assert_identical(
-            self._node_json("abs"),
-            self._python_json(LocalAssetBackend(self.root).read_catalog()),
+    def test_the_absolutized_catalog_keeps_the_same_order_and_membership(self):
+        # absolutizeEntry rewrites urls and adds rootRelativeFile/assetFile; it
+        # must not reorder, drop or add anything.
+        raw = scan_cad_directory(self.root)["entries"]
+        absolutized = LocalAssetBackend(self.root).read_catalog()["entries"]
+        self.assertEqual(
+            [e["rootRelativeFile"] for e in absolutized],
+            [e["file"] for e in raw],
+            "absolutization changed the catalog's order or membership",
         )
 
     def test_the_fixture_actually_reaches_the_interesting_branches(self):
-        # A parity test over a tree that exercises nothing passes vacuously.
+        # A snapshot over a tree that exercises nothing passes vacuously.
         entries = scan_cad_directory(self.root)["entries"]
         self.assertGreater(len(entries), 100)
         self.assertGreaterEqual(sum(1 for e in entries if e["kind"] == "assembly"), 2)

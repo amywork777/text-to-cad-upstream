@@ -15,7 +15,7 @@ embedded topology tables, component serialization — one number, one
 signal, one regeneration.
 
 Stdlib-only on purpose: the viewer's JS mirror is ``CACHE_SCHEMA_VERSION``
-in ``viewer/server/packageContract.mjs``, pinned against this literal by
+in ``apps/viewer/server/store_paths.py``, pinned against this literal by
 ``tests/python/global/test_render_contract_sync.py`` so a one-sided bump
 cannot ship.
 """

@@ -1,17 +1,20 @@
 """The user-level cache root is a CROSS-LANGUAGE contract.
 
 Python (cadgen/_internal/cache_paths.py) and JS (cadgenCacheRootDir in
-packages/cadgen-js/src/lib/surf/tessellationCacheFs.mjs, inlined again in
-apps/viewer/server/tessCache.mjs) must resolve the SAME directory from the same
-environment, or the "one cache warms every consumer" property silently
-splits into per-language stores. Same spirit as test_render_contract_sync:
-a one-sided change fails here before it can ship.
+packages/cadgen-js/src/lib/surf/tessellationCacheFs.mjs) must resolve the SAME
+directory from the same environment, or the "one cache warms every consumer"
+property silently splits into per-language stores. Same spirit as
+test_render_contract_sync: a one-sided change fails here before it can ship.
+
+The viewer server's own copy of that resolver is Python now, and is compared to
+cadgen's by VALUE across an environment matrix in
+apps/viewer/tests_server/test_store_paths.py, which replaced the grep for three
+literals that used to live here.
 
 Also pins the mesh-cache key's tessellator-version salt across languages:
 TESSELLATION_VERSION (tessellate.js) == MESH_TESSELLATION_VERSION
-(cache_paths.py), the tessellator's DEFAULT_OPTIONS tolerances against their
-Python mirror in cadgen/_internal/tessellation.py, and the inline
-viewer-server copy of the root resolver against the cadgen-js original.
+(cache_paths.py), and the tessellator's DEFAULT_OPTIONS tolerances against their
+Python mirror in cadgen/_internal/tessellation.py.
 """
 
 from __future__ import annotations
@@ -27,7 +30,6 @@ from cadgen._internal import cache_paths
 
 ROOT = Path(__file__).resolve().parents[3]
 CADJS_FS = ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellationCacheFs.mjs"
-VIEWER_COPY = ROOT / "apps" / "viewer" / "server" / "tessCache.mjs"
 TESSELLATE_JS = ROOT / "packages" / "cadgen-js" / "src" / "lib" / "surf" / "tessellate.js"
 
 
@@ -70,15 +72,6 @@ class CacheRootSyncTest(unittest.TestCase):
                     _node_resolve_root(overrides),
                     f"cache root diverged between Python and JS for {overrides}",
                 )
-
-    def test_viewer_server_inline_copy_matches_cadgen_js_resolver(self) -> None:
-        # The viewer server carries a deliberate inline copy (the bundled
-        # skill runtime has no cadgen-js tree). Pin the copied resolver's BODY,
-        # not just its behavior somewhere: the three decision reads must
-        # appear in both files.
-        for needle in ("CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"):
-            for path in (CADJS_FS, VIEWER_COPY):
-                self.assertIn(needle, path.read_text(encoding="utf-8"), f"{needle} missing from {path.name}")
 
     def test_tessellator_version_matches_between_python_and_js(self) -> None:
         match = re.search(r"^export const TESSELLATION_VERSION = (\d+);", TESSELLATE_JS.read_text(encoding="utf-8"), re.MULTILINE)

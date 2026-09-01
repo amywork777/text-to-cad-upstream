@@ -186,16 +186,34 @@ Repo-development guidance for them belongs here, not in the packages.
 prod, behaviours worth knowing, testing); everything below is workbench-only
 and deliberately lives here.
 
-Launching from a lightweight worktree (the backend is pure JS; builds need a
-cadgen-importable interpreter handed down):
+Launching from a lightweight worktree. The server IS the Python process now, so
+the interpreter you launch with is the only place cadgen is looked for — there
+is no `CADGEN_PYTHON` hand-down any more. Use the primary checkout's venv with
+the WORKTREE's cadgen sources on `PYTHONPATH`, or the worktree exercises the
+main checkout's cadgen:
 
 ```bash
-CADGEN_PYTHON=<main>/.venv/bin/python \
 PYTHONPATH=<worktree>/packages/cadgen/src \
-node <worktree>/apps/viewer/server/main.mjs \
+<main>/.venv/bin/python <worktree>/apps/viewer/server/main.py \
   --root <worktree>/models --dist <worktree>/apps/viewer/dist \
   --host 127.0.0.1 --json
 ```
+
+For `npm run dev`, set `VIEWER_PYTHON` the same way — it defaults to `python3`,
+which is right for the standalone mirror and usually wrong here, and a dev
+backend that cannot import cadgen views fine but cannot import STEP. The dev
+plugin logs the interpreter it resolved and warns when `stepImportAvailable` is
+false, so the degradation announces itself at startup:
+
+```bash
+VIEWER_PYTHON=<main>/.venv/bin/python \
+PYTHONPATH=<worktree>/packages/cadgen/src \
+npm --prefix <worktree>/apps/viewer run dev
+```
+
+The backend's own tests live at `apps/viewer/tests_server/` (outside `server/`,
+so the skill bundle's `server/` rsync never sees them). Run them from the app
+root: `python -m unittest discover -s tests_server -t .`
 
 Launcher reuse keys on realpath(root) × version, so another checkout's
 instance can never be handed back for a worktree's root.

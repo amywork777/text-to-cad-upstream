@@ -1,7 +1,7 @@
 # CAD Viewer
 
-A local-filesystem CAD review app: a React client (`src/`) over a
-dependency-free Node backend (`server/`). One instance serves ONE directory,
+A local-filesystem CAD review app: a React client (`src/`) over a stdlib-only
+Python backend (`server/`). One instance serves ONE directory,
 fixed at start; the page is always the bare origin and `?file=` selects an
 artifact inside that root. There is no hosted deployment — the `cad-viewer`
 skill bundles the built client + server, and each release mirrors this app
@@ -13,21 +13,23 @@ measurements, themes).
 
 **MAY DEPEND ON** — `cadgen-js` (the shared CAD render/runtime package,
 vendored at `packages/cadgen-js` and imported via the `cadgen-js`
-specifier) and its own npm dependencies. The backend spawns `cadgen step
-build` for foreign STEP imports as a SOFT dependency: absent cadgen
-(installable from PyPI), viewing still works.
+specifier) and its own npm dependencies, both of which are bundled into the
+client AT BUILD TIME. The backend imports `cadgen` — an ordinary PyPI package —
+to compile foreign STEP imports, and it is a SOFT dependency: nothing in
+`server/` imports it at module scope, so absent cadgen viewing still works and
+only imports answer with an install hint.
 
 **DEPENDED ON BY** — nothing. No code imports from this app, by law.
 
 ## The laws that bind the app
 
 - **Ships alone**: this app works in isolation — the built client, the
-  dependency-free Node server, and the vendored `packages/cadgen-js` are
+  stdlib-only Python server, and the vendored `packages/cadgen-js` are
   everything it needs; cadgen from PyPI is its only Python dependency, and
   a soft one. Nothing in the app — code or markdown — refers outside this
   directory: it ships unchanged, so an out-of-directory reference is
-  broken the moment it leaves. `scripts/selfContained.test.mjs` is the
-  fence.
+  broken the moment it leaves. `scripts/selfContained.test.mjs` and
+  `tests_server/test_module_boundaries.py` are the fences.
 - **Three-input law**: everything renders from the artifact file, its
   sidecar (`<name>.step.json`), and the cache. The viewer never reads
   source code and never rebuilds on source changes — generated outputs are
@@ -49,19 +51,25 @@ npm run dev -- --host 127.0.0.1
 # open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
-Prod (the shipped bundle — build first, then the JS server):
+Prod (the shipped bundle — build the client first, then run the server):
 
 ```bash
 npm run build
-node server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
+python server/main.py --root <absolute dir> --host 127.0.0.1 --json
 ```
+
+`python` must be an interpreter that has `cadgen` installed if you want STEP
+import; viewing needs nothing but the standard library. Dev spawns that same
+`server/main.py` on an ephemeral port and proxies `/__cad` and `/__tess_cache`
+to it, so there is one implementation, not two — set `VIEWER_PYTHON` to choose
+the interpreter, or `VIEWER_BACKEND_URL` to attach to one you started yourself.
 
 The launcher is unconditional and prints the URL it serves: a live instance
 already serving that realpath at this version is REUSED (`action:"reused"`);
 otherwise it binds the first free port from 3245 upward. `--new` forces a
 fresh instance (needed when testing server-code changes — a reused instance
 runs the code it started with); an explicit `--port` is strict.
-`main.mjs list` shows every running instance; `main.mjs stop --port <n>`
+`main.py list` shows every running instance; `main.py stop --port <n>`
 ends one. Do not stop instances you did not start. Dev lives on Vite's
 port (5173, strict) and never enters the instance registry.
 
@@ -86,10 +94,12 @@ is never handed back by mistake.
 ## The shape of the app
 
 ```
-server/     # pure-Node backend: scanner (catalog), backend/httpApp
-            #   (routes), artifactStatus (generated-vs-imported authority),
-            #   packageContract.mjs (schema constants mirroring cadgen —
-            #   sync-tested), tessCache, launcher (main.mjs)
+server/     # stdlib-only Python backend: scanner.py (catalog),
+            #   backend.py/http_app.py (routes), handler.py (sockets),
+            #   artifact_status.py (freshness authority), store_paths.py
+            #   (store layout, mirroring cadgen — equality-tested),
+            #   compile_client/compile_worker.py (the cadgen import path),
+            #   tess_cache.py, registry.py + main.py (the launcher)
 src/client/ # React app: CadWorkspace (state root), CadViewer (scene +
             #   effects application), workbench/ (tabs, sections, session
             #   state, playback), render/ (viewport)

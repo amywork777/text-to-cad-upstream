@@ -67,7 +67,7 @@ Contract mirrors that must stay in lockstep (each has a sync test):
 `lib/cadRefs.js` ↔ `cadgen/cad_ref_syntax.py`;
 `common/kinematicsRuntime.js` ↔ `cadgen/_internal/kinematics_fk.py`;
 tessellation cache keys ↔ `cadgen/_internal/cache_paths.py`;
-`apps/viewer/server/packageContract.mjs` ↔ `cadgen/_internal/`
+`apps/viewer/server/store_paths.py` ↔ `cadgen/_internal/`
 schema constants.
 
 ## Working on cadgen-js

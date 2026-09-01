@@ -92,16 +92,61 @@ class StdlibOnly(unittest.TestCase):
 
     def test_no_sys_path_or_pythonpath_manipulation(self) -> None:
         # Reaching for a path is how a "standalone" app quietly acquires a
-        # dependency on the repo it was developed in. main.py does the one
-        # legal insert (its own parent) and lives outside this set until the
-        # launcher step; nothing else may.
+        # dependency on the repo it was developed in. main.py holds the ONE
+        # legal insert (pinned by the next test); nothing else may touch a
+        # lookup path at all. Matched on the AST, not on text: the old
+        # substring scan also fired on the COMMENTS that explain the rule.
         offenders = []
         for path in _python_sources():
-            source = path.read_text(encoding="utf-8")
-            for marker in ("sys.path.insert", "sys.path.append", "sys.path.extend", "addsitedir", "PYTHONPATH"):
-                if marker in source:
-                    offenders.append(f"{path.name}: {marker}")
-        self.assertEqual(offenders, [])
+            if path.name == "main.py":
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    target = ast.unparse(node.func)
+                    if target.startswith("sys.path.") or "addsitedir" in target:
+                        offenders.append(f"{path.name}:{node.lineno} {target}")
+                elif isinstance(node, ast.Subscript) and "PYTHONPATH" in ast.unparse(node):
+                    offenders.append(f"{path.name}:{node.lineno} PYTHONPATH")
+        self.assertEqual(offenders, [], "the Viewer server must not manipulate any lookup path")
+
+    def test_main_py_inserts_only_its_own_app_root(self) -> None:
+        # main.py is run as a script, so `server.*` has to resolve somehow. The
+        # one permitted spelling inserts its OWN directory's parent — a path
+        # inside the shipped tree, which is what the skill self-containment
+        # rules allow. PYTHONPATH or site.addsitedir would reach outside the
+        # bundle and stay forbidden even here.
+        source = (SERVER_DIR / "main.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+
+        inserts = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and ast.unparse(node.func) == "sys.path.insert"
+        ]
+        self.assertEqual(len(inserts), 1, "exactly one sys.path insert is permitted")
+        self.assertEqual(ast.unparse(inserts[0]), "sys.path.insert(0, _APP_ROOT)")
+
+        assigned = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Assign) and any(ast.unparse(t) == "_APP_ROOT" for t in node.targets)
+        ]
+        self.assertEqual(len(assigned), 1)
+        self.assertEqual(
+            ast.unparse(assigned[0].value),
+            "str(Path(__file__).resolve().parent.parent)",
+            "_APP_ROOT must come from this file's own location, never from the "
+            "environment or a repo-relative guess",
+        )
+
+        # AST, not substring: main.py's own comments NAME the forbidden calls in
+        # order to forbid them, and a text scan cannot tell guidance from code.
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                self.assertNotIn("addsitedir", ast.unparse(node.func))
+            if isinstance(node, ast.Subscript):
+                self.assertNotIn("PYTHONPATH", ast.unparse(node))
 
 
 class ShippedRuntimeData(unittest.TestCase):

@@ -606,7 +606,7 @@ drawing content with no identity comments, so a rename changes nothing there.
 bundled server, pointing `--root` at an absolute directory:
 
 ```bash
-node <viewer>/server/main.mjs --root /absolute/path/to/project --host 127.0.0.1 --json
+python <viewer>/server/main.py --root /absolute/path/to/project --host 127.0.0.1 --json
 ```
 
 It serves one directory, fixed at start, and reuses a live instance already

@@ -1,10 +1,10 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-import { createCadApp } from "./server/httpApp.mjs";
 import { resolveDirectoryRoot as resolveViewerDirectoryRoot } from "./scripts/directoryRoot.mjs";
 import { resolveServerFsAllow } from "./scripts/serverFsAllow.mjs";
 import { assertNoDeprecatedLocalRootEnv } from "./scripts/viewerEnv.mjs";
@@ -91,37 +91,110 @@ function resolveDirectoryRoot() {
   });
 }
 
-// Dev mode runs the SAME JS backend as production, in-process: Vite serves the
-// client (with HMR) and this middleware answers /__cad/* directly. No second
-// process, no proxy, no Python at startup — cadgen is spawned per build/export
-// by the backend itself, only when a request needs it.
-function cadViewerBackendPlugin() {
-  return {
-    name: "cad-viewer-backend",
-    configureServer(server) {
-      const devPort = server.config.server?.port;
-      const app = createCadApp({
-        root: directoryRoot,
-        host: "127.0.0.1",
-        port: devPort || DEFAULT_DEV_PORT,
-      });
-      server.middlewares.use((req, res, next) => {
-        app.handle(req, res).then(
-          (handled) => {
-            if (!handled) {
-              next();
-            }
-          },
-          (error) => {
-            if (!res.headersSent) {
-              res.statusCode = 500;
-            }
-            res.end(`CAD Viewer backend error: ${error?.message || error}`);
-          },
-        );
-      });
-    },
-  };
+// Dev runs the SAME backend as production — the same server/main.py — but as a
+// second process that Vite proxies to, because a Python server cannot be
+// in-process Vite middleware. `npm run dev` stays ONE command: this plugin
+// spawns the backend on an ephemeral port, reads the port off its
+// {url,port,action} line, and hands it to the proxy in the server block.
+//
+// The backend runs --ephemeral --no-registry. --no-registry is a CORRECTNESS
+// requirement, not tidiness: a registered dev backend would be found by a later
+// `main.py --root <same dir>` reuse lookup at the same version, handing an agent
+// a URL served by Vite's proxy target instead of a real Viewer.
+//
+// VIEWER_PYTHON names the interpreter, defaulting to python3 — right for the
+// standalone repo, usually WRONG in a checkout where the interpreter carrying
+// cadgen is the repo venv. So the resolved interpreter and its
+// stepImportAvailable answer are logged at startup: a backend that cannot
+// import cadgen says so here rather than three clicks later as a failed STEP
+// import. See CONTRIBUTING.md for the checkout recipe.
+//
+// VIEWER_BACKEND_URL attaches to a backend you started yourself, which is also
+// how you put a debugger on it.
+// Resolved during CONFIG, not in configureServer: Vite builds the proxy
+// middleware from `server.proxy` while creating the server, and http-proxy
+// wants a plain string target — so the port has to be known before the config
+// object exists. Vite supports an async config function, which is what makes
+// that possible.
+async function startDevBackend() {
+  const external = String(process.env.VIEWER_BACKEND_URL || "").trim();
+  if (external) {
+    const target = external.replace(/\/+$/u, "");
+    console.info(`CAD Viewer backend: ${target} (VIEWER_BACKEND_URL)`);
+    return target;
+  }
+
+  const python = process.env.VIEWER_PYTHON || "python3";
+  const child = spawn(
+    python,
+    [
+      path.join(viewerAppRoot, "server", "main.py"),
+      "--root",
+      directoryRoot,
+      "--host",
+      "127.0.0.1",
+      "--ephemeral",
+      "--no-registry",
+      "--json",
+    ],
+    { stdio: ["ignore", "pipe", "inherit"] },
+  );
+  child.once("exit", (code) => {
+    console.error(
+      `CAD Viewer backend exited (${code}). Set VIEWER_PYTHON to an interpreter that has cadgen installed.`,
+    );
+  });
+  // Vite's own exit is the only teardown that always runs; a killed dev server
+  // must not leave the backend holding a port.
+  for (const signal of ["exit", "SIGINT", "SIGTERM"]) {
+    process.once(signal, () => child.kill("SIGTERM"));
+  }
+
+  const announced = await readFirstJsonLine(child.stdout);
+  const target = String(announced.url || "").replace(/\/+$/u, "");
+  console.info(`CAD Viewer backend: ${target} (${python}, serving ${directoryRoot})`);
+
+  // Announce the degradation instead of letting it surface three clicks later
+  // as a failed STEP import.
+  try {
+    const info = await (await fetch(`${target}/__cad/server`)).json();
+    if (!info.stepImportAvailable) {
+      console.warn(
+        `CAD Viewer backend cannot import cadgen (${python}): viewing works, STEP import will not. ` +
+          "Set VIEWER_PYTHON to an interpreter with cadgen installed.",
+      );
+    }
+  } catch {
+    // A dead backend is reported far more clearly by the proxy itself.
+  }
+  return target;
+}
+
+function readFirstJsonLine(stream) {
+  return new Promise((resolve, reject) => {
+    let buffered = "";
+    const onData = (chunk) => {
+      buffered += chunk;
+      for (const line of buffered.split("\n")) {
+        if (!line.startsWith("{")) {
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(line);
+          stream.off("data", onData);
+          resolve(parsed);
+          return;
+        } catch {
+          // a partial line; keep buffering
+        }
+      }
+    };
+    stream.on("data", onData);
+    stream.once("error", reject);
+    stream.once("end", () =>
+      reject(new Error(`CAD Viewer backend exited before announcing a port: ${buffered}`)),
+    );
+  });
 }
 
 function serverLifetimePlugin() {
@@ -153,12 +226,11 @@ function serverLifetimePlugin() {
   };
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(async ({ command }) => ({
   root: viewerAppRoot,
   envPrefix: "VIEWER_",
   plugins: [
     react(),
-    cadViewerBackendPlugin(),
     serverLifetimePlugin(),
   ],
   resolve: {
@@ -220,6 +292,27 @@ export default defineConfig(({ command }) => ({
     // one that rolls/reuses; dev stays out of that machinery entirely.)
     strictPort: true,
     allowedHosts: viewerAllowedHosts,
+    // The two API prefixes go to the Python backend; everything else is the
+    // client, served by Vite with HMR. Neither prefix collides with Vite's own
+    // reserved /@vite/, /@fs/ or /@id/.
+    //
+    // changeOrigin: false is MANDATORY. The backend keeps its DNS-rebinding
+    // Host check, which is active whenever the bound host is loopback. With
+    // false the browser's own `Host: 127.0.0.1:5173` is forwarded and passes
+    // (the check compares the NAME, never the port) — the same header the
+    // in-process middleware used to see. With true, Vite would rewrite Host to
+    // the target's, which would launder a VIEWER_ALLOWED_HOSTS entry served
+    // over a non-local name into an accepted request.
+    proxy:
+      command === "serve"
+        ? await (async () => {
+            const target = await startDevBackend();
+            return {
+              "/__cad": { target, changeOrigin: false },
+              "/__tess_cache": { target, changeOrigin: false },
+            };
+          })()
+        : undefined,
     fs: {
       // Real paths too: Vite checks ids after resolution, and the develop layout
       // reaches cadgen-js through a symlink. See scripts/serverFsAllow.mjs.

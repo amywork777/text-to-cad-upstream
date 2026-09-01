@@ -116,14 +116,16 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   a skill with missing files. `scripts/github-workflows/check-builds.sh` enforces
   this; do not relax it.
 - `apps/viewer/` is the whole CAD Viewer app: the React client (`src/`) AND its
-  pure-JS backend (`server/`, dependency-free Node). It is a standalone app,
-  separate from cadgen: the cad-viewer skill bundles the built client + server
-  at `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
+  stdlib-only Python backend (`server/`). It is a standalone app, separate from
+  cadgen: the cad-viewer skill bundles the built client + server at
+  `skills/cad-viewer/scripts/viewer` (a dev symlink here; materialized by
   `bundle-cad-viewer.sh` for publish), and each release mirrors `apps/viewer/` to the
-  standalone `earthtojake/cad-viewer` repo. The backend's render path runs no
-  Python; importing a foreign STEP spawns `cadgen step compile` (a soft dependency —
-  absent cadgen, viewing still works). Keep repo-level tooling in `scripts/`,
-  not under `apps/viewer/`.
+  standalone `earthtojake/cad-viewer` repo. cadgen-js is bundled into the client
+  at BUILD time; cadgen is an ordinary PyPI dependency of the interpreter that
+  runs `server/main.py`, imported in a worker the server owns to compile foreign
+  STEP imports. It stays SOFT — no module in `server/` imports it at module
+  scope, so absent cadgen viewing still works and only imports degrade. Keep
+  repo-level tooling in `scripts/`, not under `apps/viewer/`.
 - `packages/cadgen-js` must stay reusable/non-React; app UI and workflow state
   belong in `apps/viewer/`. It holds the shared CAD render/runtime code: one package,
   one copy of each shared primitive.

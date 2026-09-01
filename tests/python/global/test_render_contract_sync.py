@@ -5,21 +5,31 @@ This repo has lost a cross-language mirror to a deleted check before (the
 viewer scanner's package-path constants drifted silently once nothing compared
 them) — these greps are the structural version of that comparison: a one-sided
 bump fails CI before it can ship a viewer that cannot read what cadgen writes.
+
+The CLIENT half of that boundary is still JS — ``packages/cadgen-js`` parses
+``.surf`` in the browser — so the SURF_VERSION pin stays here. The viewer
+BACKEND'S half is Python now, and is no longer a grep: its store-key constants
+and path derivations are compared against cadgen's, value for value, by
+``apps/viewer/tests_server/test_store_paths.py``. That is strictly stronger
+than the literal scans of ``packageContract.mjs`` and ``storePaths.mjs`` that
+used to live here — a grep can only say a string is present, never that the two
+sides agree — and it is not a tautology, because the viewer keeps a genuinely
+independent stdlib implementation so that merely VIEWING never requires cadgen.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
-STORE_PATHS_JS = ROOT / "apps/viewer/server/storePaths.mjs"
+VIEWER_APP_ROOT = ROOT / "apps/viewer"
 
 
 def _extract(pattern: str, path: Path, flags: int = re.MULTILINE) -> str:
@@ -46,32 +56,13 @@ class RenderContractSyncTest(unittest.TestCase):
             "them; a .surf the client cannot parse renders nothing).",
         )
 
-    def test_package_contract_constants_match_python(self) -> None:
-        # Both languages resolve store keys with the SAME cache-scheme number
-        # (apps/viewer/server/packageContract.mjs mirrors cache_schema.py); a
-        # one-sided bump strands one side in the old key generation.
-        contract = ROOT / "apps/viewer/server/packageContract.mjs"
-        self.assertEqual(
-            _extract(
-                r"^CACHE_SCHEMA_VERSION = (\d+)$",
-                ROOT / "packages/cadgen/src/cadgen/_internal/cache_schema.py",
-            ),
-            _extract(r"^export const CACHE_SCHEMA_VERSION = (\d+);", contract),
-            "CACHE_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
-        )
+    def test_sidecar_schema_matches_the_js_kinematics_loader(self) -> None:
+        # The viewer BACKEND's copy of these constants is compared to cadgen's
+        # by value in apps/viewer/tests_server/test_store_paths.py. What
+        # remains genuinely cross-language is the CLIENT: the kinematics loader
+        # runs in the browser and REFUSES any other schema, so a one-sided bump
+        # makes every model's kinematics fail to load.
         sidecar_module = ROOT / "packages/cadgen/src/cadgen/_internal/source_sidecar.py"
-        self.assertEqual(
-            _extract(r'^SOURCE_SIDECAR_SUFFIX = "([^"]+)"$', sidecar_module),
-            _extract(r'^export const SOURCE_SIDECAR_SUFFIX = "([^"]+)";', contract),
-            "SOURCE_SIDECAR_SUFFIX diverged between cadgen and the viewer's package "
-            "contract — the model-side sidecar's existence IS the "
-            "generated-vs-imported marker on both freshness authorities",
-        )
-        self.assertEqual(
-            _extract(r"^SOURCE_SIDECAR_SCHEMA_VERSION = (\d+)$", sidecar_module),
-            _extract(r"^export const SOURCE_SIDECAR_SCHEMA_VERSION = (\d+);", contract),
-            "SOURCE_SIDECAR_SCHEMA_VERSION diverged between cadgen and the viewer's package contract",
-        )
         self.assertEqual(
             _extract(r"^SOURCE_SIDECAR_SCHEMA_VERSION = (\d+)$", sidecar_module),
             _extract(
@@ -83,93 +74,43 @@ class RenderContractSyncTest(unittest.TestCase):
             "one-sided bump makes every model's kinematics fail to load",
         )
 
-    def test_provenance_record_constants_match_python(self) -> None:
-        # The records tier is where generated-vs-imported actually lives at
-        # sidecar schema 5: a PLAIN generated model writes no sidecar, so the
-        # viewer's classifier reads <cache>/records/<pathKey>.source.json. Three
-        # literals have to agree across the languages, and each of them is the
-        # kind that fails SILENTLY — a wrong dir name or a wrong truncation
-        # length just never finds a record, and every generated model quietly
-        # reads as imported.
-        contract = ROOT / "apps/viewer/server/packageContract.mjs"
-        cache_paths_module = ROOT / "packages/cadgen/src/cadgen/_internal/cache_paths.py"
-        self.assertEqual(
-            _extract(
-                r'def records_dir\(\).*?return cache_root\(\) / "([^"]+)"',
-                cache_paths_module,
-                re.DOTALL,
-            ),
-            _extract(r'^export const RECORDS_DIR_NAME = "([^"]+)";', contract),
-            "the records tier's directory name diverged between cadgen's "
-            "cache_paths.records_dir and the viewer's package contract",
-        )
-        self.assertEqual(
-            _extract(
-                r'f"\{artifact_path_key\(Path\(step_path\)\)\}([^"]+)"',
-                ROOT / "packages/cadgen/src/cadgen/_internal/source_sidecar.py",
-            ),
-            _extract(r'^export const PROVENANCE_RECORD_SUFFIX = "([^"]+)";', contract),
-            "the provenance record's filename suffix diverged between cadgen's "
-            "_provenance_record_path and the viewer's package contract",
-        )
-        self.assertEqual(
-            _extract(
-                r"hexdigest\(\)\[:(\d+)\]",
-                ROOT / "packages/cadgen/src/cadgen/catalog.py",
-            ),
-            _extract(r"^export const ARTIFACT_PATH_KEY_LENGTH = (\d+);", contract),
-            "artifact_path_key's truncation length diverged between cadgen and "
-            "the viewer's package contract",
-        )
-
-    def test_provenance_record_path_derivation_matches_python(self) -> None:
-        # Behavioural, not just grep: both sides must land on the SAME absolute
-        # file for the same artifact. This catches everything the literal pins
-        # above cannot — a different hash input (resolved vs raw path), a
-        # different encoding, a join in the wrong order.
+    def test_the_viewer_derives_the_same_provenance_record_path_as_cadgen(self) -> None:
+        # Behavioural, and now Python-to-Python: both sides must land on the
+        # SAME absolute file for the same artifact. The viewer keeps its own
+        # stdlib implementation so that viewing never requires cadgen, so this
+        # is a real comparison of two independent derivations — it catches a
+        # different hash input (resolved vs raw path), a different encoding, or
+        # a join in the wrong order, none of which a constant pin can see.
         from cadgen._internal.source_sidecar import _provenance_record_path
+
+        if str(VIEWER_APP_ROOT) not in sys.path:
+            sys.path.insert(0, str(VIEWER_APP_ROOT))
+        from server import store_paths
 
         with tempfile.TemporaryDirectory() as workspace:
             cache_dir = Path(workspace) / "store"
             artifact = Path(workspace) / "nested dir" / "wídget.step"
             artifact.parent.mkdir(parents=True)
             artifact.write_text("ISO-10303-21;\n", encoding="utf-8")
-
-            env = {
-                k: v
-                for k, v in os.environ.items()
-                if k not in {"CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"}
-            }
-            env["CADGEN_CACHE_DIR"] = str(cache_dir)
-            from cadgen._internal.node_runtime import cad_node_executable
-
-            module_url = STORE_PATHS_JS.resolve().as_uri()
-            script = (
-                f"import({module_url!r}).then(m => process.stdout.write("
-                f"m.sourceProvenanceRecordPath({str(artifact)!r})))"
-            )
-            result = subprocess.run(
-                [str(cad_node_executable()), "--input-type=module", "-e", script],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
             with mock.patch.dict(os.environ, {"CADGEN_CACHE_DIR": str(cache_dir)}):
-                python_path = str(_provenance_record_path(artifact))
-            self.assertEqual(
-                python_path,
-                result.stdout.strip(),
-                "the viewer and cadgen derive DIFFERENT provenance record paths "
-                "for the same artifact — the viewer would classify every "
-                "generated model as imported",
-            )
+                self.assertEqual(
+                    str(_provenance_record_path(artifact)),
+                    store_paths.source_provenance_record_path(str(artifact)),
+                    "the viewer and cadgen derive DIFFERENT provenance record "
+                    "paths for the same artifact — the viewer would classify "
+                    "every generated model as imported",
+                )
 
     def test_viewer_classifier_reads_a_record_cadgen_wrote(self) -> None:
-        # End to end across the language boundary: cadgen writes the record,
-        # the viewer's status authority reads it back as generated. Nothing here
-        # depends on a sidecar — that is the whole point.
+        # End to end across the PACKAGE boundary: cadgen writes the record, the
+        # viewer's status authority reads it back as generated. Nothing here
+        # depends on a sidecar — that is the whole point, since a plain
+        # generated model writes none.
         from cadgen._internal.source_sidecar import write_source_provenance_record
+
+        if str(VIEWER_APP_ROOT) not in sys.path:
+            sys.path.insert(0, str(VIEWER_APP_ROOT))
+        from server import artifact_status
 
         with tempfile.TemporaryDirectory() as workspace:
             cache_dir = Path(workspace) / "store"
@@ -180,50 +121,16 @@ class RenderContractSyncTest(unittest.TestCase):
                     artifact,
                     {"sourceKind": "python", "sourcePath": "src/plate.py"},
                 )
-            self.assertFalse(
-                artifact.with_name(f"{artifact.name}.json").exists(),
-                "fixture must be a PLAIN generated model (no sidecar)",
-            )
-
-            env = {
-                k: v
-                for k, v in os.environ.items()
-                if k not in {"CADGEN_CACHE_DIR", "XDG_CACHE_HOME", "LOCALAPPDATA"}
-            }
-            env["CADGEN_CACHE_DIR"] = str(cache_dir)
-            from cadgen._internal.node_runtime import cad_node_executable
-
-            module_url = (ROOT / "apps/viewer/server/artifactStatus.mjs").resolve().as_uri()
-            script = (
-                f"import({module_url!r}).then(m => process.stdout.write(JSON.stringify("
-                f"m.resolveArtifactVerdict({str(artifact)!r}, {workspace!r}))))"
-            )
-            result = subprocess.run(
-                [str(cad_node_executable()), "--input-type=module", "-e", script],
-                capture_output=True,
-                text=True,
-                env=env,
-                check=True,
-            )
-            verdict = json.loads(result.stdout.strip())
+                self.assertFalse(
+                    artifact.with_name(f"{artifact.name}.json").exists(),
+                    "fixture must be a PLAIN generated model (no sidecar)",
+                )
+                verdict = artifact_status.resolve_artifact_verdict(str(artifact), workspace)
             self.assertTrue(
                 verdict.get("generated"),
                 "the viewer read cadgen's own provenance record and still "
                 f"classified the model as imported: {verdict}",
             )
-
-    def test_store_key_salt_reads_the_one_js_constant(self) -> None:
-        # Schema gating lives in the package KEY: storePaths.mjs salts the
-        # store key with the one JS constant this suite pins against Python.
-        # A package that resolves at all is current-scheme by construction.
-        # Matches either import shape (one name on a line, or a braced list) so
-        # adding a second mirrored constant does not read as a broken contract.
-        self.assertRegex(
-            STORE_PATHS_JS.read_text(),
-            r"import \{[^}]*\bCACHE_SCHEMA_VERSION\b[^}]*\} from \"\./packageContract\.mjs\";",
-            "the store key salt must read the cache-scheme version from the one "
-            "JS constant (packageContract.mjs), which this suite pins against Python",
-        )
 
     def test_component_blob_format_is_pinned_not_current(self) -> None:
         # Component blobs are content-addressed: their serialized bytes ARE the

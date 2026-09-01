@@ -91,6 +91,18 @@ jobs:
         working-directory: ${{ runner.temp }}/cad-viewer
         run: npm run test
 
+      # The backend is Python and mirrors with the app, so the mirror has to be
+      # able to validate it too — otherwise the standalone repo ships a server
+      # its own CI never runs. The suites are stdlib-only and skip the cadgen
+      # equality guard when cadgen is absent, which it is here by design.
+      # VIEWER_DISABLE_NATIVE_REVEAL keeps a headless runner from trying to
+      # open a file manager.
+      - name: Run mirror backend tests
+        working-directory: ${{ runner.temp }}/cad-viewer
+        env:
+          VIEWER_DISABLE_NATIVE_REVEAL: "1"
+        run: python3 -m unittest discover -s tests_server -t .
+
       - name: Build the mirror
         working-directory: ${{ runner.temp }}/cad-viewer
         run: npm run build
