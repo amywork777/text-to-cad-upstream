@@ -73,7 +73,7 @@ export function poseValuesForPreset(definition, poseName) {
 }
 
 export default function PoseControlsSection({
-  title = "Pose",
+  title = "Kinematics",
   runtime = null,
   loadingLabel = "Loading pose...",
   noParametersLabel = "No pose controls.",
@@ -305,14 +305,16 @@ export function poseControlsHaveContent(runtime, { hideWhenEmpty = false } = {})
   return Boolean(definition || status === "loading" || error);
 }
 
-// Build a pose tab descriptor, or null when there is nothing to show.
+// Build the kinematics tab descriptor, or null when there is nothing to show.
+// The tab is named for the system it drives; "pose" stays the word for the
+// state that system holds, and for the section id persisted in tab layouts.
 export function buildPoseControlsTab(props = {}) {
   if (!poseControlsHaveContent(props.runtime, { hideWhenEmpty: props.hideWhenEmpty })) {
     return null;
   }
   return {
     id: props.value || "pose",
-    title: props.title || "Pose",
+    title: props.title || "Kinematics",
     content: <PoseControlsSection {...props} />
   };
 }

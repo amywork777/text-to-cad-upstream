@@ -32,7 +32,7 @@ build` for foreign STEP imports as a SOFT dependency: absent cadgen
   sidecar (`<name>.step.json`), and the cache. The viewer never reads
   source code and never rebuilds on source changes — generated outputs are
   detached, and a stale artifact stays stale until someone runs its script.
-- **Kinematics/animation independence**: the Pose tab drives the sidecar's
+- **Kinematics/animation independence**: the Kinematics tab drives the sidecar's
   mate data through the shared FK runtime; the Animation tab evaluates the
   sidecar's copied `.anim.js` clips. They compose in the effect records and
   nowhere else.
