@@ -70,18 +70,20 @@ VALVE_R = 1.5
 VALVE_LEN = 9.0
 
 
+# (sRGB hex, alpha) pairs: _part() turns them into Colors with srgb() at use, so
+# importing this module never loads the CAD kernel (srgb() builds a bd.Color).
 COLORS = {
-    "rubber": srgb("#1A1A1E"),
-    "graphite": srgb("#2E3742"),
-    "anodized_red": srgb("#C1121F"),
-    "pale_aluminum": srgb("#C9CDD1"),
-    "chrome": srgb("#E8EAED"),
+    "rubber": ("#1A1A1E", 1.0),
+    "graphite": ("#2E3742", 1.0),
+    "anodized_red": ("#C1121F", 1.0),
+    "pale_aluminum": ("#C9CDD1", 1.0),
+    "chrome": ("#E8EAED", 1.0),
 }
 
 
 def _part(shape, name, *details, color):
     shape.label = ":".join([name, *(str(d) for d in details)])
-    shape.color = color
+    shape.color = srgb(*color)
     return shape
 
 

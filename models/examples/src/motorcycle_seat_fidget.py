@@ -76,18 +76,20 @@ LENS_H = 2.5
 LENS_X = -28.5
 
 
+# (sRGB hex, alpha) pairs: _part() turns them into Colors with srgb() at use, so
+# importing this module never loads the CAD kernel (srgb() builds a bd.Color).
 COLORS = {
-    "trim_black": srgb("#17191C"),
-    "tan_leather": srgb("#8A6642"),
-    "graphite": srgb("#2E3742"),
-    "steel": srgb("#BFC5CC"),
-    "lens_red": srgb("#D01317"),
+    "trim_black": ("#17191C", 1.0),
+    "tan_leather": ("#8A6642", 1.0),
+    "graphite": ("#2E3742", 1.0),
+    "steel": ("#BFC5CC", 1.0),
+    "lens_red": ("#D01317", 1.0),
 }
 
 
 def _part(shape, name, *details, color):
     shape.label = ":".join([name, *(str(d) for d in details)])
-    shape.color = color
+    shape.color = srgb(*color)
     return shape
 
 

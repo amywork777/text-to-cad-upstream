@@ -12,17 +12,19 @@ Locked interfaces:
 
 from __future__ import annotations
 
+import functools
+
 import math  # noqa: F401  (kept for tuning)
 
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ACCENT_COLOR,
-    ALU_COLOR,
-    RUBBER_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
-    VISOR_COLOR,
+    ACCENT,
+    ALU,
+    RUBBER,
+    SHELL,
+    STRUCT,
+    VISOR,
     part_compound,
     styled,
 )
@@ -101,7 +103,7 @@ def _wrist_clevis():
             clevis -= ring
         except Exception:
             pass
-    return styled(clevis, "wrist_clevis", STRUCT_COLOR)
+    return styled(clevis, "wrist_clevis", STRUCT)
 
 
 def _cheek_bolts():
@@ -111,7 +113,7 @@ def _cheek_bolts():
         for bx in (-13.0, 17.0):
             bolt = bd.Pos(bx, ys * 30.7, -37.0) * _ycyl(2.2, 1.4)
             bolt = _safe_chamfer(bolt, bolt.edges(), 0.5)
-            out.append(styled(bolt, f"cheek_bolt_{i}", ALU_COLOR))
+            out.append(styled(bolt, f"cheek_bolt_{i}", ALU))
             i += 1
     return out
 
@@ -121,7 +123,7 @@ def _boss_discs():
     for ys, tag in ((1.0, "l"), (-1.0, "r")):
         boss = bd.Pos(0, ys * 31.6, 0) * _ycyl(17.0, 3.2)
         boss = _safe_chamfer(boss, boss.edges(), 0.8)
-        out.append(styled(boss, f"wrist_boss_{tag}", ALU_COLOR))
+        out.append(styled(boss, f"wrist_boss_{tag}", ALU))
     return out
 
 
@@ -133,9 +135,19 @@ KNUCKLE_XS = (-27.0, -9.0, 9.0, 27.0)
 
 # thumb CMC frame (root on the +X palm edge)
 THUMB_ROOT = (39.5, 2.0, -60.0)
-T_CMC = bd.Pos(*THUMB_ROOT) * bd.Rot(0, -28, 0) * bd.Rot(0, 0, 38)  # hinge axis = local X
-T_SEG1 = T_CMC * bd.Rot(12, 0, 0)  # CMC curl
-T_SEG2 = T_SEG1 * bd.Pos(0, 0, -32.0) * bd.Rot(30, 0, 0)  # IP curl
+
+
+@functools.cache
+def _thumb_frames():
+    """(CMC, SEG1, SEG2) Locations of the thumb chain.
+
+    Built on first use rather than at import: a module-level ``bd.Pos(...)``
+    would load the CAD kernel before the @step freshness gate runs.
+    """
+    t_cmc = bd.Pos(*THUMB_ROOT) * bd.Rot(0, -28, 0) * bd.Rot(0, 0, 38)  # hinge axis = local X
+    t_seg1 = t_cmc * bd.Rot(12, 0, 0)  # CMC curl
+    t_seg2 = t_seg1 * bd.Pos(0, 0, -32.0) * bd.Rot(30, 0, 0)  # IP curl
+    return t_cmc, t_seg1, t_seg2
 
 
 def _palm_outline_face(pts, y):
@@ -145,6 +157,7 @@ def _palm_outline_face(pts, y):
 
 
 def _palm_core():
+    t_cmc, t_seg1, _ = _thumb_frames()
     pts = [
         (-20.0, -44.0),
         (24.0, -44.0),
@@ -169,15 +182,15 @@ def _palm_core():
         core -= bd.Pos(kx, KNUCKLE_Y, KNUCKLE_Z) * _xcyl(8.0, 15.5)
 
     # thumb CMC pocket + diagonal thumb relief groove
-    core -= T_CMC * _xcyl(9.5, 30.0)
-    core -= T_SEG1 * bd.Pos(0, 0, -14.0) * bd.Rot(0, 90, 0) * bd.Cylinder(
+    core -= t_cmc * _xcyl(9.5, 30.0)
+    core -= t_seg1 * bd.Pos(0, 0, -14.0) * bd.Rot(0, 90, 0) * bd.Cylinder(
         radius=11.2, height=60.0
     )
 
     # palm sensor recess
     core -= bd.Pos(2.0, 17.4, -80.0) * _ycyl(8.3, 3.2)
 
-    return styled(core, "palm_core", STRUCT_COLOR)
+    return styled(core, "palm_core", STRUCT)
 
 
 def _dorsal_cover():
@@ -202,7 +215,7 @@ def _dorsal_cover():
             cover -= bd.Pos(2.0, -20.0, gz) * bd.Box(52.0, 1.2, 1.5)
         except Exception:
             pass
-    return styled(cover, "dorsal_cover", SHELL_COLOR)
+    return styled(cover, "dorsal_cover", SHELL)
 
 
 def _palm_sensor():
@@ -210,8 +223,8 @@ def _palm_sensor():
     ring = bd.Pos(2.0, 16.5, -80.0) * bd.Rot(-90, 0, 0) * ring_raw
     lens = bd.Pos(2.0, 16.7, -80.0) * _ycyl(6.1, 1.6)
     return [
-        styled(ring, "palm_sensor_ring", ALU_COLOR),
-        styled(lens, "palm_sensor_lens", VISOR_COLOR),
+        styled(ring, "palm_sensor_ring", ALU),
+        styled(lens, "palm_sensor_lens", VISOR),
     ]
 
 
@@ -280,19 +293,20 @@ def _finger(idx, kx, curl1=21.0, curl2=25.0):
     )
 
     solids = [
-        styled(t1 * prox, f"finger{idx}_proximal", STRUCT_COLOR),
-        styled(t2 * body, f"finger{idx}_distal", STRUCT_COLOR),
+        styled(t1 * prox, f"finger{idx}_proximal", STRUCT),
+        styled(t2 * body, f"finger{idx}_distal", STRUCT),
         styled(bd.Pos(kx, KNUCKLE_Y, KNUCKLE_Z) * _pin(3.7, 17.5),
-               f"finger{idx}_pin_mcp", ALU_COLOR),
+               f"finger{idx}_pin_mcp", ALU),
         styled(t1 * bd.Pos(0, 0, -36.0) * _pin(3.7, 17.5),
-               f"finger{idx}_pin_pip", ALU_COLOR),
+               f"finger{idx}_pin_pip", ALU),
     ]
     if pad is not None:
-        solids.append(styled(t2 * pad, f"finger{idx}_tip_pad", ACCENT_COLOR))
+        solids.append(styled(t2 * pad, f"finger{idx}_tip_pad", ACCENT))
     return solids
 
 
 def _thumb():
+    t_cmc, t_seg1, t_seg2 = _thumb_frames()
     seg1 = _link(
         length=32.0, width=15.0, r_a=8.5, r_b=7.5,
         shaft_w=13.0, shaft_d=13.0, slot_w=9.7, bore_r=4.2,
@@ -303,14 +317,14 @@ def _thumb():
         pad_c=(0, 1.8, -21.0), pad_r=5.7, bore_r=3.9,
     )
     solids = [
-        styled(T_SEG1 * seg1, "thumb_proximal", STRUCT_COLOR),
-        styled(T_SEG2 * body, "thumb_distal", STRUCT_COLOR),
-        styled(T_CMC * _pin(4.0, 17.0), "thumb_pin_cmc", ALU_COLOR),
-        styled(T_SEG1 * bd.Pos(0, 0, -32.0) * _pin(3.7, 16.0),
-               "thumb_pin_ip", ALU_COLOR),
+        styled(t_seg1 * seg1, "thumb_proximal", STRUCT),
+        styled(t_seg2 * body, "thumb_distal", STRUCT),
+        styled(t_cmc * _pin(4.0, 17.0), "thumb_pin_cmc", ALU),
+        styled(t_seg1 * bd.Pos(0, 0, -32.0) * _pin(3.7, 16.0),
+               "thumb_pin_ip", ALU),
     ]
     if pad is not None:
-        solids.append(styled(T_SEG2 * pad, "thumb_tip_pad", ACCENT_COLOR))
+        solids.append(styled(t_seg2 * pad, "thumb_tip_pad", ACCENT))
     return solids
 
 
@@ -332,7 +346,7 @@ def _right_solids():
 
 def _fallback_solids():
     blk = bd.Pos(4, 0, -100) * bd.Box(80, 36, 200)
-    return [styled(blk, "hand_fallback", STRUCT_COLOR)]
+    return [styled(blk, "hand_fallback", STRUCT)]
 
 
 def build_hand(side: str):

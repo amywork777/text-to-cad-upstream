@@ -11,13 +11,16 @@ from cadgen import build123d as bd
 
 MODEL_LABEL = "photo_reference_takeaway_coffee_cup"
 
-PAPER = bd.Color(0.86, 0.78, 0.64, 1.0)
-PAPER_EDGE = bd.Color(0.90, 0.82, 0.69, 1.0)
-LID_WHITE = bd.Color(0.96, 0.94, 0.90, 1.0)
-LID_HIGHLIGHT = bd.Color(1.0, 0.985, 0.955, 1.0)
-LID_SHADOW = bd.Color(0.82, 0.80, 0.76, 1.0)
-BLUE_LOGO = bd.Color(0.00, 0.62, 0.78, 1.0)
-DARK_OPENING = bd.Color(0.08, 0.075, 0.065, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+PAPER = (0.86, 0.78, 0.64, 1.0)
+PAPER_EDGE = (0.90, 0.82, 0.69, 1.0)
+LID_WHITE = (0.96, 0.94, 0.90, 1.0)
+LID_HIGHLIGHT = (1.0, 0.985, 0.955, 1.0)
+LID_SHADOW = (0.82, 0.80, 0.76, 1.0)
+BLUE_LOGO = (0.00, 0.62, 0.78, 1.0)
+DARK_OPENING = (0.08, 0.075, 0.065, 1.0)
 
 BODY_HEIGHT = 108.0
 BODY_BOTTOM_RADIUS = 30.0

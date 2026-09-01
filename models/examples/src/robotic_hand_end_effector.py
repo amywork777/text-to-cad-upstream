@@ -55,13 +55,16 @@ WRIST_CENTER = (0.0, -45.0, -12.0)
 WRIST_RING_OUTER_RADIUS = 27.0
 WRIST_RING_INNER_RADIUS = 19.0
 
-BRUSHED_ALUMINUM = bd.Color(0.72, 0.74, 0.74, 1.0)
-DARK_TITANIUM = bd.Color(0.18, 0.20, 0.22, 1.0)
-MATTE_BLACK = bd.Color(0.01, 0.011, 0.012, 1.0)
-DARK_GRAPHITE = bd.Color(0.10, 0.105, 0.11, 1.0)
-POLISHED_STEEL = bd.Color(0.86, 0.88, 0.88, 1.0)
-BLUE_ACCENT = bd.Color(0.05, 0.33, 0.86, 1.0)
-AMBER_ACCENT = bd.Color(1.0, 0.55, 0.12, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+BRUSHED_ALUMINUM = (0.72, 0.74, 0.74, 1.0)
+DARK_TITANIUM = (0.18, 0.20, 0.22, 1.0)
+MATTE_BLACK = (0.01, 0.011, 0.012, 1.0)
+DARK_GRAPHITE = (0.10, 0.105, 0.11, 1.0)
+POLISHED_STEEL = (0.86, 0.88, 0.88, 1.0)
+BLUE_ACCENT = (0.05, 0.33, 0.86, 1.0)
+AMBER_ACCENT = (1.0, 0.55, 0.12, 1.0)
 
 
 def _safe_fillet(edges, radius: float) -> None:

@@ -33,12 +33,6 @@ from __future__ import annotations
 import math
 
 # Only for the compound-unwrapping fallback in _revolve; see its docstring.
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeRevol
-from OCP.Standard import Standard_TypeMismatch
-from OCP.TopAbs import TopAbs_SOLID
-from OCP.TopExp import TopExp_Explorer
-from OCP.TopoDS import TopoDS
-from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt
 
 from cadgen import build123d as bd, compound_from_instances
 
@@ -195,6 +189,12 @@ def _revolve(outer, inner, arc=360.0):
     with the volume the profile implies -- so unwrap it rather than rebuilding
     the profile.
     """
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeRevol
+    from OCP.Standard import Standard_TypeMismatch
+    from OCP.TopAbs import TopAbs_SOLID
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopoDS import TopoDS
+    from OCP.gp import gp_Ax1, gp_Dir, gp_Pnt
     face = _profile_face(outer, inner)
     try:
         solid = bd.Solid.revolve(face, arc, bd.Axis.X)

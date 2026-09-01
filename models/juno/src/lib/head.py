@@ -21,12 +21,12 @@ import math
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ACCENT_COLOR,
-    ALU_COLOR,
-    EYE_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
-    VISOR_COLOR,
+    ACCENT,
+    ALU,
+    EYE,
+    SHELL,
+    STRUCT,
+    VISOR,
     part_compound,
     styled,
 )
@@ -190,19 +190,19 @@ def build_head():
 
     at = bd.Pos(*HEAD_CTR)
     children = [
-        styled(at * helmet, "head_shell", SHELL_COLOR),
-        styled(at * visor, "head_visor", VISOR_COLOR),
-        styled(at * chin, "head_chin_sensor", STRUCT_COLOR),
-        styled(at * guard, "head_neck_guard", STRUCT_COLOR),
-        styled(at * pods[0], "head_ear_pod_l", ALU_COLOR),
-        styled(at * pods[1], "head_ear_pod_r", ALU_COLOR),
-        styled(at * buttons[0], "head_ear_button_l", ACCENT_COLOR),
-        styled(at * buttons[1], "head_ear_button_r", ACCENT_COLOR),
-        styled(at * dots[0], "head_cam_dot_l", VISOR_COLOR),
-        styled(at * dots[1], "head_cam_dot_r", VISOR_COLOR),
+        styled(at * helmet, "head_shell", SHELL),
+        styled(at * visor, "head_visor", VISOR),
+        styled(at * chin, "head_chin_sensor", STRUCT),
+        styled(at * guard, "head_neck_guard", STRUCT),
+        styled(at * pods[0], "head_ear_pod_l", ALU),
+        styled(at * pods[1], "head_ear_pod_r", ALU),
+        styled(at * buttons[0], "head_ear_button_l", ACCENT),
+        styled(at * buttons[1], "head_ear_button_r", ACCENT),
+        styled(at * dots[0], "head_cam_dot_l", VISOR),
+        styled(at * dots[1], "head_cam_dot_r", VISOR),
     ]
     for i, louver in enumerate(louvers):
-        children.append(styled(at * louver, f"head_vent_louver_{i}", ACCENT_COLOR))
+        children.append(styled(at * louver, f"head_vent_louver_{i}", ACCENT))
     for tile, name in eye_tiles:
-        children.append(styled(at * tile, name, EYE_COLOR))
+        children.append(styled(at * tile, name, EYE))
     return part_compound("head", children)

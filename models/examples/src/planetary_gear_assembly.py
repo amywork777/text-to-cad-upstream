@@ -37,11 +37,17 @@ def _srgb_channel_to_linear(channel: int) -> float:
     return ((value + 0.055) / 1.055) ** 2.4
 
 
-def _srgb_color(hex_color: str) -> bd.Color:
+def _srgb_color(hex_color: str) -> tuple[float, float, float, float]:
+    """Linear RGBA for an ``#rrggbb`` sRGB hex.
+
+    A plain tuple rather than ``bd.Color``: build123d's ``Shape.color`` setter
+    builds the Color on assignment, and a module-level ``bd.Color(...)`` would
+    import the CAD kernel before the @step freshness gate runs.
+    """
     value = hex_color.removeprefix("#")
     if len(value) != 6:
         raise ValueError(f"Expected #rrggbb color, got {hex_color!r}")
-    return bd.Color(
+    return (
         _srgb_channel_to_linear(int(value[0:2], 16)),
         _srgb_channel_to_linear(int(value[2:4], 16)),
         _srgb_channel_to_linear(int(value[4:6], 16)),

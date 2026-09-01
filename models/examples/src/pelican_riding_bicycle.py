@@ -5,9 +5,6 @@ import math
 from collections.abc import Sequence
 
 from cadgen import build123d as bd
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
 
 
 DISPLAY_NAME = "Pelican riding a bicycle"
@@ -93,6 +90,8 @@ def _softened(shape: bd.Shape, radius: float) -> bd.Shape:
 
 
 def _transformed(shape: bd.Shape, center: Vector3, axis_x: Vector3, axis_y: Vector3, axis_z: Vector3) -> bd.Shape:
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
     x_dir = _v_norm(axis_x)
     y_dir = _v_norm(axis_y)
     z_dir = _v_norm(axis_z)
@@ -134,6 +133,8 @@ def _oriented_box(
 
 
 def _cylinder_between(label: str, p1: Vector3, p2: Vector3, radius: float, color_name: str) -> bd.Shape:
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
     axis = _v_sub(p2, p1)
     length = _v_len(axis)
     if length <= 1e-6:

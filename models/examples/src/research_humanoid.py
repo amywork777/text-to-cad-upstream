@@ -28,15 +28,18 @@ from cadgen.assembly import AssemblyHelper, label_shape
 
 
 # restrained production-prototype palette
-ALUMINUM = bd.Color("#AEB5BA")
-MACHINED_DARK = bd.Color("#2A3035")
-CARBON = bd.Color("#171B1E")
-ARMOR = bd.Color("#D8DBD7")
-FASTENER = bd.Color("#111417")
-RUBBER = bd.Color("#24292D")
-SENSOR_GLASS = bd.Color("#07151D")
-STATUS = bd.Color("#55B7C7")
-COPPER = bd.Color("#73523D")
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+ALUMINUM = "#AEB5BA"
+MACHINED_DARK = "#2A3035"
+CARBON = "#171B1E"
+ARMOR = "#D8DBD7"
+FASTENER = "#111417"
+RUBBER = "#24292D"
+SENSOR_GLASS = "#07151D"
+STATUS = "#55B7C7"
+COPPER = "#73523D"
 
 
 Point = tuple[float, float, float]
@@ -127,7 +130,7 @@ def _length(a: Point) -> float:
 
 
 def _unit(a: Point | bd.Vector) -> Point:
-    value = _p(a) if isinstance(a, bd.Vector) else a
+    value = a if isinstance(a, tuple) else _p(a)  # tuple check first: bd.Vector would load the kernel
     magnitude = _length(value)
     if magnitude <= 1e-9:
         raise ValueError("Direction must be non-zero")

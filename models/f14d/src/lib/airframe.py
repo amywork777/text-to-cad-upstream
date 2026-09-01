@@ -11,7 +11,7 @@ from lib import geometry as G
 from lib.context import group
 from lib import palette as P
 
-# Modules that may publish `SKIN_CUTTERS` -- solids to subtract from the skin.
+# Modules that may define `skin_cutters()` -- solids to subtract from the skin.
 #
 # The skin is lofted with certain real openings FILLED, because a section taken
 # through them is two disconnected regions and cannot be lofted as one wire:
@@ -37,13 +37,16 @@ def _collect_cutters():
     Looked up through ``sys.modules`` rather than imported.  Those modules
     import ``stance`` from here, so importing them back would be circular; by
     the time ``build()`` runs the assembly has already imported them all.
+    Each module exposes ``skin_cutters()`` (cached) instead of a module-level
+    list so that importing it builds no geometry.
     """
     out = []
     for name in CUTTER_MODULES:
         mod = sys.modules.get(f"lib.{name}")
         if mod is None:
             continue
-        cutters = getattr(mod, "SKIN_CUTTERS", None) or []
+        skin_cutters = getattr(mod, "skin_cutters", None)
+        cutters = skin_cutters() if skin_cutters is not None else []
         for c in cutters:
             if c is not None:
                 out.append(c)

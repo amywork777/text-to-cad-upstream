@@ -532,15 +532,17 @@ def _headrest():
 #    cockpit reads the whole button layout instead of the wheel's edge.
 # ==========================================================================
 
-_W_C = bd.Vector(-640.0, 0.0, 560.0)
+# Plain tuples, wrapped in bd.Vector where the arithmetic needs it: a
+# module-level bd.Vector would load the CAD kernel at import time.
+_W_C = (-640.0, 0.0, 560.0)
 _W_TILT = math.radians(22.0)
-_W_UP = bd.Vector(math.sin(_W_TILT), 0.0, math.cos(_W_TILT))
-_W_N = bd.Vector(-math.cos(_W_TILT), 0.0, math.sin(_W_TILT))  # toward the driver
-_W_LAT = bd.Vector(0.0, -1.0, 0.0)  # driver's right
+_W_UP = (math.sin(_W_TILT), 0.0, math.cos(_W_TILT))
+_W_N = (-math.cos(_W_TILT), 0.0, math.sin(_W_TILT))  # toward the driver
+_W_LAT = (0.0, -1.0, 0.0)  # driver's right
 
 
 def _wpt(u, v, c=0.0):
-    return _W_C + _W_LAT * u + _W_UP * v + _W_N * c
+    return bd.Vector(_W_C) + bd.Vector(_W_LAT) * u + bd.Vector(_W_UP) * v + bd.Vector(_W_N) * c
 
 
 def _wplane(c=0.0, u=0.0, v=0.0):
@@ -693,8 +695,8 @@ def _steering_wheel():
         for u, v, c in ((26.0 * side, 2.0, -30.0), (22.0 * side, -46.0, -27.0)):
             bodies.append(surfaces.styled(
                 _disc_stack(
-                    bd.Plane(origin=_wpt(u, v, c) - _W_LAT * (9.0 * side),
-                          x_dir=_W_UP, z_dir=_W_LAT * side),
+                    bd.Plane(origin=_wpt(u, v, c) - bd.Vector(_W_LAT) * (9.0 * side),
+                          x_dir=_W_UP, z_dir=bd.Vector(_W_LAT) * side),
                     ((0.0, 5.0), (3.0, 6.6), (15.0, 6.6), (18.0, 5.0))),
                 "wheel_paddle_pivot", spec.ALLOY))
 
@@ -730,14 +732,13 @@ def _steering_wheel():
 # ==========================================================================
 
 _PEDAL_Y = 95.0
-_PEDAL_N = bd.Vector(-math.cos(math.radians(34.0)), 0.0,
-                  math.sin(math.radians(34.0))).normalized()
+_PEDAL_N = (-math.cos(math.radians(34.0)), 0.0, math.sin(math.radians(34.0)))  # normalized at use
 
 
 def _pedal_set(side, label):
     bodies = []
     y = _PEDAL_Y * side
-    pl = surfaces.plate_plane((-578.0, y, 344.0), _PEDAL_N, (0, 0, 1))
+    pl = surfaces.plate_plane((-578.0, y, 344.0), bd.Vector(_PEDAL_N).normalized(), (0, 0, 1))
 
     plate = _ruled([
         _sec(pl, surfaces.rounded_plate_pts(60.0, 116.0, 13.0)),

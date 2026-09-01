@@ -77,17 +77,19 @@ VENT_CENTER = (-15.39, 0.0, 13.08)
 VENT_ROT_DEG = -50.0
 
 
+# (sRGB hex, alpha) pairs: _part() turns them into Colors with srgb() at use, so
+# importing this module never loads the CAD kernel (srgb() builds a bd.Color).
 COLORS = {
-    "shell_red": srgb("#D01317"),
-    "graphite": srgb("#2E3742"),
-    "visor_smoke": srgb("#20262B", 0.5),
-    "trim_black": srgb("#17191C"),
+    "shell_red": ("#D01317", 1.0),
+    "graphite": ("#2E3742", 1.0),
+    "visor_smoke": ("#20262B", 0.5),
+    "trim_black": ("#17191C", 1.0),
 }
 
 
 def _part(shape, name, *details, color):
     shape.label = ":".join([name, *(str(d) for d in details)])
-    shape.color = color
+    shape.color = srgb(*color)
     return shape
 
 

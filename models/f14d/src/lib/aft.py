@@ -14,7 +14,7 @@ Everything that lives on the aft deck, the beavertail and the aft belly:
 
 Everything is placed by QUERYING ``sections.surfaces`` so a door, fairing or
 panel line sits exactly on the skin and stays there when the surface is tuned.
-Four solids are published as :data:`SKIN_CUTTERS` -- the two brake recesses and
+Four solids are published through :func:`skin_cutters` -- the two brake recesses and
 the hook trough -- because a door needs a cavity behind it and a trough is a
 cavity by definition; ``airframe.py`` subtracts them from the skin in one
 batched operation.
@@ -24,6 +24,8 @@ finished group onto the gear at the end.
 """
 
 from __future__ import annotations
+
+import functools
 
 import math
 
@@ -702,12 +704,13 @@ def _panel_lines():
 
 
 # ---------------------------------------------------------------------------
-# skin cutters -- built at IMPORT time: airframe.build() reads this list before
-# our own build() has run.
+# skin cutters -- built on first call (cached): airframe.build() asks for them
+# before our own build() has run, and nothing is built at import time.
 # ---------------------------------------------------------------------------
 
 
-def _build_cutters():
+@functools.cache
+def skin_cutters():
     out = []
     dlo, dhi = _dorsal_span(DOOR_GAP)
     out.append(_brake_bay(X_DORSAL_FWD, X_DORSAL_AFT, dlo, dhi, +1))
@@ -716,9 +719,6 @@ def _build_cutters():
         out.append(_brake_bay(X_VENTRAL_FWD, X_VENTRAL_AFT, vlo, vhi, -1))
     out.append(_hook_trough())
     return out
-
-
-SKIN_CUTTERS = _build_cutters()
 
 
 def build():
@@ -742,7 +742,7 @@ if __name__ == "__main__":
     print(f"bbox x {bb.min.X / M:7.3f}..{bb.max.X / M:7.3f}  "
           f"y {bb.min.Y / M:7.3f}..{bb.max.Y / M:7.3f}  "
           f"z {bb.min.Z / M:7.3f}..{bb.max.Z / M:7.3f}")
-    for c in SKIN_CUTTERS:
+    for c in skin_cutters():
         cb = c.bounding_box()
         print(f"cutter vol {c.volume / 1e9:7.4f} m^3  "
               f"x {cb.min.X / M:6.2f}..{cb.max.X / M:6.2f}")

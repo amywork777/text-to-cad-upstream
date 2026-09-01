@@ -17,9 +17,9 @@ import math  # noqa: F401  (kept per module convention)
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ALU_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
+    ALU,
+    SHELL,
+    STRUCT,
     actuator_solids,
     part_compound,
     styled,
@@ -91,7 +91,7 @@ def build_bicep(side: str):
     # -- shoulder-yaw rotation ring (LOCKED: dia 56, z 0..-10) --
     ring = bd.Pos(0, 0, -5.0) * bd.Cylinder(radius=28.0, height=10.0)
     ring = _try_chamfer(ring, ring.edges(), 0.8)
-    solids.append(styled(ring, f"{p}_yaw_ring", ALU_COLOR))
+    solids.append(styled(ring, f"{p}_yaw_ring", ALU))
 
     # -- upper-arm capsule: graphite core + clamshell panels (dia ~54 -> 46) --
     outer_specs = [
@@ -109,9 +109,9 @@ def build_bicep(side: str):
     rear = blank & (bd.Pos(-45.0 - seam, 0, -58.0) * bd.Box(90, 90, 130))
     front = _try_fillet(front, front.edges(), 0.8)
     rear = _try_fillet(rear, rear.edges(), 0.8)
-    solids.append(styled(core, f"{p}_core", STRUCT_COLOR))
-    solids.append(styled(front, f"{p}_shell_front", SHELL_COLOR))
-    solids.append(styled(rear, f"{p}_shell_rear", SHELL_COLOR))
+    solids.append(styled(core, f"{p}_core", STRUCT))
+    solids.append(styled(front, f"{p}_shell_front", SHELL))
+    solids.append(styled(rear, f"{p}_shell_rear", SHELL))
 
     # -- distal elbow fork (LOCKED: axis Y @ (0,0,-156), plates |y| 28..36,
     #    bosses dia 44 @ (0,+-32,-156), blends in by z -110) --
@@ -136,7 +136,7 @@ def build_bicep(side: str):
     # through-bores for the aluminum joint bosses
     for ys in (1.0, -1.0):
         fork = fork - _y_cyl(ys * 32.0, -156.0, 22.05, 8.4)
-    solids.append(styled(fork, f"{p}_fork", STRUCT_COLOR))
+    solids.append(styled(fork, f"{p}_fork", STRUCT))
 
     # -- aluminum elbow bosses (LOCKED dia 44 at (0,+-32,-156)) --
     for ys in (1.0, -1.0):
@@ -145,7 +145,7 @@ def build_bicep(side: str):
         lip = _y_cyl(ys * 37.0, -156.0, 16.0, 2.0)
         boss = body + lip
         boss = _try_chamfer(boss, boss.edges(), 0.8)
-        solids.append(styled(boss, f"{p}_elbow_boss_{tag}", ALU_COLOR))
+        solids.append(styled(boss, f"{p}_elbow_boss_{tag}", ALU))
 
     return part_compound(p, solids)
 
@@ -179,7 +179,7 @@ def build_forearm(side: str):
         ]
     )
     chassis = can + _loft(core_specs) + flare
-    solids.append(styled(chassis, f"{p}_chassis", STRUCT_COLOR))
+    solids.append(styled(chassis, f"{p}_chassis", STRUCT))
 
     # -- ice-gray clamshell panels over the chassis --
     outer_specs = [
@@ -196,12 +196,12 @@ def build_forearm(side: str):
     rear = blank & (bd.Pos(-45.0 - seam, 0, -76.0) * bd.Box(90, 80, 110))
     front = _soften_reveal(front, seam)
     rear = _soften_reveal(rear, -seam)
-    solids.append(styled(front, f"{p}_shell_front", SHELL_COLOR))
-    solids.append(styled(rear, f"{p}_shell_rear", SHELL_COLOR))
+    solids.append(styled(front, f"{p}_shell_front", SHELL))
+    solids.append(styled(rear, f"{p}_shell_rear", SHELL))
 
     # -- wrist-roll collar (LOCKED: dia 44, z -140..-150) --
     collar = bd.Pos(0, 0, -145.0) * bd.Cylinder(radius=22.0, height=10.0)
     collar = _try_chamfer(collar, collar.edges(), 0.8)
-    solids.append(styled(collar, f"{p}_wrist_collar", ALU_COLOR))
+    solids.append(styled(collar, f"{p}_wrist_collar", ALU))
 
     return part_compound(p, solids)

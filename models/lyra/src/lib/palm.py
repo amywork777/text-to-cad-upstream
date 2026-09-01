@@ -28,12 +28,12 @@ from .digits import (
     TB_TANG_H,
 )
 from .common import (
-    ALU_COLOR,
-    AMBER_COLOR,
-    GRAPHITE_COLOR,
-    PAD_COLOR,
-    PEARL_COLOR,
-    SENSOR_COLOR,
+    ALU,
+    AMBER,
+    GRAPHITE,
+    PAD,
+    PEARL,
+    SENSOR,
     part_compound,
     pin,
     safe_chamfer,
@@ -118,8 +118,8 @@ def _wrist_flange():
         flange -= bd.Pos(bx, by, 3.0) * zcyl(2.3, 8.0)
         head = bd.Pos(bx, by, 1.4) * zcyl(3.3, 2.2)
         head = safe_chamfer(head, head.edges(), 0.5)
-        heads.append(styled(head, f"flange_bolt_{i}", GRAPHITE_COLOR))
-    return styled(flange, "wrist_flange", ALU_COLOR), heads
+        heads.append(styled(head, f"flange_bolt_{i}", GRAPHITE))
+    return styled(flange, "wrist_flange", ALU), heads
 
 
 def _carpal_core():
@@ -130,7 +130,7 @@ def _carpal_core():
     except Exception:
         carpal = bd.Pos(0, 0, 19.5) * bd.Box(46.0, 18.2, 27.0)
         carpal = safe_fillet(carpal, carpal.edges().filter_by(bd.Axis.Z), 7.0)
-    return styled(carpal, "carpal_core", GRAPHITE_COLOR)
+    return styled(carpal, "carpal_core", GRAPHITE)
 
 
 def _palm_core():
@@ -152,7 +152,7 @@ def _palm_core():
 
     core = _knuckle_cuts(core)
     core = _thumb_relief(core)
-    return styled(core, "palm_core", GRAPHITE_COLOR)
+    return styled(core, "palm_core", GRAPHITE)
 
 
 def _dorsal_cover():
@@ -181,7 +181,7 @@ def _dorsal_cover():
             pass
     cover = _knuckle_cuts(cover)
     cover = _thumb_relief(cover)
-    return styled(cover, "dorsal_cover", PEARL_COLOR)
+    return styled(cover, "dorsal_cover", PEARL)
 
 
 def _palmar_plate():
@@ -196,7 +196,7 @@ def _palmar_plate():
     plate -= bd.Pos(0, PLATE_Y1, 65.0) * bd.Box(46.4, 2.0, 30.4)
     plate = _knuckle_cuts(plate)
     plate = _thumb_relief(plate)
-    return styled(plate, "palmar_plate", PEARL_COLOR)
+    return styled(plate, "palmar_plate", PEARL)
 
 
 def _palm_pad():
@@ -212,15 +212,15 @@ def _palm_pad():
         except Exception:
             pass
     pad = _thumb_relief(pad)
-    return styled(pad, "palm_pad", PAD_COLOR)
+    return styled(pad, "palm_pad", PAD)
 
 
 def _palm_sensor():
     ring = bd.Pos(0, PLATE_Y1 + 0.3, 87.0) * (ycyl(5.0, 0.6) - ycyl(4.0, 3.0))
     lens = bd.Pos(0, PLATE_Y1 + 0.2, 87.0) * ycyl(3.9, 0.8)
     return [
-        styled(ring, "palm_sensor_ring", AMBER_COLOR),
-        styled(lens, "palm_sensor_lens", SENSOR_COLOR),
+        styled(ring, "palm_sensor_ring", AMBER),
+        styled(lens, "palm_sensor_lens", SENSOR),
     ]
 
 
@@ -231,9 +231,9 @@ def _tensioners():
         face_y = -(8.75 + 0.75 * (20.0 - 6.0) / 27.0)
         dial = bd.Pos(dx, face_y - 1.1, 20.0) * ycyl(2.6, 2.4)
         dial = safe_chamfer(dial, dial.edges(), 0.5)
-        out.append(styled(dial, f"tensioner_dial_{i}", ALU_COLOR))
+        out.append(styled(dial, f"tensioner_dial_{i}", ALU))
         dot = bd.Pos(dx, face_y - 2.5, 20.0) * ycyl(1.0, 0.7)
-        out.append(styled(dot, f"tensioner_dot_{i}", AMBER_COLOR))
+        out.append(styled(dot, f"tensioner_dot_{i}", AMBER))
     return out
 
 
@@ -246,13 +246,13 @@ def _knuckle_hardware():
             styled(
                 bd.Pos(kx, 0, kz) * pin("x", MCP_PIN_R, MCP_PIN_LEN),
                 f"{finger}_mcp_pin",
-                ALU_COLOR,
+                ALU,
             )
         )
     for finger, xr in (("index", 38.2), ("pinky", -37.2)):
         kx, _, kz = MCP_ORIGIN_MM[finger]
         rim = bd.Pos(xr, 0, kz) * (xcyl(4.6, 1.2) - xcyl(MCP_PIN_R + 0.4, 3.0))
-        out.append(styled(rim, f"{finger}_mcp_rim", ALU_COLOR))
+        out.append(styled(rim, f"{finger}_mcp_rim", ALU))
     return out
 
 
@@ -269,8 +269,8 @@ def _turret_hardware():
     cap = safe_chamfer(cap, cap.edges(), 0.5)
     spindle += cap
     return [
-        styled(collar, "thumb_turret_collar", ALU_COLOR),
-        styled(spindle, "thumb_turret_spindle", ALU_COLOR),
+        styled(collar, "thumb_turret_collar", ALU),
+        styled(spindle, "thumb_turret_spindle", ALU),
     ]
 
 

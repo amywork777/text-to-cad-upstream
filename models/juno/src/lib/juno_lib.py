@@ -22,6 +22,9 @@ from cadgen import build123d as bd
 
 # Palette: warm porcelain + graphite + aluminum, with a coral accent on
 # small repeated functional details (hub caps, bumpers, vents). No logos.
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
 SHELL = (0.82, 0.815, 0.79)     # warm porcelain composite shells
 STRUCT = (0.16, 0.17, 0.19)     # graphite structural cores
 ALU = (0.88, 0.90, 0.94)        # bright machined-aluminum joint rims
@@ -30,16 +33,8 @@ RUBBER = (0.08, 0.08, 0.09)     # sole / grip rubber
 ACCENT = (0.93, 0.38, 0.16)     # coral-orange accent details
 EYE = (0.32, 0.90, 0.98)        # bright cyan display "pixels" (Anki-style)
 
-SHELL_COLOR = bd.Color(*SHELL)
-STRUCT_COLOR = bd.Color(*STRUCT)
-ALU_COLOR = bd.Color(*ALU)
-VISOR_COLOR = bd.Color(*VISOR)
-RUBBER_COLOR = bd.Color(*RUBBER)
-ACCENT_COLOR = bd.Color(*ACCENT)
-EYE_COLOR = bd.Color(*EYE)
 
-
-def styled(solid, label: str, color: bd.Color):
+def styled(solid, label: str, color):
     solid.label = label
     solid.color = color
     return solid
@@ -131,7 +126,7 @@ def actuator_solids(
     can_len = length * 0.78
     can = at * bd.Cylinder(radius=r, height=can_len)
     can = bd.fillet(can.edges(), min(2.2, r * 0.08))
-    solids.append(styled(can, f"{name}_can", STRUCT_COLOR))
+    solids.append(styled(can, f"{name}_can", STRUCT))
 
     cap_len = (length - can_len) / 2.0
     rim_r = r * 0.92
@@ -140,10 +135,10 @@ def actuator_solids(
             radius=rim_r, height=cap_len
         )
         cap = bd.chamfer(cap.edges(), min(1.2, cap_len * 0.3))
-        solids.append(styled(cap, f"{name}_cap_{tag}", ALU_COLOR))
+        solids.append(styled(cap, f"{name}_cap_{tag}", ALU))
 
     hub = at * bd.Pos(0, 0, length / 2.0 + 1.0) * bd.Cylinder(radius=r * 0.45, height=2.0)
-    solids.append(styled(hub, f"{name}_hub", ACCENT_COLOR))
+    solids.append(styled(hub, f"{name}_hub", ACCENT))
 
     if bolts and diameter >= 56.0:
         n = 8 if diameter >= 80 else 6
@@ -153,7 +148,7 @@ def actuator_solids(
             bolt = at * bd.Pos(
                 bc_r * math.cos(a), bc_r * math.sin(a), length / 2.0 + 0.6
             ) * bd.Cylinder(radius=1.6, height=1.2)
-            solids.append(styled(bolt, f"{name}_bolt_{i}", STRUCT_COLOR))
+            solids.append(styled(bolt, f"{name}_bolt_{i}", STRUCT))
     return solids
 
 

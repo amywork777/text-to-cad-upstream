@@ -18,9 +18,9 @@ import math
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ALU_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
+    ALU,
+    SHELL,
+    STRUCT,
     part_compound,
     styled,
 )
@@ -89,7 +89,7 @@ def _chassis():
             bd.Cylinder(radius=45, height=1.8) - bd.Cylinder(radius=37.5, height=1.8)
         )
         chassis -= ring
-    return styled(chassis, "pelvis_chassis", STRUCT_COLOR)
+    return styled(chassis, "pelvis_chassis", STRUCT)
 
 
 # ----------------------------------------------------------------- accents ---
@@ -97,7 +97,7 @@ def _chassis():
 def _waist_ring():
     ring = bd.Cylinder(radius=48, height=4)
     ring = _safe(lambda s: bd.chamfer(s.edges(), 0.8), ring)
-    return styled(ring, "pelvis_waist_ring", ALU_COLOR)
+    return styled(ring, "pelvis_waist_ring", ALU)
 
 
 def _pod_rim(side, tag):
@@ -108,7 +108,7 @@ def _pod_rim(side, tag):
     rim -= bd.Pos(0, side * 90, -116) * (
         bd.Cylinder(radius=41, height=1.0) - bd.Cylinder(radius=39, height=1.0)
     )
-    return styled(rim, f"pelvis_pod_rim_{tag}", ALU_COLOR)
+    return styled(rim, f"pelvis_pod_rim_{tag}", ALU)
 
 
 def _pod_collar(side, tag):
@@ -116,7 +116,7 @@ def _pod_collar(side, tag):
         bd.Cylinder(radius=42.5, height=4) - bd.Cylinder(radius=40, height=4)
     )
     collar = _safe(lambda s: bd.chamfer(_zband(s, -85.01, -84.9), 0.7), collar)
-    return styled(collar, f"pelvis_pod_collar_{tag}", ALU_COLOR)
+    return styled(collar, f"pelvis_pod_collar_{tag}", ALU)
 
 
 # ---------------------------------------------------------------- fairings ---
@@ -181,7 +181,7 @@ def _fairing(side, tag):
     # Horizontal panel-line groove across the outer face.
     blank -= bd.Pos(0, s * 112.8, -42) * bd.Box(60.0, 4.0, 2.2)
 
-    return styled(blank, f"pelvis_fairing_{tag}", SHELL_COLOR)
+    return styled(blank, f"pelvis_fairing_{tag}", SHELL)
 
 
 # ------------------------------------------------------------- crotch guard --
@@ -220,7 +220,7 @@ def _crotch_guard():
     guard = bd.Pos(50, 0, -86) * bd.Rot(0, 4, 0) * p
     # Base wedge filling the gap back to the yoke front face (x=38).
     guard += bd.Pos(42.75, 0, -88) * bd.Box(9.5, 40, 32)
-    return styled(guard, "pelvis_crotch_guard", STRUCT_COLOR)
+    return styled(guard, "pelvis_crotch_guard", STRUCT)
 
 
 # ------------------------------------------------------------------- part ---

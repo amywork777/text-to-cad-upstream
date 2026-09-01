@@ -83,18 +83,20 @@ FLAT_BOTTOM_Z = 68.0
 FLAT_TOP_Z = PLATE_TOP_Z - MX_PLATE
 
 
+# (sRGB hex, alpha) pairs: _part() turns them into Colors with srgb() at use, so
+# importing this module never loads the CAD kernel (srgb() builds a bd.Color).
 COLORS = {
-    "titanium": srgb("#3A4750"),
-    "graphite": srgb("#2E3742"),
-    "anodized_red": srgb("#C1121F"),
-    "spring_yellow": srgb("#F6BE00"),
-    "pale_aluminum": srgb("#C9CDD1"),
+    "titanium": ("#3A4750", 1.0),
+    "graphite": ("#2E3742", 1.0),
+    "anodized_red": ("#C1121F", 1.0),
+    "spring_yellow": ("#F6BE00", 1.0),
+    "pale_aluminum": ("#C9CDD1", 1.0),
 }
 
 
 def _part(shape, name, *details, color):
     shape.label = ":".join([name, *(str(d) for d in details)])
-    shape.color = color
+    shape.color = srgb(*color)
     return shape
 
 

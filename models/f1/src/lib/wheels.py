@@ -75,9 +75,6 @@ def _band(r: float) -> float:
 # construction helpers — profiles are written as (axial y, radius) pairs
 # ==========================================================================
 
-_PROFILE_PLANE = bd.Plane(origin=(0, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
-
-
 def _rev(segments, arc: float = 360.0):
     """Revolve a closed (y, r) profile about the axle.
 
@@ -90,7 +87,8 @@ def _rev(segments, arc: float = 360.0):
     wire = curves[0]
     for c in curves[1:]:
         wire = wire + c
-    return bd.revolve(_PROFILE_PLANE * bd.make_face(wire), bd.Axis.Y, arc)
+    profile_plane = bd.Plane(origin=(0, 0, 0), x_dir=(0, 1, 0), z_dir=(1, 0, 0))
+    return bd.revolve(profile_plane * bd.make_face(wire), bd.Axis.Y, arc)
 
 
 def _poly(pts):

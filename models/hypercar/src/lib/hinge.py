@@ -109,9 +109,6 @@ _U = _unit(_sub(TOWER_TOP, TOWER_BASE))                     # local +Z
 _N = _unit(_sub((0.0, 1.0, 0.0), _mul(_U, _dot((0.0, 1.0, 0.0), _U))))   # local +X
 _V = _cross(_U, _N)                                         # local +Y (aft)
 
-_PL = bd.Plane(origin=TOWER_BASE, x_dir=_N, z_dir=_U)
-
-
 def _l2g(p):
     """Local tower coordinates -> car coordinates (left side)."""
     return _add(TOWER_BASE, _mul(_N, p[0]), _mul(_V, p[1]), _mul(_U, p[2]))
@@ -605,28 +602,29 @@ def _lug(pivot_g):
 
 def _left_leaves():
     """[(shape, role, colour)] for the left-hand hinge, in car coordinates."""
+    pl = bd.Plane(origin=TOWER_BASE, x_dir=_N, z_dir=_U)  # tower frame (built here, not at import)
     out = [
-        (_PL * _screw_core(), "hinge_screw_core", P.BRONZE_DARK),
-        (_PL * _base_housing(), "tower_base_housing", P.BRONZE),
-        (_PL * _drive_motor(), "actuator_barrel", P.BRONZE_DARK),
-        (_PL * _top_housing(), "tower_top_housing", P.BRONZE),
-        (_PL * _bearing_cap(), "tower_bearing_cap", P.BRONZE_DARK),
-        (_PL * _mount_arm(LOWER_ARM, LOWER_HOLES), "hinge_mount_lower", P.ALUMINIUM),
-        (_PL * _mount_arm(UPPER_ARM, UPPER_HOLES), "hinge_mount_upper", P.ALUMINIUM),
+        (pl * _screw_core(), "hinge_screw_core", P.BRONZE_DARK),
+        (pl * _base_housing(), "tower_base_housing", P.BRONZE),
+        (pl * _drive_motor(), "actuator_barrel", P.BRONZE_DARK),
+        (pl * _top_housing(), "tower_top_housing", P.BRONZE),
+        (pl * _bearing_cap(), "tower_bearing_cap", P.BRONZE_DARK),
+        (pl * _mount_arm(LOWER_ARM, LOWER_HOLES), "hinge_mount_lower", P.ALUMINIUM),
+        (pl * _mount_arm(UPPER_ARM, UPPER_HOLES), "hinge_mount_upper", P.ALUMINIUM),
         (_surface_plate(LOWER_PAD), "mount_pad_lower", P.BRONZE_DARK),
         (_surface_plate(UPPER_PAD), "mount_pad_upper", P.BRONZE_DARK),
-        (_PL * _carrier_collar(), "carrier", P.ALUMINIUM),
-        (_PL * _nut_ring(), "carrier_nut", P.BRONZE),
-        (_PL * _swing_arm(), "swing_arm", P.ALUMINIUM),
-        (_PL * _control_link(), "control_link", P.ALUMINIUM_DARK),
+        (pl * _carrier_collar(), "carrier", P.ALUMINIUM),
+        (pl * _nut_ring(), "carrier_nut", P.BRONZE),
+        (pl * _swing_arm(), "swing_arm", P.ALUMINIUM),
+        (pl * _control_link(), "control_link", P.ALUMINIUM_DARK),
         (_surface_plate(DOOR_PAD), "door_bracket", P.BRONZE),
         (_lug(_LUG_A_G), "door_lug_upper", P.ALUMINIUM),
         (_lug(_LUG_B_G), "door_lug_lower", P.ALUMINIUM),
     ]
     for i, phase in enumerate(RAIL_PHASE):
-        out.append((_PL * _rail(phase), f"synchro_rail_{i + 1}", P.ALUMINIUM))
+        out.append((pl * _rail(phase), f"synchro_rail_{i + 1}", P.ALUMINIUM))
     for k in range(SCREW_STARTS):
-        out.append((_PL * _screw_thread(k), f"hinge_screw_thread_{k + 1}", P.BRONZE))
+        out.append((pl * _screw_thread(k), f"hinge_screw_thread_{k + 1}", P.BRONZE))
     return out
 
 

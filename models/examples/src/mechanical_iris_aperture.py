@@ -13,13 +13,16 @@ from cadgen import build123d as bd
 
 MODEL_LABEL = "mechanical_iris_aperture_assembly"
 
-BRUSHED_STEEL = bd.Color(0.64, 0.67, 0.68, 1.0)
-STEEL_HIGHLIGHT = bd.Color(0.76, 0.78, 0.78, 1.0)
-GRAPHITE = bd.Color(0.0, 0.0, 0.0, 1.0)
-BRASS = bd.Color(0.95, 0.68, 0.25, 1.0)
-GUNMETAL = bd.Color(0.13, 0.15, 0.17, 1.0)
-DARK_GRAY = bd.Color(0.06, 0.065, 0.07, 1.0)
-APERTURE_BLACK = bd.Color(0.0, 0.0, 0.0, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+BRUSHED_STEEL = (0.64, 0.67, 0.68, 1.0)
+STEEL_HIGHLIGHT = (0.76, 0.78, 0.78, 1.0)
+GRAPHITE = (0.0, 0.0, 0.0, 1.0)
+BRASS = (0.95, 0.68, 0.25, 1.0)
+GUNMETAL = (0.13, 0.15, 0.17, 1.0)
+DARK_GRAY = (0.06, 0.065, 0.07, 1.0)
+APERTURE_BLACK = (0.0, 0.0, 0.0, 1.0)
 
 BASE_OD = 160.0
 BASE_ID = 52.0

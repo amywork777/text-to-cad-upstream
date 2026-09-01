@@ -59,6 +59,8 @@ this the aircraft reads as parked on four hard rings.
 
 from __future__ import annotations
 
+import functools
+
 import math
 
 from cadgen import build123d as bd
@@ -77,12 +79,20 @@ from lib.palette import style
 _TH = math.radians(G.GROUND_PITCH)
 _CT, _ST = math.cos(_TH), math.sin(_TH)
 
-#: unit vector that ``stance()`` maps onto world -Z.  The aircraft is pitched
-#: nose down, so "down" in this frame leans very slightly FORWARD.
-DOWN = bd.Vector(_ST, 0.0, -_CT).normalized()
-UP = -DOWN
-#: unit vector that ``stance()`` maps onto world +X (level, aft).
-AFT = bd.Vector(_CT, 0.0, _ST).normalized()
+
+
+@functools.cache
+def _stance_frame():
+    """``(down, up, aft)`` unit vectors of the waterline frame.
+
+    ``down`` is what ``stance()`` maps onto world -Z -- the aircraft is pitched
+    nose down, so "down" in this frame leans very slightly FORWARD; ``aft`` maps
+    onto world +X (level, aft).  Built on first use rather than at import so
+    loading this module never touches the CAD kernel.
+    """
+    down = bd.Vector(_ST, 0.0, -_CT).normalized()
+    aft = bd.Vector(_CT, 0.0, _ST).normalized()
+    return down, -down, aft
 
 
 def world_z(x, z):
@@ -246,21 +256,27 @@ def _leg_pt(t):
                   Z_TRUN + (Z_AXLE - Z_TRUN) * t)
 
 
-_LEG_U = (_leg_pt(1.0) - _leg_pt(0.0)).normalized()
-#: aft, made perpendicular to the leg, so lugs stand off it squarely
-_LEG_AFT = (AFT - _LEG_U * AFT.dot(_LEG_U)).normalized()
-#: outboard, likewise
-_LEG_OUT = _LEG_U.cross(_LEG_AFT).normalized()
-if _LEG_OUT.Y < 0:
-    _LEG_OUT = -_LEG_OUT
+@functools.cache
+def _leg_frame():
+    """``(leg_u, leg_aft, leg_out)``: the oleo axis, aft made perpendicular to
+    the leg so lugs stand off it squarely, and outboard likewise."""
+    _, _, aft = _stance_frame()
+    leg_u = (_leg_pt(1.0) - _leg_pt(0.0)).normalized()
+    leg_aft = (aft - leg_u * aft.dot(leg_u)).normalized()
+    leg_out = leg_u.cross(leg_aft).normalized()
+    if leg_out.Y < 0:
+        leg_out = -leg_out
+    return leg_u, leg_aft, leg_out
 
 
 def _leg_off(t, aft=0.0, out=0.0):
-    return _leg_pt(t) + _LEG_AFT * aft + _LEG_OUT * out
+    _, leg_aft, leg_out = _leg_frame()
+    return _leg_pt(t) + leg_aft * aft + leg_out * out
 
 
 def _oleo(sfx):
     """Trunnion, oleo cylinder, chrome piston, axle housing and the axle."""
+    _, leg_aft, _ = _leg_frame()
     out = []
     top = _leg_pt(-0.02)
     # trunnion: a cast yoke on a transverse pin -- the gear folds forward
@@ -295,7 +311,7 @@ def _oleo(sfx):
     out.append(style(_seg(_leg_off(0.30, out=60.0), _leg_off(0.30, out=90.0), 13.0),
                      f"mlg_oleo_gauge:{sfx}", P.ALUM_DARK))
     wow = _leg_off(0.80, aft=-72.0, out=-26.0)
-    out.append(style(_seg(wow, wow + _LEG_AFT * -46.0, 30.0),
+    out.append(style(_seg(wow, wow + leg_aft * -46.0, 30.0),
                      f"mlg_wow_switch:{sfx}", P.ALUM_DARK))
     # axle: cantilevered INBOARD, the wheel and the whole brake pack ride on it
     ax = _leg_pt(1.0)
@@ -308,6 +324,7 @@ def _oleo(sfx):
 
 def _torque_links(sfx):
     """Scissors on the aft face -- the piston cannot rotate in the cylinder."""
+    _, _, leg_out = _leg_frame()
     a = _leg_off(0.46, aft=86.0)
     knee = _leg_off(0.685, aft=158.0)
     b = _leg_off(0.895, aft=78.0)
@@ -316,7 +333,7 @@ def _torque_links(sfx):
         style(_seg(knee, b, 30.0, 24.0), f"mlg_torque_link_lower:{sfx}", P.GEAR_WHITE),
     ]
     for tag, p, r in (("upper", a, 34.0), ("knee", knee, 30.0), ("lower", b, 34.0)):
-        out.append(style(_seg(p - _LEG_OUT * 46.0, p + _LEG_OUT * 46.0, r),
+        out.append(style(_seg(p - leg_out * 46.0, p + leg_out * 46.0, r),
                          f"mlg_torque_pin:{sfx}_{tag}", P.STEEL_DARK))
     out.append(style(_seg(_leg_pt(0.46), a, 40.0, 30.0),
                      f"mlg_torque_lug:{sfx}_upper", P.GEAR_WHITE))
@@ -325,71 +342,68 @@ def _torque_links(sfx):
     return out
 
 
-_BRACE_LEG = _leg_off(0.615, out=72.0)
-_BRACE_TOP = bd.Vector(10545.0, BAY_Y1 - 54.0, -430.0)
-_BRACE_KNEE = (_BRACE_LEG + _BRACE_TOP) * 0.5 + bd.Vector(30.0, 0.0, -16.0)
-
-
 def _side_brace(sfx):
     """Two-piece folding side brace, down and a few degrees over centre."""
+    brace_leg = _leg_off(0.615, out=72.0)
+    brace_top = bd.Vector(10545.0, BAY_Y1 - 54.0, -430.0)
+    brace_knee = (brace_leg + brace_top) * 0.5 + bd.Vector(30.0, 0.0, -16.0)
     out = [
-        style(_seg(_BRACE_TOP, _BRACE_KNEE, 34.0, 40.0),
+        style(_seg(brace_top, brace_knee, 34.0, 40.0),
               f"mlg_side_brace_upper:{sfx}", P.GEAR_WHITE),
-        style(_seg(_BRACE_KNEE, _BRACE_LEG, 40.0, 34.0),
+        style(_seg(brace_knee, brace_leg, 40.0, 34.0),
               f"mlg_side_brace_lower:{sfx}", P.GEAR_WHITE),
     ]
     hinge = bd.Vector(1, 0, 0) * 62.0
-    out.append(style(_seg(_BRACE_KNEE - hinge, _BRACE_KNEE + hinge, 34.0),
+    out.append(style(_seg(brace_knee - hinge, brace_knee + hinge, 34.0),
                      f"mlg_brace_knuckle:{sfx}", P.ALUM_DARK))
-    out.append(style(_seg(_BRACE_TOP - hinge * 0.8, _BRACE_TOP + hinge * 0.8, 30.0),
+    out.append(style(_seg(brace_top - hinge * 0.8, brace_top + hinge * 0.8, 30.0),
                      f"mlg_brace_pin:{sfx}_top", P.STEEL_DARK))
-    out.append(style(_seg(_BRACE_LEG - hinge * 0.8, _BRACE_LEG + hinge * 0.8, 30.0),
+    out.append(style(_seg(brace_leg - hinge * 0.8, brace_leg + hinge * 0.8, 30.0),
                      f"mlg_brace_pin:{sfx}_leg", P.STEEL_DARK))
-    out.append(style(_rect_xz(BAY_Y1 - 86.0, _BRACE_TOP.X - 96.0, _BRACE_TOP.X + 96.0,
-                              _BRACE_TOP.Z - 44.0, BAY_Z + 2.0, 74.0),
+    out.append(style(_rect_xz(BAY_Y1 - 86.0, brace_top.X - 96.0, brace_top.X + 96.0,
+                              brace_top.Z - 44.0, BAY_Z + 2.0, 74.0),
                      f"mlg_brace_fitting:{sfx}", P.ALUM_DARK))
     # downlock: a short over-centre link and its return spring
-    lk0 = _BRACE_KNEE + bd.Vector(-52.0, 0.0, 62.0)
+    lk0 = brace_knee + bd.Vector(-52.0, 0.0, 62.0)
     lk1 = _leg_off(0.40, out=70.0)
     out.append(style(_seg(lk0, lk1, 20.0), f"mlg_downlock_link:{sfx}", P.ALUM_DARK))
-    out.append(style(_seg(_BRACE_KNEE + bd.Vector(-8.0, 0.0, 34.0),
+    out.append(style(_seg(brace_knee + bd.Vector(-8.0, 0.0, 34.0),
                           lk1 + bd.Vector(6.0, 0.0, -26.0), 13.0),
                      f"mlg_downlock_spring:{sfx}", P.STEEL_BURN))
     return out
 
 
-_ACT_TOP = bd.Vector(10150.0, 1430.0, -336.0)
-_ACT_MID = bd.Vector(10362.0, 1404.0, -604.0)
-_ACT_ROD = _leg_off(0.40, aft=-96.0, out=42.0)
-
-
 def _retract_actuator(sfx):
+    act_top = bd.Vector(10150.0, 1430.0, -336.0)
+    act_mid = bd.Vector(10362.0, 1404.0, -604.0)
+    act_rod = _leg_off(0.40, aft=-96.0, out=42.0)
     out = [
-        style(_seg(_ACT_TOP, _ACT_MID, 54.0), f"mlg_retract_actuator:{sfx}", P.ALUM_DARK),
-        style(_seg(_ACT_MID, _ACT_ROD, 28.0), f"mlg_retract_rod:{sfx}", P.OLEO_CHROME),
-        style(_seg(_ACT_MID + bd.Vector(-16.0, 0, 20.0), _ACT_MID + bd.Vector(6.0, 0, -8.0), 62.0),
+        style(_seg(act_top, act_mid, 54.0), f"mlg_retract_actuator:{sfx}", P.ALUM_DARK),
+        style(_seg(act_mid, act_rod, 28.0), f"mlg_retract_rod:{sfx}", P.OLEO_CHROME),
+        style(_seg(act_mid + bd.Vector(-16.0, 0, 20.0), act_mid + bd.Vector(6.0, 0, -8.0), 62.0),
               f"mlg_actuator_gland:{sfx}", P.STEEL_DARK),
     ]
     hinge = bd.Vector(0, 54.0, 0)
-    out.append(style(_seg(_ACT_TOP - hinge, _ACT_TOP + hinge, 26.0),
+    out.append(style(_seg(act_top - hinge, act_top + hinge, 26.0),
                      f"mlg_actuator_pin:{sfx}_bay", P.STEEL_DARK))
-    out.append(style(_rect_yz(_ACT_TOP.X - 15.0, _ACT_TOP.Y - 74.0, _ACT_TOP.Y + 74.0,
-                              _ACT_TOP.Z - 26.0, BAY_Z + 2.0, 30.0),
+    out.append(style(_rect_yz(act_top.X - 15.0, act_top.Y - 74.0, act_top.Y + 74.0,
+                              act_top.Z - 26.0, BAY_Z + 2.0, 30.0),
                      f"mlg_actuator_mount:{sfx}", P.ALUM_DARK))
-    out.append(style(_seg(_leg_pt(0.40), _ACT_ROD, 40.0, 28.0),
+    out.append(style(_seg(_leg_pt(0.40), act_rod, 40.0, 28.0),
                      f"mlg_actuator_lug:{sfx}", P.GEAR_WHITE))
     for tag, dy in (("ext", -34.0), ("ret", 4.0)):
         out.append(style(_tube([
             (10600.0, 1560.0, BAY_Z - 44.0),
             (10440.0, 1520.0 + dy * 0.4, BAY_Z - 66.0),
             (10230.0, 1462.0 + dy, BAY_Z - 108.0),
-            (_ACT_TOP.X + 26.0, _ACT_TOP.Y + dy * 0.5, _ACT_TOP.Z + 24.0),
+            (act_top.X + 26.0, act_top.Y + dy * 0.5, act_top.Z + 24.0),
         ], 13.0), f"mlg_actuator_line:{sfx}_{tag}", P.HYDRAULIC))
     return out
 
 
 def _leg_plumbing(sfx):
     """Brake lines and the weight-on-wheels loom, clamped down the leg."""
+    _, leg_aft, _ = _leg_frame()
     out = []
     top = _leg_off(0.02, aft=64.0, out=-28.0)
     for tag, dy, r, col in (("a", -30.0, 13.0, P.HYDRAULIC),
@@ -407,7 +421,7 @@ def _leg_plumbing(sfx):
         out.append(style(_tube(pts, r), f"mlg_leg_line:{sfx}_{tag}", col))
     for i, t in enumerate((0.20, 0.42, 0.66, 0.86)):
         c = _leg_off(t, aft=52.0, out=-30.0)
-        out.append(style(_seg(c - _LEG_AFT * 30.0, c + _LEG_AFT * 22.0, 34.0, 28.0),
+        out.append(style(_seg(c - leg_aft * 30.0, c + leg_aft * 22.0, 34.0, 28.0),
                          f"mlg_line_clamp:{sfx}_{i}", P.ALUM_DARK))
     return out
 
@@ -459,9 +473,10 @@ def _wheel_frame(side, phi=0.0):
     ``(u, v)`` in the returned plane is (radius, axial-outboard), so the same
     2-D profile serves both sides and the pair comes out a true mirror.
     """
+    _, up, aft = _stance_frame()
     origin = bd.Vector(X_G, side * Y_W, Z_AXLE)
     axle = bd.Vector(0.0, side, 0.0)
-    rad = UP * math.cos(phi) + (AFT * side) * math.sin(phi)
+    rad = up * math.cos(phi) + (aft * side) * math.sin(phi)
     return bd.Plane(origin=origin, x_dir=rad, z_dir=rad.cross(axle))
 
 
@@ -471,8 +486,9 @@ def _wheel_axis(side):
 
 def _ground_cutter(side):
     """Half space below the contact plane, exactly on world Z = 0."""
-    o = bd.Vector(X_G, side * Y_W, Z_AXLE) + DOWN * R_CONTACT
-    pl = bd.Plane(origin=o, x_dir=AFT * side, z_dir=DOWN)
+    down, _, aft = _stance_frame()
+    o = bd.Vector(X_G, side * Y_W, Z_AXLE) + down * R_CONTACT
+    pl = bd.Plane(origin=o, x_dir=aft * side, z_dir=down)
     return pl * bd.Box(1600.0, 900.0, 900.0, align=(bd.Align.CENTER, bd.Align.CENTER, bd.Align.MIN))
 
 

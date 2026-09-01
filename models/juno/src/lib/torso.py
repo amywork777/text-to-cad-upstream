@@ -23,10 +23,10 @@ import math  # noqa: F401  (kept for parity with sibling part modules)
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ALU_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
-    VISOR_COLOR,
+    ALU,
+    SHELL,
+    STRUCT,
+    VISOR,
     part_compound,
     styled,
 )
@@ -101,7 +101,7 @@ def build_torso():
             bd.Cylinder(radius=52, height=2.4) - bd.Cylinder(radius=48, height=2.4)
         )
         collar = collar - groove
-    children.append(styled(collar, "torso_waist_collar", STRUCT_COLOR))
+    children.append(styled(collar, "torso_waist_collar", STRUCT))
 
     # --- graphite core + shoulder gusset barrels --------------------------
     outer = _loft_solid(_OUTER)
@@ -125,12 +125,12 @@ def build_torso():
     # upper-chest sensor pocket (flat floor at x = 59)
     pocket = bd.Pos(69.5, 0, 302) * bd.Box(21, 48, 11)
     core = core - pocket
-    children.append(styled(core, "torso_core", STRUCT_COLOR))
+    children.append(styled(core, "torso_core", STRUCT))
 
     # gloss-black sensor bar recessed in the pocket
     sensor = bd.Pos(61.5, 0, 301.5) * bd.Box(5, 44, 8)
     sensor = _safe_fillet(sensor, sensor.edges().filter_by(bd.Axis.X), 2.0)
-    children.append(styled(sensor, "torso_chest_sensor", VISOR_COLOR))
+    children.append(styled(sensor, "torso_chest_sensor", VISOR))
 
     # --- ice-gray armor panels (conformal ring pieces) --------------------
     # twin pectoral plates with a 10 mm center crease
@@ -138,22 +138,22 @@ def build_torso():
         pec = _clip_panel(
             ring, _region((95, 68, 146), (47.5, sgn * 39.0, 223), 12)
         )
-        children.append(styled(pec, f"torso_pec_panel_{tag}", SHELL_COLOR))
+        children.append(styled(pec, f"torso_pec_panel_{tag}", SHELL))
 
     # abdomen plate below an 8 mm horizontal reveal
     abdomen = _clip_panel(ring, _region((95, 90, 92), (47.5, 0, 98), 10))
-    children.append(styled(abdomen, "torso_abdomen_panel", SHELL_COLOR))
+    children.append(styled(abdomen, "torso_abdomen_panel", SHELL))
 
     # thin backpack panels either side of the graphite spine column
     for sgn, tag in ((1.0, "l"), (-1.0, "r")):
         back = _clip_panel(
             ring, _region((65, 45, 220), (-62.5, sgn * 35.5, 180), 10)
         )
-        children.append(styled(back, f"torso_back_panel_{tag}", SHELL_COLOR))
+        children.append(styled(back, f"torso_back_panel_{tag}", SHELL))
 
     # slim graphite spine column, flush with the back panels
     spine = _clip_panel(ring, _region((65, 16, 258), (-62.5, 0, 173), 6))
-    children.append(styled(spine, "torso_spine_column", STRUCT_COLOR))
+    children.append(styled(spine, "torso_spine_column", STRUCT))
 
     # --- top deck + neck collar -------------------------------------------
     deck_specs = [
@@ -162,11 +162,11 @@ def build_torso():
     ]
     deck = _loft_solid(deck_specs)
     deck = _safe_chamfer(deck, deck.edges().group_by(bd.Axis.Z)[-1], 2.5)
-    children.append(styled(deck, "torso_top_deck", SHELL_COLOR))
+    children.append(styled(deck, "torso_top_deck", SHELL))
 
     neck = bd.Pos(0, 0, 321) * bd.Cylinder(radius=26, height=6)
     neck = _safe_chamfer(neck, neck.edges().group_by(bd.Axis.Z)[-1], 1.0)
-    children.append(styled(neck, "torso_neck_collar", ALU_COLOR))
+    children.append(styled(neck, "torso_neck_collar", ALU))
 
     # --- aluminum shoulder bosses (locked: dia 76, |y| 112..132) ----------
     for sgn, tag in ((1.0, "l"), (-1.0, "r")):
@@ -178,6 +178,6 @@ def build_torso():
             bd.Cylinder(radius=39, height=2.5) - bd.Cylinder(radius=36.5, height=2.5)
         )
         boss = boss - groove
-        children.append(styled(boss, f"torso_shoulder_boss_{tag}", ALU_COLOR))
+        children.append(styled(boss, f"torso_shoulder_boss_{tag}", ALU))
 
     return part_compound("torso", children)

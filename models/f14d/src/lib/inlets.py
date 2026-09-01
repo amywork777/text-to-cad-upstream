@@ -14,7 +14,7 @@ rounded blob where the inlet mouth should be, because the nacelle lobe simply
 switches on at ``X_INLET_LIP`` and the loft flares into it over one station
 interval.  Neither can be fixed in the section maths.  So this module publishes
 
-    SKIN_CUTTERS   -- solids, WATERLINE frame, for ``skin - SKIN_CUTTERS``
+    skin_cutters() -- solids, WATERLINE frame, for ``skin - skin_cutters()``
     cutters()      -- the same list
 
 and the airframe module applies them.  One fused cutter per side carries three
@@ -40,6 +40,8 @@ Ramps are RETRACTED (flush), which is the parked state.
 """
 
 from __future__ import annotations
+
+import functools
 
 import math
 
@@ -387,7 +389,7 @@ def _side_cutter(side):
 
 def cutters():
     """Solids the airframe skin must be cut by, in the WATERLINE frame."""
-    return list(SKIN_CUTTERS)
+    return list(skin_cutters())
 
 
 # ---------------------------------------------------------------------------
@@ -664,18 +666,24 @@ def build():
     return stance(group("inlets", kids))
 
 
-# Built at import so the airframe module can pick them up without having to
-# call anything: ``skin - inlets.SKIN_CUTTERS``.  WATERLINE frame -- apply
-# ``stance`` AFTER cutting, exactly as ``airframe.build`` already does.
-# Guarded: a cutter that fails to build must not take the whole module (and
-# with it every visible inlet body) out of the aeroplane.
-SKIN_CUTTERS = []
-for _side in (1, -1):
-    try:
-        SKIN_CUTTERS.append(_side_cutter(_side))
-    except Exception as _exc:  # noqa: BLE001
-        import sys as _sys
-        print(f"[inlets] skin cutter {_side:+d} failed: {_exc}", file=_sys.stderr)
+@functools.cache
+def skin_cutters():
+    """Skin cutters for the airframe module: ``skin - inlets.skin_cutters()``.
+
+    WATERLINE frame -- apply ``stance`` AFTER cutting, exactly as
+    ``airframe.build`` already does.  Built on first call (cached), not at
+    import, so loading this module builds no geometry.  Guarded: a cutter that
+    fails to build must not take the whole module (and with it every visible
+    inlet body) out of the aeroplane.
+    """
+    out = []
+    for side in (1, -1):
+        try:
+            out.append(_side_cutter(side))
+        except Exception as exc:  # noqa: BLE001
+            import sys
+            print(f"[inlets] skin cutter {side:+d} failed: {exc}", file=sys.stderr)
+    return out
 
 
 if __name__ == "__main__":
@@ -684,7 +692,7 @@ if __name__ == "__main__":
     t0 = time.time()
     grp = build()
     t1 = time.time()
-    print(f"cutters {len(SKIN_CUTTERS)}  build {t1 - t0:5.2f}s")
+    print(f"cutters {len(skin_cutters())}  build {t1 - t0:5.2f}s")
     print(f"leaves  {len(grp.leaves)}")
     bb = grp.bounding_box()
     print(f"bbox x {bb.min.X/M:6.3f}..{bb.max.X/M:6.3f}  "

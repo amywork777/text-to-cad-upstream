@@ -23,7 +23,7 @@ from cadgen import build123d as bd
 
 from . import spec
 
-FLOW = bd.Vector(-1, 0, 0)  # local flow direction: air runs toward -X
+FLOW = (-1, 0, 0)  # local flow direction: air runs toward -X (a tuple; consumers wrap it in bd.Vector)
 
 
 # ==========================================================================
@@ -49,7 +49,7 @@ def as_body(shape):
     return shape
 
 
-def styled(shape, label: str, color: bd.Color):
+def styled(shape, label: str, color):
     """Label + colour one body. Every exported solid must go through this."""
     shape = as_body(shape)
     if shape is None:

@@ -5,9 +5,6 @@ from collections.abc import Sequence
 
 from cadgen import step  # noqa: E402
 from cadgen import build123d as bd
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
 
 
 DISPLAY_NAME = "Mars rover concept vehicle"
@@ -180,6 +177,8 @@ def v_norm(a: Vector3) -> Vector3:
 
 
 def _apply_rover_scale(shape: bd.Shape) -> bd.Shape:
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
     if abs(rover_scale - 1.0) < 1e-9:
         return shape
     trsf = gp_Trsf()
@@ -202,6 +201,8 @@ def group(label: str, children: Sequence[bd.Shape], color_name: str | None = Non
 
 
 def transformed(shape: bd.Shape, center: Vector3, axis_x: Vector3, axis_y: Vector3, axis_z: Vector3) -> bd.Shape:
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
     x_dir = v_norm(axis_x)
     y_dir = v_norm(axis_y)
     z_dir = v_norm(axis_z)
@@ -233,6 +234,8 @@ def oriented_box(
 
 
 def cylinder_between(label: str, p1: Vector3, p2: Vector3, radius: float, color_name: str) -> bd.Shape:
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Trsf
     axis = v_sub(p2, p1)
     length = v_len(axis)
     if length <= 1e-6:

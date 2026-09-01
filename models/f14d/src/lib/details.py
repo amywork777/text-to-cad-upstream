@@ -25,7 +25,7 @@ What is here
 * Service: NACA flush inlets, cooling scoops, ECS louvre exhausts, drains,
   boarding ladder door, kick steps and grab handles.
 * Structure that READS: panel-line grooves cut into the skin in ONE batched
-  multi-tool subtract (published as ``SKIN_CUTTERS``) and fastener domes placed
+  multi-tool subtract (published through ``skin_cutters()``) and fastener domes placed
   as shared instances -- never as thousands of boolean cuts.
 
 Scale discipline.  At 19 m over 1920 px one pixel is about 10 mm, so a scribed
@@ -36,6 +36,8 @@ correct in a close-up, and free, because they are instanced, not cut.
 """
 
 from __future__ import annotations
+
+import functools
 
 import math
 
@@ -980,7 +982,7 @@ def wicks():
 # avionics bulkhead; a stringer line down each flank; hatch outlines around the
 # things that actually open -- avionics bays, the gun bay, the ammunition drum,
 # the probe bay, the boarding ladder; and a frame-by-frame ladder across the
-# turtledeck.  All of it goes out through SKIN_CUTTERS as one batch.
+# turtledeck.  All of it goes out through skin_cutters() as one batch.
 
 FLANK_PANELS = (
     # (name,             side, x0,        x1,        z0,        z1)
@@ -1093,11 +1095,13 @@ def fasteners():
 
 
 # ===========================================================================
-# skin cutters -- collected by airframe.py and applied in ONE subtract
+# skin cutters -- collected by airframe.py (skin_cutters()) and applied in ONE subtract
 # ===========================================================================
 
 
-def _build_cutters():
+@functools.cache
+def skin_cutters():
+    """Skin cutters, built on first call (cached) rather than at import."""
     out = []
     for fn in (panel_cutters, vent_cutters, boarding_cutters):
         try:
@@ -1107,9 +1111,6 @@ def _build_cutters():
             print(f"[details] cutter group {fn.__name__} failed: {exc}",
                   file=sys.stderr)
     return out
-
-
-SKIN_CUTTERS = _build_cutters()
 
 
 # ===========================================================================
@@ -1132,7 +1133,7 @@ if __name__ == "__main__":
     t0 = time.time()
     grp = build()
     print(f"build {time.time() - t0:5.2f}s   children {len(grp.children)}  "
-          f"cutters {len(SKIN_CUTTERS)}")
+          f"cutters {len(skin_cutters())}")
     bb = grp.bounding_box()
     print(f"bbox x {bb.min.X/M:7.3f}..{bb.max.X/M:7.3f}  "
           f"y {bb.min.Y/M:7.3f}..{bb.max.Y/M:7.3f}  "

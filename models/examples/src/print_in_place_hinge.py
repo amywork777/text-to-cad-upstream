@@ -57,7 +57,8 @@ KNUCKLE_B = (-KNUCKLE_B_LENGTH / 2.0, KNUCKLE_B_LENGTH / 2.0)
 KNUCKLE_A2 = (HALF_LENGTH - KNUCKLE_A_LENGTH, HALF_LENGTH)
 PIN_SPAN_HALF = HALF_LENGTH + HEAD_AXIAL_GAP + HEAD_THICKNESS
 
-HINGE_AXIS = bd.Axis((0.0, 0.0, AXIS_Z), (1.0, 0.0, 0.0))
+HINGE_AXIS_ORIGIN = (0.0, 0.0, AXIS_Z)  # bd.Axis is built at the use site, not at import
+HINGE_AXIS_DIRECTION = (1.0, 0.0, 0.0)
 
 
 def _plate(sign: float):
@@ -146,7 +147,7 @@ def print_in_place_hinge():
     leaf_a = asm.add(_make_leaf_a(), "leaf_a_barrel_bores")
     leaf_b = asm.add(_make_leaf_b(), "leaf_b_captive_pin")
 
-    bore_axis = asm.revolute_frame(leaf_a, "bore_axis", HINGE_AXIS)
+    bore_axis = asm.revolute_frame(leaf_a, "bore_axis", bd.Axis(HINGE_AXIS_ORIGIN, HINGE_AXIS_DIRECTION))
     # Same orientation as the revolute frame (local Z along the hinge axis) so the
     # angle=0 connect holds the as-printed pose instead of re-rotating leaf B.
     pin_axis = asm.rigid_frame(

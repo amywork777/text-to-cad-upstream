@@ -18,6 +18,8 @@ pivots are passive differential joints and are not counted as actuators.
 """
 
 from __future__ import annotations
+
+import functools
 from cadgen import step
 
 from dataclasses import asdict, dataclass
@@ -31,13 +33,16 @@ from cadgen.assembly import AssemblyHelper, label_shape
 
 # Restrained industrial palette.  Color carries subsystem meaning; there are
 # deliberately no logos, words, decals, or vendor-specific panel motifs.
-ALUMINUM = bd.Color("#C8CDD1")
-COMPOSITE = bd.Color("#292D31")
-ARMOR = bd.Color("#ECEDE8")
-GRAPHITE = bd.Color("#191D21")
-SENSOR_GLASS = bd.Color("#0B1820")
-STATUS_BLUE = bd.Color("#76D7E5")
-ELASTOMER = bd.Color("#343A40")
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+ALUMINUM = "#C8CDD1"
+COMPOSITE = "#292D31"
+ARMOR = "#ECEDE8"
+GRAPHITE = "#191D21"
+SENSOR_GLASS = "#0B1820"
+STATUS_BLUE = "#76D7E5"
+ELASTOMER = "#343A40"
 
 
 Point = tuple[float, float, float]
@@ -502,7 +507,10 @@ def _add_hand(assembly: AssemblyHelper, side: str) -> object:
     return assembly.add_module("adaptive_hand", children, side)
 
 
-def _joint_specs() -> tuple[JointSpec, ...]:
+@functools.cache
+def joint_specs() -> tuple[JointSpec, ...]:
+    """The 28 actuated axes. Cached and built on first use: the vector math
+    inside touches the CAD kernel, which must stay unloaded at import time."""
     specs: list[JointSpec] = [
         JointSpec("waist_yaw", "waist", (0.0, 0.0, 816.0), (0.0, 0.0, 1.0), (-35.0, 35.0), 48.0, 44.0),
         JointSpec("waist_pitch", "waist", (0.0, 0.0, 848.0), (1.0, 0.0, 0.0), (-20.0, 25.0), 42.0, 112.0),
@@ -543,13 +551,10 @@ def _joint_specs() -> tuple[JointSpec, ...]:
     return tuple(specs)
 
 
-JOINT_SPECS = _joint_specs()
-
-
 def joint_manifest() -> list[dict[str, object]]:
     """JSON-safe actuator manifest for deterministic review and downstream use."""
 
-    return [asdict(spec) for spec in JOINT_SPECS]
+    return [asdict(spec) for spec in joint_specs()]
 
 
 def _build_robot() -> object:
@@ -603,7 +608,7 @@ def _build_robot() -> object:
         )
         _add_hand(assembly, side)
 
-    for spec in JOINT_SPECS:
+    for spec in joint_specs():
         _add_joint_module(assembly, spec)
 
     robot = assembly.build()
@@ -615,7 +620,7 @@ def design_metrics() -> dict[str, object]:
     """Source-space measurements used by the validation handoff."""
 
     return {
-        "actuated_dof": len(JOINT_SPECS),
+        "actuated_dof": len(joint_specs()),
         "left_thigh_length_mm": round(_distance(KNEES["left"], HIPS["left"]), 3),
         "left_shank_length_mm": round(_distance(ANKLES["left"], KNEES["left"]), 3),
         "left_upper_arm_length_mm": round(_distance(SHOULDERS["left"], ELBOWS["left"]), 3),

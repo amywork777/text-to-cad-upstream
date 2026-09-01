@@ -96,31 +96,34 @@ CUT_INNER_ARC_DEG = 266.0
 # Palette
 # ---------------------------------------------------------------------------
 
-COL_BELL_OUTER = bd.Color(0.45, 0.46, 0.49, 1.0)     # dark oxidized regen bell
-COL_BELL_INNER = bd.Color(0.10, 0.10, 0.12, 1.0)     # dark nozzle interior
-COL_CHAMBER = bd.Color(0.58, 0.56, 0.52, 1.0)        # warm alloy chamber
-COL_DOME = bd.Color(0.66, 0.67, 0.69, 1.0)
-COL_STRUCT = bd.Color(0.46, 0.48, 0.52, 1.0)
-COL_PUMP = bd.Color(0.70, 0.72, 0.74, 1.0)           # bright aluminum pump
-COL_GG = bd.Color(0.42, 0.42, 0.45, 1.0)
-COL_DUCT = bd.Color(0.60, 0.62, 0.65, 1.0)
-COL_EXHAUST = bd.Color(0.30, 0.29, 0.30, 1.0)        # heat-stained exhaust duct
-COL_VALVE = bd.Color(0.34, 0.36, 0.39, 1.0)
-COL_HARNESS = bd.Color(0.18, 0.19, 0.20, 1.0)
-COL_BOLT = bd.Color(0.55, 0.56, 0.58, 1.0)
-COL_CLAMP = bd.Color(0.38, 0.39, 0.41, 1.0)
-COL_SENSOR = bd.Color(0.25, 0.27, 0.30, 1.0)
-COL_TINT_STRAW = bd.Color(0.60, 0.48, 0.33, 1.0)     # restrained heat tint
-COL_TINT_BRONZE = bd.Color(0.47, 0.37, 0.41, 1.0)
-COL_TINT_BLUE = bd.Color(0.37, 0.43, 0.53, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+COL_BELL_OUTER = (0.45, 0.46, 0.49, 1.0)     # dark oxidized regen bell
+COL_BELL_INNER = (0.10, 0.10, 0.12, 1.0)     # dark nozzle interior
+COL_CHAMBER = (0.58, 0.56, 0.52, 1.0)        # warm alloy chamber
+COL_DOME = (0.66, 0.67, 0.69, 1.0)
+COL_STRUCT = (0.46, 0.48, 0.52, 1.0)
+COL_PUMP = (0.70, 0.72, 0.74, 1.0)           # bright aluminum pump
+COL_GG = (0.42, 0.42, 0.45, 1.0)
+COL_DUCT = (0.60, 0.62, 0.65, 1.0)
+COL_EXHAUST = (0.30, 0.29, 0.30, 1.0)        # heat-stained exhaust duct
+COL_VALVE = (0.34, 0.36, 0.39, 1.0)
+COL_HARNESS = (0.18, 0.19, 0.20, 1.0)
+COL_BOLT = (0.55, 0.56, 0.58, 1.0)
+COL_CLAMP = (0.38, 0.39, 0.41, 1.0)
+COL_SENSOR = (0.25, 0.27, 0.30, 1.0)
+COL_TINT_STRAW = (0.60, 0.48, 0.33, 1.0)     # restrained heat tint
+COL_TINT_BRONZE = (0.47, 0.37, 0.41, 1.0)
+COL_TINT_BLUE = (0.37, 0.43, 0.53, 1.0)
 
 # schematic flow palette (translucent)
-COL_LOX = bd.Color(0.20, 0.45, 0.95, 0.60)           # LOX = blue
-COL_RP1 = bd.Color(0.85, 0.60, 0.15, 0.60)           # RP-1 = amber
-COL_HOT = bd.Color(0.95, 0.42, 0.12, 0.55)           # hot gas = orange/red
-COL_REGEN = bd.Color(0.85, 0.60, 0.15, 0.35)         # regen band, faint amber
-COL_UNKNOWN = bd.Color(0.62, 0.62, 0.68, 0.35)       # inferred placeholder gray
-COL_INJECTOR = bd.Color(0.70, 0.70, 0.72, 0.60)
+COL_LOX = (0.20, 0.45, 0.95, 0.60)           # LOX = blue
+COL_RP1 = (0.85, 0.60, 0.15, 0.60)           # RP-1 = amber
+COL_HOT = (0.95, 0.42, 0.12, 0.55)           # hot gas = orange/red
+COL_REGEN = (0.85, 0.60, 0.15, 0.35)         # regen band, faint amber
+COL_UNKNOWN = (0.62, 0.62, 0.68, 0.35)       # inferred placeholder gray
+COL_INJECTOR = (0.70, 0.70, 0.72, 0.60)
 
 
 def _label(part, label: str, color: bd.Color | None = None):

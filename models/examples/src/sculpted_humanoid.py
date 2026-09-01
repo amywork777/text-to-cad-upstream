@@ -34,14 +34,17 @@ from cadgen.assembly import AssemblyHelper, label_shape
 
 # Restrained industrial material palette.  Source colors survive the repo's
 # topology/render path; external STEP viewers may display transparency as solid.
-GRAPHITE = bd.Color("#252B30")
-CARBON = bd.Color("#343B40")
-ALUMINUM = bd.Color("#AEB6BC")
-TITANIUM = bd.Color("#747E86")
-OFF_WHITE = bd.Color("#D8D9D4")
-SMOKED_GLASS = bd.Color(0.025, 0.075, 0.095, 0.82)
-OPTIC_GLASS = bd.Color(0.01, 0.055, 0.065, 0.94)
-STATUS_AMBER = bd.Color("#B8893A")
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+GRAPHITE = "#252B30"
+CARBON = "#343B40"
+ALUMINUM = "#AEB6BC"
+TITANIUM = "#747E86"
+OFF_WHITE = "#D8D9D4"
+SMOKED_GLASS = (0.025, 0.075, 0.095, 0.82)
+OPTIC_GLASS = (0.01, 0.055, 0.065, 0.94)
+STATUS_AMBER = "#B8893A"
 
 JOINT_CLEARANCE = 1.8
 MIN_REMAINDER_VOLUME = 1.0e-4

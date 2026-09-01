@@ -43,18 +43,21 @@ Z_RP1_TOP = 17000.0        # S1 RP-1 tank (lower) top. schematic
 Z_LOX_BOT = 17500.0        # S1 LOX tank (upper) bottom. schematic
 OCTAWEB_R = 1290.0         # outer engine circle radius. cluster-fit estimate
 
-COL_WHITE = bd.Color(0.92, 0.92, 0.93, 1.0)
-COL_SOOT = bd.Color(0.78, 0.78, 0.79, 1.0)
-COL_BLACK = bd.Color(0.10, 0.10, 0.11, 1.0)
-COL_BAY = bd.Color(0.16, 0.16, 0.17, 1.0)
-COL_METAL = bd.Color(0.55, 0.57, 0.60, 1.0)
-COL_TITAN = bd.Color(0.48, 0.47, 0.50, 1.0)
-COL_LEG = bd.Color(0.20, 0.20, 0.22, 1.0)
-COL_NIOB = bd.Color(0.27, 0.26, 0.28, 1.0)
-COL_LOX = bd.Color(0.20, 0.45, 0.95, 0.45)
-COL_RP1 = bd.Color(0.85, 0.60, 0.15, 0.45)
-COL_GRAY = bd.Color(0.62, 0.62, 0.68, 0.40)
-COL_GUIDE = bd.Color(0.55, 0.57, 0.62, 0.45)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+COL_WHITE = (0.92, 0.92, 0.93, 1.0)
+COL_SOOT = (0.78, 0.78, 0.79, 1.0)
+COL_BLACK = (0.10, 0.10, 0.11, 1.0)
+COL_BAY = (0.16, 0.16, 0.17, 1.0)
+COL_METAL = (0.55, 0.57, 0.60, 1.0)
+COL_TITAN = (0.48, 0.47, 0.50, 1.0)
+COL_LEG = (0.20, 0.20, 0.22, 1.0)
+COL_NIOB = (0.27, 0.26, 0.28, 1.0)
+COL_LOX = (0.20, 0.45, 0.95, 0.45)
+COL_RP1 = (0.85, 0.60, 0.15, 0.45)
+COL_GRAY = (0.62, 0.62, 0.68, 0.40)
+COL_GUIDE = (0.55, 0.57, 0.62, 0.45)
 
 CUT_START, CUT_ARC = 135.0, 270.0     # cutaway opening faces +Y
 

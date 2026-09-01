@@ -13,8 +13,11 @@ from cadgen import build123d as bd
 
 MODEL_LABEL = "six_blade_open_propeller_from_reference"
 
-WARM_IVORY = bd.Color(0.82, 0.78, 0.65, 1.0)
-WARM_TAUPE = bd.Color(0.72, 0.70, 0.61, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+WARM_IVORY = (0.82, 0.78, 0.65, 1.0)
+WARM_TAUPE = (0.72, 0.70, 0.61, 1.0)
 
 BLADE_COUNT = 6
 BLADE_ROOT_RADIUS = 10.8

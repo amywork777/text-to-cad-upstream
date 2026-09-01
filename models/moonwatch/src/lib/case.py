@@ -116,9 +116,6 @@ def _dense_lug_stations(n_sub: int = 3):
     out.append(rows[-1])
     return out
 
-STEEL_C = bd.Color(*S.STEEL)
-STEEL_DARK_C = bd.Color(*S.STEEL_DARK)
-GASKET_C = bd.Color(*S.GASKET)
 
 
 # ---------------------------------------------------------------------------
@@ -344,7 +341,7 @@ def build_case_middle():
     body = body - _case_middle_cuts()
     body = body - (_flank_grain_cuts(band) + _shoulder_grain_tools())
     body.label = "case_middle"
-    body.color = STEEL_C
+    body.color = S.STEEL
     return body
 
 
@@ -363,7 +360,6 @@ def build_case_middle():
 POLISH_GAP = 0.02           # hover off the facet — no z-fighting
 POLISH_THICKNESS = 0.05
 POLISH_EDGE_INSET = 0.04    # stay just inside the facet's crease lines
-STEEL_BRIGHT_C = bd.Color(*S.STEEL_BRIGHT)
 # Mirror-polish PBR (same channel values as _materials.ANGLAGE_MIRROR,
 # restated inline: these zones must not depend on a rule-table match).
 _POLISH_MATERIAL = {"roughness": 0.08, "metalness": 0.95,
@@ -372,7 +368,7 @@ _POLISH_MATERIAL = {"roughness": 0.08, "metalness": 0.95,
 
 def _polish_part(sol, label):
     sol.label = label
-    sol.color = STEEL_BRIGHT_C
+    sol.color = S.STEEL_BRIGHT
     sol.cad_material = dict(_POLISH_MATERIAL)
     return sol
 
@@ -536,7 +532,7 @@ def build_bezel_ring():
     )
     ring = ring - bd.Pos(0, 0, 9.20) * snail
     ring.label = "bezel_ring"
-    ring.color = STEEL_C
+    ring.color = S.STEEL
     return ring
 
 
@@ -685,7 +681,7 @@ def build_caseback():
         cuts.append(bd.Rot(0, 0, 22.5 + k * 45.0) * notch)
     body = body - cuts
     body.label = "caseback"
-    body.color = STEEL_C
+    body.color = S.STEEL
     return body
 
 
@@ -701,14 +697,14 @@ def build_caseback_retaining_ring():
     outer = bd.Pos(0, 0, -1.775) * bd.Cylinder(15.3, 0.45)
     ring = outer - bd.Pos(0, 0, -1.775) * bd.Cylinder(14.25, 0.6)
     ring.label = "caseback_retaining_ring"
-    ring.color = STEEL_DARK_C
+    ring.color = S.STEEL_DARK
     return ring
 
 
 def build_caseback_o_ring():
     o = bd.Pos(0, 0, 0.25) * bd.Torus(18.1, 0.25)
     o.label = "caseback_o_ring"
-    o.color = GASKET_C
+    o.color = S.GASKET
     return o
 
 
@@ -749,7 +745,7 @@ def build_crown():
 
     crown = bd.Pos(CROWN_INNER_X, 0, S.CROWN_Z) * bd.Rot(0, 90, 0) * body
     crown.label = "crown"
-    crown.color = STEEL_C
+    crown.color = S.STEEL
     return crown
 
 
@@ -759,14 +755,14 @@ def build_crown_tube():
     )
     tube = bd.Pos(21.55, 0, S.CROWN_Z) * bd.Rot(0, 90, 0) * tube
     tube.label = "crown_tube"
-    tube.color = STEEL_DARK_C
+    tube.color = S.STEEL_DARK
     return tube
 
 
 def build_crown_o_ring():
     o = bd.Pos(20.2, 0, S.CROWN_Z) * bd.Rot(0, 90, 0) * bd.Torus(1.15, 0.28)
     o.label = "crown_o_ring"
-    o.color = GASKET_C
+    o.color = S.GASKET
     return o
 
 
@@ -862,16 +858,16 @@ def build_pusher(angle_deg: float, role: str):
     tf = _pusher_transform(angle_deg)
     cap = tf * _pusher_cap_local()
     cap.label = f"pusher_cap:{role}"
-    cap.color = STEEL_C
+    cap.color = S.STEEL
     tube = tf * _pusher_tube_local()
     tube.label = f"pusher_tube:{role}"
-    tube.color = STEEL_DARK_C
+    tube.color = S.STEEL_DARK
     spring = tf * _pusher_spring_local()
     spring.label = f"pusher_spring:{role}"
-    spring.color = STEEL_DARK_C
+    spring.color = S.STEEL_DARK
     o_ring = tf * (bd.Pos(0, 0, -1.0) * bd.Torus(0.85, 0.22))
     o_ring.label = f"pusher_o_ring:{role}"
-    o_ring.color = GASKET_C
+    o_ring.color = S.GASKET
     return [cap, tube, spring, o_ring]
 
 
@@ -884,7 +880,7 @@ def build_crystal_gasket():
         0, 0, 7.0
     ) * bd.Cylinder(19.22, 1.2)
     g.label = "crystal_gasket"
-    g.color = GASKET_C
+    g.color = S.GASKET
     return g
 
 
@@ -897,7 +893,7 @@ def build_spring_bar(role: str, y_sign: float):
     bar = body + pistons
     bar = bd.Pos(0, y_sign * S.SPRING_BAR_Y, S.SPRING_BAR_Z) * bd.Rot(0, 90, 0) * bar
     bar.label = f"spring_bar:{role}"
-    bar.color = STEEL_C
+    bar.color = S.STEEL
     return bar
 
 

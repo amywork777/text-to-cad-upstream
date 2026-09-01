@@ -5,8 +5,6 @@ import math
 from collections.abc import Sequence
 
 from cadgen import build123d as bd
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
 
 
 DISPLAY_NAME = "Roadable VTOL flying car concept"
@@ -122,6 +120,8 @@ def cylinder_z(label: str, center: Vector3, radius: float, length: float, color_
 
 
 def cylinder_between(label: str, p1: Vector3, p2: Vector3, radius: float, color_name: str) -> bd.Shape:
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt
     axis = (p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2])
     length = math.sqrt(axis[0] ** 2 + axis[1] ** 2 + axis[2] ** 2)
     direction = (axis[0] / length, axis[1] / length, axis[2] / length)

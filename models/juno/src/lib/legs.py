@@ -16,11 +16,11 @@ import traceback
 from cadgen import build123d as bd
 
 from .juno_lib import (
-    ACCENT_COLOR,
-    ALU_COLOR,
-    RUBBER_COLOR,
-    SHELL_COLOR,
-    STRUCT_COLOR,
+    ACCENT,
+    ALU,
+    RUBBER,
+    SHELL,
+    STRUCT,
     actuator_solids,
     part_compound,
     rounded_box,
@@ -137,7 +137,7 @@ def _mirror_children(children):
 
 
 def _fallback(label, size):
-    return [styled(bd.Box(*size), f"{label}_fallback", STRUCT_COLOR)]
+    return [styled(bd.Box(*size), f"{label}_fallback", STRUCT)]
 
 
 # ----------------------------------------------------------------- thigh
@@ -164,7 +164,7 @@ def _thigh_children():
     core = _solo(core + _cyl_y(55, 34))  # hip collar band |y|<=17
     core = _solo(core - _cyl_y(46.5, 130))  # can clearance bore
     core = _rim_chamfer(core, 55.0, 2.0)
-    ch.append(styled(core, "thigh_core", STRUCT_COLOR))
+    ch.append(styled(core, "thigh_core", STRUCT))
 
     # Ice-gray fairing wrapping front + outer (robot-left) faces, split into
     # two shells by a panel reveal that exposes the graphite core.
@@ -182,7 +182,7 @@ def _thigh_children():
     tags = ("upper", "lower")
     for sol, tag in zip(panels, tags):
         sol = _try_chamfer(sol, sol.edges(), 0.5)
-        ch.append(styled(sol, f"thigh_fairing_{tag}", SHELL_COLOR))
+        ch.append(styled(sol, f"thigh_fairing_{tag}", SHELL))
 
     # Knee fork (locked): yoke + twin plates, inner faces y=+-38, outer
     # y=+-48, spanning z -225..-324, bored dia 56 on the knee axis.
@@ -195,7 +195,7 @@ def _thigh_children():
     fork = _solo(fork - _cyl_y(46.8, 67.6, (0, 0, KNEE_Z)))
     fork = _yoke_fillet(fork, -258, -224, 8.0)
     fork = _try_chamfer(fork, fork.edges(), 0.8)
-    ch.append(styled(fork, "knee_fork", STRUCT_COLOR))
+    ch.append(styled(fork, "knee_fork", STRUCT))
 
     # Aluminum bearing bosses dia 56 at (0,+-43,-245), through the plates.
     for s, tag in ((1.0, "out"), (-1.0, "in")):
@@ -204,7 +204,7 @@ def _thigh_children():
         )
         boss = _solo(boss)
         boss = _try_chamfer(boss, boss.edges(), 0.6)
-        ch.append(styled(boss, f"knee_boss_{tag}", ALU_COLOR))
+        ch.append(styled(boss, f"knee_boss_{tag}", ALU))
 
     return ch
 
@@ -244,7 +244,7 @@ def _shin_children():
     core = _solo(core + _cyl_y(53, 30))  # knee collar band |y|<=15
     core = _solo(core - _cyl_y(46.5, 120))  # can clearance bore
     core = _rim_chamfer(core, 53.0, 2.0)
-    ch.append(styled(core, "shin_core", STRUCT_COLOR))
+    ch.append(styled(core, "shin_core", STRUCT))
 
     # Front shin-guard ridge (ice-gray), split by a panel reveal.
     guard = _loft_z(
@@ -260,7 +260,7 @@ def _shin_children():
     panels = _solids_over(guard)[:2]
     for sol, tag in zip(panels, ("upper", "lower")):
         sol = _try_chamfer(sol, sol.edges(), 0.5)
-        ch.append(styled(sol, f"shin_guard_{tag}", SHELL_COLOR))
+        ch.append(styled(sol, f"shin_guard_{tag}", SHELL))
 
     # Ankle fork (locked): plates inner y=+-26, outer y=+-34, bored dia 40
     # on the ankle-pitch axis through (0,0,-290).
@@ -271,7 +271,7 @@ def _shin_children():
     fork = _solo(fork - _cyl_y(20, 100, (0, 0, ANKLE_Z)))
     fork = _yoke_fillet(fork, -256, -226, 7.0)
     fork = _try_chamfer(fork, fork.edges(), 0.8)
-    ch.append(styled(fork, "ankle_fork", STRUCT_COLOR))
+    ch.append(styled(fork, "ankle_fork", STRUCT))
 
     # Aluminum bearing bosses dia 40 at (0,+-30,-245).
     for s, tag in ((1.0, "out"), (-1.0, "in")):
@@ -280,7 +280,7 @@ def _shin_children():
         )
         boss = _solo(boss)
         boss = _try_chamfer(boss, boss.edges(), 0.6)
-        ch.append(styled(boss, f"ankle_boss_{tag}", ALU_COLOR))
+        ch.append(styled(boss, f"ankle_boss_{tag}", ALU))
 
     return ch
 
@@ -308,7 +308,7 @@ def _foot_children():
 
     # Rubber sole plate z -26..-19, x -68..112, width 70, toe-up + heel kick.
     sole = rounded_box(
-        "sole_blank", RUBBER_COLOR, (180, 70, 7), center=(22, 0, -22.5),
+        "sole_blank", RUBBER, (180, 70, 7), center=(22, 0, -22.5),
         radius=16, axes="z",
     )
     sole = sole - roll_clear
@@ -318,7 +318,7 @@ def _foot_children():
     sole = sole - (bd.Pos(-63, 0, -29.66) * bd.Rot(0, 17.65, 0) * bd.Box(24, 96, 10))
     for gx in (-54.0, -36.0, -18.0, 36.0, 54.0, 72.0):  # tread grooves
         sole = sole - (bd.Pos(gx, 0, -25.8) * bd.Box(4.5, 100, 4.5))
-    ch.append(styled(_solo(sole), "sole", RUBBER_COLOR))
+    ch.append(styled(_solo(sole), "sole", RUBBER))
 
     # Sneaker-like wedge upper (ice-gray), lofted along X. Heights raised
     # ~+6 mm per the visual review (feet read too thin in profile).
@@ -332,12 +332,12 @@ def _foot_children():
         ]
     )
     recess = rounded_box(
-        "recess_cut", SHELL_COLOR, (66, 64, 20), center=(0, 0, 2),
+        "recess_cut", SHELL, (66, 64, 20), center=(0, 0, 2),
         radius=9, axes="z",
     )
     upper = upper - recess  # saddle recess down to z=-8
     upper = _solo(upper - roll_clear)
-    ch.append(styled(upper, "foot_upper", SHELL_COLOR))
+    ch.append(styled(upper, "foot_upper", SHELL))
 
     # Top saddle (locked): twin plates normal to X at x 22..32 / -32..-22,
     # domed around the roll axis, tied by side rails outside the keep-clear.
@@ -350,7 +350,7 @@ def _foot_children():
     saddle = saddle & (bd.Pos(0, 0, 4) * bd.Box(80, 90, 24))  # clip to z -8..16
     saddle = _solo(saddle)
     saddle = _try_chamfer(saddle, saddle.edges(), 0.8)
-    ch.append(styled(saddle, "roll_saddle", STRUCT_COLOR))
+    ch.append(styled(saddle, "roll_saddle", STRUCT))
 
     # Aluminum bearing bosses dia 34, coaxial with X through the origin.
     for s, tag in ((1.0, "out"), (-1.0, "in")):
@@ -359,23 +359,23 @@ def _foot_children():
         )
         boss = _solo(boss)
         boss = _try_chamfer(boss, boss.edges(), 0.6)
-        ch.append(styled(boss, f"roll_boss_{tag}", ALU_COLOR))
+        ch.append(styled(boss, f"roll_boss_{tag}", ALU))
 
     # Graphite toe bumper wrapping the toe box.
     toe = rounded_box(
-        "toe_blank", STRUCT_COLOR, (13, 50, 10), center=(105.5, 0, -14),
+        "toe_blank", STRUCT, (13, 50, 10), center=(105.5, 0, -14),
         radius=5, axes="z",
     )
     toe = _solo(toe - upper)
-    ch.append(styled(toe, "toe_bumper", ACCENT_COLOR))
+    ch.append(styled(toe, "toe_bumper", ACCENT))
 
     # Graphite heel bumper.
     heel = rounded_box(
-        "heel_blank", STRUCT_COLOR, (10, 52, 11), center=(-63, 0, -13.5),
+        "heel_blank", STRUCT, (10, 52, 11), center=(-63, 0, -13.5),
         radius=4, axes="z",
     )
     heel = _solo(heel - upper)
-    ch.append(styled(heel, "heel_bumper", ACCENT_COLOR))
+    ch.append(styled(heel, "heel_bumper", ACCENT))
 
     return ch
 

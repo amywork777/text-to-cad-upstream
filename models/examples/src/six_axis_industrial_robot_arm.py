@@ -29,15 +29,18 @@ WRIST_PITCH_CENTER = (174.0, 0.0, 128.0)
 TOOL_ROLL_CENTER = (196.0, 0.0, 128.0)
 TOOL_FLANGE_CENTER = (216.0, 0.0, 128.0)
 
-MATTE_WHITE = bd.Color(0.91, 0.92, 0.90, 1.0)
-LIGHT_GRAY = bd.Color(0.73, 0.76, 0.76, 1.0)
-DARK_GRAPHITE = bd.Color(0.10, 0.11, 0.12, 1.0)
-DEEP_GRAPHITE = bd.Color(0.045, 0.048, 0.052, 1.0)
-BRUSHED_STEEL = bd.Color(0.74, 0.76, 0.76, 1.0)
-DARK_STEEL = bd.Color(0.24, 0.25, 0.26, 1.0)
-BLUE_ACCENT = bd.Color(0.02, 0.30, 0.82, 1.0)
-ORANGE_ACCENT = bd.Color(1.0, 0.46, 0.10, 1.0)
-MATTE_BLACK = bd.Color(0.005, 0.006, 0.007, 1.0)
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+MATTE_WHITE = (0.91, 0.92, 0.90, 1.0)
+LIGHT_GRAY = (0.73, 0.76, 0.76, 1.0)
+DARK_GRAPHITE = (0.10, 0.11, 0.12, 1.0)
+DEEP_GRAPHITE = (0.045, 0.048, 0.052, 1.0)
+BRUSHED_STEEL = (0.74, 0.76, 0.76, 1.0)
+DARK_STEEL = (0.24, 0.25, 0.26, 1.0)
+BLUE_ACCENT = (0.02, 0.30, 0.82, 1.0)
+ORANGE_ACCENT = (1.0, 0.46, 0.10, 1.0)
+MATTE_BLACK = (0.005, 0.006, 0.007, 1.0)
 
 
 def _set_metadata(part, label: str, color: bd.Color):

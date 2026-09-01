@@ -55,8 +55,8 @@ TUBE_R = 19.0
 # primaries per side bunch into a mouth behind the gearbox and the taper aims
 # directly at the tip exit, so from every angle the exhaust reads as one line
 # instead of a cone plus a bent pipe.
-COLL_M = bd.Vector(-2090.0, 300.0, 496.0)          # mouth centre (|y|)
-COLL_N = bd.Vector(-0.9623, -0.1750, 0.2086)       # unit axis (y flips per side)
+COLL_M = (-2090.0, 300.0, 496.0)                # mouth centre (|y|); plain tuple, see _mouth_frame
+COLL_N = (-0.9623, -0.1750, 0.2086)             # unit axis (y flips per side)
 COLL_END_T = 196.0                              # megaphone ends here
 TIP_T = 297.0                                   # ...tip exit here
 
@@ -411,8 +411,8 @@ def _cover_bolts():
 
 
 def _mouth_frame(sy):
-    centre = bd.Vector(COLL_M.X, sy * COLL_M.Y, COLL_M.Z)
-    n = bd.Vector(COLL_N.X, sy * COLL_N.Y, COLL_N.Z).normalized()
+    centre = bd.Vector(COLL_M[0], sy * COLL_M[1], COLL_M[2])
+    n = bd.Vector(COLL_N[0], sy * COLL_N[1], COLL_N[2]).normalized()
     u = n.cross(bd.Vector(0, 0, 1)).normalized()
     v = n.cross(u).normalized()
     return centre, n, u, v
@@ -444,9 +444,9 @@ def _rear_primary(sy, j):
     p0 = (px, y0, pz)
     p1 = (px - 70.0 * CA, y0, pz - 70.0 * SA)
     p2 = (-1876.0 - 10.0 * j,
-          sy * (0.32 * abs(y0) + 0.68 * COLL_M.Y), 542.0 - 20.0 * j)
+          sy * (0.32 * abs(y0) + 0.68 * COLL_M[1]), 542.0 - 20.0 * j)
     p3 = (-1992.0,
-          sy * (0.15 * abs(y0) + 0.85 * COLL_M.Y), 514.0 - 8.0 * j)
+          sy * (0.15 * abs(y0) + 0.85 * COLL_M[1]), 514.0 - 8.0 * j)
     end, t1 = _mouth_point(sy, 40.0 + 60.0 * j)
     return _tube([p0, p1, p2, p3, end], TUBE_R, t0, t1)
 
@@ -467,8 +467,8 @@ def _front_primary(sy, j):
     p2 = (-1236.0, sy * (0.34 * abs(y0) + 0.66 * run), 528.0)
     p3 = (-1292.0, sy * run, 494.0)
     p4 = (-1572.0, sy * run, 486.0)
-    p5 = (-1832.0, sy * (0.62 * run + 0.38 * COLL_M.Y), 484.0)
-    p6 = (-2006.0, sy * (0.25 * run + 0.75 * COLL_M.Y), 490.0)
+    p5 = (-1832.0, sy * (0.62 * run + 0.38 * COLL_M[1]), 484.0)
+    p6 = (-2006.0, sy * (0.25 * run + 0.75 * COLL_M[1]), 490.0)
     end, t1 = _mouth_point(sy, 220.0 + 60.0 * j)
     pts = [(p0.X, p0.Y, p0.Z), (p1.X, p1.Y, p1.Z), p2, p3, p4, p5, p6, end]
     return _tube(pts, TUBE_R, (t0.X, t0.Y, t0.Z), t1)

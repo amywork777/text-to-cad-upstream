@@ -41,10 +41,6 @@ from cadgen import build123d as bd
 
 from lib import surfaces as S
 from lib.context import group, style
-from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_SOLID
-from OCP.TopLoc import TopLoc_Location
-from build123d.topology.shape_core import downcast
 
 from lib import palette as P
 
@@ -737,6 +733,10 @@ def _bake(shape):
     with the module on or off.  The cost is that the four wheels stop sharing a
     content-addressed component and become four unique ones.
     """
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+    from OCP.TopAbs import TopAbs_COMPOUND, TopAbs_SOLID
+    from OCP.TopLoc import TopLoc_Location
+    from build123d.topology.shape_core import downcast
     occt = shape.wrapped
     loc = occt.Location()
     if loc.IsIdentity():

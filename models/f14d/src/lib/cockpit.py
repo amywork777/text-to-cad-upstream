@@ -8,7 +8,7 @@ body already carries the bubble as solid material.  This module therefore does
 two halves of one job:
 
 1. It CUTS the cockpit opening out of that bubble.  The cutter is exposed as
-   :data:`SKIN_CUTTERS`, in the WATERLINE frame, before ``stance()``; the
+   :func:`skin_cutters`, in the WATERLINE frame, before ``stance()``; the
    airframe module applies it to the skin.
 2. It rebuilds the transparency FROM THE SAME FUNCTIONS -- every outer point of
    the canopy, the windscreen and every frame is ``sections.surfaces(x, y)``.
@@ -26,13 +26,15 @@ therefore taken from the skin at the lobe silhouette, and the rail from a fixed
 HEIGHT above that sill, which is what makes it a constant-looking band instead
 of a fin that grows with the bubble.
 
-IMPORT ORDER.  ``airframe`` imports this module for :data:`SKIN_CUTTERS`, so
+IMPORT ORDER.  ``airframe`` imports this module for :func:`skin_cutters`, so
 this module must NOT import ``airframe`` at module level -- ``stance`` is
 imported lazily inside :func:`build`.  The cycle then never closes at import
 time whichever module is loaded first.
 """
 
 from __future__ import annotations
+
+import functools
 
 import math
 from functools import lru_cache
@@ -400,14 +402,19 @@ def build_skin_cutter():
     return bd.loft(faces)
 
 
-#: Cutter solids for the airframe skin, in the WATERLINE frame (pre-``stance``).
-#: The airframe applies them as ONE batched subtract: ``skin - SKIN_CUTTERS``.
-SKIN_CUTTERS = [build_skin_cutter()]
+@functools.cache
+def skin_cutters():
+    """Cutter solids for the airframe skin, in the WATERLINE frame (pre-``stance``).
+
+    The airframe applies them as ONE batched subtract: ``skin - skin_cutters()``.
+    Built on first call, not at import, so loading this module builds nothing.
+    """
+    return [build_skin_cutter()]
 
 
 def cut_skin(skin):
     """Convenience for the airframe module: apply every cockpit cutter."""
-    return skin - list(SKIN_CUTTERS)
+    return skin - list(skin_cutters())
 
 
 # ---------------------------------------------------------------------------

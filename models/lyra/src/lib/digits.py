@@ -36,10 +36,10 @@ from .chain import (
     THUMB_BASE_LEN_MM,
 )
 from .common import (
-    ALU_COLOR,
-    GRAPHITE_COLOR,
-    PAD_COLOR,
-    PEARL_COLOR,
+    ALU,
+    GRAPHITE,
+    PAD,
+    PEARL,
     part_compound,
     pin,
     safe_chamfer,
@@ -161,13 +161,13 @@ def _finger_phalanx(
     pad = safe_fillet(pad, pad.edges().filter_by(bd.Axis.Y), min(1.8 * s, 2.0))
 
     solids = [
-        styled(core, f"{label_prefix}_spine", GRAPHITE_COLOR),
-        styled(tube, f"{label_prefix}_shell", PEARL_COLOR),
-        styled(pad, f"{label_prefix}_pad", PAD_COLOR),
-        styled(pivot, f"{pin_name}_pin", ALU_COLOR),
+        styled(core, f"{label_prefix}_spine", GRAPHITE),
+        styled(tube, f"{label_prefix}_shell", PEARL),
+        styled(pad, f"{label_prefix}_pad", PAD),
+        styled(pivot, f"{pin_name}_pin", ALU),
     ]
     for i, rim in enumerate(rims):
-        solids.append(styled(rim, f"{pin_name}_rim_{i}", ALU_COLOR))
+        solids.append(styled(rim, f"{pin_name}_rim_{i}", ALU))
     return solids
 
 
@@ -233,11 +233,11 @@ def build_finger_distal(finger: str):
         pad = None
 
     solids = [
-        styled(tang, f"{finger}_distal_tang", GRAPHITE_COLOR),
-        styled(body, f"{finger}_distal_body", PEARL_COLOR),
+        styled(tang, f"{finger}_distal_tang", GRAPHITE),
+        styled(body, f"{finger}_distal_body", PEARL),
     ]
     if pad is not None:
-        solids.append(styled(pad, f"{finger}_tip_pad", PAD_COLOR))
+        solids.append(styled(pad, f"{finger}_tip_pad", PAD))
     return part_compound(f"{finger}_distal", solids)
 
 
@@ -335,13 +335,13 @@ def _thumb_phalanx(
     pad = safe_fillet(pad, pad.edges().filter_by(bd.Axis.Z), 1.8)
 
     solids = [
-        styled(core, f"{label_prefix}_spine", GRAPHITE_COLOR),
-        styled(tube, f"{label_prefix}_shell", PEARL_COLOR),
-        styled(pad, f"{label_prefix}_pad", PAD_COLOR),
-        styled(pivot, f"{pin_name}_pin", ALU_COLOR),
+        styled(core, f"{label_prefix}_spine", GRAPHITE),
+        styled(tube, f"{label_prefix}_shell", PEARL),
+        styled(pad, f"{label_prefix}_pad", PAD),
+        styled(pivot, f"{pin_name}_pin", ALU),
     ]
     for i, rim in enumerate(rims):
-        solids.append(styled(rim, f"{pin_name}_rim_{i}", ALU_COLOR))
+        solids.append(styled(rim, f"{pin_name}_rim_{i}", ALU))
     return solids
 
 
@@ -357,11 +357,11 @@ def build_thumb_base():
     )
     core += fork
     solids = [
-        styled(core, "thumb_base_link", GRAPHITE_COLOR),
-        styled(pivot, "thumb_cmc_flex_pin", ALU_COLOR),
+        styled(core, "thumb_base_link", GRAPHITE),
+        styled(pivot, "thumb_cmc_flex_pin", ALU),
     ]
     for i, rim in enumerate(rims):
-        solids.append(styled(rim, f"thumb_cmc_flex_rim_{i}", ALU_COLOR))
+        solids.append(styled(rim, f"thumb_cmc_flex_rim_{i}", ALU))
     return part_compound("thumb_base", solids)
 
 
@@ -414,9 +414,9 @@ def build_thumb_distal():
         pad = None
 
     solids = [
-        styled(tang, "thumb_distal_tang", GRAPHITE_COLOR),
-        styled(body, "thumb_distal_body", PEARL_COLOR),
+        styled(tang, "thumb_distal_tang", GRAPHITE),
+        styled(body, "thumb_distal_body", PEARL),
     ]
     if pad is not None:
-        solids.append(styled(pad, "thumb_tip_pad", PAD_COLOR))
+        solids.append(styled(pad, "thumb_tip_pad", PAD))
     return part_compound("thumb_distal", solids)

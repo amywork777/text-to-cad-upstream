@@ -105,10 +105,11 @@ COSMETIC_CUTTER_MODULES = ("details", "aft")
 
 for _name in COSMETIC_CUTTER_MODULES:
     _mod = sys.modules.get(f"lib.{_name}")
-    if _mod is not None and getattr(_mod, "SKIN_CUTTERS", None):
-        print(f"[f14d] dropping {len(_mod.SKIN_CUTTERS)} cosmetic skin cutters "
-              f"from {_name}", file=sys.stderr)
-        _mod.SKIN_CUTTERS = []
+    if _mod is not None and hasattr(_mod, "skin_cutters"):
+        # The modules build their cutters lazily in skin_cutters(); replacing it
+        # before airframe.build() asks means the cosmetic ones are never built.
+        print(f"[f14d] dropping the cosmetic skin cutters from {_name}", file=sys.stderr)
+        _mod.skin_cutters = lambda: []
 
 
 @step(out="../STEP/f14d.step", kind="assembly", animation="f14d.anim.js")

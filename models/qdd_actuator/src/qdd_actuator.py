@@ -275,31 +275,34 @@ PLANET_EXPLODE_RADIAL = 14.0
 # Concept material colors (production-actuator palette: dark anodized body,
 # machined-aluminum output hardware, one anodized accent ring)
 # ---------------------------------------------------------------------------
-AL_BODY = bd.Color(0.13, 0.135, 0.15)  # black-anodized housing
-AL_COVER = bd.Color(0.115, 0.12, 0.13)  # black-anodized rear cover
-AL_BRIGHT = bd.Color(0.78, 0.79, 0.81)  # machined aluminum (flange, carrier)
-AL_RETAINER = bd.Color(0.85, 0.20, 0.01)  # saturated anodized-orange accent ring
-STEEL = bd.Color(0.62, 0.63, 0.66)
-STEEL_POLISHED = bd.Color(0.76, 0.77, 0.79)
-STEEL_RACE = bd.Color(0.24, 0.25, 0.29)  # dark bearing-steel races vs aluminum
-STEEL_ROLLER = bd.Color(0.85, 0.86, 0.88)
-LAMINATION = bd.Color(0.30, 0.31, 0.34)
-COPPER = bd.Color(0.80, 0.45, 0.18)
-ROTOR_DARK = bd.Color(0.24, 0.25, 0.28)
-MAGNET_N = bd.Color(0.10, 0.10, 0.12)  # alternating pole colors: dark / nickel
-MAGNET_S = bd.Color(0.68, 0.69, 0.71)
-FERRITE = bd.Color(0.25, 0.08, 0.10)
-PCB_GREEN = bd.Color(0.05, 0.30, 0.14)
-IC_BLACK = bd.Color(0.08, 0.08, 0.09)
-CAP_GRAY = bd.Color(0.22, 0.24, 0.30)
-PLASTIC_BLACK = bd.Color(0.07, 0.07, 0.08)
-GUNMETAL = bd.Color(0.34, 0.35, 0.38)  # connector coupling nuts
-PIN_GOLD = bd.Color(0.80, 0.64, 0.25)  # connector contacts
-BLACK_OXIDE = bd.Color(0.20, 0.20, 0.22)  # socket-head fasteners
-RUBBER = bd.Color(0.04, 0.04, 0.04)
-TITANIUM = bd.Color(0.60, 0.59, 0.64)
-GAUGE_GOLD = bd.Color(0.85, 0.72, 0.35)
-TUBE_BLACK = bd.Color(0.32, 0.33, 0.35)  # dark gunmetal, reads against the cover
+# Plain RGB(A) tuples / sRGB hex strings, not bd.Color objects: build123d's
+# Shape.color setter builds the Color on assignment, and a module-level
+# bd.Color(...) would import the CAD kernel before the @step freshness gate.
+AL_BODY = (0.13, 0.135, 0.15)  # black-anodized housing
+AL_COVER = (0.115, 0.12, 0.13)  # black-anodized rear cover
+AL_BRIGHT = (0.78, 0.79, 0.81)  # machined aluminum (flange, carrier)
+AL_RETAINER = (0.85, 0.20, 0.01)  # saturated anodized-orange accent ring
+STEEL = (0.62, 0.63, 0.66)
+STEEL_POLISHED = (0.76, 0.77, 0.79)
+STEEL_RACE = (0.24, 0.25, 0.29)  # dark bearing-steel races vs aluminum
+STEEL_ROLLER = (0.85, 0.86, 0.88)
+LAMINATION = (0.30, 0.31, 0.34)
+COPPER = (0.80, 0.45, 0.18)
+ROTOR_DARK = (0.24, 0.25, 0.28)
+MAGNET_N = (0.10, 0.10, 0.12)  # alternating pole colors: dark / nickel
+MAGNET_S = (0.68, 0.69, 0.71)
+FERRITE = (0.25, 0.08, 0.10)
+PCB_GREEN = (0.05, 0.30, 0.14)
+IC_BLACK = (0.08, 0.08, 0.09)
+CAP_GRAY = (0.22, 0.24, 0.30)
+PLASTIC_BLACK = (0.07, 0.07, 0.08)
+GUNMETAL = (0.34, 0.35, 0.38)  # connector coupling nuts
+PIN_GOLD = (0.80, 0.64, 0.25)  # connector contacts
+BLACK_OXIDE = (0.20, 0.20, 0.22)  # socket-head fasteners
+RUBBER = (0.04, 0.04, 0.04)
+TITANIUM = (0.60, 0.59, 0.64)
+GAUGE_GOLD = (0.85, 0.72, 0.35)
+TUBE_BLACK = (0.32, 0.33, 0.35)  # dark gunmetal, reads against the cover
 
 # ---------------------------------------------------------------------------
 # Consistency checks (concept-level fit, not tolerance engineering)

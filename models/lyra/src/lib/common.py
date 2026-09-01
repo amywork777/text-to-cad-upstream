@@ -28,16 +28,12 @@ ALU = (0.87, 0.89, 0.93)        # machined-aluminum rims, pins, flange
 PAD = (0.10, 0.10, 0.11)        # soft-touch tactile pad rubber
 AMBER = (0.83, 0.50, 0.16)      # amber accent (sensor ring, tensioners)
 SENSOR = (0.03, 0.06, 0.12)     # gloss midnight sensor glass
-
-PEARL_COLOR = bd.Color(*PEARL)
-GRAPHITE_COLOR = bd.Color(*GRAPHITE)
-ALU_COLOR = bd.Color(*ALU)
-PAD_COLOR = bd.Color(*PAD)
-AMBER_COLOR = bd.Color(*AMBER)
-SENSOR_COLOR = bd.Color(*SENSOR)
+# Plain RGB tuples, not bd.Color objects: a module-level bd.Color(...) would
+# import the CAD kernel the moment this module loads, before the @step
+# freshness gate runs. build123d's ``Shape.color`` setter builds the Color.
 
 
-def styled(solid, label: str, color: bd.Color):
+def styled(solid, label: str, color):
     solid.label = label
     solid.color = color
     return solid

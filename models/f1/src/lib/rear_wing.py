@@ -34,6 +34,8 @@ GEOMETRY NOTES THAT MATTER TO THE ANIMATION
 
 from __future__ import annotations
 
+import functools
+
 import math
 
 from cadgen import build123d as bd
@@ -44,7 +46,6 @@ from . import spec, surfaces
 # derived datums
 # ==========================================================================
 
-_PIV = bd.Vector(*spec.DRS_PIVOT)
 _FLAP_TW0 = spec.RW_FLAP_INCIDENCE_CLOSED_DEG
 _FLAP_PIVOT_OFF = 32.0  # pivot sits this far aft of the flap LE, on its chord
 
@@ -184,7 +185,7 @@ def _flap_station(y: float) -> dict:
     r = min(r, 1.0)
     # LE is always _FLAP_PIVOT_OFF forward of the pivot ALONG THIS STATION'S
     # chord, so the nose stays a surface of revolution about the pivot axis.
-    le = _PIV - _chord_dir(twist) * _FLAP_PIVOT_OFF
+    le = bd.Vector(*spec.DRS_PIVOT) - _chord_dir(twist) * _FLAP_PIVOT_OFF
     return {
         "le": (le.X, y, le.Z),
         "chord": surfaces.taper(spec.RW_FLAP_CHORD, 152.0, s) * (1.0 - 0.16 * r * r),
@@ -731,9 +732,16 @@ def _lug_eye():
 # DRS ACTUATOR — the jewellery
 # ==========================================================================
 
-_CP = bd.Vector(*spec.DRS_CRANK_PIVOT)
-_CE = bd.Vector(*spec.DRS_CRANK_END_CLOSED)
-_LUG = bd.Vector(*spec.DRS_LUG_CLOSED)
+@functools.cache
+def _drs_points():
+    """(crank pivot, crank end, lug) as Vectors.
+
+    Built on first use, not at import, so loading this module never touches
+    the CAD kernel (the @step freshness gate must run before that).
+    """
+    return (bd.Vector(*spec.DRS_CRANK_PIVOT),
+            bd.Vector(*spec.DRS_CRANK_END_CLOSED),
+            bd.Vector(*spec.DRS_LUG_CLOSED))
 
 
 def _bellcrank():
@@ -744,8 +752,9 @@ def _bellcrank():
     on its way there. A second, shorter arm takes the actuator pushrod.
     """
     def polar(deg, r):
+        cp, _, _ = _drs_points()
         a = math.radians(deg)
-        return (_CP.X + r * math.cos(a), _CP.Z + r * math.sin(a))
+        return (cp.X + r * math.cos(a), cp.Z + r * math.sin(a))
 
     # (angle, radius) walked monotonically once around the hub. The drive arm
     # peaks at spec.DRS_CRANK_ANGLE_CLOSED_DEG / spec.DRS_CRANK_R + a 5 mm cap
@@ -790,8 +799,9 @@ def _bellcrank():
 
 
 def _crank_hub():
+    cp, _, _ = _drs_points()
     return (
-        bd.Location((_CP.X, spec.DRS_LINK_Y, _CP.Z))
+        bd.Location((cp.X, spec.DRS_LINK_Y, cp.Z))
         * bd.Rotation(-90, 0, 0)
         * bd.Cylinder(15.0, 30.0)
     )
@@ -799,13 +809,14 @@ def _crank_hub():
 
 def _crank_accent_ring():
     """THE accent on the whole rear wing: one vermillion ring on the bearing."""
+    cp, _, _ = _drs_points()
     outer = (
-        bd.Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
+        bd.Location((cp.X, spec.DRS_LINK_Y + 15.4, cp.Z))
         * bd.Rotation(-90, 0, 0)
         * bd.Cylinder(14.6, 3.0)
     )
     bore = (
-        bd.Location((_CP.X, spec.DRS_LINK_Y + 15.4, _CP.Z))
+        bd.Location((cp.X, spec.DRS_LINK_Y + 15.4, cp.Z))
         * bd.Rotation(-90, 0, 0)
         * bd.Cylinder(10.4, 9.0)
     )
@@ -820,9 +831,10 @@ def _crank_accent_ring():
 
 def _link_rod():
     """Polished pushrod, exactly spec.DRS_LINK_L between its rod-end centres."""
-    d = (_LUG - _CE).normalized()
-    a = _CE + d * 15.0
-    b = _LUG - d * 15.0
+    _, ce, lug = _drs_points()
+    d = (lug - ce).normalized()
+    a = ce + d * 15.0
+    b = lug - d * 15.0
     return surfaces.blade_member(a, b, 15.0, 15.0, thickness_ratio=0.62, samples=21)
 
 
@@ -844,6 +856,7 @@ def _actuator_body():
     the endplate's raked leading edge passes x = -3880 at this height, and an
     actuator ahead of that line would poke out of the front of the plate.
     """
+    cp, _, _ = _drs_points()
     axis_a = bd.Vector(-3920.0, 494.0, 740.0)
     axis_b = bd.Vector(-3998.0, 494.0, 724.0)
     body = surfaces.blade_member(axis_a, axis_b, 58.0, 46.0, thickness_ratio=0.86,
@@ -860,8 +873,8 @@ def _actuator_body():
     )
     # short pushrod from the actuator to the bellcrank's lower arm
     a2 = math.radians(spec.DRS_CRANK_ANGLE_CLOSED_DEG - 140.0)
-    lower_arm = bd.Vector(_CP.X + 21.0 * math.cos(a2), spec.DRS_LINK_Y,
-                       _CP.Z + 21.0 * math.sin(a2))
+    lower_arm = bd.Vector(cp.X + 21.0 * math.cos(a2), spec.DRS_LINK_Y,
+                       cp.Z + 21.0 * math.sin(a2))
     ram = surfaces.blade_member(bd.Vector(-3930.0, 486.0, 744.0), lower_arm,
                            13.0, 11.0, thickness_ratio=0.72, samples=17)
     return body, cap_a, cap_b, ram
@@ -912,6 +925,7 @@ def build_drs_flap():
 
 def build_drs_actuator():
     """ONLY the linkage that drives the flap. Mirrored on both sides."""
+    _, ce, lug = _drs_points()
     bodies = []
     bodies += surfaces.pair(_bellcrank(), "drs_bellcrank", spec.TITANIUM)
     bodies += surfaces.pair(_crank_hub(), "drs_crank_hub", spec.ALLOY)
@@ -919,8 +933,8 @@ def build_drs_actuator():
 
     bodies += surfaces.pair(_link_rod(), "drs_link", spec.ALLOY)
 
-    h_crank, b_crank = _rod_end(_CE, _LUG)
-    h_lug, b_lug = _rod_end(_LUG, _CE)
+    h_crank, b_crank = _rod_end(ce, lug)
+    h_lug, b_lug = _rod_end(lug, ce)
     bodies += surfaces.pair(h_crank, "drs_rodend_crank", spec.ANODIZED)
     bodies += surfaces.pair(b_crank, "drs_ball_crank", spec.ALLOY)
     bodies += surfaces.pair(h_lug, "drs_rodend_lug", spec.ANODIZED)

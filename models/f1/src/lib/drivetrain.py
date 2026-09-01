@@ -12,7 +12,7 @@ hangs off this module, so it is modelled as one continuous load path:
 The rear suspension picks up on eight inboard hardpoints stated in `spec`.
 Every one of them is carried by a machined boss or clevis that is fused into
 the casing (the five forward ones) or into the cast rear pickup carrier (the
-three aft ones), so the point physically sits in metal — `REAR_PICKUPS` and
+three aft ones), so the point physically sits in metal — `rear_pickups()` and
 `pickup_boss()` exist so that can be checked numerically.
 
 Internal layout (drivetrain-local, all derived from `spec` datums):
@@ -28,6 +28,8 @@ casing: the underside stays above z=150 at x=-3000 and above z=230 by x=-3500.
 """
 
 from __future__ import annotations
+
+import functools
 
 import math
 
@@ -424,101 +426,112 @@ def _norm3(a, b):
     return (d.X, d.Y, d.Z)
 
 
-_LOWER_PIVOT_AXIS = _norm3(spec.R_LOWER_IN_FWD, spec.R_LOWER_IN_AFT)
-_UPPER_PIVOT_AXIS = _norm3(spec.R_UPPER_IN_FWD, spec.R_UPPER_IN_AFT)
+@functools.cache
+def _pivot_axes():
+    """(lower, upper) rear wishbone pivot axes as unit tuples.
+
+    Built on first use, not at import: _norm3 goes through bd.Vector and the
+    kernel must stay unloaded until the @step freshness gate has run.
+    """
+    return (_norm3(spec.R_LOWER_IN_FWD, spec.R_LOWER_IN_AFT),
+            _norm3(spec.R_UPPER_IN_FWD, spec.R_UPPER_IN_AFT))
 
 # name, hardpoint, pin axis, boss root (inside the parent casting),
 # root chord, tip chord, cheek radius, clevis gap, pin radius
-REAR_PICKUPS = (
-    (
-        "lower_in_fwd",
-        spec.R_LOWER_IN_FWD,
-        _LOWER_PIVOT_AXIS,
-        (-3298.0, 68.0, 226.0),
-        104.0,
-        46.0,
-        19.0,
-        24.0,
-        9.0,
-    ),
-    (
-        "lower_in_aft",
-        spec.R_LOWER_IN_AFT,
-        _LOWER_PIVOT_AXIS,
-        None,  # the carrier's post and lower leg both land on this point
-        76.0,
-        44.0,
-        18.0,
-        24.0,
-        9.0,
-    ),
-    (
-        "upper_in_fwd",
-        spec.R_UPPER_IN_FWD,
-        _UPPER_PIVOT_AXIS,
-        (-3286.0, 78.0, 380.0),
-        96.0,
-        44.0,
-        18.0,
-        22.0,
-        8.5,
-    ),
-    (
-        "upper_in_aft",
-        spec.R_UPPER_IN_AFT,
-        _UPPER_PIVOT_AXIS,
-        None,  # the carrier's upper leg and post both land on this point
-        72.0,
-        42.0,
-        17.0,
-        22.0,
-        8.5,
-    ),
-    (
-        "toelink_in",
-        spec.R_TOELINK_IN,
-        (0.0, 0.0, 1.0),
-        (-3818.0, 229.0, 256.0),
-        46.0,
-        34.0,
-        16.0,
-        20.0,
-        8.0,
-    ),
-    (
-        "pullrod_in",
-        spec.R_PULLROD_IN,
-        (1.0, 0.0, 0.0),
-        (-3300.0, 72.0, 248.0),
-        80.0,
-        40.0,
-        17.0,
-        26.0,
-        8.5,
-    ),
-    (
-        "rocker_pivot",
-        spec.R_ROCKER_PIVOT,
-        spec.R_ROCKER_AXIS,
-        (-3272.0, 84.0, 268.0),
-        92.0,
-        52.0,
-        26.0,
-        0.0,
-        11.0,
-    ),
-    (
-        "damper_in",
-        spec.R_DAMPER_IN,
-        (1.0, 0.0, 0.0),
-        (-3120.0, 30.0, 300.0),
-        44.0,
-        34.0,
-        18.0,
-        26.0,
-        9.0,
-    ),
-)
+@functools.cache
+def rear_pickups():
+    """The REAR_PICKUPS table; built on first call because the pin axes come from _pivot_axes()."""
+    lower_pivot_axis, upper_pivot_axis = _pivot_axes()
+    return (
+        (
+            "lower_in_fwd",
+            spec.R_LOWER_IN_FWD,
+            lower_pivot_axis,
+            (-3298.0, 68.0, 226.0),
+            104.0,
+            46.0,
+            19.0,
+            24.0,
+            9.0,
+        ),
+        (
+            "lower_in_aft",
+            spec.R_LOWER_IN_AFT,
+            lower_pivot_axis,
+            None,  # the carrier's post and lower leg both land on this point
+            76.0,
+            44.0,
+            18.0,
+            24.0,
+            9.0,
+        ),
+        (
+            "upper_in_fwd",
+            spec.R_UPPER_IN_FWD,
+            upper_pivot_axis,
+            (-3286.0, 78.0, 380.0),
+            96.0,
+            44.0,
+            18.0,
+            22.0,
+            8.5,
+        ),
+        (
+            "upper_in_aft",
+            spec.R_UPPER_IN_AFT,
+            upper_pivot_axis,
+            None,  # the carrier's upper leg and post both land on this point
+            72.0,
+            42.0,
+            17.0,
+            22.0,
+            8.5,
+        ),
+        (
+            "toelink_in",
+            spec.R_TOELINK_IN,
+            (0.0, 0.0, 1.0),
+            (-3818.0, 229.0, 256.0),
+            46.0,
+            34.0,
+            16.0,
+            20.0,
+            8.0,
+        ),
+        (
+            "pullrod_in",
+            spec.R_PULLROD_IN,
+            (1.0, 0.0, 0.0),
+            (-3300.0, 72.0, 248.0),
+            80.0,
+            40.0,
+            17.0,
+            26.0,
+            8.5,
+        ),
+        (
+            "rocker_pivot",
+            spec.R_ROCKER_PIVOT,
+            spec.R_ROCKER_AXIS,
+            (-3272.0, 84.0, 268.0),
+            92.0,
+            52.0,
+            26.0,
+            0.0,
+            11.0,
+        ),
+        (
+            "damper_in",
+            spec.R_DAMPER_IN,
+            (1.0, 0.0, 0.0),
+            (-3120.0, 30.0, 300.0),
+            44.0,
+            34.0,
+            18.0,
+            26.0,
+            9.0,
+        ),
+    )
 
 
 def _clevis(point, axis, cheek_r, gap, pin_r):
@@ -556,7 +569,7 @@ def _clevis(point, axis, cheek_r, gap, pin_r):
 
 def pickup_boss(name):
     """The machined boss carrying one rear inboard hardpoint, as one solid."""
-    for entry in REAR_PICKUPS:
+    for entry in rear_pickups():
         if entry[0] != name:
             continue
         _, point, axis, root, c0, c1, cheek_r, gap, pin_r = entry
@@ -936,17 +949,23 @@ def _differential():
 
 _DS_ROOT = (_AXLE, 186.0, _DIFF_Z)
 _DS_HUB = (_AXLE, spec.REAR_HUB_Y, spec.HUB_Z)
-_DS_U = _unit(_DS_ROOT, _DS_HUB)
-_DS_L = (_v(_DS_HUB) - _v(_DS_ROOT)).length
+
+
+@functools.cache
+def _driveshaft_frame():
+    """(unit direction, length) of the driveshaft; built on first use, not at import."""
+    return _unit(_DS_ROOT, _DS_HUB), (_v(_DS_HUB) - _v(_DS_ROOT)).length
 
 
 def _ds(t):
-    return _along(_DS_ROOT, _DS_U, t)
+    ds_u, _ = _driveshaft_frame()
+    return _along(_DS_ROOT, ds_u, t)
 
 
 def _driveshaft_set():
     """Inner tripod housing, tapered shaft, open outer CV, hub stub."""
-    n = _v(_DS_U)
+    ds_u, ds_l = _driveshaft_frame()
+    n = _v(ds_u)
     e1 = bd.Vector(1, 0, 0)
     e2 = n.cross(e1).normalized()
 
@@ -987,7 +1006,7 @@ def _driveshaft_set():
             _cone(_ds(486.0), _ds(506.0), 30.0, 46.0),
             _cyl(_ds(506.0), _ds(548.0), 46.0),
             _cone(_ds(548.0), _ds(566.0), 46.0, 36.0),
-            _cyl(_ds(566.0), _ds(_DS_L + 4.0), 26.0),
+            _cyl(_ds(566.0), _ds(ds_l + 4.0), 26.0),
         ]
     )
     outer = _cut(
@@ -1071,7 +1090,7 @@ def _rear_pickup_carrier(side):
         _strut(root_lo, lo, 96.0, 62.0, back=0.0, fwd=24.0),  # lower leg
     ]
     for name in _aft_pickup_names():
-        entry = next(e for e in REAR_PICKUPS if e[0] == name)
+        entry = next(e for e in rear_pickups() if e[0] == name)
         _, point, axis, root, c0, c1, cheek_r, gap, pin_r = entry
         p = m(point)
         a = (axis[0], s * axis[1], axis[2])

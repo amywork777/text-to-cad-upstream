@@ -68,8 +68,8 @@ _HP = {
 RACK_X, RACK_Z = 1470.0, 300.0
 ARB_X, ARB_Z = 1428.0, 520.0
 
-FWD = bd.Vector(1, 0, 0)
-UPZ = bd.Vector(0, 0, 1)
+FWD = (1, 0, 0)  # plain tuples; consumers pass them through _v() / bd.Plane
+UPZ = (0, 0, 1)
 
 
 def _p(name, side):
@@ -335,7 +335,7 @@ def _upright(side):
     uo = _p("uwb_out", side)
     O = _mid(lo, uo)
     kp = (_v(uo) - _v(lo)).normalized()
-    n = kp.cross(FWD)                       # plate normal, outboard on the left
+    n = kp.cross(_v(FWD))                   # plate normal, outboard on the left
     pl = bd.Plane(origin=O, x_dir=(-1, 0, 0), z_dir=n)
 
     pts = [(-f, u) for (f, u) in _UP_OUTLINE]
