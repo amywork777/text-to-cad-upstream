@@ -71,6 +71,32 @@ def _park() -> None:
         os.chdir(tempfile.gettempdir())
 
 
+def _missing_cwd_message(cwd: str) -> str:
+    return f"working directory does not exist: {cwd}"
+
+
+def _enter(cwd: object, err: _FrameWriter) -> bool:
+    """Move into the request's working directory, or fail the REQUEST loudly.
+
+    Relative paths in a request resolve against the process cwd — that is the
+    native contract every cadgen path argument keeps — and a worker is parked in
+    a tempdir between jobs (see ``_park``). Skipping the chdir when the directory
+    is gone therefore does not "fall back" to anything: it silently resolves the
+    caller's relative paths under the tempdir, so the job reads nothing, writes
+    into the tempdir, or invents an artifact somewhere the caller will never look.
+
+    Failing here costs one request. The worker itself is fine — it never left the
+    parked directory — so the daemon stays up and the next request is served.
+    """
+    if not isinstance(cwd, str) or not cwd:
+        return True
+    if not os.path.isdir(cwd):
+        err.write(_missing_cwd_message(cwd) + "\n")
+        return False
+    os.chdir(cwd)
+    return True
+
+
 def _tool_main(tool: str):
     return getattr(importlib.import_module(_TOOL_IMPORTS[tool]), "main")
 
@@ -88,8 +114,8 @@ def _run(request: dict) -> int:
     previous_argv = sys.argv
     out, err = _FrameWriter("stdout"), _FrameWriter("stderr")
     try:
-        if isinstance(cwd, str) and os.path.isdir(cwd):
-            os.chdir(cwd)
+        if not _enter(cwd, err):
+            return 1
         sys.argv = [prog or f"cadgen {tool}", *argv]
         main = _tool_main(tool)
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
@@ -158,7 +184,12 @@ def _invoke(request: dict) -> dict:
         run = _DISPATCH.get(module_name)
         if run is None:
             return {"ok": False, "error": f"Unknown cadgen module for worker: {module_name}"}
-        if isinstance(repo_root, str) and os.path.isdir(repo_root):
+        if isinstance(repo_root, str) and repo_root:
+            if not os.path.isdir(repo_root):
+                # Same contract as _run's cwd: a request naming a directory that
+                # is not there fails as a payload the caller can read, rather
+                # than running against whatever tempdir the worker is parked in.
+                return {"ok": False, "error": _missing_cwd_message(repo_root)}
             os.chdir(repo_root)
         # stderr is captured rather than streamed: the cold path reports a failure's
         # text in the payload, and warm must match.

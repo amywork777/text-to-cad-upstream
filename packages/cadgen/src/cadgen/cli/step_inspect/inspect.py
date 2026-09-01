@@ -25,6 +25,11 @@ from cadgen.step_targets import (
 )
 from cadgen import analysis
 from cadgen import lookup
+from cadgen.occurrence_groups import (
+    expand_occurrence_selector,
+    occurrence_group_members,
+    occurrence_near_miss_hint,
+)
 
 
 @dataclass
@@ -70,7 +75,8 @@ def inspect_cad_refs(
         raise CadRefError(
             "No selector ref found. Expected refs like #o<path>, #o<path>.s<n>, #o<path>.f<n>, "
             "#o<path>.e<n>, #o<path>.v<n>, #m<n>, or #s<n>/#f<n>/#e<n>/#v<n> "
-            "for single-occurrence entries."
+            "for single-occurrence entries. #o<path> may name a subassembly as well as a "
+            "part; a subassembly resolves as the parts beneath it."
         )
 
     contexts: dict[str, EntryContext] = {}
@@ -103,6 +109,11 @@ def inspect_cad_refs(
                     parsed.cad_path,
                     profile=SelectorProfile.REFS if refs_required_by_cad_path.get(parsed.cad_path) else SelectorProfile.SUMMARY,
                     context_provider=context_provider,
+                    # Every token here was built from THIS entry, so the target
+                    # as typed is the thing to resolve. Targets are native
+                    # paths: a cad_path outside the cwd is a bare name, and a
+                    # bare name cannot find the file it came from.
+                    resolve_target=entry_target if parsed.cad_path == entry.cad_path else "",
                 )
             except CadRefError as exc:
                 error = cad_ref_error_payload(exc)
@@ -149,24 +160,30 @@ def inspect_cad_refs(
 
         if parsed.selectors:
             for raw_selector in parsed.selectors:
-                selection, selection_error = _inspect_selector(
-                    parsed.cad_path,
-                    raw_selector,
-                    context,
-                    detail=detail,
-                    facts=facts,
-                    positioning=positioning,
-                )
-                token_result["selections"].append(selection)
-                if selection_error is not None:
-                    errors.append(
-                        {
-                            "line": parsed.line,
-                            "cadPath": parsed.cad_path,
-                            "selector": raw_selector,
-                            **selection_error,
-                        }
+                # A GROUP ref becomes its leaves here. `refs` reports one selection per
+                # thing that owns geometry, and a subassembly owns none -- so naming one
+                # asks about its parts, and answering with all of them is the answer.
+                for selector in _group_expanded_selectors(raw_selector, context):
+                    selection, selection_error = _inspect_selector(
+                        parsed.cad_path,
+                        selector,
+                        context,
+                        detail=detail,
+                        facts=facts,
+                        positioning=positioning,
                     )
+                    if selector != raw_selector:
+                        selection["fromGroup"] = _selector_body(raw_selector)
+                    token_result["selections"].append(selection)
+                    if selection_error is not None:
+                        errors.append(
+                            {
+                                "line": parsed.line,
+                                "cadPath": parsed.cad_path,
+                                "selector": raw_selector,
+                                **selection_error,
+                            }
+                        )
         else:
             if include_topology and "topology" in report_payload:
                 token_result["topology"] = report_payload["topology"]
@@ -221,6 +238,107 @@ def _parse_entry_ref_tokens(cad_path: str, refs_text: str = "") -> list[syntax.P
     return tokens
 
 
+def _selector_body(raw_selector: str) -> str:
+    return str(raw_selector or "").strip().lstrip("#")
+
+
+def _group_id(raw_selector: str, context: EntryContext) -> str:
+    """The instance-tree group this ref names, or "" if it names anything else.
+
+    A group is an interior node: no row carries it, but rows descend from it. Only a
+    numeric occurrence ref can name one — labels are built from the occurrence rows, so
+    a label always names a leaf and never needs this.
+    """
+    index = context.selector_index
+    if index is None:
+        return ""
+    parsed = syntax.parse_selector(raw_selector)
+    if parsed is None or parsed.label or parsed.selector_type != "occurrence":
+        return ""
+    canonical = str(parsed.canonical or "")
+    if not canonical or canonical in index.occurrence_by_id:
+        return ""
+    return canonical if occurrence_group_members(canonical, index) else ""
+
+
+def _group_expanded_selectors(raw_selector: str, context: EntryContext) -> list[str]:
+    """``raw_selector`` as the leaf refs it covers; unchanged when it is not a group."""
+    group_id = _group_id(raw_selector, context)
+    if not group_id:
+        return [raw_selector]
+    return expand_occurrence_selector(
+        group_id, selector_index=context.selector_index, source_label="inspect"
+    )
+
+
+def _triplet(value: object) -> list[float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) < 3:
+        return None
+    try:
+        return [float(component) for component in value[:3]]
+    except (TypeError, ValueError):
+        return None
+
+
+def _merged_bbox(rows: list[dict[str, object]]) -> dict[str, list[float]] | None:
+    """The box that contains every row's box, or None when none of them has one."""
+    low: list[float] | None = None
+    high: list[float] | None = None
+    for row in rows:
+        bbox = row.get("bbox")
+        if not isinstance(bbox, dict):
+            continue
+        row_low = _triplet(bbox.get("min"))
+        row_high = _triplet(bbox.get("max"))
+        if row_low is None or row_high is None:
+            continue
+        low = list(row_low) if low is None else [min(a, b) for a, b in zip(low, row_low)]
+        high = list(row_high) if high is None else [max(a, b) for a, b in zip(high, row_high)]
+    if low is None or high is None:
+        return None
+    return {"min": low, "max": high}
+
+
+def _group_occurrence_row(group_id: str, context: EntryContext) -> dict[str, object] | None:
+    """A selector row standing for an instance-tree GROUP, or None if it is not one.
+
+    Shaped like the leaf rows around it so every consumer (positioning facts, the frame
+    payload, the text formatter) reads it without a special case. Its extent is the union
+    of the leaves it covers — a group's frame question is "where is this branch", and the
+    branch is exactly its parts.
+
+    ``transform`` is copied from the descriptor's node when the node records one, and
+    OMITTED otherwise. No descriptor writes a subassembly transform today: group
+    placement is baked into each leaf's absolute transform, so there is nothing to read
+    and nothing safe to derive. A frame that reported a made-up matrix would be worse
+    than one that reports the branch's real extent and no matrix.
+    """
+    index = context.selector_index
+    if index is None:
+        return None
+    members = occurrence_group_members(group_id, index)
+    if not members:
+        return None
+    rows = [index.occurrence_by_id[member] for member in members]
+    node = (getattr(index, "group_nodes", None) or {}).get(group_id) or {}
+    row: dict[str, object] = {
+        "id": group_id,
+        "path": group_id,
+        "name": str(node.get("name") or group_id),
+        "sourceName": str(node.get("name") or group_id),
+        "parentId": group_id.rpartition(".")[0] or None,
+        "nodeType": str(node.get("nodeType") or "subassembly"),
+        "memberOccurrenceIds": members,
+        "childCount": int(node.get("childCount") or 0),
+    }
+    bbox = _merged_bbox(rows)
+    if bbox is not None:
+        row["bbox"] = bbox
+    if isinstance(node.get("transform"), list):
+        row["transform"] = node["transform"]
+    return row
+
+
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
     try:
@@ -234,13 +352,24 @@ def _load_entry_context(
     *,
     profile: SelectorProfile,
     context_provider: EntryContextProvider | None = None,
+    resolve_target: str = "",
 ) -> EntryContext:
+    """Load one entry's context.
+
+    ``cad_path`` is the entry's IDENTITY — what reports name it by — and
+    ``resolve_target`` is the target as the caller typed it, which is what
+    resolution runs on. The two are the same string for a logical cad path and
+    differ for a native path from outside the cwd, whose identity is the bare
+    file name (see ``step_targets._path_identity``); resolving the identity
+    there would look for a file of that name under the cwd and either miss or,
+    worse, find a different one.
+    """
     if context_provider is not None:
         context = context_provider(cad_path, profile)
         if context is not None:
             return context
 
-    target = resolve_step_target(cad_path)
+    target = resolve_step_target(resolve_target or cad_path)
     return _load_step_context(target, profile=profile)
 
 
@@ -557,6 +686,29 @@ def _vertex_detail(row: dict[str, object], selector_index: lookup.SelectorIndex)
     }
 
 
+def _unresolved_message(
+    raw_selector: str,
+    cad_path: str,
+    parsed_selector: object,
+    context: EntryContext,
+) -> str:
+    """Why a ref did not resolve, plus what DOES exist near it.
+
+    An occurrence ref that resolves to nothing is nearly always a wrong depth rather
+    than a wrong document, and "did not resolve" alone leaves the caller guessing which.
+    The hint walks up to the deepest ancestor the document really has and names that
+    node's children -- interior nodes included, because those are now accepted too.
+    """
+    base = f"Selector '{raw_selector}' did not resolve against {cad_path}."
+    index = context.selector_index
+    if index is None or getattr(parsed_selector, "selector_type", "") != "occurrence":
+        return base
+    canonical = str(getattr(parsed_selector, "canonical", "") or "")
+    if not canonical:
+        return base
+    return f"{base} {occurrence_near_miss_hint(canonical, index)}"
+
+
 def _inspect_selector(
     cad_path: str,
     raw_selector: str,
@@ -608,7 +760,9 @@ def _inspect_selector(
             },
             {
                 "kind": "selector",
-                "message": f"Selector '{raw_selector}' did not resolve against {cad_path}.",
+                "message": _unresolved_message(
+                    raw_selector, cad_path, parsed_selector, context
+                ),
             },
         )
 
@@ -654,7 +808,12 @@ def load_entry_context_for_target(
     profile: SelectorProfile = SelectorProfile.REFS,
     context_provider: EntryContextProvider | None = None,
 ) -> EntryContext:
-    return _load_entry_context(cad_path_from_target(target), profile=profile, context_provider=context_provider)
+    return _load_entry_context(
+        cad_path_from_target(target),
+        profile=profile,
+        context_provider=context_provider,
+        resolve_target=str(target or ""),
+    )
 
 
 def _parse_single_target_token(entry_target_text: str, selector: str = "") -> syntax.ParsedToken:
@@ -705,7 +864,12 @@ def resolve_target_selection(
     context_provider: EntryContextProvider | None = None,
 ) -> TargetSelection:
     parsed = _parse_single_target_token(entry_target, selector)
-    context = _load_entry_context(parsed.cad_path, profile=SelectorProfile.REFS, context_provider=context_provider)
+    context = _load_entry_context(
+        parsed.cad_path,
+        profile=SelectorProfile.REFS,
+        context_provider=context_provider,
+        resolve_target=str(entry_target or ""),
+    )
     if context.selector_index is None:
         raise CadRefError(f"Selector index unavailable for {parsed.cad_path}")
 
@@ -730,7 +894,27 @@ def resolve_target_selection(
     raw_selector = selectors[0]
     lookup_result = lookup.lookup_selector(raw_selector, context.selector_index)
     if lookup_result is None:
-        raise CadRefError(f"Selector '{raw_selector}' did not resolve against {parsed.cad_path}.")
+        # A GROUP ref names a branch of the instance tree, which carries no row because
+        # no interior node owns geometry. frame/measure/align answer for the branch as a
+        # whole -- its extent is its leaves' -- rather than refusing a ref the viewer,
+        # `snapshot --focus`, and every kinematics mate accept.
+        group_id = _group_id(raw_selector, context)
+        group_row = _group_occurrence_row(group_id, context) if group_id else None
+        if group_row is None:
+            raise CadRefError(
+                _unresolved_message(
+                    raw_selector, parsed.cad_path, syntax.parse_selector(raw_selector), context
+                )
+            )
+        display_selector = lookup.display_selector(group_id, context.selector_index)
+        return TargetSelection(
+            context=context,
+            selector_type="occurrence",
+            row=group_row,
+            normalized_selector=group_id,
+            display_selector=display_selector,
+            copy_text=syntax.build_cad_token("", display_selector),
+        )
     selector_type, row = lookup_result
     normalized_selector = lookup.canonicalize_selector(raw_selector, context.selector_index) or raw_selector
     display_selector = lookup.display_selector(normalized_selector, context.selector_index)
@@ -753,7 +937,7 @@ def _selection_positioning_payload(selection: TargetSelection) -> dict[str, obje
 
 
 def _selection_result_payload(selection: TargetSelection) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "cadPath": selection.context.cad_path,
         "stepPath": _display_path(selection.context.step_path) if selection.context.step_path is not None else "",
         "selectorType": selection.selector_type,
@@ -761,6 +945,13 @@ def _selection_result_payload(selection: TargetSelection) -> dict[str, object]:
         "displaySelector": selection.display_selector,
         "copyText": selection.copy_text,
     }
+    members = selection.row.get("memberOccurrenceIds")
+    if isinstance(members, list):
+        # A group ref answered for a BRANCH. Say so, and say which parts it covers, so
+        # nobody reads the numbers as belonging to one part.
+        payload["occurrenceKind"] = "group"
+        payload["members"] = list(members)
+    return payload
 
 
 def _axis_or_infer(axis: str | None, *positioning: dict[str, object]) -> str:

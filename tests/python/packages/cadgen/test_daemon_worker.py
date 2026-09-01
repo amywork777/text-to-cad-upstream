@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -66,6 +67,82 @@ class InvokeContract(unittest.TestCase):
         result = worker._invoke({"module": "cadgen.dxf_export_target"})
         self.assertFalse(result["ok"])
         self.assertIn("kaboom", result["error"])
+
+
+class MissingWorkingDirectory(unittest.TestCase):
+    """A request whose cwd is gone fails the REQUEST, not the worker.
+
+    A worker parks in a tempdir between jobs, so a skipped chdir does not fall back
+    to anything sane: the caller's relative paths -- which resolve against the
+    process cwd, natively, like every other cadgen path argument -- would resolve
+    under the parked tempdir. The job would then read nothing, or write an artifact
+    somewhere the caller never looks, and report success. One clear error costs one
+    request; the daemon and the worker keep going.
+    """
+
+    def setUp(self) -> None:
+        original_cwd = os.getcwd()
+        self.addCleanup(os.chdir, original_cwd)
+        self.frames: list[dict] = []
+        emit = mock.patch.object(worker, "_emit", self.frames.append)
+        emit.start()
+        self.addCleanup(emit.stop)
+        # Nothing here should reach the module space; keep the eviction out of it.
+        evict = mock.patch.object(worker, "_evict_first_party_modules", lambda: None)
+        evict.start()
+        self.addCleanup(evict.stop)
+
+        self.ran: list[str] = []
+
+        def main(argv):
+            self.ran.append(os.getcwd())
+            return 0
+
+        tool_main = mock.patch.object(worker, "_tool_main", lambda tool: main)
+        tool_main.start()
+        self.addCleanup(tool_main.stop)
+
+        self.live = tempfile.TemporaryDirectory()
+        self.addCleanup(self.live.cleanup)
+        deleted = tempfile.mkdtemp()
+        os.rmdir(deleted)
+        self.deleted = deleted
+
+    def _stderr(self) -> str:
+        return "".join(
+            str(frame.get("data", "")) for frame in self.frames if frame.get("stream") == "stderr"
+        )
+
+    def test_a_deleted_cwd_fails_the_request_and_the_worker_serves_the_next_one(self):
+        self.assertEqual(worker._run({"tool": "step-build", "argv": [], "cwd": self.deleted}), 1)
+        self.assertIn(f"working directory does not exist: {self.deleted}", self._stderr())
+        # The tool never ran: running it in the parked tempdir is the failure mode.
+        self.assertEqual(self.ran, [])
+
+        self.frames.clear()
+        live = str(pathlib.Path(self.live.name).resolve())
+        self.assertEqual(worker._run({"tool": "step-build", "argv": [], "cwd": live}), 0)
+        self.assertEqual([str(pathlib.Path(seen).resolve()) for seen in self.ran], [live])
+        self.assertEqual(self._stderr(), "")
+
+    def test_a_deleted_invoke_repo_root_comes_back_as_a_payload(self):
+        with mock.patch.object(worker, "_DISPATCH", {"cadgen.step_artifact_cli": lambda args: {"ok": True}}):
+            result = worker._invoke(
+                {"module": "cadgen.step_artifact_cli", "args": [], "repo_root": self.deleted}
+            )
+            self.assertFalse(result["ok"])
+            self.assertEqual(result["error"], f"working directory does not exist: {self.deleted}")
+            # Same worker, next request, unaffected.
+            self.assertEqual(
+                worker._invoke(
+                    {
+                        "module": "cadgen.step_artifact_cli",
+                        "args": [],
+                        "repo_root": str(pathlib.Path(self.live.name).resolve()),
+                    }
+                ),
+                {"ok": True},
+            )
 
 
 class Allowlist(unittest.TestCase):

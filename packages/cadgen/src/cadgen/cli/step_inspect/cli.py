@@ -55,7 +55,10 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     refs_parser.add_argument(
         "inputs",
         nargs="*",
-        help="STEP/CAD entry target followed by optional selector refs like #o1.2.f1.",
+        help=(
+            "STEP/CAD entry target followed by optional selector refs like #o1.2.f1. "
+            "An occurrence ref may name a subassembly; it reports the parts beneath it."
+        ),
     )
     refs_parser.add_argument(
         "--input-file",
@@ -109,9 +112,20 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     frame_parser = subparsers.add_parser(
         "frame",
         help="Return the world frame for an occurrence or selector's owning occurrence.",
+        description=(
+            "A part ref reports that occurrence's transform. A SUBASSEMBLY ref reports "
+            "the branch: its name from the instance tree, and the extent and center of "
+            "the parts beneath it. Group placement is baked into each part's absolute "
+            "transform, so a subassembly node has no transform of its own to report."
+        ),
     )
     frame_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
-    frame_parser.add_argument("selector", nargs="?", default="", help="Optional selector ref such as #o1.2.")
+    frame_parser.add_argument(
+        "selector",
+        nargs="?",
+        default="",
+        help="Optional selector ref such as #o1.2, which may name a subassembly.",
+    )
     _add_output_arguments(frame_parser)
     frame_parser.set_defaults(handler=run_subcommand)
 
@@ -639,7 +653,21 @@ def _format_frame_text(result: dict[str, object], *, quiet: bool, verbose: bool)
     if not result.get("ok"):
         return _format_errors(result)
     frame = result.get("frame") if isinstance(result.get("frame"), dict) else {}
-    lines = [f"{result.get('copyText', result.get('cadPath'))} translation={frame.get('translation')}"]
+    head = str(result.get("copyText", result.get("cadPath")))
+    if result.get("occurrenceKind") == "group":
+        # A subassembly node carries no transform of its own -- group placement lives in
+        # each leaf's absolute transform -- so report the branch's extent, which is the
+        # question a frame on a group is actually asking, and name the branch.
+        members = result.get("members") if isinstance(result.get("members"), list) else []
+        lines = [
+            f"{head} group {frame.get('name', '')} "
+            f"({len(members)} parts) center={frame.get('center')}"
+        ]
+        if verbose and not quiet:
+            lines.append(f"bbox={frame.get('bbox')}")
+            lines.append(f"members={', '.join(str(member) for member in members)}")
+        return "\n".join(lines)
+    lines = [f"{head} translation={frame.get('translation')}"]
     if verbose and not quiet:
         lines.append(f"localAxes={frame.get('localAxes')}")
     return "\n".join(lines)
@@ -691,10 +719,14 @@ def _read_refs_input(args: argparse.Namespace) -> tuple[str, str]:
     if args.input_file:
         if len(raw_inputs) != 1:
             raise inspect.CadRefError("Pass exactly one STEP/CAD entry target with --input-file.")
+        # Native path semantics, like every other cadgen path argument: relative
+        # against the process cwd, absolute anywhere, '~' expanded. argparse hands
+        # back a bare Path, which leaves a literal "~" directory to fail on.
+        input_file = args.input_file.expanduser()
         try:
-            text = args.input_file.read_text(encoding="utf-8")
+            text = input_file.read_text(encoding="utf-8")
         except OSError as exc:
-            raise inspect.CadRefError(f"Failed to read input file: {args.input_file}") from exc
+            raise inspect.CadRefError(f"Failed to read input file: {input_file}") from exc
         entry_target, fused_ref = _split_fused_target(raw_inputs[0])
         if fused_ref:
             text = fused_ref + "\n" + text

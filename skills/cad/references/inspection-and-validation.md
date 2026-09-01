@@ -14,7 +14,7 @@ The launcher lives in the CAD skill directory:
 cadgen step inspect {refs|diff|frame|measure|align} ...
 ```
 
-Inspection targets resolve from the command cwd; prefer cwd-relative target paths. Absolute paths are accepted when they point under the command cwd (they are relativized); an absolute path outside the cwd fails with an explicit error — run the command from the workspace that owns the artifact. Common data-output flags: `--format json|text` (default is machine-readable), `--quiet`, `--verbose`.
+Targets take native path semantics, like every other cadgen path argument: a relative target resolves against the command cwd, an absolute target works from anywhere, and `~` expands. A target naming a file that does not exist reports file-not-found for that path. Prefer cwd-relative targets from the workspace that owns the artifact anyway — reports name a target by its cwd-relative path when it is inside the cwd, and by its bare file name when it is not, so cwd-relative targets read better in a report. Common data-output flags: `--format json|text` (default is machine-readable), `--quiet`, `--verbose`.
 
 Accepted target forms:
 
@@ -36,6 +36,16 @@ Selector refs are local to the STEP/CAD entry target passed to the command:
 ```
 
 Pass selector refs as `#...` tokens. The STEP/CAD file path or entry target is a separate CLI argument.
+
+An occurrence ref may name a **subassembly** as well as a part — the same `#o1.4` the CAD
+Viewer copies, `snapshot --focus` takes, and a kinematics mate poses. A subassembly owns no
+geometry of its own, so it resolves as the parts beneath it: `refs` reports one entry per
+part (each tagged `fromGroup`), and `measure`/`align` use the branch's combined extent.
+`frame` answers for the branch — its name from the instance tree, plus the extent and
+center of its parts; a subassembly has no transform of its own, because group placement is
+baked into each part's absolute transform. Counts (`occurrenceCount`, `refs --facts`) stay
+leaf-based. An occurrence ref that names nothing lists what the document does have at that
+depth.
 
 ### File-prefixed refs (the CAD Viewer copy format)
 

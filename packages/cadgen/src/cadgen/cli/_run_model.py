@@ -73,9 +73,14 @@ def run_model_argv(argv: Sequence[str], *, prog: str = "python <model>.py") -> i
 
         from cadgen.generation import generate_step_targets
 
-        output = args.output if args.output else source.step_path
+        # Native spelling on BOTH halves of the pair. ``as_posix()`` here used to
+        # hand ``C:\...\model.py=C:/.../model.step`` to a parser that splits on
+        # the first "=", so one invocation printed a path two different ways. An
+        # explicit -o is passed through VERBATIM: it is the user's own text, and
+        # round-tripping it through Path would rewrite what they typed.
+        output = args.output if args.output else str(Path(source.step_path))
         return generate_step_targets(
-            [f"{script}={Path(output).as_posix()}"],
+            [f"{script}={output}"],
             step_options=StepImportOptions(
                 mesh_tolerance=_numeric(args.mesh_tolerance, "mesh_tolerance"),
                 mesh_angular_tolerance=_numeric(
