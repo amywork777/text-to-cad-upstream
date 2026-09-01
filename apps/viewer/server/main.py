@@ -187,6 +187,8 @@ def parse_args(argv: list[str]) -> dict:
         "ephemeral": False,
         "no_registry": False,
         "api_only": False,
+        "help": False,
+        "unknown": "",
     }
     index = 0
     while index < len(argv):
@@ -225,7 +227,18 @@ def parse_args(argv: list[str]) -> dict:
             args["no_registry"] = True
         elif arg == "--api-only":
             args["api_only"] = True
-        # Unknown args tolerated, matching the old launcher.
+        elif arg in ("-h", "--help"):
+            args["help"] = True
+        else:
+            # An unknown argument is a REFUSAL, not a shrug. Tolerating them
+            # meant a typo silently changed what the viewer did: `--dir <path>`
+            # instead of `--root <path>` started a viewer on the wrong
+            # directory and served an empty catalog, and `--help` started a
+            # server instead of answering.
+            # The FIRST unknown is the useful one: `--dir /tmp` should name
+            # --dir, not the path that followed it.
+            if not args["unknown"]:
+                args["unknown"] = arg
         index += 1
     if not (0 < args["port"] <= 65535):
         args["port"] = DEFAULT_VIEWER_PORT
@@ -493,6 +506,29 @@ def _bind(host: str, port: int, args: dict) -> CadHTTPServer:
             port += 1
 
 
+USAGE = """usage: python server/main.py [--root DIR] [--host HOST] [--port N] [--new]
+       python server/main.py list
+       python server/main.py stop --port N | --pid N
+
+Serve ONE directory of CAD artifacts. The page is always the bare origin;
+`?file=` selects an artifact inside the root.
+
+  --root DIR      the directory to serve (default: where you invoked it)
+  --host HOST     bind address (default: 127.0.0.1)
+  --port N        strict: this port or fail. Default rolls from 3245 upward.
+  --dist DIR      built client to serve (default: the app's own dist/)
+  --new           force a fresh instance instead of reusing a live one
+  --json          announce the instance as JSON on stdout
+  --open          open the URL in a browser
+  --ephemeral     never reuse, never register (dev backends)
+  --no-registry   do not write the instance registry
+  --api-only      serve only /__cad and /__tess_cache (Vite owns the client)
+
+Viewing needs only the standard library. Importing a foreign .step needs
+cadgen; without it viewing is unaffected and imports answer with a hint.
+"""
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     # Only argv[0] is inspected, so `main.py --json list` is a SERVE
@@ -503,6 +539,16 @@ def main(argv: list[str] | None = None) -> int:
         return stop_command(argv[1:])
 
     args = parse_args(argv)
+    if args["help"]:
+        # A help request IS an answer: stdout, exit 0. A launcher that answers
+        # --help by starting a server reads as broken.
+        sys.stdout.write(USAGE)
+        return 0
+    if args["unknown"]:
+        _err(f"unknown argument: {args['unknown']}\n")
+        _err("run with --help for the arguments this launcher takes\n")
+        return 2
+
     directory = resolve_directory_root(root=args["root"])
     if not os.path.isdir(directory):
         # Booting a viewer whose root does not exist would answer every request

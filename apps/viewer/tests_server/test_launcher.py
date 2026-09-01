@@ -524,3 +524,38 @@ class ArgumentGrammar(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ArgumentSurface(unittest.TestCase):
+    """A launcher that answers --help by starting a server reads as broken, and
+    a tolerated typo silently changes what it serves.
+
+    Both were real: `main.py --help` used to fall through the parser and boot an
+    instance, and `--dir <path>` (the wrong spelling of --root) started a viewer
+    on the invocation directory and served an empty catalog while looking fine.
+    """
+
+    def _run(self, *argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(MAIN), *argv],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+    def test_help_answers_on_stdout_and_starts_nothing(self) -> None:
+        result = self._run("--help")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("usage: python server/main.py", result.stdout)
+        self.assertIn("--root", result.stdout)
+        self.assertEqual(result.stderr, "")
+
+    def test_short_help_is_the_same_answer(self) -> None:
+        self.assertEqual(self._run("-h").returncode, 0)
+
+    def test_an_unknown_argument_is_refused_not_ignored(self) -> None:
+        result = self._run("--dir", "/tmp")
+        self.assertEqual(result.returncode, 2)
+        # The FIRST unknown token, not the value that trailed it.
+        self.assertIn("unknown argument: --dir", result.stderr)
+        self.assertNotIn("/tmp", result.stderr.splitlines()[0])
