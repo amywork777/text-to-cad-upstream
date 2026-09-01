@@ -301,7 +301,7 @@ def load_job_from_options(
             text = stdin.read()
             source_label = "stdin"
         else:
-            job_path = (resolved_cwd / options.job).resolve()
+            job_path = (resolved_cwd / Path(options.job).expanduser()).resolve()
             text = job_path.read_text(encoding="utf-8")
             source_label = str(job_path)
         return apply_option_overrides_to_payload(load_json_text(text, source_label), options, cwd=resolved_cwd)
@@ -375,7 +375,7 @@ def resolve_input_path(raw_input: object, *, cwd: Path) -> Path:
     input_text = str(raw_input or "").strip()
     if not input_text:
         raise SnapshotError("render job is missing input")
-    raw_path = Path(input_text)
+    raw_path = Path(input_text).expanduser()
     selected = raw_path.resolve() if raw_path.is_absolute() else (cwd / raw_path).resolve()
     if not selected.exists():
         raise SnapshotError(f"Render input does not exist: {input_text}")

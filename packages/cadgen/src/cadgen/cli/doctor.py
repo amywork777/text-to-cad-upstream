@@ -23,7 +23,7 @@ from pathlib import Path
 def _resolve_requirements(target: str | None) -> Path | None:
     """The requirements.txt to check: an explicit file, a directory containing one,
     or the working directory's — ``None`` when nothing exists to check."""
-    base = Path(target) if target else Path.cwd()
+    base = Path(target).expanduser() if target else Path.cwd()
     if base.is_file():
         return base
     candidate = base / "requirements.txt"

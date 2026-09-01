@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import shutil
 import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from tests.python.support.paths import add_repo_path
 
@@ -189,7 +192,7 @@ class StepExportTargetTests(unittest.TestCase):
             payload = step_export_target.export_cad_target(
                 document,
                 [
-                    (fmt, f"round{round_index}.{fmt}")
+                    (fmt, self.out_dir / f"round{round_index}.{fmt}")
                     for fmt in step_export_target.MESH_EXPORT_FORMATS
                 ],
             )
@@ -204,6 +207,57 @@ class StepExportTargetTests(unittest.TestCase):
                         data,
                         f"{entry['format']} export must be byte-identical across runs",
                     )
+
+    def test_explicit_out_takes_native_path_semantics(self) -> None:
+        # An explicit OUT is a one-shot ad-hoc export, never persisted, so it
+        # resolves like every other cadgen path argument: relative against the
+        # PROCESS cwd (not beside the document), absolute as given, ~ expanded.
+        # The persisted form is the decorator declaration, which stays
+        # script-anchored and is reached through spec.mesh_exports instead.
+        logical_step = self.temp_root / "docs" / "box.step"
+        cwd = self.temp_root / "elsewhere"
+        cwd.mkdir(parents=True, exist_ok=True)
+        home = self.temp_root / "home"
+        home.mkdir(parents=True, exist_ok=True)
+
+        with contextlib.chdir(cwd):
+            relative = step_export_target._resolve_export_output(
+                "stl", "out.stl", logical_step=logical_step
+            )
+            self.assertEqual(relative, (cwd / "out.stl").resolve())
+            self.assertNotEqual(relative.parent, logical_step.parent)
+
+            absolute_target = self.out_dir / "absolute.stl"
+            self.assertEqual(
+                step_export_target._resolve_export_output(
+                    "stl", str(absolute_target), logical_step=logical_step
+                ),
+                absolute_target.resolve(),
+            )
+
+            with mock.patch.dict(os.environ, {"HOME": str(home)}, clear=False):
+                self.assertEqual(
+                    step_export_target._resolve_export_output(
+                        "stl", "~/tilde.stl", logical_step=logical_step
+                    ),
+                    (home / "tilde.stl").resolve(),
+                )
+
+    def test_a_relative_out_lands_in_the_process_cwd(self) -> None:
+        # The live door-level pin for the rule above: the document is in one
+        # directory, the process is in another, and the file appears where the
+        # process is.
+        document = self._write_box_document()
+        cwd = self.temp_root / "run_from_here"
+        cwd.mkdir(parents=True, exist_ok=True)
+        with contextlib.chdir(cwd):
+            payload = step_export_target.export_cad_target(document, [("stl", "cwd_relative.stl")])
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            Path(payload["files"][0]["path"]), (cwd / "cwd_relative.stl").resolve()
+        )
+        self._assert_export_file(cwd / "cwd_relative.stl", "stl")
+        self.assertFalse((document.parent / "cwd_relative.stl").exists())
 
     def test_color_hex_encodes_linear_to_srgb(self) -> None:
         # A model's Color is LINEAR; --default-color is an sRGB hex. 0 and 1 are

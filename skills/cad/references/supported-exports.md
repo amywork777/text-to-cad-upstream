@@ -24,7 +24,11 @@ def bracket():
     return bd.Box(40, 20, 6)
 ```
 
-`python models/bracket.py` then writes the STEP **and** the declared meshes, and heals any of them that were deleted — no separate export step. The declarations are recorded in the document's sidecar, which is where the mesh doors read them from. Declare the same format more than once at distinct targets for draft/print variants:
+`python models/bracket.py` then writes the STEP **and** the declared meshes, and heals any of them that were deleted — no separate export step. The declarations are recorded in the document's sidecar, which is where the mesh doors read them from.
+
+A decorator `out=` is the one intentional exception to native path semantics: on `@stl`, `@glb` and `@threemf` — exactly as on `@step` — a relative `out=` resolves relative to the SCRIPT, not the working directory. That is what makes a project relocatable: the declaration travels with the model and produces the same layout whatever directory the script is run from. Ad-hoc OUT arguments on the doors are cwd-relative instead, because they are one-shot and never persisted.
+
+Declare the same format more than once at distinct targets for draft/print variants:
 
 ```python
 @stl(out="STL/bracket_draft.stl", mesh_tolerance=8e-3)
@@ -40,7 +44,7 @@ cadgen stl build STEP/model.step                     # every declared @stl varia
 cadgen stl build STEP/model.step meshes/model.stl    # one ad-hoc export
 ```
 
-Doors take documents, never scripts: `python model.py` is the one source door, and a door handed a `.py` says so. Omitting the output is the normal form: it produces exactly what the model declared, read from the document's sidecar. A document that declares no variants of that format has nothing to produce — declare `@stl` on the model and rerun the script, or name an explicit OUT. A relative output path resolves beside the document, so pass an absolute path when that is not what you mean. Ask for several formats by running several doors — each writes only its own format:
+Doors take documents, never scripts: `python model.py` is the one source door, and a door handed a `.py` says so. Omitting the output is the normal form: it produces exactly what the model declared, read from the document's sidecar. A document that declares no variants of that format has nothing to produce — declare `@stl` on the model and rerun the script, or name an explicit OUT. An explicit OUT takes the same native path semantics as every other door: a relative path resolves against the current working directory, an absolute path is used as given, and `~` expands. Ask for several formats by running several doors — each writes only its own format:
 
 ```bash
 cadgen stl build STEP/model.step

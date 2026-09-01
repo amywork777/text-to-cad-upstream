@@ -588,18 +588,22 @@ def _resolve_export_output(
     """Resolve one requested mesh export output. ``None`` means the model's
     DECLARED path when `@stl`/`@glb`/`@threemf` declares one — both front
     doors converge on the same artifact — else the default sibling path
-    (``<name>.<ext>`` beside the logical STEP); a relative path resolves
-    beside the logical STEP, matching the historical sidecar-path semantics."""
+    (``<name>.<ext>`` beside the logical STEP).
+
+    An explicit OUT is a one-shot ad-hoc export and is NEVER persisted, so it
+    takes NATIVE path semantics like every other cadgen path argument: absolute
+    as given, ``~`` expanded, and a relative path resolved against the process's
+    working directory. The persisted, portable form is the DECORATOR
+    declaration (``@stl(out=...)``), which is script-anchored, written into the
+    sidecar's ``meshExports`` and re-read relative to the document — that path
+    is reached through ``spec.mesh_exports`` above and is untouched here."""
     if raw is None and spec is not None:
         declared = next((d for d in spec.mesh_exports if d.fmt == fmt), None)
         if declared is not None:
             return declared.path
     if raw is None:
         return logical_step.with_suffix(FORMAT_SUFFIX[fmt]).resolve()
-    out = Path(raw).expanduser()
-    if not out.is_absolute():
-        out = logical_step.parent / out
-    out = out.resolve()
+    out = Path(raw).expanduser().resolve()
     if out.suffix.lower() != FORMAT_SUFFIX[fmt]:
         raise ValueError(f"{fmt} OUT must end with {FORMAT_SUFFIX[fmt]}: {raw}")
     return out

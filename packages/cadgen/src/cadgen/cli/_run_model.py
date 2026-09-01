@@ -41,7 +41,7 @@ def _build_parser(prog: str) -> argparse.ArgumentParser:
 def run_model_argv(argv: Sequence[str], *, prog: str = "python <model>.py") -> int:
     parser = _build_parser(prog)
     args = parser.parse_args(list(argv))
-    script = Path(args.script).resolve()
+    script = Path(args.script).expanduser().resolve()
     if not script.is_file():
         parser.error(f"model script does not exist: {args.script}")
 

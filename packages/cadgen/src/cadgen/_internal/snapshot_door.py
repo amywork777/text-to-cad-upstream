@@ -143,7 +143,8 @@ def step_snapshot_verb(door: str):
         model changes, though a STEP input whose render package is missing
         builds one.
 
-        target: the model to render: a .step/.stp document or model script.
+        target: the model to render — a .step/.stp document (a model script
+            is refused by naming the run that writes the document).
         out: destination image path (written EXACTLY there, cleared first),
             or a directory for a generated timestamped name.
         job: a render-job JSON file — one job, an array of them, or

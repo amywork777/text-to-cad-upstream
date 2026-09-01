@@ -325,7 +325,9 @@ def load_display_option(raw_display: object, *, cwd: Path) -> dict[str, object]:
         validate_display_settings_values(payload, source_label="--display")
         return payload
 
-    display_path = Path(display) if Path(display).is_absolute() else cwd / display
+    display_path = Path(display).expanduser()
+    if not display_path.is_absolute():
+        display_path = cwd / display_path
     looks_like_file = display.lower().endswith(".json") or "/" in display or "\\" in display
     if not looks_like_file and not display_path.exists():
         normalized_mode = re.sub(r"[\s-]+", "_", display.lower())
@@ -363,7 +365,9 @@ def load_theme_option(raw_theme: object, *, cwd: Path) -> object:
             setting_label="theme settings",
         )
 
-    theme_path = Path(theme) if Path(theme).is_absolute() else cwd / theme
+    theme_path = Path(theme).expanduser()
+    if not theme_path.is_absolute():
+        theme_path = cwd / theme_path
     looks_like_file = theme.lower().endswith(".json") or "/" in theme or "\\" in theme
     if not looks_like_file and not theme_path.exists():
         return theme
@@ -574,7 +578,7 @@ def resolve_output_target(
     """
     if not output_path:
         return ""
-    candidate = Path(output_path)
+    candidate = Path(output_path).expanduser()
     resolved = candidate if candidate.is_absolute() else resolved_cwd / candidate
     if output_path_names_a_directory(output_path, resolved):
         return str((resolved / generated_name).resolve())

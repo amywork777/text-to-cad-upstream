@@ -156,7 +156,7 @@ def source_from_path(
     step_kind: str = "part",
     step_options: StepImportOptions | None = None,
 ) -> CadSource | None:
-    resolved = path.resolve()
+    resolved = Path(path).expanduser().resolve()
     if resolved.suffix.lower() == ".py":
         return _read_python_source(resolved, allow_dxf_only=True)
     if resolved.suffix.lower() in STEP_SUFFIXES:
