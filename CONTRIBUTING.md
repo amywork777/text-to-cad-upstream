@@ -25,7 +25,11 @@ python3.12 -m venv .venv
 `requirements-dev.txt` installs the source packages from `packages/` and the
 small set of Python extras mirrored from skill runtime requirements. This is
 the default Python environment for broad repo checks and source-checkout
-development. Skill-specific environments may install generated, skill-local
+development. After pulling, reinstall `requirements-dev.txt` to refresh the
+editable-install metadata: `cadgen.__version__` reports the installed
+dist-info by design — it is release-grained, so dev code is always newer than
+its number — and nothing behavioral consults it, but stale metadata makes the
+reported number drift further from the code than it has to. Skill-specific environments may install generated, skill-local
 package copies so they match production, but on `develop` you should still edit the
 source package under `packages/*`.
 
@@ -241,8 +245,11 @@ standalone mirror's CI, which has no cadgen by design.
 `test_render_contract_sync.TheCrossLanguageGuardsActuallyRun` is what keeps that
 wiring from being removed again.
 
-Launcher reuse keys on realpath(root) × version, so another checkout's
-instance can never be handed back for a worktree's root.
+Launcher reuse keys on realpath(root) × identity token (the version salted
+with the newest mtime across `server/*.py` and the built `dist/`), so another
+checkout's instance can never be handed back for a worktree's root — and a
+resident instance running pre-pull or pre-rebuild code fails the match and a
+fresh one starts.
 
 Worktrees deliberately carry no `node_modules`; link them from the primary
 checkout before building. cadgen-js needs all three of its runtime
