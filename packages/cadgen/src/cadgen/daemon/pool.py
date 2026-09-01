@@ -1,12 +1,23 @@
 """A pool of warm OCP worker processes, owned by the daemon supervisor.
 
-The dispatch rule, which is the whole design:
+A worker belongs to ONE PROJECT — the directory holding the model script it was spawned
+for — for its whole life. That is the load-bearing rule: cad-projects all share the same
+top-level module names (``lib``, sibling models), so a worker that served project A and is
+then handed project B can build B against A's helpers, and the pre-run module evictions
+that guard against it are a scrub rather than a guarantee. Keying the worker by project
+means a worker never sees a second project's code at all. See Pool.acquire.
 
-1. A free worker exists — use it. Warm, the common case.
-2. All busy and the pool is below its cap — spawn one and wait for it. That caller pays
-   roughly one OCP import, the same as running cold, but the worker PERSISTS, so a burst
-   converges to warm instead of paying the import every time.
-3. At the cap — wait a short while for one to free, then run cold if none does.
+The dispatch rule, which is the rest of the design:
+
+1. This project's worker is free — use it. Warm, the common case.
+2. This project's worker is busy — wait for IT, so two builds of one project serialize
+   instead of duplicating each other's work.
+3. No worker for this project and the pool is below its cap — spawn one and wait for it.
+   That caller pays roughly one OCP import, the same as running cold, but the worker
+   PERSISTS, so a burst converges to warm instead of paying the import every time.
+4. At the cap — evict the least-recently-used project's idle worker and spawn under the
+   new key. The cap is an admission budget over projects, not a reuse pool.
+5. At the cap with everything busy — wait a short while, then run cold if nothing frees.
 
 Rule 3 used to give up immediately, on the grounds that a queue is what made the old
 single-process daemon worse than useless. That lesson was real but it was about a cap of
@@ -200,12 +211,11 @@ class Worker:
         self.jobs_served = 0
         self.busy = False
         self.last_used = time.monotonic()
-        # The working directory of the last job this worker served. Dispatch
-        # prefers a free worker whose affinity matches the request, so repeat
-        # builds of one model land on the worker whose in-memory op-memo cache
-        # already holds that model's shapes (the disk tier makes a mismatch
-        # cheap rather than free).
-        self.affinity = ""
+        # The PROJECT this worker belongs to: the directory holding the model
+        # script of the first job it served. Set once and never changed --
+        # a worker executes exactly one project's code for its whole life.
+        # See Pool.acquire for why rebinding is not an option.
+        self.project = ""
         ready = self._read_frame(timeout=_SPAWN_TIMEOUT_SECONDS)
         if not ready or "ready" not in ready:
             self.kill()
@@ -283,71 +293,85 @@ class Pool:
         # cannot both see room for the last worker and both take it -- without this the
         # pool can exceed its own ceiling, which is the one thing it is for.
         self._pending = 0
+        # Projects with a spawn in flight. A second request for the same project
+        # must wait for that spawn rather than start a second worker for it --
+        # otherwise "one project, one worker" holds only when requests are spaced
+        # out, which is the opposite of when it matters.
+        self._pending_projects: list[str] = []
         self.cold_overflows = 0
         self.crashes = 0
         self.recycles = 0
         self.waits = 0
+        self.evictions = 0
 
     # --- acquisition -------------------------------------------------------------
-    def acquire(self, affinity: str = "") -> Worker | None:
+    def acquire(self, project: str = "") -> Worker | None:
         """A worker to run one job on, or None meaning "run this cold".
 
-        ``affinity`` is the job's model root, and it BINDS: a root's requests
-        are served by its session worker (whose in-memory caches are warm for
-        that model), and a request that finds its session busy WAITS for it
-        rather than fanning out — per-model serialization is what prevents two
-        builds of one model duplicating each other's work. Roots beyond the
-        worker cap rebind the least-recently-used free worker: the cap is the
-        session admission budget (opening a 30-model catalog must never mean
-        30 resident OCP processes), and rebinding loses nothing durable
-        because every session cache writes through to the shared store."""
+        ``project`` is the directory holding the request's model script, and it
+        BINDS FOR LIFE: a project's requests are served by its own worker, and a
+        request that finds that worker busy WAITS for it rather than fanning out
+        — per-project serialization is what stops two builds of one project
+        duplicating each other's work, and it keeps that worker's in-memory
+        op-memo cache warm for the model.
+
+        The binding is permanent because a worker is a Python process and every
+        cad-project shares the same top-level module names (``lib``, sibling
+        models). A worker that served project A and is then handed project B has
+        A's ``lib`` in ``sys.modules`` and A's directory in the import caches;
+        the pre-run evictions scrub that, but they are a scrub, and a scrub that
+        misses builds B against A's helpers and reports success. Keying the
+        worker by project removes the question instead of answering it: a worker
+        never sees a second project's code, so there is nothing to scrub between
+        them.
+
+        The cap is therefore an ADMISSION budget over projects, not a reuse pool.
+        At the cap a new project EVICTS the least-recently-used project's idle
+        worker and spawns a fresh one under its own key. Evicting costs one OCP
+        import and loses nothing durable (every session cache writes through to
+        the shared store); rebinding would cost nothing and lose correctness.
+
+        A request with no project — ``inspect``/``snapshot`` verbs that name no
+        model script — runs no model code, so it takes any free worker and binds
+        nothing.
+        """
         deadline: float | None = None
         with self._cv:
             while True:
                 self._reap_dead_locked()
-                bound = None
-                if affinity:
-                    bound = next(
-                        (w for w in self._workers if w.affinity == affinity), None)
-                if bound is not None:
-                    if not bound.busy:
-                        bound.busy = True
-                        return bound
-                    # The session exists and is busy: wait for IT.
+                bound = self._project_worker_locked(project)
+                if bound is not None and not bound.busy:
+                    bound.busy = True
+                    return bound
+                if bound is not None or self._project_is_spawning_locked(project):
+                    # The project's worker is busy, or its spawn is still in flight.
+                    # Wait for IT rather than starting a second worker on this project.
+                    deadline = self._wait_for_project_locked(deadline)
                     if deadline is None:
-                        budget = wait_seconds() * 4
-                        if budget <= 0:
-                            self.cold_overflows += 1
-                            return None
-                        deadline = time.monotonic() + budget
-                        self.waits += 1
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        self.cold_overflows += 1
                         return None
-                    self._cv.wait(remaining)
                     continue
-                # No session for this root yet: bind a free worker, preferring
-                # unbound ones, else the least-recently-used bound-elsewhere.
-                chosen = None
-                for worker in self._workers:
-                    if worker.busy:
-                        continue
-                    if not worker.affinity:
-                        chosen = worker
-                        break
-                    if chosen is None or worker.last_used < chosen.last_used:
-                        chosen = worker
+                chosen = self._reusable_worker_locked(project)
                 if chosen is not None:
                     chosen.busy = True
-                    if affinity:
-                        chosen.affinity = affinity
+                    if project:
+                        chosen.project = project
                     return chosen
                 if len(self._workers) + self._pending < max_workers():
-                    self._pending += 1
+                    self._reserve_spawn_locked(project)
                     break
-                # At the cap. Wait for someone to finish rather than adding an OCP
-                # process to a machine that is already running as many as it should.
+                if project:
+                    # At the cap with no worker for this project. Evict the
+                    # least-recently-used project's idle worker and spawn under
+                    # the new key; a worker is never handed to a second project.
+                    victim = self._lru_idle_worker_locked()
+                    if victim is not None:
+                        self.evictions += 1
+                        self._drop_locked(victim)
+                        self._reserve_spawn_locked(project)
+                        break
+                # At the cap and everything is busy. Wait for someone to finish rather
+                # than adding an OCP process to a machine already running as many as
+                # it should.
                 if deadline is None:
                     budget = wait_seconds()
                     if budget <= 0:
@@ -365,17 +389,82 @@ class Pool:
             worker = Worker()
         except (OSError, WorkerGone):
             with self._cv:
-                self._pending -= 1
+                self._release_spawn_locked(project)
                 self.crashes += 1
-                self._cv.notify()  # the slot this spawn reserved is free again
+                self._cv.notify_all()  # the slot this spawn reserved is free again
             return None
         with self._cv:
-            self._pending -= 1
+            self._release_spawn_locked(project)
             worker.busy = True
-            if affinity:
-                worker.affinity = affinity
+            worker.project = project
             self._workers.append(worker)
+            # Anyone waiting on this project's spawn can stop waiting -- they will
+            # find the worker busy and queue behind it, which is the intended order.
+            self._cv.notify_all()
             return worker
+
+    # --- dispatch helpers (all called with the lock held) -------------------------
+    def _project_worker_locked(self, project: str) -> Worker | None:
+        if not project:
+            return None
+        return next((w for w in self._workers if w.project == project), None)
+
+    def _project_is_spawning_locked(self, project: str) -> bool:
+        return project in self._pending_projects
+
+    def _reusable_worker_locked(self, project: str) -> Worker | None:
+        """A free worker this request may run on WITHOUT rebinding it.
+
+        For a project request that means an unbound worker only. For a
+        project-less request it means any free worker: such a request executes
+        no model code, so whose worker it borrows cannot matter.
+        """
+        best: Worker | None = None
+        for worker in self._workers:
+            if worker.busy:
+                continue
+            if not worker.project:
+                return worker
+            if project:
+                continue  # bound elsewhere, and rebinding is what this class refuses
+            if best is None or worker.last_used < best.last_used:
+                best = worker
+        return best
+
+    def _lru_idle_worker_locked(self) -> Worker | None:
+        idle = [worker for worker in self._workers if not worker.busy]
+        return min(idle, key=lambda worker: worker.last_used) if idle else None
+
+    def _reserve_spawn_locked(self, project: str) -> None:
+        self._pending += 1
+        if project:
+            self._pending_projects.append(project)
+
+    def _release_spawn_locked(self, project: str) -> None:
+        self._pending -= 1
+        if project and project in self._pending_projects:
+            self._pending_projects.remove(project)
+
+    def _wait_for_project_locked(self, deadline: float | None) -> float | None:
+        """Wait for this project's worker; None means "give up and run cold".
+
+        The budget is longer than the at-capacity one: the caller is queueing
+        behind ANOTHER BUILD of the same project, which is work it would
+        otherwise duplicate, so waiting pays off over a longer horizon.
+        """
+        if deadline is None:
+            budget = wait_seconds() * 4
+            if budget <= 0:
+                self.cold_overflows += 1
+                return None
+            deadline = time.monotonic() + budget
+            self.waits += 1
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            self.cold_overflows += 1
+            return None
+        self._cv.wait(remaining)
+        return deadline
 
     def release(self, worker: Worker, *, healthy: bool = True) -> None:
         with self._cv:
@@ -393,7 +482,10 @@ class Pool:
             # A worker went idle, or dropping one freed a slot to spawn into. Either way
             # somebody waiting at the cap can stop waiting; without this they sleep to
             # their deadline and run cold with an idle worker sitting right there.
-            self._cv.notify()
+            # notify_all, not notify: waiters are keyed to DIFFERENT projects now, so
+            # waking one arbitrary sleeper can wake the one this release does not help
+            # while the one it does help sleeps to its deadline.
+            self._cv.notify_all()
 
     # --- maintenance -------------------------------------------------------------
     def _drop_locked(self, worker: Worker) -> None:
@@ -431,12 +523,18 @@ class Pool:
             return {
                 "maxWorkers": max_workers(),
                 "workers": [
-                    {"pid": w.pid, "busy": w.busy, "jobsServed": w.jobs_served}
+                    {
+                        "pid": w.pid,
+                        "busy": w.busy,
+                        "jobsServed": w.jobs_served,
+                        "project": w.project,
+                    }
                     for w in self._workers
                 ],
                 "coldOverflows": self.cold_overflows,
                 "waits": self.waits,
                 "waitSeconds": wait_seconds(),
                 "recycles": self.recycles,
+                "evictions": self.evictions,
                 "crashes": self.crashes,
             }

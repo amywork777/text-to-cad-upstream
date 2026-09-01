@@ -277,6 +277,32 @@ def _status_payload() -> dict:
     return snapshot
 
 
+def _script_project(candidates, base: object) -> str:
+    """The project a request's code belongs to: its model script's directory.
+
+    ROUTING LIVES HERE, not in the client: the protocol is unchanged, and a
+    client cannot be trusted to answer "which project is this" consistently
+    across the four front doors that reach the daemon.
+
+    The model script is the only argument that names code the worker will
+    EXECUTE, so its parent directory is the project. cwd is not: every one of
+    ``cadgen step build models/juno/src/head.py`` and
+    ``cadgen step build models/moonwatch/src/movement_base.py`` run from a repo
+    root reports the same cwd, which is exactly how one warm worker came to
+    serve every project on the machine.
+
+    "" when no argument names a ``.py`` file; the caller decides the fallback.
+    """
+    for candidate in candidates or ():
+        text = str(candidate)
+        if text.startswith("-") or not text.endswith(".py"):
+            continue
+        root = str(base or "")
+        absolute = os.path.abspath(os.path.join(root, text) if root else text)
+        return os.path.dirname(absolute)
+    return ""
+
+
 def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: float) -> None:
     """The CAD Viewer's contract: run a cadgen module and return its payload.
 
@@ -285,16 +311,17 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
     build each paid their own OCP import and neither could reuse the other's.
     """
     module = str(request.get("module") or "")
-    # Affinity: the first path-shaped argument names the model this invoke
-    # targets; its directory routes repeat viewer builds to the worker whose
-    # in-memory op-memo cache is already warm for that model.
-    affinity = ""
-    for arg in request.get("args") or []:
-        text = str(arg)
-        if "/" in text or "\\" in text:
-            affinity = os.path.dirname(os.path.abspath(text))
-            break
-    worker = _POOL.acquire(affinity)
+    args = [str(a) for a in request.get("args") or []]
+    # The project: the model script this invoke targets, else the first
+    # path-shaped argument's directory (a viewer invoke that names an artifact
+    # rather than a script), which is what routed these before.
+    project = _script_project(args, request.get("repo_root"))
+    if not project:
+        for arg in args:
+            if "/" in arg or "\\" in arg:
+                project = os.path.dirname(os.path.abspath(arg))
+                break
+    worker = _POOL.acquire(project)
     if worker is None:
         with send_lock:
             _send(conn, {"cold": True})
@@ -304,7 +331,7 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
         worker.send({
             "kind": "invoke",
             "module": module,
-            "args": [str(a) for a in request.get("args") or []],
+            "args": args,
             "repo_root": request.get("repo_root"),
         })
         result = None
@@ -361,9 +388,11 @@ def _handle_request(
             _send(conn, {"exit": 1})
         return
 
-    # Affinity: CLI runs execute in the model's directory, so cwd routes
-    # repeat builds of one model to the worker whose op-memo cache is warm.
-    worker = _POOL.acquire(str(request.get("cwd") or ""))
+    # The project this job belongs to, so a worker only ever executes one
+    # project's code. Verbs that name no model script (inspect/snapshot on a
+    # STEP) execute none, and keep routing on cwd as they always did.
+    cwd = str(request.get("cwd") or "")
+    worker = _POOL.acquire(_script_project(argv, cwd) or cwd)
     if worker is None:
         # Capped, and nothing freed up within the wait. acquire() has already spent that
         # budget, so this really is the point where running cold beats waiting longer.
