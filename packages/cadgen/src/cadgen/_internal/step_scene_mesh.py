@@ -296,6 +296,12 @@ def _scene_mesh_resolution_hints(scene: LoadedStepScene) -> dict[str, Any]:
 
 
 def adaptive_mesh_resolution_from_hints(hints: dict[str, Any]) -> AdaptiveMeshResolution:
+    # PROVENANCE ONLY: the ``settings`` numbers below reach no tessellator. The
+    # one tessellator is JS (packages/cadgen-js/src/lib/surf/tessellate.js) and
+    # takes RELATIVE tolerances of its own; these ride into the package
+    # descriptor's mesh section and drive the freshness comparison, nothing
+    # else. The scale-floor note further down describes the historical OCCT
+    # mesher's cost, not a cost anything pays today.
     effective_score = float(hints["effectiveComplexityScore"])
     curvature_pressure = float(hints["curvaturePressureScore"])
     leaf_count = int(hints["leafOccurrenceCount"])

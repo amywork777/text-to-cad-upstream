@@ -23,7 +23,6 @@ from cadgen._internal.generation import (
     relative_to_cwd,
     run_script_generator,
 )
-from cadgen.metadata import DEFAULT_MESH_ANGULAR_TOLERANCE, DEFAULT_MESH_TOLERANCE
 from cadgen.catalog import render_package_dir
 from cadgen._internal.step_scene import LoadedStepScene, load_step_scene_cached
 from cadgen.step_artifact_cli import infer_entry_kind
@@ -236,14 +235,8 @@ def _entry_spec_for_target(
         display_name=target.step_path.stem,
         source="imported",
         step_path=target.step_path,
-        mesh_tolerance=mesh_tolerance if mesh_tolerance is not None else DEFAULT_MESH_TOLERANCE,
-        mesh_angular_tolerance=(
-            mesh_angular_tolerance
-            if mesh_angular_tolerance is not None
-            else DEFAULT_MESH_ANGULAR_TOLERANCE
-        ),
-        mesh_tolerance_explicit=mesh_tolerance is not None,
-        mesh_angular_tolerance_explicit=mesh_angular_tolerance is not None,
+        mesh_tolerance=mesh_tolerance,
+        mesh_angular_tolerance=mesh_angular_tolerance,
     )
 
 
@@ -399,8 +392,6 @@ def _with_mesh_overrides(
             if mesh_angular_tolerance is not None
             else spec.mesh_angular_tolerance
         ),
-        mesh_tolerance_explicit=mesh_tolerance is not None,
-        mesh_angular_tolerance_explicit=mesh_angular_tolerance is not None,
     )
 
 

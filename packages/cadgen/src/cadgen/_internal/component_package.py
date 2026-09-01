@@ -23,10 +23,6 @@ from typing import Any, Mapping
 
 from cadgen._internal.atomic_replace import replace_atomic, temp_suffix
 from cadgen.catalog import render_package_dir
-from cadgen._internal.generation import (
-    DEFAULT_MESH_ANGULAR_TOLERANCE,
-    DEFAULT_MESH_TOLERANCE,
-)
 from cadgen._internal.cache_schema import CACHE_SCHEMA_VERSION
 from cadgen.coordination import (
     PHASE_COMPONENTS,
@@ -488,8 +484,6 @@ def build_package_from_compound(
     single_component: bool = False,
     force: bool = False,
     provenance: Mapping[str, Any] | None = None,
-    linear_deflection: float = DEFAULT_MESH_TOLERANCE,
-    angular_deflection: float = DEFAULT_MESH_ANGULAR_TOLERANCE,
     progress: Any | None = None,
 ) -> dict[str, Any]:
     """Emit a render package from a baked ``Compound`` or single shape.

@@ -6,10 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_MESH_TOLERANCE = 0.02
-DEFAULT_MESH_ANGULAR_TOLERANCE = 0.6
-
-
 class InvalidModelScriptError(ValueError):
     """A script whose model DECLARATION is malformed in a way directory
     discovery should skip-with-a-note rather than abort on (e.g. two models in
@@ -20,6 +16,10 @@ class InvalidModelScriptError(ValueError):
 
 @dataclass(frozen=True)
 class MeshSettings:
+    """The adaptive resolver's return type (``AdaptiveMeshResolution.settings``).
+    Provenance for the package descriptor's mesh section — no tessellator reads
+    it; see ``cadgen._internal.tessellation`` for the tolerances that are real."""
+
     tolerance: float
     angular_tolerance: float
 
@@ -74,12 +74,6 @@ STEP_ENVELOPE_FIELDS = {
 }
 
 
-DEFAULT_MESH_SETTINGS = MeshSettings(
-    tolerance=DEFAULT_MESH_TOLERANCE,
-    angular_tolerance=DEFAULT_MESH_ANGULAR_TOLERANCE,
-)
-
-
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
     try:
@@ -99,25 +93,6 @@ def normalize_mesh_numeric(value: object, *, field_name: str) -> float | None:
     if normalized <= 0.0:
         raise ValueError(f"{field_name} must be greater than 0")
     return normalized
-
-
-def resolve_mesh_settings(
-    *,
-    cad_ref: str,
-    generator_metadata: GeneratorMetadata | None,
-    mesh_tolerance: float | None = None,
-    mesh_angular_tolerance: float | None = None,
-) -> MeshSettings:
-    tolerance = DEFAULT_MESH_SETTINGS.tolerance
-    angular_tolerance = DEFAULT_MESH_SETTINGS.angular_tolerance
-    if mesh_tolerance is not None:
-        tolerance = mesh_tolerance
-    if mesh_angular_tolerance is not None:
-        angular_tolerance = mesh_angular_tolerance
-    return MeshSettings(
-        tolerance=tolerance,
-        angular_tolerance=angular_tolerance,
-    )
 
 
 def resolve_model_output_path(script_path: Path, *, fmt: str, explicit_out: str | None = None) -> Path:

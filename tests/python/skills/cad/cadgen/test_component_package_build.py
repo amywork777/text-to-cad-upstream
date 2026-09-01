@@ -92,8 +92,6 @@ class OrphanComponentPruningTests(unittest.TestCase):
                 compound,
                 package_dir=package_dir,
                 root_name="asm",
-                linear_deflection=0.5,
-                angular_deflection=0.3,
             )
 
             self.assertFalse(orphan.exists())
@@ -128,8 +126,6 @@ class PayloadUnreadableFallbackTests(unittest.TestCase):
                     root,
                     package_dir=package_dir,
                     root_name="rig",
-                    linear_deflection=0.5,
-                    angular_deflection=0.4,
                 )
             self.assertEqual(1, stats["components_built"])
             import json

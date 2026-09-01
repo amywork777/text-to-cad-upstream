@@ -57,12 +57,7 @@ from cadgen.cli_progress import (
 )
 from cadgen.coordination.lock import exclusive
 from cadgen.coordination.paths import write_lock_path
-from cadgen.metadata import (
-    DEFAULT_MESH_ANGULAR_TOLERANCE,
-    DEFAULT_MESH_TOLERANCE,
-    GeneratorMetadata,
-    resolve_mesh_settings,
-)
+from cadgen.metadata import GeneratorMetadata
 from cadgen.render import (
     relative_to_file,
     relative_to_cwd,
@@ -114,7 +109,6 @@ from cadgen._internal.generation_spec import (
     EntrySpec,
     GeneratedStepResult,
     _CliTargetSpec,
-    _TOLERANCE_WARN_RATIO,
     _apply_dxf_output_override,
     _apply_dxf_output_overrides,
     _apply_step_options_to_spec,
@@ -126,8 +120,6 @@ from cadgen._internal.generation_spec import (
     _entry_spec_from_source,
     _hint_float,
     _hint_int,
-    _mesh_angular_tolerance_is_explicit,
-    _mesh_tolerance_is_explicit,
     _parse_cli_target_specs,
     _resolve_cli_output_path,
     _resolve_discovery_root,
@@ -137,7 +129,6 @@ from cadgen._internal.generation_spec import (
     _spec_requests_extra_outputs,
     _validate_cli_output_override,
     _validate_duplicate_cli_output_overrides,
-    _warn_if_tolerance_defeats_scale_floor,
     list_entry_specs,
     selected_entry_specs,
     targets_include_output_pairs,
@@ -146,18 +137,21 @@ from cadgen._internal.generation_spec import (
 def _mesh_values_match(
     mesh: Mapping[str, object],
     *,
-    linear_deflection: float,
-    angular_deflection: float,
+    chord_tolerance: float,
+    angle_tolerance: float,
     relative: bool,
 ) -> bool:
+    # The descriptor's JSON keys stay `linearDeflection`/`angularDeflection`
+    # (renaming them would re-key every package); only the Python names say
+    # what the numbers actually are.
     try:
-        artifact_linear = float(mesh.get("linearDeflection"))
-        artifact_angular = float(mesh.get("angularDeflection"))
+        artifact_chord = float(mesh.get("linearDeflection"))
+        artifact_angle = float(mesh.get("angularDeflection"))
     except (TypeError, ValueError):
         return False
     return (
-        math.isclose(artifact_linear, float(linear_deflection), rel_tol=1e-9, abs_tol=1e-12)
-        and math.isclose(artifact_angular, float(angular_deflection), rel_tol=1e-9, abs_tol=1e-12)
+        math.isclose(artifact_chord, float(chord_tolerance), rel_tol=1e-9, abs_tol=1e-12)
+        and math.isclose(artifact_angle, float(angle_tolerance), rel_tol=1e-9, abs_tol=1e-12)
         and bool(mesh.get("relative", True)) == bool(relative)
     )
 
@@ -168,10 +162,10 @@ def _selector_options_from_topology_manifest(spec: EntrySpec, manifest: Mapping[
         return None
 
     defaults = SelectorOptions()
-    linear_explicit = _mesh_tolerance_is_explicit(spec)
-    angular_explicit = _mesh_angular_tolerance_is_explicit(spec)
-    linear_deflection = spec.mesh_tolerance
-    angular_deflection = spec.mesh_angular_tolerance
+    linear_explicit = spec.mesh_tolerance is not None
+    angular_explicit = spec.mesh_angular_tolerance is not None
+    chord_tolerance = spec.mesh_tolerance if linear_explicit else defaults.chord_tolerance
+    angle_tolerance = spec.mesh_angular_tolerance if angular_explicit else defaults.angle_tolerance
 
     if not linear_explicit or not angular_explicit:
         resolution = mesh.get("resolution")
@@ -180,13 +174,13 @@ def _selector_options_from_topology_manifest(spec: EntrySpec, manifest: Mapping[
             return None
         adaptive = adaptive_mesh_resolution_from_hints(hints)
         if not linear_explicit:
-            linear_deflection = adaptive.settings.tolerance
+            chord_tolerance = adaptive.settings.tolerance
         if not angular_explicit:
-            angular_deflection = adaptive.settings.angular_tolerance
+            angle_tolerance = adaptive.settings.angular_tolerance
 
     return SelectorOptions(
-        linear_deflection=linear_deflection,
-        angular_deflection=angular_deflection,
+        chord_tolerance=chord_tolerance,
+        angle_tolerance=angle_tolerance,
         relative=bool(mesh.get("relative", defaults.relative)),
         edge_deflection=defaults.edge_deflection,
         edge_deflection_ratio=defaults.edge_deflection_ratio,
@@ -286,8 +280,8 @@ def _package_descriptor_matches_spec(
     return (
         _mesh_values_match(
             mesh,
-            linear_deflection=selector_options.linear_deflection,
-            angular_deflection=selector_options.angular_deflection,
+            chord_tolerance=selector_options.chord_tolerance,
+            angle_tolerance=selector_options.angle_tolerance,
             relative=selector_options.relative,
         )
         and _edge_visibility_classes_match_manifest(manifest, selector_options)
@@ -332,8 +326,10 @@ def _assembly_provenance_manifest(
     from cadgen._internal.glb_topology import step_topology_capabilities
 
     mesh: dict[str, object] = {
-        "linearDeflection": float(selector_options.linear_deflection),
-        "angularDeflection": float(selector_options.angular_deflection),
+        # Descriptor keys are frozen: renaming them would re-key every
+        # package in the store. The Python names beside them are honest.
+        "linearDeflection": float(selector_options.chord_tolerance),
+        "angularDeflection": float(selector_options.angle_tolerance),
         "relative": bool(selector_options.relative),
     }
     if isinstance(getattr(selector_options, "mesh_resolution", None), dict):
@@ -431,12 +427,12 @@ def _mesh_exports_sidecar_section(spec: EntrySpec) -> list[dict[str, object]]:
     base = spec.step_path.parent.resolve()
     entries: list[dict[str, object]] = []
     for declared in spec.mesh_exports:
-        chord = declared.mesh_tolerance
-        if chord is None and spec.mesh_tolerance_explicit:
-            chord = spec.mesh_tolerance
-        angle = declared.mesh_angular_tolerance
-        if angle is None and spec.mesh_angular_tolerance_explicit:
-            angle = spec.mesh_angular_tolerance
+        chord = declared.mesh_tolerance if declared.mesh_tolerance is not None else spec.mesh_tolerance
+        angle = (
+            declared.mesh_angular_tolerance
+            if declared.mesh_angular_tolerance is not None
+            else spec.mesh_angular_tolerance
+        )
         _, pose_values = posed.get((declared.fmt, declared.path), (None, None))
         entries.append(
             {
@@ -585,8 +581,6 @@ def _generate_part_outputs(
                     single_component=single_component,
                     force=force,
                     provenance=package_provenance,
-                    linear_deflection=selector_options.linear_deflection,
-                    angular_deflection=selector_options.angular_deflection,
                     progress=progress,
                 )
 
@@ -821,12 +815,12 @@ def _produce_declared_mesh_exports(
         posed_declarations = runtime_mesh_declarations(spec.script_path)
     pending: list[MeshExportJob] = []
     for declared in spec.mesh_exports:
-        chord = declared.mesh_tolerance
-        if chord is None and spec.mesh_tolerance_explicit:
-            chord = spec.mesh_tolerance
-        angle = declared.mesh_angular_tolerance
-        if angle is None and spec.mesh_angular_tolerance_explicit:
-            angle = spec.mesh_angular_tolerance
+        chord = declared.mesh_tolerance if declared.mesh_tolerance is not None else spec.mesh_tolerance
+        angle = (
+            declared.mesh_angular_tolerance
+            if declared.mesh_angular_tolerance is not None
+            else spec.mesh_angular_tolerance
+        )
         kinematics_def, pose_values = posed_declarations.get(
             (declared.fmt, declared.path), (None, None)
         )

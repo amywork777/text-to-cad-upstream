@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from cadgen._internal.glb_topology import STEP_EDGE_DEFAULT_RENDER_VISIBILITY_CLASSES
-from cadgen.metadata import DEFAULT_MESH_ANGULAR_TOLERANCE
-from cadgen.metadata import DEFAULT_MESH_TOLERANCE
+from cadgen._internal.tessellation import TESSELLATOR_ANGLE_TOLERANCE
+from cadgen._internal.tessellation import TESSELLATOR_CHORD_TOLERANCE
 from cadgen.metadata import MeshSettings
 
 
@@ -17,8 +17,12 @@ ColorRGBA = tuple[float, float, float, float]
 
 @dataclass(frozen=True)
 class SelectorOptions:
-    linear_deflection: float = DEFAULT_MESH_TOLERANCE
-    angular_deflection: float = DEFAULT_MESH_ANGULAR_TOLERANCE
+    # RELATIVE to the component diagonal, not millimetres: the one tessellator
+    # is JS (packages/cadgen-js/src/lib/surf/tessellate.js) and takes relative
+    # tolerances. "deflection" was the OCCT word for the absolute quantity this
+    # package no longer produces.
+    chord_tolerance: float = TESSELLATOR_CHORD_TOLERANCE
+    angle_tolerance: float = TESSELLATOR_ANGLE_TOLERANCE
     relative: bool = True
     edge_deflection: float | None = None
     edge_deflection_ratio: float = 0.00075

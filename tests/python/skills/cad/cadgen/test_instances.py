@@ -51,8 +51,6 @@ class CompoundFromInstancesTests(unittest.TestCase):
             shape,
             package_dir=package_dir,
             root_name=key,
-            linear_deflection=0.5,
-            angular_deflection=0.4,
         )
         return json.loads((package_dir / "assembly.json").read_text(encoding="utf-8"))
 

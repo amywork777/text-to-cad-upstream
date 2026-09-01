@@ -9,8 +9,9 @@ a one-sided change fails here before it can ship.
 
 Also pins the mesh-cache key's tessellator-version salt across languages:
 TESSELLATION_VERSION (tessellate.js) == MESH_TESSELLATION_VERSION
-(cache_paths.py), and the inline viewer-server copy of the root resolver
-against the cadgen-js original.
+(cache_paths.py), the tessellator's DEFAULT_OPTIONS tolerances against their
+Python mirror in cadgen/_internal/tessellation.py, and the inline
+viewer-server copy of the root resolver against the cadgen-js original.
 """
 
 from __future__ import annotations
@@ -89,6 +90,32 @@ class CacheRootSyncTest(unittest.TestCase):
             "bump TESSELLATION_VERSION (tessellate.js) and MESH_TESSELLATION_VERSION "
             "(cache_paths.py) together",
         )
+
+    def test_tessellator_default_tolerances_match_between_python_and_js(self) -> None:
+        # The tessellator lives in JS; the Python constants are a MIRROR the
+        # CLI, the descriptor, and the freshness gates talk in. Nothing in
+        # Python computes them, so only a pin like this can keep them honest —
+        # its absence is how the retired absolute OCCT defaults (0.02 mm /
+        # 0.6 rad) survived as if they were tessellator defaults.
+        from cadgen._internal import tessellation
+
+        source = TESSELLATE_JS.read_text(encoding="utf-8")
+        options = re.search(r"export const DEFAULT_OPTIONS = \{(.*?)\n\};", source, re.DOTALL)
+        assert options, "DEFAULT_OPTIONS not found in tessellate.js"
+        body = options.group(1)
+        for key, mirrored in (
+            ("chordTolerance", tessellation.TESSELLATOR_CHORD_TOLERANCE),
+            ("angleTolerance", tessellation.TESSELLATOR_ANGLE_TOLERANCE),
+        ):
+            with self.subTest(option=key):
+                match = re.search(rf"^\s*{key}:\s*([0-9.eE+-]+),", body, re.MULTILINE)
+                assert match, f"{key} not found in tessellate.js DEFAULT_OPTIONS"
+                self.assertEqual(
+                    float(match.group(1)),
+                    mirrored,
+                    f"DEFAULT_OPTIONS.{key} (tessellate.js) diverged from its Python mirror in "
+                    "cadgen/_internal/tessellation.py — change both together",
+                )
 
     def test_key_scheme_carries_the_version_salt(self) -> None:
         # Policy: the key must salt the algorithm version. Grep-level pin so a

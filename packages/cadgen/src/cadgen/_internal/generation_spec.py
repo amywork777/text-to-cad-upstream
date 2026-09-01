@@ -3,10 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import replace
-import math
 import os
 from pathlib import Path
-import sys
 from typing import Sequence
 
 from cadgen._internal.glb_topology import STEP_EDGE_VISIBILITY_CLASSES
@@ -26,10 +24,7 @@ from cadgen.catalog import normalize_source_ref
 from cadgen.catalog import render_package_dir
 from cadgen.cli_logging import CliLogger
 from cadgen.cli_progress import cli_progress_line
-from cadgen.metadata import DEFAULT_MESH_ANGULAR_TOLERANCE
-from cadgen.metadata import DEFAULT_MESH_TOLERANCE
 from cadgen.metadata import GeneratorMetadata
-from cadgen.metadata import resolve_mesh_settings
 from cadgen.render import relative_to_cwd
 
 
@@ -48,10 +43,12 @@ class EntrySpec:
     dxf_path: Path | None = None
     step_export_path: Path | None = None
     dxf_export_path: Path | None = None
-    mesh_tolerance: float = DEFAULT_MESH_TOLERANCE
-    mesh_angular_tolerance: float = DEFAULT_MESH_ANGULAR_TOLERANCE
-    mesh_tolerance_explicit: bool = False
-    mesh_angular_tolerance_explicit: bool = False
+    # ``None`` means "the caller specified nothing" — the adaptive resolver
+    # supplies the value. A number is the caller's explicit choice, and
+    # ``is not None`` IS the explicitness test; there is no separate flag and
+    # no default sentinel to compare against.
+    mesh_tolerance: float | None = None
+    mesh_angular_tolerance: float | None = None
     color: tuple[float, float, float, float] | None = None
     # Declared mesh serializations, resolved to absolute paths. Tolerances
     # ``None`` inherit the model's policy at export time.
@@ -238,10 +235,6 @@ def _apply_step_options_to_spec(spec: EntrySpec, step_options: StepImportOptions
             if step_options.mesh_angular_tolerance is not None
             else spec.mesh_angular_tolerance
         ),
-        mesh_tolerance_explicit=spec.mesh_tolerance_explicit or step_options.mesh_tolerance is not None,
-        mesh_angular_tolerance_explicit=(
-            spec.mesh_angular_tolerance_explicit or step_options.mesh_angular_tolerance is not None
-        ),
     )
 
 
@@ -409,12 +402,6 @@ def _entry_spec_from_source(source: CadSource) -> EntrySpec:
     script_path = source.script_path
     kind = source.kind
     step_path = source.step_path
-    mesh_settings = resolve_mesh_settings(
-        cad_ref=source.cad_ref,
-        generator_metadata=generator_metadata,
-        mesh_tolerance=source.mesh_tolerance,
-        mesh_angular_tolerance=source.mesh_angular_tolerance,
-    )
     display_path = step_path if step_path is not None else source.source_path
 
     return EntrySpec(
@@ -432,10 +419,8 @@ def _entry_spec_from_source(source: CadSource) -> EntrySpec:
         script_path=script_path,
         generator_metadata=generator_metadata,
         dxf_path=source.dxf_path,
-        mesh_tolerance=mesh_settings.tolerance,
-        mesh_angular_tolerance=mesh_settings.angular_tolerance,
-        mesh_tolerance_explicit=source.mesh_tolerance is not None,
-        mesh_angular_tolerance_explicit=source.mesh_angular_tolerance is not None,
+        mesh_tolerance=source.mesh_tolerance,
+        mesh_angular_tolerance=source.mesh_angular_tolerance,
         color=source.color,
         mesh_exports=_resolve_mesh_exports(
             getattr(generator_metadata, "mesh_exports", ()) or (),
@@ -491,81 +476,25 @@ def _spec_for_source_ref(
     return None
 
 
-def _mesh_tolerance_is_explicit(spec: EntrySpec) -> bool:
-    return bool(spec.mesh_tolerance_explicit) or not math.isclose(
-        float(spec.mesh_tolerance),
-        float(DEFAULT_MESH_TOLERANCE),
-        rel_tol=1e-12,
-        abs_tol=1e-12,
-    )
-
-
-def _mesh_angular_tolerance_is_explicit(spec: EntrySpec) -> bool:
-    return bool(spec.mesh_angular_tolerance_explicit) or not math.isclose(
-        float(spec.mesh_angular_tolerance),
-        float(DEFAULT_MESH_ANGULAR_TOLERANCE),
-        rel_tol=1e-12,
-        abs_tol=1e-12,
-    )
-
-
-# How much finer than the adaptive floor an explicit tolerance has to be before
-# it is almost certainly a mistake rather than a deliberate choice.
-_TOLERANCE_WARN_RATIO = 8.0
-
-
-def _warn_if_tolerance_defeats_scale_floor(spec: EntrySpec, adaptive: object) -> None:
-    """Say something when ``--mesh-tolerance`` silently defeats the size floor.
-
-    For anything larger than desk scale the adaptive resolver floors the linear
-    deflection proportionally to the model diagonal, because meshing a metre-scale
-    part at micron-class chord error costs minutes and hundreds of megabytes. An
-    explicit ``--mesh-tolerance`` overrides that floor completely — which is
-    correct, but silent, and 0.02 looks like a safe "default" value to pass. On a
-    5.4 m car it is 80x finer than the floor and turns a 15-second build into a
-    six-minute one with nothing in the output to explain why.
-    """
-    settings = getattr(adaptive, "settings", None)
-    floor = float(getattr(settings, "tolerance", 0.0) or 0.0)
-    requested = float(spec.mesh_tolerance)
-    if floor <= 0.0 or requested <= 0.0 or requested >= floor / _TOLERANCE_WARN_RATIO:
-        return
-    hints = getattr(adaptive, "hints", None)
-    diagonal = 0.0
-    if isinstance(hints, Mapping):
-        raw = hints.get("bboxDiag")
-        diagonal = float(raw) if isinstance(raw, (int, float)) else 0.0
-    print(
-        f"[cadgen] warning: --mesh-tolerance {requested:g} mm is "
-        f"{floor / requested:.0f}x finer than the {floor:g} mm this model's size "
-        f"({diagonal:.0f} mm diagonal) would otherwise use. Meshing will be much "
-        f"slower and the package much larger. Omit --mesh-tolerance to let it scale.",
-        file=sys.stderr,
-        flush=True,
-    )
-
-
 def _selector_options_for_part(spec: EntrySpec, *, scene: LoadedStepScene | None = None) -> SelectorOptions:
     defaults = SelectorOptions()
-    linear_deflection = spec.mesh_tolerance
-    angular_deflection = spec.mesh_angular_tolerance
+    linear_explicit = spec.mesh_tolerance is not None
+    angular_explicit = spec.mesh_angular_tolerance is not None
+    chord_tolerance = spec.mesh_tolerance if linear_explicit else defaults.chord_tolerance
+    angle_tolerance = spec.mesh_angular_tolerance if angular_explicit else defaults.angle_tolerance
     resolution: dict[str, object] = {
         "mode": "explicit",
         "profile": "custom",
         "linearExplicit": True,
         "angularExplicit": True,
     }
-    linear_explicit = _mesh_tolerance_is_explicit(spec)
-    angular_explicit = _mesh_angular_tolerance_is_explicit(spec)
     edge_visibility_classes = normalize_step_edge_render_visibility_classes(None)
     if isinstance(scene, LoadedStepScene):
         adaptive = adaptive_mesh_resolution_for_scene(scene)
         if not linear_explicit:
-            linear_deflection = adaptive.settings.tolerance
-        else:
-            _warn_if_tolerance_defeats_scale_floor(spec, adaptive)
+            chord_tolerance = adaptive.settings.tolerance
         if not angular_explicit:
-            angular_deflection = adaptive.settings.angular_tolerance
+            angle_tolerance = adaptive.settings.angular_tolerance
         edge_visibility_classes = _edge_visibility_classes_for_resolution(adaptive.profile, adaptive.hints)
         resolution = {
             "mode": "auto",
@@ -575,8 +504,8 @@ def _selector_options_for_part(spec: EntrySpec, *, scene: LoadedStepScene | None
             "hints": adaptive.hints,
         }
     return SelectorOptions(
-        linear_deflection=linear_deflection,
-        angular_deflection=angular_deflection,
+        chord_tolerance=chord_tolerance,
+        angle_tolerance=angle_tolerance,
         relative=defaults.relative,
         edge_deflection=defaults.edge_deflection,
         edge_deflection_ratio=defaults.edge_deflection_ratio,

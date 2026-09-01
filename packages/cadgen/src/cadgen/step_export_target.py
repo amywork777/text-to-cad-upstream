@@ -77,10 +77,6 @@ def _apply_mesh_overrides(
             if mesh_angular_tolerance is not None
             else spec.mesh_angular_tolerance
         ),
-        mesh_tolerance_explicit=mesh_tolerance is not None or spec.mesh_tolerance_explicit,
-        mesh_angular_tolerance_explicit=(
-            mesh_angular_tolerance is not None or spec.mesh_angular_tolerance_explicit
-        ),
     )
 
 
@@ -250,12 +246,12 @@ def _effective_export_tolerances(
     chord = cli_mesh_tolerance
     if chord is None and declared is not None:
         chord = declared.mesh_tolerance
-    if chord is None and spec.mesh_tolerance_explicit:
+    if chord is None:
         chord = spec.mesh_tolerance
     angle = cli_mesh_angular_tolerance
     if angle is None and declared is not None:
         angle = declared.mesh_angular_tolerance
-    if angle is None and spec.mesh_angular_tolerance_explicit:
+    if angle is None:
         angle = spec.mesh_angular_tolerance
     return chord, angle
 

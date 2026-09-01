@@ -20,8 +20,16 @@ from cadgen._internal.step_scene import (
     scene_occurrence_shape,
 )
 from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
-from cadgen.metadata import DEFAULT_MESH_ANGULAR_TOLERANCE, DEFAULT_MESH_TOLERANCE
 from tests.python.support.tmp_root import temporary_directory
+
+
+# The middle rung of the adaptive ladder (the "coarse-assembly" profile in
+# step_scene_mesh.adaptive_mesh_resolution_from_hints), used below purely as a
+# yardstick for "finer than" / "coarser than". These tests used to reach for
+# cadgen.metadata.DEFAULT_MESH_TOLERANCE, which held the same two numbers by
+# coincidence of history — it was the retired absolute OCCT default, not a rung.
+COARSE_ASSEMBLY_TOLERANCE = 0.02
+COARSE_ASSEMBLY_ANGULAR_TOLERANCE = 0.6
 
 
 class StepSceneSelectorArtifactTests(unittest.TestCase):
@@ -131,8 +139,8 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             resolution = adaptive_mesh_resolution_for_scene(scene)
 
             self.assertEqual("extra-fine", resolution.profile)
-            self.assertLess(resolution.settings.tolerance, DEFAULT_MESH_TOLERANCE)
-            self.assertLess(resolution.settings.angular_tolerance, DEFAULT_MESH_ANGULAR_TOLERANCE)
+            self.assertLess(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
+            self.assertLess(resolution.settings.angular_tolerance, COARSE_ASSEMBLY_ANGULAR_TOLERANCE)
             self.assertEqual(1, resolution.hints["leafOccurrenceCount"])
 
     def test_adaptive_mesh_resolution_floors_linear_deflection_for_meter_scale_models(self) -> None:
@@ -237,7 +245,7 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
         resolution = adaptive_mesh_resolution_for_scene(scene)
 
         self.assertEqual("medium", resolution.profile)
-        self.assertLess(resolution.settings.tolerance, DEFAULT_MESH_TOLERANCE)
+        self.assertLess(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
         self.assertEqual(100, resolution.hints["leafOccurrenceCount"])
 
     def test_adaptive_mesh_resolution_keeps_many_low_curvature_occurrences_balanced(self) -> None:
@@ -293,8 +301,8 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             )
 
         self.assertEqual("large-topology", resolution.profile)
-        self.assertGreater(resolution.settings.tolerance, DEFAULT_MESH_TOLERANCE)
-        self.assertGreater(resolution.settings.angular_tolerance, DEFAULT_MESH_ANGULAR_TOLERANCE)
+        self.assertGreater(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
+        self.assertGreater(resolution.settings.angular_tolerance, COARSE_ASSEMBLY_ANGULAR_TOLERANCE)
 
     def test_adaptive_mesh_resolution_uses_curvature_pressure_before_raw_counts_explode(self) -> None:
         with mock.patch.object(

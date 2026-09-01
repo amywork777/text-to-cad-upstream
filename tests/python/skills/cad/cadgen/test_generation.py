@@ -150,8 +150,6 @@ class CadGenerationTests(unittest.TestCase):
             single_component=False,
             force=False,
             provenance=None,
-            linear_deflection=None,
-            angular_deflection=None,
             progress=None,
         ):
             calls.append(
@@ -1327,8 +1325,8 @@ class CadGenerationTests(unittest.TestCase):
             if spec.cad_ref.startswith(f"{self.relative_dir}/")
         }
 
-        self.assertEqual(cad_generation.DEFAULT_MESH_TOLERANCE, specs[self._cad_ref("meshy")].mesh_tolerance)
-        self.assertEqual(cad_generation.DEFAULT_MESH_ANGULAR_TOLERANCE, specs[self._cad_ref("meshy")].mesh_angular_tolerance)
+        self.assertIsNone(specs[self._cad_ref("meshy")].mesh_tolerance)
+        self.assertIsNone(specs[self._cad_ref("meshy")].mesh_angular_tolerance)
 
     def test_imported_step_defaults_to_part(self) -> None:
         self._write_step("imported")
@@ -1346,14 +1344,16 @@ class CadGenerationTests(unittest.TestCase):
         self.assertEqual(1, len(specs))
         self.assertEqual("part", specs[0].kind)
 
-    def test_imported_step_uses_default_mesh_settings(self) -> None:
+    def test_imported_step_specifies_no_mesh_tolerances(self) -> None:
+        # Nothing specified is ``None``, which is what lets the adaptive
+        # resolver supply the values. There is no default-value sentinel.
         self._write_step("imported-mesh")
 
         specs = [spec for spec in cad_generation.list_entry_specs() if spec.cad_ref == self._cad_ref("imported-mesh")]
 
         self.assertEqual(1, len(specs))
-        self.assertEqual(cad_generation.DEFAULT_MESH_TOLERANCE, specs[0].mesh_tolerance)
-        self.assertEqual(cad_generation.DEFAULT_MESH_ANGULAR_TOLERANCE, specs[0].mesh_angular_tolerance)
+        self.assertIsNone(specs[0].mesh_tolerance)
+        self.assertIsNone(specs[0].mesh_angular_tolerance)
 
     def test_imported_step_reads_mesh_settings_from_cli_options(self) -> None:
         step_path = self._write_step("imported-heavy")

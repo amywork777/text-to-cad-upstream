@@ -24,7 +24,7 @@ from cadgen._internal.generation import (
     run_script_generator,
 )
 from cadgen.coordination import PHASE_GENERATE, STEP_PACKAGE, artifact_build
-from cadgen.metadata import DEFAULT_MESH_ANGULAR_TOLERANCE, DEFAULT_MESH_TOLERANCE, normalize_mesh_numeric
+from cadgen.metadata import normalize_mesh_numeric
 from cadgen.catalog import render_package_dir
 from cadgen.render import relative_to_cwd
 from cadgen._internal.step_scene import LoadedStepScene, load_step_scene, step_file_hash
@@ -88,14 +88,8 @@ def _build_entry_spec(
         display_name=step_path.stem,
         source="imported",
         step_path=step_path,
-        mesh_tolerance=mesh_tolerance if mesh_tolerance is not None else DEFAULT_MESH_TOLERANCE,
-        mesh_angular_tolerance=(
-            mesh_angular_tolerance
-            if mesh_angular_tolerance is not None
-            else DEFAULT_MESH_ANGULAR_TOLERANCE
-        ),
-        mesh_tolerance_explicit=mesh_tolerance is not None,
-        mesh_angular_tolerance_explicit=mesh_angular_tolerance is not None,
+        mesh_tolerance=mesh_tolerance,
+        mesh_angular_tolerance=mesh_angular_tolerance,
     )
 
 
@@ -341,8 +335,6 @@ def build_step_artifact(
                     if mesh_angular_tolerance is not None
                     else existing_spec.mesh_angular_tolerance
                 ),
-                mesh_tolerance_explicit=mesh_tolerance is not None,
-                mesh_angular_tolerance_explicit=mesh_angular_tolerance is not None,
             )
     else:
         existing_spec = EntrySpec(
@@ -353,14 +345,8 @@ def build_step_artifact(
             display_name=step_path.stem,
             source="imported",
             step_path=step_path,
-            mesh_tolerance=mesh_tolerance if mesh_tolerance is not None else DEFAULT_MESH_TOLERANCE,
-            mesh_angular_tolerance=(
-                mesh_angular_tolerance
-                if mesh_angular_tolerance is not None
-                else DEFAULT_MESH_ANGULAR_TOLERANCE
-            ),
-            mesh_tolerance_explicit=mesh_tolerance is not None,
-            mesh_angular_tolerance_explicit=mesh_angular_tolerance is not None,
+            mesh_tolerance=mesh_tolerance,
+            mesh_angular_tolerance=mesh_angular_tolerance,
         )
     # Cheap pre-lock exit for the overwhelmingly common "nothing to do" call, so an
     # already-current model never pays for a lock acquisition. It is NOT the real gate --

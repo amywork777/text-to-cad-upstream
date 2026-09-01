@@ -179,8 +179,8 @@ class ProducerGateMirrorsTheViewerTests(unittest.TestCase):
             "kind": PACKAGE_KIND,
             "components": {"abc": {"glb": "components/abc.glb"}},
             "mesh": {
-                "linearDeflection": options.linear_deflection,
-                "angularDeflection": options.angular_deflection,
+                "linearDeflection": options.chord_tolerance,
+                "angularDeflection": options.angle_tolerance,
                 "relative": options.relative,
             },
             "edgeRendering": {"visibilityClasses": list(options.edge_visibility_classes)},
