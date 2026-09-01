@@ -306,10 +306,9 @@ import {
   normalizeParameterValues
 } from "cadgen-js/common/parameters.js";
 import { copyTextToClipboard, readTextFromClipboard } from "@/ui/clipboard";
-import { triggerUrlDownload } from "@/ui/download";
 import {
   copyTargetsForFileAccessAsset,
-  downloadUrlForFileAsset
+  fileAccessAssetsForEntry
 } from "@/workbench/fileAccessAssets";
 
 const DEFAULT_DOCUMENT_TITLE = "CAD Viewer";
@@ -1426,8 +1425,6 @@ export default function CadWorkspace({
   const filePathCopyAvailable = fileAccessBackend === "local-fs" && Boolean(
     viewerServerInfo?.rootPath
   );
-  // The local-fs viewer has no remote asset links; the copy-link affordance is hosted-only.
-  const fileLinkCopyAvailable = false;
   // `isStepView` used to stand in for all four of these at once, which is why adding a
   // format meant auditing every one of its ~15 uses to work out which sense was meant.
   // They are separate capabilities; the table is the source of truth.
@@ -6744,25 +6741,6 @@ export default function CadWorkspace({
     });
   }, [themeEditing, isDesktop, selectedFileSheetKind, setTabToolsOpen]);
 
-  const handleDownloadFileAsset = useCallback((entry, asset = "output", assetInfo = null) => {
-    const fileRef = entry ? fileKey(entry) : "";
-    const assetKind = String(asset || "output").trim() || "output";
-    if (!fileRef || typeof window === "undefined") {
-      return;
-    }
-    const directDownloadUrl = String(assetInfo?.downloadUrl || "").trim();
-    const downloadUrl = directDownloadUrl || downloadUrlForFileAsset(fileRef, assetKind);
-    setCopyStatus("");
-    setScreenshotStatus("");
-    const filename = String(assetInfo?.filename || "").trim();
-    try {
-      const result = triggerUrlDownload(downloadUrl, { filename });
-      setCopyStatus(result.message);
-    } catch (downloadError) {
-      setCopyStatus(downloadError instanceof Error ? downloadError.message : "Download failed");
-    }
-  }, []);
-
   const handleCopyFileAssetReference = useCallback(async (entry, asset = "output", assetInfo = null, referenceKind = "path") => {
     const fileRef = entry ? fileKey(entry) : "";
     const assetKind = String(asset || "output").trim() || "output";
@@ -6777,25 +6755,21 @@ export default function CadWorkspace({
     try {
       let copyText = "";
       let statusLabel = "Copied file reference";
-      if (kind === "link") {
-        copyText = String(assetInfo?.downloadUrl || "").trim() || downloadUrlForFileAsset(
-          fileRef,
-          assetKind,
-          typeof window === "undefined" ? viewerServerInfo?.url : window.location.href
-        );
-        statusLabel = "Copied link";
+      // The context menu builds its asset descriptors without viewerServerInfo (it has
+      // none), so a catalog entry's ABSOLUTE `file` arrives un-rebased. Recompute the
+      // descriptor here, where the server info lives, so the copied path and relative
+      // path are the served root's, not the absolute path with its slash shaved off.
+      const resolvedAsset = fileAccessAssetsForEntry(entry, { viewerServerInfo })[assetKind] || assetInfo;
+      const targets = copyTargetsForFileAccessAsset(resolvedAsset, viewerServerInfo);
+      if (kind === "filename") {
+        copyText = targets.filename;
+        statusLabel = "Copied filename";
+      } else if (kind === "relativePath") {
+        copyText = targets.relativePath;
+        statusLabel = "Copied relative path";
       } else {
-        const targets = copyTargetsForFileAccessAsset(assetInfo, viewerServerInfo);
-        if (kind === "filename") {
-          copyText = targets.filename;
-          statusLabel = "Copied filename";
-        } else if (kind === "relativePath") {
-          copyText = targets.relativePath;
-          statusLabel = "Copied relative path";
-        } else {
-          copyText = targets.path;
-          statusLabel = "Copied path";
-        }
+        copyText = targets.path;
+        statusLabel = "Copied path";
       }
 
       if (!copyText) {
@@ -6803,7 +6777,7 @@ export default function CadWorkspace({
       }
 
       await copyTextToClipboard(copyText);
-      const filename = String(assetInfo?.filename || "").trim();
+      const filename = String(resolvedAsset?.filename || "").trim();
       // Naming the file after "Copied filename" would just repeat what was copied.
       setCopyStatus(filename && copyText !== filename ? `${statusLabel} for ${filename}` : statusLabel);
     } catch (error) {
@@ -7218,9 +7192,7 @@ export default function CadWorkspace({
           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
           filenameLoadActivity={filenameLoadActivity}
           selectedStepSourceStatus={selectedStepSourceStatus}
-          canCopyFileAssetLinks={fileLinkCopyAvailable}
           canCopyFileAssetPaths={filePathCopyAvailable}
-          onDownloadFileAsset={handleDownloadFileAsset}
           onRevealInExplorerView={handleRevealEntryInExplorerView}
           onCopyFileAssetReference={handleCopyFileAssetReference}
           fileSheetKind={selectedFileSheetHasSections ? selectedFileSheetKind : ""}
@@ -7250,9 +7222,7 @@ export default function CadWorkspace({
               activeStepArtifactGenerationFile={activeStepArtifactGenerationFiles}
               loadingFiles={viewerLoadingFiles}
               stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-              canCopyFileAssetLinks={fileLinkCopyAvailable}
               canCopyFileAssetPaths={filePathCopyAvailable}
-              onDownloadFileAsset={handleDownloadFileAsset}
               onRevealInExplorerView={handleRevealEntryInExplorerView}
               onCopyFileAssetReference={handleCopyFileAssetReference}
               catalogHydrated={catalogHydrated}
@@ -7404,7 +7374,6 @@ export default function CadWorkspace({
                   onSpeedChange: handleAnimationSpeedChange,
                   onLoopToggle: handleAnimationLoopToggle
                 }}
-                fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
@@ -7438,7 +7407,6 @@ export default function CadWorkspace({
                 sdf={selectedFileSheetKind === "sdf" ? {
                   info: selectedUrdfData?.sdf || null
                 } : null}
-                fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
@@ -7459,7 +7427,6 @@ export default function CadWorkspace({
                 selectedEntry={selectedEntry}
                 onOpenChange={setTabToolsOpen}
                 onStartResize={handleStartFileSheetResize}
-                fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}
@@ -7509,7 +7476,6 @@ export default function CadWorkspace({
                 selectedEntry={selectedEntry}
                 onOpenChange={setTabToolsOpen}
                 onStartResize={handleStartFileSheetResize}
-                fileDownloadAvailable={fileLinkCopyAvailable}
                 viewerServerInfo={viewerServerInfo}
                 suppressDynamicMetadataStatus={selectedArtifactGenerating}
                 statusItems={selectedFileStatusItems}

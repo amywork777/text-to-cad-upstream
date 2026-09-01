@@ -56,33 +56,6 @@ class EncodeUriComponent(unittest.TestCase):
         self.assertNotEqual(quote("a!*'()/b"), encoding.encode_uri_component("a!*'()/b"))
 
 
-class ContentDisposition(unittest.TestCase):
-    def test_star_form(self) -> None:
-        for value, expected in GOLDEN["contentDispositionStar"]:
-            with self.subTest(value=value):
-                self.assertEqual(encoding.encode_content_disposition_filename(value), expected)
-
-    def test_download_filename(self) -> None:
-        for value, expected in GOLDEN["downloadFilename"]:
-            with self.subTest(value=value):
-                self.assertEqual(encoding.download_filename(value), expected)
-
-    def test_full_header(self) -> None:
-        for value, expected in GOLDEN["attachmentContentDisposition"]:
-            with self.subTest(value=value):
-                self.assertEqual(encoding.attachment_content_disposition(value), expected)
-
-    def test_astral_scrub_is_per_utf16_code_unit(self) -> None:
-        # One astral character is TWO underscores. A code-point loop gives one.
-        header = encoding.attachment_content_disposition("emoji \U0001F642.stl")
-        self.assertIn('filename="emoji __.stl"', header)
-
-    def test_parens_star_and_quote_survive_the_quoted_form(self) -> None:
-        header = encoding.attachment_content_disposition("a(1)*'.step")
-        self.assertIn("filename=\"a(1)*'.step\"", header)
-        self.assertIn("filename*=UTF-8''a%281%29%2A%27.step", header)
-
-
 class Base36(unittest.TestCase):
     def test_values(self) -> None:
         for value, expected in GOLDEN["base36"]:

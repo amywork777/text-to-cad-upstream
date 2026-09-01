@@ -68,23 +68,13 @@ export function fileAccessAssetsForEntry(entry, {
     output: {
       asset: "output",
       fileRef,
-      filename: outputFilename || "download",
-      label: outputFilename || "download",
+      // No placeholder fallback: copy actions resolve a missing filename from the
+      // path basename (copyTargetsForFileAccessAsset) or fail with a clear status.
+      filename: outputFilename,
+      label: outputFilename,
       rootRelativePath: outputFileRef,
     },
   };
-}
-
-export function downloadUrlForFileAsset(fileRef, asset = "output", baseUrl = "") {
-  const path = `/__cad/download?file=${encodeURIComponent(fileRef)}&asset=${encodeURIComponent(asset || "output")}`;
-  if (!baseUrl) {
-    return path;
-  }
-  try {
-    return new URL(path, baseUrl).toString();
-  } catch {
-    return path;
-  }
 }
 
 export function copyTargetsForFileAccessAsset(asset, viewerServerInfo = {}) {

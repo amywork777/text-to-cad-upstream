@@ -388,14 +388,6 @@ const ENCODER_STRINGS = [
   "ümlaut ÄÖÜ.step", "Ω≈ç√∫˜µ", "\u{1F600}\u{1F601}", "x".repeat(300),
 ];
 
-const DISPOSITION_NAMES = [
-  "", "part.step", "download", "a\\b.step", "../escape.glb", "..", ".",
-  "a(1)*'.step", "rén du (v2).stl", "emoji 🙂.stl", "日本.step",
-  "résumé (1).glb", "bad\"name\\x.stl", "tab\there.stl", "nl\nhere.stl",
-  "cr\rhere.stl", "nul\u0000here.stl", "  spaced  .step", "ümlaut ÄÖÜ.step",
-  "a/b/c.step", "/abs/path/file.step", "trailing/", "x".repeat(300) + ".step",
-];
-
 const BASE36_VALUES = [
   "0", "1", "35", "36", "1295", "1296", "2158", "-1", "-36",
   "1719440100123", "1719440100123456789", "9007199254740993",
@@ -514,22 +506,6 @@ const golden = {
     "part.step", "sub dir/part.step", "a/b/c.step", "日本語/part.step",
     "a b(c)*d~e._-!'.step", "x&y=z/w#v.step", "🙂/x.stl",
   ].map((rel) => [rel, `/${rel.split("/").map((p) => encodeURIComponent(p)).join("/")}`]),
-  contentDispositionStar: DISPOSITION_NAMES.map((value) => [
-    value,
-    encodeURIComponent(value).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`),
-  ]),
-  downloadFilename: DISPOSITION_NAMES.map((value) => {
-    const normalized = String(value || "").replace(/\\/g, "/");
-    const base = path.posix.basename(normalized) || "download";
-    return [value, base.replace(/[\x00-\x1f"\\]/g, "_")];
-  }),
-  attachmentContentDisposition: DISPOSITION_NAMES.map((value) => {
-    const normalized = String(value || "").replace(/\\/g, "/");
-    const safe = (path.posix.basename(normalized) || "download").replace(/[\x00-\x1f"\\]/g, "_");
-    const quoted = safe.replace(/[^\x20-\x7e]/g, "_");
-    const star = encodeURIComponent(safe).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    return [value, `attachment; filename="${quoted}"; filename*=UTF-8''${star}`];
-  }),
   base36: BASE36_VALUES.map((value) => [value, BigInt(value).toString(36)]),
   fileVersion: FILE_VERSION_CASES.map(([size, mtimeNs]) => [
     size,

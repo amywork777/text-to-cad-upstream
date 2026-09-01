@@ -195,7 +195,6 @@ every producer.
 - `GET /__cad/server`
 - `GET /__cad/catalog`
 - `GET /__cad/asset?file=...`
-- `GET /__cad/download?file=...&asset=output|source`
 - `GET /__cad/artifact?file=...` (status)
 - `POST /__cad/artifact?file=...` (build; `&force=1` to rebuild)
 - `GET /__tess_cache/<key>.tess`, `POST /__tess_cache/<key>.tess`,
@@ -227,9 +226,11 @@ Version bumps orphan whole cache generations by design; `cadgen cache info` /
 `cadgen cache gc` are the only sweepers — nothing collects garbage
 automatically.
 
-`download` streams asset bytes. It serves OUTPUTS only — the artifacts the viewer may
-have to regenerate — and never source code: a model script (`.py`) is not in the
-served-asset extension set, so it is not reachable through any route.
+`asset` streams asset bytes for rendering, never for saving — there is no download
+route and no content-disposition header anywhere. It serves OUTPUTS only — the
+artifacts the viewer may have to regenerate — and never source code: a model script
+(`.py`) is not in the served-asset extension set, so it is not reachable through any
+route.
 
 No route hands a path to a desktop program. The server answers with bytes and JSON;
 it never spawns a file manager or any other GUI application on the user's machine,

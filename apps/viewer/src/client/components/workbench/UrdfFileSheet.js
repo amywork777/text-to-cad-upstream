@@ -267,7 +267,6 @@ export default function UrdfFileSheet({
   onCopyJointAngles,
   onResetPose,
   sdf = null,
-  fileDownloadAvailable = false,
   viewerServerInfo = null,
   suppressDynamicMetadataStatus = false,
   statusItems = [],

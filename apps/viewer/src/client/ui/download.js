@@ -1,3 +1,6 @@
+// Screenshot capture only: the viewer saves canvas blobs the client itself
+// produced. Artifact bytes are never downloaded through a URL — copy actions
+// hand out paths from the catalog instead.
 const DOWNLOAD_BLOCKED_MESSAGE = "Download was blocked by the browser";
 
 function normalizeFilename(value) {
@@ -29,12 +32,7 @@ function clickDownloadLink(link) {
   }
 }
 
-export function triggerUrlDownload(url, { filename = "" } = {}) {
-  const href = String(url || "").trim();
-  if (!href) {
-    throw new Error("No download URL is available");
-  }
-
+function clickTemporaryLink(href, filename) {
   const doc = getDownloadDocument();
   const link = doc.createElement("a");
   link.href = href;
@@ -72,7 +70,7 @@ export function triggerBlobDownload(blob, { filename = "" } = {}) {
 
   const downloadUrl = urlApi.createObjectURL(blob);
   try {
-    return triggerUrlDownload(downloadUrl, { filename });
+    return clickTemporaryLink(downloadUrl, filename);
   } finally {
     const revoke = () => {
       urlApi.revokeObjectURL?.(downloadUrl);

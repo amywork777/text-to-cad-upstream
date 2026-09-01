@@ -30,7 +30,6 @@ function ExplorerViewSection({
 function FileAccessSection({
   entry,
   asset,
-  canCopyFileAssetLinks,
   canCopyFileAssetPaths,
   onRevealInExplorerView,
   onCopyFileAssetReference
@@ -75,31 +74,19 @@ function FileAccessSection({
           </ContextMenuItem>
         </>
       ) : null}
-      {canCopyFileAssetLinks && canCopyFileAssetReference ? (
-        <ContextMenuItem
-          className="text-xs"
-          onSelect={() => {
-            onCopyFileAssetReference(entry, asset.asset, asset, "link");
-          }}
-        >
-          <span className="min-w-0 truncate">Copy Link</span>
-        </ContextMenuItem>
-      ) : null}
     </>
   );
 }
 
 export default function FileAccessContextMenu({
   entry,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   children
 }) {
   const revealInExplorerViewAvailable = entry && typeof onRevealInExplorerView === "function";
-  const assetActionsAvailable = entry && typeof onDownloadFileAsset === "function";
+  const assetActionsAvailable = entry && typeof onCopyFileAssetReference === "function";
   if (!revealInExplorerViewAvailable && !assetActionsAvailable) {
     return children;
   }
@@ -125,7 +112,6 @@ export default function FileAccessContextMenu({
           <FileAccessSection
             entry={entry}
             asset={assets.output}
-            canCopyFileAssetLinks={canCopyFileAssetLinks}
             canCopyFileAssetPaths={canCopyFileAssetPaths}
             onRevealInExplorerView={onRevealInExplorerView}
             onCopyFileAssetReference={onCopyFileAssetReference}

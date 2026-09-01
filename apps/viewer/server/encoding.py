@@ -1,14 +1,12 @@
-"""Byte-faithful ports of the JavaScript URL/header encoders.
+"""Byte-faithful ports of the JavaScript URL encoders.
 
-Four different escaping alphabets live in this backend and none of them is
+Three different escaping alphabets live in this backend and none of them is
 Python's default:
 
 * ``encode_uri_component``   JS ``encodeURIComponent``: leaves ``!*'()`` alone,
   where ``urllib.parse.quote`` escapes them and leaves ``/`` alone.
 * ``form_encode``            ``URLSearchParams``: space becomes ``+``, ``*``
   stays literal, ``~`` becomes ``%7E`` — ``quote_plus`` gets both backwards.
-* ``attachment_content_disposition``  RFC 5987 dual form, whose ASCII scrub runs
-  per UTF-16 CODE UNIT, so one astral character yields TWO underscores.
 * ``base36``                 lowercase ``0-9a-z``, no padding, no stdlib support.
 
 Every one is pinned against Node's own expressions by
@@ -27,13 +25,9 @@ __all__ = [
     "file_version",
     "encode_uri_component",
     "encode_url_path",
-    "encode_content_disposition_filename",
-    "download_filename",
-    "attachment_content_disposition",
     "form_encode",
     "local_asset_url_for_path",
     "strict_decode_uri_component",
-    "posix_basename",
 ]
 
 
@@ -100,54 +94,6 @@ def encode_uri_component(value: str) -> str:
 def encode_url_path(repo_relative: str) -> str:
     """``"/" + segments.map(encodeURIComponent).join("/")`` (scanner.mjs)."""
     return "/" + "/".join(encode_uri_component(part) for part in repo_relative.split("/"))
-
-
-# --- content-disposition --------------------------------------------------
-
-
-def encode_content_disposition_filename(value: str) -> str:
-    """``encodeURIComponent`` then the RFC 5987 tightening of ``' ( ) *``."""
-    encoded = encode_uri_component(value)
-    out: list[str] = []
-    for char in encoded:
-        if char in "'()*":
-            out.append(f"%{ord(char):02X}")
-        else:
-            out.append(char)
-    return "".join(out)
-
-
-def posix_basename(value: str) -> str:
-    """``path.posix.basename``.
-
-    NOT ``posixpath.basename``: JS strips trailing slashes first, so
-    ``"trailing/"`` is ``"trailing"`` where Python's would be ``""``.
-    """
-    stripped = value.rstrip("/")
-    if not stripped:
-        return ""
-    _, _, tail = stripped.rpartition("/")
-    return tail
-
-
-def download_filename(value: str) -> str:
-    normalized = (value or "").replace("\\", "/")
-    base = posix_basename(normalized) or "download"
-    return "".join("_" if (ord(c) < 0x20 or c in '"\\') else c for c in base)
-
-
-def attachment_content_disposition(filename: str) -> str:
-    safe = download_filename(filename)
-    # The ASCII scrub runs over UTF-16 CODE UNITS, not code points: a surrogate
-    # pair is two units, so "emoji <U+1F642>.stl" yields filename="emoji __.stl"
-    # with TWO underscores. Iterating code points produces one and diverges.
-    units = safe.encode("utf-16-le", "surrogatepass")
-    quoted = "".join(
-        chr(unit) if 0x20 <= unit <= 0x7E else "_"
-        for unit in (units[i] | (units[i + 1] << 8) for i in range(0, len(units), 2))
-    )
-    star = encode_content_disposition_filename(safe)
-    return f'attachment; filename="{quoted}"; filename*=UTF-8\'\'{star}'
 
 
 # --- URLSearchParams form encoding ---------------------------------------

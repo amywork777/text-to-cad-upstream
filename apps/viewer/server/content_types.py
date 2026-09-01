@@ -25,7 +25,7 @@ _STATIC_CONTENT_TYPES = {
     ".wasm": "application/wasm",
 }
 
-# CAD assets (/__cad/asset, /__cad/download, /__cad/store). Unknown -> octet-stream.
+# CAD assets (/__cad/asset, /__cad/store). Unknown -> octet-stream.
 _ASSET_CONTENT_TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".mjs": "text/javascript; charset=utf-8",

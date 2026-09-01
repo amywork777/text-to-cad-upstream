@@ -17,7 +17,6 @@ export default function MeshFileSheet({
   selectedEntry = null,
   onOpenChange,
   onStartResize,
-  fileDownloadAvailable = false,
   viewerServerInfo = null,
   suppressDynamicMetadataStatus = false,
   statusItems = [],

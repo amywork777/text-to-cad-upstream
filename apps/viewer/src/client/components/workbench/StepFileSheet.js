@@ -475,7 +475,6 @@ export default function StepFileSheet({
   showAllHiddenParts,
   stepModule = null,
   stepAnimation = null,
-  fileDownloadAvailable = false,
   viewerServerInfo = null,
   suppressDynamicMetadataStatus = false,
   statusItems = [],

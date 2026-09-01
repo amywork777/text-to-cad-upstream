@@ -31,8 +31,8 @@ from pathlib import Path
 from .backend import ForbiddenAssetError, LocalAssetBackend
 from .cadgen_ops import create_cadgen_ops
 from .content_types import content_type_for_static_asset
-from .encoding import UriError, attachment_content_disposition, strict_decode_uri_component
-from .scanner import node_basename, path_relative
+from .encoding import UriError, strict_decode_uri_component
+from .scanner import path_relative
 from .store_paths import store_packages_dir
 from .tess_cache import read_tess_cache_batch, read_tess_cache_entry, write_tess_cache_entry
 
@@ -280,9 +280,7 @@ class CadApp:
                 elif pathname == "/__cad/store":
                     self._handle_store_asset(request, response, query)
                 elif pathname == "/__cad/asset":
-                    self._handle_asset(request, response, query, download=False)
-                elif pathname == "/__cad/download":
-                    self._handle_asset(request, response, query, download=True)
+                    self._handle_asset(request, response, query)
                 else:
                     # An unrecognised /__cad/* path is a bad API call, not a
                     # page. Falling through to the SPA answered typo'd and
@@ -417,7 +415,7 @@ class CadApp:
         content_type = self.backend.content_type_for_path(candidate) or "application/octet-stream"
         response.stream_file(candidate, stat_result, content_type)
 
-    def _handle_asset(self, request, response, query, *, download):
+    def _handle_asset(self, request, response, query):
         candidate = self.backend.asset_path_for_file_ref(query.get("file") or "")
         stat_result = None
         if candidate:
@@ -429,10 +427,7 @@ class CadApp:
             response.send_json(404, {"error": "Not found"})
             return
         content_type = self.backend.content_type_for_path(candidate) or "application/octet-stream"
-        disposition = (
-            attachment_content_disposition(node_basename(candidate)) if download else None
-        )
-        response.stream_file(candidate, stat_result, content_type, disposition=disposition)
+        response.stream_file(candidate, stat_result, content_type)
 
     def _handle_tess_get(self, request, response):
         """403 refused name, 404 miss, 200 hit.

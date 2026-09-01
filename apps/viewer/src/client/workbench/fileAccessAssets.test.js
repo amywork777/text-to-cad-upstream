@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   copyTargetsForFileAccessAsset,
-  downloadUrlForFileAsset,
   fileAccessAssetsForEntry
 } from "./fileAccessAssets.js";
 
@@ -55,17 +54,6 @@ test("file access assets are ARTIFACTS ONLY -- there is never a third source ass
   assert.equal(urdf.source, undefined);
   assert.equal(urdf.output.filename, "tom.urdf");
   assert.equal(urdf.output.rootRelativePath, "robots/tom/tom.urdf");
-});
-
-test("file access download URLs target the requested asset", () => {
-  assert.equal(
-    downloadUrlForFileAsset("assemblies/robot arm.step", "artifact"),
-    "/__cad/download?file=assemblies%2Frobot%20arm.step&asset=artifact"
-  );
-  assert.equal(
-    downloadUrlForFileAsset("assemblies/robot arm.step", "output", "https://cad.example.test/viewer"),
-    "https://cad.example.test/__cad/download?file=assemblies%2Frobot%20arm.step&asset=output"
-  );
 });
 
 test("file access copy targets include absolute and root-relative local paths", () => {

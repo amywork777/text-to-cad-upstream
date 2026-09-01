@@ -141,8 +141,8 @@ class AttackFixture:
         finally:
             conn.close()
 
-    def asset(self, file_param, *, route="asset"):
-        return self.request("GET", f"/__cad/{route}?file={quote(str(file_param), safe='')}")
+    def asset(self, file_param):
+        return self.request("GET", f"/__cad/asset?file={quote(str(file_param), safe='')}")
 
 
 class SecurityTestCase(unittest.TestCase):
@@ -168,6 +168,8 @@ class ControlCases(SecurityTestCase):
         self.assertEqual(body, b"public step\n")
         self.assertEqual(headers["content-type"], "application/step")
         self.assertEqual(headers["cache-control"], "no-store")
+        # The viewer serves bytes to render, never a save-as: no route attaches.
+        self.assertNotIn("content-disposition", {k.lower() for k in headers})
 
     def test_the_root_itself_is_contained_but_has_no_served_extension(self):
         status, _, body = self.fixture.asset(self.fixture.root)
@@ -231,12 +233,10 @@ class A_EncodedAndLayeredTraversal(SecurityTestCase):
 class B_NamePrefixSibling(SecurityTestCase):
     """jupyter_server GHSA-5789-5fc7-67v3: ``/base/root-evil`` beside ``/base/root``."""
 
-    def test_the_sibling_is_refused_on_both_asset_routes(self):
+    def test_the_sibling_is_refused_on_the_asset_route(self):
         ref = os.path.join(self.fixture.evil, "stolen.step")
-        for route in ("asset", "download"):
-            with self.subTest(route=route):
-                status, _, body = self.fixture.asset(ref, route=route)
-                self.assertDenied(status, body, {403})
+        status, _, body = self.fixture.asset(ref)
+        self.assertDenied(status, body, {403})
 
     def test_the_store_route_refuses_a_prefix_sibling_of_the_packages_tier(self):
         status, _, body = self.fixture.request(
@@ -359,23 +359,6 @@ class F_NullBytesAndControlCharacters(SecurityTestCase):
         self.assertIn(status, {403, 404})
         self.assertNotIn("x-evil", {k.lower() for k in headers})
 
-    @unittest.skipIf(
-        os.name == "nt",
-        "NTFS forbids control characters (and ':') in filenames, so this name can only exist on POSIX",
-    )
-    def test_a_download_filename_with_crlf_is_scrubbed_in_both_forms(self):
-        raw_name = "a\r\nX-Evil: 1.step"
-        path = os.path.join(self.fixture.root, raw_name)
-        Path(path).write_text("x", encoding="utf-8")
-        self.addCleanup(os.unlink, path)
-        status, headers, _ = self.fixture.asset(path, route="download")
-        self.assertEqual(status, 200)
-        disposition = headers["content-disposition"]
-        self.assertNotIn("\r", disposition)
-        self.assertNotIn("\n", disposition)
-        self.assertIn('filename="a__X-Evil: 1.step"', disposition)
-        self.assertNotIn("x-evil", {k.lower() for k in headers})
-
 
 class G_MalformedPercentEncoding(SecurityTestCase):
     def test_a_malformed_escape_does_not_take_the_server_down(self):
@@ -437,7 +420,6 @@ class I_TheTwoGatesCoverTheAssetRoutes(SecurityTestCase):
         targets = [
             "/__cad/catalog",
             f"/__cad/asset?file={ref}",
-            f"/__cad/download?file={ref}",
             f"/__cad/store?file={self.fixture.package_name}/assembly.json",
         ]
         for target in targets:
@@ -688,33 +670,6 @@ class StoreRouteConfinement(SecurityTestCase):
             "GET", f"/__cad/store?file={self.fixture.package_name}/assembly.json&v=zzz"
         )
         self.assertEqual(status, 200)
-
-
-class DownloadDisposition(SecurityTestCase):
-    def test_the_exact_dual_form(self):
-        status, headers, _ = self.fixture.asset(
-            os.path.join(self.fixture.root, "ok.step"), route="download"
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(
-            headers["content-disposition"],
-            "attachment; filename=\"ok.step\"; filename*=UTF-8''ok.step",
-        )
-
-    def test_a_non_ascii_name_scrubs_the_quoted_form_and_encodes_the_star_form(self):
-        path = os.path.join(self.fixture.root, "rén du (v2).step")
-        Path(path).write_text("x", encoding="utf-8")
-        self.addCleanup(os.unlink, path)
-        _, headers, _ = self.fixture.asset(path, route="download")
-        self.assertEqual(
-            headers["content-disposition"],
-            "attachment; filename=\"r_n du (v2).step\"; "
-            "filename*=UTF-8''r%C3%A9n%20du%20%28v2%29.step",
-        )
-
-    def test_the_asset_route_sets_no_disposition(self):
-        _, headers, _ = self.fixture.asset(os.path.join(self.fixture.root, "ok.step"))
-        self.assertNotIn("content-disposition", {k.lower() for k in headers})
 
 
 class CatalogOverHttp(SecurityTestCase):

@@ -182,9 +182,7 @@ function BreadcrumbDirectoryMenuItems({
   entryHasUrdf,
   activeStepArtifactGenerationFile = "",
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onCopyFileAssetReference
 }) {
   const items = listSidebarItems(directory);
@@ -213,9 +211,7 @@ function BreadcrumbDirectoryMenuItems({
           entryHasUrdf={entryHasUrdf}
           activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-          canCopyFileAssetLinks={canCopyFileAssetLinks}
           canCopyFileAssetPaths={canCopyFileAssetPaths}
-          onDownloadFileAsset={onDownloadFileAsset}
           onCopyFileAssetReference={onCopyFileAssetReference}
         />
       );
@@ -234,9 +230,7 @@ function BreadcrumbDirectoryMenuItems({
         entryHasUrdf={entryHasUrdf}
         activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
         stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-        canCopyFileAssetLinks={canCopyFileAssetLinks}
         canCopyFileAssetPaths={canCopyFileAssetPaths}
-        onDownloadFileAsset={onDownloadFileAsset}
         onCopyFileAssetReference={onCopyFileAssetReference}
       />
     );
@@ -268,9 +262,7 @@ function BreadcrumbDirectorySubMenu({
   entryHasUrdf,
   activeStepArtifactGenerationFile = "",
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onCopyFileAssetReference
 }) {
   const labelText = String(label || directory?.name || "Folder");
@@ -298,9 +290,7 @@ function BreadcrumbDirectorySubMenu({
             entryHasUrdf={entryHasUrdf}
             activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
             stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-            canCopyFileAssetLinks={canCopyFileAssetLinks}
             canCopyFileAssetPaths={canCopyFileAssetPaths}
-            onDownloadFileAsset={onDownloadFileAsset}
             onCopyFileAssetReference={onCopyFileAssetReference}
           />
         </DropdownMenuScrollArea>
@@ -322,9 +312,7 @@ function BreadcrumbNodeDropdown({
   activeStepArtifactGenerationFile = "",
   stepArtifactGenerationAvailable = true,
   selectedStepSourceStatus = null,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   filenameLoadActivity
@@ -360,9 +348,7 @@ function BreadcrumbNodeDropdown({
       <FileAccessContextMenu
         entry={node.entry}
         stepSourceStatus={selectedStepSourceStatus}
-        canCopyFileAssetLinks={canCopyFileAssetLinks}
         canCopyFileAssetPaths={canCopyFileAssetPaths}
-        onDownloadFileAsset={onDownloadFileAsset}
         onRevealInExplorerView={onRevealInExplorerView}
         onCopyFileAssetReference={onCopyFileAssetReference}
       >
@@ -404,9 +390,7 @@ function BreadcrumbNodeDropdown({
     <FileAccessContextMenu
       entry={node.entry}
       stepSourceStatus={selectedStepSourceStatus}
-      canCopyFileAssetLinks={canCopyFileAssetLinks}
       canCopyFileAssetPaths={canCopyFileAssetPaths}
-      onDownloadFileAsset={onDownloadFileAsset}
       onRevealInExplorerView={onRevealInExplorerView}
       onCopyFileAssetReference={onCopyFileAssetReference}
     >
@@ -430,9 +414,7 @@ function BreadcrumbNodeDropdown({
             entryHasUrdf={entryHasUrdf}
             activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
             stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-            canCopyFileAssetLinks={canCopyFileAssetLinks}
             canCopyFileAssetPaths={canCopyFileAssetPaths}
-            onDownloadFileAsset={onDownloadFileAsset}
             onCopyFileAssetReference={onCopyFileAssetReference}
           />
         </DropdownMenuScrollArea>
@@ -452,9 +434,7 @@ function BreadcrumbEllipsisDropdown({
   entryHasUrdf,
   activeStepArtifactGenerationFile = "",
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onCopyFileAssetReference,
   title
 }) {
@@ -493,9 +473,7 @@ function BreadcrumbEllipsisDropdown({
                   entryHasUrdf={entryHasUrdf}
                   activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                   stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                  canCopyFileAssetLinks={canCopyFileAssetLinks}
                   canCopyFileAssetPaths={canCopyFileAssetPaths}
-                  onDownloadFileAsset={onDownloadFileAsset}
                   onCopyFileAssetReference={onCopyFileAssetReference}
                 />
               );
@@ -515,9 +493,7 @@ function BreadcrumbEllipsisDropdown({
                   entryHasUrdf={entryHasUrdf}
                   activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                   stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                  canCopyFileAssetLinks={canCopyFileAssetLinks}
                   canCopyFileAssetPaths={canCopyFileAssetPaths}
-                  onDownloadFileAsset={onDownloadFileAsset}
                   onCopyFileAssetReference={onCopyFileAssetReference}
                 />
               );
@@ -1003,9 +979,7 @@ export default function CadWorkspaceTopBar({
   stepArtifactGenerationAvailable = true,
   filenameLoadActivity = null,
   selectedStepSourceStatus = null,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   fileSheetKind = "",
@@ -1097,9 +1071,7 @@ export default function CadWorkspaceTopBar({
                   activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                   stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
                   selectedStepSourceStatus={selectedStepSourceStatus}
-                  canCopyFileAssetLinks={canCopyFileAssetLinks}
                   canCopyFileAssetPaths={canCopyFileAssetPaths}
-                  onDownloadFileAsset={onDownloadFileAsset}
                   onRevealInExplorerView={onRevealInExplorerView}
                   onCopyFileAssetReference={onCopyFileAssetReference}
                   filenameLoadActivity={filenameLoadActivity}
@@ -1123,9 +1095,7 @@ export default function CadWorkspaceTopBar({
                       entryHasUrdf={entryHasUrdf}
                       activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                       stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                      canCopyFileAssetLinks={canCopyFileAssetLinks}
                       canCopyFileAssetPaths={canCopyFileAssetPaths}
-                      onDownloadFileAsset={onDownloadFileAsset}
                       onCopyFileAssetReference={onCopyFileAssetReference}
                       title={selectedFileTitle}
                     />
@@ -1143,9 +1113,7 @@ export default function CadWorkspaceTopBar({
                       activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                       stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
                       selectedStepSourceStatus={selectedStepSourceStatus}
-                      canCopyFileAssetLinks={canCopyFileAssetLinks}
                       canCopyFileAssetPaths={canCopyFileAssetPaths}
-                      onDownloadFileAsset={onDownloadFileAsset}
                       onRevealInExplorerView={onRevealInExplorerView}
                       onCopyFileAssetReference={onCopyFileAssetReference}
                       filenameLoadActivity={filenameLoadActivity}

@@ -53,9 +53,7 @@ function FileEntryButton({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   nested = false
@@ -114,9 +112,7 @@ function FileEntryButton({
   return (
     <FileAccessContextMenu
       entry={entry}
-      canCopyFileAssetLinks={canCopyFileAssetLinks}
       canCopyFileAssetPaths={canCopyFileAssetPaths}
-      onDownloadFileAsset={onDownloadFileAsset}
       onRevealInExplorerView={onRevealInExplorerView}
       onCopyFileAssetReference={onCopyFileAssetReference}
     >
@@ -141,9 +137,7 @@ function DirectoryNode({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   nested = false
@@ -205,9 +199,7 @@ function DirectoryNode({
                     activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                     stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                    canCopyFileAssetLinks={canCopyFileAssetLinks}
                     canCopyFileAssetPaths={canCopyFileAssetPaths}
-                    onDownloadFileAsset={onDownloadFileAsset}
                     onRevealInExplorerView={onRevealInExplorerView}
                     onCopyFileAssetReference={onCopyFileAssetReference}
                     nested={true}
@@ -229,9 +221,7 @@ function DirectoryNode({
                     activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                     stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                    canCopyFileAssetLinks={canCopyFileAssetLinks}
                     canCopyFileAssetPaths={canCopyFileAssetPaths}
-                    onDownloadFileAsset={onDownloadFileAsset}
                     onRevealInExplorerView={onRevealInExplorerView}
                     onCopyFileAssetReference={onCopyFileAssetReference}
                     nested={true}
@@ -286,9 +276,7 @@ function FileViewerContents({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   catalogHydrated = false,
@@ -342,9 +330,7 @@ function FileViewerContents({
                           activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                          canCopyFileAssetLinks={canCopyFileAssetLinks}
                           canCopyFileAssetPaths={canCopyFileAssetPaths}
-                          onDownloadFileAsset={onDownloadFileAsset}
                           onRevealInExplorerView={onRevealInExplorerView}
                           onCopyFileAssetReference={onCopyFileAssetReference}
                         />
@@ -365,9 +351,7 @@ function FileViewerContents({
                           activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
                           stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-                          canCopyFileAssetLinks={canCopyFileAssetLinks}
                           canCopyFileAssetPaths={canCopyFileAssetPaths}
-                          onDownloadFileAsset={onDownloadFileAsset}
                           onRevealInExplorerView={onRevealInExplorerView}
                           onCopyFileAssetReference={onCopyFileAssetReference}
                         />
@@ -412,9 +396,7 @@ export default function FileViewerSidebar({
   activeStepArtifactGenerationFile = "",
   loadingFiles = [],
   stepArtifactGenerationAvailable = true,
-  canCopyFileAssetLinks = false,
   canCopyFileAssetPaths = false,
-  onDownloadFileAsset,
   onRevealInExplorerView,
   onCopyFileAssetReference,
   catalogHydrated = false,
@@ -448,9 +430,7 @@ export default function FileViewerSidebar({
       activeStepArtifactGenerationFile={activeStepArtifactGenerationFile}
                     loadingFiles={loadingFiles}
       stepArtifactGenerationAvailable={stepArtifactGenerationAvailable}
-      canCopyFileAssetLinks={canCopyFileAssetLinks}
       canCopyFileAssetPaths={canCopyFileAssetPaths}
-      onDownloadFileAsset={onDownloadFileAsset}
       onRevealInExplorerView={onRevealInExplorerView}
       onCopyFileAssetReference={onCopyFileAssetReference}
       catalogHydrated={catalogHydrated}
