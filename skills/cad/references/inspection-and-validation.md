@@ -174,6 +174,34 @@ check reading a compound's total volume sees nothing wrong.
 Pass `--skip-self-intersection` on large assemblies if the boolean test
 dominates runtime.
 
+### `interfere`: do two parts occupy the same space?
+
+```bash
+cadgen step inspect interfere STEP/arm.step --tolerance 0.01
+cadgen step inspect interfere STEP/arm.step --refs o1.7            # inside one subassembly
+cadgen step inspect interfere STEP/arm.step --refs o1.3,o1.9       # two named parts, as wholes
+```
+
+`interfere` intersects every candidate pair of solids (a world-bbox reject runs
+first) and reports the pairs whose common volume exceeds `--tolerance` in mm^3.
+Touching faces yield hairline slivers, so the default is 1 mm^3; go lower for
+small parts.
+
+The unit of the verdict is the **part**: a direct component of the document
+root, or of the ref you name with `--refs` (the deepest common ancestor when you
+name several). A purchased servo arrives as a sub-assembly whose motor sits
+inside its case by construction, and a weldment is several solids in one
+product — bodies of one part overlap and always will, and a STEP document
+cannot tell a vendor sub-assembly from one you authored. So overlaps between
+bodies of the same part are still computed but reported separately, as
+`intraPartOverlaps` in `--json` and a per-part summary in text; they never
+fail the check. `clashes` — the ones that fail it — are between two different
+parts. To test a part's own bodies against each other, name that part alone:
+`--refs o1.18`.
+
+Fewer than two bodies, or all bodies in one part, is `INCONCLUSIVE` with
+`ok:false`, not a pass: nothing that could fail was tested.
+
 ## Reference discovery
 
 Compact facts and planes:

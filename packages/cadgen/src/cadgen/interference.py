@@ -7,7 +7,18 @@ visual concerns into measurements" -- which cannot establish the *absence* of a
 clash, and misses anything hidden inside the assembly entirely.
 
 This computes it directly: the boolean intersection volume of every candidate
-pair of leaf occurrences.
+pair of leaf occurrences (bodies).
+
+The unit of the VERDICT is the part, not the body. A part is a direct component
+of the selection's root — the document root by default, or the ref named with
+``--refs`` (the common ancestor when several are named). A purchased servo is a
+sub-assembly whose motor sits inside its case by construction; a weldment is
+several solids in one product. Their bodies overlap and always will, and a
+STEP document cannot say "these bodies are one purchased unit" — the vendor
+sub-assembly and an authored one look identical in XCAF. So pairs INSIDE one
+part are tested too, but reported separately (``intraPartOverlaps``) and never
+fail the check; the clashes that drive the verdict are between DIFFERENT
+parts. To test one part's bodies against each other, name that part alone.
 
 Two things make an O(n^2) pairwise test tractable on a 1400-occurrence assembly:
 
@@ -52,6 +63,9 @@ class Clash:
     b_name: str
     volume: float
     bbox: tuple[float, float, float, float, float, float]
+    # The part both bodies belong to, when they belong to the same one; None
+    # for a clash between two different parts (the kind that fails the check).
+    part: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -240,13 +254,15 @@ def _strip_ref_file_prefix(ref: str, entry_target: str) -> str:
     return remainder.strip()
 
 
-def _selected(
+def _resolve_selection(
     occurrences: list[Occurrence],
     refs: Iterable[str] | None,
     *,
     label_rows: list[dict[str, str]] | None = None,
     entry_target: str = "",
-) -> list[Occurrence]:
+) -> list[str]:
+    """The requested refs as numeric occurrence refs (labels resolved, file
+    prefixes checked and dropped). Empty when nothing was requested."""
     wanted = [
         stripped
         for stripped in (
@@ -255,7 +271,7 @@ def _selected(
         if stripped
     ]
     if not wanted:
-        return occurrences
+        return []
     # `validate` and `interfere` select against the build123d scene rather than the selector
     # index, so they need labels resolved here too. Without this a label ref matches nothing
     # and both report a clean run over zero occurrences -- a silent no-op, which is worse than
@@ -267,7 +283,12 @@ def _selected(
         if label_rows is not None
         else [{"id": occurrence.ref, "name": occurrence.name} for occurrence in occurrences]
     )
-    wanted = [str(resolved).lstrip("#") for resolved in resolve_label_selectors(wanted, alias_map)]
+    return [str(resolved).lstrip("#") for resolved in resolve_label_selectors(wanted, alias_map)]
+
+
+def _filter_selected(occurrences: list[Occurrence], wanted: list[str]) -> list[Occurrence]:
+    if not wanted:
+        return occurrences
     keep: list[Occurrence] = []
     for occurrence in occurrences:
         for ref in wanted:
@@ -278,56 +299,128 @@ def _selected(
     return keep
 
 
+def _selected(
+    occurrences: list[Occurrence],
+    refs: Iterable[str] | None,
+    *,
+    label_rows: list[dict[str, str]] | None = None,
+    entry_target: str = "",
+) -> list[Occurrence]:
+    return _filter_selected(
+        occurrences,
+        _resolve_selection(occurrences, refs, label_rows=label_rows, entry_target=entry_target),
+    )
+
+
+def selection_root(wanted: list[str], occurrences: list[Occurrence]) -> str:
+    """The node whose direct components are the PARTS of this check.
+
+    Nothing named: the document root (``o1``), or ``""`` when the document has
+    several roots (each root is then a part). Refs named: their deepest common
+    ancestor — one ref IS the root, so ``--refs o1.7`` tests the components of
+    ``o1.7`` against each other, while ``--refs o1.3,o1.9`` tests the two named
+    parts as wholes.
+    """
+    if not wanted:
+        tops = sorted({occurrence.ref.split(".")[0] for occurrence in occurrences})
+        return tops[0] if len(tops) == 1 else ""
+    segments = [ref.split(".") for ref in wanted]
+    common: list[str] = []
+    for column in zip(*segments):
+        if any(segment != column[0] for segment in column):
+            break
+        common.append(column[0])
+    return ".".join(common)
+
+
+def part_of(ref: str, root: str) -> str:
+    """The part ``ref`` belongs to: the direct component of ``root`` above it
+    (``ref`` itself when it IS that component, or lies outside ``root``)."""
+    if not root:
+        return ref.split(".")[0]
+    if ref == root or not ref.startswith(f"{root}."):
+        return ref
+    return f"{root}.{ref[len(root) + 1:].split('.')[0]}"
+
+
+def part_assignments(occurrences: list[Occurrence], root: str) -> dict[str, str]:
+    """``{body ref: part ref}`` for every occurrence, relative to ``root``."""
+    return {occurrence.ref: part_of(occurrence.ref, root) for occurrence in occurrences}
+
+
 def find_clashes(
     occurrences: list[Occurrence],
     *,
     tolerance: float = DEFAULT_TOLERANCE_MM3,
     max_pairs: int | None = None,
+    parts: dict[str, str] | None = None,
 ) -> tuple[list[Clash], dict[str, int]]:
     """Pairwise interference over already-placed occurrences.
 
-    Returns the clashes plus counters, so a caller can tell "nothing overlapped"
-    apart from "we never actually tested anything".
+    Returns the overlaps plus counters, so a caller can tell "nothing overlapped"
+    apart from "we never actually tested anything". ``parts`` maps each body's
+    ref to its part (see :func:`part_assignments`); an overlap between two
+    bodies of one part comes back with ``Clash.part`` set so the caller can
+    keep it off the verdict. Without ``parts`` every body is its own part.
+    Cross-part pairs are tested FIRST, so a ``max_pairs`` budget is spent on
+    the pairs that can fail the check before the ones that cannot.
     """
     clashes: list[Clash] = []
+    part_map = parts or {}
+
+    def part_ref(occurrence: Occurrence) -> str:
+        return part_map.get(occurrence.ref, occurrence.ref)
+
     stats = {
         "occurrences": len(occurrences),
+        "parts": len({part_ref(occurrence) for occurrence in occurrences}),
         "pairs_total": 0,
+        "pairs_intra_part": 0,
         "pairs_tested": 0,
         "pairs_skipped_bbox": 0,
         "pairs_truncated": 0,
     }
     count = len(occurrences)
+    cross_pairs: list[tuple[Occurrence, Occurrence, str | None]] = []
+    intra_pairs: list[tuple[Occurrence, Occurrence, str | None]] = []
     for i in range(count):
         first = occurrences[i]
         for j in range(i + 1, count):
             second = occurrences[j]
             stats["pairs_total"] += 1
-            if not _boxes_overlap(first.bbox, second.bbox):
-                stats["pairs_skipped_bbox"] += 1
-                continue
-            if max_pairs is not None and stats["pairs_tested"] >= max_pairs:
-                stats["pairs_truncated"] += 1
-                continue
-            stats["pairs_tested"] += 1
-            common = _intersection(first.shape, second.shape)
-            if common is None:
-                continue
-            try:
-                volume = abs(_solid_volume(common))
-            except Exception:  # noqa: BLE001 - a degenerate common shape is not a clash
-                continue
-            if volume > tolerance:
-                clashes.append(
-                    Clash(
-                        a_ref=first.ref,
-                        a_name=first.name,
-                        b_ref=second.ref,
-                        b_name=second.name,
-                        volume=volume,
-                        bbox=_shape_bbox(common),
-                    )
+            shared = part_ref(first) if part_ref(first) == part_ref(second) else None
+            if shared is None:
+                cross_pairs.append((first, second, None))
+            else:
+                stats["pairs_intra_part"] += 1
+                intra_pairs.append((first, second, shared))
+    for first, second, shared in (*cross_pairs, *intra_pairs):
+        if not _boxes_overlap(first.bbox, second.bbox):
+            stats["pairs_skipped_bbox"] += 1
+            continue
+        if max_pairs is not None and stats["pairs_tested"] >= max_pairs:
+            stats["pairs_truncated"] += 1
+            continue
+        stats["pairs_tested"] += 1
+        common = _intersection(first.shape, second.shape)
+        if common is None:
+            continue
+        try:
+            volume = abs(_solid_volume(common))
+        except Exception:  # noqa: BLE001 - a degenerate common shape is not a clash
+            continue
+        if volume > tolerance:
+            clashes.append(
+                Clash(
+                    a_ref=first.ref,
+                    a_name=first.name,
+                    b_ref=second.ref,
+                    b_name=second.name,
+                    volume=volume,
+                    bbox=_shape_bbox(common),
+                    part=shared,
                 )
+            )
     clashes.sort(key=lambda clash: clash.volume, reverse=True)
     return clashes, stats
 
@@ -358,15 +451,29 @@ def inspect_interference(
     )
 
     all_occurrences = occurrences_from_scene(scene)
-    occurrences = _selected(
-        all_occurrences, refs, label_rows=scene_label_rows(scene), entry_target=str(entry)
+    label_rows = scene_label_rows(scene)
+    names = {row["id"]: row["name"] for row in label_rows}
+    wanted = _resolve_selection(all_occurrences, refs, label_rows=label_rows, entry_target=str(entry))
+    occurrences = _filter_selected(all_occurrences, wanted)
+    root = selection_root(wanted, occurrences)
+    parts = part_assignments(occurrences, root)
+    clashes, stats = find_clashes(
+        occurrences, tolerance=tolerance, max_pairs=max_pairs, parts=parts
     )
-    clashes, stats = find_clashes(occurrences, tolerance=tolerance, max_pairs=max_pairs)
+    # A part's own bodies overlapping is the part's own business (a motor
+    # modelled inside its case); only a clash between two DIFFERENT parts fails
+    # the check. Intra-part overlaps are still reported, separately.
+    cross_part = [clash for clash in clashes if clash.part is None]
+    intra_part = [clash for clash in clashes if clash.part is not None]
+    bodies_per_part: dict[str, int] = {}
+    for part in parts.values():
+        bodies_per_part[part] = bodies_per_part.get(part, 0) + 1
     # Zero pairs is not a pass: it means nothing was compared. Fewer than two
     # occurrences leaves no pair to test, so the result is INCONCLUSIVE — a
     # safety check must not render "we tested nothing" in the same green as
     # "we tested everything and found nothing". `ok` goes false so callers
-    # (and exit codes) cannot mistake the two.
+    # (and exit codes) cannot mistake the two. One PART is the same story at
+    # the level the verdict is drawn: every pair is intra-part, none can fail.
     inconclusive_reason: str | None = None
     if len(occurrences) < 2:
         if refs and len(occurrences) < len(all_occurrences):
@@ -379,14 +486,35 @@ def inspect_interference(
                 f"the document presents {len(occurrences)} leaf occurrence(s); "
                 "at least two are needed to test a pair"
             )
+    elif len(bodies_per_part) < 2:
+        (only_part,) = bodies_per_part
+        inconclusive_reason = (
+            f"all {len(occurrences)} bodies belong to one part ({only_part}); interfere tests "
+            f"parts against each other — pass --refs {only_part} to test its components "
+            "against one another"
+        )
     return {
-        "ok": not clashes and inconclusive_reason is None,
+        "ok": not cross_part and inconclusive_reason is None,
         "entry": target.cad_path,
         "tolerance": tolerance,
+        "root": {"ref": root, "name": names.get(root, "")},
+        "parts": [
+            {"ref": part, "name": names.get(part, part), "bodies": bodies}
+            for part, bodies in sorted(bodies_per_part.items(), key=lambda item: _ref_sort_key(item[0]))
+        ],
         "stats": stats,
         "conclusive": inconclusive_reason is None,
         **({"inconclusiveReason": inconclusive_reason} if inconclusive_reason else {}),
-        "clashCount": len(clashes),
-        "clashes": [clash.as_dict() for clash in clashes],
+        "clashCount": len(cross_part),
+        "clashes": [clash.as_dict() for clash in cross_part],
+        "intraPartOverlapCount": len(intra_part),
+        "intraPartOverlaps": [
+            {**clash.as_dict(), "part": {"ref": clash.part, "name": names.get(clash.part, clash.part)}}
+            for clash in intra_part
+        ],
         "errors": [],
     }
+
+
+def _ref_sort_key(ref: str) -> tuple:
+    return tuple(int(part) if part.isdigit() else part for part in ref.lstrip("o").split("."))

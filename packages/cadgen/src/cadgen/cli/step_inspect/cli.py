@@ -600,34 +600,70 @@ def _format_interfere_text(result: dict, *, quiet: bool = False, verbose: bool =
         return "\n".join(str(error.get("message") or error) for error in errors)
     stats = result.get("stats") or {}
     clashes = result.get("clashes") or []
+    intra = result.get("intraPartOverlaps") or []
+    root = result.get("root") or {}
     lines = [
         f"entry     : {result.get('entry', '')}",
         f"tolerance : {result.get('tolerance')} mm^3",
-        (
-            f"pairs     : {stats.get('pairs_tested', 0)} tested, "
-            f"{stats.get('pairs_skipped_bbox', 0)} rejected by bbox, "
-            f"{stats.get('pairs_total', 0)} total "
-            f"({stats.get('occurrences', 0)} occurrences)"
-        ),
     ]
+    if "parts" in stats:
+        root_label = (
+            f"{root.get('name') or ''} [{root.get('ref')}]".strip()
+            if root.get("ref")
+            else "the document roots"
+        )
+        lines.append(
+            f"parts     : {stats.get('parts', 0)} components of {root_label}; "
+            "a part's own bodies are not clashes"
+        )
+    lines.append(
+        f"pairs     : {stats.get('pairs_tested', 0)} tested, "
+        f"{stats.get('pairs_skipped_bbox', 0)} rejected by bbox, "
+        f"{stats.get('pairs_total', 0)} total "
+        f"({stats.get('occurrences', 0)} bodies)"
+    )
     truncated = int(stats.get("pairs_truncated", 0) or 0)
     if truncated:
         lines.append(f"TRUNCATED : {truncated} pairs were not tested (--max-pairs)")
-    if not result.get("conclusive", True):
-        reason = result.get("inconclusiveReason") or "no pairs were tested"
-        lines.append(f"result    : INCONCLUSIVE - {reason}")
-        return "\n".join(lines)
-    if not clashes:
-        lines.append("result    : PASS - no interpenetration above tolerance")
-        return "\n".join(lines)
-    lines.append(f"result    : FAIL - {len(clashes)} clash(es)")
-    for clash in clashes:
+
+    def _clash_line(clash: dict) -> str:
         a = clash.get("a") or {}
         b = clash.get("b") or {}
-        lines.append(
+        return (
             f"  {clash.get('volume', 0.0):12.1f} mm^3  "
             f"{a.get('name', '')} [{a.get('ref', '')}]  x  {b.get('name', '')} [{b.get('ref', '')}]"
         )
+
+    def _intra_summary() -> list[str]:
+        # Grouped per part: the count is what matters to the verdict's reader,
+        # and 300 records of a servo's motor inside its case belong in --json.
+        if not intra:
+            return []
+        by_part: dict[str, list[dict]] = {}
+        for overlap in intra:
+            part = overlap.get("part") or {}
+            by_part.setdefault(f"{part.get('name', '')} [{part.get('ref', '')}]", []).append(overlap)
+        out = [
+            f"intra-part: {len(intra)} overlap(s) between bodies of one part in {len(by_part)} part(s) "
+            "- not clashes; --refs <part> tests one part's bodies against each other"
+        ]
+        for label, overlaps in by_part.items():
+            largest = max(float(o.get("volume", 0.0) or 0.0) for o in overlaps)
+            out.append(f"  {label}: {len(overlaps)} overlap(s), largest {largest:.1f} mm^3")
+        return out
+
+    if not result.get("conclusive", True):
+        reason = result.get("inconclusiveReason") or "no pairs were tested"
+        lines.append(f"result    : INCONCLUSIVE - {reason}")
+        lines.extend(_intra_summary())
+        return "\n".join(lines)
+    if not clashes:
+        lines.append("result    : PASS - no interpenetration between parts above tolerance")
+        lines.extend(_intra_summary())
+        return "\n".join(lines)
+    lines.append(f"result    : FAIL - {len(clashes)} clash(es)")
+    lines.extend(_clash_line(clash) for clash in clashes)
+    lines.extend(_intra_summary())
     return "\n".join(lines)
 
 
