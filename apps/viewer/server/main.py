@@ -245,13 +245,6 @@ def parse_args(argv: list[str]) -> dict:
     return args
 
 
-def _path_inside(candidate: str, container: str) -> bool:
-    relative = os.path.relpath(candidate, container)
-    return relative == "" or (
-        relative != ".." and not relative.startswith(f"..{os.sep}") and not os.path.isabs(relative)
-    )
-
-
 def served_directory() -> str:
     """The directory this Viewer serves: the cwd, full stop.
 
