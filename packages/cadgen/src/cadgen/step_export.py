@@ -48,6 +48,14 @@ def _attach_assembly_mates(scene: LoadedStepScene, shape: Any) -> LoadedStepScen
     assembly_mates = _collect_assembly_mates(shape)
     if assembly_mates:
         scene.assembly_mates = assembly_mates
+    # compound_from_instances bakes placements at the OCCT level, so the
+    # compound has no build123d children and _create_bin_xcaf_doc flattens it
+    # to a single shape. Its assembly hierarchy lives in the explicit
+    # occurrence tree; attach it so scene consumers (interference) can walk
+    # the same occurrence namespace the packager and the on-disk STEP use.
+    occurrence_tree = getattr(shape, "_occurrence_tree", None)
+    if occurrence_tree is not None:
+        scene.instance_occurrence_tree = occurrence_tree
     return scene
 
 

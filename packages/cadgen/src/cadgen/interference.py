@@ -107,10 +107,53 @@ def _intersection(a: Any, b: Any) -> Any | None:
     return algo.Shape()
 
 
+def _occurrences_from_instance_tree(tree: dict) -> list[Occurrence]:
+    """Placed leaf occurrences from a ``compound_from_instances`` occurrence tree.
+
+    A generator built around ``compound_from_instances`` places instances at the
+    OCCT level, so the in-memory scene's XCAF walk sees ONE childless leaf — a
+    26-instance arm came back as a single occurrence, zero pairs were tested,
+    and the check passed green. The explicit occurrence tree carries what the
+    packager (and the on-disk STEP) use: leaf shapes plus accumulated world
+    locations, in the same ``o1.N`` namespace ``inspect refs`` resolves.
+    """
+    from OCP.TopLoc import TopLoc_Location
+
+    out: list[Occurrence] = []
+
+    def walk(node: dict) -> None:
+        if node.get("leaf"):
+            shape_obj = node.get("shape")
+            wrapped = getattr(shape_obj, "wrapped", shape_obj)
+            if wrapped is None:
+                return
+            # world_loc already accumulates the prototype's own location
+            # (instances._occurrence_subtree), so apply it to the UNLOCATED
+            # shape — the same convention the packager's transform uses.
+            placed = wrapped.Located(TopLoc_Location())
+            world = node.get("world_loc")
+            loc = world if isinstance(world, TopLoc_Location) else getattr(world, "wrapped", None)
+            if loc is not None:
+                placed = placed.Moved(loc)
+            ref = str(node.get("id") or "")
+            name = str(node.get("name") or ref)
+            out.append(Occurrence(ref=ref, name=name, shape=placed, bbox=_shape_bbox(placed)))
+            return
+        for child in node.get("children") or []:
+            walk(child)
+
+    walk(tree)
+    return out
+
+
 def occurrences_from_scene(scene: Any) -> list[Occurrence]:
     """Flatten a LoadedStepScene into placed leaf occurrences."""
     from OCP.TopLoc import TopLoc_Location
     from OCP.TopoDS import TopoDS_Shape
+
+    instance_tree = getattr(scene, "instance_occurrence_tree", None)
+    if instance_tree is not None:
+        return _occurrences_from_instance_tree(instance_tree)
 
     out: list[Occurrence] = []
 
@@ -150,6 +193,21 @@ def scene_label_rows(scene: Any) -> list[dict[str, str]]:
     resolve here too or the same ref works on four CLIs and fails on two.
     """
     rows: list[dict[str, str]] = []
+
+    instance_tree = getattr(scene, "instance_occurrence_tree", None)
+    if instance_tree is not None:
+        # Same tree the occurrence flatten uses — the two namespaces must
+        # agree or a label resolves to a ref no occurrence carries.
+        def walk_tree(node: dict) -> None:
+            ref = str(node.get("id") or "")
+            name = str(node.get("name") or "")
+            if ref and name:
+                rows.append({"id": ref, "name": name})
+            for child in node.get("children") or []:
+                walk_tree(child)
+
+        walk_tree(instance_tree)
+        return rows
 
     def walk(node: Any, path: tuple[int, ...]) -> None:
         ref = "o" + ".".join(str(part) for part in path)
@@ -299,15 +357,35 @@ def inspect_interference(
         logger=logger,
     )
 
+    all_occurrences = occurrences_from_scene(scene)
     occurrences = _selected(
-        occurrences_from_scene(scene), refs, label_rows=scene_label_rows(scene), entry_target=str(entry)
+        all_occurrences, refs, label_rows=scene_label_rows(scene), entry_target=str(entry)
     )
     clashes, stats = find_clashes(occurrences, tolerance=tolerance, max_pairs=max_pairs)
+    # Zero pairs is not a pass: it means nothing was compared. Fewer than two
+    # occurrences leaves no pair to test, so the result is INCONCLUSIVE — a
+    # safety check must not render "we tested nothing" in the same green as
+    # "we tested everything and found nothing". `ok` goes false so callers
+    # (and exit codes) cannot mistake the two.
+    inconclusive_reason: str | None = None
+    if len(occurrences) < 2:
+        if refs and len(occurrences) < len(all_occurrences):
+            inconclusive_reason = (
+                f"--refs selected {len(occurrences)} of {len(all_occurrences)} occurrence(s); "
+                "at least two are needed to test a pair"
+            )
+        else:
+            inconclusive_reason = (
+                f"the document presents {len(occurrences)} leaf occurrence(s); "
+                "at least two are needed to test a pair"
+            )
     return {
-        "ok": not clashes,
+        "ok": not clashes and inconclusive_reason is None,
         "entry": target.cad_path,
         "tolerance": tolerance,
         "stats": stats,
+        "conclusive": inconclusive_reason is None,
+        **({"inconclusiveReason": inconclusive_reason} if inconclusive_reason else {}),
         "clashCount": len(clashes),
         "clashes": [clash.as_dict() for clash in clashes],
         "errors": [],

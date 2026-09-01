@@ -613,6 +613,10 @@ def _format_interfere_text(result: dict, *, quiet: bool = False, verbose: bool =
     truncated = int(stats.get("pairs_truncated", 0) or 0)
     if truncated:
         lines.append(f"TRUNCATED : {truncated} pairs were not tested (--max-pairs)")
+    if not result.get("conclusive", True):
+        reason = result.get("inconclusiveReason") or "no pairs were tested"
+        lines.append(f"result    : INCONCLUSIVE - {reason}")
+        return "\n".join(lines)
     if not clashes:
         lines.append("result    : PASS - no interpenetration above tolerance")
         return "\n".join(lines)
