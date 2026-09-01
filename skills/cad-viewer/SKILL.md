@@ -48,8 +48,10 @@ place cadgen is looked for.)
 
 **Always pass an absolute `--root`.** The Viewer runs from an arbitrary working
 directory — usually wherever the skill happens to be installed, not the model
-directory — so a relative one resolves against the wrong place. `--root` defaults to
-the current directory, which is rarely what you want here.
+directory — so a relative one resolves against the wrong place. Omitting it
+falls back to the current directory, and when that lands inside the Viewer's
+own files the launcher refuses rather than serving them, so a bare launch from
+this skill directory exits 2 asking for `--root`.
 
 Flags: `--json` prints the machine-readable last stdout line
 (`{"url", "port", "action": "started"|"reused"}`) — always pass it and take the

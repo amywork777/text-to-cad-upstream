@@ -521,9 +521,23 @@ class ArgumentGrammar(unittest.TestCase):
         )
         self.assertNotEqual(resolved, str(APP_ROOT))
 
+    def test_it_refuses_rather_than_serving_the_app_when_every_candidate_is_inside(self) -> None:
+        # The guard used to reject these candidates and then return the cwd
+        # anyway, so it only held when a candidate outside the app existed. In a
+        # skill bundle that meant an agent launching from the skill directory
+        # served the skill.
+        for cwd in (str(APP_ROOT), str(APP_ROOT / "server")):
+            with self.subTest(cwd=cwd):
+                self.assertEqual(
+                    self.main_module.resolve_directory_root(root="", env={}, cwd=cwd), ""
+                )
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_an_explicit_root_still_wins_from_inside_the_app(self) -> None:
+        target = str(APP_ROOT.parent)
+        self.assertEqual(
+            self.main_module.resolve_directory_root(root=target, env={}, cwd=str(APP_ROOT)),
+            target,
+        )
 
 
 class ArgumentSurface(unittest.TestCase):
@@ -559,3 +573,7 @@ class ArgumentSurface(unittest.TestCase):
         # The FIRST unknown token, not the value that trailed it.
         self.assertIn("unknown argument: --dir", result.stderr)
         self.assertNotIn("/tmp", result.stderr.splitlines()[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

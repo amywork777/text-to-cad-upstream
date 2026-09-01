@@ -264,6 +264,14 @@ def resolve_directory_root(*, root: str = "", env=None, cwd: str | None = None) 
 
     The refusal is a footgun guard, not a boundary: an explicit ``--root``
     naming the viewer app is accepted without complaint.
+
+    Returns "" when every candidate lands inside the viewer app — the caller
+    must then demand an explicit ``--root``. Falling back to the cwd here (as
+    this did, in both this port and the JS backend before it) handed back the
+    very directory the loop had just rejected, so the guard only worked when it
+    was not needed. It matters most where the app is a SKILL BUNDLE: an agent
+    launching the bundled server from the skill directory would otherwise serve
+    the skill.
     """
     env = os.environ if env is None else env
     cwd = os.getcwd() if cwd is None else cwd
@@ -275,7 +283,7 @@ def resolve_directory_root(*, root: str = "", env=None, cwd: str | None = None) 
         resolved = os.path.abspath(candidate)
         if resolved != VIEWER_ROOT and not _path_inside(resolved, VIEWER_ROOT):
             return resolved
-    return os.path.abspath(cwd)
+    return ""
 
 
 def resolve_dist_dir(explicit: str) -> str:
@@ -550,6 +558,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     directory = resolve_directory_root(root=args["root"])
+    if not directory:
+        _err("refusing to serve the CAD Viewer's own directory\n")
+        _err("name the directory of CAD artifacts to serve: --root <dir>\n")
+        return 2
     if not os.path.isdir(directory):
         # Booting a viewer whose root does not exist would answer every request
         # with a 404 that looks like a missing model rather than a missing root.
