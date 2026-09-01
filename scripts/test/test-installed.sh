@@ -133,11 +133,21 @@ from cadgen import step, stl
 def probe():
     return bd.Box(10, 10, 10)
 PY
-"$VENV/bin/cadgen" step build models/probe.py >"$WORK/build.log" 2>&1 \
-  || { cat "$WORK/build.log" >&2; fail "cadgen step build"; }
+# Running the script IS the build: a model script is the one source door, and
+# no CLI verb takes its place.
+"$VENV/bin/python" models/probe.py >"$WORK/build.log" 2>&1 \
+  || { cat "$WORK/build.log" >&2; fail "python <model>.py"; }
 [ -f "$EMPTY/models/probe.step" ] \
-  || { cat "$WORK/build.log" >&2; fail "step build produced no STEP document"; }
+  || { cat "$WORK/build.log" >&2; fail "the model script produced no STEP document"; }
 echo "   built a STEP document and package"
+
+step "Re-emit the document through the build door"
+"$VENV/bin/cadgen" step build models/probe.step models/reemit.step \
+  >"$WORK/reemit.log" 2>&1 \
+  || { cat "$WORK/reemit.log" >&2; fail "cadgen step build"; }
+[ -f "$EMPTY/models/reemit.step" ] \
+  || { cat "$WORK/reemit.log" >&2; fail "step build produced no STEP document"; }
+echo "   re-emitted a document to a new document"
 
 step "Export it through a format door"
 rm -f "$EMPTY/models/probe.stl"
