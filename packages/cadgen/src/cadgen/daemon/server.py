@@ -565,10 +565,18 @@ cadgen step inspect, cadgen snapshot. Each of those takes --help.\
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Without this, ANY argument -- including --help, and including a typo on a real daemon
-    # start -- fell through to serve() and bound the socket, so the caller got a resident
+    # Without this, ANY argument -- including a typo on a real daemon start --
+    # fell through to serve() and bound the socket, so the caller got a resident
     # server for the full idle timeout instead of an answer.
+    #
+    # --help is the one argument that IS an answer. `daemon` is a registered
+    # `cadgen` command, and every registered command answers --help on stdout
+    # with 0 -- a help request that exits 2 reads as "this command is broken",
+    # and it failed the installed-mode check, which walks the registry.
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] in {"-h", "--help"}:
+        print(USAGE)
+        return 0
     if args:
         print(USAGE, file=sys.stderr)
         return 2

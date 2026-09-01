@@ -40,6 +40,10 @@ class _StubWorker:
         self.busy = False
         self.jobs_served = 0
         self.last_used = 0.0
+        # The real Worker stamps itself from the same counter: recency ORDER is
+        # the sequence, not the clock, because time.monotonic() is ~16 ms coarse
+        # on Windows and a burst of acquire/release cycles tied on it.
+        self.use_seq = next(pool_mod._USE_SEQUENCE)
         self.killed = False
         self.project = ""
         self._alive = True
@@ -181,19 +185,41 @@ class ProjectBinding(_PoolFixture):
         self.assertLessEqual(len(resident), 4, "30 projects must not mean 30 live workers")
         self.assertGreater(self.pool.snapshot()["evictions"], 0)
 
-    def test_a_new_project_evicts_the_lru_and_respawns(self):
+    def _evict_lru_of_three_projects(self):
         with self._cap(2):
             a = self.pool.acquire("/models/a/src")
             b = self.pool.acquire("/models/b/src")
             self.pool.release(a)
             self.pool.release(b)
-            a2 = self.pool.acquire("/models/a/src")  # refresh a's last_used
+            a2 = self.pool.acquire("/models/a/src")  # refresh a's recency
             self.pool.release(a2)
             c = self.pool.acquire("/models/c/src")
+        return a, b, c
+
+    def test_a_new_project_evicts_the_lru_and_respawns(self):
+        a, b, c = self._evict_lru_of_three_projects()
         self.assertTrue(b.killed, "the LRU project's worker must be evicted, not rebound")
         self.assertNotIn(c.pid, {a.pid, b.pid}, "a new project gets a FRESH process")
         self.assertEqual(c.project, "/models/c/src")
         self.assertEqual(self.pool.snapshot()["evictions"], 1)
+        self.pool.release(c)
+
+    def test_the_lru_choice_does_not_depend_on_the_clock_resolution(self):
+        """Recency is an ORDER, and the pool must not read it off a coarse clock.
+
+        time.monotonic() advances in ~16 ms steps on Windows, so the sequence
+        above -- three acquire/release cycles with no work between them -- landed
+        entirely inside one tick, every worker carried the same timestamp, and
+        min() broke the tie by list position: it evicted the worker whose use had
+        just been REFRESHED and kept the actually-least-recent one. Freezing the
+        clock is the same condition with the resolution taken to its limit, so
+        this reproduces on every platform instead of only one.
+        """
+        with mock.patch.object(pool_mod.time, "monotonic", lambda: 1234.0):
+            a, b, c = self._evict_lru_of_three_projects()
+        self.assertTrue(b.killed, "a tied clock must not decide which project is evicted")
+        self.assertFalse(a.killed, "the refreshed project's worker is the one to KEEP")
+        self.assertNotIn(c.pid, {a.pid, b.pid})
         self.pool.release(c)
 
     def test_a_cap_of_one_respawns_per_project_and_never_reuses(self):

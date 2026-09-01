@@ -37,6 +37,7 @@ Sizing follows the machine rather than a constant. See max_workers().
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import subprocess
@@ -48,6 +49,15 @@ import time
 DEFAULT_RECYCLE_AFTER = 200
 DEFAULT_WORKER_IDLE_SECONDS = 300.0
 _SPAWN_TIMEOUT_SECONDS = 120.0
+
+# Recency ORDER comes from this counter, not from the clock. time.monotonic()'s
+# resolution is ~16 ms on Windows, so a burst of acquire/release cycles -- which
+# is what a pool at its cap sees -- stamped several workers with the same
+# instant, and min() then broke the tie by list position: the freshly refreshed
+# worker was evicted and the actually-least-recent one kept. A strictly
+# increasing sequence has no ties on any platform. ``last_used`` stays a clock
+# because reap_idle needs an ELAPSED time, which a counter cannot give.
+_USE_SEQUENCE = itertools.count()
 
 # A warm worker measures ~281 MB resident on macOS/arm64 once it has served a job (the OCP
 # import is lazy, so a freshly spawned one is ~25 MB until then). Adding a SECOND worker
@@ -211,6 +221,7 @@ class Worker:
         self.jobs_served = 0
         self.busy = False
         self.last_used = time.monotonic()
+        self.use_seq = next(_USE_SEQUENCE)
         # The PROJECT this worker belongs to: the directory holding the model
         # script of the first job it served. Set once and never changed --
         # a worker executes exactly one project's code for its whole life.
@@ -427,13 +438,13 @@ class Pool:
                 return worker
             if project:
                 continue  # bound elsewhere, and rebinding is what this class refuses
-            if best is None or worker.last_used < best.last_used:
+            if best is None or worker.use_seq < best.use_seq:
                 best = worker
         return best
 
     def _lru_idle_worker_locked(self) -> Worker | None:
         idle = [worker for worker in self._workers if not worker.busy]
-        return min(idle, key=lambda worker: worker.last_used) if idle else None
+        return min(idle, key=lambda worker: worker.use_seq) if idle else None
 
     def _reserve_spawn_locked(self, project: str) -> None:
         self._pending += 1
@@ -470,6 +481,7 @@ class Pool:
         with self._cv:
             worker.busy = False
             worker.last_used = time.monotonic()
+            worker.use_seq = next(_USE_SEQUENCE)
             worker.jobs_served += 1
             recycle_after = _recycle_after()
             if not healthy or not worker.alive():

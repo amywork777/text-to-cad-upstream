@@ -235,11 +235,24 @@ class StepExportTargetTests(unittest.TestCase):
                 absolute_target.resolve(),
             )
 
-            with mock.patch.dict(os.environ, {"HOME": str(home)}, clear=False):
+            # Both spellings of "the home directory": ``~`` expansion reads
+            # HOME on POSIX and USERPROFILE (then HOMEDRIVE+HOMEPATH) on
+            # Windows, so a HOME-only sandbox silently expanded to the real
+            # user profile there. Both sides are resolved before comparing:
+            # Windows hands back 8.3 short components (``RUNNER~1``) in some
+            # environment values and the long form everywhere else.
+            drive, tail = os.path.splitdrive(str(home))
+            sandbox_home = {
+                "HOME": str(home),
+                "USERPROFILE": str(home),
+                "HOMEDRIVE": drive,
+                "HOMEPATH": tail,
+            }
+            with mock.patch.dict(os.environ, sandbox_home, clear=False):
                 self.assertEqual(
                     step_export_target._resolve_export_output(
                         "stl", "~/tilde.stl", logical_step=logical_step
-                    ),
+                    ).resolve(),
                     (home / "tilde.stl").resolve(),
                 )
 

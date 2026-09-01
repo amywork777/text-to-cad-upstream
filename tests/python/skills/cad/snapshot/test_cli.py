@@ -189,12 +189,13 @@ class SnapshotCliTests(unittest.TestCase):
             ]
         )
 
-        # TARGET is a Path parameter on the generated parser, so it reaches the
-        # job in the NATIVE spelling; build the expectation the same way.
+        # TARGET and OUT are both Path parameters on the generated parser, so
+        # they reach the job in the NATIVE spelling; build the expectations the
+        # same way rather than hardcoding the POSIX separator.
         self.assertEqual(job["input"], str(Path("models/examples/STEP/cylindrical_cap.step")))
         self.assertNotIn("workspaceRoot", job)
         self.assertNotIn("rootDir", job)
-        self.assertEqual(job["outputs"][0]["path"], "tmp/cap.png")
+        self.assertEqual(job["outputs"][0]["path"], str(Path("tmp/cap.png")))
         self.assertEqual(job["display"], {"mode": "wireframe"})
         self.assertEqual(job["render"]["sizeProfile"], "simple")
 

@@ -1018,17 +1018,25 @@ def drawing_mesh_path(source: Path, *, force: bool = False) -> Path:
         capture_output=True,
         text=True,
     )
-    payload = {}
-    for line in reversed(proc.stdout.splitlines()):
-        stripped = line.strip()
-        if stripped.startswith("{"):
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    payload: dict = {}
+    for line in reversed(lines):
+        if line.startswith("{"):
             try:
-                payload = json.loads(stripped)
+                payload = json.loads(line)
             except ValueError:
-                pass
+                pass  # unreadable: the raw line is reported below instead
             break
     if not payload.get("ok") or not out_path.is_file():
-        detail = str(payload.get("error") or proc.stderr or f"exit {proc.returncode}").strip()
+        # The builder's own words first, then whatever it actually printed. An
+        # unparseable stdout line used to leave "exit 0" as the entire message,
+        # which named neither the line nor the reason it could not be read.
+        detail = str(
+            payload.get("error")
+            or proc.stderr.strip()
+            or (lines[-1] if lines else "")
+            or f"exit {proc.returncode}"
+        ).strip()
         raise SnapshotError(f"could not mesh {dxf_path.name}: {detail}")
     return out_path.resolve()
 

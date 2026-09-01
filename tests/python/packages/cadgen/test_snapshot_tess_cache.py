@@ -59,18 +59,25 @@ class TessellationCacheRouteTests(unittest.TestCase):
 
         self._tmp = tempfile.TemporaryDirectory(prefix="tess-cache-")
         self.addCleanup(self._tmp.cleanup)
-        self.home = Path(self._tmp.name)
+        # Resolved: Windows hands tempfile a path through %TMP%, which is
+        # commonly spelled with 8.3 short components (``C:\Users\RUNNER~1\...``)
+        # while Path.home() comes back long, and the guard below compares them.
+        self.home = Path(self._tmp.name).resolve()
         # Every root override cleared and the home pointed at the sandbox, so
         # cache_root() takes its LAST branch (~/.cache/cadgen) on both platforms
         # and lands inside the temp dir. LOCALAPPDATA has to go too: on Windows
         # it is consulted BEFORE the home, so leaving it set wrote the runner's
-        # real user cache. USERPROFILE likewise -- Path.home() reads HOME on
-        # POSIX and USERPROFILE on Windows.
+        # real user cache. USERPROFILE (and the HOMEDRIVE+HOMEPATH pair behind
+        # it) likewise -- ``~`` expansion reads HOME on POSIX and those on
+        # Windows.
+        drive, tail = os.path.splitdrive(str(self.home))
         patcher = mock.patch.dict(
             os.environ,
             {
                 "HOME": str(self.home),
                 "USERPROFILE": str(self.home),
+                "HOMEDRIVE": drive,
+                "HOMEPATH": tail,
                 "CADGEN_CACHE_DIR": "",
                 "XDG_CACHE_HOME": "",
                 "LOCALAPPDATA": "",
@@ -79,7 +86,7 @@ class TessellationCacheRouteTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         # Guard the assumption this suite rests on: nothing it writes escapes.
-        self.assertEqual(Path.home(), self.home)
+        self.assertEqual(Path.home().resolve(), self.home)
 
     def route(self, name: str) -> str:
         return f"{TESS_CACHE_ROUTE_PREFIX}{name}"
@@ -167,8 +174,23 @@ class SnapshotAssetServerTests(unittest.TestCase):
 
         self._tmp = tempfile.TemporaryDirectory(prefix="asset-server-")
         self.addCleanup(self._tmp.cleanup)
-        self.home = Path(self._tmp.name)
-        patcher = mock.patch.dict(os.environ, {"HOME": str(self.home), "CADGEN_CACHE_DIR": "", "XDG_CACHE_HOME": ""})
+        self.home = Path(self._tmp.name).resolve()
+        # Same sandbox as TessellationCacheRouteTests above: this suite round
+        # trips the tess cache, so the Windows home spellings and LOCALAPPDATA
+        # have to be redirected too or the writes land in the real user cache.
+        drive, tail = os.path.splitdrive(str(self.home))
+        patcher = mock.patch.dict(
+            os.environ,
+            {
+                "HOME": str(self.home),
+                "USERPROFILE": str(self.home),
+                "HOMEDRIVE": drive,
+                "HOMEPATH": tail,
+                "CADGEN_CACHE_DIR": "",
+                "XDG_CACHE_HOME": "",
+                "LOCALAPPDATA": "",
+            },
+        )
         patcher.start()
         self.addCleanup(patcher.stop)
         self.root = self.home / "modelroot"
