@@ -22,6 +22,7 @@ from .artifact_status import (
     owns_step_path,
     resolve_artifact_verdict,
 )
+from .backend import require_contained
 from .build_progress import ProgressRegistry, build_progress_snapshot
 from .compile_client import CompileClient, cadgen_unavailable_message
 from .store_paths import render_package_dir
@@ -36,7 +37,10 @@ CLI_BUILD_HINT = (
 
 class CadgenOps:
     def __init__(self, root_dir: str, *, registry=None, client=None) -> None:
-        self.root_dir = root_dir
+        # Resolved once. Containment compares this against every candidate, and
+        # a root spelled relatively would make that comparison depend on the
+        # process's current directory.
+        self.root_dir = os.path.abspath(str(root_dir or ""))
         self.registry = registry if registry is not None else ProgressRegistry()
         self.client = client if client is not None else CompileClient(registry=self.registry)
 
@@ -47,8 +51,25 @@ class CadgenOps:
         self.client.shutdown()
 
     def _candidate(self, file_ref) -> str:
+        """The absolute path this ref names — refused if it leaves the root.
+
+        The SAME containment rule the asset route enforces, and it belongs here
+        as well as in ``resolve_candidate``: THIS is the value handed to
+        ``client.compile``, and a check that inspects one string while the
+        compile opens another is not a check. ``abspath`` collapses the dot
+        segments so the path verified and the path used are one string.
+
+        An absolute ref inside the root stays legal — the catalog absolutizes
+        every entry's ``file`` and the client echoes that back — so what dies
+        here is the absolute ref that lands OUTSIDE, which used to be compiled
+        into the shared store and then read back, component by component,
+        through ``/__cad/store``.
+        """
         text = str(file_ref or "")
-        return text if os.path.isabs(text) else os.path.abspath(os.path.join(self.root_dir, text))
+        candidate = os.path.abspath(
+            text if os.path.isabs(text) else os.path.join(self.root_dir, text)
+        )
+        return require_contained(self.root_dir, candidate)
 
     # --- status -----------------------------------------------------------
 
@@ -81,17 +102,27 @@ class CadgenOps:
         # foreign STEP. Everything else renders what exists or names the CLI.
         if verdict.get("rawStep") and not verdict.get("generated"):
             if self.step_import_available():
-                offer = {
+                # The import offer is exactly Node's three keys. It deliberately
+                # does NOT carry `blocked` through from `status`.
+                #
+                # `blocked` is set by artifact_status when the snapshot says
+                # `busy`, and NOTHING in this backend can say that: every
+                # snapshot is minted by _snapshot_from_record or the synthetic
+                # in-flight one, and both hardcode busy=False — as the Node
+                # buildProgressSnapshot did before them. So the flag was
+                # unreachable, and an unreachable flag that flips the client
+                # from BUILD to ATTACH is a trap for the next reader, not a
+                # safeguard. The real "a peer holds the lock" signal is
+                # `contended`, which build_artifact answers with `generating`
+                # and the client attaches to.
+                #
+                # busy/blocked stay in artifact_status.py: they are pinned there
+                # by the ported spec, which supplies the snapshot directly.
+                return {
                     "state": ARTIFACT_STATE.NEEDS_BUILD,
                     "reason": status.get("reason"),
                     "stepImport": True,
                 }
-                if status.get("blocked"):
-                    # Carried through rather than dropped: the client maps
-                    # blocked to ATTACH, and losing it here would make it POST a
-                    # build into a generator someone else is already occupying.
-                    offer["blocked"] = True
-                return offer
             return {
                 "state": ARTIFACT_STATE.ERROR,
                 "error": f"This STEP file has not been imported yet, and {cadgen_unavailable_message()}",
@@ -125,11 +156,20 @@ class CadgenOps:
                     "stepImport": True,
                     **imported,
                 }
-            return {
+            # The human sentence carries the BARE message the compile reported —
+            # "STEP import failed: failed to read STEP file: ...", which is what
+            # the Node backend showed and what the import-failure card is
+            # written for. The exception class, when there was one, rides as its
+            # own field so a diagnostic can have it without the sentence
+            # acquiring a "RuntimeError:" nobody asked for.
+            failure = {
                 "ok": False,
                 "state": ARTIFACT_STATE.ERROR,
                 "error": f"STEP import failed: {imported.get('error') or 'unknown error'}",
             }
+            if imported.get("errorType"):
+                failure["errorType"] = imported["errorType"]
+            return failure
         return {"ok": False, "state": ARTIFACT_STATE.ERROR, "error": CLI_BUILD_HINT}
 
     @staticmethod

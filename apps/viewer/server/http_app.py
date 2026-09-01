@@ -328,14 +328,16 @@ class CadApp:
     def _handle_catalog(self, request, response):
         response.send_json(200, self.backend.read_catalog())
 
-    def _entry_ref_for_status(self, file_ref) -> str:
+    def _entry_ref_for_status(self, file_ref, catalog=None) -> str:
         """The catalog URL for this ref, or ``""``.
 
-        A full catalog scan, and the client polls this route every 400ms during
-        a build. The scanner's content-hash memo is what keeps it off the hot
-        path; without that this would re-read every model in the root per tick.
+        A full catalog scan unless the caller hands one in, and the client polls
+        the status route every 400ms during a build. The scanner's content-hash
+        memo is what keeps it off the hot path; without that this would re-read
+        every model in the root per tick.
         """
-        catalog = self.backend.read_catalog()
+        if catalog is None:
+            catalog = self.backend.read_catalog()
         entry = self.backend.catalog_entry_for_file_ref(catalog, file_ref)
         return str((entry or {}).get("url") or "")
 
@@ -351,16 +353,34 @@ class CadApp:
         response.send_json(200, {**status, "ref": self._entry_ref_for_status(file_ref)})
 
     def _handle_artifact_build(self, request, response, query):
+        """``ref`` and ``catalog`` both come from ONE post-build scan.
+
+        The Node backend scanned twice and disagreed with itself: ``ref`` came
+        from a scan taken BEFORE the build and ``catalog`` from one taken after,
+        so a cold import answered with a ref pointing at the pre-import URL —
+        no ``&v=`` cache-buster — while the catalog it shipped in the same body
+        carried the post-import one. DECIDED, deliberately, to keep the port's
+        post-build ref rather than restore that: the import is precisely the
+        event that changes this entry's URL, and two fields of one payload
+        describing two different moments is a bug that happened to be
+        unobserved (no client reads ``ref`` today) rather than a contract.
+
+        Folding both onto a single scan is the other half of the decision. Node
+        paid for two full directory walks per build POST; this pays for one, and
+        it is the one that makes the two fields agree by construction rather
+        than by care.
+        """
         file_ref = query.get("file") or ""
         # Only the literal string "1" forces; anything else is a normal build.
         result = self.ops.build_artifact(file_ref, force=query.get("force") == "1")
-        # Re-scanned AFTER the build, success or failure, and republished by the
+        # Scanned AFTER the build, success or failure, and republished by the
         # client — the import is precisely the event that changes what the
         # catalog says about this entry.
+        catalog = self.backend.read_catalog()
         payload = {
             **result,
-            "ref": self._entry_ref_for_status(file_ref),
-            "catalog": self.backend.read_catalog(),
+            "ref": self._entry_ref_for_status(file_ref, catalog),
+            "catalog": catalog,
         }
         response.send_json(500 if result.get("ok") is False else 200, payload)
 

@@ -30,6 +30,7 @@ from server.artifact_status import (  # noqa: E402
     owns_step_path,
     resolve_artifact_verdict,
 )
+from server.backend import ForbiddenAssetError  # noqa: E402
 from server.build_progress import (  # noqa: E402
     PROGRESS_FRESHNESS_MS,
     ProgressRegistry,
@@ -116,6 +117,67 @@ class Ownership(ArtifactStatusTestCase):
         # which are not entries at all any more.
         self.assertFalse(owns_dxf_path("a.dxf"))
         self.assertFalse(owns_artifact_path("a.dxf"))
+
+    def test_a_trailing_newline_is_not_a_step_path(self):
+        r"""The pattern is anchored with ``\Z``, not ``$``.
+
+        Python's ``$`` also matches immediately before a final newline, so
+        ``a.step\n`` matched here where JavaScript's ``/\.(step|stp)$/`` did
+        not. What is owned is the whole name ending in the suffix, never the
+        suffix plus a stray line ending.
+        """
+        for name in ("a.step\n", "a.stp\n", "a.step\r\n", "a.step\n\n"):
+            self.assertFalse(owns_step_path(name), repr(name))
+            self.assertFalse(owns_artifact_path(name), repr(name))
+        # Still owned when a newline sits INSIDE the name: that is a (bizarre)
+        # filename, not a line ending after the suffix.
+        self.assertTrue(owns_step_path("a\nb.step"))
+
+
+class Containment(ArtifactStatusTestCase):
+    """An out-of-root ref is refused here, before any package is looked at.
+
+    The whole HTTP chain lives in ``test_security.py`` class L; these pin the
+    resolver itself, which is where the refusal has to land — every compile
+    door is downstream of it.
+    """
+
+    def test_an_absolute_ref_outside_the_root_raises(self):
+        outside = Path(self.tree.tmp.name, "outside")
+        outside.mkdir()
+        victim = outside / "secret.step"
+        victim.write_bytes(STEP_BYTES)
+        with self.assertRaises(ForbiddenAssetError):
+            resolve_artifact_verdict(str(victim), str(self.tree.root))
+        with self.assertRaises(ForbiddenAssetError):
+            artifact_status(str(victim), str(self.tree.root))
+
+    def test_a_relative_ref_that_walks_out_raises(self):
+        for ref in ("../outside/secret.step", "sub/../../outside/secret.step"):
+            with self.subTest(ref=ref), self.assertRaises(ForbiddenAssetError):
+                resolve_artifact_verdict(ref, str(self.tree.root))
+
+    def test_a_name_prefix_sibling_of_the_root_is_outside(self):
+        sibling = Path(str(self.tree.root) + "-evil")
+        sibling.mkdir()
+        stolen = sibling / "stolen.step"
+        stolen.write_bytes(STEP_BYTES)
+        with self.assertRaises(ForbiddenAssetError):
+            resolve_artifact_verdict(str(stolen), str(self.tree.root))
+
+    def test_an_absolute_in_root_ref_still_resolves(self):
+        # The judgement call: absolute IS the normal spelling here, because the
+        # catalog absolutizes every entry's file and the client echoes it back.
+        step = self.tree.step()
+        verdict = resolve_artifact_verdict(step, str(self.tree.root))
+        self.assertEqual(verdict["candidate"], os.path.abspath(step))
+
+    def test_a_missing_in_root_ref_is_still_a_soft_no(self):
+        # Containment raises; a file that simply is not there must not.
+        self.assertEqual(
+            artifact_status("absent.step", str(self.tree.root)),
+            {"state": "error", "error": "Artifact source not found: absent.step"},
+        )
 
 
 class Verdicts(ArtifactStatusTestCase):
@@ -361,6 +423,31 @@ class ProgressReader(ArtifactStatusTestCase):
         step = self.tree.step()
         self.tree.record(store_paths.coordination_scope(step), runId=17)
         self.assertIsNone(build_progress_snapshot(step)["runId"])
+
+    def test_no_producer_can_emit_busy(self):
+        """The invariant behind dropping ``blocked`` from the import offer.
+
+        ``busy`` is what makes ``artifact_status`` set ``blocked``, and
+        ``blocked`` flips the client from BUILD to ATTACH. No snapshot producer
+        in this backend can set it: every snapshot comes from
+        ``_snapshot_from_record`` or the synthetic in-flight one, and both
+        hardcode it false — as the Node ``buildProgressSnapshot`` did. So
+        carrying the flag out of ``CadgenOps`` protected nothing and misled a
+        reader about what could reach the client. If a real producer ever
+        appears, this test fails first and the offer can be reconsidered
+        deliberately.
+        """
+        step = self.tree.step()
+        registry = ProgressRegistry()
+
+        self.tree.record(store_paths.coordination_scope(step))
+        self.assertIs(build_progress_snapshot(step)["busy"], False)
+
+        self.tree.record(store_paths.render_package_dir(step), runId="pkg-run")
+        self.assertIs(build_progress_snapshot(step)["busy"], False)
+
+        registry.publish(store_paths.render_package_dir(step), "live", {"phase": "components"})
+        self.assertIs(build_progress_snapshot(step, registry=registry)["busy"], False)
 
 
 class InProcessRegistry(ArtifactStatusTestCase):

@@ -97,6 +97,17 @@ filter, which excludes a model script. `containedPathForFileRef` applies the
 root and hidden-path rules WITHOUT that filter, for callers that transfer no bytes —
 `reveal` is the one that matters. Both throw on anything outside the root.
 
+The outside-the-root half of that is `require_contained(root, candidate)`, and it
+is ONE function on purpose: the artifact routes call it too, because "refused
+unconditionally" has to include the route that COMPILES. Without it,
+`GET /__cad/asset?file=<outside>.step` was correctly 403 while
+`POST /__cad/artifact?file=<outside>.step` compiled that file into the shared
+store — after which `/__cad/store` served its geometry component by component,
+a file outside the served root readable in full. Absolute refs are not the
+problem and are not refused as a class (the catalog absolutizes every entry's
+`file` and the client sends exactly that back); an absolute ref that LANDS
+outside is.
+
 ## Artifact status (JS-only), and where builds live
 
 Artifact STATUS has exactly one authority: `server/artifact_status.py`, pure file

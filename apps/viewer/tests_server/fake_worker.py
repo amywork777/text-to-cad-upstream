@@ -78,10 +78,15 @@ def main(argv: list[str]) -> int:
             time.sleep(0.05)
             os.abort()
         elif "raise" in name:
+            # The real worker's error frame: `error` is the exception's BARE
+            # message, because the parent splices it into "STEP import failed:
+            # {error}" and a person reads the result. The class name is its own
+            # field and never part of that sentence.
             send(
                 {
                     "id": request_id,
-                    "error": "StaleDocumentError: widget.step is stale relative to its source",
+                    "error": "widget.step is stale relative to its source",
+                    "errorType": "StaleDocumentError",
                     "traceback": "...",
                 }
             )

@@ -47,11 +47,19 @@ import uuid
 #
 #   {"id": <req>, "runId": "...", "progress": {...phase block...}}   zero or more
 #   {"id": <req>, "result": {ok, document, package, skipped, contended}}   exactly
-#   {"id": <req>, "error": "<Type>: <message>", "traceback": "..."}        one of
+#   {"id": <req>, "error": "<message>", "errorType": "...", "traceback": "..."} one of
 #
 # An exception becomes a VALUE on this channel. No exit-code archaeology, no
 # stderr truncation: the parent turns the error string straight into the wire's
 # failure shape.
+#
+# `error` is the exception's BARE message, and the class name rides in the
+# separate `errorType` field. The parent prefixes it — "STEP import failed:
+# {error}" — and that string is what the viewer's import-failure card shows, so
+# a class name spliced into it reads as "STEP import failed: RuntimeError:
+# failed to read STEP file" to someone who has no idea what a RuntimeError is.
+# cadgen already writes messages meant to be read by a person; a human string
+# and a diagnostic label are two fields, never one.
 
 # A peer holding the package's write lock makes our run answer `contended` after
 # this long rather than queueing behind an arbitrarily long peer build. The
@@ -160,10 +168,16 @@ def _serve(channel: _FrameChannel) -> int:
         except BaseException as error:  # noqa: BLE001 - every failure is a frame
             # Including SystemExit/KeyboardInterrupt: a cancelled compile is a
             # failed compile, and the parent is owed an answer either way.
+            # str(error) can be empty — `raise RuntimeError()`, or a bare
+            # KeyboardInterrupt — and an empty error string would surface as
+            # "STEP import failed: ". The class name is the fallback THEN, and
+            # only then.
+            message = str(error).strip() or type(error).__name__
             channel.send(
                 {
                     "id": request_id,
-                    "error": f"{type(error).__name__}: {error}",
+                    "error": message,
+                    "errorType": type(error).__name__,
                     "traceback": traceback.format_exc(),
                 }
             )

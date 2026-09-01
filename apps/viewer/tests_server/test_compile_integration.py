@@ -14,6 +14,7 @@ real compiling would exercise on purpose (nothing makes OCCT segfault to order).
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -26,9 +27,11 @@ if str(APP_ROOT) not in sys.path:
     sys.path.insert(0, str(APP_ROOT))
 
 from server import compile_client as compile_client_module  # noqa: E402
+from server.backend import ForbiddenAssetError  # noqa: E402
 from server.build_progress import ProgressRegistry  # noqa: E402
 from server.cadgen_ops import CLI_BUILD_HINT, CadgenOps  # noqa: E402
 from server.compile_client import CompileClient, set_cadgen_probe_for_tests  # noqa: E402
+from server.store_paths import render_package_dir  # noqa: E402
 
 FAKE_WORKER = str(Path(__file__).resolve().parent / "fake_worker.py")
 
@@ -90,7 +93,25 @@ class ResultsAndErrorsAreValues(CompileTestCase):
         client = self.client()
         result = client.compile(self.step("raise.step"))
         self.assertFalse(result["ok"])
-        self.assertIn("StaleDocumentError", result["error"])
+        # The message a person reads, and the class name as its own field. The
+        # port briefly shipped "StaleDocumentError: widget.step is stale ..." as
+        # one string, which the caller then prefixed again: the import-failure
+        # card read "STEP import failed: RuntimeError: failed to read STEP
+        # file", teaching the reader a Python class name instead of the fault.
+        self.assertEqual(result["error"], "widget.step is stale relative to its source")
+        self.assertEqual(result["errorType"], "StaleDocumentError")
+
+    def test_the_human_sentence_never_carries_the_class_name(self):
+        ops = CadgenOps(
+            str(self.root), registry=ProgressRegistry(), client=self.client()
+        )
+        self.step("raise.step")
+        result = ops.build_artifact("raise.step")
+        self.assertEqual(
+            result["error"],
+            "STEP import failed: widget.step is stale relative to its source",
+        )
+        self.assertEqual(result["errorType"], "StaleDocumentError")
 
     def test_progress_frames_reach_the_registry_with_a_stable_run_id(self):
         registry = ProgressRegistry()
@@ -330,6 +351,20 @@ class OpsWiring(CompileTestCase):
         self.assertEqual(status["state"], "needs-build")
         self.assertTrue(status["stepImport"])
 
+    def test_the_import_offer_is_exactly_the_three_keys(self):
+        # No `blocked`. It is set from a `busy` snapshot, no producer in this
+        # backend can emit one (pinned by test_artifact_status'
+        # test_no_producer_can_emit_busy), and an unreachable flag that flips
+        # the client from BUILD to ATTACH is a trap rather than a safeguard.
+        # `contended` is the real "a peer holds the lock" signal and travels on
+        # the build reply, not on the offer.
+        ops = self.ops()
+        self.step("ok.step")
+        self.assertEqual(
+            ops.artifact_status("ok.step"),
+            {"state": "needs-build", "reason": "missing_glb", "stepImport": True},
+        )
+
     def test_with_no_cadgen_the_offer_becomes_an_actionable_error(self):
         set_cadgen_probe_for_tests(lambda: False)
         ops = self.ops()
@@ -395,6 +430,117 @@ class OpsWiring(CompileTestCase):
             self.assertTrue(generating, "an in-flight import must report generating")
         finally:
             thread.join()
+
+
+def _cadgen_is_importable() -> bool:
+    return (
+        subprocess.run(
+            [sys.executable, "-c", "import cadgen"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+
+
+@unittest.skipUnless(
+    _cadgen_is_importable(),
+    "cadgen is not importable — the REAL worker cannot run, and the server "
+    "itself must keep working without it",
+)
+class TheRealWorkerFramesABareMessage(CompileTestCase):
+    """The other half of the error-message fix, in the process that formats it.
+
+    Everything else here drives ``fake_worker.py``, which can only assert that
+    the PARENT relays what it is given. This runs ``compile_worker.py`` itself
+    against a document the kernel refuses, and reads what it actually sends.
+    """
+
+    def test_the_error_frame_carries_the_message_not_the_class_name(self):
+        # A real worker: no worker_command override.
+        client = CompileClient(max_workers=1)
+        self.addCleanup(client.shutdown)
+        candidate = self.root / "not-really.step"
+        candidate.write_bytes(b"this is not a STEP file\n")
+
+        result = client.compile(str(candidate))
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["error"], "a failure must say something")
+        self.assertNotRegex(
+            result["error"],
+            r"^[A-Za-z_][A-Za-z0-9_]*Error: ",
+            "the human string must not open with a Python exception class",
+        )
+        # The class name is still available — as its own field.
+        self.assertTrue(result["errorType"])
+        self.assertNotIn(result["errorType"] + ":", result["error"])
+
+        # And the sentence the viewer's import-failure card renders.
+        ops = CadgenOps(str(self.root), registry=ProgressRegistry(), client=client)
+        sentence = ops.build_artifact("not-really.step")["error"]
+        self.assertTrue(sentence.startswith("STEP import failed: "))
+        self.assertNotRegex(sentence, r"^STEP import failed: [A-Za-z_][A-Za-z0-9_]*Error: ")
+
+
+class ContainmentHappensBeforeTheKernel(CompileTestCase):
+    """An out-of-root ref must be refused before a worker is even spawned.
+
+    ``test_security.py`` proves the HTTP status; this proves the ordering, which
+    a status code cannot: ``spawn_count() == 0`` is the difference between "we
+    refused it" and "we compiled it and then declined to say so".
+    """
+
+    def ops(self, **kwargs) -> CadgenOps:
+        registry = ProgressRegistry()
+        return CadgenOps(
+            str(self.root), registry=registry, client=self.client(registry=registry, **kwargs)
+        )
+
+    def outside(self, name: str = "secret.step") -> str:
+        beyond = Path(self.tmp.name, "outside")
+        beyond.mkdir(exist_ok=True)
+        path = beyond / name
+        path.write_bytes(b"ISO-10303-21;outside")
+        return str(path)
+
+    def test_an_absolute_outside_ref_never_reaches_a_worker(self):
+        ops = self.ops()
+        victim = self.outside()
+        with self.assertRaises(ForbiddenAssetError):
+            ops.build_artifact(victim)
+        with self.assertRaises(ForbiddenAssetError):
+            ops.artifact_status(victim)
+        self.assertEqual(self.spawn_count(), 0)
+        self.assertFalse(os.path.isdir(render_package_dir(victim)))
+
+    def test_a_relative_ref_that_walks_out_never_reaches_a_worker(self):
+        ops = self.ops()
+        self.outside()
+        with self.assertRaises(ForbiddenAssetError):
+            ops.build_artifact("../outside/secret.step")
+        self.assertEqual(self.spawn_count(), 0)
+
+    def test_a_name_prefix_sibling_of_the_root_is_outside(self):
+        # models-evil beside models: startswith() would let this through.
+        ops = self.ops()
+        sibling = Path(str(self.root) + "-evil")
+        sibling.mkdir()
+        stolen = sibling / "stolen.step"
+        stolen.write_bytes(b"ISO-10303-21;stolen")
+        with self.assertRaises(ForbiddenAssetError):
+            ops.build_artifact(str(stolen))
+        self.assertEqual(self.spawn_count(), 0)
+
+    def test_an_absolute_in_root_ref_is_still_compiled(self):
+        # The judgement call, from the other side: absolute refs are the NORMAL
+        # spelling (the catalog absolutizes every entry), so refusing them as a
+        # class would have broken every import while fixing nothing.
+        ops = self.ops()
+        candidate = self.step("ok.step")
+        self.assertTrue(os.path.isabs(candidate))
+        result = ops.build_artifact(candidate)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["state"], "ready")
+        self.assertEqual(self.spawn_count(), 1)
 
 
 if __name__ == "__main__":

@@ -26,6 +26,24 @@ appeared and a COMPILE's never did — which is the viewer's own import, the cas
 where a bar matters most, and it is why an import only ever showed an
 indeterminate badge. This reader derives BOTH and takes whichever is fresher.
 
+WHY THE PACKAGES TIER STAYS, NOW THAT OUR OWN BUILDS REPORT IN PROCESS
+----------------------------------------------------------------------
+Reading a second tier is a DECLARED departure from the Node backend on a route
+the client polls every 400ms, so it owes an argument. The registry above covers
+builds this server runs — which is most of them, and none of them need a file
+read at all — but not the one case the extra read exists for.
+
+When our worker cannot take the package's write lock it answers ``contended``,
+``build_artifact`` turns that into ``generating``, and the client stops POSTing
+and ATTACHES: it polls this route for someone else's bar. The peer holding that
+lock is by construction a ``build_step_artifact`` caller — another viewer's
+worker, or a ``cadgen step compile`` in a terminal — and every one of those
+publishes at ``status_path(render_package_dir(...))``, the packages tier. Read
+only the locks tier and ``contended`` tells the client to attach to a bar that
+can never appear. So the second read is what makes ``contended`` mean anything,
+and it costs one ``open()`` of a usually-absent file per poll, paid only for
+``.step`` entries and only while we are not building them ourselves.
+
 DELIBERATELY SCHEMA-BLIND AND RUN-ATTRIBUTION-FREE
 --------------------------------------------------
 ``schemaVersion`` is not checked and ``runId`` is not matched against a live

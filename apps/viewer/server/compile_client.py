@@ -359,7 +359,13 @@ class CompileClient:
         except BaseException as error:  # noqa: BLE001 - a supervisor fault is still an answer
             # Attached waiters are owed an answer even when this thread is being
             # torn down, so the result is set before the exception continues.
-            result = {"ok": False, "error": f"{type(error).__name__}: {error}"}
+            # Same split as the worker's error frame: `error` is the bare
+            # message the UI will read, `errorType` is the diagnostic label.
+            result = {
+                "ok": False,
+                "error": str(error).strip() or type(error).__name__,
+                "errorType": type(error).__name__,
+            }
             raise
         finally:
             with self._lock:
@@ -494,8 +500,16 @@ class CompileClient:
                 # A raised exception, already structured. No exit codes, no
                 # stderr archaeology. The worker is healthy — it caught this and
                 # said so — so it goes back in the pool.
+                #
+                # `error` is the BARE message: the caller splices it into "STEP
+                # import failed: {error}" and a person reads the result. The
+                # exception class rides alongside as `errorType`, available for
+                # a log or a diagnostic panel but never part of the sentence.
                 self._clear_crashes(package_dir)
-                return {"ok": False, "error": str(frame.get("error") or "compile failed")}, False
+                failure = {"ok": False, "error": str(frame.get("error") or "compile failed")}
+                if frame.get("errorType"):
+                    failure["errorType"] = str(frame["errorType"])
+                return failure, False
 
     def _crashed(self, worker: _Worker, candidate: str, package_dir: str) -> dict:
         try:

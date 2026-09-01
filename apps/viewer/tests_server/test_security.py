@@ -42,7 +42,11 @@ if str(APP_ROOT) not in sys.path:
 
 from server import handler as handler_module  # noqa: E402
 from server.http_app import create_cad_app  # noqa: E402
-from server.store_paths import CACHE_SCHEMA_VERSION, store_packages_dir  # noqa: E402
+from server.store_paths import (  # noqa: E402
+    CACHE_SCHEMA_VERSION,
+    render_package_dir,
+    store_packages_dir,
+)
 
 SECRET = "TOP-SECRET-BYTES"
 
@@ -526,9 +530,121 @@ class K_NonServedContentUnderTheRoot(SecurityTestCase):
         self.assertDenied(status, body, {404})
 
 
+class L_ArtifactRouteContainment(SecurityTestCase):
+    """``/__cad/artifact`` obeys the rule ``/__cad/asset`` always did.
+
+    THE CHAIN THIS CLOSES — open in the Node backend too, where ``cadgenOps``
+    resolved its candidate with no containment check of any kind:
+
+      1. ``GET  /__cad/asset?file=<outside>.step``          -> 403, correctly.
+      2. ``POST /__cad/artifact?file=<outside>.step``       -> 200, and it
+         COMPILED that file into the shared content-addressed store.
+      3. ``GET  /__cad/store?file=<key>/assembly.json``     -> 200.
+      4. ``GET  /__cad/store?file=<key>/components/*.surf`` -> 200: the
+         tessellated geometry of a document the viewer was never pointed at.
+
+    Hop 1 was never the leak; hops 2-4 were, which is why this tests the WHOLE
+    chain. A test that stopped at "the POST is 403" would still pass if the
+    refusal landed after the compile had already published the package.
+    """
+
+    def artifact(self, file_param, *, method="GET"):
+        target = f"/__cad/artifact?file={quote(str(file_param), safe='')}"
+        headers = {"x-cadgen-viewer": "1"} if method == "POST" else None
+        return self.fixture.request(method, target, headers=headers)
+
+    def test_the_whole_chain_dies_at_the_build_route(self):
+        victim = os.path.join(self.fixture.outside, "secret.step")
+        package_dir = render_package_dir(victim)
+        key = os.path.basename(package_dir)
+
+        # 1. The hop that was always correct, kept as the control.
+        status, _, body = self.fixture.asset(victim)
+        self.assertDenied(status, body, {403})
+
+        # 2. The hop that leaked. 403 now — and no package on disk, so the
+        #    refusal landed BEFORE the compile rather than after it.
+        status, _, body = self.artifact(victim, method="POST")
+        self.assertDenied(status, body, {403})
+        self.assertEqual(json.loads(body)["error"], "Forbidden")
+        self.assertFalse(
+            os.path.isdir(package_dir),
+            "a refused ref must never reach the kernel: no package may exist",
+        )
+
+        # 3/4. Nothing was compiled, so there is nothing to read back out.
+        for rel in (f"{key}/assembly.json", f"{key}/components/c0.surf"):
+            with self.subTest(rel=rel):
+                status, _, body = self.fixture.request("GET", f"/__cad/store?file={rel}")
+                self.assertDenied(status, body, {404})
+
+    def test_the_status_route_refuses_the_same_ref(self):
+        # GET compiles nothing, but it resolves the same candidate and reports
+        # on it — including whether it is importable, which is a disclosure
+        # about a file outside the root all by itself.
+        victim = os.path.join(self.fixture.outside, "secret.step")
+        status, _, body = self.artifact(victim)
+        self.assertDenied(status, body, {403})
+
+    def test_relative_refs_that_walk_out_are_refused_on_both_methods(self):
+        # This route ACCEPTS a relative ref where the asset route does not, so
+        # stripping leading slashes is not enough: ".." still escapes once
+        # joined against the root.
+        for ref in ("../outside/secret.step", "sub/../../outside/secret.step"):
+            for method in ("GET", "POST"):
+                with self.subTest(ref=ref, method=method):
+                    status, _, body = self.artifact(ref, method=method)
+                    self.assertDenied(status, body, {403})
+
+    def test_the_name_prefix_sibling_is_refused_here_too(self):
+        # root-evil beside root: the jupyter_server shape, on the build route.
+        status, _, body = self.artifact(
+            os.path.join(self.fixture.evil, "stolen.step"), method="POST"
+        )
+        self.assertDenied(status, body, {403})
+
+    def test_a_dotdot_after_a_symlinked_component_is_refused_here_too(self):
+        status, _, body = self.artifact(
+            f"{self.fixture.root}/lib/../../outside/secret.step", method="POST"
+        )
+        self.assertDenied(status, body, {403})
+
+    def test_an_absolute_in_root_ref_is_STILL_ACCEPTED(self):
+        """The judgement call, pinned.
+
+        Absolute refs are not refused as a class — only absolute refs that land
+        outside. They have to keep working: the catalog absolutizes every
+        entry's ``file`` and the client echoes exactly that back, so a blanket
+        ban would break the normal path while fixing nothing.
+
+        GET rather than POST, because accepting a ref on POST means compiling
+        it, and this asserts acceptance rather than exercising the kernel.
+        """
+        status, _, body = self.artifact(os.path.join(self.fixture.root, "ok.step"))
+        self.assertEqual(status, 200, body[:400])
+        self.assertIn(json.loads(body)["state"], {"needs-build", "error", "ready"})
+
+    def test_a_relative_in_root_ref_is_still_accepted(self):
+        status, _, body = self.artifact("ok.step")
+        self.assertEqual(status, 200, body[:400])
+
+    def test_a_trailing_newline_is_not_a_step_entry(self):
+        r"""``\Z``, not ``$``.
+
+        Python's ``$`` also matches immediately before a trailing newline, so
+        ``ok.step\n`` used to claim STEP ownership and be answered with a
+        needs-build import offer for a document that does not exist. Node
+        answered ``ready``, because JavaScript's ``$`` does not match there.
+        """
+        status, _, body = self.artifact(os.path.join(self.fixture.root, "ok.step") + "\n")
+        self.assertEqual(status, 200, body[:400])
+        payload = json.loads(body)
+        self.assertEqual(payload["state"], "ready")
+        self.assertNotIn("stepImport", payload)
+
+
 class StoreRouteConfinement(SecurityTestCase):
-    """The store tier. NOT the contract's class L, which is /__cad/artifact
-    containment — that route lands in the artifact-status step of the port."""
+    """The store tier proper. The build route's half of containment is class L."""
 
     def test_traversal_is_404_never_403_on_this_route(self):
         for rel in ("../../etc/hosts", "..%2F..%2Fetc%2Fhosts", "/etc/hosts"):

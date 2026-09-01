@@ -23,6 +23,17 @@ The ordering of those checks decides the status code and is part of the
 contract: the served-extension filter runs BEFORE the containment raise, so
 ``?file=/etc/passwd`` is 404 (wrong extension) while ``?file=/tmp/x.step`` is
 403 (right extension, outside the root).
+
+``require_contained`` IS THE CONTAINMENT RULE, FOR EVERY ROUTE
+--------------------------------------------------------------
+The outside-the-root half is factored out so the artifact routes can enforce
+the SAME rule the asset routes do. They could not before, and the gap was
+exploitable end to end: ``GET /__cad/asset?file=<outside>.step`` was correctly
+403, but ``POST /__cad/artifact?file=<outside>.step`` compiled that file into
+the shared store, after which ``GET /__cad/store?file=<key>/...`` served the
+tessellated geometry of a document the viewer was never pointed at. Every
+resolver that turns a ``?file=`` ref into a path the server will act on calls
+this, and there is exactly one implementation of it to keep them honest.
 """
 
 from __future__ import annotations
@@ -49,6 +60,7 @@ __all__ = [
     "absolute_file_ref",
     "normalized_file_ref",
     "relative_file_ref",
+    "require_contained",
 ]
 
 
@@ -59,6 +71,28 @@ class ForbiddenAssetError(Exception):
 
     def __init__(self) -> None:
         super().__init__("Forbidden")
+
+
+def require_contained(root_path: str, candidate: str) -> str:
+    """``candidate``, or ``ForbiddenAssetError`` if it is outside ``root_path``.
+
+    Returns the path so a caller uses the value it just checked rather than
+    re-deriving one — check-then-use on two different strings is how a
+    containment check passes and the wrong file gets opened anyway.
+
+    An ABSOLUTE ref inside the root stays allowed, deliberately: the catalog
+    absolutizes every entry's ``file`` and the client sends exactly that back,
+    so refusing absolute refs as a class would refuse the normal case. What
+    this refuses is an absolute ref that LANDS outside — the same line the
+    asset route has always drawn.
+
+    ``path_is_inside`` collapses ``..`` lexically FIRST and only then compares
+    real paths for alias equality, so a ``..`` that walks out after a symlinked
+    component is still refused while a symlinked served root still serves.
+    """
+    if not (candidate == root_path or path_is_inside(candidate, root_path)):
+        raise ForbiddenAssetError()
+    return candidate
 
 
 def absolute_file_ref(file_path) -> str:
@@ -208,9 +242,15 @@ class LocalAssetBackend:
     # --- containment ------------------------------------------------------
 
     def _reject_outside_root(self, candidate: str) -> bool:
-        """Raise for anything outside the root; return True for a hidden path."""
-        if not (candidate == self.root_path or path_is_inside(candidate, self.root_path)):
-            raise ForbiddenAssetError()
+        """Raise for anything outside the root; return True for a hidden path.
+
+        The containment half is ``require_contained`` — the one the artifact
+        routes share. The hidden-component half stays here, because it is a rule
+        about bytes this backend would SERVE, not about what the server may
+        touch: a hidden ``.step`` is still a document the import path may
+        legitimately compile.
+        """
+        require_contained(self.root_path, candidate)
         relative = path_relative(self.root_path, candidate)
         return any(
             part and part != ".." and part.startswith(".") for part in relative.split(os.sep)

@@ -8,7 +8,9 @@ measured failure modes of that design. The caller supplies a snapshot
 
 Nothing here imports cadgen. Status is answered for a directory of models by an
 interpreter that may have no kernel installed at all, and every read degrades to
-"no" rather than raising: a badge is not a render.
+"no" rather than raising: a badge is not a render. The ONE exception is
+containment — an out-of-root ``?file=`` ref raises before anything is read,
+because that is a refusal rather than a missing file.
 
 Freshness semantics:
 
@@ -28,6 +30,7 @@ import json
 import os
 import re
 
+from .backend import require_contained
 from .store_paths import (
     SOURCE_SIDECAR_SCHEMA_VERSION,
     render_package_dir,
@@ -50,7 +53,16 @@ STEP_PACKAGE_KIND = "assembly-package"
 STEP_DESCRIPTOR_NAME = "assembly.json"
 
 # Artifacts only: model scripts are not status subjects.
-_STEP_ENTRY_RE = re.compile(r"\.(step|stp)$", re.IGNORECASE)
+#
+# ``\Z``, never ``$``: Python's ``$`` also matches immediately BEFORE a trailing
+# newline, where JavaScript's does not. With ``$`` here, ``part.step\n`` owned a
+# status it must not own, so ``?file=<abs>.step%0A`` turned Node's "ready" into
+# a needs-build carrying an import offer for a document that does not exist.
+# Same trap ``tess_cache.py`` names and avoids with ``fullmatch``; these two are
+# the whole set of anchored patterns in the backend (``url_norm`` and
+# ``scanner`` anchor only at the START, where the two languages agree), and
+# neither is spelled ``$`` any more.
+_STEP_ENTRY_RE = re.compile(r"\.(step|stp)\Z", re.IGNORECASE)
 
 
 class ARTIFACT_STATE:  # noqa: N801 - a namespace of wire constants, not a class
@@ -142,10 +154,16 @@ def owns_artifact_path(file_path) -> bool:
 
 
 def resolve_candidate(file_ref, root_dir) -> str | None:
-    """An absolute path that EXISTS, or ``None``.
+    """An absolute path INSIDE ``root_dir`` that EXISTS, or ``None``.
 
     Backslashes become slashes before the absoluteness test, so on POSIX a
     Windows-shaped ``C:\\x`` becomes ``C:/x`` and is treated as relative.
+
+    Containment is checked here and RAISES rather than answering ``None``,
+    which is the one place this module departs from "every read degrades to no".
+    It is not a read: an out-of-root ref is a refusal the route funnel turns
+    into 403, exactly as the asset route already did, and answering ``None``
+    would launder it into the far softer "Artifact source not found".
     """
     normalized = str(file_ref or "").strip().replace("\\", "/")
     if not normalized:
@@ -153,7 +171,11 @@ def resolve_candidate(file_ref, root_dir) -> str | None:
     if os.path.isabs(normalized):
         candidate = os.path.abspath(normalized)
     else:
+        # ``lstrip("/")`` alone does not make a relative ref safe: "../.." still
+        # walks out of the root once joined, which is why containment is
+        # enforced on the RESULT rather than on the spelling.
         candidate = os.path.abspath(os.path.join(root_dir, normalized.lstrip("/")))
+    require_contained(os.path.abspath(str(root_dir)), candidate)
     try:
         exists = os.path.exists(candidate)
     except ValueError:
