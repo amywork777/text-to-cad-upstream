@@ -655,17 +655,27 @@ def write_xcaf_doc_step_file(
     if plan is not None:
         with (logger.timed("canonicalize style tail (in text)") if logger is not None else nullcontext()):
             tail_start, _total, old_numbers = plan
-            canonical = _apply_style_tail_plan_in_text(
-                output_path.read_text(encoding="utf-8", errors="surrogateescape"),
-                tail_start,
-                old_numbers,
-            )
+            # ``newline=""`` on BOTH ends, not the default universal-newline
+            # translation. Path.read_text folds "\r\n" to "\n" on the way in and
+            # Path.write_text expands "\n" to os.linesep on the way out, so on
+            # Windows this round trip rewrote every line ending in a file OCCT
+            # had written with bare "\n" -- the text applier and the in-model
+            # applier then produced byte-different files from one model, and the
+            # written bytes ARE the content-addressed store key. Reading and
+            # writing verbatim keeps this a permutation of the file OCCT wrote,
+            # which is the whole contract of this branch.
+            with output_path.open(
+                "r", encoding="utf-8", errors="surrogateescape", newline=""
+            ) as handle:
+                written = handle.read()
+            canonical = _apply_style_tail_plan_in_text(written, tail_start, old_numbers)
             # A text shape this did not recognize leaves the file exactly as
             # OCCT wrote it: nondeterministically ordered, never corrupt.
             if canonical is not None:
-                output_path.write_text(
-                    canonical, encoding="utf-8", errors="surrogateescape"
-                )
+                with output_path.open(
+                    "w", encoding="utf-8", errors="surrogateescape", newline=""
+                ) as handle:
+                    handle.write(canonical)
     return step_file_hash(output_path)
 
 

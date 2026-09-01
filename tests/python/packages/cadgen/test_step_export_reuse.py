@@ -19,7 +19,10 @@ from tests.python.support.paths import add_repo_path
 
 add_repo_path("packages/cadgen/src")
 
-VENV = "/Users/jakefitzgerald/robots/text-to-cad/.venv/bin/python"
+# The interpreter running the suite, NOT a hardcoded checkout path: the child
+# must import the same cadgen/OCP the parent did, and an absolute
+# ``.venv/bin/python`` literal exists on exactly one machine.
+VENV = sys.executable
 REPO = Path(__file__).resolve().parents[4]
 
 

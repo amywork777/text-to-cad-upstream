@@ -25,7 +25,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-VENV_PYTHON = "/Users/jakefitzgerald/robots/text-to-cad/.venv/bin/python"
+# The interpreter running the suite, NOT a hardcoded checkout path: the oracle
+# spawns children that must import the same cadgen/OCP the parent did, and a
+# literal ``.venv/bin/python`` exists on exactly one machine (it named an
+# absolute macOS path and raised FileNotFoundError on every CI runner).
+VENV_PYTHON = sys.executable
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CADGEN_SRC = REPO_ROOT / "packages" / "cadgen" / "src"
 
