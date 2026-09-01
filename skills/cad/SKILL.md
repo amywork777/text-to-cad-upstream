@@ -205,6 +205,6 @@ Load these files only when their trigger applies:
 - `references/kinematics.md` — articulating, posing, or animating a STEP model: geometry parameters (the function signature), typed mates (`kinematics=` on the export decorators — mates, couplings, pose presets, export-at-pose), and the `.anim.js` choreography contract.
 - `references/supported-exports.md` — STL/3MF/native GLB mesh export workflows: declared exports and the `cadgen stl|3mf|glb build` doors.
 - `references/repair-loop.md` — diagnosis and repair procedures.
-- `references/migrating-generators.md` — converting an older gen_step()/gen_dxf() source or a `.step.py`/`.dxf.py` file into a `@step`/`@dxf` model script by hand.
+- `references/migrations.md` — the tooling disagreeing with a model you believe is correct: recognizing a project authored against an older cadgen, and where the migration guides live.
 
 Final responses should include generated files, returned `$cad-viewer` viewer links, verification snapshots, validation actually run, assumptions, and caveats. Use `references/inspection-and-validation.md` for report structure.
