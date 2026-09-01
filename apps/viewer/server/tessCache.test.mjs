@@ -1,8 +1,8 @@
 // The viewer server's /__tess_cache/ routes: same store, same name rules, and
 // the same TESB batch framing as the snapshot host. Framing is pinned against
 // the AUTHORITATIVE codec in the vendored cadgen-js (tessellationCache.js is the
-// format's home); the store lives under HOME, so every test redirects HOME
-// into a sandbox.
+// format's home); the store lives under the user's home, so every test
+// redirects that home into a sandbox.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
@@ -29,14 +29,23 @@ const KEY = "c0ffee-t1-l1.500000e-3-a3.500000e-1";
 
 function sandboxHome(t) {
   const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "tess-home-")));
-  // The cache root resolves CADGEN_CACHE_DIR and XDG_CACHE_HOME before HOME;
-  // clear both so the sandbox actually contains the store.
+  // cadgenCacheRootDir consults, in order: CADGEN_CACHE_DIR, then XDG_CACHE_HOME
+  // (POSIX) or LOCALAPPDATA (Windows), then os.homedir()/.cache/cadgen. Blanking
+  // the first three and pointing the home at the sandbox leaves ONE resolution --
+  // the platform default -- at <home>/.cache/cadgen on both. os.homedir() reads
+  // HOME on POSIX and USERPROFILE on Windows, hence both: setting only HOME left
+  // this sandbox a no-op on Windows, where the tests then read and polluted the
+  // runner's REAL user cache. (Same spelling as cadgen-js's meshExportCli test.)
   const previous = {
     HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    LOCALAPPDATA: process.env.LOCALAPPDATA,
     CADGEN_CACHE_DIR: process.env.CADGEN_CACHE_DIR,
     XDG_CACHE_HOME: process.env.XDG_CACHE_HOME,
   };
   process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  process.env.LOCALAPPDATA = "";
   delete process.env.CADGEN_CACHE_DIR;
   delete process.env.XDG_CACHE_HOME;
   t.after(() => {

@@ -179,8 +179,11 @@ test("the scan follows directory symlinks on purpose (ports b0f59af3)", (t) => {
   write(outside, "shared/part.step", "ISO-10303-21;");
   fs.symlinkSync(path.join(outside, "shared"), path.join(root, "library"), "dir");
   const files = scanCadDirectory(root).entries.map((e) => e.file);
+  // Catalog `file` refs are POSIX by contract (repoRelativePath -> toPosixPath):
+  // they become URLs. Expect the literal, never path.join -- that spells this
+  // "library\part.step" on Windows and never matches.
   assert.ok(
-    files.some((f) => f.endsWith(path.join("library", "part.step"))),
+    files.some((f) => f.endsWith("library/part.step")),
     `symlinked model folder must catalog: ${JSON.stringify(files)}`,
   );
 });

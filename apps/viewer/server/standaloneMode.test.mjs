@@ -5,7 +5,7 @@
 // runnable cadgen it degrades to one actionable message and viewing is
 // unaffected.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
@@ -27,8 +27,11 @@ function write(root, rel, content) {
   return p;
 }
 
+// The same lowercase hex digest cadgen writes into assembly.json.stepHash --
+// computed in-process, because a test that shells out to `shasum` only runs on
+// the platforms that ship it (Windows has no such binary).
 function sha256(buffer) {
-  return execFileSync("shasum", ["-a", "256"], { input: buffer }).toString().split(" ")[0];
+  return crypto.createHash("sha256").update(buffer).digest("hex");
 }
 
 // A REAL surf component: the cadgen-js sun-gear fixture (written by the actual

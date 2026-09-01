@@ -18,6 +18,17 @@ import { renderPackageDir } from "./scanner.mjs";
 function tmpRoot(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "cad-progress-")));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  // Store-primary: isolate the user-level store per test. coordinationScope()
+  // and renderPackageDir() both key off the cache root, so without this the
+  // progress records these tests write land in the REAL user cache and are
+  // never cleaned up. CADGEN_CACHE_DIR is the first key cadgenCacheRootDir
+  // consults on every platform, so it alone is a complete sandbox.
+  const previous = process.env.CADGEN_CACHE_DIR;
+  process.env.CADGEN_CACHE_DIR = path.join(root, ".store");
+  t.after(() => {
+    if (previous === undefined) delete process.env.CADGEN_CACHE_DIR;
+    else process.env.CADGEN_CACHE_DIR = previous;
+  });
   return root;
 }
 
