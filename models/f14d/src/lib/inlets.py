@@ -326,6 +326,12 @@ def _duct_cavity(side):
     return loft([_sec_face(st, 0.0, side) for st in sts])
 
 
+#: A ``skin_y`` step larger than this between adjacent groove samples is not a
+#: curve, it is the sample jumping from one surface to another -- see
+#: :func:`_cowl_groove`.
+GROOVE_STEP_MAX = 20.0
+
+
 def _cowl_groove(x, side, z0, z1, width=11.0, depth=5.0, n=22):
     """A shallow transverse joint on the cowl flank, FOLLOWING THE SKIN.
 
@@ -335,13 +341,29 @@ def _cowl_groove(x, side, z0, z1, width=11.0, depth=5.0, n=22):
     Sampled off ``skin_y`` rather than the bare nacelle superellipse -- the two
     differ by tens of millimetres wherever the glove piles onto the cowl, and a
     groove cut to the wrong surface either misses the skin or gouges it.
+
+    THE RUN ENDS AT THE GLOVE, AND HAS TO.  ``skin_y`` answers "how far out is
+    the skin at this height", and above the glove's underside that answer is the
+    GLOVE, not the cowl: at x = 7.640 m it steps 1865 -> 1952 mm between two
+    adjacent samples.  Taken literally, the band's outer wall -- nominally 60 mm
+    clear of the aeroplane -- ends up BURIED in the glove, and its top edge came
+    to rest 1 mm under the glove's upper surface.  Cutting with a tool that
+    stops a millimetre short of a surface does not make a groove; it leaves a
+    hair-thick sliver, which the boolean returned as a 1.7 mm degenerate hole in
+    the skin face, and two of those held ``airframe_skin`` at
+    ``invalidTopology`` regardless of anything the cockpit cutter did.
+
+    So the run stops at the step.  A scribed line on the cowl flank ends where
+    the flank does, which is the junction it was always drawn up to.
     """
     pts_out, pts_in = [], []
+    last = None
     for i in range(n + 1):
         z = G.lerp(z0, z1, i / n)
         y = skin_y(x, z)
-        if y is None:
-            continue
+        if y is None or (last is not None and abs(y - last) > GROOVE_STEP_MAX):
+            break
+        last = y
         pts_out.append((y + 60.0, z))
         pts_in.append((y - depth, z))
     if len(pts_out) < 3:

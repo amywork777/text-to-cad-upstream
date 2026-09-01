@@ -99,10 +99,13 @@ def build_job(target, outdir, stem, views, size, mode, focus=None, hide=None,
         "display": display,
         "render": {"sizeProfile": size, "padding": 0.06, "viewLabels": False},
     }
-    if focus:
-        job["focus"] = focus
-    if hide:
-        job["hide"] = hide
+    if focus or hide:
+        selection = {}
+        if focus:
+            selection["focus"] = focus
+        if hide:
+            selection["hide"] = hide
+        job["selection"] = selection
     return job
 
 

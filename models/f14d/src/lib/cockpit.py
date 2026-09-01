@@ -78,6 +78,7 @@ X_BULK_AFT = 6890.0
 
 CUT_MARGIN = 30.0        # opening rim, outboard of the lobe silhouette
 SILL_DROP = 22.0         # rim cut below the skin, leaving a lip to seal against
+RIM_SHELF = 180.0        # how far outboard the rim roof reaches -- see _cut_section
 RAIL_ARC = 96.0          # canopy rail width, MEASURED ALONG THE SURFACE
 RAIL_PROUD = 12.0        # frames stand this far off the skin surface
 TUB_INSET = 34.0         # well inboard of the rail foot -- leaves the ledge
@@ -331,16 +332,64 @@ def _striped(p0, p1, r, n=7):
 
 
 def _cut_section(x):
-    """Cockpit cavity section: a wide slot above the sill over a narrower well.
+    """Cockpit cavity section: a wide slot above the sill over a narrower well,
+    roofed by a shelf that runs OUTBOARD of the rim.
 
-    Eight points every station so the loft matches index for index.  Above the
+    Twelve points every station so the loft matches index for index.  Above the
     sill the cut takes the whole bubble out to ``W_CUT``; below it the well
     steps inboard to ``W_TUB``, and the ledge that step leaves IS the sill the
     canopy rail and its seal sit on.
+
+    THE RIM ROOF, AND WHY THE RIM CANNOT BE A BARE WALL
+    ---------------------------------------------------
+    The first cutter stopped at ``(W_CUT, SILL)`` and went straight up.  The
+    lip -- the band of skin standing between the sill ledge and the surface --
+    was then bounded ABOVE by wherever the boolean found the skin, which is a
+    surface/surface intersection running for 3.3 m only ``SILL_DROP`` away from
+    the wall's own foot.  That is not a robust thing to ask for, and it did not
+    survive contact with the skin we actually loft.
+
+    The lofted skin does not sit on ``sections.surfaces``.  Rays cast at the rim
+    line put it ABOVE the analytic surface at 47 of 49 sampled stations, by up
+    to 84 mm, and near x = 6.29 m it plunges 71 mm BELOW: the canopy lobe's
+    foot is not one of the rails ``sections.rails`` pins samples to, so the two
+    section samples that bracket the rim are 87..129 mm apart, the spline rounds
+    that knee into a welt, and the welt collapses where the inlet arrives and
+    the rails jump outboard.  With the wall's foot only 22 mm under a surface
+    that wanders 155 mm, the lip's top edge and the sill edge met tangentially
+    at x = 6.30 m, the intersection folded back 9 mm in x, and the skin came out
+    with a self-intersecting wire -- ``invalidTopology`` on ``airframe_skin``.
+    The error is measured in the skin loft, so no tolerance, ``ShapeFix`` pass
+    or fuzzy boolean can reach it; only the cut's shape can.
+
+    So the lip is bounded by the CUTTER instead.  At ``W_CUT`` the wall rises
+    exactly ``SILL_DROP`` -- to ``SURF(x, W_CUT(x))``, the rim height the sill
+    was measured down from -- and then turns OUTBOARD as a flat roof reaching
+    ``RIM_SHELF``.  Three things follow:
+
+    * The lip's top edge is now a cutter line at a known height, not a computed
+      intersection, so the ribbon is ``SILL_DROP`` tall by construction.
+    * The roof crosses the skin at 11..37 deg, transversally, and it does so
+      only where the loft's welt stands above the intended surface -- a 6..45 mm
+      land, measured on the cut, which is what shaves the welt off flush with
+      the rim.
+    * Where the skin dives under the whole rim (the 6.29 m collapse) the cut
+      simply finds no material.  Nothing has to meet anything tangentially for
+      that to be a legal answer.
+
+    ``RIM_SHELF`` only has to outrun the welt, and 180 mm is four times what it
+    takes: the roof has left the skin within 45 mm, and 200 mm outboard the
+    intended surface has already fallen 58..250 mm below the rim, so the wall
+    that closes the cutter off at ``W_CUT + RIM_SHELF`` never touches the
+    aircraft.  Since nothing is cut outboard of the welt, the shelf does not
+    have to be faded out at the ends of the opening either.
     """
     wc, wt, sz, fz = W_CUT(x), W_TUB(x), SILL(x), FLOOR(x)
-    return [(-wt, fz), (wt, fz), (wt, sz), (wc, sz), (wc, Z_TOP),
-            (-wc, Z_TOP), (-wc, sz), (-wt, sz)]
+    rz = SURF(x, wc)             # rim height: SILL(x) + SILL_DROP, by definition
+    ws = wc + RIM_SHELF
+    return [(-wt, fz), (wt, fz), (wt, sz), (wc, sz), (wc, rz), (ws, rz),
+            (ws, Z_TOP), (-ws, Z_TOP), (-ws, rz), (-wc, rz), (-wc, sz),
+            (-wt, sz)]
 
 
 def build_skin_cutter():
