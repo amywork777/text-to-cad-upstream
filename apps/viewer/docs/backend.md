@@ -4,7 +4,7 @@ The CAD Viewer client never reads filesystem paths. It talks to HTTP routes unde
 `/__cad/*` and to catalog URLs, and a backend on the other side resolves those to
 files. The viewer is a local-filesystem app, so there is exactly one backend.
 
-That backend is **pure JS**: `apps/viewer/server/`, dependency-free Node (>= 22). It owns
+That backend is **pure JS**: `server/`, dependency-free Node (>= 22). It owns
 everything the viewer does — the catalog scan, path containment, asset serving, the
 SPA, artifact status, the STEP import bridge, the native reveal dialog, the instance
 registry. The viewer is a STATIC VISUALIZATION TOOL: its render path runs no Python.
@@ -25,9 +25,9 @@ them is a bug:
   process, so launch reuse must never hand it back, and restarting it to test server
   changes stays entirely in your hands.
 - **Production** (`npm run build && npm run start`) — `node server/main.mjs` serves the
-  built `dist/` and the API from one process. The cad-viewer skill ships the same files
-  (built dist + this server) under its own `scripts/viewer/` and starts them the same
-  way; cadgen ships no viewer at all.
+  built `dist/` and the API from one process. The cad-viewer agent skill ships the
+  same files (built dist + this server) and starts them the same way; cadgen ships
+  no viewer at all.
 
 ## Launching (unconditional, Jupyter-style)
 
@@ -115,7 +115,7 @@ lock — so the kernel-lock rules in `cadgen/coordination/lock.py` are not being
 re-inferred here; a killed build's badge simply ages out within seconds.
 
 Constants the JS authority mirrors from cadgen (the package schema version) are
-pinned cross-language by `tests/python/global/test_render_contract_sync.py`.
+pinned cross-language by a sync test in the repo where cadgen is developed.
 
 `/__cad/server` reports `stepArtifactGenerationAvailable: false`, always: the
 capability does not exist in the viewer by design. `stepImportAvailable` reports

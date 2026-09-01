@@ -11,16 +11,23 @@ into the standalone `earthtojake/cad-viewer` repo unchanged.
 reviewing CAD artifacts (catalog, tabs, selection, pose, animation,
 measurements, themes).
 
-**MAY DEPEND ON** — `cadgen-js` (source, via the `cadgen-js` specifier;
-in the dev layout `packages/cadgen-js` here is a symlink to the canonical
-package, dereferenced into a vendored copy when mirrored) and its own npm
-dependencies. The backend spawns `cadgen step build` for foreign STEP
-imports as a SOFT dependency: absent cadgen, viewing still works.
+**MAY DEPEND ON** — `cadgen-js` (the shared CAD render/runtime package,
+vendored at `packages/cadgen-js` and imported via the `cadgen-js`
+specifier) and its own npm dependencies. The backend spawns `cadgen step
+build` for foreign STEP imports as a SOFT dependency: absent cadgen
+(installable from PyPI), viewing still works.
 
 **DEPENDED ON BY** — nothing. No code imports from this app, by law.
 
 ## The laws that bind the app
 
+- **Ships alone**: this app works in isolation — the built client, the
+  dependency-free Node server, and the vendored `packages/cadgen-js` are
+  everything it needs; cadgen from PyPI is its only Python dependency, and
+  a soft one. Nothing in the app — code or markdown — refers outside this
+  directory: it ships unchanged, so an out-of-directory reference is
+  broken the moment it leaves. `scripts/selfContained.test.mjs` is the
+  fence.
 - **Three-input law**: everything renders from the artifact file, its
   sidecar (`<name>.step.json`), and the cache. The viewer never reads
   source code and never rebuilds on source changes — generated outputs are
@@ -34,19 +41,19 @@ imports as a SOFT dependency: absent cadgen, viewing still works.
 
 ## Launching
 
-Dev (Vite serves the client from source with HMR; edits to `src/` and
-`packages/cadgen-js` show live):
+All commands run from this app's directory. Dev (Vite serves the client
+from source with HMR; edits to `src/` and `packages/cadgen-js` show live):
 
 ```bash
-npm --prefix apps/viewer run dev -- --host 127.0.0.1
+npm run dev -- --host 127.0.0.1
 # open http://127.0.0.1:5173/?file=<path relative to the served root>
 ```
 
 Prod (the shipped bundle — build first, then the JS server):
 
 ```bash
-npm --prefix apps/viewer run build
-node apps/viewer/server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
+npm run build
+node server/main.mjs --root <absolute dir> --host 127.0.0.1 --json
 ```
 
 The launcher is unconditional and prints the URL it serves: a live instance
@@ -58,30 +65,9 @@ runs the code it started with); an explicit `--port` is strict.
 ends one. Do not stop instances you did not start. Dev lives on Vite's
 port (5173, strict) and never enters the instance registry.
 
-From a lightweight worktree (backend is pure JS; builds need a
-cadgen-importable interpreter handed down):
-
-```bash
-CADGEN_PYTHON=<main>/.venv/bin/python \
-PYTHONPATH=<worktree>/packages/cadgen/src \
-node <worktree>/apps/viewer/server/main.mjs \
-  --root <worktree>/models --dist <worktree>/apps/viewer/dist \
-  --host 127.0.0.1 --json
-```
-
-Worktrees deliberately carry no `node_modules`; link them from the primary
-checkout before building:
-
-```bash
-ln -s <main>/apps/viewer/node_modules apps/viewer/node_modules
-mkdir -p packages/cadgen-js/node_modules
-ln -s <main>/packages/cadgen-js/node_modules/three packages/cadgen-js/node_modules/three
-ln -s <main>/apps/docs/node_modules/meshoptimizer  packages/cadgen-js/node_modules/meshoptimizer
-npm --prefix apps/viewer run build
-```
-
-Reuse keys on realpath(root) × version, so another checkout's instance can
-never be handed back for this worktree.
+Reuse keys on realpath(root) × version, so an instance serving a
+different directory — or the same directory from another copy of the app —
+is never handed back by mistake.
 
 ## Behaviours worth knowing before concluding something is broken
 
@@ -93,7 +79,7 @@ never be handed back for this worktree.
   different route, so probing it 404s whether or not anything is wrong.
 - **Vite's transform cache can outlive HMR and hard reloads.** If a source
   edit does not show up, restart the dev server and delete
-  `apps/viewer/node_modules/.vite`.
+  `node_modules/.vite`.
 - Never invoke the export/reveal routes from automation — they open native
   save-as dialogs and Finder windows.
 
@@ -117,6 +103,6 @@ dist/       # built client (gitignored)
 
 ## Testing
 
-`npm --prefix apps/viewer run test` (node:test suites beside the code).
+`npm run test` from this directory (node:test suites beside the code).
 Headless UI verification uses Playwright with `--use-angle=metal` —
 the default software WebGL renderer is not what users see.

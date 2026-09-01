@@ -504,6 +504,46 @@ def merge_assembly_entities(
     )
 
 
+def assembly_group_nodes(descriptor: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """The instance tree's INTERIOR nodes, keyed by occurrence id.
+
+    The descriptor's ``occurrences`` table is leaves only (a leaf is what owns geometry),
+    so a subassembly node appears nowhere a selector row can find it. Its identity --
+    the name a person recognises the branch by -- lives in the ``assembly`` tree, which
+    is what this reads.
+
+    ``transform`` is carried through when the node has one and simply absent otherwise.
+    Group placement is baked into each leaf's absolute transform today, so no node here
+    carries its own; a synthesised value would be a guess presented as a measurement, and
+    a caller can tell "no stored frame" from a wrong one only if we decline to invent it.
+    """
+    root = descriptor.get("assembly")
+    root = root.get("root") if isinstance(root, Mapping) else None
+    if not isinstance(root, Mapping):
+        return {}
+    nodes: dict[str, dict[str, Any]] = {}
+    stack: list[Mapping[str, Any]] = [root]
+    while stack:
+        node = stack.pop()
+        children = node.get("children")
+        children = [child for child in children if isinstance(child, Mapping)] if isinstance(children, list) else []
+        stack.extend(children)
+        node_id = str(node.get("id") or "").strip()
+        if not node_id or not children:
+            continue  # a leaf; its row is in the occurrences table
+        entry: dict[str, Any] = {
+            "id": node_id,
+            "name": str(node.get("name") or node_id),
+            "nodeType": str(node.get("nodeType") or "subassembly"),
+            "childCount": len(children),
+        }
+        transform = node.get("transform")
+        if isinstance(transform, list) and len(transform) == 16:
+            entry["transform"] = [float(value) for value in transform]
+        nodes[node_id] = entry
+    return nodes
+
+
 def merge_assembly_occurrences(
     index: SelectorIndex,
     descriptor: Mapping[str, Any],
@@ -518,6 +558,7 @@ def merge_assembly_occurrences(
     rows = assembly_occurrence_rows(descriptor, package_dir)
     if not rows:
         return index
+    group_nodes = assembly_group_nodes(descriptor)
     occurrences = list(index.occurrences)
     occurrence_by_id = dict(index.occurrence_by_id)
     added = 0
@@ -529,9 +570,11 @@ def merge_assembly_occurrences(
         occurrence_by_id[occurrence_id] = row
         added += 1
     if not added:
-        return index
+        return replace(index, group_nodes=group_nodes) if group_nodes else index
     # occurrenceCount came from the sidecar's stats and said 1 for a 160-part assembly, which is
     # what `inspect refs --facts` reported. It is a count of what this index can resolve.
+    # It stays a LEAF count: a group ref resolves by expanding to the leaves already
+    # counted here, so counting the interior nodes too would double-count the tree.
     manifest = dict(index.manifest)
     stats = dict(manifest.get("stats")) if isinstance(manifest.get("stats"), Mapping) else {}
     stats["occurrenceCount"] = len(occurrences)
@@ -541,6 +584,7 @@ def merge_assembly_occurrences(
         manifest=manifest,
         occurrences=occurrences,
         occurrence_by_id=occurrence_by_id,
+        group_nodes=group_nodes,
     )
 
 

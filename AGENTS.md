@@ -67,6 +67,11 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   `packages/cadgen/README.md` (the laws), `packages/cadgen-js/README.md`,
   `apps/viewer/README.md`, and `apps/docs/README.md` before changing
   generation, rendering, storage, layout, or public interfaces.
+- Ships-alone law: `packages/cadgen` (the built PyPI wheel) and `apps/viewer`
+  (mirrored unchanged to `earthtojake/cad-viewer`) each work in isolation
+  outside this repo, so their markdown must not refer to anything outside the
+  package — enforced by `tests/python/global/test_package_boundaries.py`.
+  Repo-development guidance for them goes in `CONTRIBUTING.md`.
 
 - Keep root guidance short. Put domain workflows, CLI details, and validation
   policy in the relevant `skills/<skill>/SKILL.md` or `references/` file.
@@ -190,11 +195,13 @@ the development symlink layout afterward if you are continuing on `develop`.
 
 ## CAD Viewer
 
-The whole launch/dev/worktree playbook lives in `apps/viewer/README.md`:
-launcher contract (reuse, ports, `--new`), dev vs prod, the lightweight-
-worktree recipe, and the catalog/link-verification gotchas. Read it before
-starting, stopping, or debugging a Viewer. Never stop an instance you did
-not start; packaged-runtime checks go through `scripts/bundle/bundle.sh`.
+The app-facing playbook lives in `apps/viewer/README.md`: launcher contract
+(reuse, ports, `--new`), dev vs prod, and the catalog/link-verification
+gotchas. The repo-side half — the lightweight-worktree recipe and
+node_modules linking — lives in `CONTRIBUTING.md` under "Viewer Development
+In This Repo". Read them before starting, stopping, or debugging a Viewer.
+Never stop an instance you did not start; packaged-runtime checks go
+through `scripts/bundle/bundle.sh`.
 
 ## Git And LFS
 

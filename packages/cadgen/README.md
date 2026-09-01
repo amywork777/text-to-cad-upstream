@@ -4,8 +4,8 @@ The published distribution: everything that turns CAD source into documents,
 documents into derived state, and derived state into pixels and meshes. One
 PyPI package carrying both language halves — the Python engine under
 `src/cadgen/`, and the built JavaScript it executes under
-`src/cadgen/_runtime/` (bundled from `packages/cadgen-js`, stamped by
-`scripts/bundle/bundle.sh`; the JS *source* lives in its own package).
+`src/cadgen/_runtime/` (the cadgen-js runtime, bundled in at build time; the
+JS *source* lives in its own package and never ships as source).
 
 **PURPOSE** — the engine and its command surface: model execution, the
 content-keyed cache, document assembly, kinematics, exports, validation,
@@ -15,9 +15,9 @@ inspection, snapshots, and the warm daemon.
 never at namespace-import time) and the *built outputs* of `cadgen-js`.
 Never app code, never `cadgen-js` source at runtime.
 
-**DEPENDED ON BY** — every skill (as a pinned installed distribution), the
-CAD Viewer's build path (`cadgen step build` spawned for foreign STEP
-imports — a soft dependency; viewing works without it), and CI.
+**DEPENDED ON BY** — every skill (as a pinned installed distribution) and
+the CAD Viewer's build path (`cadgen step build` spawned for foreign STEP
+imports — a soft dependency; viewing works without it).
 
 ## The design laws
 
@@ -122,8 +122,21 @@ Kinematics is pure data and choreography is pure JS, fully independent
 (11). Clients render from file + sidecar + cache and never read source or
 trigger builds (12). Correctness never depends on a cache hit (13).
 Composition: importing links, `cadgen.compose.memo` caches; a model must
-never `read_step` its own output (14). See `packages/cadgen-js/README.md`
-for the JS half of these.
+never `read_step` its own output (14). The bundled runtime under
+`_runtime/` is the JS half of these; the laws' JS statements live with the
+cadgen-js source.
+
+### 15. The package ships alone
+
+The installed distribution is the whole world: the Python engine, the
+bundled `_runtime/`, and this document. It works with the repository it
+was built from gone — and its markdown must read that way, referring to
+nothing outside the package.
+
+*Pressure-test*: every sentence in the package's markdown must be true and
+actionable for someone who only ran `pip install cadgen`. Naming a bundled
+thing ("the cadgen-js runtime bundled at build time") passes; a repo path
+to its source, a repo script, or a repo workflow does not.
 
 ## The shape of the package
 
@@ -157,12 +170,6 @@ validate · snapshot; `srdf` validate. `cadgen snapshot` routes any suffix.
 mirror pattern. `cadgen step compile` is internal tooling: skills never
 teach it — doors compile missing packages on demand.
 
-## Working on cadgen
-
-- `scripts/test/test-python.sh` (or path-targeted `unittest`) for the
-  engine; `tests/python/global/` holds the policy gates that enforce the
-  laws above.
-- Editing anything the bundlers consume? `scripts/bundle/bundle.sh`, commit
-  the regenerated `_runtime/`, then `scripts/dev/setup-symlinks.sh`.
-- `VERSION` at the repo root is canonical; release tooling stamps every
-  duplicate. Never hand-edit versions here.
+Developed in [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad);
+that repo's contributor guide carries the development workflow (tests,
+bundling, versioning).

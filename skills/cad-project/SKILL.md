@@ -13,6 +13,13 @@ this structure for anything bigger than a couple of loose models; skip it for
 one-off parts, where a flat folder is fine. Authoring the models themselves is
 the `$cad` skill; drawings are `$dxf`.
 
+**Where the project lives**: in a workspace that is more than CAD — a
+monorepo, an app with models on the side — put the project inside the
+directory that holds the workspace's models (`models/`, for example; use the
+workspace's existing home for CAD if it has one), never loose at the root.
+In an empty or bare workspace, the CAD project IS the workspace: lay out
+`src/` and the format folders at the root.
+
 ## The layout: code in `src/`, raw outputs in format folders
 
 Only OUTPUTS are organized by format. Code is not: a model script is not a

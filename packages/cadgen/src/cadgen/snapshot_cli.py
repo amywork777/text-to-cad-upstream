@@ -41,6 +41,21 @@ from cadgen.step_targets import ResolvedStepTarget, StepTopologyArtifact, StepTo
 
 from cadgen.cli_logging import CliLogger
 from cadgen.coordination import PHASE_BROWSER, SNAPSHOT, ProgressReporter
+# What a GROUP occurrence ref means is shared with `cadgen step inspect`
+# (cadgen.occurrence_groups). Two commands answering "does this document have an o1.4"
+# differently is a bug that reads as a data problem, and the near-miss hint is exactly
+# the sort of text that drifts when it is written twice. Re-exported here because
+# callers of this module have always reached for these names through it.
+from cadgen.occurrence_groups import (
+    OCCURRENCE_NEAR_MISS_LIMIT,
+    UnknownOccurrenceSelector,
+    occurrence_group_ids,
+    occurrence_near_miss_hint,
+    occurrence_sort_key,
+)
+from cadgen.occurrence_groups import (
+    expand_occurrence_selector as _expand_occurrence_selector,
+)
 from cadgen.cli_progress import cli_progress_line
 from cadgen.results import SnapshotResult
 from cadgen.snapshot_core import (
@@ -452,122 +467,16 @@ def artifact_selector_index(artifact: StepTopologyArtifact | None) -> lookup.Sel
     return index_with_assembly_occurrences(index, artifact)
 
 
-# How many sibling refs an "unknown selector" error names before it stops listing. A
-# 160-part assembly's child list is not a hint, it is a wall of text.
-OCCURRENCE_NEAR_MISS_LIMIT = 12
-
-
-def occurrence_sort_key(occurrence_id: str) -> tuple[int, ...]:
-    """Order occurrence ids by their numeric PATH, so o1.1.10 follows o1.1.2.
-
-    Mirrors ``label_refs._occurrence_sort_key``; these lists are user-facing, and
-    lexicographic order reads as arbitrary to anyone holding the instance tree.
-    """
-    body = str(occurrence_id or "").lstrip("oO")
-    parts: list[int] = []
-    for chunk in body.split("."):
-        try:
-            parts.append(int(chunk))
-        except ValueError:
-            return (1 << 30,)
-    return tuple(parts)
-
-
-def occurrence_group_ids(selector_index: lookup.SelectorIndex) -> set[str]:
-    """Every instance-tree node that is NOT itself a rendered occurrence.
-
-    Derived from the leaf ids rather than read out of ``assembly.json``: an occurrence id
-    IS its path through the tree, so the strict prefixes of a leaf are exactly its
-    ancestors. That keeps this in step with how the runtime resolves a group — by id
-    prefix, in kinematicsModule.js and cadScene.js alike — instead of introducing a third
-    opinion about what the tree contains.
-    """
-    leaves = set(selector_index.occurrence_by_id)
-    groups: set[str] = set()
-    for occurrence_id in leaves:
-        parts = str(occurrence_id).split(".")
-        for depth in range(1, len(parts)):
-            groups.add(".".join(parts[:depth]))
-    return groups - leaves
-
-
-def occurrence_near_miss_hint(selector: str, selector_index: lookup.SelectorIndex) -> str:
-    """What DOES exist near a ref that does not.
-
-    A bare "unknown selector: o1.4" leaves the caller guessing whether the document has no
-    such branch or whether they mistyped a depth. This walks up to the deepest ancestor of
-    the ref that the document really has and names that node's children.
-    """
-    known = set(selector_index.occurrence_by_id) | occurrence_group_ids(selector_index)
-    if not known:
-        return "this document declares no part/subassembly occurrences"
-    parts = str(selector).split(".")
-    ancestor = ""
-    for depth in range(len(parts) - 1, 0, -1):
-        candidate = ".".join(parts[:depth])
-        if candidate in known:
-            ancestor = candidate
-            break
-    scope = f"{ancestor}." if ancestor else ""
-    child_depth = len(ancestor.split(".")) + 1 if ancestor else 1
-    siblings = sorted(
-        {
-            occurrence_id
-            for occurrence_id in known
-            if occurrence_id.startswith(scope) and len(occurrence_id.split(".")) == child_depth
-        },
-        key=occurrence_sort_key,
-    )
-    if not siblings:
-        return "this document declares no part/subassembly occurrences"
-    listed = ", ".join(siblings[:OCCURRENCE_NEAR_MISS_LIMIT])
-    if len(siblings) > OCCURRENCE_NEAR_MISS_LIMIT:
-        listed += f", ... ({len(siblings)} total)"
-    if ancestor:
-        return f"{ancestor} does exist, and holds: {listed}"
-    return f"known occurrence refs start at: {listed}"
-
-
 def expand_occurrence_selector(
     selector: str, *, selector_index: lookup.SelectorIndex | None, source_label: str
 ) -> list[str]:
-    """The rendered occurrences a selection ref covers.
-
-    ONE document, TWO occurrence namespaces (see :mod:`cadgen.assembly_lookup`): the
-    descriptor's instance tree, and the flat selector index whose rows are that tree's
-    LEAVES, because only a leaf owns geometry. So a subassembly node — ``#o1.1`` here,
-    the very kind of ref a kinematics mate names and poses without complaint — carried no
-    row and was refused as "unknown", by an error whose own text claimed subassemblies
-    were supported.
-
-    A group is an id PREFIX of its subtree, exactly as kinematicsModule.js and
-    cadScene.js treat it, so a ref that no row carries but that rows descend FROM expands
-    to those rows. Expanded here rather than passed through: the resolved job then says
-    which parts it means, and a group with nothing rendered under it fails as a CLI error
-    instead of as an empty picture.
-
-    With no selector index (no topology to check against) the ref travels unchanged, as
-    it always has.
-    """
-    if selector_index is None:
-        return [selector]
-    if selector in selector_index.occurrence_by_id:
-        return [selector]
-    prefix = f"{selector}."
-    members = sorted(
-        (
-            occurrence_id
-            for occurrence_id in selector_index.occurrence_by_id
-            if occurrence_id.startswith(prefix)
-        ),
-        key=occurrence_sort_key,
-    )
-    if members:
-        return members
-    raise SnapshotError(
-        f"{source_label} references unknown part/subassembly occurrence selector: "
-        f"{selector}; {occurrence_near_miss_hint(selector, selector_index)}"
-    )
+    """The rendered occurrences a selection ref covers, as a snapshot error on failure."""
+    try:
+        return _expand_occurrence_selector(
+            selector, selector_index=selector_index, source_label=source_label
+        )
+    except UnknownOccurrenceSelector as error:
+        raise SnapshotError(str(error)) from error
 
 
 def normalize_selection_selector(

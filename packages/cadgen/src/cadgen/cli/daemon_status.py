@@ -43,11 +43,17 @@ def _render(status: dict) -> str:
     ]
     for worker in workers:
         state = "busy" if worker.get("busy") else "idle"
-        lines.append(f"    pid {worker.get('pid')}  {state}  {worker.get('jobsServed', 0)} jobs")
+        # A worker serves ONE project for its whole life, so which project it holds is
+        # the first thing to know about it -- "3 workers" says nothing about whether the
+        # build you are waiting on has a warm one.
+        project = str(worker.get("project") or "")
+        line = f"    pid {worker.get('pid')}  {state}  {worker.get('jobsServed', 0)} jobs"
+        lines.append(f"{line}  {project}" if project else line)
     lines.append(
         f"  totals   {status.get('jobs', 0)} jobs, "
         f"{status.get('coldOverflows', 0)} cold overflows, "
         f"{status.get('recycles', 0)} recycles, "
+        f"{status.get('evictions', 0)} evictions, "
         f"{status.get('crashes', 0)} crashes"
     )
     return "\n".join(lines)

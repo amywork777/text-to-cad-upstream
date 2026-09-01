@@ -1,5 +1,8 @@
 """The pool's dispatch rule, which is the whole reason it exists.
 
+0. A worker serves ONE project for its whole life. Two projects never share a process,
+   because cad-projects share top-level module names and a reused worker builds the
+   second project against the first one's `lib`.
 1. A free worker -> use it. Sequential work must never grow the pool.
 2. All busy, below the cap -> spawn and wait. That caller pays roughly one OCP import,
    but the worker persists, so a burst CONVERGES to warm instead of paying per burst.
@@ -38,7 +41,7 @@ class _StubWorker:
         self.jobs_served = 0
         self.last_used = 0.0
         self.killed = False
-        self.affinity = ""
+        self.project = ""
         self._alive = True
 
     def alive(self) -> bool:
@@ -112,65 +115,130 @@ class DispatchRule(_PoolFixture):
             self.pool.release(worker)
 
 
-class SessionBinding(_PoolFixture):
-    def test_bound_worker_serves_its_root(self):
+class ProjectBinding(_PoolFixture):
+    """One worker, one project, for the worker's whole life.
+
+    The rule this class defends is not a performance heuristic. Every cad-project keeps
+    its shared code in `src/lib/`, so two projects on one worker collide on the module
+    name `lib`; the loader's evictions scrub that between builds, and a scrub that misses
+    builds the second project against the first one's helpers and reports success.
+    """
+
+    def test_bound_worker_serves_its_project(self):
         with self._cap(4):
-            a = self.pool.acquire("/models/tom")
-            b = self.pool.acquire("/models/gripper")
+            a = self.pool.acquire("/models/tom/src")
+            b = self.pool.acquire("/models/gripper/src")
             self.pool.release(a)
             self.pool.release(b)
-            again = self.pool.acquire("/models/gripper")
-            self.assertIs(again, b, "the session bound to this model must win")
+            again = self.pool.acquire("/models/gripper/src")
+            self.assertIs(again, b, "the worker bound to this project must win")
             self.pool.release(again)
 
-    def test_busy_session_is_waited_for_not_fanned_out(self):
+    def test_two_projects_never_share_a_worker(self):
+        # The whole point. Interleaved, released between each, with room in the pool for
+        # reuse to look attractive -- the exact shape that put one worker on every
+        # project when routing keyed on cwd.
+        with self._cap(4):
+            by_project: dict[str, set[int]] = {}
+            for _ in range(6):
+                for project in ("/models/juno/src", "/models/moonwatch/src"):
+                    worker = self.pool.acquire(project)
+                    self.assertIsNotNone(worker)
+                    self.assertEqual(worker.project, project)
+                    by_project.setdefault(project, set()).add(worker.pid)
+                    self.pool.release(worker)
+        juno, moonwatch = by_project["/models/juno/src"], by_project["/models/moonwatch/src"]
+        self.assertEqual(len(juno), 1, "one project must converge on one warm worker")
+        self.assertEqual(len(moonwatch), 1)
+        self.assertFalse(juno & moonwatch, "a worker served two projects")
+
+    def test_busy_project_is_waited_for_not_fanned_out(self):
         import threading
         import time as _time
 
         with self._cap(4):
-            session = self.pool.acquire("/models/tom")
+            session = self.pool.acquire("/models/tom/src")
 
             def release_soon():
                 _time.sleep(0.1)
                 self.pool.release(session)
 
             threading.Thread(target=release_soon, daemon=True).start()
-            second = self.pool.acquire("/models/tom")
+            second = self.pool.acquire("/models/tom/src")
             self.assertIs(second, session,
-                          "per-model requests serialize through the session")
+                          "per-project requests serialize through the one worker")
             self.pool.release(second)
 
-    def test_admission_budget_bounds_resident_sessions(self):
+    def test_admission_budget_bounds_resident_workers(self):
         with self._cap(4):
-            pids = set()
             for index in range(30):
-                worker = self.pool.acquire(f"/models/m{index}")
+                worker = self.pool.acquire(f"/models/m{index}/src")
                 self.assertIsNotNone(worker)
-                pids.add(worker.pid)
                 self.pool.release(worker)
-            self.assertLessEqual(len(pids), 4,
-                                 "30 roots must not mean 30 workers")
+            resident = self.pool.snapshot()["workers"]
+        # 30 projects, never more than 4 resident: the cap admits projects rather than
+        # recycling one process through all of them.
+        self.assertLessEqual(len(resident), 4, "30 projects must not mean 30 live workers")
+        self.assertGreater(self.pool.snapshot()["evictions"], 0)
 
-    def test_new_root_rebinds_least_recently_used(self):
+    def test_a_new_project_evicts_the_lru_and_respawns(self):
         with self._cap(2):
-            a = self.pool.acquire("/models/a")
-            b = self.pool.acquire("/models/b")
+            a = self.pool.acquire("/models/a/src")
+            b = self.pool.acquire("/models/b/src")
             self.pool.release(a)
             self.pool.release(b)
-            a2 = self.pool.acquire("/models/a")  # refresh a's last_used
+            a2 = self.pool.acquire("/models/a/src")  # refresh a's last_used
             self.pool.release(a2)
-            c = self.pool.acquire("/models/c")
-            self.assertIs(c, b, "the LRU free worker rebinds to the new root")
-            self.assertEqual(c.affinity, "/models/c")
-            self.pool.release(c)
+            c = self.pool.acquire("/models/c/src")
+        self.assertTrue(b.killed, "the LRU project's worker must be evicted, not rebound")
+        self.assertNotIn(c.pid, {a.pid, b.pid}, "a new project gets a FRESH process")
+        self.assertEqual(c.project, "/models/c/src")
+        self.assertEqual(self.pool.snapshot()["evictions"], 1)
+        self.pool.release(c)
 
-    def test_no_affinity_behaves_as_before(self):
+    def test_a_cap_of_one_respawns_per_project_and_never_reuses(self):
+        # The single-worker variant of the interleaved repro: with no room to hold both,
+        # each alternation must evict and respawn. Reuse here would be the bug.
+        seen: list[tuple[str, int]] = []
+        with self._cap(1):
+            for _ in range(3):
+                for project in ("/models/juno/src", "/models/moonwatch/src"):
+                    worker = self.pool.acquire(project)
+                    self.assertIsNotNone(worker)
+                    self.assertEqual(worker.project, project)
+                    seen.append((project, worker.pid))
+                    self.pool.release(worker)
+        pids_by_project: dict[str, set[int]] = {}
+        for project, pid in seen:
+            pids_by_project.setdefault(project, set()).add(pid)
+        self.assertFalse(
+            pids_by_project["/models/juno/src"] & pids_by_project["/models/moonwatch/src"],
+            "a cap of one must respawn per project, never hand one process to both",
+        )
+        self.assertEqual(len(self.pool.snapshot()["workers"]), 1)
+        self.assertEqual(self.pool.snapshot()["evictions"], 5)
+
+    def test_no_project_behaves_as_before(self):
         with self._cap(4):
             a = self.pool.acquire()
             self.pool.release(a)
             b = self.pool.acquire()
             self.assertIs(a, b)
             self.pool.release(b)
+
+    def test_a_project_less_request_borrows_without_binding(self):
+        # `inspect`/`snapshot` on a STEP execute no model code, so they may run anywhere
+        # -- but they must not steal a worker's identity on the way through.
+        with self._cap(2):
+            owned = self.pool.acquire("/models/tom/src")
+            self.pool.release(owned)
+            borrowed = self.pool.acquire()
+            self.assertIs(borrowed, owned)
+            self.assertEqual(borrowed.project, "/models/tom/src", "binding was overwritten")
+            self.pool.release(borrowed)
+            again = self.pool.acquire("/models/tom/src")
+            self.assertIs(again, owned)
+            self.pool.release(again)
 
 
 class WorkerLifecycle(_PoolFixture):

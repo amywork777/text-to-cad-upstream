@@ -82,6 +82,14 @@ class SelectorIndex:
     # empty forever for inputs whose parts carry no usable labels -- those stay reachable by
     # their numeric ids, exactly as before labels existed.
     label_aliases: dict[str, Any] = field(default_factory=dict)
+    # The instance tree's INTERIOR nodes -- subassemblies -- keyed by occurrence id, as
+    # the package descriptor records them (name, nodeType, and a transform where one is
+    # written). Rows above are leaves, because only a leaf owns geometry; this is the
+    # rest of the tree, and it is what lets a command answer a group ref with the node's
+    # own identity instead of an anonymous id. Filled in by
+    # cadgen.assembly_lookup.merge_assembly_occurrences; empty for part entries, which
+    # have no interior nodes to describe.
+    group_nodes: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def build_selector_index(manifest: dict[str, Any], *, buffers: Mapping[str, Any] | None = None) -> SelectorIndex:

@@ -154,6 +154,74 @@ Canonical source directories are:
 On `develop`, `apps/viewer/packages/cadgen-js` is a symlink mirroring the root
 sources. Treat them as aliases, not separate source roots — edit the canonical path.
 
+Two source trees ship whole and must work in isolation outside this repo — the
+ships-alone law, enforced by the markdown-isolation check in
+`tests/python/global/test_package_boundaries.py`:
+
+- `packages/cadgen` builds into the PyPI wheel with cadgen-js bundled in at
+  build time; its README is the PyPI long description.
+- `apps/viewer` mirrors UNCHANGED into the standalone `earthtojake/cad-viewer`
+  repo at each release (`apps/viewer/scripts/selfContained.test.mjs` is the
+  in-app fence), with cadgen-js dereferenced into a vendored copy; cadgen from
+  PyPI is its only Python dependency, and a soft one.
+
+Markdown under either tree must be true and actionable with this repo gone:
+name the bundled thing ("the cadgen-js runtime bundled at build time"), never
+the repo path to its source, and keep commands relative to the package itself.
+Repo-development guidance for them belongs here, not in the packages.
+
+## Working On cadgen In This Repo
+
+- `scripts/test/test-python.sh` (or path-targeted `unittest`) for the engine;
+  `tests/python/global/` holds the policy gates that enforce the design laws in
+  `packages/cadgen/README.md`.
+- Editing anything the bundlers consume? `scripts/bundle/bundle.sh`, commit the
+  regenerated `_runtime/`, then `scripts/dev/setup-symlinks.sh`.
+- `VERSION` at the repo root is canonical; release tooling stamps every
+  duplicate. Never hand-edit versions under `packages/`.
+
+## Viewer Development In This Repo
+
+`apps/viewer/README.md` keeps the app-facing half (launcher contract, dev vs
+prod, behaviours worth knowing, testing); everything below is workbench-only
+and deliberately lives here.
+
+Launching from a lightweight worktree (the backend is pure JS; builds need a
+cadgen-importable interpreter handed down):
+
+```bash
+CADGEN_PYTHON=<main>/.venv/bin/python \
+PYTHONPATH=<worktree>/packages/cadgen/src \
+node <worktree>/apps/viewer/server/main.mjs \
+  --root <worktree>/models --dist <worktree>/apps/viewer/dist \
+  --host 127.0.0.1 --json
+```
+
+Launcher reuse keys on realpath(root) × version, so another checkout's
+instance can never be handed back for a worktree's root.
+
+Worktrees deliberately carry no `node_modules`; link them from the primary
+checkout before building. cadgen-js needs all three of its runtime
+dependencies linked — `three-mesh-bvh` included, which an earlier version of
+this recipe omitted:
+
+```bash
+ln -s <main>/apps/viewer/node_modules apps/viewer/node_modules
+mkdir -p packages/cadgen-js/node_modules
+for dep in three three-mesh-bvh meshoptimizer; do
+  ln -s <main>/packages/cadgen-js/node_modules/$dep packages/cadgen-js/node_modules/$dep
+done
+npm --prefix apps/viewer run build
+```
+
+Do not extend the trick to the docs app: Turbopack rejects a symlinked
+`apps/docs/node_modules`, so the docs app needs a real install in any checkout
+that builds it.
+
+Never let a symlink reach the published tree (see Branch Layouts): the mirror
+sync dereferences `apps/viewer/packages/*` into real vendored copies, and
+`scripts/github-workflows/check-builds.sh` enforces symlink-free publishes.
+
 Production-output checks are intentionally centralized. Normal development
 should stay in the symlinked `develop` layout. When you specifically need to inspect
 production outputs locally, use a temporary checkout or rerun
