@@ -193,22 +193,6 @@ test("parser warnings normalize to status items", () => {
   })[0].title, "SDF warning");
 });
 
-test("a sourceStatus field on an entry produces no status item (retired tier)", () => {
-  // The scanner never emitted sourceStatus and the generated-source card was
-  // dead code; an entry carrying the retired field must render nothing.
-  const items = buildFileStatusItems({
-    entry: {
-      file: "robots/robot.urdf",
-      kind: "urdf",
-      sourceStatus: { ok: false, status: "missing" }
-    },
-    fileSheetKind: "urdf",
-    viewerServerInfo
-  });
-
-  assert.equal(items.length, 0);
-});
-
 test("viewer alerts normalize to status items", () => {
   const item = viewerAlertFileStatusItem({
     severity: "error",

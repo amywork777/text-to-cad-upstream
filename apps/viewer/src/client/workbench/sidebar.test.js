@@ -1300,68 +1300,6 @@ test("selectedEntryKeyFromUrl does not fall back to VIEWER_DEFAULT_FILE for miss
     }
   }
 });
-
-test("selectedEntryKeyFromUrl ignores retired refs when explicit file param is missing", () => {
-  const originalWindow = globalThis.window;
-  globalThis.window = {
-    location: {
-      search: "?file=parts%2Fmissing.step&refs=%23f2"
-    }
-  };
-
-  try {
-    assert.equal(
-      selectedEntryKeyFromUrl([
-        {
-          file: "parts/sample_plate.step",
-          cadPath: "parts/sample_plate",
-          kind: "part"
-        }
-      ], { defaultFile: "parts/sample_plate.step" }),
-      ""
-    );
-  } finally {
-    if (originalWindow === undefined) {
-      delete globalThis.window;
-    } else {
-      globalThis.window = originalWindow;
-    }
-  }
-});
-
-test("selectedEntryKeyFromUrl ignores retired refs as file identity", () => {
-  const originalWindow = globalThis.window;
-  globalThis.window = {
-    location: {
-      search: "?refs=%23f2"
-    }
-  };
-
-  try {
-    assert.equal(
-      selectedEntryKeyFromUrl([
-        {
-          file: "parts/sample_base.step",
-          cadPath: "parts/sample_base",
-          kind: "part"
-        },
-        {
-          file: "parts/sample_plate.step",
-          cadPath: "parts/sample_plate",
-          kind: "part"
-        }
-      ], { defaultFile: "parts/sample_base.step" }),
-      "parts/sample_base.step"
-    );
-  } finally {
-    if (originalWindow === undefined) {
-      delete globalThis.window;
-    } else {
-      globalThis.window = originalWindow;
-    }
-  }
-});
-
 test("selectedEntryKeyFromUrl restores workspace-relative file params", () => {
   const originalWindow = globalThis.window;
   globalThis.window = {
@@ -1571,40 +1509,6 @@ test("normalizeCadFileQueryParam normalizes file params as relative paths", () =
   assert.equal(normalizeCadFileQueryParam("workspace/parts/sample_plate.step"), "workspace/parts/sample_plate.step");
   assert.equal(normalizeCadFileQueryParam("/workspace/imports/widget.step/"), "workspace/imports/widget.step");
 });
-
-test("selectedEntryKeyFromUrl ignores retired refs without a file context", () => {
-  const originalWindow = globalThis.window;
-  globalThis.window = {
-    location: {
-      search: "?refs=%23f2"
-    }
-  };
-
-  try {
-    assert.equal(
-      selectedEntryKeyFromUrl([
-        {
-          file: "parts/sample_base.step",
-          cadPath: "parts/sample_base",
-          kind: "part"
-        },
-        {
-          file: "parts/sample_plate.step",
-          cadPath: "parts/sample_plate",
-          kind: "part"
-        }
-      ]),
-      ""
-    );
-  } finally {
-    if (originalWindow === undefined) {
-      delete globalThis.window;
-    } else {
-      globalThis.window = originalWindow;
-    }
-  }
-});
-
 test("writeCadParam skips unchanged URL replacements", () => {
   const originalWindow = globalThis.window;
   const calls = [];
@@ -1635,35 +1539,6 @@ test("writeCadParam skips unchanged URL replacements", () => {
     }
   }
 });
-
-test("writeCadParam drops retired refs query params", () => {
-  const originalWindow = globalThis.window;
-  const calls = [];
-  globalThis.window = {
-    location: {
-      href: "http://viewer.test/?file=parts%2Fsample_plate.step&refs=f2",
-      pathname: "/",
-      search: "?file=parts%2Fsample_plate.step&refs=f2",
-      hash: ""
-    },
-    history: {
-      replaceState: (...args) => calls.push(args)
-    }
-  };
-
-  try {
-    writeCadParam("parts/sample_plate.step");
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0][2], "/?file=parts%2Fsample_plate.step");
-  } finally {
-    if (originalWindow === undefined) {
-      delete globalThis.window;
-    } else {
-      globalThis.window = originalWindow;
-    }
-  }
-});
-
 test("writeCadParam can push user navigation history", () => {
   const originalWindow = globalThis.window;
   const calls = [];
@@ -1699,9 +1574,9 @@ test("writeCadParam leaves the directory path untouched", () => {
   const calls = [];
   globalThis.window = {
     location: {
-      href: "http://viewer.test/workspace/models?file=parts%2Fold.step&refs=f2",
+      href: "http://viewer.test/workspace/models?file=parts%2Fold.step",
       pathname: "/workspace/models",
-      search: "?file=parts%2Fold.step&refs=f2",
+      search: "?file=parts%2Fold.step",
       hash: ""
     },
     history: {
@@ -1717,7 +1592,6 @@ test("writeCadParam leaves the directory path untouched", () => {
     assert.equal(nextUrl.pathname, "/workspace/models");
     assert.equal(nextUrl.searchParams.get("file"), "parts/sample_plate.step");
     assert.equal(nextUrl.searchParams.has("dir"), false);
-    assert.equal(nextUrl.searchParams.has("refs"), false);
   } finally {
     if (originalWindow === undefined) {
       delete globalThis.window;

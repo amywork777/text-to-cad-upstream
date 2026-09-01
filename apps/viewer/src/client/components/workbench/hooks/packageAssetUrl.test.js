@@ -3,14 +3,10 @@ import test from "node:test";
 
 import { resolvePackageAssetUrl, resolvePackageDirRef } from "./packageAssetUrl.js";
 
-test("resolvePackageDirRef collapses self-contained and legacy refs", () => {
+test("resolvePackageDirRef joins self-contained package refs", () => {
   assert.equal(
     resolvePackageDirRef("/models/step/parts/__cadgen__/models/part.step", "components/abc.glb"),
     "/models/step/parts/__cadgen__/models/part.step/components/abc.glb"
-  );
-  assert.equal(
-    resolvePackageDirRef("/models/step/parts/__cadgen__/models/part.step", "../../components/abc.glb"),
-    "/models/step/parts/__cadgen__/components/abc.glb"
   );
   assert.equal(resolvePackageDirRef("/models/part.step", "./assembly.json"), "/models/part.step/assembly.json");
 });

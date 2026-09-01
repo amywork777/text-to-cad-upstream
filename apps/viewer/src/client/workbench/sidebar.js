@@ -155,7 +155,6 @@ export function writeCadParam(urlPath, { history = "replace" } = {}) {
   }
   const normalizedUrlPath = normalizeCadFileQueryParam(urlPath);
   const url = new URL(window.location.href);
-  url.searchParams.delete("refs");
   // Only the file changes here. The directory lives in the URL's path and is never
   // rewritten from the client — switching directories means navigating to a new URL.
   if (normalizedUrlPath) {

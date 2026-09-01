@@ -4,26 +4,21 @@
 // The local-fs catalog asset URL is the query form:
 //   /__cad/asset?file=<absolute package dir>&v=<hash>
 //
-// The descriptor and components live INSIDE the package directory. The naive
+// The descriptor and components live INSIDE the package directory (packages are
+// self-contained: `assembly.json`, `components/<hash>.glb`). The naive
 // `${packageUrl}/assembly.json` would append the sub-path after the query string, leaving
 // `file=<dir>` pointing at the directory, which the asset server cannot serve (404 -> "is not a
 // component-GLB package"). So we resolve the relative ref against the package dir explicitly and
-// rewrite the `file` param. This is layout-agnostic: it handles the self-contained
-// `components/<hash>.glb` refs and any legacy `../../components/<hash>.glb` refs alike.
+// rewrite the `file` param.
 
 const URL_RESOLUTION_BASE = "http://cad-viewer.local";
 
-// POSIX-resolve `relPath` against the absolute directory `baseDir`, collapsing "." and "..".
+// Join `relPath` under the absolute directory `baseDir`. Package refs are plain
+// paths inside the package; nothing escapes the package directory.
 export function resolvePackageDirRef(baseDir, relPath) {
   const segments = String(baseDir).split("/");
   for (const part of String(relPath).split("/")) {
     if (part === "" || part === ".") {
-      continue;
-    }
-    if (part === "..") {
-      if (segments.length > 1) {
-        segments.pop();
-      }
       continue;
     }
     segments.push(part);
