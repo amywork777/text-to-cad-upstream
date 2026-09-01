@@ -524,12 +524,11 @@ class RequestBodies(HttpLayerTestCase):
 
 class PortedRoutesAreDistinguishable(HttpLayerTestCase):
     def test_routes_awaiting_later_steps_answer_501_not_404_or_200(self):
+        # Shrinks as the port lands. The catalog and the asset/store routes are
+        # gone from this list because they now answer for real — see
+        # tests_server/test_scanner.py and tests_server/test_security.py.
         for method, path, headers in [
-            ("GET", "/__cad/catalog", {}),
             ("GET", "/__cad/artifact?file=x.step", {}),
-            ("GET", "/__cad/store?file=k/a.surf", {}),
-            ("GET", "/__cad/asset?file=/x.step", {}),
-            ("GET", "/__cad/download?file=/x.step", {}),
             ("GET", "/__tess_cache/a.tess", {}),
             ("POST", "/__cad/artifact?file=x.step", {"x-cadgen-viewer": "1"}),
             ("POST", "/__cad/reveal?file=/x.step", {"x-cadgen-viewer": "1"}),

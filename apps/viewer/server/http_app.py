@@ -18,24 +18,27 @@ No ``Access-Control-*`` headers are served, deliberately: their absence is what
 makes the same-origin policy block cross-origin reads and what makes that
 preflight fail. Do not add them.
 
-PORT STATUS: this module currently carries the routing table, both gates,
-``serverInfo`` and the static/SPA half. The ``/__cad/*`` data routes that need
-the catalog scanner, the artifact-status machinery and the tessellation cache
-are wired in later steps of the port; each is registered here and answers 501
-with a distinctive body until then, so a missing route can never be mistaken
-for a working one.
+PORT STATUS: this module carries the routing table, both gates, ``serverInfo``,
+the static/SPA half, the catalog and the asset/store routes. The artifact-status
+machinery, reveal and the tessellation cache are wired in later steps of the
+port; each is registered here and answers 501 with a distinctive body until
+then, so a missing route can never be mistaken for a working one.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import stat
 import threading
 import time
 from pathlib import Path
 
+from .backend import ForbiddenAssetError, LocalAssetBackend
 from .content_types import content_type_for_static_asset
-from .encoding import UriError, strict_decode_uri_component
+from .encoding import UriError, attachment_content_disposition, strict_decode_uri_component
+from .scanner import node_basename, path_relative
+from .store_paths import store_packages_dir
 
 __all__ = [
     "CadApp",
@@ -56,10 +59,6 @@ TESS_CACHE_ROUTE_PREFIX = "/__tess_cache/"
 TESS_CACHE_BATCH_PATH = "/__tess_cache/batch"
 
 _PACKAGE_DIR = str(Path(__file__).resolve().parent)
-
-
-class ForbiddenAssetError(Exception):
-    """A path resolved outside the served root. Maps to 403."""
 
 
 def hostname_only(host_header) -> str:
@@ -121,13 +120,10 @@ class CadApp:
     """
 
     def __init__(self, *, root: str, host: str, port: int, dist_dir: str = ""):
-        root_path = os.path.abspath(str(root or "").strip() or os.getcwd())
-        if "\0" in root_path:
-            raise ValueError("CAD Viewer directory contains an invalid null byte")
-        if not os.path.isdir(root_path):
-            raise ValueError(f"CAD Viewer directory not found: {root_path}")
+        self.backend = LocalAssetBackend(root)
+        root_path = self.backend.root_path
         self.root_path = root_path
-        self.root_name = os.path.basename(root_path)
+        self.root_name = self.backend.root_name
         self.host = host
         self.port = port
         # dist_dir is compared as a string prefix, so resolve it ONCE here and
@@ -344,7 +340,7 @@ class CadApp:
     # --- placeholders filled by later steps of the port -------------------
 
     def _handle_catalog(self, request, response):
-        self._not_ported(response, "GET /__cad/catalog")
+        response.send_json(200, self.backend.read_catalog())
 
     def _handle_artifact_status(self, request, response, query):
         self._not_ported(response, "GET /__cad/artifact")
@@ -353,10 +349,52 @@ class CadApp:
         self._not_ported(response, "POST /__cad/artifact")
 
     def _handle_store_asset(self, request, response, query):
-        self._not_ported(response, "GET /__cad/store")
+        """Render-package assets, confined to the store's ``packages/`` tier.
+
+        Everything that fails here is 404, never 403: the containment failure is
+        folded into "there is no stat" rather than raised. Leading slashes are
+        STRIPPED because the client's resolvePackageAssetUrl emits
+        ``file=/<key>/components/c0.surf``; that also means ``file=/etc/hosts``
+        resolves under the tier and 404s rather than reading /etc/hosts.
+        """
+        rel = str(query.get("file") or "").replace("\\", "/")
+        base = os.path.abspath(store_packages_dir())
+        candidate = os.path.abspath(os.path.join(base, rel.lstrip("/")))
+        contained = candidate == base or candidate.startswith(base + os.sep)
+        hidden = any(
+            part and part != ".." and part.startswith(".")
+            for part in path_relative(base, candidate).split(os.sep)
+        )
+        stat_result = None
+        if contained and not hidden:
+            try:
+                stat_result = os.stat(candidate)
+            except (OSError, ValueError):
+                stat_result = None
+        # One stat answers both existence and regular-ness; re-statting would
+        # open a window where the two disagree.
+        if stat_result is None or not stat.S_ISREG(stat_result.st_mode):
+            response.send_json(404, {"error": "Not found"})
+            return
+        content_type = self.backend.content_type_for_path(candidate) or "application/octet-stream"
+        response.stream_file(candidate, stat_result, content_type)
 
     def _handle_asset(self, request, response, query, *, download):
-        self._not_ported(response, "GET /__cad/download" if download else "GET /__cad/asset")
+        candidate = self.backend.asset_path_for_file_ref(query.get("file") or "")
+        stat_result = None
+        if candidate:
+            try:
+                stat_result = os.stat(candidate)
+            except (OSError, ValueError):
+                stat_result = None
+        if not candidate or stat_result is None or not stat.S_ISREG(stat_result.st_mode):
+            response.send_json(404, {"error": "Not found"})
+            return
+        content_type = self.backend.content_type_for_path(candidate) or "application/octet-stream"
+        disposition = (
+            attachment_content_disposition(node_basename(candidate)) if download else None
+        )
+        response.stream_file(candidate, stat_result, content_type, disposition=disposition)
 
     def _handle_reveal(self, request, response, query):
         self._not_ported(response, "POST /__cad/reveal")
