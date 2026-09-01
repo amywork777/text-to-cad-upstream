@@ -374,13 +374,13 @@ jobs:
         if: steps.gate.outputs.should_publish == 'true'
         run: scripts/test/test.sh
 
-      # cadgen is built and uploaded from packages/, which the trim below
-      # removes, and BEFORE the target-branch push: a failed upload must block
-      # the release, because the publish tree pins cadgen==<version> from PyPI
-      # and a main without the matching PyPI release would break skill installs.
-      # Uploading before the pin also means the pin can only ever name a version
-      # that already exists. If PyPI succeeds but a later step fails, rerun
-      # Release with bump=none; skip-existing makes the re-upload a no-op.
+      # cadgen is built and uploaded BEFORE the target-branch push: a failed
+      # upload must block the release, because the publish tree pins
+      # cadgen==<version> from PyPI and a main without the matching PyPI release
+      # would break skill installs. Uploading before the pin also means the pin
+      # can only ever name a version that already exists. If PyPI succeeds but a
+      # later step fails, rerun Release with bump=none; skip-existing makes the
+      # re-upload a no-op.
       #
       # Only the upload itself is gated on main. The version check and the build
       # run for build-test too, so a rehearsal exercises everything about this
@@ -413,74 +413,50 @@ jobs:
           packages-dir: packages/cadgen/dist
           skip-existing: true
 
-      # The plugin package is the repository root, so everything that reaches the
-      # target branch is copied into every install. None of these is part of what
-      # installs:
-      #   models/            fixture data
-      #   apps/viewer/       the client SOURCE. What installs is the bundled runtime
-      #                      under skills/cad-viewer/scripts/viewer, and the standalone
-      #                      cad-viewer mirror syncs from the release SOURCE commit
-      #                      rather than from here (.github/workflows/sync-cad-viewer.yml).
-      #   tests/             source-only; nothing under skills/ or docs/ reads it,
-      #                      and test.yml runs on develop, never here
-      #   requirements-dev.txt  a source-checkout dev environment whose editable
-      #                      paths (packages/cadgen) do not
-      #                      survive the trim anyway
-      #   apps/docs/         a website, not an install; Deploy Docs builds and
-      #                      deploys it from the release SOURCE commit
-      #   packages/          the shared source runtimes, including cadgen itself.
-      #                      Skills install cadgen from PyPI -- the wheel is built
-      #                      and uploaded a few steps above, before this trim -- and
-      #                      the docs build runs from the release SOURCE commit.
+      # main is develop with the skill bundles materialized, versions stamped,
+      # skill requirements pinned, and ONLY models/ removed. The source roots
+      # (apps/, packages/, tests/, requirements-dev.txt) ship, so the source
+      # behind a release is discoverable on the default branch; together they are
+      # ~15 MB with no LFS objects, and models/ is the fixture corpus whose
+      # absence is the only one that buys anything. The plugin package is the
+      # repository root, so a plugin install copies all of it; the Skills CLI
+      # copies skills/<name> alone. Neither can rely on a sibling directory, which
+      # is why the ships-alone law stands unchanged with packages/ present:
+      # check-publish-tree.sh below fails the publish if a skill reaches into it.
       #
-      # This runs after the bundle, check-builds, and the tests, so the tree they
-      # validated is untouched and only the published tree is trimmed.
+      # prepare-publish-tree.sh removes models/ and dereferences the development
+      # symlink the bundle leaves in place (apps/viewer/packages/cadgen-js); a
+      # symlink must never reach the published tree. It runs after the bundle,
+      # check-builds, and the tests, so the tree they validated is untouched.
       #
-      # PUBLISH_TREE_REMOVED_ROOTS is the single source of truth for what was
-      # dropped: the commit step below reads it both to assert the roots are
-      # absent and to stop demanding the generated outputs that lived under them.
-      - name: Trim publish tree
+      # PUBLISH_TREE_REMOVED_ROOTS comes from the script -- the single source of
+      # truth for what was dropped: the commit step below reads it both to assert
+      # the roots are absent and to stop demanding generated outputs under them.
+      - name: Prepare publish tree
         if: steps.gate.outputs.should_publish == 'true'
         run: |
-          removed_roots="models apps tests requirements-dev.txt packages"
-          for root in $removed_roots; do
-            rm -rf "$root"
-            if [ -e "$root" ]; then
-              echo "Failed to remove $root from the publish tree." >&2
-              exit 1
-            fi
-          done
-          if [ ! -f skills/cad-viewer/scripts/viewer/package.json ]; then
-            echo "Refusing to publish without the bundled CAD Viewer runtime:" >&2
-            echo "  skills/cad-viewer/scripts/viewer/package.json is missing." >&2
-            exit 1
-          fi
-          # Every skill vendors what it needs, so no skill SOURCE may reach
-          # repo-root packages/ -- one that does would break silently on install
-          # rather than here. Generated artifacts are exempt: a bundled dist/ is
-          # self-contained, and its sourcemaps name the original source paths as
-          # debug metadata, which is not a runtime reference.
-          skill_packages_refs() {
-            grep -rIlE '\.\./\.\./\.\./packages/|["'"'"']\.\./\.\./packages/' skills \
-              --exclude='*.map' --exclude-dir=dist 2>/dev/null || true
-          }
-          if [ -n "$(skill_packages_refs)" ]; then
-            echo "A skill references repo-root packages/, which is not published:" >&2
-            skill_packages_refs >&2
-            exit 1
-          fi
-          echo "PUBLISH_TREE_REMOVED_ROOTS=$removed_roots" >> "$GITHUB_ENV"
-          echo "Trimmed from the publish tree: $removed_roots"
+          scripts/release/prepare-publish-tree.sh
+          removed_roots="$(scripts/release/prepare-publish-tree.sh --print-removed-roots | tr '\n' ' ')"
+          echo "PUBLISH_TREE_REMOVED_ROOTS=${removed_roots% }" >> "$GITHUB_ENV"
 
-      # Published skills have no sibling packages/cadgen to install editable
-      # from, so the publish tree resolves cadgen from PyPI at this release's
-      # version. Runs after the bundle so vendored runtime copies are pinned too,
-      # and is verified below before the tree is committed.
+      # An installed skill resolves cadgen from PyPI at this release's version:
+      # no installer runs an editable install, and the Skills CLI does not even
+      # copy the sibling packages/cadgen. Verified again by check-publish-tree.sh
+      # before the tree is committed, which also confirms the pin left the viewer
+      # app's cadgen>= floor alone.
       - name: Pin cadgen requirements to the published PyPI version
         if: steps.gate.outputs.should_publish == 'true'
         run: |
           scripts/release/pin-cadgen-requirements.sh
           scripts/release/pin-cadgen-requirements.sh --check
+
+      # The publish-tree contract, asserted over exactly the paths `git add -A`
+      # will stage: models/ absent; apps/, packages/, tests/ present; no symlink
+      # anywhere; the bundled CAD Viewer runtime real and complete; no LFS-tracked
+      # path outside the README media; no skill reaching into a repo root.
+      - name: Check publish tree
+        if: steps.gate.outputs.should_publish == 'true'
+        run: scripts/github-workflows/check-publish-tree.sh
 
       - name: Commit publish result
         if: steps.gate.outputs.should_publish == 'true'
@@ -586,10 +562,11 @@ jobs:
           fi
           echo "published=true" >> "$GITHUB_OUTPUT"
 
-  # Deploys from the release SOURCE commit, not the publish commit: the docs app
-  # builds against repo-root packages/, and the publish tree drops both. Still
-  # gated on the publish succeeding, so the site never moves for a release that
-  # did not ship.
+  # Deploys from the release SOURCE commit, not the publish commit. main carries
+  # apps/docs and packages/ too since the trim stopped at models/, but the site
+  # is built from the commit the release was cut from -- the one `git rev-parse
+  # <tag>^2` recovers -- and never from a generated tree. Still gated on the
+  # publish succeeding, so the site never moves for a release that did not ship.
   deploy-docs:
     name: Deploy Docs
     needs:
@@ -601,8 +578,9 @@ jobs:
       ref: ${{ needs.release-pr.outputs.source_sha }}
     secrets: inherit
 
-  # Mirrors from the release SOURCE commit, not the publish commit: the publish
-  # tree deliberately drops apps/viewer/, and the mirror is a source repo.
+  # Mirrors from the release SOURCE commit, not the publish commit: the mirror
+  # is a source repo, and it dereferences apps/viewer/packages/cadgen-js itself
+  # from the live package source rather than taking the publish tree's copy.
   sync-cad-viewer:
     name: Sync CAD Viewer Repo
     needs:

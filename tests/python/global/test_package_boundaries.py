@@ -4,10 +4,11 @@ Boundary law (packages/README.md and each package's README): apps import
 packages; packages never import apps; cadgen-js is framework-free — no
 React, no app or workflow state. Ships-alone law: cadgen (the built PyPI
 distribution), the CAD Viewer (mirrored unchanged to the standalone
-earthtojake/cad-viewer repo) and every skill (installed by plugin installers
-that clone the published tree — which has no models/, apps/, packages/ or
-tests/) each work in isolation outside this repo, so their markdown must not
-refer to anything outside the package. Prose drifts; this does not.
+earthtojake/cad-viewer repo) and every skill (the Skills CLI installs
+skills/<name> ALONE; plugin installers copy the published tree, which has no
+models/ and whose packages/ is never installed) each work in isolation outside
+this repo, so their markdown must not refer to anything outside the package.
+Prose drifts; this does not.
 """
 
 from __future__ import annotations
@@ -101,11 +102,12 @@ class PackagesNeverImportApps(unittest.TestCase):
 #   - apps/viewer mirrors UNCHANGED into the standalone earthtojake/cad-viewer
 #     repo (its own packages/cadgen-js symlink dereferences into a vendored
 #     copy; nothing rewrites paths on the way out).
-#   - skills/ installs standalone: the Skills CLI, Claude Code and Codex
-#     each clone the PUBLISHED tree, which carries no models/, apps/,
-#     packages/, tests/ or repo scripts — so a skill that points at this
-#     repo's example projects (models/examples, models/thang010146) or says
-#     "in this repo" makes a promise the installed skill cannot keep.
+#   - skills/ installs standalone: the Skills CLI copies skills/<name> by
+#     itself, and Claude Code and Codex copy the PUBLISHED tree, which has no
+#     models/ and never installs its packages/ — so a skill that points at this
+#     repo's example projects (models/examples, models/thang010146), at apps/,
+#     packages/ or tests/, or says "in this repo" makes a promise the installed
+#     skill cannot keep.
 # A repo-relative path in any of them ships broken. Each root forbids the
 # path families that only mean something inside this repo; a package may
 # name its own files, its bundled/vendored dependencies, and the concepts of
@@ -210,8 +212,9 @@ class PackagedMarkdownShipsAlone(unittest.TestCase):
             [],
             "Ships-alone law: cadgen installs from PyPI, apps/viewer "
             "mirrors unchanged into earthtojake/cad-viewer, and skills "
-            "install from the published tree (no models/, apps/, packages/, "
-            "tests/), so their markdown must be true and actionable with "
+            "install alone (the Skills CLI copies skills/<name> by itself; "
+            "the published tree has no models/), so their markdown must be "
+            "true and actionable with "
             "this repo gone. Name the bundled thing ('the cadgen-js runtime "
             "bundled at build time'), not the repo path to its source; give "
             "a skill a self-contained exemplar in its references/, not a "
