@@ -1493,23 +1493,60 @@ def _output_kind(output: Mapping[str, object], path: Path) -> str:
     return path.suffix.lstrip(".").lower()
 
 
-def snapshot_result(result: Mapping[str, object], *, total_ms: float = 0.0) -> SnapshotResult:
+def _job_source_identity(job: object) -> tuple[str, str]:
+    """(input path, document content hash) for one resolved packet job.
+
+    The hash is the render-package store key — the DOCUMENT identity — parsed
+    from the resolved ``packagePath`` (``<contentHash>-v<schema>``). Nothing in
+    a result named which geometry it rendered, so a stale render was
+    indistinguishable from a fresh one; the provenance exists at resolve time
+    and only needed surfacing.
+    """
+    if not is_plain_object(job):
+        return "", ""
+    resolved = job.get("resolved") if is_plain_object(job.get("resolved")) else {}
+    input_text = str(job.get("input") or resolved.get("inputPath") or "")
+    package_path = str(resolved.get("packagePath") or "")
+    document_hash = ""
+    if package_path:
+        name = Path(package_path).name
+        document_hash = name.rsplit("-v", 1)[0] if "-v" in name else name
+    return input_text, document_hash
+
+
+def snapshot_result(
+    result: Mapping[str, object],
+    *,
+    total_ms: float = 0.0,
+    packet: Mapping[str, object] | None = None,
+) -> SnapshotResult:
     """The typed answer for one finished render packet.
 
     Reads both packet shapes -- a single job's result verbatim, or the
     ``{"jobs": [...]}`` envelope -- because that distinction is a detail of how
     the renderer was called, not something a caller should have to branch on.
+
+    ``packet`` is the RESOLVED packet the renders came from; when given, each
+    file carries its job's input path and document content hash, so a caller
+    can tell which geometry a render actually framed.
     """
     job_results = [
         job
         for job in (result["jobs"] if isinstance(result.get("jobs"), list) else [result])
         if is_plain_object(job)
     ]
+    packet_jobs = list(packet.get("jobs") or []) if packet is not None else []
+    # Identities zip by position; the render loop emits results in packet order.
+    identities = (
+        [_job_source_identity(job) for job in packet_jobs]
+        if len(packet_jobs) == len(job_results)
+        else [("", "")] * len(job_results)
+    )
     files: list[SnapshotFile] = []
     parts: list[dict] = []
     warnings: list[str] = []
     debug: list[dict] = []
-    for job_result in job_results:
+    for job_result, (input_text, document_hash) in zip(job_results, identities):
         for output in job_result.get("outputs") or []:
             if not is_plain_object(output) or not output.get("path"):
                 continue
@@ -1524,6 +1561,8 @@ def snapshot_result(result: Mapping[str, object], *, total_ms: float = 0.0) -> S
                     view=str(
                         output.get("viewLabel") or output.get("label") or output.get("camera") or ""
                     ),
+                    input=input_text,
+                    documentHash=document_hash,
                 )
             )
         parts.extend(part for part in (job_result.get("parts") or []) if is_plain_object(part))
@@ -1567,4 +1606,6 @@ async def render_snapshot(
         packet, runtime_dir=runtime_dir, renderer=renderer, progress=progress
     )
     write_render_outputs(result)
-    return snapshot_result(result, total_ms=(time.perf_counter() - started) * 1000)
+    return snapshot_result(
+        result, total_ms=(time.perf_counter() - started) * 1000, packet=packet
+    )

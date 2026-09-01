@@ -97,6 +97,40 @@ class ResultShape(unittest.TestCase):
         self.assertEqual(result.warnings, ("clamped",))
         self.assertEqual(result.timings.job_count, 2)
 
+    def test_files_carry_their_jobs_document_identity(self) -> None:
+        # Nothing in a result used to say WHICH geometry it rendered, so a
+        # stale render was indistinguishable from a fresh one. The resolved
+        # packet knows: input path + the render-package store key.
+        browser_result = {
+            "ok": True,
+            "jobs": [
+                {"ok": True, "outputs": [{"path": "/tmp/a.png", "mimeType": "image/png"}]},
+                {"ok": True, "outputs": [{"path": "/tmp/b.png", "mimeType": "image/png"}]},
+            ],
+        }
+        resolved_packet = {
+            "single": False,
+            "jobs": [
+                {
+                    "input": "STEP/gripper.step",
+                    "resolved": {"packagePath": "/store/packages/abc123-v17"},
+                },
+                {
+                    "input": "STEP/tom.step",
+                    "resolved": {"packagePath": "/store/packages/def456-v17"},
+                },
+            ],
+        }
+        result = snapshot_result(browser_result, packet=resolved_packet)
+        self.assertEqual(
+            [(f.input, f.documentHash) for f in result.files],
+            [("STEP/gripper.step", "abc123"), ("STEP/tom.step", "def456")],
+        )
+
+    def test_identity_is_empty_without_a_packet(self) -> None:
+        result = snapshot_result(VIEW_RESULT)
+        self.assertEqual([(f.input, f.documentHash) for f in result.files], [("", "")])
+
     def test_one_failed_job_fails_the_packet(self) -> None:
         packet = {"ok": True, "jobs": [{"ok": True, "outputs": []}, {"ok": False}]}
         self.assertFalse(snapshot_result(packet).ok)
@@ -127,7 +161,15 @@ class JsonShape(unittest.TestCase):
         )
         self.assertEqual(
             payload["files"],
-            [{"path": native("/tmp/review.png"), "kind": "png", "view": "ISO"}],
+            [
+                {
+                    "path": native("/tmp/review.png"),
+                    "kind": "png",
+                    "view": "ISO",
+                    "input": "",
+                    "documentHash": "",
+                }
+            ],
         )
         self.assertEqual(payload["timings"], {"job_count": 1, "total_ms": 42.0})
         self.assertEqual(payload["parts"], [])
