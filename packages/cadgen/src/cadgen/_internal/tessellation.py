@@ -3,8 +3,12 @@
 There is exactly ONE tessellator in this repo and it is JavaScript: every render
 mesh and every exported mesh comes out of ``tessellateComponent`` in
 ``packages/cadgen-js/src/lib/surf/tessellate.js``. Its ``DEFAULT_OPTIONS`` are
-the real defaults; the values below are a Python-side MIRROR so the CLI, the
-descriptor, and the freshness gates can talk about the same numbers.
+the real defaults; the values below are a Python-side MIRROR, and what they
+document is what an OMITTED tolerance means: a mesh export with no
+``--mesh-tolerance`` (``MeshExportJob.mesh_tolerance is None``) is meshed at
+exactly these numbers. Nothing on the Python side substitutes them — the
+tessellator applies its own — so this module is a pinned statement of fact
+rather than a source of values.
 
 Both are RELATIVE — a fraction of the component's bounding diagonal, not
 millimetres. The absolute OCCT "deflection" constants that used to sit in

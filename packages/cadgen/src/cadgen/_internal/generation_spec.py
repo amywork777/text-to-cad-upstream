@@ -477,43 +477,21 @@ def _spec_for_source_ref(
 
 
 def _selector_options_for_part(spec: EntrySpec, *, scene: LoadedStepScene | None = None) -> SelectorOptions:
-    defaults = SelectorOptions()
-    linear_explicit = spec.mesh_tolerance is not None
-    angular_explicit = spec.mesh_angular_tolerance is not None
-    chord_tolerance = spec.mesh_tolerance if linear_explicit else defaults.chord_tolerance
-    angle_tolerance = spec.mesh_angular_tolerance if angular_explicit else defaults.angle_tolerance
-    resolution: dict[str, object] = {
-        "mode": "explicit",
-        "profile": "custom",
-        "linearExplicit": True,
-        "angularExplicit": True,
-    }
+    """The render options a build extracts topology with.
+
+    Only the edge-visibility class set varies, and it varies with the SCENE:
+    the adaptive resolver classifies the topology and
+    ``_edge_visibility_classes_for_resolution`` turns that classification into
+    the classes. Without a scene there is nothing to classify, so the default
+    set stands. Mesh tolerances are absent on purpose — ``--mesh-tolerance``
+    reaches the mesh EXPORT jobs (``MeshExportJob``), which have their own
+    content gate; a render package is tessellation-free.
+    """
     edge_visibility_classes = normalize_step_edge_render_visibility_classes(None)
     if isinstance(scene, LoadedStepScene):
         adaptive = adaptive_mesh_resolution_for_scene(scene)
-        if not linear_explicit:
-            chord_tolerance = adaptive.settings.tolerance
-        if not angular_explicit:
-            angle_tolerance = adaptive.settings.angular_tolerance
         edge_visibility_classes = _edge_visibility_classes_for_resolution(adaptive.profile, adaptive.hints)
-        resolution = {
-            "mode": "auto",
-            "profile": adaptive.profile,
-            "linearExplicit": linear_explicit,
-            "angularExplicit": angular_explicit,
-            "hints": adaptive.hints,
-        }
-    return SelectorOptions(
-        chord_tolerance=chord_tolerance,
-        angle_tolerance=angle_tolerance,
-        relative=defaults.relative,
-        edge_deflection=defaults.edge_deflection,
-        edge_deflection_ratio=defaults.edge_deflection_ratio,
-        max_edge_points=defaults.max_edge_points,
-        digits=defaults.digits,
-        mesh_resolution=resolution,
-        edge_visibility_classes=edge_visibility_classes,
-    )
+    return SelectorOptions(edge_visibility_classes=edge_visibility_classes)
 
 
 def _edge_visibility_classes_for_resolution(profile: str, hints: Mapping[str, object] | None) -> tuple[str, ...]:

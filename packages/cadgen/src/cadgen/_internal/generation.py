@@ -4,7 +4,6 @@ import argparse
 import contextlib
 import importlib.util
 import json
-import math
 import os
 import shutil
 import subprocess
@@ -36,7 +35,6 @@ from cadgen._internal.glb_topology import build_step_topology_index_manifest
 from cadgen._internal.glb_topology import read_step_topology_manifest_from_glb
 from cadgen._internal.glb_topology import (
     STEP_EDGE_VISIBILITY_CLASSES,
-    normalize_step_edge_render_visibility_classes,
 )
 from cadgen.coordination import (
     DRAWING_PACKAGE,
@@ -77,8 +75,6 @@ from cadgen._internal.step_scene import (
     LoadedStepScene,
     SelectorBundle,
     SelectorOptions,
-    adaptive_mesh_resolution_from_hints,
-    adaptive_mesh_resolution_for_scene,
     step_file_hash,
 )
 from cadgen._internal.generation_runner import (
@@ -116,7 +112,6 @@ from cadgen._internal.generation_spec import (
     _cli_progress_line,
     _display_name_for_path,
     _display_path,
-    _edge_visibility_classes_for_resolution,
     _entry_spec_from_source,
     _hint_float,
     _hint_int,
@@ -134,78 +129,6 @@ from cadgen._internal.generation_spec import (
     targets_include_output_pairs,
 )
 
-def _mesh_values_match(
-    mesh: Mapping[str, object],
-    *,
-    chord_tolerance: float,
-    angle_tolerance: float,
-    relative: bool,
-) -> bool:
-    # The descriptor's JSON keys stay `linearDeflection`/`angularDeflection`
-    # (renaming them would re-key every package); only the Python names say
-    # what the numbers actually are.
-    try:
-        artifact_chord = float(mesh.get("linearDeflection"))
-        artifact_angle = float(mesh.get("angularDeflection"))
-    except (TypeError, ValueError):
-        return False
-    return (
-        math.isclose(artifact_chord, float(chord_tolerance), rel_tol=1e-9, abs_tol=1e-12)
-        and math.isclose(artifact_angle, float(angle_tolerance), rel_tol=1e-9, abs_tol=1e-12)
-        and bool(mesh.get("relative", True)) == bool(relative)
-    )
-
-
-def _selector_options_from_topology_manifest(spec: EntrySpec, manifest: Mapping[str, object]) -> SelectorOptions | None:
-    mesh = manifest.get("mesh")
-    if not isinstance(mesh, Mapping):
-        return None
-
-    defaults = SelectorOptions()
-    linear_explicit = spec.mesh_tolerance is not None
-    angular_explicit = spec.mesh_angular_tolerance is not None
-    chord_tolerance = spec.mesh_tolerance if linear_explicit else defaults.chord_tolerance
-    angle_tolerance = spec.mesh_angular_tolerance if angular_explicit else defaults.angle_tolerance
-
-    if not linear_explicit or not angular_explicit:
-        resolution = mesh.get("resolution")
-        hints = resolution.get("hints") if isinstance(resolution, Mapping) else None
-        if not isinstance(hints, dict):
-            return None
-        adaptive = adaptive_mesh_resolution_from_hints(hints)
-        if not linear_explicit:
-            chord_tolerance = adaptive.settings.tolerance
-        if not angular_explicit:
-            angle_tolerance = adaptive.settings.angular_tolerance
-
-    return SelectorOptions(
-        chord_tolerance=chord_tolerance,
-        angle_tolerance=angle_tolerance,
-        relative=bool(mesh.get("relative", defaults.relative)),
-        edge_deflection=defaults.edge_deflection,
-        edge_deflection_ratio=defaults.edge_deflection_ratio,
-        max_edge_points=defaults.max_edge_points,
-        digits=defaults.digits,
-        mesh_resolution=mesh.get("resolution") if isinstance(mesh.get("resolution"), dict) else None,
-        edge_visibility_classes=_edge_visibility_classes_from_topology_manifest(manifest),
-    )
-
-
-def _edge_visibility_classes_from_topology_manifest(manifest: Mapping[str, object]) -> tuple[str, ...]:
-    edge_rendering = manifest.get("edgeRendering")
-    if isinstance(edge_rendering, Mapping):
-        classes = edge_rendering.get("visibilityClasses")
-        if classes is not None:
-            return normalize_step_edge_render_visibility_classes(classes)
-    mesh = manifest.get("mesh")
-    resolution = mesh.get("resolution") if isinstance(mesh, Mapping) else None
-    hints = resolution.get("hints") if isinstance(resolution, Mapping) else None
-    profile = resolution.get("profile") if isinstance(resolution, Mapping) else ""
-    if isinstance(hints, Mapping):
-        return _edge_visibility_classes_for_resolution(str(profile or ""), hints)
-    return normalize_step_edge_render_visibility_classes(None)
-
-
 def _edge_visibility_classes_match_manifest(
     manifest: Mapping[str, object],
     selector_options: SelectorOptions,
@@ -214,6 +137,19 @@ def _edge_visibility_classes_match_manifest(
     if not isinstance(edge_rendering, Mapping):
         return False
     return tuple(edge_rendering.get("visibilityClasses") or ()) == tuple(selector_options.edge_visibility_classes)
+
+
+def _manifest_records_edge_visibility_classes(manifest: Mapping[str, object]) -> bool:
+    """Well-formedness, not agreement: does this descriptor say what it was built with?
+
+    Every descriptor written by a current build does. One that does not is
+    truncated or foreign, and reusing it would serve components whose edge
+    classes nothing can name.
+    """
+    edge_rendering = manifest.get("edgeRendering")
+    if not isinstance(edge_rendering, Mapping):
+        return False
+    return bool(edge_rendering.get("visibilityClasses"))
 
 
 def _manifest_source_sidecar(manifest: Mapping[str, object]) -> Mapping[str, object]:
@@ -251,12 +187,23 @@ def _package_descriptor_matches_spec(
     has the right schema and belongs to exactly these bytes — the old
     schema-version, bake and stepHash gates all collapsed into the key. What
     remains is what the key cannot answer: provenance direction (sidecar vs
-    spec), and whether the recorded mesh/edge options match the request. The
+    spec), and — once a scene has been loaded and the caller can say what edge
+    classes it wants — whether the package was built with those classes. The
     source-closure gate stays the sanctioned asymmetry in the SAFE direction:
     generated outputs are detached from their code, so the viewer never checks
     source currency — here it survives purely as the explicit-build no-op
     gate, where being stricter can only make a requested build do real work,
     never trigger a needless one.
+
+    Without ``selector_options`` the caller cannot say what it wants, and
+    nothing can be inferred: the edge classes are a pure function of the STEP
+    bytes, which the key already pins, so re-deriving an expectation from the
+    descriptor would only compare it against itself. All that is checkable
+    there is that the descriptor IS one — that it records the classes at all.
+    The mesh comparison that used to live here weighed the descriptor's
+    recorded deflection numbers against freshly resolved ones; no tessellator
+    ever read either, so the only thing a mismatch could trigger was a rebuild
+    that rewrote them.
     """
     from cadgen._internal.component_package import is_assembly_package
 
@@ -270,22 +217,9 @@ def _package_descriptor_matches_spec(
         return False
     if not _artifact_source_kind_matches_spec(spec, manifest):
         return False
-    mesh = manifest.get("mesh")
-    if not isinstance(mesh, Mapping):
-        return False
     if selector_options is None:
-        selector_options = _selector_options_from_topology_manifest(spec, manifest)
-    if selector_options is None:
-        return False
-    return (
-        _mesh_values_match(
-            mesh,
-            chord_tolerance=selector_options.chord_tolerance,
-            angle_tolerance=selector_options.angle_tolerance,
-            relative=selector_options.relative,
-        )
-        and _edge_visibility_classes_match_manifest(manifest, selector_options)
-    )
+        return _manifest_records_edge_visibility_classes(manifest)
+    return _edge_visibility_classes_match_manifest(manifest, selector_options)
 
 
 def _existing_topology_artifact_matches_spec_without_scene(spec: EntrySpec) -> bool:
@@ -317,23 +251,21 @@ def _assembly_provenance_manifest(
 ) -> dict[str, object]:
     """The index-manifest provenance an assembly package descriptor carries, mirroring
     the monolithic GLB's embedded STEP_topology index — but WITHOUT the expensive
-    selector extraction. Sourced from the scene (sourceKind/closure), the mesh options,
-    and the STEP hash, so the build freshness gates can read it from assembly.json
-    exactly as they read the monolithic manifest.
+    selector extraction. Sourced from the scene (sourceKind/closure), the edge-render
+    options, and the STEP hash, so the build freshness gates can read it from
+    assembly.json exactly as they read the monolithic manifest.
+
+    There is no ``mesh`` section. A render package stores surfaces, not
+    triangles; the client tessellates from ``.surf`` with the JS tessellator's
+    own relative tolerances. The deflection numbers this block used to carry
+    reached no mesher, and the adaptive ``resolution`` beside them was the
+    INPUT to a decision whose output — ``edgeRendering.visibilityClasses`` — is
+    recorded right here.
     """
     import os
 
     from cadgen._internal.glb_topology import step_topology_capabilities
 
-    mesh: dict[str, object] = {
-        # Descriptor keys are frozen: renaming them would re-key every
-        # package in the store. The Python names beside them are honest.
-        "linearDeflection": float(selector_options.chord_tolerance),
-        "angularDeflection": float(selector_options.angle_tolerance),
-        "relative": bool(selector_options.relative),
-    }
-    if isinstance(getattr(selector_options, "mesh_resolution", None), dict):
-        mesh["resolution"] = selector_options.mesh_resolution
     # STEP-pure by contract: nothing here may derive from the Python source.
     # Source-derived state (provenance, pose, mates) rides the source sidecar
     # (_source_sidecar_payload below) — the descriptor is the cache engine's
@@ -341,7 +273,6 @@ def _assembly_provenance_manifest(
     minimal: dict[str, object] = {
         "capabilities": step_topology_capabilities(selector_options.edge_visibility_classes),
         "edgeRendering": {"visibilityClasses": list(selector_options.edge_visibility_classes)},
-        "mesh": mesh,
     }
     step_hash = (
         step_file_hash(step_path)

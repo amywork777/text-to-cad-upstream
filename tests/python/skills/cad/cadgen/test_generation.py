@@ -1153,30 +1153,6 @@ class CadGenerationTests(unittest.TestCase):
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
             },
-            "mesh": {
-                "linearDeflection": 0.006,
-                "angularDeflection": 0.2,
-                "relative": True,
-                "resolution": {
-                    "mode": "auto",
-                    "hints": {
-                        "bboxDiag": 10.0,
-                        "prototypeFaceCount": 6,
-                        "prototypeEdgeCount": 12,
-                        "prototypeCurvedFaceCount": 0,
-                        "prototypeCurvedEdgeCount": 0,
-                        "occurrenceFaceCount": 6,
-                        "occurrenceEdgeCount": 12,
-                        "occurrenceCurvedFaceCount": 0,
-                        "occurrenceCurvedEdgeCount": 0,
-                        "leafOccurrenceCount": 1,
-                        "complexityScore": 17.2,
-                        "effectiveComplexityScore": 11.18,
-                        "curvaturePressureScore": 0.0,
-                        "profile": "extra-fine",
-                    },
-                },
-            },
         }
 
         with (
@@ -1404,11 +1380,6 @@ class CadGenerationTests(unittest.TestCase):
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
             },
-            "mesh": {
-                "linearDeflection": 0.3,
-                "angularDeflection": 0.2,
-                "relative": True,
-            }
         }
 
         package_patch, package_calls = self._patch_package_build()
@@ -1443,18 +1414,12 @@ class CadGenerationTests(unittest.TestCase):
         artifact = mock.Mock()
         artifact.manifest = {
             "kind": "assembly-package",
-            
-            # Stale by MESH OPTIONS: the recorded deflections disagree with the
-            # requested ones. (Hash staleness cannot exist under content
-            # keying — an edited file resolves to a different package key.)
-            "edgeRendering": {
-                "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
-            },
-            "mesh": {
-                "linearDeflection": 0.9,
-                "angularDeflection": 0.9,
-                "relative": True,
-            },
+            # Stale by EDGE RENDERING: the descriptor does not say which edge
+            # visibility classes its components were built with, so nothing can
+            # match it. That is the only descriptor-level staleness left —
+            # hash staleness cannot exist under content keying (an edited file
+            # resolves to a different package key), and the mesh options the
+            # descriptor used to record reached no tessellator.
         }
 
         package_patch, package_calls = self._patch_package_build()
@@ -1491,30 +1456,6 @@ class CadGenerationTests(unittest.TestCase):
             "edgeRendering": {
                 "visibilityClasses": ["feature", "tangent", "seam", "degenerate"],
             },
-            "mesh": {
-                "linearDeflection": 0.006,
-                "angularDeflection": 0.2,
-                "relative": True,
-                "resolution": {
-                    "mode": "auto",
-                    "hints": {
-                        "bboxDiag": 10.0,
-                        "prototypeFaceCount": 6,
-                        "prototypeEdgeCount": 12,
-                        "prototypeCurvedFaceCount": 0,
-                        "prototypeCurvedEdgeCount": 0,
-                        "occurrenceFaceCount": 6,
-                        "occurrenceEdgeCount": 12,
-                        "occurrenceCurvedFaceCount": 0,
-                        "occurrenceCurvedEdgeCount": 0,
-                        "leafOccurrenceCount": 1,
-                        "complexityScore": 17.2,
-                        "effectiveComplexityScore": 11.18,
-                        "curvaturePressureScore": 0.0,
-                        "profile": "extra-fine",
-                    },
-                },
-            }
         }
 
         package_patch, package_calls = self._patch_package_build()
@@ -1549,11 +1490,6 @@ class CadGenerationTests(unittest.TestCase):
             "kind": "assembly-package",
             
             "stepHash": hashlib.sha256(step_path.read_bytes()).hexdigest(),
-            "mesh": {
-                "linearDeflection": 0.3,
-                "angularDeflection": 0.2,
-                "relative": True,
-            }
         }
 
         package_patch, package_calls = self._patch_package_build()

@@ -15,16 +15,6 @@ class InvalidModelScriptError(ValueError):
 
 
 @dataclass(frozen=True)
-class MeshSettings:
-    """The adaptive resolver's return type (``AdaptiveMeshResolution.settings``).
-    Provenance for the package descriptor's mesh section — no tessellator reads
-    it; see ``cadgen._internal.tessellation`` for the tolerances that are real."""
-
-    tolerance: float
-    angular_tolerance: float
-
-
-@dataclass(frozen=True)
 class GeneratorMetadata:
     script_path: Path
     kind: str

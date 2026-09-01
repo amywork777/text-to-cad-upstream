@@ -7,7 +7,7 @@
 // orphans old artifacts BY NAME and everything regenerates on demand. No
 // artifact records a version inside itself — a package that resolves at all
 // is current-scheme by construction.
-export const CACHE_SCHEMA_VERSION = 16; // cache_schema.CACHE_SCHEMA_VERSION
+export const CACHE_SCHEMA_VERSION = 17; // cache_schema.CACHE_SCHEMA_VERSION
 
 // The source sidecar carries the model's DECLARATIONS — the resolved kinematics
 // block, the copied animation text, the declared mesh exports — beside the model

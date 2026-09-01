@@ -23,13 +23,11 @@ from cadgen._internal.glb_topology import STEP_TOPOLOGY_SCHEMA_VERSION
 from tests.python.support.tmp_root import temporary_directory
 
 
-# The middle rung of the adaptive ladder (the "coarse-assembly" profile in
-# step_scene_mesh.adaptive_mesh_resolution_from_hints), used below purely as a
-# yardstick for "finer than" / "coarser than". These tests used to reach for
-# cadgen.metadata.DEFAULT_MESH_TOLERANCE, which held the same two numbers by
-# coincidence of history — it was the retired absolute OCCT default, not a rung.
-COARSE_ASSEMBLY_TOLERANCE = 0.02
-COARSE_ASSEMBLY_ANGULAR_TOLERANCE = 0.6
+# The adaptive resolver returns a PROFILE and the hints behind it, and nothing
+# else: the deflection numbers it used to carry reached no tessellator and are
+# gone. The profile is load-bearing because
+# generation_spec._edge_visibility_classes_for_resolution turns it into the
+# edge classes a package renders, so these tests assert profiles and hints.
 
 
 class StepSceneSelectorArtifactTests(unittest.TestCase):
@@ -139,11 +137,12 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             resolution = adaptive_mesh_resolution_for_scene(scene)
 
             self.assertEqual("extra-fine", resolution.profile)
-            self.assertLess(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
-            self.assertLess(resolution.settings.angular_tolerance, COARSE_ASSEMBLY_ANGULAR_TOLERANCE)
             self.assertEqual(1, resolution.hints["leafOccurrenceCount"])
 
-    def test_adaptive_mesh_resolution_floors_linear_deflection_for_meter_scale_models(self) -> None:
+    def test_adaptive_mesh_resolution_scales_scores_up_for_meter_scale_models(self) -> None:
+        # Size reaches the profile through the score scale factor alone: a
+        # model past 1.5 m has its complexity and curvature scores multiplied
+        # by 1.35 before they meet the ladder's thresholds.
         with temporary_directory(prefix="cad-adaptive-mesh-") as temp_dir:
             step_path = Path(temp_dir) / "big_box.step"
             build123d.export_step(build123d.Box(2600, 1300, 1300), step_path)
@@ -152,21 +151,17 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             resolution = adaptive_mesh_resolution_for_scene(scene)
 
             diagonal = float(resolution.hints["bboxDiag"])
-            self.assertGreater(diagonal, 500.0)
+            self.assertGreater(diagonal, 1500.0)
             self.assertAlmostEqual(
-                resolution.settings.tolerance, round(diagonal * 3.0e-4, 3), places=3
+                resolution.hints["effectiveComplexityScore"],
+                round(float(resolution.hints["complexityScore"]) * 1.35, 3),
+                places=3,
             )
-            self.assertEqual(
-                resolution.hints["scaleFloorTolerance"], resolution.settings.tolerance
-            )
-            # Curvature quality rides on angular deflection once the linear
-            # floor engages; coarse-profile angular values must be clamped.
-            self.assertLessEqual(resolution.settings.angular_tolerance, 0.35)
 
-    def test_adaptive_mesh_resolution_keeps_diagonal_and_floor_for_high_face_count_scenes(self) -> None:
+    def test_adaptive_mesh_resolution_keeps_diagonal_for_high_face_count_scenes(self) -> None:
         # A face-count guard used to skip the bbox/diagonal computation for
         # scenes with >=8000 occurrence faces, so bboxDiag came back None and
-        # the meter-scale floor silently no-oped on exactly the scenes that
+        # the size scale factor silently no-oped on exactly the scenes that
         # need it (e.g. a full launch stack with dozens of engines). 1,400
         # instances x 6 faces = 8,400 occurrence faces, spread over ~14 m.
         box_shape = build123d.Box(10.0, 8.0, 4.0).wrapped
@@ -199,16 +194,14 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
         self.assertGreaterEqual(resolution.hints["occurrenceFaceCount"], 8000)
         diagonal = resolution.hints["bboxDiag"]
         self.assertIsNotNone(diagonal)
-        self.assertGreater(float(diagonal), 500.0)
-        self.assertEqual(
-            resolution.hints["scaleFloorTolerance"], resolution.settings.tolerance
-        )
+        self.assertGreater(float(diagonal), 1500.0)
         self.assertAlmostEqual(
-            resolution.settings.tolerance, round(float(diagonal) * 3.0e-4, 3), places=3
+            resolution.hints["effectiveComplexityScore"],
+            round(float(resolution.hints["complexityScore"]) * 1.35, 3),
+            places=3,
         )
-        self.assertLessEqual(resolution.settings.angular_tolerance, 0.35)
 
-    def test_adaptive_mesh_resolution_keeps_absolute_tolerances_for_desk_scale_models(self) -> None:
+    def test_adaptive_mesh_resolution_leaves_desk_scale_scores_unscaled(self) -> None:
         with temporary_directory(prefix="cad-adaptive-mesh-") as temp_dir:
             step_path = Path(temp_dir) / "medium_box.step"
             build123d.export_step(build123d.Box(200, 120, 80), step_path)
@@ -216,8 +209,10 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
 
             resolution = adaptive_mesh_resolution_for_scene(scene)
 
-            self.assertNotIn("scaleFloorTolerance", resolution.hints)
-            self.assertLessEqual(resolution.settings.tolerance, 0.025)
+            self.assertEqual(
+                resolution.hints["complexityScore"],
+                resolution.hints["effectiveComplexityScore"],
+            )
 
     def test_adaptive_mesh_resolution_does_not_coarsen_simple_repeated_assemblies_by_leaf_count_alone(self) -> None:
         box_shape = build123d.Box(10, 8, 4).wrapped
@@ -245,7 +240,6 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
         resolution = adaptive_mesh_resolution_for_scene(scene)
 
         self.assertEqual("medium", resolution.profile)
-        self.assertLess(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
         self.assertEqual(100, resolution.hints["leafOccurrenceCount"])
 
     def test_adaptive_mesh_resolution_keeps_many_low_curvature_occurrences_balanced(self) -> None:
@@ -273,8 +267,6 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             )
 
         self.assertEqual("balanced-assembly", resolution.profile)
-        self.assertEqual(0.016, resolution.settings.tolerance)
-        self.assertEqual(0.5, resolution.settings.angular_tolerance)
 
     def test_adaptive_mesh_resolution_uses_large_topology_profile_for_extreme_imports(self) -> None:
         with mock.patch.object(
@@ -301,8 +293,6 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             )
 
         self.assertEqual("large-topology", resolution.profile)
-        self.assertGreater(resolution.settings.tolerance, COARSE_ASSEMBLY_TOLERANCE)
-        self.assertGreater(resolution.settings.angular_tolerance, COARSE_ASSEMBLY_ANGULAR_TOLERANCE)
 
     def test_adaptive_mesh_resolution_uses_curvature_pressure_before_raw_counts_explode(self) -> None:
         with mock.patch.object(
@@ -329,8 +319,6 @@ class StepSceneSelectorArtifactTests(unittest.TestCase):
             )
 
         self.assertEqual("medium", resolution.profile)
-        self.assertEqual(0.014, resolution.settings.tolerance)
-        self.assertEqual(0.45, resolution.settings.angular_tolerance)
 
 
 if __name__ == "__main__":
