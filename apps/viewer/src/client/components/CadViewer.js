@@ -16,7 +16,6 @@ import { buildDxfPreviewMeshData, extractDxfScorePolylines } from "cadgen-js/lib
 import { buildDxfDrawingLineGroups, drawingLineBounds } from "cadgen-js/lib/dxf/buildDrawingLines";
 import { STEP_TREE_TOPOLOGY_NODE_PREFIX } from "cadgen-js/lib/step/stepTree";
 import { copyImageBlobToClipboard } from "@/ui/clipboard";
-import { triggerBlobDownload } from "@/ui/download";
 import {
   annotatePerspectiveSnapshot,
   CAMERA_PROJECTION,
@@ -3170,7 +3169,9 @@ const CadViewer = forwardRef(function CadViewer({
   }, [bendAxisX, drawingBendLines, bendAnglesRad, drawingBends, drawingBendStyle, drawingBendRadiusMm, drawingKFactor, drawingHiddenLayers, drawingOrientation, drawingMaterialColor, drawingGeometry, drawingThicknessMm, drawingThicknessScale, meshData, viewerReadyTick]);
 
   useImperativeHandle(ref, () => ({
-    async captureScreenshot({ filename = "cad-screenshot.png", mode = "download" } = {}) {
+    // Clipboard-only: the viewer never downloads artifact or screenshot bytes
+    // through a URL — copy actions hand out paths and images instead.
+    async captureScreenshot() {
       const runtime = runtimeRef.current;
       if (!runtime?.renderer || !runtime?.scene || !runtime?.camera) {
         throw new Error("CAD Viewer not ready");
@@ -3178,18 +3179,10 @@ const CadViewer = forwardRef(function CadViewer({
 
       renderDrawingOverlay();
       const blobPromise = buildCompositeScreenshotBlob(runtime, drawingCanvasRef.current, {
-        backgroundColor: mode === "clipboard"
-          ? resolveElementBackgroundColor(runtime.renderer.domElement)
-          : "",
+        backgroundColor: resolveElementBackgroundColor(runtime.renderer.domElement),
         crop: getViewportFrameCrop(runtime, viewportFrameInsetsRef.current)
       });
-
-      if (mode === "clipboard") {
-        return await copyImageBlobToClipboard(blobPromise);
-      }
-
-      const blob = await blobPromise;
-      return triggerBlobDownload(blob, { filename });
+      return await copyImageBlobToClipboard(blobPromise);
     },
     // Viewport LOD sampler (design/unified-tessellation.md Phase 5): projection
     // parameters + live distances from the camera to model-space points. CAD

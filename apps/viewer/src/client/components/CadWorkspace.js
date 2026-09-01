@@ -6899,11 +6899,10 @@ export default function CadWorkspace({
     }
 
     try {
-      const filename = `${fileKey(selectedEntry).replace(/[^a-zA-Z0-9._-]+/g, "-")}.png`;
       if (!viewerRef.current?.captureScreenshot) {
         throw new Error("CAD Viewer not ready");
       }
-      await viewerRef.current.captureScreenshot({ filename, mode: "clipboard" });
+      await viewerRef.current.captureScreenshot();
       setCopyStatus("");
       setScreenshotStatus("Copied screenshot to clipboard");
     } catch (captureError) {
