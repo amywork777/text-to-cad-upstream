@@ -400,7 +400,7 @@ def build_step_artifact(
     # concurrent case: it ran before the peer's build existed, so a process that queued
     # behind one used to wake up and redo the full generator+mesh the holder had just
     # finished. Measured before this: two processes 0.3s apart on a cold package both ran
-    # gen_step(), the second for a further 2.5s after waiting 2.67s for the lock.
+    # the generator, the second for a further 2.5s after waiting 2.67s for the lock.
     #
     # Coordination keys by the MODEL PATH, never by the content-keyed package dir. A
     # rebuild changes the document's content key mid-build, so a package-keyed lock does

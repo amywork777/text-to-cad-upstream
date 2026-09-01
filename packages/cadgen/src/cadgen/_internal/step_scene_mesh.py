@@ -141,7 +141,7 @@ def scene_to_build123d_compound(scene: LoadedStepScene, *, label: str | None = N
         # free object"). Wrapping would add an assembly level that is not in the
         # file, pushing every occurrence path one segment deeper (o1.1 -> o1.1.1)
         # so selector refs differ depending on whether the STEP was opened
-        # directly or returned from a generator's gen_step().
+        # directly or returned from a generator's @step entry.
         single = roots[0]
         if label:
             single.label = label

@@ -1,4 +1,4 @@
-"""Scope value store: freeze/thaw of gen_step-style results + the on-disk
+"""Scope value store: freeze/thaw of @step-style results + the on-disk
 trace entries the cold tier validates (W2, design/production-architecture.md).
 
 A frozen scope value is a JSON structure tree plus content-addressed BREP
@@ -199,7 +199,7 @@ def _freeze_occurrence_tree(tree: dict) -> dict:
 
 
 def freeze_value(value) -> dict:
-    """Freeze a gen_step-style result: Shape/Compound, a dict envelope with a
+    """Freeze a @step-style result: Shape/Compound, a dict envelope with a
     ``shape`` key, or a JSON scalar structure."""
     if isinstance(value, _JSON_SCALARS):
         return {"kind": "literal", "value": value}

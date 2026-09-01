@@ -6,7 +6,7 @@ descriptor holds the tree, placements, labels, colors, and mates. Writing
 the STEP file is therefore a pure ASSEMBLY step — read blobs once, place
 occurrences (sharing each component's TShape, exactly like the original
 build did), rebuild the nested compound from the descriptor's assembly
-tree, and hand the result to the existing XCAF writer. ``gen_step()`` never
+tree, and hand the result to the existing XCAF writer. A ``@step`` entry never
 runs here; this is the FreeCAD save path, not a recompute.
 """
 

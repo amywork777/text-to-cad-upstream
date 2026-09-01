@@ -179,7 +179,7 @@ def _package_descriptor_matches_spec(
     Returns None when the entry's artifact is not a package (caller falls back
     to the monolith-GLB validator). Packages carry no embedded selector/edge
     views (selector topology is extracted on demand), so routing them through
-    the monolith validator always failed and every build re-ran gen_step plus
+    the monolith validator always failed and every build re-ran the generator plus
     the full-scene mesh; validate against the package descriptor instead.
 
     Content keying does most of the gating BY CONSTRUCTION: the package key is
@@ -684,7 +684,7 @@ def _generate_step_outputs(
                 spec.step_path.resolve(): spec,
             }
         output_kwargs["preloaded_scene"] = preloaded_scene
-        # gen_step never writes a STEP, so the artifact pipeline must not require one.
+        # A @step entry never writes a STEP, so the artifact pipeline must not require one.
         output_kwargs["require_step_file"] = False
     else:
         # Imported/committed STEP target (kind supplied by the caller or inferred upstream):
@@ -1201,9 +1201,9 @@ def _manifest_source_closure_unchanged(manifest: Mapping[str, object], base: Pat
 
 def _assembly_is_current(spec: EntrySpec) -> bool:
     """Whether a generated model's render package is already up to date, so
-    regeneration (gen_step + mesh + emit) can be skipped entirely.
+    regeneration (generator + mesh + emit) can be skipped entirely.
 
-    gen_step no longer writes a STEP, so freshness rides on the package
+    A @step entry writes no STEP, so freshness rides on the package
     descriptor's recorded source closure (the generator's Python import reach)
     re-hashing unchanged — not an on-disk STEP hash. Parts and assemblies are
     both packages and share this gate.
@@ -1272,7 +1272,7 @@ def _generated_child_is_stale(child_spec: EntrySpec, *, force: bool) -> bool:
         return False
     if force:
         return True
-    # gen_step writes no STEP — the render GLB/package is the artifact, so freshness keys
+    # A @step entry writes no STEP — the render GLB/package is the artifact, so freshness keys
     # on it. A missing/unhydrated artifact (file GLB or package directory) is stale.
     artifact_path = render_package_dir(child_spec.entry_path)
     if not artifact_path.exists():

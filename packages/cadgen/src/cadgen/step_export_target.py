@@ -312,7 +312,7 @@ def _export_scene(
     out.parent.mkdir(parents=True, exist_ok=True)
 
     if fmt == "step":
-        # gen_step writes no STEP, so serialize the generator's in-memory compound; an
+        # A @step entry writes no STEP, so serialize the generator's in-memory compound; an
         # imported source already has a text STEP on disk, so copy it to the destination.
         source_compound = getattr(scene, "source_compound", None)
         if source_compound is not None:

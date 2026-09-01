@@ -1,7 +1,7 @@
 """Per-scope dependency capture for the trace substrate (W1,
 design/production-architecture.md).
 
-A SCOPE is one traced call — a child entry's ``gen_step()`` or a
+A SCOPE is one traced call — a child entry's ``@step`` entry or a
 ``@cadgen.memo`` function. Its closure (the files whose content decides
 whether a cached result is valid) is the union of three channels:
 

@@ -179,7 +179,7 @@ def _resolve_cli_output_path(
     # to a SOURCE=OUTPUT target.
     #
     # The same wording in ``cadgen.metadata`` is absolute on purpose and must stay that way:
-    # that one validates a path written into a checked-in ``gen_step()`` envelope, which is
+    # that one validates a path written into a checked-in ``@step`` envelope, which is
     # read on every platform, so POSIX separators are the portable form there. One rule is
     # about a user's disk, the other about a file in the repository.
     if os.name != "nt" and "\\" in value:
@@ -317,7 +317,7 @@ def _apply_step_output_overrides(
                 cad_ref=cad_ref_from_step_path(output_path),
                 display_name=_display_name_for_path(output_path),
                 step_path=output_path,
-                # A STEP output path is now a STEP *export* request (gen_step writes no STEP
+                # A STEP output path is now a STEP *export* request (@step writes no STEP
                 # by default): write it on demand to the requested path.
                 step_export_path=output_path,
             )
@@ -350,7 +350,7 @@ def _apply_dxf_output_overrides(
                 spec,
                 cad_ref=cad_ref_from_dxf_path(output_path),
                 display_name=_display_name_for_path(output_path),
-                # A DXF output path is a DXF *export* request (gen_dxf builds the drawing
+                # A DXF output path is a DXF *export* request (@dxf builds the drawing
                 # package by default): write it on demand to the requested path.
                 dxf_path=output_path,
                 dxf_export_path=output_path,

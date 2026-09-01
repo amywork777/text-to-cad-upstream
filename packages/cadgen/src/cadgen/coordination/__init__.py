@@ -178,7 +178,7 @@ def snapshot(output_dir: Path | str) -> Snapshot:
 
     generator_probe = probe(generator_lock_path(output_dir))
     if generator_probe.held:
-        # A busy generator reports its phases too (an export runs the same gen_step a build
+        # A busy generator reports its phases too (an export runs the same @step entry a build
         # does). Its record is a DIFFERENT file from the writer's, and attribution works the
         # same way: only the run holding this sentinel may be rendered.
         run_id = read_run_id(generator_lock_path(output_dir))
@@ -247,7 +247,7 @@ class BuildRun:
 # The run whose lock is held on this thread, for code that is too far from `artifact_build`
 # to be handed it. `run_node_builder` solves the same problem across a PIPE -- the Node
 # child describes its work and the holder publishes it -- and this is the in-process twin:
-# a generator's `gen_step()` is called with no arguments and cannot be given the BuildRun,
+# a generator's @step entry is called with no arguments and cannot be given the BuildRun,
 # so it looks the run up instead. A ContextVar rather than a global because the viewer's
 # warm worker is long-lived and must never leak one build's reporter into another's.
 _CURRENT_BUILD: contextvars.ContextVar[BuildRun | None] = contextvars.ContextVar(
@@ -465,14 +465,14 @@ def generator_busy(
 ) -> Iterator[BuildRun | None]:
     """Occupy an artifact's GENERATOR without claiming to rewrite its package.
 
-    An export runs the model's ``gen_step()`` for a minute and writes a file somewhere else
+    An export runs the model's ``@step`` entry for a minute and writes a file somewhere else
     entirely. Taking the write lock for that made a fully-current model report `generating`
     with an empty bar; taking nothing would let a reader think the generator is free. This
     is the third option, and it is why there are two sentinels.
 
     Note what this does NOT do: the generator sentinel is a different file from the writer
     sentinel, so ``flock`` cannot make the two exclude each other. A build and an export of
-    one model DO run its ``gen_step()`` concurrently, each in its own process. That is
+    one model DO run its ``@step`` entry concurrently, each in its own process. That is
     wasteful but not unsafe -- they share no in-process state and write different outputs.
     What it buys is a state a reader can distinguish: a busy generator does not hide the
     package on disk, and a writer does.
@@ -482,7 +482,7 @@ def generator_busy(
     other, so there was no lock that would have prevented it.
 
     Yields a :class:`BuildRun`, exactly as :func:`artifact_build` does, so the work under it
-    reports through the same phases. This run does the SAME ``gen_step()`` a build does -- for
+    reports through the same phases. This run does the SAME ``@step`` entry a build does -- for
     a large assembly that is minutes -- and it used to report nothing at all to either
     surface, because it had no reporter to report through. The only thing that differs is
     where the record lands, and what a reader is entitled to conclude from it: an occupied

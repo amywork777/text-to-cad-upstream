@@ -491,7 +491,7 @@ def build_package_from_compound(
     Every model — part or assembly — is one representation: a descriptor + content-
     addressed components.
 
-    - **assembly** (``single_component=False``): the shape-only ``gen_step`` returns a baked
+    - **assembly** (``single_component=False``): the shape-only ``@step`` entry returns a baked
       compound whose direct children are the occurrences (``part.moved(transform)`` with
       ``child.label`` the name). Each child is content-addressed by its *local* (unlocated)
       geometry, so repeated parts share one component GLB; the per-child location supplies

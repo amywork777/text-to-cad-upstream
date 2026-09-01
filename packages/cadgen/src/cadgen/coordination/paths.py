@@ -49,10 +49,9 @@ WRITE_LOCK_SUFFIX = ".generation.lock"
 # hide the artifact, the latter must not.
 GENERATOR_LOCK_SUFFIX = ".generator.lock"
 
-# The status record. Deliberately still named `.generation.progress.json`: the v2 schema is
-# a strict superset of v1, so a reader that predates this package keeps working unchanged
-# while producers are migrated. Renaming it would open a window -- between the producer
-# cutover and the reader cutover -- where the viewer showed `generating` with no bar.
+# The status record the CAD Viewer's backend reads beside the write sentinel. The name is
+# the cross-process contract: cadgen writes it, the viewer's stdlib backend derives the same
+# path independently, and the parity suite compares the two by value.
 STATUS_SUFFIX = ".generation.progress.json"
 
 # The GENERATOR run's status record, and the reason there are two. Generator runs and writer

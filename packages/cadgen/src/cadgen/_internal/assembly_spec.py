@@ -1,11 +1,9 @@
 """Catalog path utilities and identity-transform constants.
 
-Historically this module also parsed Python ``gen_step()`` assembly recipes
-(``instances`` / ``children`` envelopes) into a typed ``AssemblySpec`` tree.
-That contract is gone — ``gen_step()`` is shape-only — and the parser was
-deleted with it. Only the catalog-path helpers and the identity-transform
-constants survive, kept here so the established import paths in
-``step_topology_artifact``, ``step_targets``, and ``generation`` continue to resolve.
+A model entry is shape-only (no ``instances``/``children`` envelope), so there
+is no assembly-recipe parser here — just the catalog-path helpers and the
+identity-transform constants that ``step_topology_artifact``, ``step_targets``,
+and ``generation`` import.
 """
 
 from __future__ import annotations

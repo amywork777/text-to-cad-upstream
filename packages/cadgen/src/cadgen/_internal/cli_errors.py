@@ -2,7 +2,7 @@
 
 A generator that raises used to reach the interpreter uncaught, so an ordinary authoring
 mistake printed a 62-line, 4.2 KB traceback whose one useful line -- the exception -- was
-last, under ~50 frames of ``runpy``, the launcher, and cadgen internals. A `gen_step()`
+last, under ~50 frames of ``runpy``, the launcher, and cadgen internals. A model entry's
 missing its return printed 43 lines to say ``must return one value``.
 
 What a caller actually needs is the failure and WHERE IN THEIR MODEL it happened. Those
