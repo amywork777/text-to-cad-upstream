@@ -11,12 +11,8 @@ import { configureBrowserProfileSession } from '@main/host/browser/browser-profi
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { isBrowserPartition } from '@main/host/browser/webview-security';
 import { createCadDrawing } from '@main/host/cad/cad-drawing-service';
-import { migrateLegacyCadModel } from '@main/host/cad/cad-migration-service';
-import { getCadRuntimeStatus, provisionCadRuntime } from '@main/host/cad/cad-runtime-service';
 import {
-  applyCadModelParameters,
   forgetCadModelProvenance,
-  readCadModelHistory,
   rebuildCadModel,
   validateCadModel,
 } from '@main/host/cad/cad-validation-service';
@@ -54,32 +50,13 @@ export const browserOperations = {
     return { success: true as const };
   },
 
-  getActiveBrowser: () => ({ browserId: browserWebContentsRegistry.getActiveBrowser() }),
-
   ensureCadViewer,
-
-  getCadRuntimeStatus,
-
-  repairCadRuntime: async () => {
-    try {
-      await provisionCadRuntime();
-    } catch {
-      // The status contains the actionable setup error for the renderer.
-    }
-    return getCadRuntimeStatus();
-  },
 
   validateCadModel,
 
   rebuildCadModel,
 
-  readCadModelHistory,
-
-  applyCadModelParameters,
-
   forgetCadModelProvenance,
-
-  migrateLegacyCadModel,
 
   createCadDrawing,
 

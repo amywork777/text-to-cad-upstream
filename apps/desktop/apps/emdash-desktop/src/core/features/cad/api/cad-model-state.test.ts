@@ -11,7 +11,6 @@ import {
   interruptRecoveredCadRun,
   markCadConversationContextCurrent,
   reconcileCadArtifactFromDisk,
-  recordCadSourceMigration,
   reconcileCadModelConversations,
   recordCadConversationTurnDuration,
   registerCadModelConversation,
@@ -88,46 +87,6 @@ describe('CAD model catalog', () => {
         { path: identity.modelPath, role: 'model' },
       ],
     });
-  });
-
-  it('relinks legacy source provenance without changing the accepted revision', () => {
-    const accepted = reconcileCadArtifactFromDisk(
-      withModel(),
-      identity.contextKey,
-      {
-        revisionId: 'sha256:accepted',
-        modelPath: identity.modelPath,
-        modelHash: 'model-hash',
-        sourcePath: identity.sourcePath,
-        sourceHash: 'legacy-source-hash',
-      },
-      {},
-      openedAt
-    );
-    const migrated = recordCadSourceMigration(
-      accepted,
-      identity.contextKey,
-      {
-        contextKey: identity.contextKey,
-        modelPath: identity.modelPath,
-        sourcePath: 'examples/plate.py',
-      },
-      '2026-08-24T10:05:00.000Z'
-    );
-
-    expect(migrated.models[identity.contextKey]).toMatchObject({
-      revisionId: 'sha256:accepted',
-      modelHash: 'model-hash',
-      modelPath: identity.modelPath,
-      sourcePath: 'examples/plate.py',
-      artifacts: [
-        { path: 'examples/plate.py', role: 'source' },
-        { path: identity.modelPath, role: 'model' },
-      ],
-      lastGood: { modelPath: identity.modelPath, modelHash: 'model-hash' },
-    });
-    expect(migrated.models[identity.contextKey]?.sourceHash).toBeUndefined();
-    expect(migrated.models[identity.contextKey]?.lastGood?.sourceHash).toBeUndefined();
   });
 
   it('migrates the existing model conversation to default Design without losing its id', () => {

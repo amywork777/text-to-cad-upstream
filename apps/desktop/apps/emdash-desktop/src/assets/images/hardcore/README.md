@@ -1,8 +1,8 @@
 # Hardcore app icon
 
 The app icon is the Text-to-CAD faceted blue star selected for the desktop app.
-Its canonical source is `vendor/text-to-cad/docs/public/favicon.png`, mirrored from
-`earthtojake/text-to-cad`'s `develop` branch.
+Its canonical source is `apps/docs/public/favicon.png` at the root of this
+repository (`earthtojake/text-to-cad`).
 
 - `hardcore.png`, `hardcore-dev.png`, and `hardcore-canary.png` are exact copies
   of the canonical PNG.

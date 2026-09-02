@@ -1,6 +1,5 @@
 import { makeObservable, observable, runInAction } from 'mobx';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import type { BrowserEvent } from '@core/primitives/browser/api';
 
@@ -139,7 +138,6 @@ function terminalRegistryEntries(): {
 describe('PaneStore browser tabs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    browserDiagnosticsStore.clear();
     browserSessionStore.clear();
   });
 
@@ -191,17 +189,9 @@ describe('PaneStore browser tabs', () => {
     manager.open('browser', {});
     const tab = manager.resolvedTabs[0];
     const browserId = browserResource(tab)?.browserId ?? '';
-    browserDiagnosticsStore.append({
-      browserId,
-      level: 'error',
-      source: 'console',
-      message: 'failure',
-    });
-
     manager.closeTab(tab?.tabId ?? '');
 
     expect(browserSessionStore.getSession(browserId)).toBeUndefined();
-    expect(browserDiagnosticsStore.entriesForBrowser(browserId)).toEqual([]);
     expect(manager.resolvedTabs).toEqual([]);
   });
 

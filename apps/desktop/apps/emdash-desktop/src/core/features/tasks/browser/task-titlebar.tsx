@@ -1,5 +1,5 @@
 import { Button, Tooltip } from '@emdash/ui/react/primitives';
-import { Files, ListTree, MessageSquare, PanelLeft, type LucideIcon } from 'lucide-react';
+import { Files, MessageSquare, PanelLeft, type LucideIcon } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import type { CadTabResource } from '@core/features/cad/api/browser/cad-tab-resource';
 import { ConnectionStatusDot } from '@core/features/machines/contributions/browser/connection-status-dot';
@@ -72,9 +72,6 @@ const ReadyDesignTitlebar = observer(function ReadyDesignTitlebar({
           isChatOpen={activeCadModel?.chatOpen ?? false}
           showFiles
           showChat={Boolean(activeCadModel) && !hasWorkbenchChat}
-          // The CAD Viewer owns its own topology tree and file sheet; the
-          // desktop no longer toggles them from outside the frame.
-          showModelTree={false}
           onProjectTreeChange={toggleLeftSidebar}
           onFilesChange={() => taskView.chrome.commands.toggleSidebarTab('files')}
           onChatChange={(open) => activeCadModel?.setChatOpen(open)}
@@ -88,26 +85,20 @@ export function WorkspacePanelControls({
   isProjectTreeOpen,
   isFilesOpen = false,
   isChatOpen = false,
-  isModelTreeOpen = false,
   showFiles = false,
   showChat = false,
-  showModelTree = false,
   onProjectTreeChange,
   onFilesChange,
   onChatChange,
-  onModelTreeChange,
 }: {
   isProjectTreeOpen: boolean;
   isFilesOpen?: boolean;
   isChatOpen?: boolean;
-  isModelTreeOpen?: boolean;
   showFiles?: boolean;
   showChat?: boolean;
-  showModelTree?: boolean;
   onProjectTreeChange: () => void;
   onFilesChange?: () => void;
   onChatChange?: (open: boolean) => void;
-  onModelTreeChange?: (pressed: boolean) => void;
 }) {
   return (
     <div className="flex items-center gap-1" role="group" aria-label="Workspace layout">
@@ -125,35 +116,8 @@ export function WorkspacePanelControls({
           onToggle={() => onChatChange(!isChatOpen)}
         />
       ) : null}
-      {showModelTree && onModelTreeChange ? (
-        <PanelToggle
-          label="viewer details"
-          action={
-            isModelTreeOpen
-              ? 'Hide viewer details'
-              : isFilesOpen
-                ? 'Show viewer details and close files'
-                : 'Show viewer details'
-          }
-          icon={ListTree}
-          pressed={isModelTreeOpen}
-          onToggle={() => onModelTreeChange(!isModelTreeOpen)}
-        />
-      ) : null}
       {showFiles && onFilesChange ? (
-        <PanelToggle
-          label="files"
-          action={
-            isFilesOpen
-              ? 'Hide files'
-              : isModelTreeOpen
-                ? 'Show files and close viewer details'
-                : 'Show files'
-          }
-          icon={Files}
-          pressed={isFilesOpen}
-          onToggle={onFilesChange}
-        />
+        <PanelToggle label="files" icon={Files} pressed={isFilesOpen} onToggle={onFilesChange} />
       ) : null}
     </div>
   );

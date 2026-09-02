@@ -14,8 +14,8 @@ All paths are relative to `apps/emdash-desktop/`.
 
 `src/main/index.ts` → app lifecycle → IPC/RPC registration → window creation → renderer
 
-- `index.ts` — Loads `.env`, normalizes PATH, initializes database, registers all RPC controllers via `src/main/rpc.ts`, creates the main window.
-- `src/main/rpc.ts` — Assembles the typed RPC router from domain controllers (`src/main/core/*/controller.ts`).
+- `index.ts` — Loads `.env`, normalizes PATH, initializes database, registers all wire controllers via `src/core/manifests/node/controllers.ts`, creates the main window.
+- `src/core/manifests/node/controllers.ts` — Assembles the typed wire controllers from each feature's `node/wire-controller.ts`.
 - `src/preload/index.ts` — Exposes `window.electronAPI` (`invoke`, `eventSend`, `eventOn`) via `contextBridge`.
 - `src/renderer/lib/ipc.ts` — Creates the typed RPC client and event emitter used throughout the renderer.
 

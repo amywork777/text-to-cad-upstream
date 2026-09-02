@@ -98,18 +98,12 @@ importers:
       ignore:
         specifier: ^5.3.1
         version: 5.3.2
-      jsonc-parser:
-        specifier: ^3.3.1
-        version: 3.3.1
       nbranch:
         specifier: ^0.1.1
         version: 0.1.1
       node-pty:
         specifier: 1.1.0
         version: 1.1.0
-      pidusage:
-        specifier: ^4.0.1
-        version: 4.0.1
       pino:
         specifier: ^9.14.0
         version: 9.14.0
@@ -174,9 +168,6 @@ importers:
       '@types/node':
         specifier: ^24.13.1
         version: 24.13.1
-      '@types/pidusage':
-        specifier: ^2.0.5
-        version: 2.0.5
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.17
@@ -213,9 +204,6 @@ importers:
       date-fns:
         specifier: ^4.1.0
         version: 4.4.0
-      devicon:
-        specifier: ^2.17.0
-        version: 2.17.0
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
@@ -237,9 +225,6 @@ importers:
       jsdom:
         specifier: ^29.0.2
         version: 29.1.1(@noble/hashes@2.2.0)
-      katex:
-        specifier: ^0.16.45
-        version: 0.16.47
       lucide-react:
         specifier: ^0.564.0
         version: 0.564.0(react@19.2.7)
@@ -276,9 +261,6 @@ importers:
       react-dom:
         specifier: ^19.2.0
         version: 19.2.7(react@19.2.7)
-      s3mini:
-        specifier: ^0.9.4
-        version: 0.9.5
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.1
@@ -3938,9 +3920,6 @@ packages:
   '@types/node@24.13.1':
     resolution: {integrity: sha512-RSpUJGmvsJ1ZeBehQZFhIdpsz+bIpES0nIQXko4Ybq+N+kX6XvOq3Jo+iJ82FWLdblFq85AsMikd3m35jgezYg==}
 
-  '@types/pidusage@2.0.5':
-    resolution: {integrity: sha512-MIiyZI4/MK9UGUXWt0jJcCZhVw7YdhBuTOuqP/BjuLDLZ2PmmViMIQgZiWxtaMicQfAz/kMrZ5T7PKxFSkTeUA==}
-
   '@types/react-dom@19.2.3':
     resolution: {integrity: sha512-jp2L/eY6fn+KgVVQAOqYItbF0VY/YApe5Mz2F0aykSO8gx31bYCZyvSeYxCHKvzHG5eZjc+zyaS5BrBWya2+kQ==}
     peerDependencies:
@@ -7268,10 +7247,6 @@ packages:
   picomatch@4.0.4:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
-
-  pidusage@4.0.1:
-    resolution: {integrity: sha512-yCH2dtLHfEBnzlHUJymR/Z1nN2ePG3m392Mv8TFlTP1B0xkpMQNHAnfkY0n2tAi6ceKO6YWhxYfZ96V4vVkh/g==}
-    engines: {node: '>=18'}
 
   pify@4.0.1:
     resolution: {integrity: sha512-uB80kBFb/tfd68bVleG9T5GGsGPjJrLAUpR5PZIrhBnIaRTQRjqdJSsIKkOP6OAIFbj7GOrcudc5pNjZ+geV2g==}
@@ -11570,8 +11545,6 @@ snapshots:
     dependencies:
       undici-types: 7.18.2
 
-  '@types/pidusage@2.0.5': {}
-
   '@types/react-dom@19.2.3(@types/react@19.2.17)':
     dependencies:
       '@types/react': 19.2.17
@@ -15610,10 +15583,6 @@ snapshots:
   picomatch@2.3.2: {}
 
   picomatch@4.0.4: {}
-
-  pidusage@4.0.1:
-    dependencies:
-      safe-buffer: 5.2.1
 
   pify@4.0.1: {}
 

@@ -71,37 +71,6 @@ export function ensureCadModel(
   };
 }
 
-export function recordCadSourceMigration(
-  catalog: CadModelCatalog,
-  contextKey: string,
-  identity: CadModelIdentity,
-  migratedAt: string
-): CadModelCatalog {
-  const current = catalog.models[contextKey];
-  if (!current) return ensureCadModel(catalog, identity, migratedAt);
-  const { sourceHash: _sourceHash, ...withoutSourceHash } = current;
-  const lastGood = current.lastGood
-    ? (() => {
-        const {
-          sourcePath: _sourcePath,
-          sourceBackupPath: _sourceBackupPath,
-          sourceHash: _lastGoodSourceHash,
-          ...modelSnapshot
-        } = current.lastGood;
-        return { ...modelSnapshot, modelPath: identity.modelPath };
-      })()
-    : undefined;
-  return replaceModel(catalog, contextKey, {
-    ...withoutSourceHash,
-    contextKey,
-    modelPath: identity.modelPath,
-    ...(identity.sourcePath ? { sourcePath: identity.sourcePath } : {}),
-    artifacts: cadCoreArtifacts(identity.modelPath, identity.sourcePath),
-    ...(lastGood ? { lastGood } : {}),
-    updatedAt: migratedAt,
-  });
-}
-
 export function reconcileCadModelConversations(
   catalog: CadModelCatalog,
   contextKey: string,

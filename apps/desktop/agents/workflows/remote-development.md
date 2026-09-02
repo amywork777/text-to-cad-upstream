@@ -21,8 +21,8 @@ or shell-profile code.
   reconnecting Wire client over SSH streamlocal forwarding
 - `src/main/core/wire-workers/` — desktop-local wire runtime workers for local
   projects while remote runtimes are served by the workspace server
-- `src/main/utils/remoteOpenIn.ts` and `src/main/utils/shellEscape.ts` — external
-  SSH URL/command helpers that intentionally bypass workspace-server runtimes
+- `src/main/host/remoteOpenIn.ts` — external SSH URL/command helper that
+  intentionally bypasses workspace-server runtimes
 
 ## Authentication And Storage
 

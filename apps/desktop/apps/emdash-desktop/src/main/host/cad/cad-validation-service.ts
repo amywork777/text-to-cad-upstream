@@ -1,27 +1,9 @@
 import { execFile, type ChildProcess } from 'node:child_process';
-import { createHash, randomUUID } from 'node:crypto';
-import {
-  existsSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import type {
-  CadParameterApplyResult,
-  CadProvenanceForgetResult,
-  CadSourceHistoryResult,
-  CadValidationResult,
-} from '@core/features/browser/api';
-import {
-  applyCadParameterValues,
-  parseCadSourceHistory,
-} from '@core/features/cad/api/cad-source-history';
-import { verifiedMigratedCadSourceForLegacy } from '@main/host/cad/cad-migration-marker';
+import type { CadProvenanceForgetResult, CadValidationResult } from '@core/features/browser/api';
 import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 import {
   cadgenProvenanceRecordPaths,
@@ -39,7 +21,6 @@ const execFileAsync = promisify(execFile);
 const VALIDATION_TIMEOUT_MS = 120_000;
 const REBUILD_TIMEOUT_MS = 10 * 60_000;
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
-const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 interface CadValidationInFlight {
   revision: string;
   promise: Promise<CadValidationResult>;
@@ -345,84 +326,6 @@ async function inspectCadArtifact(
   };
 }
 
-export function readCadModelHistory(input: {
-  workspacePath: string;
-  filePath: string;
-}): CadSourceHistoryResult {
-  const target = validateSourceTarget(input);
-  if (!target.success) return target;
-  if (!isPythonModelPath(target.relativeFilePath)) {
-    return { success: false, error: 'Feature history requires a Python @step model.' };
-  }
-  try {
-    const sourcePath = join(target.workspacePath, target.relativeFilePath);
-    const source = readCadSource(sourcePath);
-    const history = parseCadSourceHistory(source);
-    return {
-      success: true,
-      sourceHash: sha256Text(source),
-      history: isLegacyPythonModelPath(target.relativeFilePath)
-        ? {
-            ...history,
-            parameters: [],
-            diagnostics: [
-              ...history.diagnostics,
-              'This legacy .step.py source is view-only. Rename it to a plain .py @step model before editing dimensions.',
-            ],
-          }
-        : history,
-    };
-  } catch (error) {
-    return { success: false, error: errorMessage(error) };
-  }
-}
-
-export function applyCadModelParameters(input: {
-  workspacePath: string;
-  filePath: string;
-  expectedSourceHash: string;
-  values: Record<string, number>;
-}): CadParameterApplyResult {
-  const target = validateSourceTarget(input);
-  if (!target.success) return target;
-  if (isLegacyPythonModelPath(target.relativeFilePath)) {
-    return {
-      success: false,
-      error:
-        'This legacy .step.py model is view-only. Rename it to a plain .py @step model before editing parameters.',
-    };
-  }
-  if (!isPythonModelPath(target.relativeFilePath)) {
-    return {
-      success: false,
-      error: 'Design parameters require a Python @step model.',
-    };
-  }
-  if (Object.keys(input.values).length === 0) {
-    return { success: false, error: 'No design parameter changes were provided.' };
-  }
-  try {
-    const sourcePath = join(target.workspacePath, target.relativeFilePath);
-    const source = readCadSource(sourcePath);
-    if (sha256Text(source) !== input.expectedSourceHash) {
-      return {
-        success: false,
-        conflict: true,
-        error: 'The generator changed on disk. Refresh History before applying parameters.',
-      };
-    }
-    const applied = applyCadParameterValues(source, input.values);
-    atomicWriteSource(sourcePath, applied.source);
-    return {
-      success: true,
-      sourceHash: sha256Text(applied.source),
-      appliedValues: applied.appliedValues,
-    };
-  } catch (error) {
-    return { success: false, error: errorMessage(error) };
-  }
-}
-
 export type { CadRuntimeCommand } from '@main/host/cad/cad-recipe';
 export { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 
@@ -463,30 +366,8 @@ function sha256(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
-function sha256Text(source: string): string {
-  return createHash('sha256').update(source).digest('hex');
-}
-
 function optionalFileHash(path: string): string | undefined {
   return existsSync(path) ? sha256(path) : undefined;
-}
-
-function readCadSource(path: string): string {
-  const stats = statSync(path);
-  if (stats.size > MAX_SOURCE_BYTES) {
-    throw new Error('The CAD generator is larger than the 2 MB History limit.');
-  }
-  return readFileSync(path, 'utf8');
-}
-
-function atomicWriteSource(path: string, source: string): void {
-  const temporaryPath = `${path}.hardcore-${randomUUID()}.tmp`;
-  try {
-    writeFileSync(temporaryPath, source, { encoding: 'utf8', mode: statSync(path).mode });
-    renameSync(temporaryPath, path);
-  } finally {
-    if (existsSync(temporaryPath)) rmSync(temporaryPath);
-  }
 }
 
 /**
@@ -510,8 +391,7 @@ export function resolveCadArtifactTarget(input: CadArtifactTargetInput): CadArti
       linkedSourceForStep(workspacePath, requestedFilePath, input.sourcePath) ?? undefined;
   } else if (isPythonModelPath(requestedFilePath)) {
     modelPath = cadSourceOutputPath(workspacePath, requestedFilePath);
-    sourcePath =
-      verifiedSourceForLegacy(workspacePath, requestedFilePath, modelPath) ?? requestedFilePath;
+    sourcePath = requestedFilePath;
   } else {
     return {
       success: false,
@@ -549,13 +429,7 @@ function validateSourceTarget(input: {
   | { success: false; error: string } {
   const workspacePath = resolve(input.workspacePath);
   const requestedFilePath = resolveWorkspaceFilePath(workspacePath, input.filePath);
-  const requestedModelPath = join(
-    workspacePath,
-    defaultModelPath(relative(workspacePath, requestedFilePath))
-  );
-  const filePath =
-    verifiedSourceForLegacy(workspacePath, requestedFilePath, requestedModelPath) ??
-    requestedFilePath;
+  const filePath = requestedFilePath;
   const relativeFilePath = relative(workspacePath, filePath);
   if (!isSafeWorkspaceRelativePath(relativeFilePath)) {
     return { success: false, error: 'CAD files must be inside the active model workspace.' };
@@ -599,8 +473,6 @@ function linkedSourceForStep(
   // Preserve the old artifact.step.py naming convention as a bounded legacy
   // compatibility link. Legacy recipes remain read-only until renamed.
   const legacySibling = `${filePath}.py`;
-  const verifiedSource = verifiedSourceForLegacy(workspacePath, legacySibling, filePath);
-  if (verifiedSource) return verifiedSource;
   return existsSync(legacySibling) ? legacySibling : null;
 }
 
@@ -610,20 +482,6 @@ function isSafeWorkspaceRelativePath(path: string): boolean {
 
 function resolveWorkspaceFilePath(workspacePath: string, filePath: string): string {
   return isAbsolute(filePath) ? resolve(filePath) : resolve(workspacePath, filePath);
-}
-
-function verifiedSourceForLegacy(
-  workspacePath: string,
-  legacySourcePath: string,
-  modelPath: string
-): string | null {
-  if (!isLegacyPythonModelPath(legacySourcePath)) return null;
-  return verifiedMigratedCadSourceForLegacy({
-    workspacePath,
-    legacySourcePath,
-    migratedSourcePath: legacySourcePath.replace(/\.(?:step|stp)\.py$/i, '.py'),
-    modelPath,
-  });
 }
 
 export function assertLegacyCadArtifactIsCurrent(

@@ -1,6 +1,5 @@
 import { defineContract, eventStream, procedure } from '@emdash/wire/rpc';
 import { z } from 'zod';
-import type { CadSourceHistory } from '@core/features/cad/api/cad-source-history';
 import type {
   BrowserDataClearKind,
   BrowserEvent,
@@ -28,14 +27,6 @@ export type CadValidationResult =
     }
   | { success: false; error: string };
 
-export type CadSourceHistoryResult =
-  | { success: true; sourceHash: string; history: CadSourceHistory }
-  | { success: false; error: string };
-
-export type CadParameterApplyResult =
-  | { success: true; sourceHash: string; appliedValues: Record<string, number> }
-  | { success: false; error: string; conflict?: boolean };
-
 export type CadDrawingResult =
   | {
       success: true;
@@ -52,22 +43,6 @@ export type CadDrawingResult =
 export type CadProvenanceForgetResult =
   | { success: true; removed: string[] }
   | { success: false; error: string };
-
-export type CadMigrationResult =
-  | {
-      success: true;
-      sourcePath: string;
-      modelPath: string;
-      openPath: string;
-    }
-  | { success: false; error: string };
-
-export type CadRuntimeStatus = {
-  state: 'idle' | 'installing' | 'ready' | 'error';
-  packageName: 'cad@text-to-cad';
-  message: string;
-  updatedAt: string | null;
-};
 
 export const browserDomain = 'browser' as const;
 
@@ -92,21 +67,9 @@ export const browserContract = defineContract({
     input: z.object({ browserId: z.string().nullable() }),
     output: z.custom<BrowserActionResult>(),
   }),
-  getActiveBrowser: procedure({
-    input: z.void(),
-    output: z.object({ browserId: z.string().nullable() }),
-  }),
   ensureCadViewer: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),
     output: z.custom<{ success: true; url: string } | { success: false; error: string }>(),
-  }),
-  getCadRuntimeStatus: procedure({
-    input: z.void(),
-    output: z.custom<CadRuntimeStatus>(),
-  }),
-  repairCadRuntime: procedure({
-    input: z.void(),
-    output: z.custom<CadRuntimeStatus>(),
   }),
   validateCadModel: procedure({
     input: z.object({
@@ -120,26 +83,9 @@ export const browserContract = defineContract({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),
     output: z.custom<CadValidationResult>(),
   }),
-  readCadModelHistory: procedure({
-    input: z.object({ workspacePath: z.string(), filePath: z.string() }),
-    output: z.custom<CadSourceHistoryResult>(),
-  }),
-  applyCadModelParameters: procedure({
-    input: z.object({
-      workspacePath: z.string(),
-      filePath: z.string(),
-      expectedSourceHash: z.string(),
-      values: z.record(z.string(), z.number()),
-    }),
-    output: z.custom<CadParameterApplyResult>(),
-  }),
   forgetCadModelProvenance: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),
     output: z.custom<CadProvenanceForgetResult>(),
-  }),
-  migrateLegacyCadModel: procedure({
-    input: z.object({ workspacePath: z.string(), filePath: z.string() }),
-    output: z.custom<CadMigrationResult>(),
   }),
   createCadDrawing: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),

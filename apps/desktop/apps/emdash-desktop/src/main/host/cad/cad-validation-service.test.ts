@@ -4,15 +4,8 @@ import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  cadMigrationMarkerPath,
-  cadMigrationSha256,
-  readCadVerifiedMigrationMarker,
-  writeCadVerifiedMigrationMarker,
-} from './cad-migration-marker';
 import { cadgenProvenanceRecordPath, cadgenProvenanceRecordPaths } from './cad-recipe';
 import {
-  applyCadModelParameters,
   assertLegacyCadArtifactIsCurrent,
   cadArtifactOperationKey,
   cadArtifactIdentity,
@@ -22,7 +15,6 @@ import {
   cadValidationModelPath,
   cadValidationInputRevision,
   forgetCadModelProvenance,
-  readCadModelHistory,
   resolveCadArtifactTarget,
   validateCadModel,
 } from './cad-validation-service';
@@ -563,91 +555,6 @@ describe('CAD validation service path boundary', () => {
     });
   });
 
-  it('uses proven migrated provenance when restart sees a verified crash marker', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
-    temporaryDirectories.push(workspacePath);
-    const legacyPath = join(workspacePath, 'bracket.step.py');
-    const plainPath = join(workspacePath, 'bracket.py');
-    const stepPath = join(workspacePath, 'bracket.step');
-    const packagePath = join(workspacePath, '__cadgen__', 'models', 'bracket.step');
-    const legacy = Buffer.from('LEGACY = 1');
-    const migrated = Buffer.from('WIDTH = 20');
-    const step = Buffer.from('step-v1');
-    await mkdir(packagePath, { recursive: true });
-    await writeFile(legacyPath, legacy);
-    await writeFile(plainPath, migrated);
-    await writeFile(stepPath, step);
-    await writeFile(
-      join(packagePath, 'assembly.json'),
-      JSON.stringify({ sourceKind: 'python', sourcePath: 'bracket.step.py' })
-    );
-    writeCadVerifiedMigrationMarker(cadMigrationMarkerPath(legacyPath), {
-      version: 1,
-      state: 'verified',
-      legacySourcePath: 'bracket.step.py',
-      migratedSourcePath: 'bracket.py',
-      modelPath: 'bracket.step',
-      originalSourceHash: cadMigrationSha256(legacy),
-      modelHash: cadMigrationSha256(step),
-      migratedSourceHash: cadMigrationSha256(migrated),
-      sourceMode: 0o644,
-      migratedSourceBase64: migrated.toString('base64'),
-    });
-
-    expect(
-      readCadVerifiedMigrationMarker({
-        workspacePath,
-        legacySourcePath: legacyPath,
-        migratedSourcePath: plainPath,
-        modelPath: stepPath,
-        requireMigratedSource: true,
-      })
-    ).toMatchObject({ success: true, marker: { state: 'verified' } });
-
-    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toEqual({
-      success: true,
-      workspacePath,
-      relativeModelPath: 'bracket.step',
-      relativeSourcePath: 'bracket.py',
-    });
-  });
-
-  it('preserves migrated provenance after successful cleanup removes the legacy source', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
-    temporaryDirectories.push(workspacePath);
-    const legacyPath = join(workspacePath, 'bracket.step.py');
-    const plainPath = join(workspacePath, 'bracket.py');
-    const stepPath = join(workspacePath, 'bracket.step');
-    const packagePath = join(workspacePath, '__cadgen__', 'models', 'bracket.step');
-    const migrated = Buffer.from('WIDTH = 20');
-    const step = Buffer.from('step-v1');
-    await mkdir(packagePath, { recursive: true });
-    await writeFile(plainPath, migrated);
-    await writeFile(stepPath, step);
-    await writeFile(
-      join(packagePath, 'assembly.json'),
-      JSON.stringify({ sourceKind: 'python', sourcePath: 'bracket.step.py' })
-    );
-    writeCadVerifiedMigrationMarker(cadMigrationMarkerPath(legacyPath), {
-      version: 1,
-      state: 'committed',
-      legacySourcePath: 'bracket.step.py',
-      migratedSourcePath: 'bracket.py',
-      modelPath: 'bracket.step',
-      originalSourceHash: cadMigrationSha256(Buffer.from('LEGACY = 1')),
-      modelHash: cadMigrationSha256(step),
-      migratedSourceHash: cadMigrationSha256(migrated),
-      sourceMode: 0o644,
-    });
-
-    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toEqual({
-      success: true,
-      workspacePath,
-      relativeModelPath: 'bracket.step',
-      relativeSourcePath: 'bracket.py',
-    });
-  });
-
   it('runs generators without reusing same-second Python bytecode', () => {
     const environment = cadToolEnvironment({ PATH: '/usr/bin' });
 
@@ -656,125 +563,6 @@ describe('CAD validation service path boundary', () => {
       PYTHONDONTWRITEBYTECODE: '1',
     });
     expect(environment.PYTHONPYCACHEPREFIX).toContain('hardcore-cad-no-bytecode-');
-  });
-
-  it('reads source-derived features and explicit design parameters', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-history-'));
-    temporaryDirectories.push(workspacePath);
-    const filePath = join(workspacePath, 'bracket.py');
-    await writeFile(
-      filePath,
-      '# @cad-parameter {"label":"Width","min":10,"max":30,"step":1,"unit":"mm"}\nWIDTH = 20\n\nfrom cadgen import step\n\n@step()\ndef bracket():\n    with BuildPart() as part:\n        Box(WIDTH, 10, 4)\n    return part.part\n'
-    );
-
-    const result = readCadModelHistory({ workspacePath, filePath });
-
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.history.groups).toEqual([expect.objectContaining({ functionName: 'bracket' })]);
-    expect(result.history.parameters).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: 'width',
-          defaultValue: 20,
-          unit: 'mm',
-          origin: 'declared',
-        }),
-        expect.objectContaining({ symbol: 'Box.width', origin: 'feature-literal' }),
-        expect.objectContaining({ symbol: 'Box.height', origin: 'feature-literal' }),
-      ])
-    );
-  });
-
-  it('applies parameters only against the expected source hash', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-history-'));
-    temporaryDirectories.push(workspacePath);
-    const filePath = join(workspacePath, 'bracket.py');
-    await writeFile(
-      filePath,
-      '# @cad-parameter {"label":"Width","min":10,"max":30,"step":1}\nWIDTH = 20\n'
-    );
-    const loaded = readCadModelHistory({ workspacePath, filePath });
-    expect(loaded.success).toBe(true);
-    if (!loaded.success) return;
-
-    const applied = applyCadModelParameters({
-      workspacePath,
-      filePath,
-      expectedSourceHash: loaded.sourceHash,
-      values: { width: 24 },
-    });
-
-    expect(applied).toMatchObject({ success: true, appliedValues: { width: 24 } });
-    expect(await readFile(filePath, 'utf8')).toContain('WIDTH = 24');
-    expect(
-      applyCadModelParameters({
-        workspacePath,
-        filePath,
-        expectedSourceHash: loaded.sourceHash,
-        values: { width: 25 },
-      })
-    ).toMatchObject({ success: false, conflict: true });
-  });
-
-  it('keeps parameter editing read-only for unmigrated legacy sources', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-history-'));
-    temporaryDirectories.push(workspacePath);
-    const filePath = join(workspacePath, 'bracket.step.py');
-    const source = 'WIDTH = 20\n\ndef gen_step():\n    return WIDTH\n';
-    await writeFile(filePath, source);
-
-    const history = readCadModelHistory({ workspacePath, filePath });
-    expect(history).toMatchObject({
-      success: true,
-      history: {
-        parameters: [],
-        diagnostics: expect.arrayContaining([expect.stringContaining('view-only')]),
-      },
-    });
-
-    expect(
-      applyCadModelParameters({
-        workspacePath,
-        filePath,
-        expectedSourceHash: createHash('sha256').update(source).digest('hex'),
-        values: { width: 30 },
-      })
-    ).toMatchObject({ success: false, error: expect.stringContaining('view-only') });
-    expect(await readFile(filePath, 'utf8')).toBe(source);
-  });
-
-  it('applies automatically exposed feature dimensions through the same hash guard', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-history-'));
-    temporaryDirectories.push(workspacePath);
-    const filePath = join(workspacePath, 'automatic.py');
-    await writeFile(
-      filePath,
-      'OVERALL_HEIGHT = 100\nROOF_Z = OVERALL_HEIGHT\n\ndef gen_step():\n    with BuildPart() as part:\n        Box(20, 10, ROOF_Z)\n    return part.part\n'
-    );
-    const loaded = readCadModelHistory({ workspacePath, filePath });
-    expect(loaded.success).toBe(true);
-    if (!loaded.success) return;
-    const height = loaded.history.parameters.find(
-      (parameter) => parameter.symbol === 'OVERALL_HEIGHT'
-    );
-    const length = loaded.history.parameters.find((parameter) => parameter.symbol === 'Box.length');
-    expect(height).toBeDefined();
-    expect(length).toBeDefined();
-
-    const applied = applyCadModelParameters({
-      workspacePath,
-      filePath,
-      expectedSourceHash: loaded.sourceHash,
-      values: { [height!.id]: 150, [length!.id]: 25 },
-    });
-
-    expect(applied).toMatchObject({
-      success: true,
-      appliedValues: { [height!.id]: 150, [length!.id]: 25 },
-    });
-    expect(await readFile(filePath, 'utf8')).toContain('OVERALL_HEIGHT = 150');
-    expect(await readFile(filePath, 'utf8')).toContain('Box(25, 10, ROOF_Z)');
   });
 });
 

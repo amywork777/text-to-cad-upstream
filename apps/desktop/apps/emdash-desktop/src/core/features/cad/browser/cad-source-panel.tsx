@@ -6,14 +6,11 @@ import {
   Code2,
   Loader2,
   MoreHorizontal,
-  RefreshCw,
   RotateCcw,
   Save,
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { CadMigrationResult } from '@core/features/browser/api';
-import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import {
   cadSourcePanelPresentation,
   migratedCadSourcePath,
@@ -21,7 +18,6 @@ import {
 import type { SaveFileError } from '@core/features/editor/api/browser/open-file-store/open-file-store';
 import { useEmbeddedSourceEditor } from '@core/features/editor/contributions/browser/use-embedded-source-editor';
 import type { TaskTabContext } from '@core/features/workbench/api/browser/tabs/task-tab-context';
-import { useOpenModal } from '@core/manifests/browser/modal-api';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api';
 import { useTheme } from '@core/primitives/theme/browser';
 import type { CadTabResource } from '../api/browser/cad-tab-resource';
@@ -31,23 +27,19 @@ export const CadSourcePanel = observer(function CadSourcePanel({
   resource,
   task,
   sourcePath,
-  onMigrated,
 }: {
   resource: CadTabResource;
   task: TaskTabContext;
   sourcePath: string;
-  onMigrated: (result: Extract<CadMigrationResult, { success: true }>) => Promise<void> | void;
 }) {
   const connectionId = task.getRemoteConnectionId?.();
   const presentation = cadSourcePanelPresentation(sourcePath);
   const migratedName = migratedCadSourcePath(sourcePath)?.split(/[\\/]/).at(-1);
-  const openConfirm = useOpenModal('confirmActionModal');
   const fileRef = useMemo<HostFileRef>(
     () => hostFileRefFromNativePath(sourcePath, connectionId),
     [connectionId, sourcePath]
   );
   const [saving, setSaving] = useState(false);
-  const [migrating, setMigrating] = useState(false);
   const [needsRebuild, setNeedsRebuild] = useState(false);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
   const saveShortcutRef = useRef<() => void>(() => {});
@@ -99,43 +91,6 @@ export const CadSourcePanel = observer(function CadSourcePanel({
 
   saveShortcutRef.current = () => void saveOnly();
 
-  const migrateLegacySource = async () => {
-    if (!presentation.legacy || migrating || runInProgress || rebuilding) return;
-    if (connectionId) {
-      setMessage({ tone: 'error', text: 'Legacy migration is available for local projects only.' });
-      return;
-    }
-    const outcome = await openConfirm({
-      title: 'Migrate legacy CAD source?',
-      description: `Hardcore will use cadgen to rewrite and rename this source to ${migratedName ?? 'a plain .py file'}. The accepted STEP stays unchanged.`,
-      confirmLabel: 'Migrate',
-      variant: 'default',
-    });
-    if (!outcome.success) return;
-    setMigrating(true);
-    setMessage(null);
-    try {
-      const result = await (
-        await getBrowserClient()
-      ).migrateLegacyCadModel(
-        { workspacePath: resource.workspacePath, filePath: sourcePath },
-        { timeoutMs: 150_000 }
-      );
-      if (!result.success) {
-        setMessage({ tone: 'error', text: result.error });
-        return;
-      }
-      await onMigrated(result);
-    } catch (error) {
-      setMessage({
-        tone: 'error',
-        text: error instanceof Error ? error.message : 'Could not migrate the legacy CAD source.',
-      });
-    } finally {
-      setMigrating(false);
-    }
-  };
-
   const rebuildAndView = async () => {
     if (!entry || rebuilding || runInProgress) return;
     setMessage(null);
@@ -159,7 +114,7 @@ export const CadSourcePanel = observer(function CadSourcePanel({
     resource.setWorkspaceMode('3d');
   };
 
-  const blocked = saving || rebuilding || migrating || runInProgress;
+  const blocked = saving || rebuilding || runInProgress;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -192,21 +147,7 @@ export const CadSourcePanel = observer(function CadSourcePanel({
             </Badge>
           ) : null}
         </div>
-        {presentation.legacy ? (
-          <Button
-            type="button"
-            size="xs"
-            disabled={blocked || loading || Boolean(connectionId)}
-            onClick={() => void migrateLegacySource()}
-          >
-            {migrating ? (
-              <Loader2 className="mr-1 size-3 animate-spin" />
-            ) : (
-              <RefreshCw className="mr-1 size-3" />
-            )}
-            Migrate
-          </Button>
-        ) : (
+        {presentation.legacy ? null : (
           <>
             <div className="hidden shrink-0 items-center gap-1 @min-[561px]:flex">
               {entry?.dirty ? (
@@ -309,8 +250,9 @@ export const CadSourcePanel = observer(function CadSourcePanel({
         <div className="bg-warning/5 flex items-start gap-2 border-b px-4 py-2 text-tiny text-foreground-muted">
           <AlertTriangle className="text-warning mt-0.5 size-3.5 shrink-0" />
           <span>
-            This old .step.py/.stp.py generator is view-only. Migrate it explicitly to edit a plain
-            Python model; Hardcore will keep the accepted STEP unchanged.
+            This old .step.py/.stp.py generator is view-only. cadgen 0.5 has no migration tool:
+            rename it to {migratedName ?? 'a plain .py file'} by hand (see
+            docs/migrating-0.4-to-0.5.md). The accepted STEP stays unchanged.
           </span>
         </div>
       ) : null}

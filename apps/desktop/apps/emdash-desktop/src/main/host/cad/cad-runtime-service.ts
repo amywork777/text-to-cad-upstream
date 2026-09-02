@@ -14,24 +14,6 @@ import {
 const execFileAsync = promisify(execFile);
 let provisioning: Promise<void> | null = null;
 
-export type CadRuntimeStatus = {
-  state: 'idle' | 'installing' | 'ready' | 'error';
-  packageName: 'cad@text-to-cad';
-  message: string;
-  updatedAt: string | null;
-};
-
-let status: CadRuntimeStatus = {
-  state: 'idle',
-  packageName: 'cad@text-to-cad',
-  message: 'CAD setup requires Python 3.11 or newer and will verify it before installing.',
-  updatedAt: null,
-};
-
-export function getCadRuntimeStatus(): CadRuntimeStatus {
-  return { ...status };
-}
-
 /**
  * The canonical Text-to-CAD resources this process runs on: the monorepo root
  * in a checkout, or the bundle beside a packaged app. Resolved on every call
@@ -49,33 +31,9 @@ export function currentTextToCadLayout(): TextToCadLayout | null {
 
 export async function provisionCadRuntime(): Promise<void> {
   if (provisioning) return provisioning;
-  status = {
-    ...status,
-    state: 'installing',
-    message: 'Checking Python 3.11+ and preparing the built-in CAD skills…',
-    updatedAt: new Date().toISOString(),
-  };
-  provisioning = runProvisioning()
-    .then(() => {
-      status = {
-        ...status,
-        state: 'ready',
-        message: 'The CAD runtime and skills are ready.',
-        updatedAt: new Date().toISOString(),
-      };
-    })
-    .catch((error: unknown) => {
-      status = {
-        ...status,
-        state: 'error',
-        message: cadRuntimeProvisioningErrorMessage(error),
-        updatedAt: new Date().toISOString(),
-      };
-      throw error;
-    })
-    .finally(() => {
-      provisioning = null;
-    });
+  provisioning = runProvisioning().finally(() => {
+    provisioning = null;
+  });
   return provisioning;
 }
 
@@ -147,10 +105,6 @@ export function currentCadRuntimeRoot(): string {
 
 export function currentCadRuntimePythonExecutable(): string {
   return cadRuntimePythonExecutable(currentCadRuntimeRoot());
-}
-
-export function currentCadRuntimePluginRoot(): string {
-  return cadRuntimePluginRoot(currentCadRuntimeRoot());
 }
 
 /**

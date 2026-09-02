@@ -30,7 +30,6 @@ describe('WorkspacePanelControls', () => {
     const onProjectTreeChange = vi.fn();
     const onFilesChange = vi.fn();
     const onChatChange = vi.fn();
-    const onModelTreeChange = vi.fn();
 
     await act(async () => {
       root.render(
@@ -38,14 +37,11 @@ describe('WorkspacePanelControls', () => {
           isProjectTreeOpen={false}
           isFilesOpen={false}
           isChatOpen={false}
-          isModelTreeOpen={false}
           showFiles
           showChat
-          showModelTree
           onProjectTreeChange={onProjectTreeChange}
           onFilesChange={onFilesChange}
           onChatChange={onChatChange}
-          onModelTreeChange={onModelTreeChange}
         />
       );
     });
@@ -53,15 +49,12 @@ describe('WorkspacePanelControls', () => {
     expect(page.getByRole('button', { name: 'Choose visible panels' }).query()).toBeNull();
     expect(page.getByRole('button', { name: 'Show threads' })).toBeVisible();
     expect(page.getByRole('button', { name: 'Show chat' })).toBeVisible();
-    expect(page.getByRole('button', { name: 'Show viewer details' })).toBeVisible();
     expect(page.getByRole('button', { name: 'Show files' })).toBeVisible();
 
     await page.getByRole('button', { name: 'Show files' }).click();
     expect(onFilesChange).toHaveBeenCalledOnce();
     await page.getByRole('button', { name: 'Show chat' }).click();
     expect(onChatChange).toHaveBeenCalledWith(true);
-    await page.getByRole('button', { name: 'Show viewer details' }).click();
-    expect(onModelTreeChange).toHaveBeenCalledWith(true);
   });
 
   it('exposes each open panel as a pressed hide action', async () => {
@@ -71,19 +64,16 @@ describe('WorkspacePanelControls', () => {
           isProjectTreeOpen
           isFilesOpen
           isChatOpen
-          isModelTreeOpen
           showFiles
           showChat
-          showModelTree
           onProjectTreeChange={vi.fn()}
           onFilesChange={vi.fn()}
           onChatChange={vi.fn()}
-          onModelTreeChange={vi.fn()}
         />
       );
     });
 
-    for (const name of ['Hide threads', 'Hide chat', 'Hide viewer details', 'Hide files']) {
+    for (const name of ['Hide threads', 'Hide chat', 'Hide files']) {
       const locator = page.getByRole('button', { name });
       expect(locator).toHaveAttribute('aria-pressed', 'true');
       expect(locator).toHaveAttribute('data-variant', 'ghost');

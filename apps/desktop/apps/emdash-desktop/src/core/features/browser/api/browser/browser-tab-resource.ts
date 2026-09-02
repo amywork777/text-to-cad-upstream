@@ -1,5 +1,4 @@
 import { reaction } from 'mobx';
-import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import type { BrowserSessionSnapshot } from '@core/primitives/browser/api';
 import type {
@@ -14,7 +13,7 @@ import { getBrowserClient } from './client';
  * Domain resource for a single open browser tab.
  *
  * On construction, restores the browser session if needed (from snapshot).
- * On dispose, clears diagnostics, removes the session, and unregisters from RPC.
+ * On dispose, removes the session and unregisters from RPC.
  *
  * Subscribes to the open-in-new-tab event and opens a sibling browser tab via
  * handle.open('browser', { initialUrl }).
@@ -57,7 +56,6 @@ export class BrowserTabResource implements TabResource {
     this._disposed = true;
     this._unsubscribeOpenInNewTab();
     this._disposeSessionSync();
-    browserDiagnosticsStore.clearBrowser(this.browserId);
     browserSessionStore.removeSession(this.browserId);
     void getBrowserClient().then((client) =>
       client.unregisterSession({ browserId: this.browserId })

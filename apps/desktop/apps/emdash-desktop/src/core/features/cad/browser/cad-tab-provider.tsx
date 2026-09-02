@@ -15,7 +15,6 @@ import { CadTabResource } from '@core/features/cad/api/browser/cad-tab-resource'
 import {
   ensureCadModel,
   reconcileCadArtifactFromDisk,
-  recordCadSourceMigration,
   type CadModelIdentity,
 } from '@core/features/cad/api/cad-model-state';
 import { CAD_VALIDATION_WIRE_TIMEOUT_MS } from '@core/features/cad/api/cad-validation';
@@ -63,7 +62,7 @@ export interface CadOpenArgs {
 
 const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentProps) {
   const taskView = useTaskComposition();
-  const [catalog, setCatalog] = useMemento(cadModelCatalogMemento);
+  const [catalog] = useMemento(cadModelCatalogMemento);
   const cadTabs = host.resolvedTabs.filter(
     (tab): tab is ResolvedTab<CadTabResource> => tab.kind === 'cad'
   );
@@ -186,50 +185,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
                         resource={resource}
                         task={ctx as TaskTabContext}
                         sourcePath={sourcePath}
-                        onMigrated={async (result) => {
-                          const migratedSourcePath = resolveWorkspacePath(
-                            resource.workspacePath,
-                            result.sourcePath
-                          );
-                          const migratedModelPath = resolveWorkspacePath(
-                            resource.workspacePath,
-                            result.openPath
-                          );
-                          await taskView.editorView.retargetOpenFiles(
-                            sourcePath,
-                            migratedSourcePath
-                          );
-                          await taskView.editorView.files?.refresh();
-                          const contextKey = cadModelContextKey(result.modelPath);
-                          setCatalog((current) =>
-                            recordCadSourceMigration(
-                              current,
-                              contextKey,
-                              {
-                                contextKey,
-                                modelPath: result.modelPath,
-                                sourcePath: result.sourcePath,
-                              },
-                              new Date().toISOString()
-                            )
-                          );
-                          if (resource.path === migratedModelPath) {
-                            resource.refreshViewer();
-                            return;
-                          }
-                          const group = taskView.paneLayout.groups.find(({ pane }) =>
-                            pane.resolvedTabs.some((candidate) => candidate.tabId === tab.tabId)
-                          );
-                          taskView.paneLayout.open(
-                            'cad',
-                            { path: migratedModelPath },
-                            {
-                              preview: false,
-                              ...(group ? { target: { paneId: group.paneId } } : {}),
-                            }
-                          );
-                          group?.pane.closeTab(tab.tabId);
-                        }}
                       />
                     </div>
                   ) : null}
