@@ -144,10 +144,16 @@ export type CadRuntimeCommand = {
   args: string[];
 };
 
+/** How long a rebuild waits for another build of the same model before reporting `contended`. */
+export const CAD_REBUILD_LOCK_TIMEOUT_SECONDS = 120;
+
 /**
  * The one source door in cadgen 0.5: running the script. The freshness gate
  * inside cadgen decides whether anything rebuilds, so the desktop never
  * passes --force; opening, previewing, and restarting never call this at all.
+ * The lock timeout keeps a rebuild from waiting forever behind a build that
+ * another client (or an interrupted one) still holds; cadgen then answers
+ * `outcome: "contended"` and the desktop keeps the accepted STEP.
  */
 export function cadSourceRebuildToolPlan(relativeSourcePath: string): CadRuntimeCommand {
   if (/\.(?:step|stp)\.py$/i.test(relativeSourcePath)) {
@@ -158,7 +164,15 @@ export function cadSourceRebuildToolPlan(relativeSourcePath: string): CadRuntime
   if (!/\.py$/i.test(relativeSourcePath)) {
     throw new Error('A source rebuild requires a Python @step model.');
   }
-  return { tool: 'model', args: [relativeSourcePath, '--json'] };
+  return {
+    tool: 'model',
+    args: [
+      relativeSourcePath,
+      '--json',
+      '--lock-timeout',
+      String(CAD_REBUILD_LOCK_TIMEOUT_SECONDS),
+    ],
+  };
 }
 
 /**
@@ -224,9 +238,31 @@ export function cadgenProvenanceRecordPath(
   artifactPath: string,
   cacheRoot: string = resolveCadgenCacheRoot()
 ): string {
+  return join(cacheRoot, 'records', `${cadgenArtifactPathKey(artifactPath)}.source.json`);
+}
+
+/**
+ * Every records-tier file cadgen keeps for one artifact: the provenance record
+ * and the per-model export ledger (source closure -> written STEP hash). The
+ * doors resolve a generated document through that ledger, so once the desktop
+ * restores an accepted STEP under a recipe that no longer produced it, both
+ * records must go: cadgen then treats the STEP as an import and reads its
+ * bytes, and the next run of the recipe simply rebuilds and re-records.
+ */
+export function cadgenProvenanceRecordPaths(
+  artifactPath: string,
+  cacheRoot: string = resolveCadgenCacheRoot()
+): string[] {
+  const key = cadgenArtifactPathKey(artifactPath);
+  return [
+    join(cacheRoot, 'records', `${key}.source.json`),
+    join(cacheRoot, 'records', `${key}.step-export.json`),
+  ];
+}
+
+export function cadgenArtifactPathKey(artifactPath: string): string {
   const resolved = resolveLikeCadgen(artifactPath);
-  const key = createHash('sha256').update(resolved, 'utf8').digest('hex').slice(0, 24);
-  return join(cacheRoot, 'records', `${key}.source.json`);
+  return createHash('sha256').update(resolved, 'utf8').digest('hex').slice(0, 24);
 }
 
 export interface CadgenSourceProvenance {

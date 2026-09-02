@@ -49,6 +49,10 @@ export type CadDrawingResult =
     }
   | { success: false; error: string };
 
+export type CadProvenanceForgetResult =
+  | { success: true; removed: string[] }
+  | { success: false; error: string };
+
 export type CadMigrationResult =
   | {
       success: true;
@@ -128,6 +132,10 @@ export const browserContract = defineContract({
       values: z.record(z.string(), z.number()),
     }),
     output: z.custom<CadParameterApplyResult>(),
+  }),
+  forgetCadModelProvenance: procedure({
+    input: z.object({ workspacePath: z.string(), filePath: z.string() }),
+    output: z.custom<CadProvenanceForgetResult>(),
   }),
   migrateLegacyCadModel: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),

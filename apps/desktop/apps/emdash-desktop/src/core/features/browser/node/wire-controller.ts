@@ -5,6 +5,7 @@ import {
   type CadDrawingResult,
   type CadMigrationResult,
   type CadParameterApplyResult,
+  type CadProvenanceForgetResult,
   type CadRuntimeStatus,
   type CadSourceHistoryResult,
   type CadValidationResult,
@@ -41,6 +42,10 @@ export type BrowserOperations = {
     expectedSourceHash: string;
     values: Record<string, number>;
   }): Promise<CadParameterApplyResult> | CadParameterApplyResult;
+  forgetCadModelProvenance(input: {
+    workspacePath: string;
+    filePath: string;
+  }): Promise<CadProvenanceForgetResult> | CadProvenanceForgetResult;
   migrateLegacyCadModel(input: {
     workspacePath: string;
     filePath: string;
@@ -74,6 +79,7 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     rebuildCadModel: (input) => browserOperations.rebuildCadModel(input),
     readCadModelHistory: (input) => browserOperations.readCadModelHistory(input),
     applyCadModelParameters: (input) => browserOperations.applyCadModelParameters(input),
+    forgetCadModelProvenance: (input) => browserOperations.forgetCadModelProvenance(input),
     migrateLegacyCadModel: (input) => browserOperations.migrateLegacyCadModel(input),
     createCadDrawing: (input) => browserOperations.createCadDrawing(input),
     openDevTools: ({ browserId }) => browserOperations.openDevTools(browserId),

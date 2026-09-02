@@ -8,6 +8,7 @@ import {
   provisionCadRuntime,
 } from '@main/host/cad/cad-runtime-service';
 import { viewerClientIsBuilt } from '@main/host/cad/text-to-cad-layout';
+import { log } from '@main/lib/logger';
 
 const HOST = '127.0.0.1';
 const STARTUP_TIMEOUT_MS = 30_000;
@@ -322,6 +323,7 @@ async function startViewer(
     };
   }
 
+  log.info({ cwd, url: launch.url, action: launch.action }, 'cad: viewer launched');
   if (launch.action === 'reused') {
     // Another launch (this app earlier, or an agent session) already serves
     // this directory with the same code. The launcher process exits on its
