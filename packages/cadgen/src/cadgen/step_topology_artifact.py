@@ -359,6 +359,19 @@ def _scene_for_regeneration(
     progress: object | None = None,
 ) -> tuple[EntrySpec, LoadedStepScene]:
     if spec.source == "generated":
+        from cadgen._internal.doors import announce_rebuild, document_staleness
+
+        document = spec.step_path
+        announce_rebuild(
+            "step inspect",
+            document,
+            reason=(
+                (document_staleness(document) if document.is_file() else "no document on disk")
+                or ("--force" if force else "its render package is missing or stale")
+            ),
+            source=spec.script_path or spec.source_path,
+            verb="inspecting",
+        )
         # The run holding the lock, so the generator reports its phase (and whatever the
         # generator itself reports through cadgen.progress). Without it this call -- which
         # for a large assembly is the longest thing inspect does -- opened the build with no

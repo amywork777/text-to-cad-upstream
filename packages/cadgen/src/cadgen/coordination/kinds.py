@@ -86,3 +86,17 @@ SNAPSHOT = ArtifactKind(
 # and writes a file elsewhere -- so it is coordinated with generator_busy() against the
 # model's own kind rather than being a kind of its own. Add one here when something needs
 # to coordinate a directory these two do not cover.
+
+# `inspect validate`. Not a coordinated artifact either -- it writes no package and
+# takes no lock -- but a check over a 2,500-occurrence assembly runs for many minutes,
+# and it reports through the same phase model so the terminal line reads like a
+# build's. Resolving the input is deliberately not a phase here for the same reason
+# as SNAPSHOT: a stale document's rebuild paints its own line first.
+PHASE_COLLECT = "collect"
+PHASE_CHECK = "check"
+
+VALIDATION = ArtifactKind(
+    name="validation",
+    phases=(PHASE_COLLECT, PHASE_CHECK),
+    labels={PHASE_COLLECT: "Collecting parts", PHASE_CHECK: "Checking parts"},
+)

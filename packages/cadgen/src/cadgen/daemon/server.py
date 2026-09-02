@@ -260,6 +260,16 @@ def _watch_client(
             return
 
 
+def worker_died_message(exc: pool_mod.WorkerGone, *, job: str) -> str:
+    """The invoke-path (CAD Viewer) wording for a worker lost mid-job. The CLI path
+    composes its own in the client, where the rerun can be spelled out."""
+    return (
+        f"the warm cadgen worker running {job} died mid-job ({exc}) -- most likely out of "
+        "memory, or a crash in the geometry kernel. The job was not retried; rerun it cold "
+        "with CADGEN_DAEMON=0 to see the failure directly."
+    )
+
+
 def _status_payload() -> dict:
     """What the supervisor knows that nothing else can: which workers exist and their
     state. A socket file on disk proves none of it."""
@@ -345,7 +355,10 @@ def _handle_invoke(conn, request: dict, send_lock: threading.Lock, started: floa
         healthy = False
         with contextlib.suppress(OSError):
             with send_lock:
-                _send(conn, {"result": {"ok": False, "error": str(exc)}})
+                _send(conn, {"result": {
+                    "ok": False,
+                    "error": worker_died_message(exc, job=f"{module} {' '.join(args)}".strip()),
+                }})
     except OSError:
         pass  # client vanished; the worker is fine
     finally:
@@ -424,9 +437,15 @@ def _handle_request(
             with send_lock:
                 _send(conn, frame)
     except pool_mod.WorkerGone as exc:
+        # Its own frame, not a stderr chunk: the client owns the wording (it knows
+        # how the user invoked it) and pins it by test; the supervisor supplies the
+        # evidence. Note the log line too -- `cadgen daemon status` cannot show a
+        # worker that is gone.
         healthy = False
+        _log(f"{tool}: worker {worker.pid} died mid-job: {exc}")
         with send_lock:
-            _send(conn, {"stream": "stderr", "data": f"cadgen-daemon: {exc}\n"})
+            _send(conn, {"workerDied": {"pid": worker.pid, "detail": str(exc),
+                                        "exitStatus": exc.exit_status}})
     except OSError:
         # The CLIENT went away mid-job. The worker is fine; stop relaying.
         healthy = True

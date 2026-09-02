@@ -52,9 +52,12 @@ from cadgen.coordination import record as _record
 from cadgen.coordination.kinds import (
     DRAWING_PACKAGE,
     PHASE_BROWSER,
+    PHASE_CHECK,
+    PHASE_COLLECT,
     PHASE_RENDER,
     SNAPSHOT,
     STEP_PACKAGE,
+    VALIDATION,
     ArtifactKind,
 )
 from cadgen.coordination.lock import (
@@ -93,8 +96,11 @@ __all__ = [
     "Contended",
     "DRAWING_PACKAGE",
     "PHASE_BROWSER",
+    "PHASE_CHECK",
+    "PHASE_COLLECT",
     "PHASE_RENDER",
     "SNAPSHOT",
+    "VALIDATION",
     "NULL_PROGRESS",
     "PHASE_COMPONENTS",
     "PHASE_DONE",

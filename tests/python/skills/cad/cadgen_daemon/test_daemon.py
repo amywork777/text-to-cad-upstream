@@ -235,6 +235,72 @@ class CadgenDaemonTests(unittest.TestCase):
             )
         self.assertEqual(exit_code, 0, self.log_path.read_text(encoding="utf-8"))
 
+    def test_e_a_worker_killed_mid_job_is_reported_with_the_cold_rerun(self) -> None:
+        """The 35-minute validate that ended in `worker closed the connection`.
+
+        A real worker, a real SIGKILL (what the OOM killer sends), the real relay:
+        the client must say the worker died and how, name the job, and print the
+        exact CADGEN_DAEMON=0 rerun -- and must NOT quietly run the job cold."""
+        import signal
+        import threading
+
+        if self.server is None or self.server.poll() is not None:
+            type(self)._start_server()
+        # A model that sleeps inside its entry: long enough to be killed mid-job
+        # deterministically, and never current, so the worker really runs it.
+        (self.model_dir / "box_sleepy.py").write_text(
+            BOX_SOURCE.replace(
+                "def model():\n", "def model():\n    import time; time.sleep(30)\n"
+            ),
+            encoding="utf-8",
+        )
+        outcome: dict = {}
+        script = self.model_dir / "box_sleepy.py"
+
+        def run() -> None:
+            # The decorator's real handoff shape: the script path leads argv and
+            # prog is how the user spelled it (cadgen.authoring._run_from_main).
+            env = {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
+            out, err = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, env):
+                os.environ.pop("CADGEN_DAEMON_CHILD", None)
+                with redirect_stdout(out), redirect_stderr(err):
+                    outcome["exit"] = daemon_client.run_via_daemon(
+                        "run", [str(script), "--force"], cwd=str(self.model_dir),
+                        prog="python box_sleepy.py",
+                    )
+            outcome["output"] = out.getvalue() + err.getvalue()
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        env = {"CADGEN_DAEMON": "1", "CADGEN_DAEMON_SOCKET": str(self.address)}
+        busy_pid = None
+        deadline = time.monotonic() + 60.0
+        while time.monotonic() < deadline and busy_pid is None:
+            with mock.patch.dict(os.environ, env):
+                os.environ.pop("CADGEN_DAEMON_CHILD", None)
+                status = daemon_client.status() or {}
+            for worker in status.get("workers") or []:
+                if worker.get("busy"):
+                    busy_pid = int(worker["pid"])
+            time.sleep(0.2)
+        self.assertIsNotNone(busy_pid, "no worker ever went busy on the sleeping model")
+        time.sleep(1.0)  # let the job be well inside model() before the kill
+        os.kill(busy_pid, signal.SIGKILL)
+        thread.join(timeout=60.0)
+        self.assertFalse(thread.is_alive(), "the client never returned after its worker died")
+
+        self.assertEqual(outcome["exit"], 1, outcome["output"])
+        output = outcome["output"]
+        self.assertIn("the warm worker running `python box_sleepy.py --force` died mid-job", output)
+        self.assertIn("killed by SIGKILL (signal 9)", output)
+        self.assertIn("out of memory", output)
+        self.assertIn("NOT retried", output)
+        self.assertIn(f"CADGEN_DAEMON=0 python {script} --force", output)
+        self.assertNotIn("worker closed the connection", output)
+        # And the supervisor is still up, serving the next request.
+        self.assertIsNone(self.server.poll())
+
 
 if __name__ == "__main__":
     unittest.main()

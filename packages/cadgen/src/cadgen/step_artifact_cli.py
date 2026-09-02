@@ -450,6 +450,19 @@ def build_step_artifact(
                     logger=logger,
                 )
         if from_generator:
+            from cadgen._internal.doors import announce_rebuild, document_staleness
+
+            document = existing_spec.step_path
+            announce_rebuild(
+                "step compile",
+                document,
+                reason=(
+                    (document_staleness(document) if document.is_file() else "no document on disk")
+                    or ("--force" if force else "its render package is missing or stale")
+                ),
+                source=existing_spec.script_path or existing_spec.source_path,
+                verb="compiling its render package",
+            )
             scene = run_script_generator(
                 existing_spec,
                 "step",
