@@ -14,13 +14,14 @@ transfer (the same post-transfer canonicalization contract as
 per-occurrence-colored assembly from scratch repeatedly — fresh allocations
 every time, exactly what flips the map order — and demands identical bytes.
 
-The plan is applied in one of two places — to the written TEXT (linear, the
-normal path) or to the MODEL via ``ChangeOrder`` (quadratic, the backstop for a
-tail whose numbers straddle a digit-width boundary). Those two must agree
-BYTE for byte, not merely semantically: the bytes are the store key, so a
-formatting difference between them would re-key every package in every store.
-``test_both_appliers_write_identical_bytes`` is what makes deleting neither
-path safe.
+The plan is applied in one of two places — to the written FILE (the tail
+records alone in the normal path, the whole file when the fast path does not
+recognize the file's shape) or to the MODEL via ``ChangeOrder`` (quadratic, the
+backstop for a tail whose numbers straddle a digit-width boundary). Those two
+must agree BYTE for byte, not merely semantically: the bytes are the store key,
+so a formatting difference between them would re-key every package in every
+store. ``test_both_appliers_write_identical_bytes`` is what makes deleting
+neither path safe.
 """
 
 from __future__ import annotations
@@ -183,35 +184,145 @@ class StepWriteDeterminismTest(unittest.TestCase):
         """Control for the test above: both appliers must be doing work.
 
         If the rig ever stopped producing a permuted tail, the equality test
-        would pass by comparing two untouched files."""
-        from cadgen.step_export import _style_tail_plan
+        would pass by comparing two untouched files. ``_style_tail_order`` is
+        the one step both routes share, so its result is what gets captured."""
+        import cadgen.step_export as step_export
 
         with tempfile.TemporaryDirectory(prefix="step-appliers-") as tmp:
-            plans = []
-            original = None
-            import cadgen.step_export as step_export
+            orders: list = []
+            original = step_export._style_tail_order
 
-            original = step_export._style_tail_plan
+            def capture(scan, targets):
+                order = original(scan, targets)
+                orders.append((scan, targets, order))
+                return order
 
-            def capture(model):
-                plan = original(model)
-                plans.append(plan)
-                return plan
-
-            step_export._style_tail_plan = capture
+            step_export._style_tail_order = capture
             try:
                 self._write_with("text", Path(tmp) / "probe.step")
             finally:
-                step_export._style_tail_plan = original
+                step_export._style_tail_order = original
 
-            self.assertTrue(plans and plans[0] is not None, "no style tail plan was made")
-            tail_start, total, old_numbers = plans[0]
+            # The scan's coverage probe runs first with empty targets; the
+            # last call is the real order, with the targets read from the file.
+            self.assertTrue(orders, "no style tail order was made")
+            scan, targets, old_numbers = orders[-1]
+            self.assertTrue(
+                any(targets.values()), "the in-file applier read no styled targets"
+            )
+            self.assertIsNotNone(old_numbers)
             self.assertGreater(len(old_numbers), 1, "tail must hold several entities")
             self.assertNotEqual(
-                old_numbers, list(range(tail_start, total + 1)),
+                old_numbers, list(range(scan.tail_start, scan.total + 1)),
                 "the rig's tail was already in canonical order — this fixture no "
                 "longer exercises the reorder",
             )
+
+    def test_unrecognized_file_shape_falls_back_to_the_whole_file_pass(self) -> None:
+        """When the in-place applier refuses the written file, the writer runs
+        the whole-file pass with the full model plan — and that must be the
+        same bytes the normal path produces."""
+        import cadgen.step_export as step_export
+
+        with tempfile.TemporaryDirectory(prefix="step-fallback-") as tmp:
+            expected = self._write_with("text", Path(tmp) / "normal.step")
+            original = step_export._canonicalize_style_tail_in_file
+            calls: list = []
+
+            def refuse(path, scan):
+                calls.append(path)
+                return False
+
+            step_export._canonicalize_style_tail_in_file = refuse
+            try:
+                fallback = self._write_with("text", Path(tmp) / "fallback.step")
+            finally:
+                step_export._canonicalize_style_tail_in_file = original
+            self.assertEqual(len(calls), 1, "the in-file applier was not consulted")
+            self.assertEqual(
+                hashlib.sha256(fallback).hexdigest(),
+                hashlib.sha256(expected).hexdigest(),
+                "the rewrite after a refused file shape wrote different bytes",
+            )
+
+    def test_in_file_applier_refuses_a_reference_into_the_tail_from_outside(self) -> None:
+        """The in-place applier rewrites only the tail records, which is exact
+        only while nothing outside the tail spells a tail number. A file that
+        does — here a part name — must be refused, not partially renumbered."""
+        import cadgen.step_export as step_export
+
+        with tempfile.TemporaryDirectory(prefix="step-guard-") as tmp:
+            scans: list = []
+            original = step_export._style_tail_scan
+
+            def capture(model):
+                scan = original(model)
+                scans.append(scan)
+                return scan
+
+            step_export._style_tail_scan = capture
+            try:
+                out = Path(tmp) / "guarded.step"
+                self._write_with("text", out)
+            finally:
+                step_export._style_tail_scan = original
+            scan = scans[-1]
+            self.assertIsNotNone(scan)
+            canonical = out.read_bytes()
+            # Already canonical: applying again is a no-op and is accepted.
+            self.assertTrue(step_export._canonicalize_style_tail_in_file(out, scan))
+            self.assertEqual(out.read_bytes(), canonical)
+            # A pre-tail string that mentions a tail number is refused, even
+            # though a reference regex would never have rewritten it: the
+            # guard is deliberately conservative.
+            tampered = canonical.replace(
+                b"PRODUCT('determinism_rig'",
+                b"PRODUCT('rig #%d'" % scan.tail_start,
+                1,
+            )
+            self.assertNotEqual(tampered, canonical, "the rig's product name moved")
+            out.write_bytes(tampered)
+            self.assertFalse(step_export._canonicalize_style_tail_in_file(out, scan))
+            self.assertEqual(out.read_bytes(), tampered, "a refused file must be untouched")
+
+    def test_tail_reference_pattern_matches_exactly_the_tail_numbers(self) -> None:
+        """The pre-tail guard is one compiled range pattern over the whole
+        file; it must match every tail number (leading zeros included, since
+        ``int()`` would map those into the tail too) and nothing else."""
+        from cadgen.step_export import _tail_reference_pattern
+
+        for tail_start, total in ((39957, 44756), (100, 999), (5, 5), (1000, 1000), (2960431, 3012345)):
+            pattern = _tail_reference_pattern(tail_start, total)
+            width = len(str(total))
+            low = max(1, tail_start - 1500)
+            for value in list(range(low, min(total, tail_start + 1500))) + list(range(max(low, total - 1500), total + 1500)):
+                expected = tail_start <= value <= total
+                for spelling in (b"#%d" % value, b"#00%d" % value):
+                    self.assertEqual(
+                        pattern.fullmatch(spelling) is not None, expected,
+                        f"{spelling!r} against [{tail_start}, {total}]",
+                    )
+            self.assertIsNone(pattern.search(b"#%d0" % tail_start), "a longer number is not a tail reference")
+            self.assertIsNotNone(pattern.search(b"(#%d,#%d)" % (tail_start - 1, total)))
+            self.assertEqual(len(str(tail_start)), width, "fixture ranges are same-width")
+
+    def test_styled_item_target_reads_the_third_parameter(self) -> None:
+        from cadgen.step_export import _styled_item_target
+
+        self.assertEqual(_styled_item_target(b"#39958 = STYLED_ITEM('color',(#39959),#196);\n"), 196)
+        # OCCT wraps long records at a fixed column with an indented continuation.
+        self.assertEqual(
+            _styled_item_target(
+                b"#39966 = OVER_RIDING_STYLED_ITEM('overriding color',(#39967),#196,#39958\n  );\n"
+            ),
+            196,
+        )
+        self.assertEqual(
+            _styled_item_target(b"#7 = OVER_RIDING_STYLED_ITEM('a, (b) #9',(#1,\n  #2),\n  #44678,#3);\n"),
+            44678,
+        )
+        self.assertIsNone(_styled_item_target(b"#7 = STYLED_ITEM('',(#1),$);\n"))
+        self.assertIsNone(_styled_item_target(b"#7 = STYLED_ITEM('',(#1));\n"))
 
     def test_canonicalization_is_a_pure_reorder(self) -> None:
         """The canonical file must carry the same entity population — sorted

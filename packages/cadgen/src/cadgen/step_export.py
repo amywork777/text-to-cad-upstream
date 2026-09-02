@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 from contextlib import nullcontext
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -411,8 +412,39 @@ def _style_entity_children(ent: Any) -> list:
     return out
 
 
-def _style_tail_plan(model: Any) -> tuple[int, int, list[int]] | None:
-    """The canonical order for the style section, as entity NUMBERS.
+_STYLED_ITEM_TYPES = ("StepVisual_StyledItem", "StepVisual_OverRidingStyledItem")
+
+
+@dataclass(frozen=True, slots=True)
+class _StyleTailScan:
+    """What the canonical style-tail order needs from the model, read from the
+    TAIL ENTITIES ONLY -- never from the millions of geometry entities before
+    them (see ``_style_tail_scan``).
+
+    ``children[n]`` lists the tail entities entity ``n`` references, in field
+    order, with everything outside the tail already dropped. ``styled_items[m]``
+    is MDGPR ``m``'s items that are styled items, in Items order, as
+    ``(tail_number, entity)``; the tail number is None for a styled item that
+    lives outside the tail (never seen from OCCT, handled by the full plan).
+    """
+
+    tail_start: int
+    total: int
+    children: dict[int, list[int]]
+    mdgpr_nums: list[int]
+    styled_items: dict[int, list[tuple[int | None, Any]]]
+
+    @property
+    def size(self) -> int:
+        return self.total - self.tail_start + 1
+
+    @property
+    def targets_need_full_plan(self) -> bool:
+        return any(num is None for items in self.styled_items.values() for num, _ent in items)
+
+
+def _style_tail_scan(model: Any) -> _StyleTailScan | None:
+    """Read the style tail's structure from the model, touching tail entities only.
 
     OCCT registers each styled product's presentation graph by iterating an
     ADDRESS-hashed shape map (STEPCAFControl_Writer::transfer's myMapCompMDGPR,
@@ -422,16 +454,18 @@ def _style_tail_plan(model: Any) -> tuple[int, int, list[int]] | None:
     even per call. Everything before the style tail is deterministic transfer
     order (see _renumber_nauo_ids, which leans on the same property).
 
-    The canonical order: MDGPR blocks sorted by the styled targets they
-    reference (head entity numbers, which ARE stable), each closure laid out in
-    field-order DFS. Entities shared between closures (deduplicated colours)
-    land with the first canonical owner. Anything unexpected in the tail
-    returns None — worst case is the old nondeterminism, never a corrupt file.
+    The tail is the suffix of the model from the first MDGPR to the last entity,
+    and it is made entirely of ``_STYLE_TAIL_FAMILY`` types (OCCT registers the
+    MDGPRs last, after layers, SHUOs and properties). So it is found by walking
+    BACKWARDS from the last entity while the type stays in the family: a few
+    ten-thousand ``Entity(i)`` calls on the largest assemblies instead of one per
+    entity in the model, which made the old forward scan cost seconds per write.
 
-    Returns ``(tail_start, total, old_numbers)`` where ``old_numbers[i]`` is the
-    entity that must end up numbered ``tail_start + i``. This function only
-    READS the model; the two appliers below differ in where they put the
-    permutation, not in what it is.
+    Returns None when there is nothing to permute (at most one MDGPR), when the
+    tail holds an unexpected type (the writer changed shape; the canonicalization
+    steps aside rather than guess), or when the closures do not cover the whole
+    tail. Every None leaves the file exactly as OCCT wrote it: nondeterministically
+    ordered, never corrupt.
     """
     from OCP.StepVisual import (
         StepVisual_MechanicalDesignGeometricPresentationRepresentation as _MDGPR,
@@ -449,44 +483,112 @@ def _style_tail_plan(model: Any) -> tuple[int, int, list[int]] | None:
     if mdgpr_count <= 1:
         return None
 
+    # OCP's model.Number() binding returns 0 for every entity, so numbers come
+    # from Entity(i); it returns an identity-stable wrapper, so id() keys are
+    # sound while `entities` holds the references.
     total = model.NbEntities()
-    # OCP's model.Number() binding returns 0, so numbers come from this scan;
-    # Entity(i) returns an identity-stable wrapper, so id() keys are sound
-    # while `entities` holds the references.
-    entities = [None] + [model.Entity(index) for index in range(1, total + 1)]
-    type_names = [None] + [ent.DynamicType().Name() for ent in entities[1:]]
-    mdgpr_nums = [i for i in range(1, total + 1) if type_names[i] == _MDGPR_TYPE]
-    tail_start = mdgpr_nums[0]
-    if any(type_names[i] not in _STYLE_TAIL_FAMILY for i in range(tail_start, total + 1)):
+    entities: dict[int, Any] = {}
+    mdgpr_nums: list[int] = []
+    number = total
+    while number >= 1:
+        ent = model.Entity(number)
+        name = ent.DynamicType().Name()
+        if name not in _STYLE_TAIL_FAMILY:
+            break
+        entities[number] = ent
+        if name == _MDGPR_TYPE:
+            mdgpr_nums.append(number)
+        number -= 1
+    if len(mdgpr_nums) != mdgpr_count:
+        # An MDGPR sits before a non-family entity: the tail is not the pure
+        # style suffix this expects.
         return None
-    number_of = {id(ent): index for index, ent in enumerate(entities[1:], start=1)}
-    tail_ids = {id(entities[i]) for i in range(tail_start, total + 1)}
+    mdgpr_nums.reverse()
+    tail_start = mdgpr_nums[0]
+    for number in range(min(entities), tail_start):
+        del entities[number]
+    number_of = {id(ent): number for number, ent in entities.items()}
+    referenced = {number: _style_entity_children(ent) for number, ent in entities.items()}
+    children = {
+        number: [number_of[id(child)] for child in refs if id(child) in number_of]
+        for number, refs in referenced.items()
+    }
+    styled_items = {
+        mdgpr_num: [
+            (number_of.get(id(item)), item)
+            for item in referenced[mdgpr_num]
+            if item.DynamicType().Name() in _STYLED_ITEM_TYPES
+        ]
+        for mdgpr_num in mdgpr_nums
+    }
+    scan = _StyleTailScan(tail_start, total, children, mdgpr_nums, styled_items)
+    # Coverage does not depend on block order (the closures' union is the
+    # same whichever MDGPR is visited first), so a tail the DFS cannot reach
+    # completely is known here, before the write.
+    if _style_tail_order(scan, {n: [] for n in mdgpr_nums}) is None:
+        return None
+    return scan
 
-    def block_key(mdgpr_num: int) -> tuple:
-        targets = []
-        for item in _style_entity_children(entities[mdgpr_num]):
-            if item.DynamicType().Name() in ("StepVisual_StyledItem", "StepVisual_OverRidingStyledItem"):
-                target_num = number_of.get(id(item.Item()))
-                if target_num is not None and target_num < tail_start:
-                    targets.append(target_num)
-        return (tuple(sorted(targets)), mdgpr_num)
 
-    desired: list = []
+def _style_tail_order(scan: _StyleTailScan, targets: dict[int, list[int]]) -> list[int] | None:
+    """The canonical order of the tail, as OLD entity numbers: ``result[i]`` is
+    the entity that must end up numbered ``tail_start + i``.
+
+    MDGPR blocks sort by the styled targets they reference (``targets[m]``: the
+    head-entity numbers the block's styled items point at, which ARE stable),
+    ties broken by the MDGPR's own number; each closure is laid out in
+    field-order DFS, the order AddWithRefs traverses, so a closure's internal
+    layout is reproduced exactly. Entities shared between closures (deduplicated
+    colours) land with the first canonical owner. None when the closures do not
+    cover the tail.
+    """
+    children = scan.children
+    desired: list[int] = []
     seen: set[int] = set()
 
-    def visit(ent: Any) -> None:
-        if id(ent) not in tail_ids or id(ent) in seen:
+    def visit(number: int) -> None:
+        if number in seen:
             return
-        seen.add(id(ent))
-        desired.append(ent)
-        for child in _style_entity_children(ent):
+        seen.add(number)
+        desired.append(number)
+        for child in children[number]:
             visit(child)
 
-    for mdgpr_num in sorted(mdgpr_nums, key=block_key):
-        visit(entities[mdgpr_num])
-    if len(desired) != total - tail_start + 1:
+    for mdgpr_num in sorted(scan.mdgpr_nums, key=lambda m: (tuple(sorted(targets[m])), m)):
+        visit(mdgpr_num)
+    if len(desired) != scan.size:
         return None
-    return tail_start, total, [number_of[id(ent)] for ent in desired]
+    return desired
+
+
+def _style_tail_plan(model: Any) -> tuple[int, int, list[int]] | None:
+    """The full canonical plan from the model alone: ``(tail_start, total,
+    old_numbers)``, for the in-model applier.
+
+    This is the SLOW route. The styled targets are geometry entities before the
+    tail, and OCP cannot number an entity directly (``model.Number()`` returns
+    0), so finding them means wrapping every entity in the model — seconds on a
+    large assembly. The text route avoids that by reading the target numbers
+    from the written records instead (``_canonicalize_style_tail_in_file``); the
+    byte-identity test pins the two routes to the same output.
+    """
+    scan = _style_tail_scan(model)
+    if scan is None:
+        return None
+    entities = [None] + [model.Entity(index) for index in range(1, scan.total + 1)]
+    number_of = {id(ent): index for index, ent in enumerate(entities[1:], start=1)}
+    targets: dict[int, list[int]] = {}
+    for mdgpr_num, items in scan.styled_items.items():
+        block: list[int] = []
+        for _tail_number, item in items:
+            target_num = number_of.get(id(item.Item()))
+            if target_num is not None and target_num < scan.tail_start:
+                block.append(target_num)
+        targets[mdgpr_num] = block
+    old_numbers = _style_tail_order(scan, targets)
+    if old_numbers is None:
+        return None
+    return scan.tail_start, scan.total, old_numbers
 
 
 def _apply_style_tail_plan_in_model(model: Any, tail_start: int, old_numbers: list[int]) -> None:
@@ -512,22 +614,104 @@ def _apply_style_tail_plan_in_model(model: Any, tail_start: int, old_numbers: li
 # A STEP record header: `#123 = TYPE(...)`, always at the start of a line. A
 # wrapped continuation line can also begin with `#`, but only a header carries
 # the ` = `, so this cannot mistake one for the other.
-_STEP_RECORD_START = re.compile(r"(?m)^#(\d+) = ")
+_STEP_RECORD_START = re.compile(rb"(?m)^#(\d+) = ")
 # A quoted STEP string OR an entity reference. The string alternative comes
 # first and consumes the whole literal (`''` is an escaped quote), so a `#` that
 # happens to sit inside a part name is never rewritten as a reference.
-_STEP_STRING_OR_REF = re.compile(r"'(?:[^']|'')*'|#(\d+)")
+_STEP_STRING_OR_REF = re.compile(rb"'(?:[^']|'')*'|#(\d+)")
+
+
+def _digit_range_regex(low: str, high: str) -> str:
+    """A regex matching exactly the decimal strings of ``len(low)`` digits in
+    ``[low, high]`` (both the same width, ``low <= high``)."""
+    if low == high:
+        return low
+    if low[0] == high[0]:
+        return low[0] + _digit_range_regex(low[1:], high[1:])
+
+    def at_least(digits: str) -> str:  # same-width strings >= digits
+        if len(digits) == 1:
+            return f"[{digits}-9]"
+        parts = [digits[0] + at_least(digits[1:])]
+        if digits[0] != "9":
+            parts.append(f"[{int(digits[0]) + 1}-9]" + r"\d" * (len(digits) - 1))
+        return "(?:" + "|".join(parts) + ")"
+
+    def at_most(digits: str) -> str:  # same-width strings <= digits
+        if len(digits) == 1:
+            return f"[0-{digits}]"
+        parts = [digits[0] + at_most(digits[1:])]
+        if digits[0] != "0":
+            parts.append(f"[0-{int(digits[0]) - 1}]" + r"\d" * (len(digits) - 1))
+        return "(?:" + "|".join(parts) + ")"
+
+    parts = [low[0] + at_least(low[1:])]
+    if int(high[0]) - int(low[0]) > 1:
+        parts.append(f"[{int(low[0]) + 1}-{int(high[0]) - 1}]" + r"\d" * (len(low) - 1))
+    parts.append(high[0] + at_most(high[1:]))
+    return "(?:" + "|".join(parts) + ")"
+
+
+def _tail_reference_pattern(tail_start: int, total: int) -> "re.Pattern[bytes]":
+    """Matches any `#N` token whose integer value is a tail number — including
+    a leading-zero spelling, which ``int()`` would also map into the tail."""
+    body = _digit_range_regex(str(tail_start), str(total)).encode()
+    return re.compile(rb"#0*" + body + rb"(?!\d)")
+
+
+def _step_record_fields(record: bytes) -> list[bytes]:
+    """The top-level parameters of one `#N = TYPE(...)` record, whitespace
+    (including OCCT's line wrapping) removed. An aggregate parameter comes back
+    as one field, parentheses included."""
+    start = record.find(b"(")
+    if start < 0:
+        return []
+    fields: list[bytes] = []
+    current: list[bytes] = []
+    depth = 0
+    for match in re.finditer(rb"'(?:[^']|'')*'|[(),]|[^'(),\s]+", record[start:]):
+        token = match.group(0)
+        if token == b"(":
+            depth += 1
+            if depth > 1:
+                current.append(token)
+        elif token == b")":
+            depth -= 1
+            if depth == 0:
+                fields.append(b"".join(current))
+                break
+            current.append(token)
+        elif token == b"," and depth == 1:
+            fields.append(b"".join(current))
+            current = []
+        else:
+            current.append(token)
+    return fields
+
+
+def _styled_item_target(record: bytes) -> int | None:
+    """The entity a written STYLED_ITEM / OVER_RIDING_STYLED_ITEM record styles:
+    its third parameter (name, styles, item[, over_ridden_style])."""
+    fields = _step_record_fields(record)
+    if len(fields) < 3:
+        return None
+    match = re.fullmatch(rb"#(\d+)", fields[2])
+    return int(match.group(1)) if match else None
 
 
 def _apply_style_tail_plan_in_text(
-    text: str, tail_start: int, old_numbers: list[int]
-) -> str | None:
+    text: bytes, tail_start: int, old_numbers: list[int]
+) -> bytes | None:
     """The same permutation, applied to the WRITTEN file instead of the model.
 
     Two linear passes over the text: renumber every reference through the
     old->new map (the regex skips string literals), then reorder the tail
     records, which are a contiguous suffix of the DATA section. Returns None if
     the text does not have the shape this expects.
+
+    ``text`` is the whole file, or any suffix of it that begins at a record
+    header: the fast path hands it the file from the first tail record on
+    (``_canonicalize_style_tail_in_file``), the fallback the entire file.
 
     This is byte-identical to the in-model applier only because the caller
     guarantees every rewritten number keeps its digit width: OCCT wraps long
@@ -539,13 +723,12 @@ def _apply_style_tail_plan_in_text(
     if all(old == new for old, new in new_of.items()):
         return text
 
-    def renumber(match: "re.Match[str]") -> str:
+    def renumber(match: "re.Match[bytes]") -> bytes:
         digits = match.group(1)
         if digits is None:  # a string literal — leave it exactly as written
             return match.group(0)
-        number = int(digits)
-        replacement = new_of.get(number)
-        return match.group(0) if replacement is None else f"#{replacement}"
+        replacement = new_of.get(int(digits))
+        return match.group(0) if replacement is None else b"#%d" % replacement
 
     renumbered = _STEP_STRING_OR_REF.sub(renumber, text)
 
@@ -560,7 +743,7 @@ def _apply_style_tail_plan_in_text(
     if first_tail is None or len(headers) - first_tail != len(old_numbers):
         return None
     region_start = headers[first_tail].start()
-    end_marker = renumbered.find("\nENDSEC;", region_start)
+    end_marker = renumbered.find(b"\nENDSEC;", region_start)
     if end_marker < 0:
         return None
     region_end = end_marker + 1  # the last record keeps its trailing newline
@@ -572,9 +755,85 @@ def _apply_style_tail_plan_in_text(
     records.sort(key=lambda record: record[0])
     return (
         renumbered[:region_start]
-        + "".join(body for _number, body in records)
+        + b"".join(body for _number, body in records)
         + renumbered[region_end:]
     )
+
+
+def _canonicalize_style_tail_in_file(path: Path, scan: _StyleTailScan) -> bool:
+    """Apply the canonical order to the file OCCT just wrote, touching only the
+    tail records — a shortcut of ``_apply_style_tail_plan_in_text`` over the
+    whole file that is proven, not assumed, to produce the same bytes.
+
+    The style tail is the last ``scan.size`` records of the DATA section, and
+    nothing before it references into it (OCCT registers the MDGPR closures
+    last; a reference can only point at an entity that existed when its owner
+    was added). So the permutation runs on the file's suffix from the first
+    tail record on, and the styled TARGET numbers the block order needs are
+    read from the styled-item records themselves — a lookup OCP cannot do in
+    the model without wrapping every entity. Two checks make skipping the
+    pre-tail bytes exact rather than a bet:
+
+    - the headers from the first tail record to ENDSEC are exactly the tail
+      numbers, so the suffix IS what the whole-file pass would have sorted;
+    - no `#N` token before it — reference, header, or even inside a string —
+      spells a tail number (one precompiled range pattern over the bytes, no
+      Python per match), so the whole-file renumber would have changed nothing
+      there. A pre-tail header numbered above ``total`` is the one shape this
+      does not rule out, and a file written from a ``total``-entity model
+      cannot have one.
+
+    There is deliberately no line-count check: OCCT wraps COMPLEX entity records
+    with continuation lines that begin at column 0 with `#`, so counting `\n#`
+    over-counts headers on any real model.
+
+    Returns False when a check fails; the caller then runs the whole-file pass,
+    which is exact for any shape and costs what every write used to cost.
+    """
+    tail_start, total, size = scan.tail_start, scan.total, scan.size
+    data = path.read_bytes()
+    # OCCT writes entities in number order, so the tail begins at #tail_start;
+    # the header check below holds this to account rather than trusting it.
+    first_header = data.rfind(b"\n#%d = " % tail_start)
+    if first_header < 0:
+        return False
+    region_start = first_header + 1
+    suffix = data[region_start:]
+    headers = list(_STEP_RECORD_START.finditer(suffix))
+    if len(headers) != size or sorted(int(m.group(1)) for m in headers) != list(
+        range(tail_start, total + 1)
+    ):
+        return False
+    if _tail_reference_pattern(tail_start, total).search(data, 0, region_start):
+        return False
+
+    end_marker = suffix.find(b"\nENDSEC;")
+    if end_marker < 0:
+        return False
+    bounds = [m.start() for m in headers] + [end_marker + 1]
+    records = {int(headers[i].group(1)): suffix[bounds[i]:bounds[i + 1]] for i in range(size)}
+    targets: dict[int, list[int]] = {}
+    for mdgpr_num, items in scan.styled_items.items():
+        block: list[int] = []
+        for tail_number, _item in items:
+            target_num = _styled_item_target(records[tail_number])
+            # `#0` is OCCT's spelling of an entity outside the model; the
+            # model-side lookup finds no number for it either.
+            if target_num is not None and 0 < target_num < tail_start:
+                block.append(target_num)
+        targets[mdgpr_num] = block
+    old_numbers = _style_tail_order(scan, targets)
+    if old_numbers is None:
+        return False
+    canonical = _apply_style_tail_plan_in_text(suffix, tail_start, old_numbers)
+    if canonical is None:
+        return False
+    if canonical != suffix:
+        with path.open("r+b") as handle:
+            handle.seek(region_start)
+            handle.write(canonical)
+            handle.truncate()
+    return True
 
 
 def write_xcaf_doc_step_file(
@@ -631,33 +890,41 @@ def write_xcaf_doc_step_file(
     # Same contract, other direction: OCCT appends multi-product style graphs
     # in heap-address order. Reorder them into content order.
     #
-    # The permutation is computed here, from the model, because model entity
-    # numbers ARE the numbers Write() is about to emit. WHERE it gets applied is
-    # a performance decision, not a correctness one:
+    # The tail's STRUCTURE is read here, from the model, because model entity
+    # numbers ARE the numbers Write() is about to emit; the scan touches only
+    # the tail entities, so it costs tens of milliseconds on a model whose
+    # geometry runs to millions of entities. WHERE the permutation gets applied
+    # is a performance decision, not a correctness one:
     #
-    #   - in the written TEXT (the normal path): two linear passes over the
-    #     file, low single-digit seconds on the largest models we have;
+    #   - in the written FILE (the normal path): the tail records alone are
+    #     renumbered and reordered in place, after two checks that the rest
+    #     of the file could not have been touched by a whole-file rewrite
+    #     (which remains the fallback when a check fails);
     #   - in the MODEL, before writing: exact but quadratic — ~110 s on juno,
-    #     because each ChangeOrder renumbers the whole model.
+    #     because each ChangeOrder renumbers the whole model — and it needs the
+    #     full plan, whose target lookup wraps every entity in the model.
     #
-    # The text applier is byte-identical to the model applier only while every
-    # number it rewrites keeps its digit width (OCCT wraps records at a fixed
-    # column, so a number that gained a digit would shift the wrapping). A tail
-    # that straddles a power of ten is rare and cannot be made width-safe, so it
-    # takes the slow path rather than writing differently-formatted bytes.
+    # The in-file applier is byte-identical to the model applier only while
+    # every number it rewrites keeps its digit width (OCCT wraps records at a
+    # fixed column, so a number that gained a digit would shift the wrapping).
+    # A tail that straddles a power of ten is rare and cannot be made
+    # width-safe, so it takes the slow path rather than writing
+    # differently-formatted bytes.
     with (logger.timed("plan style tail order") if logger is not None else nullcontext()):
-        plan = _style_tail_plan(writer.Writer().Model())
-    if plan is not None:
-        tail_start, total, old_numbers = plan
-        if (
-            len(str(tail_start)) != len(str(total))
-            or os.environ.get("CADGEN_STEP_STYLE_REORDER", "").strip() == "model"
-        ):
-            with (logger.timed("canonicalize style tail (in model)") if logger is not None else nullcontext()):
+        scan = _style_tail_scan(writer.Writer().Model())
+    if scan is not None and (
+        len(str(scan.tail_start)) != len(str(scan.total))
+        or scan.targets_need_full_plan
+        or os.environ.get("CADGEN_STEP_STYLE_REORDER", "").strip() == "model"
+    ):
+        with (logger.timed("canonicalize style tail (in model)") if logger is not None else nullcontext()):
+            plan = _style_tail_plan(writer.Writer().Model())
+            if plan is not None:
+                tail_start, _total, old_numbers = plan
                 _apply_style_tail_plan_in_model(
                     writer.Writer().Model(), tail_start, old_numbers
                 )
-            plan = None
+        scan = None
 
     # The header must be edited AFTER Transfer: Transfer rebuilds the writer's
     # model, discarding anything set on the pre-transfer header.
@@ -677,30 +944,31 @@ def write_xcaf_doc_step_file(
             raise RuntimeError(f"Failed to write STEP file: {output_path}")
     if not output_path.exists() or output_path.stat().st_size <= 0:
         raise RuntimeError(f"STEP export did not create {output_path}")
-    if plan is not None:
-        with (logger.timed("canonicalize style tail (in text)") if logger is not None else nullcontext()):
-            tail_start, _total, old_numbers = plan
-            # ``newline=""`` on BOTH ends, not the default universal-newline
-            # translation. Path.read_text folds "\r\n" to "\n" on the way in and
-            # Path.write_text expands "\n" to os.linesep on the way out, so on
-            # Windows this round trip rewrote every line ending in a file OCCT
-            # had written with bare "\n" -- the text applier and the in-model
-            # applier then produced byte-different files from one model, and the
-            # written bytes ARE the content-addressed store key. Reading and
-            # writing verbatim keeps this a permutation of the file OCCT wrote,
-            # which is the whole contract of this branch.
-            with output_path.open(
-                "r", encoding="utf-8", errors="surrogateescape", newline=""
-            ) as handle:
-                written = handle.read()
-            canonical = _apply_style_tail_plan_in_text(written, tail_start, old_numbers)
-            # A text shape this did not recognize leaves the file exactly as
-            # OCCT wrote it: nondeterministically ordered, never corrupt.
-            if canonical is not None:
-                with output_path.open(
-                    "w", encoding="utf-8", errors="surrogateescape", newline=""
-                ) as handle:
-                    handle.write(canonical)
+    if scan is not None:
+        with (logger.timed("canonicalize style tail (in file)") if logger is not None else nullcontext()):
+            canonicalized = _canonicalize_style_tail_in_file(output_path, scan)
+        if not canonicalized:
+            # A file shape the fast path did not recognize. Never seen from
+            # OCCT; the exact route is the whole-file pass with the full plan
+            # — what every write cost before the fast path, never the
+            # quadratic model route, which on a large model would run for hours.
+            if logger is not None:
+                logger.warning(
+                    f"style tail of {output_path.name} was not the expected file "
+                    "shape; canonicalizing with a whole-file pass"
+                )
+            with (logger.timed("canonicalize style tail (whole file)") if logger is not None else nullcontext()):
+                plan = _style_tail_plan(writer.Writer().Model())
+                if plan is not None:
+                    tail_start, _total, old_numbers = plan
+                    canonical = _apply_style_tail_plan_in_text(
+                        output_path.read_bytes(), tail_start, old_numbers
+                    )
+                    # A text shape this did not recognize either leaves the file
+                    # exactly as OCCT wrote it: nondeterministically ordered,
+                    # never corrupt.
+                    if canonical is not None:
+                        output_path.write_bytes(canonical)
     return step_file_hash(output_path)
 
 
