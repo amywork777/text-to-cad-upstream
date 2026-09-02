@@ -63,8 +63,10 @@ export type AcpPromptAttachment = {
 
 type PermissionQueueItem = {
   requestId: string;
+  kind: 'permission' | 'question';
   title: string;
-  options: Array<{ optionId: string; name: string; kind: string }>;
+  body?: string;
+  options: Array<{ optionId: string; name: string; kind: string; description?: string }>;
 };
 
 export type AcpLoadError =
@@ -233,13 +235,34 @@ export class AcpChatStore {
   get permissionQueue(): PermissionQueueItem[] {
     return (this.session?.sessionState.current().pendingPermissions ?? []).map((request) => ({
       requestId: request.requestId,
+      kind: request.kind ?? 'permission',
       title: request.toolCall.title,
+      ...(request.body !== undefined ? { body: request.body } : {}),
       options: request.options.map((option) => ({
         optionId: option.optionId,
         name: option.name,
         kind: option.kind,
+        ...(option.description !== undefined ? { description: option.description } : {}),
       })),
     }));
+  }
+
+  /** A one-line account-limit warning from the provider, or null while limits are fine. */
+  get rateLimitNotice(): string | null {
+    const limit = this.usage?.rateLimit;
+    if (!limit || limit.status === 'allowed') return null;
+    const resets =
+      limit.resetsAt !== undefined
+        ? ` Resets ${new Date(limit.resetsAt * 1000).toLocaleTimeString([], {
+            hour: 'numeric',
+            minute: '2-digit',
+          })}.`
+        : '';
+    const used =
+      limit.utilization !== undefined ? ` ${Math.round(limit.utilization * 100)}% used.` : '';
+    return limit.status === 'rejected'
+      ? `Provider rate limit reached; requests are being refused.${resets}`
+      : `Approaching the provider rate limit.${used}${resets}`;
   }
 
   get queuedPrompts(): ComposerQueuedPrompt[] {
@@ -253,6 +276,12 @@ export class AcpChatStore {
     contextUsed: number;
     contextSize: number;
     cost?: { amount: number; currency: string } | null;
+    rateLimit?: {
+      status: 'allowed' | 'allowed_warning' | 'rejected';
+      resetsAt?: number;
+      rateLimitType?: string;
+      utilization?: number;
+    };
   } | null {
     return this.session?.usage.current() ?? null;
   }

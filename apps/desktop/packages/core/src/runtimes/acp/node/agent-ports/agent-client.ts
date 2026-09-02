@@ -1,5 +1,8 @@
 import type {
   Client,
+  CompleteElicitationNotification,
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   CreateTerminalRequest,
   CreateTerminalResponse,
   KillTerminalRequest,
@@ -38,6 +41,10 @@ export interface InboundRouter {
     connection: AcpConnectionContext,
     params: CreateTerminalRequest
   ): Promise<CreateTerminalResponse>;
+  onElicitation(
+    connection: AcpConnectionContext,
+    params: CreateElicitationRequest
+  ): Promise<CreateElicitationResponse>;
 }
 
 export interface AgentPorts {
@@ -73,6 +80,19 @@ export function buildAgentClient(
 
     createTerminal: async (params: CreateTerminalRequest): Promise<CreateTerminalResponse> => {
       return router.onCreateTerminal(connection, params);
+    },
+
+    unstable_createElicitation: (
+      params: CreateElicitationRequest
+    ): Promise<CreateElicitationResponse> => {
+      return router.onElicitation(connection, params);
+    },
+
+    unstable_completeElicitation: async (
+      _params: CompleteElicitationNotification
+    ): Promise<void> => {
+      // URL elicitations are never created here (only form mode is advertised),
+      // so there is nothing to complete.
     },
 
     terminalOutput: async (params: TerminalOutputRequest): Promise<TerminalOutputResponse> => {

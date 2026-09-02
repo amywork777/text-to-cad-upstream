@@ -94,5 +94,14 @@ export const sessionUsageSchema = z.object({
   contextUsed: z.number().int(),
   /** Cumulative provider-reported cost, or null when the provider omits cost. */
   cost: z.object({ amount: z.number(), currency: z.string() }).nullable(),
+  /** Provider account limits reported beside usage (Claude); absent for others. */
+  rateLimit: z
+    .object({
+      status: z.enum(['allowed', 'allowed_warning', 'rejected']),
+      resetsAt: z.number().optional(),
+      rateLimitType: z.string().optional(),
+      utilization: z.number().optional(),
+    })
+    .optional(),
 });
 export type SessionUsage = z.infer<typeof sessionUsageSchema>;

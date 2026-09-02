@@ -78,6 +78,25 @@ host's `agent-config` runtime for both local and remote hosts.
 - `packages/core/src/runtimes/tui-agents/` owns hook ingestion, hook config/plugin installation, and the agent state LiveModel. `src/main/core/agent-status/` projects those runtime states into the conversation SQLite/cache state, while `src/services/notifications/` turns deliverable agent events into the persisted notification feed, batched sound delivery, and Electron OS notifications over the desktop Wire contract.
 - Qwen Code hooks use the documented Qwen settings schema in `$QWEN_HOME/settings.json` (falling back to `~/.qwen/settings.json`). Emdash installs command hooks for permission requests and session end/stop events while preserving unrelated user hooks.
 
+## ACP Stream Coverage
+
+Everything an ACP adapter sends must reach the thread or be ignored on purpose.
+`packages/plugins/src/agents/impl/acp-coverage.test.ts` scans the Codex and
+Claude adapter bundles for the session-update kinds, content block types, tool
+kinds, `_meta` keys, and client methods they emit or call, and fails on any value
+that is not in its rendered or intentionally-ignored tables. A dependency bump
+that introduces a new shape fails there with the value's name.
+
+Two client capabilities in `acp-agent-connection.ts` decide what the adapters
+send at all: `_meta.terminal_output` turns on terminal narration (the
+`terminal_info` / `terminal_output` / `terminal_exit` metadata the session
+manager mirrors into live terminals; Codex always narrates, Claude only when
+asked), and `elicitation.form` re-enables Claude's AskUserQuestion and MCP
+questions, which `SessionCell.requestElicitation` puts to the user one choice
+field at a time through the composer's permission band (free-text fields have
+no input there and stay empty, which the agent treats as skipped). Neither
+adapter calls the client terminal methods; both run commands themselves.
+
 ## Adding Or Changing A Provider
 
 1. add or update the plugin in `packages/plugins/src/agents/impl/` and register it in

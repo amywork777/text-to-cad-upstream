@@ -1,4 +1,9 @@
-import type { Client, McpCapabilities, SessionUpdate } from '@agentclientprotocol/sdk';
+import type {
+  Client,
+  McpCapabilities,
+  SessionUpdate,
+  ClientCapabilities,
+} from '@agentclientprotocol/sdk';
 import type { Result } from '@emdash/shared';
 import { ok, toSerializedError } from '@emdash/shared';
 import type { Scope } from '@emdash/shared/concurrency';
@@ -155,13 +160,22 @@ function onceProcessClosed(handle: AcpProcessHandle, logger: Logger): Promise<Pr
 }
 
 function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
+  const clientCapabilities: ClientCapabilities & { _meta?: Record<string, unknown> } = {
+    fs: { readTextFile: true, writeTextFile: true },
+    terminal: typeof host.spawnTerminal === 'function',
+    // Claude re-enables AskUserQuestion and forwards MCP questions only when
+    // the client can render a form elicitation (see SessionCell.requestElicitation).
+    elicitation: { form: {} },
+    // Both adapters run commands themselves and narrate them through _meta
+    // (terminal_info / terminal_output / terminal_exit). Codex always does;
+    // this flag is what turns the narration on for Claude, whose Bash output
+    // otherwise arrives as a plain code block after the command ends.
+    _meta: { terminal_output: true },
+  };
   return agent.initialize({
     protocolVersion: 1,
     clientInfo: { name: 'emdash', version: '1' },
-    clientCapabilities: {
-      fs: { readTextFile: true, writeTextFile: true },
-      terminal: typeof host.spawnTerminal === 'function',
-    },
+    clientCapabilities,
   });
 }
 
