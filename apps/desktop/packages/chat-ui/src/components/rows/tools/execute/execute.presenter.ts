@@ -31,6 +31,7 @@ export function executeFromItem(item: ExecuteToolNode, ctx: SegmentCtx): ChatExe
     ...(live?.truncated ? { outputTruncated: true } : {}),
     ...(live ? { outputVersion: live.version } : {}),
     status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
     startedAt: 0,
     ...(item.terminalId !== undefined ? { terminalId: item.terminalId } : {}),

@@ -16,6 +16,26 @@ export const toolRoot = style([
   { height: toolVars.rowH, overflow: 'hidden' },
 ]);
 
+/** Column that holds the row and its optional result preview line. */
+export const toolStack = style({
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  minWidth: 0,
+  width: '100%',
+});
+
+/** First line of a text result, muted under the row. */
+export const toolPreview = style({
+  fontSize: vars.typeBodyFontSize,
+  color: vars.fgMuted,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  minWidth: 0,
+  userSelect: 'text',
+});
+
 export const toolRow = style([
   sx({ display: 'flex', alignItems: 'center', gap: '1.5', color: 'fgPassive', userSelect: 'none' }),
   // min-width:0 lets flex children shrink below their intrinsic width so

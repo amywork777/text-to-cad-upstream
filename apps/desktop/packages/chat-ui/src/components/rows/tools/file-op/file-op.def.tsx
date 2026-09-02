@@ -27,6 +27,7 @@ export function readFileOpFromItem(
     id: item.id,
     op: 'read',
     status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
     ops: item.path || item.resource ? [{ path: item.path ?? item.resource! }] : [],
   };
@@ -41,6 +42,7 @@ export function deleteFileOpFromItem(
     id: item.id,
     op: 'delete',
     status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
     ops: [{ path: item.path }],
   };

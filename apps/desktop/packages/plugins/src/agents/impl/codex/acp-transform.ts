@@ -7,9 +7,17 @@ type CodexToolInput = {
   arguments?: unknown;
 };
 
+/** Provider names of Codex's multi-agent tools, as they arrive in `title`. */
+const COLLAB_TOOLS = new Set(['spawnAgent', 'sendInput', 'wait', 'closeAgent']);
+
 /** Promote Codex adapter metadata into provider-neutral transcript events. */
 export function enrichCodexUpdate(update: NormalizedEvent, raw: SessionUpdate): NormalizedEvent {
   if (update.kind !== 'tool_call' && update.kind !== 'tool_update') return update;
+
+  const collab = codexCollabEvent(update, raw);
+  if (collab) return collab;
+
+  update = withFormattedOutput(update, raw);
 
   if (
     update.kind === 'tool_call' &&
@@ -39,6 +47,132 @@ export function enrichCodexUpdate(update: NormalizedEvent, raw: SessionUpdate): 
     parentToolCallId: update.parentToolCallId,
     ...(inputSummary ? { inputSummary } : {}),
   };
+}
+
+/**
+ * Codex reports a command's result as `rawOutput.formatted_output`, not as
+ * ACP text content. Promote it so the transcript keeps the output after the
+ * live terminal is gone.
+ */
+function withFormattedOutput(
+  update: Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }>,
+  raw: SessionUpdate
+): Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }> {
+  if (update.outputText !== undefined) return update;
+  const rawOutput = (raw as { rawOutput?: unknown }).rawOutput;
+  const formatted =
+    rawOutput && typeof rawOutput === 'object'
+      ? (rawOutput as { formatted_output?: unknown }).formatted_output
+      : undefined;
+  if (typeof formatted !== 'string' || formatted.length === 0) return update;
+  return { ...update, outputText: formatted };
+}
+
+type CollabInput = {
+  prompt?: unknown;
+  senderThreadId?: unknown;
+  receiverThreadIds?: unknown;
+  agentsStates?: unknown;
+};
+
+/**
+ * Codex's multi-agent tools (spawnAgent / sendInput / wait / closeAgent)
+ * arrive as opaque `other` tool calls. Surface the spawned agent as a
+ * subagent row with its brief, describe the waits and messages, and close the
+ * row when the agent is closed. The child thread itself never streams to us.
+ */
+function codexCollabEvent(
+  update: Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }>,
+  raw: SessionUpdate
+): NormalizedEvent | null {
+  const rawTitle = (raw as { title?: unknown }).title;
+  const name = typeof rawTitle === 'string' ? rawTitle : update.title;
+  if (!name || !COLLAB_TOOLS.has(name)) return null;
+  const input = (raw as { rawInput?: unknown }).rawInput;
+  if (!input || typeof input !== 'object') return null;
+  const collab = input as CollabInput;
+  if (typeof collab.senderThreadId !== 'string' && !Array.isArray(collab.receiverThreadIds)) {
+    return null;
+  }
+  const receivers = Array.isArray(collab.receiverThreadIds)
+    ? collab.receiverThreadIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  const states =
+    collab.agentsStates && typeof collab.agentsStates === 'object'
+      ? (collab.agentsStates as Record<string, { status?: unknown }>)
+      : {};
+  const agentId = receivers[0] ?? Object.keys(states)[0];
+  const prompt = typeof collab.prompt === 'string' ? compactText(collab.prompt, 200) : undefined;
+
+  switch (name) {
+    case 'spawnAgent':
+      return {
+        kind: 'subagent',
+        toolCallId: update.toolCallId,
+        title: 'Codex agent',
+        // The spawn call completing means the agent is now running; only a
+        // failed spawn ends the row here.
+        status: update.status === 'failed' ? 'failed' : 'in_progress',
+        parentToolCallId: update.parentToolCallId,
+        ...(prompt ? { inputSummary: prompt } : {}),
+        background: true,
+        ...(agentId ? { agentId } : {}),
+      };
+    case 'closeAgent':
+      if (update.kind === 'tool_update' && update.status === 'completed' && agentId) {
+        // Closing ends the agent whatever it last reported, unless it failed.
+        const reported = collabAgentStatus(states[agentId]?.status);
+        return {
+          kind: 'subagent_update',
+          agentId,
+          status: reported === 'failed' ? 'failed' : 'completed',
+        };
+      }
+      return describeCollabCall(update, 'Close agent', agentId);
+    case 'sendInput':
+      return describeCollabCall(update, 'Message to agent', prompt ?? agentId);
+    case 'wait':
+      return describeCollabCall(update, 'Wait for agent', agentId);
+    default:
+      return null;
+  }
+}
+
+function describeCollabCall(
+  update: Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }>,
+  title: string,
+  inputSummary: string | undefined
+): NormalizedEvent {
+  const summary = inputSummary ? { inputSummary: shortAgentId(inputSummary) } : {};
+  return update.kind === 'tool_call'
+    ? { ...update, title, toolKind: 'other', ...summary }
+    : { ...update, title, ...summary };
+}
+
+/** Thread ids are UUIDs; keep a message brief readable and an id short. */
+function shortAgentId(value: string): string {
+  return /^[0-9a-f-]{32,}$/i.test(value) ? `agent ${value.slice(0, 8)}` : value;
+}
+
+function collabAgentStatus(
+  value: unknown
+): Extract<NormalizedEvent, { kind: 'subagent_update' }>['status'] | undefined {
+  if (typeof value !== 'string') return undefined;
+  switch (value.toLowerCase()) {
+    case 'completed':
+    case 'done':
+    case 'closed':
+      return 'completed';
+    case 'failed':
+    case 'error':
+    case 'errored':
+      return 'failed';
+    case 'running':
+    case 'pendinginit':
+      return 'in_progress';
+    default:
+      return undefined;
+  }
 }
 
 function codexToolInput(raw: SessionUpdate): CodexToolInput | null {

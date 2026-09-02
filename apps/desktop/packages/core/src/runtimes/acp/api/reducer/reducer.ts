@@ -526,7 +526,17 @@ export function reduce(s: ParserState, input: ReducerInput, deps: ReducerDeps): 
       return s;
     case 'subagent_update': {
       const agents = updateAgentSlice(s.agents, event, s.transcript.active?.id ?? null, input.at);
-      return agents === s.agents ? s : { ...s, agents };
+      // Background agents report back in a later turn; only the active turn's
+      // rows can still change, committed turns stay as they were.
+      const active = s.transcript.active;
+      const items = active ? foldItem(active.items, event, active.id, input.at) : null;
+      if (agents === s.agents && (!active || items === active.items)) return s;
+      const transcript: TranscriptSlice =
+        active && items && items !== active.items
+          ? { ...s.transcript, active: { ...active, items } }
+          : s.transcript;
+      if (transcript !== s.transcript) assertTranscriptInvariants(transcript);
+      return { ...s, agents, transcript };
     }
     default:
       break; // falls through to transcript handling below

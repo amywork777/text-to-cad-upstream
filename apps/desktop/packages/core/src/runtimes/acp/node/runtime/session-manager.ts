@@ -700,6 +700,7 @@ export class SessionManager implements InboundRouter {
       update: redactToolOutputImageData(params.update),
     });
     this.applyRawMeta(record.cell, params.update);
+    this.applyNarratedTerminalMeta(conversationId, connection.cwd, params.update);
     record.cell.push(withToolOutputAttachments(event, attachments));
     this.syncRecord(record);
   }
@@ -1052,6 +1053,59 @@ export class SessionManager implements InboundRouter {
     }
   }
 
+  /**
+   * Codex runs commands in terminals of its own and narrates them through
+   * `_meta`: `terminal_info` on the tool_call, `terminal_output_delta` while
+   * the command runs, and `terminal_exit` (with the whole output again) when
+   * it ends. Mirror that narration into the terminal registry so the renderer
+   * streams the output live, exactly like a client-spawned terminal.
+   */
+  private applyNarratedTerminalMeta(
+    conversationId: string,
+    cwd: string,
+    update: SessionUpdate
+  ): void {
+    if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') {
+      return;
+    }
+    const meta = (update as { _meta?: unknown })._meta;
+    if (!meta || typeof meta !== 'object') return;
+    const fields = meta as Record<string, unknown>;
+
+    const info = narratedTerminalField(fields.terminal_info);
+    if (info) {
+      this.terminals.adoptNarrated(conversationId, {
+        terminalId: info.terminalId,
+        command: narratedCommand(update) ?? info.terminalId,
+        cwd: info.cwd ?? cwd,
+      });
+    }
+
+    const output =
+      narratedTerminalField(fields.terminal_output_delta) ??
+      narratedTerminalField(fields.terminal_output);
+    const exit = narratedTerminalField(fields.terminal_exit);
+    const terminalId = output?.terminalId ?? exit?.terminalId;
+    if (!terminalId) return;
+    if (!this.terminals.get(terminalId)) {
+      // Output for a terminal we never saw start (a resumed session): adopt it late.
+      this.terminals.adoptNarrated(conversationId, {
+        terminalId,
+        command: narratedCommand(update) ?? terminalId,
+        cwd,
+      });
+    }
+    if (exit) {
+      this.terminals.exitNarrated(
+        terminalId,
+        { exitCode: exit.exitCode, signal: exit.signal },
+        output?.data
+      );
+    } else if (output?.data) {
+      this.terminals.appendNarratedOutput(terminalId, output.data);
+    }
+  }
+
   private async applyInitialMode(record: SessionRecord, input: AcpStartInput): Promise<void> {
     const modeId = input.modeId;
     if (!modeId) return;
@@ -1109,6 +1163,42 @@ function startFingerprint(input: AcpStartInput): string {
     env: Object.entries(input.env ?? {}).sort(([left], [right]) => left.localeCompare(right)),
     initialQueue: input.initialQueue ?? null,
   });
+}
+
+type NarratedTerminalField = {
+  terminalId: string;
+  cwd?: string;
+  data?: string;
+  exitCode: number | null;
+  signal: string | null;
+};
+
+function narratedTerminalField(value: unknown): NarratedTerminalField | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as {
+    terminal_id?: unknown;
+    cwd?: unknown;
+    data?: unknown;
+    exit_code?: unknown;
+    signal?: unknown;
+  };
+  if (typeof record.terminal_id !== 'string' || !record.terminal_id) return null;
+  return {
+    terminalId: record.terminal_id,
+    ...(typeof record.cwd === 'string' && record.cwd ? { cwd: record.cwd } : {}),
+    ...(typeof record.data === 'string' ? { data: record.data } : {}),
+    exitCode: typeof record.exit_code === 'number' ? record.exit_code : null,
+    signal: typeof record.signal === 'string' ? record.signal : null,
+  };
+}
+
+function narratedCommand(update: SessionUpdate): string | null {
+  const rawInput = (update as { rawInput?: unknown }).rawInput;
+  const command =
+    rawInput && typeof rawInput === 'object' ? (rawInput as { command?: unknown }).command : null;
+  if (typeof command === 'string' && command.trim()) return command;
+  const title = (update as { title?: unknown }).title;
+  return typeof title === 'string' && title.trim() ? title : null;
 }
 
 function withToolOutputAttachments(

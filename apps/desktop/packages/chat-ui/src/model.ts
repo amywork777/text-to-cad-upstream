@@ -71,6 +71,8 @@ export type ChatToolCall = {
   error?: string;
   /** Short one-line synopsis shown alongside the tool name. */
   inputSummary?: string;
+  /** First line of the tool's text result, shown under the row when the provider reported one. */
+  outputPreview?: string;
   /** Runtime-owned generated image references. Bytes are resolved lazily by the host. */
   outputAttachments?: ChatImageAttachment[];
   /** Id of the parent tool call (for hierarchical rendering). */
