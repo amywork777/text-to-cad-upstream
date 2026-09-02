@@ -1,4 +1,3 @@
-import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { BROWSER_DEFAULT_URL, normalizeBrowserZoomFactor } from '@core/primitives/browser/api';
 import type { BrowserWebviewElement } from './browser-webview-types';
@@ -104,30 +103,6 @@ export function bindBrowserWebviewEvents(
         url: event.validatedURL,
       },
     });
-    browserDiagnosticsStore.append({
-      browserId,
-      level: 'error',
-      source: 'navigation',
-      message: event.errorDescription,
-      url: event.validatedURL,
-    });
-  };
-
-  const onConsoleMessage = (event: {
-    level: number;
-    message: string;
-    line: number;
-    sourceId: string;
-  }) => {
-    if (!shouldRecordConsoleDiagnostic(event)) return;
-    browserDiagnosticsStore.append({
-      browserId,
-      level: consoleLevelToDiagnosticsLevel(event.level),
-      source: 'console',
-      message: event.message,
-      url: event.sourceId,
-      line: event.line,
-    });
   };
 
   const onTitle = (event: { title: string }) => {
@@ -144,7 +119,6 @@ export function bindBrowserWebviewEvents(
   webview.addEventListener('did-navigate', onNavigate);
   webview.addEventListener('did-navigate-in-page', onNavigate);
   webview.addEventListener('did-fail-load', onFailLoad);
-  webview.addEventListener('console-message', onConsoleMessage);
   webview.addEventListener('page-title-updated', onTitle);
   webview.addEventListener('page-favicon-updated', onFavicon);
 
@@ -157,19 +131,7 @@ export function bindBrowserWebviewEvents(
     webview.removeEventListener('did-navigate', onNavigate);
     webview.removeEventListener('did-navigate-in-page', onNavigate);
     webview.removeEventListener('did-fail-load', onFailLoad);
-    webview.removeEventListener('console-message', onConsoleMessage);
     webview.removeEventListener('page-title-updated', onTitle);
     webview.removeEventListener('page-favicon-updated', onFavicon);
   };
-}
-
-function consoleLevelToDiagnosticsLevel(level: number) {
-  if (level >= 3) return 'error';
-  if (level === 2) return 'warning';
-  return 'info';
-}
-
-function shouldRecordConsoleDiagnostic(event: { message: string; sourceId: string }): boolean {
-  if (!event.sourceId.startsWith('node:electron/')) return true;
-  return !event.message.includes('Electron Security Warning');
 }

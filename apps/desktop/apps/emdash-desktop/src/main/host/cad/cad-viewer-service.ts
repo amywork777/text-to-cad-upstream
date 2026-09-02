@@ -364,10 +364,6 @@ async function viewerIsHealthy(port: number, workspacePath: string): Promise<boo
   }
 }
 
-export function cadViewerLauncherPath(): string | null {
-  return currentTextToCadLayout()?.viewer.launcher ?? null;
-}
-
 // Re-exported for callers that still resolve the interpreter through the viewer
 // service; the runtime service owns the rule.
 export { findCadPythonExecutable } from '@main/host/cad/cad-runtime-service';

@@ -151,16 +151,6 @@ export function selectCadModelFiles(
   );
 }
 
-export function isCadRelatedDirectory(path: string, activePath: string): boolean {
-  const normalized = normalizePath(path);
-  if (containsInternalDirectory(normalized)) return false;
-  const modelDirectory = cadModelDirectory(activePath);
-  const relativeDirectory = relativeDirectoryFrom(modelDirectory, normalized);
-  if (!relativeDirectory) return false;
-  const firstSegment = relativeDirectory.split('/')[0]?.toLowerCase();
-  return firstSegment ? RELATED_DIRECTORIES.has(firstSegment) : false;
-}
-
 function classifyRole(path: string, relativeDirectory: string): CadModelFileRole | null {
   const lowercase = path.toLowerCase();
   const relatedDirectory = relativeDirectory.split('/').filter(Boolean)[0]?.toLowerCase();

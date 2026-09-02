@@ -6,7 +6,6 @@
 - `src/main/core/fs/impl/ssh-fs.ts`
 - `src/main/core/pty/ssh2-pty.ts`
 - `src/main/core/terminals/impl/ssh-terminal-provider.ts`
-- `src/main/utils/shellEscape.ts`
 
 ## Rules
 

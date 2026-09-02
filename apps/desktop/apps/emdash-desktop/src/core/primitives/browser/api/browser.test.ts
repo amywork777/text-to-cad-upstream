@@ -125,7 +125,7 @@ describe('browser session identity', () => {
       taskId: 'Task One',
     });
 
-    expect(BROWSER_PROFILE_PARTITION).toBe('persist:emdash-browser-profile');
+    expect(BROWSER_PROFILE_PARTITION).toBe('persist:hardcore-browser-profile');
     expect(createBrowserSessionSnapshot({ identity, now: 100 }).partition).toBe(
       BROWSER_PROFILE_PARTITION
     );
@@ -140,7 +140,7 @@ describe('browser session identity', () => {
     });
 
     expect(makeIsolatedBrowserPartition(identity)).toBe(
-      'persist:emdash-browser-isolated-Project_One-Workspace_One-Task_One'
+      'persist:hardcore-browser-isolated-Project_One-Workspace_One-Task_One'
     );
     expect(
       createBrowserSessionSnapshot({
@@ -150,7 +150,7 @@ describe('browser session identity', () => {
       })
     ).toMatchObject({
       profileId: BROWSER_ISOLATED_PROFILE_ID,
-      partition: 'persist:emdash-browser-isolated-Project_One-Workspace_One-Task_One',
+      partition: 'persist:hardcore-browser-isolated-Project_One-Workspace_One-Task_One',
     });
   });
 

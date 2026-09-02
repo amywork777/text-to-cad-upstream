@@ -87,7 +87,6 @@ describe('compact CAD artifact headers', () => {
           }
           task={{ getRemoteConnectionId: () => undefined } as never}
           sourcePath="/tmp/project/a-very-long-model-recipe-name.py"
-          onMigrated={vi.fn()}
         />
       );
     });

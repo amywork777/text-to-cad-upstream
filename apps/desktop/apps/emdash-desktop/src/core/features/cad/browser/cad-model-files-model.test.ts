@@ -5,7 +5,6 @@ import {
   cadModelSourcePath,
   cadModelStemPath,
   isCadModelSourcePath,
-  isCadRelatedDirectory,
   selectCadModelFiles,
 } from './cad-model-files-model';
 
@@ -155,20 +154,5 @@ describe('selectCadModelFiles', () => {
       { name: 'bracket-iso.png', role: 'validation' },
       { name: 'bracket.3mf', role: 'export' },
     ]);
-  });
-});
-
-describe('isCadRelatedDirectory', () => {
-  it('accepts only relationship folders beneath the model directory', () => {
-    expect(
-      isCadRelatedDirectory('/workspace/models/snapshots', '/workspace/models/bracket.step')
-    ).toBe(true);
-    expect(
-      isCadRelatedDirectory('/workspace/models/analyses/bracket', '/workspace/models/bracket.step')
-    ).toBe(true);
-    expect(
-      isCadRelatedDirectory('/workspace/models/__cadgen__', '/workspace/models/bracket.step')
-    ).toBe(false);
-    expect(isCadRelatedDirectory('/workspace/docs', '/workspace/models/bracket.step')).toBe(false);
   });
 });

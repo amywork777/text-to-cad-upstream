@@ -3,11 +3,7 @@ import type { BrowserDataClearKind, BrowsingDataKind } from '@core/primitives/br
 import {
   browserContract,
   type CadDrawingResult,
-  type CadMigrationResult,
-  type CadParameterApplyResult,
   type CadProvenanceForgetResult,
-  type CadRuntimeStatus,
-  type CadSourceHistoryResult,
   type CadValidationResult,
   type BrowserScreenshotResult,
 } from '../api';
@@ -19,37 +15,20 @@ export type BrowserOperations = {
   releaseWebContents(browserId: string): BrowserActionResult;
   bindWebContents(input: { browserId: string; webContentsId: number }): BrowserActionResult;
   setActiveBrowser(browserId: string | null): BrowserActionResult;
-  getActiveBrowser(): { browserId: string | null };
   ensureCadViewer(input: {
     workspacePath: string;
     filePath: string;
   }): Promise<{ success: true; url: string } | { success: false; error: string }>;
-  getCadRuntimeStatus(): CadRuntimeStatus;
-  repairCadRuntime(): Promise<CadRuntimeStatus>;
   validateCadModel(input: {
     workspacePath: string;
     filePath: string;
     sourcePath?: string;
   }): Promise<CadValidationResult>;
   rebuildCadModel(input: { workspacePath: string; filePath: string }): Promise<CadValidationResult>;
-  readCadModelHistory(input: {
-    workspacePath: string;
-    filePath: string;
-  }): Promise<CadSourceHistoryResult> | CadSourceHistoryResult;
-  applyCadModelParameters(input: {
-    workspacePath: string;
-    filePath: string;
-    expectedSourceHash: string;
-    values: Record<string, number>;
-  }): Promise<CadParameterApplyResult> | CadParameterApplyResult;
   forgetCadModelProvenance(input: {
     workspacePath: string;
     filePath: string;
   }): Promise<CadProvenanceForgetResult> | CadProvenanceForgetResult;
-  migrateLegacyCadModel(input: {
-    workspacePath: string;
-    filePath: string;
-  }): Promise<CadMigrationResult> | CadMigrationResult;
   createCadDrawing(input: {
     workspacePath: string;
     filePath: string;
@@ -71,16 +50,10 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     releaseWebContents: ({ browserId }) => browserOperations.releaseWebContents(browserId),
     bindWebContents: (input) => browserOperations.bindWebContents(input),
     setActiveBrowser: ({ browserId }) => browserOperations.setActiveBrowser(browserId),
-    getActiveBrowser: () => browserOperations.getActiveBrowser(),
     ensureCadViewer: (input) => browserOperations.ensureCadViewer(input),
-    getCadRuntimeStatus: () => browserOperations.getCadRuntimeStatus(),
-    repairCadRuntime: () => browserOperations.repairCadRuntime(),
     validateCadModel: (input) => browserOperations.validateCadModel(input),
     rebuildCadModel: (input) => browserOperations.rebuildCadModel(input),
-    readCadModelHistory: (input) => browserOperations.readCadModelHistory(input),
-    applyCadModelParameters: (input) => browserOperations.applyCadModelParameters(input),
     forgetCadModelProvenance: (input) => browserOperations.forgetCadModelProvenance(input),
-    migrateLegacyCadModel: (input) => browserOperations.migrateLegacyCadModel(input),
     createCadDrawing: (input) => browserOperations.createCadDrawing(input),
     openDevTools: ({ browserId }) => browserOperations.openDevTools(browserId),
     captureScreenshot: ({ browserId }) => browserOperations.captureScreenshot(browserId),

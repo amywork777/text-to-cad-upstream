@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { browserDiagnosticsStore } from '@core/features/browser/api/browser/browser-diagnostics-store';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { bindBrowserWebviewEvents } from './browser-webview-events';
 import type { BrowserWebviewElement, BrowserWebviewEventMap } from './browser-webview-types';
@@ -62,7 +61,6 @@ function asWebview(fake: FakeBrowserWebview): BrowserWebviewElement {
 describe('bindBrowserWebviewEvents', () => {
   beforeEach(() => {
     vi.useRealTimers();
-    browserDiagnosticsStore.clear();
     browserSessionStore.clear();
   });
 
@@ -137,20 +135,6 @@ describe('bindBrowserWebviewEvents', () => {
         url: 'https://missing.invalid/',
       },
     });
-    expect(browserDiagnosticsStore.entriesForBrowser(session.browserId)).toMatchObject([
-      {
-        level: 'error',
-        source: 'console',
-        message: 'Unhandled error token=[REDACTED]',
-        line: 42,
-      },
-      {
-        level: 'error',
-        source: 'navigation',
-        message: 'Name not resolved',
-        url: 'https://missing.invalid/',
-      },
-    ]);
   });
 
   it('reapplies the session zoom after navigation commits', () => {
@@ -208,26 +192,6 @@ describe('bindBrowserWebviewEvents', () => {
       currentUrl: 'about:blank',
       title: '',
     });
-  });
-
-  it('ignores Electron internal security warnings', () => {
-    const session = browserSessionStore.createSession({
-      browserId: 'browser-1',
-      projectId: 'project-1',
-      workspaceId: 'workspace-1',
-      taskId: 'task-1',
-    });
-    const webview = new FakeBrowserWebview();
-
-    bindBrowserWebviewEvents(session.browserId, asWebview(webview));
-    webview.emit('console-message', {
-      level: 2,
-      message: '%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold;',
-      line: 1,
-      sourceId: 'node:electron/js2c/sandbox_bundle',
-    });
-
-    expect(browserDiagnosticsStore.entriesForBrowser(session.browserId)).toEqual([]);
   });
 
   it('refreshes history state after navigation commits', async () => {
