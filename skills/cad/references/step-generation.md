@@ -273,6 +273,13 @@ CADGEN_DAEMON=0 python part.py      # force a cold in-process run
   died, names the job, and prints the exact `CADGEN_DAEMON=0 ...` rerun. Nothing
   is retried silently: a half-hour job re-running unannounced is worse than the
   failure it would hide.
+- **A build has a memory ceiling.** One process's peak resident size is watched
+  during the model function and the emit; past the cap the build aborts with one
+  line naming the stage it was in, instead of the OS killing whatever it likes.
+  Default: half the machine's memory budget (the cgroup limit in a container, else
+  physical RAM), never below 4 GB — a 2,500-part engine builds in ~4 GB.
+  `CADGEN_MAX_RSS_GB=<gigabytes>` raises it; `0` disables. With `--verbose`, every
+  stage line also reports peak RSS, so a report says where memory went.
 - **The cap follows the machine**: the smaller of what memory allows (half of RAM, or the
   cgroup limit inside a container, divided by ~300 MB a warm worker holds) and what the
   cores allow (`cores - 2`), never more than 32. `CADGEN_DAEMON_MAX_WORKERS` overrides.

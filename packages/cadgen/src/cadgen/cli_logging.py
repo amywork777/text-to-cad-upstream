@@ -23,6 +23,7 @@ class CliLogger:
     verbose: bool = False
     stream: TextIO | None = None
     _started_at: float = field(default_factory=time.perf_counter)
+    _open_stages: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.stream is None:
@@ -40,15 +41,26 @@ class CliLogger:
 
     def timing(self, label: str, elapsed: float) -> None:
         if self.verbose:
-            self.info(f"{label} completed in {format_elapsed(elapsed)}")
+            # Peak RSS so far rides every stage line: a build report then says
+            # where memory went, not just where time went (the w16 engine's
+            # overnight OOMs left logs with no memory numbers at all).
+            from cadgen._internal.memory_guard import format_gb, peak_rss_bytes
+
+            self.info(f"{label} completed in {format_elapsed(elapsed)} (peak rss {format_gb(peak_rss_bytes())})")
+
+    def current_stage(self) -> str:
+        """The innermost ``timed`` label still open, for the memory guard's message."""
+        return self._open_stages[-1] if self._open_stages else ""
 
     @contextmanager
     def timed(self, label: str) -> Iterator[None]:
         started_at = time.perf_counter()
         self.debug(f"{label} started")
+        self._open_stages.append(label)
         try:
             yield
         finally:
+            self._open_stages.pop()
             self.timing(label, time.perf_counter() - started_at)
 
     def total(self, label: str = "total") -> None:

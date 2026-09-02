@@ -510,6 +510,29 @@ def _run_script_generator_inner(
     force: bool = False,
     progress: object | None = None,
 ) -> LoadedStepScene | None:
+    # The one build memory ceiling (cadgen._internal.memory_guard): covers the
+    # model function AND the emit, cold CLI and warm worker alike, and names the
+    # stage the logger last opened when it trips.
+    from cadgen._internal.memory_guard import MemoryGuard, resolve_cap_bytes
+
+    with MemoryGuard(
+        resolve_cap_bytes(),
+        label=f"build of {spec.source_ref}",
+        describe_stage=logger.current_stage,
+    ):
+        return _run_script_generator_body(
+            spec, model_format, logger=logger, force=force, progress=progress
+        )
+
+
+def _run_script_generator_body(
+    spec: EntrySpec,
+    model_format: str,
+    *,
+    logger: CliLogger,
+    force: bool = False,
+    progress: object | None = None,
+) -> LoadedStepScene | None:
     # Kernel-op memoization (design/incremental-generation.md): installed here so
     # every generator run — cold CLI or warm daemon worker — re-executes the model
     # script against memoized build123d choke points. The cache lives in
