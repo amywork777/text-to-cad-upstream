@@ -842,7 +842,12 @@ export function modelOptionsForRenderJob(context, job = {}) {
         if (message) {
           context.warnings.push(message);
         }
-      }
+      },
+      // The choreography half of a still: `{clip, elapsedSec}` rides the channel
+      // cadScene's effects pass already reads (the docs hero drives playback
+      // through the same key), so the clip's frame merges over the pose exactly
+      // as it does in the viewer — one applySceneState, no snapshot-side twin.
+      animation: job.stepAnimation || null
     },
     filterSelection
   };

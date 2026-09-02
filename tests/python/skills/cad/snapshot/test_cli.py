@@ -2021,6 +2021,187 @@ class StepPoseParameterTests(unittest.TestCase):
                 self.assertNotIn("retired", message)
 
 
+class StepAnimationFrameTests(unittest.TestCase):
+    """The job's `animation` key freezes ONE frame of ONE clip: `{"clip": name,
+    "time": seconds}`, spelled the same as the flag (`--animation CLIP --time
+    SECONDS`) and the sidecar section it reads. It is layered over `kinematics`
+    the way the viewer layers its Animation tab over the Pose tab — the two
+    travel independently and meet only in the renderer's effect records."""
+
+    CLIPS = (
+        "export const clips = {\n"
+        "  demo: { label: 'Demo', duration: 8, update(t, m) { m.get('ram').translate([0, 0, t]); } },\n"
+        "  spin: { duration: 2, update(t, m) { m.get('ram').rotate([0, 0, 1], 45 * t); } },\n"
+        "};\n"
+    )
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self.models = self.root / "models"
+        self.models.mkdir()
+        (self.root / "tmp").mkdir()
+
+    def _step(self, name="part.step", *, clips=CLIPS, kinematics=None):
+        step_path = self.models / name
+        step_path.write_text("ISO-10303-21;\nEND-ISO-10303-21;\n", encoding="utf-8")
+        write_package(
+            step_path,
+            kinematics=kinematics,
+            animation={"clips": clips} if clips is not None else None,
+        )
+        return step_path
+
+    def _job(self, **overrides):
+        job = {
+            "input": f"models/{overrides.pop('name', 'part.step')}",
+            "outputs": [{"path": "tmp/iso.png", "camera": "iso"}],
+        }
+        job.update(overrides)
+        return job
+
+    def _resolve(self, job):
+        original = snapshot_main.ensure_step_topology_artifact
+        try:
+            snapshot_main.ensure_step_topology_artifact = lambda *args, **kwargs: None
+            return resolve_render_job_packet(job, cwd=self.root)
+        finally:
+            snapshot_main.ensure_step_topology_artifact = original
+
+    def test_the_flag_pair_becomes_one_job_field(self) -> None:
+        """`--animation CLIP --time SECONDS` is ONE request on the job, and the
+        time defaults to 0 when only the clip is named."""
+        job = job_from_argv(["models/part.step", "tmp/o.png", "--animation", "demo", "--time", "2.5"])
+        self.assertEqual({"clip": "demo", "time": 2.5}, job["animation"])
+
+        at_start = job_from_argv(["models/part.step", "tmp/o.png", "--animation", "demo"])
+        self.assertEqual({"clip": "demo", "time": 0.0}, at_start["animation"])
+
+    def test_the_flag_pair_overrides_a_job_file_like_kinematics_does(self) -> None:
+        job_file = self.root / "job.json"
+        job_file.write_text(json.dumps(self._job()), encoding="utf-8")
+        options = options_from_argv(
+            ["--job", str(job_file), "--animation", "spin", "--time", "1"]
+        )
+        payload = load_job_from_options(options, stdin=_TtyStringIO(), cwd=self.root)
+        self.assertEqual({"clip": "spin", "time": 1.0}, payload["animation"])
+
+    def test_time_without_animation_is_refused(self) -> None:
+        """The moment indexes a clip; without one it is meaningless — refused
+        the way focus+hide is, before any job is built."""
+        from cadgen import step
+
+        with self.assertRaisesRegex(ValueError, "time requires animation"):
+            step.snapshot(Path("models/part.step"), Path("tmp/part.png"), time=1.0)
+
+        errors = io.StringIO()
+        with contextlib.redirect_stderr(errors):
+            code = cad_snapshot_entry.main(["models/part.step", "tmp/o.png", "--time", "1"])
+        self.assertEqual(1, code)
+        self.assertIn("time requires animation", errors.getvalue())
+
+    def test_the_library_door_takes_the_request_as_one_object(self) -> None:
+        """`snapshot(animation={"clip": ..., "time": ...})` is the dict spelling
+        of the flag pair; the clip name alone, and inline JSON, are the others.
+        Naming the time twice is refused rather than silently picking one."""
+        from cadgen.snapshot_cli import parse_animation_option
+
+        self.assertEqual({"clip": "demo", "time": 3.0}, parse_animation_option({"clip": "demo", "time": 3}))
+        self.assertEqual({"clip": "demo", "time": 0.0}, parse_animation_option({"clip": "demo"}))
+        self.assertEqual({"clip": "demo", "time": 1.0}, parse_animation_option('{"clip": "demo", "time": 1}'))
+        self.assertEqual({"clip": "demo", "time": 2.0}, parse_animation_option("demo", 2))
+        with self.assertRaisesRegex(SnapshotError, "given twice"):
+            parse_animation_option({"clip": "demo", "time": 3}, 1)
+
+    def test_the_request_has_a_closed_shape(self) -> None:
+        from cadgen.snapshot_cli import parse_animation_option
+
+        for bad, pattern in (
+            ({"clip": "demo", "speed": 2}, r"unknown key\(s\): speed; supported keys: clip, time"),
+            ({"time": 2}, "must name a clip"),
+            ({"clip": "demo", "time": -1}, "time must be seconds >= 0"),
+            ({"clip": "demo", "time": "soon"}, "time must be seconds >= 0"),
+            ({"clip": "demo", "time": True}, "time must be seconds >= 0"),
+        ):
+            with self.subTest(request=bad):
+                with self.assertRaisesRegex(SnapshotError, pattern):
+                    parse_animation_option(bad)
+
+    def test_a_job_packet_request_is_validated_for_shape_too(self) -> None:
+        """A packet carries the field directly, so it never met the flag parser;
+        the resolver holds it to the same shape."""
+        self._step()
+        with self.assertRaisesRegex(SnapshotError, r'render job animation must be a \{"clip": name, "time": seconds\} object'):
+            self._resolve(self._job(animation="demo"))
+        with self.assertRaisesRegex(SnapshotError, r"render job animation has unknown key\(s\): loop"):
+            self._resolve(self._job(animation={"clip": "demo", "loop": False}))
+
+    def test_a_declared_clip_resolves_the_sidecar_url_and_normalizes_the_request(self) -> None:
+        # An animation-only model: no kinematics at all, and the frame still
+        # needs the sidecar, because that is where the copied .anim.js lives.
+        self._step()
+        packet = self._resolve(self._job(animation={"clip": "demo", "time": 2}))
+        resolved_job = packet["jobs"][0]
+        self.assertIn(".step.json", str(resolved_job["resolved"]["stepParameterUrl"]))
+        self.assertEqual({"clip": "demo", "time": 2.0}, resolved_job["animation"])
+
+    def test_an_unknown_clip_is_refused_with_the_declared_clips(self) -> None:
+        """A typo fails as a CLI error naming what the model has — never as a
+        stack trace out of the browser, and never as a rest-pose render."""
+        self._step()
+        with self.assertRaisesRegex(
+            SnapshotError, r"Unknown animation clip: orbit\. This model declares: demo, spin"
+        ):
+            self._resolve(self._job(animation={"clip": "orbit"}))
+
+    def test_a_module_that_declares_no_clips_says_so(self) -> None:
+        self._step(clips="export const clips = {};")
+        with self.assertRaisesRegex(
+            SnapshotError, r"Unknown animation clip: demo\. This model declares no animation clips"
+        ):
+            self._resolve(self._job(animation={"clip": "demo"}))
+
+    def test_a_module_built_indirectly_defers_the_name_check_to_the_runtime(self) -> None:
+        # The CLI reads the literal the contract requires; a module that assembles
+        # its clips some other way is not refused on a guess — the runtime, with
+        # the compiled clips in hand, is the authority that names the set.
+        self._step(clips="const build = () => ({ demo: { update() {} } });\nexport const clips = build();")
+        packet = self._resolve(self._job(animation={"clip": "anything"}))
+        self.assertEqual({"clip": "anything", "time": 0.0}, packet["jobs"][0]["animation"])
+
+    def test_a_model_without_animation_has_no_frame_to_render(self) -> None:
+        self._step(clips=None)
+        with self.assertRaisesRegex(SnapshotError, "declares no animation") as caught:
+            self._resolve(self._job(animation={"clip": "demo"}))
+        self.assertIn("animation=", str(caught.exception))
+
+    def test_a_frame_is_layered_over_kinematics_not_instead_of_it(self) -> None:
+        """Both fields travel; neither gates the other — the same sidecar URL
+        serves both loaders, and each reads only its own section."""
+        pose = {
+            "mates": [{"name": "stroke", "kind": "slider", "parent": "#body", "child": "#ram",
+                       "axis": {"origin": [0, 0, 0], "dir": [0, 0, 1]},
+                       "limits": {"value": [0, 1]}}],
+        }
+        self._step(kinematics=pose)
+        packet = self._resolve(self._job(kinematics={"stroke": 1}, animation={"clip": "spin", "time": 0.5}))
+        resolved_job = packet["jobs"][0]
+        self.assertEqual({"stroke": 1}, resolved_job["kinematics"])
+        self.assertEqual({"clip": "spin", "time": 0.5}, resolved_job["animation"])
+        self.assertIn(".step.json", str(resolved_job["resolved"]["stepParameterUrl"]))
+
+    def test_a_frame_supports_only_view_mode(self) -> None:
+        self._step()
+        with self.assertRaisesRegex(SnapshotError, "animation frame supports only view mode"):
+            self._resolve(self._job(mode="section", animation={"clip": "demo"}))
+
+    def test_a_frame_requires_a_step_model(self) -> None:
+        (self.models / "part.stl").write_bytes(b"solid part\nendsolid part\n")
+        with self.assertRaisesRegex(SnapshotError, "animation frame requires a STEP model"):
+            self._resolve(self._job(name="part.stl", animation={"clip": "demo"}))
+
+
 class ExactOutputContractTests(unittest.TestCase):
     """The declared path is the written path, and a failure leaves nothing there.
 

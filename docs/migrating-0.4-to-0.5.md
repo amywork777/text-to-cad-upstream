@@ -805,9 +805,10 @@ If your v0.4 project drove snapshots from job JSON, the schema changed.
 ```
 
 The accepted job keys are: `input` (required), `mode`, `outputs`, `theme`,
-`display`, `render`, `camera`, `selection`, `kinematics`, `jointValues`,
-`sizeProfile`, `width`, `height`, `scale`, `sceneScale`, `debug`,
-`timeoutSeconds`.
+`display`, `render`, `camera`, `selection`, `kinematics`, `animation`
+(`{"clip": name, "time": seconds}` — one still frame of a STEP model's clip,
+layered over `kinematics`), `jointValues`, `sizeProfile`, `width`, `height`,
+`scale`, `sceneScale`, `debug`, `timeoutSeconds`.
 
 Also removed: the `params` key (it is `kinematics` now — `params` is reserved
 and rejected), and `workspaceRoot` / `rootDir` (pass a relative or absolute
@@ -826,8 +827,9 @@ Other behaviour worth knowing:
   `{"jobs": [...]}`.
 - `--job PATH` reads a JSON file; `--job -` reads stdin. `--job` does **not**
   accept inline JSON. The rich option flags (`--camera`, `--theme`,
-  `--display`, `--kinematics`, `--joint-values`) each take a name, inline JSON,
-  or a path.
+  `--display`, `--kinematics`, `--animation`, `--joint-values`) each take a
+  name, inline JSON, or a path; `--time SECONDS` is the moment for
+  `--animation` and is refused without it.
 
 ### Themes and display are two separate options
 

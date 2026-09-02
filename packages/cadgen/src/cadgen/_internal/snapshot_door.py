@@ -12,7 +12,7 @@ Three signature shapes cover the seven doors honestly (the old shared
 signature advertised STEP-only options to every door and refused them at
 runtime):
 
-- STEP: the full surface — section mode, display, kinematics, focus/hide.
+- STEP: the full surface — section mode, display, kinematics, animation, focus/hide.
 - mesh (stl/3mf/glb) and dxf: view/list renders of untyped geometry.
 - robot (urdf/sdf): the mesh shape plus ``joint_values``.
 
@@ -61,6 +61,8 @@ def _run(
     theme: object,
     display: object = None,
     kinematics: object = None,
+    animation: object = None,
+    time: float | None = None,
     joint_values: object = None,
     focus: tuple[str, ...] = (),
     hide: tuple[str, ...] = (),
@@ -100,6 +102,12 @@ def _run(
         options.camera, options.camera_specified = camera, True
     if kinematics is not None:
         options.kinematics, options.kinematics_specified = kinematics, True
+    # `time` is the second half of the `animation` request — the moment in the
+    # clip — and means nothing without the clip it indexes.
+    if time is not None and animation is None:
+        raise ValueError("time requires animation: name the clip the frame is taken from")
+    if animation is not None:
+        options.animation, options.animation_time, options.animation_specified = animation, time, True
     if joint_values is not None:
         options.joint_values, options.joint_values_specified = joint_values, True
     if focus:
@@ -127,6 +135,8 @@ def step_snapshot_verb(door: str):
         theme: str | dict | None = None,
         display: str | dict | None = None,
         kinematics: str | dict | None = None,
+        animation: str | dict | None = None,
+        time: float | None = None,
         focus: tuple[str, ...] = (),
         hide: tuple[str, ...] = (),
         width: int | None = None,
@@ -156,6 +166,10 @@ def step_snapshot_verb(door: str):
         display: a display mode name, display-settings JSON, or a file path.
         kinematics: pose values — a declared preset name or {dof: value}
             JSON, validated against the model's kinematics declaration.
+        animation: one still frame of a clip the model's .anim.js declares —
+            the clip name (with --time), or {"clip": name, "time": seconds}
+            JSON; layered over the kinematics pose the way the viewer does.
+        time: seconds into the animation clip (default 0); requires animation.
         focus: occurrence ref rendered at full opacity (repeatable); the
             rest of the assembly is ghosted in place.
         hide: occurrence ref left out of the render (repeatable).
@@ -170,6 +184,7 @@ def step_snapshot_verb(door: str):
             kinds,
             target=target, out=out, job=job, mode=mode,
             camera=camera, theme=theme, display=display, kinematics=kinematics,
+            animation=animation, time=time,
             focus=focus, hide=hide, width=width, height=height,
             size_profile=size_profile, view_labels=view_labels, debug=debug,
         )
@@ -299,6 +314,8 @@ def polymorphic_snapshot_verb():
         theme: str | dict | None = None,
         display: str | dict | None = None,
         kinematics: str | dict | None = None,
+        animation: str | dict | None = None,
+        time: float | None = None,
         joint_values: str | dict | None = None,
         focus: tuple[str, ...] = (),
         hide: tuple[str, ...] = (),
@@ -322,6 +339,9 @@ def polymorphic_snapshot_verb():
         display: display settings (STEP inputs only).
         kinematics: pose values for a STEP model's kinematics — a preset
             name or {dof: value} JSON.
+        animation: one still frame of a STEP model's clip — the clip name
+            (with --time), or {"clip": name, "time": seconds} JSON.
+        time: seconds into the animation clip (default 0); requires animation.
         joint_values: {joint: degrees} JSON posing a robot description.
         focus: occurrence ref rendered at full opacity (STEP only).
         hide: occurrence ref left out of the render (STEP only).
@@ -336,6 +356,7 @@ def polymorphic_snapshot_verb():
             ALL_KINDS,
             target=target, out=out, job=job, mode=mode,
             camera=camera, theme=theme, display=display, kinematics=kinematics,
+            animation=animation, time=time,
             joint_values=joint_values, focus=focus, hide=hide,
             width=width, height=height, size_profile=size_profile,
             view_labels=view_labels, debug=debug,

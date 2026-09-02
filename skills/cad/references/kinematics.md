@@ -193,6 +193,23 @@ fails with the poses this model actually has:
 cadgen step snapshot STEP/arm.step tmp/open.png --kinematics open
 ```
 
+For still evidence of a CLIP, freeze one frame: `--animation` names a clip
+the model's `.anim.js` declares and `--time` the moment in seconds (default
+0). One frame, one clip, one time — there is no sequence output. The frame
+is composed exactly as the viewer composes it: `--kinematics` sets the base
+pose, and the clip's `update(t, m)` is evaluated at that time on top of it.
+A clip name the model does not declare fails with the clips it has:
+
+```bash
+cadgen step snapshot STEP/arm.step tmp/demo_t2.png --animation demo --time 2.0
+cadgen step snapshot STEP/arm.step tmp/demo_open.png --kinematics open --animation demo --time 2.0
+```
+
+In a JSON job the request is one field, `"animation": {"clip": "demo",
+"time": 2.0}`, beside `"kinematics"`; the Python door takes the same object
+(`step.snapshot(..., animation={"clip": "demo", "time": 2.0})`) or the clip
+name with `time=`.
+
 Identify fixed pivots, link lengths, gear ratios, and joint limits BEFORE
 declaring mates; pivot every rotation about its hinge bore or mate face —
 never a bounding-box center. Convert visual concerns into `cadgen step

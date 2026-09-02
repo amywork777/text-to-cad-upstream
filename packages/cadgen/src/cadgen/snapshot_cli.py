@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import math
 import os
 import re
 import sys
@@ -166,12 +167,84 @@ class SnapshotOptions:
     size_profile: str = ""
     kinematics: object = None
     kinematics_specified: bool = False
+    animation: object = None
+    animation_time: object = None
+    animation_specified: bool = False
     joint_values: object = None
     joint_values_specified: bool = False
     focus: list[str] | None = None
     hide: list[str] | None = None
     view_labels: bool = False
     debug: bool = False
+
+
+# The frame request's closed vocabulary: the clip and the moment, nothing else.
+ANIMATION_REQUEST_KEYS = frozenset({"clip", "time"})
+
+
+def normalize_animation_request(value: object, *, where: str) -> dict[str, object]:
+    """``{"clip": <name>, "time": <seconds>}`` — the job's ``animation`` field.
+
+    Both spellings of the request (the flag pair and a job packet's field) land
+    here, so one validator holds the shape: a non-empty clip name, a finite
+    non-negative time in seconds defaulting to 0, and no other keys.
+    """
+    if not is_plain_object(value):
+        raise SnapshotError(
+            f'{where} must be a {{"clip": name, "time": seconds}} object, got {json.dumps(value)}'
+        )
+    unknown = sorted(set(value) - ANIMATION_REQUEST_KEYS)
+    if unknown:
+        raise SnapshotError(
+            f"{where} has unknown key(s): {', '.join(unknown)}; "
+            f"supported keys: {', '.join(sorted(ANIMATION_REQUEST_KEYS))}"
+        )
+    clip = value.get("clip")
+    if not isinstance(clip, str) or not clip.strip():
+        raise SnapshotError(f"{where} must name a clip: {{\"clip\": name, \"time\": seconds}}")
+    raw_time = value.get("time", 0)
+    try:
+        if isinstance(raw_time, bool):
+            raise ValueError("bool")
+        time_seconds = float(raw_time)
+    except (TypeError, ValueError) as exc:
+        raise SnapshotError(f"{where} time must be seconds >= 0, got {json.dumps(raw_time)}") from exc
+    if not math.isfinite(time_seconds) or time_seconds < 0:
+        raise SnapshotError(f"{where} time must be seconds >= 0, got {raw_time}")
+    return {"clip": clip.strip(), "time": time_seconds}
+
+
+def parse_animation_option(raw_animation: object, raw_time: object = None) -> dict[str, object]:
+    """``--animation CLIP [--time SECONDS]`` in job form: ``{"clip": name, "time": seconds}``.
+
+    Already an object when it came from a ``<format>.snapshot(animation={...})``
+    call; from argv it is one string, told apart by shape the way ``--kinematics``
+    is: text that opens with ``{`` is the inline JSON request, anything else is
+    the NAME of a clip the model's ``.anim.js`` declares. ``--time`` is the
+    second half of the same request — the moment, in seconds, defaulting to 0 —
+    and is folded in here, so the job carries ONE field either way. Resolving
+    the name needs the sidecar, which only the resolver has loaded, so it travels
+    through unresolved and is checked against the declared clips there.
+    """
+    if is_plain_object(raw_animation):
+        request = dict(raw_animation)
+    else:
+        text = str(raw_animation or "")
+        if text.lstrip().startswith("{"):
+            parsed = load_json_text(text, "--animation")
+            if not is_plain_object(parsed):
+                raise SnapshotError('--animation must be a clip name or a {"clip": name, "time": seconds} object')
+            request = parsed
+        else:
+            request = {"clip": text}
+    if raw_time is not None:
+        if "time" in request:
+            raise SnapshotError(
+                "the animation time was given twice: pass it as --time SECONDS or inside "
+                'the {"clip": name, "time": seconds} request, not both'
+            )
+        request["time"] = raw_time
+    return normalize_animation_request(request, where="--animation")
 
 
 def parse_kinematics_option(raw_kinematics: object) -> dict[str, object] | str:
@@ -245,6 +318,7 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
             options.debug,
             options.size_profile,
             options.kinematics_specified,
+            options.animation_specified,
             options.joint_values_specified,
             options.display_specified,
             options.theme_specified,
@@ -261,6 +335,8 @@ def apply_option_overrides_to_job(job: object, options: SnapshotOptions, *, cwd:
         next_job["theme"] = load_theme_option(options.theme, cwd=cwd)
     if options.kinematics_specified:
         next_job["kinematics"] = parse_kinematics_option(options.kinematics)
+    if options.animation_specified:
+        next_job["animation"] = parse_animation_option(options.animation, options.animation_time)
     if options.joint_values_specified:
         next_job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.display_specified:
@@ -335,6 +411,8 @@ def load_job_from_options(
         job["display"] = load_display_option(options.display, cwd=resolved_cwd)
     if options.kinematics_specified:
         job["kinematics"] = parse_kinematics_option(options.kinematics)
+    if options.animation_specified:
+        job["animation"] = parse_animation_option(options.animation, options.animation_time)
     if options.joint_values_specified:
         job["jointValues"] = parse_joint_values_option(options.joint_values)
     if options.debug:
@@ -612,6 +690,10 @@ def resolve_robot_render_job(
         raise SnapshotError(
             f"kinematics values require a STEP model; pose a {label} robot with jointValues"
         )
+    if job.get("animation") is not None:
+        raise SnapshotError(
+            f"an animation frame requires a STEP model with a sidecar; {label} robots have no clips"
+        )
 
     mode = str(job.get("mode") or "view").strip().lower()
     if mode not in SUPPORTED_RENDER_MODES:
@@ -774,6 +856,13 @@ def resolve_step_render_job(
     **_kind_context: object,
 ) -> dict[str, object]:
     has_param_render = has_kinematics_render_values(job.get("kinematics"))
+    # The frame request is validated for SHAPE up front (a packet may carry it
+    # directly, so it did not necessarily pass through the flag parser); which
+    # clip it names is checked against the sidecar further down.
+    animation_request: dict[str, object] | None = None
+    if job.get("animation") is not None:
+        animation_request = normalize_animation_request(job["animation"], where="render job animation")
+        job["animation"] = animation_request
     # A render is a READ. A document whose sidecar closure no longer re-hashes
     # is refused by naming the run rather than rebuilt here — putting a build
     # inside a render is exactly the coupling documents-only inputs remove.
@@ -814,6 +903,8 @@ def resolve_step_render_job(
         )
     if has_param_render and mode != "view":
         raise SnapshotError("kinematics values support only view mode; set display.mode for display-style changes")
+    if animation_request is not None and mode != "view":
+        raise SnapshotError("an animation frame supports only view mode; set display.mode for display-style changes")
 
     resolved: dict[str, object] = {
         "rootPath": str(root_path),
@@ -839,11 +930,19 @@ def resolve_step_render_job(
     kinematics_block = (
         sidecar.get("kinematics") if isinstance(sidecar.get("kinematics"), dict) else None
     )
-    if kinematics_block:
-        # Typed mates are the ONE articulation mechanism: the page fetches the
-        # sidecar and folds --kinematics DOF values through the shared FK
-        # evaluator (cadgen-js kinematicsModule).
+    animation_block = (
+        sidecar.get("animation") if isinstance(sidecar.get("animation"), dict) else None
+    )
+    animation_text = str(animation_block.get("clips") or "") if animation_block else ""
+    if kinematics_block or animation_text.strip():
+        # The sidecar is the page's ONE runtime input beyond geometry: typed
+        # mates are the articulation mechanism (--kinematics DOF values fold
+        # through the shared FK evaluator, cadgen-js kinematicsModule) and the
+        # copied .anim.js text is the choreography (--animation compiles it
+        # through the shared clip runtime). Either section makes the URL worth
+        # resolving; each loader reads only its own section.
         resolved["stepParameterUrl"] = asset_url_for_path(source_sidecar_path(source_path), root_path)
+    if kinematics_block:
         # A pose NAME and every DOF id are validated HERE, against the
         # declaration the CLI just loaded — a typo must fail as a clean CLI
         # error, not as a stack trace out of the browser runtime (which repeats
@@ -877,6 +976,31 @@ def resolve_step_render_job(
             "drive — declare kinematics= (typed mates) on the model's @step; "
             "see the cad skill's kinematics reference"
         )
+    if animation_request is not None:
+        if not animation_text.strip():
+            raise SnapshotError(
+                f"{input_path.name} declares no animation, so there is no clip frame to "
+                "render — declare animation= (a .anim.js module) on the model's @step; "
+                "see the cad skill's kinematics reference"
+            )
+        # The clip NAME is validated HERE against the declaration the CLI just
+        # loaded — a typo must fail as a clean CLI error naming the clips the
+        # model has, not as a stack trace out of the browser runtime (which
+        # repeats the check, with the compiled clips in hand, as the backstop
+        # and the authority for a module that builds its clips indirectly).
+        from cadgen._internal.animation_clips import declared_clip_ids
+
+        clip_name = str(animation_request["clip"])
+        declared_clips = declared_clip_ids(animation_text)
+        if declared_clips is not None and clip_name not in declared_clips:
+            raise SnapshotError(
+                f"Unknown animation clip: {clip_name}. "
+                + (
+                    f"This model declares: {', '.join(declared_clips)}"
+                    if declared_clips
+                    else "This model declares no animation clips"
+                )
+            )
     if debug_enabled:
         resolved["debug"] = {"stepArtifact": step_artifact_debug}
 
@@ -926,6 +1050,10 @@ def resolve_drawing_render_job(
     if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
             "kinematics values require a STEP model; a drawing is parameterized by its @dxf source"
+        )
+    if job.get("animation") is not None:
+        raise SnapshotError(
+            "an animation frame requires a STEP model with a sidecar; drawings have no clips"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()

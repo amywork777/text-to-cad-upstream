@@ -70,6 +70,36 @@ export function firstAnimationClipId(clips) {
   return animationClipList(clips)[0]?.id || "";
 }
 
+/** One frozen frame from a `{clip, time}` request — the snapshot job's
+ * `animation` field. The id resolves exactly as the viewer's transport resolves
+ * its active clip (findAnimationClip), and the result is the same
+ * `{clip, elapsedSec, playing}` the viewer hands its render pass, so a still at
+ * time t IS the frame the viewer shows there. An unknown id fails with the
+ * declared set — nothing renders a plausible rest frame under a typo. Time
+ * passes through unclamped: looping and clamping belong to the evaluator, for
+ * stills and playback alike. */
+export function resolveAnimationFrame(clips, request) {
+  const id = normalizeString(request?.clip);
+  if (!id) {
+    throw new Error("animation requires a clip name ({clip, time})");
+  }
+  const clip = findAnimationClip(clips, id);
+  if (!clip) {
+    const declared = animationClipList(clips).map((entry) => entry.id);
+    throw new Error(
+      declared.length
+        ? `Unknown animation clip: ${id}. This model declares: ${declared.join(", ")}`
+        : `Unknown animation clip: ${id}. This model declares no animation clips`
+    );
+  }
+  const rawTime = request?.time;
+  const time = rawTime === undefined || rawTime === null ? 0 : Number(rawTime);
+  if (!Number.isFinite(time) || time < 0) {
+    throw new Error(`animation time must be seconds >= 0, got ${JSON.stringify(rawTime)}`);
+  }
+  return { clip, elapsedSec: time, playing: false };
+}
+
 export function buildDefaultAnimationState() {
   return {
     activeClipId: "",

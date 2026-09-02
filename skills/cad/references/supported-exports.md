@@ -82,7 +82,7 @@ cadgen 3mf snapshot 3MF/bracket.3mf tmp/bracket_3mf.png
 cadgen glb snapshot meshes/bracket.glb tmp/bracket_glb.png
 ```
 
-A mesh carries no CAD topology, so these render shaded solid and do not HAVE `--focus`/`--hide`, `--display`, `--kinematics`, or `--mode section` — a mesh has no occurrences, CAD edges, or kinematics for those to act on, so they are absent from the command rather than refused by it. `cadgen step snapshot` refuses a mesh input and names the door that takes it.
+A mesh carries no CAD topology, so these render shaded solid and do not HAVE `--focus`/`--hide`, `--display`, `--kinematics`, `--animation`/`--time`, or `--mode section` — a mesh has no occurrences, CAD edges, kinematics, or clips for those to act on, so they are absent from the command rather than refused by it. `cadgen step snapshot` refuses a mesh input and names the door that takes it.
 
 This is a review of the EXPORT, not of the model. Snapshot validation of the primary STEP is still what the required workflow means; render the mesh when the question is about the mesh (tessellation density, a tolerance change, what an external tool will receive).
 

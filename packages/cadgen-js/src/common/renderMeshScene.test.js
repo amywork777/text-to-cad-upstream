@@ -13,6 +13,12 @@ import {
   renderMeshJob,
   resolveOutputCameraProjection
 } from "./renderMeshScene.js";
+import { evaluateAnimationClip, normalizeAnimationClips } from "./animationRuntime.js";
+import { resolveAnimationFrame } from "./animationClock.js";
+import { stepModuleFromKinematics } from "./kinematicsModule.js";
+import { normalizeStepModuleDefinition } from "./stepModule.js";
+import { normalizeStepParameterRenderValues } from "./stepParameters.js";
+import { stepParameterRuntime } from "./source.js";
 
 function twoPartMeshData() {
   return {
@@ -181,4 +187,123 @@ test("output projection echo follows the per-output camera decision", () => {
   );
   // Perspective theme/display projection is perspective for any spec.
   assert.equal(resolveOutputCameraProjection({ projection: "perspective" }, "iso"), "perspective");
+});
+
+// A snapshot's still frame at clip time t must be the frame the viewer shows
+// there. Both go through ONE effects pass (applySceneState, inside buildModel):
+// kinematics folds the pose into effect matrices, then the clip's frame is
+// merged OVER it. The snapshot reaches that pass through the job's
+// `stepAnimation` -> callbacks.animation channel, the same key the docs hero
+// drives playback with, so there is no snapshot-side twin to drift.
+function roundedPoint(matrix, point) {
+  return new THREE.Vector3(...point).applyMatrix4(matrix).toArray().map((v) => Math.round(v * 1e6) / 1e6);
+}
+
+const SLIDE_CLIPS = normalizeAnimationClips({
+  slide: {
+    duration: 4,
+    update(t, m) {
+      // The animation runtime addresses parts by label (part.label || part.name).
+      m.get("Left").translate([t, 0, 0]);
+    }
+  }
+});
+
+function liftRuntime(liftMm) {
+  // A one-mate kinematics block in the sidecar's RESOLVED form (world axis
+  // numbers), compiled the way loadKinematicsModuleDefinition compiles it.
+  const definition = normalizeStepModuleDefinition(
+    stepModuleFromKinematics({
+      mates: [{
+        name: "lift",
+        kind: "slider",
+        parent: "#Right",
+        child: "#Left",
+        axis: { origin: [0, 0, 0], dir: [0, 0, 1] },
+        limits: { value: [0, 10] }
+      }]
+    }),
+    { url: "/__cad/asset?file=pair.step.json", cadPath: "pair.step" }
+  );
+  return stepParameterRuntime({
+    definition,
+    renderParameters: normalizeStepParameterRenderValues(definition, { lift: liftMm }),
+    selectorRuntime: null,
+    cadPath: "pair.step",
+    sourceUrl: "/__cad/asset?file=pair.step.json"
+  });
+}
+
+// The headless sequence: buildModel from the job's options (which carry the
+// frame on callbacks.animation), then the per-output `model.update({
+// stepParameters })` renderMeshJob performs before fitting each camera.
+function buildStepModel(job) {
+  const meshData = twoPartMeshData();
+  const context = renderJobContext(meshData, job);
+  const model = buildModel(THREE, { kind: "step", meshData }, modelOptionsForRenderJob(context, job));
+  model.update({ stepParameters: job.stepParameters || null });
+  return model;
+}
+
+test("the still frame rides the effects-pass channel the viewer and docs hero use", () => {
+  const stepAnimation = resolveAnimationFrame(SLIDE_CLIPS, { clip: "slide", time: 1.5 });
+  const job = { mode: "view", kind: "step", outputs: [{ path: "frame.png" }], stepAnimation };
+  const options = modelOptionsForRenderJob(renderJobContext(twoPartMeshData(), job), job);
+  // cadScene's applyParameters reads callbacks.animation; a job without a
+  // frame request leaves the channel empty so the pass is pose-only.
+  assert.equal(options.callbacks.animation, stepAnimation);
+  assert.equal(
+    modelOptionsForRenderJob(renderJobContext(twoPartMeshData(), {}), {}).callbacks.animation,
+    null
+  );
+});
+
+test("a snapshot frame at time t is the clip evaluated at t, on the rendered records", () => {
+  const stepAnimation = resolveAnimationFrame(SLIDE_CLIPS, { clip: "slide", time: 1.5 });
+  const model = buildStepModel({ mode: "view", kind: "step", outputs: [{ path: "frame.png" }], stepAnimation });
+  try {
+    const byId = new Map(model.displayRecords.map((record) => [record.partId, record]));
+    // What the viewer's pass computes for the same clip and elapsedSec.
+    const expected = evaluateAnimationClip(THREE, model.meshData, SLIDE_CLIPS.slide, 1.5);
+    assert.deepEqual(
+      roundedPoint(byId.get("left").effectMatrix, [0, 0, 0]),
+      roundedPoint(expected.matrices.get("left"), [0, 0, 0])
+    );
+    assert.deepEqual(roundedPoint(byId.get("left").effectMatrix, [0, 0, 0]), [1.5, 0, 0]);
+    // The clip never touched the other part, and neither did the still.
+    assert.equal(byId.get("right").effectMatrix, null);
+    // The frame moves the bounds the camera frames on, exactly as a pose does:
+    // the left part now spans x 1.5..2.5 beside the untouched right part.
+    assert.deepEqual(model.bounds.min, [1.5, 0, 0]);
+    assert.deepEqual(model.bounds.max, [3, 1, 0]);
+  } finally {
+    model.dispose();
+  }
+});
+
+test("a snapshot frame layers over the kinematics pose in the viewer's order", () => {
+  const stepParameters = liftRuntime(4);
+  const posed = buildStepModel({ mode: "view", kind: "step", outputs: [{ path: "pose.png" }], stepParameters });
+  const poseMatrix = posed.displayRecords.find((record) => record.partId === "left").effectMatrix.clone();
+  posed.dispose();
+  assert.deepEqual(roundedPoint(poseMatrix, [0, 0, 0]), [0, 0, 4]);
+
+  const stepAnimation = resolveAnimationFrame(SLIDE_CLIPS, { clip: "slide", time: 1.5 });
+  const composed = buildStepModel({
+    mode: "view", kind: "step", outputs: [{ path: "frame.png" }], stepParameters, stepAnimation
+  });
+  try {
+    const left = composed.displayRecords.find((record) => record.partId === "left");
+    // Pose first, choreography on top in world space: the clip's matrix
+    // PREMULTIPLIES the pose (applyAnimationFrameToEffects), never the reverse.
+    const animMatrix = evaluateAnimationClip(THREE, composed.meshData, SLIDE_CLIPS.slide, 1.5).matrices.get("left");
+    const expected = new THREE.Matrix4().multiplyMatrices(animMatrix, poseMatrix);
+    assert.deepEqual(
+      left.effectMatrix.elements.map((v) => Math.round(v * 1e6) / 1e6),
+      expected.elements.map((v) => Math.round(v * 1e6) / 1e6)
+    );
+    assert.deepEqual(roundedPoint(left.effectMatrix, [0, 0, 0]), [1.5, 0, 4]);
+  } finally {
+    composed.dispose();
+  }
 });

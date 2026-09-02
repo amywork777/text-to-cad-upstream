@@ -204,7 +204,7 @@ class MeshDoorSplit(_Gate):
             with self.subTest(format=fmt):
                 text = door_help(fmt)
                 self.assertIn(f".{fmt}", text)
-                for absent in (".step", ".urdf", "--kinematics", "--focus", "--display"):
+                for absent in (".step", ".urdf", "--kinematics", "--animation", "--focus", "--display"):
                     self.assertNotIn(absent, text, f"{absent} is not a mesh door's business")
 
 
@@ -221,12 +221,12 @@ class GeneratedHelpTests(unittest.TestCase):
     def test_help_describes_only_this_door(self):
         dxf_help = door_help("dxf")
         self.assertIn(".dxf", dxf_help)
-        for absent in (".step", ".urdf", "--kinematics", "--focus"):
+        for absent in (".step", ".urdf", "--kinematics", "--animation", "--time", "--focus"):
             self.assertNotIn(absent, dxf_help, f"{absent} is not this door's business")
 
     def test_step_only_options_appear_for_the_step_door(self):
         step_help = door_help("step")
-        for present in ("--kinematics", "--focus", "section", "--view-labels"):
+        for present in ("--kinematics", "--animation", "--time", "--focus", "section", "--view-labels"):
             self.assertIn(present, step_help)
 
     def test_theme_is_one_option_everywhere(self):

@@ -12,6 +12,7 @@ import {
   findAnimationClip,
   firstAnimationClipId,
   hasAnimationClips,
+  resolveAnimationFrame,
   restoreAnimationState,
   shouldPublishAnimationFrame
 } from "./animationClock.js";
@@ -44,6 +45,36 @@ test("rest is the default selection and resolves to no clip", () => {
   assert.equal(findAnimationClip(CLIPS, ""), null);
   assert.equal(findAnimationClip(CLIPS, REST_CLIP_ID), null);
   assert.equal(findAnimationClip(CLIPS, "meshCycle")?.id, "meshCycle");
+});
+
+test("a still-frame request resolves to the viewer's own render-pass shape", () => {
+  // The snapshot's `animation: {clip, time}` becomes exactly what the viewer's
+  // Animation tab hands its effects pass — the same clip record, the time as
+  // elapsedSec, not playing — so the still IS the frame the viewer shows there.
+  assert.deepEqual(
+    resolveAnimationFrame(CLIPS, { clip: "inspectExplode", time: 2.5 }),
+    { clip: CLIPS.inspectExplode, elapsedSec: 2.5, playing: false }
+  );
+  // Time defaults to the start of the clip, and is NOT clamped or wrapped here:
+  // looping and clamping belong to the evaluator, for stills and playback alike.
+  assert.equal(resolveAnimationFrame(CLIPS, { clip: "meshCycle" }).elapsedSec, 0);
+  assert.equal(resolveAnimationFrame(CLIPS, { clip: "meshCycle", time: 99 }).elapsedSec, 99);
+});
+
+test("a still-frame request for an unknown clip names the declared clips", () => {
+  assert.throws(
+    () => resolveAnimationFrame(CLIPS, { clip: "orbit" }),
+    /Unknown animation clip: orbit\. This model declares: meshCycle, inspectExplode/
+  );
+  assert.throws(
+    () => resolveAnimationFrame({}, { clip: "orbit" }),
+    /Unknown animation clip: orbit\. This model declares no animation clips/
+  );
+  // Rest is not a clip a still can ask for by name, and a nameless request is a bug.
+  assert.throws(() => resolveAnimationFrame(CLIPS, { clip: REST_CLIP_ID }), /Unknown animation clip/);
+  assert.throws(() => resolveAnimationFrame(CLIPS, {}), /requires a clip name/);
+  assert.throws(() => resolveAnimationFrame(CLIPS, { clip: "meshCycle", time: -1 }), /seconds >= 0/);
+  assert.throws(() => resolveAnimationFrame(CLIPS, { clip: "meshCycle", time: "soon" }), /seconds >= 0/);
 });
 
 test("a restored session keeps the clock but never resumes playback", () => {

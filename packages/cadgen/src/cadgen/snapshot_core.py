@@ -81,6 +81,11 @@ SUPPORTED_JOB_KEYS = frozenset(
         # A robot's pose. The STEP analogue is kinematics; a robot is posed by joint
         # angle, so it gets its own key rather than overloading one that means a sidecar.
         "jointValues",
+        # One frozen frame of a STEP model's choreography: {"clip": name, "time":
+        # seconds}. Named for the sidecar section it reads (the model's animation=
+        # declaration) and spelled the same as the --animation flag. Layered over
+        # the kinematics pose exactly as the viewer layers its Animation tab.
+        "animation",
         "sizeProfile",
         "width",
         "height",
@@ -810,6 +815,10 @@ def resolve_mesh_render_job(
     if has_kinematics_render_values(job.get("kinematics")):
         raise SnapshotError(
             f"kinematics values require a STEP model; {label} mesh inputs are not parametric"
+        )
+    if job.get("animation") is not None:
+        raise SnapshotError(
+            f"an animation frame requires a STEP model with a sidecar; {label} mesh inputs have no clips"
         )
 
     mode = str(job.get("mode") or "view").strip().lower()

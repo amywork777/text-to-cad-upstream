@@ -13,8 +13,12 @@ import {
 } from "./stepParameters.js";
 import {
   loadSource,
+  sourceIsStep,
   stepParameterRuntime
 } from "./source.js";
+import { compileAnimationClips } from "./animationRuntime.js";
+import { resolveAnimationFrame } from "./animationClock.js";
+import { loadAnimationSource } from "./kinematicsModule.js";
 import {
   createHttpTessellationCacheProvider,
   setTessellationCacheProvider
@@ -54,9 +58,39 @@ async function capturePreparedSource(source, job) {
   }
 }
 
+// `job.animation` is the JOB PACKET's frame request ({clip, time}); the
+// `stepAnimation` it becomes is the SETTINGS key renderMeshScene routes to the
+// shared effects pass — the same `{clip, elapsedSec}` the viewer's Animation
+// tab hands its own pass. The choreography half loads on its own, through the
+// same two steps the viewer takes (loadAnimationSource -> compileAnimationClips):
+// the sidecar's kinematics section is never consulted here, so the two systems
+// stay independent end to end and meet only in the effect records.
+async function loadStepAnimation(job, source) {
+  const request = job.animation;
+  if (request === undefined || request === null) {
+    return null;
+  }
+  if (!sourceIsStep(source)) {
+    throw new Error("animation is supported only for STEP/STP sources");
+  }
+  if (String(job.mode || "view").toLowerCase() !== "view") {
+    throw new Error("an animation frame supports only view mode");
+  }
+  const sidecarUrl = String(job.resolved?.stepParameterUrl || "").trim();
+  if (!sidecarUrl) {
+    throw new Error("animation requires resolved.stepParameterUrl");
+  }
+  const moduleSource = await loadAnimationSource(sidecarUrl);
+  if (!moduleSource) {
+    throw new Error("model declares no animation, so there is no clip frame to render");
+  }
+  return resolveAnimationFrame(await compileAnimationClips(moduleSource), request);
+}
+
 export async function runHeadlessRenderJob(job) {
   const loadStarted = performance.now();
   const source = await loadSource(job);
+  const stepAnimation = await loadStepAnimation(job, source);
   headlessStageTimings.loadSourceMs = Math.round(performance.now() - loadStarted);
   const stepParameterSource = source.stepParameterSource;
   // `job.kinematics` is the JOB PACKET's pose input (a preset name or {dof: value}); the
@@ -67,7 +101,8 @@ export async function runHeadlessRenderJob(job) {
   const renderJob = {
     ...job,
     selectorRuntime: source.selectorRuntime,
-    displayEdgeRuntime: source.displayEdgeRuntime
+    displayEdgeRuntime: source.displayEdgeRuntime,
+    stepAnimation
   };
   if (stepParameterSource && explicitParams && String(job.mode || "view").toLowerCase() !== "view") {
     throw new Error("kinematics values support only view mode; set display.mode for display-style changes");
