@@ -21,8 +21,8 @@ export function ConflictDialog({ filePath }: ConflictDialogArgs) {
       <Dialog.Header showCloseButton={false}>
         <Dialog.Title>File Modified Externally</Dialog.Title>
         <Dialog.Description>
-          <code className="bg-muted rounded px-1 py-0.5 text-xs">{shortPath}</code> was changed
-          outside the editor while you have unsaved edits. What would you like to do?
+          <code className="rounded bg-background-2 px-1 py-0.5 text-xs">{shortPath}</code> was
+          changed outside the editor while you have unsaved edits. What would you like to do?
         </Dialog.Description>
       </Dialog.Header>
       <Dialog.Footer className="gap-2">

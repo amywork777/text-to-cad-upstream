@@ -20,7 +20,7 @@ function McpServerPill({
 
   return (
     <span
-      className="group hover:border-destructive/60 inline-flex h-8 max-w-full items-center gap-1.5 rounded-lg border border-border bg-background-quaternary-1 pr-1.5 pl-3 text-xs text-foreground transition-colors hover:bg-background-destructive hover:text-foreground-destructive"
+      className="group inline-flex h-8 max-w-full items-center gap-1.5 rounded-lg border border-border bg-background-quaternary-1 pr-1.5 pl-3 text-xs text-foreground transition-colors hover:border-border-destructive/60 hover:bg-background-destructive hover:text-foreground-destructive"
       title={`${server.name} (${server.transport})`}
     >
       <Icon
@@ -52,7 +52,7 @@ function McpServerPill({
 
 function EmptyMcpState() {
   return (
-    <p className="text-muted-foreground text-xs">No MCP servers configured for this agent yet.</p>
+    <p className="text-xs text-foreground-muted">No MCP servers configured for this agent yet.</p>
   );
 }
 
@@ -92,7 +92,7 @@ export function AgentMcpSection({
       <div>
         {isLoading ? (
           <div className="flex h-9 items-center justify-center">
-            <Loader2 className="text-muted-foreground size-4 animate-spin" />
+            <Loader2 className="size-4 animate-spin text-foreground-muted" />
           </div>
         ) : servers.length === 0 ? (
           <EmptyMcpState />

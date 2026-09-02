@@ -30,7 +30,7 @@ function ConflictChoice({
       className={cn(
         'flex min-w-0 flex-1 flex-col gap-1 rounded-lg border p-2.5 text-left transition-colors',
         selected
-          ? 'border-primary bg-background'
+          ? 'border-border-primary bg-background'
           : 'border-border bg-background-1 hover:bg-background',
         disabled && 'cursor-not-allowed opacity-60'
       )}

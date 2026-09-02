@@ -28,7 +28,7 @@ function SourceCard({
       className={cn(
         'flex min-h-24 flex-1 flex-col items-start justify-between rounded-xl border p-4 text-left transition-colors',
         selected
-          ? 'border-primary bg-background text-foreground'
+          ? 'border-border-primary bg-background text-foreground'
           : 'border-border bg-background-1 text-foreground hover:bg-background',
         disabled && 'cursor-not-allowed opacity-60 hover:bg-background-1'
       )}
@@ -38,7 +38,7 @@ function SourceCard({
         <span
           className={cn(
             'flex h-5 w-5 items-center justify-center rounded-md border',
-            selected ? 'border-primary bg-primary text-primary-foreground' : 'border-border'
+            selected ? 'border-border-primary bg-foreground text-background' : 'border-border'
           )}
         >
           {selected && <Check className="h-3.5 w-3.5" />}

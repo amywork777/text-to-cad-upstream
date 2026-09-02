@@ -128,7 +128,7 @@ export const AutomationRow = observer(function AutomationRow({
               <span
                 className={cn(
                   'min-w-0 truncate text-xs font-normal',
-                  projectId == null && 'text-destructive/80'
+                  projectId == null && 'text-foreground-destructive/80'
                 )}
               >
                 {projectId ? projectDisplayName(getProjectStore(projectId)) : 'No project'}

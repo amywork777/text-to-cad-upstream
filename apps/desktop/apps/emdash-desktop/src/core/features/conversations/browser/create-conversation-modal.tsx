@@ -179,7 +179,7 @@ export const CreateConversationModal = observer(function CreateConversationModal
               </div>
             </Field.Root>
           ) : null}
-          {error && <p className="text-destructive text-xs">{error}</p>}
+          {error && <p className="text-xs text-foreground-destructive">{error}</p>}
           {liveActionDisabledReason && (
             <p className="text-xs text-foreground-muted" role="note" tabIndex={0}>
               {liveActionDisabledReason}

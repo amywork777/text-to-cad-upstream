@@ -149,7 +149,7 @@ function ShutdownOverlay() {
     >
       <div className="flex flex-col items-center gap-3">
         <Spinner />
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-foreground-muted">
           Shutting down — stopping sessions and saving state…
         </p>
       </div>

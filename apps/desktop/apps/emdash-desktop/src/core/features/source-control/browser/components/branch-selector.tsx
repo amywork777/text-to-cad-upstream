@@ -132,8 +132,8 @@ export function BranchSelector({
       }}
     >
       {trigger ?? (
-        <Combobox.Trigger className="hover:bg-muted/30 flex h-9 items-center justify-between rounded-md border border-border px-2.5 py-1 text-left text-sm outline-none">
-          <div className="text-muted-foreground flex items-center gap-2">
+        <Combobox.Trigger className="flex h-9 items-center justify-between rounded-md border border-border px-2.5 py-1 text-left text-sm outline-none hover:bg-background-2/30">
+          <div className="flex items-center gap-2 text-foreground-muted">
             <GitBranch />
             <Combobox.Value placeholder="Select a branch" />
           </div>

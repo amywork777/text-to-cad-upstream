@@ -246,7 +246,7 @@ export const ProjectEngineeringFilesPanel = observer(function ProjectEngineering
 
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             {query.isError ? (
-              <div className="border-destructive/30 bg-destructive/5 text-destructive rounded-md border p-3 text-xs">
+              <div className="rounded-md border border-border-destructive/30 bg-background-destructive/5 p-3 text-xs text-foreground-destructive">
                 {query.error instanceof Error
                   ? query.error.message
                   : 'Engineering files unavailable.'}
@@ -650,7 +650,7 @@ function ProjectDocumentPreview({
             <Loader2 className="size-4 animate-spin" /> Loading document…
           </div>
         ) : preview.status === 'error' ? (
-          <div className="text-destructive flex h-full items-center justify-center text-sm">
+          <div className="flex h-full items-center justify-center text-sm text-foreground-destructive">
             {preview.message}
           </div>
         ) : preview.mimeType === 'application/pdf' || document.relativePath.endsWith('.pdf') ? (

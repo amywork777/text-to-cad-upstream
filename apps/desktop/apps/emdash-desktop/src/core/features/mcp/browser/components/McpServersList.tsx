@@ -58,7 +58,7 @@ export const McpServersList: React.FC<McpServersListProps> = ({
   if (mcp.isLoading) {
     return (
       <div className="flex min-h-64 items-center justify-center text-foreground">
-        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
       </div>
     );
   }
@@ -106,7 +106,7 @@ export const McpServersList: React.FC<McpServersListProps> = ({
 
         {filteredInstalled.length === 0 && filteredCatalog.length === 0 && (
           <div className="py-12 text-center">
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-foreground-muted">
               {search ? 'No servers match your search.' : 'No servers available.'}
             </p>
           </div>

@@ -20,7 +20,7 @@ const FieldTooltip: React.FC<{ content: string }> = ({ content }) => (
         render={
           <button
             type="button"
-            className="text-muted-foreground hover:text-foreground"
+            className="text-foreground-muted hover:text-foreground"
             aria-label="More information"
           >
             <Info className="h-3.5 w-3.5" aria-hidden="true" />

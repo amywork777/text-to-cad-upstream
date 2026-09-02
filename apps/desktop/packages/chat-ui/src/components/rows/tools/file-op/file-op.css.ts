@@ -57,8 +57,7 @@ export const fileOpHeader = style({
   },
 });
 
-export const monoRunning = style({
-  fontFamily: 'monospace',
+export const runningLabel = style({
   fontSize: vars.typeBodyFontSize,
   color: vars.fgPassive,
 });
@@ -79,7 +78,7 @@ export const fileOpStatusIcon = style({
 export const fileOpPermissionIcon = style([
   fileOpStatusIcon,
   {
-    color: '#eab308',
+    color: vars.planActive,
   },
 ]);
 

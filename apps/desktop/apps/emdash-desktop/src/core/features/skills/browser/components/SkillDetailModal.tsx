@@ -92,7 +92,7 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({
               {detailedSkill.displayName}
             </Dialog.Title>
             {meta && (
-              <div className="text-muted-foreground mt-0.5 flex items-center gap-1.5 text-xs">
+              <div className="mt-0.5 flex items-center gap-1.5 text-xs text-foreground-muted">
                 <img src={meta.icon} alt="" className="h-4 w-4 rounded-sm" />
                 <span>From {meta.name} skill library</span>
               </div>
@@ -104,8 +104,8 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({
         {showLoadingContent && <SkillDetailShimmer />}
 
         {!showLoadingContent && detailedSkill.defaultPrompt && (
-          <div className="bg-muted/40 space-y-1 rounded-md pb-2">
-            <p className="text-muted-foreground text-xs font-medium">Example prompt</p>
+          <div className="space-y-1 rounded-md bg-background-2/40 pb-2">
+            <p className="text-xs font-medium text-foreground-muted">Example prompt</p>
             <pre className="text-xs wrap-break-word whitespace-pre-wrap text-foreground">
               {detailedSkill.defaultPrompt}
             </pre>
@@ -116,7 +116,7 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({
           <Markdown
             content={visibleBody}
             variant="compact"
-            className="bg-muted/20 text-muted-foreground rounded-md px-3 py-2 text-xs"
+            className="rounded-md bg-background-2/20 px-3 py-2 text-xs text-foreground-muted"
             onOpenLink={openLink}
           />
         )}
@@ -130,7 +130,7 @@ export const SkillDetailModal: React.FC<SkillDetailModalProps> = ({
               size="sm"
               onClick={() => void handleUninstall()}
               disabled={isProcessing}
-              className="text-destructive hover:text-destructive"
+              className="text-foreground-destructive hover:text-foreground-destructive"
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               Uninstall

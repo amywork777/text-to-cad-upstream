@@ -76,11 +76,11 @@ function Shortcut({ hotkey, className, variant = 'text', bare = false }: Shortcu
       aria-label={keys.join(' + ')}
       className={cn(
         variant === 'text' &&
-          'inline-flex shrink-0 items-center justify-center gap-0 rounded px-1.5 py-1 text-xs leading-none text-muted-foreground in-data-[slot=tooltip-content]:text-background',
+          'inline-flex shrink-0 items-center justify-center gap-0 rounded px-1.5 py-1 text-xs leading-none text-foreground-muted in-data-[slot=tooltip-content]:text-background',
         variant === 'badge' &&
           'inline-flex shrink-0 items-center justify-center gap-0 rounded bg-background-secondary px-1.5 py-1 text-xs leading-none text-foreground/60 in-data-[slot=tooltip-content]:bg-background/20 in-data-[slot=tooltip-content]:py-0.5 in-data-[slot=tooltip-content]:text-background',
         variant === 'keycaps' &&
-          'inline-flex shrink-0 items-center gap-0.5 text-muted-foreground in-data-[slot=button]:text-current in-data-[slot=combobox-trigger]:text-current in-data-[slot=tooltip-content]:text-background',
+          'inline-flex shrink-0 items-center gap-0.5 text-foreground-muted in-data-[slot=button]:text-current in-data-[slot=combobox-trigger]:text-current in-data-[slot=tooltip-content]:text-background',
         className
       )}
     >

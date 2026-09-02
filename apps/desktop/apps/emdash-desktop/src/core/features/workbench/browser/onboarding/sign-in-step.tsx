@@ -59,7 +59,7 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
                 <User className="h-7 w-7 text-foreground-muted" />
               </div>
             )}
-            <CheckCircle className="text-primary absolute -right-1 -bottom-1 h-5 w-5 fill-background" />
+            <CheckCircle className="absolute -right-1 -bottom-1 h-5 w-5 fill-background text-foreground" />
           </div>
           <div className="flex flex-col items-center justify-center gap-1">
             <h1 className="text-center text-xl">Connected as @{user.username}</h1>
@@ -97,7 +97,7 @@ export function SignInStep({ onComplete }: { onComplete: () => void }) {
           {signInMutation.isPending ? 'Signing in…' : 'Sign in with GitHub'}
         </Button>
         {error && (
-          <div className="bg-destructive/10 text-destructive flex items-start gap-1.5 rounded-md px-2.5 py-2 text-xs">
+          <div className="flex items-start gap-1.5 rounded-md bg-background-destructive/10 px-2.5 py-2 text-xs text-foreground-destructive">
             <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>

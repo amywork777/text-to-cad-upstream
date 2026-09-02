@@ -75,7 +75,7 @@ export function PromptActionsMenu({
       >
         <div className="shrink-0 border-b px-4 py-3">
           <div className="text-sm font-semibold">Prompts</div>
-          <div className="text-muted-foreground text-xs">{actionTooltip}</div>
+          <div className="text-xs text-foreground-muted">{actionTooltip}</div>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-1">
           {actions.map((action) => {
@@ -98,8 +98,8 @@ export function PromptActionsMenu({
                     <span
                       className={
                         expanded
-                          ? 'text-muted-foreground mt-0.5 block max-h-48 overflow-y-auto pr-1 text-xs leading-relaxed'
-                          : 'text-muted-foreground mt-0.5 block text-xs leading-relaxed'
+                          ? 'mt-0.5 block max-h-48 overflow-y-auto pr-1 text-xs leading-relaxed text-foreground-muted'
+                          : 'mt-0.5 block text-xs leading-relaxed text-foreground-muted'
                       }
                       style={previewStyle(expanded)}
                     >

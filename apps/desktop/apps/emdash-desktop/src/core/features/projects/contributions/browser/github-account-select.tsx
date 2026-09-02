@@ -24,16 +24,16 @@ export function GitHubZeroAccountSelectItems() {
     <>
       <Select.Item value={GITHUB_INFERRED_NONE_OPTION} className="py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Github className="text-muted-foreground h-4 w-4 shrink-0" />
+          <Github className="h-4 w-4 shrink-0 text-foreground-muted" />
           <span className="relative -top-px min-w-0 truncate">Inferred (none)</span>
-          <span className="text-muted-foreground relative -top-px shrink-0 text-xs">
+          <span className="relative -top-px shrink-0 text-xs text-foreground-muted">
             No account connected
           </span>
         </div>
       </Select.Item>
       <Select.Item value={GITHUB_CONNECT_ACCOUNT_OPTION} className="py-2">
         <div className="flex min-w-0 items-center gap-2">
-          <Plus className="text-muted-foreground h-4 w-4 shrink-0" />
+          <Plus className="h-4 w-4 shrink-0 text-foreground-muted" />
           <span className="relative -top-px shrink-0">Connect GitHub account…</span>
         </div>
       </Select.Item>
@@ -59,12 +59,12 @@ export function GitHubAccountSelectLabel({ account }: { account: GitHubAccountSu
           className="h-4 w-4 shrink-0 rounded-full"
         />
       ) : (
-        <Github className="text-muted-foreground h-4 w-4 shrink-0" />
+        <Github className="h-4 w-4 shrink-0 text-foreground-muted" />
       )}
       <span className="min-w-0 truncate" title={`@${account.login}`}>
         @{account.login}
       </span>
-      <span className="text-muted-foreground shrink-0 text-xs">{account.host}</span>
+      <span className="shrink-0 text-xs text-foreground-muted">{account.host}</span>
       {account.isDefault ? <GitHubDefaultAccountBadge /> : null}
     </div>
   );

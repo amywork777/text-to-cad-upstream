@@ -118,13 +118,13 @@ export const CadSourcePanel = observer(function CadSourcePanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
-      <div className="@container flex min-h-12 shrink-0 items-center gap-3 border-b px-4">
+      <div className="@container flex h-10 shrink-0 items-center gap-2 border-b px-3">
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-background-secondary text-foreground-muted">
           <Code2 className="size-3.5" />
         </span>
         <div className="min-w-0 flex-1">
           <div
-            className="truncate text-xs font-medium text-foreground"
+            className="truncate text-sm font-medium text-foreground"
             title={sourcePath.split(/[\\/]/).at(-1)}
           >
             {sourcePath.split(/[\\/]/).at(-1)}
@@ -247,8 +247,8 @@ export const CadSourcePanel = observer(function CadSourcePanel({
       </div>
 
       {presentation.legacy ? (
-        <div className="bg-warning/5 flex items-start gap-2 border-b px-4 py-2 text-tiny text-foreground-muted">
-          <AlertTriangle className="text-warning mt-0.5 size-3.5 shrink-0" />
+        <div className="flex items-start gap-2 border-b bg-background-warning/5 px-4 py-2 text-tiny text-foreground-muted">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-foreground-warning" />
           <span>
             This old .step.py/.stp.py generator is view-only. cadgen 0.5 has no migration tool:
             rename it to {migratedName ?? 'a plain .py file'} by hand (see
@@ -261,8 +261,8 @@ export const CadSourcePanel = observer(function CadSourcePanel({
         <div
           className={`flex items-center gap-2 border-b px-4 py-2 text-tiny ${
             message.tone === 'error'
-              ? 'border-destructive/30 bg-destructive/5 text-destructive'
-              : 'bg-success/5 text-success'
+              ? 'border-border-destructive/30 bg-background-destructive/5 text-foreground-destructive'
+              : 'bg-background-success/5 text-foreground-success'
           }`}
           role={message.tone === 'error' ? 'alert' : 'status'}
         >
@@ -283,7 +283,7 @@ export const CadSourcePanel = observer(function CadSourcePanel({
             Loading source…
           </div>
         ) : entry && (entry.status.kind === 'error' || entry.status.kind === 'orphaned') ? (
-          <div className="text-destructive absolute inset-0 flex items-center justify-center p-8 text-center text-sm">
+          <div className="absolute inset-0 flex items-center justify-center p-8 text-center text-sm text-foreground-destructive">
             The generator source could not be opened.
           </div>
         ) : null}

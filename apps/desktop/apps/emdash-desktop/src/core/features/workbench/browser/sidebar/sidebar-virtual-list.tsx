@@ -341,7 +341,7 @@ function InsertionIndicator({ pointerY }: { pointerY: number | null }) {
   const top = isAbove ? overRect.top : overRect.top + overRect.height;
   return createPortal(
     <div
-      className="bg-primary"
+      className="bg-foreground"
       style={{
         position: 'fixed',
         left: overRect.left + 8,

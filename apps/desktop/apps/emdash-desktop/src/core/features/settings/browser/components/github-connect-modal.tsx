@@ -160,15 +160,15 @@ function ConnectMethodCard({
           'disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent'
         )}
       >
-        <Icon className="text-muted-foreground h-4 w-4 shrink-0" />
+        <Icon className="h-4 w-4 shrink-0 text-foreground-muted" />
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-medium text-foreground">{title}</h3>
-          <p className="text-muted-foreground mt-0.5 text-xs">{description}</p>
+          <p className="mt-0.5 text-xs text-foreground-muted">{description}</p>
         </div>
         {loading ? (
-          <Loader2 className="text-muted-foreground h-4 w-4 shrink-0 animate-spin" />
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin text-foreground-muted" />
         ) : (
-          <ArrowRight className="text-muted-foreground h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+          <ArrowRight className="h-4 w-4 shrink-0 text-foreground-muted transition-transform group-hover:translate-x-0.5" />
         )}
       </button>
       {error && <InlineError message={error} className="mx-3 mt-2 mb-3" />}
@@ -180,7 +180,7 @@ function InlineError({ message, className }: { message: string; className?: stri
   return (
     <div
       className={cn(
-        'bg-destructive/10 text-destructive flex items-start gap-1.5 rounded-md px-2.5 py-2 text-xs',
+        'bg-background-destructive/10 text-foreground-destructive flex items-start gap-1.5 rounded-md px-2.5 py-2 text-xs',
         className
       )}
     >

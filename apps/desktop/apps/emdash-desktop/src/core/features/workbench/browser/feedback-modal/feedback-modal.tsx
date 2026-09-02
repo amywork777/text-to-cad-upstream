@@ -127,8 +127,8 @@ export function FeedbackModal({ blurb }: FeedbackModalArgs) {
       onDragLeave={handleDragLeave}
     >
       {isDraggingOver && (
-        <div className="border-primary bg-primary/5 absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed">
-          <div className="text-primary flex flex-col items-center gap-1">
+        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-border-primary bg-foreground/5">
+          <div className="flex flex-col items-center gap-1 text-foreground">
             <ImageIcon className="size-6" />
             <span className="text-xs font-medium">Drop image here</span>
           </div>
@@ -205,7 +205,7 @@ export function FeedbackModal({ blurb }: FeedbackModalArgs) {
                     render={
                       <button
                         type="button"
-                        className="text-muted-foreground mt-1 inline-flex size-4 items-center justify-center hover:text-foreground"
+                        className="mt-1 inline-flex size-4 items-center justify-center text-foreground-muted hover:text-foreground"
                         aria-label="More information about diagnostic logs"
                       >
                         <Info className="size-3.5" aria-hidden="true" />
@@ -249,7 +249,7 @@ export function FeedbackModal({ blurb }: FeedbackModalArgs) {
           </div>
 
           {errorMessage ? (
-            <p className="text-destructive text-sm" role="alert">
+            <p className="text-sm text-foreground-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}

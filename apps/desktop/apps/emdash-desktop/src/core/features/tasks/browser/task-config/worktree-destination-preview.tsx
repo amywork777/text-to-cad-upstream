@@ -80,14 +80,14 @@ export function WorktreeDestinationPreviewView({
       <span className="flex min-w-0 items-center gap-1.5">
         <FolderGit2 className="size-3.5 shrink-0" />
         <span className="shrink-0">Worktree:</span>
-        <code className="min-w-0 truncate font-mono" title={worktreePath}>
+        <span className="min-w-0 truncate" title={worktreePath}>
           {worktreePath}
-        </code>
+        </span>
       </span>
       {worktreeRoot.provenance.kind === 'broken-setting' ? (
         <span className="text-foreground-warning">
           The configured worktree root '{worktreeRoot.provenance.staleValue}' is not usable —
-          falling back to <code className="font-mono">{worktreeRoot.value}</code>.
+          falling back to <span>{worktreeRoot.value}</span>.
         </span>
       ) : null}
     </div>

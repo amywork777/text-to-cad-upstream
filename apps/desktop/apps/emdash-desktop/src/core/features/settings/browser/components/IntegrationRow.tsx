@@ -34,11 +34,11 @@ interface IntegrationRowProps {
 
 const STATUS_CLASSES: Record<IntegrationStatus, string> = {
   connected: 'border border-border-success bg-background-success text-foreground-success',
-  loading: 'border border-border/60 bg-transparent text-muted-foreground',
-  error: 'border border-border/60 bg-transparent text-muted-foreground',
-  disconnected: 'border border-border/60 bg-transparent text-muted-foreground',
-  missing: 'border border-border/60 bg-transparent text-muted-foreground',
-  needs_key: 'border border-border/60 bg-transparent text-muted-foreground',
+  loading: 'border border-border/60 bg-transparent text-foreground-muted',
+  error: 'border border-border/60 bg-transparent text-foreground-muted',
+  disconnected: 'border border-border/60 bg-transparent text-foreground-muted',
+  missing: 'border border-border/60 bg-transparent text-foreground-muted',
+  needs_key: 'border border-border/60 bg-transparent text-foreground-muted',
 };
 
 const STATUS_LABELS: Record<IntegrationStatus, string> = {
@@ -54,10 +54,10 @@ const BUTTON_BASE =
   'inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-md border border-border/70 bg-background px-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60';
 
 const ICON_BUTTON =
-  'rounded-md p-1.5 text-muted-foreground transition hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
+  'rounded-md p-1.5 text-foreground-muted transition hover:bg-background-2/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 const ICON_WRAPPER =
-  'flex h-6 w-6 items-center justify-center rounded-md bg-muted/40 text-muted-foreground';
+  'flex h-6 w-6 items-center justify-center rounded-md bg-background-2/40 text-foreground-muted';
 
 /** Logo wrapper without background - logos render directly. */
 const LOGO_WRAPPER = 'flex h-6 w-6 items-center justify-center';
@@ -97,7 +97,7 @@ const IntegrationRow: React.FC<IntegrationRowProps> = ({
 
   const defaultMiddle =
     status === 'connected' && accountLabel ? (
-      <span className="text-muted-foreground truncate text-sm">{accountLabel}</span>
+      <span className="truncate text-sm text-foreground-muted">{accountLabel}</span>
     ) : null;
 
   const isSvg = themedLogoSrc?.trimStart().startsWith('<svg');
@@ -155,7 +155,7 @@ const IntegrationRow: React.FC<IntegrationRowProps> = ({
   const showInstallCopy = !!installCommand && status !== 'connected';
 
   return (
-    <div className="group hover:bg-muted/40 relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 transition-colors">
+    <div className="group relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-background-2/40">
       <div className="flex items-center gap-3">
         {avatar}
         {onNameClick ? (
@@ -165,7 +165,7 @@ const IntegrationRow: React.FC<IntegrationRowProps> = ({
             className="group flex items-center gap-1 text-sm font-medium text-foreground transition focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none"
           >
             <span>{name}</span>
-            <span className="text-muted-foreground text-xs transition group-hover:text-foreground/80">
+            <span className="text-xs text-foreground-muted transition group-hover:text-foreground/80">
               ↗
             </span>
           </button>
@@ -174,7 +174,7 @@ const IntegrationRow: React.FC<IntegrationRowProps> = ({
         )}
       </div>
 
-      <div className="text-muted-foreground flex items-center justify-end gap-2 text-sm">
+      <div className="flex items-center justify-end gap-2 text-sm text-foreground-muted">
         {showInstallCopy ? (
           <Tooltip.Provider>
             <Tooltip.Root>
@@ -195,7 +195,7 @@ const IntegrationRow: React.FC<IntegrationRowProps> = ({
               <Tooltip.Content side="top">
                 <div className="max-w-[240px] space-y-1">
                   <div className="text-xs font-medium text-foreground">Copy install command</div>
-                  <code className="text-muted-foreground block truncate font-mono text-tiny">
+                  <code className="block truncate font-mono text-tiny text-foreground-muted">
                     {installCommand}
                   </code>
                 </div>

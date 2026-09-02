@@ -29,7 +29,7 @@ export const ResetToDefaultButton: React.FC<ResetToDefaultButtonProps> = ({
               type="button"
               variant="ghost"
               icon
-              className="text-muted-foreground h-7 w-7 shrink-0 hover:text-foreground"
+              className="h-7 w-7 shrink-0 text-foreground-muted hover:text-foreground"
               onClick={onReset}
               disabled={disabled}
               aria-label="Reset to default"

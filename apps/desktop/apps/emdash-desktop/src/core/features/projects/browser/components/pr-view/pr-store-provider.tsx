@@ -55,7 +55,7 @@ export function ProjectPullRequestsProvider({
     );
   }
   if (!store) {
-    return <p className="text-muted-foreground py-4 text-center text-sm">Loading…</p>;
+    return <p className="py-4 text-center text-sm text-foreground-muted">Loading…</p>;
   }
   return <PullRequestsStoreProvider store={store}>{children}</PullRequestsStoreProvider>;
 }

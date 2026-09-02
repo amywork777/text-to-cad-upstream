@@ -257,7 +257,7 @@ export const BaseProjectSettingsSection = observer(function BaseProjectSettingsS
               <GitHubAccountSelectLabel account={effective.githubAccount.value} />
             ) : (
               <div className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                <Github className="text-muted-foreground h-4 w-4 shrink-0" />
+                <Github className="h-4 w-4 shrink-0 text-foreground-muted" />
                 {accountUnresolvable ? (
                   <span className="flex min-w-0 items-center gap-2 truncate">
                     <span className="min-w-0 truncate">Unavailable GitHub account</span>
@@ -282,7 +282,7 @@ export const BaseProjectSettingsSection = observer(function BaseProjectSettingsS
               <>
                 <Select.Item value={EXPLICIT_NO_ACCOUNT_OPTION} className="py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <Github className="text-muted-foreground h-4 w-4 shrink-0" />
+                    <Github className="h-4 w-4 shrink-0 text-foreground-muted" />
                     <span className="relative -top-px shrink-0">No GitHub account</span>
                   </div>
                 </Select.Item>

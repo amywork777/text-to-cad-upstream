@@ -64,7 +64,7 @@ export const DiffFileRenderer = observer(function DiffFileRenderer({ tab }: Diff
     }
     case 'binary':
       return (
-        <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+        <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
           Binary file — no diff available
         </div>
       );
@@ -191,7 +191,7 @@ const DiffContentPreview = observer(function DiffContentPreview({
 
   if (tab.status === 'deleted') {
     return (
-      <div className="text-muted-foreground flex h-full items-center justify-center text-sm">
+      <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
         Deleted file — no preview available
       </div>
     );

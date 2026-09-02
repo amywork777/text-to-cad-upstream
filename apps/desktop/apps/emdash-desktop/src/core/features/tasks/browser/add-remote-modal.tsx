@@ -242,7 +242,7 @@ export const AddRemoteModal = observer(function AddRemoteModal({
                 className="w-full"
               />
               {ownersErrorMessage && (
-                <p className="text-destructive text-xs">{ownersErrorMessage}</p>
+                <p className="text-xs text-foreground-destructive">{ownersErrorMessage}</p>
               )}
             </Field.Root>
             <Field.Root>
@@ -297,7 +297,7 @@ export const AddRemoteModal = observer(function AddRemoteModal({
           />
         ) : null}
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        {error && <p className="text-sm text-foreground-destructive">{error}</p>}
       </Dialog.Body>
     </ModalLayout>
   );

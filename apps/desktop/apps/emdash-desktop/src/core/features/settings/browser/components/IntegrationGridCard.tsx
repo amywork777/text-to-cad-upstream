@@ -19,7 +19,7 @@ export function IntegrationGridCard({
         type="button"
         onClick={onSelect}
         className={cn(
-          'group relative flex w-full items-center gap-4 rounded-lg border border-border bg-background-1 p-4 text-left text-card-foreground transition-all hover:bg-background-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+          'group relative flex w-full items-center gap-4 rounded-lg border border-border bg-background-1 p-4 text-left text-foreground transition-all hover:bg-background-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           selected && 'bg-background-2'
         )}
       >
@@ -58,7 +58,7 @@ export function ConnectionIssueIndicator({
       <Tooltip.Trigger
         render={
           <span
-            className="text-destructive absolute top-3 right-3 inline-flex h-5 w-5 items-center justify-center rounded-full"
+            className="absolute top-3 right-3 inline-flex h-5 w-5 items-center justify-center rounded-full text-foreground-destructive"
             aria-label={`${providerName} connection issue`}
           >
             <CircleAlert className="h-4 w-4" />

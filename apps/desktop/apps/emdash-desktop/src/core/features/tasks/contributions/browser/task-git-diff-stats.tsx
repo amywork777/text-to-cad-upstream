@@ -52,7 +52,7 @@ export const TaskGitDiffStats = observer(function TaskGitDiffStats({
   return (
     <span
       className={cn(
-        'shrink-0 tabular-nums leading-none text-muted-foreground flex items-center gap-1 text-xs',
+        'shrink-0 tabular-nums leading-none text-foreground-muted flex items-center gap-1 text-xs',
         className
       )}
       aria-label={[

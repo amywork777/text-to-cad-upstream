@@ -30,7 +30,7 @@ export function BranchNameField({ state, pushBranch, onPushBranchChange }: Branc
             className="px-0"
           />
           {branchAlreadyExists && (
-            <p className="text-muted-foreground mt-1 text-xs">
+            <p className="mt-1 text-xs text-foreground-muted">
               This branch already exists — the task will check it out instead of creating a new one.
             </p>
           )}

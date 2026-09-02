@@ -167,7 +167,7 @@ const McpDrawerContent: React.FC<McpDrawerContentProps> = ({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         {isCatalog && mode.entry.description && (
-          <p className="text-muted-foreground mb-4 text-xs">{mode.entry.description}</p>
+          <p className="mb-4 text-xs text-foreground-muted">{mode.entry.description}</p>
         )}
         <Field.Group>
           <form.Field name="name">
@@ -237,7 +237,7 @@ const McpDrawerContent: React.FC<McpDrawerContentProps> = ({
                             disabled={isCatalog}
                             placeholder={'-y\nmy-mcp-server'}
                             rows={3}
-                            className="border-input placeholder:text-muted-foreground focus-visible:ring-ring flex w-full rounded-md border bg-background px-3 py-2 text-sm ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                            className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-foreground-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                           />
                         </Field.Root>
                       )}
@@ -323,7 +323,7 @@ const McpDrawerContent: React.FC<McpDrawerContentProps> = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="text-destructive hover:text-destructive"
+            className="text-foreground-destructive hover:text-foreground-destructive"
             onClick={() => onRemove(form.state.values.name)}
           >
             <Trash2 className="mr-1.5 h-3.5 w-3.5" />

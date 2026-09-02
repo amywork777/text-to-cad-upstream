@@ -141,7 +141,7 @@ export const PrSelector = observer(function PrSelector({
   const selectedContent = renderSelectedValue ? (
     renderSelectedValue(value!)
   ) : (
-    <div className="hover:bg-muted/30 flex w-full min-w-0 items-start rounded-md border border-border p-3 text-left text-sm hover:shadow-xs">
+    <div className="flex w-full min-w-0 items-start rounded-md border border-border p-3 text-left text-sm hover:bg-background-2/30 hover:shadow-xs">
       <SelectedPrValue pr={value!} />
     </div>
   );
@@ -149,7 +149,7 @@ export const PrSelector = observer(function PrSelector({
   const placeholderContent = renderPlaceholder ? (
     renderPlaceholder()
   ) : (
-    <div className="hover:bg-muted/30 flex h-6 w-full items-center justify-center gap-1 rounded-md border border-dashed border-border p-3 text-center text-sm text-foreground-passive hover:shadow-xs">
+    <div className="flex h-6 w-full items-center justify-center gap-1 rounded-md border border-dashed border-border p-3 text-center text-sm text-foreground-passive hover:bg-background-2/30 hover:shadow-xs">
       Click to select a pull request
     </div>
   );

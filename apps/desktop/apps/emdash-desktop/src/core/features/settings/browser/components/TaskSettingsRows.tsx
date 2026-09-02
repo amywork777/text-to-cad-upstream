@@ -14,7 +14,7 @@ function InfoTooltip({ label, content }: { label: string; content: React.ReactNo
           render={
             <button
               type="button"
-              className="text-muted-foreground inline-flex h-4 w-4 items-center justify-center hover:text-foreground"
+              className="inline-flex h-4 w-4 items-center justify-center text-foreground-muted hover:text-foreground"
               aria-label={label}
             >
               <Info className="h-3.5 w-3.5" />

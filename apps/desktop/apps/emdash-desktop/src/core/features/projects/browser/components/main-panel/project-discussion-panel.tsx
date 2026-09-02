@@ -186,7 +186,7 @@ export const ProjectDiscussionPanel = observer(function ProjectDiscussionPanel({
       className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg border bg-background"
     >
       <div className="flex items-center gap-3 border-b px-5 py-4">
-        <span className="bg-accent text-accent-foreground flex size-8 items-center justify-center rounded-lg">
+        <span className="flex size-8 items-center justify-center rounded-lg bg-background-secondary text-foreground-muted">
           <MessageSquareText className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -221,7 +221,7 @@ export const ProjectDiscussionPanel = observer(function ProjectDiscussionPanel({
           <DiscussionEmptyState onSuggestion={setDraft} />
         )}
         {session?.error || error ? (
-          <div className="border-destructive/30 text-destructive absolute inset-x-4 bottom-4 rounded-md border bg-background p-3 text-xs shadow-sm">
+          <div className="absolute inset-x-4 bottom-4 rounded-md border border-border-destructive/30 bg-background p-3 text-xs text-foreground-destructive shadow-sm">
             {session?.error ?? error}
           </div>
         ) : null}

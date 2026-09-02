@@ -71,7 +71,7 @@ export const toolStatusIcon = style({
 export const toolPermissionIcon = style([
   toolStatusIcon,
   {
-    color: '#eab308',
+    color: vars.planActive,
   },
 ]);
 

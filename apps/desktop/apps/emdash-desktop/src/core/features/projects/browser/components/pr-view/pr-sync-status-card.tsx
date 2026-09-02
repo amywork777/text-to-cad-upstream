@@ -99,7 +99,7 @@ export const PrSyncStatusCard = observer(function PrSyncStatusCard({
     const hasProgress = state.total != null && state.total > 0;
     return (
       <SyncStatusCard
-        icon={<Loader2 className="text-muted-foreground size-3.5 shrink-0 animate-spin" />}
+        icon={<Loader2 className="size-3.5 shrink-0 animate-spin text-foreground-muted" />}
         label={kindLabel}
         content={
           hasProgress ? `Syncing PRs: ${state.synced ?? 0} / ${state.total}` : 'Syncing PRs…'

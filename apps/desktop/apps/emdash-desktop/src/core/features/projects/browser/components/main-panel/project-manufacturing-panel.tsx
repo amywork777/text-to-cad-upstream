@@ -95,7 +95,7 @@ export function ProjectManufacturingPanel({ project }: { project: Project }) {
         </div>
 
         {profileQuery.isError ? (
-          <div className="border-destructive/30 bg-destructive/5 text-destructive border-b px-4 py-2 text-xs">
+          <div className="border-b border-border-destructive/30 bg-background-destructive/5 px-4 py-2 text-xs text-foreground-destructive">
             {profileQuery.error instanceof Error
               ? profileQuery.error.message
               : 'The manufacturing profile could not be loaded.'}
@@ -254,9 +254,7 @@ function ManufacturingChecks({
             <CheckIcon status={check.status} />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-foreground">{check.label}</div>
-              <div className="mt-0.5 text-tiny leading-4 text-foreground-muted">
-                {check.detail}
-              </div>
+              <div className="mt-0.5 text-tiny leading-4 text-foreground-muted">{check.detail}</div>
             </div>
           </div>
         ))}
@@ -272,12 +270,12 @@ function ManufacturingChecks({
 
 function CheckIcon({ status }: { status: ManufacturingReadinessCheck['status'] }) {
   if (status === 'ready') {
-    return <CheckCircle2 className="text-success mt-0.5 size-4 shrink-0" />;
+    return <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-foreground-success" />;
   }
   if (status === 'per-model') {
     return <ScanLine className="mt-0.5 size-4 shrink-0 text-foreground-muted" />;
   }
-  return <CircleDashed className="text-warning mt-0.5 size-4 shrink-0" />;
+  return <CircleDashed className="mt-0.5 size-4 shrink-0 text-foreground-warning" />;
 }
 
 function optionalNumber(value: string): number | null {

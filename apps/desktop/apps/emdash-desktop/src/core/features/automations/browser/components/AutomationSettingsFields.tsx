@@ -94,7 +94,7 @@ export function AutomationSettingsFields({
         </TaskStateProvider>
       </Field.Group>
 
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-xs text-foreground-destructive">{error}</p>}
     </fieldset>
   );
 }

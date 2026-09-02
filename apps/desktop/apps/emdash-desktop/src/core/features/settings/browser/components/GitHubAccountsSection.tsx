@@ -47,16 +47,16 @@ export function GitHubAccountsSection() {
       </div>
 
       {isLoading ? (
-        <div className="text-muted-foreground flex items-center gap-2 py-3 text-sm">
+        <div className="flex items-center gap-2 py-3 text-sm text-foreground-muted">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading GitHub accounts...
         </div>
       ) : sortedAccounts.length === 0 ? (
         <div className="flex items-center gap-3 rounded-lg border border-dashed border-border/70 p-3">
-          <div className="bg-muted/50 flex h-9 w-9 shrink-0 items-center justify-center rounded-md">
-            <Github className="text-muted-foreground h-4 w-4" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background-2/50">
+            <Github className="h-4 w-4 text-foreground-muted" />
           </div>
-          <p className="text-muted-foreground min-w-0 flex-1 text-sm">
+          <p className="min-w-0 flex-1 text-sm text-foreground-muted">
             No GitHub accounts are connected.
           </p>
         </div>
@@ -153,8 +153,8 @@ function GitHubAccountRow({
           className="h-9 w-9 shrink-0 rounded-full border border-border/60"
         />
       ) : (
-        <div className="bg-muted flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60">
-          <Github className="text-muted-foreground h-4 w-4" />
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background-2">
+          <Github className="h-4 w-4 text-foreground-muted" />
         </div>
       )}
       <div className="min-w-0 flex-1">
@@ -163,7 +163,7 @@ function GitHubAccountRow({
           {account.isDefault && <DefaultGitHubAccountBadge login={account.login} />}
           <GitHubCredentialSourceBadge source={account.credentialSource} />
         </div>
-        <p className="text-muted-foreground truncate text-xs">{account.host}</p>
+        <p className="truncate text-xs text-foreground-muted">{account.host}</p>
       </div>
       <Tooltip.Root>
         <Tooltip.Trigger

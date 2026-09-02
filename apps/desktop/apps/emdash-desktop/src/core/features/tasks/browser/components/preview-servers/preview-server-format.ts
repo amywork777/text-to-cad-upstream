@@ -42,6 +42,6 @@ export function previewServerStatusClasses(server: PreviewServer): string {
     case 'reconnecting':
       return 'bg-background-warning text-foreground-warning hover:bg-background-warning-hover';
     case 'failed':
-      return 'bg-background-destructive text-foreground-destructive hover:bg-destructive/20';
+      return 'bg-background-destructive text-foreground-destructive hover:bg-background-destructive/20';
   }
 }

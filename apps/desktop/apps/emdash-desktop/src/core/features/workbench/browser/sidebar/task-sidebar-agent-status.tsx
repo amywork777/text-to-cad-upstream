@@ -34,9 +34,9 @@ export function SidebarAgentStatusLabel({ status }: { status: AgentStatusKind })
     <span
       className={`inline-flex shrink-0 items-center gap-1 text-micro font-medium ${
         status === 'awaiting-input'
-          ? 'text-warning'
+          ? 'text-foreground-warning'
           : status === 'error'
-            ? 'text-destructive'
+            ? 'text-foreground-destructive'
             : 'text-foreground-muted'
       }`}
       role="status"

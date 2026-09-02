@@ -15,7 +15,7 @@ interface ProjectOption {
 
 function ProjectIcon({ isSsh }: { isSsh: boolean }) {
   const Icon = isSsh ? FolderInput : FolderClosed;
-  return <Icon className="text-muted-foreground h-4 w-4 shrink-0" />;
+  return <Icon className="h-4 w-4 shrink-0 text-foreground-muted" />;
 }
 
 interface ProjectSelectorProps {

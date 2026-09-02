@@ -146,9 +146,11 @@ export function ImportStep({ onComplete }: { onComplete: () => void }) {
       {importProgress.isImporting && <ImportProgress progress={importProgress.progress} />}
 
       {importProgress.error && (
-        <p className="text-destructive text-center text-sm">{importProgress.error}</p>
+        <p className="text-center text-sm text-foreground-destructive">{importProgress.error}</p>
       )}
-      {startFreshError && <p className="text-destructive text-center text-sm">{startFreshError}</p>}
+      {startFreshError && (
+        <p className="text-center text-sm text-foreground-destructive">{startFreshError}</p>
+      )}
 
       <div className="flex w-full shrink-0 flex-col gap-2">
         <Button variant="primary" size="lg" onClick={handleImport} disabled={isBusy || !canImport}>

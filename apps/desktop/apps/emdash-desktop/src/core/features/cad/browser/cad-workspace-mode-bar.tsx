@@ -76,7 +76,7 @@ export function CadWorkspaceModeBar({
                 className="min-w-7 gap-1.5 px-2 @max-[520px]:px-1.5"
                 onClick={() => onChange(mode)}
               >
-                <Icon className="size-3.5" />
+                <Icon />
                 <span className="@max-[520px]:sr-only">{engineeringWorkspaceModeLabel(mode)}</span>
               </Button>
             );

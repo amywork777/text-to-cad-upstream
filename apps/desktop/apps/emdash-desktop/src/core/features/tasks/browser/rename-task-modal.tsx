@@ -102,9 +102,9 @@ export const RenameTaskModal = observer(function RenameTaskModal({
               autoFocus
             />
             {validationMessage && !isUnchanged && (
-              <p className="text-destructive mt-1 text-xs">{validationMessage}</p>
+              <p className="mt-1 text-xs text-foreground-destructive">{validationMessage}</p>
             )}
-            {error && <p className="text-destructive mt-1 text-xs">{error}</p>}
+            {error && <p className="mt-1 text-xs text-foreground-destructive">{error}</p>}
           </Field.Root>
         </Field.Group>
       </Dialog.Body>

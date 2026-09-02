@@ -90,7 +90,7 @@ function UserFilterPopover({
         {filtered.map((item) => (
           <li key={item.value}>
             <button
-              className="hover:bg-muted flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-background-2"
               onClick={() => onChange(selected === item.value ? null : item.value)}
             >
               {item.avatarUrl ? (
@@ -100,7 +100,7 @@ function UserFilterPopover({
                   className="size-4 shrink-0 rounded-full"
                 />
               ) : (
-                <span className="bg-muted-foreground/20 size-4 shrink-0 rounded-full" />
+                <span className="size-4 shrink-0 rounded-full bg-foreground-muted/20" />
               )}
               <span className="flex-1 truncate text-left">{item.label}</span>
               {selected === item.value && (
@@ -110,7 +110,7 @@ function UserFilterPopover({
           </li>
         ))}
         {filtered.length === 0 && (
-          <li className="text-muted-foreground px-2 py-3 text-center text-xs">No results</li>
+          <li className="px-2 py-3 text-center text-xs text-foreground-muted">No results</li>
         )}
       </ul>
     </FilterButton>
@@ -145,7 +145,7 @@ function LabelFilterPopover({
         {filtered.map((item) => (
           <li key={item.value}>
             <button
-              className="hover:bg-muted flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-background-2"
               onClick={() => toggle(item.value)}
             >
               {item.color ? (
@@ -154,7 +154,7 @@ function LabelFilterPopover({
                   style={{ backgroundColor: `#${item.color}` }}
                 />
               ) : (
-                <span className="bg-muted-foreground/20 size-3 shrink-0 rounded-full" />
+                <span className="size-3 shrink-0 rounded-full bg-foreground-muted/20" />
               )}
               <span className="flex-1 truncate text-left">{item.label}</span>
               {selected.includes(item.value) && (
@@ -164,7 +164,7 @@ function LabelFilterPopover({
           </li>
         ))}
         {filtered.length === 0 && (
-          <li className="text-muted-foreground px-2 py-3 text-center text-xs">No results</li>
+          <li className="px-2 py-3 text-center text-xs text-foreground-muted">No results</li>
         )}
       </ul>
     </FilterButton>
@@ -183,14 +183,14 @@ function FilterPill({
   onRemove: () => void;
 }) {
   return (
-    <span className="bg-muted inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-xs">
+    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background-2 px-2 py-0.5 text-xs">
       {avatarUrl && <img src={avatarUrl} alt={label} className="size-3.5 rounded-full" />}
       {color && (
         <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: `#${color}` }} />
       )}
       {label}
       <button
-        className="text-muted-foreground ml-0.5 rounded-full hover:text-foreground"
+        className="ml-0.5 rounded-full text-foreground-muted hover:text-foreground"
         onClick={onRemove}
         aria-label={`Remove ${label} filter`}
       >
@@ -223,7 +223,7 @@ export const PullRequestView = observer(function PullRequestView() {
   if (!repositoryUrl) {
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
-        <p className="text-muted-foreground py-4 text-center text-sm">
+        <p className="py-4 text-center text-sm text-foreground-muted">
           Pull requests are currently available only for configured GitHub remotes. You can change
           the remote in the project settings.
         </p>

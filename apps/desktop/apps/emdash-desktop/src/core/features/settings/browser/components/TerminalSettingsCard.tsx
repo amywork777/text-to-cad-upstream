@@ -310,7 +310,7 @@ const TerminalSettingsCard: React.FC = () => {
               </Button>
               <div className="flex min-w-14 items-baseline justify-center gap-1 text-sm text-foreground tabular-nums">
                 <span>{fontSize}</span>
-                <span className="text-muted-foreground text-xs">px</span>
+                <span className="text-xs text-foreground-muted">px</span>
               </div>
               <Button
                 type="button"

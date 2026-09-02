@@ -159,7 +159,7 @@ export function ProjectContextPanel({ project }: { project: Project }) {
               </div>
             </div>
             {brief.isError ? (
-              <div className="border-destructive/30 bg-destructive/5 text-destructive border-b px-4 py-2 text-xs">
+              <div className="border-b border-border-destructive/30 bg-background-destructive/5 px-4 py-2 text-xs text-foreground-destructive">
                 {brief.error instanceof Error
                   ? brief.error.message
                   : 'The brief could not be loaded.'}

@@ -182,7 +182,7 @@ export const CreatePrModal = observer(function CreatePrModal({
       </Dialog.Header>
       <Dialog.Body className="space-y-4">
         {!hasGitHubRemote && (
-          <p className="text-muted-foreground text-sm">
+          <p className="text-sm text-foreground-muted">
             No GitHub remote detected. Configure a GitHub remote to create pull requests.
           </p>
         )}

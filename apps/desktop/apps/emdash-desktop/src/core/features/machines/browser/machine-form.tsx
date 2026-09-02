@@ -41,7 +41,7 @@ function FieldInfoTooltip({ label, children }: { label: string; children: ReactN
         render={
           <button
             type="button"
-            className="focus-visible:ring-primary/30 relative inline-flex size-4 shrink-0 items-center justify-center rounded-full text-foreground-passive transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:outline-none"
+            className="relative inline-flex size-4 shrink-0 items-center justify-center rounded-full text-foreground-passive transition-colors before:absolute before:-inset-2.5 before:content-[''] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
             aria-label={`About ${label}`}
           >
             <InfoIcon className="size-3.5" aria-hidden="true" />
@@ -628,13 +628,13 @@ export function MachineFormFields({
       </form>
 
       {testState !== 'idle' && (
-        <div className="border-input rounded-md border px-3 py-2 text-sm">
+        <div className="rounded-md border border-border px-3 py-2 text-sm">
           <div className="flex items-center gap-2">
             {testState === 'testing' && (
-              <LoaderCircle className="text-muted-foreground size-4 animate-spin" />
+              <LoaderCircle className="size-4 animate-spin text-foreground-muted" />
             )}
             {testState === 'success' && <CheckCircle2 className="size-4 text-foreground-success" />}
-            {testState === 'error' && <XCircle className="text-destructive size-4" />}
+            {testState === 'error' && <XCircle className="size-4 text-foreground-destructive" />}
             <span className="flex-1 font-medium">
               {testState === 'testing' && 'Testing connection…'}
               {testState === 'success' &&
@@ -645,7 +645,7 @@ export function MachineFormFields({
               <button
                 type="button"
                 onClick={() => setShowDebugLogs((value) => !value)}
-                className="text-muted-foreground flex items-center gap-1 text-xs hover:text-foreground"
+                className="flex items-center gap-1 text-xs text-foreground-muted hover:text-foreground"
               >
                 {showDebugLogs ? (
                   <ChevronUp className="size-3" />
@@ -657,7 +657,7 @@ export function MachineFormFields({
             ) : null}
           </div>
           {showDebugLogs && testResult?.debugLogs && (
-            <pre className="bg-muted text-muted-foreground mt-2 max-h-32 overflow-y-auto rounded px-2 py-1.5 text-xs">
+            <pre className="mt-2 max-h-32 overflow-y-auto rounded bg-background-2 px-2 py-1.5 text-xs text-foreground-muted">
               {testResult.debugLogs.join('\n')}
             </pre>
           )}

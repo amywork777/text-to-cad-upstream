@@ -22,7 +22,7 @@ export const TaskDataLine = observer(function TaskDataLine({
         <span
           className={cn(
             'min-w-0 flex-1 truncate text-sm text-foreground',
-            missedDeadline && 'text-destructive'
+            missedDeadline && 'text-foreground-destructive'
           )}
         >
           {task.displayName}

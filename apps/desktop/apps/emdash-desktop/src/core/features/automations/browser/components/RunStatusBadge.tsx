@@ -33,7 +33,7 @@ export function RunStatusBadge({ status, error }: RunStatusBadgeProps) {
 
   if (status === 'failed') {
     const badge = (
-      <span className={cn(BASE, 'bg-destructive/10 text-destructive')}>
+      <span className={cn(BASE, 'bg-background-destructive/10 text-foreground-destructive')}>
         <XCircle className="size-3" />
         Failed
       </span>
@@ -43,7 +43,12 @@ export function RunStatusBadge({ status, error }: RunStatusBadgeProps) {
       <Tooltip.Root>
         <Tooltip.Trigger
           render={
-            <span className={cn(BASE, 'bg-destructive/10 text-destructive cursor-default')} />
+            <span
+              className={cn(
+                BASE,
+                'bg-background-destructive/10 text-foreground-destructive cursor-default'
+              )}
+            />
           }
         >
           <XCircle className="size-3" />
@@ -65,7 +70,7 @@ export function RunStatusBadge({ status, error }: RunStatusBadgeProps) {
 
   if (status === 'skipped' || status === 'cancelled') {
     return (
-      <span className={cn(BASE, 'bg-background-3 text-muted-foreground')}>
+      <span className={cn(BASE, 'bg-background-3 text-foreground-muted')}>
         <MinusCircle className="size-3" />
         {status === 'cancelled' ? 'Cancelled' : 'Skipped'}
       </span>
