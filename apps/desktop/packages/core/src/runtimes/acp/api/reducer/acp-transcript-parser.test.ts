@@ -1298,3 +1298,162 @@ describe('foldItem tool results', () => {
     ).toBe(items);
   });
 });
+
+describe('foldItem surfaced shapes', () => {
+  const turnId = 'turn-2';
+
+  it('adds a row per linked resource and never lists a uri twice', () => {
+    const link = { uri: 'file:///repo/models/plate.step', name: 'plate.step' };
+    let items = foldItem(
+      [],
+      { kind: 'message', role: 'assistant', messageId: 'm1', text: 'Here it is:' },
+      turnId,
+      1
+    );
+    items = foldItem(
+      items,
+      { kind: 'message', role: 'assistant', messageId: 'm1', text: '', links: [link] },
+      turnId,
+      2
+    );
+    items = foldItem(
+      items,
+      { kind: 'message', role: 'assistant', messageId: 'm1', text: '', links: [link] },
+      turnId,
+      3
+    );
+    expect(items.map((item) => item.kind)).toEqual(['message', 'resource-link']);
+    expect(items[1]).toMatchObject({
+      uri: link.uri,
+      name: 'plate.step',
+      target: { kind: 'workspace-file', path: '/repo/models/plate.step' },
+    });
+  });
+
+  it('never creates an empty message from an image-only chunk without attachments', () => {
+    expect(
+      foldItem([], { kind: 'message', role: 'assistant', messageId: 'm2', text: '' }, turnId, 1)
+    ).toEqual([]);
+  });
+
+  it('shows an edit that reported no diff and replaces it once the diff arrives', () => {
+    let items = foldItem(
+      [],
+      {
+        kind: 'tool_call',
+        toolCallId: 'e1',
+        title: 'Edit',
+        toolKind: 'edit',
+        status: 'in_progress',
+        parentToolCallId: null,
+        diffs: [],
+        locations: [{ path: '/repo/src/a.ts' }],
+      },
+      turnId,
+      1
+    );
+    expect(items[0]).toMatchObject({
+      kind: 'unknown-tool-call',
+      name: 'Edit',
+      inputSummary: '/repo/src/a.ts',
+    });
+    items = foldItem(
+      items,
+      {
+        kind: 'tool_update',
+        toolCallId: 'e1',
+        title: null,
+        toolKind: 'edit',
+        status: 'completed',
+        parentToolCallId: null,
+        diffs: [{ path: '/repo/src/a.ts', oldText: 'a', newText: 'b' }],
+      },
+      turnId,
+      2
+    );
+    expect(items.map((item) => item.kind)).toEqual(['modify-file-tool-call']);
+  });
+
+  it('reads the path from Codex titles and from locations', () => {
+    const fromTitle = foldItem(
+      [],
+      {
+        kind: 'tool_call',
+        toolCallId: 'r1',
+        title: "Read file '/repo/src/a.ts'",
+        toolKind: 'read',
+        status: 'in_progress',
+        parentToolCallId: null,
+        diffs: [],
+      },
+      turnId,
+      1
+    );
+    expect(fromTitle[0]).toMatchObject({ kind: 'read-tool-call', path: '/repo/src/a.ts' });
+    const fromLocations = foldItem(
+      [],
+      {
+        kind: 'tool_call',
+        toolCallId: 'r2',
+        title: 'Reading',
+        toolKind: 'read',
+        status: 'in_progress',
+        parentToolCallId: null,
+        diffs: [],
+        locations: [{ path: '/repo/src/b.ts' }],
+      },
+      turnId,
+      1
+    );
+    expect(fromLocations[0]).toMatchObject({ kind: 'read-tool-call', path: '/repo/src/b.ts' });
+  });
+
+  it('keeps the plan as this turn last saw it on the plan row', () => {
+    const items = foldItem(
+      [],
+      {
+        kind: 'plan',
+        entries: [{ content: 'Write tests', status: 'in_progress', priority: 'high' }],
+      },
+      turnId,
+      1
+    );
+    expect(items[0]).toMatchObject({
+      kind: 'create-plan-tool-call',
+      entries: [{ content: 'Write tests', status: 'in_progress', priority: 'high' }],
+    });
+  });
+
+  it('records provider progress on a running tool row', () => {
+    let items = foldItem(
+      [],
+      {
+        kind: 'tool_call',
+        toolCallId: 'p1',
+        title: 'linear.search',
+        toolKind: 'other',
+        status: 'in_progress',
+        parentToolCallId: null,
+        diffs: [],
+      },
+      turnId,
+      1
+    );
+    items = foldItem(
+      items,
+      {
+        kind: 'tool_update',
+        toolCallId: 'p1',
+        title: null,
+        toolKind: null,
+        status: null,
+        parentToolCallId: null,
+        diffs: [],
+        progress: 'fetching issues (page 2)',
+      },
+      turnId,
+      2
+    );
+    expect(items[0]).toMatchObject({ status: 'running', progress: 'fetching issues (page 2)' });
+  });
+});

@@ -37,11 +37,13 @@ export function planFromItem(
   item: Extract<ToolNode, { kind: 'create-plan-tool-call' }>,
   ctx: SegmentCtx
 ): ChatPlan {
-  const plan = ctx.plan();
+  // The item carries the plan as this turn last saw it; older transcripts
+  // without that snapshot fall back to the live session plan.
+  const entries = item.entries ?? ctx.plan()?.entries ?? [];
   return {
     kind: 'plan',
     id: item.id,
-    entries: plan?.entries ?? [],
+    entries: entries.map(({ content, status, priority }) => ({ content, status, priority })),
     streaming: item.status === 'running',
   };
 }

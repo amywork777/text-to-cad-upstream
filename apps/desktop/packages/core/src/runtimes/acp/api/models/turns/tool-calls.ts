@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AttachmentRef } from '../attachments';
 import { attachmentRefSchema } from '../attachments';
+import { planEntryInputSchema, type PlanEntryInput } from '../plan';
 import type { ToolCallGroupKind, ToolStatus } from './tools';
 import { toolCallGroupKindSchema, toolStatusSchema } from './tools';
 
@@ -15,6 +16,8 @@ export interface BaseToolCallItem {
   outputText?: string;
   /** Short failure reason when the provider reported the call as failed. */
   error?: string;
+  /** Latest provider progress line while the call runs (MCP progress, for example). */
+  progress?: string;
   parentToolCallId?: string;
   children?: ToolNode[];
   /** Runtime-owned image outputs produced by this tool call. */
@@ -83,6 +86,8 @@ export interface SpawnSubagentToolCall extends BaseToolCallItem {
 export interface CreatePlanToolCall extends BaseToolCallItem {
   kind: 'create-plan-tool-call';
   planId: string;
+  /** The plan as it stood when this turn last updated it; the live plan slice keeps moving. */
+  entries?: PlanEntryInput[];
 }
 
 export interface UnknownToolCall extends BaseToolCallItem {
@@ -132,6 +137,8 @@ export const baseToolCallItemSchema = z.object({
   outputText: z.string().optional(),
   /** Short failure reason when the provider reported the call as failed. */
   error: z.string().optional(),
+  /** Latest provider progress line while the call runs (MCP progress, for example). */
+  progress: z.string().optional(),
   /** Raw provider parent id used to rebuild the tree; not a render link. */
   parentToolCallId: z.string().optional(),
   /** Nested provider or reducer-derived tool nodes owned by this call. */
@@ -209,6 +216,8 @@ export const createPlanToolCallSchema = baseToolCallItemSchema.extend({
   kind: z.literal('create-plan-tool-call'),
   /** Session-scoped plan id resolved against PlanState. */
   planId: z.string(),
+  /** The plan as it stood when this turn last updated it; the live plan slice keeps moving. */
+  entries: z.array(planEntryInputSchema).optional(),
 });
 
 export const unknownToolCallSchema = baseToolCallItemSchema.extend({

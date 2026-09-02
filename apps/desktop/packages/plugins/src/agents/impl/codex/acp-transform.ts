@@ -18,6 +18,7 @@ export function enrichCodexUpdate(update: NormalizedEvent, raw: SessionUpdate): 
   if (collab) return collab;
 
   update = withFormattedOutput(update, raw);
+  update = withMcpProgress(update, raw);
 
   if (
     update.kind === 'tool_call' &&
@@ -66,6 +67,28 @@ function withFormattedOutput(
       : undefined;
   if (typeof formatted !== 'string' || formatted.length === 0) return update;
   return { ...update, outputText: formatted };
+}
+
+/**
+ * Codex streams MCP tool progress as `_meta.mcp_output_delta` on updates that
+ * carry nothing else. Keep the latest line so the row can say what the
+ * integration is doing while it runs.
+ */
+function withMcpProgress(
+  update: Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }>,
+  raw: SessionUpdate
+): Extract<NormalizedEvent, { kind: 'tool_call' | 'tool_update' }> {
+  if (update.kind !== 'tool_update') return update;
+  const meta = raw._meta as { mcp_output_delta?: { data?: unknown } } | null | undefined;
+  const data = meta?.mcp_output_delta?.data;
+  if (typeof data !== 'string') return update;
+  const line = data
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .filter(Boolean)
+    .at(-1);
+  if (!line) return update;
+  return { ...update, progress: compactText(line, 160) };
 }
 
 type CollabInput = {

@@ -297,3 +297,17 @@ describe('enrichCodexUpdate multi-agent tools', () => {
     expect(enrichCodexUpdate(update, raw)).toBe(update);
   });
 });
+
+describe('enrichCodexUpdate MCP progress', () => {
+  it('keeps the latest progress line while an integration call runs', () => {
+    const raw = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'tc-1',
+      _meta: { mcp_output_delta: { data: 'connecting\nfetching issues (page 2)\n' } },
+    } as unknown as SessionUpdate;
+    expect(enrichCodexUpdate(makeToolUpdate({ status: null }), raw)).toMatchObject({
+      kind: 'tool_update',
+      progress: 'fetching issues (page 2)',
+    });
+  });
+});

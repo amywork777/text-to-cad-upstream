@@ -14,8 +14,14 @@
  *   - Returns { kind: 'ignored' } for variants not yet rendered.
  */
 
-import type { SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk';
-import type { NormalizedDiff, NormalizedEvent, NormalizedToolStatus } from './normalized-event';
+import type { ContentBlock, SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk';
+import type {
+  NormalizedDiff,
+  NormalizedEvent,
+  NormalizedResourceLink,
+  NormalizedToolLocation,
+  NormalizedToolStatus,
+} from './normalized-event';
 
 function extractDiffs(
   content: ReadonlyArray<ToolCallContent> | null | undefined
@@ -101,31 +107,118 @@ function extractInputSummary(update: SessionUpdate): string | undefined {
   return undefined;
 }
 
+/** Embedded text resources are kept whole up to this size; larger ones are cut. */
+const EMBEDDED_RESOURCE_TEXT_LIMIT = 16_000;
+
+type MessageContent =
+  | { kind: 'text'; text: string }
+  | { kind: 'link'; link: NormalizedResourceLink }
+  | { kind: 'image' }
+  | { kind: 'ignored' };
+
+/**
+ * Every content block a message chunk can carry. Text streams as-is,
+ * resource links become rows, embedded text resources are inlined under their
+ * uri, and images are attached by the runtime's attachment ingress (the chunk
+ * itself keeps an empty text so the attachment has a message to hang on).
+ * Audio and binary resources have no rendering and are skipped.
+ */
+function messageContent(content: ContentBlock): MessageContent {
+  switch (content.type) {
+    case 'text':
+      return content.text ? { kind: 'text', text: content.text } : { kind: 'ignored' };
+    case 'resource_link':
+      return {
+        kind: 'link',
+        link: {
+          uri: content.uri,
+          name: content.name,
+          ...(typeof content.title === 'string' ? { title: content.title } : {}),
+          ...(typeof content.description === 'string' ? { description: content.description } : {}),
+          ...(typeof content.mimeType === 'string' ? { mimeType: content.mimeType } : {}),
+          ...(typeof content.size === 'number' ? { size: content.size } : {}),
+        },
+      };
+    case 'resource': {
+      const resource = content.resource as { uri?: unknown; text?: unknown };
+      if (typeof resource.text !== 'string' || !resource.text) return { kind: 'ignored' };
+      const body =
+        resource.text.length > EMBEDDED_RESOURCE_TEXT_LIMIT
+          ? `${resource.text.slice(0, EMBEDDED_RESOURCE_TEXT_LIMIT)}\n… (truncated)`
+          : resource.text;
+      const label = typeof resource.uri === 'string' && resource.uri ? `${resource.uri}\n` : '';
+      return { kind: 'text', text: `\n${label}${body}\n` };
+    }
+    case 'image':
+      return { kind: 'image' };
+    default:
+      return { kind: 'ignored' };
+  }
+}
+
+function decodeMessageChunk(
+  role: 'user' | 'assistant',
+  update: Extract<SessionUpdate, { sessionUpdate: 'user_message_chunk' | 'agent_message_chunk' }>
+): NormalizedEvent {
+  const content = messageContent(update.content);
+  if (content.kind === 'ignored') return { kind: 'ignored' };
+  const base = { kind: 'message' as const, role, messageId: update.messageId ?? null };
+  switch (content.kind) {
+    case 'text':
+      return { ...base, text: content.text };
+    case 'link':
+      return { ...base, text: '', links: [content.link] };
+    case 'image':
+      return { ...base, text: '' };
+  }
+}
+
+function extractLocations(update: SessionUpdate): NormalizedToolLocation[] | undefined {
+  const raw = (update as unknown as { locations?: unknown }).locations;
+  if (!Array.isArray(raw)) return undefined;
+  const locations: NormalizedToolLocation[] = [];
+  for (const entry of raw) {
+    const candidate = entry as { path?: unknown; line?: unknown } | null;
+    if (typeof candidate?.path !== 'string' || !candidate.path) continue;
+    locations.push({
+      path: candidate.path,
+      ...(typeof candidate.line === 'number' ? { line: candidate.line } : {}),
+    });
+  }
+  return locations.length > 0 ? locations : undefined;
+}
+
+function planEntries(raw: unknown): Extract<NormalizedEvent, { kind: 'plan' }>['entries'] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((entry) => {
+    const candidate = entry as { content?: unknown; status?: unknown; priority?: unknown };
+    return {
+      content: typeof candidate.content === 'string' ? candidate.content : '',
+      status: planEntryStatus(candidate.status),
+      priority: planEntryPriority(candidate.priority),
+    };
+  });
+}
+
+function planEntryStatus(value: unknown): 'pending' | 'in_progress' | 'completed' {
+  return value === 'in_progress' || value === 'completed' ? value : 'pending';
+}
+
+function planEntryPriority(value: unknown): 'high' | 'medium' | 'low' {
+  return value === 'high' || value === 'low' ? value : 'medium';
+}
+
 /**
  * Decode a raw ACP SessionUpdate into a NormalizedEvent.
  * Stateless — does not depend on turn or session context.
  */
 export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
   switch (update.sessionUpdate) {
-    case 'user_message_chunk': {
-      if (update.content.type !== 'text' || !update.content.text) return { kind: 'ignored' };
-      return {
-        kind: 'message',
-        role: 'user',
-        messageId: update.messageId ?? null,
-        text: update.content.text,
-      };
-    }
+    case 'user_message_chunk':
+      return decodeMessageChunk('user', update);
 
-    case 'agent_message_chunk': {
-      if (update.content.type !== 'text' || !update.content.text) return { kind: 'ignored' };
-      return {
-        kind: 'message',
-        role: 'assistant',
-        messageId: update.messageId ?? null,
-        text: update.content.text,
-      };
-    }
+    case 'agent_message_chunk':
+      return decodeMessageChunk('assistant', update);
 
     case 'agent_thought_chunk': {
       if (update.content.type !== 'text' || !update.content.text) return { kind: 'ignored' };
@@ -139,6 +232,7 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
     case 'tool_call': {
       const terminalId = extractTerminalId(update);
       const inputSummary = extractInputSummary(update);
+      const locations = extractLocations(update);
       return {
         kind: 'tool_call',
         toolCallId: update.toolCallId,
@@ -149,12 +243,14 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         diffs: extractDiffs(update.content),
         ...(inputSummary !== undefined ? { inputSummary } : {}),
         ...(terminalId !== undefined ? { terminalId } : {}),
+        ...(locations !== undefined ? { locations } : {}),
       };
     }
 
     case 'tool_call_update': {
       const outputText = extractTextOutput(update.content ?? undefined);
       const terminalId = extractTerminalId(update);
+      const locations = extractLocations(update);
       return {
         kind: 'tool_update',
         toolCallId: update.toolCallId,
@@ -165,6 +261,7 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         diffs: extractDiffs(update.content ?? undefined),
         ...(outputText !== undefined ? { outputText } : {}),
         ...(terminalId !== undefined ? { terminalId } : {}),
+        ...(locations !== undefined ? { locations } : {}),
       };
     }
 
@@ -218,8 +315,32 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       return { kind: 'title', title: raw.title };
     }
 
-    // plan_update and plan_removed are UNSTABLE/ID-based ACP variants gated
-    // behind PlanCapabilities — not emitted by Claude. Ignored for now.
+    case 'plan_update': {
+      // Experimental ACP plan formats. Item plans replace the entries; a
+      // markdown or file plan is shown as one entry so it is never lost.
+      const plan = (
+        update as unknown as {
+          plan?: { type?: unknown; entries?: unknown; content?: unknown; uri?: unknown };
+        }
+      ).plan;
+      if (!plan || typeof plan !== 'object') return { kind: 'ignored' };
+      if (plan.type === 'items') return { kind: 'plan', entries: planEntries(plan.entries) };
+      const text =
+        plan.type === 'markdown' && typeof plan.content === 'string'
+          ? plan.content
+          : plan.type === 'file' && typeof plan.uri === 'string'
+            ? `Plan: ${plan.uri}`
+            : null;
+      if (!text) return { kind: 'ignored' };
+      return {
+        kind: 'plan',
+        entries: [{ content: text, status: 'in_progress', priority: 'medium' }],
+      };
+    }
+
+    case 'plan_removed':
+      return { kind: 'plan', entries: [] };
+
     default:
       return { kind: 'ignored' };
   }

@@ -75,6 +75,15 @@ export async function persistToolOutputAttachments(input: {
 }
 
 function toolOutputImages(update: SessionUpdate): ProviderImage[] {
+  if (
+    (update.sessionUpdate === 'agent_message_chunk' ||
+      update.sessionUpdate === 'user_message_chunk') &&
+    update.content.type === 'image'
+  ) {
+    return [
+      { data: update.content.data, mimeType: update.content.mimeType, uri: update.content.uri },
+    ];
+  }
   if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update')
     return [];
   const images: ProviderImage[] = [];

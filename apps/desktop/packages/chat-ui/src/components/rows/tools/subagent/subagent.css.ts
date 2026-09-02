@@ -83,6 +83,15 @@ export const subagentStatusRow = style({
   fontSize: vars.typeBodyFontSize,
 });
 
+/** What the agent reported back, kept to one truncated line beside its status. */
+export const subagentStatusDetail = style({
+  minWidth: 0,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+  color: vars.fgMuted,
+});
+
 export const subagentStatusRowCollapsible = style({
   cursor: 'pointer',
   selectors: {

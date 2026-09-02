@@ -3,6 +3,8 @@ export type {
   EnrichHook,
   NormalizedDiff,
   NormalizedEvent,
+  NormalizedResourceLink,
+  NormalizedToolLocation,
   NormalizedToolStatus,
   PlanEntryInput,
   SessionUsage,
