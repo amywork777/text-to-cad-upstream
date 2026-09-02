@@ -25,7 +25,9 @@ def named_tmp_root(name: str) -> Path:
 # not ours. Kept as a literal here because the support package must not
 # import cadgen to clean up a directory.
 WINDOWS_SHARING_VIOLATION = 32
-CLEANUP_RETRY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4)
+# Widened after the 750 ms ladder lost once more on the runner (2026-09-02):
+# the scanner's hold on a just-read file can outlast a second. ~6 s total.
+CLEANUP_RETRY_DELAYS_SECONDS = (0.05, 0.1, 0.2, 0.4, 0.8, 1.6, 3.2)
 
 
 class RetryingTemporaryDirectory(tempfile.TemporaryDirectory[str]):
@@ -43,13 +45,14 @@ class RetryingTemporaryDirectory(tempfile.TemporaryDirectory[str]):
     on that exact interpreter -- so the cleanup waits it out.
 
     Deliberately narrow, mirroring the atomic rename: only ``WinError 32``
-    retries (five attempts over 750 ms, then the error propagates), the
+    retries (eight attempts over about six seconds, then the error propagates), the
     attribute does not exist off Windows so this is plain ``cleanup()`` on
     POSIX, and nothing is ignored -- a directory that cannot be removed in that
     window still fails the test loudly, as a real leaked handle should.
     """
 
     def cleanup(self) -> None:
+        import gc
         import time
 
         for delay in (*CLEANUP_RETRY_DELAYS_SECONDS, None):
@@ -59,4 +62,7 @@ class RetryingTemporaryDirectory(tempfile.TemporaryDirectory[str]):
             except OSError as error:
                 if getattr(error, "winerror", None) != WINDOWS_SHARING_VIOLATION or delay is None:
                     raise
+                # A handle kept alive only by a reference cycle is released here,
+                # so an in-process holder cannot masquerade as the scanner.
+                gc.collect()
                 time.sleep(delay)
