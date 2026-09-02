@@ -1,0 +1,62 @@
+{
+  "type": "designHistory",
+  "version": 1,
+  "identityScope": "revision",
+  "binding": {
+    "hashAlgorithm": "sha256",
+    "sourcePath": "src/bracket.py",
+    "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "stepPath": "STEP/bracket.step",
+    "stepHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "groups": [
+    {
+      "id": "group:bracket",
+      "label": "Bracket",
+      "functionName": "bracket",
+      "dependencyIds": [],
+      "featureIds": ["feature:bracket:rectangle:1"]
+    }
+  ],
+  "features": [
+    {
+      "id": "feature:bracket:rectangle:1",
+      "groupId": "group:bracket",
+      "operation": "Rectangle",
+      "label": "Rectangle sketch",
+      "kind": "sketch",
+      "mode": "add",
+      "source": {
+        "path": "src/bracket.py",
+        "start": 120,
+        "end": 140,
+        "startLine": 6,
+        "startColumn": 12,
+        "endLine": 6,
+        "endColumn": 32
+      },
+      "editability": {
+        "mode": "read-only",
+        "parameterIds": []
+      },
+      "selectorRefs": [
+        {
+          "kind": "face",
+          "ref": "cadgen://bracket/face/top"
+        }
+      ],
+      "sketch": {
+        "plane": "XZ",
+        "transform": {
+          "origin": [0, -20, 0],
+          "xAxis": [1, 0, 0],
+          "yAxis": [0, 0, 1],
+          "normal": [0, -1, 0]
+        },
+        "dimensionIds": []
+      }
+    }
+  ],
+  "parameters": [],
+  "diagnostics": []
+}
