@@ -2,6 +2,7 @@ import { createController, type Controller } from '@emdash/wire/rpc';
 import type { BrowserDataClearKind, BrowsingDataKind } from '@core/primitives/browser/api';
 import {
   browserContract,
+  type CadArtifactScanResult,
   type CadDrawingResult,
   type CadProvenanceForgetResult,
   type CadValidationResult,
@@ -33,6 +34,10 @@ export type BrowserOperations = {
     workspacePath: string;
     filePath: string;
   }): Promise<CadDrawingResult> | CadDrawingResult;
+  listCadArtifacts(input: {
+    workspacePath: string;
+    sinceMs: number;
+  }): Promise<CadArtifactScanResult> | CadArtifactScanResult;
   openDevTools(browserId: string): BrowserActionResult;
   captureScreenshot(browserId: string): Promise<BrowserActionResult>;
   captureScreenshotForChat(browserId: string): Promise<BrowserScreenshotResult>;
@@ -55,6 +60,7 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     rebuildCadModel: (input) => browserOperations.rebuildCadModel(input),
     forgetCadModelProvenance: (input) => browserOperations.forgetCadModelProvenance(input),
     createCadDrawing: (input) => browserOperations.createCadDrawing(input),
+    listCadArtifacts: (input) => browserOperations.listCadArtifacts(input),
     openDevTools: ({ browserId }) => browserOperations.openDevTools(browserId),
     captureScreenshot: ({ browserId }) => browserOperations.captureScreenshot(browserId),
     captureScreenshotForChat: ({ browserId }) =>

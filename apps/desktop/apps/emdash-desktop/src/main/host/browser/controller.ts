@@ -10,6 +10,7 @@ import { getAppSettingsService } from '@main/bootstrap/core/service-instances';
 import { configureBrowserProfileSession } from '@main/host/browser/browser-profile-session';
 import { browserWebContentsRegistry } from '@main/host/browser/browser-webcontents-registry';
 import { isBrowserPartition } from '@main/host/browser/webview-security';
+import { listCadArtifacts } from '@main/host/cad/cad-artifact-scan';
 import { createCadDrawing } from '@main/host/cad/cad-drawing-service';
 import {
   forgetCadModelProvenance,
@@ -59,6 +60,8 @@ export const browserOperations = {
   forgetCadModelProvenance,
 
   createCadDrawing,
+
+  listCadArtifacts,
 
   openDevTools: (browserId: string) => ({
     success: import.meta.env.DEV && browserWebContentsRegistry.openDevTools(browserId),
