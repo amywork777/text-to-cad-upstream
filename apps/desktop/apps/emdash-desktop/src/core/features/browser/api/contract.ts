@@ -44,6 +44,16 @@ export type CadProvenanceForgetResult =
   | { success: true; removed: string[] }
   | { success: false; error: string };
 
+export type CadArtifactScanResult =
+  | {
+      success: true;
+      /** Workspace-relative model artifacts written since the requested time, oldest first. */
+      artifacts: Array<{ path: string; mtimeMs: number }>;
+      /** True when the walk stopped early because the workspace is too large. */
+      truncated: boolean;
+    }
+  | { success: false; error: string };
+
 export const browserDomain = 'browser' as const;
 
 export const browserContract = defineContract({
@@ -90,6 +100,10 @@ export const browserContract = defineContract({
   createCadDrawing: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),
     output: z.custom<CadDrawingResult>(),
+  }),
+  listCadArtifacts: procedure({
+    input: z.object({ workspacePath: z.string(), sinceMs: z.number() }),
+    output: z.custom<CadArtifactScanResult>(),
   }),
   openDevTools: procedure({
     input: z.object({ browserId: z.string() }),

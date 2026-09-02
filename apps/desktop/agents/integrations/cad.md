@@ -135,6 +135,21 @@ authorization, source updates, rebuild, validation, rollback, and artifact accep
 never writes source or accepts geometry on its own. Until then, recipes are edited in the desktop's
 general source editor and rebuilt through the lifecycle above.
 
+## Artifacts written by any agent
+
+Nothing in the app knows which agent wrote a file, and a Codex or Claude
+subagent writes into the same workspace as its parent. `CadTaskRunLifecycle`
+therefore watches every conversation in the task: when an agent stops working,
+`listCadArtifacts` (a host-side walk that skips runtime, cache, and dependency
+folders) returns the model artifacts written since that turn started, and
+`planCadArtifactReveal` decides what to do with the ones the catalog does not
+already track. With no CAD tab open the first model (a STEP when there is one)
+opens in the artifact pane; anything else is announced with an Open action so a
+viewer the user is reviewing is never replaced mid-turn. Remote workspaces are
+skipped because the viewer only serves local directories, and artifacts written
+outside the workspace (a git worktree, a temp directory) stay invisible: the
+viewer cannot serve them either.
+
 ## Acceptance gate
 
 Before shipping a desktop build, verify the installed application rather than only a checkout:

@@ -29,6 +29,7 @@ import {
   useTaskComposition,
 } from '@core/features/workbench/api/browser/task-composition-context';
 import { useMemento } from '@core/primitives/mementos/react/use-memento';
+import { useCadArtifactReveal } from './cad-artifact-reveal';
 import {
   clearCadTaskRunOwnership,
   getFocusedCadArtifact,
@@ -52,12 +53,23 @@ import {
  */
 export const CadTaskRunLifecycle = observer(function CadTaskRunLifecycle() {
   const task = useTaskComposition();
+  const conversations = useConversations();
   const [catalog, setCatalog] = useMemento(cadModelCatalogMemento);
   const catalogRef = useRef(catalog);
   catalogRef.current = catalog;
   const preparingRef = useRef(false);
   const workspacePath = task.workspace?.path;
   const connectionId = task.workspace?.sshConnectionId;
+  const isTrackedArtifact = useCallback(
+    (relativePath: string) =>
+      Object.values(catalogRef.current.models).some(
+        (model) =>
+          model.modelPath === relativePath ||
+          model.artifacts.some((artifact) => artifact.path === relativePath)
+      ),
+    []
+  );
+  useCadArtifactReveal(task, conversations, isTrackedArtifact);
 
   useEffect(() => {
     const target = { projectId: task.projectId, taskId: task.taskId };
