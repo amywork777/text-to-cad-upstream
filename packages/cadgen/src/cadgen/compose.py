@@ -105,40 +105,18 @@ def _run_scope(scope_id: str, entry_file: Path, root: Path,
                 _stats["hits"] += 1
             return value
 
-    # A miss must execute against CURRENT sources: the process may hold stale
-    # first-party modules (a helper edited since they were imported), so the
-    # scope gets the same clean-module guarantee the generation runner gives a
-    # full run. Existing references in the caller keep working; re-imports
-    # inside this scope see fresh code.
-    from cadgen._internal.source_hash import evict_first_party_modules
-
-    evict_first_party_modules()
-    # CPython validates .pyc files by (whole-second mtime, size): two
-    # same-length edits inside one second load STALE BYTECODE on re-import —
-    # exactly the cadence of an agent-driven edit loop. A miss is already a
-    # rebuild, so drop the bytecode caches next to this scope's sources.
-    import shutil
-
-    pycache_parents = {Path(entry_file).resolve().parent}
-    pycache_parents |= {
-        f.parent for f in scope_capture.static_import_closure(Path(entry_file), root)
-    }
-    for parent in pycache_parents:
-        shutil.rmtree(parent / "__pycache__", ignore_errors=True)
-    # Belt and braces: the first-party classifier is environment-derived, so
-    # also drop by location — any loaded module living under this scope's
-    # root is definitionally this model's code and must re-import fresh.
-    root_resolved = Path(root).resolve()
-    for name, module in list(sys.modules.items()):
-        file_name = getattr(module, "__file__", None)
-        if not file_name:
-            continue
-        try:
-            inside = Path(file_name).resolve().is_relative_to(root_resolved)
-        except (OSError, ValueError):
-            continue
-        if inside:
-            sys.modules.pop(name, None)
+    # A miss runs against the modules the JOB started with -- never against a
+    # re-imported set. This used to evict every first-party module (and purge
+    # their bytecode) right here, on every miss, so that a resident worker's
+    # stale helper could not leak into a scope. That guarantee belongs to the
+    # job boundary, where the generation runner and the daemon worker already
+    # provide it; taken mid-job it broke the run instead: in a worker the
+    # script's folder is off sys.path once its body has loaded, so a lazy
+    # ``from lib import x`` inside a function after the first miss found no
+    # ``lib`` at all (three builders lost cold rebuilds to it), and in-process
+    # the re-import made a SECOND ``lib`` beside the one the model already held,
+    # doubling every module-level cache and palette. Sources do not change inside
+    # one job; nothing here may touch sys.modules.
     with scope_capture.scoped_recording(entry_file, root) as recording:
         result = call()
     with _lock:

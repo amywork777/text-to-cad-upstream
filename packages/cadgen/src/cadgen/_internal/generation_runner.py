@@ -112,6 +112,30 @@ def _generator_search_paths(resolved_script_path: Path) -> list[str]:
     return search_paths
 
 
+def _purge_stale_bytecode(script_path: Path) -> None:
+    """Drop ``__pycache__`` beside the generator and its static import closure, once per job.
+
+    CPython validates a ``.pyc`` by (whole-second mtime, size): two same-length
+    edits inside one second load STALE BYTECODE on re-import -- exactly the
+    cadence of an agent-driven edit loop. The job boundary is the one place the
+    first-party module space is rebuilt, so it is the one place this belongs
+    (the scope layer used to do it on every miss, mid-job, alongside an eviction
+    that broke lazy imports)."""
+    import shutil
+
+    from cadgen._internal import scope_capture
+
+    resolved = script_path.resolve()
+    parents = {resolved.parent}
+    for root in _generator_search_paths(resolved):
+        try:
+            parents |= {f.parent for f in scope_capture.static_import_closure(resolved, root)}
+        except Exception:  # noqa: BLE001 - a closure that cannot be traced still gets the script's own folder purged
+            continue
+    for parent in parents:
+        shutil.rmtree(parent / "__pycache__", ignore_errors=True)
+
+
 def _sibling_module_root(name: str | None, script_path: Path) -> str | None:
     """The generator search root that WOULD have satisfied ``import name``, or
     None when the missing module is not a first-party sibling at all."""
@@ -512,6 +536,7 @@ def _run_script_generator_inner(
     # itself, but a data file it reads does not, so `cadgen.read_step` declares one
     # here and it joins the closure like any other input.
     evict_first_party_modules()
+    _purge_stale_bytecode(spec.script_path)
     modules_before_load = set(sys.modules)
     with record_first_party_execution() as executed_files, record_discovered_inputs() as read_files:
         with logger.timed(f"load generator {spec.source_ref}"):
