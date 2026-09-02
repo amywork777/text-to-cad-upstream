@@ -29,6 +29,20 @@ export function subagentHeaderHFromLineHeight(lineHeight: number): number {
   return lineHeight + SUBAGENT_ROW_GAP + SUBAGENT_STATUS_ROW_H;
 }
 
+const SUBAGENT_PREVIEW_LIMIT = 160;
+
+function subagentOutputPreview(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const line = text
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > SUBAGENT_PREVIEW_LIMIT
+    ? `${line.slice(0, SUBAGENT_PREVIEW_LIMIT - 1)}…`
+    : line;
+}
+
 export function subagentFromItem(
   item: SpawnSubagentToolNode,
   ctx: SegmentCtx
@@ -37,6 +51,7 @@ export function subagentFromItem(
   const status = item.status;
   const error = 'error' in item && typeof item.error === 'string' ? item.error : undefined;
   const name = item.name || item.title || 'Subagent';
+  const outputPreview = subagentOutputPreview(item.outputText);
   return {
     kind: 'subagent',
     id: item.id,
@@ -47,6 +62,7 @@ export function subagentFromItem(
     background: item.background,
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
     error,
+    ...(outputPreview ? { outputPreview } : {}),
   };
 }
 

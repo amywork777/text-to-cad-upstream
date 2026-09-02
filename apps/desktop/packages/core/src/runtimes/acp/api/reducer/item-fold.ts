@@ -20,12 +20,14 @@ import type {
   ModifyFileToolCall,
   TranscriptItem,
   TranscriptMessage,
+  TranscriptResourceLink,
   TranscriptThinking,
   ToolCallItem,
   ToolGroup,
   ToolNode,
   ToolStatus,
 } from '../models/turns';
+import { resolveResourceTarget } from '../models/turns/resource-links';
 import {
   makeDiffId,
   makeMessageId,
@@ -34,7 +36,12 @@ import {
   makeToolGroupId,
   makeToolId,
 } from './ids';
-import type { NormalizedDiff, NormalizedEvent, NormalizedToolStatus } from './normalized-event';
+import type {
+  NormalizedDiff,
+  NormalizedEvent,
+  NormalizedResourceLink,
+  NormalizedToolStatus,
+} from './normalized-event';
 
 export type FoldEvent =
   | Exclude<NormalizedEvent, { kind: 'message' | 'thinking' }>
@@ -119,7 +126,8 @@ function isWebFetchKind(toolKind: string | null | undefined): boolean {
 }
 
 function inferReadPath(title: string): string | undefined {
-  const match = /^Read\s+(.+?)(?:\s+\(|$)/.exec(title);
+  // Claude: "Read src/a.ts"; Codex: "Read file 'src/a.ts'".
+  const match = /^Read(?:\s+file)?\s+['"]?(.+?)['"]?(?:\s+\(|$)/.exec(title);
   return match?.[1];
 }
 
@@ -205,6 +213,7 @@ export function createToolCallItem(params: {
   outputText?: string;
   terminalId?: string;
   attachments?: ToolCallItem['attachments'];
+  locations?: ReadonlyArray<{ path: string }>;
 }): ToolCallItem {
   const failure =
     mapToolStatus(params.status) === 'error' ? toolErrorSummary(params.outputText) : undefined;
@@ -236,10 +245,23 @@ export function createToolCallItem(params: {
     return { kind: 'web-fetch-tool-call', ...base, url: title };
   }
   if (isReadKind(toolKind, title)) {
+    const path = inferReadPath(title) ?? params.locations?.[0]?.path;
     return {
       kind: 'read-tool-call',
       ...base,
-      ...(inferReadPath(title) ? { path: inferReadPath(title) } : {}),
+      ...(path ? { path } : {}),
+    };
+  }
+  if (isEditKind(toolKind)) {
+    // An edit that reported no diff (a failed or diff-less write) still shows
+    // as a row naming the file, instead of vanishing from the thread.
+    const path = params.locations?.[0]?.path;
+    return {
+      kind: 'unknown-tool-call',
+      ...base,
+      toolKind,
+      name: title,
+      ...(path && base.inputSummary === undefined ? { inputSummary: path } : {}),
     };
   }
   if (isExecuteKind(toolKind)) {
@@ -260,7 +282,8 @@ function updateToolCallItem(
   status: NormalizedToolStatus | null,
   outputText?: string,
   terminalId?: string,
-  attachments?: ToolCallItem['attachments']
+  attachments?: ToolCallItem['attachments'],
+  progress?: string
 ): ToolCallItem {
   const mapped = mapToolStatus(status ?? undefined);
   const nextTitle = title ?? item.title;
@@ -276,6 +299,7 @@ function updateToolCallItem(
     ...(mergedAttachments !== undefined ? { attachments: mergedAttachments } : {}),
     ...(outputText !== undefined ? { outputText: capToolOutput(outputText) } : {}),
     ...(failure !== undefined ? { error: failure } : {}),
+    ...(progress !== undefined ? { progress } : {}),
   };
   switch (item.kind) {
     case 'execute-tool-call':
@@ -559,6 +583,7 @@ function upsertPlanToolCall(
     title: 'Plan updated',
     status: planStatus(event.entries),
     planId: SESSION_PLAN_ID,
+    entries: event.entries,
   };
   if (idx >= 0) {
     const existing = items[idx] as CreatePlanToolCall;
@@ -569,6 +594,7 @@ function upsertPlanToolCall(
             status: next.status,
             title: next.title,
             planId: next.planId,
+            entries: next.entries,
           }
         : item
     );
@@ -668,6 +694,43 @@ function normalizeToolStructure(items: TranscriptItem[], turnId: string): Transc
   return buildTree(flattenItems(items), turnId);
 }
 
+/** Add a row per linked resource after its message; the same uri is never listed twice. */
+function appendResourceLinks(
+  items: TranscriptItem[],
+  messageId: string,
+  links: ReadonlyArray<NormalizedResourceLink> | undefined
+): TranscriptItem[] {
+  if (!links?.length) return items;
+  const existing = items.filter(
+    (it): it is TranscriptResourceLink =>
+      it.kind === 'resource-link' && it.id.startsWith(`${messageId}:link:`)
+  );
+  const seen = new Set(existing.map((link) => link.uri));
+  let result = items;
+  let index = existing.length;
+  for (const link of links) {
+    if (seen.has(link.uri)) continue;
+    seen.add(link.uri);
+    result = [
+      ...result,
+      {
+        kind: 'resource-link',
+        id: `${messageId}:link:${index}`,
+        seq: nextSeq(result),
+        uri: link.uri,
+        name: link.name,
+        ...(link.title !== undefined ? { title: link.title } : {}),
+        ...(link.description !== undefined ? { description: link.description } : {}),
+        ...(link.mimeType !== undefined ? { mimeType: link.mimeType } : {}),
+        ...(link.size !== undefined ? { size: link.size } : {}),
+        target: resolveResourceTarget(link.uri),
+      },
+    ];
+    index += 1;
+  }
+  return result;
+}
+
 /**
  * Apply one NormalizedEvent to a turn's item list, returning an updated list.
  * The turnId is used for id synthesis — all item ids are scoped to the turn.
@@ -698,9 +761,16 @@ export function foldItem(
             : {}),
         };
         return normalizeToolStructure(
-          base.map((it, i) => (i === idx ? updated : it)),
+          appendResourceLinks(
+            base.map((it, i) => (i === idx ? updated : it)),
+            id,
+            event.links
+          ),
           turnId
         );
+      }
+      if (event.text.length === 0 && !event.attachments?.length && !event.links?.length) {
+        return items;
       }
       // New message.
       const newMsg: TranscriptMessage = {
@@ -711,7 +781,10 @@ export function foldItem(
         text: event.text,
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
       };
-      return normalizeToolStructure([...base, newMsg], turnId);
+      return normalizeToolStructure(
+        appendResourceLinks([...base, newMsg], id, event.links),
+        turnId
+      );
     }
 
     case 'subagent_update': {
@@ -789,8 +862,6 @@ export function foldItem(
         return normalizeToolStructure(next, turnId);
       }
 
-      if (isEditKind(event.toolKind)) return normalizeToolStructure(base, turnId);
-
       const tool = createToolCallItem({
         id: toolId,
         seq: nextSeq(base),
@@ -803,6 +874,7 @@ export function foldItem(
         ...(event.outputText !== undefined ? { outputText: event.outputText } : {}),
         ...(event.terminalId !== undefined ? { terminalId: event.terminalId } : {}),
         ...(event.attachments !== undefined ? { attachments: event.attachments } : {}),
+        ...(event.locations !== undefined ? { locations: event.locations } : {}),
       });
       const next = upsertToolCallItem(base, tool);
       return normalizeToolStructure(next, turnId);
@@ -813,8 +885,11 @@ export function foldItem(
       const parentToolCallId = event.parentToolCallId ?? undefined;
       const base = finalizeOpenThinking(flatItems, at);
       if (event.diffs.length > 0) {
+        const withoutPlaceholder = base.filter(
+          (it) => !(it.kind === 'unknown-tool-call' && it.id === toolId)
+        );
         const next = upsertFileOperations(
-          base,
+          withoutPlaceholder,
           toolId,
           event.toolCallId,
           event.title ?? 'Edit file',
@@ -835,12 +910,11 @@ export function foldItem(
           event.status,
           event.outputText,
           event.terminalId,
-          event.attachments
+          event.attachments,
+          event.progress
         );
         next = base.map((it, i) => (i === idx ? updated : it));
       } else if (hasFileOperationsForToolCall(base, event.toolCallId)) {
-        next = base;
-      } else if (isEditKind(event.toolKind)) {
         next = base;
       } else {
         next = upsertToolCallItem(
@@ -912,6 +986,7 @@ export function finalizeItems(items: TranscriptItem[], at: number): TranscriptIt
   return items.map((item): TranscriptItem => {
     switch (item.kind) {
       case 'message':
+      case 'resource-link':
         return item;
       case 'thinking':
         return item.status === 'thinking'

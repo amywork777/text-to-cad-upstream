@@ -1,4 +1,5 @@
 import {
+  agentStateSchema,
   planStateSchema,
   promptDraftSchema,
   sessionUsageSchema,
@@ -94,6 +95,7 @@ export class AcpLiveSession {
   readonly draft: RemoteValueState<z.infer<typeof promptDraftSchema> | null>;
   readonly terminals: RemoteValueState<TerminalState[]>;
   readonly mcpServers: RemoteValueState<Array<z.infer<typeof sessionMcpServerSchema>>>;
+  readonly agents: RemoteValueState<Array<z.infer<typeof agentStateSchema>>>;
   private readonly scope = createScope({ label: 'acp-live-session' });
   private readonly terminalLogs = new Map<
     string,
@@ -131,6 +133,7 @@ export class AcpLiveSession {
       z.array(sessionMcpServerSchema),
       this.scope
     );
+    this.agents = remoteValueState(member.states.agents, z.array(agentStateSchema), this.scope);
   }
 
   static async create(

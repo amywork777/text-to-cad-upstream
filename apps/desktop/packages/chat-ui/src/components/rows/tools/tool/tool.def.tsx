@@ -210,7 +210,9 @@ function outputPreviewFromItem(item: ToolNode): string | undefined {
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
   const presentation = toolPresentation(item);
-  const outputPreview = outputPreviewFromItem(item);
+  const running = 'status' in item && item.status === 'running';
+  const progress = base?.progress;
+  const outputPreview = running && progress ? progress : outputPreviewFromItem(item);
   return {
     kind: 'tool',
     id: item.id,

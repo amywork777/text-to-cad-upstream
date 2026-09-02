@@ -73,6 +73,8 @@ export type ChatToolCall = {
   inputSummary?: string;
   /** First line of the tool's text result, shown under the row when the provider reported one. */
   outputPreview?: string;
+  /** Latest provider progress line while the call runs. */
+  progress?: string;
   /** Runtime-owned generated image references. Bytes are resolved lazily by the host. */
   outputAttachments?: ChatImageAttachment[];
   /** Id of the parent tool call (for hierarchical rendering). */
@@ -108,6 +110,8 @@ export type ChatSubagentToolCall = {
   awaitingPermission?: boolean;
   /** Optional failure message shown in the failed state tooltip. */
   error?: string;
+  /** First line of what the agent reported back, shown once it finished. */
+  outputPreview?: string;
   /** Id of the parent tool call (for hierarchical rendering). */
   parentId?: string;
 };

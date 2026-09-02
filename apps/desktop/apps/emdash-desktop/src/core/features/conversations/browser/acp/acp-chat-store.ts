@@ -36,6 +36,16 @@ import { dispatchAcpPrompt, type AcpPromptDispatchResult } from './acp-prompt-di
 import { bindSessionTerminalOutputs } from './acp-terminal-output-binding';
 import { deriveAgentProgress, type AgentProgress } from './agent-progress';
 
+export type BackgroundAgent = {
+  agentId: string;
+  name: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: number;
+  completedAt?: number;
+  summary?: string;
+  outputFile?: string;
+};
+
 export interface AgentAffordances {
   isWorking: boolean;
   isBusy: boolean;
@@ -245,6 +255,21 @@ export class AcpChatStore {
     cost?: { amount: number; currency: string } | null;
   } | null {
     return this.session?.usage.current() ?? null;
+  }
+
+  /** Background subagents the runtime knows about, newest launch last. */
+  get backgroundAgents(): BackgroundAgent[] {
+    return (this.session?.agents.current() ?? [])
+      .filter((agent) => agent.background)
+      .map((agent) => ({
+        agentId: agent.agentId,
+        name: agent.name,
+        status: agent.status,
+        startedAt: agent.startedAt,
+        ...(agent.completedAt !== undefined ? { completedAt: agent.completedAt } : {}),
+        ...(agent.summary !== undefined ? { summary: agent.summary } : {}),
+        ...(agent.outputFile !== undefined ? { outputFile: agent.outputFile } : {}),
+      }));
   }
 
   get agentProgress(): AgentProgress {

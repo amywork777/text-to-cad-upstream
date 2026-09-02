@@ -39,3 +39,110 @@ describe('decodeSessionUpdate terminal attachment', () => {
     expect('terminalId' in event).toBe(false);
   });
 });
+
+describe('decodeSessionUpdate message content blocks', () => {
+  function chunk(content: Record<string, unknown>): SessionUpdate {
+    return {
+      sessionUpdate: 'agent_message_chunk',
+      messageId: 'm1',
+      content,
+    } as unknown as SessionUpdate;
+  }
+
+  it('turns a resource link into a message link', () => {
+    expect(
+      decodeSessionUpdate(
+        chunk({
+          type: 'resource_link',
+          uri: 'file:///repo/models/plate.step',
+          name: 'plate.step',
+          title: 'Plate',
+          mimeType: 'model/step',
+          size: 1234,
+        })
+      )
+    ).toEqual({
+      kind: 'message',
+      role: 'assistant',
+      messageId: 'm1',
+      text: '',
+      links: [
+        {
+          uri: 'file:///repo/models/plate.step',
+          name: 'plate.step',
+          title: 'Plate',
+          mimeType: 'model/step',
+          size: 1234,
+        },
+      ],
+    });
+  });
+
+  it('inlines embedded text resources under their uri', () => {
+    expect(
+      decodeSessionUpdate(
+        chunk({
+          type: 'resource',
+          resource: { uri: 'file:///repo/notes.md', mimeType: 'text/markdown', text: '# Notes' },
+        })
+      )
+    ).toMatchObject({ kind: 'message', text: '\nfile:///repo/notes.md\n# Notes\n' });
+  });
+
+  it('keeps an image chunk as an empty message for the attachment ingress', () => {
+    expect(
+      decodeSessionUpdate(chunk({ type: 'image', data: 'AAAA', mimeType: 'image/png' }))
+    ).toEqual({ kind: 'message', role: 'assistant', messageId: 'm1', text: '' });
+  });
+
+  it('ignores audio', () => {
+    expect(
+      decodeSessionUpdate(chunk({ type: 'audio', data: 'AAAA', mimeType: 'audio/wav' }))
+    ).toEqual({ kind: 'ignored' });
+  });
+});
+
+describe('decodeSessionUpdate tool locations and plans', () => {
+  it('carries reported file locations', () => {
+    const event = decodeSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'call-2',
+      title: 'Edit',
+      kind: 'edit',
+      status: 'in_progress',
+      locations: [{ path: '/repo/src/a.ts', line: 12 }, { path: 42 }],
+    } as unknown as SessionUpdate);
+    expect(event).toMatchObject({
+      kind: 'tool_call',
+      locations: [{ path: '/repo/src/a.ts', line: 12 }],
+    });
+  });
+
+  it('maps item, markdown, and removed plan updates onto the plan event', () => {
+    expect(
+      decodeSessionUpdate({
+        sessionUpdate: 'plan_update',
+        plan: {
+          type: 'items',
+          id: 'p1',
+          entries: [{ content: 'Write tests', status: 'in_progress', priority: 'high' }],
+        },
+      } as unknown as SessionUpdate)
+    ).toEqual({
+      kind: 'plan',
+      entries: [{ content: 'Write tests', status: 'in_progress', priority: 'high' }],
+    });
+    expect(
+      decodeSessionUpdate({
+        sessionUpdate: 'plan_update',
+        plan: { type: 'markdown', id: 'p1', content: '1. Do the thing' },
+      } as unknown as SessionUpdate)
+    ).toEqual({
+      kind: 'plan',
+      entries: [{ content: '1. Do the thing', status: 'in_progress', priority: 'medium' }],
+    });
+    expect(
+      decodeSessionUpdate({ sessionUpdate: 'plan_removed', id: 'p1' } as unknown as SessionUpdate)
+    ).toEqual({ kind: 'plan', entries: [] });
+  });
+});

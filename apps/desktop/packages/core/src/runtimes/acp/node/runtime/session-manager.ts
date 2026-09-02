@@ -994,8 +994,13 @@ export class SessionManager implements InboundRouter {
   private resolveConversationForSession(processKey: string, acpSessionId: string): string | null {
     const route = this.routes.get(processKey)?.get(acpSessionId);
     if (route) return route;
+    // The first update of a new session arrives before session/new resolves;
+    // it belongs to the one conversation loading on this process. With several
+    // loading at once the guess could stitch a session into the wrong thread,
+    // so the update is dropped (and logged) instead.
     const loading = this.loadingConversations.get(processKey);
-    const pending = loading?.values().next().value;
+    if (!loading || loading.size !== 1) return null;
+    const pending = loading.values().next().value;
     if (!pending) return null;
     this.registerRoute(processKey, acpSessionId, pending);
     return pending;
@@ -1207,6 +1212,7 @@ function withToolOutputAttachments(
 ): NormalizedEvent {
   if (!attachments?.length) return event;
   switch (event.kind) {
+    case 'message':
     case 'tool_call':
     case 'tool_update':
     case 'subagent':

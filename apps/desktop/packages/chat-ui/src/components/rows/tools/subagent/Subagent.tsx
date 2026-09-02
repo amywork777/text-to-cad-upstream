@@ -10,6 +10,7 @@ import {
   subagentIndicator,
   subagentName,
   subagentNameRow,
+  subagentStatusDetail,
   subagentStatusRow,
   subagentStatusRowCollapsible,
 } from './subagent.css';
@@ -79,6 +80,11 @@ export function SubagentHeader(props: {
         title={props.item.phase === 'failed' ? (props.item.error ?? 'Failed') : undefined}
       >
         <span>{label()}</span>
+        <Show when={props.item.outputPreview}>
+          <span class={subagentStatusDetail} title={props.item.outputPreview}>
+            · {props.item.outputPreview}
+          </span>
+        </Show>
         <Show when={props.collapsible}>
           <span class={clsx(subagentChevron, props.expanded && subagentChevronExpanded)}>›</span>
         </Show>

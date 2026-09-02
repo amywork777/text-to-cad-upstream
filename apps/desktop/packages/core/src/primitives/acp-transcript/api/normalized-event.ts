@@ -30,6 +30,19 @@ export type NormalizedDiff = {
 
 export type NormalizedToolStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
 
+/** An ACP `resource_link` content block: a file or URL the agent points the user at. */
+export type NormalizedResourceLink = {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  size?: number;
+};
+
+/** A file location an ACP tool call reports touching. */
+export type NormalizedToolLocation = { path: string; line?: number };
+
 export type NormalizedEvent =
   | {
       kind: 'message';
@@ -37,6 +50,8 @@ export type NormalizedEvent =
       messageId: string | null;
       text: string;
       attachments?: AttachmentRef[];
+      /** Resources the message links to; each becomes its own row after the text. */
+      links?: NormalizedResourceLink[];
     }
   | {
       kind: 'thinking';
@@ -54,6 +69,7 @@ export type NormalizedEvent =
       inputSummary?: string;
       outputText?: string;
       terminalId?: string;
+      locations?: NormalizedToolLocation[];
       /** Runtime-owned image output references; never provider base64 payloads. */
       attachments?: AttachmentRef[];
     }
@@ -123,6 +139,9 @@ export type NormalizedEvent =
       diffs: NormalizedDiff[];
       outputText?: string;
       terminalId?: string;
+      locations?: NormalizedToolLocation[];
+      /** Latest provider progress line for a call that is still running. */
+      progress?: string;
       /** Runtime-owned image output references; never provider base64 payloads. */
       attachments?: AttachmentRef[];
     }

@@ -53,6 +53,7 @@ export function summarizeCadTurns(
         if (item.text.trim()) thinkingText.push(item.text);
         continue;
       }
+      if (item.kind === 'resource-link') continue;
       collectToolNode(item, activities, artifacts);
     }
 

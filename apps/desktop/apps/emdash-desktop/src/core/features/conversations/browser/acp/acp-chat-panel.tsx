@@ -182,6 +182,50 @@ const ActiveAgentStatus = observer(function ActiveAgentStatus({
   );
 });
 
+const BACKGROUND_AGENT_STATUS: Record<'running' | 'completed' | 'failed', string> = {
+  running: 'running',
+  completed: 'done',
+  failed: 'failed',
+};
+
+/**
+ * Background subagents outlive the turn that launched them, so they get a
+ * strip of their own: every agent the runtime tracks, its state, and what it
+ * reported back, whether or not the foreground agent is still working.
+ */
+const BackgroundAgentsStatus = observer(function BackgroundAgentsStatus({
+  store,
+}: {
+  store: AcpChatStore;
+}) {
+  const agents = store.backgroundAgents;
+  if (agents.length === 0) return null;
+  const running = agents.filter((agent) => agent.status === 'running').length;
+  const heading =
+    running > 0
+      ? `${running} background agent${running === 1 ? '' : 's'} running`
+      : `${agents.length} background agent${agents.length === 1 ? '' : 's'} finished`;
+  return (
+    <div
+      className="mx-3 mb-1 flex min-w-0 flex-col gap-0.5 overflow-hidden rounded-md border bg-background/95 px-2.5 py-1.5 text-xs text-foreground-muted"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="font-medium text-foreground">{heading}</span>
+      {agents.slice(-4).map((agent) => (
+        <span
+          key={agent.agentId}
+          className="min-w-0 truncate"
+          title={[agent.summary, agent.outputFile].filter(Boolean).join('\n') || undefined}
+        >
+          {agent.name} · {BACKGROUND_AGENT_STATUS[agent.status]}
+          {agent.summary ? ` · ${agent.summary}` : ''}
+        </span>
+      ))}
+    </div>
+  );
+});
+
 /** Map an AcpPermissionRequest to the ComposerPermissionRequest shape the UI expects. */
 function toComposerPermission(
   req: AcpChatStore['permissionQueue'][number] | undefined
@@ -775,6 +819,7 @@ const ComposerForStore = observer(function ComposerForStore({
   return createPortal(
     <>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInputChange} />
+      <BackgroundAgentsStatus store={store} />
       {a.isWorking && <ActiveAgentStatus store={store} providerName={providerName} />}
       {disabledReason && (
         <div
