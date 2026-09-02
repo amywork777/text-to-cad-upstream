@@ -449,18 +449,16 @@ def _write_component_artifacts_atomic(
     same location-stripped BinTools bytes that computed the cid — and
     ``<cid>.surf`` — the render view. Surface extraction is READING; the
     blob is a plain write when the hashing payload is already in hand.
-    The surf goes in place LAST so its existence signals a complete set."""
+    The surf goes in place LAST so its existence signals a complete set.
+
+    No colour goes into the surf: the cid is geometry-only, so a colour there
+    would let two occurrences of one part with different colours share one
+    file and one of them render wrong. The descriptor's occurrence carries
+    colour (``_occurrence_color``) and the viewer applies it per record."""
     from cadgen._internal.surface_extract import extract_surface_component
 
     out_surf.parent.mkdir(parents=True, exist_ok=True)
     local = _unlocated_shape(shape)
-    color = getattr(local, "color", None)
-    part_color = None
-    if color is not None:
-        try:
-            part_color = tuple(color.to_tuple())
-        except Exception:
-            part_color = None
     _write_atomic(
         out_surf.with_name(f"{cad_ref}.brep"),
         brep_bytes if brep_bytes is not None else _shape_brep_bytes(shape),
@@ -470,7 +468,6 @@ def _write_component_artifacts_atomic(
         extract_surface_component(
             local.wrapped,
             face_colors=getattr(local, "cad_face_ordinal_colors", None),
-            part_color=part_color,
         ),
     )
     return out_surf

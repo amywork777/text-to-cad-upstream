@@ -133,6 +133,16 @@ browser — batch several views into one `--job` packet instead — and
 concurrent identical mesh exports of one document waste work (the shared
 freshness ledger makes them safe, not free).
 
+The lock is also why several agents building ONE assembly entry at once report
+long wall times that are not build cost: each waits for the holder, then
+finds the result current or rebuilds only its own scope. Measured on a
+sixteen-module engine with six builders, a ten-minute run was eight and a half
+minutes of `waiting for another run to finish building`. Give each parallel
+builder its own entry instead — a small `@step` script that composes only its
+subsystem (with the others' modules stubbed or omitted) — verify there, and
+build the full assembly once when the subsystems land. Memo scopes make that
+final build pay only for what changed.
+
 ## `src/README.md` — the model catalog
 
 Every project ships a short catalog so an agent landing in the project knows

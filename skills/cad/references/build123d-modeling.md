@@ -164,6 +164,28 @@ into the render package, so a colour set on a `Compound` that has children never
 reaches the screen. It does reach the STEP file's XCAF label, which is why this
 looks like it worked if you only check the STEP. Colour every leaf.
 
+## Finish
+
+Colour alone cannot tell cast from machined from carbon: those differ in how
+they RESPOND to light, and by default every part takes the viewer theme's one
+roughness/metalness/clearcoat. A leaf shape may carry a `cad_material` dict to
+override those per part; the values ride the render package's occurrence and
+the viewer applies them over the theme, so the same model reads differently
+under every theme without re-authoring:
+
+```python
+housing.cad_material = {"roughness": 0.85, "metalness": 0.2}            # as-cast
+journal.cad_material = {"roughness": 0.25, "metalness": 0.9}            # ground steel
+lacquer.cad_material = {"roughness": 0.4, "clearcoat": 1.0, "clearcoatRoughness": 0.1}
+window.cad_material = {"opacity": 0.35}
+```
+
+Keys: `roughness`, `metalness`, `clearcoat`, `clearcoatRoughness`, `opacity`,
+each clamped to 0..1; unknown keys are ignored. Like colour, it belongs on the
+LEAF — a group compound's `cad_material` reaches nothing — and it is a
+presentation hint only: STEP has no channel for it, so it lives in the package,
+not the file.
+
 ## Rotating a plane
 
 `Plane.rotated()` composes its matrix in **WORLD axes, not the plane's own**.

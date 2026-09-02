@@ -684,12 +684,13 @@ def extract_surface_component(
     shape,
     *,
     face_colors: dict | None = None,
-    part_color: tuple | list | None = None,
 ) -> bytes:
     """Serialize one (unlocated) component shape as a .surf container.
-    ``part_color`` is the part-level RGBA the component GLB used to bake into
-    its material; the descriptor's occurrences carry no colour, so it ships
-    on the component."""
+
+    Geometry and per-face colours only. The part-level colour is NOT in here:
+    the surf is content-addressed by geometry, so two occurrences of one part
+    in different colours share one file, and the descriptor's occurrence is
+    where colour rides (``component_package._occurrence_color``)."""
     bin_out = _Bin()
 
     face_map = TopTools_IndexedMapOfShape()
@@ -875,8 +876,6 @@ def extract_surface_component(
         "edges": edges,
         "counts": {"faces": face_map.Extent(), "edges": edge_map.Extent()},
     }
-    if part_color is not None:
-        index["partColor"] = [float(c) for c in part_color]
     json_bytes = json.dumps(index, separators=(",", ":")).encode("utf-8")
     payload = bin_out.payload()
     return (

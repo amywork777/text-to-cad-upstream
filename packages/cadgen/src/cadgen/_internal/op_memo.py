@@ -58,7 +58,15 @@ _OP_MEMO_VERSION = 3
 
 _lock = threading.RLock()
 _cache: OrderedDict[tuple, object] = OrderedDict()
-_tshape_bytes_memo: dict[object, str] = {}
+# Digest per TShape, so a shape that is an input to several ops serializes once.
+# BOUNDED and LRU, not "clear when huge": the keys are strong references to
+# OCCT TShapes, so every entry keeps a whole solid alive. Unbounded (it cleared
+# only past 4x the result cache, 131072 entries) it pinned every intermediate
+# boolean result of a 1400-part engine for the run's lifetime -- one input to
+# a process the OS killed at 200+ GB. Recent shapes are the ones re-hashed; a
+# miss costs one BinTools write.
+_TSHAPE_DIGEST_CAPACITY = 2048
+_tshape_bytes_memo: OrderedDict[object, str] = OrderedDict()
 # NOTE: an earlier revision stamped op-result TShapes with their producing
 # key so chained inputs could key without serialization. It destabilized
 # keys on movement-class models (1444 re-misses per warm run vs ~25
@@ -97,13 +105,14 @@ def _tshape_digest(wrapped) -> str:
     tshape = wrapped.TShape()
     cached = _tshape_bytes_memo.get(tshape)
     if cached is not None:
+        _tshape_bytes_memo.move_to_end(tshape)
         return cached
     stream = io.BytesIO()
     BinTools.Write_s(wrapped.Located(TopLoc_Location()), stream)
     digest = hashlib.sha256(stream.getvalue()).hexdigest()
-    if len(_tshape_bytes_memo) > 4 * _capacity():
-        _tshape_bytes_memo.clear()
     _tshape_bytes_memo[tshape] = digest
+    while len(_tshape_bytes_memo) > _TSHAPE_DIGEST_CAPACITY:
+        _tshape_bytes_memo.popitem(last=False)
     return digest
 
 
