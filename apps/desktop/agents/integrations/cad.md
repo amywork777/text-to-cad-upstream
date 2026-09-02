@@ -1,121 +1,145 @@
 # CAD integration
 
-Hardcore is a thread-first desktop shell for the Text-to-CAD toolchain. It keeps the existing
-Electron, ACP, Claude, and Codex foundations while treating accepted STEP files as first-class
-artifacts. It does not introduce a second agent runtime or attempt to become a full manual CAD
-editor.
+Hardcore is the thread-first desktop shell for Text-to-CAD. It lives at `apps/desktop` inside
+[earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad) and runs on that
+repository's canonical resources directly:
 
-## Current release boundary
+- `apps/viewer` — Jake's CAD Viewer (React client, stdlib-only Python server).
+- `packages/cadgen` — the `cadgen` distribution: `@step` recipes, the warm build daemon, the
+  content-addressed cache, and the `cadgen` inspection doors.
+- `packages/cadgen-js` — the shared render runtime, bundled into the viewer client at build time.
+- `skills/` — the agent skills, installed into Codex and Claude Code as the `cad@text-to-cad`
+  plugin.
 
-Hardcore's production Text-to-CAD pin remains fixed while Jake's 0.5 release branch is changing.
-Do not advance the vendor pin until an official 0.5 tag is available and the packaged-app acceptance
-gate passes against that exact tag. Compatibility work belongs behind the CAD adapter so a release
-upgrade is one controlled change rather than scattered path checks.
+There is no vendored Text-to-CAD copy, no second viewer runtime, and no desktop-owned cache or
+daemon. The desktop keeps its existing Electron shell, ACP sessions, Claude/Codex routing, and
+design system; the CAD adapter under `src/main/host/cad/` is the only part that knows where the
+canonical resources are.
 
-Run the existing setup and checks from the repository root:
+## Locating the canonical tree
+
+`src/main/host/cad/text-to-cad-layout.ts` resolves the tree once per call:
+
+1. `HARDCORE_TEXT_TO_CAD_ROOT`, when set.
+2. `Contents/Resources/text-to-cad` beside a packaged app.
+3. The nearest ancestor of the app that carries `VERSION`, `packages/cadgen/pyproject.toml`,
+   `skills/cad/SKILL.md`, and both plugin manifests — the monorepo root in a checkout.
+
+A checkout uses `apps/viewer` (kind `repository`); a packaged bundle uses the cad-viewer skill's
+materialized runtime at `skills/cad-viewer/scripts/viewer` (kind `bundle`), which is the same client
+and server laid out the way Jake publishes them. Nothing is inferred from cache directories or
+adjacent metadata files.
+
+Run the setup and checks from `apps/desktop`:
 
 ```bash
-pnpm cad:setup
-pnpm cad:check
-pnpm cad:test
+pnpm cad:setup    # runtime + viewer client + provider plugins
+pnpm cad:check    # report only
+pnpm cad:test     # Jake's selected suites, the viewer launch smoke, and a generate/validate smoke
 ```
 
-The setup provisions the supported provider CLIs, complete CAD skills, and one pinned local Python
-runtime. Keep skill folders intact: their scripts, references, packages, and viewer assets are part
-of the capability and cannot be replaced by copying only `SKILL.md`.
+`tooling/scripts/setup-cad.mjs` builds `apps/viewer/dist` when it is missing (npm, from
+`packages/cadgen-js` and `apps/viewer`), prepares the Python runtime, and registers the plugin.
+The Python runtime is, in order: `CAD_DESKTOP_PYTHON`, a checkout's own `.venv` when it imports
+cadgen from `packages/cadgen`, or a managed venv under the app's user data installed from
+`packages/cadgen` with `tooling/cad-runtime-constraints.txt` as the dependency lock (editable in a
+checkout). At runtime `HARDCORE_CAD_PYTHON` overrides the same choice.
+
+Provider plugins are installed from a filtered, symlink-free staging copy under the runtime root
+(`plugins/text-to-cad`): manifests, `skills/`, `LICENSE`, and `VERSION`, with the cad-viewer skill's
+runtime materialized as `dist/` + `server/` only. Codex `plugin add` drops symlinks silently and both
+provider caches copy whatever they are pointed at, so the develop-layout symlink and a repository
+full of `node_modules` must never be the marketplace source. The desktop never launches that copy.
 
 ## Product model
 
 The thread is the entry point. A user opens a project folder and can run many independent threads in
-parallel, like Codex or Cursor. A thread may create or edit any relevant STEP, drawing, assembly,
-analysis, document, or supporting file in that folder. It is not permanently owned by one model and
-does not require a custom engineering-project hierarchy, conversation taxonomy, or geometry-edit
-lease.
-
-The primary layout is:
+parallel. A thread may create or edit any relevant STEP, drawing, assembly, analysis, document, or
+supporting file in that folder. The primary layout is:
 
 ```text
 projects and threads | active conversation | artifacts and viewer
 ```
 
-Artifact tabs belong to the selected thread. Opening an existing CAD file should open its canonical
-STEP directly in the artifact area; users should not need to create or select a model-specific chat
-first. Advanced file browsing remains available through the desktop's ordinary project-file UI, not
-a duplicate file tree injected into the embedded viewer.
+Artifact tabs belong to the selected thread. Opening an existing CAD file opens its canonical STEP
+directly in the artifact area, served by the CAD Viewer for that thread's workspace. Advanced file
+browsing remains the desktop's ordinary project-file UI.
 
-## Canonical artifact lifecycle
+## Canonical artifact lifecycle (cadgen 0.5)
 
-The accepted on-disk STEP file and its recorded hash are canonical model state. A Python recipe is an
-optional linked source file that can rebuild the STEP; it is not the artifact shown in the 3D tab and
-it must never overwrite the STEP merely because a project or app restarted.
+The accepted on-disk STEP and its recorded SHA-256 are canonical model state. A plain `.py` recipe
+that decorates one function with `@step` is the optional source that can rebuild it. `<name>.step.py`
+is legacy: view-only until renamed by hand (cadgen 0.5 removed its migration codemod; see
+`docs/migrating-0.4-to-0.5.md` at the repository root).
 
 Every geometry-changing turn follows the same lifecycle:
 
-1. Hash and back up the currently accepted STEP and linked editable source.
-2. Let the selected agent edit files and explicitly rebuild when requested.
-3. Validate the resulting STEP independently of the agent's completion message.
-4. Accept and reload only the validated on-disk artifact.
-5. Restore the previous accepted files after failure, interruption, or invalid geometry.
+1. Hash and back up the accepted STEP, its optional `.step.json` sidecar, and the linked recipe.
+2. Let the selected agent edit files, or apply the user's explicit recipe edit in the source editor.
+3. Run the recipe through the one v0.5 source door — `python <recipe>.py --json` — with cadgen's
+   warm daemon and content-addressed cache on their defaults and never `--force`; cadgen's own
+   freshness gate decides whether anything rebuilds.
+4. Validate the resulting STEP independently with `cadgen step inspect refs` and
+   `cadgen step inspect validate`.
+5. Accept and reload only the validated on-disk artifact.
+6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry.
 
-Opening, restart recovery, and ordinary validation are read-only. They inspect and hash the STEP;
-they never run source with a force or rebuild option. Stop must terminate the agent and descendant
-processes before recovery is evaluated.
+Opening, previewing, and restart recovery are read-only: they hash and inspect the STEP and never run
+Python. A recipe edit alone never overwrites a newer STEP; only an explicit rebuild does, and its
+output is accepted only after validation.
 
-## 0.5 compatibility seam
+The recipe behind an accepted STEP is resolved, in order of trust, from the desktop's persisted
+model catalog, from cadgen's own provenance record
+(`<cache>/records/<sha256(resolved artifact path)[:24]>.source.json`, verified both ways against the
+recipe's declared `out=`), and from the legacy `.step.py` sibling. A same-stem `.py` beside an
+imported STEP is never assumed to own it. The `.step.json` sidecar carries declarations (kinematics,
+animation, mesh exports) and is backed up and restored with the STEP; it is never source identity.
 
-Keep these evolving Text-to-CAD contracts in one adapter:
+## Viewer ownership
 
-- Viewer location and startup command.
-- Cadgen command names and generation arguments.
-- Explicit persisted source-to-STEP association and the bounded pinned-0.4 fallback.
-- Accepted-artifact, hash, and package lookup.
-- Bundled skill and runtime locations.
+Jake's viewer owns the viewport, topology tree, measurement, references, display controls, pose
+controls, and per-file rendering. The desktop starts one server per workspace directory with
+`python server/main.py --host 127.0.0.1 --json` from that directory, reads the launcher's
+`{url, port, action}` line, and embeds `http://127.0.0.1:<port>/?file=<workspace-relative path>`.
+The launcher owns ports and reuse: `action: "reused"` means another launch already serves that
+directory at the same code, and the desktop tracks that port without owning a process to stop.
+Health is `GET /__cad/server` with `rootPath` equal to the workspace.
 
-The adapter should select behavior from explicit capability/version detection. Do not infer a
-generated model from a cache-directory name or an unestablished adjacent metadata file. Do not
-special-case the moving 0.5 branch throughout renderer or main-process code.
+The desktop does not script the viewer: there is no injected CSS or DOM, no reading of React
+internals, and no polling of viewer state. Selections reach the chat through the viewer's own Copy
+Reference and Copy Link actions; screenshots use Electron's webContents capture. When the accepted
+STEP changes, the desktop reloads the page.
 
 ## Native feature-tree contract
 
-The viewer should eventually render source-backed design history itself instead of receiving an
-injected DOM tree. Hardcore owns edit authorization, source updates, rebuild, validation, rollback,
-and artifact acceptance. The portable payload is the versioned `designHistory` descriptor in
-`src/core/features/cad/api/cad-design-history-descriptor.ts`.
+Hardcore previously injected a source-backed feature tree and parameter sliders into the viewer's
+DOM. That bridge was removed with the move into this repository; the last version is
+`amywork777/hardcore@cb70246a40` (`src/core/features/cad/browser/cad-viewer-integration.ts`,
+`cad-history-panel.tsx`, `cad-agent-panel.tsx`) and the desktop import commit preserves it in this
+repository's history. What stays is the portable payload: the versioned `designHistory` descriptor
+in `src/core/features/cad/api/cad-design-history-descriptor.ts`, its checked-in v1 fixture, and the
+source parser in `cad-source-history.ts`.
 
-The descriptor binds history to both `sourceHash` and `stepHash`, carries exact source spans, numeric
-editability, sketch planes/transforms/dimensions when known, and exact cadgen/viewer selector
-references. Its feature IDs are deterministic but explicitly revision-local: consumers must not use
-them to correlate construction features after either bound hash changes. Cross-revision identity
-requires authored IDs from cadgen and a later contract version.
-
-The exported `cadDesignHistoryApi` and runtime schema are the JSON boundary for viewer and
-host-process handoffs. All external payloads must pass that schema; the checked-in v1 fixture is the
-portable compatibility example. The current source parser adapts into this shape as a migration
-bridge. It leaves selector references empty when it cannot prove identity; fuzzy labels and STEP face
-order are not stable references. Principal-plane transforms follow build123d normals, including
-positive XZ offsets moving in the negative Y direction.
-
-In the native viewer, keep two ideas separate:
-
-- **Design**: authored operations, sketches, and editable numerical dimensions.
-- **Geometry**: exact STEP bodies, components, faces, edges, and vertices.
-
-An edit request returns through a host callback. The viewer never writes source or accepts geometry
-on its own.
+The descriptor binds history to both `sourceHash` and `stepHash`, carries exact source spans,
+numeric editability, sketch planes/transforms/dimensions when known, and exact cadgen/viewer selector
+references. Feature IDs are deterministic but revision-local. To become a native viewer extension it
+needs, in `apps/viewer`, a typed extension point that accepts this descriptor, renders it beside the
+topology tree, and returns edit requests through a host callback; the desktop stays the owner of edit
+authorization, source updates, rebuild, validation, rollback, and artifact acceptance, and the viewer
+never writes source or accepts geometry on its own. Until then, recipes are edited in the desktop's
+general source editor and rebuilt through the lifecycle above.
 
 ## Acceptance gate
 
-Before changing the production Text-to-CAD pin, verify the installed Electron application rather
-than only a source checkout:
+Before shipping a desktop build, verify the installed application rather than only a checkout:
 
-1. Start Claude and Codex sessions and confirm bundled skills are available automatically.
-2. Generate a STEP and open the accepted artifact.
-3. Change a numeric dimension, rebuild, validate, and reload it.
-4. Restart the app and confirm the same STEP hash and viewport artifact return without regeneration.
-5. Produce an invalid edit and confirm the last accepted artifact is restored.
-6. Open an imported STEP with no editable source.
-7. Exercise an explicitly linked source/STEP pair and an imported STEP with no source link.
-8. Run at least two CAD threads concurrently and confirm independent status, processes, and viewers.
-9. Package the app and repeat a smoke generation without relying on a developer checkout.
-
-Only after that gate passes should the exact released tag become the production vendor pin.
+1. Start Claude and Codex sessions and confirm the bundled skills are available automatically.
+2. Open an existing STEP without regeneration and confirm its hash.
+3. Generate a STEP from a plain `@step` recipe and open the accepted artifact.
+4. Change a numeric dimension in the source editor, rebuild, validate, and reload it.
+5. Produce an invalid edit and an interrupted run and confirm the last accepted artifact is restored.
+6. Restart the app and confirm the same STEP hash and viewport artifact return without regeneration.
+7. Run at least two CAD threads concurrently and confirm independent status, processes, and viewers.
+8. Package the app and run the packaged CAD smoke (`scripts/release/verify-packaged-cad.ts`), which
+   provisions the bundled runtime, builds two models in two roots, validates them, and serves each
+   from its own viewer.

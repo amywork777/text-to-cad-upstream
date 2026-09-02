@@ -6,8 +6,8 @@ import { pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { BrowserWindow } from 'electron';
 import type { CadDrawingResult } from '@core/features/browser/api';
+import { findCadPythonExecutable } from '@main/host/cad/cad-runtime-service';
 import { cadToolEnvironment, validateCadModel } from '@main/host/cad/cad-validation-service';
-import { findCadPluginRoot, findCadPythonExecutable } from '@main/host/cad/cad-viewer-service';
 
 const execFileAsync = promisify(execFile);
 const DRAWING_TIMEOUT_MS = 120_000;
@@ -95,11 +95,9 @@ export async function createCadDrawing(input: {
 }): Promise<CadDrawingResult> {
   const validation = await validateCadModel(input);
   if (!validation.success) return validation;
-  const pluginRoot = findCadPluginRoot();
-  if (!pluginRoot) return { success: false, error: 'The pinned CAD environment is unavailable.' };
-  const python = findCadPythonExecutable(pluginRoot);
-  if (!existsSync(python)) {
-    return { success: false, error: 'The pinned CAD Python interpreter is unavailable.' };
+  const python = findCadPythonExecutable();
+  if (!python) {
+    return { success: false, error: 'The CAD Python environment is unavailable.' };
   }
 
   const workspacePath = resolve(input.workspacePath);

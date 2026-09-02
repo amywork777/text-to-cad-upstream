@@ -54,6 +54,9 @@ const cadRunSchema = z.object({
 const cadLastGoodSchema = z.object({
   modelPath: z.string(),
   backupPath: z.string().optional(),
+  /** The `<model>.step.json` declarations sidecar, when the accepted STEP had one. */
+  sidecarPath: z.string().optional(),
+  sidecarBackupPath: z.string().optional(),
   sourcePath: z.string().optional(),
   sourceBackupPath: z.string().optional(),
   recordedAt: z.string(),

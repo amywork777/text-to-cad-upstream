@@ -2,38 +2,98 @@ import { existsSync, readdirSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/** One electron-builder extraResources entry. */
+export interface CadExtraResource {
+  from: string;
+  to: string;
+  filter?: string[];
+}
+
+/** apps/desktop — the self-contained desktop workspace inside text-to-cad. */
 export const HARDCORE_REPOSITORY_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../../../..'
 );
 
-const SOURCE_FILES = [
+/** Packaged resource directories. */
+export const PACKAGED_TEXT_TO_CAD_DIRECTORY = 'text-to-cad';
+export const PACKAGED_DESKTOP_TOOLING_DIRECTORY = 'text-to-cad-desktop';
+export const TEXT_TO_CAD_ROOT_ENV = 'HARDCORE_TEXT_TO_CAD_ROOT';
+
+/**
+ * The canonical Text-to-CAD tree the desktop packages from: the monorepo root
+ * two levels above apps/desktop, unless a build points elsewhere.
+ */
+export function resolveTextToCadRoot(
+  desktopRoot = HARDCORE_REPOSITORY_ROOT,
+  environment: NodeJS.ProcessEnv = process.env
+): string {
+  const configured = environment[TEXT_TO_CAD_ROOT_ENV]?.trim();
+  return configured ? resolve(configured) : resolve(desktopRoot, '..', '..');
+}
+
+/** What the source tree must provide before the packaged copy can be made. */
+const TEXT_TO_CAD_SOURCE_FILES = [
+  'VERSION',
+  'LICENSE',
   '.codex-plugin/plugin.json',
   '.claude-plugin/plugin.json',
+  '.claude-plugin/marketplace.json',
   'skills/cad/SKILL.md',
   'skills/cad-viewer/SKILL.md',
-  'skills/cad-viewer/scripts/viewer/package.json',
-  'skills/cad-viewer/scripts/viewer/dist/index.html',
-  'skills/cad-viewer/scripts/viewer/server/main.mjs',
+  'apps/viewer/server/main.py',
+  'apps/viewer/dist/index.html',
+  'apps/viewer/package.json',
+  'apps/viewer/requirements.txt',
   'packages/cadgen/pyproject.toml',
+  'packages/cadgen/src/cadgen/__init__.py',
+  'packages/cadgen/src/cadgen/_runtime/browser',
+  'packages/cadgen/src/cadgen/_runtime/node',
 ] as const;
 
-const PACKAGED_FILES = [
+const DESKTOP_SOURCE_FILES = [
   'tooling/scripts/setup-cad.mjs',
   'tooling/cad-runtime-constraints.txt',
-  ...SOURCE_FILES.map((path) => join('vendor', 'text-to-cad', path)),
 ] as const;
 
-export function assertCadBundleSource(repositoryRoot = HARDCORE_REPOSITORY_ROOT): void {
+/**
+ * What ships under Contents/Resources: the desktop's CAD tooling beside a
+ * materialized Text-to-CAD bundle laid out like Jake's publish tree, where the
+ * cad-viewer skill carries the built client and Python server.
+ */
+export const PACKAGED_CAD_FILES = [
+  `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/scripts/setup-cad.mjs`,
+  `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/cad-runtime-constraints.txt`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/VERSION`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/LICENSE`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/.codex-plugin/plugin.json`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/.claude-plugin/plugin.json`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/.claude-plugin/marketplace.json`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad/SKILL.md`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/SKILL.md`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/server/main.py`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/dist/index.html`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/package.json`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/requirements.txt`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/pyproject.toml`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/__init__.py`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/_runtime/browser`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/_runtime/node`,
+] as const;
+
+export function assertCadBundleSource(
+  textToCadRoot = resolveTextToCadRoot(),
+  desktopRoot = HARDCORE_REPOSITORY_ROOT
+): void {
   assertFiles(
-    join(repositoryRoot, 'vendor', 'text-to-cad'),
-    SOURCE_FILES,
-    'The pinned Text-to-CAD submodule is incomplete. Check it out before packaging Hardcore.'
+    textToCadRoot,
+    TEXT_TO_CAD_SOURCE_FILES,
+    `The Text-to-CAD tree at ${textToCadRoot} is incomplete. Run pnpm cad:setup from apps/desktop (it builds apps/viewer) before packaging.`
   );
   assertFiles(
-    repositoryRoot,
-    ['tooling/scripts/setup-cad.mjs', 'tooling/cad-runtime-constraints.txt'],
-    'The CAD environment installer or dependency lock is missing from the repository.'
+    desktopRoot,
+    DESKTOP_SOURCE_FILES,
+    'The CAD environment installer or dependency lock is missing from apps/desktop.'
   );
 }
 
@@ -43,10 +103,71 @@ export function assertPackagedCadResources(appOutDir: string): void {
     throw new Error(`Packaged app resources were not found under ${appOutDir}.`);
   }
   assertFiles(
-    join(resourcesRoot, 'hardcore-cad'),
-    PACKAGED_FILES,
-    'The packaged app is missing its pinned CAD runtime or skills.'
+    resourcesRoot,
+    PACKAGED_CAD_FILES,
+    'The packaged app is missing its Text-to-CAD runtime, viewer, or skills.'
   );
+}
+
+/**
+ * electron-builder extraResources for the CAD bundle. The cad-viewer skill's
+ * runtime is copied from apps/viewer explicitly (never through the checkout's
+ * symlink) so the packaged tree mirrors the published skill layout.
+ */
+export function cadExtraResources(
+  textToCadRoot = resolveTextToCadRoot(),
+  desktopRoot = HARDCORE_REPOSITORY_ROOT
+): CadExtraResource[] {
+  const bundle = PACKAGED_TEXT_TO_CAD_DIRECTORY;
+  const viewerRuntime = `${bundle}/skills/cad-viewer/scripts/viewer`;
+  const pythonFilter = ['**/*', '!**/__pycache__/**', '!**/*.pyc'];
+  return [
+    {
+      from: join(desktopRoot, 'tooling', 'scripts', 'setup-cad.mjs'),
+      to: `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/scripts/setup-cad.mjs`,
+    },
+    {
+      from: join(desktopRoot, 'tooling', 'cad-runtime-constraints.txt'),
+      to: `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/cad-runtime-constraints.txt`,
+    },
+    { from: join(textToCadRoot, 'VERSION'), to: `${bundle}/VERSION` },
+    { from: join(textToCadRoot, 'LICENSE'), to: `${bundle}/LICENSE` },
+    { from: join(textToCadRoot, '.codex-plugin'), to: `${bundle}/.codex-plugin` },
+    { from: join(textToCadRoot, '.claude-plugin'), to: `${bundle}/.claude-plugin` },
+    {
+      from: join(textToCadRoot, 'skills'),
+      to: `${bundle}/skills`,
+      filter: [
+        '**/*',
+        '!**/node_modules/**',
+        '!**/.venv/**',
+        '!**/__pycache__/**',
+        '!**/*.pyc',
+        '!cad-viewer/scripts/viewer',
+        '!cad-viewer/scripts/viewer/**',
+      ],
+    },
+    { from: join(textToCadRoot, 'apps', 'viewer', 'dist'), to: `${viewerRuntime}/dist` },
+    {
+      from: join(textToCadRoot, 'apps', 'viewer', 'server'),
+      to: `${viewerRuntime}/server`,
+      filter: pythonFilter,
+    },
+    {
+      from: join(textToCadRoot, 'apps', 'viewer', 'package.json'),
+      to: `${viewerRuntime}/package.json`,
+    },
+    {
+      from: join(textToCadRoot, 'apps', 'viewer', 'requirements.txt'),
+      to: `${viewerRuntime}/requirements.txt`,
+    },
+    { from: join(textToCadRoot, 'apps', 'viewer', 'LICENSE'), to: `${viewerRuntime}/LICENSE` },
+    {
+      from: join(textToCadRoot, 'packages', 'cadgen'),
+      to: `${bundle}/packages/cadgen`,
+      filter: [...pythonFilter, '!build/**', '!**/*.egg-info/**'],
+    },
+  ];
 }
 
 export function packagedResourcesRoot(appOutDir: string): string | null {
@@ -68,7 +189,8 @@ export function packagedResourcesRoot(appOutDir: string): string | null {
   return nestedMacResources && existsSync(nestedMacResources) ? nestedMacResources : null;
 }
 
-export function findPackagedCadBundleRoots(releaseDir: string): string[] {
+/** Every unpacked app's Resources directory that carries the CAD bundle. */
+export function findPackagedCadResourceRoots(releaseDir: string): string[] {
   if (!existsSync(releaseDir)) return [];
 
   const candidates = [
@@ -81,10 +203,14 @@ export function findPackagedCadBundleRoots(releaseDir: string): string[] {
   for (const candidate of candidates) {
     const resources = packagedResourcesRoot(candidate);
     if (!resources) continue;
-    const bundle = join(resources, 'hardcore-cad');
-    if (existsSync(join(bundle, 'tooling', 'scripts', 'setup-cad.mjs'))) {
-      roots.add(resolve(bundle));
-    }
+    const setup = join(
+      resources,
+      PACKAGED_DESKTOP_TOOLING_DIRECTORY,
+      'tooling',
+      'scripts',
+      'setup-cad.mjs'
+    );
+    if (existsSync(setup)) roots.add(resolve(resources));
   }
   return [...roots].sort();
 }

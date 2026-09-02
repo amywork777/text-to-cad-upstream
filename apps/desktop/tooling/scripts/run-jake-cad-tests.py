@@ -1,4 +1,4 @@
-"""Run Jake's selected release/0.5 unittest modules against the bundled source."""
+"""Run Jake's selected cadgen unittest modules from the canonical Text-to-CAD tree."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from pathlib import Path
 
 TEST_MODULES = (
     "tests.python.skills.cad.run.test_cli",
-    "tests.python.skills.cad.import_cli.test_cli",
     "tests.python.skills.cad.inspect.test_cli",
     "tests.python.packages.cadgen.test_doctor",
     "tests.python.packages.cadgen.test_generated_step_fidelity",
@@ -28,7 +27,7 @@ def main() -> int:
     if not (tests_root / "tests/python/support/paths.py").is_file():
         parser.error(f"Jake test checkout is missing tests/python/support/paths.py: {tests_root}")
     if not (tests_root / "packages/cadgen/src/cadgen/authoring.py").is_file():
-        parser.error(f"Jake test checkout does not contain the release/0.5 cadgen source: {tests_root}")
+        parser.error(f"Text-to-CAD tree does not contain the cadgen source: {tests_root}")
 
     sys.path.insert(0, str(tests_root))
 

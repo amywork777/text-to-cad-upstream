@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join, posix, resolve, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { findPackagedCadBundleRoots } from './cad-resources.ts';
+import {
+  findPackagedCadResourceRoots,
+  PACKAGED_DESKTOP_TOOLING_DIRECTORY,
+  PACKAGED_TEXT_TO_CAD_DIRECTORY,
+} from './cad-resources.ts';
 import { fail, info, step } from './lib/log.ts';
 
 const SMOKE_MODEL = `from cadgen import build123d as bd
@@ -26,14 +30,14 @@ def packaged_parallel_smoke():
 `;
 
 export interface PackagedCadSmokePlan {
+  resourcesRoot: string;
   bundleRoot: string;
   setupScript: string;
   constraints: string;
   bundledCadgenSource: string;
-  installedCadgenSource: string;
   runtimeRoot: string;
+  cacheRoot: string;
   python: string;
-  viewerPython: string;
   viewerLauncher: string;
   workspace: string;
   source: string;
@@ -43,51 +47,46 @@ export interface PackagedCadSmokePlan {
   parallelArtifact: string;
 }
 
+/**
+ * The packaged smoke runs everything the desktop would: provision the Python
+ * runtime from the bundled packages/cadgen, run two model scripts in two
+ * project roots at once, validate the STEPs with cadgen's doors, and serve
+ * each root from the bundled CAD Viewer runtime (the cad-viewer skill's
+ * built client + Python server, launched by that same interpreter).
+ */
 export function createPackagedCadSmokePlan(
-  bundleRoot: string,
+  resourcesRoot: string,
   scratchRoot: string,
   platform = process.platform
 ): PackagedCadSmokePlan {
   const path = platform === 'win32' ? win32 : posix;
+  const bundleRoot = path.join(resourcesRoot, PACKAGED_TEXT_TO_CAD_DIRECTORY);
+  const desktopTooling = path.join(resourcesRoot, PACKAGED_DESKTOP_TOOLING_DIRECTORY);
   const runtimeRoot = path.join(scratchRoot, 'runtime');
   const workspace = path.join(scratchRoot, 'workspace');
   const python =
     platform === 'win32'
       ? path.join(runtimeRoot, 'venv', 'Scripts', 'python.exe')
       : path.join(runtimeRoot, 'venv', 'bin', 'python');
-  const viewerPython = path.join(
-    runtimeRoot,
-    'plugins',
-    'text-to-cad',
-    'skills',
-    'cad-viewer',
-    'scripts',
-    'viewer',
-    '.venv',
-    platform === 'win32' ? 'Scripts' : 'bin',
-    platform === 'win32' ? 'python.exe' : 'python'
-  );
   const viewerLauncher = path.join(
-    runtimeRoot,
-    'plugins',
-    'text-to-cad',
+    bundleRoot,
     'skills',
     'cad-viewer',
     'scripts',
     'viewer',
     'server',
-    'main.mjs'
+    'main.py'
   );
   const parallelWorkspace = path.join(scratchRoot, 'parallel-workspace');
   return {
+    resourcesRoot,
     bundleRoot,
-    setupScript: path.join(bundleRoot, 'tooling', 'scripts', 'setup-cad.mjs'),
-    constraints: path.join(bundleRoot, 'tooling', 'cad-runtime-constraints.txt'),
-    bundledCadgenSource: path.join(bundleRoot, 'vendor', 'text-to-cad', 'packages', 'cadgen'),
-    installedCadgenSource: path.join(runtimeRoot, 'plugins', 'text-to-cad', 'packages', 'cadgen'),
+    setupScript: path.join(desktopTooling, 'tooling', 'scripts', 'setup-cad.mjs'),
+    constraints: path.join(desktopTooling, 'tooling', 'cad-runtime-constraints.txt'),
+    bundledCadgenSource: path.join(bundleRoot, 'packages', 'cadgen'),
     runtimeRoot,
+    cacheRoot: path.join(scratchRoot, 'cadgen-cache'),
     python,
-    viewerPython,
     viewerLauncher,
     workspace,
     source: path.join(workspace, 'packaged-smoke.py'),
@@ -98,15 +97,19 @@ export function createPackagedCadSmokePlan(
   };
 }
 
-export async function verifyPackagedCadRuntime(bundleRoot: string): Promise<void> {
+export async function verifyPackagedCadRuntime(resourcesRoot: string): Promise<void> {
   const scratch = mkdtempSync(join(tmpdir(), 'hardcore-packaged-cad-'));
-  const plan = createPackagedCadSmokePlan(bundleRoot, scratch);
+  const plan = createPackagedCadSmokePlan(resourcesRoot, scratch);
   const environment = {
     ...process.env,
-    CADGEN_WARM: '0',
-    CADGEN_PYTHON: plan.python,
+    // Hermetic: cold builds and a scratch cache, so the smoke never touches the
+    // developer's warm daemon or ~/.cache/cadgen.
+    CADGEN_DAEMON: '0',
+    CADGEN_CACHE_DIR: plan.cacheRoot,
     HARDCORE_CAD_RUNTIME_ROOT: plan.runtimeRoot,
+    HARDCORE_TEXT_TO_CAD_ROOT: plan.bundleRoot,
     PIP_DISABLE_PIP_VERSION_CHECK: '1',
+    PYTHONDONTWRITEBYTECODE: '1',
   };
 
   try {
@@ -114,14 +117,8 @@ export async function verifyPackagedCadRuntime(bundleRoot: string): Promise<void
     run(process.execPath, [plan.setupScript, '--runtime-only'], { env: environment });
 
     step('Importing cadgen from the packaged source');
-    assertSameFile(plan.bundledCadgenSource, plan.installedCadgenSource, 'pyproject.toml');
-    assertSameFile(
-      plan.bundledCadgenSource,
-      plan.installedCadgenSource,
-      join('src', 'cadgen', '__init__.py')
-    );
     run(
-      plan.viewerPython,
+      plan.python,
       [
         '-c',
         [
@@ -132,12 +129,12 @@ export async function verifyPackagedCadRuntime(bundleRoot: string): Promise<void
           "assert os.path.samefile(actual,expected), f'cadgen came from {actual}, expected {expected}'",
           'from cadgen import build123d,step',
         ].join(';'),
-        plan.installedCadgenSource,
+        plan.bundledCadgenSource,
       ],
       { env: environment }
     );
     step('Verifying the packaged CAD dependency lock');
-    const freeze = capture(plan.viewerPython, ['-m', 'pip', 'freeze', '--all'], {
+    const freeze = capture(plan.python, ['-m', 'pip', 'freeze', '--all'], {
       env: environment,
     });
     verifyCadRuntimeLock(readFileSync(plan.constraints, 'utf8'), freeze);
@@ -149,14 +146,14 @@ export async function verifyPackagedCadRuntime(bundleRoot: string): Promise<void
     step('Generating STEP artifacts concurrently in two project roots');
     await runConcurrentProcesses([
       {
-        command: plan.viewerPython,
-        args: [plan.source, '--force', '--json'],
+        command: plan.python,
+        args: [plan.source, '--json'],
         cwd: plan.workspace,
         env: environment,
       },
       {
-        command: plan.viewerPython,
-        args: [plan.parallelSource, '--force', '--json'],
+        command: plan.python,
+        args: [plan.parallelSource, '--json'],
         cwd: plan.parallelWorkspace,
         env: environment,
       },
@@ -168,28 +165,23 @@ export async function verifyPackagedCadRuntime(bundleRoot: string): Promise<void
     }
 
     step('Validating and inspecting the packaged STEP artifact');
-    run(plan.viewerPython, ['-m', 'cadgen.cli', 'step', 'inspect', 'validate', plan.artifact], {
+    run(plan.python, ['-m', 'cadgen.cli', 'step', 'inspect', 'validate', plan.artifact], {
       cwd: plan.workspace,
       env: environment,
     });
-    run(
-      plan.viewerPython,
-      ['-m', 'cadgen.cli', 'step', 'inspect', 'refs', plan.artifact, '--facts'],
-      {
-        cwd: plan.workspace,
-        env: environment,
-      }
-    );
-    run(
-      plan.viewerPython,
-      ['-m', 'cadgen.cli', 'step', 'inspect', 'validate', plan.parallelArtifact],
-      { cwd: plan.parallelWorkspace, env: environment }
-    );
+    run(plan.python, ['-m', 'cadgen.cli', 'step', 'inspect', 'refs', plan.artifact, '--facts'], {
+      cwd: plan.workspace,
+      env: environment,
+    });
+    run(plan.python, ['-m', 'cadgen.cli', 'step', 'inspect', 'validate', plan.parallelArtifact], {
+      cwd: plan.parallelWorkspace,
+      env: environment,
+    });
 
     step('Launching isolated CAD Viewers for two project roots');
     const viewerStarts = await Promise.allSettled([
-      startPackagedViewer(plan.viewerLauncher, plan.workspace, environment),
-      startPackagedViewer(plan.viewerLauncher, plan.parallelWorkspace, environment),
+      startPackagedViewer(plan.python, plan.viewerLauncher, plan.workspace, environment),
+      startPackagedViewer(plan.python, plan.viewerLauncher, plan.parallelWorkspace, environment),
     ]);
     const viewers = viewerStarts.flatMap((result) =>
       result.status === 'fulfilled' ? [result.value] : []
@@ -242,6 +234,7 @@ type PackagedViewer = {
 };
 
 async function startPackagedViewer(
+  python: string,
   launcher: string,
   workspace: string,
   environment: NodeJS.ProcessEnv
@@ -249,15 +242,14 @@ async function startPackagedViewer(
   if (!existsSync(launcher)) {
     throw new Error(`Packaged CAD Viewer launcher is missing: ${launcher}`);
   }
-  const child = spawn(
-    process.execPath,
-    [launcher, '--root', workspace, '--host', '127.0.0.1', '--json', '--new'],
-    {
-      cwd: workspace,
-      env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  );
+  // The served directory is the cwd; the launcher owns the port and answers a
+  // JSON line once the socket is bound. --new keeps the smoke from reusing a
+  // developer's live Viewer for the same scratch path.
+  const child = spawn(python, [launcher, '--host', '127.0.0.1', '--json', '--new'], {
+    cwd: workspace,
+    env: { ...environment, PYTHONUNBUFFERED: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   let stdout = '';
   let stderr = '';
   let spawnError: Error | null = null;
@@ -368,7 +360,7 @@ async function verifyViewerArtifact(input: {
   }
 
   const artifactUrl = new URL('/__cad/artifact', base);
-  artifactUrl.searchParams.set('file', input.artifact);
+  artifactUrl.searchParams.set('file', artifactName ?? input.artifact);
   const artifactResponse = await fetch(artifactUrl);
   const artifactStatus: unknown = await artifactResponse.json();
   if (
@@ -480,14 +472,6 @@ function normalizeDistributionName(name: string): string {
   return name.toLowerCase().replace(/[-_.]+/g, '-');
 }
 
-function assertSameFile(leftRoot: string, rightRoot: string, relativePath: string): void {
-  const left = readFileSync(join(leftRoot, relativePath));
-  const right = readFileSync(join(rightRoot, relativePath));
-  if (!left.equals(right)) {
-    throw new Error(`Packaged CAD staging changed ${relativePath}`);
-  }
-}
-
 function run(
   command: string,
   args: string[],
@@ -579,15 +563,15 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     },
     strict: true,
   });
-  const bundles = findPackagedCadBundleRoots(values['release-dir']);
-  if (bundles.length === 0) {
-    fail(`No packaged CAD bundle was found under ${values['release-dir']}`);
+  const resourceRoots = findPackagedCadResourceRoots(values['release-dir']);
+  if (resourceRoots.length === 0) {
+    fail(`No packaged Text-to-CAD bundle was found under ${values['release-dir']}`);
   }
 
   // The bundle is byte-identical between installer targets in the same release job.
   // electron-builder's afterPack hook already checks every target; run the expensive
   // Python provisioning/generation smoke once per operating-system release job.
-  await verifyPackagedCadRuntime(bundles[0]);
+  await verifyPackagedCadRuntime(resourceRoots[0]);
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

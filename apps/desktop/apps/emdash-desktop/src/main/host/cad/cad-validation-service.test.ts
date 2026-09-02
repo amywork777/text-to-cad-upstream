@@ -9,6 +9,7 @@ import {
   readCadVerifiedMigrationMarker,
   writeCadVerifiedMigrationMarker,
 } from './cad-migration-marker';
+import { cadgenProvenanceRecordPath } from './cad-recipe';
 import {
   applyCadModelParameters,
   assertLegacyCadArtifactIsCurrent,
@@ -27,13 +28,13 @@ import {
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp/hardcore-test-user-data' } }));
 
 const temporaryDirectories: string[] = [];
-const originalCadPluginRoot = process.env.HARDCORE_CAD_PLUGIN_ROOT;
+const originalCadgenCacheDir = process.env.CADGEN_CACHE_DIR;
 const originalCadPython = process.env.HARDCORE_CAD_PYTHON;
 const originalCadTestLog = process.env.HARDCORE_CAD_TEST_LOG;
 
 afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map((path) => rm(path, { recursive: true })));
-  restoreEnvironment('HARDCORE_CAD_PLUGIN_ROOT', originalCadPluginRoot);
+  restoreEnvironment('CADGEN_CACHE_DIR', originalCadgenCacheDir);
   restoreEnvironment('HARDCORE_CAD_PYTHON', originalCadPython);
   restoreEnvironment('HARDCORE_CAD_TEST_LOG', originalCadTestLog);
 });
@@ -116,19 +117,21 @@ describe('CAD validation service path boundary', () => {
     expect(cadValidationInputRevision({ workspacePath, filePath })).not.toBe(initial);
   });
 
-  it('follows render-package provenance from a STEP back to its model source', async () => {
+  it("follows cadgen's provenance record from a STEP back to its recipe", async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
     temporaryDirectories.push(workspacePath);
     const sourcePath = join(workspacePath, 'models', 'car.py');
     const stepPath = join(workspacePath, 'models', 'car.step');
-    const packagePath = join(workspacePath, 'models', '__cadgen__', 'models', 'car.step');
-    await mkdir(packagePath, { recursive: true });
-    await writeFile(sourcePath, 'OVERALL_LENGTH = 4200');
-    await writeFile(stepPath, 'step-v1');
+    await mkdir(dirname(stepPath), { recursive: true });
     await writeFile(
-      join(packagePath, 'assembly.json'),
-      JSON.stringify({ sourceKind: 'python', sourcePath: 'car.py' })
+      sourcePath,
+      'from cadgen import build123d as bd\nfrom cadgen import step\n\n@step()\ndef car():\n    return bd.Box(10, 10, 10)\n'
     );
+    await writeFile(stepPath, 'step-v1');
+    await writeProvenanceRecord(workspacePath, stepPath, {
+      sourceKind: 'python',
+      sourcePath: 'car.py',
+    });
     const initial = cadValidationInputRevision({ workspacePath, filePath: stepPath });
 
     expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toEqual({
@@ -138,7 +141,13 @@ describe('CAD validation service path boundary', () => {
       relativeSourcePath: 'models/car.py',
     });
 
-    await writeFile(sourcePath, 'OVERALL_LENGTH = 4300');
+    await writeFile(
+      sourcePath,
+      'from cadgen import build123d as bd\nfrom cadgen import step\n\n@step()\ndef car():\n    return bd.Box(10, 10, 10)\n'.replace(
+        '10, 10, 10',
+        '12, 10, 10'
+      )
+    );
 
     expect(cadValidationInputRevision({ workspacePath, filePath: stepPath })).not.toBe(initial);
   });
@@ -164,17 +173,16 @@ describe('CAD validation service path boundary', () => {
     });
   });
 
-  it('accepts a valid STEP when its linked Python recipe is missing', async () => {
+  it('accepts a valid STEP when the recipe its record names is missing', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
     temporaryDirectories.push(workspacePath);
     const stepPath = join(workspacePath, 'models', 'car.step');
-    const packagePath = join(workspacePath, 'models', '__cadgen__', 'models', 'car.step');
-    await mkdir(packagePath, { recursive: true });
+    await mkdir(dirname(stepPath), { recursive: true });
     await writeFile(stepPath, 'accepted-step');
-    await writeFile(
-      join(packagePath, 'assembly.json'),
-      JSON.stringify({ sourceKind: 'python', sourcePath: 'car.py' })
-    );
+    await writeProvenanceRecord(workspacePath, stepPath, {
+      sourceKind: 'python',
+      sourcePath: 'car.py',
+    });
 
     const target = resolveCadArtifactTarget({ workspacePath, filePath: stepPath });
     expect(target).toEqual({
@@ -203,34 +211,39 @@ describe('CAD validation service path boundary', () => {
     });
   });
 
-  it('rejects descriptor provenance that escapes the model workspace', async () => {
+  it('rejects record provenance that escapes the model workspace', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
     const outsidePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-outside-'));
     temporaryDirectories.push(workspacePath, outsidePath);
     const stepPath = join(workspacePath, 'models', 'car.step');
-    const packagePath = join(workspacePath, 'models', '__cadgen__', 'models', 'car.step');
     const outsideSource = join(outsidePath, 'car.py');
-    await mkdir(packagePath, { recursive: true });
+    await mkdir(dirname(stepPath), { recursive: true });
     await writeFile(stepPath, 'step-v1');
-    await writeFile(outsideSource, 'OVERALL_LENGTH = 4200');
     await writeFile(
-      join(packagePath, 'assembly.json'),
-      JSON.stringify({
-        sourceKind: 'python',
-        sourcePath: relative(dirname(stepPath), outsideSource),
-      })
+      outsideSource,
+      'from cadgen import build123d as bd\nfrom cadgen import step\n\n@step()\ndef car():\n    return bd.Box(10, 10, 10)\n'
     );
+    await writeProvenanceRecord(workspacePath, stepPath, {
+      sourceKind: 'python',
+      sourcePath: relative(dirname(stepPath), outsideSource),
+    });
     const initial = cadValidationInputRevision({ workspacePath, filePath: stepPath });
 
-    await writeFile(outsideSource, 'OVERALL_LENGTH = 4300');
+    await writeFile(
+      outsideSource,
+      'from cadgen import build123d as bd\nfrom cadgen import step\n\n@step()\ndef car():\n    return bd.Box(10, 10, 10)\n'.replace(
+        '10, 10, 10',
+        '12, 10, 10'
+      )
+    );
 
     expect(cadValidationInputRevision({ workspacePath, filePath: stepPath })).toBe(initial);
   });
 
-  it('runs a library-first model only through the explicit source rebuild path', () => {
-    expect(cadSourceRebuildToolPlan('car.py', 'pinned-0.4')).toEqual({
+  it('runs a recipe only through the explicit source rebuild path, never with --force', () => {
+    expect(cadSourceRebuildToolPlan('car.py')).toEqual({
       tool: 'model',
-      args: ['car.py', '--force', '--json'],
+      args: ['car.py', '--json'],
     });
   });
 
@@ -242,7 +255,7 @@ describe('CAD validation service path boundary', () => {
     ).toBe(cadArtifactOperationKey({ workspacePath, filePath: join(workspacePath, 'car.step') }));
   });
 
-  it('serializes a custom @step(write=...) recipe with its canonical STEP', async () => {
+  it('serializes a custom @step(out=...) recipe with its canonical STEP', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-custom-operation-key-'));
     temporaryDirectories.push(workspacePath);
     const sourcePath = join(workspacePath, 'src', 'STEP', 'plate.py');
@@ -253,7 +266,7 @@ describe('CAD validation service path boundary', () => {
       [
         'from cadgen import step',
         '',
-        '@step(write="../../STEP/plate.step")',
+        '@step(out="../../STEP/plate.step")',
         'def plate():',
         '    return None',
       ].join('\n')
@@ -349,7 +362,7 @@ describe('CAD validation service path boundary', () => {
         '',
         '@cg.step(',
         '    kind="part",',
-        '    write="../artifacts/plate.stp",',
+        '    out="../artifacts/plate.stp",',
         ')',
         'def plate():',
         '    return None',
@@ -361,7 +374,7 @@ describe('CAD validation service path boundary', () => {
     );
   });
 
-  it('does not borrow write= from a different decorator on the same function', async () => {
+  it('does not borrow out= from a different decorator on the same function', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-custom-operation-key-'));
     temporaryDirectories.push(workspacePath);
     const sourcePath = join(workspacePath, 'plate.py');
@@ -371,7 +384,7 @@ describe('CAD validation service path boundary', () => {
         'from cadgen import step',
         '',
         '@step',
-        '@metadata(write="elsewhere/plate.step")',
+        '@metadata(out="elsewhere/plate.step")',
         'def plate():',
         '    return None',
       ].join('\n')
@@ -401,24 +414,7 @@ describe('CAD validation service path boundary', () => {
     const sourcePath = join(workspacePath, 'car.py');
     const stepPath = join(workspacePath, 'car.step');
     const commandLog = join(workspacePath, 'commands.log');
-    const fakePluginRoot = join(workspacePath, 'plugin');
     const fakePython = join(workspacePath, 'fake-python');
-    await mkdir(join(fakePluginRoot, 'skills', 'cad-viewer', 'scripts', 'viewer', 'server'), {
-      recursive: true,
-    });
-    await writeFile(
-      join(fakePluginRoot, 'skills', 'cad-viewer', 'scripts', 'viewer', 'server', 'main.mjs'),
-      ''
-    );
-    await writeFile(
-      join(fakePluginRoot, 'skills', 'cad-viewer', 'scripts', 'viewer', 'package.json'),
-      JSON.stringify({ name: 'cad-viewer-runtime', version: '0.4.25' })
-    );
-    await mkdir(join(fakePluginRoot, 'packages', 'cadgen'), { recursive: true });
-    await writeFile(
-      join(fakePluginRoot, 'packages', 'cadgen', 'pyproject.toml'),
-      '[project]\nname = "cadgen"\nversion = "0.4.25"\n'
-    );
     await writeFile(
       fakePython,
       '#!/bin/sh\nprintf "%s\\n" "$*" >> "$HARDCORE_CAD_TEST_LOG"\ncase "$*" in\n  *"inspect refs"*) printf "%s\\n" \'{"ok":true,"tokens":[]}\' ;;\n  *) printf "%s\\n" \'{"ok":true}\' ;;\nesac\n'
@@ -426,7 +422,6 @@ describe('CAD validation service path boundary', () => {
     await chmod(fakePython, 0o755);
     await writeFile(sourcePath, 'raise RuntimeError("must never run on open")\n');
     await writeFile(stepPath, 'accepted-step');
-    process.env.HARDCORE_CAD_PLUGIN_ROOT = fakePluginRoot;
     process.env.HARDCORE_CAD_PYTHON = fakePython;
     process.env.HARDCORE_CAD_TEST_LOG = commandLog;
 
@@ -450,19 +445,14 @@ describe('CAD validation service path boundary', () => {
     temporaryDirectories.push(workspacePath);
 
     expect(
-      cadValidationModelPath(
-        workspacePath,
-        'emdash-smoke.py',
-        {
-          ok: true,
-          sourceRef: 'emdash-smoke.py',
-          cadPath: 'emdash-smoke',
-          kind: 'part',
-          outcome: 'built',
-          packagePath: '__cadgen__/models/emdash-smoke.step',
-        },
-        'pinned-0.4'
-      )
+      cadValidationModelPath(workspacePath, 'emdash-smoke.py', {
+        ok: true,
+        sourceRef: 'emdash-smoke.py',
+        cadPath: 'emdash-smoke',
+        kind: 'part',
+        outcome: 'built',
+        packagePath: '/home/amy/.cache/cadgen/packages/abc-v17',
+      })
     ).toBe('emdash-smoke.step');
   });
 
@@ -744,6 +734,18 @@ describe('CAD validation service path boundary', () => {
     expect(await readFile(filePath, 'utf8')).toContain('Box(25, 10, ROOF_Z)');
   });
 });
+
+async function writeProvenanceRecord(
+  workspacePath: string,
+  stepPath: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  const cacheRoot = join(workspacePath, '.cadgen-cache');
+  process.env.CADGEN_CACHE_DIR = cacheRoot;
+  const recordPath = cadgenProvenanceRecordPath(stepPath, cacheRoot);
+  await mkdir(dirname(recordPath), { recursive: true });
+  await writeFile(recordPath, JSON.stringify({ schemaVersion: 5, ...payload }));
+}
 
 function restoreEnvironment(name: string, value: string | undefined): void {
   if (value === undefined) {

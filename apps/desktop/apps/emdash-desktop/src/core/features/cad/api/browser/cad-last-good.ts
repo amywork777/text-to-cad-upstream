@@ -44,6 +44,14 @@ export async function preserveLastGoodModel(options: {
     client,
     uri(resolveWorkspacePath(options.workspacePath, options.modelPath))
   );
+  // cadgen 0.5 writes one optional declarations sidecar beside a STEP that
+  // needs one (kinematics, animation, mesh exports). It is part of the
+  // accepted artifact, never its source, so it is preserved and restored with
+  // the STEP bytes.
+  const sidecarPath = cadSidecarPath(options.modelPath);
+  const sidecarExists = sidecarPath
+    ? await fileExists(client, uri(resolveWorkspacePath(options.workspacePath, sidecarPath)))
+    : false;
   const distinctSourcePath =
     options.sourcePath && options.sourcePath !== options.modelPath ? options.sourcePath : undefined;
   const sourceExists = distinctSourcePath
@@ -64,6 +72,7 @@ export async function preserveLastGoodModel(options: {
   const extension = modelExtension(options.modelPath);
   const modelKey = encodeURIComponent(options.contextKey.slice('cad-model:'.length));
   const backupPath = `.hardcore/last-good/${modelKey}-${options.runId}${extension}`;
+  const sidecarBackupPath = `${backupPath}.json`;
   const sourceBackupPath = distinctSourcePath
     ? `.hardcore/last-good/${modelKey}-${options.runId}.source${modelExtension(distinctSourcePath)}`
     : undefined;
@@ -78,6 +87,13 @@ export async function preserveLastGoodModel(options: {
     );
     modelHash = await sha256File(client, backupUri, backupPath);
   }
+  if (modelExists && sidecarExists && sidecarPath) {
+    await copyFile(
+      client,
+      uri(resolveWorkspacePath(options.workspacePath, sidecarPath)),
+      uri(resolveWorkspacePath(options.workspacePath, sidecarBackupPath))
+    );
+  }
   if (sourceExists && distinctSourcePath && sourceBackupPath) {
     const sourceBackupUri = uri(resolveWorkspacePath(options.workspacePath, sourceBackupPath));
     await copyFile(
@@ -90,6 +106,8 @@ export async function preserveLastGoodModel(options: {
   return {
     modelPath: options.modelPath,
     ...(modelExists ? { backupPath } : {}),
+    ...(modelExists && sidecarPath ? { sidecarPath } : {}),
+    ...(modelExists && sidecarExists && sidecarPath ? { sidecarBackupPath } : {}),
     ...(sourceExists && distinctSourcePath && sourceBackupPath
       ? { sourcePath: distinctSourcePath, sourceBackupPath }
       : {}),
@@ -143,6 +161,28 @@ export async function restoreLastGoodModel(options: {
     );
     if (!restored.success) throw new Error(fileErrorMessage(restored.error));
   }
+
+  // Bring the sidecar back to the accepted state as well: restore the copy
+  // that belonged to the STEP, or remove one a failed rebuild left behind.
+  if (options.snapshot.backupPath && options.snapshot.sidecarPath) {
+    const sidecarUri = uri(
+      resolveWorkspacePath(options.workspacePath, options.snapshot.sidecarPath)
+    );
+    if (options.snapshot.sidecarBackupPath) {
+      await copyFile(
+        client,
+        uri(resolveWorkspacePath(options.workspacePath, options.snapshot.sidecarBackupPath)),
+        sidecarUri
+      );
+    } else if (await fileExists(client, sidecarUri)) {
+      const removed = await client.fs.delete({ uri: sidecarUri });
+      if (!removed.success) throw new Error(fileErrorMessage(removed.error));
+    }
+  }
+}
+
+export function cadSidecarPath(modelPath: string): string | null {
+  return /\.(?:step|stp)$/i.test(modelPath) ? `${modelPath}.json` : null;
 }
 
 async function sha256File(

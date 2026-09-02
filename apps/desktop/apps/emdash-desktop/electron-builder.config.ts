@@ -1,15 +1,19 @@
-import { join } from 'node:path';
 import type { Configuration } from 'electron-builder';
 import {
   assertCadBundleSource,
   assertPackagedCadResources,
+  cadExtraResources,
   HARDCORE_REPOSITORY_ROOT,
+  resolveTextToCadRoot,
 } from './scripts/release/cad-resources.ts';
 import {
   APP_ID,
   ARTIFACT_PREFIX,
   PRODUCT_NAME,
 } from './src/core/primitives/app-identity/api/app-identity.ts';
+
+// The canonical Text-to-CAD tree this desktop ships: the monorepo root above apps/desktop.
+const TEXT_TO_CAD_ROOT = resolveTextToCadRoot();
 
 const config: Configuration = {
   appId: APP_ID,
@@ -26,36 +30,10 @@ const config: Configuration = {
     },
   ],
   generateUpdatesFilesForAllChannels: false,
-  beforePack: () => assertCadBundleSource(),
+  beforePack: () => assertCadBundleSource(TEXT_TO_CAD_ROOT, HARDCORE_REPOSITORY_ROOT),
   afterPack: ({ appOutDir }) => assertPackagedCadResources(appOutDir),
   files: ['out/**/*', 'node_modules/**/*', 'drizzle/**/*'],
-  extraResources: [
-    {
-      from: join(HARDCORE_REPOSITORY_ROOT, 'tooling', 'scripts', 'setup-cad.mjs'),
-      to: 'hardcore-cad/tooling/scripts/setup-cad.mjs',
-    },
-    {
-      from: join(HARDCORE_REPOSITORY_ROOT, 'tooling', 'cad-runtime-constraints.txt'),
-      to: 'hardcore-cad/tooling/cad-runtime-constraints.txt',
-    },
-    {
-      from: join(HARDCORE_REPOSITORY_ROOT, 'vendor', 'text-to-cad'),
-      to: 'hardcore-cad/vendor/text-to-cad',
-      filter: [
-        '.codex-plugin/**/*',
-        '.claude-plugin/**/*',
-        'skills/**/*',
-        '!skills/**/.venv/**/*',
-        '!skills/**/__pycache__/**/*',
-        '!skills/**/*.pyc',
-        'packages/cadgen/**/*',
-        '!packages/cadgen/**/__pycache__/**/*',
-        '!packages/cadgen/**/*.pyc',
-        'LICENSE',
-        'VERSION',
-      ],
-    },
-  ],
+  extraResources: cadExtraResources(TEXT_TO_CAD_ROOT, HARDCORE_REPOSITORY_ROOT),
   asarUnpack: [
     'out/main/adapters/**',
     'node_modules/better-sqlite3/**',

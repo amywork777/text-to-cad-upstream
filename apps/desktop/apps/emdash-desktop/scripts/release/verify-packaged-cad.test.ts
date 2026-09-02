@@ -2,28 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { createPackagedCadSmokePlan, verifyCadRuntimeLock } from './verify-packaged-cad.ts';
 
 describe('packaged CAD smoke plan', () => {
-  it('provisions and runs from the packaged CAD source on Unix', () => {
-    const plan = createPackagedCadSmokePlan(
-      '/release/resources/hardcore-cad',
-      '/tmp/smoke',
-      'linux'
+  it('provisions and runs from the packaged Text-to-CAD bundle on Unix', () => {
+    const plan = createPackagedCadSmokePlan('/release/resources', '/tmp/smoke', 'linux');
+    expect(plan.bundleRoot).toBe('/release/resources/text-to-cad');
+    expect(plan.setupScript).toBe(
+      '/release/resources/text-to-cad-desktop/tooling/scripts/setup-cad.mjs'
     );
-    expect(plan.setupScript).toBe('/release/resources/hardcore-cad/tooling/scripts/setup-cad.mjs');
     expect(plan.constraints).toBe(
-      '/release/resources/hardcore-cad/tooling/cad-runtime-constraints.txt'
+      '/release/resources/text-to-cad-desktop/tooling/cad-runtime-constraints.txt'
     );
-    expect(plan.bundledCadgenSource).toBe(
-      '/release/resources/hardcore-cad/vendor/text-to-cad/packages/cadgen'
-    );
-    expect(plan.installedCadgenSource).toBe(
-      '/tmp/smoke/runtime/plugins/text-to-cad/packages/cadgen'
-    );
+    expect(plan.bundledCadgenSource).toBe('/release/resources/text-to-cad/packages/cadgen');
     expect(plan.python).toBe('/tmp/smoke/runtime/venv/bin/python');
-    expect(plan.viewerPython).toBe(
-      '/tmp/smoke/runtime/plugins/text-to-cad/skills/cad-viewer/scripts/viewer/.venv/bin/python'
-    );
+    expect(plan.cacheRoot).toBe('/tmp/smoke/cadgen-cache');
     expect(plan.viewerLauncher).toBe(
-      '/tmp/smoke/runtime/plugins/text-to-cad/skills/cad-viewer/scripts/viewer/server/main.mjs'
+      '/release/resources/text-to-cad/skills/cad-viewer/scripts/viewer/server/main.py'
     );
     expect(plan.artifact).toBe('/tmp/smoke/workspace/packaged-smoke.step');
     expect(plan.parallelArtifact).toBe(
@@ -77,14 +69,13 @@ describe('packaged CAD smoke plan', () => {
   });
 
   it('uses the packaged Windows virtual-environment launcher', () => {
-    const plan = createPackagedCadSmokePlan('C:\\release\\hardcore-cad', 'C:\\smoke', 'win32');
+    const plan = createPackagedCadSmokePlan('C:\\release\\resources', 'C:\\smoke', 'win32');
     expect(plan.python).toBe('C:\\smoke\\runtime\\venv\\Scripts\\python.exe');
-    expect(plan.viewerPython).toBe(
-      'C:\\smoke\\runtime\\plugins\\text-to-cad\\skills\\cad-viewer\\scripts\\viewer\\.venv\\Scripts\\python.exe'
-    );
     expect(plan.viewerLauncher).toBe(
-      'C:\\smoke\\runtime\\plugins\\text-to-cad\\skills\\cad-viewer\\scripts\\viewer\\server\\main.mjs'
+      'C:\\release\\resources\\text-to-cad\\skills\\cad-viewer\\scripts\\viewer\\server\\main.py'
     );
-    expect(plan.setupScript).toBe('C:\\release\\hardcore-cad\\tooling\\scripts\\setup-cad.mjs');
+    expect(plan.setupScript).toBe(
+      'C:\\release\\resources\\text-to-cad-desktop\\tooling\\scripts\\setup-cad.mjs'
+    );
   });
 });

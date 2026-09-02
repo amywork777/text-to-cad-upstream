@@ -14,6 +14,9 @@ export interface CadModelIdentity {
 export interface CadLastGoodSnapshot {
   modelPath: string;
   backupPath?: string;
+  /** The `<model>.step.json` sidecar that belonged to the accepted STEP, if any. */
+  sidecarPath?: string;
+  sidecarBackupPath?: string;
   sourcePath?: string;
   sourceBackupPath?: string;
   recordedAt: string;

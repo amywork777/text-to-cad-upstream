@@ -14,7 +14,8 @@ describe('Electron native startup preflight', () => {
     const options = electronRebuildOptions();
 
     expect(options.buildPath).toMatch(/apps\/emdash-desktop$/);
-    expect(options.projectRootPath).toMatch(/hardcore$/);
+    // The workspace root is apps/desktop inside text-to-cad; never a hardcoded checkout name.
+    expect(options.projectRootPath).toBe(path.resolve(options.buildPath, '..', '..'));
     expect(options.onlyModules).toEqual(['better-sqlite3']);
   });
 

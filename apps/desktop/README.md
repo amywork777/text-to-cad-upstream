@@ -1,44 +1,50 @@
-# Hardcore
+# Hardcore desktop (`apps/desktop`)
 
-Hardcore is a CAD-first desktop workspace for turning engineering intent into editable,
-revisioned models with Claude or Codex.
+Hardcore is the CAD-first desktop workspace for Text-to-CAD: threads of Claude or Codex work beside
+the CAD Viewer, and accepted STEP files are the canonical artifacts. It lives here, inside the
+Text-to-CAD monorepo, so it always builds against the repository's own `apps/viewer`,
+`packages/cadgen`, `packages/cadgen-js`, and `skills/`.
 
-![Hardcore CAD workspace](artifacts/screenshots/hardcore-opendesign-studio-pattern.jpg)
+This directory is a self-contained pnpm workspace (its own `package.json`, `pnpm-workspace.yaml`,
+lockfile, and internal `@emdash/*` packages) so installing the CAD skills never pulls in Electron. The
+Electron app itself is `apps/emdash-desktop/`; see `AGENTS.md` for the layout and
+`agents/integrations/cad.md` for how the app uses the canonical Text-to-CAD resources.
 
 ## Product model
 
-- An engineering project owns parts, assemblies, drawings, materials, and project discussions.
-- Each CAD model owns its files, revisions, feature tree, parameters, and multiple focused chats.
-- Exactly one model chat can edit geometry at a time; the others share current model context without
-  competing writes.
-- The on-disk artifact revision and hash are the canonical model state.
-- Source, History, Drawing, Instructions, and Analysis are workspace modes—not extra side panels.
-
-## Current MVP
-
-- Text-to-CAD generation and follow-up revision through Claude or Codex
-- Embedded STEP viewer with model tree, inspection tools, and CAD-themed controls
-- Editable source and parameter controls for generator-backed models
-- Revision-safe reload and persistence
-- Model-scoped conversations with explicit edit authority
-- Project files, material assignments, and component/BOM material context
-- Pinned local CAD runtime provisioning
+- An engineering project owns parts, assemblies, drawings, and project discussions.
+- Each thread owns its conversation and the artifacts it opens; many threads run in parallel.
+- The on-disk STEP and its hash are the canonical model state; a plain `.py` `@step` recipe is its
+  optional source, edited in the general source editor and rebuilt through cadgen's own script door.
+- Jake's CAD Viewer owns everything inside the viewport; the desktop owns the artifact lifecycle.
 
 ## Development
 
-Prerequisites are provisioned through the pinned pnpm and Node configuration in the repository.
+Prerequisites: any `pnpm` (the pinned Node and pnpm are provisioned from `package.json`), Python
+3.11+, and `npm` for the one-time CAD Viewer client build. From this directory:
 
 ```bash
 pnpm install
-pnpm run doctor
+pnpm cad:setup      # Python runtime, apps/viewer/dist, and the cad@text-to-cad provider plugin
 pnpm run dev
 ```
 
-Run the complete local quality gate with:
+`pnpm cad:setup` accepts a repository `.venv` that already imports cadgen from `packages/cadgen`
+(the CONTRIBUTING setup at the repository root); otherwise it provisions a managed runtime under the
+app's user data.
+
+Quality gates, also from this directory:
 
 ```bash
-pnpm run check
+pnpm run check      # format, lint, typecheck, test
+pnpm cad:check      # report the CAD runtime, viewer client, and provider plugins
+pnpm cad:test       # Jake's selected suites, the viewer launch smoke, and a generate/validate smoke
 ```
+
+Packaging (`pnpm --dir apps/emdash-desktop run package:mac`) bundles the built viewer, the skills,
+`packages/cadgen`, and the runtime installer under `Contents/Resources/text-to-cad`; the packaged CAD
+smoke (`scripts/release/verify-packaged-cad.ts`) provisions that bundle in a scratch directory and
+exercises two isolated project roots.
 
 ## Privacy
 
