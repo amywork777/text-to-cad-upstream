@@ -25,12 +25,18 @@ export type ComposerPermissionOption = {
   optionId: string;
   name: string;
   kind: string;
+  /** Secondary text shown under the option in the menu. */
+  description?: string;
 };
 
 export type ComposerPermissionRequest = {
   requestId: string;
+  /** 'permission' asks whether the agent may act; 'question' is the agent asking the user. */
+  kind?: 'permission' | 'question';
   /** Pre-formatted action verb, e.g. "Read a File", "Execute". */
   title: string;
+  /** What is being asked or granted: a plan, a command, file paths, the question text. */
+  body?: string;
   options: ComposerPermissionOption[];
 };
 
@@ -46,7 +52,7 @@ export interface PermissionBandProps {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function kindToTone(kind: string): SplitButtonOption['tone'] {
-  if (kind.startsWith('allow_')) return 'accept';
+  if (kind.startsWith('allow_') || kind === 'answer') return 'accept';
   if (kind.startsWith('reject_')) return 'reject';
   return 'neutral';
 }
@@ -54,7 +60,7 @@ function kindToTone(kind: string): SplitButtonOption['tone'] {
 function defaultSelectedId(options: ComposerPermissionOption[]): string | undefined {
   return (
     options.find((o) => o.kind === 'allow_once')?.optionId ??
-    options.find((o) => o.kind.startsWith('allow_'))?.optionId ??
+    options.find((o) => o.kind.startsWith('allow_') || o.kind === 'answer')?.optionId ??
     options[0]?.optionId
   );
 }
@@ -67,9 +73,11 @@ export function PermissionBand({
   onResolve,
   className,
 }: PermissionBandProps) {
+  const isQuestion = request.kind === 'question';
   const splitOptions: SplitButtonOption[] = request.options.map((o) => ({
     id: o.optionId,
     label: o.name,
+    ...(o.description ? { description: o.description } : {}),
     tone: kindToTone(o.kind),
   }));
 
@@ -91,10 +99,16 @@ export function PermissionBand({
 
       {/* Context label */}
       <span className={styles.bandLabel}>
-        <span className={styles.bandLabelStrong}>Allow</span> <span>{request.title}</span>
+        <span className={styles.bandLabelStrong}>{isQuestion ? 'Question' : 'Allow'}</span>{' '}
+        <span>{request.title}</span>
         {queueCount > 1 && (
           <span className={styles.bandCounter}>
             ({1} of {queueCount})
+          </span>
+        )}
+        {request.body && (
+          <span className={styles.bandBody} title={request.body}>
+            {request.body}
           </span>
         )}
       </span>

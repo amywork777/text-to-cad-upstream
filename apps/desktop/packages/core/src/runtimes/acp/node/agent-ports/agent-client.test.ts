@@ -47,6 +47,7 @@ describe('buildAgentClient generated-image ingress', () => {
       onSessionUpdate,
       onPermissionRequest: vi.fn(),
       onCreateTerminal: vi.fn(),
+      onElicitation: vi.fn(),
     } as unknown as InboundRouter;
     const client = buildAgentClient(connection, router, {} as never);
 

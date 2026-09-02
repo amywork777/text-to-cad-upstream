@@ -1,4 +1,6 @@
 import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   RequestPermissionRequest,
   RequestPermissionResponse,
   SessionConfigOption,
@@ -384,9 +386,12 @@ export class SessionCell {
 
   requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const requestId = crypto.randomUUID();
+    const body = permissionBody(params);
     const request: AcpPermissionRequest = {
       requestId,
+      kind: 'permission',
       toolCall: this.buildPermissionToolCall(requestId, params.toolCall),
+      ...(body !== undefined ? { body } : {}),
       options: params.options.map((option) => ({
         optionId: option.optionId,
         name: option.name,
@@ -400,6 +405,52 @@ export class SessionCell {
     });
     this.applyEvent({ type: 'PermissionRequested', request });
     return this.permissions.request(request);
+  }
+
+  /**
+   * An ACP form elicitation: Claude's AskUserQuestion and questions MCP
+   * servers ask. Every choice field is put to the user one at a time through
+   * the same pending-permission channel the composer already renders, and the
+   * answers are folded into one accept response. Free-text fields have no
+   * input here and stay empty, which the agent treats as skipped; a session
+   * that ends mid-question cancels the whole elicitation.
+   */
+  async requestElicitation(params: CreateElicitationRequest): Promise<CreateElicitationResponse> {
+    if (params.mode !== 'form') return { action: 'decline' };
+    const questions = elicitationQuestions(params);
+    if (questions.length === 0) return { action: 'decline' };
+    const toolCallId = (params as { toolCallId?: unknown }).toolCallId;
+    const content: Record<string, string | string[]> = {};
+    for (const question of questions) {
+      const requestId = crypto.randomUUID();
+      const request: AcpPermissionRequest = {
+        requestId,
+        kind: 'question',
+        toolCall: this.buildPermissionToolCall(
+          requestId,
+          typeof toolCallId === 'string'
+            ? { toolCallId, title: question.title, kind: 'other' }
+            : { toolCallId: requestId, title: question.title, kind: 'other' }
+        ),
+        body: question.body,
+        options: [
+          ...question.options.map((option) => ({
+            optionId: option.value,
+            name: option.label,
+            kind: 'answer',
+            ...(option.description !== undefined ? { description: option.description } : {}),
+          })),
+          { optionId: ELICITATION_SKIP_OPTION, name: 'Skip', kind: 'reject_once' },
+        ],
+      };
+      this.applyEvent({ type: 'PermissionRequested', request });
+      const response = await this.permissions.request(request);
+      if (response.outcome.outcome !== 'selected') return { action: 'cancel' };
+      const optionId = response.outcome.optionId;
+      if (optionId === ELICITATION_SKIP_OPTION) continue;
+      content[question.key] = question.multiSelect ? [optionId] : optionId;
+    }
+    return { action: 'accept', content };
   }
 
   async setMode(modeId: string): Promise<Result<void, AcpSetModeOptionError>> {
@@ -766,7 +817,7 @@ export class SessionCell {
       id: activeTurn ? makeToolId(activeTurn.id, toolCallId) : `permission:${toolCallId}`,
       seq: 0,
       toolCallId,
-      title: rawToolCall?.title ?? 'Permission request',
+      title: rawToolCall?.title ?? permissionTitle(rawToolCall),
       toolKind: rawToolCall?.kind ?? null,
       status: 'pending',
       parentToolCallId: undefined,
@@ -776,6 +827,132 @@ export class SessionCell {
   private emitTranscriptChanged(): void {
     this.deps.callbacks?.onTranscriptChanged?.();
   }
+}
+
+const ELICITATION_SKIP_OPTION = '__skip__';
+const PERMISSION_BODY_LIMIT = 2_000;
+
+/** A request that arrives before its tool call still gets a meaningful name. */
+function permissionTitle(rawToolCall: RequestPermissionRequest['toolCall'] | undefined): string {
+  const rawInput = rawToolCall?.rawInput;
+  const command =
+    rawInput && typeof rawInput === 'object' ? (rawInput as { command?: unknown }).command : null;
+  if (typeof command === 'string' && command.trim()) return command.trim();
+  switch (rawToolCall?.kind) {
+    case 'edit':
+      return 'Edit files';
+    case 'execute':
+      return 'Run a command';
+    case 'fetch':
+      return 'Fetch a page';
+    default:
+      return 'Permission request';
+  }
+}
+
+/**
+ * What the user is deciding on: the request's text content (a plan, a
+ * permissions scope, an MCP question), else the command, else the file paths
+ * Codex tucks into its own metadata.
+ */
+function permissionBody(params: RequestPermissionRequest): string | undefined {
+  const parts: string[] = [];
+  const content = params.toolCall?.content;
+  if (Array.isArray(content)) {
+    for (const block of content) {
+      if (block.type === 'content' && block.content.type === 'text' && block.content.text.trim()) {
+        parts.push(block.content.text.trim());
+      }
+    }
+  }
+  if (parts.length === 0) {
+    const rawInput = params.toolCall?.rawInput;
+    const command =
+      rawInput && typeof rawInput === 'object' ? (rawInput as { command?: unknown }).command : null;
+    if (typeof command === 'string' && command.trim()) parts.push(command.trim());
+  }
+  if (parts.length === 0) {
+    const meta = (params as { _meta?: unknown })._meta as { codex?: { params?: unknown } } | null;
+    const paths = collectPathLike(meta?.codex?.params);
+    if (paths.length > 0) parts.push(paths.join('\n'));
+  }
+  const body = parts.join('\n\n');
+  if (!body) return undefined;
+  return body.length > PERMISSION_BODY_LIMIT ? `${body.slice(0, PERMISSION_BODY_LIMIT)}…` : body;
+}
+
+function collectPathLike(value: unknown, depth = 0, out: string[] = []): string[] {
+  if (!value || typeof value !== 'object' || depth > 3) return out;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectPathLike(entry, depth + 1, out);
+    return out;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      (key === 'path' || key === 'file' || key === 'cwd' || key === 'command') &&
+      typeof entry === 'string' &&
+      entry &&
+      !out.includes(entry)
+    ) {
+      out.push(entry);
+    } else if (entry && typeof entry === 'object') {
+      collectPathLike(entry, depth + 1, out);
+    }
+  }
+  return out;
+}
+
+type ElicitationQuestion = {
+  key: string;
+  title: string;
+  body: string;
+  multiSelect: boolean;
+  options: Array<{ value: string; label: string; description?: string }>;
+};
+
+/** The choice fields of a form elicitation, in schema order. */
+function elicitationQuestions(
+  params: Extract<CreateElicitationRequest, { mode: 'form' }>
+): ElicitationQuestion[] {
+  const properties = params.requestedSchema.properties ?? {};
+  const questions: ElicitationQuestion[] = [];
+  for (const [key, schema] of Object.entries(properties)) {
+    const field = schema as {
+      type?: unknown;
+      title?: unknown;
+      description?: unknown;
+      enum?: unknown;
+      oneOf?: unknown;
+      items?: { anyOf?: unknown } | null;
+    };
+    const multiSelect = field.type === 'array';
+    const enumOptions = multiSelect ? field.items?.anyOf : (field.oneOf ?? field.enum);
+    if (!Array.isArray(enumOptions) || enumOptions.length === 0) continue;
+    const options = enumOptions.flatMap((option) => {
+      if (typeof option === 'string') return [{ value: option, label: option }];
+      const candidate = option as { const?: unknown; title?: unknown; _meta?: unknown };
+      if (typeof candidate.const !== 'string') return [];
+      const meta = (candidate._meta as Record<string, unknown> | null | undefined)?.[
+        '_claude/askUserQuestionOption'
+      ] as { description?: unknown } | undefined;
+      const description = typeof meta?.description === 'string' ? meta.description : undefined;
+      const label =
+        description !== undefined
+          ? candidate.const
+          : typeof candidate.title === 'string' && candidate.title
+            ? candidate.title
+            : candidate.const;
+      return [{ value: candidate.const, label, ...(description ? { description } : {}) }];
+    });
+    if (options.length === 0) continue;
+    const title = typeof field.title === 'string' && field.title ? field.title : key;
+    const body =
+      typeof field.description === 'string' && field.description
+        ? field.description
+        : params.message;
+    questions.push({ key, title, body, multiSelect, options });
+  }
+  return questions;
 }
 
 function findToolCall(

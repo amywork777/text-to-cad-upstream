@@ -41,6 +41,17 @@ export const bandLabelStrong = style({
   color: vars.foreground,
 });
 
+/** The plan, command, paths, or question the user is deciding on. */
+export const bandBody = style({
+  display: 'block',
+  marginTop: '0.25rem',
+  maxHeight: '6rem',
+  overflow: 'auto',
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+  color: vars.foregroundMuted,
+});
+
 export const bandCounter = style({
   marginLeft: '0.375rem',
   opacity: 0.6,

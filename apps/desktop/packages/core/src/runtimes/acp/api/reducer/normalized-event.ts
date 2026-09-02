@@ -5,4 +5,5 @@ export type {
   NormalizedResourceLink,
   NormalizedToolLocation,
   NormalizedToolStatus,
+  SessionUsage,
 } from '#primitives/acp-transcript/api';

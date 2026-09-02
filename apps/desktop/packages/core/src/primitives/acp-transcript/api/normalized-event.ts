@@ -10,10 +10,21 @@ export type AttachmentRef = {
   mimeType: 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
 };
 
+export type SessionRateLimit = {
+  status: 'allowed' | 'allowed_warning' | 'rejected';
+  /** Epoch seconds when the limit resets, when the provider says. */
+  resetsAt?: number;
+  rateLimitType?: string;
+  /** Fraction of the limit already used, when the provider says. */
+  utilization?: number;
+};
+
 export type SessionUsage = {
   contextSize: number;
   contextUsed: number;
   cost: { amount: number; currency: string } | null;
+  /** Provider account limits reported beside usage (Claude); absent for others. */
+  rateLimit?: SessionRateLimit;
 };
 
 export type PlanEntryInput = {

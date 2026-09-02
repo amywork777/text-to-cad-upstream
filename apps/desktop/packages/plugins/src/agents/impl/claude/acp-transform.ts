@@ -48,7 +48,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
   const toolName = claudeToolName(raw);
   const parentToolCallId = parentPatch.parentToolCallId ?? update.parentToolCallId;
 
-  if (toolName === 'Agent') {
+  if (toolName === 'Agent' || toolName === 'Task') {
     const asyncLaunch = parseAsyncLaunch(raw);
     return {
       kind: 'subagent',
@@ -116,6 +116,11 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       parentToolCallId,
       ...(inputSummary ? { inputSummary } : {}),
     };
+  }
+
+  if (toolName === 'ExitPlanMode') {
+    // The plan itself is the call's text content; the row names what it is.
+    return { ...update, ...parentPatch, ...outputPatch, title: 'Plan for approval' };
   }
 
   if (!parentPatch.parentToolCallId && outputPatch.outputText === undefined) return update;

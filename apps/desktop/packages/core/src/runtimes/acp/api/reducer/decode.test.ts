@@ -146,3 +146,59 @@ describe('decodeSessionUpdate tool locations and plans', () => {
     ).toEqual({ kind: 'plan', entries: [] });
   });
 });
+
+describe('decodeSessionUpdate initial tool text and rate limits', () => {
+  it('keeps text a tool call carries from the start', () => {
+    const event = decodeSessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'plan-1',
+      title: 'ExitPlanMode',
+      kind: 'switch_mode',
+      status: 'pending',
+      content: [{ type: 'content', content: { type: 'text', text: '1. Add tests\n2. Ship' } }],
+    } as unknown as SessionUpdate);
+    expect(event).toMatchObject({ kind: 'tool_call', outputText: '1. Add tests\n2. Ship' });
+  });
+
+  it('reads linked resources inside tool results as lines', () => {
+    const event = decodeSessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'view-1',
+      status: 'completed',
+      content: [
+        {
+          type: 'content',
+          content: { type: 'resource_link', name: 'render.png', uri: 'file:///repo/render.png' },
+        },
+      ],
+    } as unknown as SessionUpdate);
+    expect(event).toMatchObject({
+      kind: 'tool_update',
+      outputText: 'render.png: file:///repo/render.png',
+    });
+  });
+
+  it('carries provider rate limits beside usage', () => {
+    const event = decodeSessionUpdate({
+      sessionUpdate: 'usage_update',
+      used: 10,
+      size: 100,
+      _meta: {
+        '_claude/rateLimit': {
+          status: 'allowed_warning',
+          resetsAt: 1_700_000_000,
+          utilization: 0.9,
+        },
+      },
+    } as unknown as SessionUpdate);
+    expect(event).toEqual({
+      kind: 'usage',
+      usage: {
+        contextUsed: 10,
+        contextSize: 100,
+        cost: null,
+        rateLimit: { status: 'allowed_warning', resetsAt: 1_700_000_000, utilization: 0.9 },
+      },
+    });
+  });
+});

@@ -1,4 +1,6 @@
 import type {
+  CreateElicitationRequest,
+  CreateElicitationResponse,
   CreateTerminalRequest,
   CreateTerminalResponse,
   LoadSessionRequest,
@@ -714,6 +716,23 @@ export class SessionManager implements InboundRouter {
     if (!conversationId || !record) return Promise.resolve({ outcome: { outcome: 'cancelled' } });
     this.lifecycle.recordOutput(conversationId);
     const response = record.cell.requestPermission(params);
+    this.syncRecord(record);
+    return response;
+  }
+
+  onElicitation(
+    connection: AcpConnectionContext,
+    params: CreateElicitationRequest
+  ): Promise<CreateElicitationResponse> {
+    const sessionId = (params as { sessionId?: unknown }).sessionId;
+    const conversationId =
+      typeof sessionId === 'string'
+        ? this.resolveConversationForSession(connection.key, sessionId)
+        : null;
+    const record = conversationId ? this.cells.get(conversationId) : undefined;
+    if (!conversationId || !record) return Promise.resolve({ action: 'cancel' });
+    this.lifecycle.recordOutput(conversationId);
+    const response = record.cell.requestElicitation(params);
     this.syncRecord(record);
     return response;
   }

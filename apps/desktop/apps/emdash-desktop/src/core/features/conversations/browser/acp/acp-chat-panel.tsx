@@ -233,14 +233,31 @@ function toComposerPermission(
   if (!req) return null;
   return {
     requestId: req.requestId,
+    kind: req.kind,
     title: req.title,
+    ...(req.body !== undefined ? { body: req.body } : {}),
     options: req.options.map((o) => ({
       optionId: o.optionId,
       name: o.name,
       kind: o.kind,
+      ...(o.description !== undefined ? { description: o.description } : {}),
     })),
   };
 }
+
+const RateLimitStatus = observer(function RateLimitStatus({ store }: { store: AcpChatStore }) {
+  const notice = store.rateLimitNotice;
+  if (!notice) return null;
+  return (
+    <div
+      className="mx-3 mb-1 rounded-md border border-border-warning bg-background-warning px-2.5 py-1.5 text-xs text-foreground-warning"
+      role="status"
+      aria-live="polite"
+    >
+      {notice}
+    </div>
+  );
+});
 
 const supportedAttachmentMimeTypes = new Set<AttachmentMimeType>([
   'image/png',
@@ -819,6 +836,7 @@ const ComposerForStore = observer(function ComposerForStore({
   return createPortal(
     <>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInputChange} />
+      <RateLimitStatus store={store} />
       <BackgroundAgentsStatus store={store} />
       {a.isWorking && <ActiveAgentStatus store={store} providerName={providerName} />}
       {disabledReason && (

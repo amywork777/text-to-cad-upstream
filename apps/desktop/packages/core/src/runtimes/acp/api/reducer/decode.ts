@@ -21,6 +21,7 @@ import type {
   NormalizedResourceLink,
   NormalizedToolLocation,
   NormalizedToolStatus,
+  SessionUsage,
 } from './normalized-event';
 
 function extractDiffs(
@@ -65,7 +66,15 @@ function extractTextOutput(
   for (const block of content) {
     const raw = block as { type?: unknown; content?: unknown; text?: unknown };
     if (raw.type === 'content') {
-      collectTextPayload(raw.content, parts);
+      const link = raw.content as { type?: unknown; name?: unknown; uri?: unknown } | null;
+      if (link?.type === 'resource_link' && typeof link.uri === 'string') {
+        // A linked resource inside a tool result (Codex's View Image) reads as a line.
+        parts.push(
+          typeof link.name === 'string' && link.name ? `${link.name}: ${link.uri}` : link.uri
+        );
+      } else {
+        collectTextPayload(raw.content, parts);
+      }
     } else if (raw.type === 'text' && typeof raw.text === 'string') {
       parts.push(raw.text);
     }
@@ -188,6 +197,26 @@ function extractLocations(update: SessionUpdate): NormalizedToolLocation[] | und
   return locations.length > 0 ? locations : undefined;
 }
 
+/** Claude reports account rate limits beside usage; the composer warns from them. */
+function decodeRateLimit(value: unknown): SessionUsage['rateLimit'] | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as {
+    status?: unknown;
+    resetsAt?: unknown;
+    rateLimitType?: unknown;
+    utilization?: unknown;
+  };
+  if (raw.status !== 'allowed' && raw.status !== 'allowed_warning' && raw.status !== 'rejected') {
+    return undefined;
+  }
+  return {
+    status: raw.status,
+    ...(typeof raw.resetsAt === 'number' ? { resetsAt: raw.resetsAt } : {}),
+    ...(typeof raw.rateLimitType === 'string' ? { rateLimitType: raw.rateLimitType } : {}),
+    ...(typeof raw.utilization === 'number' ? { utilization: raw.utilization } : {}),
+  };
+}
+
 function planEntries(raw: unknown): Extract<NormalizedEvent, { kind: 'plan' }>['entries'] {
   if (!Array.isArray(raw)) return [];
   return raw.map((entry) => {
@@ -233,6 +262,9 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
       const terminalId = extractTerminalId(update);
       const inputSummary = extractInputSummary(update);
       const locations = extractLocations(update);
+      // A call can carry text from the start (a plan awaiting approval, an
+      // agent's brief, a startup failure); it is kept like a result.
+      const outputText = extractTextOutput(update.content);
       return {
         kind: 'tool_call',
         toolCallId: update.toolCallId,
@@ -242,6 +274,7 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         parentToolCallId: null,
         diffs: extractDiffs(update.content),
         ...(inputSummary !== undefined ? { inputSummary } : {}),
+        ...(outputText !== undefined ? { outputText } : {}),
         ...(terminalId !== undefined ? { terminalId } : {}),
         ...(locations !== undefined ? { locations } : {}),
       };
@@ -306,7 +339,13 @@ export function decodeSessionUpdate(update: SessionUpdate): NormalizedEvent {
         raw.cost && typeof raw.cost.amount === 'number' && raw.cost.currency
           ? { amount: raw.cost.amount, currency: raw.cost.currency }
           : null;
-      return { kind: 'usage', usage: { contextUsed, contextSize, cost } };
+      const rateLimit = decodeRateLimit(
+        (update as { _meta?: Record<string, unknown> | null })._meta?.['_claude/rateLimit']
+      );
+      return {
+        kind: 'usage',
+        usage: { contextUsed, contextSize, cost, ...(rateLimit ? { rateLimit } : {}) },
+      };
     }
 
     case 'session_info_update': {

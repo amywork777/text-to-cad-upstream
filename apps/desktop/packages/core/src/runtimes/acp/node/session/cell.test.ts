@@ -559,3 +559,108 @@ describe('SessionCell idle turns and queue commands', () => {
     expect(cell.sessionState.queuedPrompts.map((prompt) => prompt.id)).toEqual([second.id]);
   });
 });
+
+describe('SessionCell elicitations', () => {
+  it('asks each choice question through the permission channel and folds the answers', async () => {
+    const { cell } = makeCell();
+    const elicitation = cell.requestElicitation({
+      mode: 'form',
+      sessionId: 'session-1',
+      toolCallId: 'ask-1',
+      message: 'Which finish?',
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          question_0: {
+            type: 'string',
+            title: 'Finish',
+            oneOf: [
+              {
+                const: 'Anodized',
+                title: 'Anodized — durable',
+                _meta: { '_claude/askUserQuestionOption': { description: 'durable' } },
+              },
+              { const: 'Raw', title: 'Raw' },
+            ],
+          },
+          question_0_custom: { type: 'string', title: 'Other' },
+          question_1: {
+            type: 'array',
+            title: 'Exports',
+            description: 'Which exports do you need?',
+            items: {
+              anyOf: [
+                { const: 'STL', title: 'STL' },
+                { const: 'GLB', title: 'GLB' },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    let pending = cell.sessionState.pendingPermissions;
+    expect(pending).toHaveLength(1);
+    expect(pending[0]).toMatchObject({
+      kind: 'question',
+      body: 'Which finish?',
+      options: [
+        { optionId: 'Anodized', name: 'Anodized', kind: 'answer', description: 'durable' },
+        { optionId: 'Raw', name: 'Raw', kind: 'answer' },
+        { optionId: '__skip__', name: 'Skip', kind: 'reject_once' },
+      ],
+    });
+    expect(isOk(cell.resolvePermission(pending[0].requestId, 'Anodized'))).toBe(true);
+
+    await vi.waitFor(() => expect(cell.sessionState.pendingPermissions).toHaveLength(1));
+    pending = cell.sessionState.pendingPermissions;
+    expect(pending[0]).toMatchObject({ kind: 'question', body: 'Which exports do you need?' });
+    expect(isOk(cell.resolvePermission(pending[0].requestId, 'GLB'))).toBe(true);
+
+    await expect(elicitation).resolves.toEqual({
+      action: 'accept',
+      content: { question_0: 'Anodized', question_1: ['GLB'] },
+    });
+    expect(cell.sessionState.pendingPermissions).toHaveLength(0);
+  });
+
+  it('declines forms without choice fields and url elicitations', async () => {
+    const { cell } = makeCell();
+    await expect(
+      cell.requestElicitation({
+        mode: 'form',
+        sessionId: 'session-1',
+        message: 'Name?',
+        requestedSchema: { type: 'object', properties: { name: { type: 'string' } } },
+      })
+    ).resolves.toEqual({ action: 'decline' });
+    await expect(
+      cell.requestElicitation({
+        mode: 'url',
+        sessionId: 'session-1',
+        message: 'Sign in',
+        url: 'https://example.com',
+        elicitationId: 'e1',
+      })
+    ).resolves.toEqual({ action: 'decline' });
+  });
+
+  it('shows what a permission request is about', () => {
+    const { cell } = makeCell();
+    void cell.requestPermission({
+      sessionId: 'session-1',
+      toolCall: {
+        toolCallId: 'tool-2',
+        kind: 'execute',
+        status: 'pending',
+        rawInput: { command: 'rm -rf build', cwd: '/repo' },
+      },
+      options: [{ optionId: 'allow', name: 'Allow', kind: 'allow_once' as PermissionOptionKind }],
+    });
+    expect(cell.sessionState.pendingPermissions[0]).toMatchObject({
+      kind: 'permission',
+      body: 'rm -rf build',
+      toolCall: { title: 'rm -rf build' },
+    });
+  });
+});

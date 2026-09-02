@@ -385,3 +385,23 @@ describe('parseTaskNotification', () => {
     });
   });
 });
+
+describe('enrichClaudeUpdate tool names', () => {
+  it('treats the Task tool as a subagent like Agent', () => {
+    const raw = makeRaw({ claudeCode: { toolName: 'Task' } });
+    expect(enrichClaudeUpdate(makeToolCall({ title: 'Explore the repo' }), raw)).toMatchObject({
+      kind: 'subagent',
+      title: 'Explore the repo',
+    });
+  });
+
+  it('names an ExitPlanMode call as the plan awaiting approval', () => {
+    const raw = makeRaw({ claudeCode: { toolName: 'ExitPlanMode' } });
+    expect(
+      enrichClaudeUpdate(
+        makeToolCall({ title: 'ExitPlanMode', toolKind: 'switch_mode', outputText: '1. Ship' }),
+        raw
+      )
+    ).toMatchObject({ kind: 'tool_call', title: 'Plan for approval', outputText: '1. Ship' });
+  });
+});
