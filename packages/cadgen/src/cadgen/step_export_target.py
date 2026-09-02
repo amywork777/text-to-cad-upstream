@@ -35,6 +35,7 @@ import json
 import shutil
 from dataclasses import replace
 from pathlib import Path
+from typing import NamedTuple
 
 from cadgen.catalog import source_from_path
 from cadgen.cli_logging import CliLogger
@@ -80,6 +81,16 @@ def _apply_mesh_overrides(
     )
 
 
+class ResolvedScene(NamedTuple):
+    """What :func:`_resolve_spec_and_scene` hands back: the spec, the in-memory
+    scene, and whether that scene came from RUNNING THE GENERATOR (``True``) or
+    from loading the document on disk (``False``)."""
+
+    spec: EntrySpec
+    scene: LoadedStepScene
+    from_source: bool
+
+
 def _resolve_spec_and_scene(
     repo_root: Path,
     step_path: Path | None,
@@ -88,14 +99,27 @@ def _resolve_spec_and_scene(
     mesh_tolerance: float | None,
     mesh_angular_tolerance: float | None,
     logger: CliLogger,
-) -> tuple[EntrySpec, LoadedStepScene]:
+    door: str,
+    verb: str,
+) -> ResolvedScene:
     """Build the entry spec + an in-memory scene for the model.
 
-    Generated model (``--source-path`` given): run the ``@step`` entry in-process to build the
-    scene — generated models keep no on-disk STEP. Imported model: load the existing STEP
-    and classify it via :func:`cadgen.step_artifact_cli.infer_entry_kind`.
+    Imported model (no ``source_path``): load the existing STEP and classify it via
+    :func:`cadgen.step_artifact_cli.infer_entry_kind`.
+
+    Generated model (``source_path`` given): the DOCUMENT is the truth when it is
+    current -- the freshness authority (:func:`cadgen._internal.doors.document_staleness`)
+    finds the on-disk STEP and a closure that re-hashes -- and it is loaded exactly like
+    an import, running no Python at all. Only a stale or missing document runs the
+    ``@step`` entry in-process, and that decision is ANNOUNCED on stderr through
+    :func:`cadgen._internal.doors.announce_rebuild` before the generator starts, naming
+    ``door`` (the command deciding) and ``verb`` (what it will do afterwards). Until that
+    line existed, ``inspect validate`` on a stale document rebuilt the model for fifteen
+    minutes with nothing on any stream to say so.
     """
     if source_path is not None:
+        from cadgen._internal.doors import announce_rebuild, document_staleness
+
         source = source_from_path(source_path)
         if source is None:
             raise RuntimeError(f"Python generator is not a @step CAD source: {source_path}")
@@ -112,6 +136,15 @@ def _resolve_spec_and_scene(
                 step_path=step_path,
             )
         spec = _apply_mesh_overrides(spec, mesh_tolerance, mesh_angular_tolerance)
+        document = spec.step_path
+        reason = document_staleness(document) if document.is_file() else "no document on disk"
+        if reason is None:
+            with logger.timed(f"load STEP {document.name}"):
+                scene = load_step_scene(document)
+            return ResolvedScene(spec, scene, False)
+        announce_rebuild(
+            door, document, reason=reason, source=spec.script_path or source_path, verb=verb
+        )
         # An export runs the generator but writes the render package NOTHING -- its output
         # is a STEP/STL/3MF/GLB file somewhere else entirely. Claiming the writer lock here
         # made a fully-current model report `generating` with an empty bar for the whole
@@ -125,7 +158,7 @@ def _resolve_spec_and_scene(
         )
         if scene is None:
             raise RuntimeError(f"Generator did not produce a STEP scene: {spec.source_ref}")
-        return spec, scene
+        return ResolvedScene(spec, scene, True)
 
     if step_path is None:
         raise ValueError("step_path is required for imported STEP/STP models")
@@ -141,7 +174,7 @@ def _resolve_spec_and_scene(
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
     )
-    return spec, scene
+    return ResolvedScene(spec, scene, False)
 
 
 def _display_name_for(path: Path) -> str:
@@ -308,6 +341,7 @@ def _export_scene(
     mesh_tolerance: float | None = None,
     mesh_angular_tolerance: float | None = None,
     logger: CliLogger,
+    from_current_document: bool = False,
 ) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -324,9 +358,11 @@ def _export_scene(
             # last run produced while the caller reports outcome:built -- the failure in #308,
             # where an edited generator kept exporting the old part and validate, snapshot and
             # the Viewer all inherited it without a single error. A generated entry reaches
-            # this line only when the scene arrived without source_compound (loaded from cache
-            # rather than run), and the answer to that is to say so, not to copy.
-            if spec.source == "generated":
+            # this line only when the scene arrived without source_compound, and the answer
+            # to that is to say so, not to copy -- UNLESS the resolver loaded the scene from
+            # the document because the freshness authority called it current, in which case
+            # the file on disk IS this build and copying it is the export.
+            if spec.source == "generated" and not from_current_document:
                 raise RuntimeError(
                     f"{spec.source_ref}: refusing to export a generated model from its own "
                     f"{_display_name_for(spec.step_path)} -- the scene carries no generator "
@@ -348,6 +384,8 @@ def _resolve_mesh_package(
     source_path: Path | None,
     *,
     logger: CliLogger,
+    door: str = "step export",
+    verb: str = "exporting",
 ) -> tuple[EntrySpec, Path | None, LoadedStepScene | None]:
     """Resolve what a mesh export tessellates from: ``(spec, package_dir, scene)``.
 
@@ -376,6 +414,19 @@ def _resolve_mesh_package(
         if package_dir is not None:
             logger.debug(f"reusing current render package: {package_dir.name}")
             return spec, package_dir, None
+        from cadgen._internal.doors import announce_rebuild, document_staleness
+
+        document = spec.step_path
+        announce_rebuild(
+            door,
+            document,
+            reason=(
+                (document_staleness(document) if document.is_file() else "no document on disk")
+                or "its render package is missing or stale"
+            ),
+            source=spec.script_path or source_path,
+            verb=verb,
+        )
         # See _resolve_spec_and_scene on lock_intent: an export must not claim
         # the writer lock, or a fully-current model reports `generating`.
         scene = run_script_generator(
@@ -534,7 +585,8 @@ def export_model_to_path(
     mesh_angular_tolerance = normalize_mesh_numeric(mesh_angular_tolerance, field_name="mesh_angular_tolerance")
     if fmt in MESH_EXPORT_FORMATS:
         spec, package_dir, scene = _resolve_mesh_package(
-            repo_root, step_path, source_path, logger=logger
+            repo_root, step_path, source_path, logger=logger,
+            door="step export", verb=f"exporting {fmt}",
         )
         chord, angle = _effective_export_tolerances(
             spec,
@@ -550,13 +602,15 @@ def export_model_to_path(
             logger=logger,
         )
         return {"ok": True, "path": str(out), "filename": out.name, "format": fmt}
-    spec, scene = _resolve_spec_and_scene(
+    spec, scene, from_source = _resolve_spec_and_scene(
         repo_root,
         step_path,
         source_path,
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
         logger=logger,
+        door="step export",
+        verb=f"exporting {fmt}",
     )
     written = _export_scene(
         fmt,
@@ -566,6 +620,7 @@ def export_model_to_path(
         mesh_tolerance=mesh_tolerance,
         mesh_angular_tolerance=mesh_angular_tolerance,
         logger=logger,
+        from_current_document=not from_source,
     )
     return {"ok": True, "path": str(written), "filename": written.name, "format": fmt}
 

@@ -260,7 +260,11 @@ def _shape_brep_bytes(shape: Any) -> bytes:
     """Location-stripped binary BREP of a shape (no triangulation/normals) — the
     process-boundary payload for parallel component builds. Mirrors
     ``_content_hash_shape``'s serialization so the worker rebuilds exactly the
-    geometry the cid addresses."""
+    geometry the cid addresses.
+
+    Takes a build123d shape or a bare ``TopoDS_Shape``: ``inspect validate``
+    ships its per-prototype payloads through here too, and it holds kernel
+    shapes, not wrappers."""
     import io
 
     from OCP.BinTools import BinTools, BinTools_FormatVersion
@@ -268,7 +272,7 @@ def _shape_brep_bytes(shape: Any) -> bytes:
 
     stream = io.BytesIO()
     BinTools.Write_s(
-        shape.wrapped.Located(TopLoc_Location()),
+        getattr(shape, "wrapped", shape).Located(TopLoc_Location()),
         stream,
         False,  # theWithTriangles
         False,  # theWithNormals
@@ -346,22 +350,30 @@ def _build_component_surf_worker(
         return (cid, f"{type(exc).__name__}: {exc}")
 
 
-def _component_build_worker_count(missing_count: int) -> int:
-    """Worker count for parallel component builds.
+def parallel_worker_count(work_count: int, *, env_var: str) -> int:
+    """Worker count for a spawn pool over ``work_count`` independent OCP jobs.
 
-    ``CADGEN_COMPONENT_WORKERS`` overrides (0/1 disables). Defaults engage only
-    when enough components are missing to amortize the per-worker interpreter +
-    OCP import cost (~seconds each)."""
-    env_value = os.environ.get("CADGEN_COMPONENT_WORKERS", "").strip()
+    ``env_var`` overrides (0/1 disables). Defaults engage only when there is
+    enough work to amortize the per-worker interpreter + OCP import cost
+    (~seconds each), and cap at eight so a large machine does not multiply a
+    ~300 MB resident kernel by its core count. One sizing rule, every pool: the
+    component build and ``inspect validate`` differ only in the variable that
+    overrides them."""
+    env_value = os.environ.get(env_var, "").strip()
     if env_value:
         try:
             requested = int(env_value)
         except ValueError:
             requested = 0
-        return max(1, min(requested, missing_count)) if requested > 1 else 1
-    if missing_count < 6:
+        return max(1, min(requested, work_count)) if requested > 1 else 1
+    if work_count < 6:
         return 1
-    return max(1, min((os.cpu_count() or 2) - 2, missing_count, 8))
+    return max(1, min((os.cpu_count() or 2) - 2, work_count, 8))
+
+
+def _component_build_worker_count(missing_count: int) -> int:
+    """Worker count for parallel component builds (``CADGEN_COMPONENT_WORKERS``)."""
+    return parallel_worker_count(missing_count, env_var="CADGEN_COMPONENT_WORKERS")
 
 
 # Where a package build spends its wall clock, gated behind an env var so the

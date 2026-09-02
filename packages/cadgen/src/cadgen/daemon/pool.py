@@ -197,7 +197,32 @@ def _recycle_after() -> int:
 
 
 class WorkerGone(RuntimeError):
-    """The worker died or stopped speaking. Its job is lost; the pool replaces it."""
+    """The worker died or stopped speaking. Its job is lost; the pool replaces it.
+
+    ``exit_status`` is the process's wait status when it had already exited (a
+    negative number is the signal that killed it -- -9 is the OOM killer's SIGKILL
+    on Linux and macOS alike); None when the pipe closed but the process was still
+    running at the moment we looked."""
+
+    def __init__(self, message: str, *, exit_status: int | None = None) -> None:
+        super().__init__(message)
+        self.exit_status = exit_status
+
+
+def describe_exit(status: int | None) -> str:
+    """``exited with code 1`` / ``was killed by SIGKILL (signal 9)`` / ``closed its
+    output while still running`` -- the evidence a dead worker leaves."""
+    if status is None:
+        return "closed its output while still running"
+    if status < 0:
+        import signal
+
+        try:
+            name = signal.Signals(-status).name
+        except ValueError:
+            name = f"signal {-status}"
+        return f"was killed by {name} (signal {-status})"
+    return f"exited with code {status}"
 
 
 class Worker:
@@ -257,10 +282,22 @@ class Worker:
         while True:
             frame = self._read_frame()
             if frame is None:
-                raise WorkerGone("worker closed the connection")
+                status = self._exit_status()
+                raise WorkerGone(
+                    f"worker {getattr(self, 'pid', self.proc.pid)} {describe_exit(status)}",
+                    exit_status=status,
+                )
             yield frame
             if "exit" in frame or "result" in frame or "pong" in frame:
                 return
+
+    def _exit_status(self) -> int | None:
+        """The wait status once the pipe has closed. A dying process closes its
+        pipe a moment before the kernel reaps it, so give it that moment."""
+        try:
+            return self.proc.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            return None
 
     def alive(self) -> bool:
         return self.proc.poll() is None

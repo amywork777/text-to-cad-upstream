@@ -268,6 +268,51 @@ def _recv_json(channel: transport.Channel, timeout: float | None):
     return message if isinstance(message, dict) else None
 
 
+def _job_words(payload: dict) -> tuple[str, list[str], list[str]]:
+    """``(how the user spelled the command, its arguments, the cold argv)``.
+
+    The ``run`` tool is the decorator's warm handoff for ``python <script>``: its
+    argv carries the SCRIPT PATH first and its prog is ``python <name>``, so the
+    job reads ``python <name> <args>`` and the rerun is ``python <path> <args>``.
+    Every other tool is a ``cadgen`` command whose argv is exactly what follows it.
+    """
+    argv = [str(arg) for arg in payload.get("argv") or []]
+    tool = str(payload.get("tool") or "")
+    prog = str(payload.get("prog") or f"cadgen {tool}")
+    if tool == "run" and argv:
+        return prog, argv[1:], ["python", *argv]
+    return prog, argv, [*prog.split(), *argv]
+
+
+def cold_rerun_command(payload: dict) -> str:
+    """The exact command that runs this job in its own process, warm path off."""
+    import shlex
+
+    _prog, _args, cold = _job_words(payload)
+    if os.name == "nt":
+        return f"set CADGEN_DAEMON=0 && {subprocess.list2cmdline(cold)}"
+    return f"CADGEN_DAEMON=0 {shlex.join(cold)}"
+
+
+def worker_died_message(payload: dict, death: dict) -> str:
+    """What the user reads when the warm worker running THEIR job dies.
+
+    Says that the worker died and how (the pool's evidence: exit code or signal),
+    names the job, suspects the likely causes, states that nothing was retried --
+    a 35-minute job silently re-running cold is worse than the failure -- and
+    gives the rerun verbatim. Every clause is load-bearing; the test pins them.
+    """
+    prog, args, _cold = _job_words(payload)
+    job = " ".join([prog, *args])
+    detail = str(death.get("detail") or "worker closed the connection")
+    return (
+        f"cadgen-daemon: the warm worker running `{job}` died mid-job ({detail}) -- "
+        "most likely out of memory, or a crash in the geometry kernel. The job was NOT "
+        "retried. Run it cold, in its own process, to see the failure directly:\n"
+        f"  {cold_rerun_command(payload)}\n"
+    )
+
+
 def _run_request(channel: transport.Channel, payload: dict) -> int | object | None:
     """Send one request and stream the response; int exit code, ``_RESTART``, or
     ``None`` on any protocol fault."""
@@ -301,6 +346,13 @@ def _run_request(channel: transport.Channel, payload: dict) -> int | object | No
             return None
         if "exit" in message:
             return int(message["exit"])
+        if "workerDied" in message:
+            # The worker running this job is gone. The supervisor follows with the exit
+            # frame; this is the one place the loss is explained, and it is never a
+            # silent cold retry -- the caller's job may have run for half an hour.
+            sys.stderr.write(worker_died_message(payload, message["workerDied"] or {}))
+            sys.stderr.flush()
+            continue
         target = streams.get(message.get("stream"))
         data = message.get("data")
         if target is None or not isinstance(data, str):

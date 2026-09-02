@@ -188,14 +188,26 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
     validate_parser = subparsers.add_parser(
         "validate",
         help="Report per-solid geometric validity: topology, closure, and orientation.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
         description=(
             "Check each leaf occurrence for topological validity, watertightness, "
             "self-intersection, and positive volume. This is the geometry-soundness "
             "check; `refs --facts` reports counts and bounds and its \"ok\" field "
-            "covers ref resolution only.\n"
-            "  cadgen step inspect validate models/car/car.step.py\n"
-            "  cadgen step inspect validate models/car/car.step.py --refs o1.1,o1.7\n"
-            "  cadgen step inspect validate models/panel/panel.step.py --allow-open\n"
+            "covers ref resolution only.\n\n"
+            "Occurrences that share one shape (the same part placed many times) are "
+            "checked ONCE for topology, closure, solid presence and volume, in parallel "
+            "across a process pool (CADGEN_VALIDATE_WORKERS overrides the size; 1 runs "
+            "in-process), and a finding names every occurrence it applies to. The "
+            "self-intersection test is numeric and can differ by placement, so by "
+            "default it runs once per shape at its first placement -- the report says so "
+            "in selfIntersectionCheck -- and --every-placement runs it on every copy.\n\n"
+            "A stale generated document is rebuilt from its script first; that decision is "
+            "announced on stderr.\n\n"
+            "examples:\n"
+            "  cadgen step inspect validate models/car/car.step\n"
+            "  cadgen step inspect validate models/car/car.step --refs o1.1,o1.7\n"
+            "  cadgen step inspect validate models/panel/panel.step --allow-open\n"
+            "  cadgen step inspect validate models/car/car.step --every-placement --out validate.json\n"
         ),
     )
     validate_parser.add_argument("entry", help="CAD STEP path or CAD entry target.")
@@ -213,6 +225,23 @@ def build_parser(prog: str = DEFAULT_PROG) -> argparse.ArgumentParser:
         "--skip-self-intersection",
         action="store_true",
         help="Skip the boolean self-intersection test, which dominates runtime on large assemblies.",
+    )
+    validate_parser.add_argument(
+        "--every-placement",
+        action="store_true",
+        help=(
+            "Run the self-intersection test on every placed copy of a shape, not once at its "
+            "first placement. Topology, closure and volume are still checked once per shape."
+        ),
+    )
+    validate_parser.add_argument(
+        "--out",
+        default=None,
+        help=(
+            "Also write the JSON report to this path, rewritten after every shape checked "
+            "with \"partial\": true until the run completes -- so a killed run leaves a "
+            "readable document. Stdout still carries the final report."
+        ),
     )
     _add_output_arguments(validate_parser)
     validate_parser.set_defaults(handler=run_subcommand)
@@ -393,6 +422,8 @@ _SUBCOMMANDS: dict[str, tuple] = {
             "inspection": "validate",
             "allow_open": bool(getattr(args, "allow_open", False)),
             "skip_self_intersection": bool(getattr(args, "skip_self_intersection", False)),
+            "every_placement": bool(getattr(args, "every_placement", False)),
+            "out": Path(args.out) if getattr(args, "out", None) else None,
         },
         lambda args: {"entry": args.entry},
         (OSError, RuntimeError, ValueError),
@@ -672,20 +703,45 @@ def _format_validate_text(result: dict, *, quiet: bool = False, verbose: bool = 
     if errors:
         return "\n".join(str(error.get("message") or error) for error in errors)
     parts = result.get("parts") or []
+    occurrences = result.get("occurrenceCount", 0)
+    prototypes = result.get("prototypeCount")
+    shapes = f" ({prototypes} unique shape(s))" if prototypes is not None else ""
     lines = [
         f"entry       : {result.get('entry', '')}",
-        f"occurrences : {result.get('occurrenceCount', 0)}",
+        f"occurrences : {occurrences}{shapes}",
     ]
+    mode = result.get("selfIntersectionCheck")
+    if mode:
+        lines.append(
+            "self-int.   : "
+            + {
+                "first-placement": "checked once per shape, at its first placement (--every-placement checks each copy)",
+                "every-placement": "checked on every placed copy",
+                "skipped": "skipped (--skip-self-intersection)",
+            }.get(str(mode), str(mode))
+        )
+    if result.get("partial"):
+        lines.append(
+            f"result      : PARTIAL - {result.get('checkedPrototypeCount', 0)}/{prototypes} shape(s) checked"
+        )
     if not parts:
-        lines.append("result      : PASS - all solids valid, closed, and positive volume")
+        if not result.get("partial"):
+            lines.append("result      : PASS - all solids valid, closed, and positive volume")
         return "\n".join(lines)
-    lines.append(f"result      : FAIL - {len(parts)} occurrence(s)")
+    failures = result.get("failureCount", len(parts))
+    lines.append(f"result      : FAIL - {failures} occurrence(s) in {len(parts)} finding(s)")
     for part in parts:
         reasons = ", ".join(part.get("reasons") or [])
-        lines.append(f"  {reasons:44s} {part.get('name', '')} [{part.get('ref', '')}]")
+        members = part.get("occurrences") or []
+        more = f"  (+{len(members) - 1} more placement(s))" if len(members) > 1 else ""
+        lines.append(f"  {reasons:44s} {part.get('name', '')} [{part.get('ref', '')}]{more}")
         if verbose:
             volumes = part.get("volumes") or []
             lines.append(f"      solids={part.get('solidCount', 0)} volumes={volumes}")
+            if len(members) > 1:
+                lines.append(
+                    "      also: " + ", ".join(str(member.get("ref", "")) for member in members[1:])
+                )
     return "\n".join(lines)
 
 

@@ -12,6 +12,7 @@ import argparse
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -79,6 +80,8 @@ class ShellsOverTheVerb(unittest.TestCase):
         ),
         (["interfere", "part.step", "--refs", "o1.1,o1.2"], "interfere", ("refs", ["o1.1", "o1.2"])),
         (["validate", "part.step", "--allow-open"], "validate", ("allow_open", True)),
+        (["validate", "part.step", "--every-placement"], "validate", ("every_placement", True)),
+        (["validate", "part.step", "--out", "v.json"], "validate", ("out", Path("v.json"))),
     )
 
     def _dispatch(self, argv: list[str]) -> dict:

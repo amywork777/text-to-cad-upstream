@@ -178,6 +178,8 @@ def inspect(
     max_pairs: int | None = None,
     allow_open: bool = False,
     skip_self_intersection: bool = False,
+    every_placement: bool = False,
+    out: Path | None = None,
 ) -> InspectResult:
     """Answer one geometry question about TARGET, without changing it.
 
@@ -214,6 +216,12 @@ def inspect(
     allow_open: treat surface/shell geometry as intended, for `validate`.
     skip_self_intersection: skip the boolean self-intersection test, which
         dominates runtime on large assemblies, for `validate`.
+    every_placement: for `validate`, run the numeric self-intersection test
+        on every placed copy of a part instead of once at its first placement.
+        Topology, closure and volume are always checked once per unique shape.
+    out: for `validate`, a path that receives the JSON report as it
+        accumulates (`"partial": true` until the last part lands), so a killed
+        run leaves a readable document.
     """
     # Every heavy import stays in the body: this module is on a model script's
     # pre-gate path (see the module docstring).
@@ -285,6 +293,8 @@ def inspect(
                 refs=selectors,
                 allow_open=allow_open,
                 check_self_intersection=not skip_self_intersection,
+                every_placement=every_placement,
+                out=out,
             )
     except inspection_api.CadRefError as exc:
         # A ref that does not resolve is an ANSWER, not a crash: the report says

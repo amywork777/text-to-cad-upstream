@@ -159,11 +159,14 @@ Use `validate` for that question:
 cadgen step inspect validate models/part/part.step
 cadgen step inspect validate models/part/part.step --refs o1.2      # one subassembly
 cadgen step inspect validate models/panel/panel.step --allow-open   # surfaces intended
+cadgen step inspect validate models/rig/rig.step --out validate.json  # keep a partial on a kill
 ```
 
-It reports, per occurrence, any of `invalidTopology`, `openShell`,
-`nonPositiveVolume`, `noSolid`, `selfIntersecting`, and exits non-zero when any
-occurrence fails.
+It reports any of `invalidTopology`, `openShell`, `nonPositiveVolume`,
+`noSolid`, `selfIntersecting`, and exits non-zero when any occurrence fails.
+Each `parts` entry is one finding on one shape: `ref`/`name` is the placement
+the checks ran on, and `occurrences` lists every placement the finding applies
+to (`failureCount` counts occurrences, `prototypeCount` unique shapes).
 
 Two subtleties worth knowing. `BRepCheck_Analyzer` returns **true** for a
 reversed solid, so topological validity alone cannot catch an inverted body —
@@ -171,8 +174,28 @@ only the sign of the volume can. And volume is measured per solid, never
 aggregated: a `+1000` and a `-1000` inside one compound sum to zero, so any
 check reading a compound's total volume sees nothing wrong.
 
-Pass `--skip-self-intersection` on large assemblies if the boolean test
-dominates runtime.
+Large assemblies: a part placed a hundred times is ONE shape with a hundred
+locations, so topology, closure, solid presence and volume are checked once per
+unique shape, in parallel across a process pool (`CADGEN_VALIDATE_WORKERS`
+sizes it; `1` runs in-process). The self-intersection test is numeric and can
+differ by placement — the same bolt has failed at 15° and 30° of tilt and passed
+upright — so by default it runs once per shape at its first placement and the
+report says so (`"selfIntersectionCheck": "first-placement"`). Pass
+`--every-placement` to run it on every copy (a `selfIntersecting` entry then
+lists exactly the placements that failed), or `--skip-self-intersection` to drop
+the test when it dominates runtime. Progress paints on stderr per shape;
+`--out PATH` also writes the report after every shape with `"partial": true`
+until the run completes, so a run that is killed (out of memory, a lost daemon
+worker) leaves the findings it reached.
+
+`validate` and `interfere` need the model's in-memory scene. A current
+document is loaded from disk and runs no Python; a stale one (its script or a
+helper it imports changed since the document was written) is rebuilt from its
+script first, and the door announces that on stderr before the rebuild starts:
+
+```text
+inspect validate: STEP/rig.step is stale (src/lib/palette.py changed after the document was written); rebuilding from src/rig.py before validating
+```
 
 ### `interfere`: do two parts occupy the same space?
 
