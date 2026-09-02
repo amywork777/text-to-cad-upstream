@@ -18,7 +18,6 @@ import {
   recordCadSourceMigration,
   type CadModelIdentity,
 } from '@core/features/cad/api/cad-model-state';
-import { isEditableCadSourcePath } from '@core/features/cad/api/cad-source-path';
 import { CAD_VALIDATION_WIRE_TIMEOUT_MS } from '@core/features/cad/api/cad-validation';
 import { cadModelCatalogMemento } from '@core/features/cad/contributions/mementos';
 import { getAppSettingValueSnapshot } from '@core/features/settings/api/browser/app-settings-client';
@@ -50,7 +49,6 @@ import { cadModelSourcePath, selectCadModelFiles } from './cad-model-files-model
 import { CadSourcePanel } from './cad-source-panel';
 import { CadWorkbenchChatRelay } from './cad-workbench-chat-relay';
 import { CadWorkspaceModeBar } from './cad-workspace-mode-bar';
-import { useCadSourceRebuild } from './use-cad-source-rebuild';
 
 export interface CadState extends BrowserState {
   path: string;
@@ -70,7 +68,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
     (tab): tab is ResolvedTab<CadTabResource> => tab.kind === 'cad'
   );
   const activeCadTab = cadTabs.find((tab) => tab.isActive);
-  const activeCadResource = activeCadTab?.resource;
   const hasWorkbenchChat = taskView.paneLayout.groups.some(({ pane }) =>
     pane.resolvedTabs.some((tab) => tab.kind === 'acp-chat' || tab.kind === 'conversation')
   );
@@ -82,22 +79,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
     const sourcePath = catalog.models[cadModelContextKey(modelPath)]?.sourcePath;
     return sourcePath ? resolveWorkspacePath(resource.workspacePath, sourcePath) : null;
   };
-  const activeSourcePath = activeCadResource
-    ? cadModelSourcePath(fileCandidates, activeCadResource.path, knownSourcePath(activeCadResource))
-    : null;
-
-  useEffect(() => {
-    if (!activeCadResource) return;
-    activeCadResource.syncViewerIntegration();
-    activeCadResource.syncViewerTreeState();
-    void activeCadResource.syncViewerFeatureHistory(false, activeSourcePath);
-    const timer = window.setInterval(() => {
-      activeCadResource.syncViewerIntegration();
-      activeCadResource.syncViewerTreeState();
-      void activeCadResource.syncViewerFeatureHistory(false, activeSourcePath);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [activeCadResource, activeSourcePath]);
 
   return (
     <>
@@ -110,7 +91,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
           resource.path,
           knownSourcePath(resource)
         );
-        const hasEditablePythonSource = Boolean(sourcePath && isEditableCadSourcePath(sourcePath));
         const drawingFiles = modelFiles.filter((file) => file.role === 'drawing');
         const modes = availableEngineeringWorkspaceModes({
           kind: 'part',
@@ -158,13 +138,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
             style={{ display: visible ? 'flex' : 'none' }}
             inert={visible ? undefined : true}
           >
-            {visible && hasEditablePythonSource && sourcePath ? (
-              <CadViewerParameterBridge
-                resource={resource}
-                task={ctx as TaskTabContext}
-                sourcePath={sourcePath}
-              />
-            ) : null}
             {visible ? (
               <CadArtifactReconciliationBridge resource={resource} sourcePath={sourcePath} />
             ) : null}
@@ -177,13 +150,11 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
             ) : null}
             <div className="flex min-h-0 flex-1">
               <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                {visible ? <CadResponsiveTreeGuard resource={resource} /> : null}
                 <CadWorkspaceModeBar
                   modes={modes}
                   activeMode={activeMode}
                   onChange={changeMode}
                   onRefresh={resource.refreshViewer}
-                  onAnnotate={() => void resource.toggleViewerAnnotation()}
                   onCapture={resource.requestCaptureForChat}
                   onAddOutput={addOutput}
                   creatingOutput={resource.drawingCreating ? 'drawing' : null}
@@ -199,7 +170,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
                         browserId={resource.browserId}
                         visible={visible && activeMode === '3d'}
                         showToolbar={false}
-                        onDomReady={resource.handleViewerDomReady}
                       />
                     ) : resource.status === 'error' ? (
                       <CadError resource={resource} />
@@ -282,49 +252,6 @@ const CadTabContent = observer(function CadTabContent({ host, ctx }: TabContentP
   );
 });
 
-const COMPACT_CAD_WORKSPACE_WIDTH = 720;
-
-const CadResponsiveTreeGuard = observer(function CadResponsiveTreeGuard({
-  resource,
-}: {
-  resource: CadTabResource;
-}) {
-  const markerRef = useRef<HTMLSpanElement>(null);
-  const compactRef = useRef<boolean | null>(null);
-  const initialTreeStateHandledRef = useRef(false);
-
-  useEffect(() => {
-    const workspace = markerRef.current?.parentElement;
-    if (!workspace || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      const compact = entry.contentRect.width < COMPACT_CAD_WORKSPACE_WIDTH;
-      const enteredCompact = compact && compactRef.current !== true;
-      compactRef.current = compact;
-      if (enteredCompact && resource.viewerTreeOpen === true) {
-        initialTreeStateHandledRef.current = true;
-        resource.setViewerTreeOpen(false);
-      }
-    });
-    observer.observe(workspace);
-    return () => observer.disconnect();
-  }, [resource]);
-
-  useEffect(() => {
-    if (
-      initialTreeStateHandledRef.current ||
-      compactRef.current === null ||
-      resource.viewerTreeOpen === null
-    ) {
-      return;
-    }
-    initialTreeStateHandledRef.current = true;
-    if (compactRef.current && resource.viewerTreeOpen) resource.setViewerTreeOpen(false);
-  }, [resource, resource.viewerTreeOpen]);
-
-  return <span ref={markerRef} className="pointer-events-none absolute size-0" aria-hidden />;
-});
-
 function CadArtifactReconciliationBridge({
   resource,
   sourcePath,
@@ -385,64 +312,6 @@ function CadArtifactReconciliationBridge({
       cancelled = true;
     };
   }, [contextKey, identity, resource, runStatus, setCatalog]);
-
-  return null;
-}
-
-function CadViewerParameterBridge({
-  resource,
-  task,
-  sourcePath,
-}: {
-  resource: CadTabResource;
-  task: TaskTabContext;
-  sourcePath: string;
-}) {
-  const handlingRef = useRef(false);
-  const { rebuildSource, rebuilding, runInProgress } = useCadSourceRebuild({
-    resource,
-    task,
-    sourcePath,
-  });
-
-  useEffect(() => {
-    let cancelled = false;
-    const consumeCommand = async () => {
-      if (cancelled || handlingRef.current || rebuilding || runInProgress) return;
-      const command = await resource.consumeViewerParameterCommand();
-      if (cancelled || !command) return;
-      handlingRef.current = true;
-      try {
-        const result = await rebuildSource({
-          restoreSourceOnFailure: true,
-          prepare: async () => {
-            const applied = await (
-              await getBrowserClient()
-            ).applyCadModelParameters({
-              workspacePath: resource.workspacePath,
-              filePath: sourcePath,
-              expectedSourceHash: command.sourceHash,
-              values: command.values,
-            });
-            return applied.success ? { success: true } : { success: false, error: applied.error };
-          },
-        });
-        if (result.success) {
-          toast.success('Model updated');
-        } else {
-          toast.error('Could not update model', { description: result.error });
-        }
-      } finally {
-        handlingRef.current = false;
-      }
-    };
-    void consumeCommand();
-    const timer = window.setInterval(() => void consumeCommand(), 500);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [rebuildSource, rebuilding, resource, runInProgress, sourcePath]);
 
   return null;
 }

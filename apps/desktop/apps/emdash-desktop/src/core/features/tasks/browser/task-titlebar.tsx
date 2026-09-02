@@ -70,22 +70,14 @@ const ReadyDesignTitlebar = observer(function ReadyDesignTitlebar({
           isProjectTreeOpen={isLeftOpen}
           isFilesOpen={isFilesOpen}
           isChatOpen={activeCadModel?.chatOpen ?? false}
-          isModelTreeOpen={activeCadModel?.viewerTreeOpen ?? false}
           showFiles
           showChat={Boolean(activeCadModel) && !hasWorkbenchChat}
-          showModelTree={Boolean(activeCadModel) && activeCadModel?.viewerTreeOpen !== null}
+          // The CAD Viewer owns its own topology tree and file sheet; the
+          // desktop no longer toggles them from outside the frame.
+          showModelTree={false}
           onProjectTreeChange={toggleLeftSidebar}
-          onFilesChange={() => {
-            if (!isFilesOpen && activeCadModel?.viewerTreeOpen) {
-              activeCadModel.setViewerTreeOpen(false);
-            }
-            taskView.chrome.commands.toggleSidebarTab('files');
-          }}
+          onFilesChange={() => taskView.chrome.commands.toggleSidebarTab('files')}
           onChatChange={(open) => activeCadModel?.setChatOpen(open)}
-          onModelTreeChange={(pressed) => {
-            if (pressed && isFilesOpen) taskView.chrome.commands.toggleSidebarTab('files');
-            activeCadModel?.setViewerTreeOpen(pressed);
-          }}
         />
       }
     />

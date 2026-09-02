@@ -3,8 +3,8 @@ import {
   buildCadViewerUrl,
   CadViewerLifecycleRegistry,
   CadViewerProcessLifecycle,
+  parseCadViewerLaunch,
   preferredCadViewerPath,
-  selectCadViewerPort,
 } from './cad-viewer-service';
 
 class FakeViewerChild {
@@ -55,20 +55,26 @@ describe('preferredCadViewerPath', () => {
   });
 });
 
-describe('selectCadViewerPort', () => {
-  it('uses the preferred port when it is unoccupied', async () => {
-    await expect(selectCadViewerPort(3245, async () => true)).resolves.toBe(3245);
+describe('parseCadViewerLaunch', () => {
+  it('reads the launcher contract from the last JSON line', () => {
+    expect(
+      parseCadViewerLaunch(
+        'Starting CAD Viewer at http://127.0.0.1:3246/ (serving /p)\nCAD Viewer URL: http://127.0.0.1:3246/\n{"url":"http://127.0.0.1:3246/","port":3246,"action":"started"}\n'
+      )
+    ).toEqual({ url: 'http://127.0.0.1:3246/', port: 3246, action: 'started' });
+    expect(
+      parseCadViewerLaunch('{"url":"http://127.0.0.1:3245/","port":3245,"action":"reused"}')
+    ).toEqual({
+      url: 'http://127.0.0.1:3245/',
+      port: 3245,
+      action: 'reused',
+    });
   });
 
-  it('does not attach Hardcore to an unrelated stale viewer on the preferred port', async () => {
-    const occupied = new Set([3245, 3246]);
-    await expect(selectCadViewerPort(3245, async (port) => !occupied.has(port))).resolves.toBe(
-      3247
-    );
-  });
-
-  it('fails cleanly when no candidate port is available', async () => {
-    await expect(selectCadViewerPort(65_535, async () => false)).resolves.toBeNull();
+  it('ignores partial output and unknown shapes', () => {
+    expect(parseCadViewerLaunch('{"url":"http://127.0.0.1:3246/","po')).toBeNull();
+    expect(parseCadViewerLaunch('{"ok":true}')).toBeNull();
+    expect(parseCadViewerLaunch('')).toBeNull();
   });
 });
 
@@ -167,6 +173,40 @@ describe('CadViewerProcessLifecycle', () => {
       })
     ).resolves.toEqual({ success: false, error: 'CAD Viewer startup timed out' });
     expect(timedOutChild.killCount).toBe(1);
+  });
+});
+
+describe('CadViewerProcessLifecycle reuse', () => {
+  it('keeps a reused external viewer without owning a process, and never kills it', async () => {
+    const lifecycle = new CadViewerProcessLifecycle();
+    const launcher = new FakeViewerChild();
+    await lifecycle.ensureStarted({
+      isHealthy: async () => false,
+      start: async () => {
+        lifecycle.adopt(launcher);
+        lifecycle.markExternal(3245);
+        launcher.terminate();
+        return { success: true, port: 3245 };
+      },
+    });
+    expect(lifecycle.port).toBe(3245);
+    expect(launcher.killCount).toBe(0);
+
+    let starts = 0;
+    await expect(
+      lifecycle.ensureStarted({
+        isHealthy: async (port) => port === 3245,
+        start: async () => {
+          starts += 1;
+          return { success: false, error: 'must reuse the healthy viewer' };
+        },
+      })
+    ).resolves.toEqual({ success: true, port: 3245 });
+    expect(starts).toBe(0);
+
+    lifecycle.stop();
+    expect(lifecycle.port).toBeNull();
+    expect(launcher.killCount).toBe(0);
   });
 });
 

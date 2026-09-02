@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   assertCadBundleSource,
   assertPackagedCadResources,
-  findPackagedCadBundleRoots,
+  cadExtraResources,
+  findPackagedCadResourceRoots,
   packagedResourcesRoot,
+  resolveTextToCadRoot,
 } from './cad-resources';
 
 const roots: string[] = [];
@@ -15,27 +17,68 @@ afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
 
+const SOURCE_FILES = [
+  'VERSION',
+  'LICENSE',
+  '.codex-plugin/plugin.json',
+  '.claude-plugin/plugin.json',
+  '.claude-plugin/marketplace.json',
+  'skills/cad/SKILL.md',
+  'skills/cad-viewer/SKILL.md',
+  'apps/viewer/server/main.py',
+  'apps/viewer/dist/index.html',
+  'apps/viewer/package.json',
+  'apps/viewer/requirements.txt',
+  'packages/cadgen/pyproject.toml',
+  'packages/cadgen/src/cadgen/__init__.py',
+  'packages/cadgen/src/cadgen/_runtime/browser/render.html',
+  'packages/cadgen/src/cadgen/_runtime/node/mesh-export.mjs',
+];
+
+const DESKTOP_FILES = ['tooling/scripts/setup-cad.mjs', 'tooling/cad-runtime-constraints.txt'];
+
 describe('CAD release resources', () => {
-  it('fails before packaging when the Text-to-CAD submodule is absent', async () => {
-    const root = await temporaryRoot();
-    expect(() => assertCadBundleSource(root)).toThrow('submodule is incomplete');
+  it('packages from the monorepo root above apps/desktop unless overridden', () => {
+    expect(resolveTextToCadRoot('/repo/apps/desktop', {})).toBe('/repo');
+    expect(
+      resolveTextToCadRoot('/repo/apps/desktop', { HARDCORE_TEXT_TO_CAD_ROOT: '/elsewhere' })
+    ).toBe('/elsewhere');
   });
 
-  it('accepts the complete pinned CAD source bundle', async () => {
-    const root = await temporaryRoot();
-    await createFiles(root, [
-      'tooling/scripts/setup-cad.mjs',
-      'tooling/cad-runtime-constraints.txt',
-      'vendor/text-to-cad/.codex-plugin/plugin.json',
-      'vendor/text-to-cad/.claude-plugin/plugin.json',
-      'vendor/text-to-cad/skills/cad/SKILL.md',
-      'vendor/text-to-cad/skills/cad-viewer/SKILL.md',
-      'vendor/text-to-cad/skills/cad-viewer/scripts/viewer/package.json',
-      'vendor/text-to-cad/skills/cad-viewer/scripts/viewer/dist/index.html',
-      'vendor/text-to-cad/skills/cad-viewer/scripts/viewer/server/main.mjs',
-      'vendor/text-to-cad/packages/cadgen/pyproject.toml',
-    ]);
-    expect(() => assertCadBundleSource(root)).not.toThrow();
+  it('fails before packaging when the viewer is not built or the tree is incomplete', async () => {
+    const textToCad = await temporaryRoot();
+    const desktop = await temporaryRoot();
+    await createFiles(desktop, DESKTOP_FILES);
+    await createFiles(
+      textToCad,
+      SOURCE_FILES.filter((path) => path !== 'apps/viewer/dist/index.html')
+    );
+    expect(() => assertCadBundleSource(textToCad, desktop)).toThrow(
+      /incomplete[\s\S]*apps\/viewer\/dist\/index\.html/
+    );
+  });
+
+  it('accepts a complete Text-to-CAD tree and desktop tooling', async () => {
+    const textToCad = await temporaryRoot();
+    const desktop = await temporaryRoot();
+    await createFiles(desktop, DESKTOP_FILES);
+    await createFiles(textToCad, SOURCE_FILES);
+    expect(() => assertCadBundleSource(textToCad, desktop)).not.toThrow();
+  });
+
+  it('copies the viewer runtime from apps/viewer, never through the skill symlink', () => {
+    const resources = cadExtraResources('/repo', '/repo/apps/desktop');
+    const targets = resources.map((entry) => entry.to);
+    expect(targets).toContain('text-to-cad/skills/cad-viewer/scripts/viewer/dist');
+    expect(targets).toContain('text-to-cad/skills/cad-viewer/scripts/viewer/server');
+    expect(targets).toContain('text-to-cad/packages/cadgen');
+    expect(targets).toContain('text-to-cad-desktop/tooling/scripts/setup-cad.mjs');
+    const skills = resources.find((entry) => entry.to === 'text-to-cad/skills');
+    expect(skills?.filter).toContain('!cad-viewer/scripts/viewer/**');
+    const viewerDist = resources.find(
+      (entry) => entry.to === 'text-to-cad/skills/cad-viewer/scripts/viewer/dist'
+    );
+    expect(viewerDist?.from).toBe(join('/repo', 'apps', 'viewer', 'dist'));
   });
 
   it('finds and verifies macOS packaged resources', async () => {
@@ -70,8 +113,8 @@ describe('CAD release resources', () => {
     await createPackagedFiles(linuxResources);
     await createPackagedFiles(macResources);
 
-    expect(findPackagedCadBundleRoots(join(root, 'release'))).toEqual(
-      [join(linuxResources, 'hardcore-cad'), join(macResources, 'hardcore-cad')].sort()
+    expect(findPackagedCadResourceRoots(join(root, 'release'))).toEqual(
+      [linuxResources, macResources].sort()
     );
   });
 });
@@ -84,16 +127,23 @@ async function temporaryRoot(): Promise<string> {
 
 async function createPackagedFiles(resources: string): Promise<void> {
   await createFiles(resources, [
-    'hardcore-cad/tooling/scripts/setup-cad.mjs',
-    'hardcore-cad/tooling/cad-runtime-constraints.txt',
-    'hardcore-cad/vendor/text-to-cad/.codex-plugin/plugin.json',
-    'hardcore-cad/vendor/text-to-cad/.claude-plugin/plugin.json',
-    'hardcore-cad/vendor/text-to-cad/skills/cad/SKILL.md',
-    'hardcore-cad/vendor/text-to-cad/skills/cad-viewer/SKILL.md',
-    'hardcore-cad/vendor/text-to-cad/skills/cad-viewer/scripts/viewer/package.json',
-    'hardcore-cad/vendor/text-to-cad/skills/cad-viewer/scripts/viewer/dist/index.html',
-    'hardcore-cad/vendor/text-to-cad/skills/cad-viewer/scripts/viewer/server/main.mjs',
-    'hardcore-cad/vendor/text-to-cad/packages/cadgen/pyproject.toml',
+    'text-to-cad-desktop/tooling/scripts/setup-cad.mjs',
+    'text-to-cad-desktop/tooling/cad-runtime-constraints.txt',
+    'text-to-cad/VERSION',
+    'text-to-cad/LICENSE',
+    'text-to-cad/.codex-plugin/plugin.json',
+    'text-to-cad/.claude-plugin/plugin.json',
+    'text-to-cad/.claude-plugin/marketplace.json',
+    'text-to-cad/skills/cad/SKILL.md',
+    'text-to-cad/skills/cad-viewer/SKILL.md',
+    'text-to-cad/skills/cad-viewer/scripts/viewer/server/main.py',
+    'text-to-cad/skills/cad-viewer/scripts/viewer/dist/index.html',
+    'text-to-cad/skills/cad-viewer/scripts/viewer/package.json',
+    'text-to-cad/skills/cad-viewer/scripts/viewer/requirements.txt',
+    'text-to-cad/packages/cadgen/pyproject.toml',
+    'text-to-cad/packages/cadgen/src/cadgen/__init__.py',
+    'text-to-cad/packages/cadgen/src/cadgen/_runtime/browser/render.html',
+    'text-to-cad/packages/cadgen/src/cadgen/_runtime/node/mesh-export.mjs',
   ]);
 }
 

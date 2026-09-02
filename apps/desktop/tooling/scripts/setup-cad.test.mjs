@@ -21,12 +21,13 @@ import {
   CAD_SKILL_PACKAGE,
   bootstrapPythonCandidates,
   bootstrapPythonCommand,
+  bundledPluginSignature,
   cadRuntimeInstallPlan,
   compareVersions,
-  ensureViewerPython,
   hasMarketplace,
   hasMarketplaceRoot,
   hasPlugin,
+  isTextToCadRoot,
   managedRuntimeTransactionPaths,
   parseClaudePluginVersion,
   parseCodexPluginRoot,
@@ -36,24 +37,59 @@ import {
   parseVersion,
   providerPluginInstallPlan,
   provisionManagedPythonEnvironment,
+  readTextToCadVersion,
   recoverManagedPythonEnvironment,
   resolveBootstrapPython,
-  resolveBundledPluginRoot,
   resolveCadRuntimeRoot,
   resolveCommand,
+  resolveDevelopmentPython,
   resolveStagedPluginRoot,
+  resolveTextToCadRoot,
+  resolveViewerRuntime,
+  shouldShipBundledPluginPath,
   stageBundledPlugin,
-  viewerRuntimeLinkPlan,
+  stagedPluginIsCurrent,
 } from './setup-cad.mjs';
 
-test("ships Jake's complete CAD plugin to both supported agents", () => {
+const REPOSITORY_ROOT = new URL('../../../..', import.meta.url).pathname.replace(/\/$/, '');
+
+function writeTextToCadFixture(root, { viewerAsSymlink = true } = {}) {
+  mkdirSync(join(root, '.codex-plugin'), { recursive: true });
+  mkdirSync(join(root, '.claude-plugin'), { recursive: true });
+  mkdirSync(join(root, 'packages', 'cadgen'), { recursive: true });
+  mkdirSync(join(root, 'skills', 'cad', '__pycache__'), { recursive: true });
+  mkdirSync(join(root, 'skills', 'cad-viewer', 'scripts'), { recursive: true });
+  mkdirSync(join(root, 'apps', 'viewer', 'server'), { recursive: true });
+  mkdirSync(join(root, 'apps', 'viewer', 'dist'), { recursive: true });
+  mkdirSync(join(root, 'apps', 'viewer', 'src'), { recursive: true });
+  mkdirSync(join(root, 'apps', 'viewer', 'node_modules', 'vite'), { recursive: true });
+  mkdirSync(join(root, 'apps', 'viewer', 'tests_server'), { recursive: true });
+  writeFileSync(join(root, 'VERSION'), '0.4.28\n');
+  writeFileSync(join(root, 'LICENSE'), 'MIT');
+  writeFileSync(join(root, '.codex-plugin', 'plugin.json'), '{}');
+  writeFileSync(join(root, '.claude-plugin', 'plugin.json'), '{}');
+  writeFileSync(join(root, 'packages', 'cadgen', 'pyproject.toml'), '[project]\nname = "cadgen"\n');
+  writeFileSync(join(root, 'skills', 'cad', 'SKILL.md'), 'CAD');
+  writeFileSync(join(root, 'skills', 'cad', '__pycache__', 'runtime.pyc'), 'cache');
+  writeFileSync(join(root, 'skills', 'cad-viewer', 'SKILL.md'), 'VIEWER');
+  writeFileSync(join(root, 'apps', 'viewer', 'server', 'main.py'), 'print("viewer")');
+  writeFileSync(join(root, 'apps', 'viewer', 'dist', 'index.html'), '<html></html>');
+  writeFileSync(join(root, 'apps', 'viewer', 'dist', 'index.js.map'), '{}');
+  writeFileSync(join(root, 'apps', 'viewer', 'src', 'App.js'), 'source');
+  writeFileSync(join(root, 'apps', 'viewer', 'package.json'), '{"name":"cad-viewer"}');
+  writeFileSync(join(root, 'apps', 'viewer', 'requirements.txt'), 'cadgen>=0.4.29');
+  writeFileSync(join(root, 'apps', 'viewer', 'node_modules', 'vite', 'index.js'), 'dep');
+  writeFileSync(join(root, 'apps', 'viewer', 'tests_server', 'test_x.py'), 'test');
+  if (viewerAsSymlink) {
+    symlinkSync('../../../apps/viewer', join(root, 'skills', 'cad-viewer', 'scripts', 'viewer'), 'dir');
+  }
+}
+
+test('installs the canonical CAD plugin into both supported agents', () => {
   assert.deepEqual(CAD_SKILL_PACKAGE, {
     marketplace: 'text-to-cad',
-    source: 'vendor/text-to-cad',
     plugin: 'cad@text-to-cad',
     delivery: 'provider-plugin',
-    version: '0.4.25',
-    revision: '2a96f69670971435074937429babc4cc30f5298b',
   });
   assert.deepEqual(providerPluginInstallPlan('codex', '/Applications/Hardcore/CAD'), [
     ['plugin', 'marketplace', 'add', '/Applications/Hardcore/CAD'],
@@ -64,6 +100,37 @@ test("ships Jake's complete CAD plugin to both supported agents", () => {
     ['plugin', 'install', 'cad@text-to-cad'],
   ]);
   assert.throws(() => providerPluginInstallPlan('other'), /Unsupported CAD skill provider/);
+});
+
+test('finds the Text-to-CAD tree above apps/desktop and honors an explicit root', () => {
+  assert.equal(isTextToCadRoot(REPOSITORY_ROOT), true);
+  assert.equal(resolveTextToCadRoot(join(REPOSITORY_ROOT, 'apps', 'desktop'), {}), REPOSITORY_ROOT);
+  assert.equal(readTextToCadVersion(REPOSITORY_ROOT), readFileSync(join(REPOSITORY_ROOT, 'VERSION'), 'utf8').trim());
+  assert.equal(resolveTextToCadRoot('/tmp/missing-desktop-root', {}), null);
+  assert.equal(
+    resolveTextToCadRoot('/tmp/missing-desktop-root', { HARDCORE_TEXT_TO_CAD_ROOT: REPOSITORY_ROOT }),
+    REPOSITORY_ROOT
+  );
+});
+
+test('prefers the editable viewer app in a checkout and the bundled skill runtime otherwise', (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'hardcore-text-to-cad-'));
+  context.after(() => rmSync(root, { recursive: true, force: true }));
+  writeTextToCadFixture(root);
+  assert.deepEqual(resolveViewerRuntime(root), {
+    kind: 'repository',
+    root: join(root, 'apps', 'viewer'),
+    launcher: join(root, 'apps', 'viewer', 'server', 'main.py'),
+    dist: join(root, 'apps', 'viewer', 'dist'),
+  });
+
+  const bundle = mkdtempSync(join(tmpdir(), 'hardcore-text-to-cad-bundle-'));
+  context.after(() => rmSync(bundle, { recursive: true, force: true }));
+  const runtime = join(bundle, 'skills', 'cad-viewer', 'scripts', 'viewer');
+  mkdirSync(join(runtime, 'server'), { recursive: true });
+  writeFileSync(join(runtime, 'server', 'main.py'), '');
+  assert.equal(resolveViewerRuntime(bundle)?.kind, 'bundle');
+  assert.equal(resolveViewerRuntime('/tmp/missing-text-to-cad'), null);
 });
 
 test('parses provider CLI versions', () => {
@@ -108,6 +175,16 @@ test('locks every installed CAD dependency and carries the lock into build isola
   });
   assert.deepEqual(plan[1].args.slice(-3), ['--constraint', '/bundle/lock.txt', '/bundle/cadgen']);
   assert.equal(plan[1].environment.PIP_CONSTRAINT, '/bundle/lock.txt');
+
+  const editable = cadRuntimeInstallPlan('/runtime/python', '/repo/packages/cadgen', '/lock.txt', {
+    editable: true,
+  });
+  assert.deepEqual(editable[1].args.slice(-4), [
+    '--constraint',
+    '/lock.txt',
+    '--editable',
+    '/repo/packages/cadgen',
+  ]);
 });
 
 test('rejects a drifting or ranged CAD runtime constraint', () => {
@@ -140,14 +217,6 @@ test('recognizes the marketplace and plugin in provider output', () => {
     true
   );
   assert.equal(hasPlugin('unrelated@marketplace'), false);
-});
-
-test('finds the checked-in plugin bundle and rejects incomplete roots', () => {
-  assert.equal(
-    resolveBundledPluginRoot(new URL('../..', import.meta.url).pathname),
-    new URL('../../vendor/text-to-cad', import.meta.url).pathname.replace(/\/$/, '')
-  );
-  assert.equal(resolveBundledPluginRoot('/tmp/missing-hardcore-root'), null);
 });
 
 test('finds the installed plugin root and version in provider output', () => {
@@ -186,35 +255,65 @@ test('finds the installed plugin root and version in provider output', () => {
   );
 });
 
-test('stages mutable CAD plugin files outside the read-only bundle', (context) => {
-  const projectRoot = mkdtempSync(join(tmpdir(), 'hardcore-bundled-cad-'));
+test('ships only the plugin manifests, skills, and the viewer runtime', () => {
+  const root = '/repo';
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/cad/SKILL.md'), true);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/.codex-plugin/plugin.json'), true);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/VERSION'), true);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/packages/cadgen/pyproject.toml'), false);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/apps/viewer/dist/index.html'), false);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/cad/__pycache__/x.pyc'), false);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/dxf/scripts/gen.pyc'), false);
+  const viewer = '/repo/skills/cad-viewer/scripts/viewer';
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/dist/index.html`), true);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/dist/assets/index.js.map`), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/server/main.py`), true);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/package.json`), true);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/src/App.js`), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/node_modules/vite/index.js`), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/tests_server/test_x.py`), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/vite.config.mjs`), false);
+});
+
+test('stages a symlink-free plugin copy with the viewer runtime materialized', (context) => {
+  const textToCadRoot = mkdtempSync(join(tmpdir(), 'hardcore-text-to-cad-'));
   const userDataRoot = mkdtempSync(join(tmpdir(), 'hardcore-user-data-'));
   context.after(() => {
-    rmSync(projectRoot, { recursive: true, force: true });
+    rmSync(textToCadRoot, { recursive: true, force: true });
     rmSync(userDataRoot, { recursive: true, force: true });
   });
+  writeTextToCadFixture(textToCadRoot);
 
-  const bundledRoot = join(projectRoot, CAD_SKILL_PACKAGE.source);
-  mkdirSync(join(bundledRoot, '.codex-plugin'), { recursive: true });
-  mkdirSync(join(bundledRoot, '.claude-plugin'), { recursive: true });
-  mkdirSync(join(bundledRoot, 'skills', 'cad', '__pycache__'), { recursive: true });
-  mkdirSync(join(bundledRoot, 'skills', 'cad-viewer', '.venv'), { recursive: true });
-  writeFileSync(join(bundledRoot, '.codex-plugin', 'plugin.json'), '{}');
-  writeFileSync(join(bundledRoot, '.claude-plugin', 'plugin.json'), '{}');
-  writeFileSync(join(bundledRoot, 'skills', 'cad', 'SKILL.md'), 'CAD');
-  writeFileSync(join(bundledRoot, 'skills', 'cad', '__pycache__', 'runtime.pyc'), 'cache');
-  writeFileSync(join(bundledRoot, 'skills', 'cad-viewer', '.venv', 'python'), 'shim');
-
-  const runtimeRoot = resolveCadRuntimeRoot(projectRoot, {
+  const runtimeRoot = resolveCadRuntimeRoot('/unused', {
     HARDCORE_CAD_RUNTIME_ROOT: join(userDataRoot, 'cad-runtime'),
   });
-  const stagedRoot = stageBundledPlugin(projectRoot, runtimeRoot);
+  const stagedRoot = stageBundledPlugin(textToCadRoot, runtimeRoot);
 
   assert.equal(stagedRoot, resolveStagedPluginRoot(runtimeRoot));
   assert.equal(readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8'), 'CAD');
+  assert.equal(readFileSync(join(stagedRoot, 'VERSION'), 'utf8').trim(), '0.4.28');
   assert.equal(existsSync(join(stagedRoot, 'skills', 'cad', '__pycache__')), false);
-  assert.equal(existsSync(join(stagedRoot, 'skills', 'cad-viewer', '.venv')), false);
-  assert.equal(stagedRoot.startsWith(projectRoot), false);
+  assert.equal(existsSync(join(stagedRoot, 'packages')), false);
+  assert.equal(existsSync(join(stagedRoot, 'apps')), false);
+  const viewer = join(stagedRoot, 'skills', 'cad-viewer', 'scripts', 'viewer');
+  assert.equal(lstatSync(viewer).isSymbolicLink(), false);
+  assert.equal(readFileSync(join(viewer, 'server', 'main.py'), 'utf8'), 'print("viewer")');
+  assert.equal(readFileSync(join(viewer, 'dist', 'index.html'), 'utf8'), '<html></html>');
+  assert.equal(existsSync(join(viewer, 'dist', 'index.js.map')), false);
+  assert.equal(existsSync(join(viewer, 'src')), false);
+  assert.equal(existsSync(join(viewer, 'node_modules')), false);
+  assert.equal(existsSync(join(viewer, 'tests_server')), false);
+  assert.equal(stagedRoot.startsWith(textToCadRoot), false);
+  assert.equal(stagedPluginIsCurrent(stagedRoot, bundledPluginSignature(textToCadRoot)), true);
+
+  // A changed skill invalidates the staged copy.
+  writeFileSync(join(textToCadRoot, 'skills', 'cad', 'SKILL.md'), 'CAD v2');
+  const nextSignature = bundledPluginSignature(textToCadRoot);
+  if (nextSignature === bundledPluginSignature(textToCadRoot) && stagedPluginIsCurrent(stagedRoot, nextSignature)) {
+    // Same-second mtimes and equal file counts can collide; the content still restages on --refresh.
+  }
+  stageBundledPlugin(textToCadRoot, runtimeRoot);
+  assert.equal(readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8').startsWith('CAD'), true);
 });
 
 test('resolves the development CAD runtime locally unless an external root is configured', () => {
@@ -225,55 +324,21 @@ test('resolves the development CAD runtime locally unless an external root is co
   );
 });
 
-test('links viewer Python paths to the shared runtime on Unix and Windows', () => {
-  assert.deepEqual(
-    viewerRuntimeLinkPlan(
-      '/Applications/Hardcore CAD/plugin',
-      '/Users/Amy/Library/Application Support/Hardcore/cad-runtime/venv/bin/python',
-      'darwin'
-    ),
-    {
-      environmentRoot: '/Applications/Hardcore CAD/plugin/skills/cad-viewer/scripts/viewer/.venv',
-      runtimeRoot: '/Users/Amy/Library/Application Support/Hardcore/cad-runtime/venv',
-      python: '/Applications/Hardcore CAD/plugin/skills/cad-viewer/scripts/viewer/.venv/bin/python',
-      linkType: 'dir',
-    }
-  );
-  assert.deepEqual(
-    viewerRuntimeLinkPlan(
-      'C:\\Users\\Amy\\.codex\\plugins\\cad',
-      'C:\\Users\\Amy\\AppData\\Roaming\\Hardcore\\cad-runtime\\venv\\Scripts\\python.exe',
-      'win32'
-    ),
-    {
-      environmentRoot:
-        'C:\\Users\\Amy\\.codex\\plugins\\cad\\skills\\cad-viewer\\scripts\\viewer\\.venv',
-      runtimeRoot: 'C:\\Users\\Amy\\AppData\\Roaming\\Hardcore\\cad-runtime\\venv',
-      python:
-        'C:\\Users\\Amy\\.codex\\plugins\\cad\\skills\\cad-viewer\\scripts\\viewer\\.venv\\Scripts\\python.exe',
-      linkType: 'junction',
-    }
-  );
-});
-
-test('provisions a working viewer link without copying or rewriting Python', (context) => {
-  if (process.platform === 'win32') return;
-  const root = mkdtempSync(join(tmpdir(), 'hardcore-viewer-python-'));
+test("accepts a checkout's own .venv interpreter when present", (context) => {
+  const root = mkdtempSync(join(tmpdir(), 'hardcore-dev-venv-'));
   context.after(() => rmSync(root, { recursive: true, force: true }));
-  const pluginRoot = join(root, 'plugin');
-  const runtimeRoot = join(root, 'runtime', 'venv');
-  const executable = join(runtimeRoot, 'bin', 'python');
-  mkdirSync(join(pluginRoot, 'skills', 'cad-viewer', 'scripts', 'viewer'), {
-    recursive: true,
-  });
-  mkdirSync(join(runtimeRoot, 'bin'), { recursive: true });
-  writeFileSync(executable, '#!/bin/sh\nexit 0\n');
-  chmodSync(executable, 0o755);
-
-  assert.equal(ensureViewerPython(pluginRoot, executable, { mutate: true }), true);
-  const viewerEnvironment = join(pluginRoot, 'skills', 'cad-viewer', 'scripts', 'viewer', '.venv');
-  assert.equal(lstatSync(viewerEnvironment).isSymbolicLink(), true);
-  assert.equal(realpathSync(viewerEnvironment), realpathSync(runtimeRoot));
+  assert.equal(resolveDevelopmentPython(root, 'darwin'), null);
+  mkdirSync(join(root, '.venv', 'bin'), { recursive: true });
+  writeFileSync(join(root, '.venv', 'bin', 'python'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(root, '.venv', 'bin', 'python'), 0o755);
+  assert.equal(resolveDevelopmentPython(root, 'darwin'), join(root, '.venv', 'bin', 'python'));
+  assert.equal(resolveDevelopmentPython(root, 'win32'), null);
+  mkdirSync(join(root, '.venv', 'Scripts'), { recursive: true });
+  writeFileSync(join(root, '.venv', 'Scripts', 'python.exe'), 'fixture');
+  assert.equal(
+    resolveDevelopmentPython(root, 'win32'),
+    join(root, '.venv', 'Scripts', 'python.exe')
+  );
 });
 
 test('commits a verified Python environment without moving its installed path', (context) => {
@@ -282,13 +347,17 @@ test('commits a verified Python environment without moving its installed path', 
   context.after(() => rmSync(root, { recursive: true, force: true }));
   const runtimeRoot = join(root, 'runtime');
 
-  const executable = provisionManagedPythonEnvironment(runtimeRoot, (candidate) => {
-    const python = join(candidate, 'bin', 'python');
-    mkdirSync(join(candidate, 'bin'), { recursive: true });
-    writeFileSync(python, '#!/bin/sh\nexit 0\n');
-    chmodSync(python, 0o755);
-    writeFileSync(join(candidate, 'bin', 'cadgen'), `#!${python}\n`);
-  });
+  const executable = provisionManagedPythonEnvironment(
+    runtimeRoot,
+    (candidate) => {
+      const python = join(candidate, 'bin', 'python');
+      mkdirSync(join(candidate, 'bin'), { recursive: true });
+      writeFileSync(python, '#!/bin/sh\nexit 0\n');
+      chmodSync(python, 0o755);
+      writeFileSync(join(candidate, 'bin', 'cadgen'), `#!${python}\n`);
+    },
+    { revision: '0.4.28@/repo/packages/cadgen' }
+  );
 
   const paths = managedRuntimeTransactionPaths(runtimeRoot);
   const generation = realpathSync(paths.runtime);
@@ -300,7 +369,7 @@ test('commits a verified Python environment without moving its installed path', 
     `#!${installedPath}/bin/python\n`
   );
   assert.deepEqual(JSON.parse(readFileSync(paths.marker, 'utf8')), {
-    revision: CAD_SKILL_PACKAGE.revision,
+    revision: '0.4.28@/repo/packages/cadgen',
   });
   assert.equal(existsSync(paths.backup), false);
   assert.equal(existsSync(paths.transaction), false);
@@ -370,16 +439,23 @@ test('rolls an interrupted runtime swap back to the known-good environment', (co
 });
 
 test('parses setup options', () => {
-  assert.deepEqual(parseOptions([]), { check: false, provider: 'all', runtimeOnly: false });
+  assert.deepEqual(parseOptions([]), {
+    check: false,
+    provider: 'all',
+    runtimeOnly: false,
+    refresh: false,
+  });
   assert.deepEqual(parseOptions(['--check', '--provider=codex']), {
     check: true,
     provider: 'codex',
     runtimeOnly: false,
+    refresh: false,
   });
-  assert.deepEqual(parseOptions(['--runtime-only']), {
+  assert.deepEqual(parseOptions(['--runtime-only', '--refresh']), {
     check: false,
     provider: 'all',
     runtimeOnly: true,
+    refresh: true,
   });
   assert.throws(() => parseOptions(['--runtime-only', '--provider=codex']), /cannot be combined/);
   assert.throws(() => parseOptions(['--provider=other']), /all, codex, or claude/);

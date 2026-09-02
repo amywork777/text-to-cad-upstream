@@ -10,28 +10,40 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join, posix, relative, resolve, win32 } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+/**
+ * Prepares everything the desktop needs from the canonical Text-to-CAD tree:
+ *
+ * - the Python runtime that carries cadgen (packages/cadgen), pinned by
+ *   tooling/cad-runtime-constraints.txt, or a checkout's own .venv when it
+ *   already imports cadgen from this repository;
+ * - the built CAD Viewer client (apps/viewer/dist) in a checkout;
+ * - the `cad@text-to-cad` provider plugin for Codex and Claude Code, staged
+ *   as a filtered, symlink-free copy of the skills (Codex `plugin add` drops
+ *   symlinks silently, and provider caches copy whatever they are pointed at).
+ *
+ * The desktop itself launches apps/viewer and runs packages/cadgen directly;
+ * the staged copy exists only so agent sessions see the same skills.
+ */
 export const CAD_SKILL_PACKAGE = Object.freeze({
   marketplace: 'text-to-cad',
-  source: 'vendor/text-to-cad',
   plugin: 'cad@text-to-cad',
   delivery: 'provider-plugin',
-  version: '0.4.25',
-  revision: '2a96f69670971435074937429babc4cc30f5298b',
 });
 
+export const TEXT_TO_CAD_ROOT_ENV = 'HARDCORE_TEXT_TO_CAD_ROOT';
 const MARKETPLACE = CAD_SKILL_PACKAGE.marketplace;
 const PLUGIN = CAD_SKILL_PACKAGE.plugin;
 const MIN_CODEX_VERSION = [0, 142, 0];
 const MIN_PYTHON_VERSION = [3, 11, 0];
 const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const PINNED_CADGEN_VERSION = '0.4.25';
 const PINNED_PIP_VERSION = '25.2';
 export const CAD_RUNTIME_CONSTRAINTS_PATH = join(
   PROJECT_ROOT,
@@ -42,6 +54,32 @@ const REQUIRED_CAD_DISTRIBUTIONS = ['build123d', 'cadquery-ocp', 'ezdxf', 'shape
 const CAD_IMPORTS = ['OCP', 'build123d', 'cadgen', 'cadgen.authoring', 'cadgen.cli'];
 const BUNDLE_MARKER = '.hardcore-cad-bundle.json';
 const RUNTIME_MARKER = '.hardcore-cad-runtime.json';
+const TEXT_TO_CAD_ROOT_MARKERS = [
+  'VERSION',
+  join('packages', 'cadgen', 'pyproject.toml'),
+  join('skills', 'cad', 'SKILL.md'),
+  join('skills', 'cad-viewer', 'SKILL.md'),
+  join('.codex-plugin', 'plugin.json'),
+  join('.claude-plugin', 'plugin.json'),
+];
+const SHIPPED_PLUGIN_ENTRIES = ['.codex-plugin', '.claude-plugin', 'skills', 'LICENSE', 'VERSION'];
+const VIEWER_RUNTIME_ENTRIES = new Set([
+  'dist',
+  'server',
+  'package.json',
+  'requirements.txt',
+  'LICENSE',
+  'README.md',
+]);
+const EXCLUDED_SEGMENTS = new Set([
+  '.git',
+  '.venv',
+  '.vite',
+  '__pycache__',
+  'node_modules',
+  'tests_server',
+  'tmp',
+]);
 
 export function parseVersion(output) {
   const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
@@ -120,7 +158,7 @@ export function resolveCommand(
   return executable;
 }
 
-export function providerPluginInstallPlan(provider, source = CAD_SKILL_PACKAGE.source) {
+export function providerPluginInstallPlan(provider, source) {
   if (provider === 'codex') {
     return [
       ['plugin', 'marketplace', 'add', source],
@@ -136,11 +174,44 @@ export function providerPluginInstallPlan(provider, source = CAD_SKILL_PACKAGE.s
   throw new Error(`Unsupported CAD skill provider: ${provider}`);
 }
 
-export function resolveBundledPluginRoot(projectRoot = PROJECT_ROOT) {
-  const root = join(projectRoot, CAD_SKILL_PACKAGE.source);
-  const codexManifest = join(root, '.codex-plugin', 'plugin.json');
-  const claudeManifest = join(root, '.claude-plugin', 'plugin.json');
-  return existsSync(codexManifest) && existsSync(claudeManifest) ? root : null;
+/** A directory is the Text-to-CAD tree only when every marker is present. */
+export function isTextToCadRoot(root) {
+  return TEXT_TO_CAD_ROOT_MARKERS.every((marker) => existsSync(join(root, marker)));
+}
+
+/**
+ * The canonical Text-to-CAD tree: an explicit override, the monorepo root two
+ * levels above apps/desktop in a checkout, or the bundle beside the packaged
+ * desktop tooling (resources/text-to-cad next to resources/text-to-cad-desktop).
+ */
+export function resolveTextToCadRoot(projectRoot = PROJECT_ROOT, environment = process.env) {
+  const configured = environment[TEXT_TO_CAD_ROOT_ENV]?.trim();
+  const candidates = configured
+    ? [resolve(configured)]
+    : [resolve(projectRoot, '..', '..'), resolve(projectRoot, '..', 'text-to-cad')];
+  return candidates.find((candidate) => isTextToCadRoot(candidate)) ?? null;
+}
+
+export function readTextToCadVersion(root) {
+  try {
+    const version = readFileSync(join(root, 'VERSION'), 'utf8').trim();
+    return /^\d+\.\d+\.\d+/.test(version) ? version : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The CAD Viewer runtime: apps/viewer in a checkout, the bundled skill copy otherwise. */
+export function resolveViewerRuntime(root) {
+  for (const candidate of [
+    { kind: 'repository', root: join(root, 'apps', 'viewer') },
+    { kind: 'bundle', root: join(root, 'skills', 'cad-viewer', 'scripts', 'viewer') },
+  ]) {
+    const launcher = join(candidate.root, 'server', 'main.py');
+    if (!existsSync(launcher)) continue;
+    return { ...candidate, launcher, dist: join(candidate.root, 'dist') };
+  }
+  return null;
 }
 
 export function resolveCadRuntimeRoot(projectRoot = PROJECT_ROOT, environment = process.env) {
@@ -152,28 +223,79 @@ export function resolveStagedPluginRoot(runtimeRoot = resolveCadRuntimeRoot()) {
   return join(runtimeRoot, 'plugins', MARKETPLACE);
 }
 
-export function stageBundledPlugin(
-  projectRoot = PROJECT_ROOT,
-  runtimeRoot = resolveCadRuntimeRoot(projectRoot),
-  { mutate = true } = {}
-) {
-  const source = resolveBundledPluginRoot(projectRoot);
-  if (!source) throw new Error('Hardcore could not locate its bundled CAD plugin.');
+/**
+ * Whether a path under the Text-to-CAD tree belongs in the staged provider
+ * plugin. Only the manifests, skills, LICENSE, and VERSION ship; inside the
+ * cad-viewer skill's runtime (a symlink to apps/viewer in a checkout) only the
+ * built client and the Python server do. Caches, environments, tests, and
+ * sourcemaps never do.
+ */
+export function shouldShipBundledPluginPath(root, sourcePath) {
+  const relativePath = relative(root, sourcePath);
+  if (!relativePath) return true;
+  const segments = relativePath.split(/[\\/]/);
+  if (segments.some((segment) => EXCLUDED_SEGMENTS.has(segment))) return false;
+  const last = segments[segments.length - 1];
+  if (/\.(?:pyc|map)$/i.test(last)) return false;
+  if (!SHIPPED_PLUGIN_ENTRIES.includes(segments[0])) return false;
+  const viewerPrefix = ['skills', 'cad-viewer', 'scripts', 'viewer'];
+  const insideViewer =
+    segments.length > viewerPrefix.length &&
+    viewerPrefix.every((segment, index) => segments[index] === segment);
+  if (insideViewer && !VIEWER_RUNTIME_ENTRIES.has(segments[viewerPrefix.length])) return false;
+  return true;
+}
 
+/** A cheap content signature of what the staged plugin would contain. */
+export function bundledPluginSignature(root) {
+  let count = 0;
+  let newest = 0;
+  const visit = (path) => {
+    let stats;
+    try {
+      stats = statSync(path);
+    } catch {
+      return;
+    }
+    if (stats.isDirectory()) {
+      for (const entry of readdirSync(path)) {
+        const child = join(path, entry);
+        if (shouldShipBundledPluginPath(root, child)) visit(child);
+      }
+      return;
+    }
+    count += 1;
+    newest = Math.max(newest, Math.trunc(stats.mtimeMs));
+  };
+  for (const entry of SHIPPED_PLUGIN_ENTRIES) visit(join(root, entry));
+  return `${readTextToCadVersion(root) ?? 'unknown'}:${count}:${newest}`;
+}
+
+export function stageBundledPlugin(textToCadRoot, runtimeRoot, { mutate = true } = {}) {
+  if (!textToCadRoot || !isTextToCadRoot(textToCadRoot)) {
+    throw new Error('Hardcore could not locate the Text-to-CAD skills to stage.');
+  }
   const target = resolveStagedPluginRoot(runtimeRoot);
-  if (!mutate || stagedPluginIsCurrent(target)) return target;
+  const signature = bundledPluginSignature(textToCadRoot);
+  if (!mutate || stagedPluginIsCurrent(target, signature)) return target;
 
   const staging = `${target}.staging-${process.pid}`;
   mkdirSync(dirname(target), { recursive: true });
   rmSync(staging, { recursive: true, force: true });
   try {
-    cpSync(source, staging, {
-      recursive: true,
-      filter: (sourcePath) => shouldCopyBundledPluginPath(source, sourcePath),
-    });
+    mkdirSync(staging, { recursive: true });
+    for (const entry of SHIPPED_PLUGIN_ENTRIES) {
+      const source = join(textToCadRoot, entry);
+      if (!existsSync(source)) continue;
+      cpSync(source, join(staging, entry), {
+        recursive: true,
+        dereference: true,
+        filter: (sourcePath) => shouldShipBundledPluginPath(textToCadRoot, sourcePath),
+      });
+    }
     writeFileSync(
       join(staging, BUNDLE_MARKER),
-      `${JSON.stringify({ revision: CAD_SKILL_PACKAGE.revision })}\n`,
+      `${JSON.stringify({ signature, version: readTextToCadVersion(textToCadRoot) })}\n`,
       'utf8'
     );
     rmSync(target, { recursive: true, force: true });
@@ -184,26 +306,16 @@ export function stageBundledPlugin(
   return target;
 }
 
-function stagedPluginIsCurrent(root) {
+export function stagedPluginIsCurrent(root, signature) {
   const codexManifest = join(root, '.codex-plugin', 'plugin.json');
   const claudeManifest = join(root, '.claude-plugin', 'plugin.json');
   if (!existsSync(codexManifest) || !existsSync(claudeManifest)) return false;
   try {
     const marker = JSON.parse(readFileSync(join(root, BUNDLE_MARKER), 'utf8'));
-    return marker.revision === CAD_SKILL_PACKAGE.revision;
+    return marker.signature === signature;
   } catch {
     return false;
   }
-}
-
-function shouldCopyBundledPluginPath(root, sourcePath) {
-  const path = relative(root, sourcePath);
-  if (!path) return true;
-  const segments = path.split(/[\\/]/);
-  return (
-    !segments.some((segment) => ['.git', '.venv', '__pycache__'].includes(segment)) &&
-    !path.endsWith('.pyc')
-  );
 }
 
 function capture(command, args, { environment = process.env, platform = process.platform } = {}) {
@@ -218,9 +330,10 @@ function capture(command, args, { environment = process.env, platform = process.
   };
 }
 
-function run(command, args, { environment = process.env } = {}) {
+function run(command, args, { environment = process.env, cwd } = {}) {
   const result = spawnSync(resolveCommand(command, environment.PATH ?? ''), args, {
     env: environment,
+    cwd,
     stdio: 'inherit',
   });
   if (result.error) throw result.error;
@@ -244,7 +357,8 @@ export function parseCadRuntimeConstraints(source) {
 export function cadRuntimeInstallPlan(
   executable,
   cadgenSource,
-  constraintsPath = CAD_RUNTIME_CONSTRAINTS_PATH
+  constraintsPath = CAD_RUNTIME_CONSTRAINTS_PATH,
+  { editable = false } = {}
 ) {
   return [
     {
@@ -270,6 +384,7 @@ export function cadRuntimeInstallPlan(
         '--force-reinstall',
         '--constraint',
         constraintsPath,
+        ...(editable ? ['--editable'] : []),
         cadgenSource,
       ],
       environment: {
@@ -286,7 +401,7 @@ function normalizeDistributionName(name) {
   return name.toLowerCase().replace(/[-_.]+/g, '-');
 }
 
-function cadRuntimeHealthcheckSource(constraintsPath) {
+function cadRuntimeHealthcheckSource(constraintsPath, expectedCadgenVersion) {
   return `
 import importlib.metadata
 import importlib.util
@@ -319,7 +434,7 @@ missing_imports = any(
     importlib.util.find_spec(name) is None
     for name in ${JSON.stringify(CAD_IMPORTS)}
 )
-wrong_cadgen = importlib.metadata.version("cadgen") != ${JSON.stringify(PINNED_CADGEN_VERSION)}
+wrong_cadgen = importlib.metadata.version("cadgen") != ${JSON.stringify(expectedCadgenVersion)}
 raise SystemExit(bool(wrong or missing or missing_imports or wrong_cadgen))
 `;
 }
@@ -376,8 +491,8 @@ export function resolveBootstrapPython(
   );
 }
 
-function pythonExecutable(runtime) {
-  return process.platform === 'win32'
+export function pythonExecutable(runtime, platform = process.platform) {
+  return platform === 'win32'
     ? join(runtime, 'Scripts', 'python.exe')
     : join(runtime, 'bin', 'python');
 }
@@ -395,11 +510,7 @@ export function managedRuntimeTransactionPaths(runtimeRoot) {
   };
 }
 
-export function provisionManagedPythonEnvironment(
-  runtimeRoot,
-  prepare,
-  { revision = CAD_SKILL_PACKAGE.revision } = {}
-) {
+export function provisionManagedPythonEnvironment(runtimeRoot, prepare, { revision } = {}) {
   const paths = managedRuntimeTransactionPaths(runtimeRoot);
   recoverManagedPythonEnvironment(runtimeRoot);
   mkdirSync(paths.generations, { recursive: true });
@@ -620,94 +731,132 @@ function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
 
-function pythonCheck(executable, runtimeRoot) {
+/** The managed runtime marker: which cadgen source and version it was built from. */
+export function runtimeRevision(cadgenSource, version) {
+  return `${version}@${realpathOr(cadgenSource)}`;
+}
+
+function realpathOr(path) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+function pythonCheck(executable, runtimeRoot, revision, expectedCadgenVersion) {
   if (!executable || !existsSync(executable)) return false;
   if (!existsSync(CAD_RUNTIME_CONSTRAINTS_PATH)) return false;
   const result = spawnSync(executable, [
     '-c',
-    cadRuntimeHealthcheckSource(CAD_RUNTIME_CONSTRAINTS_PATH),
+    cadRuntimeHealthcheckSource(CAD_RUNTIME_CONSTRAINTS_PATH, expectedCadgenVersion),
   ]);
   if (result.status !== 0 || !runtimeRoot) return result.status === 0;
   try {
     const marker = JSON.parse(readFileSync(join(runtimeRoot, RUNTIME_MARKER), 'utf8'));
-    return marker.revision === CAD_SKILL_PACKAGE.revision;
+    return marker.revision === revision;
   } catch {
     return false;
   }
 }
 
-export function viewerRuntimeLinkPlan(pluginRoot, executable, platform = process.platform) {
-  const path = platform === 'win32' ? win32 : posix;
-  const environmentRoot = path.join(
-    pluginRoot,
-    'skills',
-    'cad-viewer',
-    'scripts',
-    'viewer',
-    '.venv'
-  );
-  return {
-    environmentRoot,
-    runtimeRoot: path.dirname(path.dirname(executable)),
-    python: path.join(
-      environmentRoot,
-      platform === 'win32' ? 'Scripts' : 'bin',
-      platform === 'win32' ? 'python.exe' : 'python'
-    ),
-    linkType: platform === 'win32' ? 'junction' : 'dir',
-  };
+/** A checkout's own `.venv` (the CONTRIBUTING setup), when it exists. */
+export function resolveDevelopmentPython(textToCadRoot, platform = process.platform) {
+  const python = pythonExecutable(join(textToCadRoot, '.venv'), platform);
+  return existsSync(python) ? python : null;
 }
 
-function ensurePythonRuntime(cadgenSource, { mutate, runtimeRoot }) {
+/** True when `python` imports cadgen from this tree's packages/cadgen. */
+export function pythonImportsRepositoryCadgen(python, textToCadRoot) {
+  const probe = spawnSync(
+    python,
+    [
+      '-c',
+      'import cadgen, pathlib; print(pathlib.Path(cadgen.__file__).resolve())',
+    ],
+    { encoding: 'utf8', timeout: 30_000 }
+  );
+  if (probe.status !== 0) return false;
+  const location = probe.stdout.trim();
+  const expected = realpathOr(join(textToCadRoot, 'packages', 'cadgen'));
+  return location === expected || location.startsWith(expected + sep);
+}
+
+function ensurePythonRuntime(textToCadRoot, { mutate, runtimeRoot, editable }) {
+  const cadgenSource = join(textToCadRoot, 'packages', 'cadgen');
+  const version = readTextToCadVersion(textToCadRoot);
+  const revision = runtimeRevision(cadgenSource, version);
   const override = process.env.CAD_DESKTOP_PYTHON;
   if (override) {
-    if (!pythonCheck(override)) {
+    if (!pythonCheck(override, null, revision, version)) {
       throw new Error(`CAD_DESKTOP_PYTHON is not a usable CAD backend: ${override}`);
     }
     return override;
   }
 
+  const developmentPython = resolveDevelopmentPython(textToCadRoot);
+  if (developmentPython && pythonImportsRepositoryCadgen(developmentPython, textToCadRoot)) {
+    console.log(`Using the checkout's CAD Python runtime at ${developmentPython}`);
+    return developmentPython;
+  }
+
   recoverManagedPythonEnvironment(runtimeRoot);
   const runtime = join(runtimeRoot, 'venv');
   const executable = pythonExecutable(runtime);
-  if (pythonCheck(executable, runtimeRoot)) return executable;
+  if (pythonCheck(executable, runtimeRoot, revision, version)) return executable;
   if (!mutate) return null;
 
   const bootstrap = resolveBootstrapPython();
   console.log(`Preparing CAD Python runtime at ${runtime}`);
-  return provisionManagedPythonEnvironment(runtimeRoot, (candidate) => {
-    const candidateExecutable = pythonExecutable(candidate);
-    run(bootstrap.command, [...bootstrap.args, '-m', 'venv', candidate]);
-    for (const command of cadRuntimeInstallPlan(candidateExecutable, cadgenSource)) {
-      run(command.command, command.args, {
-        environment: command.environment ?? process.env,
-      });
-    }
-    if (!pythonCheck(candidateExecutable)) {
-      throw new Error(
-        `CAD Python installed but required imports failed: ${CAD_IMPORTS.join(', ')}`
-      );
-    }
-  });
+  return provisionManagedPythonEnvironment(
+    runtimeRoot,
+    (candidate) => {
+      const candidateExecutable = pythonExecutable(candidate);
+      run(bootstrap.command, [...bootstrap.args, '-m', 'venv', candidate]);
+      for (const command of cadRuntimeInstallPlan(
+        candidateExecutable,
+        cadgenSource,
+        CAD_RUNTIME_CONSTRAINTS_PATH,
+        { editable }
+      )) {
+        run(command.command, command.args, {
+          environment: command.environment ?? process.env,
+        });
+      }
+      if (!pythonCheck(candidateExecutable, null, revision, version)) {
+        throw new Error(
+          `CAD Python installed but required imports failed: ${CAD_IMPORTS.join(', ')}`
+        );
+      }
+    },
+    { revision }
+  );
 }
 
-export function ensureViewerPython(pluginRoot, executable, { mutate }) {
-  if (!executable) return false;
-  const plan = viewerRuntimeLinkPlan(pluginRoot, executable);
-  if (pythonCheck(plan.python)) return true;
-  if (!mutate) return false;
-
-  mkdirSync(dirname(plan.environmentRoot), { recursive: true });
-  removeManagedEnvironment(plan.environmentRoot);
-  try {
-    symlinkSync(plan.runtimeRoot, plan.environmentRoot, plan.linkType);
-  } catch (error) {
-    throw new Error(
-      `Could not link the CAD Viewer to its pinned Python runtime: ${error instanceof Error ? error.message : String(error)}`
-    );
+/**
+ * The CAD Viewer client must be built before the desktop can serve it. A
+ * checkout builds apps/viewer with npm (cadgen-js is aliased from
+ * packages/cadgen-js, so it needs its own install first); a bundle already
+ * carries dist/.
+ */
+export function ensureViewerClient(textToCadRoot, { mutate }) {
+  const viewer = resolveViewerRuntime(textToCadRoot);
+  if (!viewer) return false;
+  const built = () => existsSync(join(viewer.dist, 'index.html'));
+  if (built()) return true;
+  if (!mutate || viewer.kind !== 'repository') return false;
+  const cadgenJs = join(textToCadRoot, 'packages', 'cadgen-js');
+  if (existsSync(join(cadgenJs, 'package.json')) && !existsSync(join(cadgenJs, 'node_modules'))) {
+    console.log('Installing packages/cadgen-js dependencies for the CAD Viewer build');
+    run('npm', ['--prefix', cadgenJs, 'install', '--no-audit', '--no-fund']);
   }
-  if (!pythonCheck(plan.python)) throw new Error(`CAD Python launcher failed: ${plan.python}`);
-  return true;
+  if (!existsSync(join(viewer.root, 'node_modules'))) {
+    console.log('Installing apps/viewer dependencies');
+    run('npm', ['--prefix', viewer.root, 'install', '--no-audit', '--no-fund']);
+  }
+  console.log('Building the CAD Viewer client (apps/viewer/dist)');
+  run('npm', ['--prefix', viewer.root, 'run', 'build']);
+  return built();
 }
 
 function removeManagedEnvironment(environmentRoot) {
@@ -723,7 +872,7 @@ function removeManagedEnvironment(environmentRoot) {
   }
 }
 
-function checkCodex({ mutate, pluginSourceRoot, refreshPlugin }) {
+function checkCodex({ mutate, pluginSourceRoot, refreshPlugin, expectedVersion }) {
   const [addMarketplace, installPlugin] = providerPluginInstallPlan('codex', pluginSourceRoot);
   const versionResult = capture('codex', ['--version']);
   if (!versionResult.available) return { provider: 'Codex', available: false, ready: false };
@@ -756,7 +905,7 @@ function checkCodex({ mutate, pluginSourceRoot, refreshPlugin }) {
   if (
     mutate &&
     hasPlugin(plugins.output) &&
-    (refreshPlugin || parseCodexPluginVersion(plugins.output) !== CAD_SKILL_PACKAGE.version)
+    (refreshPlugin || parseCodexPluginVersion(plugins.output) !== expectedVersion)
   ) {
     run('codex', ['plugin', 'remove', PLUGIN]);
     plugins = capture('codex', ['plugin', 'list']);
@@ -771,8 +920,7 @@ function checkCodex({ mutate, pluginSourceRoot, refreshPlugin }) {
   }
 
   const pluginCurrent =
-    hasPlugin(plugins.output) &&
-    parseCodexPluginVersion(plugins.output) === CAD_SKILL_PACKAGE.version;
+    hasPlugin(plugins.output) && parseCodexPluginVersion(plugins.output) === expectedVersion;
   return {
     provider: 'Codex',
     available: true,
@@ -784,7 +932,7 @@ function checkCodex({ mutate, pluginSourceRoot, refreshPlugin }) {
   };
 }
 
-function checkClaude({ mutate, pluginSourceRoot, refreshPlugin }) {
+function checkClaude({ mutate, pluginSourceRoot, refreshPlugin, expectedVersion }) {
   const [addMarketplace, installPlugin] = providerPluginInstallPlan('claude', pluginSourceRoot);
   const versionResult = capture('claude', ['--version']);
   if (!versionResult.available) return { provider: 'Claude Code', available: false, ready: false };
@@ -813,7 +961,7 @@ function checkClaude({ mutate, pluginSourceRoot, refreshPlugin }) {
   if (
     mutate &&
     hasPlugin(plugins.output) &&
-    (refreshPlugin || parseClaudePluginVersion(plugins.output) !== CAD_SKILL_PACKAGE.version)
+    (refreshPlugin || parseClaudePluginVersion(plugins.output) !== expectedVersion)
   ) {
     run('claude', ['plugin', 'uninstall', PLUGIN, '--keep-data']);
     plugins = capture('claude', ['plugin', 'list']);
@@ -829,7 +977,7 @@ function checkClaude({ mutate, pluginSourceRoot, refreshPlugin }) {
 
   const version = parseVersion(versionResult.output);
   const pluginVersion = parseClaudePluginVersion(plugins.output);
-  const pluginCurrent = pluginVersion === CAD_SKILL_PACKAGE.version;
+  const pluginCurrent = pluginVersion === expectedVersion;
   return {
     provider: 'Claude Code',
     available: true,
@@ -854,6 +1002,7 @@ function checkClaude({ mutate, pluginSourceRoot, refreshPlugin }) {
 export function parseOptions(args) {
   const check = args.includes('--check');
   const runtimeOnly = args.includes('--runtime-only');
+  const refresh = args.includes('--refresh');
   const providerArg = args.find((arg) => arg.startsWith('--provider='));
   const provider = providerArg?.slice('--provider='.length) ?? 'all';
   if (!['all', 'codex', 'claude'].includes(provider)) {
@@ -862,7 +1011,7 @@ export function parseOptions(args) {
   if (runtimeOnly && provider !== 'all') {
     throw new Error('--runtime-only cannot be combined with --provider');
   }
-  return { check, provider, runtimeOnly };
+  return { check, provider, runtimeOnly, refresh };
 }
 
 function printStatus(status) {
@@ -880,57 +1029,63 @@ function printStatus(status) {
 
 export function main(args = process.argv.slice(2)) {
   const options = parseOptions(args);
+  const textToCadRoot = resolveTextToCadRoot();
+  if (!textToCadRoot) {
+    throw new Error(
+      `Text-to-CAD resources were not found above ${PROJECT_ROOT}. Run from the text-to-cad checkout or set ${TEXT_TO_CAD_ROOT_ENV}.`
+    );
+  }
+  const version = readTextToCadVersion(textToCadRoot);
+  if (!version) throw new Error(`Text-to-CAD VERSION is unreadable at ${textToCadRoot}`);
   const runtimeRoot = resolveCadRuntimeRoot();
-  const stagedRoot = resolveStagedPluginRoot(runtimeRoot);
-  const refreshPlugin = !stagedPluginIsCurrent(stagedRoot);
-  const pluginSourceRoot = stageBundledPlugin(PROJECT_ROOT, runtimeRoot, {
+  const editable = resolveViewerRuntime(textToCadRoot)?.kind === 'repository';
+  console.log(`Text-to-CAD ${version} at ${textToCadRoot}`);
+
+  const viewerBuilt = ensureViewerClient(textToCadRoot, { mutate: !options.check });
+  console.log(`CAD Viewer client: ${viewerBuilt ? 'built' : 'not built (run pnpm cad:setup)'}`);
+  if (!viewerBuilt && !options.check) {
+    throw new Error('The CAD Viewer client could not be built.');
+  }
+
+  const executable = ensurePythonRuntime(textToCadRoot, {
     mutate: !options.check,
+    runtimeRoot,
+    editable,
   });
-  const cadgenSource = join(pluginSourceRoot, 'packages', 'cadgen');
   if (options.runtimeOnly) {
-    const executable = ensurePythonRuntime(cadgenSource, {
-      mutate: !options.check,
-      runtimeRoot,
-    });
-    if (!executable) {
-      throw new Error('The bundled CAD Python runtime has not been provisioned.');
-    }
-    if (!ensureViewerPython(pluginSourceRoot, executable, { mutate: !options.check })) {
-      throw new Error('The bundled CAD Viewer could not access the pinned Python runtime.');
-    }
+    if (!executable) throw new Error('The CAD Python runtime has not been provisioned.');
     console.log(`CAD Python runtime: ready (${executable})`);
     return;
   }
+  console.log(
+    `CAD Python runtime: ${executable ? `ready (${executable})` : 'missing (run pnpm cad:setup)'}`
+  );
+
+  const stagedRoot = resolveStagedPluginRoot(runtimeRoot);
+  const refreshPlugin =
+    options.refresh || !stagedPluginIsCurrent(stagedRoot, bundledPluginSignature(textToCadRoot));
+  const pluginSourceRoot = stageBundledPlugin(textToCadRoot, runtimeRoot, {
+    mutate: !options.check,
+  });
 
   const checks = [];
+  const providerInput = { mutate: !options.check, pluginSourceRoot, refreshPlugin, expectedVersion: version };
   if (options.provider === 'all' || options.provider === 'codex') {
-    checks.push(checkCodex({ mutate: !options.check, pluginSourceRoot, refreshPlugin }));
+    checks.push(checkCodex(providerInput));
   }
   if (options.provider === 'all' || options.provider === 'claude') {
-    checks.push(checkClaude({ mutate: !options.check, pluginSourceRoot, refreshPlugin }));
+    checks.push(checkClaude(providerInput));
   }
-
-  const installed = checks.filter((status) => status.available && status.ready);
-  const runtimeAvailable =
-    installed.some((status) => status.pluginRoot) &&
-    existsSync(join(cadgenSource, 'pyproject.toml'));
-  const executable = runtimeAvailable
-    ? ensurePythonRuntime(cadgenSource, {
-        mutate: !options.check,
-        runtimeRoot,
-      })
-    : null;
-  for (const status of installed) {
-    status.ready = Boolean(
-      status.pluginRoot &&
-      ensureViewerPython(status.pluginRoot, executable, { mutate: !options.check })
-    );
+  for (const status of checks) {
+    if (status.available) status.ready = status.ready && Boolean(executable);
   }
   checks.forEach(printStatus);
 
   const available = checks.filter((status) => status.available);
   if (available.length === 0) throw new Error('Neither Codex nor Claude Code is installed');
-  if (available.some((status) => !status.ready)) process.exitCode = 1;
+  if (!viewerBuilt || !executable || available.some((status) => !status.ready)) {
+    process.exitCode = 1;
+  }
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) {

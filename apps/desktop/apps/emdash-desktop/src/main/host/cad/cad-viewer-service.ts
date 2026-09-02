@@ -1,20 +1,15 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 import {
-  currentCadRuntimePluginRoot,
-  currentCadRuntimePythonExecutable,
+  currentTextToCadLayout,
+  findCadPythonExecutable,
   provisionCadRuntime,
 } from '@main/host/cad/cad-runtime-service';
-import {
-  cadgenPythonEnvironment,
-  resolveCadViewerCapability,
-} from '@main/host/cad/cadgen-compatibility';
+import { viewerClientIsBuilt } from '@main/host/cad/text-to-cad-layout';
 
 const HOST = '127.0.0.1';
-const DEFAULT_PORT = 3245;
 const STARTUP_TIMEOUT_MS = 30_000;
 
 export type EnsureCadViewerResult =
@@ -28,6 +23,44 @@ export type CadViewerChild = {
   onTerminated(listener: () => void): void;
 };
 
+/** The launcher's machine-readable last line: `{"url","port","action"}`. */
+export interface CadViewerLaunch {
+  url: string;
+  port: number;
+  action: 'started' | 'reused';
+}
+
+export function parseCadViewerLaunch(stdout: string): CadViewerLaunch | null {
+  for (const line of stdout.split(/\r?\n/).reverse()) {
+    const candidate = line.trim();
+    if (!candidate.startsWith('{')) continue;
+    try {
+      const payload: unknown = JSON.parse(candidate);
+      if (
+        typeof payload === 'object' &&
+        payload !== null &&
+        'url' in payload &&
+        typeof payload.url === 'string' &&
+        'port' in payload &&
+        typeof payload.port === 'number' &&
+        'action' in payload &&
+        (payload.action === 'started' || payload.action === 'reused')
+      ) {
+        return { url: payload.url, port: payload.port, action: payload.action };
+      }
+    } catch {
+      // A partial line; keep looking.
+    }
+  }
+  return null;
+}
+
+/**
+ * One Viewer per served directory. Jake's launcher owns ports and reuse: a
+ * launch from a directory that already has a live Viewer at the same code
+ * answers `reused` and exits, so the lifecycle may end up tracking a port it
+ * does not own a process for. Only owned children are ever killed.
+ */
 export class CadViewerProcessLifecycle {
   private viewerProcess: CadViewerChild | null = null;
   private viewerPort: number | null = null;
@@ -69,7 +102,21 @@ export class CadViewerProcessLifecycle {
     return true;
   }
 
+  /** Track a Viewer another launch already owns (the launcher answered `reused`). */
+  markExternal(port: number): void {
+    this.viewerProcess = null;
+    this.viewerPort = port;
+  }
+
+  get port(): number | null {
+    return this.viewerPort;
+  }
+
   stop(child: CadViewerChild | null = this.viewerProcess): void {
+    if (child === null && this.viewerProcess === null) {
+      this.viewerPort = null;
+      return;
+    }
     if (!child || this.viewerProcess !== child) return;
     this.viewerProcess = null;
     this.viewerPort = null;
@@ -83,10 +130,10 @@ export class CadViewerProcessLifecycle {
     const currentProcess = this.viewerProcess;
     const currentPort = this.viewerPort;
     if (
-      currentProcess &&
       currentPort !== null &&
       (await input.isHealthy(currentPort)) &&
-      this.viewerProcess === currentProcess
+      this.viewerProcess === currentProcess &&
+      this.viewerPort === currentPort
     ) {
       return { success: true, port: currentPort };
     }
@@ -147,30 +194,23 @@ export async function ensureCadViewer(input: {
   const lifecycle = viewerLifecycles.forWorkspace(target.workspacePath);
   const started = await lifecycle.ensureStarted({
     isHealthy: (port) => viewerIsHealthy(port, target.workspacePath),
-    start: () =>
-      enqueueViewerStartup(async () => {
-        const port = await selectCadViewerPort(configuredPort());
-        if (port === null) {
-          return { success: false, error: 'No local port is available for CAD Viewer.' };
-        }
-        return startViewer(port, target.workspacePath, lifecycle);
-      }),
+    start: () => enqueueViewerStartup(() => startViewer(target.workspacePath, lifecycle)),
   });
   return started.success
     ? { success: true, url: buildCadViewerUrl({ ...target, port: started.port }) }
     : started;
 }
 
-export async function selectCadViewerPort(
-  preferredPort: number,
-  isAvailable: (port: number) => Promise<boolean> = portIsAvailable
-): Promise<number | null> {
-  for (let offset = 0; offset < 100; offset += 1) {
-    const candidate = preferredPort + offset;
-    if (candidate > 65_535) break;
-    if (await isAvailable(candidate)) return candidate;
+function validateTarget(input: { workspacePath: string; filePath: string }) {
+  const workspacePath = resolve(input.workspacePath);
+  const absoluteFilePath = isAbsolute(input.filePath)
+    ? input.filePath
+    : resolve(workspacePath, input.filePath);
+  const relativeFilePath = relative(workspacePath, absoluteFilePath);
+  if (!relativeFilePath || relativeFilePath.startsWith('..') || isAbsolute(relativeFilePath)) {
+    return { success: false as const, error: 'CAD files must be inside the active workspace.' };
   }
-  return null;
+  return { success: true as const, workspacePath, relativeFilePath };
 }
 
 export function buildCadViewerUrl(input: {
@@ -178,102 +218,68 @@ export function buildCadViewerUrl(input: {
   relativeFilePath: string;
   port: number;
 }): string {
+  // The Viewer serves one directory fixed at launch, so the page is always the
+  // bare origin and only the root-relative artifact belongs in the URL.
   const url = new URL(`http://${HOST}:${input.port}`);
-  // Every supported Viewer is launched with --root, so the page itself stays
-  // at the bare origin and only the root-relative artifact belongs in the URL.
   url.pathname = '/';
   url.searchParams.set('file', input.relativeFilePath.split(sep).join('/'));
   return url.toString();
 }
 
-function validateTarget(input: {
-  workspacePath: string;
-  filePath: string;
-}):
-  | { success: true; workspacePath: string; relativeFilePath: string }
-  | { success: false; error: string } {
-  const workspacePath = resolve(input.workspacePath);
-  const requestedFilePath = resolve(input.filePath);
-  const relativeRequestedPath = relative(workspacePath, requestedFilePath);
-  if (
-    !relativeRequestedPath ||
-    relativeRequestedPath.startsWith(`..${sep}`) ||
-    isAbsolute(relativeRequestedPath)
-  ) {
-    return { success: false, error: 'CAD files must be inside the active project workspace.' };
-  }
-  if (!existsSync(requestedFilePath)) {
-    return { success: false, error: `CAD file does not exist: ${requestedFilePath}` };
-  }
-  const filePath = preferredCadViewerPath(requestedFilePath);
-  const relativeFilePath = relative(workspacePath, filePath);
-  return { success: true, workspacePath, relativeFilePath };
-}
-
 export function preferredCadViewerPath(
   filePath: string,
-  _fileExists: (candidate: string) => boolean = existsSync
+  _exists: (candidate: string) => boolean = existsSync
 ): string {
+  // The accepted STEP is the canonical artifact. A legacy generator beside it
+  // never replaces it in the viewer.
   return filePath;
 }
 
 async function startViewer(
-  port: number,
   cwd: string,
   lifecycle: CadViewerProcessLifecycle
 ): Promise<StartCadViewerResult> {
-  let pluginRoot = findCadPluginRoot();
-  if (!pluginRoot) {
-    try {
-      await provisionCadRuntime();
-      pluginRoot = findCadPluginRoot();
-    } catch (error) {
-      return {
-        success: false,
-        error: `Could not prepare the pinned CAD environment: ${error instanceof Error ? error.message : String(error)}`,
-      };
-    }
-  }
-  if (!pluginRoot) {
+  const layout = currentTextToCadLayout();
+  if (!layout) {
     return {
       success: false,
-      error: 'The pinned CAD plugin could not be located after automatic setup.',
+      error:
+        'Text-to-CAD resources were not found. Run Hardcore from the text-to-cad checkout or set HARDCORE_TEXT_TO_CAD_ROOT.',
+    };
+  }
+  if (!viewerClientIsBuilt(layout)) {
+    return {
+      success: false,
+      error: `The CAD Viewer client is not built at ${layout.viewer.dist}. Run pnpm cad:setup to build apps/viewer.`,
     };
   }
 
-  let viewer = resolveCadViewerCapability(pluginRoot);
-  if (!viewer) {
+  let python = findCadPythonExecutable(layout);
+  if (!python) {
     try {
       await provisionCadRuntime();
     } catch (error) {
       return {
         success: false,
-        error: `Could not prepare the pinned CAD environment: ${error instanceof Error ? error.message : String(error)}`,
+        error: `Could not prepare the CAD environment: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
-    viewer = resolveCadViewerCapability(pluginRoot);
-    if (!viewer) {
-      return { success: false, error: 'The pinned CAD Viewer environment is incomplete.' };
-    }
+    python = findCadPythonExecutable(layout);
+    if (!python) return { success: false, error: 'The CAD Python environment is incomplete.' };
   }
 
-  let viewerLog = '';
-  const viewerProcess = spawn(
-    process.execPath,
-    [viewer.launcher, '--root', cwd, '--host', HOST, '--port', String(port), '--json'],
-    {
-      cwd,
-      env: cadgenPythonEnvironment(
-        {
-          ...process.env,
-          ELECTRON_RUN_AS_NODE: '1',
-          INIT_CWD: cwd,
-        },
-        viewer.supportsCadgenPython ? findCadPythonExecutable(pluginRoot) : null
-      ),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    }
-  );
+  // The served directory is the cwd, full stop: the launcher takes no
+  // directory flag, picks the first free port from 3245 upward, and answers
+  // one JSON line once the socket is bound and the app attached.
+  let stdout = '';
+  let stderr = '';
+  const viewerProcess = spawn(python, [layout.viewer.launcher, '--host', HOST, '--json'], {
+    cwd,
+    env: cadToolEnvironment(),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let exited = false;
+  let spawnError: Error | null = null;
   const viewerChild: CadViewerChild = {
     kill: () => viewerProcess.kill(),
     onTerminated: (listener) => {
@@ -282,37 +288,59 @@ async function startViewer(
     },
   };
   lifecycle.adopt(viewerChild);
-  const appendViewerLog = (chunk: Buffer | string) => {
-    if (!lifecycle.owns(viewerChild)) return;
-    viewerLog = `${viewerLog}${String(chunk)}`.slice(-8_000);
-  };
-  viewerProcess.stdout?.on('data', appendViewerLog);
-  viewerProcess.stderr?.on('data', appendViewerLog);
+  viewerProcess.stdout?.on('data', (chunk: Buffer | string) => {
+    stdout = `${stdout}${String(chunk)}`.slice(-16_000);
+  });
+  viewerProcess.stderr?.on('data', (chunk: Buffer | string) => {
+    stderr = `${stderr}${String(chunk)}`.slice(-8_000);
+  });
+  viewerProcess.once('exit', () => {
+    exited = true;
+  });
+  viewerProcess.once('error', (error) => {
+    spawnError = error;
+    exited = true;
+  });
 
   const deadline = Date.now() + STARTUP_TIMEOUT_MS;
+  let launch: CadViewerLaunch | null = null;
   while (Date.now() < deadline) {
-    if (!lifecycle.owns(viewerChild)) break;
-    if ((await viewerIsHealthy(port, cwd)) && lifecycle.markReady(viewerChild, port)) {
-      return { success: true, port };
-    }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+    launch = parseCadViewerLaunch(stdout);
+    if (launch) break;
+    if (spawnError) break;
+    if (exited) break;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  }
+  if (!launch) {
+    lifecycle.stop(viewerChild);
+    const detail = spawnError
+      ? (spawnError as Error).message
+      : `${stderr.trim()}\n${stdout.trim()}`.trim();
+    return {
+      success: false,
+      error: `CAD Viewer did not start.${detail ? ` ${detail}` : ''}`,
+    };
   }
 
+  if (launch.action === 'reused') {
+    // Another launch (this app earlier, or an agent session) already serves
+    // this directory with the same code. The launcher process exits on its
+    // own; the resident instance is not ours to stop.
+    lifecycle.markExternal(launch.port);
+  } else if (!lifecycle.markReady(viewerChild, launch.port)) {
+    return { success: false, error: 'CAD Viewer startup was replaced by a newer request.' };
+  }
+
+  while (Date.now() < deadline) {
+    if (await viewerIsHealthy(launch.port, cwd)) return { success: true, port: launch.port };
+    if (launch.action === 'started' && !lifecycle.owns(viewerChild)) break;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+  }
+  lifecycle.stop(viewerChild);
   return {
     success: false,
-    error: viewerLog.trim() || 'CAD Viewer did not become ready within 30 seconds.',
+    error: `CAD Viewer at ${launch.url} did not answer for ${cwd}.${stderr.trim() ? ` ${stderr.trim()}` : ''}`,
   };
-}
-
-async function portIsAvailable(port: number): Promise<boolean> {
-  return new Promise((resolvePort) => {
-    const server = createServer();
-    server.unref();
-    server.once('error', () => resolvePort(false));
-    server.listen({ host: HOST, port, exclusive: true }, () => {
-      server.close(() => resolvePort(true));
-    });
-  });
 }
 
 async function viewerIsHealthy(port: number, workspacePath: string): Promise<boolean> {
@@ -334,55 +362,13 @@ async function viewerIsHealthy(port: number, workspacePath: string): Promise<boo
   }
 }
 
-function configuredPort(): number {
-  const value = Number(process.env.HARDCORE_CAD_VIEWER_PORT ?? DEFAULT_PORT);
-  return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : DEFAULT_PORT;
+export function cadViewerLauncherPath(): string | null {
+  return currentTextToCadLayout()?.viewer.launcher ?? null;
 }
 
-export function findCadPluginRoot(): string | null {
-  const configured = process.env.HARDCORE_CAD_PLUGIN_ROOT;
-  const bundledCopy = currentCadRuntimePluginRoot();
-  const codexRoot = join(homedir(), '.codex', '.tmp', 'marketplaces', 'text-to-cad');
-  for (const candidate of [configured, bundledCopy, codexRoot]) {
-    if (candidate && hasViewer(candidate)) return candidate;
-  }
-
-  const claudeRoot = join(homedir(), '.claude', 'plugins', 'cache', 'text-to-cad', 'cad');
-  if (!existsSync(claudeRoot)) return null;
-  const versions = readdirSync(claudeRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }));
-  return versions.map((version) => join(claudeRoot, version)).find(hasViewer) ?? null;
-}
-
-export function findCadPythonExecutable(pluginRoot: string): string {
-  const configured = process.env.HARDCORE_CAD_PYTHON?.trim();
-  if (configured && existsSync(configured)) return configured;
-  const runtimePython = currentCadRuntimePythonExecutable();
-  if (existsSync(runtimePython)) return runtimePython;
-  const repositoryPython = join(
-    pluginRoot,
-    '.venv',
-    process.platform === 'win32' ? 'Scripts' : 'bin',
-    process.platform === 'win32' ? 'python.exe' : 'python'
-  );
-  if (existsSync(repositoryPython)) return repositoryPython;
-  return join(
-    pluginRoot,
-    'skills',
-    'cad-viewer',
-    'scripts',
-    'viewer',
-    '.venv',
-    process.platform === 'win32' ? 'Scripts' : 'bin',
-    process.platform === 'win32' ? 'python.exe' : 'python'
-  );
-}
-
-function hasViewer(pluginRoot: string): boolean {
-  return resolveCadViewerCapability(pluginRoot) !== null;
-}
+// Re-exported for callers that still resolve the interpreter through the viewer
+// service; the runtime service owns the rule.
+export { findCadPythonExecutable } from '@main/host/cad/cad-runtime-service';
 
 process.once('exit', () => {
   viewerLifecycles.stopAll();

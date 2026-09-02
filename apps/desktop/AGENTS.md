@@ -1,22 +1,30 @@
 # Project Overview
 
-Emdash is a local-first, cross-platform Electron app for running multiple AI coding
-agents in parallel. Each task is isolated in its own Git worktree and can run locally
-or over SSH, while the desktop app coordinates provider CLIs, ACP chat sessions,
-terminal sessions, issue and PR integrations, diff review, and release packaging.
+Hardcore is a local-first, cross-platform Electron app for running multiple AI coding
+agents in parallel around CAD artifacts. Each task is isolated in its own Git worktree and
+can run locally or over SSH, while the desktop app coordinates provider CLIs, ACP chat
+sessions, terminal sessions, the CAD Viewer, diff review, and release packaging.
+
+This directory is `apps/desktop` inside the Text-to-CAD monorepo
+(earthtojake/text-to-cad). The repository root's `AGENTS.md` governs the rest of the
+repository; this file governs everything under `apps/desktop`. The desktop uses the
+repository's canonical CAD resources directly — `apps/viewer`, `packages/cadgen`,
+`packages/cadgen-js`, and `skills/` — and never vendors or copies them into this tree.
+Read [CAD integration](agents/integrations/cad.md) before changing anything under
+`src/main/host/cad/` or `src/core/features/cad/`.
 
 ## Repository Structure
 
-This is a pnpm workspace monorepo. The Electron app lives in
-`apps/emdash-desktop/` as `@emdash/emdash-desktop`; shared packages live under
+This directory is a pnpm workspace of its own. The Electron app lives in
+`apps/emdash-desktop/` as `@hardcore/desktop`; shared packages live under
 `packages/`. Unless a path is prefixed with `packages/` or another app, app paths
 such as `src/...`, `drizzle/`, `scripts/`, and `build/` are relative to
-`apps/emdash-desktop/`.
+`apps/emdash-desktop/`. All commands below run from `apps/desktop`, not from the
+repository root.
 
-Repo root:
+Workspace root (`apps/desktop`):
 
 - `.claude/` - Local Claude agent settings for this checkout.
-- `.github/` - GitHub issue templates, reusable actions, CI, and release workflows.
 - `agents/` - Agent-facing architecture, workflow, convention, integration, and risk docs.
 - `apps/emdash-desktop/` - The Electron desktop app.
 - `apps/workspace-server/` - Remote workspace server and its Docker-based dev stack.
@@ -27,16 +35,19 @@ Repo root:
 - `packages/theme/` - Theme token codegen that emits the generated theme CSS.
 - `packages/ui/` - Shared React UI components, theme tokens, recipes, and primitives.
 - `packages/wire/` - Typed wire protocol contracts shared by app and workspace server.
+- `tooling/` - Root scripts, including the CAD setup (`tooling/scripts/setup-cad.mjs`)
+  and the pinned CAD dependency lock (`tooling/cad-runtime-constraints.txt`).
 - `pnpm-workspace.yaml` - Workspace package globs for `apps/*` and `packages/**`.
 - Root config files - `package.json`, `nx.json`, `.nvmrc`, `.oxfmtrc.json`,
-  `.oxlintrc.json`, and lockfile/configuration owned at the workspace root.
+  `.oxlintrc.json`, and lockfile/configuration owned at this workspace root.
 
 Inside `apps/emdash-desktop/`:
 
 - `build/` - Electron packaging assets; avoid edits unless working on packaging/signing.
 - `drizzle/` - Generated Drizzle SQL migrations and metadata.
 - `scripts/` - Release, verification, and build support scripts.
-- `src/main/` - Electron main process: bootstrap, Wire gateway, DB, and host services.
+- `src/main/` - Electron main process: bootstrap, Wire gateway, DB, and host services,
+  including the CAD adapter under `src/main/host/cad/`.
 - `src/entry/` - Electron entry points: `main.ts` (main process) and `preload.ts`, the typed
   preload bridge exposed to the renderer.
 - `src/renderer/` - React composition shell, shared browser infrastructure, and tests.
@@ -58,11 +69,13 @@ full index — one blessed command per flow, database flows, Storybook,
 packaging, remote development, and escape hatches):
 
 ```bash
-pnpm install        # complete setup from the repo root — nothing else needed
+pnpm install        # complete setup from apps/desktop — nothing else needed
+pnpm cad:setup      # Python runtime, apps/viewer client build, provider plugins
 pnpm run doctor     # report-only environment health check
-pnpm run dev        # full workspace dev (root); app-only from apps/emdash-desktop/
+pnpm run dev        # full workspace dev (apps/desktop); app-only from apps/emdash-desktop/
 pnpm run build      # build all workspace projects
 pnpm run check      # full merge gate: format, lint, typecheck, test
+pnpm cad:test       # Jake's selected CAD suites plus the desktop's generate/validate smoke
 ```
 
 The four gate commands also run individually from the repo root:
@@ -222,10 +235,10 @@ pnpm run test
 - `packages/chat-ui` has node, browser, perf, and benchmark test targets.
 - `packages/ui`, `packages/shared`, and `packages/plugins` run their package-local tests.
 - Integration-style tests create temporary repos and worktrees in `os.tmpdir()`.
-- CI runs `.github/workflows/code-consistency-check.yml` with `nx affected` for
-  `format:check`, `typecheck`, `lint`, and `test` on touched projects and
-  dependents; the Playwright-backed `browser` Vitest projects are skipped there.
-- Tests are still expected locally before merge even where CI coverage is narrower.
+- The monorepo's GitHub workflows do not run this workspace yet; the former fork's
+  `code-consistency-check.yml` (`nx affected` for `format:check`, `typecheck`, `lint`,
+  and `test`) is the template for adding it. Until then every gate runs locally before
+  merge.
 
 ## Security & Compliance
 
@@ -275,6 +288,9 @@ pnpm run test
   spawning as high risk.
 - Read the matching `agents/risky-areas/` page before touching database, PTY, SSH, or
   updater code.
+- Never copy, vendor, or stage `apps/viewer`, `packages/cadgen`, or `skills/` into this
+  tree; resolve them through `src/main/host/cad/text-to-cad-layout.ts`. Never script the
+  CAD Viewer's DOM from the desktop.
 - Do not weaken shell quoting, spawn behavior, env allowlists, path validation, or
   secret redaction casually.
 - Prefer existing service, provider, plugin, Wire, modal, view, tab, and store patterns

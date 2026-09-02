@@ -58,6 +58,10 @@ flow, CI/CD-testing and resume options, and local/manual fallbacks.
   root is the plugin package; its skills are `skills/` directly.
 - `models/`: sample and durable CAD/robot-description fixtures.
 - `apps/viewer/`: editable CAD Viewer source app.
+- `apps/desktop/`: Hardcore, the Electron desktop shell (Claude/Codex threads beside
+  the CAD Viewer). A self-contained pnpm workspace with its own `AGENTS.md`; it
+  runs on `apps/viewer`, `packages/cadgen`, `packages/cadgen-js`, and `skills/`
+  directly and is never a dependency of the skills.
 - `packages/cadgen-js`: shared JS CAD/render/runtime code, UI-framework agnostic.
 - `packages/cadgen`: the published distribution — STEP/GLB/topology generation,
   the skill CLI parsers, the CAD Viewer backend + client, and the Node/browser

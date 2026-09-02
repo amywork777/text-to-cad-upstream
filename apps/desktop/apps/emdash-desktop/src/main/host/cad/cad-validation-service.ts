@@ -1,8 +1,7 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   CadParameterApplyResult,
@@ -14,20 +13,20 @@ import {
   parseCadSourceHistory,
 } from '@core/features/cad/api/cad-source-history';
 import { verifiedMigratedCadSourceForLegacy } from '@main/host/cad/cad-migration-marker';
-import { provisionCadRuntime } from '@main/host/cad/cad-runtime-service';
-import { findCadPluginRoot, findCadPythonExecutable } from '@main/host/cad/cad-viewer-service';
+import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 import {
-  cadSourceRebuildToolPlan as compatibilityCadSourceRebuildToolPlan,
+  cadSourceRebuildToolPlan as recipeRebuildToolPlan,
+  linkedSourceFromCadgenRecord,
   normalizeCadArtifactRelationship,
   resolveCadBuildArtifactPath,
-  resolveCadgenCapability,
   resolveCadSourceArtifactRelationship,
-  type CadgenContract,
   type CadRuntimeCommand,
-} from '@main/host/cad/cadgen-compatibility';
+} from '@main/host/cad/cad-recipe';
+import { findCadPythonExecutable, provisionCadRuntime } from '@main/host/cad/cad-runtime-service';
 
 const execFileAsync = promisify(execFile);
 const VALIDATION_TIMEOUT_MS = 120_000;
+const REBUILD_TIMEOUT_MS = 10 * 60_000;
 const MAX_OUTPUT_BYTES = 5 * 1024 * 1024;
 const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
 interface CadValidationInFlight {
@@ -52,7 +51,7 @@ type CadArtifactTarget =
 export type CadArtifactTargetInput = {
   workspacePath: string;
   filePath: string;
-  /** Persisted model-catalog provenance; preferred over upstream cache metadata. */
+  /** Persisted model-catalog provenance; preferred over cadgen's cache record. */
   sourcePath?: string;
 };
 
@@ -81,7 +80,7 @@ export function validateCadModel(input: CadArtifactTargetInput): Promise<CadVali
 }
 
 /**
- * Explicitly rebuilds an authored Python recipe before inspecting the STEP it
+ * Explicitly runs an authored Python recipe before inspecting the STEP it
  * produced. Normal open/restart validation must use validateCadModel instead;
  * that path treats the accepted STEP as immutable input and never runs Python.
  */
@@ -110,10 +109,10 @@ export function cadArtifactOperationKey(input: CadArtifactTargetInput): string {
 }
 
 /**
- * Resolve the artifact a library-first recipe declares without executing it.
- * cadgen requires `write=` to be a string literal, so this lightweight import /
- * decorator scan can give a custom output the same mutex as direct STEP
- * validation before Python runs.
+ * Resolve the artifact a recipe declares without executing it. cadgen requires
+ * `out=` to be a string literal, so this lightweight import / decorator scan
+ * can give a custom output the same mutex as direct STEP validation before
+ * Python runs.
  */
 function cadSourceOutputPath(workspacePath: string, sourcePath: string): string {
   const relationship = resolveCadSourceArtifactRelationship({ workspacePath, sourcePath });
@@ -215,7 +214,7 @@ async function rebuildCadModelOnce(input: {
     return {
       success: false,
       error:
-        'This legacy .step.py model is view-only until it is migrated. Run python -m cadgen.migrate on the source before rebuilding it.',
+        'This legacy .step.py model is view-only. Rename it to a plain .py model with one @step function (see docs/migrating-0.4-to-0.5.md) before rebuilding it.',
     };
   }
   if (!isPythonModelPath(target.relativeFilePath)) {
@@ -226,19 +225,18 @@ async function rebuildCadModelOnce(input: {
   if (!runtime.success) return runtime;
 
   try {
-    const buildCommand = cadSourceRebuildToolPlan(target.relativeFilePath, runtime.contract);
+    const buildCommand = cadSourceRebuildToolPlan(target.relativeFilePath);
     const build = await runCadCommand(
       runtime.python,
       target.workspacePath,
       buildCommand.tool,
-      buildCommand.args
+      buildCommand.args,
+      REBUILD_TIMEOUT_MS
     );
-    const modelPath = cadValidationModelPath(
-      target.workspacePath,
-      target.relativeFilePath,
-      build,
-      runtime.contract
-    );
+    if (build.outcome === 'contended') {
+      throw new Error('Another build of this model is still running. Try again when it finishes.');
+    }
+    const modelPath = cadValidationModelPath(target.workspacePath, target.relativeFilePath, build);
     return inspectCadArtifact(
       runtime.python,
       target.workspacePath,
@@ -251,49 +249,24 @@ async function rebuildCadModelOnce(input: {
 }
 
 async function prepareCadRuntime(): Promise<
-  { success: true; python: string; contract: CadgenContract } | { success: false; error: string }
+  { success: true; python: string } | { success: false; error: string }
 > {
-  let pluginRoot = findCadPluginRoot();
-  if (!pluginRoot) {
-    try {
-      await provisionCadRuntime();
-      pluginRoot = findCadPluginRoot();
-    } catch (error) {
-      return {
-        success: false,
-        error: `Could not prepare the pinned CAD environment: ${errorMessage(error)}`,
-      };
-    }
-  }
-  if (!pluginRoot) {
-    return {
-      success: false,
-      error: 'The pinned CAD plugin could not be located after automatic setup.',
-    };
-  }
-  const capability = resolveCadgenCapability(pluginRoot);
-  if (!capability) {
-    return {
-      success: false,
-      error: 'The pinned CAD environment has an unsupported or missing cadgen package manifest.',
-    };
-  }
-  const python = findCadPythonExecutable(pluginRoot);
-  if (!existsSync(python)) {
+  let python = findCadPythonExecutable();
+  if (!python) {
     try {
       await provisionCadRuntime();
     } catch (error) {
       return {
         success: false,
-        error: `Could not prepare the pinned CAD environment: ${errorMessage(error)}`,
+        error: `Could not prepare the CAD environment: ${errorMessage(error)}`,
       };
     }
-    if (!existsSync(python)) {
-      return { success: false, error: 'The pinned CAD environment is incomplete.' };
-    }
+    python = findCadPythonExecutable();
   }
-
-  return { success: true, python, contract: capability.contract };
+  if (!python) {
+    return { success: false, error: 'The CAD Python environment is incomplete.' };
+  }
+  return { success: true, python };
 }
 
 async function inspectCadArtifact(
@@ -344,7 +317,7 @@ export function readCadModelHistory(input: {
             parameters: [],
             diagnostics: [
               ...history.diagnostics,
-              'This legacy .step.py source is view-only. Run python -m cadgen.migrate on it before editing dimensions.',
+              'This legacy .step.py source is view-only. Rename it to a plain .py @step model before editing dimensions.',
             ],
           }
         : history,
@@ -366,7 +339,7 @@ export function applyCadModelParameters(input: {
     return {
       success: false,
       error:
-        'This legacy .step.py model is view-only until it is migrated. Run python -m cadgen.migrate on the source before editing parameters.',
+        'This legacy .step.py model is view-only. Rename it to a plain .py @step model before editing parameters.',
     };
   }
   if (!isPythonModelPath(target.relativeFilePath)) {
@@ -400,13 +373,11 @@ export function applyCadModelParameters(input: {
   }
 }
 
-export type { CadRuntimeCommand } from '@main/host/cad/cadgen-compatibility';
+export type { CadRuntimeCommand } from '@main/host/cad/cad-recipe';
+export { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 
-export function cadSourceRebuildToolPlan(
-  relativeFilePath: string,
-  contract: CadgenContract
-): CadRuntimeCommand {
-  return compatibilityCadSourceRebuildToolPlan(relativeFilePath, contract);
+export function cadSourceRebuildToolPlan(relativeFilePath: string): CadRuntimeCommand {
+  return recipeRebuildToolPlan(relativeFilePath);
 }
 
 export function cadInspectionToolPlan(modelPath: string): CadRuntimeCommand[] {
@@ -470,7 +441,7 @@ function atomicWriteSource(path: string, source: string): void {
 
 /**
  * Resolves the immutable artifact inspected by normal open/restart validation.
- * A Python path is accepted only as a link to its sibling STEP; the recipe is
+ * A Python path is accepted only as a link to its declared STEP; the recipe is
  * never executed here.
  */
 export function resolveCadArtifactTarget(input: CadArtifactTargetInput): CadArtifactTarget {
@@ -544,6 +515,13 @@ function validateSourceTarget(input: {
   return { success: true, workspacePath, relativeFilePath };
 }
 
+/**
+ * The recipe behind an accepted STEP, in order of trust: the model catalog's
+ * persisted association, cadgen's own provenance record (verified both ways
+ * against the recipe's declared output), then the legacy `.step.py` sibling.
+ * A same-stem `.py` beside an imported STEP is never assumed to own it, and
+ * the `.step.json` sidecar carries declarations only, never source identity.
+ */
 function linkedSourceForStep(
   workspacePath: string,
   filePath: string,
@@ -565,45 +543,11 @@ function linkedSourceForStep(
     }
   }
 
-  // Bounded pinned-0.4 fallback. Newer cadgen contracts must supply source
-  // association through Hardcore's explicit persisted model metadata or an
-  // upstream contract that has been verified before it is added here.
-  const descriptorPath = join(
-    workspacePath,
-    dirname(stepRelativePath),
-    '__cadgen__',
-    'models',
-    basename(stepRelativePath),
-    'assembly.json'
-  );
-  try {
-    const descriptor: unknown = JSON.parse(readFileSync(descriptorPath, 'utf8'));
-    if (
-      isRecord(descriptor) &&
-      descriptor.sourceKind === 'python' &&
-      typeof descriptor.sourcePath === 'string' &&
-      descriptor.sourcePath.trim() &&
-      descriptor.sourcePath.toLowerCase().endsWith('.py')
-    ) {
-      // Upstream defines sourcePath relative to the STEP's parent, not the
-      // project root. Resolve it there, then re-apply the workspace boundary.
-      const sourcePath = resolve(dirname(filePath), descriptor.sourcePath);
-      const sourceRelativePath = relative(workspacePath, sourcePath);
-      if (isSafeWorkspaceRelativePath(sourceRelativePath)) {
-        const verifiedSource = verifiedSourceForLegacy(workspacePath, sourcePath, filePath);
-        if (verifiedSource) return verifiedSource;
-        if (existsSync(sourcePath)) return sourcePath;
-      }
-    }
-  } catch {
-    // A raw or not-yet-built STEP has no descriptor. Do not guess a plain
-    // same-stem .py source: imported CAD and an unrelated helper can share a
-    // stem. Newer recipes require explicit persisted Hardcore metadata until
-    // upstream establishes another source-association contract.
-  }
+  const recorded = linkedSourceFromCadgenRecord({ workspacePath, modelPath: filePath });
+  if (recorded) return join(workspacePath, recorded.relativeSourcePath);
 
   // Preserve the old artifact.step.py naming convention as a bounded legacy
-  // compatibility link. Legacy recipes remain read-only until migrated.
+  // compatibility link. Legacy recipes remain read-only until renamed.
   const legacySibling = `${filePath}.py`;
   const verifiedSource = verifiedSourceForLegacy(workspacePath, legacySibling, filePath);
   if (verifiedSource) return verifiedSource;
@@ -643,7 +587,7 @@ export function assertLegacyCadArtifactIsCurrent(
   const absoluteModelPath = join(workspacePath, modelPath);
   if (!existsSync(absoluteModelPath)) {
     throw new Error(
-      `The legacy model has no accepted sibling STEP. Run python -m cadgen.migrate ${relativeSourcePath}, then rebuild it.`
+      `The legacy model has no accepted sibling STEP. Rename ${basename(relativeSourcePath)} to a plain .py @step model and rebuild it.`
     );
   }
 
@@ -651,7 +595,7 @@ export function assertLegacyCadArtifactIsCurrent(
   const currentSourceHash = sha256(join(workspacePath, relativeSourcePath));
   if (!recordedSourceHash || recordedSourceHash !== currentSourceHash) {
     throw new Error(
-      `The legacy source cannot be proven to match its accepted STEP. Run python -m cadgen.migrate ${relativeSourcePath}, then rebuild it before editing.`
+      `The legacy source cannot be proven to match its accepted STEP. Rename ${basename(relativeSourcePath)} to a plain .py @step model and rebuild it before editing.`
     );
   }
   return modelPath;
@@ -669,12 +613,13 @@ async function runCadCommand(
   python: string,
   cwd: string,
   tool: CadRuntimeCommand['tool'],
-  args: string[]
+  args: string[],
+  timeout = VALIDATION_TIMEOUT_MS
 ): Promise<Record<string, unknown>> {
   const pythonArgs = tool === 'model' ? args : ['-m', 'cadgen.cli', ...args];
   const result = await execFileAsync(python, pythonArgs, {
     cwd,
-    timeout: VALIDATION_TIMEOUT_MS,
+    timeout,
     maxBuffer: MAX_OUTPUT_BYTES,
     env: cadToolEnvironment(),
   });
@@ -693,15 +638,13 @@ async function runCadCommand(
 export function cadValidationModelPath(
   workspacePath: string,
   relativeFilePath: string,
-  build: Record<string, unknown>,
-  contract: CadgenContract
+  build: Record<string, unknown>
 ): string {
   if (!isPythonModelPath(relativeFilePath)) return relativeFilePath;
   return resolveCadBuildArtifactPath({
     workspacePath,
     relativeSourcePath: relativeFilePath,
     build,
-    contract,
   });
 }
 
@@ -718,25 +661,17 @@ function isLegacyPythonModelPath(path: string): boolean {
   return /\.(?:step|stp)\.py$/i.test(path);
 }
 
-export function cadToolEnvironment(
-  environment: NodeJS.ProcessEnv = process.env
-): NodeJS.ProcessEnv {
-  return {
-    ...environment,
-    // Parameter edits often preserve both source length and the filesystem's
-    // coarse timestamp. Pointing Python at an unwritten cache directory keeps a
-    // same-second stale `.pyc` from regenerating the previous model revision.
-    PYTHONDONTWRITEBYTECODE: '1',
-    PYTHONPYCACHEPREFIX: join(tmpdir(), `hardcore-cad-no-bytecode-${process.pid}`),
-  };
-}
-
 function validationErrorMessage(error: unknown): string {
   if (isRecord(error)) {
     const stdout = typeof error.stdout === 'string' ? error.stdout.trim() : '';
     if (stdout) {
+      const lastLine = stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .at(-1);
       try {
-        const parsed: unknown = JSON.parse(stdout);
+        const parsed: unknown = JSON.parse(lastLine ?? stdout);
         if (isRecord(parsed)) {
           const failureCount = numberValue(parsed.failureCount);
           if (failureCount)
@@ -746,13 +681,17 @@ function validationErrorMessage(error: unknown): string {
             if (isRecord(first) && typeof first.message === 'string') return first.message;
             return String(first);
           }
+          if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
         }
       } catch {
         // Use the process error below when stdout is not JSON.
       }
     }
-    if (typeof error.stderr === 'string' && error.stderr.trim())
-      return error.stderr.trim().split('\n').at(-1) ?? 'CAD validation failed.';
+    if (typeof error.stderr === 'string' && error.stderr.trim()) {
+      const lines = error.stderr.trim().split('\n');
+      const failure = [...lines].reverse().find((line) => /FAILED|Error|error:/i.test(line));
+      return (failure ?? lines.at(-1) ?? 'CAD validation failed.').trim();
+    }
     if (typeof error.message === 'string') return error.message;
   }
   return 'CAD validation failed.';

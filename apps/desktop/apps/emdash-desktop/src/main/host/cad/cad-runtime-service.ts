@@ -1,8 +1,15 @@
-import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { dirname, join, parse } from 'node:path';
+import { execFile, spawnSync } from 'node:child_process';
+import { existsSync, realpathSync } from 'node:fs';
+import { dirname, join, parse, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
+import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
+import {
+  findTextToCadLayout,
+  PACKAGED_DESKTOP_TOOLING_DIRECTORY,
+  TEXT_TO_CAD_ROOT_ENV,
+  type TextToCadLayout,
+} from '@main/host/cad/text-to-cad-layout';
 
 const execFileAsync = promisify(execFile);
 let provisioning: Promise<void> | null = null;
@@ -25,6 +32,21 @@ export function getCadRuntimeStatus(): CadRuntimeStatus {
   return { ...status };
 }
 
+/**
+ * The canonical Text-to-CAD resources this process runs on: the monorepo root
+ * in a checkout, or the bundle beside a packaged app. Resolved on every call
+ * so an explicit override or a freshly built viewer is seen immediately.
+ */
+export function currentTextToCadLayout(): TextToCadLayout | null {
+  const startDirectories: string[] = [];
+  if (typeof app.getAppPath === 'function') startDirectories.push(app.getAppPath());
+  startDirectories.push(process.cwd());
+  return findTextToCadLayout({
+    resourcesPath: app.isPackaged ? process.resourcesPath : null,
+    startDirectories,
+  });
+}
+
 export async function provisionCadRuntime(): Promise<void> {
   if (provisioning) return provisioning;
   status = {
@@ -38,7 +60,7 @@ export async function provisionCadRuntime(): Promise<void> {
       status = {
         ...status,
         state: 'ready',
-        message: 'The pinned CAD runtime and skills are ready.',
+        message: 'The CAD runtime and skills are ready.',
         updatedAt: new Date().toISOString(),
       };
     })
@@ -74,8 +96,14 @@ function readableProcessOutput(value: unknown): string | null {
 }
 
 async function runProvisioning(): Promise<void> {
-  const script = findSetupScript(process.cwd(), process.resourcesPath);
-  if (!script) throw new Error('Hardcore could not locate its pinned CAD environment installer.');
+  const script = findSetupScript(process.cwd(), app.isPackaged ? process.resourcesPath : undefined);
+  if (!script) throw new Error('Hardcore could not locate its CAD environment installer.');
+  const layout = currentTextToCadLayout();
+  if (!layout) {
+    throw new Error(
+      `Text-to-CAD resources were not found. Run the desktop from the text-to-cad checkout, or set ${TEXT_TO_CAD_ROOT_ENV}.`
+    );
+  }
   const runtimeRoot = currentCadRuntimeRoot();
   await execFileAsync(process.execPath, [script], {
     cwd: dirname(dirname(dirname(script))),
@@ -83,9 +111,10 @@ async function runProvisioning(): Promise<void> {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
       HARDCORE_CAD_RUNTIME_ROOT: runtimeRoot,
+      [TEXT_TO_CAD_ROOT_ENV]: layout.root,
       PYTHONDONTWRITEBYTECODE: '1',
     },
-    timeout: 10 * 60_000,
+    timeout: 20 * 60_000,
     maxBuffer: 10 * 1024 * 1024,
   });
 }
@@ -107,6 +136,7 @@ export function cadRuntimePythonExecutable(runtimeRoot: string): string {
   );
 }
 
+/** The filtered, symlink-free plugin copy provider CLIs install skills from. */
 export function cadRuntimePluginRoot(runtimeRoot: string): string {
   return join(runtimeRoot, 'plugins', 'text-to-cad');
 }
@@ -123,9 +153,76 @@ export function currentCadRuntimePluginRoot(): string {
   return cadRuntimePluginRoot(currentCadRuntimeRoot());
 }
 
+/**
+ * The interpreter that carries cadgen. An explicit override wins; a checkout's
+ * own `.venv` is accepted when it imports cadgen from this repository's
+ * packages/cadgen (the CONTRIBUTING setup), and the managed runtime under
+ * user data is the packaged default.
+ */
+export function findCadPythonExecutable(
+  layout: TextToCadLayout | null = currentTextToCadLayout()
+): string | null {
+  const configured = process.env.HARDCORE_CAD_PYTHON?.trim();
+  if (configured && existsSync(configured)) return configured;
+  if (layout?.kind === 'repository') {
+    const developmentPython = developmentPythonExecutable(layout.root);
+    if (developmentPython && pythonImportsRepositoryCadgen(developmentPython, layout)) {
+      return developmentPython;
+    }
+  }
+  const runtimePython = currentCadRuntimePythonExecutable();
+  return existsSync(runtimePython) ? runtimePython : null;
+}
+
+export function developmentPythonExecutable(root: string): string | null {
+  const python = join(
+    root,
+    '.venv',
+    process.platform === 'win32' ? 'Scripts' : 'bin',
+    process.platform === 'win32' ? 'python.exe' : 'python'
+  );
+  return existsSync(python) ? python : null;
+}
+
+const repositoryCadgenProbes = new Map<string, boolean>();
+
+function pythonImportsRepositoryCadgen(python: string, layout: TextToCadLayout): boolean {
+  const cached = repositoryCadgenProbes.get(python);
+  if (cached !== undefined) return cached;
+  let imports = false;
+  try {
+    const probe = spawnSync(
+      python,
+      ['-c', 'import cadgen, pathlib; print(pathlib.Path(cadgen.__file__).resolve())'],
+      { encoding: 'utf8', env: cadToolEnvironment(), timeout: 30_000 }
+    );
+    const location = probe.status === 0 ? probe.stdout.trim() : '';
+    const expected = realpathSafe(layout.cadgenSource);
+    imports = Boolean(location) && (location === expected || location.startsWith(expected + sep));
+  } catch {
+    imports = false;
+  }
+  repositoryCadgenProbes.set(python, imports);
+  return imports;
+}
+
+function realpathSafe(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return path;
+  }
+}
+
 export function findSetupScript(start: string, resourcesPath?: string): string | null {
   if (resourcesPath) {
-    const packaged = join(resourcesPath, 'hardcore-cad', 'tooling', 'scripts', 'setup-cad.mjs');
+    const packaged = join(
+      resourcesPath,
+      PACKAGED_DESKTOP_TOOLING_DIRECTORY,
+      'tooling',
+      'scripts',
+      'setup-cad.mjs'
+    );
     if (existsSync(packaged)) return packaged;
   }
   let current = start;

@@ -34,12 +34,16 @@ describe('preserveLastGoodModel', () => {
   it('copies an existing artifact into the hidden recovery directory', async () => {
     const modelBytes = new TextEncoder().encode('accepted-step-at-backup-time');
     const sourceBytes = new TextEncoder().encode('source-at-backup-time');
-    const exists = vi
-      .fn()
-      .mockResolvedValueOnce({ success: true, data: { exists: true } })
-      .mockResolvedValueOnce({ success: true, data: { exists: true } })
-      .mockResolvedValueOnce({ success: true, data: { exists: false } })
-      .mockResolvedValueOnce({ success: true, data: { exists: false } });
+    const exists = vi.fn(async ({ uri }: { uri: unknown }) => {
+      const target = decodeURIComponent(String(uri));
+      return {
+        success: true,
+        data: {
+          exists:
+            target.endsWith('examples/plate.step') || target.endsWith('examples/plate.step.py'),
+        },
+      };
+    });
     const createDirectory = vi.fn(async () => ({ success: true, data: undefined }));
     const copy = vi.fn(async () => ({ success: true, data: undefined }));
     const readBytes = vi
@@ -69,6 +73,7 @@ describe('preserveLastGoodModel', () => {
     expect(snapshot).toMatchObject({
       modelPath: 'examples/plate.step',
       backupPath: '.hardcore/last-good/examples%2Fplate-run-1.step',
+      sidecarPath: 'examples/plate.step.json',
       sourcePath: 'examples/plate.step.py',
       sourceBackupPath: '.hardcore/last-good/examples%2Fplate-run-1.source.py',
       validationStatus: 'unknown',
@@ -76,6 +81,42 @@ describe('preserveLastGoodModel', () => {
       modelHash: '40158d556412844f3f9b3447542cb515743bfd966856a4a9d412bd51b4e8ab30',
       sourceHash: '0e3029b74d363be199f5b4aa2f0dc832bd1b8906aa9873fd1d6ac41314048580',
     });
+    expect(snapshot?.sidecarBackupPath).toBeUndefined();
+  });
+
+  it('backs up the .step.json sidecar beside the accepted STEP', async () => {
+    const exists = vi.fn(async ({ uri }: { uri: unknown }) => {
+      const target = decodeURIComponent(String(uri));
+      return {
+        success: true,
+        data: {
+          exists:
+            target.endsWith('examples/plate.step') || target.endsWith('examples/plate.step.json'),
+        },
+      };
+    });
+    const createDirectory = vi.fn(async () => ({ success: true, data: undefined }));
+    const copy = vi.fn(async () => ({ success: true, data: undefined }));
+    const readBytes = vi.fn(async () => ({
+      success: true,
+      data: {
+        bytes: async () => new TextEncoder().encode('step'),
+        meta: { mimeType: 'application/step', truncated: false },
+      },
+    }));
+    vi.mocked(getFilesClient).mockResolvedValue({
+      fs: { exists, createDirectory, copy, readBytes },
+    } as never);
+
+    const snapshot = await preserveLastGoodModel({ ...options, sourcePath: undefined });
+
+    expect(copy).toHaveBeenCalledTimes(2);
+    expect(snapshot).toMatchObject({
+      backupPath: '.hardcore/last-good/examples%2Fplate-run-1.step',
+      sidecarPath: 'examples/plate.step.json',
+      sidecarBackupPath: '.hardcore/last-good/examples%2Fplate-run-1.step.json',
+    });
+    expect(snapshot?.sourceBackupPath).toBeUndefined();
   });
 
   it('restores the model and generator from their recovery copies', async () => {
@@ -111,6 +152,50 @@ describe('preserveLastGoodModel', () => {
       expect.objectContaining({ overwrite: true }),
       expect.objectContaining({ name: 'plate.step.py' })
     );
+  });
+
+  it('restores the sidecar copy with the STEP, and removes one a failed rebuild left behind', async () => {
+    const readBytes = vi.fn(async () => ({
+      success: true,
+      data: {
+        bytes: async () => new Uint8Array([1, 2, 3]),
+        meta: { mimeType: 'application/octet-stream' },
+      },
+    }));
+    const upload = vi.fn(async () => ({ success: true, data: undefined }));
+    const copy = vi.fn(async () => ({ success: true, data: undefined }));
+    const exists = vi.fn(async () => ({ success: true, data: { exists: true } }));
+    const remove = vi.fn(async () => ({ success: true, data: undefined }));
+    vi.mocked(getFilesClient).mockResolvedValue({
+      fs: { readBytes, upload, copy, exists, delete: remove },
+    } as never);
+
+    await restoreLastGoodModel({
+      workspacePath: options.workspacePath,
+      snapshot: {
+        modelPath: options.modelPath,
+        backupPath: '.hardcore/last-good/plate-run-1.step',
+        sidecarPath: 'examples/plate.step.json',
+        sidecarBackupPath: '.hardcore/last-good/plate-run-1.step.json',
+        recordedAt: options.recordedAt,
+        validationStatus: 'unknown',
+      },
+    });
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(remove).not.toHaveBeenCalled();
+
+    await restoreLastGoodModel({
+      workspacePath: options.workspacePath,
+      snapshot: {
+        modelPath: options.modelPath,
+        backupPath: '.hardcore/last-good/plate-run-1.step',
+        sidecarPath: 'examples/plate.step.json',
+        recordedAt: options.recordedAt,
+        validationStatus: 'unknown',
+      },
+    });
+    expect(copy).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 
   it('can restore the last valid model without erasing a direct source edit', async () => {

@@ -6,20 +6,29 @@ import { fileURLToPath } from 'node:url';
 import {
   parseClaudePluginVersion,
   parseCodexPluginRoot,
+  pythonImportsRepositoryCadgen,
+  pythonExecutable,
   resolveCadRuntimeRoot,
   resolveCommand,
+  resolveDevelopmentPython,
+  resolveStagedPluginRoot,
+  resolveTextToCadRoot,
 } from './setup-cad.mjs';
 
+/**
+ * The desktop's CAD integration gate, run from apps/desktop:
+ *
+ * 1. `setup-cad.mjs --check` reports the runtime, viewer client, and plugins.
+ * 2. Jake's selected cadgen suites run from the canonical tree with the same
+ *    interpreter the desktop uses.
+ * 3. Jake's own viewer launch smoke runs against the staged (materialized)
+ *    cad-viewer runtime — the copy provider plugins install from.
+ * 4. A plain @step recipe is built, validated, and inspected exactly the way
+ *    the desktop does it: `python model.py --json`, then the cadgen doors.
+ */
 const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const JAKE_TEST_CHECKOUT = resolve(
-  process.env.JAKE_TEST_CHECKOUT ?? join(PROJECT_ROOT, 'vendor', 'text-to-cad')
-);
+const TEXT_TO_CAD_ROOT = resolveTextToCadRoot(PROJECT_ROOT);
 const CAD_RUNTIME_ROOT = resolveCadRuntimeRoot(PROJECT_ROOT);
-const PYTHON = join(
-  CAD_RUNTIME_ROOT,
-  'venv',
-  process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python'
-);
 
 function capture(command, args) {
   return execFileSync(resolveCommand(command), args, { encoding: 'utf8' });
@@ -40,6 +49,18 @@ function run(label, command, args, options = {}) {
   if (result.status !== 0) throw new Error(`${label} failed with status ${result.status}`);
 }
 
+function resolvePython() {
+  const override = process.env.HARDCORE_CAD_PYTHON?.trim();
+  if (override && existsSync(override)) return override;
+  const development = resolveDevelopmentPython(TEXT_TO_CAD_ROOT);
+  if (development && pythonImportsRepositoryCadgen(development, TEXT_TO_CAD_ROOT)) {
+    return development;
+  }
+  const managed = pythonExecutable(join(CAD_RUNTIME_ROOT, 'venv'));
+  if (existsSync(managed)) return managed;
+  throw new Error('CAD Python runtime is missing; run pnpm cad:setup');
+}
+
 function installedProviders() {
   const codexOutput = capture('codex', ['plugin', 'list']);
   const claudeOutput = capture('claude', ['plugin', 'list']);
@@ -56,19 +77,13 @@ function installedProviders() {
 }
 
 function main() {
+  if (!TEXT_TO_CAD_ROOT) throw new Error('Text-to-CAD resources were not found above apps/desktop');
   run('CAD integration health check', process.execPath, [
     join(PROJECT_ROOT, 'tooling/scripts/setup-cad.mjs'),
     '--check',
   ]);
 
-  if (!existsSync(PYTHON)) throw new Error('CAD Python runtime is missing; run pnpm cad:setup');
-  const viewerTest = join(JAKE_TEST_CHECKOUT, 'scripts/test/test-viewer-launch.sh');
-  if (!existsSync(viewerTest)) {
-    throw new Error(
-      `Jake test checkout is missing. Set JAKE_TEST_CHECKOUT or create ${JAKE_TEST_CHECKOUT}`
-    );
-  }
-
+  const python = resolvePython();
   const providers = installedProviders();
   for (const provider of providers) {
     if (!provider.root || !existsSync(provider.root)) {
@@ -76,40 +91,50 @@ function main() {
     }
   }
 
-  run("Jake's selected release/0.5 Python tests", PYTHON, [
+  run("Jake's selected cadgen suites (canonical tree)", python, [
     join(PROJECT_ROOT, 'tooling/scripts/run-jake-cad-tests.py'),
     '--tests-root',
-    JAKE_TEST_CHECKOUT,
+    TEXT_TO_CAD_ROOT,
   ]);
-  run("Jake's bundled viewer launch/import test", 'bash', [viewerTest]);
 
-  const scratch = mkdtempSync(join(tmpdir(), 'emdash-cad-'));
+  const stagedViewer = join(
+    resolveStagedPluginRoot(CAD_RUNTIME_ROOT),
+    'skills',
+    'cad-viewer',
+    'scripts',
+    'viewer'
+  );
+  run("Jake's viewer launch smoke (staged cad-viewer runtime)", 'bash', [
+    join(TEXT_TO_CAD_ROOT, 'scripts/test/test-viewer-launch.sh'),
+  ], { cwd: TEXT_TO_CAD_ROOT, env: { VIEWER_RUNTIME_DIR: stagedViewer, VIEWER_PYTHON: python } });
+
+  const scratch = mkdtempSync(join(tmpdir(), 'hardcore-cad-'));
   try {
     const source = join(scratch, basename('emdash-smoke.py'));
     const step = join(scratch, 'emdash-smoke.step');
     copyFileSync(join(PROJECT_ROOT, 'tooling/fixtures/cad/emdash-smoke.py'), source);
 
     run(
-      'Bundled 0.5 runtime: generate a real STEP artifact',
-      PYTHON,
-      [basename(source), '--force', '--json'],
+      'cadgen 0.5 script door: build a real STEP artifact',
+      python,
+      [basename(source), '--json'],
       { cwd: scratch }
     );
-    if (!existsSync(step)) throw new Error(`generator did not write ${step}`);
+    if (!existsSync(step)) throw new Error(`the recipe did not write ${step}`);
 
     run(
-      'Bundled 0.5 runtime: validate the generated STEP artifact',
-      PYTHON,
+      'cadgen 0.5 doors: validate the generated STEP artifact',
+      python,
       ['-m', 'cadgen.cli', 'step', 'inspect', 'validate', basename(step)],
       { cwd: scratch }
     );
     run(
-      'Bundled 0.5 runtime: inspect topology and bounds',
-      PYTHON,
+      'cadgen 0.5 doors: inspect topology and bounds',
+      python,
       ['-m', 'cadgen.cli', 'step', 'inspect', 'refs', basename(step), '--facts'],
       { cwd: scratch }
     );
-    console.log(`\nCross-provider CAD artifact passed: ${step}`);
+    console.log(`\nCAD artifact passed: ${step}`);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

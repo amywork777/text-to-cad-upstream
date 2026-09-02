@@ -33,8 +33,8 @@ describe('pinned CAD runtime provisioning', () => {
   it('finds the bundled setup script in a packaged app resources directory', async () => {
     const root = await mkdtemp(join(tmpdir(), 'hardcore-cad-packaged-runtime-'));
     temporaryDirectories.push(root);
-    const setup = join(root, 'hardcore-cad', 'tooling', 'scripts', 'setup-cad.mjs');
-    await mkdir(join(root, 'hardcore-cad', 'tooling', 'scripts'), { recursive: true });
+    const setup = join(root, 'text-to-cad-desktop', 'tooling', 'scripts', 'setup-cad.mjs');
+    await mkdir(join(root, 'text-to-cad-desktop', 'tooling', 'scripts'), { recursive: true });
     await writeFile(setup, '');
 
     expect(findSetupScript('/Applications/Hardcore.app', root)).toBe(setup);
