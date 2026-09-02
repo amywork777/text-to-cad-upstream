@@ -57,6 +57,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
       status: asyncLaunch ? 'in_progress' : update.status,
       parentToolCallId,
       inputSummary: agentInputSummary(raw),
+      ...outputPatch,
       ...(asyncLaunch ? { background: true } : {}),
       ...(asyncLaunch?.agentId !== undefined ? { agentId: asyncLaunch.agentId } : {}),
       ...(asyncLaunch?.outputFile !== undefined ? { outputFile: asyncLaunch.outputFile } : {}),
@@ -74,6 +75,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
         scope: 'web',
         status: update.status,
         parentToolCallId,
+        ...outputPatch,
       };
     }
   }
@@ -87,6 +89,7 @@ export function enrichClaudeUpdate(update: NormalizedEvent, raw: SessionUpdate):
         url: sanitizeUrl(rawUrl),
         status: update.status,
         parentToolCallId,
+        ...outputPatch,
       };
     }
   }

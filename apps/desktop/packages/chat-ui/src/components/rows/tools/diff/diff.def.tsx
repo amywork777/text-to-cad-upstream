@@ -39,6 +39,7 @@ export function createFileDiffFromItem(
     oldText: null,
     newText: item.content,
     status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
   };
 }
@@ -54,6 +55,7 @@ export function modifyFileDiffFromItem(
     oldText: item.oldText,
     newText: item.newText,
     status: item.status,
+    ...(item.error !== undefined ? { error: item.error } : {}),
     awaitingPermission: ctx.pendingToolCallIds().has(item.toolCallId),
   };
 }

@@ -189,9 +189,28 @@ function outputAttachmentsFromItem(item: ToolNode): ChatImageAttachment[] | unde
   }));
 }
 
+const OUTPUT_PREVIEW_LIMIT = 160;
+
+/**
+ * The first line of a text result. Integration (MCP) results stay hidden:
+ * their payloads may carry credentials.
+ */
+function outputPreviewFromItem(item: ToolNode): string | undefined {
+  if (item.kind === 'tool-group' || item.kind === 'mcp-tool-call') return undefined;
+  const text = item.outputText;
+  if (!text) return undefined;
+  const line = text
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > OUTPUT_PREVIEW_LIMIT ? `${line.slice(0, OUTPUT_PREVIEW_LIMIT - 1)}…` : line;
+}
+
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
   const presentation = toolPresentation(item);
+  const outputPreview = outputPreviewFromItem(item);
   return {
     kind: 'tool',
     id: item.id,
@@ -199,9 +218,15 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
     status: 'status' in item ? item.status : 'done',
     ...(presentation.activity ? { activity: presentation.activity } : {}),
     awaitingPermission: base ? ctx.pendingToolCallIds().has(base.toolCallId) : false,
+    ...(base?.error ? { error: base.error } : {}),
     inputSummary: presentation.inputSummary,
+    ...(outputPreview ? { outputPreview } : {}),
     outputAttachments: outputAttachmentsFromItem(item),
   };
+}
+
+function toolUnitH(data: ChatToolCall, lineHeight: number, rowH: number): number {
+  return rowH + (data.outputPreview ? lineHeight : 0);
 }
 
 export const toolUnitDef = defineUnit<ChatToolCall, { rowH: number }>({
@@ -209,13 +234,17 @@ export const toolUnitDef = defineUnit<ChatToolCall, { rowH: number }>({
   margin: { top: 2, bottom: 2 },
   vars: { rowH: ROW_H },
 
-  measure(_data, _ctx, vars): number {
-    return vars.rowH;
+  measure(data, ctx, vars): number {
+    return toolUnitH(data, ctx.theme.fonts.body.lineHeight, vars.rowH);
   },
 
   Render(props) {
+    const height = () => {
+      const ctx = props.ctx.measureCtx?.();
+      return toolUnitH(props.data, ctx?.theme.fonts.body.lineHeight ?? 20, props.vars.rowH);
+    };
     return (
-      <div class={toolRoot} style={assignInlineVars(toolVars, pxTokens({ rowH: props.vars.rowH }))}>
+      <div class={toolRoot} style={assignInlineVars(toolVars, pxTokens({ rowH: height() }))}>
         <Tool item={props.data} />
       </div>
     );

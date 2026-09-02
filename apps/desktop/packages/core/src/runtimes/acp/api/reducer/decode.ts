@@ -69,9 +69,23 @@ function extractTextOutput(
 }
 
 function extractTerminalId(update: SessionUpdate): string | undefined {
-  const raw = update as unknown as { terminalId?: unknown; terminal_id?: unknown };
+  const raw = update as unknown as {
+    terminalId?: unknown;
+    terminal_id?: unknown;
+    content?: unknown;
+  };
   if (typeof raw.terminalId === 'string') return raw.terminalId;
   if (typeof raw.terminal_id === 'string') return raw.terminal_id;
+  // ACP attaches a terminal to a tool call as a content block
+  // ({ type: 'terminal', terminalId }); Codex sends exactly that.
+  if (Array.isArray(raw.content)) {
+    for (const block of raw.content) {
+      const candidate = block as { type?: unknown; terminalId?: unknown } | null;
+      if (candidate?.type === 'terminal' && typeof candidate.terminalId === 'string') {
+        return candidate.terminalId;
+      }
+    }
+  }
   return undefined;
 }
 

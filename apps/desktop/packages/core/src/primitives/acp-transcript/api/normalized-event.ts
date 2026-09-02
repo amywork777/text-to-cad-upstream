@@ -67,6 +67,8 @@ export type NormalizedEvent =
       background?: boolean;
       agentId?: string;
       outputFile?: string;
+      /** Text the agent reported back, when the provider surfaces it. */
+      outputText?: string;
       attachments?: AttachmentRef[];
     }
   | {
@@ -86,6 +88,8 @@ export type NormalizedEvent =
       status: NormalizedToolStatus | null;
       parentToolCallId: string | null;
       matchCount?: number;
+      /** Result text the provider reported for the search, when it surfaces one. */
+      outputText?: string;
       attachments?: AttachmentRef[];
     }
   | {
@@ -105,6 +109,8 @@ export type NormalizedEvent =
       title?: string;
       status: NormalizedToolStatus | null;
       parentToolCallId: string | null;
+      /** Fetched text the provider reported, when it surfaces one. */
+      outputText?: string;
       attachments?: AttachmentRef[];
     }
   | {

@@ -178,3 +178,122 @@ describe('enrichCodexUpdate', () => {
     expect(enrichCodexUpdate(update, makeRaw())).toBe(update);
   });
 });
+
+describe('enrichCodexUpdate command output', () => {
+  it('promotes formatted_output so the transcript keeps command results', () => {
+    const raw = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'tc-1',
+      status: 'completed',
+      rawOutput: { formatted_output: 'HEAD\n', exit_code: 0 },
+    } as unknown as SessionUpdate;
+    expect(enrichCodexUpdate(makeToolUpdate(), raw)).toMatchObject({
+      kind: 'tool_update',
+      outputText: 'HEAD\n',
+    });
+  });
+
+  it('keeps ACP text output when both are present', () => {
+    const raw = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'tc-1',
+      status: 'completed',
+      rawOutput: { formatted_output: 'ignored', exit_code: 0 },
+    } as unknown as SessionUpdate;
+    expect(enrichCodexUpdate(makeToolUpdate({ outputText: 'from acp' }), raw)).toMatchObject({
+      outputText: 'from acp',
+    });
+  });
+});
+
+describe('enrichCodexUpdate multi-agent tools', () => {
+  const child = '019f259c-8089-7470-a1ac-f0481c9eb13a';
+
+  function collabRaw(
+    title: string,
+    sessionUpdate: 'tool_call' | 'tool_call_update',
+    input: Record<string, unknown>
+  ): SessionUpdate {
+    return {
+      sessionUpdate,
+      toolCallId: 'tc-1',
+      title,
+      kind: 'other',
+      status: sessionUpdate === 'tool_call' ? 'in_progress' : 'completed',
+      rawInput: { senderThreadId: 'parent', receiverThreadIds: [], agentsStates: {}, ...input },
+    } as unknown as SessionUpdate;
+  }
+
+  it('surfaces spawnAgent as a background subagent with its brief', () => {
+    const raw = collabRaw('spawnAgent', 'tool_call', {
+      prompt: 'Find files under packages/core that mention stopReason.',
+      status: 'inProgress',
+    });
+    expect(enrichCodexUpdate(makeToolCall({ title: 'spawnAgent' }), raw)).toEqual({
+      kind: 'subagent',
+      toolCallId: 'tc-1',
+      title: 'Codex agent',
+      status: 'in_progress',
+      parentToolCallId: null,
+      inputSummary: 'Find files under packages/core that mention stopReason.',
+      background: true,
+    });
+  });
+
+  it('attaches the agent id and keeps the row running once the spawn completes', () => {
+    const raw = collabRaw('spawnAgent', 'tool_call_update', {
+      prompt: 'Find files',
+      receiverThreadIds: [child],
+      agentsStates: { [child]: { status: 'pendingInit', message: null } },
+    });
+    expect(enrichCodexUpdate(makeToolUpdate(), raw)).toMatchObject({
+      kind: 'subagent',
+      status: 'in_progress',
+      agentId: child,
+      background: true,
+    });
+  });
+
+  it('closes the subagent row when closeAgent completes', () => {
+    const raw = collabRaw('closeAgent', 'tool_call_update', {
+      receiverThreadIds: [child],
+      agentsStates: { [child]: { status: 'running', message: null } },
+    });
+    expect(enrichCodexUpdate(makeToolUpdate(), raw)).toEqual({
+      kind: 'subagent_update',
+      agentId: child,
+      status: 'completed',
+    });
+  });
+
+  it('describes waits and messages instead of leaving raw tool names', () => {
+    const wait = collabRaw('wait', 'tool_call', { prompt: null, receiverThreadIds: [child] });
+    expect(enrichCodexUpdate(makeToolCall({ title: 'wait' }), wait)).toMatchObject({
+      kind: 'tool_call',
+      title: 'Wait for agent',
+      inputSummary: 'agent 019f259c',
+    });
+    const message = collabRaw('sendInput', 'tool_call', {
+      prompt: 'Return only confirmed matches.',
+      receiverThreadIds: [child],
+    });
+    expect(enrichCodexUpdate(makeToolCall({ title: 'sendInput' }), message)).toMatchObject({
+      kind: 'tool_call',
+      title: 'Message to agent',
+      inputSummary: 'Return only confirmed matches.',
+    });
+  });
+
+  it('leaves unrelated tools named like the collab tools alone', () => {
+    const raw = {
+      sessionUpdate: 'tool_call',
+      toolCallId: 'tc-1',
+      title: 'wait',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: { seconds: 5 },
+    } as unknown as SessionUpdate;
+    const update = makeToolCall({ title: 'wait' });
+    expect(enrichCodexUpdate(update, raw)).toBe(update);
+  });
+});

@@ -16,6 +16,7 @@ import {
   makeToolId,
   makeTurnId,
 } from './ids';
+import { foldItem } from './item-fold';
 import { AcpTranscriptParser } from './parser';
 
 const CID = 'conv-1';
@@ -1178,5 +1179,122 @@ describe('AcpTranscriptParser – session slices', () => {
     expect(result.config.modelOptions?.selected).toBe('haiku');
     expect(result.usage?.contextUsed).toBe(500);
     expect(result.title).toBe('Replay title');
+  });
+});
+
+describe('foldItem tool results', () => {
+  const turnId = 'turn-1';
+
+  it('keeps a bounded text result on non-execute tool rows', () => {
+    let items = foldItem(
+      [],
+      {
+        kind: 'search',
+        toolCallId: 's1',
+        query: 'stopReason',
+        scope: 'workspace',
+        status: 'in_progress',
+        parentToolCallId: null,
+      },
+      turnId,
+      1
+    );
+    items = foldItem(
+      items,
+      {
+        kind: 'search',
+        toolCallId: 's1',
+        query: 'stopReason',
+        scope: 'workspace',
+        status: 'completed',
+        parentToolCallId: null,
+        outputText: 'src/a.ts\nsrc/b.ts',
+      },
+      turnId,
+      2
+    );
+    expect(items[0]).toMatchObject({
+      kind: 'search-tool-call',
+      status: 'done',
+      outputText: 'src/a.ts\nsrc/b.ts',
+    });
+  });
+
+  it('records the first output line as the failure reason', () => {
+    let items = foldItem(
+      [],
+      {
+        kind: 'tool_call',
+        toolCallId: 'c1',
+        title: 'npm test',
+        toolKind: 'execute',
+        status: 'in_progress',
+        parentToolCallId: null,
+        diffs: [],
+      },
+      turnId,
+      1
+    );
+    items = foldItem(
+      items,
+      {
+        kind: 'tool_update',
+        toolCallId: 'c1',
+        title: null,
+        toolKind: 'execute',
+        status: 'failed',
+        parentToolCallId: null,
+        diffs: [],
+        outputText: '\nError: 2 tests failed\n  at suite',
+      },
+      turnId,
+      2
+    );
+    expect(items[0]).toMatchObject({
+      kind: 'execute-tool-call',
+      status: 'error',
+      error: 'Error: 2 tests failed',
+    });
+  });
+
+  it('folds subagent updates into the spawn row they belong to', () => {
+    let items = foldItem(
+      [],
+      {
+        kind: 'subagent',
+        toolCallId: 'a1',
+        title: 'Codex agent',
+        status: 'in_progress',
+        parentToolCallId: null,
+        agentId: 'thread-9',
+        background: true,
+      },
+      turnId,
+      1
+    );
+    items = foldItem(
+      items,
+      {
+        kind: 'subagent_update',
+        agentId: 'thread-9',
+        status: 'completed',
+        summary: 'Found 3 files',
+      },
+      turnId,
+      2
+    );
+    expect(items[0]).toMatchObject({
+      kind: 'spawn-subagent-tool-call',
+      status: 'done',
+      outputText: 'Found 3 files',
+    });
+    expect(
+      foldItem(
+        items,
+        { kind: 'subagent_update', agentId: 'someone-else', status: 'failed' },
+        turnId,
+        3
+      )
+    ).toBe(items);
   });
 });

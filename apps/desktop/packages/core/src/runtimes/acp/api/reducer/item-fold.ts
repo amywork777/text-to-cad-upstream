@@ -41,6 +41,29 @@ export type FoldEvent =
   | (Extract<NormalizedEvent, { kind: 'message' }> & { messageId: string })
   | (Extract<NormalizedEvent, { kind: 'thinking' }> & { messageId: string });
 
+/** Persisted text results stay bounded; execute rows keep their own full output. */
+const TOOL_OUTPUT_TEXT_LIMIT = 16_000;
+const TOOL_ERROR_SUMMARY_LIMIT = 240;
+
+function capToolOutput(text: string): string {
+  return text.length > TOOL_OUTPUT_TEXT_LIMIT
+    ? `${text.slice(0, TOOL_OUTPUT_TEXT_LIMIT)}\n… (truncated)`
+    : text;
+}
+
+/** The first non-empty line of a failed call's output, for the row's tooltip. */
+function toolErrorSummary(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const line = text
+    .split(/\r?\n/)
+    .map((candidate) => candidate.trim())
+    .find(Boolean);
+  if (!line) return undefined;
+  return line.length > TOOL_ERROR_SUMMARY_LIMIT
+    ? `${line.slice(0, TOOL_ERROR_SUMMARY_LIMIT - 1)}…`
+    : line;
+}
+
 function mapToolStatus(status: NormalizedToolStatus | null | undefined): ToolStatus | undefined {
   switch (status) {
     case 'pending':
@@ -164,7 +187,9 @@ function baseToolFields(
     status: mapToolStatus(status) ?? 'running',
     ...(inputSummary !== undefined ? { inputSummary } : {}),
     ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
-    ...(attachments !== undefined ? { attachments: mergeAttachmentRefs(undefined, attachments) } : {}),
+    ...(attachments !== undefined
+      ? { attachments: mergeAttachmentRefs(undefined, attachments) }
+      : {}),
   };
 }
 
@@ -181,16 +206,22 @@ export function createToolCallItem(params: {
   terminalId?: string;
   attachments?: ToolCallItem['attachments'];
 }): ToolCallItem {
-  const base = baseToolFields(
-    params.id,
-    params.seq,
-    params.toolCallId,
-    params.title,
-    params.status,
-    params.parentToolCallId,
-    params.inputSummary,
-    params.attachments
-  );
+  const failure =
+    mapToolStatus(params.status) === 'error' ? toolErrorSummary(params.outputText) : undefined;
+  const base = {
+    ...baseToolFields(
+      params.id,
+      params.seq,
+      params.toolCallId,
+      params.title,
+      params.status,
+      params.parentToolCallId,
+      params.inputSummary,
+      params.attachments
+    ),
+    ...(params.outputText !== undefined ? { outputText: capToolOutput(params.outputText) } : {}),
+    ...(failure !== undefined ? { error: failure } : {}),
+  };
   const { title, toolKind } = params;
   if (isSubagentKind(toolKind)) {
     return { kind: 'spawn-subagent-tool-call', ...base, name: title };
@@ -234,11 +265,17 @@ function updateToolCallItem(
   const mapped = mapToolStatus(status ?? undefined);
   const nextTitle = title ?? item.title;
   const mergedAttachments = mergeAttachmentRefs(item.attachments, attachments);
+  const failure =
+    mapped === 'error'
+      ? (toolErrorSummary(outputText ?? item.outputText) ?? item.error)
+      : undefined;
   const common = {
     ...item,
     ...(mapped !== undefined ? { status: mapped } : {}),
     ...(title !== null ? { title: title } : {}),
     ...(mergedAttachments !== undefined ? { attachments: mergedAttachments } : {}),
+    ...(outputText !== undefined ? { outputText: capToolOutput(outputText) } : {}),
+    ...(failure !== undefined ? { error: failure } : {}),
   };
   switch (item.kind) {
     case 'execute-tool-call':
@@ -296,6 +333,16 @@ function upsertSpecialEvent(
   const parentToolCallId = event.parentToolCallId ?? undefined;
   const mapped = mapToolStatus(event.status) ?? 'running';
   const attachments = mergeAttachmentRefs(existing?.attachments, event.attachments);
+  // Integration (MCP) results may carry credentials or private payloads and
+  // stay out of the transcript; the other kinds keep a bounded text result.
+  const reported = event.kind === 'mcp_tool' ? undefined : event.outputText;
+  const outputText = reported !== undefined ? capToolOutput(reported) : existing?.outputText;
+  const error =
+    mapped === 'error' ? (toolErrorSummary(outputText) ?? existing?.error) : existing?.error;
+  const carried = {
+    ...(outputText !== undefined ? { outputText } : {}),
+    ...(error !== undefined ? { error } : {}),
+  };
 
   let next: ToolCallItem;
   switch (event.kind) {
@@ -308,6 +355,7 @@ function upsertSpecialEvent(
         title: event.title,
         name: event.title,
         status: mapped,
+        ...carried,
         ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
         ...(event.background !== undefined ? { background: event.background } : {}),
         ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
@@ -325,6 +373,7 @@ function upsertSpecialEvent(
         query: event.query,
         ...(event.scope !== undefined ? { scope: event.scope } : {}),
         status: mapped,
+        ...carried,
         ...(event.matchCount !== undefined ? { matchCount: event.matchCount } : {}),
         ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
         ...(attachments !== undefined ? { attachments } : {}),
@@ -339,6 +388,7 @@ function upsertSpecialEvent(
         title: event.tool,
         tool: event.tool,
         status: mapped,
+        ...carried,
         ...(event.server !== undefined ? { server: event.server } : {}),
         ...(event.inputSummary !== undefined ? { inputSummary: event.inputSummary } : {}),
         ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
@@ -354,6 +404,7 @@ function upsertSpecialEvent(
         title: event.title ?? event.url,
         url: event.url,
         status: mapped,
+        ...carried,
         ...(event.title !== undefined ? { pageTitle: event.title } : {}),
         ...(parentToolCallId !== undefined ? { parentToolCallId } : {}),
         ...(attachments !== undefined ? { attachments } : {}),
@@ -661,6 +712,40 @@ export function foldItem(
         ...(event.attachments?.length ? { attachments: event.attachments } : {}),
       };
       return normalizeToolStructure([...base, newMsg], turnId);
+    }
+
+    case 'subagent_update': {
+      const idx = flatItems.findIndex(
+        (it) =>
+          it.kind === 'spawn-subagent-tool-call' &&
+          ((event.toolCallId !== undefined && it.toolCallId === event.toolCallId) ||
+            (event.agentId !== undefined && it.agentId === event.agentId))
+      );
+      if (idx < 0) return items;
+      const current = flatItems[idx] as Extract<ToolCallItem, { kind: 'spawn-subagent-tool-call' }>;
+      const mapped = mapToolStatus(event.status);
+      const summary = event.summary !== undefined ? capToolOutput(event.summary) : undefined;
+      const failure =
+        mapped === 'error'
+          ? (toolErrorSummary(summary ?? current.outputText) ?? current.error)
+          : undefined;
+      const next = {
+        ...current,
+        ...(mapped !== undefined ? { status: mapped } : {}),
+        ...(summary !== undefined ? { outputText: summary } : {}),
+        ...(failure !== undefined ? { error: failure } : {}),
+      };
+      if (
+        next.status === current.status &&
+        next.outputText === current.outputText &&
+        next.error === current.error
+      ) {
+        return items;
+      }
+      return normalizeToolStructure(
+        flatItems.map((it, i) => (i === idx ? next : it)),
+        turnId
+      );
     }
 
     case 'thinking': {

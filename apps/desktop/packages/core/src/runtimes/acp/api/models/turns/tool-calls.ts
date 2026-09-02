@@ -11,6 +11,10 @@ export interface BaseToolCallItem {
   title: string;
   status: ToolStatus;
   inputSummary?: string;
+  /** Provider-reported text result, capped by the reducer; previewed where a row has room. */
+  outputText?: string;
+  /** Short failure reason when the provider reported the call as failed. */
+  error?: string;
   parentToolCallId?: string;
   children?: ToolNode[];
   /** Runtime-owned image outputs produced by this tool call. */
@@ -124,6 +128,10 @@ export const baseToolCallItemSchema = z.object({
   status: toolStatusSchema,
   /** Provider/plugin-generated short input description for compact display. */
   inputSummary: z.string().optional(),
+  /** Provider-reported text result, capped by the reducer; previewed where a row has room. */
+  outputText: z.string().optional(),
+  /** Short failure reason when the provider reported the call as failed. */
+  error: z.string().optional(),
   /** Raw provider parent id used to rebuild the tree; not a render link. */
   parentToolCallId: z.string().optional(),
   /** Nested provider or reducer-derived tool nodes owned by this call. */

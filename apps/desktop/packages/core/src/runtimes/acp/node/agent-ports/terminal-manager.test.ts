@@ -219,3 +219,57 @@ describe('AgentTerminalManager.killAll()', () => {
     expect(manager.listAll()).toHaveLength(0);
   });
 });
+
+describe('AgentTerminalManager narrated terminals', () => {
+  const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+  it('adopts, streams, and exits a terminal the agent runs itself', async () => {
+    const { recording, manager } = makeManager();
+    manager.adoptNarrated('conv-1', { terminalId: 'call-9', command: 'pytest -q', cwd: '/repo' });
+    expect(recording.terminalCreated[0]).toMatchObject({
+      conversationId: 'conv-1',
+      terminalId: 'call-9',
+      command: 'pytest -q',
+      cwd: '/repo',
+    });
+
+    expect(manager.appendNarratedOutput('call-9', 'collected 3 items\n')).toBe(true);
+    await flush();
+    expect(recording.terminalOutput.map((e) => e.chunk).join('')).toBe('collected 3 items\n');
+
+    // Providers re-send the whole output at exit; only the unseen tail is appended.
+    expect(
+      manager.exitNarrated('call-9', { exitCode: 0, signal: null }, 'collected 3 items\n3 passed\n')
+    ).toBe(true);
+    await flush();
+    expect(recording.terminalOutput.map((e) => e.chunk).join('')).toBe(
+      'collected 3 items\n3 passed\n'
+    );
+    expect(recording.terminalExit[0]).toMatchObject({
+      terminalId: 'call-9',
+      exitStatus: { exitCode: 0 },
+    });
+    expect(manager.get('call-9')?.outputSnapshot()).toMatchObject({
+      output: 'collected 3 items\n3 passed\n',
+      exitStatus: { exitCode: 0, signal: null },
+    });
+  });
+
+  it('adopts an id once and ignores narration for terminals it does not own', () => {
+    const { recording, manager } = makeManager();
+    manager.adoptNarrated('conv-1', { terminalId: 'call-1', command: 'ls', cwd: '/repo' });
+    manager.adoptNarrated('conv-1', { terminalId: 'call-1', command: 'ls again', cwd: '/repo' });
+    expect(recording.terminalCreated).toHaveLength(1);
+    expect(manager.appendNarratedOutput('unknown', 'x')).toBe(false);
+    expect(manager.exitNarrated('unknown', { exitCode: 1, signal: null })).toBe(false);
+  });
+
+  it('releases narrated terminals like spawned ones', () => {
+    const { recording, manager } = makeManager();
+    manager.adoptNarrated('conv-1', { terminalId: 'call-2', command: 'ls', cwd: '/repo' });
+    manager.release('call-2');
+    expect(manager.get('call-2')).toBeUndefined();
+    expect(recording.terminalReleased[0]).toMatchObject({ terminalId: 'call-2' });
+    expect(manager.appendNarratedOutput('call-2', 'late')).toBe(false);
+  });
+});

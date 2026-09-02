@@ -20,7 +20,9 @@ import {
   toolName,
   toolNameWithSummary,
   toolPermissionIcon,
+  toolPreview,
   toolRow,
+  toolStack,
   toolStatus,
   toolSummary,
 } from './tool.css';
@@ -47,36 +49,43 @@ export function Tool(props: ToolProps) {
     return `${props.item.name}${summary}${status}${error}`;
   };
   return (
-    <div class={toolRow}>
-      <span
-        class={toolName}
-        classList={{
-          [textShimmer]: isRunning(),
-          [toolNameWithSummary]: Boolean(props.item.inputSummary),
-        }}
-      >
-        {props.item.name}
-      </span>
-      <Show when={props.item.inputSummary}>
-        <span class={toolSummary}>{props.item.inputSummary}</span>
-      </Show>
-      <Show
-        when={props.item.awaitingPermission}
-        fallback={
-          <Show when={props.item.status === 'error'}>
-            <span class={toolErrorIcon} title={props.item.error ?? 'Failed'} aria-hidden="true">
-              <IconError />
-            </span>
-          </Show>
-        }
-      >
-        <span class={toolPermissionIcon} title="Awaiting permission" aria-hidden="true">
-          <IconShieldAlert />
+    <div class={toolStack}>
+      <div class={toolRow}>
+        <span
+          class={toolName}
+          classList={{
+            [textShimmer]: isRunning(),
+            [toolNameWithSummary]: Boolean(props.item.inputSummary),
+          }}
+        >
+          {props.item.name}
         </span>
+        <Show when={props.item.inputSummary}>
+          <span class={toolSummary}>{props.item.inputSummary}</span>
+        </Show>
+        <Show
+          when={props.item.awaitingPermission}
+          fallback={
+            <Show when={props.item.status === 'error'}>
+              <span class={toolErrorIcon} title={props.item.error ?? 'Failed'} aria-hidden="true">
+                <IconError />
+              </span>
+            </Show>
+          }
+        >
+          <span class={toolPermissionIcon} title="Awaiting permission" aria-hidden="true">
+            <IconShieldAlert />
+          </span>
+        </Show>
+        <span class={toolStatus} role="status" aria-live="polite" aria-atomic="true">
+          {statusAnnouncement()}
+        </span>
+      </div>
+      <Show when={props.item.outputPreview}>
+        <div class={toolPreview} title={props.item.outputPreview}>
+          {props.item.outputPreview}
+        </div>
       </Show>
-      <span class={toolStatus} role="status" aria-live="polite" aria-atomic="true">
-        {statusAnnouncement()}
-      </span>
     </div>
   );
 }

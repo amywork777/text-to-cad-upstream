@@ -17,6 +17,7 @@ import { useTheme } from '@components/contexts/ThemeContext';
 import { HEADER_ROW_EXTRA_H, ROW_H } from '@components/engine/row-metrics';
 import { CollapseHeader } from '@components/primitives/CollapseHeader';
 import { PreviewWindow } from '@components/primitives/PreviewWindow';
+import { planUnitDef } from '@components/rows/plan/plan.def';
 import { diffUnitDef } from '@components/rows/tools/diff/diff.def';
 import { executeUnitDef } from '@components/rows/tools/execute/execute.def';
 import { fileOpUnitDef } from '@components/rows/tools/file-op/file-op.def';
@@ -67,6 +68,7 @@ const CHILD_DEFS: Record<string, UnitDef<any, any>> = {
   execute: executeUnitDef,
   diff: diffUnitDef,
   'file-op': fileOpUnitDef,
+  plan: planUnitDef,
 };
 
 // ── Geometry helpers ──────────────────────────────────────────────────────────
@@ -89,7 +91,7 @@ function isActiveItem(item: ChatItem): boolean {
 }
 
 function canShowCollapsedPreview(item: ChatItem): boolean {
-  return !isSubagentItem(item) && isActiveItem(item);
+  return isActiveItem(item);
 }
 
 function subagentGroupBottomSpacerH(item: ChatItem): number {
