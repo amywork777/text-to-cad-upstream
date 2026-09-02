@@ -1,4 +1,5 @@
 import { encodeResourceUri } from '@emdash/core/primitives/path/api';
+import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import type { CadLastGoodSnapshot } from '@core/features/cad/api/cad-model-state';
 import { getFilesClient } from '@core/features/files/api/browser/client';
 import { resolveWorkspacePath } from '@core/features/workspaces/api/browser/workspace-path';
@@ -160,6 +161,19 @@ export async function restoreLastGoodModel(options: {
       }
     );
     if (!restored.success) throw new Error(fileErrorMessage(restored.error));
+  }
+
+  // cadgen's records tier still describes the rejected run; forget it so the
+  // doors and the viewer read the restored bytes instead of that ledger. Local
+  // hosts only: the records live in the host's user cache.
+  if (options.snapshot.backupPath && !options.sshConnectionId) {
+    const forgotten = await (
+      await getBrowserClient()
+    ).forgetCadModelProvenance({
+      workspacePath: options.workspacePath,
+      filePath: resolveWorkspacePath(options.workspacePath, options.snapshot.modelPath),
+    });
+    if (!forgotten.success) throw new Error(forgotten.error);
   }
 
   // Bring the sidecar back to the accepted state as well: restore the copy

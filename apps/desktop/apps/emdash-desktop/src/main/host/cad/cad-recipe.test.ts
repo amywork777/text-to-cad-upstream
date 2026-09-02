@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   cadgenProvenanceRecordPath,
+  cadgenProvenanceRecordPaths,
   cadSourceRebuildToolPlan,
   cadStepOutputDeclaration,
   linkedSourceFromCadgenRecord,
@@ -117,7 +118,7 @@ describe('cadgen 0.5 recipes', () => {
   it('runs a recipe through the plain script door without --force', () => {
     expect(cadSourceRebuildToolPlan('src/plate.py')).toEqual({
       tool: 'model',
-      args: ['src/plate.py', '--json'],
+      args: ['src/plate.py', '--json', '--lock-timeout', '120'],
     });
     expect(() => cadSourceRebuildToolPlan('legacy.step.py')).toThrow(/view-only/);
     expect(() => cadSourceRebuildToolPlan('plate.step')).toThrow(/Python @step model/);
@@ -173,6 +174,15 @@ describe('cadgen provenance records', () => {
     expect(cadgenProvenanceRecordPath(stepPath, '/cache')).toBe(
       join('/cache', 'records', `${expectedKey}.source.json`)
     );
+  });
+
+  it('names both records-tier files for an artifact', async () => {
+    const root = await temporaryDirectory('hardcore-cad-records-');
+    const stepPath = join(root, 'plate.step');
+    await writeFile(stepPath, 'step');
+    const [source, ledger] = cadgenProvenanceRecordPaths(stepPath, '/cache');
+    expect(source).toBe(cadgenProvenanceRecordPath(stepPath, '/cache'));
+    expect(ledger).toBe(source.replace(/\.source\.json$/, '.step-export.json'));
   });
 
   it('agrees with cadgen.catalog.artifact_path_key when a repository venv is available', async () => {

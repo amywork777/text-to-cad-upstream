@@ -921,14 +921,18 @@ function checkCodex({ mutate, pluginSourceRoot, refreshPlugin, expectedVersion }
 
   const pluginCurrent =
     hasPlugin(plugins.output) && parseCodexPluginVersion(plugins.output) === expectedVersion;
+  const marketplaceCurrent = hasMarketplaceRoot(marketplaces.output, pluginSourceRoot);
   return {
     provider: 'Codex',
     available: true,
     version: version.join('.'),
-    marketplace: hasMarketplaceRoot(marketplaces.output, pluginSourceRoot),
+    marketplace: marketplaceCurrent,
     plugin: pluginCurrent,
     pluginRoot: pluginCurrent ? parseCodexPluginRoot(plugins.output) : null,
-    ready: hasMarketplaceRoot(marketplaces.output, pluginSourceRoot) && pluginCurrent,
+    // A report-only check accepts the plugin at this version from any staged
+    // copy (a packaged app and a checkout each stage their own); setup always
+    // re-points the marketplace at this checkout's copy.
+    ready: pluginCurrent && (marketplaceCurrent || !mutate),
   };
 }
 
@@ -978,11 +982,12 @@ function checkClaude({ mutate, pluginSourceRoot, refreshPlugin, expectedVersion 
   const version = parseVersion(versionResult.output);
   const pluginVersion = parseClaudePluginVersion(plugins.output);
   const pluginCurrent = pluginVersion === expectedVersion;
+  const marketplaceCurrent = hasMarketplaceRoot(marketplaces.output, pluginSourceRoot);
   return {
     provider: 'Claude Code',
     available: true,
     version: version?.join('.') ?? versionResult.output.trim(),
-    marketplace: hasMarketplaceRoot(marketplaces.output, pluginSourceRoot),
+    marketplace: marketplaceCurrent,
     plugin: pluginCurrent,
     pluginRoot: pluginCurrent
       ? join(
@@ -995,7 +1000,7 @@ function checkClaude({ mutate, pluginSourceRoot, refreshPlugin, expectedVersion 
           pluginVersion
         )
       : null,
-    ready: hasMarketplaceRoot(marketplaces.output, pluginSourceRoot) && pluginCurrent,
+    ready: pluginCurrent && (marketplaceCurrent || !mutate),
   };
 }
 

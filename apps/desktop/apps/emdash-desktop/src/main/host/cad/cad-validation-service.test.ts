@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -9,7 +10,7 @@ import {
   readCadVerifiedMigrationMarker,
   writeCadVerifiedMigrationMarker,
 } from './cad-migration-marker';
-import { cadgenProvenanceRecordPath } from './cad-recipe';
+import { cadgenProvenanceRecordPath, cadgenProvenanceRecordPaths } from './cad-recipe';
 import {
   applyCadModelParameters,
   assertLegacyCadArtifactIsCurrent,
@@ -20,6 +21,7 @@ import {
   cadToolEnvironment,
   cadValidationModelPath,
   cadValidationInputRevision,
+  forgetCadModelProvenance,
   readCadModelHistory,
   resolveCadArtifactTarget,
   validateCadModel,
@@ -152,6 +154,47 @@ describe('CAD validation service path boundary', () => {
     expect(cadValidationInputRevision({ workspacePath, filePath: stepPath })).not.toBe(initial);
   });
 
+  it("forgets cadgen's records for a restored STEP so the doors read its bytes again", async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
+    temporaryDirectories.push(workspacePath);
+    const stepPath = join(workspacePath, 'plate.step');
+    await writeFile(
+      join(workspacePath, 'plate.py'),
+      'from cadgen import step\n\n@step()\ndef plate(): ...\n'
+    );
+    await writeFile(stepPath, 'accepted-step');
+    await writeProvenanceRecord(workspacePath, stepPath, {
+      sourceKind: 'python',
+      sourcePath: 'plate.py',
+    });
+    const [, ledgerPath] = cadgenProvenanceRecordPaths(stepPath, process.env.CADGEN_CACHE_DIR);
+    await writeFile(
+      ledgerPath,
+      JSON.stringify({ exports: { 'plate.step': { closure: 'rejected' } } })
+    );
+    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toMatchObject({
+      relativeSourcePath: 'plate.py',
+    });
+
+    const forgotten = forgetCadModelProvenance({ workspacePath, filePath: stepPath });
+
+    expect(forgotten).toEqual({
+      success: true,
+      removed: cadgenProvenanceRecordPaths(stepPath, process.env.CADGEN_CACHE_DIR),
+    });
+    expect(existsSync(ledgerPath)).toBe(false);
+    // Without a record the STEP reads as an import: bytes only, no recipe link.
+    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toEqual({
+      success: true,
+      workspacePath,
+      relativeModelPath: 'plate.step',
+    });
+    expect(forgetCadModelProvenance({ workspacePath, filePath: stepPath })).toEqual({
+      success: true,
+      removed: [],
+    });
+  });
+
   it('keeps stale linked source bytes from redefining the accepted STEP revision', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
     temporaryDirectories.push(workspacePath);
@@ -243,7 +286,7 @@ describe('CAD validation service path boundary', () => {
   it('runs a recipe only through the explicit source rebuild path, never with --force', () => {
     expect(cadSourceRebuildToolPlan('car.py')).toEqual({
       tool: 'model',
-      args: ['car.py', '--json'],
+      args: ['car.py', '--json', '--lock-timeout', '120'],
     });
   });
 

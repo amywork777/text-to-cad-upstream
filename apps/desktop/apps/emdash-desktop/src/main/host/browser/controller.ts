@@ -15,6 +15,7 @@ import { migrateLegacyCadModel } from '@main/host/cad/cad-migration-service';
 import { getCadRuntimeStatus, provisionCadRuntime } from '@main/host/cad/cad-runtime-service';
 import {
   applyCadModelParameters,
+  forgetCadModelProvenance,
   readCadModelHistory,
   rebuildCadModel,
   validateCadModel,
@@ -75,6 +76,8 @@ export const browserOperations = {
   readCadModelHistory,
 
   applyCadModelParameters,
+
+  forgetCadModelProvenance,
 
   migrateLegacyCadModel,
 

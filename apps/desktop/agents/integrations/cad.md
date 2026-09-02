@@ -82,7 +82,13 @@ Every geometry-changing turn follows the same lifecycle:
 4. Validate the resulting STEP independently with `cadgen step inspect refs` and
    `cadgen step inspect validate`.
 5. Accept and reload only the validated on-disk artifact.
-6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry.
+6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry,
+   and forget cadgen's records-tier entries for that artifact (`records/<key>.source.json` and
+   `<key>.step-export.json`). cadgen's doors resolve a generated document through its export ledger,
+   so after a restore they would otherwise validate the rejected output instead of the bytes on
+   disk; without the records the STEP reads as an import and the next recipe run rebuilds once.
+   In-flight recipe runs are terminated when the app exits so an orphaned build cannot overwrite the
+   accepted STEP later.
 
 Opening, previewing, and restart recovery are read-only: they hash and inspect the STEP and never run
 Python. A recipe edit alone never overwrites a newer STEP; only an explicit rebuild does, and its

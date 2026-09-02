@@ -1,10 +1,19 @@
-import { execFile } from 'node:child_process';
+import { execFile, type ChildProcess } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
 import type {
   CadParameterApplyResult,
+  CadProvenanceForgetResult,
   CadSourceHistoryResult,
   CadValidationResult,
 } from '@core/features/browser/api';
@@ -15,6 +24,7 @@ import {
 import { verifiedMigratedCadSourceForLegacy } from '@main/host/cad/cad-migration-marker';
 import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 import {
+  cadgenProvenanceRecordPaths,
   cadSourceRebuildToolPlan as recipeRebuildToolPlan,
   linkedSourceFromCadgenRecord,
   normalizeCadArtifactRelationship,
@@ -23,6 +33,7 @@ import {
   type CadRuntimeCommand,
 } from '@main/host/cad/cad-recipe';
 import { findCadPythonExecutable, provisionCadRuntime } from '@main/host/cad/cad-runtime-service';
+import { log } from '@main/lib/logger';
 
 const execFileAsync = promisify(execFile);
 const VALIDATION_TIMEOUT_MS = 120_000;
@@ -35,6 +46,7 @@ interface CadValidationInFlight {
 }
 
 const validationInFlight = new Map<string, CadValidationInFlight>();
+const runningCadProcesses = new Set<ChildProcess>();
 const recentValidation = new Map<string, CadValidationResult>();
 const cadArtifactOperationTails = new Map<string, Promise<void>>();
 const cadArtifactRebuildCounts = new Map<string, number>();
@@ -95,6 +107,40 @@ export function rebuildCadModel(input: {
     if (remaining > 0) cadArtifactRebuildCounts.set(key, remaining);
     else cadArtifactRebuildCounts.delete(key);
   });
+}
+
+/**
+ * Forget cadgen's records-tier bookkeeping for an artifact the desktop just
+ * restored. The accepted STEP bytes are canonical; a recipe that failed or
+ * produced invalid geometry left a ledger entry pointing at the rejected
+ * output, and the doors would otherwise answer for that output instead of the
+ * bytes on disk. Eviction is within cadgen's contract for the records tier
+ * (best-effort, deletable at any time, costs at most one rebuild).
+ */
+export function forgetCadModelProvenance(input: CadArtifactTargetInput): CadProvenanceForgetResult {
+  const target = resolveCadArtifactTarget(input);
+  if (!target.success) return target;
+  const modelPath = join(target.workspacePath, target.relativeModelPath);
+  const removed: string[] = [];
+  for (const recordPath of cadgenProvenanceRecordPaths(modelPath)) {
+    try {
+      unlinkSync(recordPath);
+      removed.push(recordPath);
+    } catch (error) {
+      if (!(isRecord(error) && error.code === 'ENOENT')) {
+        return {
+          success: false,
+          error: `Could not clear cadgen's record for ${target.relativeModelPath}: ${errorMessage(error)}`,
+        };
+      }
+    }
+  }
+  recentValidation.delete(cadArtifactOperationKey(input));
+  log.info(
+    { modelPath: target.relativeModelPath, removed },
+    'cad: forgot cadgen provenance records'
+  );
+  return { success: true, removed };
 }
 
 export function cadArtifactOperationKey(input: CadArtifactTargetInput): string {
@@ -210,6 +256,10 @@ async function rebuildCadModelOnce(input: {
 }): Promise<CadValidationResult> {
   const target = validateSourceTarget(input);
   if (!target.success) return target;
+  log.info(
+    { workspacePath: target.workspacePath, recipe: target.relativeFilePath },
+    'cad: rebuild requested'
+  );
   if (isLegacyPythonModelPath(target.relativeFilePath)) {
     return {
       success: false,
@@ -617,12 +667,22 @@ async function runCadCommand(
   timeout = VALIDATION_TIMEOUT_MS
 ): Promise<Record<string, unknown>> {
   const pythonArgs = tool === 'model' ? args : ['-m', 'cadgen.cli', ...args];
-  const result = await execFileAsync(python, pythonArgs, {
+  log.info({ cwd, tool, args }, 'cad: running python');
+  const pending = execFileAsync(python, pythonArgs, {
     cwd,
     timeout,
     maxBuffer: MAX_OUTPUT_BYTES,
     env: cadToolEnvironment(),
   });
+  // Track the child so an app exit terminates an in-flight build instead of
+  // leaving an orphaned run to overwrite the accepted STEP later.
+  runningCadProcesses.add(pending.child);
+  let result: { stdout: string };
+  try {
+    result = await pending;
+  } finally {
+    runningCadProcesses.delete(pending.child);
+  }
   const line = result.stdout
     .trim()
     .split('\n')
@@ -660,6 +720,15 @@ function isPythonModelPath(path: string): boolean {
 function isLegacyPythonModelPath(path: string): boolean {
   return /\.(?:step|stp)\.py$/i.test(path);
 }
+
+export function terminateRunningCadProcesses(): void {
+  for (const child of runningCadProcesses) {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+  }
+  runningCadProcesses.clear();
+}
+
+process.once('exit', terminateRunningCadProcesses);
 
 function validationErrorMessage(error: unknown): string {
   if (isRecord(error)) {
