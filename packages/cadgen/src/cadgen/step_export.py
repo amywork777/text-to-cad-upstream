@@ -80,16 +80,33 @@ def create_bin_xcaf_doc() -> Any:
 
 
 def quantity_color_rgba_from_color(color: object) -> object | None:
-    """Return a Quantity_ColorRGBA with explicit linear RGB semantics.
+    """Return a Quantity_ColorRGBA carrying the colour's CHANNEL values as linear RGB.
 
-    build123d.Color exposes its values through Quantity_ColorRGBA.GetRGB().
-    Different OCP versions can serialize that wrapped color with different
-    implicit color-space assumptions, so normalize through Quantity_TOC_RGB
-    before writing XCAF labels.
+    cadgen's colour contract (``cadgen.color``): a Color's channels -- the
+    numbers ``tuple(color)`` yields, the ones ``srgb()`` computed -- ARE the
+    linear RGB the renderer displays. The render package stores exactly those
+    (``component_package._occurrence_color``), so the STEP document must carry
+    the same numbers or the two views of one model disagree.
+
+    They did. This used to read ``GetRGB()``, the Quantity_Color's INTERNAL
+    value, which is not the channel: build123d's constructor treats its
+    arguments as sRGB and linearizes them once more on the way in, so for
+    ``srgb("#808080")`` (channels 0.216) the internal value is 0.038. Written
+    as linear, that reached the file as sRGB 0.216 and came back through the
+    reader -- ``inspect``, ``read_step``, the Viewer's STEP import, any other
+    CAD tool -- two and a half stops darker than the package renders the same
+    part. Normalizing the channel values through Quantity_TOC_RGB puts the
+    intended sRGB byte in the file.
     """
     if color is None:
         return None
-
+    if not isinstance(color, tuple) and getattr(color, "wrapped", None) is not None:
+        try:
+            channels = tuple(float(component) for component in color)
+        except Exception:  # noqa: BLE001 - not an iterable Color; fall through to the wrapped read
+            channels = ()
+        if len(channels) >= 3:
+            color = channels
     if isinstance(color, tuple):
         values = tuple(max(0.0, min(1.0, float(component))) for component in color)
         if len(values) == 3:

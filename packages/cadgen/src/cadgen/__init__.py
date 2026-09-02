@@ -15,6 +15,10 @@ from typing import TYPE_CHECKING
 # Cost where nothing is wrong: one str.endswith per glob call. CADGEN_FONT_GUARD=0
 # opts out.
 from cadgen._internal.font_scan import install_font_guard as _install_font_guard
+from cadgen._internal.kernel_import_site import install as _install_kernel_import_site
+
+_install_kernel_import_site()
+del _install_kernel_import_site
 
 _install_font_guard()
 del _install_font_guard

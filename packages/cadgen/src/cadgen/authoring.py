@@ -359,13 +359,26 @@ threemf = _mesh_export_decorator("threemf", "3mf")
 def _maybe_hint_eager_imports(defn: ModelDef) -> None:
     if os.environ.get("CADGEN_DAEMON_CHILD"):
         return
-    if "OCP" in sys.modules or "build123d" in sys.modules:
-        print(
-            f"hint: {defn.script_path.name} imported the CAD kernel at module top; "
-            "use `from cadgen import build123d as bd` so re-runs skip the ~2.5s "
-            "import when the model is current (see the cad skill docs)",
-            file=sys.stderr,
-        )
+    if "OCP" not in sys.modules and "build123d" not in sys.modules:
+        return
+    from cadgen._internal.kernel_import_site import first_import_site
+
+    site = first_import_site()
+    where = ""
+    if site is not None:
+        path, line, source = site
+        where = f" at {os.path.relpath(path) if os.path.isabs(path) else path}:{line}"
+        if source:
+            where += f" ({source.strip()})"
+    print(
+        f"hint: the CAD kernel was imported before {defn.script_path.name}'s @step could "
+        f"gate the run{where}. Module bodies must not touch it: use `from cadgen import "
+        "build123d as bd` instead of importing build123d/OCP, and keep `bd.<anything>` "
+        "out of module-level constants and default arguments (each one resolves the "
+        "attribute at import). Then re-runs skip the ~2.5s import when the model is "
+        "current (see the cad skill docs).",
+        file=sys.stderr,
+    )
 
 
 def _run_from_main(defn: ModelDef) -> int:

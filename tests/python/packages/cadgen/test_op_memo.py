@@ -71,6 +71,49 @@ class OpMemoTest(unittest.TestCase):
         second = _build_part()
         self.assertIsNot(first.wrapped.TShape(), second.wrapped.TShape())
 
+    def test_boolean_results_match_the_unmemoized_kernel(self):
+        """Input protection must not change what the boolean PRODUCES.
+
+        ``SetNonDestructive(True)`` did: a ring with two bosses fused on
+        tangentially (chained ``+``), bored, then halved is a valid solid when
+        OCCT runs destructively and an invalid, self-intersecting one in
+        non-destructive mode -- the w16 engine's rod caps, all sixteen, failed
+        ``inspect validate`` this way while every in-process check passed.
+        Operands are copied instead, so the kernel runs the algorithm it was
+        validated with and the inputs still come back untouched."""
+        from OCP.BRepCheck import BRepCheck_Analyzer
+        from build123d import Align, Axis, Box, Cylinder, Location
+
+        def cap():
+            width = 19.0
+            ring = Cylinder(41.0, width, align=(Align.CENTER,) * 3).rotate(Axis.Y, 90)
+            bosses = [Cylinder(7.5, 46.0).moved(Location((0, sy * 34.0, -3.0))) for sy in (-1, 1)]
+            body = ring + bosses[0] + bosses[1]
+            body = body - Cylinder(30.0, width + 2, align=(Align.CENTER,) * 3).rotate(Axis.Y, 90)
+            return body - Box(100, 200, 100, align=(Align.CENTER, Align.CENTER, Align.MIN))
+
+        memoized = cap()
+        self.assertTrue(BRepCheck_Analyzer(memoized.wrapped, True).IsValid(), "memoized boolean chain produced an invalid solid")
+        os.environ["CADGEN_OP_MEMO"] = "0"
+        try:
+            bare = cap()
+        finally:
+            os.environ["CADGEN_OP_MEMO"] = "1"
+        self.assertTrue(BRepCheck_Analyzer(bare.wrapped, True).IsValid())
+        self.assertEqual(len(bare.solids()), len(memoized.solids()))
+
+    def test_boolean_inputs_come_back_untouched(self):
+        """The guarantee the flag used to provide, now by copying: a tool that
+        is ALSO emitted as its own part serializes identically before and after
+        it is used, so package bytes do not depend on cache state."""
+        from build123d import Align, Axis, Cylinder
+
+        tool = Cylinder(30.0, 21.0, align=(Align.CENTER,) * 3).rotate(Axis.Y, 90)
+        before = _digest(tool)
+        body = Cylinder(41.0, 19.0, align=(Align.CENTER,) * 3).rotate(Axis.Y, 90) - tool
+        self.assertGreater(body.volume, 0)
+        self.assertEqual(before, _digest(tool))
+
     def test_mutating_a_result_does_not_poison_the_cache(self):
         from OCP.BRepMesh import BRepMesh_IncrementalMesh
 

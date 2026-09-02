@@ -625,9 +625,16 @@ def _protect_inputs(op_name: str, args: tuple, kwargs: dict, *, is_classmethod: 
     shells — therefore serialized different component bytes on a cold run than
     on a warm one, and the package hash changed with the cache state.
 
-    - Booleans: ``SetNonDestructive`` makes the algorithm copy what it would
-      have modified (the result carries the bumped tolerances either way; the
-      inputs never do). Native, and far cheaper than copying the operands.
+    - Booleans: the operands and tools run as exact copies
+      (``BRepBuilderAPI_Copy``); ``self`` is passed as given because the op
+      copies its attributes onto the result and never rewrites its geometry.
+      NOT ``SetNonDestructive``: that flag does not merely protect the inputs,
+      it changes the RESULT. A ring with two bosses fused on tangentially, then
+      bored and halved, is a valid solid destructively and an invalid,
+      self-intersecting one non-destructively (the w16 rod caps, every one of
+      them, under ``inspect validate``). Copying costs a fraction of the
+      boolean it precedes and leaves OCCT running the algorithm it was
+      validated with.
     - Every other op runs on exact copies (``BRepBuilderAPI_Copy``). An
       instance op's other shape arguments are sub-shapes of ``self`` (the
       edges to fillet, the faces to hollow), so they are mapped THROUGH the
@@ -640,13 +647,20 @@ def _protect_inputs(op_name: str, args: tuple, kwargs: dict, *, is_classmethod: 
     their inputs on OCCT 7.8) so the guarantee does not rot with a kernel
     upgrade; the copy is a small fraction of the op it precedes, and only a
     miss pays it."""
-    if op_name == "bool_op":
-        operation = args[3] if len(args) > 3 else kwargs.get("operation")
-        setter = getattr(operation, "SetNonDestructive", None)
-        if setter is not None:
-            setter(True)
-        return args, kwargs
     from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+
+    if op_name == "bool_op":
+
+        def copied(value):
+            if _is_shape(value):
+                return _rewrapped(value, BRepBuilderAPI_Copy(value.wrapped).Shape())
+            if isinstance(value, (list, tuple)):
+                return type(value)(copied(item) for item in value)
+            return value
+
+        # (self, args, tools, operation): self stays, the operand and tool
+        # iterables are copied element by element, the OCCT builder passes through.
+        return (args[0], *(copied(arg) for arg in args[1:])), {k: copied(v) for k, v in kwargs.items()}
 
     if is_classmethod:
 

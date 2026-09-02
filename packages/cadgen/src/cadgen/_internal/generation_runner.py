@@ -74,13 +74,7 @@ def _load_generator_module(script_path: Path) -> object:
     # package) — so resolution is independent of the process working directory. Deliberately NOT
     # seeding the repo root or skills/cad/scripts: a generator must not depend on the repository's
     # skills/ being importable (AGENTS.md skill isolation).
-    search_paths = [str(resolved_script_path.parent)]
-    for parent in resolved_script_path.parents:
-        if (
-            (parent / "STEP" / "__init__.py").is_file()
-            or (parent / "robot_common" / "__init__.py").is_file()
-        ):
-            search_paths.append(str(parent))
+    search_paths = _generator_search_paths(resolved_script_path)
     for candidate in reversed(search_paths):
         if candidate not in sys.path:
             sys.path.insert(0, candidate)
@@ -100,6 +94,58 @@ def _load_generator_module(script_path: Path) -> object:
         sys.path[:] = original_sys_path
 
     return module
+
+
+def _generator_search_paths(resolved_script_path: Path) -> list[str]:
+    """The import roots a generator's module body may rely on: its own folder,
+    plus any ancestor that is a package root (holds a ``STEP/`` or
+    ``robot_common/`` package). Seeded onto ``sys.path`` for the module body
+    ONLY (see ``_load_generator_module``); named again by the teaching error a
+    function-level import of one of these roots' modules raises."""
+    search_paths = [str(resolved_script_path.parent)]
+    for parent in resolved_script_path.parents:
+        if (
+            (parent / "STEP" / "__init__.py").is_file()
+            or (parent / "robot_common" / "__init__.py").is_file()
+        ):
+            search_paths.append(str(parent))
+    return search_paths
+
+
+def _sibling_module_root(name: str | None, script_path: Path) -> str | None:
+    """The generator search root that WOULD have satisfied ``import name``, or
+    None when the missing module is not a first-party sibling at all."""
+    if not name:
+        return None
+    top = name.partition(".")[0]
+    for root in _generator_search_paths(script_path.resolve()):
+        base = Path(root) / top
+        if base.is_dir() or base.with_suffix(".py").is_file():
+            return root
+    return None
+
+
+def _teach_function_level_import(error: ModuleNotFoundError, script_path: Path) -> None:
+    """Turn ``ModuleNotFoundError: No module named 'lib'`` raised INSIDE the model
+    function into the rule it broke.
+
+    The loader seeds the generator's folder onto ``sys.path`` for the module
+    body and restores it afterwards, so a ``from lib import fasteners`` at the
+    top of a helper module works while the same line inside a function, run
+    later by the pipeline, does not -- and the bare error names neither the
+    rule nor the fix. Only a module that a search root would have satisfied is
+    re-raised this way; a genuinely missing third-party package keeps its own
+    error."""
+    root = _sibling_module_root(getattr(error, "name", None), script_path)
+    if root is None:
+        return
+    raise RuntimeError(
+        f"{_display_path(script_path)}: `import {error.name}` ran inside the model function, "
+        f"where {_display_path(Path(root))} is no longer on sys.path. The pipeline seeds the "
+        "generator's folder (and its package roots) onto sys.path only while the module body "
+        "loads, then restores it before calling the model. Move the import to module top level "
+        "-- in the model script and in every helper module it imports."
+    ) from error
 
 
 @dataclass(frozen=True)
@@ -488,7 +534,11 @@ def _run_script_generator_inner(
         # and without this the longest phase of most builds reports nothing at all. Silent
         # generators are unaffected -- nothing reads the binding unless they ask for it.
         with logger.timed(f"run {model_format} model {spec.source_ref}"), reporting_as(progress):
-            raw_payload = generator()
+            try:
+                raw_payload = generator()
+            except ModuleNotFoundError as error:
+                _teach_function_level_import(error, spec.script_path)
+                raise
 
     source_closure: PythonSourceClosure | None = None
     if model_format == "step":

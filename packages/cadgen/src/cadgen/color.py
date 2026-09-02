@@ -7,7 +7,8 @@ So ``Color(0.5, 0.5, 0.5)`` does not display as ``#808080`` -- it displays as
 roughly ``#BCBCBC``. Picking channel values off a hex palette by eye therefore
 produces a washed-out, desaturated model, with no error to explain it.
 
-Use :func:`srgb` to author the colour you actually want to see::
+Use :func:`srgb` to author the colour you actually want to see (it returns the
+linear channel tuple, which ``shape.color = ...`` wraps into a ``Color``)::
 
     from cadgen.color import srgb
 
@@ -49,17 +50,23 @@ def _parse_hex(value: str) -> tuple[int, int, int]:
         raise ValueError(f"expected a hex colour, got {value!r}") from exc
 
 
-def srgb(value: str, alpha: float = 1.0):
-    """Build a build123d ``Color`` from the sRGB hex you want to SEE on screen.
+def srgb(value: str, alpha: float = 1.0) -> tuple[float, float, float, float]:
+    """The linear RGBA channels for the sRGB hex you want to SEE on screen.
 
-    ``value`` is ``#rgb`` or ``#rrggbb``. ``alpha`` is 0..1.
+    ``value`` is ``#rgb`` or ``#rrggbb``. ``alpha`` is 0..1. Assign the result
+    to ``shape.color``: build123d's setter wraps it in a ``Color`` whose
+    channels are exactly these numbers.
+
+    Returns a plain tuple, never a ``Color``, on purpose: a palette module that
+    spells its constants ``CAST = srgb("#7f8288")`` runs at import, and
+    constructing a ``Color`` there would import the CAD kernel (~2.5 s) before
+    ``@step`` has had the chance to skip a current build or hand the run to the
+    warm daemon. The kernel is touched only when a shape takes the colour.
     """
-    from build123d import Color
-
     red, green, blue = _parse_hex(value)
-    return Color(
+    return (
         srgb_to_linear(red / 255.0),
         srgb_to_linear(green / 255.0),
         srgb_to_linear(blue / 255.0),
-        alpha,
+        float(alpha),
     )
