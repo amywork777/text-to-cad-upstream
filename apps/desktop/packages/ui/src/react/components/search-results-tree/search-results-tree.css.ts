@@ -47,7 +47,7 @@ export const count = style({
 });
 
 export const matchRow = style({
-  fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace)',
+  fontFamily: vars.fontMono,
   fontSize: '12px',
 });
 

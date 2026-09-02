@@ -18,8 +18,8 @@ export function UseTemplateButton({ open, onOpenChange, onSelect }: UseTemplateB
           <button
             className={cn(
               'inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5',
-              'text-xs font-medium text-foreground transition-colors hover:bg-muted/40 outline-none',
-              'data-popup-open:bg-muted/40'
+              'text-xs font-medium text-foreground transition-colors hover:bg-background-2/40 outline-none',
+              'data-popup-open:bg-background-2/40'
             )}
           />
         }

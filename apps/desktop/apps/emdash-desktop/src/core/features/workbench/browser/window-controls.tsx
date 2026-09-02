@@ -92,7 +92,7 @@ function ControlButton({
       title={label}
       onClick={onClick}
       className={cn(
-        'flex h-10 w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-muted',
+        'flex h-10 w-12 items-center justify-center text-foreground-muted transition-colors hover:bg-background-2',
         danger && 'hover:bg-background-destructive hover:text-foreground-destructive'
       )}
     >

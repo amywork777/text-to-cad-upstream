@@ -195,7 +195,7 @@ export function AgentSignInModal({
             </div>
           )}
           {error && (
-            <div className="text-destructive absolute inset-0 bg-background p-4 text-sm">
+            <div className="absolute inset-0 bg-background p-4 text-sm text-foreground-destructive">
               {error}
             </div>
           )}

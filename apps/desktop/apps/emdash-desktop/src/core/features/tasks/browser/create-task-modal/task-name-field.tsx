@@ -20,7 +20,7 @@ export function TaskNameField({ state }: TaskNameFieldProps) {
         onChange={(e) => handleTaskNameChange(e.target.value)}
       />
       {showSlugHint && (
-        <p className="text-muted-foreground mt-1 text-xs">
+        <p className="mt-1 text-xs text-foreground-muted">
           Chat names only allow letters, numbers, and hyphens.
         </p>
       )}

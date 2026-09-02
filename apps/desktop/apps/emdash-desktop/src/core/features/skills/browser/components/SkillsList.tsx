@@ -44,7 +44,7 @@ export const SkillsList: React.FC<SkillsListProps> = ({ skills, onOpenTerminal }
   if (skills.isLoading) {
     return (
       <div className="flex min-h-64 items-center justify-center text-foreground">
-        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
+        <Loader2 className="h-6 w-6 animate-spin text-foreground-muted" />
       </div>
     );
   }

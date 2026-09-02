@@ -81,7 +81,7 @@ export function CreateSkillModal({ host }: { host: HostRef }) {
               }}
               className="text-sm"
             />
-            <p className="text-muted-foreground text-micro">
+            <p className="text-micro text-foreground-muted">
               Lowercase letters, numbers, and hyphens
             </p>
           </div>
@@ -112,12 +112,12 @@ export function CreateSkillModal({ host }: { host: HostRef }) {
               }}
               className="field-sizing-fixed h-64 max-h-[40dvh] resize-y overflow-y-auto font-mono text-sm"
             />
-            <p className="text-muted-foreground text-micro">
+            <p className="text-micro text-foreground-muted">
               Define what this skill does and how agents should use it
             </p>
           </div>
 
-          {createError && <p className="text-destructive text-xs">{createError}</p>}
+          {createError && <p className="text-xs text-foreground-destructive">{createError}</p>}
         </div>
       </Dialog.Body>
 

@@ -329,7 +329,7 @@ export function InitialConversationField({
       <div
         className={cn(
           'flex flex-col gap-2 transition-colors',
-          isDragOver && 'bg-accent/10 ring-2 ring-accent/50 ring-inset'
+          isDragOver && 'bg-background-info ring-2 ring-border-info ring-inset'
         )}
         onBlur={onPromptBlur}
         {...(canDeliverInitialPrompt ? dropHandlers : {})}

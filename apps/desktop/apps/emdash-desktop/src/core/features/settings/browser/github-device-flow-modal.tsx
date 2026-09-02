@@ -221,7 +221,7 @@ export function GithubDeviceFlowModal({ onError }: GithubDeviceFlowModalArgs) {
                         className="h-5 w-5 shrink-0 rounded-full"
                       />
                     ) : null}
-                    <p className="text-muted-foreground truncate text-xs">@{user.login}</p>
+                    <p className="truncate text-xs text-foreground-muted">@{user.login}</p>
                   </div>
                 ) : null}
               </div>
@@ -249,7 +249,7 @@ export function GithubDeviceFlowModal({ onError }: GithubDeviceFlowModalArgs) {
               type="button"
               onClick={() => copyToClipboard(userCode)}
               disabled={!userCode}
-              className="focus-visible:border-ring focus-visible:ring-ring/50 rounded-lg border border-border bg-background/60 p-4 text-left transition-colors hover:border-border-1 hover:bg-background-1 focus-visible:ring-3 focus-visible:outline-none disabled:pointer-events-none"
+              className="rounded-lg border border-border bg-background/60 p-4 text-left transition-colors hover:border-border-1 hover:bg-background-1 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none"
               aria-label={copied ? 'Code copied' : 'Copy authorization code'}
             >
               {userCode ? (

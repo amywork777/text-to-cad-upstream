@@ -68,7 +68,7 @@ export function AccountTab() {
 
   if (isLoading) {
     return (
-      <div className="text-muted-foreground flex items-center gap-2 text-sm">
+      <div className="flex items-center gap-2 text-sm text-foreground-muted">
         <Loader2 className="h-4 w-4 animate-spin" />
         Loading account...
       </div>
@@ -85,8 +85,8 @@ export function AccountTab() {
             className="h-10 w-10 rounded-full border border-border/60"
           />
         ) : (
-          <div className="bg-muted flex h-12 w-12 items-center justify-center rounded-full border border-border/60">
-            <User className="text-muted-foreground h-6 w-6" />
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-border/60 bg-background-2">
+            <User className="h-6 w-6 text-foreground-muted" />
           </div>
         )}
         <div className="min-w-0 flex-1">
@@ -111,11 +111,11 @@ export function AccountTab() {
       <div className="flex flex-col gap-3">
         <div>
           <p className="text-sm font-medium text-foreground">Session expired</p>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-foreground-muted">
             Sign in again to reconnect your Hardcore account.
           </p>
         </div>
-        {error && <p className="text-destructive text-xs">{error}</p>}
+        {error && <p className="text-xs text-foreground-destructive">{error}</p>}
         {serverAvailable === false ? (
           <ServerUnavailableMessage />
         ) : (
@@ -137,11 +137,11 @@ export function AccountTab() {
     <div className="flex flex-col gap-3">
       <div>
         <p className="text-sm font-medium text-foreground">Hardcore Account</p>
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-foreground-muted">
           Create a Hardcore account to automatically connect GitHub using OAuth2.
         </p>
       </div>
-      {error && <p className="text-destructive text-xs">{error}</p>}
+      {error && <p className="text-xs text-foreground-destructive">{error}</p>}
       {serverAvailable === false ? (
         <ServerUnavailableMessage />
       ) : (

@@ -50,8 +50,8 @@ export const SyncToAgentsSection: React.FC<SyncToAgentsSectionProps> = ({
           <div
             key={provider.id}
             className={cn(
-              'group relative inline-flex h-8 items-center gap-1.5 rounded-full border border-primary bg-primary/10 pr-3 pl-2 text-xs text-foreground ring-1 ring-primary/30 transition-colors',
-              'hover:border-destructive/60 hover:bg-background-destructive hover:text-foreground-destructive'
+              'group relative inline-flex h-8 items-center gap-1.5 rounded-full border border-border-primary bg-foreground/10 pr-3 pl-2 text-xs text-foreground ring-1 ring-ring/30 transition-colors',
+              'hover:border-border-destructive/60 hover:bg-background-destructive hover:text-foreground-destructive'
             )}
             title={`Synced to ${provider.name}`}
           >

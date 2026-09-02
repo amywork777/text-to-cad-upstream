@@ -36,7 +36,7 @@ export function SkillsToolbar({
             aria-label="Refresh catalog"
           >
             <RefreshCw
-              className={`text-muted-foreground h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`}
+              className={`h-4 w-4 text-foreground-muted ${isRefreshing ? 'animate-spin' : ''}`}
             />
           </Button>
           <Button variant="primary" onClick={onCreateSkill}>

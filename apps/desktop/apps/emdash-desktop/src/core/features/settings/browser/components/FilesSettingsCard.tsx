@@ -111,7 +111,7 @@ function ExclusionListEditor({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-sm text-foreground">{title}</div>
-          <div className="text-muted-foreground text-xs">{description}</div>
+          <div className="text-xs text-foreground-muted">{description}</div>
         </div>
         <ResetToDefaultButton
           visible={overridden}

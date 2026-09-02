@@ -34,7 +34,7 @@ function PreviewSoundButton({
               variant="ghost"
               size="sm"
               icon
-              className="text-muted-foreground hover:text-foreground"
+              className="text-foreground-muted hover:text-foreground"
               disabled={disabled}
               onClick={() => soundPlayer.preview(path)}
               aria-label="Preview sound"
@@ -161,7 +161,7 @@ const NotificationSettingsCard: React.FC = () => {
                           <Button
                             type="button"
                             variant="secondary"
-                            className="text-muted-foreground max-w-56 bg-transparent font-normal"
+                            className="max-w-56 bg-transparent font-normal text-foreground-muted"
                             disabled={loading}
                             onClick={chooseCustomSound}
                             aria-label={

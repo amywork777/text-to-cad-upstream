@@ -33,7 +33,7 @@ function StepHeader({
       aria-current={isActive ? 'step' : undefined}
       className={cn(
         'text-md border-r px-5 py-3',
-        isActive ? 'bg-background-1 text-primary' : 'text-foreground-muted',
+        isActive ? 'bg-background-1 text-foreground' : 'text-foreground-muted',
         isLast && 'border-r-0'
       )}
     >

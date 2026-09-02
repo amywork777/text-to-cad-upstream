@@ -43,5 +43,5 @@ export const collapseStatusError = style({
 export const collapseStatusPermission = style({
   marginLeft: 'auto',
   display: 'flex',
-  color: '#eab308',
+  color: vars.planActive,
 });

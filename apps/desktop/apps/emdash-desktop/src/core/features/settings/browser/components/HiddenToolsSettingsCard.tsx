@@ -47,7 +47,7 @@ export default function HiddenToolsSettingsCard() {
               status={isDetected ? 'connected' : 'missing'}
               showStatusPill={false}
               middle={
-                <span className="text-muted-foreground flex items-center gap-2 text-sm">
+                <span className="flex items-center gap-2 text-sm text-foreground-muted">
                   <span className={`h-1.5 w-1.5 rounded-full ${indicatorClass}`} />
                   {statusLabel}
                 </span>

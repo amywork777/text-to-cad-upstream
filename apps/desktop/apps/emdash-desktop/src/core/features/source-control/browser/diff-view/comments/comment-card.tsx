@@ -73,7 +73,7 @@ const CommentMeta = forwardRef<HTMLSpanElement, React.HTMLAttributes<HTMLSpanEle
   ({ className, ...props }, ref) => (
     <span
       ref={ref}
-      className={cn('text-xs font-normal text-muted-foreground', className)}
+      className={cn('text-xs font-normal text-foreground-muted', className)}
       {...props}
     />
   )

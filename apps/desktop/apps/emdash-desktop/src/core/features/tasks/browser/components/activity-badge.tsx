@@ -150,7 +150,7 @@ export function ActivityBadgeView({
         className={cn(
           'flex h-7 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors',
           failed && !running
-            ? 'bg-background-destructive text-foreground-destructive hover:bg-destructive/20'
+            ? 'bg-background-destructive text-foreground-destructive hover:bg-background-destructive/20'
             : 'bg-background-secondary text-foreground-muted hover:text-foreground'
         )}
       >
@@ -198,7 +198,7 @@ export function ActivityBadgeView({
               <div
                 key={step.id}
                 data-step={step.id}
-                className="hover:bg-muted/30 flex items-start gap-2 rounded-md p-1.5 transition-colors"
+                className="flex items-start gap-2 rounded-md p-1.5 transition-colors hover:bg-background-2/30"
               >
                 <button
                   type="button"

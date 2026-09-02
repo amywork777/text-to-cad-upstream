@@ -84,5 +84,5 @@ export const cardErrorIcon = style({
 
 export const cardPermissionIcon = style({
   display: 'flex',
-  color: '#eab308',
+  color: vars.planActive,
 });

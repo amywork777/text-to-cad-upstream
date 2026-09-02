@@ -202,13 +202,13 @@ export function ShareableSettingsSection({
               type="button"
               variant="link"
               size="sm"
-              className="group text-muted-foreground inline-flex h-auto cursor-pointer items-center gap-1 px-0 text-sm font-normal hover:text-foreground hover:no-underline focus-visible:ring-0 focus-visible:outline-none"
+              className="group inline-flex h-auto cursor-pointer items-center gap-1 px-0 text-sm font-normal text-foreground-muted hover:text-foreground hover:no-underline focus-visible:ring-0 focus-visible:outline-none"
               onClick={() => openExternal('https://github.com/amywork777/hardcore')}
             >
               <span className="font-sans text-xs transition-colors group-hover:text-foreground">
                 docs
               </span>
-              <span className="text-muted-foreground text-sm transition-colors group-hover:text-foreground">
+              <span className="text-sm text-foreground-muted transition-colors group-hover:text-foreground">
                 ↗
               </span>
             </Button>

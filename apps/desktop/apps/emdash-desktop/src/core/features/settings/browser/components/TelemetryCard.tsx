@@ -23,13 +23,13 @@ const TelemetryCard: React.FC = () => {
               type="button"
               variant="link"
               size="sm"
-              className="group text-muted-foreground inline-flex h-auto items-center gap-1 px-0 text-sm font-normal hover:text-foreground hover:no-underline focus-visible:ring-0 focus-visible:outline-none"
+              className="group inline-flex h-auto items-center gap-1 px-0 text-sm font-normal text-foreground-muted hover:text-foreground hover:no-underline focus-visible:ring-0 focus-visible:outline-none"
               onClick={() => openExternal('https://github.com/amywork777/hardcore')}
             >
               <span className="transition-colors group-hover:text-foreground">
                 Telemetry information
               </span>
-              <ArrowUpRight className="text-muted-foreground size-3.5 transition-colors transition-transform duration-200 group-hover:translate-x-px group-hover:-translate-y-px group-hover:text-foreground" />
+              <ArrowUpRight className="size-3.5 text-foreground-muted transition-colors transition-transform duration-200 group-hover:translate-x-px group-hover:-translate-y-px group-hover:text-foreground" />
             </Button>
             <span> for details.</span>
           </p>
@@ -47,7 +47,7 @@ const TelemetryCard: React.FC = () => {
             aria-label="Enable anonymous telemetry"
           />
           {!hasKeyAndHost && (
-            <span className="text-muted-foreground text-micro">
+            <span className="text-micro text-foreground-muted">
               Inactive in this build (no PostHog keys)
             </span>
           )}

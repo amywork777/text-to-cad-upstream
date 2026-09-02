@@ -173,7 +173,7 @@ const ActiveAgentStatus = observer(function ActiveAgentStatus({
       <span className="sr-only" role="status" aria-live="polite">
         {modelLabel}: {progress.phase}
       </span>
-      <span className="bg-primary size-1.5 shrink-0 animate-pulse rounded-full" aria-hidden />
+      <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-foreground" aria-hidden />
       <span className="min-w-0 truncate tabular-nums">
         <span className="font-medium text-foreground">{modelLabel}</span> · {progress.phase}
         {tokenLabel} · {elapsedSeconds}s

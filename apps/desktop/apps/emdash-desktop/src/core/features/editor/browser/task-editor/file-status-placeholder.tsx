@@ -114,7 +114,7 @@ function Notice({
   detail?: string;
 }) {
   return (
-    <div className="text-muted-foreground flex flex-col items-center gap-3">
+    <div className="flex flex-col items-center gap-3 text-foreground-muted">
       <Icon className="h-10 w-10 opacity-30" />
       <div className="text-center">
         <p className="text-sm font-medium">{fileName}</p>

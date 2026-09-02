@@ -77,7 +77,7 @@ export const diffStatusIcon = style({
 export const diffPermissionIcon = style([
   diffStatusIcon,
   {
-    color: '#eab308',
+    color: vars.planActive,
   },
 ]);
 export const diffErrorIcon = style([

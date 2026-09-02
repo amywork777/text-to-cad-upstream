@@ -101,7 +101,7 @@ export const CommentWidget: React.FC<CommentWidgetProps> = ({ comment, onEdit, o
                 variant="ghost"
                 size="xs"
                 icon
-                className="text-destructive hover:text-destructive h-8 w-8"
+                className="h-8 w-8 text-foreground-destructive hover:text-foreground-destructive"
                 onClick={() => void onDelete()}
                 title="Delete"
                 aria-label="Delete comment"

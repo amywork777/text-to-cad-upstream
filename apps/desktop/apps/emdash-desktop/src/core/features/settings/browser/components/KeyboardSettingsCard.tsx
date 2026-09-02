@@ -115,7 +115,7 @@ const KeyboardSettingsCard: React.FC = observer(function KeyboardSettingsCard() 
       <div className="space-y-6">
         {groups.map((group) => (
           <div key={group.category}>
-            <div className="text-muted-foreground mb-3 text-xs font-medium tracking-wide uppercase">
+            <div className="mb-3 text-xs font-medium tracking-wide text-foreground-muted uppercase">
               {group.category}
             </div>
             <div className="space-y-3">
@@ -132,7 +132,7 @@ const KeyboardSettingsCard: React.FC = observer(function KeyboardSettingsCard() 
                   >
                     <div className="min-w-0 flex-1 basis-64 space-y-1">
                       <div className="text-sm wrap-break-word">{entry.command.title}</div>
-                      <div className="text-muted-foreground text-xs wrap-break-word">
+                      <div className="text-xs wrap-break-word text-foreground-muted">
                         {entry.command.description}
                       </div>
                     </div>
@@ -172,7 +172,7 @@ const KeyboardSettingsCard: React.FC = observer(function KeyboardSettingsCard() 
                                           type="button"
                                           variant="ghost"
                                           icon
-                                          className="text-muted-foreground hover:text-foreground"
+                                          className="text-foreground-muted hover:text-foreground"
                                           onClick={() => {
                                             resetField(key);
                                             toast('Shortcut reset', {
@@ -197,7 +197,7 @@ const KeyboardSettingsCard: React.FC = observer(function KeyboardSettingsCard() 
                                           type="button"
                                           variant="ghost"
                                           icon
-                                          className="text-muted-foreground hover:text-foreground"
+                                          className="text-foreground-muted hover:text-foreground"
                                           onClick={() => {
                                             update({ [key]: null });
                                             toast('Shortcut removed', {

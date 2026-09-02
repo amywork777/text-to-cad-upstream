@@ -116,10 +116,10 @@ export function CadDrawingPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background-secondary">
-      <div className="@container flex min-h-11 shrink-0 items-center gap-2 border-b bg-background px-3">
+      <div className="@container flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <FileOutput className="size-3.5 shrink-0" />
-          <span className="truncate text-xs font-medium" title="Engineering drawing">
+          <span className="truncate text-sm font-medium" title="Engineering drawing">
             Engineering drawing
           </span>
           {manifest.revisionId ? (
@@ -195,7 +195,7 @@ export function CadDrawingPanel({
             <Loader2 className="size-4 animate-spin" /> Loading drawing…
           </div>
         ) : preview.status === 'error' ? (
-          <div className="text-destructive flex h-full items-center justify-center text-sm">
+          <div className="flex h-full items-center justify-center text-sm text-foreground-destructive">
             {preview.message}
           </div>
         ) : preview.status === 'ready' && preview.mimeType === 'application/pdf' ? (

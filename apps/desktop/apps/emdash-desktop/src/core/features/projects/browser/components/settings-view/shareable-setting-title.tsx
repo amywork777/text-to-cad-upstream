@@ -60,7 +60,7 @@ export function ShareableSettingTitle({
                       variant="ghost"
                       size="xs"
                       icon
-                      className="text-muted-foreground size-4.5 rounded-full p-0 hover:text-foreground"
+                      className="size-4.5 rounded-full p-0 text-foreground-muted hover:text-foreground"
                       aria-label={`Use team settings for ${leafLabel}`}
                       onClick={onRestore}
                     >

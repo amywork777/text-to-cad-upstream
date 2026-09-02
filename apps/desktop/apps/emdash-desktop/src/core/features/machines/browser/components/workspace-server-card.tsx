@@ -112,7 +112,7 @@ function WorkspaceRuntimeDetails({
           {state.detail && <span>{state.detail}</span>}
         </span>
       )}
-      {state.error && <span className="text-destructive">{state.error.message}</span>}
+      {state.error && <span className="text-foreground-destructive">{state.error.message}</span>}
     </span>
   );
 }

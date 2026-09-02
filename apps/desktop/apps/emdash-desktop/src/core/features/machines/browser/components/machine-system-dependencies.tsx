@@ -78,7 +78,7 @@ export function MachineSystemDependenciesCard({
         {isLoading ? (
           <div className="p-4 text-sm text-foreground-muted">Checking system dependencies...</div>
         ) : error ? (
-          <div className="text-destructive p-4 text-sm">
+          <div className="p-4 text-sm text-foreground-destructive">
             Failed to load system dependencies: {error.message}
           </div>
         ) : (

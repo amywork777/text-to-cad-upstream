@@ -71,7 +71,7 @@ function InlineSelect({
       <Select.Trigger
         size="sm"
         className={cn(
-          'h-7 border-border/60 bg-muted/20 px-2 text-sm font-medium hover:bg-muted/40',
+          'h-7 border-border/60 bg-background-2/20 px-2 text-sm font-medium hover:bg-background-2/40',
           className
         )}
       >
@@ -336,7 +336,7 @@ export function CronPicker({ value, onChange, className }: CronPickerProps) {
       </div>
 
       {parseError && (
-        <p className="text-destructive text-xs">
+        <p className="text-xs text-foreground-destructive">
           Could not parse the cron expression. Showing defaults — saving will overwrite it.
         </p>
       )}

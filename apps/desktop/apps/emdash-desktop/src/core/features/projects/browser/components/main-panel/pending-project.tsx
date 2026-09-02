@@ -67,7 +67,7 @@ export const PendingProjectStatus = observer(function PendingProjectStatus({
         />
       </div>
       {isError && (
-        <p className="text-destructive max-w-full text-sm wrap-break-word">
+        <p className="max-w-full text-sm wrap-break-word text-foreground-destructive">
           {project.creation.kind === 'failed'
             ? project.creation.message
             : 'Project creation failed'}

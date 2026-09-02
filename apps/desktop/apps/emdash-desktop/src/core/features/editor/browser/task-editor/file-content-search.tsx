@@ -148,15 +148,17 @@ export function FileContentSearchResults({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="text-muted-foreground flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs">
+      <div className="flex h-8 shrink-0 items-center gap-1.5 px-3 text-xs text-foreground-muted">
         {state.isSearching && <Loader2 className="size-3 animate-spin" aria-label="Searching" />}
         <span>{resultSummary}</span>
       </div>
 
       {state.error ? (
-        <div className="text-destructive px-3 py-6 text-center text-xs">{state.error}</div>
+        <div className="px-3 py-6 text-center text-xs text-foreground-destructive">
+          {state.error}
+        </div>
       ) : !state.isSearching && state.files.length === 0 ? (
-        <div className="text-muted-foreground px-3 py-6 text-center text-xs">No results found</div>
+        <div className="px-3 py-6 text-center text-xs text-foreground-muted">No results found</div>
       ) : (
         <SearchResultsTree
           files={searchFiles}
@@ -171,7 +173,7 @@ export function FileContentSearchResults({
       )}
 
       {!state.isSearching && !state.complete && (
-        <div className="text-muted-foreground shrink-0 border-t border-border px-3 py-2 text-xs">
+        <div className="shrink-0 border-t border-border px-3 py-2 text-xs text-foreground-muted">
           Results were limited. Refine your search to see more.
         </div>
       )}

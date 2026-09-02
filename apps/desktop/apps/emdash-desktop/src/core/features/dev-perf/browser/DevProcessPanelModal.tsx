@@ -86,26 +86,26 @@ export function DevProcessPanelModal() {
       </div>
 
       {trace.kind === 'done' && (
-        <p className="text-muted-foreground font-mono text-tiny break-all select-text">
+        <p className="font-mono text-tiny break-all text-foreground-muted select-text">
           Trace written to {trace.path}
         </p>
       )}
       {trace.kind === 'error' && (
-        <p className="text-destructive text-xs">Trace capture failed: {trace.message}</p>
+        <p className="text-xs text-foreground-destructive">Trace capture failed: {trace.message}</p>
       )}
 
       {!supported && (
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-foreground-muted">
           Process snapshots are not supported on this platform.
         </p>
       )}
 
       {processes === null ? (
-        <p className="text-muted-foreground text-xs">Loading…</p>
+        <p className="text-xs text-foreground-muted">Loading…</p>
       ) : (
         <div className="max-h-[55dvh] overflow-y-auto rounded border">
           <table className="w-full text-left font-mono text-xs">
-            <thead className="bg-muted/50 sticky top-0">
+            <thead className="sticky top-0 bg-background-2/50">
               <tr>
                 <th className="px-2 py-1 font-medium">Process</th>
                 <th className="w-16 px-2 py-1 text-right font-medium">PID</th>
@@ -130,7 +130,7 @@ export function DevProcessPanelModal() {
               ))}
             </tbody>
             <tfoot>
-              <tr className="bg-muted/50 border-t">
+              <tr className="border-t bg-background-2/50">
                 <td className="px-2 py-1 font-medium">Total ({processes.length} processes)</td>
                 <td />
                 <td className="px-2 py-1 text-right font-medium">
