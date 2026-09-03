@@ -186,7 +186,13 @@ async function verifyPackagedStartup(application: string): Promise<void> {
   let passed = false;
   try {
     step(`Launching packaged app with isolated profile: ${application}`);
-    child = spawn(executable, launchArgs, { env: environment, stdio: 'ignore' });
+    // Own process group (POSIX) so Chromium helpers and any CAD runtime provisioner
+    // the app spawns are signalled with it, and stop writing the scratch profile.
+    child = spawn(executable, launchArgs, {
+      env: environment,
+      stdio: 'ignore',
+      detached: process.platform !== 'win32',
+    });
     const deadline = Date.now() + STARTUP_TIMEOUT_MS;
     while (Date.now() < deadline) {
       const source = existsSync(logFile) ? readFileSync(logFile, 'utf8') : '';
@@ -209,7 +215,9 @@ async function verifyPackagedStartup(application: string): Promise<void> {
   } finally {
     if (child) await stopChild(child);
     if (passed) {
-      rmSync(scratch, { recursive: true, force: true });
+      // The app may still be tearing down a CAD runtime provisioner it spawned;
+      // outwait the last writes instead of failing a passed smoke on ENOTEMPTY.
+      rmSync(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
     } else {
       if (existsSync(logFile)) {
         const source = readFileSync(logFile, 'utf8');
@@ -221,13 +229,25 @@ async function verifyPackagedStartup(application: string): Promise<void> {
   }
 }
 
+function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid !== undefined && process.platform !== 'win32') {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The group is already gone; fall back to the process itself.
+    }
+  }
+  child.kill(signal);
+}
+
 async function stopChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null) return;
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
-  child.kill('SIGTERM');
+  signalTree(child, 'SIGTERM');
   const stopped = await Promise.race([exited.then(() => true), delay(5_000).then(() => false)]);
   if (!stopped && child.exitCode === null) {
-    child.kill('SIGKILL');
+    signalTree(child, 'SIGKILL');
     await exited;
   }
 }
