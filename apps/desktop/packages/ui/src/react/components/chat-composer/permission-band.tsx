@@ -15,6 +15,7 @@
 import { cx } from '@styles/utilities/cx';
 import { ShieldAlertIcon } from 'lucide-react';
 import * as React from 'react';
+import { Button } from '@/react/primitives/button';
 import { SplitButton, type SplitButtonOption } from '@/react/primitives/split-button';
 import { composerThemeScope } from './composer-contract.css';
 import * as styles from './permission-band.css';
@@ -51,6 +52,15 @@ export interface PermissionBandProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const MAX_INLINE_QUESTION_OPTIONS = 3;
+
+/** The Button primitive speaks in outcome tones; map the option kinds onto them. */
+function kindToButtonTone(kind: string): 'success' | 'destructive' | undefined {
+  if (kind.startsWith('allow_') || kind === 'answer') return 'success';
+  if (kind.startsWith('reject_')) return 'destructive';
+  return undefined;
+}
+
 function kindToTone(kind: string): SplitButtonOption['tone'] {
   if (kind.startsWith('allow_') || kind === 'answer') return 'accept';
   if (kind.startsWith('reject_')) return 'reject';
@@ -74,6 +84,9 @@ export function PermissionBand({
   className,
 }: PermissionBandProps) {
   const isQuestion = request.kind === 'question';
+  // A short question reads best with every answer visible; permissions and long
+  // option lists keep the split button so the primary choice stays one click away.
+  const showEveryOption = isQuestion && request.options.length <= MAX_INLINE_QUESTION_OPTIONS;
   const splitOptions: SplitButtonOption[] = request.options.map((o) => ({
     id: o.optionId,
     label: o.name,
@@ -113,18 +126,35 @@ export function PermissionBand({
         )}
       </span>
 
-      {/* Split button — its option menu portals out of the composer root and
-          must carry the theme-bridge scope. */}
-      <SplitButton
-        options={splitOptions}
-        selectedId={selectedId}
-        onSelectedChange={setSelectedId}
-        onAction={onResolve}
-        size="xs"
-        variant="secondary"
-        className={styles.bandAction}
-        menuClassName={composerThemeScope}
-      />
+      {showEveryOption ? (
+        <span className={styles.bandActions}>
+          {request.options.map((option) => (
+            <Button
+              key={option.optionId}
+              size="xs"
+              variant="secondary"
+              tone={kindToButtonTone(option.kind)}
+              title={option.description}
+              onClick={() => onResolve(option.optionId)}
+            >
+              {option.name}
+            </Button>
+          ))}
+        </span>
+      ) : (
+        /* Split button — its option menu portals out of the composer root and
+           must carry the theme-bridge scope. */
+        <SplitButton
+          options={splitOptions}
+          selectedId={selectedId}
+          onSelectedChange={setSelectedId}
+          onAction={onResolve}
+          size="xs"
+          variant="secondary"
+          className={styles.bandAction}
+          menuClassName={composerThemeScope}
+        />
+      )}
     </div>
   );
 }

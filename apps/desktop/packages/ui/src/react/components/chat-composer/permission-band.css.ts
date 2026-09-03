@@ -61,13 +61,21 @@ export const bandAction = style({
   flexShrink: 0,
 });
 
-globalStyle(`${bandAction} button`, {
+/** Every answer of a short question, side by side. */
+export const bandActions = style({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  flexShrink: 0,
+});
+
+globalStyle(`${bandAction} button, ${bandActions} button`, {
   backgroundColor: vars.surfaceElevated,
   color: vars.foreground,
   borderColor: `color-mix(in srgb, ${vars.foreground} 12%, transparent)`,
 });
 
-globalStyle(`${bandAction} button:hover`, {
+globalStyle(`${bandAction} button:hover, ${bandActions} button:hover`, {
   backgroundColor: vars.surfaceElevatedHover,
   color: vars.foreground,
 });

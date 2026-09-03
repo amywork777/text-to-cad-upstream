@@ -44,8 +44,10 @@ export function Tool(props: ToolProps) {
           : props.item.status === 'error'
             ? 'Failed'
             : 'Completed';
-    const status = state ? `. ${state}` : '';
-    const error = props.item.error ? `. ${props.item.error}` : '';
+    // Comma joins read naturally after a summary that ends in its own punctuation
+    // (a question title followed by "Awaiting permission").
+    const status = state ? `, ${state}` : '';
+    const error = props.item.error ? `, ${props.item.error}` : '';
     return `${props.item.name}${summary}${status}${error}`;
   };
   return (

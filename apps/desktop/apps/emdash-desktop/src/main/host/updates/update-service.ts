@@ -8,7 +8,7 @@ import { updateEvents } from '@core/features/updates/node';
 import { IS_CANARY, UPDATE_CHANNEL } from '@core/primitives/app-identity/api/app-identity';
 import { resolveAppVersion } from '@main/core/app/utils';
 import { log } from '@main/lib/logger';
-import { formatUpdaterError, sanitizeUpdaterLogArgs } from './utils';
+import { formatUpdaterError, isUpdateFeedUnavailable, sanitizeUpdaterLogArgs } from './utils';
 
 let autoUpdater: typeof _electronUpdater.autoUpdater | undefined;
 
@@ -53,6 +53,9 @@ class UpdateService implements Disposable {
   private currentCheckPromise: Promise<UpdateInfo | null> | null = null;
   private initialized = false;
   private active = false;
+  // Set once a check proves there is no feed to reach; further scheduled checks are skipped so a
+  // build that was never published (a fork, a private repo) does not log an error every hour.
+  private feedUnavailable = false;
   private installRequested = false;
   private installRestartGuardTimer?: NodeJS.Timeout;
   private notificationPublisher?: UpdateNotificationPublisher;
@@ -128,6 +131,17 @@ class UpdateService implements Disposable {
 
     autoUpdater.on('error', (err: Error) => {
       const errorMessage = formatUpdaterError(err);
+      if (isUpdateFeedUnavailable(err)) {
+        if (!this.feedUnavailable) {
+          this.feedUnavailable = true;
+          log.warn('Update feed unavailable; skipping further update checks this session', {
+            detail: errorMessage,
+          });
+        }
+        this.updateState.status = 'idle';
+        this.updateState.error = undefined;
+        return;
+      }
       log.error('Auto-updater error:', errorMessage);
 
       if (this.updateState.status === 'installing') {
@@ -178,6 +192,10 @@ class UpdateService implements Disposable {
   private scheduleNextCheck(delay = CHECK_INTERVAL_MS): void {
     if (this.checkTimer) {
       clearTimeout(this.checkTimer);
+    }
+    if (this.feedUnavailable) {
+      this.updateState.nextCheck = undefined;
+      return;
     }
     this.updateState.nextCheck = new Date(Date.now() + delay);
     this.checkTimer = setTimeout(() => {

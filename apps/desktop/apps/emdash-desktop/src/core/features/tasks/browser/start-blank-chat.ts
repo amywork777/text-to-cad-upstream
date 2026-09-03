@@ -6,6 +6,7 @@ import {
   readLastCadConversationProvider,
   rememberCadConversationProvider,
 } from '@core/features/cad/api/browser/cad-conversation-provider';
+import { BLANK_CHAT_TITLE } from '@core/features/conversations/api/browser/prompt-title';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
 import {
   getProjectSshConnectionId,
@@ -17,8 +18,6 @@ import { getTaskManagerStore } from '@core/features/tasks/api/browser/task-state
 import { taskViewDef } from '@core/features/tasks/contributions/views';
 import { getNavigation } from '@core/primitives/navigation/browser/navigation-selectors';
 import type { CreateTaskParams } from '@core/primitives/tasks/api';
-
-const BLANK_CHAT_TITLE = 'New chat';
 
 type TaskManager = NonNullable<ReturnType<typeof getTaskManagerStore>>;
 

@@ -33,3 +33,18 @@ export function sanitizeUpdaterLogArgs(args: unknown[]) {
     return arg;
   });
 }
+
+/**
+ * A 404, a missing host, or a refused connection means there is no feed to
+ * talk to: this build was not published where its updater configuration
+ * points (a fork, a private repository, an offline machine).
+ */
+export function isUpdateFeedUnavailable(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const err = error as Error & { statusCode?: number; code?: string; status?: number };
+  const status = Number(err.statusCode ?? err.status ?? 0);
+  if (status === 404 || status === 403) return true;
+  if (['ENOTFOUND', 'ECONNREFUSED', 'EAI_AGAIN'].includes(String(err.code ?? ''))) return true;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /Http(?:Error)?:?\s*404\b|HTTP 404|Cannot find (?:latest|channel)/i.test(message);
+}

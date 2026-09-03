@@ -25,6 +25,10 @@ import {
 } from '@core/features/conversations/api/browser/chat/advertised-command-provider';
 import { getChatUiRuntime } from '@core/features/conversations/api/browser/chat/chat-ui-runtime';
 import { getSharedChatContext } from '@core/features/conversations/api/browser/chat/shared-chat-context';
+import {
+  hasBlankChatTitle,
+  titleFromPrompt,
+} from '@core/features/conversations/api/browser/prompt-title';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
 import type { ProjectHostAccess } from '@core/features/projects/api/browser/stores/project-context';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
@@ -442,6 +446,7 @@ export class AcpChatStore {
         ? { attachments: attachments.map((attachment) => attachment.ref) }
         : {}),
     });
+    if (result.success) this._titleFromFirstPrompt(text);
     if (!result.success && optimisticId) {
       runInAction(() => {
         if (this.chatState.session.state.pendingPrompt?.id === optimisticId) {
@@ -451,6 +456,23 @@ export class AcpChatStore {
       });
     }
     return result;
+  }
+
+  // A chat born as "New chat" takes its sidebar title from the first thing asked in
+  // it, the way the Codex and Claude Code apps title threads. An agent that later
+  // announces a session title through ACP renames it again.
+  private _titleFromFirstPrompt(text: string): void {
+    const manager = conversationRegistry.get(this.taskId);
+    const conversation = manager?.conversations.get(this.conversationId);
+    if (!manager || !conversation || !hasBlankChatTitle(conversation.data.title)) return;
+    const title = titleFromPrompt(text);
+    if (!title) return;
+    void manager.renameConversation(this.conversationId, title).catch((error: unknown) => {
+      log.warn('Failed to title chat from its first prompt', {
+        conversationId: this.conversationId,
+        error,
+      });
+    });
   }
 
   setDraftText(text: string): void {
