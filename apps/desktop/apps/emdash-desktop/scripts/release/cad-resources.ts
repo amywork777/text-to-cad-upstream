@@ -64,6 +64,7 @@ const DESKTOP_SOURCE_FILES = [
 export const PACKAGED_CAD_FILES = [
   `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/scripts/setup-cad.mjs`,
   `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/cad-runtime-constraints.txt`,
+  `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/skills/cad-desktop/SKILL.md`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/VERSION`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/LICENSE`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/.codex-plugin/plugin.json`,
@@ -129,6 +130,11 @@ export function cadExtraResources(
     {
       from: join(desktopRoot, 'tooling', 'cad-runtime-constraints.txt'),
       to: `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/cad-runtime-constraints.txt`,
+    },
+    // Skills that exist only inside the desktop; setup-cad.mjs stages them on top of the plugin.
+    {
+      from: join(desktopRoot, 'skills'),
+      to: `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/skills`,
     },
     { from: join(textToCadRoot, 'VERSION'), to: `${bundle}/VERSION` },
     { from: join(textToCadRoot, 'LICENSE'), to: `${bundle}/LICENSE` },

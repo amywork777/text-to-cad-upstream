@@ -24,8 +24,8 @@ const config: Configuration = {
   publish: [
     {
       provider: 'github',
-      owner: 'amywork777',
-      repo: 'hardcore',
+      owner: 'earthtojake',
+      repo: 'text-to-cad',
       releaseType: 'draft',
     },
   ],

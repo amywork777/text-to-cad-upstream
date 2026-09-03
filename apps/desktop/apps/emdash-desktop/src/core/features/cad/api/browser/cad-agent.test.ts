@@ -86,7 +86,7 @@ describe('buildCadAgentContext', () => {
     expect(context).toContain('instead of forcing CAD');
     expect(context).toContain('Web search');
     expect(context).toContain('its own CAD Viewer beside the chat');
-    expect(context).toContain('do not run the cad-viewer skill');
+    expect(context).toContain('cad-desktop skill');
   });
 
   it('anchors the agent to the current file and Jake validation workflow', () => {

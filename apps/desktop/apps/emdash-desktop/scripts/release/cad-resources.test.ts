@@ -35,7 +35,11 @@ const SOURCE_FILES = [
   'packages/cadgen/src/cadgen/_runtime/node/mesh-export.mjs',
 ];
 
-const DESKTOP_FILES = ['tooling/scripts/setup-cad.mjs', 'tooling/cad-runtime-constraints.txt'];
+const DESKTOP_FILES = [
+  'tooling/scripts/setup-cad.mjs',
+  'tooling/cad-runtime-constraints.txt',
+  'skills/cad-desktop/SKILL.md',
+];
 
 describe('CAD release resources', () => {
   it('packages from the monorepo root above apps/desktop unless overridden', () => {
@@ -129,6 +133,7 @@ async function createPackagedFiles(resources: string): Promise<void> {
   await createFiles(resources, [
     'text-to-cad-desktop/tooling/scripts/setup-cad.mjs',
     'text-to-cad-desktop/tooling/cad-runtime-constraints.txt',
+    'text-to-cad-desktop/skills/cad-desktop/SKILL.md',
     'text-to-cad/VERSION',
     'text-to-cad/LICENSE',
     'text-to-cad/.codex-plugin/plugin.json',

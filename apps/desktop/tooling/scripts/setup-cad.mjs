@@ -44,6 +44,13 @@ const PLUGIN = CAD_SKILL_PACKAGE.plugin;
 const MIN_CODEX_VERSION = [0, 142, 0];
 const MIN_PYTHON_VERSION = [3, 11, 0];
 const PROJECT_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+/**
+ * Skills that exist only inside the desktop, staged on top of the Text-to-CAD
+ * plugin: `cad-desktop` tells an agent how the app shows models, and replaces
+ * the `cad-viewer` hand-off, which is dropped from the staged copy.
+ */
+export const DESKTOP_SKILLS_ROOT = join(PROJECT_ROOT, 'skills');
+const DESKTOP_REPLACED_SKILLS = new Set(['cad-viewer']);
 const PINNED_PIP_VERSION = '25.2';
 export const CAD_RUNTIME_CONSTRAINTS_PATH = join(
   PROJECT_ROOT,
@@ -238,6 +245,7 @@ export function shouldShipBundledPluginPath(root, sourcePath) {
   const last = segments[segments.length - 1];
   if (/\.(?:pyc|map)$/i.test(last)) return false;
   if (!SHIPPED_PLUGIN_ENTRIES.includes(segments[0])) return false;
+  if (segments[0] === 'skills' && DESKTOP_REPLACED_SKILLS.has(segments[1])) return false;
   const viewerPrefix = ['skills', 'cad-viewer', 'scripts', 'viewer'];
   const insideViewer =
     segments.length > viewerPrefix.length &&
@@ -247,10 +255,10 @@ export function shouldShipBundledPluginPath(root, sourcePath) {
 }
 
 /** A cheap content signature of what the staged plugin would contain. */
-export function bundledPluginSignature(root) {
+export function bundledPluginSignature(root, { overlayRoot = DESKTOP_SKILLS_ROOT } = {}) {
   let count = 0;
   let newest = 0;
-  const visit = (path) => {
+  const visit = (path, ship) => {
     let stats;
     try {
       stats = statSync(path);
@@ -260,23 +268,33 @@ export function bundledPluginSignature(root) {
     if (stats.isDirectory()) {
       for (const entry of readdirSync(path)) {
         const child = join(path, entry);
-        if (shouldShipBundledPluginPath(root, child)) visit(child);
+        if (ship(child)) visit(child, ship);
       }
       return;
     }
     count += 1;
     newest = Math.max(newest, Math.trunc(stats.mtimeMs));
   };
-  for (const entry of SHIPPED_PLUGIN_ENTRIES) visit(join(root, entry));
-  return `${readTextToCadVersion(root) ?? 'unknown'}:${count}:${newest}`;
+  for (const entry of SHIPPED_PLUGIN_ENTRIES) {
+    visit(join(root, entry), (child) => shouldShipBundledPluginPath(root, child));
+  }
+  // The desktop's own skills count too, so editing one restages and reinstalls.
+  if (overlayRoot) {
+    visit(overlayRoot, (child) => !EXCLUDED_SEGMENTS.has(child.split(/[\\/]/).pop() ?? ''));
+  }
+  return `${readTextToCadVersion(root) ?? 'unknown'}:desktop:${count}:${newest}`;
 }
 
-export function stageBundledPlugin(textToCadRoot, runtimeRoot, { mutate = true } = {}) {
+export function stageBundledPlugin(
+  textToCadRoot,
+  runtimeRoot,
+  { mutate = true, overlayRoot = DESKTOP_SKILLS_ROOT } = {}
+) {
   if (!textToCadRoot || !isTextToCadRoot(textToCadRoot)) {
     throw new Error('Hardcore could not locate the Text-to-CAD skills to stage.');
   }
   const target = resolveStagedPluginRoot(runtimeRoot);
-  const signature = bundledPluginSignature(textToCadRoot);
+  const signature = bundledPluginSignature(textToCadRoot, { overlayRoot });
   if (!mutate || stagedPluginIsCurrent(target, signature)) return target;
 
   const staging = `${target}.staging-${process.pid}`;
@@ -292,6 +310,18 @@ export function stageBundledPlugin(textToCadRoot, runtimeRoot, { mutate = true }
         dereference: true,
         filter: (sourcePath) => shouldShipBundledPluginPath(textToCadRoot, sourcePath),
       });
+    }
+    if (overlayRoot && existsSync(overlayRoot)) {
+      for (const skill of readdirSync(overlayRoot)) {
+        if (EXCLUDED_SEGMENTS.has(skill)) continue;
+        const source = join(overlayRoot, skill);
+        if (!statSync(source).isDirectory()) continue;
+        cpSync(source, join(staging, 'skills', skill), {
+          recursive: true,
+          dereference: true,
+          filter: (sourcePath) => !/\.(?:pyc|map)$/i.test(sourcePath),
+        });
+      }
     }
     writeFileSync(
       join(staging, BUNDLE_MARKER),

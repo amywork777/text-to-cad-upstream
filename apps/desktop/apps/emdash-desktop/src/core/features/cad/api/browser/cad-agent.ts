@@ -65,7 +65,7 @@ const CAD_ARTIFACT_SUFFIXES = ['.step', '.stp', '.stl', '.3mf', '.glb', '.dxf'] 
 export function buildHardcoreViewerContext(): string {
   return [
     'Hardcore shows STEP, STP, DXF, and URDF files from this workspace in its own CAD Viewer beside the chat and opens new models there automatically.',
-    'Do not start the CAD Viewer server, do not run the cad-viewer skill, and do not post "Open in CAD Viewer" links; refer to files by their workspace-relative path and the viewer will show them.',
+    'Follow the cad-desktop skill for viewing and hand-off. The cad-viewer skill is intentionally absent here: do not start a viewer server and do not post "Open in CAD Viewer" links; refer to files by their workspace-relative path and the viewer shows them.',
   ].join('\n');
 }
 

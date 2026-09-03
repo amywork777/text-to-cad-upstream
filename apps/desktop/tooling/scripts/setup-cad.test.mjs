@@ -264,11 +264,13 @@ test('ships only the plugin manifests, skills, and the viewer runtime', () => {
   assert.equal(shouldShipBundledPluginPath(root, '/repo/apps/viewer/dist/index.html'), false);
   assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/cad/__pycache__/x.pyc'), false);
   assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/dxf/scripts/gen.pyc'), false);
+  // cad-viewer never ships from the desktop: the app shows models itself and stages cad-desktop instead.
   const viewer = '/repo/skills/cad-viewer/scripts/viewer';
-  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/dist/index.html`), true);
+  assert.equal(shouldShipBundledPluginPath(root, '/repo/skills/cad-viewer/SKILL.md'), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/dist/index.html`), false);
   assert.equal(shouldShipBundledPluginPath(root, `${viewer}/dist/assets/index.js.map`), false);
-  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/server/main.py`), true);
-  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/package.json`), true);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/server/main.py`), false);
+  assert.equal(shouldShipBundledPluginPath(root, `${viewer}/package.json`), false);
   assert.equal(shouldShipBundledPluginPath(root, `${viewer}/src/App.js`), false);
   assert.equal(shouldShipBundledPluginPath(root, `${viewer}/node_modules/vite/index.js`), false);
   assert.equal(shouldShipBundledPluginPath(root, `${viewer}/tests_server/test_x.py`), false);
@@ -287,7 +289,12 @@ test('stages a symlink-free plugin copy with the viewer runtime materialized', (
   const runtimeRoot = resolveCadRuntimeRoot('/unused', {
     HARDCORE_CAD_RUNTIME_ROOT: join(userDataRoot, 'cad-runtime'),
   });
-  const stagedRoot = stageBundledPlugin(textToCadRoot, runtimeRoot);
+  // The desktop's own skills ride on top of the plugin; cad-viewer is replaced
+  // by cad-desktop because the app shows models itself.
+  const overlayRoot = join(userDataRoot, 'desktop-skills');
+  mkdirSync(join(overlayRoot, 'cad-desktop'), { recursive: true });
+  writeFileSync(join(overlayRoot, 'cad-desktop', 'SKILL.md'), 'DESKTOP');
+  const stagedRoot = stageBundledPlugin(textToCadRoot, runtimeRoot, { overlayRoot });
 
   assert.equal(stagedRoot, resolveStagedPluginRoot(runtimeRoot));
   assert.equal(readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8'), 'CAD');
@@ -295,24 +302,25 @@ test('stages a symlink-free plugin copy with the viewer runtime materialized', (
   assert.equal(existsSync(join(stagedRoot, 'skills', 'cad', '__pycache__')), false);
   assert.equal(existsSync(join(stagedRoot, 'packages')), false);
   assert.equal(existsSync(join(stagedRoot, 'apps')), false);
-  const viewer = join(stagedRoot, 'skills', 'cad-viewer', 'scripts', 'viewer');
-  assert.equal(lstatSync(viewer).isSymbolicLink(), false);
-  assert.equal(readFileSync(join(viewer, 'server', 'main.py'), 'utf8'), 'print("viewer")');
-  assert.equal(readFileSync(join(viewer, 'dist', 'index.html'), 'utf8'), '<html></html>');
-  assert.equal(existsSync(join(viewer, 'dist', 'index.js.map')), false);
-  assert.equal(existsSync(join(viewer, 'src')), false);
-  assert.equal(existsSync(join(viewer, 'node_modules')), false);
-  assert.equal(existsSync(join(viewer, 'tests_server')), false);
+  assert.equal(existsSync(join(stagedRoot, 'skills', 'cad-viewer')), false);
+  assert.equal(
+    readFileSync(join(stagedRoot, 'skills', 'cad-desktop', 'SKILL.md'), 'utf8'),
+    'DESKTOP'
+  );
   assert.equal(stagedRoot.startsWith(textToCadRoot), false);
-  assert.equal(stagedPluginIsCurrent(stagedRoot, bundledPluginSignature(textToCadRoot)), true);
+  assert.equal(
+    stagedPluginIsCurrent(stagedRoot, bundledPluginSignature(textToCadRoot, { overlayRoot })),
+    true
+  );
+  // Without the overlay the signature differs, so a desktop skill edit restages.
+  assert.notEqual(
+    bundledPluginSignature(textToCadRoot, { overlayRoot }),
+    bundledPluginSignature(textToCadRoot, { overlayRoot: null })
+  );
 
   // A changed skill invalidates the staged copy.
   writeFileSync(join(textToCadRoot, 'skills', 'cad', 'SKILL.md'), 'CAD v2');
-  const nextSignature = bundledPluginSignature(textToCadRoot);
-  if (nextSignature === bundledPluginSignature(textToCadRoot) && stagedPluginIsCurrent(stagedRoot, nextSignature)) {
-    // Same-second mtimes and equal file counts can collide; the content still restages on --refresh.
-  }
-  stageBundledPlugin(textToCadRoot, runtimeRoot);
+  stageBundledPlugin(textToCadRoot, runtimeRoot, { overlayRoot });
   assert.equal(readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8').startsWith('CAD'), true);
 });
 
