@@ -151,7 +151,10 @@ folders) returns the model artifacts written since that turn started, and
 `planCadArtifactReveal` decides what to do with the ones the catalog does not
 already track. With no CAD tab open the first model (a STEP when there is one)
 opens in the artifact pane; anything else is announced with an Open action so a
-viewer the user is reviewing is never replaced mid-turn. Remote workspaces are
+viewer the user is reviewing is never replaced mid-turn. Turns are recorded app-wide in
+`cadTurnLedger`, not in the task view: a turn that ends while another project is on screen, or while a
+pane change remounts the view, is revealed the next time its task is shown, scanning from the turn's real
+start. Remote workspaces are
 skipped because the viewer only serves local directories, and artifacts written
 outside the workspace (a git worktree, a temp directory) stay invisible: the
 viewer cannot serve them either.
