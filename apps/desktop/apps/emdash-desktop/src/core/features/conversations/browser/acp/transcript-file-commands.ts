@@ -35,6 +35,8 @@ export function classifyTranscriptLink(href: string): TranscriptLinkClassificati
   if (!target || target.startsWith('#') || target.startsWith('?') || target.startsWith('//')) {
     return { kind: 'external' };
   }
+  const viewerFile = cadViewerFileFromUrl(target);
+  if (viewerFile) return { kind: 'workspace-file', path: viewerFile };
   const filePath = target.replace(EDITOR_LOCATION_SUFFIX_RE, '');
   if (
     target.startsWith('/') ||
@@ -62,4 +64,27 @@ export function createTranscriptFileCommands(
     onOpenFile: ({ path }) => open(path),
     openMentionFile: open,
   };
+}
+
+const CAD_VIEWER_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/**
+ * The workspace file behind a CAD Viewer link. Agents that run the cad-viewer
+ * skill post `http://127.0.0.1:<port>/?file=models/part.step`; Hardcore has its
+ * own viewer beside the chat, so the link opens the file there instead of a
+ * browser tab on a server that may already be gone.
+ */
+export function cadViewerFileFromUrl(href: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  if (!CAD_VIEWER_HOSTS.has(url.hostname)) return null;
+  const file = url.searchParams.get('file')?.trim();
+  if (!file) return null;
+  const relative = file.replace(/^\/+/, '');
+  return relative.length > 0 ? relative : null;
 }

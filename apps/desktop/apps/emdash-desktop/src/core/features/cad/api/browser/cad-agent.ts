@@ -58,6 +58,17 @@ const CAD_SOURCE_SUFFIXES = [
 ] as const;
 const CAD_ARTIFACT_SUFFIXES = ['.step', '.stp', '.stl', '.3mf', '.glb', '.dxf'] as const;
 
+/**
+ * Hardcore shows models itself; an agent that follows the CAD skill's viewer
+ * hand-off would otherwise start a second viewer server and post links to it.
+ */
+export function buildHardcoreViewerContext(): string {
+  return [
+    'Hardcore shows STEP, STP, DXF, and URDF files from this workspace in its own CAD Viewer beside the chat and opens new models there automatically.',
+    'Do not start the CAD Viewer server, do not run the cad-viewer skill, and do not post "Open in CAD Viewer" links; refer to files by their workspace-relative path and the viewer will show them.',
+  ].join('\n');
+}
+
 export function buildCadFirstRoutingContext(): string {
   return [
     'Hardcore is a CAD-first engineering workspace with general agent tools available when they help.',
@@ -67,6 +78,7 @@ export function buildCadFirstRoutingContext(): string {
     'When a request asks to design or model a physical object, treat attached images as CAD references unless the user explicitly requests image output or image editing.',
     "For screenshots, diagrams, and documents, follow the user's stated task instead of forcing CAD.",
     'Web search, analysis, and other tools remain available when the engineering task calls for them.',
+    buildHardcoreViewerContext(),
   ].join('\n');
 }
 

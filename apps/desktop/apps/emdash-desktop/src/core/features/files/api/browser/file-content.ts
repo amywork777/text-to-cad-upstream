@@ -42,9 +42,18 @@ export async function watchFileContent(
 }
 
 /** Reads an image file's bytes and returns them as a data URL for previews. */
+/**
+ * Previews read whole files. The runtime's default cap (200 KB) is sized for
+ * text; a render or a drawing PDF is routinely a few megabytes.
+ */
+export const PREVIEW_MAX_BYTES = 64 * 1024 * 1024;
+
 export async function readImageFile(ref: HostFileRef) {
   const client = await getFilesClient();
-  const result = await client.fs.readBytes({ uri: encodeResourceUri(ref) });
+  const result = await client.fs.readBytes({
+    uri: encodeResourceUri(ref),
+    options: { maxBytes: PREVIEW_MAX_BYTES },
+  });
   if (!result.success) return result;
   const bytes = await result.data.bytes();
   const buffer = new ArrayBuffer(bytes.byteLength);

@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getFilesClient } from '@core/features/files/api/browser/client';
+import { PREVIEW_MAX_BYTES } from '@core/features/files/api/browser/file-content';
 import { openWithOS } from '@core/features/workbench/api/browser/open-with-os';
 import { useWorkspace } from '@core/features/workbench/api/browser/task-composition-context';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api';
@@ -58,10 +59,15 @@ export function CadDrawingPanel({
         await getFilesClient()
       ).fs.readBytes({
         uri: encodeResourceUri(hostFileRefFromNativePath(previewPath, workspace.sshConnectionId)),
+        options: { maxBytes: PREVIEW_MAX_BYTES },
       });
       if (disposed) return;
       if (!result.success) {
         setPreview({ status: 'error', message: 'The drawing could not be loaded.' });
+        return;
+      }
+      if (result.data.meta.truncated) {
+        setPreview({ status: 'error', message: 'The drawing is too large to preview.' });
         return;
       }
       const bytes = await result.data.bytes();

@@ -2,7 +2,10 @@ import { toast } from '@emdash/ui/react/primitives';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
-import { buildCadFirstRoutingContext } from '@core/features/cad/api/browser/cad-agent';
+import {
+  buildCadFirstRoutingContext,
+  buildHardcoreViewerContext,
+} from '@core/features/cad/api/browser/cad-agent';
 import {
   preserveLastGoodModel,
   restoreLastGoodModel,
@@ -19,7 +22,10 @@ import {
   type CadModelCatalog,
   type CadModelRecord,
 } from '@core/features/cad/contributions/mementos';
-import { registerWorkbenchChatSubmissionHandler } from '@core/features/conversations/api/browser/chat/workbench-chat-submit-bridge';
+import {
+  combineWorkbenchHiddenContext,
+  registerWorkbenchChatSubmissionHandler,
+} from '@core/features/conversations/api/browser/chat/workbench-chat-submit-bridge';
 import {
   acquireIntegratedAgentSession,
   type IntegratedAgentSession,
@@ -134,7 +140,10 @@ export const CadTaskRunLifecycle = observer(function CadTaskRunLifecycle() {
         setCatalog(prepared.catalog);
         return {
           success: true,
-          hiddenContext: prepared.hiddenContext,
+          hiddenContext: combineWorkbenchHiddenContext(
+            prepared.hiddenContext,
+            buildHardcoreViewerContext()
+          ),
           onDispatchFailure: async () => {
             const updateCatalog = (update: (current: CadModelCatalog) => CadModelCatalog) => {
               setCatalog((current) => {

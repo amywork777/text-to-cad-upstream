@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { classifyTranscriptLink, createTranscriptFileCommands } from './transcript-file-commands';
+import {
+  cadViewerFileFromUrl,
+  classifyTranscriptLink,
+  createTranscriptFileCommands,
+} from './transcript-file-commands';
 
 describe('classifyTranscriptLink', () => {
   it.each([
@@ -62,5 +66,26 @@ describe('createTranscriptFileCommands', () => {
       ['project-1', 'task-1', 'src/prose-link.ts'],
       ['project-1', 'task-1', 'src/mention.ts'],
     ]);
+  });
+});
+
+describe('cadViewerFileFromUrl', () => {
+  it.each([
+    ['http://127.0.0.1:3250/?file=models%2Fenclosure.step', 'models/enclosure.step'],
+    ['http://localhost:3245/?file=/models/bracket.step', 'models/bracket.step'],
+    ['http://127.0.0.1:3246/?file=block.step&view=iso', 'block.step'],
+  ])('reads the workspace file behind a CAD Viewer link: %s', (href, expected) => {
+    expect(cadViewerFileFromUrl(href)).toBe(expected);
+    expect(classifyTranscriptLink(href)).toEqual({ kind: 'workspace-file', path: expected });
+  });
+
+  it.each([
+    'http://127.0.0.1:3250/',
+    'http://example.com/?file=models/part.step',
+    'https://github.com/earthtojake/text-to-cad',
+    'file:///tmp/part.step',
+  ])('leaves other links alone: %s', (href) => {
+    expect(cadViewerFileFromUrl(href)).toBeNull();
+    expect(classifyTranscriptLink(href)).toEqual({ kind: 'external' });
   });
 });

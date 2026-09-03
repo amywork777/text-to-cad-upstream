@@ -89,13 +89,13 @@ export function CadWorkspaceModeBar({
                 <Button
                   type="button"
                   size="xs"
-                  icon
                   variant="ghost"
                   aria-label="Create engineering drawing"
                   disabled={creatingOutput === 'drawing'}
                   onClick={() => onAddOutput('drawing')}
                 >
                   {creatingOutput === 'drawing' ? <Loader2 className="animate-spin" /> : <Plus />}
+                  Drawing
                 </Button>
               }
             />
