@@ -77,11 +77,26 @@ export function createAcpSessionsLiveHost(): AcpSessionsLiveHost {
   );
 }
 
+/**
+ * Returns the live-model slot for a conversation, creating it on first use.
+ *
+ * The slot (and every cell in it) is stable for the life of the host. Renderer
+ * replicas and the leased provider resolve a conversation's cells once and keep
+ * using them across an evict-and-restart (Stop, process death, resume), so a
+ * restart must publish into the cells they already hold rather than register a
+ * fresh set behind the same key. A restart therefore reuses the slot and resets
+ * it to the initial shape; `dispose` leaves the slot registered.
+ */
 export function createSessionLiveModels(
   host: AcpSessionLiveHost,
   conversationId: string,
   initialState: SessionState
 ): SessionLiveModels {
+  const existing = host.models.get(conversationId);
+  if (existing) {
+    resetSessionLiveModels(existing, initialState);
+    return existing;
+  }
   const model: SessionLiveModels = {
     states: {
       state: cell(initialState),
@@ -95,11 +110,25 @@ export function createSessionLiveModels(
       mcpServers: cell<SessionMcpServer[]>([]),
     },
     dispose() {
-      host.models.delete(conversationId);
+      // Keep the slot: subscribers still hold these cells, and the next start
+      // for this conversation publishes into them (see above).
     },
   };
   host.models.set(conversationId, model);
   return model;
+}
+
+function resetSessionLiveModels(model: SessionLiveModels, initialState: SessionState): void {
+  const { states } = model;
+  publishLiveModelState(states.state, initialState, peek(states.state));
+  publishLiveModelState(states.config, initialSessionConfigState, peek(states.config));
+  publishLiveModelState(states.usage, null, peek(states.usage));
+  publishLiveModelState(states.plan, null, peek(states.plan));
+  publishLiveModelState(states.agents, [], peek(states.agents));
+  publishLiveModelState(states.activeTurn, null, peek(states.activeTurn));
+  publishLiveModelState(states.draft, null, peek(states.draft));
+  publishLiveModelState(states.terminals, [], peek(states.terminals));
+  publishLiveModelState(states.mcpServers, [], peek(states.mcpServers));
 }
 
 export function createSessionsListModel(host: AcpSessionsLiveHost): SessionsListModel {
