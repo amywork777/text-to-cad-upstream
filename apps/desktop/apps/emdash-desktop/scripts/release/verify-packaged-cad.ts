@@ -1,5 +1,13 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, posix, resolve, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -317,7 +325,9 @@ async function verifyViewerArtifact(input: {
     serverInfo === null ||
     !('rootPath' in serverInfo) ||
     typeof serverInfo.rootPath !== 'string' ||
-    resolve(serverInfo.rootPath) !== resolve(input.workspace)
+    // The launcher serves the real path (macOS keeps /var behind /private/var);
+    // compare real paths so a symlinked temp root does not read as the wrong root.
+    realpathSync(resolve(serverInfo.rootPath)) !== realpathSync(resolve(input.workspace))
   ) {
     throw new Error(`Packaged CAD Viewer served the wrong root: ${JSON.stringify(serverInfo)}`);
   }
