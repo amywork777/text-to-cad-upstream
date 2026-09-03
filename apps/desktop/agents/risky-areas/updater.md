@@ -21,6 +21,10 @@
 - treat signing, notarization, packaging targets, and native rebuild flow as release-critical
 - keep build output directories and packaging config stable unless the task is explicitly about release behavior
 
+- A build whose feed answers 404, 403, or is unreachable (a fork, a private repository, an offline
+  machine) is not an error state: `update-service.ts` warns once, marks the feed unavailable, and stops
+  the hourly schedule for the session. Manual checks from Settings still run.
+
 ## Update Feed / Publishing Strategy
 
 The stable release pipeline publishes to **GitHub Releases** (primary feed) and **Cloudflare R2** (legacy/migration feed) in parallel. Both feeds are served from the same single build.
