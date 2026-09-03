@@ -79,6 +79,7 @@ import type {
 } from '#services/session-lifecycle/api';
 import { createSessionLifecycle } from '#services/session-lifecycle/node';
 import { registrationsToAcpMcpServers, summarizeAcpMcpServers } from './mcp-servers';
+import { resolveModelOptionValue } from './model-option';
 import { persistToolOutputAttachments, redactToolOutputImageData } from './tool-output-attachments';
 import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
 
@@ -337,17 +338,8 @@ export class SessionManager implements InboundRouter {
             modes: response.modes,
             configOptions: response.configOptions,
           });
-          if (input.model) {
-            const modelResult = await record.cell.setConfigOption('model', input.model);
-            this.assertStartCurrent(input.conversationId, generation);
-            if (!modelResult.success) {
-              this.deps.logger.warn('SessionManager: failed to apply initial model', {
-                conversationId: input.conversationId,
-                providerId: input.providerId,
-                error: modelResult.error,
-              });
-            }
-          }
+          await this.applyInitialModel(record, input);
+          this.assertStartCurrent(input.conversationId, generation);
           await this.applyInitialMode(record, input);
           this.assertStartCurrent(input.conversationId, generation);
           const queueResult = this.queueInitialPrompts(record);
@@ -409,17 +401,8 @@ export class SessionManager implements InboundRouter {
           modes: response.modes,
           configOptions: response.configOptions,
         });
-        if (input.model) {
-          const modelResult = await record.cell.setConfigOption('model', input.model);
-          this.assertStartCurrent(input.conversationId, generation);
-          if (!modelResult.success) {
-            this.deps.logger.warn('SessionManager: failed to apply initial model', {
-              conversationId: input.conversationId,
-              providerId: input.providerId,
-              error: modelResult.error,
-            });
-          }
-        }
+        await this.applyInitialModel(record, input);
+        this.assertStartCurrent(input.conversationId, generation);
         await this.applyInitialMode(record, input);
         this.assertStartCurrent(input.conversationId, generation);
         const queueResult = this.queueInitialPrompts(record);
@@ -1127,6 +1110,40 @@ export class SessionManager implements InboundRouter {
       );
     } else if (output?.data) {
       this.terminals.appendNarratedOutput(terminalId, output.data);
+    }
+  }
+
+  /**
+   * Re-applies the model a conversation persisted. The desktop stores its own
+   * catalog id, which is translated onto the value the agent advertises; an
+   * unadvertised model is skipped (the agent's default stays) rather than sent
+   * as an invalid value the agent would reject.
+   */
+  private async applyInitialModel(record: SessionRecord, input: AcpStartInput): Promise<void> {
+    const requested = input.model;
+    if (!requested) return;
+    const modelOptions = record.cell.config.modelOptions;
+    const available = modelOptions?.available ?? [];
+    const resolved = resolveModelOptionValue(available, requested);
+    if (!resolved) {
+      this.deps.logger.warn('SessionManager: persisted model not advertised, skipping', {
+        conversationId: input.conversationId,
+        providerId: input.providerId,
+        model: requested,
+        advertised: available.map((option) => option.id),
+      });
+      return;
+    }
+    if (modelOptions?.selected === resolved) return;
+    const result = await record.cell.setConfigOption('model', resolved);
+    if (!result.success) {
+      this.deps.logger.warn('SessionManager: failed to apply initial model', {
+        conversationId: input.conversationId,
+        providerId: input.providerId,
+        model: requested,
+        resolved,
+        error: result.error,
+      });
     }
   }
 

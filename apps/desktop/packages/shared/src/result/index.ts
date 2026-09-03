@@ -18,13 +18,31 @@ export type SerializedError = {
   readonly name: string;
   readonly message: string;
   readonly stack?: string;
+  /** Structured detail carried by the error (for example JSON-RPC error data), when cloneable. */
+  readonly data?: unknown;
 };
 
 /** Normalizes any thrown value into a cloneable SerializedError. */
-export const toSerializedError = (e: unknown): SerializedError =>
-  e instanceof Error
-    ? { name: e.name, message: e.message, stack: e.stack }
-    : { name: 'Unknown', message: String(e) };
+export const toSerializedError = (e: unknown): SerializedError => {
+  if (!(e instanceof Error)) return { name: 'Unknown', message: String(e) };
+  const data = cloneableErrorData((e as { data?: unknown }).data);
+  return {
+    name: e.name,
+    message: e.message,
+    stack: e.stack,
+    ...(data !== undefined ? { data } : {}),
+  };
+};
+
+/** JSON-RPC style errors carry their real reason in `data`; keep it only when it survives cloning. */
+function cloneableErrorData(value: unknown): unknown {
+  if (value === undefined || value === null) return undefined;
+  try {
+    return JSON.parse(JSON.stringify(value)) as unknown;
+  } catch {
+    return undefined;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Core Result shape — plain objects, never class instances, safe on the wire

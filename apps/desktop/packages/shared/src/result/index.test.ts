@@ -108,6 +108,24 @@ describe('toSerializedError', () => {
     expect(cloned.name).toBe('Error');
     expect(cloned.message).toBe('cloneable');
   });
+
+  it('keeps cloneable error data such as JSON-RPC details', () => {
+    const e = Object.assign(new Error('Internal error'), {
+      data: { details: 'Invalid value for config option model: claude-fable-5' },
+    });
+    const s = toSerializedError(e);
+    expect(s.data).toEqual({ details: 'Invalid value for config option model: claude-fable-5' });
+    expect(structuredClone(s).data).toEqual(s.data);
+  });
+
+  it('drops error data that cannot be cloned', () => {
+    const e = Object.assign(new Error('boom'), {
+      data: { fn: () => 1, cyc: {} as { self?: unknown } },
+    });
+    (e.data.cyc as { self?: unknown }).self = e.data.cyc;
+    const s = toSerializedError(e);
+    expect(s.data).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

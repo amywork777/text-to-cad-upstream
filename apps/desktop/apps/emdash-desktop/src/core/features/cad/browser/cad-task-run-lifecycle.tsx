@@ -84,10 +84,12 @@ export const CadTaskRunLifecycle = observer(function CadTaskRunLifecycle() {
         return { success: false, error: 'The project workspace is not available.' };
       }
       if (submission.agentIsWorking) {
-        return {
-          success: false,
-          error: 'Finish or stop the current response before starting another CAD change.',
-        };
+        // Prompts sent mid-turn are queued by the runtime and start when the
+        // current turn ends, the same way Codex and Claude Code queue them. The
+        // per-run backup/validation preparation is skipped for a queued prompt:
+        // it needs the model files at rest, which they are not while an agent is
+        // editing them. The reveal ledger still tracks whatever that turn writes.
+        return { success: true, hiddenContext: buildCadFirstRoutingContext() };
       }
       if (preparingRef.current) {
         return { success: false, error: 'The current CAD change is still being prepared.' };

@@ -88,13 +88,26 @@ export async function getDiagnosticLogAttachment() {
 export function registerProcessErrorLogging(logger: { error(...input: unknown[]): void }) {
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught exception', error);
+    // The file transport may be the thing that failed; stderr keeps the reason.
+    console.error('[hardcore] uncaught exception', error);
     flushAndExit();
   });
 
   process.on('unhandledRejection', (reason) => {
     logger.error('Unhandled rejection', reason);
+    console.error('[hardcore] unhandled rejection', reason);
+    // A full disk degrades logging and persistence; quitting on it would also
+    // kill every running agent, so the app stays up and reports instead.
+    if (isDiskFullError(reason)) return;
     flushAndExit();
   });
+}
+
+/** True for the Node errors a full or quota-limited disk raises. */
+export function isDiskFullError(reason: unknown): boolean {
+  if (typeof reason !== 'object' || reason === null) return false;
+  const code = (reason as { code?: unknown }).code;
+  return code === 'ENOSPC' || code === 'EDQUOT';
 }
 
 function flushAndExit() {

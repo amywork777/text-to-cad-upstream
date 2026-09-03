@@ -402,6 +402,78 @@ describe('AcpRuntime session manager', () => {
     ]);
   });
 
+  it('translates the persisted model onto the advertised option after a new session starts', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [modelConfigOption('opus[1m]')],
+    });
+    const rt = new AcpRuntime(h.deps);
+
+    const result = await rt.startSession(
+      makeStartInput({ conversationId: 'conv-model', model: 'claude-fable-5' })
+    );
+
+    expect(isOk(result)).toBe(true);
+    expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'session-1',
+      configId: 'model',
+      value: 'claude-fable-5-1',
+    });
+  });
+
+  it('translates the persisted model after a session is loaded', async () => {
+    const h = makeAcpHarness();
+    h.agent.loadSession.mockResolvedValueOnce({
+      configOptions: [modelConfigOption('opus[1m]')],
+    });
+    const rt = new AcpRuntime(h.deps);
+
+    const result = await rt.resumeSession({
+      ...makeStartInput({ conversationId: 'conv-model-load', model: 'claude-fable-5' }),
+      sessionId: 'session-old',
+    });
+
+    expect(isOk(result)).toBe(true);
+    expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith({
+      sessionId: 'session-old',
+      configId: 'model',
+      value: 'claude-fable-5-1',
+    });
+  });
+
+  it('skips the persisted model when the agent advertises nothing comparable', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [modelConfigOption('opus[1m]')],
+    });
+    const rt = new AcpRuntime(h.deps);
+
+    const result = await rt.startSession(
+      makeStartInput({ conversationId: 'conv-model-unknown', model: 'gpt-5.5' })
+    );
+
+    expect(isOk(result)).toBe(true);
+    expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
+  });
+
+  it('skips the persisted model when it is already selected', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockResolvedValueOnce({
+      sessionId: 'session-1',
+      configOptions: [modelConfigOption('claude-fable-5-1')],
+    });
+    const rt = new AcpRuntime(h.deps);
+
+    const result = await rt.startSession(
+      makeStartInput({ conversationId: 'conv-model-selected', model: 'claude-fable-5' })
+    );
+
+    expect(isOk(result)).toBe(true);
+    expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
+  });
+
   it('re-applies the persisted mode after a new session starts', async () => {
     const h = makeAcpHarness();
     h.agent.newSession.mockResolvedValueOnce({
@@ -1082,6 +1154,21 @@ function leakContainers(rt: AcpRuntime): LeakCheckContainer[] {
       has: (key) => key in peek(rt.sessionsListLiveModel().states.list),
     },
   ];
+}
+
+function modelConfigOption(currentValue: string) {
+  return {
+    id: 'model',
+    name: 'Model',
+    category: 'model',
+    type: 'select',
+    currentValue,
+    options: [
+      { value: 'default', name: 'Default (recommended)' },
+      { value: 'opus[1m]', name: 'Opus (1M context)' },
+      { value: 'claude-fable-5-1', name: 'Fable' },
+    ],
+  };
 }
 
 function modeConfigOption(currentValue: string) {

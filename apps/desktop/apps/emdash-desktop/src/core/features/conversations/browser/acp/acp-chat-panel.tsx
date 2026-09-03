@@ -466,6 +466,8 @@ const ComposerForStore = observer(function ComposerForStore({
           ),
         ]);
         if (!preparation.success) {
+          // The editor clears itself on submit; hand the text back so nothing is lost.
+          editorApiRef.current?.setText(value);
           toast.error('Could not start this change', { description: preparation.error });
           return;
         }
@@ -485,6 +487,7 @@ const ComposerForStore = observer(function ComposerForStore({
               rollbackError = error instanceof Error ? error.message : String(error);
             }
           }
+          editorApiRef.current?.setText(value);
           toast.error('Could not send this request', {
             description: rollbackError ? `${dispatch.error} ${rollbackError}` : dispatch.error,
           });
@@ -495,6 +498,7 @@ const ComposerForStore = observer(function ComposerForStore({
         editorApiRef.current?.clear();
       })()
         .catch((error: unknown) => {
+          editorApiRef.current?.setText(value);
           toast.error('Could not prepare this request', {
             description: error instanceof Error ? error.message : String(error),
           });

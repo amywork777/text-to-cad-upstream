@@ -2,7 +2,12 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { flushLogWrites, redactDiagnosticLog, writeRendererLogEntry } from './file-logger';
+import {
+  flushLogWrites,
+  isDiskFullError,
+  redactDiagnosticLog,
+  writeRendererLogEntry,
+} from './file-logger';
 
 vi.mock('electron', () => ({
   app: {
@@ -151,5 +156,19 @@ describe('redactDiagnosticLog', () => {
     expect(redacted).toContain('macaddr [REDACTED_MAC]');
     expect(redacted).toContain('git@[REDACTED_HOST]');
     expect(redacted).toContain('https://[REDACTED_CREDENTIALS]@example.com/repo');
+  });
+});
+
+describe('isDiskFullError', () => {
+  it('recognises the Node errors a full or quota-limited disk raises', () => {
+    expect(isDiskFullError(Object.assign(new Error('write'), { code: 'ENOSPC' }))).toBe(true);
+    expect(isDiskFullError({ code: 'EDQUOT' })).toBe(true);
+  });
+
+  it('leaves every other rejection reason fatal', () => {
+    expect(isDiskFullError(new Error('boom'))).toBe(false);
+    expect(isDiskFullError(Object.assign(new Error('io'), { code: 'EIO' }))).toBe(false);
+    expect(isDiskFullError('ENOSPC')).toBe(false);
+    expect(isDiskFullError(null)).toBe(false);
   });
 });
