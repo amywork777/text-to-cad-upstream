@@ -82,6 +82,7 @@ import { getGitExecutable } from '@main/core/utils/exec';
 import { getAppDb } from '@main/db/instance';
 import { desktopKeyValueStore } from '@main/db/kv';
 import { resolveDatabasePath } from '@main/db/path';
+import { withCadRuntimeOnPath } from '@main/host/cad/cad-runtime-service';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
 import { refreshUserEnv, userShellEnvManager } from '@main/lib/userEnv';
@@ -201,7 +202,11 @@ function startDesktopWorkersWithHost(
   host: ReturnType<typeof createWireWorkerHost>
 ): Omit<DesktopWorkersHandle, 'startVitalsSampling' | 'setSpawnLogging'> {
   const workersStartedAt = Date.now();
-  const userShellEnv = createUserShellEnvController(() => userShellEnvManager.current());
+  // Every worker spawns from this environment; the CAD runtime goes first on its
+  // PATH so agents and terminals find the python that carries cadgen.
+  const userShellEnv = createUserShellEnvController(async () =>
+    withCadRuntimeOnPath(await userShellEnvManager.current())
+  );
   // Logs readiness timing and observes rejection so a background readiness
   // failure never surfaces as an unhandled rejection: the failure reaches
   // callers through the queued clients' per-call rejections.

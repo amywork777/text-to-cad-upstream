@@ -90,6 +90,12 @@ Every geometry-changing turn follows the same lifecycle:
    In-flight recipe runs are terminated when the app exits so an orphaned build cannot overwrite the
    accepted STEP later.
 
+Agents and in-app terminals see that runtime: the login-shell environment the desktop hands to its
+workers carries the CAD interpreter's directory first on PATH (`withCadRuntimeOnPath`), so `python`,
+`pip`, and `cadgen` resolve to the checkout venv in a repository or to the managed runtime in a packaged
+app. Without it an agent following the CAD skill in a fresh project finds no cadgen and pip-installs its
+own copy, which fails inside a network-less sandbox and duplicates the runtime the app already provisioned.
+
 Opening, previewing, and restart recovery are read-only: they hash and inspect the STEP and never run
 Python. A recipe edit alone never overwrites a newer STEP; only an explicit rebuild does, and its
 output is accepted only after validation.

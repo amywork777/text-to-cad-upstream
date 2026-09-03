@@ -4,6 +4,7 @@ import { dirname, join, parse, sep } from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
 import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
+import { prependPathEntries } from '@main/host/cad/cad-runtime-path';
 import {
   findTextToCadLayout,
   PACKAGED_DESKTOP_TOOLING_DIRECTORY,
@@ -187,4 +188,28 @@ export function findSetupScript(start: string, resourcesPath?: string): string |
     if (current === root) return null;
     current = dirname(current);
   }
+}
+
+/**
+ * The directory whose `python` and `cadgen` agents and terminals should find
+ * first: the checkout venv when running from the repository, else the managed
+ * runtime under user data. The managed path is named before it is provisioned,
+ * so a session started while the installer runs picks the runtime up the moment
+ * the venv lands, without a restart.
+ */
+export function cadRuntimeBinDirectory(
+  layout: TextToCadLayout | null = currentTextToCadLayout()
+): string {
+  return dirname(findCadPythonExecutable(layout) ?? currentCadRuntimePythonExecutable());
+}
+
+/**
+ * The login-shell environment every worker spawns from (agents, terminals) with
+ * the CAD runtime first on PATH. Without this an agent following the CAD skill
+ * finds no cadgen in a fresh project and tries to pip-install its own copy, which
+ * fails offline and inside sandboxes and duplicates the runtime the app already
+ * provisioned.
+ */
+export function withCadRuntimeOnPath(env: Record<string, string>): Record<string, string> {
+  return prependPathEntries(env, [cadRuntimeBinDirectory()]);
 }
