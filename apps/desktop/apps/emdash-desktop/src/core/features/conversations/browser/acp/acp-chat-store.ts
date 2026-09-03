@@ -36,7 +36,12 @@ import { getHostClient } from '@core/primitives/desktop-host/browser/host-client
 import { log } from '@core/primitives/logging/browser/logger';
 import type { AcpBootstrapPhase } from './acp-bootstrap-status';
 import { AcpLiveSession, AcpStartError, asValueSource } from './acp-live-session';
-import { dispatchAcpPrompt, type AcpPromptDispatchResult } from './acp-prompt-dispatch';
+import {
+  describeAcpError,
+  dispatchAcpPrompt,
+  SESSION_GONE_ERROR_TYPES,
+  type AcpPromptDispatchResult,
+} from './acp-prompt-dispatch';
 import { bindSessionTerminalOutputs } from './acp-terminal-output-binding';
 import { deriveAgentProgress, type AgentProgress } from './agent-progress';
 
@@ -134,6 +139,7 @@ export class AcpChatStore {
       usage: computed,
       agentProgress: computed,
       affordances: computed,
+      sessionEnded: computed,
       isEmpty: computed,
       submitPrompt: action,
       stop: action,
@@ -267,6 +273,16 @@ export class AcpChatStore {
     return limit.status === 'rejected'
       ? `Provider rate limit reached; requests are being refused.${resets}`
       : `Approaching the provider rate limit.${used}${resets}`;
+  }
+
+  /**
+   * True once the runtime reports the agent session closed (the agent process
+   * exited, or the session was evicted after a failed turn). The chat keeps its
+   * history; the next prompt reconnects the session before it is sent.
+   */
+  get sessionEnded(): boolean {
+    if (this.historyLoading || !this.session) return false;
+    return this.session.sessionState.current().lifecycle === 'closed';
   }
 
   get queuedPrompts(): ComposerQueuedPrompt[] {
@@ -439,13 +455,21 @@ export class AcpChatStore {
       return { success: false, error: 'The agent session changed before the message was sent.' };
     }
 
-    const result = await dispatchAcpPrompt(session, {
+    const prompt = {
       text,
       ...(resolvedHiddenContext ? { hiddenContext: resolvedHiddenContext } : {}),
       ...(attachments.length > 0
         ? { attachments: attachments.map((attachment) => attachment.ref) }
         : {}),
-    });
+    };
+    let result = await dispatchAcpPrompt(session, prompt);
+    if (!result.success && result.errorType && SESSION_GONE_ERROR_TYPES.has(result.errorType)) {
+      // The agent session ended underneath the chat (process exit, eviction after a
+      // failed turn). Reconnect from the persisted history and send once more
+      // instead of handing the person an opaque failure.
+      const reconnected = await this._reconnect();
+      if (reconnected && this.session) result = await dispatchAcpPrompt(this.session, prompt);
+    }
     if (result.success) this._titleFromFirstPrompt(text);
     if (!result.success && optimisticId) {
       runInAction(() => {
@@ -676,22 +700,32 @@ export class AcpChatStore {
         return;
       }
       if (this._disposed) return;
-
-      // The host has closed and evicted the provider session at this point.
-      // Drop the stale live replicas before reconnecting the same conversation
-      // so its persisted history remains available for the next prompt.
-      this._unsubs.splice(0).forEach((unsub) => unsub());
-      session.dispose();
-      runInAction(() => {
-        if (this.session === session) this.session = null;
-        this.historyLoading = true;
-        this.bootstrapPhase = 'starting';
-        this.loadError = null;
-      });
-      await this._runBootstrap();
+      // The host has closed and evicted the provider session at this point;
+      // reconnect the same conversation from its persisted history.
+      await this._reconnect();
     } catch (error) {
       this._toastError('Failed to stop', error);
     }
+  }
+
+  /**
+   * Drops the stale live replicas and bootstraps the conversation again so its
+   * persisted history and a fresh provider session are available. Resolves to
+   * true when a session is connected afterwards.
+   */
+  private async _reconnect(): Promise<boolean> {
+    const session = this.session;
+    if (this._disposed) return false;
+    this._unsubs.splice(0).forEach((unsub) => unsub());
+    session?.dispose();
+    runInAction(() => {
+      if (this.session === session) this.session = null;
+      this.historyLoading = true;
+      this.bootstrapPhase = 'starting';
+      this.loadError = null;
+    });
+    await this._runBootstrap();
+    return !this._disposed && this.session !== null && this.loadError === null;
   }
 
   private async _refreshAuthStatus(providerId: string): Promise<void> {
@@ -809,7 +843,13 @@ export class AcpChatStore {
       void this.session
         ?.setPromptDraft(draft)
         .then((result) => {
-          if (!result.success) this._toastError('Failed to sync draft', result.error);
+          if (!result.success) {
+            // A closed session cannot hold a draft; the next prompt reconnects it.
+            const described = describeAcpError(result.error);
+            if (!described.type || !SESSION_GONE_ERROR_TYPES.has(described.type)) {
+              this._toastError('Failed to sync draft', result.error);
+            }
+          }
           if (result.success && draft.input === null && this._pendingDraftRev === rev) {
             runInAction(() => {
               this._pendingDraftRev = null;
@@ -872,7 +912,7 @@ export class AcpChatStore {
   }
 
   private _toastError(title: string, error: unknown): void {
-    toast.error(title, { description: error instanceof Error ? error.message : undefined });
+    toast.error(title, { description: describeAcpError(error).message });
   }
 }
 

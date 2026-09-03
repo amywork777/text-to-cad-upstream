@@ -245,6 +245,23 @@ function toComposerPermission(
   };
 }
 
+const SessionEndedStatus = observer(function SessionEndedStatus({
+  store,
+}: {
+  store: AcpChatStore;
+}) {
+  if (!store.sessionEnded) return null;
+  return (
+    <div
+      className="mx-3 mb-1 rounded-md border bg-background/95 px-2.5 py-1.5 text-xs text-foreground-muted"
+      role="status"
+      aria-live="polite"
+    >
+      The agent session ended. Your history is kept; sending a message reconnects it.
+    </div>
+  );
+});
+
 const RateLimitStatus = observer(function RateLimitStatus({ store }: { store: AcpChatStore }) {
   const notice = store.rateLimitNotice;
   if (!notice) return null;
@@ -841,6 +858,7 @@ const ComposerForStore = observer(function ComposerForStore({
     <>
       <input ref={fileInputRef} type="file" multiple hidden onChange={handleFileInputChange} />
       <RateLimitStatus store={store} />
+      <SessionEndedStatus store={store} />
       <BackgroundAgentsStatus store={store} />
       {a.isWorking && <ActiveAgentStatus store={store} providerName={providerName} />}
       {disabledReason && (
