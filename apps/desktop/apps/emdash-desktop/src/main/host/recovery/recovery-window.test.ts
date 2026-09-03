@@ -93,7 +93,7 @@ it('dispatches every recovery navigation action in the main process', async () =
   expect(mocks.navigationListener).toBeDefined();
   const navigate = async (action: string): Promise<void> => {
     const preventDefault = vi.fn();
-    await mocks.navigationListener?.({ preventDefault }, `emdash-recovery://${action}`);
+    await mocks.navigationListener?.({ preventDefault }, `hardcore-recovery://${action}`);
     expect(preventDefault).toHaveBeenCalledOnce();
   };
 
