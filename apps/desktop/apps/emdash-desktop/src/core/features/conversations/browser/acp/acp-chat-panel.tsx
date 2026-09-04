@@ -276,6 +276,9 @@ const RateLimitStatus = observer(function RateLimitStatus({ store }: { store: Ac
   );
 });
 
+/** Upper bound on the pre-send issue-context lookup; past it the prompt goes out without it. */
+const ISSUE_CONTEXT_TIMEOUT_MS = 4_000;
+
 const supportedAttachmentMimeTypes = new Set<AttachmentMimeType>([
   'image/png',
   'image/jpeg',
@@ -465,7 +468,15 @@ const ComposerForStore = observer(function ComposerForStore({
       setPreparingSubmission(true);
       void (async () => {
         const [issueContext, preparation] = await Promise.all([
-          buildHiddenIssueContext(value).catch((error: unknown) => {
+          // Issue-mention enrichment is a nicety: a tracker that is slow, offline
+          // or signed out must never hold the send. Anything that looks like an
+          // issue key ("VZ-ORIGAMI-01") would otherwise wait on it forever.
+          Promise.race([
+            buildHiddenIssueContext(value),
+            new Promise<undefined>((resolve) =>
+              window.setTimeout(() => resolve(undefined), ISSUE_CONTEXT_TIMEOUT_MS)
+            ),
+          ]).catch((error: unknown) => {
             log.warn('Failed to resolve issue context for ACP prompt', {
               conversationId: store.conversationId,
               error,
