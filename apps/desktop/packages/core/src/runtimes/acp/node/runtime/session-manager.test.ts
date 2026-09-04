@@ -474,6 +474,24 @@ describe('AcpRuntime session manager', () => {
     expect(h.agent.setSessionConfigOption).not.toHaveBeenCalled();
   });
 
+  it('drops the pooled adapter after a failed session start so the next start gets a fresh one', async () => {
+    const h = makeAcpHarness();
+    h.agent.newSession.mockRejectedValueOnce(new Error('Internal error'));
+    const rt = new AcpRuntime(h.deps);
+
+    const failed = await rt.startSession(makeStartInput({ conversationId: 'conv-husk' }));
+    expect(failed.success).toBe(false);
+    if (!failed.success) expect(failed.error.type).toBe('new_session_failed');
+    const initializedBefore = h.agent.initialize.mock.calls.length;
+
+    h.agent.newSession.mockResolvedValueOnce({ sessionId: 'session-fresh', configOptions: [] });
+    const retried = await rt.startSession(makeStartInput({ conversationId: 'conv-husk' }));
+
+    expect(isOk(retried)).toBe(true);
+    // A fresh adapter connection was spawned and initialized for the retry.
+    expect(h.agent.initialize.mock.calls.length).toBe(initializedBefore + 1);
+  });
+
   it('re-applies the persisted mode after a new session starts', async () => {
     const h = makeAcpHarness();
     h.agent.newSession.mockResolvedValueOnce({

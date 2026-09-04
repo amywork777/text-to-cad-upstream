@@ -468,7 +468,10 @@ export class AcpChatStore {
       // The agent session ended underneath the chat (process exit, eviction after a
       // failed turn). Reconnect from the persisted history and send once more
       // instead of handing the person an opaque failure.
-      const reconnected = await this._reconnect();
+      // The first attempt may fail because the runtime still pooled the broken
+      // adapter; that failure drops it, so a second attempt gets a fresh one.
+      const reconnected =
+        (await this._reconnect({ closeFirst: true })) || (await this._reconnect());
       if (reconnected && this.session) result = await dispatchAcpPrompt(this.session, prompt);
     }
     if (result.success) this._titleFromFirstPrompt(text);
@@ -714,9 +717,16 @@ export class AcpChatStore {
    * persisted history and a fresh provider session are available. Resolves to
    * true when a session is connected afterwards.
    */
-  private async _reconnect(): Promise<boolean> {
+  private async _reconnect(options: { closeFirst?: boolean } = {}): Promise<boolean> {
     const session = this.session;
     if (this._disposed) return false;
+    if (options.closeFirst && session) {
+      // The runtime may still hold the broken session (an adapter whose process
+      // died underneath it). Cancelling closes and evicts it, so the bootstrap
+      // below starts a fresh one instead of reattaching to the same husk.
+      await session.cancelTurn().catch(() => undefined);
+      if (this._disposed) return false;
+    }
     this._unsubs.splice(0).forEach((unsub) => unsub());
     session?.dispose();
     runInAction(() => {

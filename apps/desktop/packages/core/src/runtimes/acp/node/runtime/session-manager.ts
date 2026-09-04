@@ -393,6 +393,19 @@ export class SessionManager implements InboundRouter {
           // record), so the lease is still caller-held and released explicitly.
           await this.lifecycle.evict(input.conversationId, { intent: 'keep' });
           await acquired.release();
+          // An adapter that cannot open a session is usually a husk whose own
+          // process died underneath it (Codex's app-server, Claude's CLI). It is
+          // pooled per provider and cwd, so every later start would reuse it and
+          // fail the same way; drop it so the next start spawns a fresh one.
+          this.deps.logger.warn(
+            'SessionManager: dropping the pooled adapter after a failed session start',
+            {
+              conversationId: input.conversationId,
+              providerId: input.providerId,
+              error: toSerializedError(e),
+            }
+          );
+          await this.connections.invalidate({ providerId: input.providerId, cwd: input.cwd });
           return acpErr.newSessionFailed(toSerializedError(e));
         }
         record = this.createRecord(input, connection, acquired, response.sessionId);
