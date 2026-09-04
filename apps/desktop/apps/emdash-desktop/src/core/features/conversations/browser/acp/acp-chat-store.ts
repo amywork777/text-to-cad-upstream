@@ -39,6 +39,7 @@ import { AcpLiveSession, AcpStartError, asValueSource } from './acp-live-session
 import {
   describeAcpError,
   dispatchAcpPrompt,
+  isSessionGoneError,
   SESSION_GONE_ERROR_TYPES,
   type AcpPromptDispatchResult,
 } from './acp-prompt-dispatch';
@@ -463,7 +464,7 @@ export class AcpChatStore {
         : {}),
     };
     let result = await dispatchAcpPrompt(session, prompt);
-    if (!result.success && result.errorType && SESSION_GONE_ERROR_TYPES.has(result.errorType)) {
+    if (!result.success && isSessionGoneError(result.errorType, result.error)) {
       // The agent session ended underneath the chat (process exit, eviction after a
       // failed turn). Reconnect from the persisted history and send once more
       // instead of handing the person an opaque failure.

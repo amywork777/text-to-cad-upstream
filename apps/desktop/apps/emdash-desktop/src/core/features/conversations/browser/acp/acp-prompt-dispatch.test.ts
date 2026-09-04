@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { describeAcpError, dispatchAcpPrompt } from './acp-prompt-dispatch';
+import { describeAcpError, dispatchAcpPrompt, isSessionGoneError } from './acp-prompt-dispatch';
 
 describe('ACP prompt dispatch acknowledgement', () => {
   it('reports success only after the session accepts the prompt', async () => {
@@ -72,5 +72,29 @@ describe('describeAcpError', () => {
     );
     expect(describeAcpError({ type: 'weird' }).message).toBe('The agent rejected the request.');
     expect(describeAcpError(undefined).message).toBe('The agent rejected the request.');
+  });
+
+  it('treats an adapter whose process died as a session that is gone', () => {
+    expect(isSessionGoneError('prompt_failed', 'Internal error')).toBe(true);
+    expect(
+      isSessionGoneError(
+        'prompt_failed',
+        'The Claude Agent session has ended. Please start a new session.'
+      )
+    ).toBe(true);
+    expect(
+      isSessionGoneError('conversation_not_found', 'The agent session for this chat has ended.')
+    ).toBe(true);
+    expect(isSessionGoneError('prompt_failed', 'Provider unavailable')).toBe(false);
+    expect(isSessionGoneError(undefined, 'Internal error')).toBe(false);
+  });
+
+  it('explains a bare internal error from a failed prompt', () => {
+    expect(
+      describeAcpError({
+        type: 'prompt_failed',
+        cause: { name: 'RequestError', message: 'Internal error' },
+      }).message
+    ).toMatch(/internal error/i);
   });
 });

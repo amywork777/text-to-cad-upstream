@@ -8,6 +8,19 @@ export type AcpPromptDispatchResult =
 export const SESSION_GONE_ERROR_TYPES = new Set(['conversation_not_found', 'invalid_state']);
 
 /**
+ * True when a failed send means the agent session is unusable: the runtime no
+ * longer knows the conversation, or the adapter still holds a session whose
+ * process died underneath it and answers every prompt with an internal error.
+ */
+export function isSessionGoneError(errorType: string | undefined, message: string): boolean {
+  if (errorType && SESSION_GONE_ERROR_TYPES.has(errorType)) return true;
+  if (errorType !== 'prompt_failed') return false;
+  return /internal error|session (?:has )?(?:ended|closed)|not found|process (?:exited|closed)/i.test(
+    message
+  );
+}
+
+/**
  * Turns a runtime or transport error into a sentence a person can act on.
  * Runtime errors are tagged objects whose `message` is sometimes an identifier
  * (a conversation id for `conversation_not_found`), so the type decides the
@@ -30,8 +43,17 @@ export function describeAcpError(error: unknown): { message: string; type?: stri
       return { type, message: cause ?? message ?? 'Sign in to the agent to continue.' };
     case 'provider_unsupported':
       return { type, message: 'This agent is not available on this machine.' };
-    case 'prompt_failed':
-      return { type, message: cause ?? message ?? 'The agent could not run this request.' };
+    case 'prompt_failed': {
+      const reason = cause ?? message;
+      if (!reason || /^internal error$/i.test(reason)) {
+        return {
+          type,
+          message:
+            'The agent hit an internal error; the session will be reconnected on the next send.',
+        };
+      }
+      return { type, message: reason };
+    }
     default:
       return { ...(type ? { type } : {}), message: cause ?? message ?? GENERIC_MESSAGE };
   }
