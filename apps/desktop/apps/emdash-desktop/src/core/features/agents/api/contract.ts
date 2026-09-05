@@ -1,4 +1,5 @@
 import { hostRefSchema } from '@emdash/core/primitives/host/api';
+import { modelOptionSchema } from '@emdash/core/runtimes/acp/api';
 import {
   agentConfigAuthErrorSchema,
   agentConfigContract,
@@ -41,6 +42,11 @@ const agentsAuthErrorSchema = z.union([agentConfigAuthErrorSchema, runtimeResolv
 export const agentsDomain = 'agents' as const;
 
 export const agentsContract = defineContract({
+  discoverModels: fallible({
+    input: providerInputSchema,
+    data: z.array(modelOptionSchema),
+    error: runtimeResolveErrorSchema,
+  }),
   // Static plugin-registry metadata (icons, display names); identical on every host.
   listMetadata: procedure({ input: z.void(), output: z.custom<AgentMetadata[]>() }),
   list: fallible({

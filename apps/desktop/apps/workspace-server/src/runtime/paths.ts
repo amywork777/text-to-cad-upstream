@@ -7,7 +7,6 @@ export type WorkspaceServerRuntimePaths = {
   attachmentsDirectory: string;
   acpIntentsFile: string;
   tuiAgentsIntentsFile: string;
-  automationsDatabase: string;
   conversationsDatabase: string;
   fileSearchDatabase: string;
   workspaceRegistryDatabase: string;
@@ -27,7 +26,6 @@ export function workspaceServerRuntimePaths(socketPath?: string): WorkspaceServe
     attachmentsDirectory: join(stateDirectory, 'acp-attachments'),
     acpIntentsFile: join(stateDirectory, 'acp-session-intents.json'),
     tuiAgentsIntentsFile: join(stateDirectory, 'tui-agent-session-intents.json'),
-    automationsDatabase: join(stateDirectory, 'automations.db'),
     conversationsDatabase: join(stateDirectory, 'conversations.db'),
     fileSearchDatabase: join(stateDirectory, 'file-search.db'),
     workspaceRegistryDatabase: join(stateDirectory, 'workspace-registry.db'),

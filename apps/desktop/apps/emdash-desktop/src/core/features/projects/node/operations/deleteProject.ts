@@ -1,7 +1,6 @@
 import { err, ok, type Result } from '@emdash/shared';
 import type { Logger } from '@emdash/shared/logger';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import { projectEvents } from '@core/features/projects/api/node/project-events';
 import { projectSubject } from '@core/features/projects/contributions/subject';
@@ -41,7 +40,6 @@ export type ProjectDeletionResult = Result<void, MutationError>;
 export type ProjectDeletionDependencies = {
   db: AppDb;
   runtimes: WorkspaceRemovalBroker;
-  automations: Pick<AutomationsService, 'removeProjectDeployments'>;
   getMementosRuntimeClient(): Promise<MementosRuntimeClient>;
   logger: Logger;
   projects: Pick<ProjectAttachmentManager, 'invalidate'>;
@@ -158,7 +156,6 @@ async function purgeProjectLocalState(
 ): Promise<void> {
   const { db } = dependencies;
   await dependencies.pullRequests.deleteProjectData(projectId);
-  await dependencies.automations.removeProjectDeployments(projectId);
   await db.delete(projects).where(eq(projects.id, projectId));
   const client = await dependencies.getMementosRuntimeClient();
   const taskRows = await db.select({ id: tasks.id }).from(tasks);

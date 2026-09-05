@@ -22,6 +22,14 @@ export type CreateAgentsWireControllerOptions = Readonly<{
 export function createAgentsWireController(options: CreateAgentsWireControllerOptions): Controller {
   const agentOperations = options.operations;
   return createController(agentsContract, {
+    discoverModels: ({ host, providerId }, meta) =>
+      withHostRuntime(options.runtimes, host, async (runtime) => {
+        const settings = await agentOperations.getSettings(providerId);
+        return runtime.acp.discoverModels(
+          { providerId, env: settings.value.env },
+          callOptions(meta)
+        );
+      }),
     listMetadata: () => agentOperations.listMetadata(),
     list: ({ host }) =>
       withHostRuntime(options.runtimes, host, (runtime) =>

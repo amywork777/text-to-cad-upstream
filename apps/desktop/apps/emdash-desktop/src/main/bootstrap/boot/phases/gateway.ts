@@ -7,7 +7,6 @@ import { setAgentStatusConversationEventPublisher } from '@main/core/agent-statu
 import { tuiAgentStatusBridge } from '@main/core/agent-status/tui-agent-status-bridge';
 import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
 import { installDesktopWire, registerDesktopWireControllers } from '@main/gateway/desktop-wire';
-import { createDesktopDevServerBridgeParticipant } from '@main/gateway/dev-server-bridge';
 import { log } from '@main/lib/logger';
 import { appScope } from '../../core/app-scope';
 import { runInBackground } from '../../core/background';
@@ -23,11 +22,6 @@ export function installGateway(
 ): void {
   installDesktopWire();
   registerDesktopWireControllers(controllers);
-  const devServerBridgeParticipant = createDesktopDevServerBridgeParticipant(
-    runtimes.broker,
-    database.workspaceIdentity
-  );
-
   acpAgentStatusBridge.initialize(
     (handler) => conversationEvents.on('conversation:created', handler),
     {
@@ -58,7 +52,6 @@ export function installGateway(
     loadActiveConversationIds: (host) =>
       loadActiveAgentStatusConversationIds(database.db, host, 'pty'),
   });
-  appScope.add(services.hostAttachments.register(devServerBridgeParticipant));
   appScope.add(
     services.hostAttachments.register({
       label: 'acp-agent-status',

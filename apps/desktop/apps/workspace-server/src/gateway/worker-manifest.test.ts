@@ -5,7 +5,6 @@ import { workspaceWorkerPath } from './worker-paths';
 const runtimeIds = [
   'acp',
   'agent-config',
-  'automations',
   'conversations',
   'file-search',
   'files',

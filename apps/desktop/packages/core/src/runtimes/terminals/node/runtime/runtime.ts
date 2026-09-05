@@ -19,18 +19,12 @@ import {
   type ShellAvailabilityFailedError,
   type StartTerminalInput,
   type StartTerminalSpec,
-  type TerminalDevServer,
   type TerminalKey,
   type TerminalNotFoundError,
   type TerminalRuntimeError,
   type TerminalSessionState,
   type TerminalStartFailedError,
 } from '#runtimes/terminals/api';
-import {
-  wireTerminalUrlDetector,
-  type DetectedPreviewUrl,
-  type TerminalPortProbe,
-} from '#services/preview-detection/node';
 import {
   buildTerminalEnv,
   killTmuxSession,
@@ -54,17 +48,10 @@ const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
 type SessionsCell = Cell<Record<string, TerminalSessionState>>;
-type DevServersCell = Cell<Record<string, TerminalDevServer>>;
 
 type InteractiveTerminalConfig = {
   key: TerminalKey;
   spec: StartTerminalSpec;
-};
-
-type PreviewOutputSource = {
-  emitData(chunk: string): void;
-  emitExit(): void;
-  dispose(): void;
 };
 
 export type TerminalsRuntimeOptions = {
@@ -74,7 +61,6 @@ export type TerminalsRuntimeOptions = {
   createExecutionContext?: (env: UserShellEnv) => IExecutionContext;
   scope?: Scope;
   clock?: Clock;
-  portProbe?: TerminalPortProbe;
   lifecycle?: TerminalsRuntimeLifecycleOptions;
   shellResolver?: TerminalShellResolver;
   createShellResolver?: (env: UserShellEnv) => TerminalShellResolver;
@@ -88,15 +74,9 @@ export type TerminalsRuntimeLifecycleOptions = {
 
 export class TerminalsRuntime {
   private readonly sessionsList: SessionsCell = cell({});
-  private readonly devServersList: DevServersCell = cell({});
   readonly sessionsHost: LeasedLiveModelProvider<typeof terminalsContract.sessions> = expose(
     terminalsContract.sessions,
     { list: this.sessionsList },
-    { publish: { list: 'diff' } }
-  );
-  readonly devServersHost: LeasedLiveModelProvider<typeof terminalsContract.devServers> = expose(
-    terminalsContract.devServers,
-    { list: this.devServersList },
     { publish: { list: 'diff' } }
   );
 
@@ -106,7 +86,6 @@ export class TerminalsRuntime {
   private readonly createExecutionContext: ((env: UserShellEnv) => IExecutionContext) | undefined;
   private readonly scope: Scope;
   private readonly clock: Clock;
-  private readonly portProbe: TerminalPortProbe | undefined;
   private readonly shellResolver: TerminalShellResolver | undefined;
   private readonly createShellResolver: ((env: UserShellEnv) => TerminalShellResolver) | undefined;
   private readonly logger: Logger;
@@ -115,7 +94,6 @@ export class TerminalsRuntime {
   private readonly sessionKeys = new Map<string, TerminalKey>();
   private readonly interactiveConfigs = new Map<string, InteractiveTerminalConfig>();
   private readonly startCounts = new Map<string, number>();
-  private readonly previewSources = new Map<string, PreviewOutputSource>();
 
   constructor(options: TerminalsRuntimeOptions) {
     this.registry = new PtyRegistry(options.spawner, {
@@ -126,7 +104,6 @@ export class TerminalsRuntime {
     this.createExecutionContext = options.createExecutionContext;
     this.scope = options.scope ?? createScope({ label: 'terminals-runtime' });
     this.clock = options.clock ?? systemClock;
-    this.portProbe = options.portProbe;
     this.shellResolver = options.shellResolver;
     this.createShellResolver = options.createShellResolver;
     this.logger = options.logger ?? noopLogger;
@@ -145,7 +122,6 @@ export class TerminalsRuntime {
       syncListEntry: (sessionKey, activity) => this.syncActivity(sessionKey, activity),
       deactivate: (sessionKey, cause) => this.killSession(sessionKey, cause),
       evictSteps: [
-        { name: 'preview-detection', run: (key) => this.closePreviewSource(key) },
         {
           name: 'pty-registry',
           run: (key) => {
@@ -293,10 +269,7 @@ export class TerminalsRuntime {
     this.lifecycle.dispose();
     this.registry.killAll();
     this.logs.clear();
-    for (const source of this.previewSources.values()) source.dispose();
-    this.previewSources.clear();
     void this.sessionsHost.dispose();
-    void this.devServersHost.dispose();
   }
 
   /**
@@ -352,17 +325,11 @@ export class TerminalsRuntime {
       },
       {
         output: log,
-        onData: (chunk) => {
+        onData: () => {
           this.lifecycle.recordOutput(sessionKey);
-          this.previewSourceFor(sessionKey, key).emitData(chunk);
         },
-        onExit: () => this.handleInteractiveExit(sessionKey),
       }
     );
-  }
-
-  private handleInteractiveExit(sessionKey: string): void {
-    this.closePreviewSource(sessionKey);
   }
 
   private async resolveShellProfile(
@@ -430,7 +397,6 @@ export class TerminalsRuntime {
   private syncSession(key: string, session: PtySession | null): void {
     this.sessionsList.update((previous) => {
       if (!session) {
-        this.closePreviewSource(key);
         const existing = previous[key];
         if (!existing) return previous;
         return {
@@ -498,83 +464,6 @@ export class TerminalsRuntime {
   private removeSessionListEntry(sessionKey: string): void {
     this.sessionsList.update((previous) => omitKey(previous, sessionKey));
   }
-
-  private previewSourceFor(sessionKey: string, key: TerminalKey): PreviewOutputSource {
-    const existing = this.previewSources.get(sessionKey);
-    if (existing) return existing;
-
-    const dataHandlers: Array<(chunk: string) => void> = [];
-    const exitHandlers: Array<() => void> = [];
-    const stopDetector = wireTerminalUrlDetector({
-      pty: {
-        onData(handler) {
-          dataHandlers.push(handler);
-        },
-        onExit(handler) {
-          exitHandlers.push(handler);
-        },
-      },
-      ...(this.portProbe ? { portProbe: this.portProbe } : {}),
-      onDetected: (server) => this.upsertDevServer(sessionKey, key, server),
-      onSourceClosed: (event) => {
-        if (event.reason === 'local-probe-failed') {
-          this.removeDevServer(sessionKey, event.server);
-        } else {
-          this.pruneDevServersForSession(sessionKey);
-        }
-      },
-    });
-
-    const source: PreviewOutputSource = {
-      emitData(chunk) {
-        for (const handler of dataHandlers) handler(chunk);
-      },
-      emitExit() {
-        for (const handler of exitHandlers) handler();
-      },
-      dispose: stopDetector,
-    };
-    this.previewSources.set(sessionKey, source);
-    return source;
-  }
-
-  private closePreviewSource(sessionKey: string): void {
-    const source = this.previewSources.get(sessionKey);
-    if (source) {
-      source.emitExit();
-      source.dispose();
-      this.previewSources.delete(sessionKey);
-    }
-    this.pruneDevServersForSession(sessionKey);
-  }
-
-  private upsertDevServer(sessionKey: string, key: TerminalKey, server: DetectedPreviewUrl): void {
-    const id = devServerKeyFor(sessionKey, server);
-    const record: TerminalDevServer = {
-      key,
-      protocol: server.protocol,
-      host: server.host,
-      port: server.port,
-      urlPath: server.urlPath,
-      detectedAt: this.clock.now(),
-    };
-    this.devServersList.update((previous) => ({
-      ...previous,
-      [id]: record,
-    }));
-  }
-
-  private removeDevServer(sessionKey: string, server: DetectedPreviewUrl): void {
-    const id = devServerKeyFor(sessionKey, server);
-    this.devServersList.update((previous) => omitKey(previous, id));
-  }
-
-  private pruneDevServersForSession(sessionKey: string): void {
-    const prefix = `${sessionKey}:`;
-    this.devServersList.update((previous) =>
-      Object.fromEntries(Object.entries(previous).filter(([id]) => !id.startsWith(prefix)))
-    );
-  }
 }
 
 function scopeKeyFor(workspace: HostFileRef): string {
@@ -583,10 +472,6 @@ function scopeKeyFor(workspace: HostFileRef): string {
 
 function sessionKeyFor(key: TerminalKey): string {
   return `${scopeKeyFor(key.workspace)}:${key.id}`;
-}
-
-function devServerKeyFor(sessionKey: string, server: DetectedPreviewUrl): string {
-  return `${sessionKey}:${server.protocol}:${server.port}`;
 }
 
 function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {

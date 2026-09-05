@@ -13,9 +13,7 @@ const browserRpc = vi.hoisted(() => ({
 }));
 const paneVisibility = vi.hoisted(() => ({ current: true }));
 
-vi.mock('@core/features/workbench/api/browser/task-composition-context', () => ({
-  usePreviewServers: () => ({ urls: [] }),
-}));
+vi.mock('@core/features/workbench/api/browser/task-composition-context', () => ({}));
 
 vi.mock('@core/primitives/workbench-shell/browser/tabs/pane-context', () => ({
   usePaneContext: () => ({

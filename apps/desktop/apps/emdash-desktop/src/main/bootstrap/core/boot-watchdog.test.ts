@@ -22,7 +22,7 @@ describe('boot watchdog', () => {
     let releaseInner: () => void = () => {};
     const hung = step('services', () =>
       step(
-        'services:automations-init',
+        'services:notifications-init',
         () =>
           new Promise<void>((resolve) => {
             releaseInner = resolve;
@@ -34,7 +34,7 @@ describe('boot watchdog', () => {
 
     expect(onTrigger).toHaveBeenCalledOnce();
     expect(onTrigger).toHaveBeenCalledWith({
-      stuckPhase: 'services > services:automations-init',
+      stuckPhase: 'services > services:notifications-init',
     });
 
     releaseInner();

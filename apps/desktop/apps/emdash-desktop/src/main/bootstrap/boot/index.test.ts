@@ -6,7 +6,6 @@ const bundles = {
   infrastructure: {},
   runtimes: { clients: {} },
   services: {
-    automations: {},
     projects: {},
     pullRequestsRegistration: {},
   },

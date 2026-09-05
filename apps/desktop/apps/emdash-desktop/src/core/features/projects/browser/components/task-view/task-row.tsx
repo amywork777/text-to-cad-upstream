@@ -68,7 +68,6 @@ export const TaskRow = observer(function TaskRow({
       onRename={handleRename}
       onArchive={!isArchived && task.state !== 'unregistered' ? handleArchive : undefined}
       onRestore={handleRestore}
-      onConvertAutomation={undefined}
       onDelete={handleDelete}
     >
       <div className="group flex w-full items-center gap-2">
@@ -128,7 +127,6 @@ export const TaskRow = observer(function TaskRow({
             onRename={handleRename}
             onArchive={!isArchived && task.state !== 'unregistered' ? handleArchive : undefined}
             onRestore={isArchived ? handleRestore : undefined}
-            onConvertAutomation={undefined}
             onDelete={handleDelete}
             trigger={
               <button

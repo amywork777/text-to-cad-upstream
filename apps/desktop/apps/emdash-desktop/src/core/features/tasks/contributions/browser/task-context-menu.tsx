@@ -1,5 +1,5 @@
 import { ContextMenu, DropdownMenu, toast } from '@emdash/ui/react/primitives';
-import { Archive, Copy, MessageSquare, Pencil, Pin, PinOff, RotateCcw, Trash2 } from 'lucide-react';
+import { Archive, Copy, Pencil, Pin, PinOff, RotateCcw, Trash2 } from 'lucide-react';
 import React from 'react';
 
 interface TaskMenuActions {
@@ -14,7 +14,6 @@ interface TaskMenuActions {
   onArchive?: () => void;
   onRestore?: () => void;
   onReconnect?: () => void;
-  onConvertAutomation?: () => void;
   onDelete: () => void;
 }
 
@@ -62,7 +61,6 @@ function TaskMenuItems({
   onArchive,
   onRestore,
   onReconnect,
-  onConvertAutomation,
   onDelete,
 }: TaskMenuActions & { kind: 'context' | 'dropdown' }) {
   const archiveDisabledReasonId = React.useId();
@@ -90,12 +88,6 @@ function TaskMenuItems({
         <TaskMenuItem kind={kind} onClick={onReconnect}>
           <RotateCcw className="size-4" />
           Reconnect
-        </TaskMenuItem>
-      )}
-      {onConvertAutomation && (
-        <TaskMenuItem kind={kind} onClick={onConvertAutomation}>
-          <MessageSquare className="size-4" />
-          Convert to regular task
         </TaskMenuItem>
       )}
       {!isArchived && onArchive && (

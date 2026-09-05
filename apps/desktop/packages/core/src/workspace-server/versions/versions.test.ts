@@ -91,12 +91,12 @@ describe('negotiateProtocol', () => {
     });
 
     it('requires older major clients to upgrade for breaking contract changes', () => {
-      const result = negotiateProtocol('0.1.0');
+      const result = negotiateProtocol('2.0.0');
 
       expect(result).toEqual({
         compatible: false,
         action: 'upgrade-client',
-        clientProtocolVersion: '0.1.0',
+        clientProtocolVersion: '2.0.0',
         serverProtocolVersion: PROTOCOL_VERSION,
       });
     });

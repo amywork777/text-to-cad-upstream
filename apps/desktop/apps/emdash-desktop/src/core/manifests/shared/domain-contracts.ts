@@ -1,6 +1,5 @@
 import { accountContract, accountDomain } from '@core/features/account/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
-import { automationsContract, automationsDomain } from '@core/features/automations/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
 import { conversationsContract, conversationsDomain } from '@core/features/conversations/api';
@@ -12,7 +11,6 @@ import { legacyPortContract, legacyPortDomain } from '@core/features/legacy-port
 import { promptLibraryContract, promptLibraryDomain } from '@core/features/library/api';
 import { machinesContract, machinesDomain } from '@core/features/machines/api';
 import { mcpContract, mcpDomain } from '@core/features/mcp/api';
-import { previewServersContract, previewServersDomain } from '@core/features/preview-servers/api';
 import { projectsDomain, projectsWireContract } from '@core/features/projects/api';
 import { repositoryContract, repositoryDomain } from '@core/features/repository/api';
 import { searchContract, searchDomain } from '@core/features/search/api';
@@ -74,10 +72,8 @@ export const desktopDomainContracts = {
   [workspaceRegistryDomain]: workspaceRegistryWireContract,
   [lifecycleScriptsDomain]: lifecycleScriptsWireContract,
   [projectsDomain]: projectsWireContract,
-  [automationsDomain]: automationsContract,
   [browserDomain]: browserContract,
   [conversationsDomain]: conversationsContract,
-  [previewServersDomain]: previewServersContract,
   [githubDomain]: githubContract,
   [sshDomain]: sshContract,
   [hostsDomain]: hostsContract,

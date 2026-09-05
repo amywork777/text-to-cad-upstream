@@ -1,6 +1,5 @@
 import type { ConversationManagerStore } from '@core/features/conversations/api/browser/conversation-manager';
 import { getConversationsForTask } from '@core/features/conversations/api/browser/conversation-selectors';
-import type { PreviewServerStore } from '@core/features/tasks/api/browser/stores/preview-server-store';
 import { getTaskStore } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import { useTaskViewContext } from '@core/features/tasks/contributions/browser/task-view-context';
 import type { TerminalManagerStore } from '@core/features/terminals/api/browser/task-terminal/terminal-manager';
@@ -28,12 +27,6 @@ export function useWorkspaceId(): string {
   const workspaceId = getTaskStore(projectId, taskId)?.workspaceId;
   if (!workspaceId) throw new Error('useWorkspaceId: task has no workspace');
   return workspaceId;
-}
-
-export function usePreviewServers(): PreviewServerStore {
-  const previewServers = useTaskComposition().previewServers;
-  if (!previewServers) throw new Error('usePreviewServers: task is not provisioned');
-  return previewServers;
 }
 
 export function useConversations(): ConversationManagerStore {

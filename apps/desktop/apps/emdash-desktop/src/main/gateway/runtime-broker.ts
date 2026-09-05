@@ -70,7 +70,6 @@ async function resolveDesktopRuntimeClient(
     fileSearch: clients.fileSearch,
     files: clients.files,
     acp: clients.acp,
-    automations: clients.automations,
     conversations: clients.conversations,
     tuiAgents: clients.tuiAgents,
     agentConfig: clients.agentConfig,

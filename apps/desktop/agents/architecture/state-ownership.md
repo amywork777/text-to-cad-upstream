@@ -2,7 +2,7 @@
 
 Emdash has two durable state authorities:
 
-- Desktop SQLite owns desktop entities such as projects, tasks, automations, conversations,
+- Desktop SQLite owns desktop entities such as projects, tasks, conversations,
   and the bindings from those entities to host resources.
 - Each workspace host owns the resources on its machine: repositories, worktrees,
   branches, process state, and the per-record outcome annotations its registry writes.

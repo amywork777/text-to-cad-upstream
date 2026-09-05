@@ -14,6 +14,7 @@ import type { EffortOption, ModeOption, ModelChoice, SessionConfigState } from '
 
 /** Shape of a single ACP option entry within a select-type config option. */
 type RawOption = { value: string; name: string; description?: string | null };
+type RawOptionGroup = { options: RawOption[] };
 
 function toEffortOption(raw: RawOption): EffortOption {
   const opt: EffortOption = { id: raw.value, name: raw.name };
@@ -36,8 +37,10 @@ function toModelChoice(raw: RawOption): ModelChoice {
 
 function selectOptions(opt: SessionConfigOption): RawOption[] {
   if (opt.type !== 'select') return [];
-  const raw = opt as unknown as { options?: RawOption[] };
-  return Array.isArray(raw.options) ? raw.options : [];
+  const raw = opt as unknown as { options?: Array<RawOption | RawOptionGroup> };
+  return Array.isArray(raw.options)
+    ? raw.options.flatMap((option) => ('options' in option ? option.options : [option]))
+    : [];
 }
 
 /**

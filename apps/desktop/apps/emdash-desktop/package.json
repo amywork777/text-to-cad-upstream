@@ -65,8 +65,6 @@
     "@octokit/rest": "^22.0.1",
     "@parcel/watcher": "^2.5.6",
     "better-sqlite3": "^12.6.0",
-    "croner": "^10.0.1",
-    "cronstrue": "^3.14.0",
     "drizzle-orm": "^0.32.1",
     "electron-updater": "^6.3.9",
     "human-id": "^4.1.2",

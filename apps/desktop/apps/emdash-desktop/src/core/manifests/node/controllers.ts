@@ -13,8 +13,6 @@ import type { AccountService } from '@core/features/account/node/services/emdash
 import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
-import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
-import { createAutomationsWireController } from '@core/features/automations/node/wire-controller';
 import {
   createBrowserWireController,
   type BrowserOperations,
@@ -39,8 +37,6 @@ import type { PromptLibraryService } from '@core/features/library/node/prompt-li
 import { createPromptLibraryWireController } from '@core/features/library/node/wire-controller';
 import { createMachinesWireController } from '@core/features/machines/node/wire-controller';
 import { createMcpWireController } from '@core/features/mcp/node/wire-controller';
-import type { PreviewServerAccessOperations } from '@core/features/preview-servers/node/preview-server-access-service';
-import { createPreviewServersWireController } from '@core/features/preview-servers/node/wire-controller';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { ProjectSettingsService } from '@core/features/projects/api/node/settings/project-settings-service';
 import type { ProjectDeletionDependencies } from '@core/features/projects/node/operations/deleteProject';
@@ -114,7 +110,6 @@ export type DesktopControllerContext = {
     'providerOverrideSettings'
   >;
   readonly appSettings: AppSettingsService;
-  readonly automations: AutomationsService;
   readonly browserOperations: BrowserOperations;
   readonly compensation: CompensationRunner;
   readonly db: AppDb;
@@ -129,7 +124,6 @@ export type DesktopControllerContext = {
   readonly logger: Logger;
   readonly loggingOperations: LoggingControllerOperations;
   readonly notifications: NotificationService;
-  readonly previewServerAccess: PreviewServerAccessOperations;
   readonly projectDeletion: ProjectDeletionDependencies;
   readonly promptLibrary: PromptLibraryService;
   readonly projects: ProjectAttachmentManager;
@@ -349,20 +343,6 @@ export const desktopNodeControllers = {
         scope
       ),
   },
-  automations: {
-    create: ({ automations, db, logger, runtimes, taskService }) =>
-      createAutomationsWireController({
-        db,
-        getProjectById: (projectId) => getProjectById(db, projectId),
-        logger,
-        runtime: {
-          runtimes,
-          getProjectById: (projectId) => getProjectById(db, projectId),
-        },
-        service: automations,
-        taskService,
-      }),
-  },
   browser: {
     create: ({ browserOperations }) => createBrowserWireController(browserOperations),
   },
@@ -391,9 +371,6 @@ export const desktopNodeControllers = {
         withCompensation: compensation,
         hostIsReachable,
       }),
-  },
-  previewServers: {
-    create: ({ previewServerAccess }) => createPreviewServersWireController(previewServerAccess),
   },
   github: {
     create: ({ github, logger, telemetry }) =>

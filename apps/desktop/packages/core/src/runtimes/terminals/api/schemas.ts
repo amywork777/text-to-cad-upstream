@@ -61,21 +61,6 @@ export const terminalKeySchema = z.object({
 
 export type TerminalKey = z.infer<typeof terminalKeySchema>;
 
-export const terminalDevServerSchema = z.object({
-  key: terminalKeySchema,
-  protocol: z.enum(['http:', 'https:']),
-  host: z.enum(['localhost', '127.0.0.1']),
-  port: z.number().int().min(1).max(65535),
-  urlPath: z.string(),
-  detectedAt: z.number().int(),
-});
-
-export type TerminalDevServer = z.infer<typeof terminalDevServerSchema>;
-
-export const terminalDevServerListSchema = z.record(z.string(), terminalDevServerSchema);
-
-export type TerminalDevServerList = z.infer<typeof terminalDevServerListSchema>;
-
 export const startTerminalSpecSchema = z
   .object({
     cwd: z.string().min(1),

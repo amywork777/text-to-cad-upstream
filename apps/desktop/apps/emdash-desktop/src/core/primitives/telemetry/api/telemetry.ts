@@ -1,9 +1,5 @@
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
 import type { SpawnPurpose } from '@emdash/shared/perf';
-import type {
-  AutomationRunStatus,
-  AutomationRunTriggerKind,
-} from '@core/primitives/automations/api';
 import type { OpenInAppId } from '@core/primitives/open-in-apps/api/open-in-apps';
 import type { TaskLifecycleStatus } from '@core/primitives/tasks/api';
 import type { PullRequestMergeStrategy } from '@root/src/core/services/pull-requests/api';
@@ -15,7 +11,7 @@ type SpawnCountProps = {
   [P in SpawnPurpose as `spawns_${P}`]?: number;
 };
 
-export type FocusView = 'home' | 'project' | 'task' | 'settings' | 'automations';
+export type FocusView = 'home' | 'project' | 'task' | 'settings';
 export type FocusMainPanel = 'agents' | 'editor' | 'diff' | 'browser' | 'terminal';
 export type FocusedRegion = 'main' | 'bottom';
 
@@ -24,7 +20,6 @@ export type FocusTrigger = 'navigation' | 'panel_switch' | 'region_switch';
 export interface TelemetryEnvelope {
   event_ts_ms?: number;
   session_id?: string;
-  automation_id?: string;
   project_id?: string;
   task_id?: string;
   conversation_id?: string;
@@ -64,24 +59,6 @@ export type TelemetryEventProperties = {
   project_viewed: { from_view: FocusView | null };
   task_viewed: { from_view: FocusView | null };
   settings_viewed: { from_view: FocusView | null };
-  automations_viewed: { from_view: FocusView | null };
-
-  automation_created: {
-    enabled: boolean;
-    trigger_kind: 'cron';
-    provider: AgentProviderId | null;
-    has_initial_prompt: boolean;
-  };
-  automation_enabled_changed: { enabled: boolean; trigger_kind: 'cron' };
-  automation_run_started: { trigger_kind: AutomationRunTriggerKind };
-  automation_run_completed: {
-    status: Extract<AutomationRunStatus, 'done' | 'failed' | 'skipped' | 'cancelled'>;
-    trigger_kind: AutomationRunTriggerKind;
-    duration_ms?: number;
-    task_id?: string;
-    error_step?: string;
-    error_code?: string;
-  };
 
   project_added: { type: 'local' | 'ssh'; strategy: 'open' | 'create' | 'clone'; success: boolean };
   project_deleted: EmptyProps;

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { browserControlsRegistry } from '@core/features/browser/api/browser/browser-controls-registry';
 import { browserSessionStore } from '@core/features/browser/api/browser/browser-session-store';
 import { getBrowserClient } from '@core/features/browser/api/browser/client';
-import { usePreviewServers } from '@core/features/workbench/api/browser/task-composition-context';
 import {
   cycleNextTabCommand,
   cyclePreviousTabCommand,
@@ -18,7 +17,6 @@ import {
   type BrowserLoadErrorPresentation,
 } from './browser-load-error';
 import { decideBrowserReload } from './browser-navigation-controls';
-import { BrowserStartPage } from './browser-start-page';
 import { BrowserToolbar } from './browser-toolbar';
 import { canOpenBrowserUrlExternally, openBrowserUrlExternally } from './browser-toolbar-actions';
 import { bindBrowserWebviewEvents } from './browser-webview-events';
@@ -56,7 +54,6 @@ export const BrowserPane = observer(function BrowserPane({
   const session = browserSessionStore.getSession(browserId);
   const { pane, scopeInstance } = usePaneContext();
   const effectiveVisible = visible && pane.isVisible;
-  const previewServers = usePreviewServers();
   const webviewRef = useRef<BrowserWebviewElement | null>(null);
   const focusUrlRef = useRef<() => void>(() => {});
   const [adapter, setAdapter] = useState<BrowserWebviewAdapter | null>(null);
@@ -346,7 +343,9 @@ export const BrowserPane = observer(function BrowserPane({
             onOpenExternal={() => openBrowserUrlExternally(loadErrorUrl)}
           />
         ) : showStartPage ? (
-          <BrowserStartPage devServerUrls={previewServers.urls} onOpenUrl={navigateTo} />
+          <div className="flex h-full items-center justify-center text-sm text-foreground-muted">
+            Enter a URL to open a reference page.
+          </div>
         ) : webviewProps && isRegistered && pane.isVisible ? (
           <webview
             key={`${webviewMount?.browserId ?? 'browser'}:${webviewMount?.partition ?? 'partition'}:${webviewMount?.revision ?? 0}`}

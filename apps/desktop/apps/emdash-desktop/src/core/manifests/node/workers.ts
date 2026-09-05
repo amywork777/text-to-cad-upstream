@@ -1,6 +1,5 @@
 import { acpWorker } from '../../../../../../packages/core/src/runtimes/acp/api/worker';
 import { agentConfigWorker } from '../../../../../../packages/core/src/runtimes/agent-config/api/worker';
-import { automationsWorker } from '../../../../../../packages/core/src/runtimes/automations/api/worker';
 import { conversationsWorker } from '../../../../../../packages/core/src/runtimes/conversations/api/worker';
 import { fileSearchWorker } from '../../../../../../packages/core/src/runtimes/file-search/api/worker';
 import { filesWorker } from '../../../../../../packages/core/src/runtimes/files/api/worker';
@@ -28,10 +27,6 @@ function desktopRuntimeWorker<const Id extends string>(
 
 export const desktopWorkers = {
   [acpWorker.id]: desktopRuntimeWorker(acpWorker, 'src/main/gateway/entries/acp.ts'),
-  [automationsWorker.id]: desktopRuntimeWorker(
-    automationsWorker,
-    '../../packages/core/src/runtimes/automations/node/runtime-entry.ts'
-  ),
   [agentConfigWorker.id]: desktopRuntimeWorker(
     agentConfigWorker,
     'src/main/gateway/entries/agent-config.ts'

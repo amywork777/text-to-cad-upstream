@@ -30,14 +30,12 @@ selected the exact version named by the resolved channel pointer.
 The contract lives in `packages/core/src/workspace-server/`, shared by the server and every client so TypeScript clients stay in sync at build time. Non-TypeScript clients (e.g. a future mobile app) use the negotiation handshake at runtime — compile-time sharing is a convenience, not the contract.
 
 The daemon is the Electron-free equivalent of the desktop runtime host. Every core runtime is a
-required supervised child worker in both socket and stdio modes: ACP, agent config, automations,
+required supervised child worker in both socket and stdio modes: ACP, agent config,
 conversations, file search, files, Git, host settings, resource usage, scripts, terminals, TUI
 agents, and workspace registry. The filesystem watcher is also a worker because it is the shared
 dependency for files, Git, file search, and the workspace registry. The workspace registry depends
 on host settings and scripts: it owns the reactive project-config model, resolves lifecycle
-commands and shell setup, and sends strict execution inputs to scripts. Automations starts last and
-depends on the workspace registry: automation workspace activation flows through the registry's
-`createWorkspace` and `activateWorkspace` verbs. Server startup fails if any required worker cannot
+commands and shell setup, and sends strict execution inputs to scripts. Server startup fails if any required worker cannot
 become ready; there are no unavailable-domain fallback implementations in the aggregate controller.
 
 The parent mounts each complete runtime contract under `workspaceWireContract`. Aggregate
@@ -68,7 +66,7 @@ The wire contract is versioned with a single [semver](https://semver.org) string
 [`packages/core/src/workspace-server/versions/index.ts`](../../packages/core/src/workspace-server/versions/index.ts):
 
 ```ts
-export const PROTOCOL_VERSION = '2.0.0';
+export const PROTOCOL_VERSION = '3.0.0';
 ```
 
 ### What each component means

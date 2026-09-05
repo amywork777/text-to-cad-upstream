@@ -56,7 +56,6 @@ export function createWorkspaceWireController(deps: WorkspaceWireControllerDeps)
     },
     acp: forwardContractImpl(workspaceWireContract.acp, deps.runtimes.acp),
     agentConfig: forwardContractImpl(workspaceWireContract.agentConfig, deps.runtimes.agentConfig),
-    automations: forwardContractImpl(workspaceWireContract.automations, deps.runtimes.automations),
     conversations: forwardContractImpl(
       workspaceWireContract.conversations,
       deps.runtimes.conversations

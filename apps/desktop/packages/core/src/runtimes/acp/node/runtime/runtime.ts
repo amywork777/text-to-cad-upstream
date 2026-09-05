@@ -1,5 +1,6 @@
 import type { Result } from '@emdash/shared';
 import { ok } from '@emdash/shared';
+import { createScope } from '@emdash/shared/concurrency';
 import type { LiveLogSource } from '@emdash/wire/live';
 import type {
   AcpAttachmentError,
@@ -39,11 +40,18 @@ import {
 } from '#runtimes/acp/node/connection/source';
 import type { SessionLiveModels, SessionsListModel } from '#runtimes/acp/node/state/live-models';
 import type { StoredAttachment } from './attachment-store';
+import { discoverModels } from './discover-models';
 import { SessionManager, type HistoryPage } from './session-manager';
 import { TerminalLiveRegistry } from './terminal-live-registry';
 import type { AcpRuntimeDeps, AcpStartInput } from './types';
 
 export class AcpRuntime {
+  private readonly discoveryScope = createScope({ label: 'model-discovery' });
+
+  discoverModels(input: { providerId: string; env?: Record<string, string> }) {
+    return discoverModels(this.deps, this.discoveryScope, input);
+  }
+
   readonly terminals: AgentTerminalManager;
   readonly connections: AcpConnectionSource;
   readonly manager: SessionManager;
@@ -268,6 +276,7 @@ export class AcpRuntime {
   async dispose(): Promise<void> {
     this.manager.dispose();
     this.killAllTerminals();
+    await this.discoveryScope.dispose();
     await this.connections.dispose();
   }
 }

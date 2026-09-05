@@ -7,11 +7,6 @@ import {
 } from '@emdash/core/runtimes/agent-config/api';
 import { agentConfigWorkerSpec } from '@emdash/core/runtimes/agent-config/node';
 import {
-  automationsContract,
-  type AutomationsContract,
-} from '@emdash/core/runtimes/automations/api';
-import { automationsWorkerSpec } from '@emdash/core/runtimes/automations/node';
-import {
   conversationsContract,
   type ConversationsContract,
 } from '@emdash/core/runtimes/conversations/api';
@@ -59,13 +54,10 @@ import { queuedClient, type ContractClient } from '@emdash/wire/rpc';
 import {
   createVitalsCollectingSpawner,
   createWireWorkerHost,
-  type WireWorker,
   type WireWorkerState,
 } from '@emdash/wire/worker';
 import { childProcessSpawner } from '@emdash/wire/worker/node';
 import { app } from 'electron';
-import { createAutomationCreationAdmissionController } from '@core/features/automations/node/creation-admission';
-import { automationRuntimePaths } from '@core/features/automations/node/runtime-paths';
 import { GitHubApiAuthService } from '@core/features/github/api/node/services/github-api-auth-service';
 import { githubApiBaseUrlForHost } from '@core/features/github/api/node/services/github-api-base-url';
 import { mementoSweepPolicies } from '@core/manifests/shared/memento-catalog';
@@ -79,9 +71,7 @@ import { resolveFileSearchDatabasePath } from '@main/core/file-search/database-p
 import { providerAccountRegistry } from '@main/core/provider-accounts/provider-account-registry-instance';
 import { sessionIntentFilePaths } from '@main/core/runtime/session-intent-stores';
 import { getGitExecutable } from '@main/core/utils/exec';
-import { getAppDb } from '@main/db/instance';
 import { desktopKeyValueStore } from '@main/db/kv';
-import { resolveDatabasePath } from '@main/db/path';
 import { withCadRuntimeOnPath } from '@main/host/cad/cad-runtime-service';
 import { log } from '@main/lib/logger';
 import { telemetryService } from '@main/lib/telemetry';
@@ -90,7 +80,6 @@ import { desktopWorkerPath } from './worker-paths';
 
 export type AcpRuntimeClient = ContractClient<AcpApiContract>;
 export type AgentConfigRuntimeClient = ContractClient<AgentConfigContract>;
-export type AutomationsRuntimeClient = ContractClient<AutomationsContract>;
 export type ConversationsRuntimeClient = ContractClient<ConversationsContract>;
 export type FileSearchRuntimeClient = ContractClient<FileSearchContract>;
 export type FilesRuntimeClient = ContractClient<FilesContract>;
@@ -108,7 +97,6 @@ export type WorkspaceRegistryRuntimeClient = ContractClient<WorkspaceRegistryCon
 export type DesktopRuntimeClients = {
   readonly acp: AcpRuntimeClient;
   readonly agentConfig: AgentConfigRuntimeClient;
-  readonly automations: AutomationsRuntimeClient;
   readonly conversations: ConversationsRuntimeClient;
   readonly fileSearch: FileSearchRuntimeClient;
   readonly files: FilesRuntimeClient;
@@ -446,39 +434,9 @@ function startDesktopWorkersWithHost(
       return await worker.ready();
     })
   );
-  const automationsWorkerRef: { current: WireWorker<AutomationsContract> | undefined } = {
-    current: undefined,
-  };
-  const automationsReady = timedReady(
-    'automations',
-    Promise.all([workspaceRegistryReady, acpReady, tuiAgentsReady, conversationsReady]).then(
-      async ([workspaceRegistry, acp, tuiAgents, conversationsClient]) => {
-        const paths = automationRuntimePaths(resolveDatabasePath());
-        const worker = host.create(
-          ...automationsWorkerSpec({
-            executable: desktopWorkerPath('automations'),
-            env: process.env,
-            dependencies: {
-              workspaceRegistry,
-              // Creation admission is a desktop-mirror data check (ADR 0006): tombstones
-              // live in the app db, so the main process answers for the worker.
-              creationAdmission: createAutomationCreationAdmissionController(getAppDb),
-              acpSessions: acp,
-              tuiSessions: tuiAgents.client,
-              conversationIndex: conversationsClient,
-            },
-            dbFile: paths.dbFile,
-          })
-        );
-        automationsWorkerRef.current = worker;
-        return { client: await worker.ready(), worker };
-      }
-    )
-  );
   const runtimeReady = Promise.all([
     acpReady,
     agentConfigReady,
-    automationsReady,
     conversationsReady,
     fileSearchReady,
     filesReady,
@@ -498,9 +456,6 @@ function startDesktopWorkersWithHost(
     clients: {
       acp: queuedClient(acpApiContract, () => acpReady),
       agentConfig: queuedClient(agentConfigContract, () => agentConfigReady),
-      automations: queuedClient(automationsContract, () =>
-        automationsReady.then((result) => result.client)
-      ),
       conversations: queuedClient(conversationsContract, () => conversationsReady),
       fileSearch: queuedClient(fileSearchContract, () => fileSearchReady),
       files: queuedClient(filesContract, () => filesReady),
@@ -524,10 +479,6 @@ function startDesktopWorkersWithHost(
     runtimeReady: () => runtimeReady,
     dispose() {
       disposePromise ??= (async () => {
-        // The automations worker persists run state; stop it gracefully first
-        // when it materialized. A still-pending creation chain must not stall
-        // shutdown — host disposal tears down whatever exists.
-        if (automationsWorkerRef.current) await automationsWorkerRef.current.stop();
         await host.dispose();
       })();
       return disposePromise;

@@ -1,5 +1,4 @@
 import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
-import { getRunProjectionsByRunIds } from '@core/features/automations/api/node/run-projection';
 import { conversationRegistryTable as conversations } from '@core/features/conversations/api/node/registry';
 import {
   mapAutomationRunRowToMeta,
@@ -12,6 +11,7 @@ import {
 import { type Task } from '@core/primitives/tasks/api';
 import type { AppDb } from '@core/services/app-db/node/db';
 import { tasks } from '@core/services/app-db/node/schema';
+import { getRunProjectionsByRunIds } from './automation-history';
 
 export async function getTasks(db: AppDb, projectId?: string): Promise<Task[]> {
   const rows = projectId

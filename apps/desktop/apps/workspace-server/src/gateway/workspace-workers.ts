@@ -4,9 +4,6 @@ import type { AcpApiContract } from '@emdash/core/runtimes/acp/api';
 import { acpWorkerSpec } from '@emdash/core/runtimes/acp/node';
 import type { AgentConfigContract } from '@emdash/core/runtimes/agent-config/api';
 import { agentConfigWorkerSpec } from '@emdash/core/runtimes/agent-config/node';
-import type { AutomationsContract } from '@emdash/core/runtimes/automations/api';
-import { workspaceCreationAdmissionContract } from '@emdash/core/runtimes/automations/api';
-import { automationsWorkerSpec } from '@emdash/core/runtimes/automations/node';
 import type { ConversationsContract } from '@emdash/core/runtimes/conversations/api';
 import { conversationsWorkerSpec } from '@emdash/core/runtimes/conversations/node';
 import type { FileSearchContract } from '@emdash/core/runtimes/file-search/api';
@@ -40,10 +37,9 @@ import {
   type ShellEnvManager,
 } from '@emdash/core/services/shell-env/node';
 import { pluginRegistry } from '@emdash/plugins/agents';
-import { ok } from '@emdash/shared';
 import type { Scope } from '@emdash/shared/concurrency';
 import type { Logger } from '@emdash/shared/logger';
-import { createController, type ContractClient } from '@emdash/wire/rpc';
+import type { ContractClient } from '@emdash/wire/rpc';
 import { createWireWorkerHost } from '@emdash/wire/worker';
 import { childProcessSpawner } from '@emdash/wire/worker/node';
 import { workspaceServerRuntimePaths } from '../runtime/paths';
@@ -52,7 +48,6 @@ import { workspaceWorkerPath } from './worker-paths';
 export type WorkspaceServerRuntimeClients = {
   acp: ContractClient<AcpApiContract>;
   agentConfig: ContractClient<AgentConfigContract>;
-  automations: ContractClient<AutomationsContract>;
   conversations: ContractClient<ConversationsContract>;
   fileSearch: ContractClient<FileSearchContract>;
   files: ContractClient<FilesContract>;
@@ -273,31 +268,11 @@ export async function createWorkspaceServerRuntimeHost(
     gitPromise,
     workspaceRegistryPromise,
   ]);
-  const automations = await workerHost.spawn(
-    ...automationsWorkerSpec({
-      executable: workspaceWorkerPath('automations'),
-      env,
-      dependencies: {
-        workspaceRegistry,
-        // Deletion tombstones are client-plane data (ADR 0006): the workspace server
-        // has no desktop mirror to consult, so host-resident runs admit
-        // unconditionally; identity-keyed sweeps keep recreation safe regardless.
-        creationAdmission: createController(workspaceCreationAdmissionContract, {
-          checkWorktreeCreation: async () => ok(undefined),
-        }),
-        acpSessions: acp,
-        tuiSessions: tuiAgents,
-        conversationIndex: conversations,
-      },
-      dbFile: paths.automationsDatabase,
-    })
-  );
 
   return {
     runtimes: {
       acp,
       agentConfig,
-      automations,
       conversations,
       fileSearch,
       files,

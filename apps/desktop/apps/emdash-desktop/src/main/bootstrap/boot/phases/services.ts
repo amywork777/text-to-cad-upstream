@@ -1,6 +1,5 @@
-import { isLocalHostRef, LOCAL_HOST_REF, type HostRef } from '@emdash/core/primitives/host/api';
+import { LOCAL_HOST_REF, type HostRef } from '@emdash/core/primitives/host/api';
 import { err, ok } from '@emdash/shared';
-import { runWithTimeout } from '@emdash/shared/scheduling';
 import { app } from 'electron';
 import { providerTokenRegistry } from '@core/features/account/api/node/provider-token-registry';
 import { AccountAuthServerClient } from '@core/features/account/node/services/account-auth-server-client';
@@ -10,8 +9,6 @@ import { AccountCredentialStore } from '@core/features/account/node/services/cre
 import { createAccountService } from '@core/features/account/node/services/emdash-account-service';
 import { ProviderTokenDispatcher } from '@core/features/account/node/services/provider-token-dispatcher';
 import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
-import { AutomationsService } from '@core/features/automations/api/node/automations-service';
-import { buildAutomationDeployment } from '@core/features/automations/node/deployment-builder';
 import { createConversationDeletionSweepKind } from '@core/features/conversations/node/sweep/conversation-deletion-sweep';
 import { ConversationBackfillService } from '@core/features/conversations/node/sync/conversation-backfill';
 import { ConversationSyncService } from '@core/features/conversations/node/sync/conversation-sync-service';
@@ -41,10 +38,7 @@ import {
   type PromptLibraryKV,
 } from '@core/features/library/node/prompt-library-service';
 import { LocalSettingsSync } from '@core/features/machines/node/local-settings-sync';
-import { previewServerService } from '@core/features/preview-servers/api/node/preview-server-service-instance';
-import { PreviewServerAccessService } from '@core/features/preview-servers/node/preview-server-access-service';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
-import { projectEvents } from '@core/features/projects/api/node/project-events';
 import { loadStoredGitSettings } from '@core/features/projects/api/node/settings/effective-settings';
 import { ProjectSettingsService } from '@core/features/projects/api/node/settings/project-settings-service';
 import type { ProjectDeletionDependencies } from '@core/features/projects/node/operations/deleteProject';
@@ -59,7 +53,6 @@ import { createSearchService } from '@core/features/search/node/search-service';
 import { TaskService } from '@core/features/tasks/api/node/task-service';
 import type { TaskSessionCleanup } from '@core/features/tasks/api/node/task-session-cleanup';
 import { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
-import { installAutomationTelemetry } from '@core/features/telemetry/node/automation-telemetry';
 import { installTaskTelemetry } from '@core/features/telemetry/node/task-telemetry';
 import { desktopHostEvents } from '@core/features/workbench/node/event-host';
 import {
@@ -77,7 +70,6 @@ import { startPeriodicSweep } from '@core/primitives/periodic-sweep/node/periodi
 import { DEFAULT_AGENT_GIT_CREDENTIALS } from '@core/primitives/project-settings/api';
 import type { HostReachabilityProbe } from '@core/primitives/ssh/api';
 import { AppDbKeyValueStore } from '@core/services/app-db/node/key-value-store';
-import { isServerUsable } from '@core/services/hosts/api';
 import { createNotificationService } from '@core/services/notifications/node';
 import { PullRequestsRegistration } from '@core/services/pull-requests/node/pull-requests-registration';
 import { bindPullRequestSyncIdentityResolver } from '@core/services/pull-requests/node/sync-identity';
@@ -135,7 +127,6 @@ type GitHubKVSchema = { tokenSource: string };
 
 export type ServicesBundle = {
   readonly account: ReturnType<typeof createAccountService>;
-  readonly automations: AutomationsService;
   readonly github: {
     account: GitHubAccountService;
     cliImport: GitHubCliAccountImportService;
@@ -147,7 +138,6 @@ export type ServicesBundle = {
   readonly hostIsReachable: HostReachabilityProbe;
   readonly hostAttachments: HostAttachmentRegistry;
   readonly notifications: ReturnType<typeof createNotificationService>;
-  readonly previewServerAccess: PreviewServerAccessService;
   readonly promptLibrary: ReturnType<typeof createPromptLibraryService>;
   readonly projectDeletion: ProjectDeletionDependencies;
   readonly projects: ProjectAttachmentManager;
@@ -173,40 +163,6 @@ export async function bootServices(
   const getPullRequestsRuntimeClient = async () => clients.pullRequests;
   const getTerminalsRuntimeClient = async () => clients.terminals;
   const getTuiAgentsRuntimeClient = async () => clients.tuiAgents;
-  previewServerService.attachSshRuntime({
-    getConnectionState: (connectionId) =>
-      infrastructure.ssh.manager.getConnectionState(connectionId),
-    getSshProxy: async (connectionId) => {
-      await infrastructure.ssh.ssh.ensureConnected(connectionId);
-      const proxy = infrastructure.ssh.manager.getProxy(connectionId);
-      if (!proxy) throw new Error(`SSH connection ${connectionId} is not available`);
-      return proxy;
-    },
-    inspectRemotePort: async (connectionId, remotePort) => {
-      // Advisory only: rejections here mean "no hint" to the tunnel, which
-      // then keeps its blind dual-family dial. The usability guard keeps the
-      // probe from triggering workspace-server provisioning as a side effect.
-      if (!isServerUsable(infrastructure.hosts.stateModel.get(connectionId))) {
-        throw new Error(`No usable workspace server for SSH connection ${connectionId}`);
-      }
-      const connection = await infrastructure.hosts.client(connectionId);
-      const inspected = await runWithTimeout(
-        () => connection.client.portForwards.inspect({ port: remotePort }),
-        { timeoutMs: 2_000 }
-      );
-      if (!inspected.success) throw new Error(inspected.error.message);
-      return inspected.data;
-    },
-  });
-  const handleSshConnectionEvent = (
-    event: Parameters<typeof previewServerService.handleSshConnectionEvent>[0]
-  ) => {
-    previewServerService.handleSshConnectionEvent(event);
-  };
-  infrastructure.ssh.manager.on('connection-event', handleSshConnectionEvent);
-  appScope.add(() => {
-    infrastructure.ssh.manager.off('connection-event', handleSshConnectionEvent);
-  });
   const fileSearchRuntime = createFileSearchRuntime(runtimes, {
     getSearchExclusions: async () => (await appSettingsService.get('files')).searchExclude,
   });
@@ -230,8 +186,6 @@ export async function bootServices(
   });
   const lifecycleParticipants = createWorkspaceLifecycleParticipants({
     registerFileSearchRoot: fileSearchRuntime.registerRoot,
-    stopPreviewServers: (projectId, workspaceId) =>
-      previewServerService.stopForWorkspace(projectId, workspaceId),
   });
   const taskSessionManager = new TaskSessionManager({
     db,
@@ -296,15 +250,6 @@ export async function bootServices(
     availability: desktopRuntimes.hostAvailability,
     adapter: projectAttachmentAdapter,
   });
-  const previewServerAccess = new PreviewServerAccessService({
-    projects: projectManager,
-    previewServers: previewServerService,
-  });
-  appScope.add(
-    projectEvents.on('project:deleted', (projectId) => {
-      previewServerAccess.forgetProject(projectId);
-    })
-  );
   const projectSettingsService = new ProjectSettingsService({
     db,
     projects: projectManager,
@@ -377,29 +322,6 @@ export async function bootServices(
     tasks: taskService,
   });
   searchService.initialize();
-  const automationRuntime = {
-    runtimes,
-    getProjectById: (projectId: string) => getProjectById(db, projectId),
-  };
-  const automationsService = new AutomationsService({
-    db,
-    runtime: automationRuntime,
-    buildDeployment: (automation) =>
-      buildAutomationDeployment(
-        {
-          db,
-          getProjectById: (projectId) => getProjectById(db, projectId),
-          getRepoFacts: async (project) => {
-            const attached = projectManager.requireAttached(project.id);
-            return attached.success ? attached.data.repoFacts.get() : null;
-          },
-          resolveWorkspace: (workspaceId) => workspaceIdentity.resolve(workspaceId),
-          resolveWorktreePool: (project) => workspacePlacement.resolveWorktreePool(project),
-        },
-        automation
-      ),
-  });
-  installAutomationTelemetry(telemetryService, automationsService);
   installTaskTelemetry(telemetryService, taskService, taskSessionManager);
 
   // Unmigrated string-typed consumers get the documented plaintext view over
@@ -593,7 +515,6 @@ export async function bootServices(
   });
   await step('services:app-settings-init', () => appSettingsService.initialize());
   applyNativeTheme(await appSettingsService.get('theme'));
-  await step('services:automations-init', () => automationsService.initialize());
   await step('services:notifications-init', () => notificationService.initialize());
   installUpdateNotifications(notificationService);
   browserWebContentsRegistry.setKeyboardSettings(await appSettingsService.get('keyboard'));
@@ -604,7 +525,6 @@ export async function bootServices(
   const projectDeletion: ProjectDeletionDependencies = {
     db,
     runtimes,
-    automations: automationsService,
     getMementosRuntimeClient,
     logger: log,
     projects: projectManager,
@@ -680,13 +600,6 @@ export async function bootServices(
       reconcileSweep.detachHost(host);
     },
   });
-  hostAttachments.register({
-    label: 'automations-tombstone-sweep',
-    attach: async (host) => {
-      if (!isLocalHostRef(host)) await automationsService.sweepDeletionTombstones();
-    },
-    detach: () => {},
-  });
   // "Sync local settings" (spec: release-code-prep §6): mirror the local
   // watcherExclude to hosts whose toggle is ON — on attach, on local change,
   // and when the toggle flips ON. Fire-and-forget so a slow host never blocks
@@ -747,13 +660,11 @@ export async function bootServices(
   registerProviderTokenHandlers();
   return {
     account: accountService,
-    automations: automationsService,
     github: githubServices,
     gitCredentials,
     hostIsReachable,
     hostAttachments,
     notifications: notificationService,
-    previewServerAccess,
     promptLibrary: promptLibraryService,
     projectDeletion,
     projects: projectManager,

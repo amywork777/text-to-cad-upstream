@@ -1,5 +1,6 @@
 import {
   defineContract,
+  procedure,
   downloadFile,
   fallible,
   liveLog,
@@ -16,6 +17,7 @@ import {
 } from '#runtimes/acp/api/models/attachments';
 import {
   sessionConfigStateSchema,
+  modelOptionSchema,
   sessionMcpServerSchema,
   sessionUsageSchema,
 } from '#runtimes/acp/api/models/config';
@@ -72,6 +74,10 @@ const sessionKeySchema = z.object({ conversationId: z.string() });
 const terminalOutputKeySchema = z.object({ terminalId: z.string() });
 
 export const acpApiContract = defineContract({
+  discoverModels: procedure({
+    input: z.object({ providerId: z.string(), env: z.record(z.string(), z.string()).optional() }),
+    output: z.array(modelOptionSchema),
+  }),
   start: fallible({
     input: acpStartInputSchema,
     data: startResultSchema,

@@ -135,14 +135,12 @@ describe('deleteProject', () => {
       deleteBySubject: vi.fn(async () => ({ success: true as const, data: undefined })),
       deleteOrphans: vi.fn(async () => ({ success: true as const, data: undefined })),
     };
-    const automations = { removeProjectDeployments: vi.fn(async () => {}) };
     const projectsManager = { invalidate: vi.fn(async () => {}) };
     const pullRequests = { deleteProjectData: vi.fn(async () => {}) };
     const telemetry = { capture: vi.fn() };
     const dependencies: ProjectDeletionDependencies = {
       db: fixture.db,
       runtimes,
-      automations: automations as unknown as ProjectDeletionDependencies['automations'],
       getMementosRuntimeClient: async () => mementos as unknown as MementosRuntimeClient,
       logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger,
       projects: projectsManager as unknown as ProjectDeletionDependencies['projects'],
@@ -152,7 +150,6 @@ describe('deleteProject', () => {
     };
     return {
       dependencies,
-      automations,
       mementos,
       projectsManager,
       pullRequests,
@@ -164,8 +161,7 @@ describe('deleteProject', () => {
   it('purges the project cascade and removes provenance worktrees through the verb when reachable', async () => {
     await seedProject();
     const { registry, runtimes } = makeRuntimes();
-    const { dependencies, automations, projectsManager, pullRequests, telemetry } =
-      makeDependencies(runtimes);
+    const { dependencies, projectsManager, pullRequests, telemetry } = makeDependencies(runtimes);
     projectsManager.invalidate.mockImplementationOnce(async () => {
       const [tombstoned] = await fixture.db
         .select()
@@ -198,7 +194,6 @@ describe('deleteProject', () => {
     expect(projectsManager.invalidate.mock.invocationCallOrder[0]!).toBeLessThan(
       registry.deleteWorktree.mock.invocationCallOrder[0]!
     );
-    expect(automations.removeProjectDeployments).toHaveBeenCalledWith('project-1');
     expect(telemetry.capture).toHaveBeenCalledWith('project_deleted', {
       project_id: 'project-1',
     });

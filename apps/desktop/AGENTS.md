@@ -176,7 +176,6 @@ flowchart LR
   Runtime --> ACP[ACP sessions]
   Runtime --> SSH[SSH and SFTP]
   Services --> VCS[Git, GitHub, GitLab, PRs]
-  Services --> Issues[Issue integrations]
   Services --> MCP[MCP and skills]
   ACP --> CoreAcp[@emdash/core ACP runtime]
   ACP --> Plugins[@emdash/plugins providers]
@@ -205,7 +204,7 @@ from `src/main/gateway/entries/acp.ts` (`src/main/core/acp/` bridges agent statu
 `src/core/features/conversations/browser/acp/` maps updates into `@emdash/chat-ui`.
 
 Main-process adapter domains live under `src/main/core/`: ACP, agent status, app,
-dependencies, file search, files, Git, preview servers, provider accounts, runtime,
+dependencies, file search, files, Git, provider accounts, runtime,
 shared, terminal shell, and utils. Portable domain logic lives in vertical slices
 under `src/core/` and in `packages/core/` (for example PTY services under
 `packages/core/src/services/pty/` and resource monitoring under
@@ -304,7 +303,7 @@ pnpm run test
 - Access task and Project MobX stores through selectors and task view hooks:
   `getTaskStore`, `asProvisioned`, `taskViewKind`, `getTaskManagerStore`,
   `getProjectStore`, `asAvailableProject`, `getProjectHostAccess`, `useTaskViewKind`, `useWorkspace`,
-  `useWorkspaceId`, `useDevServers`, `useWorkspaceViewModel`, `useConversations`,
+  `useWorkspaceId`, `useWorkspaceViewModel`, `useConversations`,
   and `useTerminals`.
 - Never use `asProvisioned(...)!` or `asAvailableProject(...)!`; use explicit null checks.
 - State guards must check `kind !== 'ready'` rather than enumerating non-ready states.

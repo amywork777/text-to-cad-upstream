@@ -1,6 +1,5 @@
 import { acpApiContract } from '@emdash/core/runtimes/acp/api';
 import { agentConfigContract } from '@emdash/core/runtimes/agent-config/api';
-import { automationsContract } from '@emdash/core/runtimes/automations/api';
 import { conversationsContract } from '@emdash/core/runtimes/conversations/api';
 import { fileSearchContract } from '@emdash/core/runtimes/file-search/api';
 import { filesContract } from '@emdash/core/runtimes/files/api';
@@ -38,7 +37,6 @@ export function createTestRuntimeClients(
   return {
     acp: createDisconnectedClient(acpApiContract),
     agentConfig: createDisconnectedClient(agentConfigContract),
-    automations: createDisconnectedClient(automationsContract),
     conversations: createDisconnectedClient(conversationsContract),
     fileSearch: createDisconnectedClient(fileSearchContract),
     files: createDisconnectedClient(filesContract),

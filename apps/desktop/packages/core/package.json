@@ -250,16 +250,6 @@
       "types": "./dist/runtimes-agent-config-node.d.mts",
       "default": "./dist/runtimes-agent-config-node.mjs"
     },
-    "./runtimes/automations/api": {
-      "development": "./src/runtimes/automations/api/index.ts",
-      "types": "./dist/runtimes-automations-api.d.mts",
-      "default": "./dist/runtimes-automations-api.mjs"
-    },
-    "./runtimes/automations/node": {
-      "development": "./src/runtimes/automations/node/index.ts",
-      "types": "./dist/runtimes-automations-node.d.mts",
-      "default": "./dist/runtimes-automations-node.mjs"
-    },
     "./runtimes/conversations/api": {
       "development": "./src/runtimes/conversations/api/index.ts",
       "types": "./dist/runtimes-conversations-api.d.mts",
@@ -330,11 +320,6 @@
       "types": "./dist/runtimes-scripts-node.d.mts",
       "default": "./dist/runtimes-scripts-node.mjs"
     },
-    "./services/preview-detection/api": {
-      "development": "./src/services/preview-detection/api/index.ts",
-      "types": "./dist/services-preview-detection-api.d.mts",
-      "default": "./dist/services-preview-detection-api.mjs"
-    },
     "./workspace-server": {
       "development": "./src/workspace-server/index.ts",
       "types": "./dist/workspace-server.d.mts",
@@ -361,7 +346,6 @@
     "@emdash/wire": "workspace:*",
     "@parcel/watcher": "^2.5.6",
     "better-sqlite3": "^12.10.0",
-    "croner": "^10.0.1",
     "drizzle-orm": "^0.45.2",
     "minimatch": "^10.2.5",
     "semver": "^7.8.4",

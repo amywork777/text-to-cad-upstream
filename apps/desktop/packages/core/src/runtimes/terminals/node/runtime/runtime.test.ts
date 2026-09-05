@@ -145,42 +145,6 @@ describe('TerminalsRuntime', () => {
     }
   });
 
-  it('publishes detected dev servers and prunes them when the session exits', async () => {
-    const spawner = new FakePtySpawner();
-    const scope = createScope({ label: 'test-terminals' });
-    const runtime = new TerminalsRuntime({
-      spawner,
-      userEnv: async () => testUserEnv(),
-      scope,
-      clock: createManualClock(1000),
-      portProbe: async () => true,
-    });
-    const workspace = testWorkspace();
-    await runtime.start({
-      key: { workspace, id: 'terminal-1' },
-      spec: { cwd: '/repo', env: {} },
-    });
-    await waitFor(() => spawner.processes.length === 1);
-
-    spawner.processes[0]!.emitData('ready at http://localhost:5173/app\n');
-
-    await waitFor(async () => Object.keys(await devServers(runtime)).length === 1);
-    expect(await devServers(runtime)).toEqual({
-      [`${workspaceKey(workspace)}:terminal-1:http::5173`]: {
-        key: { workspace, id: 'terminal-1' },
-        protocol: 'http:',
-        host: 'localhost',
-        port: 5173,
-        urlPath: '/app',
-        detectedAt: 1000,
-      },
-    });
-
-    spawner.processes[0]!.emitExit({ exitCode: 0, signal: null });
-    await waitFor(async () => Object.keys(await devServers(runtime)).length === 0);
-    await scope.dispose();
-  });
-
   it('retains exited terminals with scrollback instead of evicting them', async () => {
     const spawner = new FakePtySpawner();
     const scope = createScope({ label: 'test-terminals' });
@@ -523,7 +487,6 @@ type RuntimeInternals = {
   sessionKeys: Map<string, unknown>;
   interactiveConfigs: Map<string, unknown>;
   startCounts: Map<string, unknown>;
-  previewSources: Map<string, unknown>;
   registry: { get(key: string): unknown };
 };
 
@@ -535,7 +498,6 @@ function leakContainers(runtime: TerminalsRuntime): LeakCheckContainer[] {
     mapContainer('sessionKeys', internals.sessionKeys),
     mapContainer('interactiveConfigs', internals.interactiveConfigs),
     mapContainer('startCounts', internals.startCounts),
-    mapContainer('previewSources', internals.previewSources),
     { name: 'ptyRegistry', has: (key) => internals.registry.get(key) !== undefined },
   ];
 }
@@ -550,24 +512,6 @@ async function sessions(runtime: TerminalsRuntime): Promise<Record<string, Termi
   }
 }
 
-async function devServers(runtime: TerminalsRuntime) {
-  const lease = runtime.devServersHost.acquireState(undefined, 'list');
-  try {
-    const source = await lease.ready();
-    return (await source.snapshot()).data as Record<string, unknown>;
-  } finally {
-    await lease.release();
-  }
-}
-
 function workspaceKey(workspace: HostFileRef): string {
   return resourceKeyFromFileRef(workspace);
-}
-
-async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<void> {
-  for (let i = 0; i < 50; i += 1) {
-    if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  }
-  throw new Error('Timed out waiting for predicate');
 }

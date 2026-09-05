@@ -64,3 +64,16 @@ Built-in issue-tracker connectors and issue search are intentionally omitted fro
 GitHub sign-in, Git source control, and pull-request review remain available for model recipes.
 Configured MCP tools can supply external context. Existing saved issue references and database
 migration history are retained for compatibility; the desktop no longer contacts those trackers.
+
+Scheduled agent automations and web development server previews are also omitted. This removes
+scheduler workers, cron dependencies, terminal URL scanning, port probes, and automatic preview
+tunnels. Historical automation records and migrations remain readable; no scheduler is started.
+CAD preview still uses the canonical cadgen outputs and viewer.
+
+The Codex and Claude model pickers discover models through the installed provider's ACP adapter.
+Open the picker or choose Refresh to retrieve the provider's current catalog, including new model
+IDs. Choices depend on provider authentication and settings; keep the provider CLI up to date.
+Discovery initializes a short-lived session without sending a prompt, then releases its process.
+
+Remote workspaces require the matching protocol 3 workspace-server build. Protocol 2 servers are
+rejected during negotiation because scheduled automations and preview-server streams were removed.

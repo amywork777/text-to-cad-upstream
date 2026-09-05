@@ -1,6 +1,5 @@
 import type { AcpApiContract } from '@emdash/core/runtimes/acp/api';
 import type { AgentConfigContract } from '@emdash/core/runtimes/agent-config/api';
-import type { AutomationsContract } from '@emdash/core/runtimes/automations/api';
 import type { FileSearchContract } from '@emdash/core/runtimes/file-search/api';
 import type { FilesContract } from '@emdash/core/runtimes/files/api';
 import type { GitContract } from '@emdash/core/runtimes/git/api';
@@ -14,7 +13,6 @@ import type { MementosWireContract } from '@core/primitives/mementos/api';
 
 export type AcpRuntimeClient = ContractClient<AcpApiContract>;
 export type AgentConfigRuntimeClient = ContractClient<AgentConfigContract>;
-export type AutomationsRuntimeClient = ContractClient<AutomationsContract>;
 export type FileSearchRuntimeClient = ContractClient<FileSearchContract>;
 export type FilesRuntimeClient = ContractClient<FilesContract>;
 export type GitRuntimeClient = ContractClient<GitContract>;

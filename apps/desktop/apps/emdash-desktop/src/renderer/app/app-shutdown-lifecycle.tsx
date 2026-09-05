@@ -172,7 +172,7 @@ function describeShutdownImpact(summary: ActiveSessionSummary): string {
       ? `${summary.incomplete ? 'At least ' : ''}${impacts.join(' and ')} may be stopped.`
       : summary.incomplete
         ? 'Running agent sessions and terminals may be stopped.'
-        : 'Background services and automations will stop.';
+        : 'Background services will stop.';
   const remote =
     summary.remoteSessions > 0
       ? ` ${summary.incomplete ? 'At least ' : ''}${summary.remoteSessions} remote ${summary.remoteSessions === 1 ? 'session' : 'sessions'} will keep running.`

@@ -32,6 +32,9 @@ export type StartSessionInput = AcpStartInputWire;
 
 export function createAcpProcedures(runtime: AcpRuntime) {
   return {
+    discoverModels(input: { providerId: string; env?: Record<string, string> }) {
+      return runtime.discoverModels(input);
+    },
     start(input: StartSessionInput): Promise<Result<{ sessionId: string }, AcpStartError>> {
       return runtime.startSession(input);
     },

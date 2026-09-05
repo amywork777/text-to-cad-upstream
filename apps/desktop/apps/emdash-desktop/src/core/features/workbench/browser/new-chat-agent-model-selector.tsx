@@ -2,8 +2,7 @@ import type { AgentProviderId } from '@emdash/plugins/agents/types';
 import { Button, Popover } from '@emdash/ui/react/primitives';
 import { Check, ChevronDown } from 'lucide-react';
 import { useState } from 'react';
-import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
-import { useAgents } from '@core/features/agents/api/browser/use-agents';
+import { useAgentModels } from '@core/features/agents/api/browser/use-agent-models';
 import { AgentIcon } from '@core/features/agents/contributions/browser/agent-icon';
 import { CAD_CONVERSATION_PROVIDER_IDS } from '@core/features/cad/api/browser/cad-conversation-provider';
 import { cn } from '@core/primitives/styling/browser/cn';
@@ -31,22 +30,31 @@ export function NewChatAgentModelSelector({
   onModelChange: (modelId: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
-  const selectedAgent = agents?.find((agent) => agent.id === providerId);
-  const models = selectedAgent?.capabilities.models;
-  const modelOptions =
-    models?.kind === 'selectable'
-      ? Object.entries(models.modelOptions).map(([id, option]) => ({ id, name: option.name }))
-      : [];
+  const {
+    modelOptions: options,
+    isLoading,
+    error,
+    refresh,
+  } = useAgentModels(providerId, connectionId);
+  const modelOptions = Object.entries(options ?? {}).map(([id, option]) => ({
+    id,
+    name: option.name,
+  }));
   const selectedModel = modelOptions.find((option) => option.id === modelId);
   const providerLabel =
     providerId && providerId in PROVIDER_LABELS
       ? PROVIDER_LABELS[providerId as keyof typeof PROVIDER_LABELS]
       : 'Choose agent';
-  const modelLabel = selectedModel?.name ?? 'Default';
+  const modelLabel = selectedModel?.name ?? modelId ?? 'Default';
 
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && providerId) void refresh();
+      }}
+    >
       <Popover.Trigger
         render={
           <Button
@@ -105,11 +113,21 @@ export function NewChatAgentModelSelector({
         </div>
 
         <div className="mx-1 border-t" />
-        <div className="px-2 pt-2 pb-1 text-tiny font-medium text-foreground-muted">Model</div>
+        <div className="flex items-center justify-between px-2 pt-2 pb-1 text-tiny text-foreground-muted">
+          <span>{isLoading ? 'Loading models…' : 'Model'}</span>
+          <button type="button" disabled={isLoading || !providerId} onClick={() => void refresh()}>
+            Refresh
+          </button>
+        </div>
+        {error ? (
+          <p className="px-2 py-1 text-xs text-foreground-muted">
+            Couldn’t load models. Refresh or use the provider default.
+          </p>
+        ) : null}
         <div className="max-h-64 overflow-y-auto px-1 pb-1">
           <ModelOption
             label="Default (recommended)"
-            selected={modelId === null || !selectedModel}
+            selected={modelId === null}
             onSelect={() => {
               onModelChange(null);
               setOpen(false);

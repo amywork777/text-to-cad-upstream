@@ -8,7 +8,6 @@ export function createTerminalsController(runtime: TerminalsRuntime) {
     getShellAvailability: () => runtime.getShellAvailability(),
     output: (key) => runtime.outputLog(key),
     sessions: runtime.sessionsHost,
-    devServers: runtime.devServersHost,
     sendInput: ({ key, data }) => runtime.sendInput(key, data),
     resize: ({ key, cols, rows }) => runtime.resize(key, cols, rows),
     kill: ({ key }) => runtime.kill(key),

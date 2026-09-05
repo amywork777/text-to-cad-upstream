@@ -1,7 +1,6 @@
 import { defineContract } from '@emdash/wire/rpc';
 import { acpApiContract } from '../../../runtimes/acp/api';
 import { agentConfigContract } from '../../../runtimes/agent-config/api';
-import { automationsContract } from '../../../runtimes/automations/api';
 import { conversationsContract } from '../../../runtimes/conversations/api';
 import { fileSearchContract } from '../../../runtimes/file-search/api';
 import { filesContract } from '../../../runtimes/files/api';
@@ -28,7 +27,6 @@ export const hostRuntimesDefinitions = {
   fileSearch: fileSearchContract,
   files: filesContract,
   acp: acpApiContract,
-  automations: automationsContract,
   conversations: conversationsContract,
   tuiAgents: tuiAgentsContract,
   agentConfig: agentConfigContract,

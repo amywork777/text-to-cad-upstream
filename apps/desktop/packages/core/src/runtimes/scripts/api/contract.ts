@@ -2,7 +2,6 @@ import { defineContract, fallible, liveLog, liveModel, liveState } from '@emdash
 import { z } from 'zod';
 import { scriptRunNotFoundErrorSchema, startScriptRunErrorSchema } from './errors';
 import {
-  scriptDevServerListSchema,
   scriptRunInputSchema,
   scriptRunKeySchema,
   scriptRunResizeInputSchema,
@@ -34,14 +33,6 @@ export const scriptsContract = defineContract({
   /** Streamed output per (workspace, script); scrollback retained until the next run. */
   output: liveLog({
     key: scriptRunKeySchema,
-  }),
-
-  /** Dev-server URLs detected in run output, host-wide (the desktop preview bridge reads this). */
-  devServers: liveModel({
-    key: z.void().optional(),
-    states: {
-      list: liveState({ data: scriptDevServerListSchema }),
-    },
   }),
 
   /**

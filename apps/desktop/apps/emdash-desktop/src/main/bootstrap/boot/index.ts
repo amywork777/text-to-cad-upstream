@@ -39,7 +39,6 @@ export async function finishBoot(config: AppConfig, signal?: AbortSignal): Promi
     );
     throwIfBootCancelled(signal);
     configureQuitCleanupServices({
-      automations: services.automations,
       editorBuffers: databaseBundle.editorBuffer,
       projects: services.projects,
       pullRequests: services.pullRequestsRegistration,

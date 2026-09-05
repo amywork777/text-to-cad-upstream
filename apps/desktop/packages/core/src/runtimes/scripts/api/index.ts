@@ -9,8 +9,6 @@ export {
   type StartScriptRunError,
 } from '#runtimes/scripts/api/errors';
 export {
-  scriptDevServerListSchema,
-  scriptDevServerSchema,
   scriptKindSchema,
   scriptProvenanceSchema,
   scriptRunInputSchema,
@@ -24,8 +22,6 @@ export {
   startScriptRunInputSchema,
   stopScriptRunInputSchema,
   waitScriptRunInputSchema,
-  type ScriptDevServer,
-  type ScriptDevServerList,
   type ScriptKind,
   type ScriptProvenance,
   type ScriptRunInput,

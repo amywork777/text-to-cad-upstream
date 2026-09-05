@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { hostRefFromConnectionId } from '@core/features/agents/api/browser/client';
 import type { AgentDisableReason } from '@core/features/agents/api/browser/components/agent-selector/agent-selector-options';
+import { useAgentModels } from '@core/features/agents/api/browser/use-agent-models';
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
@@ -149,16 +150,6 @@ export function useInitialConversationState(
   };
 }
 
-function useModelOptions(
-  providerId: AgentProviderId | null,
-  connectionId: string | undefined
-): Record<string, { name: string }> | null {
-  const { data: agents } = useAgents(hostRefFromConnectionId(connectionId));
-  if (!providerId) return null;
-  const models = agents?.find((a) => a.id === providerId)?.capabilities.models;
-  return models?.kind === 'selectable' ? models.modelOptions : null;
-}
-
 const SLASH_PROMPTS_SECTION = 'Prompts';
 
 function promptPreview(text: string): string {
@@ -207,7 +198,7 @@ export function InitialConversationField({
   const editorApiRef = useRef<PromptEditorRef | null>(null);
   const syncingEditorTextRef = useRef(false);
   const { value: promptLibrary } = usePromptLibrary();
-  const modelOptions = useModelOptions(state.provider, state.connectionId);
+  const { modelOptions } = useAgentModels(state.provider, state.connectionId);
   const defaultIssueContext = useMemo(
     () => (linkedIssue ? buildIssueContextText(linkedIssue) : null),
     [linkedIssue]

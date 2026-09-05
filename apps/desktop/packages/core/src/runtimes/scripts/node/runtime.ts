@@ -4,18 +4,11 @@ import { noopLogger, type Logger } from '@emdash/shared/logger';
 import { LiveLogSource } from '@emdash/wire/live';
 import type { LeasedLiveModelProvider, LiveSource } from '@emdash/wire/rpc';
 import { cell, expose, family, peek, type Cell } from '@emdash/wire/state';
-import {
-  wireTerminalUrlDetector,
-  type DetectedPreviewUrl,
-  type TerminalPortProbe,
-} from '#services/preview-detection/node';
 import { buildTerminalEnv, PtyRegistry, type PtySpawner } from '#services/pty/api';
 import type { UserShellEnv } from '#services/shell-env/api';
 import { scriptsContract } from '../api/contract';
 import type { ScriptRunNotFoundError, StartScriptRunError } from '../api/errors';
 import type {
-  ScriptDevServer,
-  ScriptDevServerList,
   ScriptKind,
   ScriptRunInput,
   ScriptRunKey,
@@ -35,16 +28,8 @@ const OUTPUT_TAIL_CAP = 16 * 1024;
 export type ScriptsRuntimeOptions = {
   spawner: PtySpawner;
   userEnv: () => Promise<UserShellEnv>;
-  /** Test seam for the dev-server URL detector's port liveness probe. */
-  portProbe?: TerminalPortProbe;
   now?: () => number;
   logger?: Logger;
-};
-
-type PreviewSource = {
-  emitData(chunk: string): void;
-  emitExit(): void;
-  dispose(): void;
 };
 
 type ActiveRun = {
@@ -62,7 +47,7 @@ type ActiveRun = {
  * per-(workspace, script) guard, per-run timeouts, an explicit stop verb,
  * provenance attribution, and transient result retention (last run per key, all
  * in-memory). Runs are detached from the starting caller — they die only on stop,
- * self-exit, or host shutdown. No idle sweeping: a dev-server `run` script keeps
+ * self-exit, or host shutdown. No idle sweeping: a long-running script keeps
  * running when every observer disconnects.
  */
 export class ScriptsRuntime {
@@ -79,27 +64,18 @@ export class ScriptsRuntime {
       },
     }
   );
-  private readonly devServersList: Cell<ScriptDevServerList> = cell({});
-  readonly devServersHost: LeasedLiveModelProvider<typeof scriptsContract.devServers> = expose(
-    scriptsContract.devServers,
-    { list: this.devServersList },
-    { publish: { list: 'diff' } }
-  );
 
   private readonly registry: PtyRegistry;
   private readonly loadUserEnv: () => Promise<UserShellEnv>;
-  private readonly portProbe: TerminalPortProbe | undefined;
   private readonly now: () => number;
   private readonly logger: Logger;
   private readonly logs = new Map<string, LiveLogSource>();
   private readonly active = new Map<string, ActiveRun>();
-  private readonly previewSources = new Map<string, PreviewSource>();
   private disposed = false;
 
   constructor(options: ScriptsRuntimeOptions) {
     this.registry = new PtyRegistry(options.spawner);
     this.loadUserEnv = options.userEnv;
-    this.portProbe = options.portProbe;
     this.now = options.now ?? Date.now;
     this.logger = options.logger ?? noopLogger;
   }
@@ -146,10 +122,8 @@ export class ScriptsRuntime {
           onData: (chunk) => {
             outputTail = appendOutputTail(outputTail, chunk);
             this.updateRun(input, runId, (run) => ({ ...run, outputTail }));
-            this.previewSourceFor(input).emitData(chunk);
           },
           onExit: (info) => {
-            this.closePreviewSource(runKey);
             const run = this.active.get(runKey);
             if (run?.runId === runId) {
               if (run.timer) clearTimeout(run.timer);
@@ -286,10 +260,7 @@ export class ScriptsRuntime {
     this.registry.killAll();
     this.active.clear();
     this.logs.clear();
-    for (const source of this.previewSources.values()) source.dispose();
-    this.previewSources.clear();
     void this.runsHost.dispose();
-    void this.devServersHost.dispose();
     void this.runStates.dispose();
   }
 
@@ -322,91 +293,6 @@ export class ScriptsRuntime {
     }
     return log;
   }
-
-  /** Same detection interactive terminals get: URLs in run output become dev servers. */
-  private previewSourceFor(key: ScriptRunKey): PreviewSource {
-    const runKey = runKeyFor(key);
-    const existing = this.previewSources.get(runKey);
-    if (existing) return existing;
-
-    const dataHandlers: Array<(chunk: string) => void> = [];
-    const exitHandlers: Array<() => void> = [];
-    const stopDetector = wireTerminalUrlDetector({
-      pty: {
-        onData(handler) {
-          dataHandlers.push(handler);
-        },
-        onExit(handler) {
-          exitHandlers.push(handler);
-        },
-      },
-      ...(this.portProbe ? { portProbe: this.portProbe } : {}),
-      onDetected: (server) => this.upsertDevServer(runKey, key, server),
-      onSourceClosed: (event) => {
-        if (event.reason === 'local-probe-failed') {
-          this.devServersList.update((previous) =>
-            omitKey(previous, devServerKeyFor(runKey, event.server))
-          );
-        } else {
-          this.pruneDevServers(runKey);
-        }
-      },
-    });
-
-    const source: PreviewSource = {
-      emitData(chunk) {
-        for (const handler of dataHandlers) handler(chunk);
-      },
-      emitExit() {
-        for (const handler of exitHandlers) handler();
-      },
-      dispose: stopDetector,
-    };
-    this.previewSources.set(runKey, source);
-    return source;
-  }
-
-  private closePreviewSource(runKey: string): void {
-    const source = this.previewSources.get(runKey);
-    if (source) {
-      source.emitExit();
-      source.dispose();
-      this.previewSources.delete(runKey);
-    }
-    this.pruneDevServers(runKey);
-  }
-
-  private upsertDevServer(runKey: string, key: ScriptRunKey, server: DetectedPreviewUrl): void {
-    const record: ScriptDevServer = {
-      key,
-      protocol: server.protocol,
-      host: server.host,
-      port: server.port,
-      urlPath: server.urlPath,
-      detectedAt: this.now(),
-    };
-    this.devServersList.update((previous) => ({
-      ...previous,
-      [devServerKeyFor(runKey, server)]: record,
-    }));
-  }
-
-  private pruneDevServers(runKey: string): void {
-    const prefix = `${runKey}:`;
-    this.devServersList.update((previous) =>
-      Object.fromEntries(Object.entries(previous).filter(([id]) => !id.startsWith(prefix)))
-    );
-  }
-}
-
-function devServerKeyFor(runKey: string, server: DetectedPreviewUrl): string {
-  return `${runKey}:${server.protocol}:${server.port}`;
-}
-
-function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
-  if (!(key in record)) return record;
-  const { [key]: _removed, ...rest } = record;
-  return rest;
 }
 
 function runKeyFor(key: ScriptRunKey): string {

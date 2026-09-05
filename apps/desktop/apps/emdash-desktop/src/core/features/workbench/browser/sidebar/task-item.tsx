@@ -98,7 +98,6 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
       onUnpin={() => void task.setPinned(false)}
       onRename={handleRename}
       onReconnect={handleReconnect}
-      onConvertAutomation={undefined}
       onArchive={canArchive ? handleArchive : undefined}
       onDelete={handleDelete}
     >
@@ -141,7 +140,6 @@ export const SidebarTaskItem = observer(function SidebarTaskItem({
             onUnpin={() => void task.setPinned(false)}
             onRename={handleRename}
             onReconnect={handleReconnect}
-            onConvertAutomation={undefined}
             onArchive={canArchive ? handleArchive : undefined}
             onDelete={handleDelete}
             trigger={

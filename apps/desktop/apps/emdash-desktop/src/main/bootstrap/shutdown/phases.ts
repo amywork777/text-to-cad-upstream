@@ -1,4 +1,3 @@
-import type { AutomationsService } from '@core/features/automations/api/node/automations-service';
 import type { EditorBufferService } from '@core/features/editor/node/editor-buffer-service';
 import type { ProjectAttachmentManager } from '@core/features/projects/api/node/project-attachment-manager';
 import type { PullRequestsRegistration } from '@core/services/pull-requests/node/pull-requests-registration';
@@ -17,7 +16,6 @@ const CRITICAL_DEADLINE_MS = 5_000;
 const GRACE_WINDOW_MS = 400;
 
 type QuitCleanupServices = {
-  automations: Pick<AutomationsService, 'stop'>;
   editorBuffers: Pick<EditorBufferService, 'dispose'>;
   projects: Pick<ProjectAttachmentManager, 'dispose' | 'release'>;
   pullRequests: Pick<PullRequestsRegistration, 'dispose'>;
@@ -85,7 +83,6 @@ export async function runQuitCleanup(): Promise<void> {
   if (!services) throw new Error('Quit cleanup services were not configured');
   telemetryService.capture('app_closed');
 
-  services.automations.stop();
   updateService.dispose();
   disposeNotificationService();
   services.pullRequests.dispose();

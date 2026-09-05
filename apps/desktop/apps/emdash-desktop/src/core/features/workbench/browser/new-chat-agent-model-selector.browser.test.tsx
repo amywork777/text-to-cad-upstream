@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@emdash/ui/style.css';
 import React, { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -7,10 +8,13 @@ import '../../../../renderer/index.css';
 import { NewChatAgentModelSelector } from './new-chat-agent-model-selector';
 
 const mocks = vi.hoisted(() => ({
+  includeNewRelease: false,
   agents: [
     {
       id: 'codex',
+      status: 'available',
       capabilities: {
+        acp: { kind: 'supported' },
         models: {
           kind: 'selectable',
           modelOptions: {
@@ -22,10 +26,13 @@ const mocks = vi.hoisted(() => ({
     },
     {
       id: 'claude',
+      status: 'available',
       capabilities: {
+        acp: { kind: 'supported' },
         models: {
           kind: 'selectable',
           modelOptions: {
+            default: { name: 'Default (recommended)' },
             'claude-fable-5': { name: 'Claude Fable 5' },
             'claude-haiku-4-5': { name: 'Claude Haiku 4.5' },
           },
@@ -37,6 +44,21 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@core/features/agents/api/browser/use-agents', () => ({
   useAgents: () => ({ data: mocks.agents }),
+}));
+
+vi.mock('@core/features/agents/api/browser/client', () => ({
+  hostRefFromConnectionId: () => ({ kind: 'local' }),
+  getAgentsClient: async () => ({
+    discoverModels: async ({ providerId }: { providerId: string }) => ({
+      success: true,
+      data: Object.entries(
+        mocks.agents.find((agent) => agent.id === providerId)!.capabilities.models.modelOptions
+      )
+        .map(([id, option]) => ({ id, name: option!.name }))
+        .concat(mocks.includeNewRelease ? [{ id: 'future-release', name: 'Future release' }] : []),
+    }),
+  }),
+  unwrapAgentsResult: async (result: Promise<{ data: unknown }>) => (await result).data,
 }));
 
 vi.mock('@core/features/agents/contributions/browser/agent-icon', async () => {
@@ -58,6 +80,7 @@ describe.each(['emlight', 'emdark'] as const)('NewChatAgentModelSelector (%s)', 
   let root: Root;
 
   beforeEach(() => {
+    mocks.includeNewRelease = false;
     document.documentElement.classList.add(themeClass);
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -70,8 +93,37 @@ describe.each(['emlight', 'emdark'] as const)('NewChatAgentModelSelector (%s)', 
     host.remove();
   });
 
+  it('discovers a newly released model on refresh without reloading the app', async () => {
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <Harness />
+        </QueryClientProvider>
+      )
+    );
+    await act(async () => page.getByRole('button', { name: 'Choose agent and model' }).click());
+    await expect.element(page.getByRole('button', { name: 'GPT-5.6 Sol' })).toBeVisible();
+    mocks.includeNewRelease = true;
+    await act(async () => page.getByRole('button', { name: 'Refresh', exact: true }).click());
+    await expect
+      .element(page.getByRole('button', { name: 'Future release', exact: true }))
+      .toBeVisible();
+    await act(async () =>
+      page.getByRole('button', { name: 'Future release', exact: true }).click()
+    );
+    expect(page.getByRole('button', { name: 'Choose agent and model' })).toHaveTextContent(
+      /Future release/
+    );
+  });
+
   it('offers the provider default and every named model without truncating rows', async () => {
-    await act(async () => root.render(<Harness />));
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <Harness />
+        </QueryClientProvider>
+      )
+    );
 
     const trigger = page.getByRole('button', { name: 'Choose agent and model' });
     expect(trigger).toHaveTextContent(/Codex.*Default/);
@@ -81,7 +133,7 @@ describe.each(['emlight', 'emdark'] as const)('NewChatAgentModelSelector (%s)', 
       'aria-pressed',
       'true'
     );
-    expect(page.getByRole('button', { name: 'GPT-5.6 Sol' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'GPT-5.6 Sol' })).toBeVisible();
     const longModel = page.getByRole('button', { name: 'GPT-5.3 Codex Spark' });
     expect(longModel).toBeVisible();
     expect(getComputedStyle(longModel.query() as HTMLElement).borderRadius).toBe('8px');
@@ -102,7 +154,7 @@ describe.each(['emlight', 'emdark'] as const)('NewChatAgentModelSelector (%s)', 
       'aria-pressed',
       'true'
     );
-    expect(page.getByRole('button', { name: 'Claude Fable 5' })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: 'Claude Fable 5' })).toBeVisible();
     expect(page.getByRole('button', { name: 'GPT-5.6 Sol' }).query()).toBeNull();
   });
 });

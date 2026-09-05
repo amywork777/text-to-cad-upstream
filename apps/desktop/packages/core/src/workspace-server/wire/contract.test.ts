@@ -3,7 +3,6 @@ import { workspaceWireContract } from './contract';
 
 describe('workspaceWireContract', () => {
   it('mounts every worker-backed runtime expected by the aggregate controller', () => {
-    expect(workspaceWireContract.automations.deploy.kind).toBe('procedure');
     expect(workspaceWireContract.fileSearch.searchContent.kind).toBe('liveJob');
     expect(workspaceWireContract.terminals.start.kind).toBe('procedure');
   });

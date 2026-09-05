@@ -106,3 +106,13 @@ adapter calls the client terminal methods; both run commands themselves.
    supports explicit events; `tui-agents` installs and hosts those hooks at runtime
 4. validate PATH dependency behavior through the `HostDependencies` component and resolver contract
 5. add or update tests for any non-standard behavior
+
+## Model discovery
+
+ACP providers own the model catalog. `acp.discoverModels` starts a short-lived adapter session
+without a prompt, reads its config options (or legacy models response), and disposes the process
+on success, error, timeout, or runtime shutdown. It receives the same provider environment overrides
+as conversations. New-task and new-conversation pickers use this host-scoped query; opening the
+CAD picker or selecting Refresh refreshes the catalog. Active conversations continue to use their
+own live configuration so project settings and account restrictions remain authoritative. Do not
+add versioned model lists to the Codex/Claude plugins.

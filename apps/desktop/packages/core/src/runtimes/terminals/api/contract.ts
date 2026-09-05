@@ -7,7 +7,6 @@ import {
   shellAvailabilityFailedErrorSchema,
   terminalControlInputSchema,
   terminalDataInputSchema,
-  terminalDevServerListSchema,
   terminalKeySchema,
   terminalNotFoundErrorSchema,
   terminalResizeInputSchema,
@@ -34,12 +33,6 @@ export const terminalsContract = defineContract({
     key: z.void().optional(),
     states: {
       list: liveState({ data: terminalSessionListSchema }),
-    },
-  }),
-  devServers: liveModel({
-    key: z.void().optional(),
-    states: {
-      list: liveState({ data: terminalDevServerListSchema }),
     },
   }),
   sendInput: fallible({

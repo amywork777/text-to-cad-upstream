@@ -75,7 +75,7 @@ describe('WorkspacePlacementResolver', () => {
 
     await expect(resolver.resolveRepositoriesRoot(hostRef('remote', 'ssh-1'))).resolves.toEqual({
       success: true,
-      data: '/home/remote/emdash/repositories',
+      data: '/home/remote/hardcore/repositories',
     });
   });
 
@@ -105,7 +105,7 @@ describe('WorkspacePlacementResolver', () => {
 
     await expect(resolver.resolveWorktreePool(project)).resolves.toEqual({
       success: true,
-      data: '/home/jona/emdash/worktrees/emdash-ba5cbeaf',
+      data: '/home/jona/hardcore/worktrees/emdash-ba5cbeaf',
     });
     await resolver.resolveWorktreePool(project);
     expect(getHomeDir).toHaveBeenCalledTimes(1);
@@ -186,7 +186,7 @@ describe('WorkspacePlacementResolver', () => {
 
     expect(result).toMatchObject({
       success: true,
-      data: expect.stringMatching(/^\/home\/jona\/emdash\/worktrees\/emdash-[a-f0-9]{8}$/u),
+      data: expect.stringMatching(/^\/home\/jona\/hardcore\/worktrees\/emdash-[a-f0-9]{8}$/u),
     });
   });
 
@@ -204,12 +204,12 @@ describe('WorkspacePlacementResolver', () => {
   it('treats a missing parent directory as an available candidate', async () => {
     const { resolver } = makeResolver({
       home: '/home/jona',
-      missingParents: ['/home/jona/emdash/repositories'],
+      missingParents: ['/home/jona/hardcore/repositories'],
     });
 
     await expect(resolver.resolveRepositoryDestination(LOCAL_HOST_REF, 'api')).resolves.toEqual({
       success: true,
-      data: '/home/jona/emdash/repositories/api',
+      data: '/home/jona/hardcore/repositories/api',
     });
   });
 

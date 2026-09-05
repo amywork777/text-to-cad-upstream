@@ -54,6 +54,7 @@ export async function createAcpAgentConnection(
   },
   args: {
     providerId: string;
+    clientCapabilities?: ClientCapabilities;
     spawn: AgentHostAcpSpawn;
     scope: Scope;
     /** Factory called once; the runtime passes its buildAgentClient result here. */
@@ -117,7 +118,7 @@ export async function createAcpAgentConnection(
 
   try {
     const initialized = await Promise.race([
-      initializeAgent(connection, host),
+      initializeAgent(connection, host, args.clientCapabilities),
       processClosed.then(failClosedBeforeReady),
     ]);
     const supportsLoadSession = initialized.agentCapabilities?.loadSession === true;
@@ -159,7 +160,11 @@ function onceProcessClosed(handle: AcpProcessHandle, logger: Logger): Promise<Pr
   });
 }
 
-function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
+function initializeAgent(
+  agent: AcpAgentApi,
+  host: AcpAgentProcessHost,
+  capabilities?: ClientCapabilities
+) {
   const clientCapabilities: ClientCapabilities & { _meta?: Record<string, unknown> } = {
     fs: { readTextFile: true, writeTextFile: true },
     terminal: typeof host.spawnTerminal === 'function',
@@ -175,7 +180,7 @@ function initializeAgent(agent: AcpAgentApi, host: AcpAgentProcessHost) {
   return agent.initialize({
     protocolVersion: 1,
     clientInfo: { name: 'emdash', version: '1' },
-    clientCapabilities,
+    clientCapabilities: capabilities ?? clientCapabilities,
   });
 }
 

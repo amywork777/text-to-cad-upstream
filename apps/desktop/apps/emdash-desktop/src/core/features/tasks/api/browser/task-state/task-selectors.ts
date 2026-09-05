@@ -42,19 +42,6 @@ export function taskHostActionAvailability(projectId: string): TaskHostActionAva
   return context?.host.liveAction.kind === 'enabled' ? { kind: 'enabled' } : { kind: 'disabled' };
 }
 
-/** Call only inside `observer` components (or other MobX reactions). */
-export function getTaskIdForAutomationRun(
-  projectId: string,
-  automationRunId: string
-): string | null {
-  const manager = getTaskManagerStore(projectId);
-  if (!manager) return null;
-  for (const task of manager.tasks.values()) {
-    if (task.data.automationRunId === automationRunId) return task.data.id;
-  }
-  return null;
-}
-
 export type TaskViewKind =
   | 'missing'
   | 'project-hydrating'

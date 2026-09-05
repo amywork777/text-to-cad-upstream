@@ -8,7 +8,6 @@ import type {
 import type { Unsubscribe } from '@emdash/shared';
 import type { Disposable } from '@emdash/shared/concurrency';
 import type { ConversationProvider } from '@core/features/conversations/api/node/types';
-import { previewServerService } from '@core/features/preview-servers/api/node/preview-server-service-instance';
 import type { RepoFactsSource } from '@core/features/projects/api/node/settings/effective-settings';
 import type { ProjectSettingsProvider } from '@core/features/projects/api/node/settings/provider';
 import type { TaskSessionManager } from '@core/features/tasks/api/node/task-session-manager';
@@ -189,7 +188,6 @@ export class ProjectProvider implements Disposable {
         const tmux = await this.settings.resolveTmux();
         const mode = tmux.value ? 'detach' : 'terminate';
         await this.taskSessions.teardownAllForProject(this.projectId, mode);
-        await previewServerService.stopForProject(this.projectId);
       } finally {
         await this.release();
       }

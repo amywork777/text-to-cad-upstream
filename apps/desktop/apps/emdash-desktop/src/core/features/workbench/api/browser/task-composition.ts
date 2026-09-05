@@ -15,7 +15,6 @@ import {
   diffTabManagerStoreToken,
   gitCheckoutStoreToken,
 } from '@core/features/source-control/contributions/browser/workspace-store-tokens';
-import { PreviewServerStore } from '@core/features/tasks/api/browser/stores/preview-server-store';
 import {
   taskChromeStore,
   type TaskChromeStore,
@@ -104,7 +103,6 @@ export class TaskComposition {
 
   diffView: DiffViewStore | null = null;
   prStore: PrStore | null = null;
-  previewServers: PreviewServerStore | null = null;
 
   private readonly _disposers: (() => void)[] = [];
   private _sessionDisposers: (() => void)[] = [];
@@ -488,12 +486,7 @@ export class TaskComposition {
   }
 
   private initialize(): void {
-    if (
-      this.previewServers ||
-      this._initializing ||
-      !this._workspace ||
-      !this._acquiredWorkspaceId
-    ) {
+    if (this.prStore || this._initializing || !this._workspace || !this._acquiredWorkspaceId) {
       return;
     }
     const workspace = this._workspace;
@@ -506,14 +499,6 @@ export class TaskComposition {
     workspace: WorkspaceStore,
     workspaceId: string
   ): Promise<void> {
-    this.previewServers = new PreviewServerStore({
-      projectId: this.projectId,
-      workspaceId,
-      connectionId: workspace.sshConnectionId,
-      hostAccess: this._terminals.hostAccess,
-    });
-    this.previewServers.start();
-
     try {
       await this.hydrateAndSeedPaneLayout();
     } catch (error) {
@@ -611,8 +596,6 @@ export class TaskComposition {
     this._workspace?.get(diffTabManagerStoreToken).unbindSession();
     this.prStore?.dispose();
     this.prStore = null;
-    this.previewServers?.dispose();
-    this.previewServers = null;
     this.paneLayout.stopPersistence();
     for (const dispose of this._sessionDisposers) dispose();
     this._sessionDisposers = [];

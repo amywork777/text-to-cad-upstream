@@ -16,7 +16,6 @@ export type WorkspaceLifecycleParticipant = Readonly<{
 
 export function createWorkspaceLifecycleParticipants(dependencies: {
   registerFileSearchRoot(path: HostAbsolutePath, host: HostRef): Promise<void> | void;
-  stopPreviewServers(projectId: string, workspaceId: string): Promise<void> | void;
 }): readonly WorkspaceLifecycleParticipant[] {
   return [
     {
@@ -26,11 +25,6 @@ export function createWorkspaceLifecycleParticipants(dependencies: {
           hostFileRefFromNativePath(identity.path, sshConnectionIdOf(identity.host)).path,
           identity.host
         ),
-    },
-    {
-      id: 'preview-servers',
-      deactivate: ({ identity }) =>
-        dependencies.stopPreviewServers(identity.projectId, identity.workspaceId),
     },
   ];
 }

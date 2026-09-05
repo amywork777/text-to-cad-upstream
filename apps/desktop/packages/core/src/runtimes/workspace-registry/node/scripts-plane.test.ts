@@ -55,12 +55,10 @@ describe('ScriptRunsObserver', () => {
     const unused = () => {
       throw new Error('not exercised by these tests');
     };
-    const devServersHost = expose(scriptsContract.devServers, { list: cell({}) });
     wire = createTestWire(
       scriptsContract,
       createController(scriptsContract, {
         runs: runsHost,
-        devServers: devServersHost,
         output: unused,
         start: unused,
         wait: unused,
