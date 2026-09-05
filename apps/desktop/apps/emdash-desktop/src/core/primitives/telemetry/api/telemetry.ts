@@ -215,5 +215,4 @@ export interface TelemetryService {
   captureException(error: Error | unknown, additionalProperties?: Record<string, unknown>): void;
   getTelemetryStatus(): TelemetryStatus;
   setTelemetryEnabledViaUser(enabled: boolean): void;
-  getFeatureFlags(): Record<string, boolean>;
 }

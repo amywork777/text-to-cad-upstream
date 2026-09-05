@@ -7,9 +7,7 @@ import { setAgentStatusConversationEventPublisher } from '@main/core/agent-statu
 import { tuiAgentStatusBridge } from '@main/core/agent-status/tui-agent-status-bridge';
 import type { DesktopRuntimes } from '@main/gateway/desktop-runtimes';
 import { installDesktopWire, registerDesktopWireControllers } from '@main/gateway/desktop-wire';
-import { log } from '@main/lib/logger';
 import { appScope } from '../../core/app-scope';
-import { runInBackground } from '../../core/background';
 import type { ControllersBundle } from './controllers';
 import type { DatabaseBundle } from './database';
 import type { ServicesBundle } from './services';
@@ -66,11 +64,4 @@ export function installGateway(
       detach: (host) => tuiAgentStatusBridge.detachHost(host),
     })
   );
-
-  runInBackground('account-session', async () => {
-    const result = await services.account.initialize();
-    if (!result.success) {
-      log.warn('Failed to load account session token:', result.error);
-    }
-  });
 }

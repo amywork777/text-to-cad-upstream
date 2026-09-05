@@ -1,4 +1,5 @@
 import type { ChatComposerProps, PromptEditorRef } from '@emdash/ui/react/components';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -121,12 +122,17 @@ function FieldProbe({
   placeholder?: string;
 }) {
   const state = useInitialConversationState('project-1');
-  return React.createElement(InitialConversationField, {
-    state,
-    linkedIssue,
-    includeIssueContextByDefault,
-    placeholder,
-  });
+  const [queryClient] = React.useState(() => new QueryClient());
+  return React.createElement(
+    QueryClientProvider,
+    { client: queryClient },
+    React.createElement(InitialConversationField, {
+      state,
+      linkedIssue,
+      includeIssueContextByDefault,
+      placeholder,
+    })
+  );
 }
 
 function chatComposerProps(): ChatComposerProps {

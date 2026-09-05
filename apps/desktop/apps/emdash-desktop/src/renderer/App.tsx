@@ -1,7 +1,6 @@
 import { Tooltip } from '@emdash/ui/react/primitives';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAccountSession } from '@core/features/account/api/browser/useAccount';
 import { GithubContextProvider } from '@core/features/github/api/browser/github-context-provider';
 import { useLegacyPortStatus } from '@core/features/legacy-port/api/browser/useLegacyPort';
 import { TerminalPoolProvider } from '@core/features/terminals/browser/pty/pty-pool-provider';
@@ -19,7 +18,6 @@ import { WelcomeScreen } from './app/welcome';
 import { Workspace } from './app/workspace';
 import { WorkspaceViewProvider } from './lib/layout/provider';
 import { ModalRenderer } from './lib/modal/modal-renderer';
-import { FeatureFlagProvider } from './lib/providers/feature-flag-override-context';
 import { ThemeProvider } from './lib/providers/theme-provider';
 
 export const HAS_SEEN_ONBOARDING = 'hardcore:has-seen-onboarding:v1';
@@ -33,17 +31,13 @@ function hasSeenOnboarding(): boolean {
 }
 
 type AppView = 'onboarding' | 'welcome' | 'workspace';
-type OnboardingStep = 'sign-in' | 'import';
 
 function AppContent() {
   const [view, setView] = useState<AppView>(() =>
     hasSeenOnboarding() ? 'workspace' : 'onboarding'
   );
 
-  const { data: session, isLoading: sessionLoading } = useAccountSession();
-  const { data: legacyStatus, isLoading: legacyLoading } = useLegacyPortStatus();
-
-  const isLoading = sessionLoading || legacyLoading;
+  const { data: legacyStatus, isLoading } = useLegacyPortStatus();
 
   const queriesReported = useRef(false);
   useEffect(() => {
@@ -52,22 +46,18 @@ function AppContent() {
     reportAppQueriesSettled();
   }, [isLoading]);
 
-  // Computed once when queries first resolve while in onboarding. Never updated
-  // after that so query refetches mid-onboarding (e.g. legacyPortStatus after
-  // import completes) cannot shrink the step list and unmount active step components.
-  const [frozenSteps, setFrozenSteps] = useState<OnboardingStep[] | null>(null);
-
+  // Freeze the import decision so a status refresh cannot unmount an import in progress.
+  const [needsImport, setNeedsImport] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!isLoading && view === 'onboarding' && frozenSteps === null) {
-      const computed: OnboardingStep[] = [];
-      if (!session?.isSignedIn) computed.push('sign-in');
-      const needsImport = legacyStatus?.hasImportSources && !legacyStatus.portStatus;
-      if (needsImport) computed.push('import');
-      setFrozenSteps(computed);
+    if (!isLoading && view === 'onboarding' && needsImport === null) {
+      const shouldImport = Boolean(legacyStatus?.hasImportSources && !legacyStatus.portStatus);
+      setNeedsImport(shouldImport);
+      if (!shouldImport) {
+        localStorage.setItem(HAS_SEEN_ONBOARDING, 'true');
+        setView('welcome');
+      }
     }
-  }, [view, isLoading, frozenSteps, session, legacyStatus]);
-
-  const stepsNeeded = frozenSteps ?? [];
+  }, [view, isLoading, needsImport, legacyStatus]);
 
   const handleOnboardingComplete = () => {
     localStorage.setItem(HAS_SEEN_ONBOARDING, 'true');
@@ -75,22 +65,22 @@ function AppContent() {
   };
 
   const handleOpenSettingsFromMenu = useCallback(() => {
-    if (view === 'onboarding' && stepsNeeded.length > 0) return false;
+    if (view === 'onboarding' && needsImport) return false;
     setView('workspace');
     return true;
-  }, [view, stepsNeeded.length]);
+  }, [view, needsImport]);
 
   const renderContent = () => {
     // Linux runs frameless (`frame: false`), so every branch — including the
     // pre-resolution loading window — must mount the overlay to keep window
     // controls and a drag region available.
-    if (isLoading || (view === 'onboarding' && frozenSteps === null)) {
+    if (isLoading || (view === 'onboarding' && needsImport === null)) {
       return <FramelessTitlebarOverlay />;
     }
-    if (view === 'onboarding' && stepsNeeded.length > 0) {
+    if (view === 'onboarding' && needsImport) {
       return (
         <>
-          <Onboarding steps={stepsNeeded} onComplete={handleOnboardingComplete} />
+          <Onboarding onComplete={handleOnboardingComplete} />
           <FramelessTitlebarOverlay />
         </>
       );
@@ -135,9 +125,7 @@ function AppContent() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <FeatureFlagProvider>
-        <AppContent />
-      </FeatureFlagProvider>
+      <AppContent />
     </QueryClientProvider>
   );
 }

@@ -1,4 +1,3 @@
-import { accountContract, accountDomain } from '@core/features/account/api';
 import { agentsContract, agentsDomain } from '@core/features/agents/api';
 import { browserContract, browserDomain } from '@core/features/browser/api';
 import { catalogDomain, catalogWireContract } from '@core/features/catalog/api';
@@ -45,7 +44,6 @@ import { appSettingsContract, appSettingsDomain } from '@core/services/settings/
 import { sshContract, sshDomain } from '@core/services/ssh/api';
 
 export const desktopDomainContracts = {
-  [accountDomain]: accountContract,
   [agentsDomain]: agentsContract,
   [appSettingsDomain]: appSettingsContract,
   [devPerfDomain]: devPerfContract,

@@ -6,7 +6,6 @@ The main process is organized into domain modules under `src/main/core/`. Each d
 
 ## Domain Modules (`src/main/core/`)
 
-- **account** — Emdash account service, credential store, provider token registry
 - **agent-status** — Desktop projection of runtime agent states into SQLite/cache state and renderer status events
 - **app** — App lifecycle service and controller
 - **conversations** — Conversation CRUD and session start
@@ -21,7 +20,6 @@ The main process is organized into domain modules under `src/main/core/`. Each d
 - **pty** — PTY lifecycle (`local-pty.ts`, `ssh2-pty.ts`), session registry, env setup, spawn utilities
 - **repository** — Repository controller
 - **settings** — App settings service and schema, provider settings (separate controller)
-- **shared** — Shared utilities (OAuth flow)
 - **skills** — Skills service and controller
 - **ssh** — SSH connection management, credentials, config parsing, client proxy
 - **tasks** — Task CRUD (create, delete, archive, restore, provision)

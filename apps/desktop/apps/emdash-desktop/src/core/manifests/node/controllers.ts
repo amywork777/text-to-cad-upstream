@@ -9,8 +9,6 @@ import {
   type ContractImpl,
   type Controller,
 } from '@emdash/wire/rpc';
-import type { AccountService } from '@core/features/account/node/services/emdash-account-service';
-import { createAccountWireController } from '@core/features/account/node/wire-controller';
 import { createAgentOperations } from '@core/features/agents/node/controller';
 import { createAgentsWireController } from '@core/features/agents/node/wire-controller';
 import {
@@ -104,7 +102,6 @@ import {
 import { createSshWireController } from '@core/services/ssh/node/controller';
 
 export type DesktopControllerContext = {
-  readonly accountService: AccountService;
   readonly agentDependencies: Omit<
     Parameters<typeof createAgentOperations>[0],
     'providerOverrideSettings'
@@ -166,10 +163,6 @@ function controllerFromImpl<Defs extends ContractDefinitions>(
 }
 
 export const desktopNodeControllers = {
-  account: {
-    create: ({ accountService, logger, telemetry }) =>
-      createAccountWireController(accountService, { logger, telemetry }),
-  },
   agents: {
     create: ({ agentDependencies, providerSettings, runtimes }) =>
       createAgentsWireController({

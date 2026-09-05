@@ -77,3 +77,7 @@ Discovery initializes a short-lived session without sending a prompt, then relea
 
 Remote workspaces require the matching protocol 3 workspace-server build. Protocol 2 servers are
 rejected during negotiation because scheduled automations and preview-server streams were removed.
+
+The desktop has no hosted app account or sign-in gate. GitHub connections use the local
+GitHub CLI or GitHub device flow from settings; agent authentication stays with each
+provider CLI. First run offers legacy data import when available, then opens the welcome screen.

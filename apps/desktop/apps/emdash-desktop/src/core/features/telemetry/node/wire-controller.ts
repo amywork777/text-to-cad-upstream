@@ -11,6 +11,5 @@ export function createTelemetryWireController(telemetry: TelemetryService): Cont
     setEnabled: ({ enabled }) => {
       telemetry.setTelemetryEnabledViaUser(enabled);
     },
-    getFeatureFlags: () => telemetry.getFeatureFlags(),
   });
 }

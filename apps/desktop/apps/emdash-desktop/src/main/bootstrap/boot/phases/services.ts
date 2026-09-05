@@ -1,13 +1,6 @@
 import { LOCAL_HOST_REF, type HostRef } from '@emdash/core/primitives/host/api';
 import { err, ok } from '@emdash/shared';
 import { app } from 'electron';
-import { providerTokenRegistry } from '@core/features/account/api/node/provider-token-registry';
-import { AccountAuthServerClient } from '@core/features/account/node/services/account-auth-server-client';
-import { AccountOAuthClient } from '@core/features/account/node/services/account-oauth-client';
-import type { AccountKVSchema } from '@core/features/account/node/services/account-session-store';
-import { AccountCredentialStore } from '@core/features/account/node/services/credential-store';
-import { createAccountService } from '@core/features/account/node/services/emdash-account-service';
-import { ProviderTokenDispatcher } from '@core/features/account/node/services/provider-token-dispatcher';
 import { getPluginMetadata } from '@core/features/agents/api/node/plugin-registry';
 import { createConversationDeletionSweepKind } from '@core/features/conversations/node/sweep/conversation-deletion-sweep';
 import { ConversationBackfillService } from '@core/features/conversations/node/sync/conversation-backfill';
@@ -99,7 +92,6 @@ import {
 } from '@main/core/runtime/operations/session-cleanup';
 import { sweepSessionHygiene } from '@main/core/runtime/operations/session-hygiene';
 import { createDesktopSessionIntentStores } from '@main/core/runtime/session-intent-stores';
-import { executeOAuthFlow } from '@main/core/shared/oauth-flow';
 import { getTerminalColorEnv } from '@main/core/terminal-shell/color-env';
 import { runLocalCommand } from '@main/core/utils/exec';
 import { KV } from '@main/db/kv';
@@ -119,14 +111,12 @@ import { telemetryService } from '@main/lib/telemetry';
 import { appScope } from '../../core/app-scope';
 import { step } from '../../core/phase';
 import { setCoreServiceInstances } from '../../core/service-instances';
-import { registerProviderTokenHandlers, wireAccountTelemetry } from '../wiring';
 import type { DatabaseBundle } from './database';
 import type { InfrastructureBundle } from './infrastructure';
 
 type GitHubKVSchema = { tokenSource: string };
 
 export type ServicesBundle = {
-  readonly account: ReturnType<typeof createAccountService>;
   readonly github: {
     account: GitHubAccountService;
     cliImport: GitHubCliAccountImportService;
@@ -327,14 +317,6 @@ export async function bootServices(
   // Unmigrated string-typed consumers get the documented plaintext view over
   // the Secret-typed secrets store (see toPlaintextSecretStore).
   const plaintextSecrets = toPlaintextSecretStore(encryptedAppSecretsStore);
-  const accountCredentials = new AccountCredentialStore(plaintextSecrets, log);
-  const accountService = createAccountService({
-    authServerClient: new AccountAuthServerClient(),
-    credentials: accountCredentials,
-    keyValueStore: new AppDbKeyValueStore<AccountKVSchema>(db, 'account', log),
-    oauthClient: new AccountOAuthClient(executeOAuthFlow),
-    providerTokenDispatcher: new ProviderTokenDispatcher(providerTokenRegistry),
-  });
   const promptLibraryService = createPromptLibraryService({
     db,
     keyValueStore: new AppDbKeyValueStore<PromptLibraryKV>(db, 'prompt-library', log),
@@ -488,7 +470,6 @@ export async function bootServices(
     repositories: githubRepositories,
   };
   setCoreServiceInstances({
-    account: accountService,
     appSettings: appSettingsService,
     notifications: notificationService,
     promptLibrary: promptLibraryService,
@@ -506,7 +487,6 @@ export async function bootServices(
     log.warn('telemetry init failed:', error);
   }
 
-  wireAccountTelemetry(accountService);
   projectSettingsService.initialize();
   pullRequestsRegistration.initialize();
   appService.initialize({
@@ -657,9 +637,7 @@ export async function bootServices(
   void sessionHygieneSweep.runNow().catch((error) => {
     log.warn('session hygiene sweep failed', { error: String(error) });
   });
-  registerProviderTokenHandlers();
   return {
-    account: accountService,
     github: githubServices,
     gitCredentials,
     hostIsReachable,

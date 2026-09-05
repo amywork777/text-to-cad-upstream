@@ -7,25 +7,9 @@ import { GithubConnectModal } from '@core/features/settings/browser/components/g
 import { ModalHostTestProvider, type ModalHostController } from '@core/primitives/modals/react';
 import { modalStore } from '@core/primitives/modals/react/modal-store';
 
-const accountHooks = vi.hoisted(() => ({
-  session: { isSignedIn: false, hasAccount: false },
-  signIn: vi.fn(async (_provider: string | undefined) => ({
-    success: true,
-    providerAccount: { login: 'dkonopka' },
-    providerAccountStatus: 'created',
-  })),
-  linkProvider: vi.fn(async (_provider: string | undefined) => ({ success: true })),
-}));
-
 const githubHooks = vi.hoisted(() => ({
   deviceFlowAuth: vi.fn(async () => ({ success: true })),
-  importCliAccounts: vi.fn(async () => ({ success: true, importedAccountIds: [] })),
-}));
-
-vi.mock('@core/features/account/api/browser/useAccount', () => ({
-  useAccountSession: () => ({ data: accountHooks.session }),
-  useAccountSignIn: () => ({ mutateAsync: accountHooks.signIn, isPending: false }),
-  useAccountLinkProvider: () => ({ mutateAsync: accountHooks.linkProvider, isPending: false }),
+  importCliAccounts: vi.fn(async () => ({ success: true, importedAccountIds: [] as string[] })),
 }));
 
 vi.mock('@core/features/github/api/browser/useGithubAccounts', () => ({
@@ -57,7 +41,7 @@ describe('GitHub connect-and-resume', () => {
   };
 
   beforeEach(() => {
-    accountHooks.signIn.mockClear();
+    githubHooks.importCliAccounts.mockReset();
     githubHooks.deviceFlowAuth.mockClear();
     controller = {
       complete: vi.fn<(result: unknown) => void>(),
@@ -115,12 +99,16 @@ describe('GitHub connect-and-resume', () => {
     expect(interruptedSettled).toBe(false);
   });
 
-  it('completes the connect modal after a successful OAuth connect', async () => {
+  it('completes the connect modal after importing a GitHub CLI account', async () => {
+    githubHooks.importCliAccounts.mockResolvedValue({
+      success: true,
+      importedAccountIds: ['github-1'],
+    });
     await renderConnectModal();
 
-    await act(async () => methodButton('Continue').click());
+    await act(async () => methodButton('Import from GitHub CLI').click());
 
-    expect(accountHooks.signIn).toHaveBeenCalledWith('github');
+    expect(githubHooks.importCliAccounts).toHaveBeenCalledTimes(1);
     expect(controller.complete).toHaveBeenCalledTimes(1);
   });
 

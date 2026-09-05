@@ -26,8 +26,4 @@ export const telemetryContract = defineContract({
     }),
   }),
   setEnabled: procedure({ input: z.object({ enabled: z.boolean() }), output: z.void() }),
-  getFeatureFlags: procedure({
-    input: z.void(),
-    output: z.record(z.string(), z.boolean()),
-  }),
 });

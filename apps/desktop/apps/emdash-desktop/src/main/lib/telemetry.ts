@@ -42,10 +42,6 @@ class DesktopTelemetryService implements Disposable, TelemetryServicePort {
   private userOptOut: boolean | undefined;
   private sessionId: string | undefined;
   private lastActiveDate: string | undefined;
-  private cachedGithubUsername: string | null = null;
-  private cachedAccountId: string | null = null;
-  private cachedEmail: string | null = null;
-  private cachedFeatureFlags: Record<string, boolean> = {};
   private heartbeatInterval: ReturnType<typeof setInterval> | undefined;
   private perfSampled = false;
   private appVersion = 'unknown';
@@ -80,8 +76,6 @@ class DesktopTelemetryService implements Disposable, TelemetryServicePort {
       is_dev: !this.isPackaged,
       install_source: this.installSource ?? (this.isPackaged ? 'dmg' : 'dev'),
       $lib: LIB_NAME,
-      ...(this.cachedGithubUsername ? { github_username: this.cachedGithubUsername } : {}),
-      ...(this.cachedAccountId ? { account_id: this.cachedAccountId } : {}),
     };
   }
 
@@ -256,68 +250,6 @@ class DesktopTelemetryService implements Disposable, TelemetryServicePort {
     }
   }
 
-  private async posthogIdentify(username: string, email?: string): Promise<void> {
-    if (!this.isEnabled() || !username) return;
-    try {
-      const u = (this.host ?? '').replace(/\/$/, '') + '/capture/';
-      const body = {
-        api_key: this.apiKey,
-        event: '$identify',
-        properties: {
-          distinct_id: this.instanceId,
-          $set: {
-            ...(email ? { email } : {}),
-            ...this.getBaseProps(),
-          },
-        },
-      };
-      await fetch(u, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(5_000),
-      }).catch(() => undefined);
-    } catch {
-      // swallow errors; telemetry must never crash the app
-    }
-  }
-
-  private async posthogDecide(): Promise<void> {
-    if (!this.isEnabled() || !this.instanceId) return;
-    try {
-      const u = (this.host ?? '').replace(/\/$/, '') + '/decide/?v=3';
-      const body = {
-        api_key: this.apiKey,
-        distinct_id: this.instanceId,
-        person_properties: {
-          ...(this.cachedGithubUsername ? { github_username: this.cachedGithubUsername } : {}),
-          ...(this.cachedAccountId ? { account_id: this.cachedAccountId } : {}),
-          ...(this.cachedEmail ? { email: this.cachedEmail } : {}),
-        },
-      };
-      const response = await fetch(u, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (response.ok) {
-        const data = (await response.json()) as { featureFlags?: Record<string, unknown> };
-        const flags = data.featureFlags ?? {};
-        const parsed: Record<string, boolean> = {};
-        for (const [key, value] of Object.entries(flags)) {
-          if (typeof value === 'boolean') {
-            parsed[key] = value;
-          } else if (value === 'true' || value === 'false') {
-            parsed[key] = value === 'true';
-          }
-        }
-        this.cachedFeatureFlags = parsed;
-      }
-    } catch {
-      // swallow errors; telemetry must never crash the app
-    }
-  }
-
   // ---------------------------------------------------------------------------
   // Daily active user
   // ---------------------------------------------------------------------------
@@ -432,32 +364,6 @@ class DesktopTelemetryService implements Disposable, TelemetryServicePort {
     await Promise.all([this.kv.del('lastSessionId'), this.kv.del('lastHeartbeatTs')]);
   }
 
-  /**
-   * Associate the current anonymous session with a known identity. Called via
-   * the accountChanged hook when sign-in succeeds or on cold boot if a session
-   * is already stored. Triggers a PostHog identify and a decide call to refresh
-   * cached feature flags.
-   */
-  async identify(username: string, userId: string, email: string): Promise<void> {
-    if (!username) return;
-    this.cachedGithubUsername = username;
-    this.cachedAccountId = userId;
-    this.cachedEmail = email;
-    await this.posthogIdentify(username, email);
-    await this.posthogDecide();
-  }
-
-  /**
-   * Clear the cached identity and feature flags. Called via the accountCleared
-   * hook when the user signs out.
-   */
-  clearIdentity(): void {
-    this.cachedGithubUsername = null;
-    this.cachedAccountId = null;
-    this.cachedEmail = null;
-    this.cachedFeatureFlags = {};
-  }
-
   capture<E extends TelemetryEvent>(
     event: E,
     properties?: TelemetryProperties<E> | Record<string, unknown>
@@ -518,23 +424,6 @@ class DesktopTelemetryService implements Disposable, TelemetryServicePort {
 
   async checkAndReportDailyActiveUser(): Promise<void> {
     return this.checkDailyActiveUser();
-  }
-
-  /**
-   * Returns the current set of evaluated feature flags. In dev mode, FLAG_*
-   * environment variables (e.g. FLAG_my_flag=true) override any PostHog values.
-   */
-  getFeatureFlags(): Record<string, boolean> {
-    if (!isViteDevBuild) return this.cachedFeatureFlags;
-
-    const overrides: Record<string, boolean> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (key.startsWith('FLAG_')) {
-        const flagName = key.slice(5).toLowerCase().replace(/_/g, '-');
-        overrides[flagName] = value === 'true' || value === '1';
-      }
-    }
-    return { ...this.cachedFeatureFlags, ...overrides };
   }
 }
 

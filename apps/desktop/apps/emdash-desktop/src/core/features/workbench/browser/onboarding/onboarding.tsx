@@ -1,20 +1,14 @@
-import { useState } from 'react';
-import { OnboardingShell } from './onboarding-shell';
+import { ImportStep } from './import-step';
 
-type OnboardingStep = 'sign-in' | 'import';
-
-export function Onboarding({
-  steps: initialSteps,
-  onComplete,
-}: {
-  steps: OnboardingStep[];
-  onComplete: () => void;
-}) {
-  const [steps] = useState(initialSteps);
-
+export function Onboarding({ onComplete }: { onComplete: () => void }) {
   return (
     <div className="flex h-full w-full flex-col items-center justify-center [-webkit-app-region:drag]">
-      <OnboardingShell steps={steps} onComplete={onComplete} />
+      <div className="mx-auto flex h-full max-h-[70vh] min-h-0 w-full max-w-5xl flex-col items-start justify-center [-webkit-app-region:no-drag]">
+        <div className="text-md border border-b-0 bg-background-1 px-5 py-3">Import</div>
+        <div className="flex h-full min-h-0 w-full flex-col items-center justify-center border bg-background-1">
+          <ImportStep onComplete={onComplete} />
+        </div>
+      </div>
     </div>
   );
 }

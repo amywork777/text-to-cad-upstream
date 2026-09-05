@@ -391,7 +391,6 @@ pnpm run test
   `EMDASH_DISABLE_NATIVE_DB`, `EMDASH_DISABLE_PTY`,
   `CODEX_SANDBOX_MODE`, and `CODEX_APPROVAL_POLICY`.
 - Build-time telemetry configuration may use `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST`.
-- Runtime feature flags are read through telemetry-backed feature flag helpers.
 - App-internal path aliases are defined in `tsconfig.json` (`@/*`, `@core/*`, `@renderer/*`,
   `@main/*`, `@root/*`, and `@tooling/*`) and mirrored where needed in
   `electron.vite.config.ts`; workspace packages resolve through their `exports` maps with a
