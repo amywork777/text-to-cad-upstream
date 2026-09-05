@@ -108,21 +108,19 @@ internals, and no polling of viewer state. Selections reach the chat through the
 Reference and Copy Link actions; screenshots use Electron's webContents capture. When the accepted
 STEP changes, the desktop reloads the page.
 
-## Native feature-tree contract
+## Future visual editing
 
 Hardcore previously injected a source-backed feature tree and parameter sliders into the viewer's
 DOM. That bridge was removed with the move into this repository; the last version is
 `amywork777/hardcore@cb70246a40` (`src/core/features/cad/browser/cad-viewer-integration.ts`,
-`cad-history-panel.tsx`, `cad-agent-panel.tsx`) and the desktop import commit preserves it in this
-repository's history. What stays is the portable payload: the versioned `designHistory` descriptor
-in `src/core/features/cad/api/cad-design-history-descriptor.ts`, its checked-in v1 fixture, and the
-source parser in `cad-source-history.ts`.
+`cad-history-panel.tsx`, `cad-agent-panel.tsx`). The unused descriptor, fixture and Python source
+parser were also removed from this import; their last version is available at
+`8654e450:apps/desktop/apps/emdash-desktop/src/core/features/cad/api/`.
 
-The descriptor binds history to `sourceHash` and `stepHash` and preserves the earlier authoring
-work. It is not wired into the viewer. Current 0.5.0 laws make the viewer a source-blind artifact
-reviewer: any future feature editor must be owned by the desktop, including source updates,
-rebuild, validation, rollback, and acceptance. Until that authoring UI is implemented, recipes
-are edited in the desktop's Source view and rebuilt through the lifecycle above.
+Current 0.5.0 laws make the viewer a source-blind artifact reviewer. Future visual editing should
+keep source updates, rebuild, validation, rollback and acceptance in the desktop, with viewport
+interactions exposed through explicit shared interfaces. Recipes currently use the desktop's
+Source view and the rebuild lifecycle above.
 
 ## Acceptance gate
 

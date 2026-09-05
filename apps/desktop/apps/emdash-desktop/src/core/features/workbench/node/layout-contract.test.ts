@@ -94,15 +94,7 @@ const checks: ContractCheck[] = [
     name: 'no ShowHide on workbench surfaces',
     pattern: /\bShowHide\b/,
     scope: surfaceDirs,
-    allowlist: [
-      {
-        path: 'core/features/source-control/browser/diff-view/main-panel/stacked-diff-view.tsx',
-        reason:
-          'Diff-view per-file content collapse keeps heavy rendered diffs mounted while ' +
-          'collapsed. Content-level state, not workbench chrome; no panel defaultLayout below ' +
-          'it (ticket 12 finding).',
-      },
-    ],
+    allowlist: [],
     rationale:
       'ShowHide is display:none-based. Workbench chrome (sidebars, drawer, changes sections) ' +
       'must unmount when closed so panel layouts mount fresh from persisted defaults.',

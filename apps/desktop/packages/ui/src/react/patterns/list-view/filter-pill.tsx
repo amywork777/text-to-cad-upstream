@@ -21,8 +21,7 @@ export interface FilterPillProps extends React.HTMLAttributes<HTMLSpanElement> {
 /**
  * ListView.FilterPill — a chip representing one active filter.
  *
- * Modelled on the `FilterPill` in `pr-view.tsx`. Supports an optional avatar
- * or color swatch prefix and a "×" remove button.
+ * Supports an optional avatar or color swatch prefix and a "×" remove button.
  */
 function FilterPill({
   label,
@@ -66,8 +65,7 @@ export interface FilterButtonProps extends React.ButtonHTMLAttributes<HTMLButton
 /**
  * ListView.FilterButton — ghost trigger button for opening a filter popover.
  *
- * Modelled on the `FilterButton` in `pr-view.tsx`. Visually equivalent to a
- * ghost link — low-profile until it is active or hovered.
+ * Visually equivalent to a ghost link — low-profile until it is active or hovered.
  */
 function FilterButton({ active = false, icon, children, className, ...props }: FilterButtonProps) {
   return (

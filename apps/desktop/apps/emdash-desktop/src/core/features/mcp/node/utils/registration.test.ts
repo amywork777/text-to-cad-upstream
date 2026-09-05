@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import {
   mcpServerFieldCount,
   mcpServerToRegistration,
   registrationToMcpServer,
-} from './registration';
+} from '@emdash/core/primitives/mcp/api';
+import { describe, expect, it } from 'vitest';
 
 describe('MCP registration conversion', () => {
   it('preserves enabled state across canonical conversion', () => {
