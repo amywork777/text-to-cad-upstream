@@ -9,7 +9,7 @@ export type CadTurnRecord = {
 export type ConversationStatusSnapshot = ReadonlyArray<readonly [id: string, status: string]>;
 
 /**
- * Which turns have ended and still owe a model reveal, for every conversation
+ * Which turns are active or still owe a final model scan, for every conversation
  * in the app. It lives outside any task view so a turn that starts or ends
  * while another project is on screen, or while a pane change remounts the
  * task view, is neither lost nor scanned from the wrong moment.
@@ -48,33 +48,19 @@ export class CadTurnLedger {
     }
   });
 
-  /** The earliest start among ended, unrevealed turns of the given conversations, or null. */
-  pendingSince(ids: Iterable<string>): number | null {
-    let since: number | null = null;
-    for (const id of ids) {
+  /** Immutable record snapshots let an in-flight scan acknowledge only the turns it saw. */
+  pendingTurns(ids: Iterable<string>): Array<readonly [string, CadTurnRecord]> {
+    return [...ids].flatMap((id) => {
       const record = this.turns.get(id);
-      if (!record || record.endedAt === null || record.revealed) continue;
-      since = since === null ? record.startedAt : Math.min(since, record.startedAt);
-    }
-    return since;
+      return record && !record.revealed ? [[id, record] as const] : [];
+    });
   }
 
-  /** Observable fingerprint of the ended turns for the given conversations, for reactions to key on. */
-  endedFingerprint(ids: Iterable<string>): string {
-    const parts: string[] = [];
-    for (const id of ids) {
-      const record = this.turns.get(id);
-      if (record?.endedAt !== null && record?.endedAt !== undefined && !record.revealed) {
-        parts.push(`${id}:${record.endedAt}`);
+  readonly markRevealed = action((turns: ReadonlyArray<readonly [string, CadTurnRecord]>): void => {
+    for (const [id, record] of turns) {
+      if (record.endedAt !== null && this.turns.get(id) === record) {
+        this.turns.set(id, { ...record, revealed: true });
       }
-    }
-    return parts.join('|');
-  }
-
-  readonly markRevealed = action((ids: Iterable<string>): void => {
-    for (const id of ids) {
-      const record = this.turns.get(id);
-      if (record && record.endedAt !== null) this.turns.set(id, { ...record, revealed: true });
     }
   });
 }

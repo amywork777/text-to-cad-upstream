@@ -85,7 +85,7 @@ describe('buildCadAgentContext', () => {
     expect(context).toContain('screenshots, diagrams, and documents');
     expect(context).toContain('instead of forcing CAD');
     expect(context).toContain('Web search');
-    expect(context).toContain('its own CAD Viewer beside the chat');
+    expect(context).toContain('valid intermediate builds to the same output path');
     expect(context).toContain('cad-desktop skill');
   });
 

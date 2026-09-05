@@ -31,6 +31,7 @@ describe('listCadArtifacts', () => {
     await mkdir(join(root, 'models', 'parts'), { recursive: true });
     await mkdir(join(root, 'node_modules', 'pkg'), { recursive: true });
     await writeFile(join(root, 'models', 'parts', 'bracket.step'), 'ISO-10303-21;');
+    await writeFile(join(root, 'models', 'empty.step'), '');
     await writeFile(join(root, 'models', 'bracket.py'), 'from cadgen import step');
     await writeFile(join(root, 'node_modules', 'pkg', 'fixture.step'), 'ISO-10303-21;');
     const old = join(root, 'legacy.step');
@@ -38,7 +39,7 @@ describe('listCadArtifacts', () => {
     const past = new Date(Date.now() - 60 * 60 * 1000);
     await utimes(old, past, past);
 
-    const result = listCadArtifacts({ workspacePath: root, sinceMs: Date.now() - 5_000 });
+    const result = await listCadArtifacts({ workspacePath: root, sinceMs: Date.now() - 5_000 });
 
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -46,8 +47,11 @@ describe('listCadArtifacts', () => {
     expect(result.artifacts.map(({ path }) => path)).toEqual(['models/parts/bracket.step']);
   });
 
-  it('reports a missing workspace instead of throwing', () => {
-    const result = listCadArtifacts({ workspacePath: '/nonexistent/hardcore-scan', sinceMs: 0 });
+  it('reports a missing workspace instead of throwing', async () => {
+    const result = await listCadArtifacts({
+      workspacePath: '/nonexistent/hardcore-scan',
+      sinceMs: 0,
+    });
     expect(result).toMatchObject({ success: false });
   });
 });

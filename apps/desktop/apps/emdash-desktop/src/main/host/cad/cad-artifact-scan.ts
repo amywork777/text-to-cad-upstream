@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import type { CadArtifactScanResult } from '@core/features/browser/api';
 
@@ -33,17 +33,17 @@ export function isRevealableCadArtifact(path: string): boolean {
 
 /**
  * Model artifacts under a workspace written at or after `sinceMs`, newest
- * last. The desktop calls this when an agent turn ends so a model produced by
+ * last. The desktop polls this while an agent works so a model produced by
  * the agent, or by any subagent writing into the same workspace, can be
  * opened without the file tree having that folder expanded.
  */
-export function listCadArtifacts(input: {
+export async function listCadArtifacts(input: {
   workspacePath: string;
   sinceMs: number;
-}): CadArtifactScanResult {
+}): Promise<CadArtifactScanResult> {
   const root = resolve(input.workspacePath);
   try {
-    if (!statSync(root).isDirectory()) {
+    if (!(await stat(root)).isDirectory()) {
       return { success: false, error: `Workspace is not a directory: ${root}` };
     }
   } catch {
@@ -54,11 +54,11 @@ export function listCadArtifacts(input: {
   let visited = 0;
   let truncated = false;
 
-  const walk = (directory: string, depth: number): void => {
+  const walk = async (directory: string, depth: number): Promise<void> => {
     if (depth > MAX_DEPTH || truncated) return;
     let entries;
     try {
-      entries = readdirSync(directory, { withFileTypes: true });
+      entries = await readdir(directory, { withFileTypes: true });
     } catch {
       return;
     }
@@ -69,13 +69,15 @@ export function listCadArtifacts(input: {
       }
       const full = join(directory, entry.name);
       if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) walk(full, depth + 1);
+        if (!SKIPPED_DIRECTORIES.has(entry.name)) await walk(full, depth + 1);
         continue;
       }
       if (!entry.isFile() || !isRevealableCadArtifact(entry.name)) continue;
       let mtimeMs: number;
       try {
-        mtimeMs = statSync(full).mtimeMs;
+        const info = await stat(full);
+        if (info.size === 0) continue;
+        mtimeMs = info.mtimeMs;
       } catch {
         continue;
       }
@@ -83,7 +85,7 @@ export function listCadArtifacts(input: {
       artifacts.push({ path: relative(root, full).split(sep).join('/'), mtimeMs });
     }
   };
-  walk(root, 0);
+  await walk(root, 0);
 
   artifacts.sort(
     (left, right) => left.mtimeMs - right.mtimeMs || left.path.localeCompare(right.path)

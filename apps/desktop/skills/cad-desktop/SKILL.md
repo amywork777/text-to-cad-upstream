@@ -15,11 +15,15 @@ Model recipes use `@step` on a parameterless function and call it from an
 
 ## What the desktop does for you
 
-- When your turn ends, every new or changed model artifact under the workspace
-  (`.step`, `.stp`, `.dxf`, `.urdf`, `.srdf`, `.sdf`, `.glb`, `.stl`, `.3mf`) is
-  found and opened in the viewer beside the chat, or announced with an Open
-  action when a model is already open. You do not have to do anything for a
-  model to be seen.
+- While you work, the desktop discovers completed model artifacts under the local
+  workspace (`.step`, `.stp`, `.dxf`, `.glb`, `.stl`, `.3mf`). It validates new
+  STEP files before opening the first model beside the chat. Other new models
+  are announced with an Open action so the current viewer stays selected.
+- For longer CAD tasks, build valid intermediate geometry at meaningful milestones
+  (for example, the base shape, then features, then the assembly). Publish each
+  revision to the same output path: the viewer follows artifact changes live.
+  Source edits alone do not update geometry. Finish each build before publishing
+  its output; do not leave a partially written STEP at the final path.
 - A model tab has a 3D view, a Source view for the plain `.py` recipe that generated
   it (with Save and Rebuild), and a Drawing action that produces an SVG, DXF,
   and PDF engineering drawing from the current STEP revision.

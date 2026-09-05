@@ -16,7 +16,7 @@ describe('CadTurnLedger', () => {
     expect(ledger.turns.get('a')).toEqual({ startedAt: 1_000, endedAt: 6_000, revealed: false });
   });
 
-  it('reports the earliest pending start across a task and nothing once revealed', () => {
+  it('keeps each task’s pending turns until acknowledged', () => {
     const c = clock();
     const ledger = new CadTurnLedger(c.now);
     ledger.apply(
@@ -51,18 +51,20 @@ describe('CadTurnLedger', () => {
         ['b', 'working'],
       ]
     );
-    expect(ledger.pendingSince(['a', 'b'])).toBe(1_000);
-    expect(ledger.pendingSince(['b'])).toBe(2_000);
-    expect(ledger.pendingSince(['zzz'])).toBeNull();
-    ledger.markRevealed(['a', 'b']);
-    expect(ledger.pendingSince(['a', 'b'])).toBeNull();
+    expect(ledger.pendingTurns(['a', 'b']).map(([, turn]) => turn.startedAt)).toEqual([
+      1_000, 2_000,
+    ]);
+    expect(ledger.pendingTurns(['b'])).toHaveLength(1);
+    expect(ledger.pendingTurns(['zzz'])).toEqual([]);
+    ledger.markRevealed(ledger.pendingTurns(['a', 'b']));
+    expect(ledger.pendingTurns(['a', 'b'])).toEqual([]);
   });
 
   it('keeps a turn pending while it is still running', () => {
     const ledger = new CadTurnLedger(clock().now);
     ledger.apply([['a', 'working']], [['a', 'idle']]);
-    expect(ledger.pendingSince(['a'])).toBeNull();
-    ledger.markRevealed(['a']);
+    expect(ledger.pendingTurns(['a'])).toHaveLength(1);
+    ledger.markRevealed(ledger.pendingTurns(['a']));
     expect(ledger.turns.get('a')?.revealed).toBe(false);
   });
 
@@ -79,15 +81,17 @@ describe('CadTurnLedger', () => {
     expect(ledger.turns.get('a')?.startedAt).toBe(500);
   });
 
-  it('fingerprints only ended, unrevealed turns', () => {
-    const c = clock();
-    const ledger = new CadTurnLedger(c.now);
-    ledger.apply([['a', 'working']], [['a', 'idle']]);
-    expect(ledger.endedFingerprint(['a'])).toBe('');
-    c.tick(10);
+  it('does not acknowledge a turn that ended or restarted during an in-flight scan', () => {
+    const ledger = new CadTurnLedger(clock().now);
+    ledger.seed([['a', 'working']]);
+    const activeScan = ledger.pendingTurns(['a']);
     ledger.apply([['a', 'idle']], [['a', 'working']]);
-    expect(ledger.endedFingerprint(['a'])).toBe('a:1010');
-    ledger.markRevealed(['a']);
-    expect(ledger.endedFingerprint(['a'])).toBe('');
+    ledger.markRevealed(activeScan);
+    expect(ledger.pendingTurns(['a'])).toHaveLength(1);
+    const endedScan = ledger.pendingTurns(['a']);
+    ledger.apply([['a', 'working']], [['a', 'idle']]);
+    ledger.apply([['a', 'idle']], [['a', 'working']]);
+    ledger.markRevealed(endedScan);
+    expect(ledger.pendingTurns(['a'])).toHaveLength(1);
   });
 });

@@ -77,7 +77,7 @@ Every geometry-changing turn follows the same lifecycle:
    pass `--force` or the retired `--lock-timeout` flag.
 4. Read the build result's `document` path and independently inspect and validate those bytes
    with `cadgen step inspect refs` and `cadgen step inspect validate`.
-5. Accept and reload only the validated on-disk artifact.
+5. At turn completion, accept and reload only the validated on-disk artifact.
 6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry.
    Never delete store entries on rollback: a render tree is keyed by the document bytes.
 
@@ -92,6 +92,28 @@ leaves the document viewable. A same-stem `.py` beside an imported STEP is never
 Old `.step.py` siblings remain discoverable, but must use current declarations to rebuild.
 The `.step.json` sidecar carries kinematics;
 choreography lives in the document's `.step.js` render module.
+
+## Live build previews
+
+While a local task is visible and an agent is working, the desktop scans for new artifacts
+about every two seconds, using asynchronous filesystem reads. It waits for recent writes to
+settle and validates new STEP files before opening the first model. Other new files receive an
+Open action; discovery never replaces an existing CAD tab. A final scan also covers turns
+that finished while another task was visible. Failed scans stay pending for retry.
+
+The embedded viewer already polls its artifact catalog and follows revisions at the same path.
+Intermediate builds are previews; they do not advance an existing model's accepted revision or
+replace its rollback backup. Final validation and rollback remain owned by the desktop's run
+lifecycle. Previewing never executes a recipe. Agents should publish completed, valid builds at
+meaningful milestones; the viewport cannot show geometry that has not been built yet.
+
+This is completed-artifact discovery, not progressive assembly construction. Cadgen's daemon
+already exposes child job states and declared output paths, but that feed carries no parent
+occurrence transforms. Pending placements live inside the build process; the completed artifact
+tree publishes them. The viewer must not infer placements from source or model records, or treat
+an older assembly's layout as the current build's layout. Progressive component loading from an
+already published tree can be implemented in the viewer independently. Keep cadgen's build
+process unchanged for preview work; changes there are limited to separately demonstrated bugs.
 
 ## Viewer ownership
 

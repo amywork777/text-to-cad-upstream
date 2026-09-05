@@ -6,12 +6,9 @@ import type { ConversationManagerStore } from '@core/features/conversations/api/
 import { openFile } from '@core/features/workbench/api/browser/open-file';
 import { resolveWorkspacePath } from '@core/features/workspaces/api/browser/workspace-path';
 import { hostFileRefFromNativePath } from '@core/primitives/desktop-runtime/api';
+import { CAD_VALIDATION_WIRE_TIMEOUT_MS } from '../api/cad-validation';
+import { CAD_ARTIFACT_REVEAL_SETTLE_MS, startCadArtifactPolling } from './cad-artifact-poller';
 import { cadTurnLedger } from './cad-turn-ledger';
-
-/** Let the writer finish (cadgen renames its output into place) before reading it. */
-export const CAD_ARTIFACT_REVEAL_SETTLE_MS = 750;
-/** Scan from a little before the turn started: clocks and watchers are not exact. */
-const TURN_START_SLACK_MS = 2_000;
 
 export type CadArtifactRevealPlan = { open: string | null; announce: string[] };
 
@@ -63,15 +60,7 @@ function watchTurns(conversations: ConversationManagerStore): void {
 /** Artifacts already revealed per workspace, so a remount never reopens the same model. */
 const revealedPaths = new Map<string, Set<string>>();
 
-/**
- * Reveal models written by any agent in the task. Every conversation's turns
- * are recorded app-wide; when a turn has ended and this task is on screen, the
- * workspace is scanned for model artifacts newer than that turn, including
- * turns that ended while another project was in view. Subagents write into
- * the same workspace, so their models surface the same way. Artifacts the
- * catalog already tracks (the focused model a run just rebuilt) are left to
- * the run lifecycle.
- */
+/** Reveal settled output during active turns; the canonical viewer follows subsequent revisions. */
 export function useCadArtifactReveal(
   task: RevealTask,
   conversations: ConversationManagerStore,
@@ -87,8 +76,6 @@ export function useCadArtifactReveal(
     watchTurns(conversations);
     const revealed = revealedPaths.get(workspacePath) ?? new Set<string>();
     revealedPaths.set(workspacePath, revealed);
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let disposed = false;
 
     const open = (relativePath: string) =>
       openFile(hostFileRefFromNativePath(resolveWorkspacePath(workspacePath, relativePath)), {
@@ -96,53 +83,55 @@ export function useCadArtifactReveal(
         target: 'artifact',
       });
 
-    const reveal = async (sinceMs: number) => {
-      const result = await (await getBrowserClient()).listCadArtifacts({ workspacePath, sinceMs });
-      if (disposed || !result.success) return;
-      const fresh = result.artifacts
-        .map(({ path }) => path)
-        .filter((path) => !revealed.has(path) && !isTrackedArtifact(path));
-      for (const path of fresh) revealed.add(path);
-      if (fresh.length === 0) return;
+    const reveal = async (sinceMs: number, isDisposed: () => boolean): Promise<boolean> => {
+      const client = await getBrowserClient();
+      const result = await client.listCadArtifacts({ workspacePath, sinceMs });
+      if (!result.success) throw new Error(result.error);
+      if (isDisposed()) return false;
+      let settled = true;
+      const fresh: string[] = [];
+      for (const { path, mtimeMs } of result.artifacts) {
+        if (revealed.has(path) || isTrackedArtifact(path)) continue;
+        if (Date.now() - mtimeMs < CAD_ARTIFACT_REVEAL_SETTLE_MS) {
+          settled = false;
+          continue;
+        }
+        if (/\.(?:step|stp)$/i.test(path)) {
+          const validation = await client.validateCadModel(
+            { workspacePath, filePath: path },
+            { timeoutMs: CAD_VALIDATION_WIRE_TIMEOUT_MS }
+          );
+          if (isDisposed()) return false;
+          if (!validation.success) continue;
+        }
+        fresh.push(path);
+      }
+      if (isDisposed()) return false;
       const hasOpenCadTab = paneLayout.groups.some(({ pane }) =>
         pane.resolvedTabs.some((tab) => tab.kind === 'cad')
       );
       const plan = planCadArtifactReveal({ newPaths: fresh, hasOpenCadTab });
-      if (plan.open) open(plan.open);
+      if (plan.open) {
+        open(plan.open);
+        revealed.add(plan.open);
+      }
+      if (isDisposed()) return false;
       for (const path of plan.announce) {
+        revealed.add(path);
         toast.info(`New CAD artifact: ${path.split('/').pop() ?? path}`, {
           description: path,
           duration: 10_000,
           action: { label: 'Open', onClick: () => open(path) },
         });
       }
+      return settled;
     };
 
-    // Ended turns stay pending until the scan actually runs, so a task view
-    // that unmounts before the settle delay hands them to the next mount.
-    const processPending = () => {
-      const ids = [...conversations.conversations.keys()];
-      const since = cadTurnLedger.pendingSince(ids);
-      if (since === null) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        cadTurnLedger.markRevealed(ids);
-        void reveal(since - TURN_START_SLACK_MS);
-      }, CAD_ARTIFACT_REVEAL_SETTLE_MS);
-    };
-
-    const dispose = reaction(
-      () => cadTurnLedger.endedFingerprint(conversations.conversations.keys()),
-      () => processPending()
-    );
-    processPending();
-
-    return () => {
-      disposed = true;
-      dispose();
-      if (timer) clearTimeout(timer);
-    };
+    return startCadArtifactPolling({
+      ledger: cadTurnLedger,
+      conversationIds: () => conversations.conversations.keys(),
+      scan: reveal,
+    });
   }, [
     connectionId,
     conversations,
