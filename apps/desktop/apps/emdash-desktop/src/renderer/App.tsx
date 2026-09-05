@@ -3,7 +3,6 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAccountSession } from '@core/features/account/api/browser/useAccount';
 import { GithubContextProvider } from '@core/features/github/api/browser/github-context-provider';
-import { IntegrationsProvider } from '@core/features/integrations/contributions/browser/integrations-provider';
 import { useLegacyPortStatus } from '@core/features/legacy-port/api/browser/useLegacyPort';
 import { TerminalPoolProvider } from '@core/features/terminals/browser/pty/pty-pool-provider';
 import { confirmOpenExternalLink } from '@core/features/workbench/api/browser/open-external-link';
@@ -115,19 +114,17 @@ function AppContent() {
       <WorkspaceLayoutContextProvider>
         <TerminalPoolProvider>
           <GithubContextProvider>
-            <IntegrationsProvider>
-              <WorkspaceViewProvider>
-                <AppMenuEvents onOpenSettings={handleOpenSettingsFromMenu} />
-                <ExternalLinkProvider openExternalLink={confirmOpenExternalLink}>
-                  <ThemeProvider>
-                    <ModalRenderer />
-                    <AppShutdownLifecycle />
-                    <HostRecoveryWakeups />
-                    {renderContent()}
-                  </ThemeProvider>
-                </ExternalLinkProvider>
-              </WorkspaceViewProvider>
-            </IntegrationsProvider>
+            <WorkspaceViewProvider>
+              <AppMenuEvents onOpenSettings={handleOpenSettingsFromMenu} />
+              <ExternalLinkProvider openExternalLink={confirmOpenExternalLink}>
+                <ThemeProvider>
+                  <ModalRenderer />
+                  <AppShutdownLifecycle />
+                  <HostRecoveryWakeups />
+                  {renderContent()}
+                </ThemeProvider>
+              </ExternalLinkProvider>
+            </WorkspaceViewProvider>
           </GithubContextProvider>
         </TerminalPoolProvider>
       </WorkspaceLayoutContextProvider>

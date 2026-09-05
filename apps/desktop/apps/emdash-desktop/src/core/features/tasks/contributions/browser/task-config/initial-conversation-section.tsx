@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@emdash/plugins/agents/types';
 import { ChatComposer } from '@emdash/ui/react/components';
 import type { CommandItem, MentionItem, PromptEditorRef } from '@emdash/ui/react/components';
-import { Field, Switch } from '@emdash/ui/react/primitives';
+import { Field, Icon, Switch } from '@emdash/ui/react/primitives';
 import {
   useCallback,
   useEffect,
@@ -17,7 +17,6 @@ import type { AgentDisableReason } from '@core/features/agents/api/browser/compo
 import { useAgents } from '@core/features/agents/api/browser/use-agents';
 import { AgentSelector } from '@core/features/agents/contributions/browser/agent-selector';
 import { useEffectiveProvider } from '@core/features/conversations/api/browser/use-effective-provider';
-import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
 import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
 import { buildIssueContextText } from '@core/features/tasks/browser/context-bar/context-actions';
@@ -174,7 +173,7 @@ function toLinkedIssueMentionItem(issue: LinkedIssue): MentionItem {
     name: issue.displayIdentifier ?? issue.identifier,
     kind: 'issue',
     description: issue.title,
-    icon: <IntegrationIcon provider={issue.provider} size={13} />,
+    icon: <Icon name="circle-dot" size="sm" />,
   };
 }
 
@@ -285,7 +284,7 @@ export function InitialConversationField({
     if (kind !== 'issue') return null;
     const target = parseIssueMentionToken(id);
     if (!target) return null;
-    return <IntegrationIcon provider={target.provider} size={12} />;
+    return <Icon name="circle-dot" size="sm" />;
   }, []);
 
   const querySlashItems = useCallback(

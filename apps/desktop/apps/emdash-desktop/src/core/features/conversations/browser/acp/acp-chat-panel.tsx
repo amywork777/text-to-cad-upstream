@@ -28,27 +28,14 @@ import {
   imageBytesFromDataUrl,
   subscribeWorkbenchChatInput,
 } from '@core/features/conversations/api/browser/chat/workbench-chat-input-bridge';
-import {
-  combineWorkbenchHiddenContext,
-  prepareWorkbenchChatSubmission,
-} from '@core/features/conversations/api/browser/chat/workbench-chat-submit-bridge';
+import { prepareWorkbenchChatSubmission } from '@core/features/conversations/api/browser/chat/workbench-chat-submit-bridge';
 import { conversationRegistry } from '@core/features/conversations/api/browser/stores/conversation-registry';
-import { useConnectedIssueProviders } from '@core/features/integrations/api/browser/use-connected-issue-providers';
-import { IntegrationIcon } from '@core/features/integrations/contributions/browser/integration-icon';
-import { getIssuesClient } from '@core/features/issues/api/browser/client';
 import { usePromptLibrary } from '@core/features/library/api/browser/prompts/use-prompt-library';
-import {
-  getProjectSshConnectionId,
-  getProjectStore,
-  getProjectViewStore,
-  projectData,
-} from '@core/features/projects/api/browser/stores/project-selectors';
+import { getProjectSshConnectionId } from '@core/features/projects/api/browser/stores/project-selectors';
 import { getSearchClient } from '@core/features/search/api/client';
-import { getGitRepositoryStore } from '@core/features/source-control/api/browser/stores/source-control-selectors';
 // TODO(conversations-extraction): Pass task state into ACP chat instead of importing task stores.
 import {
   asProvisioned,
-  getRegisteredTaskData,
   getTaskStore,
 } from '@core/features/tasks/api/browser/task-state/task-selectors';
 import {
@@ -57,23 +44,17 @@ import {
 } from '@core/features/terminals/api/browser/pty/terminal-image-paths';
 import { openModal } from '@core/manifests/browser/modal-api';
 import { projectAvailabilityUi } from '@core/manifests/browser/project-availability-ui';
-import { openExternal } from '@core/primitives/desktop-host/browser/host-client';
-import { issueMentionToken, parseIssueMentionToken } from '@core/primitives/issues/api';
-import { linkedIssueMentionName, type LinkedIssue } from '@core/primitives/linked-issues/api';
 import { log } from '@core/primitives/logging/browser/logger';
 import { usePaneContext } from '@core/primitives/workbench-shell/browser/tabs/pane-context';
 import { acpBootstrapStatusLabel } from './acp-bootstrap-status';
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
 import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
-import { buildIssueMentionHiddenContext } from './issue-mention-context';
 import { createTranscriptFileCommands } from './transcript-file-commands';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const attachmentDataUrlCache = new Map<string, Promise<string | null>>();
-const ISSUE_SEARCH_MIN_LENGTH = 2;
-const ISSUE_SEARCH_LIMIT = 20;
 const SLASH_COMMANDS_SECTION = 'Commands';
 const SLASH_PROMPTS_SECTION = 'Prompts';
 
@@ -87,18 +68,6 @@ function commandMatchesQuery(command: CommandItem, query: string): boolean {
   return [command.name, command.label, command.description]
     .filter((value): value is string => !!value)
     .some((value) => value.toLowerCase().includes(normalized));
-}
-
-function toIssueMentionItem(issue: LinkedIssue): MentionItem {
-  const token = issueMentionToken(issue.provider, issue.identifier);
-  return {
-    id: token,
-    label: token,
-    name: linkedIssueMentionName(issue),
-    kind: 'issue',
-    description: issue.title,
-    icon: <IntegrationIcon provider={issue.provider} size={13} />,
-  };
 }
 
 function useAnimatedInteger(target: number): number {
@@ -130,14 +99,6 @@ function useAnimatedInteger(target: number): number {
   }, [target]);
 
   return displayed;
-}
-
-function issueMatchesQuery(issue: LinkedIssue, query: string): boolean {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  return [issue.identifier, issue.displayIdentifier, issue.title]
-    .filter((value): value is string => !!value)
-    .some((value) => value.toLowerCase().includes(normalized));
 }
 
 const ActiveAgentStatus = observer(function ActiveAgentStatus({
@@ -275,9 +236,6 @@ const RateLimitStatus = observer(function RateLimitStatus({ store }: { store: Ac
     </div>
   );
 });
-
-/** Upper bound on the pre-send issue-context lookup; past it the prompt goes out without it. */
-const ISSUE_CONTEXT_TIMEOUT_MS = 4_000;
 
 const supportedAttachmentMimeTypes = new Set<AttachmentMimeType>([
   'image/png',
@@ -437,27 +395,6 @@ const ComposerForStore = observer(function ComposerForStore({
     [attachments]
   );
 
-  const buildHiddenIssueContext = useCallback(
-    (value: string) =>
-      buildIssueMentionHiddenContext(value, async (target) => {
-        const result = await (
-          await getIssuesClient()
-        ).getIssueContext({
-          provider: target.provider,
-          options: { identifier: target.identifier, projectId: store.projectId },
-        });
-        if (!result.success) {
-          log.warn('Failed to resolve issue mention context', {
-            token: target.token,
-            error: result.error,
-          });
-          return null;
-        }
-        return result.data;
-      }),
-    [store.projectId]
-  );
-
   const handleSubmit = useCallback(
     (value: string) => {
       const promptAttachments = buildPromptAttachments();
@@ -467,32 +404,15 @@ const ComposerForStore = observer(function ComposerForStore({
       preparingSubmissionRef.current = true;
       setPreparingSubmission(true);
       void (async () => {
-        const [issueContext, preparation] = await Promise.all([
-          // Issue-mention enrichment is a nicety: a tracker that is slow, offline
-          // or signed out must never hold the send. Anything that looks like an
-          // issue key ("VZ-ORIGAMI-01") would otherwise wait on it forever.
-          Promise.race([
-            buildHiddenIssueContext(value),
-            new Promise<undefined>((resolve) =>
-              window.setTimeout(() => resolve(undefined), ISSUE_CONTEXT_TIMEOUT_MS)
-            ),
-          ]).catch((error: unknown) => {
-            log.warn('Failed to resolve issue context for ACP prompt', {
-              conversationId: store.conversationId,
-              error,
-            });
-            return undefined;
-          }),
-          prepareWorkbenchChatSubmission(
-            { projectId: store.projectId, taskId: store.taskId },
-            {
-              conversationId: store.conversationId,
-              text: value,
-              messageCountBeforeSubmit: store.messageCount,
-              agentIsWorking: store.affordances.isWorking,
-            }
-          ),
-        ]);
+        const preparation = await prepareWorkbenchChatSubmission(
+          { projectId: store.projectId, taskId: store.taskId },
+          {
+            conversationId: store.conversationId,
+            text: value,
+            messageCountBeforeSubmit: store.messageCount,
+            agentIsWorking: store.affordances.isWorking,
+          }
+        );
         if (!preparation.success) {
           // The editor clears itself on submit; hand the text back so nothing is lost.
           editorApiRef.current?.setText(value);
@@ -503,7 +423,7 @@ const ComposerForStore = observer(function ComposerForStore({
         const dispatch = await store.dispatchPrompt(
           value,
           promptAttachments,
-          combineWorkbenchHiddenContext(issueContext, preparation.hiddenContext)
+          preparation.hiddenContext
         );
         if (!dispatch.success) {
           let rollbackError: string | undefined;
@@ -536,7 +456,7 @@ const ComposerForStore = observer(function ComposerForStore({
           setPreparingSubmission(false);
         });
     },
-    [store, buildPromptAttachments, buildHiddenIssueContext]
+    [store, buildPromptAttachments]
   );
 
   const handleStop = useCallback(() => {
@@ -708,106 +628,21 @@ const ComposerForStore = observer(function ComposerForStore({
   const workspaceId = useObserver(
     () => asProvisioned(getTaskStore(store.projectId, store.taskId))?.workspaceId
   );
-  const linkedIssue = useObserver(
-    () => getRegisteredTaskData(store.projectId, store.taskId)?.linkedIssue
-  );
-  const issueProviderContext = useObserver(() => {
-    const project = projectData(getProjectStore(store.projectId));
-    return {
-      projectPath: project?.path,
-      repositoryUrl:
-        getGitRepositoryStore(store.projectId)?.issueRepositoryUrl ??
-        getGitRepositoryStore(store.projectId)?.canonicalRepositoryUrl ??
-        undefined,
-      selectedIssueProvider: getProjectViewStore(store.projectId)?.selectedIssueProvider ?? null,
-    };
-  });
-  const { connectedProviders, isProviderUsable } = useConnectedIssueProviders(issueProviderContext);
-  const issueProvider = useMemo(() => {
-    const selected = issueProviderContext.selectedIssueProvider;
-    if (selected && isProviderUsable(selected)) return selected;
-    return connectedProviders[0] ?? null;
-  }, [connectedProviders, isProviderUsable, issueProviderContext.selectedIssueProvider]);
-
   const mentionProvider = useMemo<ContextMentionProvider | undefined>(() => {
-    if (!workspaceId && !linkedIssue && !issueProvider) return undefined;
-    const wsId = workspaceId;
+    if (!workspaceId) return undefined;
     return {
       async search(query: string): Promise<MentionItem[]> {
-        const pinnedIssue =
-          linkedIssue && issueMatchesQuery(linkedIssue, query)
-            ? toIssueMentionItem(linkedIssue)
-            : null;
-        const issueSearch =
-          issueProvider && query.trim().length >= ISSUE_SEARCH_MIN_LENGTH
-            ? getIssuesClient()
-                .then((client) =>
-                  client.searchIssues({
-                    provider: issueProvider,
-                    options: {
-                      limit: ISSUE_SEARCH_LIMIT,
-                      searchTerm: query.trim(),
-                      projectId: store.projectId,
-                      projectPath: issueProviderContext.projectPath,
-                      repositoryUrl: issueProviderContext.repositoryUrl ?? undefined,
-                    },
-                  })
-                )
-                .catch((error: unknown) => {
-                  log.warn('Failed to search issue mentions', { provider: issueProvider, error });
-                  return null;
-                })
-            : Promise.resolve(null);
-
-        const [files, issueResult] = await Promise.all([
-          wsId
-            ? getSearchClient().then((client) =>
-                client.searchWorkspaceFiles({ workspaceId: wsId, query })
-              )
-            : Promise.resolve([]),
-          issueSearch,
-        ]);
-
-        const pinnedIssueItems: MentionItem[] = [];
-        const searchedIssueItems: MentionItem[] = [];
-        const seenIssueIds = new Set<string>();
-        if (pinnedIssue) {
-          pinnedIssueItems.push(pinnedIssue);
-          seenIssueIds.add(pinnedIssue.id);
-        }
-        if (issueResult?.success) {
-          for (const issue of issueResult.data) {
-            const item = toIssueMentionItem(issue);
-            if (seenIssueIds.has(item.id)) continue;
-            seenIssueIds.add(item.id);
-            searchedIssueItems.push(item);
-          }
-        } else if (issueResult && !issueResult.success) {
-          log.warn('Failed to search issue mentions', {
-            provider: issueProvider,
-            error: issueResult.error,
-          });
-        }
-
-        const fileItems = files.map((f) => ({
-          id: f.path,
-          label: f.path,
-          name: f.filename,
-          kind: 'file' as const,
-          description: f.path,
+        const files = await (await getSearchClient()).searchWorkspaceFiles({ workspaceId, query });
+        return files.map((file) => ({
+          id: file.path,
+          label: file.path,
+          name: file.filename,
+          kind: 'file',
+          description: file.path,
         }));
-
-        return [...pinnedIssueItems, ...fileItems, ...searchedIssueItems];
       },
     };
-  }, [
-    workspaceId,
-    linkedIssue,
-    issueProvider,
-    store.projectId,
-    issueProviderContext.projectPath,
-    issueProviderContext.repositoryUrl,
-  ]);
+  }, [workspaceId]);
 
   // Display-only (the selector is locked): static registry metadata, no host needed.
   const { data: agents } = useAgentMetadata();
@@ -825,13 +660,6 @@ const ComposerForStore = observer(function ComposerForStore({
     conversationRegistry.get(store.taskId)?.conversations.get(store.conversationId)?.data
       .providerId ?? null;
   const providerName = agentOptions.find((option) => option.id === providerId)?.name ?? null;
-  const renderMentionIcon = useCallback(({ id, kind }: { id: string; kind: string }) => {
-    if (kind !== 'issue') return null;
-    const target = parseIssueMentionToken(id);
-    if (!target) return null;
-    return <IntegrationIcon provider={target.provider} size={12} />;
-  }, []);
-
   const querySlashItems = useCallback(
     async (query: string): Promise<CommandItem[]> => {
       const normalized = query.trim().toLowerCase();
@@ -922,7 +750,6 @@ const ComposerForStore = observer(function ComposerForStore({
               : null
           }
           mentionProvider={mentionProvider}
-          renderMentionIcon={renderMentionIcon}
           queryCommands={querySlashItems}
           attachments={attachments}
           onAttachmentsChange={handleAttachmentsChange}
@@ -1091,22 +918,6 @@ export const AcpChatPanel = observer(function AcpChatPanel() {
         if (arg.kind === 'file') {
           fileCommands?.openMentionFile(arg.id);
           return;
-        }
-        if (arg.kind === 'issue') {
-          const target = parseIssueMentionToken(arg.id);
-          if (!target) return;
-          void getIssuesClient()
-            .then((client) =>
-              client.getIssueContext({
-                provider: target.provider,
-                options: { identifier: target.identifier, projectId: store.projectId },
-              })
-            )
-            .then((result) => {
-              if (result.success && result.data.url) {
-                void openExternal(result.data.url);
-              }
-            });
         }
       },
     };

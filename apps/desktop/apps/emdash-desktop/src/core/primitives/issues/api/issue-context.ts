@@ -1,5 +1,6 @@
-import type { IssueProviderType } from '@core/primitives/issue-providers/api';
 import type { LinkedIssue } from '@core/primitives/linked-issues/api';
+
+type IssueProviderType = LinkedIssue['provider'];
 
 const ISSUE_TARGET_RE = /\((issue:[^\s)]+)\)/g;
 

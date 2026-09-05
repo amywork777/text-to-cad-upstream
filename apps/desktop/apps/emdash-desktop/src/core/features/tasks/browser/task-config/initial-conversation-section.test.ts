@@ -53,29 +53,12 @@ vi.mock('@core/features/projects/api/browser/stores/project-selectors', () => ({
   getProjectViewStore: vi.fn(() => undefined),
 }));
 
-vi.mock('@core/features/integrations/contributions/browser/integration-icon', () => ({
-  IntegrationIcon: () => null,
-}));
-
-vi.mock('@core/features/integrations/api/browser/use-connected-issue-providers', () => ({
-  useConnectedIssueProviders: () => ({
-    connectedProviders: [],
-    hasAnyIssueIntegration: false,
-    isProviderUsable: () => false,
-    isCheckingConnections: false,
-  }),
-}));
-
 vi.mock('@core/features/library/api/browser/prompts/use-prompt-library', () => ({
   usePromptLibrary: () => ({ value: [] }),
 }));
 
 vi.mock('@core/features/agents/contributions/browser/agent-selector', () => ({
   AgentSelector: () => null,
-}));
-
-vi.mock('../components/issue-selector/issue-selector', () => ({
-  ProviderLogo: () => null,
 }));
 
 vi.mock('../create-task-modal/use-prompt-file-drop', () => ({
@@ -338,7 +321,7 @@ describe('InitialConversationField', () => {
     );
   });
 
-  it('renders provider icons for every issue mention', async () => {
+  it('renders a generic icon for saved issue mentions', async () => {
     const linkedIssue: LinkedIssue = {
       provider: 'linear',
       identifier: 'ENG-123',
@@ -361,7 +344,7 @@ describe('InitialConversationField', () => {
       kind: 'issue',
     });
 
-    expect(firstIcon).toMatchObject({ props: { provider: 'linear' } });
-    expect(secondIcon).toMatchObject({ props: { provider: 'linear' } });
+    expect(firstIcon).toMatchObject({ props: { name: 'circle-dot' } });
+    expect(secondIcon).toMatchObject({ props: { name: 'circle-dot' } });
   });
 });

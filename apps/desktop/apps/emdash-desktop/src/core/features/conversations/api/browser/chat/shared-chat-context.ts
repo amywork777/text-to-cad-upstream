@@ -1,12 +1,9 @@
 import type { ChatContext } from '@emdash/chat-ui';
-import { getIntegrationsClient } from '@core/features/integrations/api/browser/client';
-import { registerIssueMentionIcons } from '@core/primitives/issues/browser/issue-mention-icons';
 import { advertisedCommandProvider } from './advertised-command-provider';
 import { chatMentionProvider } from './chat-mention-provider';
 import { getChatUiRuntime } from './chat-ui-runtime';
 
 let shared: ChatContext | null = null;
-let didPreloadIssueMentionIcons = false;
 
 /**
  * Create the process-long ChatContext. Call once from the renderer bootstrap
@@ -18,7 +15,6 @@ let didPreloadIssueMentionIcons = false;
  */
 export function initSharedChatContext(): ChatContext {
   if (!shared) {
-    preloadIssueMentionIcons();
     shared = getChatUiRuntime().createChatContext({
       mentionProvider: chatMentionProvider,
       commandProvider: advertisedCommandProvider,
@@ -33,15 +29,4 @@ export function initSharedChatContext(): ChatContext {
  */
 export function getSharedChatContext(): ChatContext {
   return shared ?? initSharedChatContext();
-}
-
-function preloadIssueMentionIcons(): void {
-  if (didPreloadIssueMentionIcons) return;
-  didPreloadIssueMentionIcons = true;
-  void getIntegrationsClient()
-    .then((client) => client.list(undefined))
-    .then(registerIssueMentionIcons)
-    .catch(() => {
-      // IntegrationsProvider also refreshes the registry after React mounts.
-    });
 }

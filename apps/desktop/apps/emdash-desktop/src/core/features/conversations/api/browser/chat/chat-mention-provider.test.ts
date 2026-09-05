@@ -1,21 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { issueMentionToken, parseIssueMentionToken } from '@core/primitives/issues/api';
-import { registerIssueMentionIcons } from '@core/primitives/issues/browser/issue-mention-icons';
 import { chatMentionProvider } from './chat-mention-provider';
 
 describe('chatMentionProvider', () => {
-  it('resolves issue tokens with provider icon URLs', () => {
-    registerIssueMentionIcons([
-      {
-        id: 'linear',
-        features: ['issues'],
-        icon: {
-          kind: 'svg',
-          variants: [{ minSize: 0, light: '<svg viewBox="0 0 16 16"></svg>' }],
-        },
-      },
-    ]);
-
+  it('keeps saved issue references readable without a connected tracker', () => {
     const meta = chatMentionProvider.resolve(issueMentionToken('linear', 'ENG-123'));
 
     expect(meta).toMatchObject({
@@ -24,7 +12,7 @@ describe('chatMentionProvider', () => {
       name: 'ENG-123',
       kind: 'issue',
     });
-    expect(meta?.iconUrl).toContain('data:image/svg+xml');
+    expect(meta?.iconUrl).toBeUndefined();
   });
 
   it('delegates non-issue tokens to the workspace file provider', () => {

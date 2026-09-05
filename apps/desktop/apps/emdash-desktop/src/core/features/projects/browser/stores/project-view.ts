@@ -5,7 +5,7 @@ import type {
   ProjectTaskSortBy,
   ProjectViewState,
 } from '@core/features/projects/contributions/mementos';
-import type { IssueProviderType } from '@core/primitives/issue-providers/api';
+import type { LinkedIssue } from '@core/primitives/linked-issues/api';
 import type { MementoHandle } from '@core/primitives/mementos/browser';
 
 export type ProjectView = 'tasks' | 'pull-request' | 'workspaces' | 'settings';
@@ -22,15 +22,15 @@ export class ProjectViewStore {
     return this.handle.value.activeView;
   }
 
-  get selectedIssueProvider(): IssueProviderType | null {
-    return (this.handle.value.selectedIssueProvider as IssueProviderType | undefined) ?? null;
+  get selectedIssueProvider(): LinkedIssue['provider'] | null {
+    return (this.handle.value.selectedIssueProvider as LinkedIssue['provider'] | undefined) ?? null;
   }
 
   setProjectView(view: ProjectView) {
     this.handle.update((current) => ({ ...current, activeView: view }));
   }
 
-  setSelectedIssueProvider(provider: IssueProviderType | null) {
+  setSelectedIssueProvider(provider: LinkedIssue['provider'] | null) {
     this.handle.update((current) => ({
       ...current,
       selectedIssueProvider: provider ?? undefined,

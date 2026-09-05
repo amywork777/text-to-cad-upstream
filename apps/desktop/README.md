@@ -59,3 +59,8 @@ TELEMETRY_ENABLED=false
 ## License
 
 Licensed under the [Apache-2.0 license](LICENSE.md).
+
+Built-in issue-tracker connectors and issue search are intentionally omitted from the CAD app.
+GitHub sign-in, Git source control, and pull-request review remain available for model recipes.
+Configured MCP tools can supply external context. Existing saved issue references and database
+migration history are retained for compatibility; the desktop no longer contacts those trackers.

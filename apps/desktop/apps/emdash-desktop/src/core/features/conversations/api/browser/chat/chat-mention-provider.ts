@@ -1,6 +1,5 @@
 import type { ChatMentionMeta, MentionProvider } from '@emdash/chat-ui';
 import { parseIssueMentionToken } from '@core/primitives/issues/api';
-import { issueMentionIconUrl } from '@core/primitives/issues/browser/issue-mention-icons';
 import { workspaceFileMentionProvider } from './workspace-file-mention-provider';
 
 class ChatMentionProvider implements MentionProvider {
@@ -12,7 +11,6 @@ class ChatMentionProvider implements MentionProvider {
         label: issue.token,
         name: issue.identifier,
         kind: 'issue',
-        iconUrl: issueMentionIconUrl(issue.provider),
       };
     }
 

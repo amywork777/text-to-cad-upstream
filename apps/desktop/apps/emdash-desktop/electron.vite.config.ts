@@ -53,12 +53,6 @@ export default defineConfig({
     root: 'src/main',
     envDir: resolve('.'),
     plugins: [copyAdapterAssetsPlugin()],
-    // formidable (bundled via @emdash/plugins -> asana) reassigns `require`
-    // behind a `global.GENTLY` guard, which Rollup rejects. Defining it false
-    // makes the branch dead code so the bundle builds.
-    define: {
-      'global.GENTLY': 'false',
-    },
     build: {
       emptyOutDir: true,
       externalizeDeps: {

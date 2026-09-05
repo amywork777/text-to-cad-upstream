@@ -10,7 +10,6 @@ import {
   agentsSettingsPage,
   browserSettingsPage,
   generalSettingsPage,
-  integrationsSettingsPage,
   interfaceSettingsPage,
   repositorySettingsPage,
 } from '@core/features/settings/contributions/settings-pages';
@@ -20,7 +19,6 @@ import type { SettingsPageContribution } from '@core/primitives/settings/api/pag
 
 export const settingsPageContributions = [
   generalSettingsPage,
-  integrationsSettingsPage,
   interfaceSettingsPage,
   browserSettingsPage,
   repositorySettingsPage,

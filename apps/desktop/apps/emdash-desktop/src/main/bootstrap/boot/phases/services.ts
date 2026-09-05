@@ -1,5 +1,4 @@
 import { isLocalHostRef, LOCAL_HOST_REF, type HostRef } from '@emdash/core/primitives/host/api';
-import { integrationPluginRegistry } from '@emdash/plugins/integrations';
 import { err, ok } from '@emdash/shared';
 import { runWithTimeout } from '@emdash/shared/scheduling';
 import { app } from 'electron';
@@ -37,13 +36,6 @@ import { githubIdentityClient } from '@core/features/github/node/services/github
 import { LegacyGitHubTokenMigrationStore } from '@core/features/github/node/services/legacy-github-token-migration-store';
 import { clearOctokitCache } from '@core/features/github/node/services/octokit-cache';
 import { createGitHubRepositoryService } from '@core/features/github/node/services/repo-service';
-import {
-  IntegrationConnectionService,
-  setIntegrationConnectionService,
-} from '@core/features/integrations/node/integration-connection-service';
-import { IntegrationCredentialStore } from '@core/features/integrations/node/integration-credential-store';
-import { setIntegrationCredentialStore } from '@core/features/integrations/node/integration-credential-store-instance';
-import { createIssueProviderRegistry } from '@core/features/issues/node/registry';
 import {
   createPromptLibraryService,
   type PromptLibraryKV,
@@ -139,9 +131,6 @@ import { registerProviderTokenHandlers, wireAccountTelemetry } from '../wiring';
 import type { DatabaseBundle } from './database';
 import type { InfrastructureBundle } from './infrastructure';
 
-type JiraKVSchema = { creds: { siteUrl?: string; email?: string } };
-type InstanceKVSchema = { connection: { instanceUrl?: string } };
-type PlaneKVSchema = { connection: { apiBaseUrl?: string; workspaceSlug?: string } };
 type GitHubKVSchema = { tokenSource: string };
 
 export type ServicesBundle = {
@@ -155,7 +144,6 @@ export type ServicesBundle = {
     repositories: ReturnType<typeof createGitHubRepositoryService>;
   };
   readonly gitCredentials: GitCredentialsService;
-  readonly issueProviders: ReturnType<typeof createIssueProviderRegistry>;
   readonly hostIsReachable: HostReachabilityProbe;
   readonly hostAttachments: HostAttachmentRegistry;
   readonly notifications: ReturnType<typeof createNotificationService>;
@@ -444,23 +432,6 @@ export async function bootServices(
     logger: log,
     createSystemSink: createSystemNotificationSink,
   });
-  const integrationCredentialStore = new IntegrationCredentialStore(
-    providerAccountRegistry,
-    {
-      secrets: plaintextSecrets,
-      kv: {
-        jira: new KV<JiraKVSchema>('jira'),
-        gitlab: new KV<InstanceKVSchema>('gitlab'),
-        forgejo: new KV<InstanceKVSchema>('forgejo'),
-        plane: new KV<PlaneKVSchema>('plane'),
-      },
-    },
-    log
-  );
-  setIntegrationCredentialStore(integrationCredentialStore);
-  setIntegrationConnectionService(
-    new IntegrationConnectionService(integrationCredentialStore, telemetryService, log)
-  );
   const githubKV = new KV<GitHubKVSchema>('github');
   const legacyGitHubTokens = new LegacyGitHubTokenMigrationStore(plaintextSecrets, {
     getTokenSource: () => githubKV.get('tokenSource'),
@@ -507,14 +478,6 @@ export async function bootServices(
     listAccounts: () => githubAccountService.listAccounts(),
     channels: gitCredentialServer,
     logger: log,
-  });
-  const issueProviders = createIssueProviderRegistry({
-    github: {
-      accounts: providerAccountRegistry,
-      auth: githubApiAuthService,
-      logger: log,
-      resolveProjectGitHubAccount,
-    },
   });
   const pullRequestsRegistration = new PullRequestsRegistration({
     getClient: getPullRequestsRuntimeClient,
@@ -575,21 +538,14 @@ export async function bootServices(
     pullRequestsRegistration.resolveSyncIdentity(repositoryUrl)
   );
   const githubRepositories = createGitHubRepositoryService(githubApiAuthService);
-  const githubAuthPlugin = integrationPluginRegistry.get('github');
-  const githubDeviceMethod = githubAuthPlugin?.capabilities.auth.methods.find(
-    (candidate) => candidate.kind === 'oauth-device'
-  );
-  if (!githubDeviceMethod || githubDeviceMethod.kind !== 'oauth-device') {
-    throw new Error('GitHub integration plugin does not declare an oauth-device auth method.');
-  }
   const githubDeviceFlow = new GitHubDeviceFlowService({
     accountStore: providerAccountRegistry,
     identityClient: githubIdentityClient,
     publishEvent: (event) => githubEvents.emit(undefined, event),
     createDeviceAuth: defaultGitHubDeviceAuthFactory,
     config: {
-      clientId: githubDeviceMethod.clientId,
-      scopes: githubDeviceMethod.scopes,
+      clientId: 'Ov23ligC35uHWopzCeWf',
+      scopes: ['repo', 'read:user', 'read:org'],
     },
   });
   // Run-once upgrade step (spec: github-git-settings §10): the legacy
@@ -796,7 +752,6 @@ export async function bootServices(
     gitCredentials,
     hostIsReachable,
     hostAttachments,
-    issueProviders,
     notifications: notificationService,
     previewServerAccess,
     promptLibrary: promptLibraryService,

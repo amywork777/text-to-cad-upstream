@@ -31,9 +31,6 @@ import { createEditorWireController } from '@core/features/editor/node/wire-cont
 import { createFilesWireController } from '@core/features/files/node/wire-controller';
 import type { GitCredentialsService } from '@core/features/github/api/node/services/git-credentials-service';
 import { createGithubWireController } from '@core/features/github/node/wire-controller';
-import { createIntegrationsWireController } from '@core/features/integrations/node/wire-controller';
-import type { IssueProviderRegistry } from '@core/features/issues/node/registry';
-import { createIssuesWireController } from '@core/features/issues/node/wire-controller';
 import {
   createLegacyPortWireController,
   type LegacyPortControllerOperations,
@@ -128,7 +125,6 @@ export type DesktopControllerContext = {
   readonly hostAvailability: HostAvailabilityService;
   readonly hostIsReachable: HostReachabilityProbe;
   readonly hostOperations: DesktopHostControllerOperations;
-  readonly issueProviders: IssueProviderRegistry;
   readonly legacyPortOperations: LegacyPortControllerOperations;
   readonly logger: Logger;
   readonly loggingOperations: LoggingControllerOperations;
@@ -402,13 +398,6 @@ export const desktopNodeControllers = {
   github: {
     create: ({ github, logger, telemetry }) =>
       createGithubWireController({ ...github, logger, telemetry }),
-  },
-  integrations: {
-    create: () => createIntegrationsWireController(),
-  },
-  issues: {
-    create: ({ issueProviders, projects }) =>
-      createIssuesWireController({ projects, providers: issueProviders }),
   },
   ssh: {
     create: ({ ssh }) => createSshWireController(ssh.ssh, ssh.connections),

@@ -16,8 +16,6 @@ The main process is organized into domain modules under `src/main/core/`. Each d
 - **fs** — Filesystem operations with provider pattern (`local-fs.ts`, `ssh-fs.ts`)
 - **git** — Git operations (`git-service.ts`, `git-repo-utils.ts`, `detectGitInfo.ts`)
 - **github** — GitHub auth, PRs, issues, repos (via `gh` CLI)
-- **jira** — Jira integration
-- **linear** — Linear integration
 - **mcp** — MCP service, adapters, config IO, catalog
 - **projects** — Project management with provider pattern (`local-project-provider.ts`), worktree service, project settings, CRUD operations
 - **pty** — PTY lifecycle (`local-pty.ts`, `ssh2-pty.ts`), session registry, env setup, spawn utilities

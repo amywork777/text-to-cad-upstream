@@ -124,7 +124,7 @@ describe('SETTINGS_SEARCH_INDEX integrity', () => {
 
   it('routes well-known queries to the expected tabs', () => {
     expect(matchedTabsForQuery('telemetry')).toEqual(['general']);
-    expect(matchedTabsForQuery('jira')).toEqual(['integrations']);
+    expect(matchedTabsForQuery('jira')).toEqual([]);
     expect(matchedTabsForQuery('ssh')).toContain('connections');
     expect(matchedTabsForQuery('dark mode')).toEqual(['interface']);
     expect(matchedTabsForQuery('font')).toContain('interface');

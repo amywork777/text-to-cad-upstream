@@ -5,7 +5,6 @@ import {
 import { AgentsSettingsPage } from '../browser/agents-page/AgentsSettingsPage';
 import { BrowserSettingsPage } from '../browser/pages/browser-settings-page';
 import { GeneralSettingsPage } from '../browser/pages/general-settings-page';
-import { IntegrationsSettingsPage } from '../browser/pages/integrations-settings-page';
 import { InterfaceSettingsPage } from '../browser/pages/interface-settings-page';
 import { RepositorySettingsPage } from '../browser/pages/repository-settings-page';
 import type { SettingsPageTab } from './views';
@@ -15,13 +14,6 @@ export const generalSettingsPage = defineSettingsPageContribution({
   label: 'General',
   icon: 'settings',
   component: GeneralSettingsPage,
-} satisfies SettingsPageContribution<SettingsPageTab>);
-
-export const integrationsSettingsPage = defineSettingsPageContribution({
-  id: 'integrations',
-  label: 'Integrations',
-  icon: 'plug',
-  component: IntegrationsSettingsPage,
 } satisfies SettingsPageContribution<SettingsPageTab>);
 
 export const interfaceSettingsPage = defineSettingsPageContribution({

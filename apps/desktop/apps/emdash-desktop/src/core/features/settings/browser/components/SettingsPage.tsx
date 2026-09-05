@@ -29,7 +29,6 @@ const SETTINGS_SEARCH_HOTKEY = chord('Mod+F');
 
 const SIDEBAR_ITEMS: PageSidebarMenuItem[] = [
   navItemFor('general'),
-  navItemFor('integrations'),
   navItemFor('interface'),
   navItemFor('browser'),
   navItemFor('repository'),

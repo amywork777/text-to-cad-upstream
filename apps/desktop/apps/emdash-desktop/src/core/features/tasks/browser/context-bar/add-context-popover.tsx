@@ -1,10 +1,9 @@
 import { Combobox } from '@emdash/ui/react/primitives';
-import { ChevronDown, ChevronUp, MessageSquare, TextInitial } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleDot, MessageSquare, TextInitial } from 'lucide-react';
 import { useMemo, useRef, useState, type ReactNode } from 'react';
 import { useChordKeydown } from '@core/primitives/keybindings/browser';
 import { Shortcut } from '@core/primitives/keybindings/browser/shortcut';
 import { cn } from '@core/primitives/styling/browser/cn';
-import { ProviderLogo } from '../components/issue-selector/issue-selector';
 import { buildContextActionText, type ContextAction } from '../context-bar/context-actions';
 
 const ADD_CONTEXT_HOTKEY = 'Mod+Shift+A';
@@ -35,7 +34,7 @@ export function ActionItemRow({ action }: { action: ContextAction }) {
     case 'linked-issue':
       return (
         <ActionItemBaseRow
-          icon={<ProviderLogo provider={action.provider} className="h-3.5 w-3.5 shrink-0" />}
+          icon={<CircleDot className="h-3.5 w-3.5 shrink-0" />}
           label={action.issue.title}
           text={action.issue.identifier}
         />

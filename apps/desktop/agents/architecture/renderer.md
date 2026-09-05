@@ -30,7 +30,7 @@ aggregate slice contributions.
 
 Feature-owned React components, hooks, and MobX stores live beside their portable API and Node
 implementation. Major browser slices include `tasks`, `projects`, `conversations`, `automations`,
-`browser`, `integrations`, `settings`, `skills`, `mcp`, and `library`. Workbench-owned tabs,
+`browser`, `settings`, `skills`, `mcp`, and `library`. Workbench-owned tabs,
 sidebar, command palette, and onboarding UI live under `src/core/features/workbench/browser/`.
 Cross-slice task-view lifecycle and workspace composition live in
 `src/core/features/workbench/api/browser/task-composition.ts` and

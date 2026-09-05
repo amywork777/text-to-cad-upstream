@@ -106,7 +106,6 @@ export function createDesktopWireOptions(
       submitFeedback: (input) => appOperations.submitFeedback(input),
     },
     hostIsReachable: services.hostIsReachable,
-    issueProviders: services.issueProviders,
     legacyPortOperations,
     logger: log,
     loggingOperations: {
