@@ -8,6 +8,10 @@ export type CadTurnRecord = {
 
 export type ConversationStatusSnapshot = ReadonlyArray<readonly [id: string, status: string]>;
 
+// A permission or question pauses the same turn; tools may finish while it is paused.
+const isActiveTurn = (status: string | undefined) =>
+  status === 'working' || status === 'awaiting-input';
+
 /**
  * Which turns are active or still owe a final model scan, for every conversation
  * in the app. It lives outside any task view so a turn that starts or ends
@@ -25,9 +29,9 @@ export class CadTurnLedger {
       const before = new Map(previous ?? []);
       for (const [id, status] of current) {
         const was = before.get(id);
-        if (status === 'working' && was !== 'working') {
+        if (isActiveTurn(status) && !isActiveTurn(was)) {
           this.turns.set(id, { startedAt: this.now(), endedAt: null, revealed: false });
-        } else if (was === 'working' && status !== 'working') {
+        } else if (isActiveTurn(was) && !isActiveTurn(status)) {
           const record = this.turns.get(id);
           this.turns.set(id, {
             startedAt: record?.startedAt ?? this.now(),
@@ -42,7 +46,7 @@ export class CadTurnLedger {
   /** Conversations already working when a watcher attaches: their turn is assumed to start now. */
   readonly seed = action((current: ConversationStatusSnapshot): void => {
     for (const [id, status] of current) {
-      if (status === 'working' && !this.turns.has(id)) {
+      if (isActiveTurn(status) && !this.turns.has(id)) {
         this.turns.set(id, { startedAt: this.now(), endedAt: null, revealed: false });
       }
     }

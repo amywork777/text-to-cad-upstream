@@ -68,6 +68,22 @@ describe('CadTurnLedger', () => {
     expect(ledger.turns.get('a')?.revealed).toBe(false);
   });
 
+  it('keeps discovery active across permission waits without resetting the turn start', () => {
+    const c = clock();
+    const ledger = new CadTurnLedger(c.now);
+    ledger.seed([['a', 'working']]);
+    c.tick(5_000);
+    ledger.apply([['a', 'awaiting-input']], [['a', 'working']]);
+    ledger.markRevealed(ledger.pendingTurns(['a']));
+    expect(ledger.turns.get('a')).toEqual({ startedAt: 1_000, endedAt: null, revealed: false });
+    c.tick(5_000);
+    ledger.apply([['a', 'working']], [['a', 'awaiting-input']]);
+    expect(ledger.turns.get('a')?.startedAt).toBe(1_000);
+    ledger.apply([['a', 'completed']], [['a', 'working']]);
+    ledger.markRevealed(ledger.pendingTurns(['a']));
+    expect(ledger.pendingTurns(['a'])).toEqual([]);
+  });
+
   it('seeds conversations that are already working when a watcher attaches', () => {
     const c = clock(500);
     const ledger = new CadTurnLedger(c.now);
