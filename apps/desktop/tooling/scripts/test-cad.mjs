@@ -11,8 +11,8 @@ import {
   resolveCadRuntimeRoot,
   resolveCommand,
   resolveDevelopmentPython,
-  resolveStagedPluginRoot,
   resolveTextToCadRoot,
+  resolveViewerRuntime,
 } from './setup-cad.mjs';
 
 /**
@@ -21,8 +21,8 @@ import {
  * 1. `setup-cad.mjs --check` reports the runtime, viewer client, and plugins.
  * 2. Jake's selected cadgen suites run from the canonical tree with the same
  *    interpreter the desktop uses.
- * 3. Jake's own viewer launch smoke runs against the staged (materialized)
- *    cad-viewer runtime — the copy provider plugins install from.
+ * 3. The canonical viewer launch smoke runs the current cadgen.viewer backend
+ *    against the same client build the desktop serves.
  * 4. A plain @step recipe is built, validated, and inspected exactly the way
  *    the desktop does it: `python model.py --json`, then the cadgen doors.
  */
@@ -97,16 +97,14 @@ function main() {
     TEXT_TO_CAD_ROOT,
   ]);
 
-  const stagedViewer = join(
-    resolveStagedPluginRoot(CAD_RUNTIME_ROOT),
-    'skills',
-    'cad-viewer',
-    'scripts',
-    'viewer'
+  const viewer = resolveViewerRuntime(TEXT_TO_CAD_ROOT);
+  if (!viewer) throw new Error('The canonical cadgen viewer is missing');
+  run(
+    'Viewer launch and import smoke (canonical cadgen)',
+    'bash',
+    [join(TEXT_TO_CAD_ROOT, 'scripts/test/test-viewer-launch.sh')],
+    { cwd: TEXT_TO_CAD_ROOT, env: { VIEWER_RUNTIME_DIR: viewer.dist, VIEWER_PYTHON: python } }
   );
-  run("Jake's viewer launch smoke (staged cad-viewer runtime)", 'bash', [
-    join(TEXT_TO_CAD_ROOT, 'scripts/test/test-viewer-launch.sh'),
-  ], { cwd: TEXT_TO_CAD_ROOT, env: { VIEWER_RUNTIME_DIR: stagedViewer, VIEWER_PYTHON: python } });
 
   const scratch = mkdtempSync(join(tmpdir(), 'hardcore-cad-'));
   try {

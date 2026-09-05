@@ -26,21 +26,19 @@ describe('legacy CAD source paths', () => {
     expect(canonicalCadModelPathForLegacySource('models/bracket.py')).toBeNull();
   });
 
-  it('keeps legacy sources view-only while ordinary cadgen Python remains editable', () => {
-    expect(isEditableCadSourcePath('models/bracket.step.py')).toBe(false);
-    expect(isEditableCadSourcePath('models/bracket.stp.py')).toBe(false);
+  it('allows every Python filename; cadgen validates the program on rebuild', () => {
+    expect(isEditableCadSourcePath('models/bracket.step.py')).toBe(true);
+    expect(isEditableCadSourcePath('models/bracket.stp.py')).toBe(true);
     expect(isEditableCadSourcePath('models/bracket.py')).toBe(true);
     expect(isEditableCadSourcePath('models/bracket.step')).toBe(false);
   });
 
   it('uses honest legacy and canonical source labels', () => {
     expect(cadSourcePanelPresentation('models/bracket.step.py')).toEqual({
-      legacy: true,
-      readOnly: true,
-      subtitle: 'Legacy model · view only',
+      readOnly: false,
+      subtitle: 'Model recipe · rebuilds canonical STEP · ⌘S to save',
     });
     expect(cadSourcePanelPresentation('models/bracket.py')).toEqual({
-      legacy: false,
       readOnly: false,
       subtitle: 'Model recipe · rebuilds canonical STEP · ⌘S to save',
     });

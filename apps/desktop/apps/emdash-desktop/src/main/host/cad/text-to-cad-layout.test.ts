@@ -18,6 +18,7 @@ afterEach(async () => {
 const MARKERS = [
   'VERSION',
   'packages/cadgen/pyproject.toml',
+  'packages/cadgen/src/cadgen/viewer/__main__.py',
   'skills/cad/SKILL.md',
   'skills/cad-viewer/SKILL.md',
   '.codex-plugin/plugin.json',
@@ -38,7 +39,7 @@ describe('Text-to-CAD layout', () => {
       skillsRoot: join(repositoryRoot, 'skills'),
       viewer: {
         root: join(repositoryRoot, 'apps', 'viewer'),
-        launcher: join(repositoryRoot, 'apps', 'viewer', 'server', 'main.py'),
+        launcher: 'cadgen.viewer',
       },
     });
     expect(layout?.version).toMatch(/^\d+\.\d+\.\d+/);
@@ -46,7 +47,7 @@ describe('Text-to-CAD layout', () => {
 
   it('walks up from the desktop app to the monorepo root', async () => {
     const root = await temporaryRoot();
-    await createFiles(root, [...MARKERS, 'apps/viewer/server/main.py']);
+    await createFiles(root, [...MARKERS, 'apps/viewer/package.json']);
     await writeFile(join(root, 'VERSION'), '0.4.28\n');
     const nested = join(root, 'apps', 'desktop', 'apps', 'emdash-desktop');
     await mkdir(nested, { recursive: true });
@@ -60,7 +61,7 @@ describe('Text-to-CAD layout', () => {
 
   it('prefers an explicit root and rejects one that lacks a marker', async () => {
     const root = await temporaryRoot();
-    await createFiles(root, [...MARKERS, 'apps/viewer/server/main.py']);
+    await createFiles(root, [...MARKERS, 'apps/viewer/package.json']);
     await writeFile(join(root, 'VERSION'), '0.4.28\n');
     const incomplete = await temporaryRoot();
     await createFiles(incomplete, MARKERS.slice(1));
@@ -80,13 +81,13 @@ describe('Text-to-CAD layout', () => {
     expect(resolveTextToCadLayout(incomplete)).toBeNull();
   });
 
-  it('uses the bundled cad-viewer skill runtime beside a packaged app', async () => {
+  it('uses the bundled cadgen viewer beside a packaged app', async () => {
     const resources = await temporaryRoot();
     const bundle = join(resources, 'text-to-cad');
     await createFiles(bundle, [
       ...MARKERS,
-      'skills/cad-viewer/scripts/viewer/server/main.py',
-      'skills/cad-viewer/scripts/viewer/dist/index.html',
+      'packages/cadgen/src/cadgen/viewer/__main__.py',
+      'packages/cadgen/src/cadgen/_runtime/viewer/index.html',
     ]);
     await writeFile(join(bundle, 'VERSION'), '0.5.0\n');
 
@@ -96,7 +97,7 @@ describe('Text-to-CAD layout', () => {
       root: bundle,
       version: '0.5.0',
       viewer: {
-        launcher: join(bundle, 'skills', 'cad-viewer', 'scripts', 'viewer', 'server', 'main.py'),
+        launcher: 'cadgen.viewer',
       },
     });
     expect(layout && viewerClientIsBuilt(layout)).toBe(true);
@@ -104,7 +105,7 @@ describe('Text-to-CAD layout', () => {
 
   it('reports an unbuilt viewer client instead of guessing', async () => {
     const root = await temporaryRoot();
-    await createFiles(root, [...MARKERS, 'apps/viewer/server/main.py']);
+    await createFiles(root, [...MARKERS, 'apps/viewer/package.json']);
     await writeFile(join(root, 'VERSION'), '0.4.28\n');
     const layout = resolveTextToCadLayout(root);
     expect(layout && viewerClientIsBuilt(layout)).toBe(false);
@@ -112,7 +113,7 @@ describe('Text-to-CAD layout', () => {
 
   it('does not infer a root from a viewer directory alone', async () => {
     const root = await temporaryRoot();
-    await createFiles(root, ['apps/viewer/server/main.py', 'VERSION']);
+    await createFiles(root, ['apps/viewer/package.json', 'VERSION']);
     expect(resolveTextToCadLayout(root)).toBeNull();
   });
 });

@@ -27,6 +27,9 @@ def packaged_smoke():
     plate = bd.Box(30, 20, 6)
     hole = bd.Pos(0, 0, -1) * bd.Cylinder(3, 8)
     return plate - hole
+
+if __name__ == "__main__":
+    packaged_smoke()
 `;
 
 const PARALLEL_SMOKE_MODEL = `from cadgen import build123d as bd
@@ -35,6 +38,9 @@ from cadgen import step
 @step()
 def packaged_parallel_smoke():
     return bd.Box(18, 12, 4)
+
+if __name__ == "__main__":
+    packaged_parallel_smoke()
 `;
 
 export interface PackagedCadSmokePlan {
@@ -76,15 +82,7 @@ export function createPackagedCadSmokePlan(
     platform === 'win32'
       ? path.join(runtimeRoot, 'venv', 'Scripts', 'python.exe')
       : path.join(runtimeRoot, 'venv', 'bin', 'python');
-  const viewerLauncher = path.join(
-    bundleRoot,
-    'skills',
-    'cad-viewer',
-    'scripts',
-    'viewer',
-    'server',
-    'main.py'
-  );
+  const viewerLauncher = 'cadgen.viewer';
   const parallelWorkspace = path.join(scratchRoot, 'parallel-workspace');
   return {
     resourcesRoot,
@@ -247,13 +245,10 @@ async function startPackagedViewer(
   workspace: string,
   environment: NodeJS.ProcessEnv
 ): Promise<PackagedViewer> {
-  if (!existsSync(launcher)) {
-    throw new Error(`Packaged CAD Viewer launcher is missing: ${launcher}`);
-  }
   // The served directory is the cwd; the launcher owns the port and answers a
   // JSON line once the socket is bound. --new keeps the smoke from reusing a
   // developer's live Viewer for the same scratch path.
-  const child = spawn(python, [launcher, '--host', '127.0.0.1', '--json', '--new'], {
+  const child = spawn(python, ['-m', launcher, '--host', '127.0.0.1', '--json', '--new'], {
     cwd: workspace,
     env: { ...environment, PYTHONUNBUFFERED: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -351,8 +346,8 @@ async function verifyViewerArtifact(input: {
       (entry) =>
         typeof entry === 'object' &&
         entry !== null &&
-        'rootRelativeFile' in entry &&
-        entry.rootRelativeFile === artifactName
+        'file' in entry &&
+        entry.file === artifactName
     )
   ) {
     throw new Error('Packaged CAD Viewer catalog did not include the generated STEP artifact.');
@@ -362,8 +357,8 @@ async function verifyViewerArtifact(input: {
       (entry) =>
         typeof entry === 'object' &&
         entry !== null &&
-        'rootRelativeFile' in entry &&
-        entry.rootRelativeFile === excludedArtifactName
+        'file' in entry &&
+        entry.file === excludedArtifactName
     )
   ) {
     throw new Error('Packaged CAD Viewer catalog leaked an artifact from another project root.');
@@ -378,7 +373,7 @@ async function verifyViewerArtifact(input: {
     typeof artifactStatus !== 'object' ||
     artifactStatus === null ||
     !('state' in artifactStatus) ||
-    artifactStatus.state !== 'ready'
+    artifactStatus.state !== 'rendered'
   ) {
     throw new Error(
       `Packaged CAD Viewer did not open the generated artifact: ${JSON.stringify(artifactStatus)}`

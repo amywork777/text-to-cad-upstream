@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBrowserClient } from '@core/features/browser/api/browser/client';
 import { getFilesClient } from '@core/features/files/api/browser/client';
 import {
   preserveLastGoodModel,
@@ -9,10 +8,6 @@ import {
 } from './cad-last-good';
 
 vi.mock('@core/features/files/api/browser/client', () => ({ getFilesClient: vi.fn() }));
-vi.mock('@core/features/browser/api/browser/client', () => ({ getBrowserClient: vi.fn() }));
-
-const forgetCadModelProvenance = vi.fn(async () => ({ success: true as const, removed: [] }));
-vi.mocked(getBrowserClient).mockResolvedValue({ forgetCadModelProvenance } as never);
 
 const options = {
   workspacePath: '/work/repo',
@@ -149,11 +144,6 @@ describe('preserveLastGoodModel', () => {
 
     expect(readBytes).toHaveBeenCalledTimes(2);
     expect(upload).toHaveBeenCalledTimes(2);
-    // cadgen's records still describe the rejected run; the restore forgets them.
-    expect(forgetCadModelProvenance).toHaveBeenCalledWith({
-      workspacePath: options.workspacePath,
-      filePath: '/work/repo/examples/plate.step',
-    });
     expect(upload).toHaveBeenCalledWith(
       expect.objectContaining({ overwrite: true }),
       expect.objectContaining({ name: 'plate.step' })

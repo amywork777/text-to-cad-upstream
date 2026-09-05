@@ -8,8 +8,8 @@ import { dirname, join, parse, resolve } from 'node:path';
  * checkout the root is the monorepo root: cadgen comes from packages/cadgen,
  * the CAD Viewer from apps/viewer, and the agent skills from skills/. A
  * packaged app carries a materialized copy under resources/text-to-cad laid
- * out like Jake's publish tree, where the cad-viewer skill's bundled runtime
- * (built client + stdlib Python server) stands in for apps/viewer.
+ * out like the cadgen distribution: the server is cadgen.viewer and the built
+ * client is packaged inside cadgen/_runtime/viewer.
  *
  * Nothing here is inferred from cache directories or adjacent metadata: a root
  * counts only when every marker file is present.
@@ -24,7 +24,7 @@ export interface TextToCadLayout {
   skillsRoot: string;
   viewer: {
     root: string;
-    /** The stdlib-only Python launcher: `python server/main.py --host ... --json`. */
+    /** The installed module launched with `python -m cadgen.viewer`. */
     launcher: string;
     /** The built client the launcher serves; `dist/index.html` must exist. */
     dist: string;
@@ -116,17 +116,19 @@ export function readTextToCadVersion(root: string): string | null {
 function resolveViewerRuntime(
   root: string
 ): { kind: TextToCadLayoutKind; root: string; launcher: string; dist: string } | null {
-  const candidates: Array<{ kind: TextToCadLayoutKind; root: string }> = [
-    // A checkout: the editable CAD Viewer app and the dist it builds.
-    { kind: 'repository', root: join(root, 'apps', 'viewer') },
-    // The publish tree and the packaged bundle: the cad-viewer skill's
-    // materialized runtime (the same client and server, built and copied).
-    { kind: 'bundle', root: join(root, 'skills', 'cad-viewer', 'scripts', 'viewer') },
-  ];
-  for (const candidate of candidates) {
-    const launcher = join(candidate.root, 'server', 'main.py');
-    if (!existsSync(launcher)) continue;
-    return { ...candidate, launcher, dist: join(candidate.root, 'dist') };
+  if (!existsSync(join(root, 'packages', 'cadgen', 'src', 'cadgen', 'viewer', '__main__.py')))
+    return null;
+  const client = join(root, 'apps', 'viewer');
+  if (existsSync(join(client, 'package.json'))) {
+    return {
+      kind: 'repository',
+      root: client,
+      launcher: 'cadgen.viewer',
+      dist: join(client, 'dist'),
+    };
   }
-  return null;
+  const dist = join(root, 'packages', 'cadgen', 'src', 'cadgen', '_runtime', 'viewer');
+  return existsSync(join(dist, 'index.html'))
+    ? { kind: 'bundle', root: dist, launcher: 'cadgen.viewer', dist }
+    : null;
 }

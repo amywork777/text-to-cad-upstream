@@ -4,7 +4,6 @@ import {
   browserContract,
   type CadArtifactScanResult,
   type CadDrawingResult,
-  type CadProvenanceForgetResult,
   type CadValidationResult,
   type BrowserScreenshotResult,
 } from '../api';
@@ -26,10 +25,6 @@ export type BrowserOperations = {
     sourcePath?: string;
   }): Promise<CadValidationResult>;
   rebuildCadModel(input: { workspacePath: string; filePath: string }): Promise<CadValidationResult>;
-  forgetCadModelProvenance(input: {
-    workspacePath: string;
-    filePath: string;
-  }): Promise<CadProvenanceForgetResult> | CadProvenanceForgetResult;
   createCadDrawing(input: {
     workspacePath: string;
     filePath: string;
@@ -58,7 +53,6 @@ export function createBrowserWireController(browserOperations: BrowserOperations
     ensureCadViewer: (input) => browserOperations.ensureCadViewer(input),
     validateCadModel: (input) => browserOperations.validateCadModel(input),
     rebuildCadModel: (input) => browserOperations.rebuildCadModel(input),
-    forgetCadModelProvenance: (input) => browserOperations.forgetCadModelProvenance(input),
     createCadDrawing: (input) => browserOperations.createCadDrawing(input),
     listCadArtifacts: (input) => browserOperations.listCadArtifacts(input),
     openDevTools: ({ browserId }) => browserOperations.openDevTools(browserId),

@@ -11,10 +11,7 @@ import {
 } from 'lucide-react';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import {
-  cadSourcePanelPresentation,
-  migratedCadSourcePath,
-} from '@core/features/cad/api/cad-source-path';
+import { cadSourcePanelPresentation } from '@core/features/cad/api/cad-source-path';
 import type { SaveFileError } from '@core/features/editor/api/browser/open-file-store/open-file-store';
 import { useEmbeddedSourceEditor } from '@core/features/editor/contributions/browser/use-embedded-source-editor';
 import type { TaskTabContext } from '@core/features/workbench/api/browser/tabs/task-tab-context';
@@ -34,7 +31,6 @@ export const CadSourcePanel = observer(function CadSourcePanel({
 }) {
   const connectionId = task.getRemoteConnectionId?.();
   const presentation = cadSourcePanelPresentation(sourcePath);
-  const migratedName = migratedCadSourcePath(sourcePath)?.split(/[\\/]/).at(-1);
   const fileRef = useMemo<HostFileRef>(
     () => hostFileRefFromNativePath(sourcePath, connectionId),
     [connectionId, sourcePath]
@@ -147,7 +143,7 @@ export const CadSourcePanel = observer(function CadSourcePanel({
             </Badge>
           ) : null}
         </div>
-        {presentation.legacy ? null : (
+        {presentation.readOnly ? null : (
           <>
             <div className="hidden shrink-0 items-center gap-1 @min-[561px]:flex">
               {entry?.dirty ? (
@@ -245,17 +241,6 @@ export const CadSourcePanel = observer(function CadSourcePanel({
           </>
         )}
       </div>
-
-      {presentation.legacy ? (
-        <div className="flex items-start gap-2 border-b bg-background-warning/5 px-4 py-2 text-tiny text-foreground-muted">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-foreground-warning" />
-          <span>
-            This old .step.py/.stp.py generator is view-only. cadgen 0.5 has no migration tool:
-            rename it to {migratedName ?? 'a plain .py file'} by hand (see
-            docs/migrating-0.4-to-0.5.md). The accepted STEP stays unchanged.
-          </span>
-        </div>
-      ) : null}
 
       {message ? (
         <div

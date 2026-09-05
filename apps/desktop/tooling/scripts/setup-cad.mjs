@@ -70,14 +70,6 @@ const TEXT_TO_CAD_ROOT_MARKERS = [
   join('.claude-plugin', 'plugin.json'),
 ];
 const SHIPPED_PLUGIN_ENTRIES = ['.codex-plugin', '.claude-plugin', 'skills', 'LICENSE', 'VERSION'];
-const VIEWER_RUNTIME_ENTRIES = new Set([
-  'dist',
-  'server',
-  'package.json',
-  'requirements.txt',
-  'LICENSE',
-  'README.md',
-]);
 const EXCLUDED_SEGMENTS = new Set([
   '.git',
   '.venv',
@@ -208,17 +200,23 @@ export function readTextToCadVersion(root) {
   }
 }
 
-/** The CAD Viewer runtime: apps/viewer in a checkout, the bundled skill copy otherwise. */
+/** The server is cadgen.viewer; the client is a checkout build or cadgen's bundled build. */
 export function resolveViewerRuntime(root) {
-  for (const candidate of [
-    { kind: 'repository', root: join(root, 'apps', 'viewer') },
-    { kind: 'bundle', root: join(root, 'skills', 'cad-viewer', 'scripts', 'viewer') },
-  ]) {
-    const launcher = join(candidate.root, 'server', 'main.py');
-    if (!existsSync(launcher)) continue;
-    return { ...candidate, launcher, dist: join(candidate.root, 'dist') };
+  if (!existsSync(join(root, 'packages', 'cadgen', 'src', 'cadgen', 'viewer', '__main__.py')))
+    return null;
+  const client = join(root, 'apps', 'viewer');
+  if (existsSync(join(client, 'package.json'))) {
+    return {
+      kind: 'repository',
+      root: client,
+      launcher: 'cadgen.viewer',
+      dist: join(client, 'dist'),
+    };
   }
-  return null;
+  const dist = join(root, 'packages', 'cadgen', 'src', 'cadgen', '_runtime', 'viewer');
+  return existsSync(join(dist, 'index.html'))
+    ? { kind: 'bundle', root: dist, launcher: 'cadgen.viewer', dist }
+    : null;
 }
 
 export function resolveCadRuntimeRoot(projectRoot = PROJECT_ROOT, environment = process.env) {
@@ -246,11 +244,6 @@ export function shouldShipBundledPluginPath(root, sourcePath) {
   if (/\.(?:pyc|map)$/i.test(last)) return false;
   if (!SHIPPED_PLUGIN_ENTRIES.includes(segments[0])) return false;
   if (segments[0] === 'skills' && DESKTOP_REPLACED_SKILLS.has(segments[1])) return false;
-  const viewerPrefix = ['skills', 'cad-viewer', 'scripts', 'viewer'];
-  const insideViewer =
-    segments.length > viewerPrefix.length &&
-    viewerPrefix.every((segment, index) => segments[index] === segment);
-  if (insideViewer && !VIEWER_RUNTIME_ENTRIES.has(segments[viewerPrefix.length])) return false;
   return true;
 }
 
@@ -800,10 +793,7 @@ export function resolveDevelopmentPython(textToCadRoot, platform = process.platf
 export function pythonImportsRepositoryCadgen(python, textToCadRoot) {
   const probe = spawnSync(
     python,
-    [
-      '-c',
-      'import cadgen, pathlib; print(pathlib.Path(cadgen.__file__).resolve())',
-    ],
+    ['-c', 'import cadgen, pathlib; print(pathlib.Path(cadgen.__file__).resolve())'],
     { encoding: 'utf8', timeout: 30_000 }
   );
   if (probe.status !== 0) return false;
@@ -1104,7 +1094,12 @@ export function main(args = process.argv.slice(2)) {
   });
 
   const checks = [];
-  const providerInput = { mutate: !options.check, pluginSourceRoot, refreshPlugin, expectedVersion: version };
+  const providerInput = {
+    mutate: !options.check,
+    pluginSourceRoot,
+    refreshPlugin,
+    expectedVersion: version,
+  };
   if (options.provider === 'all' || options.provider === 'codex') {
     checks.push(checkCodex(providerInput));
   }

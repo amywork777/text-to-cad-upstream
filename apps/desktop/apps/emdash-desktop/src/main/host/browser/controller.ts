@@ -12,11 +12,7 @@ import { browserWebContentsRegistry } from '@main/host/browser/browser-webconten
 import { isBrowserPartition } from '@main/host/browser/webview-security';
 import { listCadArtifacts } from '@main/host/cad/cad-artifact-scan';
 import { createCadDrawing } from '@main/host/cad/cad-drawing-service';
-import {
-  forgetCadModelProvenance,
-  rebuildCadModel,
-  validateCadModel,
-} from '@main/host/cad/cad-validation-service';
+import { rebuildCadModel, validateCadModel } from '@main/host/cad/cad-validation-service';
 import { ensureCadViewer } from '@main/host/cad/cad-viewer-service';
 
 export const browserOperations = {
@@ -56,8 +52,6 @@ export const browserOperations = {
   validateCadModel,
 
   rebuildCadModel,
-
-  forgetCadModelProvenance,
 
   createCadDrawing,
 

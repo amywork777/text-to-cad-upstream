@@ -40,10 +40,6 @@ export type CadDrawingResult =
     }
   | { success: false; error: string };
 
-export type CadProvenanceForgetResult =
-  | { success: true; removed: string[] }
-  | { success: false; error: string };
-
 export type CadArtifactScanResult =
   | {
       success: true;
@@ -92,10 +88,6 @@ export const browserContract = defineContract({
   rebuildCadModel: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),
     output: z.custom<CadValidationResult>(),
-  }),
-  forgetCadModelProvenance: procedure({
-    input: z.object({ workspacePath: z.string(), filePath: z.string() }),
-    output: z.custom<CadProvenanceForgetResult>(),
   }),
   createCadDrawing: procedure({
     input: z.object({ workspacePath: z.string(), filePath: z.string() }),

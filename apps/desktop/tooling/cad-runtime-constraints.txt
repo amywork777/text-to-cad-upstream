@@ -1,7 +1,7 @@
 # Hardcore CAD runtime lock.
 #
 # This is intentionally owned by the desktop app rather than Jake's source
-# package: cadgen stays installed from the pinned Text-to-CAD submodule, while
+# package: cadgen stays installed from the canonical Text-to-CAD package, while
 # every third-party distribution it resolves is constrained to the versions
 # exercised by Hardcore's packaged-runtime smoke test. Constraints do not
 # force platform-specific packages to install, but any package pip selects must

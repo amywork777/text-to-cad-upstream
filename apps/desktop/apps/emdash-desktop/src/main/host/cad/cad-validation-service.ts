@@ -1,12 +1,11 @@
 import { execFile, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
-import type { CadProvenanceForgetResult, CadValidationResult } from '@core/features/browser/api';
+import type { CadValidationResult } from '@core/features/browser/api';
 import { cadToolEnvironment } from '@main/host/cad/cad-python-environment';
 import {
-  cadgenProvenanceRecordPaths,
   cadSourceRebuildToolPlan as recipeRebuildToolPlan,
   linkedSourceFromCadgenRecord,
   normalizeCadArtifactRelationship,
@@ -88,40 +87,6 @@ export function rebuildCadModel(input: {
     if (remaining > 0) cadArtifactRebuildCounts.set(key, remaining);
     else cadArtifactRebuildCounts.delete(key);
   });
-}
-
-/**
- * Forget cadgen's records-tier bookkeeping for an artifact the desktop just
- * restored. The accepted STEP bytes are canonical; a recipe that failed or
- * produced invalid geometry left a ledger entry pointing at the rejected
- * output, and the doors would otherwise answer for that output instead of the
- * bytes on disk. Eviction is within cadgen's contract for the records tier
- * (best-effort, deletable at any time, costs at most one rebuild).
- */
-export function forgetCadModelProvenance(input: CadArtifactTargetInput): CadProvenanceForgetResult {
-  const target = resolveCadArtifactTarget(input);
-  if (!target.success) return target;
-  const modelPath = join(target.workspacePath, target.relativeModelPath);
-  const removed: string[] = [];
-  for (const recordPath of cadgenProvenanceRecordPaths(modelPath)) {
-    try {
-      unlinkSync(recordPath);
-      removed.push(recordPath);
-    } catch (error) {
-      if (!(isRecord(error) && error.code === 'ENOENT')) {
-        return {
-          success: false,
-          error: `Could not clear cadgen's record for ${target.relativeModelPath}: ${errorMessage(error)}`,
-        };
-      }
-    }
-  }
-  recentValidation.delete(cadArtifactOperationKey(input));
-  log.info(
-    { modelPath: target.relativeModelPath, removed },
-    'cad: forgot cadgen provenance records'
-  );
-  return { success: true, removed };
 }
 
 export function cadArtifactOperationKey(input: CadArtifactTargetInput): string {
@@ -241,13 +206,6 @@ async function rebuildCadModelOnce(input: {
     { workspacePath: target.workspacePath, recipe: target.relativeFilePath },
     'cad: rebuild requested'
   );
-  if (isLegacyPythonModelPath(target.relativeFilePath)) {
-    return {
-      success: false,
-      error:
-        'This legacy .step.py model is view-only. Rename it to a plain .py model with one @step function (see docs/migrating-0.4-to-0.5.md) before rebuilding it.',
-    };
-  }
   if (!isPythonModelPath(target.relativeFilePath)) {
     return { success: false, error: 'A source rebuild requires a Python @step model.' };
   }
@@ -484,39 +442,6 @@ function resolveWorkspaceFilePath(workspacePath: string, filePath: string): stri
   return isAbsolute(filePath) ? resolve(filePath) : resolve(workspacePath, filePath);
 }
 
-export function assertLegacyCadArtifactIsCurrent(
-  workspacePath: string,
-  relativeSourcePath: string
-): string {
-  if (!isLegacyPythonModelPath(relativeSourcePath)) {
-    throw new Error('Legacy CAD compatibility requires a .step.py or .stp.py source.');
-  }
-  const modelPath = defaultModelPath(relativeSourcePath);
-  const absoluteModelPath = join(workspacePath, modelPath);
-  if (!existsSync(absoluteModelPath)) {
-    throw new Error(
-      `The legacy model has no accepted sibling STEP. Rename ${basename(relativeSourcePath)} to a plain .py @step model and rebuild it.`
-    );
-  }
-
-  const recordedSourceHash = readCadgenStepSourceHash(absoluteModelPath);
-  const currentSourceHash = sha256(join(workspacePath, relativeSourcePath));
-  if (!recordedSourceHash || recordedSourceHash !== currentSourceHash) {
-    throw new Error(
-      `The legacy source cannot be proven to match its accepted STEP. Rename ${basename(relativeSourcePath)} to a plain .py @step model and rebuild it before editing.`
-    );
-  }
-  return modelPath;
-}
-
-function readCadgenStepSourceHash(path: string): string | null {
-  const text = readFileSync(path, 'utf8');
-  const match = text.match(
-    /DESCRIPTIVE_REPRESENTATION_ITEM\s*\(\s*'cadgen:sourceHash'\s*,\s*'([0-9a-f]{64})'\s*\)/i
-  );
-  return match?.[1]?.toLowerCase() ?? null;
-}
-
 async function runCadCommand(
   python: string,
   cwd: string,
@@ -547,7 +472,12 @@ async function runCadCommand(
     .map((candidate) => candidate.trim())
     .filter(Boolean)
     .at(-1);
-  if (!line) throw new Error('CAD tool returned no result.');
+  if (!line)
+    throw new Error(
+      tool === 'model'
+        ? 'The recipe produced no build result. Call its parameterless @step function from an if __name__ == "__main__": block.'
+        : 'CAD tool returned no result.'
+    );
   const parsed: unknown = JSON.parse(line);
   if (!isRecord(parsed) || parsed.ok !== true) throw new Error('CAD tool did not pass.');
   return parsed;
@@ -573,10 +503,6 @@ function defaultModelPath(sourcePath: string): string {
 
 function isPythonModelPath(path: string): boolean {
   return path.toLowerCase().endsWith('.py');
-}
-
-function isLegacyPythonModelPath(path: string): boolean {
-  return /\.(?:step|stp)\.py$/i.test(path);
 }
 
 export function terminateRunningCadProcesses(): void {

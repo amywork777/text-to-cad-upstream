@@ -274,11 +274,15 @@ async function startViewer(
   // one JSON line once the socket is bound and the app attached.
   let stdout = '';
   let stderr = '';
-  const viewerProcess = spawn(python, [layout.viewer.launcher, '--host', HOST, '--json'], {
-    cwd,
-    env: cadToolEnvironment(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const viewerProcess = spawn(
+    python,
+    ['-m', layout.viewer.launcher, '--host', HOST, '--json', '--dist', layout.viewer.dist],
+    {
+      cwd,
+      env: cadToolEnvironment(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+  );
   let exited = false;
   let spawnError: Error | null = null;
   const viewerChild: CadViewerChild = {

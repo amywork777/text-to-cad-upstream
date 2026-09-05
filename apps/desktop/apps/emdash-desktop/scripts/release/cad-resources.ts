@@ -41,10 +41,9 @@ const TEXT_TO_CAD_SOURCE_FILES = [
   '.claude-plugin/marketplace.json',
   'skills/cad/SKILL.md',
   'skills/cad-viewer/SKILL.md',
-  'apps/viewer/server/main.py',
+  'packages/cadgen/src/cadgen/viewer/__main__.py',
   'apps/viewer/dist/index.html',
   'apps/viewer/package.json',
-  'apps/viewer/requirements.txt',
   'packages/cadgen/pyproject.toml',
   'packages/cadgen/src/cadgen/__init__.py',
   'packages/cadgen/src/cadgen/_runtime/browser',
@@ -58,8 +57,8 @@ const DESKTOP_SOURCE_FILES = [
 
 /**
  * What ships under Contents/Resources: the desktop's CAD tooling beside a
- * materialized Text-to-CAD bundle laid out like Jake's publish tree, where the
- * cad-viewer skill carries the built client and Python server.
+ * Text-to-CAD bundle whose cadgen package carries both the Python server and
+ * the built client.
  */
 export const PACKAGED_CAD_FILES = [
   `${PACKAGED_DESKTOP_TOOLING_DIRECTORY}/tooling/scripts/setup-cad.mjs`,
@@ -72,10 +71,8 @@ export const PACKAGED_CAD_FILES = [
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/.claude-plugin/marketplace.json`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad/SKILL.md`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/SKILL.md`,
-  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/server/main.py`,
-  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/dist/index.html`,
-  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/package.json`,
-  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/skills/cad-viewer/scripts/viewer/requirements.txt`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/viewer/__main__.py`,
+  `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/_runtime/viewer/index.html`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/pyproject.toml`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/__init__.py`,
   `${PACKAGED_TEXT_TO_CAD_DIRECTORY}/packages/cadgen/src/cadgen/_runtime/browser`,
@@ -111,16 +108,16 @@ export function assertPackagedCadResources(appOutDir: string): void {
 }
 
 /**
- * electron-builder extraResources for the CAD bundle. The cad-viewer skill's
- * runtime is copied from apps/viewer explicitly (never through the checkout's
- * symlink) so the packaged tree mirrors the published skill layout.
+ * electron-builder extraResources for the CAD bundle. The client build is
+ * placed inside cadgen/_runtime/viewer, exactly where the installed wheel
+ * resolves it. Skills carry instructions only.
  */
 export function cadExtraResources(
   textToCadRoot = resolveTextToCadRoot(),
   desktopRoot = HARDCORE_REPOSITORY_ROOT
 ): CadExtraResource[] {
   const bundle = PACKAGED_TEXT_TO_CAD_DIRECTORY;
-  const viewerRuntime = `${bundle}/skills/cad-viewer/scripts/viewer`;
+  const viewerRuntime = `${bundle}/packages/cadgen/src/cadgen/_runtime/viewer`;
   const pythonFilter = ['**/*', '!**/__pycache__/**', '!**/*.pyc'];
   return [
     {
@@ -153,26 +150,12 @@ export function cadExtraResources(
         '!cad-viewer/scripts/viewer/**',
       ],
     },
-    { from: join(textToCadRoot, 'apps', 'viewer', 'dist'), to: `${viewerRuntime}/dist` },
-    {
-      from: join(textToCadRoot, 'apps', 'viewer', 'server'),
-      to: `${viewerRuntime}/server`,
-      filter: pythonFilter,
-    },
-    {
-      from: join(textToCadRoot, 'apps', 'viewer', 'package.json'),
-      to: `${viewerRuntime}/package.json`,
-    },
-    {
-      from: join(textToCadRoot, 'apps', 'viewer', 'requirements.txt'),
-      to: `${viewerRuntime}/requirements.txt`,
-    },
-    { from: join(textToCadRoot, 'apps', 'viewer', 'LICENSE'), to: `${viewerRuntime}/LICENSE` },
     {
       from: join(textToCadRoot, 'packages', 'cadgen'),
       to: `${bundle}/packages/cadgen`,
-      filter: [...pythonFilter, '!build/**', '!**/*.egg-info/**'],
+      filter: [...pythonFilter, '!build/**', '!**/*.egg-info/**', '!src/cadgen/_runtime/viewer/**'],
     },
+    { from: join(textToCadRoot, 'apps', 'viewer', 'dist'), to: viewerRuntime },
   ];
 }
 

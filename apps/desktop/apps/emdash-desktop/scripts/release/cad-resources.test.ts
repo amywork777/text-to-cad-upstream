@@ -25,10 +25,9 @@ const SOURCE_FILES = [
   '.claude-plugin/marketplace.json',
   'skills/cad/SKILL.md',
   'skills/cad-viewer/SKILL.md',
-  'apps/viewer/server/main.py',
+  'packages/cadgen/src/cadgen/viewer/__main__.py',
   'apps/viewer/dist/index.html',
   'apps/viewer/package.json',
-  'apps/viewer/requirements.txt',
   'packages/cadgen/pyproject.toml',
   'packages/cadgen/src/cadgen/__init__.py',
   'packages/cadgen/src/cadgen/_runtime/browser/render.html',
@@ -70,17 +69,17 @@ describe('CAD release resources', () => {
     expect(() => assertCadBundleSource(textToCad, desktop)).not.toThrow();
   });
 
-  it('copies the viewer runtime from apps/viewer, never through the skill symlink', () => {
+  it('ships the viewer client inside cadgen and no server runtime inside skills', () => {
     const resources = cadExtraResources('/repo', '/repo/apps/desktop');
     const targets = resources.map((entry) => entry.to);
-    expect(targets).toContain('text-to-cad/skills/cad-viewer/scripts/viewer/dist');
-    expect(targets).toContain('text-to-cad/skills/cad-viewer/scripts/viewer/server');
+    expect(targets).toContain('text-to-cad/packages/cadgen/src/cadgen/_runtime/viewer');
+    expect(targets.some((target) => target.includes('skills/cad-viewer/scripts'))).toBe(false);
     expect(targets).toContain('text-to-cad/packages/cadgen');
     expect(targets).toContain('text-to-cad-desktop/tooling/scripts/setup-cad.mjs');
     const skills = resources.find((entry) => entry.to === 'text-to-cad/skills');
     expect(skills?.filter).toContain('!cad-viewer/scripts/viewer/**');
     const viewerDist = resources.find(
-      (entry) => entry.to === 'text-to-cad/skills/cad-viewer/scripts/viewer/dist'
+      (entry) => entry.to === 'text-to-cad/packages/cadgen/src/cadgen/_runtime/viewer'
     );
     expect(viewerDist?.from).toBe(join('/repo', 'apps', 'viewer', 'dist'));
   });
@@ -141,10 +140,8 @@ async function createPackagedFiles(resources: string): Promise<void> {
     'text-to-cad/.claude-plugin/marketplace.json',
     'text-to-cad/skills/cad/SKILL.md',
     'text-to-cad/skills/cad-viewer/SKILL.md',
-    'text-to-cad/skills/cad-viewer/scripts/viewer/server/main.py',
-    'text-to-cad/skills/cad-viewer/scripts/viewer/dist/index.html',
-    'text-to-cad/skills/cad-viewer/scripts/viewer/package.json',
-    'text-to-cad/skills/cad-viewer/scripts/viewer/requirements.txt',
+    'text-to-cad/packages/cadgen/src/cadgen/viewer/__main__.py',
+    'text-to-cad/packages/cadgen/src/cadgen/_runtime/viewer/index.html',
     'text-to-cad/packages/cadgen/pyproject.toml',
     'text-to-cad/packages/cadgen/src/cadgen/__init__.py',
     'text-to-cad/packages/cadgen/src/cadgen/_runtime/browser/render.html',

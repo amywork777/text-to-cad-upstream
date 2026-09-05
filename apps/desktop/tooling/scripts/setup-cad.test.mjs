@@ -59,7 +59,7 @@ function writeTextToCadFixture(root, { viewerAsSymlink = true } = {}) {
   mkdirSync(join(root, 'packages', 'cadgen'), { recursive: true });
   mkdirSync(join(root, 'skills', 'cad', '__pycache__'), { recursive: true });
   mkdirSync(join(root, 'skills', 'cad-viewer', 'scripts'), { recursive: true });
-  mkdirSync(join(root, 'apps', 'viewer', 'server'), { recursive: true });
+  mkdirSync(join(root, 'packages', 'cadgen', 'src', 'cadgen', 'viewer'), { recursive: true });
   mkdirSync(join(root, 'apps', 'viewer', 'dist'), { recursive: true });
   mkdirSync(join(root, 'apps', 'viewer', 'src'), { recursive: true });
   mkdirSync(join(root, 'apps', 'viewer', 'node_modules', 'vite'), { recursive: true });
@@ -72,7 +72,10 @@ function writeTextToCadFixture(root, { viewerAsSymlink = true } = {}) {
   writeFileSync(join(root, 'skills', 'cad', 'SKILL.md'), 'CAD');
   writeFileSync(join(root, 'skills', 'cad', '__pycache__', 'runtime.pyc'), 'cache');
   writeFileSync(join(root, 'skills', 'cad-viewer', 'SKILL.md'), 'VIEWER');
-  writeFileSync(join(root, 'apps', 'viewer', 'server', 'main.py'), 'print("viewer")');
+  writeFileSync(
+    join(root, 'packages', 'cadgen', 'src', 'cadgen', 'viewer', '__main__.py'),
+    'print("viewer")'
+  );
   writeFileSync(join(root, 'apps', 'viewer', 'dist', 'index.html'), '<html></html>');
   writeFileSync(join(root, 'apps', 'viewer', 'dist', 'index.js.map'), '{}');
   writeFileSync(join(root, 'apps', 'viewer', 'src', 'App.js'), 'source');
@@ -81,7 +84,11 @@ function writeTextToCadFixture(root, { viewerAsSymlink = true } = {}) {
   writeFileSync(join(root, 'apps', 'viewer', 'node_modules', 'vite', 'index.js'), 'dep');
   writeFileSync(join(root, 'apps', 'viewer', 'tests_server', 'test_x.py'), 'test');
   if (viewerAsSymlink) {
-    symlinkSync('../../../apps/viewer', join(root, 'skills', 'cad-viewer', 'scripts', 'viewer'), 'dir');
+    symlinkSync(
+      '../../../apps/viewer',
+      join(root, 'skills', 'cad-viewer', 'scripts', 'viewer'),
+      'dir'
+    );
   }
 }
 
@@ -105,30 +112,37 @@ test('installs the canonical CAD plugin into both supported agents', () => {
 test('finds the Text-to-CAD tree above apps/desktop and honors an explicit root', () => {
   assert.equal(isTextToCadRoot(REPOSITORY_ROOT), true);
   assert.equal(resolveTextToCadRoot(join(REPOSITORY_ROOT, 'apps', 'desktop'), {}), REPOSITORY_ROOT);
-  assert.equal(readTextToCadVersion(REPOSITORY_ROOT), readFileSync(join(REPOSITORY_ROOT, 'VERSION'), 'utf8').trim());
+  assert.equal(
+    readTextToCadVersion(REPOSITORY_ROOT),
+    readFileSync(join(REPOSITORY_ROOT, 'VERSION'), 'utf8').trim()
+  );
   assert.equal(resolveTextToCadRoot('/tmp/missing-desktop-root', {}), null);
   assert.equal(
-    resolveTextToCadRoot('/tmp/missing-desktop-root', { HARDCORE_TEXT_TO_CAD_ROOT: REPOSITORY_ROOT }),
+    resolveTextToCadRoot('/tmp/missing-desktop-root', {
+      HARDCORE_TEXT_TO_CAD_ROOT: REPOSITORY_ROOT,
+    }),
     REPOSITORY_ROOT
   );
 });
 
-test('prefers the editable viewer app in a checkout and the bundled skill runtime otherwise', (context) => {
+test('prefers the editable viewer app in a checkout and the bundled cadgen client otherwise', (context) => {
   const root = mkdtempSync(join(tmpdir(), 'hardcore-text-to-cad-'));
   context.after(() => rmSync(root, { recursive: true, force: true }));
   writeTextToCadFixture(root);
   assert.deepEqual(resolveViewerRuntime(root), {
     kind: 'repository',
     root: join(root, 'apps', 'viewer'),
-    launcher: join(root, 'apps', 'viewer', 'server', 'main.py'),
+    launcher: 'cadgen.viewer',
     dist: join(root, 'apps', 'viewer', 'dist'),
   });
 
   const bundle = mkdtempSync(join(tmpdir(), 'hardcore-text-to-cad-bundle-'));
   context.after(() => rmSync(bundle, { recursive: true, force: true }));
-  const runtime = join(bundle, 'skills', 'cad-viewer', 'scripts', 'viewer');
-  mkdirSync(join(runtime, 'server'), { recursive: true });
-  writeFileSync(join(runtime, 'server', 'main.py'), '');
+  const runtime = join(bundle, 'packages', 'cadgen', 'src', 'cadgen');
+  mkdirSync(join(runtime, 'viewer'), { recursive: true });
+  mkdirSync(join(runtime, '_runtime', 'viewer'), { recursive: true });
+  writeFileSync(join(runtime, 'viewer', '__main__.py'), '');
+  writeFileSync(join(runtime, '_runtime', 'viewer', 'index.html'), '<html></html>');
   assert.equal(resolveViewerRuntime(bundle)?.kind, 'bundle');
   assert.equal(resolveViewerRuntime('/tmp/missing-text-to-cad'), null);
 });
@@ -321,7 +335,10 @@ test('stages a symlink-free plugin copy with the viewer runtime materialized', (
   // A changed skill invalidates the staged copy.
   writeFileSync(join(textToCadRoot, 'skills', 'cad', 'SKILL.md'), 'CAD v2');
   stageBundledPlugin(textToCadRoot, runtimeRoot, { overlayRoot });
-  assert.equal(readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8').startsWith('CAD'), true);
+  assert.equal(
+    readFileSync(join(stagedRoot, 'skills', 'cad', 'SKILL.md'), 'utf8').startsWith('CAD'),
+    true
+  );
 });
 
 test('resolves the development CAD runtime locally unless an external root is configured', () => {

@@ -14,9 +14,7 @@ describe('packaged CAD smoke plan', () => {
     expect(plan.bundledCadgenSource).toBe('/release/resources/text-to-cad/packages/cadgen');
     expect(plan.python).toBe('/tmp/smoke/runtime/venv/bin/python');
     expect(plan.cacheRoot).toBe('/tmp/smoke/cadgen-cache');
-    expect(plan.viewerLauncher).toBe(
-      '/release/resources/text-to-cad/skills/cad-viewer/scripts/viewer/server/main.py'
-    );
+    expect(plan.viewerLauncher).toBe('cadgen.viewer');
     expect(plan.artifact).toBe('/tmp/smoke/workspace/packaged-smoke.step');
     expect(plan.parallelArtifact).toBe(
       '/tmp/smoke/parallel-workspace/packaged-parallel-smoke.step'
@@ -71,9 +69,7 @@ describe('packaged CAD smoke plan', () => {
   it('uses the packaged Windows virtual-environment launcher', () => {
     const plan = createPackagedCadSmokePlan('C:\\release\\resources', 'C:\\smoke', 'win32');
     expect(plan.python).toBe('C:\\smoke\\runtime\\venv\\Scripts\\python.exe');
-    expect(plan.viewerLauncher).toBe(
-      'C:\\release\\resources\\text-to-cad\\skills\\cad-viewer\\scripts\\viewer\\server\\main.py'
-    );
+    expect(plan.viewerLauncher).toBe('cadgen.viewer');
     expect(plan.setupScript).toBe(
       'C:\\release\\resources\\text-to-cad-desktop\\tooling\\scripts\\setup-cad.mjs'
     );

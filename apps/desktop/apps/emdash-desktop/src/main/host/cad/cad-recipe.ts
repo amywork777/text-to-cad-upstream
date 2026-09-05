@@ -10,7 +10,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
  * Its artifact is the sibling `<stem>.step` unless the decorator says
  * `out="..."`, which resolves relative to the script. Reading the declaration
  * is a lightweight import/decorator scan; Python only ever runs through the
- * explicit rebuild path. Legacy `.step.py` files are view-only.
+ * explicit rebuild path. A double-suffixed filename is also a normal Python recipe.
  */
 export type CadSourceArtifactRelationship = {
   workspacePath: string;
@@ -76,9 +76,10 @@ export function resolveCadSourceArtifactRelationship(input: {
     }
   }
   const target = cadStepOutputDeclaration(source);
-  const defaultPath = isLegacyPythonCadSource(sourcePath)
-    ? sourcePath.slice(0, -3)
-    : sourcePath.slice(0, -3) + '.step';
+  const defaultPath =
+    isLegacyPythonCadSource(sourcePath) && !cadStepDeclaration(source)
+      ? sourcePath.slice(0, -3)
+      : sourcePath.slice(0, -3) + '.step';
   const modelPath = target
     ? isAbsolute(target.path)
       ? resolve(target.path)
@@ -101,6 +102,11 @@ export function resolveCadSourceArtifactRelationship(input: {
 
 /** The `out=` string literal of the recipe's @step decorator, when declared. */
 export function cadStepOutputDeclaration(source: string): { keyword: 'out'; path: string } | null {
+  const declaration = cadStepDeclaration(source);
+  return declaration?.path ? { keyword: 'out', path: declaration.path } : null;
+}
+
+function cadStepDeclaration(source: string): { path?: string } | null {
   const stepNames = new Set<string>();
   const moduleNames = new Set<string>();
   for (const line of source.split(/\r?\n/)) {
@@ -134,7 +140,7 @@ export function cadStepOutputDeclaration(source: string): { keyword: 'out'; path
     }
     const match = declaration.match(/\bout\s*=\s*(['"])([^'"\\]+)\1/);
     const path = match?.[2]?.trim();
-    return path ? { keyword: 'out', path } : null;
+    return path ? { path } : {};
   }
   return null;
 }
@@ -144,40 +150,20 @@ export type CadRuntimeCommand = {
   args: string[];
 };
 
-/** How long a rebuild waits for another build of the same model before reporting `contended`. */
-export const CAD_REBUILD_LOCK_TIMEOUT_SECONDS = 120;
-
-/**
- * The one source door in cadgen 0.5: running the script. The freshness gate
- * inside cadgen decides whether anything rebuilds, so the desktop never
- * passes --force; opening, previewing, and restarting never call this at all.
- * The lock timeout keeps a rebuild from waiting forever behind a build that
- * another client (or an interrupted one) still holds; cadgen then answers
- * `outcome: "contended"` and the desktop keeps the accepted STEP.
- */
+/** Run the model program; cadgen owns caching and concurrency. */
 export function cadSourceRebuildToolPlan(relativeSourcePath: string): CadRuntimeCommand {
-  if (/\.(?:step|stp)\.py$/i.test(relativeSourcePath)) {
-    throw new Error(
-      'Legacy .step.py recipes are view-only. Rename the file to a plain .py model with one @step function before rebuilding it.'
-    );
-  }
   if (!/\.py$/i.test(relativeSourcePath)) {
     throw new Error('A source rebuild requires a Python @step model.');
   }
   return {
     tool: 'model',
-    args: [
-      relativeSourcePath,
-      '--json',
-      '--lock-timeout',
-      String(CAD_REBUILD_LOCK_TIMEOUT_SECONDS),
-    ],
+    args: [relativeSourcePath, '--json'],
   };
 }
 
 /**
  * Resolve the artifact reported after a model run. cadgen reports the
- * document as `cadPath` (workspace-relative, without the extension); the
+ * document as `document` (the complete STEP path); the
  * declared out=/sibling relationship is the fallback when a run omits it.
  */
 export function resolveCadBuildArtifactPath(input: {
@@ -191,8 +177,8 @@ export function resolveCadBuildArtifactPath(input: {
     sourcePath: input.relativeSourcePath,
   });
   const cadReference =
-    typeof input.build.cadPath === 'string' && input.build.cadPath.trim()
-      ? input.build.cadPath.trim()
+    typeof input.build.document === 'string' && input.build.document.trim()
+      ? input.build.document.trim()
       : relationship?.relativeModelPath;
   if (!cadReference) throw new Error('The CAD build did not identify its generated artifact.');
   const reported = /\.(?:step|stp)$/i.test(cadReference) ? cadReference : `${cadReference}.step`;
@@ -230,58 +216,34 @@ export function resolveCadgenCacheRoot(
 }
 
 /**
- * The records-tier provenance file cadgen writes for every generated document:
- * `<cache>/records/<sha256(resolved artifact path)[:24]>.source.json`. It is
- * evictable bookkeeping, never identity: a missing record reads as an import.
+ * Read cadgen 0.5's code-side provenance for the desktop's Source action.
+ * Render and validation still resolve the document by its bytes. These hints
+ * are optional, read-only, and never a reason to reject an artifact.
  */
-export function cadgenProvenanceRecordPath(
-  artifactPath: string,
-  cacheRoot: string = resolveCadgenCacheRoot()
-): string {
-  return join(cacheRoot, 'records', `${cadgenArtifactPathKey(artifactPath)}.source.json`);
-}
-
-/**
- * Every records-tier file cadgen keeps for one artifact: the provenance record
- * and the per-model export ledger (source closure -> written STEP hash). The
- * doors resolve a generated document through that ledger, so once the desktop
- * restores an accepted STEP under a recipe that no longer produced it, both
- * records must go: cadgen then treats the STEP as an import and reads its
- * bytes, and the next run of the recipe simply rebuilds and re-records.
- */
-export function cadgenProvenanceRecordPaths(
-  artifactPath: string,
-  cacheRoot: string = resolveCadgenCacheRoot()
-): string[] {
-  const key = cadgenArtifactPathKey(artifactPath);
-  return [
-    join(cacheRoot, 'records', `${key}.source.json`),
-    join(cacheRoot, 'records', `${key}.step-export.json`),
-  ];
-}
-
-export function cadgenArtifactPathKey(artifactPath: string): string {
-  const resolved = resolveLikeCadgen(artifactPath);
-  return createHash('sha256').update(resolved, 'utf8').digest('hex').slice(0, 24);
-}
-
 export interface CadgenSourceProvenance {
   sourceKind: string;
   sourcePath?: string;
-  sourceHash?: string;
 }
 
 export function readCadgenSourceProvenance(
   artifactPath: string,
   cacheRoot: string = resolveCadgenCacheRoot()
 ): CadgenSourceProvenance | null {
-  const record = readJsonRecord(cadgenProvenanceRecordPath(artifactPath, cacheRoot));
-  if (!record || typeof record.sourceKind !== 'string') return null;
-  return {
-    sourceKind: record.sourceKind,
-    ...(typeof record.sourcePath === 'string' ? { sourcePath: record.sourcePath } : {}),
-    ...(typeof record.sourceHash === 'string' ? { sourceHash: record.sourceHash } : {}),
-  };
+  const artifact = resolveLikeCadgen(artifactPath);
+  const outputKey = createHash('sha256').update(artifact, 'utf8').digest('hex');
+  const output = readJsonRecord(join(cacheRoot, 'index', 'output', outputKey));
+  if (typeof output?.model !== 'string') return null;
+  const modelKey = createHash('sha256').update(output.model, 'utf8').digest('hex');
+  const record = readJsonRecord(join(cacheRoot, 'index', 'model', modelKey));
+  if (record?.kind !== 'record' || record.model !== output.model || record.sourceKind !== 'python')
+    return null;
+  if (
+    typeof record.script !== 'string' ||
+    !isRecord(record.outputs) ||
+    !isRecord(record.outputs[artifact])
+  )
+    return null;
+  return { sourceKind: 'python', sourcePath: record.script };
 }
 
 /**
@@ -302,18 +264,28 @@ export function linkedSourceFromCadgenRecord(input: {
   if (!isSafeWorkspaceRelativePath(relativeModelPath) || !existsSync(modelPath)) return null;
   const provenance = readCadgenSourceProvenance(modelPath, input.cacheRoot);
   if (provenance?.sourceKind !== 'python' || !provenance.sourcePath?.trim()) return null;
-  // cadgen records the recipe relative to the document's directory.
-  const sourcePath = resolve(dirname(modelPath), provenance.sourcePath);
-  const relativeSourcePath = relative(workspacePath, sourcePath);
+  // cadgen records the absolute script path on the code side of the store.
+  const recordedSource = resolve(dirname(modelPath), provenance.sourcePath);
+  const relativeSourcePath = relative(
+    resolveLikeCadgen(workspacePath),
+    resolveLikeCadgen(recordedSource)
+  );
+  const sourcePath = resolve(workspacePath, relativeSourcePath);
   if (
     !isSafeWorkspaceRelativePath(relativeSourcePath) ||
     !/\.py$/i.test(relativeSourcePath) ||
-    isLegacyPythonCadSource(relativeSourcePath) ||
     !existsSync(sourcePath)
   ) {
     return null;
   }
-  const declared = resolveCadSourceArtifactRelationship({ workspacePath, sourcePath });
+  let source: string;
+  try {
+    source = readFileSync(sourcePath, 'utf8');
+  } catch {
+    return null;
+  }
+  if (!cadStepDeclaration(source)) return null;
+  const declared = resolveCadSourceArtifactRelationship({ workspacePath, sourcePath, source });
   if (!declared || declared.relativeModelPath !== relativeModelPath) return null;
   return { workspacePath, relativeSourcePath, relativeModelPath, declaration: 'record' };
 }

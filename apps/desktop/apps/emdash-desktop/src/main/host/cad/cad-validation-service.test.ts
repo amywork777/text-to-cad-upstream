@@ -1,12 +1,10 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cadgenProvenanceRecordPath, cadgenProvenanceRecordPaths } from './cad-recipe';
 import {
-  assertLegacyCadArtifactIsCurrent,
   cadArtifactOperationKey,
   cadArtifactIdentity,
   cadInspectionToolPlan,
@@ -14,7 +12,6 @@ import {
   cadToolEnvironment,
   cadValidationModelPath,
   cadValidationInputRevision,
-  forgetCadModelProvenance,
   resolveCadArtifactTarget,
   validateCadModel,
 } from './cad-validation-service';
@@ -146,47 +143,6 @@ describe('CAD validation service path boundary', () => {
     expect(cadValidationInputRevision({ workspacePath, filePath: stepPath })).not.toBe(initial);
   });
 
-  it("forgets cadgen's records for a restored STEP so the doors read its bytes again", async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
-    temporaryDirectories.push(workspacePath);
-    const stepPath = join(workspacePath, 'plate.step');
-    await writeFile(
-      join(workspacePath, 'plate.py'),
-      'from cadgen import step\n\n@step()\ndef plate(): ...\n'
-    );
-    await writeFile(stepPath, 'accepted-step');
-    await writeProvenanceRecord(workspacePath, stepPath, {
-      sourceKind: 'python',
-      sourcePath: 'plate.py',
-    });
-    const [, ledgerPath] = cadgenProvenanceRecordPaths(stepPath, process.env.CADGEN_CACHE_DIR);
-    await writeFile(
-      ledgerPath,
-      JSON.stringify({ exports: { 'plate.step': { closure: 'rejected' } } })
-    );
-    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toMatchObject({
-      relativeSourcePath: 'plate.py',
-    });
-
-    const forgotten = forgetCadModelProvenance({ workspacePath, filePath: stepPath });
-
-    expect(forgotten).toEqual({
-      success: true,
-      removed: cadgenProvenanceRecordPaths(stepPath, process.env.CADGEN_CACHE_DIR),
-    });
-    expect(existsSync(ledgerPath)).toBe(false);
-    // Without a record the STEP reads as an import: bytes only, no recipe link.
-    expect(resolveCadArtifactTarget({ workspacePath, filePath: stepPath })).toEqual({
-      success: true,
-      workspacePath,
-      relativeModelPath: 'plate.step',
-    });
-    expect(forgetCadModelProvenance({ workspacePath, filePath: stepPath })).toEqual({
-      success: true,
-      removed: [],
-    });
-  });
-
   it('keeps stale linked source bytes from redefining the accepted STEP revision', async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
     temporaryDirectories.push(workspacePath);
@@ -278,7 +234,7 @@ describe('CAD validation service path boundary', () => {
   it('runs a recipe only through the explicit source rebuild path, never with --force', () => {
     expect(cadSourceRebuildToolPlan('car.py')).toEqual({
       tool: 'model',
-      args: ['car.py', '--json', '--lock-timeout', '120'],
+      args: ['car.py', '--json'],
     });
   });
 
@@ -483,7 +439,7 @@ describe('CAD validation service path boundary', () => {
       cadValidationModelPath(workspacePath, 'emdash-smoke.py', {
         ok: true,
         sourceRef: 'emdash-smoke.py',
-        cadPath: 'emdash-smoke',
+        document: 'emdash-smoke',
         kind: 'part',
         outcome: 'built',
         packagePath: '/home/amy/.cache/cadgen/packages/abc-v17',
@@ -502,7 +458,6 @@ describe('CAD validation service path boundary', () => {
       `ISO-10303-21;\nDESCRIPTIVE_REPRESENTATION_ITEM('cadgen:sourceHash','${sourceHash}');\nEND-ISO-10303-21;\n`
     );
 
-    expect(assertLegacyCadArtifactIsCurrent(workspacePath, 'legacy.step.py')).toBe('legacy.step');
     expect(
       resolveCadArtifactTarget({
         workspacePath,
@@ -514,22 +469,6 @@ describe('CAD validation service path boundary', () => {
       relativeModelPath: 'legacy.step',
       relativeSourcePath: 'legacy.step.py',
     });
-  });
-
-  it('refuses stale legacy geometry instead of validating an edited source against an old STEP', async () => {
-    const workspacePath = await mkdtemp(join(tmpdir(), 'hardcore-cad-validation-'));
-    temporaryDirectories.push(workspacePath);
-    const original = 'def gen_step():\n    return 10\n';
-    const originalHash = createHash('sha256').update(original).digest('hex');
-    await writeFile(join(workspacePath, 'legacy.step.py'), 'def gen_step():\n    return 20\n');
-    await writeFile(
-      join(workspacePath, 'legacy.step'),
-      `DESCRIPTIVE_REPRESENTATION_ITEM('cadgen:sourceHash','${originalHash}');\n`
-    );
-
-    expect(() => assertLegacyCadArtifactIsCurrent(workspacePath, 'legacy.step.py')).toThrow(
-      'cannot be proven to match'
-    );
   });
 
   it('does not trust a plain sibling when both naming conventions exist without a marker', async () => {
@@ -573,9 +512,23 @@ async function writeProvenanceRecord(
 ): Promise<void> {
   const cacheRoot = join(workspacePath, '.cadgen-cache');
   process.env.CADGEN_CACHE_DIR = cacheRoot;
-  const recordPath = cadgenProvenanceRecordPath(stepPath, cacheRoot);
-  await mkdir(dirname(recordPath), { recursive: true });
-  await writeFile(recordPath, JSON.stringify({ schemaVersion: 5, ...payload }));
+  const artifact = realpathSync.native(stepPath);
+  const source = resolve(dirname(artifact), String(payload.sourcePath ?? 'missing.py'));
+  const model = `${source}::plate`;
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  await mkdir(join(cacheRoot, 'index', 'output'), { recursive: true });
+  await mkdir(join(cacheRoot, 'index', 'model'), { recursive: true });
+  await writeFile(join(cacheRoot, 'index', 'output', hash(artifact)), JSON.stringify({ model }));
+  await writeFile(
+    join(cacheRoot, 'index', 'model', hash(model)),
+    JSON.stringify({
+      kind: 'record',
+      model,
+      script: source,
+      sourceKind: payload.sourceKind,
+      outputs: { [artifact]: { sha256: 'fixture' } },
+    })
+  );
 }
 
 function restoreEnvironment(name: string, value: string | undefined): void {

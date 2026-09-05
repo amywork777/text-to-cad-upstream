@@ -1,14 +1,10 @@
-import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  cadgenProvenanceRecordPath,
-  cadgenProvenanceRecordPaths,
   cadSourceRebuildToolPlan,
   cadStepOutputDeclaration,
   linkedSourceFromCadgenRecord,
@@ -118,26 +114,26 @@ describe('cadgen 0.5 recipes', () => {
   it('runs a recipe through the plain script door without --force', () => {
     expect(cadSourceRebuildToolPlan('src/plate.py')).toEqual({
       tool: 'model',
-      args: ['src/plate.py', '--json', '--lock-timeout', '120'],
+      args: ['src/plate.py', '--json'],
     });
-    expect(() => cadSourceRebuildToolPlan('legacy.step.py')).toThrow(/view-only/);
+    expect(cadSourceRebuildToolPlan('plate.step.py').args).toEqual(['plate.step.py', '--json']);
     expect(() => cadSourceRebuildToolPlan('plate.step')).toThrow(/Python @step model/);
   });
 
-  it('maps the reported cadPath back to the workspace STEP', () => {
+  it('maps the reported document back to the workspace STEP', () => {
     const workspacePath = '/workspace';
     expect(
       resolveCadBuildArtifactPath({
         workspacePath,
         relativeSourcePath: 'src/plate.py',
-        build: { ok: true, sourceRef: 'src/plate.py', cadPath: 'STEP/plate', outcome: 'built' },
+        build: { ok: true, sourceRef: 'src/plate.py', document: 'STEP/plate', outcome: 'built' },
       })
     ).toBe(join('STEP', 'plate.step'));
     expect(() =>
       resolveCadBuildArtifactPath({
         workspacePath,
         relativeSourcePath: 'src/plate.py',
-        build: { ok: true, cadPath: '../elsewhere/plate' },
+        build: { ok: true, document: '../elsewhere/plate' },
       })
     ).toThrow(/inside the active model workspace/);
   });
@@ -163,53 +159,6 @@ describe('cadgen provenance records', () => {
     ).toBe(join('C:\\Users\\amy\\AppData\\Local', 'cadgen'));
   });
 
-  it('keys the record like cadgen: sha256 of the resolved artifact path, truncated', async () => {
-    const root = await temporaryDirectory('hardcore-cad-records-');
-    const stepPath = join(root, 'plate.step');
-    await writeFile(stepPath, 'step');
-    const expectedKey = createHash('sha256')
-      .update(realpathSync.native(stepPath), 'utf8')
-      .digest('hex')
-      .slice(0, 24);
-    expect(cadgenProvenanceRecordPath(stepPath, '/cache')).toBe(
-      join('/cache', 'records', `${expectedKey}.source.json`)
-    );
-  });
-
-  it('names both records-tier files for an artifact', async () => {
-    const root = await temporaryDirectory('hardcore-cad-records-');
-    const stepPath = join(root, 'plate.step');
-    await writeFile(stepPath, 'step');
-    const [source, ledger] = cadgenProvenanceRecordPaths(stepPath, '/cache');
-    expect(source).toBe(cadgenProvenanceRecordPath(stepPath, '/cache'));
-    expect(ledger).toBe(source.replace(/\.source\.json$/, '.step-export.json'));
-  });
-
-  it('agrees with cadgen.catalog.artifact_path_key when a repository venv is available', async () => {
-    const repositoryRoot = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      '../../../../../../../..'
-    );
-    const python = join(repositoryRoot, '.venv', 'bin', 'python');
-    if (process.platform === 'win32' || !existsSync(python)) return;
-    const root = await temporaryDirectory('hardcore-cad-records-');
-    const stepPath = join(root, 'plate.step');
-    await writeFile(stepPath, 'step');
-    const probe = spawnSync(
-      python,
-      [
-        '-c',
-        'import sys; from pathlib import Path; from cadgen.catalog import artifact_path_key; print(artifact_path_key(Path(sys.argv[1])))',
-        stepPath,
-      ],
-      { encoding: 'utf8' }
-    );
-    if (probe.status !== 0) return;
-    expect(cadgenProvenanceRecordPath(stepPath, '/cache')).toBe(
-      join('/cache', 'records', `${probe.stdout.trim()}.source.json`)
-    );
-  });
-
   it('follows a python record to the recipe only when the recipe declares this STEP', async () => {
     const root = await temporaryDirectory('hardcore-cad-records-');
     const cacheRoot = join(root, 'cache');
@@ -230,8 +179,7 @@ describe('cadgen provenance records', () => {
 
     expect(readCadgenSourceProvenance(stepPath, cacheRoot)).toEqual({
       sourceKind: 'python',
-      sourcePath: '../src/plate.py',
-      sourceHash: 'abc',
+      sourcePath: realpathSync.native(sourcePath),
     });
     expect(
       linkedSourceFromCadgenRecord({ workspacePath: root, modelPath: stepPath, cacheRoot })
@@ -285,9 +233,23 @@ describe('cadgen provenance records', () => {
 });
 
 async function writeRecord(cacheRoot: string, stepPath: string, payload: Record<string, unknown>) {
-  const recordPath = cadgenProvenanceRecordPath(stepPath, cacheRoot);
-  await mkdir(dirname(recordPath), { recursive: true });
-  await writeFile(recordPath, JSON.stringify(payload));
+  const artifact = realpathSync.native(stepPath);
+  const source = resolve(dirname(artifact), String(payload.sourcePath ?? 'missing.py'));
+  const model = `${source}::plate`;
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  await mkdir(join(cacheRoot, 'index', 'output'), { recursive: true });
+  await mkdir(join(cacheRoot, 'index', 'model'), { recursive: true });
+  await writeFile(join(cacheRoot, 'index', 'output', hash(artifact)), JSON.stringify({ model }));
+  await writeFile(
+    join(cacheRoot, 'index', 'model', hash(model)),
+    JSON.stringify({
+      kind: 'record',
+      model,
+      script: source,
+      sourceKind: payload.sourceKind,
+      outputs: { [artifact]: { sha256: 'fixture' } },
+    })
+  );
 }
 
 async function temporaryDirectory(prefix: string): Promise<string> {

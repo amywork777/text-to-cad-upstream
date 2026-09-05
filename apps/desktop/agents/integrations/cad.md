@@ -4,7 +4,7 @@ Hardcore is the thread-first desktop shell for Text-to-CAD. It lives at `apps/de
 [earthtojake/text-to-cad](https://github.com/earthtojake/text-to-cad) and runs on that
 repository's canonical resources directly:
 
-- `apps/viewer` — Jake's CAD Viewer (React client, stdlib-only Python server).
+- `apps/viewer` — the CAD Viewer's React client; its server is `cadgen.viewer`.
 - `packages/cadgen` — the `cadgen` distribution: `@step` recipes, the warm build daemon, the
   content-addressed cache, and the `cadgen` inspection doors.
 - `packages/cadgen-js` — the shared render runtime, bundled into the viewer client at build time.
@@ -25,10 +25,9 @@ canonical resources are.
 3. The nearest ancestor of the app that carries `VERSION`, `packages/cadgen/pyproject.toml`,
    `skills/cad/SKILL.md`, and both plugin manifests — the monorepo root in a checkout.
 
-A checkout uses `apps/viewer` (kind `repository`); a packaged bundle uses the cad-viewer skill's
-materialized runtime at `skills/cad-viewer/scripts/viewer` (kind `bundle`), which is the same client
-and server laid out the way Jake publishes them. Nothing is inferred from cache directories or
-adjacent metadata files.
+A checkout uses `apps/viewer/dist` (kind `repository`). A packaged bundle places that build
+inside `packages/cadgen/src/cadgen/_runtime/viewer` (kind `bundle`), so installing the bundled
+cadgen also installs the viewer. Both launch the installed module with `python -m cadgen.viewer`.
 
 Run the setup and checks from `apps/desktop`:
 
@@ -46,10 +45,8 @@ cadgen from `packages/cadgen`, or a managed venv under the app's user data insta
 checkout). At runtime `HARDCORE_CAD_PYTHON` overrides the same choice.
 
 Provider plugins are installed from a filtered, symlink-free staging copy under the runtime root
-(`plugins/text-to-cad`): manifests, `skills/`, `LICENSE`, and `VERSION`, with the cad-viewer skill's
-runtime materialized as `dist/` + `server/` only. Codex `plugin add` drops symlinks silently and both
-provider caches copy whatever they are pointed at, so the develop-layout symlink and a repository
-full of `node_modules` must never be the marketplace source. The desktop never launches that copy.
+(`plugins/text-to-cad`): manifests, `skills/`, `LICENSE`, and `VERSION`. The desktop replaces
+`cad-viewer` with its own `cad-desktop` skill. No viewer runtime is copied into the plugin.
 
 ## Product model
 
@@ -67,51 +64,40 @@ browsing remains the desktop's ordinary project-file UI.
 
 ## Canonical artifact lifecycle (cadgen 0.5)
 
-The accepted on-disk STEP and its recorded SHA-256 are canonical model state. A plain `.py` recipe
-that decorates one function with `@step` is the optional source that can rebuild it. `<name>.step.py`
-is legacy: view-only until renamed by hand (cadgen 0.5 removed its migration codemod; see
-`docs/migrating-0.4-to-0.5.md` at the repository root).
+The accepted on-disk STEP and its recorded SHA-256 are canonical model state. A Python recipe with a parameterless `@step` function and an explicit main call is the
+optional source that can rebuild it. Filenames, including `.step.py`, do not decide whether a
+program is current; cadgen validates the declarations when it runs.
 
 Every geometry-changing turn follows the same lifecycle:
 
 1. Hash and back up the accepted STEP, its optional `.step.json` sidecar, and the linked recipe.
 2. Let the selected agent edit files, or apply the user's explicit recipe edit in the source editor.
-3. Run the recipe through the one v0.5 source door — `python <recipe>.py --json` — with cadgen's
-   warm daemon and content-addressed cache on their defaults and never `--force`; cadgen's own
-   freshness gate decides whether anything rebuilds.
-4. Validate the resulting STEP independently with `cadgen step inspect refs` and
-   `cadgen step inspect validate`.
+3. Run `python <recipe>.py --json`. The recipe must call its parameterless decorated function
+   from `if __name__ == "__main__":`. Cadgen owns caching and concurrency; the desktop does not
+   pass `--force` or the retired `--lock-timeout` flag.
+4. Read the build result's `document` path and independently inspect and validate those bytes
+   with `cadgen step inspect refs` and `cadgen step inspect validate`.
 5. Accept and reload only the validated on-disk artifact.
-6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry,
-   and forget cadgen's records-tier entries for that artifact (`records/<key>.source.json` and
-   `<key>.step-export.json`). cadgen's doors resolve a generated document through its export ledger,
-   so after a restore they would otherwise validate the rejected output instead of the bytes on
-   disk; without the records the STEP reads as an import and the next recipe run rebuilds once.
-   In-flight recipe runs are terminated when the app exits so an orphaned build cannot overwrite the
-   accepted STEP later.
+6. Restore the previous STEP, sidecar, and recipe after failure, interruption, or invalid geometry.
+   Never delete store entries on rollback: a render tree is keyed by the document bytes.
 
-Agents and in-app terminals see that runtime: the login-shell environment the desktop hands to its
-workers carries the CAD interpreter's directory first on PATH (`withCadRuntimeOnPath`), so `python`,
-`pip`, and `cadgen` resolve to the checkout venv in a repository or to the managed runtime in a packaged
-app. Without it an agent following the CAD skill in a fresh project finds no cadgen and pip-installs its
-own copy, which fails inside a network-less sandbox and duplicates the runtime the app already provisioned.
+Opening, previewing, and restart recovery never run the source program. A source edit alone never
+overwrites the accepted STEP; only an explicit rebuild does.
 
-Opening, previewing, and restart recovery are read-only: they hash and inspect the STEP and never run
-Python. A recipe edit alone never overwrites a newer STEP; only an explicit rebuild does, and its
-output is accepted only after validation.
-
-The recipe behind an accepted STEP is resolved, in order of trust, from the desktop's persisted
-model catalog, from cadgen's own provenance record
-(`<cache>/records/<sha256(resolved artifact path)[:24]>.source.json`, verified both ways against the
-recipe's declared `out=`), and from the legacy `.step.py` sibling. A same-stem `.py` beside an
-imported STEP is never assumed to own it. The `.step.json` sidecar carries declarations (kinematics,
-animation, mesh exports) and is backed up and restored with the STEP; it is never source identity.
+The desktop's Source action first uses the persisted model-catalog association. Otherwise it reads
+cadgen's optional code-side provenance (`index/output` → `index/model`), verifies that the script
+exists inside the workspace and its declared output is this STEP, and offers that source. This is
+authoring context, never render identity or a validation prerequisite. A missing or evicted record
+leaves the document viewable. A same-stem `.py` beside an imported STEP is never assumed to own it.
+Old `.step.py` siblings remain discoverable, but must use current declarations to rebuild.
+The `.step.json` sidecar carries kinematics;
+choreography lives in the document's `.step.js` render module.
 
 ## Viewer ownership
 
 Jake's viewer owns the viewport, topology tree, measurement, references, display controls, pose
 controls, and per-file rendering. The desktop starts one server per workspace directory with
-`python server/main.py --host 127.0.0.1 --json` from that directory, reads the launcher's
+`python -m cadgen.viewer --host 127.0.0.1 --json --dist <built client>` from that directory, reads the launcher's
 `{url, port, action}` line, and embeds `http://127.0.0.1:<port>/?file=<workspace-relative path>`.
 The launcher owns ports and reuse: `action: "reused"` means another launch already serves that
 directory at the same code, and the desktop tracks that port without owning a process to stop.
@@ -132,32 +118,11 @@ repository's history. What stays is the portable payload: the versioned `designH
 in `src/core/features/cad/api/cad-design-history-descriptor.ts`, its checked-in v1 fixture, and the
 source parser in `cad-source-history.ts`.
 
-The descriptor binds history to both `sourceHash` and `stepHash`, carries exact source spans,
-numeric editability, sketch planes/transforms/dimensions when known, and exact cadgen/viewer selector
-references. Feature IDs are deterministic but revision-local. To become a native viewer extension it
-needs, in `apps/viewer`, a typed extension point that accepts this descriptor, renders it beside the
-topology tree, and returns edit requests through a host callback; the desktop stays the owner of edit
-authorization, source updates, rebuild, validation, rollback, and artifact acceptance, and the viewer
-never writes source or accepts geometry on its own. Until then, recipes are edited in the desktop's
-general source editor and rebuilt through the lifecycle above.
-
-## Artifacts written by any agent
-
-Nothing in the app knows which agent wrote a file, and a Codex or Claude
-subagent writes into the same workspace as its parent. `CadTaskRunLifecycle`
-therefore watches every conversation in the task: when an agent stops working,
-`listCadArtifacts` (a host-side walk that skips runtime, cache, and dependency
-folders) returns the model artifacts written since that turn started, and
-`planCadArtifactReveal` decides what to do with the ones the catalog does not
-already track. With no CAD tab open the first model (a STEP when there is one)
-opens in the artifact pane; anything else is announced with an Open action so a
-viewer the user is reviewing is never replaced mid-turn. Turns are recorded app-wide in
-`cadTurnLedger`, not in the task view: a turn that ends while another project is on screen, or while a
-pane change remounts the view, is revealed the next time its task is shown, scanning from the turn's real
-start. Remote workspaces are
-skipped because the viewer only serves local directories, and artifacts written
-outside the workspace (a git worktree, a temp directory) stay invisible: the
-viewer cannot serve them either.
+The descriptor binds history to `sourceHash` and `stepHash` and preserves the earlier authoring
+work. It is not wired into the viewer. Current 0.5.0 laws make the viewer a source-blind artifact
+reviewer: any future feature editor must be owned by the desktop, including source updates,
+rebuild, validation, rollback, and acceptance. Until that authoring UI is implemented, recipes
+are edited in the desktop's Source view and rebuilt through the lifecycle above.
 
 ## Acceptance gate
 

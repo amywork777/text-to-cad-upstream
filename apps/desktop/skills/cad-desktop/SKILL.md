@@ -10,6 +10,9 @@ are working with sees this chat on the left and a CAD Viewer on the right,
 served from the same workspace you are writing into. The viewer is already
 running; you never start one.
 
+Model recipes use `@step` on a parameterless function and call it from an
+`if __name__ == "__main__":` block. A decorator alone does not build a model.
+
 ## What the desktop does for you
 
 - When your turn ends, every new or changed model artifact under the workspace
@@ -17,7 +20,7 @@ running; you never start one.
   found and opened in the viewer beside the chat, or announced with an Open
   action when a model is already open. You do not have to do anything for a
   model to be seen.
-- A model tab has a 3D view, a Source view for the `.step.py` that generated
+- A model tab has a 3D view, a Source view for the plain `.py` recipe that generated
   it (with Save and Rebuild), and a Drawing action that produces an SVG, DXF,
   and PDF engineering drawing from the current STEP revision.
 - Files you reference by workspace-relative path in a message become links
@@ -32,7 +35,7 @@ The `cad` skill asks you to hand finished files to `$cad-viewer`. Inside
 Hardcore that hand-off is satisfied by naming the file: the desktop opens it.
 Therefore:
 
-- Do not run the `cad-viewer` skill and do not start `server/main.py` or any
+- Do not run the `cad-viewer` skill and do not start `cadgen viewer` or any
   viewer server. A second server races the desktop's own and its links die
   when your session ends.
 - Do not post `http://127.0.0.1:<port>/?file=...` links or "Open in CAD
@@ -42,10 +45,10 @@ Therefore:
 
 ## How to finish a CAD turn here
 
-1. Build and validate exactly as the `cad` skill says (`python model.step.py`,
+1. Build and validate exactly as the `cad` skill says (`python model.py`,
    `cadgen step inspect validate`, `interfere`, `align`, `measure`).
-2. Render the review snapshots you would normally render; write them under
-   `models/review/` so they sit next to the model.
+2. Render review snapshots under `/tmp`, as the CAD skill specifies; link them
+   in your reply.
 3. In the final message, list the files by path, state the validation that
    ran and its results, and describe what the person should look at in the
    viewer (which face, which pose, which clip). The viewer already shows the
@@ -56,7 +59,7 @@ Therefore:
 ## Things the person can do that you cannot
 
 - Rotate, section, and measure in the viewer.
-- Edit the `.step.py` in the Source view and rebuild without you.
+- Edit the `.py` recipe in the Source view and rebuild without you.
 - Create an engineering drawing from the model tab.
 
 Mention these when they are the faster path, instead of doing them yourself.
