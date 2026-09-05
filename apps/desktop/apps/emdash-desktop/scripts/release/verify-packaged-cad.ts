@@ -65,8 +65,8 @@ export interface PackagedCadSmokePlan {
  * The packaged smoke runs everything the desktop would: provision the Python
  * runtime from the bundled packages/cadgen, run two model scripts in two
  * project roots at once, validate the STEPs with cadgen's doors, and serve
- * each root from the bundled CAD Viewer runtime (the cad-viewer skill's
- * built client + Python server, launched by that same interpreter).
+ * each root from cadgen's bundled client and Python server, launched by
+ * that same interpreter.
  */
 export function createPackagedCadSmokePlan(
   resourcesRoot: string,

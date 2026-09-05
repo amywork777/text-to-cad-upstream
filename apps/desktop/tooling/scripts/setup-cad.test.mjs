@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -52,6 +53,21 @@ import {
 } from './setup-cad.mjs';
 
 const REPOSITORY_ROOT = new URL('../../../..', import.meta.url).pathname.replace(/\/$/, '');
+
+test('runs the setup entry point through a symlink', () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'hardcore-setup-entry-'));
+  try {
+    const entry = join(scratch, 'setup.mjs');
+    symlinkSync(new URL('./setup-cad.mjs', import.meta.url), entry);
+    const result = spawnSync(process.execPath, [entry, '--provider=invalid'], {
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /--provider must be all, codex, or claude/);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 function writeTextToCadFixture(root, { viewerAsSymlink = true } = {}) {
   mkdirSync(join(root, '.codex-plugin'), { recursive: true });

@@ -206,8 +206,10 @@ async function verifyPackagedStartup(application: string): Promise<void> {
         info(`Packaged app reached a usable workspace in ${result.usableWorkspaceMs} ms`);
         return;
       }
-      if (child.exitCode !== null) {
-        throw new Error(`The packaged app exited before startup completed (${child.exitCode})`);
+      if (child.exitCode !== null || child.signalCode !== null) {
+        throw new Error(
+          `The packaged app exited before startup completed (${child.signalCode ?? child.exitCode})`
+        );
       }
       await delay(250);
     }
@@ -242,7 +244,7 @@ function signalTree(child: ChildProcess, signal: NodeJS.Signals): void {
 }
 
 async function stopChild(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null) return;
+  if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
   signalTree(child, 'SIGTERM');
   const stopped = await Promise.race([exited.then(() => true), delay(5_000).then(() => false)]);
