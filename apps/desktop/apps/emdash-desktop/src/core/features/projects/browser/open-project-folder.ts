@@ -22,16 +22,20 @@ export interface OpenProjectFolderDependencies {
 export type OpenProjectFolderMode = 'scratch' | 'existing';
 
 const browserDependencies: OpenProjectFolderDependencies = {
+  // A native picker stays pending until the person selects a folder or cancels.
   selectDirectory: async (mode) =>
     await (
       await getHostClient()
-    ).openSelectDirectoryDialog({
-      title: mode === 'scratch' ? 'Create a project' : 'Open a project',
-      message:
-        mode === 'scratch'
-          ? 'Create a new folder, then select it.'
-          : 'Choose the folder that contains your engineering files.',
-    }),
+    ).openSelectDirectoryDialog(
+      {
+        title: mode === 'scratch' ? 'Create a project' : 'Open a project',
+        message:
+          mode === 'scratch'
+            ? 'Create a new folder, then select it.'
+            : 'Choose the folder that contains your engineering files.',
+      },
+      { timeoutMs: 0 }
+    ),
   getProjectManager: getProjectManagerStore,
   createId: () => crypto.randomUUID(),
   waitUntilReady: async (projectId) => {
