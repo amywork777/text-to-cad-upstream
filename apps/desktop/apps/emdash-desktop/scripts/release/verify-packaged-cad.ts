@@ -346,8 +346,8 @@ async function verifyViewerArtifact(input: {
       (entry) =>
         typeof entry === 'object' &&
         entry !== null &&
-        'file' in entry &&
-        entry.file === artifactName
+        'rootRelativeFile' in entry &&
+        entry.rootRelativeFile === artifactName
     )
   ) {
     throw new Error('Packaged CAD Viewer catalog did not include the generated STEP artifact.');
@@ -357,8 +357,8 @@ async function verifyViewerArtifact(input: {
       (entry) =>
         typeof entry === 'object' &&
         entry !== null &&
-        'file' in entry &&
-        entry.file === excludedArtifactName
+        'rootRelativeFile' in entry &&
+        entry.rootRelativeFile === excludedArtifactName
     )
   ) {
     throw new Error('Packaged CAD Viewer catalog leaked an artifact from another project root.');
