@@ -9,6 +9,8 @@
  * project is gone, which is the honest answer to "read this file in a project
  * I removed" and stops a stale tab from reading an arbitrary path.
  */
+import { fileWorkspace } from "../projects/file-workspace";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 import { shell } from "electron";
@@ -38,6 +40,8 @@ import { IpcError } from "./register";
 /** `broadcast` from `./index`, taken as an argument rather than imported. */
 type Broadcast = <C extends IpcEventChannel>(channel: C, payload: IpcEventPayload<C>) => void;
 
+const watchedProjects = new Map<string, Map<string, number>>();
+
 let watchers: FileWatchers | null = null;
 let terminals: Terminals | null = null;
 
@@ -50,9 +54,8 @@ let terminals: Terminals | null = null;
  */
 export function initExplorerServices(broadcast: Broadcast) {
   watchers ??= new FileWatchers((root, changes) => {
-    const project = projects.list().find((candidate) => candidate.path === root);
-    if (project) {
-      broadcast("files.changed", { projectId: project.id, changes });
+    for (const projectId of watchedProjects.get(root)?.keys() ?? []) {
+      broadcast("files.changed", { projectId, workspacePath: root, changes });
     }
   });
   terminals ??= new Terminals((event) => {
@@ -138,15 +141,17 @@ export const explorerHandlers = {
   explorer: {
     list: ({
       projectId,
+      workspacePath,
       path: directory,
       includeIgnored,
     }: {
       projectId: string;
+      workspacePath?: string;
       path: string;
       includeIgnored?: boolean;
     }) =>
       fsCall(async () => {
-        const root = rootOf(projectId);
+        const root = await fileWorkspace(rootOf(projectId), workspacePath);
         return listDirectory(root, directory, {
           rules: await IgnoreRules.read(root),
           ...(includeIgnored === undefined ? {} : { includeIgnored }),
@@ -155,44 +160,48 @@ export const explorerHandlers = {
 
     paths: ({
       projectId,
+      workspacePath,
       path: directory,
       limit,
     }: {
       projectId: string;
+      workspacePath?: string;
       path: string;
       limit?: number;
     }) =>
-      fsCall(() =>
-        listPaths(rootOf(projectId), directory, limit === undefined ? {} : { limit }),
+      fsCall(async () =>
+        listPaths(await fileWorkspace(rootOf(projectId), workspacePath), directory, limit === undefined ? {} : { limit }),
       ),
 
-    stat: ({ projectId, path: target }: { projectId: string; path: string }) =>
-      fsCall(() => statFile(rootOf(projectId), target)),
+    stat: ({ projectId, workspacePath, path: target }: { projectId: string; workspacePath?: string; path: string }) =>
+      fsCall(async () => statFile(await fileWorkspace(rootOf(projectId), workspacePath), target)),
 
-    readText: ({ projectId, path: target }: { projectId: string; path: string }) =>
-      fsCall(() => readTextFile(rootOf(projectId), target)),
+    readText: ({ projectId, workspacePath, path: target }: { projectId: string; workspacePath?: string; path: string }) =>
+      fsCall(async () => readTextFile(await fileWorkspace(rootOf(projectId), workspacePath), target)),
 
     writeText: ({
       projectId,
+      workspacePath,
       path: target,
       content,
       expectedRevision,
     }: {
       projectId: string;
+      workspacePath?: string;
       path: string;
       content: string;
       expectedRevision?: string;
-    }) => fsCall(() => writeTextFile(rootOf(projectId), target, content, expectedRevision)),
+    }) => fsCall(async () => writeTextFile(await fileWorkspace(rootOf(projectId), workspacePath), target, content, expectedRevision)),
 
-    readBinary: ({ projectId, path: target }: { projectId: string; path: string }) =>
-      fsCall(() => readBinaryFile(rootOf(projectId), target)),
+    readBinary: ({ projectId, workspacePath, path: target }: { projectId: string; workspacePath?: string; path: string }) =>
+      fsCall(async () => readBinaryFile(await fileWorkspace(rootOf(projectId), workspacePath), target)),
 
-    absolutePath: ({ projectId, path: target }: { projectId: string; path: string }) =>
-      fsCall(async () => ({ path: await resolveInRoot(rootOf(projectId), target) })),
+    absolutePath: ({ projectId, workspacePath, path: target }: { projectId: string; workspacePath?: string; path: string }) =>
+      fsCall(async () => ({ path: await resolveInRoot(await fileWorkspace(rootOf(projectId), workspacePath), target) })),
 
-    openDefault: ({ projectId, path: target }: { projectId: string; path: string }) =>
+    openDefault: ({ projectId, workspacePath, path: target }: { projectId: string; workspacePath?: string; path: string }) =>
       fsCall(async () => {
-        const absolute = await resolveInRoot(rootOf(projectId), target);
+        const absolute = await resolveInRoot(await fileWorkspace(rootOf(projectId), workspacePath), target);
         // `openPath` answers with a message instead of throwing, and an
         // unhandled one leaves the user clicking a menu item that does nothing.
         const failure = await shell.openPath(absolute);
@@ -201,11 +210,28 @@ export const explorerHandlers = {
         }
       }),
 
-    watch: ({ projectId }: { projectId: string }) =>
-      fsCall(() => services().watchers.watch(rootOf(projectId))),
+    watch: ({ projectId, workspacePath }: { projectId: string; workspacePath?: string }) =>
+      fsCall(async () => {
+        const root = await fileWorkspace(rootOf(projectId), workspacePath);
+        await services().watchers.watch(root);
+        const owners = watchedProjects.get(root) ?? new Map<string, number>();
+        owners.set(projectId, (owners.get(projectId) ?? 0) + 1);
+        watchedProjects.set(root, owners);
+      }),
 
-    unwatch: ({ projectId }: { projectId: string }) =>
-      fsCall(() => services().watchers.unwatch(rootOf(projectId))),
+    unwatch: ({ projectId, workspacePath }: { projectId: string; workspacePath?: string }) =>
+      fsCall(async () => {
+        // Release the previously validated subscription even if its worktree was deleted.
+        const requested = workspacePath ?? rootOf(projectId);
+        const expected = await fs.realpath(requested).catch(() => requested);
+        for (const [root, owners] of watchedProjects) {
+          if (root !== expected || !owners.has(projectId)) continue;
+          const refs = (owners.get(projectId) ?? 1) - 1;
+          if (refs) owners.set(projectId, refs); else owners.delete(projectId);
+          if (!owners.size) watchedProjects.delete(root);
+          await services().watchers.unwatch(root);
+        }
+      }),
 
     loadTabs: ({ projectId }: { projectId: string }) => explorerTabs.list(projectId),
 

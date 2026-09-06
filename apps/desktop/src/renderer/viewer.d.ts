@@ -23,6 +23,7 @@ declare module "@viewer/file-view" {
     file?: string;
     className?: string;
     manageDocumentTitle?: boolean;
+    onSelectionChange?: (selection: { file: string; refs: string[] } | null) => void;
     onOpenFile?: (path: string, meta: { history?: string }) => void;
     /**
      * `"desktop"` pins the desktop layout — the sheet beside the model, never

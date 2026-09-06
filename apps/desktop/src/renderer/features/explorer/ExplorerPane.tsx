@@ -86,6 +86,7 @@ function TabBody({ tab, project }: { tab: ExplorerTab; project: Project }) {
           path={tab.path}
           project={project}
           tabId={tab.id}
+          workspacePath={tab.workspacePath}
           viewSource={tab.viewSource}
         />
       );

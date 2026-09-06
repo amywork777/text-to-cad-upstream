@@ -360,6 +360,7 @@ export default function CadFileView({
   origin = "",
   file = "",
   onOpenFile,
+  onSelectionChange,
   className = "",
   catalog = null,
   manageDocumentTitle = true,
@@ -379,6 +380,7 @@ export default function CadFileView({
         origin={viewerOrigin}
         file={file}
         onOpenFile={onOpenFile}
+        onSelectionChange={onSelectionChange}
         className={className}
         catalog={catalog}
         manageDocumentTitle={manageDocumentTitle}
@@ -398,6 +400,7 @@ function CadFileViewSurface({
   origin,
   file,
   onOpenFile,
+  onSelectionChange,
   className,
   catalog,
   manageDocumentTitle,
@@ -4681,6 +4684,12 @@ function CadFileViewSurface({
       .filter(Boolean),
     [copySelectionPayload.lines, selectedEntry]
   );
+  useEffect(() => {
+    if (!onSelectionChange) return;
+    onSelectionChange(selectedEntry ? { file: cadFileParamForEntry(selectedEntry), refs: canonicalCopySelectionLines } : null);
+  }, [onSelectionChange, selectedEntry, canonicalCopySelectionLines]);
+  useEffect(() => () => onSelectionChange?.(null), [onSelectionChange]);
+
   const copyButtonLabel = useMemo(
     () => buildSelectionCopyButtonLabel(canonicalCopySelectionLines, { count: copySelectionPayload.copiedCount }),
     [canonicalCopySelectionLines, copySelectionPayload.copiedCount]

@@ -63,10 +63,11 @@ export function subscribeToMain(): () => void {
     window.hardcore.on("runtime.status", (status) => {
       useRuntime.getState().receive(status);
     }),
-    window.hardcore.on("files.changed", ({ projectId, changes }) => {
+    window.hardcore.on("files.changed", ({ projectId, workspacePath, changes }) => {
       useExplorer.getState().receiveChanges(
         projectId,
         changes.map((change) => change.path),
+        workspacePath,
       );
     }),
     // An agent's tool call, relayed by main; answered whatever happens, so

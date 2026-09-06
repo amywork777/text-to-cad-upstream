@@ -151,6 +151,8 @@ const ExplorerTabBase = {
 export const FileTabSchema = z.object({
   ...ExplorerTabBase,
   kind: z.literal("file"),
+  /** Absent for the project root; otherwise a main-validated Git worktree. */
+  workspacePath: z.string().optional(),
   /**
    * Project-root-relative path with POSIX separators, or null for a tab
    * opened before a file was picked. Relative rather than absolute so a strip

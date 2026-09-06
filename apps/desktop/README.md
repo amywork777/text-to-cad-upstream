@@ -142,7 +142,15 @@ pool and is the slow assertion of the suite.
 project and asks it to call `open_file`; it asserts the explorer opened the
 tab and that the session recorded the tool call. It is skipped unless a
 signed-in `codex` is on the machine (`codex login status`), so a runner
-without one stays green. It is the only test that talks to a model.
+without one stays green. It also requires `HARDCORE_E2E_CODEX=1`.
+
+Additional opt-in checks:
+
+- `cad-selection.spec.ts`: set `HARDCORE_E2E_CAD_STEP` to a STEP file. Opens a disposable copy and appends a selected component reference to an existing draft.
+- `live-cad-workspace.spec.ts`: set `HARDCORE_E2E_LIVE_CAD=1` and `HARDCORE_E2E_CAD_SOURCE` to the toy-car script (with `BODY_LENGTH = 160.0`, producing `car.step`). Each provider edits a disposable worktree, selects a model, opens the artifact, and restores its session and tab after restarting.
+- `live-subagents.spec.ts`: `HARDCORE_E2E_LIVE_CAD=1` runs real read-only subagents, queues a second prompt and checks child replay for both providers. Claude ACP 0.75.1 currently omits child events on reload; that final assertion is marked as an expected failure after the live/queue checks pass. Codex replay passes.
+
+The live tests spend provider tokens and use the machine's existing authentication. They copy the app hand-off skill into the scratch project where needed and do not replace global plugins.
 
 Nothing in `npm test` loads `better-sqlite3` or `node-pty`: both are built
 against Electron's ABI and will not load in a plain Node process. The migration
@@ -332,6 +340,11 @@ also gets `CADGEN_NODE`: cadgen's DXF and mesh-export builders run in Node,
 an app launched from the Finder has no `node` on its PATH, and the one Node
 a packaged app is sure to have is its own Electron binary run as Node.
 
+Agent sessions receive this same resolved runtime: its Python directory is placed first on PATH,
+and a per-profile `cadgen` shim invokes that interpreter's `cadgen.cli:main` entry point.
+This also supports development venvs that import cadgen through PYTHONPATH but have no
+installed cadgen console script. Provider shell settings are preserved.
+
 There is nothing to install and no "installing" state. Settings › About &
 Updates carries a read-only block — the runtime (source and interpreter),
 cadgen's version against the app's, the viewer backend, the Hardcore plugin
@@ -342,7 +355,7 @@ that did not come up, the viewer's stderr) and Try again; it never asks the
 person to set anything up.
 
 `src/main/cad/viewer.ts` runs one `python -m cadgen.viewer --api-only --host
-127.0.0.1 --json` per project root (cwd = the root, the launcher's contract),
+127.0.0.1 --json` per workspace root (cwd = the root, the launcher's contract),
 parses its JSON line, keeps the child, restarts it on a crash with backoff,
 stops it when the project is removed and on quit — and never kills an
 instance the launcher reported as `reused`, because that one is somebody
@@ -543,6 +556,14 @@ when there is one, so a directory can be matched to a thread without opening
 anything. That directory is also the session's *identity* in the agent's own
 store — both `codex resume` and `claude --resume` key their threads by cwd —
 so a Hardcore worktree session is resumable from a terminal later.
+
+File tabs keep an optional workspace path while remaining in the project's shared tab strip.
+Main validates that path against the project's actual Git worktrees before serving files.
+Filesystem requests, the file tree and CAD viewer all use that same root, so identical
+relative filenames from two worktrees remain distinct. `viewer_state` reports canonical
+selection references only for the requesting workspace. Selecting geometry and clicking
+**Add selection to prompt** preserves the current draft; a new draft is pinned to the
+model's workspace, while a chat in another workspace refuses the addition.
 
 Three things are never deleted automatically: a worktree outside the app's own
 root, one with an open session, and one with uncommitted changes. The branch is

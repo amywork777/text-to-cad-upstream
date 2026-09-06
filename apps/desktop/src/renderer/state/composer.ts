@@ -22,7 +22,11 @@ export type QueuedPrompt = {
   content: PromptBlock[];
 };
 
+export const newDraftKey = (projectId: string) => `new:${projectId}`;
+
 type ComposerState = {
+  draftWorkspaces: Record<string, string>;
+  setDraftWorkspace: (key: string, workspace: string | undefined) => void;
   queues: Record<string, QueuedPrompt[]>;
   drafts: Record<string, string>;
 
@@ -39,6 +43,12 @@ type ComposerState = {
 let sequence = 0;
 
 export const useComposer = create<ComposerState>((set, get) => ({
+  draftWorkspaces: {},
+  setDraftWorkspace: (key, workspace) => set((state) => {
+    const draftWorkspaces = { ...state.draftWorkspaces };
+    if (workspace) draftWorkspaces[key] = workspace; else delete draftWorkspaces[key];
+    return { draftWorkspaces };
+  }),
   queues: {},
   drafts: {},
 
@@ -84,7 +94,11 @@ export const useComposer = create<ComposerState>((set, get) => ({
   },
 
   setDraft: (sessionId, text) =>
-    set((state) => ({ drafts: { ...state.drafts, [sessionId]: text } })),
+    set((state) => {
+      const draftWorkspaces = { ...state.draftWorkspaces };
+      if (!text.trim()) delete draftWorkspaces[sessionId];
+      return { drafts: { ...state.drafts, [sessionId]: text }, draftWorkspaces };
+    }),
 }));
 
 /**

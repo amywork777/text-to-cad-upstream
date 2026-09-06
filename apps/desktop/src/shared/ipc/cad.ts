@@ -69,6 +69,7 @@ export type CadCommandKind = z.infer<typeof CadCommandKindSchema>;
 export const CadCommandSchema = z.object({
   requestId: z.string().min(1),
   kind: CadCommandKindSchema,
+  workspacePath: z.string().optional(),
   /** The project the command is about; the renderer switches to it. */
   projectId: z.string().min(1),
   /** Project-root-relative, already resolved and checked by main. */
@@ -96,7 +97,7 @@ export const cadIpc = {
      * Idempotent: the launcher's reuse contract means asking twice gets the
      * same instance.
      */
-    viewerOrigin: invoke(z.object({ projectId: z.string().min(1) }), ViewerOriginSchema),
+    viewerOrigin: invoke(z.object({ projectId: z.string().min(1), workspacePath: z.string().optional() }), ViewerOriginSchema),
     /** The renderer's answer to a `cad.command`. */
     reply: invoke(CadReplySchema, z.void()),
   },

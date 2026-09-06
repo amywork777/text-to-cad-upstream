@@ -85,7 +85,7 @@ function collapsedFor(projectId: string | null): boolean {
 
 /** Initial state for a new tab of each kind. */
 type TabInit = {
-  file: Partial<Pick<FileTab, "path" | "viewSource">>;
+  file: Partial<Pick<FileTab, "path" | "viewSource" | "workspacePath">>;
   review: Partial<Pick<ReviewTab, "scope" | "sessionId">>;
   browser: Partial<Pick<BrowserTab, "url">>;
   terminal: Partial<Pick<TerminalTab, "cwd" | "readOnly">>;
@@ -128,6 +128,7 @@ type ExplorerState = {
   fsRevision: number;
   /** Paths touched by the last batch, so an open editor knows it is stale. */
   changedPaths: string[];
+  changedWorkspacePath?: string;
   /**
    * A path an agent asked to have revealed (`reveal` through the Hardcore MCP
    * server): the tree expands to it and selects it without opening it.
@@ -138,7 +139,7 @@ type ExplorerState = {
   bindProject: (projectId: string | null) => Promise<void>;
   open: <K extends ExplorerTabKind>(kind: K, init?: TabInit[K]) => ExplorerTab | null;
   /** Open a file, reusing a tab already showing it. */
-  openFile: (path: string) => ExplorerTab | null;
+  openFile: (path: string, workspacePath?: string) => ExplorerTab | null;
   close: (id: string) => void;
   closeActive: () => void;
   setActive: (id: string) => void;
@@ -160,7 +161,7 @@ type ExplorerState = {
   setTreeOpen: (next: (current: ReadonlySet<string>) => ReadonlySet<string>) => void;
   /** File one directory's listing. */
   setTreeListing: (directory: string, entries: DirEntry[]) => void;
-  receiveChanges: (projectId: string, paths: string[]) => void;
+  receiveChanges: (projectId: string, paths: string[], workspacePath?: string) => void;
   setReveal: (reveal: { path: string; directory: boolean } | null) => void;
 };
 
@@ -289,7 +290,7 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
     return tab;
   },
 
-  openFile: (filePath) => {
+  openFile: (filePath, workspacePath) => {
     const { projectId, tabs } = get();
     if (!projectId) {
       return null;
@@ -299,7 +300,7 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
     get().show();
     // Reuse rather than stack duplicates: clicking the same file in the tree
     // twice is one tab, the way every editor behaves.
-    const existing = tabs.find((tab) => tab.kind === "file" && tab.path === filePath);
+    const existing = tabs.find((tab) => tab.kind === "file" && tab.path === filePath && tab.workspacePath === workspacePath);
     if (existing) {
       set({ activeId: existing.id });
       return existing;
@@ -309,12 +310,12 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
     const blank = tabs.find((tab) => tab.kind === "file" && tab.path === null);
     if (blank) {
       const next = tabs.map((tab) =>
-        tab.id === blank.id ? ({ ...tab, path: filePath } as ExplorerTab) : tab,
+        tab.id === blank.id ? ({ ...tab, path: filePath, workspacePath } as ExplorerTab) : tab,
       );
       commit(set, projectId, next, blank.id);
       return next.find((tab) => tab.id === blank.id) ?? null;
     }
-    return get().open("file", { path: filePath });
+    return get().open("file", { path: filePath, workspacePath });
   },
 
   close: (id) => {
@@ -411,11 +412,11 @@ export const useExplorer = create<ExplorerState>((set, get) => ({
 
   setReveal: (reveal) => set({ reveal }),
 
-  receiveChanges: (projectId, paths) => {
+  receiveChanges: (projectId, paths, workspacePath) => {
     if (get().projectId !== projectId) {
       return;
     }
-    set((state) => ({ fsRevision: state.fsRevision + 1, changedPaths: paths }));
+    set((state) => ({ fsRevision: state.fsRevision + 1, changedPaths: paths, changedWorkspacePath: workspacePath }));
   },
 }));
 

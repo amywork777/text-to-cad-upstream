@@ -67,14 +67,23 @@ type Loaded =
 export function FileTab({
   tabId,
   project,
+  workspacePath,
   path,
   viewSource,
 }: {
   tabId: string;
   project: Project;
+  workspacePath?: string;
   path: string | null;
   viewSource: boolean;
 }) {
+  useEffect(() => {
+    if (!workspacePath) return;
+    const request = { projectId: project.id, workspacePath };
+    const watching = window.hardcore.explorer.watch(request);
+    return () => { void watching.then(() => window.hardcore.explorer.unwatch(request)).catch(() => {}); };
+  }, [project.id, workspacePath]);
+
   const update = useExplorer((state) => state.update);
   const openFile = useExplorer((state) => state.openFile);
   const treeCollapsed = useExplorer((state) => state.treeCollapsed);
@@ -100,7 +109,7 @@ export function FileTab({
    * and every such effect is another synchronous setState cascading into
    * another render. Deriving during render has neither problem.
    */
-  const key = `${path ?? ""}:${reloadToken}`;
+  const key = `${workspacePath ?? project.path}:${path ?? ""}:${reloadToken}`;
   const [result, setResult] = useState<{ key: string; value: Loaded } | null>(null);
   const [draftState, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const [staleKey, setStaleKey] = useState<string | null>(null);
@@ -138,7 +147,7 @@ export function FileTab({
 
     void (async () => {
       try {
-        const stat = await window.hardcore.explorer.stat({ projectId: project.id, path });
+        const stat = await window.hardcore.explorer.stat({ projectId: project.id, workspacePath, path });
         const renderer = rendererFor(stat);
         if (renderer.id === "cad") {
           settle({ state: "cad", stat });
@@ -146,7 +155,7 @@ export function FileTab({
         }
         if (renderer.id === "image" || renderer.id === "pdf") {
           const binary = await window.hardcore.explorer.readBinary({
-            projectId: project.id,
+            projectId: project.id, workspacePath,
             path,
           });
           settle({ state: "binary", stat, dataUrl: binary.dataUrl });
@@ -156,7 +165,7 @@ export function FileTab({
           settle({ state: "unsupported", stat });
           return;
         }
-        const file = await window.hardcore.explorer.readText({ projectId: project.id, path });
+        const file = await window.hardcore.explorer.readText({ projectId: project.id, workspacePath, path });
         settle({ state: "text", stat, file });
         if (!cancelled) {
           setDraftState({ key, value: file.content });
@@ -169,7 +178,7 @@ export function FileTab({
     return () => {
       cancelled = true;
     };
-  }, [key, path, project.id]);
+  }, [key, path, project.id, workspacePath]);
 
   /**
    * The watcher fired.
@@ -193,7 +202,7 @@ export function FileTab({
       return;
     }
     return useExplorer.subscribe((state, previous) => {
-      if (state.fsRevision === previous.fsRevision || !state.changedPaths.includes(path)) {
+      if (state.fsRevision === previous.fsRevision || (state.changedWorkspacePath && state.changedWorkspacePath !== (workspacePath ?? project.path)) || !state.changedPaths.includes(path)) {
         return;
       }
       if (dirtyRef.current) {
@@ -202,7 +211,7 @@ export function FileTab({
         setReloadToken((token) => token + 1);
       }
     });
-  }, [key, path]);
+  }, [key, path, workspacePath, project.path]);
 
   /* ---------------------------------------------------------------------- */
   /* Actions                                                                 */
@@ -215,7 +224,7 @@ export function FileTab({
     setSaving(true);
     try {
       const written = await window.hardcore.explorer.writeText({
-        projectId: project.id,
+        projectId: project.id, workspacePath,
         path: loaded.stat.path,
         content: draft,
         expectedRevision: loaded.file.revision,
@@ -231,39 +240,39 @@ export function FileTab({
     } finally {
       setSaving(false);
     }
-  }, [draft, key, loaded, project.id, saving]);
+  }, [draft, key, loaded, project.id, saving, workspacePath]);
 
   const copyPath = useCallback(async () => {
     if (!path) {
       return;
     }
     const absolute = await window.hardcore.explorer
-      .absolutePath({ projectId: project.id, path })
+      .absolutePath({ projectId: project.id, workspacePath, path })
       .then((result) => result.path)
       .catch(() => path);
     await navigator.clipboard.writeText(absolute).catch(() => {});
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1400);
-  }, [path, project.id]);
+  }, [path, project.id, workspacePath]);
 
   const reveal = useCallback(async () => {
     if (!path) {
       return;
     }
     const absolute = await window.hardcore.explorer
-      .absolutePath({ projectId: project.id, path })
+      .absolutePath({ projectId: project.id, workspacePath, path })
       .then((result) => result.path)
       .catch(() => null);
     if (absolute) {
       await window.hardcore.shell.showItemInFolder({ path: absolute }).catch(() => {});
     }
-  }, [path, project.id]);
+  }, [path, project.id, workspacePath]);
 
   const openExternally = useCallback(() => {
     if (path) {
-      void window.hardcore.explorer.openDefault({ projectId: project.id, path }).catch(() => {});
+      void window.hardcore.explorer.openDefault({ projectId: project.id, workspacePath, path }).catch(() => {});
     }
-  }, [path, project.id]);
+  }, [path, project.id, workspacePath]);
 
   /* ---------------------------------------------------------------------- */
   /* The tree's drag handle                                                  */
@@ -484,7 +493,8 @@ export function FileTab({
             loaded={loaded}
             onChange={setDraft}
             onOpenExternally={openExternally}
-            onOpenFile={(next) => openFile(next)}
+            onOpenFile={(next) => openFile(next, workspacePath)}
+            workspacePath={workspacePath}
             projectId={project.id}
             reloadToken={reloadToken}
             save={save}
@@ -516,8 +526,9 @@ export function FileTab({
                 // cursor from crossing over with it.
                 key={project.id}
                 onCollapse={() => setTreeCollapsed(true)}
-                onOpen={(next) => openFile(next)}
-                projectId={project.id}
+                onOpen={(next) => openFile(next, workspacePath)}
+                workspacePath={workspacePath}
+            projectId={project.id}
                 projectName={project.name}
                 reveal={treeReveal}
               />
@@ -535,6 +546,7 @@ function Body({
   showingSource,
   reloadToken,
   projectId,
+  workspacePath,
   onChange,
   save,
   onOpenFile,
@@ -545,6 +557,7 @@ function Body({
   showingSource: boolean;
   reloadToken: number;
   projectId: string;
+  workspacePath?: string;
   onChange: (next: string) => void;
   save: () => void;
   onOpenFile: (path: string) => void;
@@ -572,7 +585,7 @@ function Body({
       return <EmptyState description={loaded.message} icon={FileText} title="Could not open that file" tone="warn" />;
 
     case "cad":
-      return <CadRenderer onOpenFile={onOpenFile} path={loaded.stat.path} projectId={projectId} />;
+      return <CadRenderer workspacePath={workspacePath} onOpenFile={onOpenFile} path={loaded.stat.path} projectId={projectId} />;
 
     case "binary":
       return loaded.stat.fileKind === "pdf" ? (

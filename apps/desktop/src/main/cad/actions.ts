@@ -14,6 +14,7 @@
  * it, with the same `resolveInRoot` the explorer's own reads use: an agent
  * can only show what the explorer could show anyway.
  */
+import { fileWorkspace } from "../projects/file-workspace";
 import fsp from "node:fs/promises";
 import path from "node:path";
 
@@ -95,10 +96,15 @@ export async function resolveForSession(
   session: BridgeSession,
   target: string,
 ): Promise<{ root: string; absolute: string; relative: string }> {
-  const root = deps.projectRoot(session.projectId);
-  if (!root) {
+  const projectRoot = deps.projectRoot(session.projectId);
+  if (!projectRoot) {
     throw new Error("this session's project is no longer open in Hardcore");
   }
+  const realProject = await fsp.realpath(projectRoot);
+  const realCwd = await fsp.realpath(session.cwd);
+  const fromProject = path.relative(realProject, realCwd);
+  const inProject = !path.isAbsolute(fromProject) && fromProject !== ".." && !fromProject.startsWith(`..${path.sep}`);
+  const root = await fileWorkspace(projectRoot, inProject ? undefined : realCwd);
   // The cwd is realpath'd first so a path that does not exist yet is judged
   // against the same real root the explorer uses (`/var` vs `/private/var`).
   const cwd = await fsp.realpath(session.cwd).catch(() => session.cwd);
@@ -120,7 +126,7 @@ export async function resolveForSession(
 
 export function createActions(deps: ActionDeps, commands: RendererCommands): BridgeActions {
   const relay = (kind: CadCommandKind, session: BridgeSession, extra: Partial<CadCommand> = {}) =>
-    commands.request({ kind, projectId: session.projectId, ...extra });
+    commands.request({ kind, projectId: session.projectId, workspacePath: session.cwd, ...extra });
 
   return {
     open_file: async (session, { path: target }) => {
@@ -129,13 +135,13 @@ export function createActions(deps: ActionDeps, commands: RendererCommands): Bri
       if (stat.isDirectory()) {
         throw new Error(`${target} is a directory; use reveal for folders`);
       }
-      return relay("open-file", session, { path: resolved.relative });
+      return relay("open-file", session, { workspacePath: resolved.root, path: resolved.relative });
     },
 
     reveal: async (session, { path: target }) => {
       const resolved = await resolveForSession(deps, session, target);
       const stat = await fsp.stat(resolved.absolute);
-      return relay("reveal", session, { path: resolved.relative, directory: stat.isDirectory() });
+      return relay("reveal", session, { workspacePath: resolved.root, path: resolved.relative, directory: stat.isDirectory() });
     },
 
     open_url: async (session, { url }) => {

@@ -35,6 +35,7 @@ type Row = {
 
 export function FileTree({
   projectId,
+  workspacePath,
   projectName,
   activePath,
   reveal = null,
@@ -43,6 +44,7 @@ export function FileTree({
   fsRevision,
 }: {
   projectId: string;
+  workspacePath?: string;
   projectName: string;
   /** The file the tab is showing, highlighted in the tree. */
   activePath: string | null;
@@ -82,10 +84,42 @@ export function FileTree({
    * One set, written by the person and by `reveal` alike, says both things
    * without disagreeing with itself.
    */
-  const expanded = useExplorer((state) => state.treeOpen);
-  const setExpanded = useExplorer((state) => state.setTreeOpen);
-  const children = useExplorer((state) => state.treeListings);
-  const setListing = useExplorer((state) => state.setTreeListing);
+  const allExpanded = useExplorer((state) => state.treeOpen);
+  const setAllExpanded = useExplorer((state) => state.setTreeOpen);
+  const allChildren = useExplorer((state) => state.treeListings);
+  const setAllListing = useExplorer((state) => state.setTreeListing);
+
+  // Prefix only store keys; displayed paths and filesystem requests stay workspace-relative.
+  const prefix = workspacePath ? `${workspacePath}::` : "";
+  const ownsKey = useCallback(
+    (key: string) => prefix ? key.startsWith(prefix) : !key.includes("::"),
+    [prefix],
+  );
+  const expanded = useMemo(
+    () => new Set(["", ...[...allExpanded].filter(ownsKey).map((key) => key.slice(prefix.length))]),
+    [allExpanded, ownsKey, prefix],
+  );
+  const children = useMemo(
+    () => Object.fromEntries(Object.entries(allChildren)
+      .filter(([key]) => ownsKey(key))
+      .map(([key, entries]) => [key.slice(prefix.length), entries])),
+    [allChildren, ownsKey, prefix],
+  );
+  const setExpanded = useCallback((next: (current: ReadonlySet<string>) => ReadonlySet<string>) => {
+    setAllExpanded((current) => {
+      const own = new Set(["", ...[...current].filter(ownsKey).map((key) => key.slice(prefix.length))]);
+      const updated = next(own);
+      if (updated === own) return current;
+      return new Set([
+        ...[...current].filter((key) => !ownsKey(key)),
+        ...[...updated].map((key) => prefix + key),
+      ]);
+    });
+  }, [ownsKey, prefix, setAllExpanded]);
+  const setListing = useCallback(
+    (directory: string, entries: DirEntry[]) => setAllListing(prefix + directory, entries),
+    [prefix, setAllListing],
+  );
 
   const revealTarget = reveal?.path ?? activePath;
   const revealed = useMemo(() => {
@@ -111,10 +145,10 @@ export function FileTree({
   const load = useCallback(
     (directory: string) =>
       window.hardcore.explorer
-        .list({ projectId, path: directory })
+        .list({ projectId, workspacePath, path: directory })
         .then((entries: DirEntry[]) => setListing(directory, entries))
         .catch(() => {}),
-    [projectId, setListing],
+    [projectId, workspacePath, setListing],
   );
 
   // The root, on every mount: the listings survive a remount, but a tree that
@@ -171,7 +205,7 @@ export function FileTree({
     }
     let cancelled = false;
     void window.hardcore.explorer
-      .paths({ projectId, path: "" })
+      .paths({ projectId, workspacePath, path: "" })
       .then((result) => {
         if (!cancelled) {
           setCorpus({ revision: fsRevision, paths: result.paths });
@@ -185,7 +219,7 @@ export function FileTree({
     return () => {
       cancelled = true;
     };
-  }, [filtering, corpusStale, fsRevision, projectId]);
+  }, [filtering, corpusStale, fsRevision, projectId, workspacePath]);
 
   /**
    * Reveal: open every ancestor of the revealed path and read them.

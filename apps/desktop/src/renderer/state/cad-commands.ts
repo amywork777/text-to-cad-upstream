@@ -12,6 +12,7 @@
 import { rendererForPath } from "@renderer/features/explorer/renderers/registry";
 import type { CadCommand } from "@shared/ipc/cad";
 
+import { useCadSelection } from "./cad-selection";
 import { hostOf, tabTitle, useExplorer } from "./explorer";
 import { useProjects } from "./projects";
 import { useUi } from "./ui";
@@ -32,15 +33,15 @@ async function focusProject(projectId: string): Promise<void> {
   useExplorer.getState().show();
 }
 
-function describeTabs() {
+function describeTabs(projectId: string) {
   const { tabs, activeId } = useExplorer.getState();
   return {
-    active: activeId,
-    tabs: tabs.map((tab) => ({
+    active: useExplorer.getState().projectId === projectId ? activeId : null,
+    tabs: (useExplorer.getState().projectId === projectId ? tabs : []).map((tab) => ({
       id: tab.id,
       kind: tab.kind,
       title: tabTitle(tab),
-      ...(tab.kind === "file" ? { path: tab.path, renderer: tab.path ? rendererForPath(tab.path).id : null } : {}),
+      ...(tab.kind === "file" ? { path: tab.path, workspacePath: tab.workspacePath, renderer: tab.path ? rendererForPath(tab.path).id : null } : {}),
       ...(tab.kind === "browser" ? { url: tab.url } : {}),
       ...(tab.kind === "terminal" ? { cwd: tab.cwd } : {}),
       ...(tab.kind === "review" ? { scope: tab.scope } : {}),
@@ -49,13 +50,15 @@ function describeTabs() {
 }
 
 export async function performCadCommand(command: CadCommand): Promise<unknown> {
+  const projectRoot = useProjects.getState().projects.find((project) => project.id === command.projectId)?.path;
+  const fileWorkspace = command.workspacePath === projectRoot ? undefined : command.workspacePath;
   switch (command.kind) {
     case "open-file": {
       if (!command.path) {
         throw new Error("open-file needs a path");
       }
       await focusProject(command.projectId);
-      const tab = useExplorer.getState().openFile(command.path);
+      const tab = useExplorer.getState().openFile(command.path, fileWorkspace);
       if (!tab) {
         throw new Error("the explorer could not open a tab");
       }
@@ -77,12 +80,12 @@ export async function performCadCommand(command: CadCommand): Promise<unknown> {
       await focusProject(command.projectId);
       const explorer = useExplorer.getState();
       // The tree lives in a file tab: make sure one is showing.
-      const fileTab = explorer.tabs.find((tab) => tab.id === explorer.activeId && tab.kind === "file")
-        ?? explorer.tabs.find((tab) => tab.kind === "file");
+      const fileTab = explorer.tabs.find((tab) => tab.id === explorer.activeId && tab.kind === "file" && tab.workspacePath === fileWorkspace)
+        ?? explorer.tabs.find((tab) => tab.kind === "file" && tab.workspacePath === fileWorkspace);
       if (fileTab) {
         explorer.setActive(fileTab.id);
       } else {
-        explorer.open("file");
+        explorer.open("file", { workspacePath: fileWorkspace });
       }
       if (explorer.treeCollapsed) {
         explorer.setTreeCollapsed(false);
@@ -101,22 +104,25 @@ export async function performCadCommand(command: CadCommand): Promise<unknown> {
     }
 
     case "list-tabs":
-      return describeTabs();
+      return describeTabs(command.projectId);
 
     case "viewer-state": {
       const { tabs, activeId } = useExplorer.getState();
-      const active = tabs.find((tab) => tab.id === activeId) ?? null;
-      const file = active?.kind === "file" ? active.path : null;
+      const active = useExplorer.getState().projectId === command.projectId ? tabs.find((tab) => tab.id === activeId) ?? null : null;
+      const project = useProjects.getState().projects.find((item) => item.id === command.projectId);
+      const workspacePath = active?.kind === "file" ? active.workspacePath ?? project?.path : null;
+      const sameWorkspace = workspacePath === command.workspacePath || (!command.workspacePath && workspacePath === project?.path);
+      const selected = useCadSelection.getState().selection;
+      const file = active?.kind === "file" && sameWorkspace ? active.path : null;
       const renderer = file ? rendererForPath(file).id : null;
       return {
         file,
         renderer,
         viewer: renderer === "cad",
-        // The viewer surface keeps selection and camera to itself for now;
-        // saying so is better than inventing values.
-        selection: null,
+        workspacePath,
+        selection: renderer === "cad" && selected?.projectId === command.projectId && selected.workspacePath === workspacePath && selected.file === file ? selected.refs : null,
         camera: null,
-        activeTab: active ? { id: active.id, kind: active.kind, title: tabTitle(active) } : null,
+        activeTab: active && sameWorkspace ? { id: active.id, kind: active.kind, title: tabTitle(active) } : null,
       };
     }
   }

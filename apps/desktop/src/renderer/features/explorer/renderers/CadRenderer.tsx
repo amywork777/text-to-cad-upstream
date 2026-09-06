@@ -1,10 +1,12 @@
-import { Box, RefreshCw, Settings2 } from "lucide-react";
+import { MessageSquarePlus, Box, RefreshCw, Settings2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 
 import { Button } from "@renderer/components/ui/button";
 import { Spinner } from "@renderer/components/ui/spinner";
 import { useElementWidth } from "@renderer/hooks/use-element-width";
 import { useResolvedTheme } from "@renderer/hooks/use-theme";
+import { addCadSelection, useCadSelection } from "@renderer/state/cad-selection";
+import { useProjects } from "@renderer/state/projects";
 import { useUi } from "@renderer/state/ui";
 import type { ViewerOrigin } from "@shared/ipc/cad";
 
@@ -42,6 +44,7 @@ import { EmptyState } from "../EmptyState";
  * scheme.
  */
 type CadSurfaceProps = {
+  onSelectionChange: (selection: { file: string; refs: string[] } | null) => void;
   origin: string;
   file: string;
   width: number;
@@ -63,7 +66,7 @@ const CadSurface = lazy(async () => {
   // no declarations of its own.
   const { CadFileView, ViewerOriginProvider } = await import("@viewer/file-view");
   return {
-    default: ({ origin, file, width, colorScheme, onOpenFile }: CadSurfaceProps) => (
+    default: ({ origin, file, width, colorScheme, onOpenFile, onSelectionChange }: CadSurfaceProps) => (
       <ViewerOriginProvider origin={origin}>
         {/*
           A containing block for the surface's `position: fixed` parts. The
@@ -79,6 +82,8 @@ const CadSurface = lazy(async () => {
             // `min-h-0` beats the surface's own `min-h-svh`: the tab is shorter
             // than the window, and a surface that insists on the window's
             // height puts its bottom panels below the tab's edge.
+            key={file}
+            onSelectionChange={onSelectionChange}
             className="h-full min-h-0"
             colorScheme={colorScheme}
             file={file}
@@ -98,14 +103,34 @@ const CadSurface = lazy(async () => {
 
 export function CadRenderer({
   projectId,
+  workspacePath,
   path,
   onOpenFile,
 }: {
   projectId: string;
+  workspacePath?: string;
   /** Project-root-relative: the same path the viewer's `?file=` carries. */
   path: string;
   onOpenFile: (path: string) => void;
 }) {
+  const projectRoot = useProjects((state) => state.projects.find((project) => project.id === projectId)?.path);
+  const workspace = workspacePath ?? projectRoot;
+  const selection = useCadSelection((state) => state.selection);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const onSelectionChange = useCallback((value: { file: string; refs: string[] } | null) => {
+    const next = value && workspace ? { ...value, projectId, workspacePath: workspace } : null;
+    useCadSelection.setState((state) => {
+      const previous = state.selection;
+      if (previous === next || (previous && next && previous.projectId === next.projectId && previous.workspacePath === next.workspacePath && previous.file === next.file && previous.refs.length === next.refs.length && previous.refs.every((ref, index) => ref === next.refs[index]))) return state;
+      return { selection: next };
+    });
+  }, [projectId, workspace]);
+  const currentSelection = selection?.projectId === projectId && selection.workspacePath === workspace && selection.file === path ? selection : null;
+  const addSelection = () => {
+    if (!currentSelection) return;
+    try { addCadSelection(currentSelection); setSelectionError(null); }
+    catch (error) { setSelectionError(error instanceof Error ? error.message : String(error)); }
+  };
   const [answer, setAnswer] = useState<ViewerOrigin | null>(null);
   const openSettings = useUi((state) => state.openSettings);
   const colorScheme = useResolvedTheme();
@@ -122,7 +147,7 @@ export function CadRenderer({
   useEffect(() => {
     let cancelled = false;
     void window.hardcore.cad
-      .viewerOrigin({ projectId })
+      .viewerOrigin({ projectId, workspacePath })
       .then((result) => {
         if (!cancelled) {
           setAnswer(result);
@@ -136,7 +161,7 @@ export function CadRenderer({
     return () => {
       cancelled = true;
     };
-  }, [projectId, attempt]);
+  }, [projectId, workspacePath, attempt]);
 
   if (!answer) {
     return (
@@ -191,7 +216,12 @@ export function CadRenderer({
   }
 
   return (
-    <div className="h-full min-h-0" data-cad-surface ref={hostRef}>
+    <div className="flex h-full min-h-0 flex-col" data-cad-surface ref={hostRef}>
+      {currentSelection?.refs.length ? <div className="flex items-center gap-2 border-b px-3 py-1.5">
+        <Button onClick={addSelection} size="sm" variant="secondary" className="h-7 gap-1.5 text-xs"><MessageSquarePlus className="size-3.5" />Add selection to prompt</Button>
+        {selectionError ? <span role="alert" className="text-xs text-destructive">{selectionError}</span> : <span className="text-xs text-muted-foreground">{currentSelection.refs.length} reference{currentSelection.refs.length === 1 ? "" : "s"}</span>}
+      </div> : null}
+      <div className="min-h-0 flex-1">
       <Suspense
         fallback={
           <div className="flex h-full items-center justify-center gap-2 text-xs text-muted-foreground">
@@ -200,8 +230,9 @@ export function CadRenderer({
           </div>
         }
       >
-        <CadSurface colorScheme={colorScheme} file={path} onOpenFile={onOpenFile} origin={answer.origin} width={width} />
+        <CadSurface key={`${workspace}:${path}`} onSelectionChange={onSelectionChange} colorScheme={colorScheme} file={path} onOpenFile={onOpenFile} origin={answer.origin} width={width} />
       </Suspense>
+      </div>
     </div>
   );
 }

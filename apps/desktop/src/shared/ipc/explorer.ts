@@ -86,7 +86,8 @@ export type TerminalInfo = z.infer<typeof TerminalInfoSchema>;
 /* -------------------------------------------------------------------------- */
 
 const InProject = z.object({ projectId: z.string().min(1) });
-const AtPath = InProject.extend({ path: z.string() });
+const InWorkspace = InProject.extend({ workspacePath: z.string().optional() });
+const AtPath = InWorkspace.extend({ path: z.string() });
 
 export const explorerIpc = {
   explorer: {
@@ -118,8 +119,8 @@ export const explorerIpc = {
     openDefault: invoke(AtPath, z.void()),
 
     /** Start (or join) the project root's watcher. Refcounted in main. */
-    watch: invoke(InProject, z.void()),
-    unwatch: invoke(InProject, z.void()),
+    watch: invoke(InWorkspace, z.void()),
+    unwatch: invoke(InWorkspace, z.void()),
 
     /** The persisted tab strip for a project (the `explorer_tabs` table). */
     loadTabs: invoke(InProject, z.array(ExplorerTabSchema)),
@@ -178,6 +179,7 @@ export const explorerEvents = {
    */
   "files.changed": z.object({
     projectId: z.string(),
+    workspacePath: z.string().optional(),
     changes: z.array(FileChangeSchema),
   }),
   /**

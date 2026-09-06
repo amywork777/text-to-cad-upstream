@@ -202,6 +202,15 @@ describe("resolution order", () => {
 });
 
 describe("the process environment", () => {
+  it("puts the viewer Python before other installs without losing the agent shell environment", async () => {
+    const m = machine({ checkout: true, venv: true, env: { PATH: "/app/path" } });
+    const runtime = new CadRuntime(m.host);
+    const env = await runtime.agentEnvironment({ PATH: "/shell/bin:/usr/bin", PROVIDER_SETTING: "keep" });
+    expect(env.PATH).toBe(`${path.join(m.userData, "cad-bin")}:${path.dirname(runtime.resolve()!.python)}:/shell/bin:/usr/bin`);
+    expect(env.PROVIDER_SETTING).toBe("keep");
+    expect(env.PYTHONPATH).toMatch(/packages\/cadgen\/src$/);
+  });
+
   it("gives every cadgen process the app's own Node, unbuffered output, and the resolution's PYTHONPATH", () => {
     const m = machine({ checkout: true, venv: true, env: { HOME: "/home/x", PATH: "/usr/bin" } });
     const runtime = new CadRuntime(m.host);

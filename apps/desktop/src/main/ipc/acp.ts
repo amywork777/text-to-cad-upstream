@@ -13,7 +13,7 @@ import type { IpcHandlers } from "../../shared/ipc";
 import type { acpContract } from "../../shared/ipc/acp";
 import { spawnPtyTerminal } from "../acp/pty-backend";
 import { SessionManager } from "../acp/sessions";
-import { forgetSession, mcpServersFor } from "../cad";
+import { cadRuntime, forgetSession, mcpServersFor } from "../cad";
 import { projects, sessions, settings } from "../db/repositories";
 import { head } from "../projects/git";
 import { releaseWorkspace, resolveWorkspace } from "../projects/workspace";
@@ -33,6 +33,7 @@ export const sessionManager = new SessionManager({
   broadcast,
   // Every session gets the Hardcore MCP server, with a token that names it.
   mcpServers: mcpServersFor,
+  agentEnvironment: (shell) => cadRuntime().agentEnvironment(shell),
   clientVersion: app.isPackaged ? app.getVersion() : __APP_VERSION__,
   newId: () => randomUUID(),
   launchOverride: fakeAgent

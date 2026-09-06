@@ -44,6 +44,7 @@ export type SessionWorkspace = {
 };
 
 export type SessionManagerDeps = {
+  agentEnvironment?: (shell: Record<string, string>) => Promise<Record<string, string>>;
   repo: SessionRepository;
   detector: AgentDetector;
   spawnTerminal: SpawnTerminal;
@@ -413,7 +414,8 @@ export class SessionManager {
     this.live.get(session.id)?.close();
     this.setStatus(session.id, "connecting");
 
-    const env = await this.deps.detector.environment();
+    const shellEnv = await this.deps.detector.environment();
+    const env = await this.deps.agentEnvironment?.(shellEnv) ?? shellEnv;
     const connection = new SessionConnection({
       sessionId: session.id,
       agentId: session.agentId,
@@ -436,6 +438,7 @@ export class SessionManager {
         // project the paths belong to and one change record per path.
         this.deps.broadcast("files.changed", {
           projectId: session.projectId,
+          workspacePath: session.cwd,
           changes: paths.map((path) => ({ path, kind: "changed" as const, directory: false })),
         });
       },

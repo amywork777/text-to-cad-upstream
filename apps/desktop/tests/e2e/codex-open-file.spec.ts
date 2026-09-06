@@ -124,20 +124,21 @@ test("a Codex session opens a STEP in the explorer through open_file", async () 
   );
   expect(outcome.stopReason).toBe("end_turn");
 
+  // And the session recorded the tool call, with the server's answer in it.
+  const state = await page.evaluate((id) => window.hardcore.sessions.state({ id }), session.id);
+  const parts = state?.turns.flatMap((turn) => turn.parts) ?? [];
+  const toolCalls = parts.filter((part) => part.type === "tool_call") as Array<{ title: string; name: string | null; status: string; output: unknown }>;
+  const openFile = toolCalls.find((call) => /open_file/.test(`${call.title} ${call.name ?? ""}`));
+  expect(openFile, JSON.stringify(parts.filter((part) => part.type === "text" || part.type === "tool_call")).slice(-8000)).toBeDefined();
+  expect(openFile!.status).toBe("completed");
+
+
   // The explorer opened it: a tab named after the file, rendered by the viewer.
   await expect(page.getByRole("tab", { name: /part\.step/ })).toBeVisible({ timeout: 30_000 });
   if (CAD_PYTHON) {
     await expect(page.locator("canvas").first()).toBeVisible({ timeout: 90_000 });
     await expect(page.getByRole("tab", { name: "Tree" })).toBeVisible({ timeout: 90_000 });
   }
-
-  // And the session recorded the tool call, with the server's answer in it.
-  const state = await page.evaluate((id) => window.hardcore.sessions.state({ id }), session.id);
-  const parts = state?.turns.flatMap((turn) => turn.parts) ?? [];
-  const toolCalls = parts.filter((part) => part.type === "tool_call") as Array<{ title: string; name: string | null; status: string; output: unknown }>;
-  const openFile = toolCalls.find((call) => /open_file/.test(`${call.title} ${call.name ?? ""}`));
-  expect(openFile, JSON.stringify(toolCalls.map((call) => ({ title: call.title, name: call.name, status: call.status })))).toBeDefined();
-  expect(openFile!.status).toBe("completed");
 
   await page.waitForTimeout(1500);
   await page.screenshot({ path: path.join(screenshots, "codex-open-file.png"), animations: "disabled" });

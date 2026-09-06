@@ -360,6 +360,30 @@ export class CadRuntime {
     return { ...base, ...bundled, ...resolved.env, ...node, PYTHONUNBUFFERED: "1" };
   }
 
+  /** Agents build with the same Python/cadgen that serves the viewer. */
+  async agentEnvironment(shell: Record<string, string>): Promise<Record<string, string>> {
+    const resolved = this.resolve();
+    if (!resolved) return shell;
+    const runtime = this.processEnv(resolved);
+    const env = { ...shell };
+    if (resolved.source === "bundled") {
+      for (const key of HOST_PYTHON_ENV) delete env[key];
+    }
+    for (const key of ["PYTHONPATH", "PYTHONNOUSERSITE", "PYTHONDONTWRITEBYTECODE", "PYTHONUNBUFFERED", "CADGEN_NODE", "ELECTRON_RUN_AS_NODE"]) {
+      if (runtime[key] !== undefined) env[key] = runtime[key];
+    }
+    const bin = path.dirname(resolved.python);
+    const commands = path.join(this.host.userData, "cad-bin");
+    await fsp.mkdir(commands, { recursive: true });
+    const windows = this.host.platform === "win32";
+    const executable = path.join(commands, windows ? "cadgen.cmd" : "cadgen");
+    const quoted = "'" + resolved.python.replaceAll("'", "'\"'\"'") + "'";
+    const script = windows ? `@echo off\r\n"${resolved.python}" -c "from cadgen.cli import main; raise SystemExit(main())" %*\r\n` : `#!/bin/sh\nexec ${quoted} -c 'from cadgen.cli import main; raise SystemExit(main())' "$@"\n`;
+    await fsp.writeFile(executable, script, { mode: 0o755 });
+    env.PATH = [commands, bin, ...(this.host.platform === "win32" ? [path.join(bin, "Scripts")] : []), shell.PATH ?? ""].join(path.delimiter);
+    return env;
+  }
+
   /** Drop what is known about an interpreter; the next `status()` probes again. */
   invalidate(): void {
     this.probeCache.clear();

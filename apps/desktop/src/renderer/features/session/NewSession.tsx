@@ -5,7 +5,7 @@ import { Button } from "@renderer/components/ui/button";
 import { resolveGitMode, useProjectGitInfo } from "@renderer/lib/git-mode";
 import { useAcp } from "@renderer/state/acp";
 import { useAgents, useInstalledAgents } from "@renderer/state/agents";
-import { useComposer } from "@renderer/state/composer";
+import { newDraftKey, useComposer } from "@renderer/state/composer";
 import { useProjects } from "@renderer/state/projects";
 import { useSessions } from "@renderer/state/sessions";
 import { useSettings } from "@renderer/state/settings";
@@ -31,6 +31,8 @@ import { errorMessage, isAuthError } from "./view";
  * the composer, with the agent's login as the action.
  */
 export function NewSession({ project }: { project: Project }) {
+  const draftKey = newDraftKey(project.id);
+  const draftWorkspace = useComposer((state) => state.draftWorkspaces[draftKey]);
   const settings = useSettings((state) => state.settings);
   const agents = useAgents((state) => state.agents);
   const installed = useInstalledAgents();
@@ -81,21 +83,23 @@ export function NewSession({ project }: { project: Project }) {
       sessionId = await create({
         projectId: project.id,
         agentId: resolvedAgentId,
-        cwd: project.path,
+        ...(draftWorkspace ? { cwd: draftWorkspace } : {}),
         gitMode: resolvedGitMode,
       });
     } catch (error) {
       const message = errorMessage(error);
       // Main has already dropped the row: nothing to resume, nothing to list.
       setFailure({ message, auth: isAuthError(message) || agent?.auth === "unauthenticated" });
-      setDraft("__new__", text);
+      setDraft(draftKey, text);
+      if (draftWorkspace) useComposer.getState().setDraftWorkspace(draftKey, draftWorkspace);
       setBusy(false);
       return;
     }
     if (approval !== "ask") {
       void setApproval(sessionId, approval);
     }
-    setDraft("__new__", "");
+    setDraft(draftKey, "");
+    useComposer.getState().setDraftWorkspace(draftKey, undefined);
     setActiveSession(sessionId);
     setBusy(false);
     void submitPrompt(sessionId, text, content);
@@ -108,7 +112,7 @@ export function NewSession({ project }: { project: Project }) {
     <div className="mb-1.5 flex items-center gap-1 px-1" data-context-strip>
       <ProjectChip onChange={setActiveProject} project={project} />
       <Dot />
-      <GitModeChip gitMode={resolvedGitMode} info={gitInfo} onChange={setGitMode} />
+      {draftWorkspace ? <span className="text-xs text-muted-foreground" title={draftWorkspace}>In {draftWorkspace.split("/").pop()}</span> : <GitModeChip gitMode={resolvedGitMode} info={gitInfo} onChange={setGitMode} />}
       <Dot />
       <AgentChip agentId={resolvedAgentId} onChange={chooseAgent} />
     </div>
@@ -151,6 +155,7 @@ export function NewSession({ project }: { project: Project }) {
             disabled={busy}
             onSubmit={start}
             placeholder={busy && agent ? `Starting ${agent.name}…` : "Do anything"}
+            newSessionDraftKey={draftKey}
             sessionId={null}
             status={busy ? "submitted" : "ready"}
           />

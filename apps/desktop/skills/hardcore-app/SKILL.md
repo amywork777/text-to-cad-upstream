@@ -16,11 +16,11 @@ and `gcode` skills still say how to build the files.
 
 - Do not run `cadgen viewer`, `python -m cadgen.viewer`, or anything that
   serves a URL for review, and do not write `http://127.0.0.1:…` links. Hardcore
-  runs one viewer per project on its own; a second one is noise the person
+  runs one viewer per workspace on its own; a second one is noise the person
   cannot see.
 - Where the `cad` skill says to hand paths to `$cad-viewer`, do this instead:
   call `open_file` with the path. That call is the hand-off.
-- Reference files by their path relative to the project root
+- Reference files by their path relative to this session’s working directory
   (`STEP/bracket.step`, not `/Users/…/STEP/bracket.step`); Hardcore turns them
   into links the person can click.
 
@@ -32,7 +32,7 @@ and `gcode` skills still say how to build the files.
 | `reveal(path)` | You want to point at a file or folder in the tree without switching what is open. |
 | `attach_snapshot(path)` | You rendered a PNG (`cadgen step snapshot`) and want it in the transcript. The image appears inline; otherwise a snapshot is a file the person has to go and find. |
 | `list_open_tabs()` | You need to know what the person is already looking at before opening more. |
-| `viewer_state()` | You want the file currently in the viewer before acting on "this part" or "that face". |
+| `viewer_state()` | Read the active file and selected canonical CAD references before acting on "this part" or "that face". The answer is scoped to this session’s project and workspace; camera data is not exposed. |
 | `open_url(url)` | A datasheet, a docs page or a step.parts listing belongs beside the work. |
 
 Call `open_file` on the artifact (`STEP/bracket.step`), not on the script that
@@ -53,7 +53,7 @@ made it. Open the file the person asked about, not every file you touched.
 
 In the viewer they can orbit, zoom, section, measure between faces, isolate a
 component, toggle layers of a DXF, pose joints, play a `.step.js` animation,
-and edit the model script beside it and rebuild. So:
+and inspect the model script in a file tab. So:
 
 - Do not narrate what a snapshot already shows; describe what to check.
 - Ask them to measure or section when a question needs a view you cannot

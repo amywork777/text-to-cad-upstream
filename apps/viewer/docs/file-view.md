@@ -207,3 +207,15 @@ narrow pane with no viewport at all. Two more things follow for a host:
   state (open sections, pose, camera) cannot collide in one `localStorage`.
 - **Theme choice is global**, shared by every surface on the page — it is a user
   preference, not a property of a file.
+
+### Selection in a host composer
+
+`onSelectionChange(selection)` is optional. It receives `{ file, refs }`, where
+`file` is relative to the served root and `refs` is the same array of canonical,
+file-prefixed CAD references used by the surface's Copy selection action. An empty
+array means nothing is selected; `null` clears the host state on cleanup. Keep the
+callback stable. Hosts that change files should key the surface by file to discard
+selection immediately, and scope the callback to their own project/workspace.
+
+This reports selection only. The host decides whether an explicit action appends
+references to a draft; the viewer neither submits prompts nor knows about chats.

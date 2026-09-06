@@ -9,6 +9,7 @@
  * `cad.command` (src/shared/ipc/cad.ts): the renderer did what an agent's
  * tool asked and this hands the result back to the waiting bridge call.
  */
+import { fileWorkspace } from "../projects/file-workspace";
 import type { IpcHandlers } from "../../shared/ipc";
 import type { cadIpc } from "../../shared/ipc/cad";
 import type { ViewerOrigin } from "../../shared";
@@ -18,12 +19,12 @@ import type { IpcContext } from "./register";
 
 export const cadHandlers = {
   cad: {
-    viewerOrigin: async ({ projectId }): Promise<ViewerOrigin> => {
+    viewerOrigin: async ({ projectId, workspacePath }): Promise<ViewerOrigin> => {
       const project = projects.list().find((candidate) => candidate.id === projectId);
       if (!project) {
         return { origin: null, reason: "no-project" };
       }
-      const answer = await viewers().originFor(project.path);
+      const answer = await viewers().originFor(await fileWorkspace(project.path, workspacePath));
       if (answer.origin || answer.reason !== "runtime-not-ready") {
         return answer;
       }

@@ -1,0 +1,40 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { resolveForSession, createActions, RendererCommands } from "@main/cad/actions";
+import { fileWorkspace } from "@main/projects/file-workspace";
+import { readTextFile } from "@main/explorer/fs";
+
+const temporary: string[] = [];
+afterEach(async () => { for (const root of temporary.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
+
+it("opens the artifact from the session's worktree and rejects escapes", async () => {
+  const base = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "hardcore-cad-workspace-")));
+  temporary.push(base);
+  const root = path.join(base, "project");
+  const worktree = path.join(base, "worktree");
+  await fs.mkdir(root);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } });
+  git("init", "-q");
+  git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial");
+  git("worktree", "add", "--detach", worktree);
+  await fs.writeFile(path.join(root, "part.step"), "main");
+  await fs.writeFile(path.join(worktree, "part.step"), "worktree");
+  await fs.writeFile(path.join(base, "outside.txt"), "outside");
+  await fs.symlink(path.join(base, "outside.txt"), path.join(worktree, "escape.txt"));
+  const session = { sessionId: "session", projectId: "project", cwd: worktree };
+  const deps = { projectRoot: () => root };
+  const resolved = await resolveForSession(deps, session, "part.step");
+  expect(resolved).toEqual({ root: worktree, absolute: path.join(worktree, "part.step"), relative: "part.step" });
+  expect((await readTextFile(await fileWorkspace(root, resolved.root), resolved.relative)).content).toBe("worktree");
+  await expect(resolveForSession(deps, session, "../outside.txt")).rejects.toThrow(/outside/);
+  await expect(resolveForSession(deps, session, "escape.txt")).rejects.toThrow(/outside/);
+  await expect(fileWorkspace(root, base)).rejects.toThrow(/does not belong/);
+  const commandDeps = { ...deps, newId: () => "request", send: (command: unknown) => queueMicrotask(() => commands.reply({ requestId: "request", ok: true, result: command })) };
+  const commands = new RendererCommands(commandDeps);
+  const command = await createActions(commandDeps, commands).open_file(session, { path: "part.step" });
+  expect(command).toMatchObject({ kind: "open-file", projectId: "project", workspacePath: worktree, path: "part.step" });
+  commands.dispose();
+});

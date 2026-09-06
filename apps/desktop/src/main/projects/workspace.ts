@@ -29,6 +29,7 @@
  * threads by cwd, so a worktree is what makes a Hardcore session resumable
  * from a terminal later.
  */
+import { fileWorkspace } from "./file-workspace";
 import os from "node:os";
 import path from "node:path";
 
@@ -126,13 +127,7 @@ export async function resolveWorkspace(input: ResolveInput): Promise<Workspace> 
  * against the two places it is allowed to be.
  */
 async function explicitWorkspace(cwd: string, input: ResolveInput): Promise<Workspace> {
-  const requested = path.resolve(cwd);
-  const parent = projectWorktreeDir(input.settings, input.project);
-  const allowed =
-    git.samePath(requested, input.project.path) || git.isUnder(parent, requested);
-  if (!allowed) {
-    throw new git.GitError("that directory does not belong to this project");
-  }
+  const requested = await fileWorkspace(input.project.path, cwd);
 
   const info = await git.repoInfo(requested);
   const isWorktree = !git.samePath(requested, input.project.path);
