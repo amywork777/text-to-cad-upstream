@@ -37,7 +37,7 @@ TOOL_TYPES: dict[str, dict] = {
                 "plain": "chamfer mill"},
     "drill": {"family": "mill", "keys": ("point_angle",), "required": ("diameter_mm",), "plain": "drill"},
     "spot": {"family": "mill", "keys": ("angle_deg",), "required": ("diameter_mm",), "plain": "spot drill"},
-    "tap": {"family": "mill", "keys": ("pitch_mm",), "required": ("diameter_mm", "pitch_mm"), "plain": "tap"},
+    "tap": {"family": "mill", "keys": ("pitch_mm", "hand"), "required": ("diameter_mm", "pitch_mm"), "plain": "tap"},
     "reamer": {"family": "mill", "keys": (), "required": ("diameter_mm",), "plain": "reamer"},
     "boring": {"family": "mill", "keys": (), "required": ("diameter_mm",), "plain": "boring bar"},
     "thread_mill": {"family": "mill", "keys": ("pitch_mm",), "required": ("diameter_mm", "pitch_mm"),
@@ -97,6 +97,8 @@ class Tool:
     nose_radius_mm: float = 0.0
     side: str = ""
     kerf_mm: float = 0.0
+    #: A tap's hand: ``right`` (the default, posted G84) or ``left`` (G74, spindle reversed).
+    hand: str = ""
 
     @property
     def family(self) -> str:
@@ -116,7 +118,7 @@ class Tool:
         if self.type in ("vee", "engraver") and self.angle_deg:
             return f"{_num(self.angle_deg)}° {word}"
         if self.type == "tap":
-            return f"M{_num(self.diameter_mm)}x{_num(self.pitch_mm)} tap"
+            return f"M{_num(self.diameter_mm)}x{_num(self.pitch_mm)}{' LH' if self.hand == 'left' else ''} tap"
         if self.type == "beam":
             return f"{_num(self.kerf_mm)} mm kerf beam"
         if self.type in ("groove", "partoff"):
@@ -247,6 +249,7 @@ def parse_tool(raw: object, position: int) -> Tool:
         nose_radius_mm=read_number(raw, "nose_radius_mm", where, default=0.4 if kind == "turn" else 0.0, minimum=0.0),
         side=choice(raw["side"], SIDES, f"{where}.side") if "side" in raw else "",
         kerf_mm=read_number(raw, "kerf_mm", where, default=0.0),
+        hand=choice(raw["hand"], ("right", "left"), f"{where}.hand") if "hand" in raw else "",
     )
     if kind == "bull" and tool.corner_radius_mm > tool.radius:
         raise CamJobError(f"{where}: corner_radius_mm ({tool.corner_radius_mm:g}) is more than the tool's radius")
