@@ -1,0 +1,217 @@
+"""Feeds and speeds: a material table and the rules that turn it into a spindle speed and a feed for one tool.
+
+**Every number here is a starting point, and the Results say so.** They are deliberately on the conservative side of
+the ranges tool vendors publish for carbide end mills on a rigid hobby-to-light-industrial machine (Harvey/Helical,
+Kennametal, Sandvik and Onsrud catalogue tables, which give surface speed per material and chip load per tooth
+against diameter): aluminium 6061 is published at roughly 300-1000 m/min and 0.025-0.08 mm/tooth at 6 mm, so the
+table says 250 m/min and 0.04 mm; 1018 steel at roughly 100-200 m/min and 0.02-0.05 mm, so 120 and 0.03; stainless
+304 at 60-120 m/min, so 80; titanium Ti-6Al-4V at 40-70 m/min, so 50; plastics and woods at the low end of a router
+chart's chip loads. High-speed steel runs at about a third of carbide's surface speed. A job's ``feed``/``speed``
+override wins over all of it; a machine's ``max_rpm``/``max_feed_mm_min`` clamps it, and a clamp is reported.
+
+The rules (:func:`for_op`):
+
+* spindle ``rpm = 1000 * Vc / (pi * D)``, scaled per operation (drills 0.6, spot 0.8, reamers 0.5, taps 0.2,
+  thread mills 0.8), clamped to the machine's maximum;
+* milling feed ``= rpm * flutes * fz``, with ``fz`` the table's chip load at 6 mm scaled linearly with the diameter
+  (between 0.2x and 2x); a full-width slot takes 0.75x; a light radial stepover gets radial chip thinning
+  ``D / (2 sqrt(D ae - ae^2))``, capped at 2x;
+* drilling feed ``= rpm * f``, ``f`` per revolution proportional to the diameter; tapping ``= rpm * pitch`` exactly;
+* plunge at 0.3x and ramp at 0.5x the milling feed; the default step down is a fraction of the diameter per
+  material (half the diameter in aluminium, a quarter in steel).
+
+Cutting processes (laser, plasma, waterjet) have a speed table per material and thickness (:func:`for_cut`), also
+starting points: a 1-2 kW fibre laser, a 45 A air plasma, a 50 hp abrasive waterjet. Stdlib only.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import asdict, dataclass
+
+__all__ = ["CUT_SPEEDS", "Feeds", "MATERIALS", "OP_KINDS", "default_stepdown", "for_cut", "for_op"]
+
+#: Per material: plain name, carbide surface speed (m/min), carbide chip load per tooth at 6 mm (mm), drill feed per
+#: revolution per mm of diameter (mm/rev/mm), and the default step down as a fraction of the diameter.
+MATERIALS: dict[str, dict] = {
+    "aluminum-6061": {"plain": "aluminium 6061", "vc": 250.0, "fz6": 0.040, "drill": 0.020, "stepdown": 0.5},
+    "aluminum-7075": {"plain": "aluminium 7075", "vc": 220.0, "fz6": 0.040, "drill": 0.020, "stepdown": 0.5},
+    "steel-1018": {"plain": "mild steel 1018", "vc": 120.0, "fz6": 0.030, "drill": 0.015, "stepdown": 0.25},
+    "stainless-304": {"plain": "stainless 304", "vc": 80.0, "fz6": 0.025, "drill": 0.012, "stepdown": 0.2},
+    "tool-steel": {"plain": "tool steel (annealed)", "vc": 70.0, "fz6": 0.020, "drill": 0.010, "stepdown": 0.15},
+    "titanium-6al4v": {"plain": "titanium Ti-6Al-4V", "vc": 50.0, "fz6": 0.025, "drill": 0.010, "stepdown": 0.15},
+    "brass": {"plain": "brass", "vc": 200.0, "fz6": 0.050, "drill": 0.025, "stepdown": 0.5},
+    "copper": {"plain": "copper", "vc": 150.0, "fz6": 0.035, "drill": 0.020, "stepdown": 0.3},
+    "delrin": {"plain": "Delrin (acetal)", "vc": 300.0, "fz6": 0.080, "drill": 0.030, "stepdown": 0.75},
+    "acrylic": {"plain": "acrylic", "vc": 250.0, "fz6": 0.060, "drill": 0.025, "stepdown": 0.5},
+    "hdpe": {"plain": "HDPE", "vc": 300.0, "fz6": 0.100, "drill": 0.040, "stepdown": 1.0},
+    "nylon": {"plain": "nylon", "vc": 250.0, "fz6": 0.080, "drill": 0.030, "stepdown": 0.75},
+    "mdf": {"plain": "MDF", "vc": 400.0, "fz6": 0.100, "drill": 0.040, "stepdown": 1.0},
+    "hardwood": {"plain": "hardwood", "vc": 400.0, "fz6": 0.080, "drill": 0.030, "stepdown": 0.75},
+    "plywood": {"plain": "plywood", "vc": 400.0, "fz6": 0.090, "drill": 0.030, "stepdown": 0.75},
+    "carbon-fiber": {"plain": "carbon fibre", "vc": 150.0, "fz6": 0.030, "drill": 0.010, "stepdown": 0.25},
+    "foam": {"plain": "foam", "vc": 500.0, "fz6": 0.200, "drill": 0.050, "stepdown": 2.0},
+}
+
+#: The operation kinds the rules know: what a planner asks feeds for.
+OP_KINDS = ("rough", "slot", "finish", "face", "drill", "spot", "ream", "bore", "tap", "thread_mill", "engrave")
+_RPM_SCALE = {"drill": 0.6, "spot": 0.8, "ream": 0.5, "bore": 0.7, "tap": 0.2, "thread_mill": 0.8, "engrave": 1.0}
+_HSS = 0.35
+#: Spindle speed when the job's material table cannot set one (a lathe or cutting tool asks for_cut instead).
+_FALLBACK_RPM = 10000.0
+
+
+@dataclass(frozen=True)
+class Feeds:
+    """What a planner cuts at. ``clamped`` names each limit the machine imposed; ``source`` says whether the numbers
+    are the table's (``table``), the job's (``job``) or both (``mixed``)."""
+
+    rpm: float
+    feed_mm_min: float
+    plunge_mm_min: float
+    ramp_mm_min: float
+    chipload_mm: float | None
+    surface_m_min: float | None
+    clamped: tuple[str, ...] = ()
+    source: str = "table"
+    note: str = "a starting point: adjust to the machine, the tool and what you hear"
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+def _material_numbers(material) -> dict:
+    if material.table:
+        return MATERIALS[material.name]
+    return {"vc": material.surface_m_min, "fz6": material.chipload_mm, "fixed_fz": True,
+            "drill": None if material.drill_mm_per_rev is None else material.drill_mm_per_rev,
+            "stepdown": material.stepdown_fraction or 0.5}
+
+
+def default_stepdown(material, tool) -> float:
+    """The default axial step for roughing: the material's fraction of the diameter, never past the flutes."""
+    numbers = _material_numbers(material)
+    return max(0.05, min(tool.flute_length_mm or math.inf, numbers["stepdown"] * tool.diameter_mm))
+
+
+def _chip_thinning(diameter: float, stepover_mm: float | None) -> float:
+    if not stepover_mm or stepover_mm >= diameter / 2.0:
+        return 1.0
+    engaged = math.sqrt(max(1e-12, diameter * stepover_mm - stepover_mm ** 2))
+    return min(2.0, diameter / (2.0 * engaged))
+
+
+def _round_rpm(rpm: float) -> float:
+    return float(max(10.0, round(rpm / 10.0) * 10.0))
+
+
+def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = None, feed: float | None = None,
+           speed: float | None = None) -> Feeds:
+    """The spindle speed and feeds for ``tool`` doing an operation of ``kind`` (:data:`OP_KINDS`) in ``material`` on
+    ``machine``; ``feed``/``speed`` are the job's overrides (mm/min, rpm)."""
+    if kind not in OP_KINDS:
+        raise ValueError(f"unknown feeds kind {kind!r}; one of {', '.join(OP_KINDS)}")
+    numbers = _material_numbers(material)
+    diameter = max(tool.diameter_mm, 0.1)
+    vc = numbers["vc"] * (_HSS if tool.material == "hss" else 1.0) * _RPM_SCALE.get(kind, 1.0)
+    clamped: list[str] = []
+    rpm = float(speed) if speed is not None else 1000.0 * vc / (math.pi * diameter)
+    if machine.max_rpm is not None and rpm > machine.max_rpm:
+        clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {machine.max_rpm:.0f} rpm")
+        rpm = float(machine.max_rpm)
+    rpm = _round_rpm(rpm) if speed is None else rpm
+    chipload = None
+    if kind == "tap":
+        cut = rpm * tool.pitch_mm
+        plunge = cut
+    elif kind in ("drill", "spot", "ream", "bore"):
+        per_rev = numbers["drill"] * diameter if numbers.get("drill") is not None else 2.0 * numbers["fz6"]
+        if kind == "ream":
+            per_rev *= 2.0
+        if kind == "spot":
+            per_rev *= 0.5
+        if tool.material == "hss":
+            per_rev *= 0.8
+        chipload = per_rev
+        cut = rpm * per_rev
+        plunge = cut
+    else:
+        fz = numbers["fz6"] if numbers.get("fixed_fz") else numbers["fz6"] * min(2.0, max(0.2, diameter / 6.0))
+        if kind == "slot":
+            fz *= 0.75
+        if kind == "engrave":
+            fz *= 0.5
+        fz *= _chip_thinning(diameter, stepover_mm)
+        chipload = fz
+        cut = rpm * max(1, tool.flutes) * fz
+        plunge = 0.3 * cut
+    ramp = 0.5 * cut if kind not in ("drill", "spot", "ream", "bore", "tap") else cut
+    if feed is not None:
+        scale = float(feed) / cut if cut > 0 else 1.0
+        cut, plunge, ramp = float(feed), plunge * scale, ramp * scale
+    if machine.max_feed_mm_min is not None and cut > machine.max_feed_mm_min:
+        if kind == "tap":
+            clamped.append(f"a tap must feed at rpm x pitch ({cut:.0f} mm/min), more than the machine's "
+                           f"{machine.max_feed_mm_min:.0f} mm/min: the spindle was slowed to match")
+            rpm = machine.max_feed_mm_min / tool.pitch_mm
+            cut = plunge = ramp = rpm * tool.pitch_mm
+        else:
+            clamped.append(f"feed {cut:.0f} mm/min clamped to the machine's {machine.max_feed_mm_min:.0f} mm/min")
+            ratio = machine.max_feed_mm_min / cut
+            cut, plunge, ramp = machine.max_feed_mm_min, plunge * ratio, ramp * ratio
+    source = "job" if (feed is not None and speed is not None) else "mixed" if (feed is not None or speed is not None) else "table"
+    if kind != "tap":
+        cut, plunge, ramp = (float(max(1.0, round(v))) for v in (cut, plunge, ramp))
+    return Feeds(rpm=round(rpm, 3), feed_mm_min=round(cut, 3), plunge_mm_min=round(plunge, 3),
+                 ramp_mm_min=round(ramp, 3), chipload_mm=None if chipload is None else round(chipload, 5),
+                 surface_m_min=round(math.pi * diameter * rpm / 1000.0, 1), clamped=tuple(clamped), source=source)
+
+
+#: Cutting speed (mm/min) against thickness (mm), per process and material: starting points for a 1-2 kW fibre
+#: laser (a CO2 for the non-metals), a 45 A air plasma and a 50 hp abrasive waterjet, interpolated log-linearly.
+CUT_SPEEDS: dict[str, dict[str, tuple[tuple[float, float], ...]]] = {
+    "laser": {
+        "steel-1018": ((1.0, 10000.0), (3.0, 3000.0), (6.0, 1200.0), (10.0, 600.0)),
+        "stainless-304": ((1.0, 9000.0), (3.0, 2000.0), (6.0, 700.0)),
+        "aluminum-6061": ((1.0, 8000.0), (3.0, 1500.0), (6.0, 500.0)),
+        "acrylic": ((3.0, 1500.0), (6.0, 600.0), (10.0, 300.0)),
+        "plywood": ((3.0, 1200.0), (6.0, 500.0)),
+        "mdf": ((3.0, 1100.0), (6.0, 450.0)),
+        "hardwood": ((3.0, 900.0), (6.0, 400.0)),
+    },
+    "plasma": {
+        "steel-1018": ((1.5, 6000.0), (3.0, 3500.0), (6.0, 1800.0), (10.0, 900.0), (16.0, 450.0)),
+        "stainless-304": ((1.5, 5000.0), (3.0, 2800.0), (6.0, 1300.0), (10.0, 650.0)),
+        "aluminum-6061": ((1.5, 6500.0), (3.0, 4000.0), (6.0, 2000.0), (10.0, 1000.0)),
+    },
+    "waterjet": {
+        "steel-1018": ((3.0, 600.0), (6.0, 300.0), (12.0, 140.0), (25.0, 60.0)),
+        "stainless-304": ((3.0, 500.0), (6.0, 250.0), (12.0, 110.0)),
+        "aluminum-6061": ((3.0, 1400.0), (6.0, 700.0), (12.0, 330.0), (25.0, 150.0)),
+        "titanium-6al4v": ((3.0, 450.0), (6.0, 220.0), (12.0, 100.0)),
+        "acrylic": ((3.0, 2500.0), (6.0, 1300.0), (12.0, 600.0)),
+        "carbon-fiber": ((3.0, 1500.0), (6.0, 700.0)),
+    },
+}
+
+
+def for_cut(material, process: str, thickness_mm: float) -> float | None:
+    """A starting cutting speed (mm/min) for ``process`` through ``thickness_mm`` of ``material``, or ``None`` when
+    the table has no row for it (the job then names its own ``feed``)."""
+    rows = CUT_SPEEDS.get(process, {}).get(getattr(material, "name", material))
+    if not rows or thickness_mm <= 0:
+        return None
+    xs = [math.log(t) for t, _ in rows]
+    ys = [math.log(v) for _, v in rows]
+    x = math.log(thickness_mm)
+    if x <= xs[0]:
+        return float(round(math.exp(ys[0])))
+    if x >= xs[-1]:
+        # Past the table: the last row's slope carries on, which is conservative (speed falls with thickness).
+        slope = (ys[-1] - ys[-2]) / (xs[-1] - xs[-2]) if len(xs) > 1 else -1.0
+        return float(round(math.exp(ys[-1] + slope * (x - xs[-1]))))
+    for i in range(len(xs) - 1):
+        if xs[i] <= x <= xs[i + 1]:
+            f = (x - xs[i]) / (xs[i + 1] - xs[i])
+            return float(round(math.exp(ys[i] + f * (ys[i + 1] - ys[i]))))
+    return None
