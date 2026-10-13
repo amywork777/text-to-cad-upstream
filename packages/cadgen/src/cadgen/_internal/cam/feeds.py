@@ -215,3 +215,185 @@ def for_cut(material, process: str, thickness_mm: float) -> float | None:
             f = (x - xs[i]) / (xs[i + 1] - xs[i])
             return float(round(math.exp(ys[i] + f * (ys[i + 1] - ys[i]))))
     return None
+
+
+# --- cutting processes per machine (the ``cut`` and ``wire_edm`` operations) -----------------------------------
+#
+# Starting points again, for a sane first program: the rows of CUT_SPEEDS (and CUT_SPEEDS_EXTRA) are for a reference
+# machine, and :func:`cut_feeds` scales them to the job's machine:
+#
+# * laser: metals are a fibre source's rows at 1500 W (a CO2 cuts metal about half as fast per watt: its reference
+#   is 3000 W, and under 500 W it does not cut metal), everything else a CO2's at 100 W (a diode's too, from the
+#   same rows); speed scales about linearly with power (``machine.power_w``, 0.05x to 4x);
+# * plasma: the rows are a 45 A air plasma's; another current (``machine.amps``) cuts thickness t about as fast as
+#   45 A cuts t x 45 / amps (an equivalent thickness);
+# * waterjet: the rows are an abrasive jet's at quality 3 (of 1 separation .. 5 finest); quality scales speed
+#   (2.0, 1.4, 1.0, 0.75, 0.6x), and a pure-water jet (``machine.abrasive`` false) has its own rows for soft stock;
+# * wire EDM: a removal rate in mm²/min for a 0.25 mm brass wire's main cut; the feed is the rate over the
+#   thickness, and skims run faster (3x, 5x, 8x).
+#
+# Pierce times grow with thickness (a waterjet's with how slowly it cuts). Every number is a starting point.
+
+#: The materials a fibre laser's rows (and a plasma) cut: metals.
+METALS = ("aluminum-6061", "aluminum-7075", "steel-1018", "stainless-304", "tool-steel", "titanium-6al4v", "brass",
+          "copper")
+#: More rows for the reference machines, beside CUT_SPEEDS's.
+CUT_SPEEDS_EXTRA: dict[str, dict[str, tuple[tuple[float, float], ...]]] = {
+    "laser": {
+        "brass": ((1.0, 6000.0), (3.0, 1000.0)),
+        "aluminum-7075": ((1.0, 7000.0), (3.0, 1300.0), (6.0, 450.0)),
+        "delrin": ((3.0, 900.0), (6.0, 400.0)),
+        "foam": ((5.0, 3000.0), (20.0, 800.0)),
+    },
+    "plasma": {
+        "aluminum-7075": ((1.5, 6000.0), (3.0, 3700.0), (6.0, 1800.0), (10.0, 900.0)),
+        "tool-steel": ((1.5, 5000.0), (3.0, 3000.0), (6.0, 1500.0), (10.0, 750.0)),
+        "copper": ((1.5, 4000.0), (3.0, 2200.0), (6.0, 1000.0)),
+        "brass": ((1.5, 4500.0), (3.0, 2500.0), (6.0, 1200.0)),
+    },
+    "waterjet": {
+        "aluminum-7075": ((3.0, 1300.0), (6.0, 650.0), (12.0, 300.0), (25.0, 140.0)),
+        "tool-steel": ((3.0, 450.0), (6.0, 220.0), (12.0, 100.0)),
+        "brass": ((3.0, 700.0), (6.0, 350.0), (12.0, 160.0)),
+        "copper": ((3.0, 600.0), (6.0, 300.0), (12.0, 140.0)),
+        "delrin": ((3.0, 2000.0), (6.0, 1000.0), (12.0, 450.0)),
+        "hdpe": ((3.0, 2500.0), (6.0, 1300.0), (12.0, 600.0)),
+        "hardwood": ((6.0, 1500.0), (12.0, 700.0)),
+    },
+}
+#: A pure-water jet's rows (no abrasive): soft stock only.
+WATERJET_PURE: dict[str, tuple[tuple[float, float], ...]] = {
+    "foam": ((10.0, 10000.0), (50.0, 3000.0)),
+    "hdpe": ((1.5, 2500.0), (3.0, 1000.0)),
+    "nylon": ((1.5, 2000.0), (3.0, 800.0)),
+}
+LASER_REFERENCE_W = {"fiber": 1500.0, "co2": 100.0, "diode": 100.0}
+_CO2_METAL_REFERENCE_W = 3000.0
+PLASMA_REFERENCE_A = 45.0
+WATERJET_QUALITY = {1: 2.0, 2: 1.4, 3: 1.0, 4: 0.75, 5: 0.6}
+#: Wire EDM main-cut removal rate (mm²/min) for a 0.25 mm brass wire; skims run at these multiples of its feed.
+WIRE_RATE_MM2_MIN = {"steel-1018": 150.0, "tool-steel": 120.0, "stainless-304": 120.0, "aluminum-6061": 300.0,
+                     "aluminum-7075": 280.0, "titanium-6al4v": 80.0, "copper": 100.0, "brass": 250.0}
+WIRE_SKIM_FACTORS = (3.0, 5.0, 8.0, 10.0)
+
+
+def _interpolate(rows, thickness_mm: float) -> float:
+    xs = [math.log(t) for t, _ in rows]
+    ys = [math.log(v) for _, v in rows]
+    x = math.log(thickness_mm)
+    if len(xs) == 1 or x <= xs[0]:
+        return math.exp(ys[0])
+    if x >= xs[-1]:
+        slope = (ys[-1] - ys[-2]) / (xs[-1] - xs[-2])
+        return math.exp(ys[-1] + slope * (x - xs[-1]))
+    for i in range(len(xs) - 1):
+        if xs[i] <= x <= xs[i + 1]:
+            f = (x - xs[i]) / (xs[i + 1] - xs[i])
+            return math.exp(ys[i] + f * (ys[i + 1] - ys[i]))
+    return math.exp(ys[-1])
+
+
+def _cut_rows(process: str, name: str):
+    return CUT_SPEEDS.get(process, {}).get(name) or CUT_SPEEDS_EXTRA.get(process, {}).get(name)
+
+
+def laser_source(material, machine) -> str:
+    """The laser's source: the machine's, else fibre for a metal and CO2 for anything else."""
+    name = getattr(material, "name", material)
+    return getattr(machine, "laser_source", None) or ("fiber" if name in METALS else "co2")
+
+
+@dataclass(frozen=True)
+class CutSpeed:
+    """A cutting process's starting speed: ``speed_mm_min`` (None when no row fits: ``why`` says so), the reference
+    it was scaled from, and plain notes (an extrapolated thickness, a clamp)."""
+
+    speed_mm_min: float | None
+    reference: str
+    why: str = ""
+    notes: tuple[str, ...] = ()
+    table_max_mm: float | None = None
+
+
+def cut_speed(material, machine, thickness_mm: float, *, quality: int = 3) -> CutSpeed:
+    """The starting cutting speed for ``machine`` (laser, plasma, waterjet) through ``thickness_mm`` of
+    ``material`` (a job Material or its name), scaled from the reference machine's rows (see above)."""
+    name = getattr(material, "name", material)
+    process = machine.kind
+    metal = name in METALS
+    notes: list[str] = []
+    if process == "laser":
+        source = laser_source(name, machine)
+        power = getattr(machine, "power_w", None) or LASER_REFERENCE_W[source]
+        if metal and source == "diode":
+            return CutSpeed(None, "", "a diode laser does not cut metal; use a fibre laser, a plasma or a waterjet")
+        if metal and source == "co2" and power < 500:
+            return CutSpeed(None, "", f"a {power:g} W CO2 laser does not cut metal (it takes about 500 W and up); use "
+                            "a fibre laser, a plasma or a waterjet")
+        if not metal and source == "fiber":
+            return CutSpeed(None, "", f"the table has fibre-laser rows for metals only, not {name}; a fibre laser "
+                            "passes through clear acrylic and chars wood. Use a CO2 laser, or give the cut a feed")
+        reference = _CO2_METAL_REFERENCE_W if (metal and source == "co2") else LASER_REFERENCE_W[source]
+        rows = _cut_rows("laser", name)
+        scale = min(4.0, max(0.05, power / reference))
+        words = f"a {reference:g} W {'CO2' if source == 'diode' else source} laser's rows, scaled to {power:g} W"
+    elif process == "plasma":
+        if not metal:
+            return CutSpeed(None, "", f"a plasma cuts conductive metal only, not {name}; use a laser, a waterjet or "
+                            "a router")
+        amps = getattr(machine, "amps", None) or PLASMA_REFERENCE_A
+        rows = _cut_rows("plasma", name)
+        scale = 1.0
+        thickness_mm = thickness_mm * PLASMA_REFERENCE_A / amps
+        words = f"a {PLASMA_REFERENCE_A:g} A air plasma, scaled to {amps:g} A"
+    elif process == "waterjet":
+        if quality not in WATERJET_QUALITY:
+            raise ValueError(f"waterjet quality {quality!r} is not 1..5")
+        if getattr(machine, "abrasive", True):
+            rows = _cut_rows("waterjet", name)
+            words = f"an abrasive waterjet at quality {quality}"
+        else:
+            if metal:
+                return CutSpeed(None, "", "pure water does not cut metal; set machine.abrasive true")
+            rows = WATERJET_PURE.get(name)
+            words = f"a pure-water jet at quality {quality}"
+        scale = WATERJET_QUALITY[quality]
+    else:
+        raise ValueError(f"cut_speed is for laser, plasma and waterjet machines, not {process!r}")
+    if not rows:
+        return CutSpeed(None, "", f"the {process} table has no row for {name}; give the cut its own feed (mm/min)")
+    table_max = rows[-1][0]
+    if thickness_mm > table_max * 1.0001:
+        notes.append(f"{thickness_mm:g} mm is past the table's thickest {name} row ({table_max:g} mm"
+                     + (" at the equivalent thickness for this current" if process == "plasma" else "")
+                     + "): the speed is extrapolated; check the machine can cut it at all")
+    speed = _interpolate(rows, max(thickness_mm, 0.05)) * scale
+    return CutSpeed(float(round(speed)), words, notes=tuple(notes), table_max_mm=table_max)
+
+
+def pierce_seconds(machine, thickness_mm: float, *, reference_speed_mm_min: float | None = None,
+                   source: str = "") -> float:
+    """A starting pierce time (s): the beam or jet held still on until it is through ``thickness_mm``."""
+    t = max(0.0, float(thickness_mm))
+    kind = machine.kind
+    if kind == "laser":
+        if source == "diode":
+            return round(0.5 + 0.2 * t, 2)
+        return round(0.1 + 0.15 * t, 2) if source == "fiber" else round(0.05 + 0.05 * t, 2)
+    if kind == "plasma":
+        return round(0.1 + 0.08 * t, 2)
+    if kind == "waterjet":
+        speed = reference_speed_mm_min or 300.0
+        return round(1.0 + 120.0 * t / speed, 1)
+    return 0.0
+
+
+def wire_speeds(material, thickness_mm: float, passes: int) -> list[float] | None:
+    """Wire EDM feeds (mm/min) for the main cut and each skim through ``thickness_mm``, or None when the table has
+    no rate for the material."""
+    rate = WIRE_RATE_MM2_MIN.get(getattr(material, "name", material))
+    if rate is None:
+        return None
+    main = rate / max(thickness_mm, 0.5)
+    return [round(main, 2)] + [round(main * WIRE_SKIM_FACTORS[min(k, len(WIRE_SKIM_FACTORS) - 1)], 2)
+                               for k in range(max(0, passes - 1))]
