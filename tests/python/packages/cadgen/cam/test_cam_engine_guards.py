@@ -119,9 +119,6 @@ class DrillBodyGouge(unittest.TestCase):
         self.assertEqual([], _errors(result, "gouge"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class StaleOutputs(unittest.TestCase):
     """A plan never leaves the last run's GLB or G-code standing beside a refusal, a crash or a smaller job."""
@@ -219,16 +216,47 @@ class StaleOutputs(unittest.TestCase):
 
         tools = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
                  {"id": "T3", "type": "flat", "diameter_mm": 10, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30}]
-        job = mill_job([{"op": "face", "tool": "T3"}, {"op": "face", "tool": "T1"}], tools=tools)
+        # A stub over a post with a tool changer, so the same job also posts as one file without it.
+        job = mill_job([{"op": "face", "tool": "T3"}, {"op": "face", "tool": "T1"}], tools=tools,
+                       machine={"kind": "mill", "post": "linuxcnc", "max_rpm": 24000})
         with mock.patch.object(posts, "get_post", lambda *a, **k: Split(real_get(*a, **k))):
             result = self.plan(job)
         self.assertTrue(result.ok)
-        self.assertEqual(["plate.cam.glb", "plate.top.T1.nc", "plate.top.T3.nc"], self.names())
-        self.assertEqual([("top", "T1", "plate.top.T1.nc"), ("top", "T3", "plate.top.T3.nc")],
+        self.assertEqual(["plate.cam.glb", "plate.top.T1.ngc", "plate.top.T3.ngc"], self.names())
+        self.assertEqual([("top", "T1", "plate.top.T1.ngc"), ("top", "T3", "plate.top.T3.ngc")],
                          [(p["setup"], p["tool"], Path(p["file"]).name) for p in result.posts])
         cam = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]
         self.assertEqual(["T1", "T3"], [p["tool"] for p in cam["posts"]])
-        self.assertEqual(["plate.top.T1.nc", "plate.top.T3.nc"], cam["setups"][0]["posts"])
+        self.assertEqual(["plate.top.T1.ngc", "plate.top.T3.ngc"], cam["setups"][0]["posts"])
         # Planned again with a post that does not split: the per-tool files go with the last run.
         self.assertTrue(self.plan(job).ok)
-        self.assertEqual(["plate.cam.glb", "plate.top.nc"], self.names())
+        self.assertEqual(["plate.cam.glb", "plate.top.ngc"], self.names())
+
+
+class StockGuards(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from tests.python.support.cam_fixtures import plate_step
+
+        cls.directory = class_directory(cls)
+        cls.step = plate_step(cls.directory)
+
+    def plan(self, document, job, name: str):
+        from cadgen import cam
+
+        with quiet():
+            return cam.plan(document, job=job, out_dir=self.directory / name)
+
+    def test_a_box_size_bigger_than_the_part_is_taken_and_a_smaller_one_refused(self):
+        bigger = self.plan(self.step, mill_job([{"op": "face", "tool": "T1"}],
+                                               stock={"kind": "box", "size_mm": [70, 50, 8]}), "bigger")
+        self.assertTrue(bigger.ok)
+        self.assertTrue(bigger.verdict)
+        smaller = self.plan(self.step, mill_job([{"op": "face", "tool": "T1"}],
+                                                stock={"kind": "box", "size_mm": [50, 50, 8]}), "smaller")
+        self.assertFalse(smaller.ok)
+        self.assertIn("smaller than the part", smaller.findings[0]["summary"])
+
+
+if __name__ == "__main__":
+    unittest.main()

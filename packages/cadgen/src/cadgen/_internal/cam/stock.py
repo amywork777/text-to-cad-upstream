@@ -211,7 +211,8 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
             centre = (low + high) / 2.0
             s_low = np.array([centre[0] - size[0] / 2, centre[1] - size[1] / 2, low[2]])
             s_high = s_low + size
-            if np.any(s_low[:2] > low[:2] + 1e-9) or np.any(s_high > high + 1e-9):
+            # Refused only when the stock does not hold the part: smaller than it on some side.
+            if np.any(s_low > low + 1e-9) or np.any(s_high < high - 1e-9):
                 raise CamJobError(f"stock.size_mm {list(spec.size_mm)} is smaller than the part "
                                   f"({' x '.join(f'{v:g}' for v in (high - low))} mm); make it larger or use margin_mm")
         else:
