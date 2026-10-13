@@ -319,7 +319,8 @@ def _read_dxf(path: Path, *, thickness: float) -> Part:
         for z, flip in ((thickness, False), (0.0, True)):
             for tri in tris:
                 coords = np.asarray(tri.exterior.coords)[:3]
-                signed = np.cross(coords[1] - coords[0], coords[2] - coords[0])
+                e1, e2 = coords[1] - coords[0], coords[2] - coords[0]
+                signed = e1[0] * e2[1] - e1[1] * e2[0]
                 order = [0, 1, 2] if (signed > 0) != flip else [0, 2, 1]
                 vertices.append(np.column_stack([coords[order], np.full(3, z)]))
                 triangles.append(np.arange(3) + offset)
