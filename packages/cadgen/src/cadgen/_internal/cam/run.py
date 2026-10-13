@@ -185,6 +185,12 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
                        ops=op_plans, tolerance_mm=tolerance, logger=logger)
     with logger.timed("checks"):
         findings, ran, skipped = run_checks(ctx)
+    # An operation's own findings (ctx.meta["findings"], e.g. a drill the wrong size for its holes) join the checks'.
+    planner = [item for op in op_plans for item in op.meta.get("findings", ())]
+    if planner:
+        from cadgen._internal.cam.checks.base import by_severity
+
+        findings = by_severity(list(findings) + planner)
     for op in op_plans:
         if op.meta.get("plunges"):
             warnings.append(f"{op.summary}: plunged straight in {op.meta['plunges']} time(s); the tool must cut at "
@@ -333,6 +339,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     from cadgen._internal.cam.geom2d import Sections
     from cadgen._internal.cam.ir import Event, OpRange, Toolpath, ToolpathBuilder, concat
     from cadgen._internal.cam.linking import Heights
+    from cadgen._internal.cam.multiaxis import hold_rotary
     from cadgen._internal.cam.operations.base import PlanContext
     from cadgen._internal.cam.wcs import build_wcs
 
@@ -346,7 +353,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     history: list = []          # (wcs, toolpath) per operation planned so far, for PlanContext.history
     index = 0
     for setup in parsed.setups:
-        wcs = build_wcs(setup, stock_points=stock.vertices, part_points=part.vertices)
+        wcs = build_wcs(setup, stock_points=stock.vertices, part_points=part.vertices, machine=machine)
         part_w = wcs.to_wcs(part.vertices)
         stock_w = wcs.to_wcs(stock.vertices)
         top = float(stock_w[:, 2].max())
@@ -373,10 +380,12 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             if tool is not None and tool.id != current["tool"]:
                 events.append(("tool", {"tool": tool.id, "number": tool.number, "plain": tool.plain}))
                 current["tool"], current["rpm"] = tool.id, None
+            # An op may run the spindle the other way (a left-hand tap): ctx.meta["spindle_dir"] = "ccw".
+            direction = ctx.meta.get("spindle_dir", "cw")
             if feeds is not None and machine.kind not in ("laser", "plasma", "waterjet", "wire_edm") \
-                    and feeds.rpm != current["rpm"]:
-                events.append(("spindle", {"rpm": feeds.rpm, "dir": "cw"}))
-                current["rpm"] = feeds.rpm
+                    and (feeds.rpm != current["rpm"] or direction != current.get("dir", "cw")):
+                events.append(("spindle", {"rpm": feeds.rpm, "dir": direction}))
+                current["rpm"], current["dir"] = feeds.rpm, direction
             coolant = spec.coolant or parsed.coolant
             if coolant != current["coolant"]:
                 events.append(("coolant", {"mode": coolant}))
@@ -386,7 +395,8 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             if tail.pos[2] < heights.clearance - 1e-9:
                 tail.rapid(z=heights.clearance)
             tail_path = tail.build()
-            joined = concat([path, tail_path])
+            # Every move carries the setup's rotary position (3+2), or holds a continuous op's last one.
+            joined = hold_rotary(path, tail_path, wcs)
             wrapped = Toolpath(joined.moves, [Event(0, kind, data) for kind, data in events] + list(joined.events),
                                [OpRange(index, setup.id, spec.op, operation.plain, spec.tool, 0, len(joined.moves),
                                         dict(ctx.meta))], start=position, rotary=joined.rotary, lathe=joined.lathe)
