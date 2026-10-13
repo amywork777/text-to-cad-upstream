@@ -93,7 +93,7 @@ class Heightfield(unittest.TestCase):
 
 class Registries(unittest.TestCase):
     def test_every_check_in_the_spec_is_registered_and_unbuilt_ones_are_skipped(self):
-        from cadgen._internal.cam.checks import CHECK_NAMES, run_checks
+        from cadgen._internal.cam.checks import CHECK_NAMES, REGISTRY, available, run_checks
 
         self.assertEqual(("gouge", "holder_collision", "reach", "rapid_into_stock", "travel", "corner_radius",
                           "material_left", "fixture", "limits", "machine"), CHECK_NAMES)
@@ -101,7 +101,8 @@ class Registries(unittest.TestCase):
                               tolerance_mm=0.01)
         findings, ran, skipped = run_checks(ctx)
         self.assertEqual([], findings)
-        self.assertIn("holder_collision", skipped)
+        self.assertEqual([entry.name for entry in REGISTRY if not available(entry)], skipped)
+        self.assertIn("holder_collision", ran)
         self.assertIn("reach", ran)
 
     def test_the_operation_registry_teaches_what_is_planned(self):
