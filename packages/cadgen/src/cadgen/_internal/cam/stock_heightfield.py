@@ -86,6 +86,8 @@ class HeightfieldSim:
         self.top = np.where(empty, self.floor, top)
         self.bottom = np.where(empty, self.floor, bottom)
         self.tolerance = float(tolerance_mm)
+        #: Sample spacing along the path (the fit ladder may raise it past the cell).
+        self.step = self.cell
         self.cut_from_below = False
         self._part_heights = None
 
@@ -194,7 +196,7 @@ class HeightfieldSim:
             if tool is None or tool.family != "mill" or op.end <= op.start:
                 continue
             piece = toolpath.slice(op.start, op.end)
-            samples = piece.sample(self.tolerance, max_step_mm=self.cell)
+            samples = piece.sample(self.tolerance, max_step_mm=self.step)
             points = wcs.from_wcs(samples.points)
             cutting = np.isin(samples.kind, (FEED, PLUNGE, ARC_CW, ARC_CCW))
             rapid = samples.kind == RAPID

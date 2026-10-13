@@ -1,7 +1,9 @@
 """``reach``: the cut goes deeper than the tool's flutes (the shank rubs the walls) or its stickout (the holder hits).
 
-The depth is the simulator's: the deepest the tool tip sat below material within reach of its side, per operation.
-A setup the simulator skipped falls back to the setup's stock top minus the operation's lowest cutting move.
+The depth is the simulator's: the deepest the tool tip sat below material within reach of its side (the walls next
+to the tool, not the stock top far away), per operation, so a stepped pocket is judged step by step. A setup the
+simulator skipped falls back to the setup's stock top minus the operation's lowest cutting move (conservative).
+A holder wider than the cut is judged by ``holder_collision``, not here.
 """
 
 from __future__ import annotations

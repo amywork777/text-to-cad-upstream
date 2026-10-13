@@ -397,8 +397,8 @@ class CamPlanResult:
         for op in self.operations:
             line = f"{op['setup']} {op['index'] + 1}. {op['summary']}"
             if op.get("rpm"):
-                line += f" · {op['rpm']} rpm · {op['feed_mm_min']} mm/min"
-            lines.append(line + f" · {_duration(op.get('time_s', 0.0))}")
+                line += f" · {op['rpm']:g} rpm · {op['feed_mm_min']:g} mm/min"
+            lines.append(line)
             lines += [f"  lite: {limit}" for limit in op.get("limits", ())]
         if self.glb is not None:
             lines.append(f"wrote GLB: {_display(self.glb)}")
@@ -410,14 +410,3 @@ class CamPlanResult:
         lines.append("safety: the G-code is not proven on a machine; air-cut or single-block it first, "
                      "and check the work offset and every tool length")
         return lines
-
-
-def _duration(seconds: float) -> str:
-    """``42 s``, ``3.5 min``, ``1 h 12 min``: a cycle time as the viewer says it."""
-    seconds = float(seconds)
-    if seconds < 60:
-        return f"{seconds:.0f} s"
-    if seconds < 3600:
-        return f"{seconds / 60:.1f} min"
-    hours, rest = divmod(seconds, 3600)
-    return f"{int(hours)} h {rest / 60:.0f} min"
