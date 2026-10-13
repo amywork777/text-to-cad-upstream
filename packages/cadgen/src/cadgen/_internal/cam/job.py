@@ -307,6 +307,9 @@ def _machine(raw: object) -> Machine:
             raise CamJobError("machine.rotary_limits_deg must be an object like {\"a\": [-120, 120]}")
         check_keys(value, ("a", "b", "c"), "machine.rotary_limits_deg")
         limits = {axis: number_list(v, f"machine.rotary_limits_deg.{axis}", length=2) for axis, v in value.items()}
+        for axis, (low, high) in limits.items():
+            if high <= low:
+                raise CamJobError(f"machine.rotary_limits_deg.{axis} must be [low, high] with high more than low")
     diameter_mode = raw.get("diameter_mode", True)
     if not isinstance(diameter_mode, bool):
         raise CamJobError("machine.diameter_mode must be true or false")
@@ -444,6 +447,10 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
         if "b_deg" in orientation and machine.kinematics != "bc_head":
             raise CamJobError(f"{where}.orientation: b_deg needs a mill5 with kinematics bc_head; use a_deg and c_deg")
         orientation = {k: float(v) for k, v in orientation.items()}
+        from cadgen._internal.cam.multiaxis import check_orientation
+
+        # What the machine's rotary axes (and machine.rotary_limits_deg) can reach; every axis it has, named.
+        orientation = check_orientation(orientation, machine, f"{where}.orientation")
     else:
         orientation = choice(orientation, ORIENTATIONS, f"{where}.orientation")
     origin = raw.get("origin", "stock-top-center")
