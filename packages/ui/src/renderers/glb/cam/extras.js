@@ -100,16 +100,28 @@ function toolType(op, tools) {
   return /\bball\b/i.test(text(op.tool_plain)) ? "ball" : "";
 }
 
+const point = (value) => {
+  const at = list(value).map((entry) => number(entry)).filter((entry) => entry !== null);
+  return at.length === 3 ? at : null;
+};
+const opIndex = (value) => (Number.isInteger(number(value)) ? number(value) : null);
+
+/**
+ * A finding as the viewer shows it. cadgen writes `severity`, `summary` and the places it is about as `items`
+ * (`[{ setup, operation, at, ... }]`); a flat `level`, `message`, `operation` and `at` are read too. `operation`
+ * is the first operation it names, `operations` every one, `at` the first place.
+ */
 function readFinding(raw) {
   if (!plainObject(raw)) return null;
   const level = text(raw.level) || text(raw.severity) || "warning";
   const message = text(raw.message) || text(raw.summary) || text(raw.description) || text(raw.check);
   if (!message) return null;
-  const at = list(raw.at).map((value) => number(value)).filter((value) => value !== null);
+  const items = list(raw.items).filter(plainObject);
+  const operations = [...new Set([opIndex(raw.operation), ...items.map((item) => opIndex(item.operation))].filter((index) => index !== null))];
   return {
     check: text(raw.check), level: level === "error" ? "error" : level === "warning" ? "warning" : level, message,
-    operation: Number.isInteger(number(raw.operation)) ? number(raw.operation) : null,
-    at: at.length === 3 ? at : null,
+    operation: operations.length ? operations[0] : null, operations,
+    at: point(raw.at) || items.map((item) => point(item.at)).find(Boolean) || null,
   };
 }
 

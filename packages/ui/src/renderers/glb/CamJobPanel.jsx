@@ -31,9 +31,10 @@ export function camChoices(job) {
   }
   job.findings.forEach((finding, index) => {
     if (finding.level !== "error") return;
-    const op = job.operations.find((entry) => entry.index === finding.operation) || null;
-    choices.set(`finding:${index}`, { id: `finding:${index}`, ops: op ? [op.index] : [], faces: op?.faces || [],
-      summary: op ? `${finding.message} (${op.summary})` : finding.message });
+    const ops = job.operations.filter((entry) => (finding.operations || [finding.operation]).includes(entry.index));
+    const op = ops[0] || null;
+    choices.set(`finding:${index}`, { id: `finding:${index}`, ops: ops.map((entry) => entry.index), faces: [...new Set(ops.flatMap((entry) => entry.faces))],
+      summary: op ? `${finding.message} (${ops.map((entry) => entry.summary).join("; ")})` : finding.message });
   });
   return choices;
 }

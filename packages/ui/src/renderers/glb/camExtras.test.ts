@@ -36,7 +36,7 @@ it('reads a sparse or malformed job forgivingly: places, clocks, plain words and
   expect(job.operations.map((op: any) => [op.index, op.plain, op.t0, op.t1, op.toolDiameterMm])).toEqual([[0, 'drill', 0, 12, 5], [1, 'contour', 12, 42, null]]);
   expect(job.operations[0].summary).toBe('drill with 5 mm drill');
   // A finding with nothing to say is left out.
-  expect(job.findings).toEqual([{ check: 'gouge', level: 'error', message: 'Cuts into the part', operation: null, at: null }]);
+  expect(job.findings).toEqual([{ check: 'gouge', level: 'error', message: 'Cuts into the part', operation: null, operations: [], at: null }]);
   expect(job.verdict).toMatchObject({ status: 'fix', headline: '1 to fix', errors: 1, warnings: 0 });
   expect(job.durationS).toBe(42);
 });
@@ -70,4 +70,12 @@ it('takes a setup\'s tool axis from its matrix (a 3+2 tilt, an indexed rotary po
     ['top', '+Z', [0, 0, 1]], ['tilt', 'A 30°', [0, 0.5, c]], ['side', '-Y', [0, -1, 0]]]);
   expect(job.setups[1].across).toEqual([1, 0, 0]);
   expect(job.posts.map((post: any) => post.tool)).toEqual(['', 'T3']);
+});
+
+it('reads a finding as cadgen writes it: its operations and place in items', () => {
+  const extras = camExtras() as any;
+  extras.findings = [{ check: 'rapid_into_stock', severity: 'error', type: 'rapid_into_stock', summary: 'A rapid crashes into the stock',
+    description: 'raise the clearance', items: [{ setup: 'top', operation: 1, move: 6, at: [20.7, 1, 12.4] }, { setup: 'top', operation: 0 }] }];
+  const job = readCamJob(camScene({ extras }))!;
+  expect(job.findings).toEqual([{ check: 'rapid_into_stock', level: 'error', message: 'A rapid crashes into the stock', operation: 1, operations: [1, 0], at: [20.7, 1, 12.4] }]);
 });
