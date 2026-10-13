@@ -109,12 +109,19 @@ class WCS:
         return [[round(v, 9) for v in row] for row in rows] + [[0.0, 0.0, 0.0, 1.0]]
 
 
-def build_wcs(setup, *, stock_points, part_points) -> WCS:
+def build_wcs(setup, *, stock_points, part_points, machine=None) -> WCS:
     """The WCS of ``setup`` (a :class:`~cadgen._internal.cam.job.Setup`), given the stock's and the part's points
-    (any (N, 3) arrays in part mm whose bounds are theirs: box corners, mesh vertices)."""
+    (any (N, 3) arrays in part mm whose bounds are theirs: box corners, mesh vertices). On a mill4/mill5 (``machine``
+    given) a fixed orientation the rotary axes reach is that rotary position, and every rotary axis is posted
+    (``multiaxis.orientation_rotary``)."""
     import numpy as np
 
-    rotation = rotation_for(setup.orientation)
+    indexed = None
+    if machine is not None:
+        from cadgen._internal.cam.multiaxis import orientation_rotary
+
+        indexed = orientation_rotary(setup.orientation, machine)
+    rotation = rotation_for(indexed if indexed is not None else setup.orientation)
     r = np.asarray(rotation)
     origin = setup.origin
     if isinstance(origin, dict):
@@ -130,7 +137,9 @@ def build_wcs(setup, *, stock_points, part_points) -> WCS:
         else:
             o = np.array([(low[0] + high[0]) / 2.0, (low[1] + high[1]) / 2.0, high[2]])
     rotary = ()
-    if isinstance(setup.orientation, dict):
+    if indexed is not None:
+        rotary = tuple((axis[0], float(value)) for axis, value in indexed.items())
+    elif isinstance(setup.orientation, dict):
         rotary = tuple((axis[0], float(value)) for axis, value in setup.orientation.items() if value)
     return WCS(setup_id=setup.id, rotation=tuple(tuple(float(v) for v in row) for row in rotation),
                origin=tuple(float(v) for v in o), rotary_deg=rotary, orientation=setup.orientation)
