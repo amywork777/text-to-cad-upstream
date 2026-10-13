@@ -5,6 +5,12 @@ one whose module this cadgen has and calls ``run(ctx: CheckContext) -> list[find
 :mod:`.base`). A check whose module is absent is skipped and named in the result's ``skipped`` list, never an error:
 adding a check is adding its module. Error-level findings make the verdict "N to fix"; warnings do not.
 
+A check can also not reach a setup: the ones judged on the simulated stock (:data:`ON_STOCK`) are not evaluated for
+a setup the simulator skipped (a side setup on a heightfield), and a check that could not read what it judges says
+so with a ``not_judged`` finding. Each is a ``skipped`` entry naming the check, the setup (and operation) and why,
+and a setup the simulator skipped gets one warning finding naming the checks it went without: never a silent pass.
+A check none of whose setups it could judge is not listed as run.
+
 Stdlib only at import.
 """
 
@@ -52,15 +58,50 @@ def available(entry: Entry) -> bool:
     return importlib.util.find_spec(entry.target.split(":")[0]) is not None
 
 
-def run_checks(ctx) -> tuple[list[dict], list[str], list[str]]:
-    """``(findings errors first, checks run, checks skipped)``."""
+#: Checks judged on the simulated stock, and what a setup the simulator skipped goes without. ``whole``: the check
+#: judges nothing else, so it did not run at all when no setup was simulated.
+ON_STOCK = {
+    "rapid_into_stock": ("rapids are not checked against the uncut stock", True),
+    "holder_collision": ("the holder and shank are checked against the part only, not the stock", False),
+    "material_left": ("material left after its cuts is not judged", True),
+}
+
+
+def run_checks(ctx) -> tuple[list[dict], list[str], list[dict]]:
+    """``(findings errors first, checks run, checks skipped)``: a skipped entry is ``{"check", "why"}``, with
+    ``"setup"`` (and ``"operation"``) when the check did not reach that setup or operation."""
+    from cadgen._internal.cam.checks.base import finding
+
     found: list[dict] = []
-    ran, skipped = [], []
+    ran: list[str] = []
+    skipped: list[dict] = []
     for entry in REGISTRY:
         if not available(entry):
-            skipped.append(entry.name)
+            skipped.append({"check": entry.name, "why": "this cadgen does not have it yet"})
             continue
         module, function = entry.target.split(":")
         found.extend(getattr(importlib.import_module(module), function)(ctx))
         ran.append(entry.name)
+    # Setups the simulator skipped: the stock checks did not judge them.
+    reports = getattr(ctx, "sim_reports", {}) or {}
+    unsimulated = [(setup_id, report.skipped) for setup_id, report in reports.items() if report.skipped]
+    for setup_id, why in unsimulated:
+        names = [name for name in ON_STOCK if name in ran]
+        if not names:
+            continue
+        skipped += [{"check": name, "setup": setup_id, "why": f"{why}: {ON_STOCK[name][0]}"} for name in names]
+        found.append(finding(
+            "checks", "warning", "setup_not_simulated",
+            f"Setup '{setup_id}' is not simulated, so {', '.join(names)} did not judge it",
+            f"{why}. Not judged there: {'; '.join(ON_STOCK[name][0] for name in names)}. Check that setup by hand: "
+            "air-cut it or run it single-block first",
+            [{"setup": setup_id, "checks": names}]))
+    if reports and len(unsimulated) == len(reports):
+        ran = [name for name in ran if not (name in ON_STOCK and ON_STOCK[name][1])]
+    # A check that could not read what it judges said so (``not_judged``): a skipped entry too.
+    for item in found:
+        if item.get("type") == "not_judged":
+            for where in item["items"]:
+                skipped.append({"check": item["check"], **{k: where[k] for k in ("setup", "operation") if k in where},
+                                "why": item["summary"]})
     return by_severity(found), ran, skipped

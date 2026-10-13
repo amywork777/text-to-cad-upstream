@@ -325,5 +325,58 @@ class DrawingReader(unittest.TestCase):
         self.assertIn(f"POINT {handles[0]}", str(caught.exception))
 
 
+
+class ChecksSayWhatTheyDidNotJudge(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from tests.python.support.cam_fixtures import plate_step
+
+        cls.directory = class_directory(cls)
+        cls.step = plate_step(cls.directory)
+
+    def plan(self, job, name: str):
+        from cadgen import cam
+
+        with quiet():
+            return cam.plan(self.step, job=job, out_dir=self.directory / name)
+
+    def test_a_side_setup_the_heightfield_cannot_simulate_is_a_warning_and_skipped_entries(self):
+        from tests.python.support.cam_fixtures import read_glb
+
+        job = mill_job([], setups=[{"id": "top", "orientation": "+Z", "operations": [{"op": "face", "tool": "T1"}]},
+                                   {"id": "side", "orientation": "+X", "operations": [{"op": "face", "tool": "T1"}]}])
+        result = self.plan(job, "side")
+        self.assertTrue(result.ok)
+        (warning,) = [f for f in result.findings if f["type"] == "setup_not_simulated"]
+        self.assertEqual("warning", warning["severity"])
+        self.assertIn("'side'", warning["summary"])
+        self.assertIn("rapid_into_stock", warning["items"][0]["checks"])
+        checks = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]["checks"]
+        skipped = {(entry["check"], entry.get("setup")) for entry in checks["skipped"]}
+        self.assertIn(("rapid_into_stock", "side"), skipped)
+        self.assertNotIn(("rapid_into_stock", "top"), skipped)
+        self.assertIn("rapid_into_stock", checks["ran"])                  # it judged the top setup
+
+    def test_a_turned_section_the_gouge_check_cannot_read_is_said_and_anything_else_raises(self):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        from cadgen._internal.cam.checks._turning import gouges
+        from cadgen._internal.cam.job_errors import CamJobError
+        from cadgen._internal.cam.tools import parse_tool
+
+        op = SimpleNamespace(tool=parse_tool({"id": "T1", "type": "turn"}, 0), operation=SimpleNamespace(
+            family="Turning"), start=0, end=4, meta={}, setup="lathe", index=0, summary="Rough turn with T1")
+        ctx = SimpleNamespace(job=SimpleNamespace(machine=SimpleNamespace(kind="lathe")), part=None,
+                              tolerance_mm=0.01, ops=[op], setup_plan=lambda _: SimpleNamespace(wcs=None))
+        with mock.patch("cadgen._internal.cam.turn_profile.read_profile", side_effect=CamJobError("not round")):
+            (found,) = gouges(ctx)
+        self.assertEqual(("gouge", "warning", "not_judged"), (found["check"], found["severity"], found["type"]))
+        self.assertIn("not round", found["summary"])
+        with mock.patch("cadgen._internal.cam.turn_profile.read_profile", side_effect=RuntimeError("bug")):
+            with self.assertRaises(RuntimeError):
+                gouges(ctx)
+
+
 if __name__ == "__main__":
     unittest.main()

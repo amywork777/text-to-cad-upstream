@@ -26,6 +26,15 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | `material_left` | warning | stock is left above the part after every operation, beyond `stock_to_leave_mm` | add a finishing or rest operation where it says |
 | `limits` | warning | a feed or speed was clamped to `max_feed_mm_min` or `max_rpm` | none needed; report it |
 
+## What a check could not judge
+
+A check never passes in silence. A setup the stock simulator cannot simulate (a side setup on a
+3-axis mill's heightfield) gets a warning (`check` `checks`, `type` `setup_not_simulated`) naming
+the checks that did not judge it (`rapid_into_stock`, `material_left`, and `holder_collision`
+against the stock); a check that could not read what it judges says so with a `not_judged`
+warning. Each is an entry in the GLB's `checks.skipped` (`check`, `setup`, `why`). Tell the user
+which setups went unchecked and that they must be air-cut first.
+
 ## Adapted steps
 
 A part too big for the time and memory target is never refused: the run coarsens the stock grid,

@@ -1,8 +1,12 @@
-"""``material_left``: stock still standing above the part after every operation, beyond the stock to leave."""
+"""``material_left``: stock still standing above the part after every operation, beyond the stock to leave.
+
+A simulator that cannot read the part says so as a ``not_judged`` warning, never a silent pass.
+"""
 
 from __future__ import annotations
 
 from cadgen._internal.cam.checks.base import finding, xyz
+from cadgen._internal.cam.job_errors import CamJobError
 
 __all__ = ["run"]
 
@@ -14,7 +18,12 @@ def run(ctx) -> list[dict]:
     if ctx.sim is None:
         return []
     leave = max((op.spec.stock_to_leave_mm for op in ctx.ops), default=0.0)
-    left = ctx.sim.material_left(ctx.part, stock_to_leave_mm=leave, tolerance_mm=ctx.tolerance_mm)
+    try:
+        left = ctx.sim.material_left(ctx.part, stock_to_leave_mm=leave, tolerance_mm=ctx.tolerance_mm)
+    except CamJobError as exc:
+        return [finding("material_left", "warning", "not_judged",
+                        f"Material left was not judged: the simulated stock could not be compared with the part ({exc})",
+                        "check the part against the program by hand", [{}])]
     if left is None or left.volume_mm3 < MIN_VOLUME_MM3:
         return []
     return [finding(

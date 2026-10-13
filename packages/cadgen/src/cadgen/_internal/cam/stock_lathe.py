@@ -252,10 +252,8 @@ class LatheSim:
     def material_left(self, part, *, stock_to_leave_mm: float, tolerance_mm: float) -> MaterialLeft | None:
         if self.material is None or self.wcs is None or part is None:
             return None
-        try:
-            target = self.target(part, self.wcs, tolerance_mm=tolerance_mm)
-        except Exception:  # noqa: BLE001 - a part the lathe cannot read was refused when planning
-            return None
+        # A part whose turned section cannot be read raises (CamJobError): the material_left check says so.
+        target = self.target(part, self.wcs, tolerance_mm=tolerance_mm)
         if target is None:
             return None
         slack = stock_to_leave_mm + max(0.02, 2.0 * tolerance_mm)

@@ -6,12 +6,14 @@ the op's ``meta["lathe"]``: the insert with its nose radius, edges and holder, t
 every cutting move in the setup's half-plane, and compared with the part's turned section (its max-radius envelope,
 :func:`~cadgen._internal.cam.turn_profile.read_profile`): any overlap deeper than the tolerance is a gouge, measured as
 how far inside the section the tool reaches. A thread is not judged (it cuts below the modelled major diameter on
-purpose). Called from ``gouge.run``.
+purpose). A part whose turned section cannot be read is not judged and says so (a ``not_judged`` warning). Called
+from ``gouge.run``.
 """
 
 from __future__ import annotations
 
 from cadgen._internal.cam.checks.base import finding, xyz
+from cadgen._internal.cam.job_errors import CamJobError
 
 __all__ = ["gouges"]
 
@@ -36,7 +38,12 @@ def gouges(ctx) -> list[dict]:
         plan = ctx.setup_plan(op.setup)
         try:
             section = read_profile(ctx.part, plan.wcs, tolerance_mm=ctx.tolerance_mm).region
-        except Exception:  # noqa: BLE001 - a part the lathe cannot read was refused when it was planned
+        except CamJobError as exc:
+            # Said, never passed in silence; anything but a reading the lathe refuses is a fault and propagates.
+            out.append(finding(
+                "gouge", "warning", "not_judged",
+                f"{op.summary} was not judged for gouges: the part's turned section could not be read ({exc})",
+                "check the cut against the part by hand, or report it", [{"setup": op.setup, "operation": op.index}]))
             continue
         shapes = tool_shape(op.tool, role, **params)
         piece = plan.toolpath.slice(op.start, op.end)
