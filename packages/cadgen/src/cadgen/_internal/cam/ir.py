@@ -34,6 +34,29 @@ simulator, the checks and the GLB read the expansion; a post either emits the cy
 posts the expansion. The expansion ends where the controller's cycle leaves the tool (over the last hole at the R
 plane or the initial level), so both ways leave the machine in the same place.
 
+What the posts read beyond that (every key optional unless said; a post that cannot emit a cycle natively, or finds
+a key it needs missing, posts the expansion, so the expansion must always be the whole truth):
+
+- more drilling ``cycle`` names: ``bore_stop`` (G86), ``bore_dwell`` (G89), ``fine_bore`` (G76 on a mill, with
+  ``shift_mm``); ``left_hand`` true on a ``tap`` (G74).
+- lathe ``cycle`` ``thread`` (G76): ``z_start``, ``z_end``, ``x_clear`` (the radius it starts and ends at),
+  ``x_crest`` (the crest's radius: the major for an external thread, the minor for an internal one), ``depth_mm``
+  (radial thread height; the root is ``x_crest`` -/+ it), ``pitch_mm`` (the lead), ``external`` (default true),
+  ``first_depth_mm``, ``min_depth_mm``, ``finish_mm``, ``spring_passes``, ``infeed_deg`` (29.5), ``angle_deg``
+  (60), ``taper_mm`` (radius change from ``z_start`` to ``z_end``). The expansion starts and ends at
+  ``(x_clear, z_start)``.
+- lathe ``cycle`` ``turn_rough`` (G71): ``profile`` (``[[x_radius, z], ...]``, the finished profile in cutting
+  order), ``depth_mm`` (radial depth a pass), ``allowance_x_mm`` (radial), ``allowance_z_mm``, ``retract_mm``,
+  ``feed``, ``x_start``/``z_start`` (where it starts and ends), ``external`` (default true).
+- ``spindle`` on a lathe: ``css_m_min`` (constant surface speed; ``rpm`` stays the speed the times assumed),
+  ``max_rpm`` (the clamp), ``feed_per_rev`` true (posted per revolution: F = the move's mm/min over ``rpm``).
+- multi-axis: a ``setup`` event's ``rotary`` (3+2) means the moves are in the tilted WCS (machine-aligned after the
+  table turns); moves whose ``a b c`` change along cutting moves are simultaneous and carry the tool tip in the
+  setup's WCS at rotary zero (what TCP, G43.4/G234, expects).
+- ``beam`` on a wire EDM: ``taper_deg`` (signed: plus leans the wire's top to the left of travel), ``thickness_mm``
+  (program plane to the top guide's plane), ``offset_side`` (``left``/``right``: where the wire runs, for
+  controller compensation).
+
 **Operations** are :class:`OpRange` rows: the move range ``[start, end)`` of each operation, its global index, setup,
 op name, plain word, tool, and ``meta`` (planner facts a check reads, e.g. ``unreachable`` areas, ``stock_to_leave``).
 
