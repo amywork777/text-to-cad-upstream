@@ -58,6 +58,9 @@ class PlanContext:
     meta: dict = field(default_factory=dict)
     #: Every feeds the op asked for, in order; the first is the one its row shows.
     chosen_feeds: list = field(default_factory=list)
+    #: Everything planned before this operation, in program order across setups: ``(wcs, Toolpath)`` per operation
+    #: (its op range, tool and events included), so a planner can simulate the stock as it stands (rest machining).
+    history: list = field(default_factory=list)
 
     @property
     def machine(self):

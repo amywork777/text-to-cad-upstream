@@ -143,6 +143,8 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
 
     setup_plans, op_plans, notes = plan_setups(parsed, operations, part, stock, logger)
     warnings += notes
+    # An operation that coarsened its own sampling says so in its meta (``adapted``: fit-ladder steps).
+    adapted += [{**step, "operation": op.index} for op in op_plans for step in op.meta.get("adapted", ())]
     mark = lap("plan_s", mark)
 
     # Times: program time runs on across setups.
@@ -341,6 +343,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     warnings: list[str] = []
     setup_plans: list[SetupPlan] = []
     op_plans: list[OpPlan] = []
+    history: list = []          # (wcs, toolpath) per operation planned so far, for PlanContext.history
     index = 0
     for setup in parsed.setups:
         wcs = build_wcs(setup, stock_points=stock.vertices, part_points=part.vertices)
@@ -361,7 +364,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             tool = tools.get(spec.tool) if spec.tool else None
             ctx = PlanContext(job=parsed, setup=setup, wcs=wcs, heights=heights, part=part, stock=stock,
                               sections=sections, spec=spec, index=index, tool=tool, start=position,
-                              tolerance_mm=tolerance, log=logger.debug)
+                              tolerance_mm=tolerance, log=logger.debug, history=list(history))
             with logger.timed(f"plan {setup.id} {spec.index + 1}. {spec.op}"):
                 path = operation.plan(ctx, params)
             path = path.with_op(index)
@@ -388,6 +391,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
                                [OpRange(index, setup.id, spec.op, operation.plain, spec.tool, 0, len(joined.moves),
                                         dict(ctx.meta))], start=position, rotary=joined.rotary, lathe=joined.lathe)
             pieces.append(wrapped)
+            history.append((wcs, wrapped))
             position = tuple(float(v) for v in wrapped.positions()[-1])
             op_plans.append(OpPlan(index=index, setup=setup.id, spec=spec, operation=operation, tool=tool, feeds=feeds,
                                    params=params, meta=dict(ctx.meta), summary=operation.summary(ctx, params)))
