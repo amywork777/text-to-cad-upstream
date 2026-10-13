@@ -1,10 +1,12 @@
 """``mach3``: Mach3 and Mach4 (``.tap``) for mills, 4th-axis mills, routers and plasma tables.
 
 Every program sets ``G91.1`` (incremental arc centres): Mach3's IJ mode can be configured absolute, and an arc read
-the other way is a crash. Mill and router: ``T M6`` then ``G43 H`` at a clearance Z, G2/G3, M8/M7/M9, the canned
+the other way is a crash. Mill and router: ``M5 M9`` and ``G53 G0 Z0`` (Z to the machine's top) then ``T M6``,
+``G0 X Y`` over the first point and ``G43 H`` at a clearance Z, G2/G3, M8/M7/M9, the canned
 cycles G81 G82 G83 (Q pecks back to R) G73 G84 G85 G86 G89 natively (a left-hand tap and fine boring post expanded),
 dwell ``G4 P`` in seconds (``machine.dwell_ms: true`` when Mach's General Config has "G4 dwell in ms" ticked), ``M30``.
-A 4th axis posts A words; a 3+2 setup turns A after each tool change (set the work offset on the turned part).
+A 4th axis posts A words; a 3+2 setup turns A after each tool change, Z at the top (set the work offset on the
+turned part), and the program ends with Z at the top and A back at zero (``G53 G0 A0``).
 Mach has no tool centre point control, so a toolpath that turns A while cutting (a wrap) is refused: post it with
 linuxcnc, fanuc or haas.
 
@@ -31,6 +33,10 @@ class Mach3Post(IsoPost):
     drill_codes = {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "bore": "G85",
                    "ream": "G85", "bore_stop": "G86", "bore_dwell": "G89"}
     left_tap_code = ""
+    mill_tool_home = ("G53 G0 Z0",)
+    mill_end_home = ("G53 G0 Z0",)
+    index_home_lines = ("G53 G0 Z0",)
+    rotary_home_style = "g53"
     options = {"cycles": CYCLES_OPTION, **torch_options(False), "dwell_ms": DWELL_MS}
 
     def begin(self, program: Program) -> None:

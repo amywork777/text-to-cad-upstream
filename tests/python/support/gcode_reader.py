@@ -7,7 +7,8 @@ G83/G73, back to R (G99) or the initial level (G98). G90 only (``G91`` is refuse
 G20/G21 (inches scaled to mm), work offsets, F/S/T/M words, and comments in parentheses or after ``;``.
 
 The dialect bits the posts write are read too, backwards compatibly: A/B/C words (a rotary-only line is a move of its
-own), ``G28``/``G30`` homes (recorded, no motion: the IR has none), ``G92`` (sets the position), tool length and
+own), ``G28``/``G30`` homes and ``G53`` machine-coordinate moves (recorded in ``homes``, no motion: the IR has
+none), ``G92`` (sets the position), tool length and
 TCP words (``G43``, ``G43.4``, ``G234``: ``tcp``), tilted planes (``G68.2``: ``tilt``; ``G254``: ``dwo``), wire taper
 and compensation (``G51``/``G52``: ``taper``; ``G41``/``G42``: ``comp``; ``U V`` on a move: ``uv``), feed per
 revolution (``G95``, or the lathe's ``G99``: ``Move.per_rev``) and an inline laser power ``S`` (``Move.s``).
@@ -115,7 +116,7 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 profile = None
             continue
         explicit_motion = None
-        homing = "G28" in gs or "G30" in gs
+        homing = "G28" in gs or "G30" in gs or "G53" in gs
         for code in gs:
             if code in ("G17", "G18", "G19"):
                 plane = code
@@ -154,7 +155,7 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 program.taper.append((code, values.get("A", 0.0)))
             elif code in ("G41", "G42"):
                 program.comp.append((code, values.get("D")))
-            elif code in ("G28", "G30"):
+            elif code in ("G28", "G30", "G53"):
                 program.homes += 1
             elif code == "G92":
                 pos[0] = values.get("X", pos[0] / scale) * scale
@@ -333,3 +334,12 @@ def sample(program: Program, chord: float = 0.005, max_step: float | None = None
                 points.append([a + (b - a) * k / count for a, b in zip(move.start, move.end)])
                 kinds.append(move.kind)
     return np.asarray(points, dtype=float), kinds
+
+
+def posted_text(result, setup: str | None = None) -> str:
+    """Every file a ``cam.plan`` result posted for ``setup`` (default: the first setup), joined in program order: a
+    post that writes one file per tool (GRBL) splits a setup, and the files read back as one program."""
+    from pathlib import Path
+
+    setup = setup if setup is not None else result.posts[0]["setup"]
+    return "".join(Path(p["file"]).read_text(encoding="utf-8") for p in result.posts if p["setup"] == setup)

@@ -102,10 +102,25 @@ class Goldens(unittest.TestCase):
             with self.subTest(post=post_name, case=golden):
                 text = render(post_name, kind, keys)[2].upper()
                 head = "\n".join(text.splitlines()[:8])
-                self.assertIn("NOT PROVEN ON A MACHINE", head)
-                self.assertIn("AIR-CUT IT OR RUN IT SINGLE-BLOCK FIRST", head)
-                self.assertIn("VERIFY THE WORK OFFSET", head)
+                self.assertIn("NOT PROVEN ON A MACHINE. AIR-CUT IT OR RUN IT SINGLE-BLOCK FIRST", head)
                 self.assertTrue(text.isascii())
+                self.assertLessEqual(max(len(line) for line in text.splitlines()), 70)
+                # What to verify is the machine kind's: tool lengths on a mill, never on a beam or a wire.
+                machine = _KIND.get(kind, kind)
+                if machine in ("mill", "mill4", "mill5", "router"):
+                    self.assertIn("VERIFY THE WORK OFFSET", head)
+                    self.assertIn("EVERY TOOL LENGTH", head)
+                elif machine == "lathe":
+                    self.assertIn("EVERY TOOL'S OFFSETS", head)
+                else:
+                    self.assertNotIn("TOOL LENGTH", text)
+                    if post_name == "marlin":
+                        self.assertNotIn("G54", text)
+                        self.assertIn("THE ORIGIN IS WHERE THE HEAD STARTS", head)
+                    elif post_name == "wire_edm":
+                        self.assertIn("VERIFY THE START HOLE", head)
+                    else:
+                        self.assertIn("VERIFY THE WORK OFFSET", head)
 
 
 class ReadBack(unittest.TestCase):
@@ -113,7 +128,8 @@ class ReadBack(unittest.TestCase):
     expand are checked by their parameters instead)."""
 
     def _ir_points(self, program, post, masked_kinds, step=None):
-        path = program.toolpath
+        # The IR as posted: the first rapid after each tool change runs X Y first, then Z.
+        path = F.with_entries(program.toolpath, lathe=program.machine.kind == "lathe")
         samples = path.sample(0.002, max_step_mm=step)
         keep = np.ones(len(samples.points), dtype=bool)       # the start too: a G43 Z line can sit on it
         for event in path.events:
@@ -163,9 +179,8 @@ class ReadBack(unittest.TestCase):
                 self.assertAlmostEqual(thread["x_clear"], F.THREAD["x_clear"], places=4)
                 self.assertEqual(read.roughs, [], "roughing posts expanded unless machine.cycles is true")
                 points, _ = gcode_reader.sample(read, 0.002, max_step=0.05)
-                ir = self._ir_points(program, post, ("thread",))
-                self.assertLess(_nearest(points, program.toolpath.sample(0.002, max_step_mm=0.05).points), 0.035,
-                                "the thread's final pass is the IR's last pass")
+                ir = F.with_entries(program.toolpath, lathe=True).sample(0.002, max_step_mm=0.05).points
+                self.assertLess(_nearest(points, ir), 0.035, "the thread's final pass is the IR's last pass")
         for post_name in ("fanuc", "haas"):
             with self.subTest(post=post_name, cycles=True):
                 post, program, text = render(post_name, "lathe", {"cycles": True})
@@ -188,6 +203,8 @@ class ReadBack(unittest.TestCase):
                 moves = program.toolpath.moves
                 ir = [tuple(np.round([m["x"], m["y"], m["z"], m["a"], m["b"], m["c"]], 4)) for m in moves
                       if int(m["kind"]) != DWELL]
+                # The entry turns the rotary axes first, where the tool starts, before any linear move.
+                ir.insert(0, tuple(np.round([*program.toolpath.start, *(moves[0][a] for a in "abc")], 4)))
                 posted = [tuple(np.round([*mv.end, mv.abc["A"], mv.abc["B"], mv.abc["C"]], 4)) for mv in read.moves
                           if mv.kind != "dwell"]
                 dedupe = lambda rows: [r for k, r in enumerate(rows) if k == 0 or r != rows[k - 1]]  # noqa: E731
@@ -211,7 +228,9 @@ class ReadBack(unittest.TestCase):
         self.assertEqual(len(read.tilt), 3)
         self.assertEqual(read.tilt[0], {"X": 0.0, "Y": 0.0, "Z": 0.0, "I": -90.0, "J": -30.0, "K": 0.0})
         self.assertEqual(text.count("G69"), 3)
-        self.assertNotIn(" A", text.split("G21", 1)[1])          # G68.2 turns the table: no A/C words posted
+        moves = "\n".join(line for line in text.split("G21", 1)[1].splitlines() if "G28" not in line)
+        self.assertNotIn(" A", moves)                           # G68.2 turns the table: no A/C words posted
+        self.assertTrue(text.rstrip().endswith("G91 G28 Z0.\nG90\nG91 G28 A0. C0.\nG90\nM30\n%"))
 
 
 class Dialects(unittest.TestCase):
@@ -319,7 +338,8 @@ class Dialects(unittest.TestCase):
     def test_wire_edm_start_point_threading_and_taper(self):
         text = render("wire_edm", "wire_edm", {})[2]
         self.assertIn("G92 X0. Y0.", text)
-        self.assertIn("M60\nG0 X-15. Y-15.\n(THREAD THE WIRE)\nM50", text)
+        # Fanuc-format automatic wire threading: M50 cuts the wire, M60 threads it.
+        self.assertIn("(CUT THE WIRE FOR THE NEXT START HOLE)\nM50\nG0 X-15. Y-15.\n(THREAD THE WIRE)\nM60", text)
         self.assertIn("WIRE CENTRE", text)
         self.assertNotRegex(text, r"\bZ-?\d")
         tapered = F.wire({"uv_words": False}, beam={"taper_deg": 2.0, "thickness_mm": 20.0})
@@ -456,6 +476,413 @@ class Refusals(unittest.TestCase):
                 self.assertEqual(tuple(post.kinds), entry.kinds)
                 self.assertEqual(post.extension, entry.extension)
 
+
+def _job(post: str, build, *, kind: str = "mill", keys=None, tools=None, rotary=()):
+    """A program on ``post`` from ``build(b)`` (a ToolpathBuilder starting at (0, 0, 5)) with the mill tools."""
+    from cadgen._internal.cam.ir import Toolpath, ToolpathBuilder
+
+    setup, wcs = F._setup()
+    b = ToolpathBuilder((0, 0, 5))
+    build(b)
+    path = b.build()
+    if rotary:
+        path = Toolpath(path.moves, path.events, path.ops, start=path.start, rotary=rotary)
+    return F._program(setup, wcs, path, F._tools(tools or F.MILL_TOOLS), F._machine(kind, post, keys))
+
+
+def _start(b, tool="T1", rpm=10000):
+    b.event("setup", id="top", wcs="G54", plain="Top", rotary={})
+    b.begin_op(index=0, setup="top", op="pocket", plain="P", tool=tool)
+    b.event("tool", tool=tool, number=int(tool[1:]))
+    if rpm:
+        b.event("spindle", rpm=rpm, dir="cw")
+
+
+def _code(text: str) -> list[str]:
+    return [line for line in text.splitlines() if line and not line.startswith(("(", ";", "%", "O"))]
+
+
+class Safety(unittest.TestCase):
+    """The CNC programmer's review: every finding as a test."""
+
+    def assertRefuses(self, call, *fragments):
+        with self.assertRaises(CamJobError) as caught:
+            call()
+        for fragment in fragments:
+            self.assertIn(fragment, str(caught.exception))
+        return str(caught.exception)
+
+    # the drilling cycle names a planner may emit --------------------------------------------------------
+
+    def test_every_drill_cycle_name_posts_natively_or_expanded(self):
+        native = {
+            "fanuc": {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "tap_left": "G74",
+                      "ream": "G85", "bore": "G85", "bore_dwell": "G89", "bore_stop": "G86", "fine_bore": "G76"},
+            "haas": {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "tap_left": "G74",
+                     "ream": "G85", "bore": "G85", "bore_dwell": "G89", "bore_stop": "G86", "fine_bore": "G76"},
+            "linuxcnc": {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G33.1",
+                         "tap_left": "G33.1", "ream": "G85", "bore": "G85", "bore_dwell": "G89", "bore_stop": "G86",
+                         "fine_bore": None},
+            "mach3": {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "tap_left": None,
+                      "ream": "G85", "bore": "G85", "bore_dwell": "G89", "bore_stop": "G86", "fine_bore": None},
+        }
+        for post_name, codes in native.items():
+            for name, code in codes.items():
+                cycle = "tap" if name == "tap_left" else name
+
+                def build(b):
+                    _start(b, tool="T3" if cycle == "tap" else "T2", rpm=500)
+                    b.rapid(x=-10, y=5)
+                    data = {"cycle": cycle, "holes": [[-10, 5, 0]], "z_bottom": -6.0, "r_plane": 1.0,
+                            "retract": "initial", "initial_z": 5.0, "feed": 300.0, "peck_mm": 3.0, "dwell_s": 0.5,
+                            "pitch_mm": 1.0, "shift_mm": 0.1, **({"left_hand": True} if name == "tap_left" else {})}
+                    h = b.begin_cycle(**data)
+                    b.rapid(z=1)
+                    b.feed(z=-6, f=300)
+                    b.feed(z=1, f=300)
+                    b.rapid(z=5)
+                    b.end_cycle(h)
+                    b.end_op()
+
+                with self.subTest(post=post_name, cycle=name):
+                    program = _job(post_name, build)
+                    text = get_post(post_name, "mill").render(program)
+                    if code:
+                        self.assertRegex(text, rf"(?m)^(G9[89] )?{re.escape(code)}\b")
+                    else:
+                        self.assertNotRegex(text, r"\bG(7[3-6]|8[1-9])\b")
+                        self.assertIn("G1 Z-6", text.replace("G1 Z-6.", "G1 Z-6"))
+                    read = read_back(None, program, text)
+                    self.assertAlmostEqual(-6.0, min(m.end[2] for m in read.moves), places=3)
+
+    # 2: a native cycle in a simultaneous program ------------------------------------------------------------
+
+    def _tcp_then_drill(self, post):
+        import numpy as np
+
+        from cadgen._internal.cam.ir import Toolpath
+
+        def build(b):
+            _start(b)
+            b.rapid(x=-10, y=0)
+            b.rapid(z=1)
+            b.feed(z=0, f=500)
+            for k in range(1, 4):
+                b.feed(x=-10 + 2 * k, y=0, z=0, f=800)
+            b.rapid(z=5)
+            b.end_op()
+            b.begin_op(index=1, setup="top", op="drill", plain="Drill", tool="T2")
+            b.event("tool", tool="T2", number=2)
+            b.event("spindle", rpm=7600, dir="cw")
+            h = b.begin_cycle(cycle="drill", holes=[[-10, 5, 0]], z_bottom=-6.0, r_plane=1.0, retract="initial",
+                              initial_z=5.0, feed=300.0)
+            b.rapid(x=-10, y=5)
+            b.rapid(z=1)
+            b.feed(z=-6, f=300)
+            b.rapid(z=5)
+            b.end_cycle(h)
+            b.end_op()
+
+        program = _job(post, build, kind="mill5")
+        moves = program.toolpath.moves.copy()
+        a = np.zeros(len(moves))
+        a[3:6] = [5, 10, 15]
+        a[6] = 15
+        moves["a"] = a
+        path = Toolpath(moves, program.toolpath.events, program.toolpath.ops, start=(0, 0, 5), rotary=("a",))
+        return _with(program, path)
+
+    def test_a_simultaneous_program_posts_its_drilling_expanded_with_the_rotary_words(self):
+        for post_name, tcp in (("fanuc", "G43.4"), ("haas", "G234"), ("linuxcnc", "G43.4")):
+            with self.subTest(post=post_name):
+                text = get_post(post_name, "mill5").render(self._tcp_then_drill(post_name))
+                self.assertNotRegex(text, r"\bG8[1-9]\b")
+                code = _code(text)
+                second = code.index(next(line for line in code if re.match(r"T2 M0?6$", line)))
+                # Rotaries first (the table to A0 with Z at the top), then TCP on, then X Y, then Z.
+                after = code[second + 1:]
+                self.assertRegex(after[0], r"^S7600 M3$")
+                self.assertRegex(after[1], r"^G0 A0\.?$")
+                self.assertEqual(f"{tcp} H2", after[2])
+                self.assertRegex(after[3], r"^G0 X-10\.? Y5\.?$")
+                read = read_back(None, self._tcp_then_drill(post_name), text)
+                self.assertAlmostEqual(-6.0, min(m.end[2] for m in read.moves), places=3)
+                self.assertEqual(0.0, read.moves[-1].abc["A"])
+
+    # 4: tiny arcs -----------------------------------------------------------------------------------------
+
+    def test_an_arc_shorter_than_the_posted_resolution_is_a_line_not_a_full_circle(self):
+        def build(b):
+            _start(b)
+            b.rapid(x=10, y=0)
+            b.rapid(z=-1)
+            b.arc(10, 0.0004, -1, centre=(0, 0, 0), clockwise=False, f=500)
+            b.feed(x=10, y=5, f=500)
+            b.end_op()
+
+        for post_name in ("linuxcnc", "fanuc", "grbl"):
+            with self.subTest(post=post_name):
+                text = get_post(post_name, "mill").render(_job(post_name, build))
+                self.assertNotRegex(text, r"\bG[23]\b")
+
+    def test_an_arc_whose_end_is_off_its_circle_is_refused(self):
+        def build(b):
+            _start(b)
+            b.rapid(x=10, y=0)
+            b.rapid(z=-1)
+            b.arc(0, 10.5, -1, centre=(0, 0, 0), clockwise=False, f=500)
+            b.end_op()
+
+        self.assertRefuses(lambda: get_post("fanuc", "mill").render(_job("fanuc", build)), "from its centre",
+                           "operation 1 (pocket), move 2")
+
+    # 5, 6, 7: the entry, Z home before M6 and a rotary index, G91.1 -------------------------------------------
+
+    def test_after_a_tool_change_x_y_come_first_then_the_tool_length_then_down(self):
+        def build(b):
+            _start(b)
+            b.rapid(x=10, y=0, z=1)                        # a diagonal descent as the first move
+            b.feed(z=-1, f=300)
+            b.rapid(z=5)
+            b.end_op()
+
+        expected = {"linuxcnc": ["G53 G0 Z0", "T1 M6", "S10000 M3", "G0 X10 Y0", "G0 G43 Z5 H1", "Z1"],
+                    "mach3": ["G53 G0 Z0", "T1 M6", "S10000 M3", "G0 X10 Y0", "G0 G43 Z5 H1", "Z1"],
+                    "fanuc": ["G91 G28 Z0.", "G90", "T1 M6", "S10000 M3", "G0 X10. Y0.", "G0 G43 Z5. H1", "Z1."],
+                    "haas": ["T1 M06", "S10000 M3", "G0 X10. Y0.", "G0 G43 Z5. H1", "Z1."],
+                    "grbl": ["G0 Z5", "S10000 M3", "G4 P3", "X10 Y0", "Z1"]}
+        for post_name, lines in expected.items():
+            with self.subTest(post=post_name):
+                code = _code(get_post(post_name, "mill").render(_job(post_name, build)))
+                start = code.index(lines[0])
+                self.assertEqual(lines, code[start:start + len(lines)])
+
+    def test_linuxcnc_sets_incremental_arc_centres_and_homes_z_before_every_tool_change(self):
+        for kind in ("mill", "lathe"):
+            with self.subTest(kind=kind):
+                self.assertIn("G91.1", render("linuxcnc", kind, {})[2].splitlines())
+        text = render("linuxcnc", "mill", {})[2]
+        lines = text.splitlines()
+        for k, line in enumerate(lines):
+            if re.match(r"T\d+ M6$", line):
+                self.assertEqual("G53 G0 Z0", lines[k - 1])
+        lathe = render("linuxcnc", "lathe", {})[2].splitlines()
+        for k, line in enumerate(lathe):
+            if re.match(r"T\d+ M6$", line):
+                self.assertEqual("G30", lathe[k - 1])
+        self.assertEqual(["G30", "M2"], lathe[-2:])
+
+    def test_a_3_plus_2_index_without_a_tool_change_homes_z_first(self):
+        from cadgen._internal.cam.ir import Event, Toolpath
+
+        program = F.program("mill5", "linuxcnc")
+        path = program.toolpath
+        bare = Toolpath(path.moves, [e for e in path.events if e.kind not in ("tool", "spindle")], path.ops,
+                        start=path.start, rotary=path.rotary)
+        text = get_post("linuxcnc", "mill5").render(_with(program, bare))
+        self.assertIn("G55\nG53 G0 Z0\nG0 A30 C90\n", text)
+
+    # 8: arc fitting does not fold a ramp into a flat helix -------------------------------------------------
+
+    def test_a_ramp_onto_a_circle_stays_a_ramp(self):
+        import math
+
+        def build(b):
+            _start(b)
+            b.rapid(x=10, y=0)
+            b.rapid(z=1)
+            b.feed(x=10 * math.cos(math.radians(5)), y=10 * math.sin(math.radians(5)), z=-2, f=500)
+            for k in range(10, 181, 5):
+                a = math.radians(k)
+                b.feed(x=10 * math.cos(a), y=10 * math.sin(a), z=-2, f=500)
+            b.rapid(z=5)
+            b.end_op()
+
+        program = _job("fanuc", build)
+        text = get_post("fanuc", "mill").render(program)
+        read = read_back(None, program, text)
+        for move in read.moves:
+            if move.kind in ("arc_cw", "arc_ccw"):
+                self.assertEqual(move.start[2], move.end[2], "no helix: the ramp is a line of its own")
+        ramp = next(m for m in read.moves if m.kind == "feed" and m.end[2] == -2.0)
+        self.assertEqual(1.0, ramp.start[2])
+
+    # 9, 10: a stop or a tool change restores the spindle and coolant ----------------------------------------
+
+    def test_after_a_stop_the_spindle_and_coolant_come_back_on_before_the_next_move(self):
+        def build(b):
+            _start(b)
+            b.event("coolant", mode="flood")
+            b.rapid(x=10, y=0)
+            b.rapid(z=1)
+            b.event("stop", optional=False, message="Check chip")
+            b.feed(z=-2, f=300)
+            b.feed(x=0, f=600)
+            b.rapid(z=5)
+            b.end_op()
+
+        for post_name, restore in (("fanuc", ["S10000 M3", "M8"]), ("grbl", ["S10000 M3", "G4 P3", "M8"]),
+                                   ("linuxcnc", ["S10000 M3", "M8"])):
+            with self.subTest(post=post_name):
+                code = _code(get_post(post_name, "mill").render(_job(post_name, build)))
+                k = code.index("M0")
+                self.assertEqual(restore, code[k + 1:k + 1 + len(restore)])
+
+    def test_iso_tool_changes_stop_the_spindle_and_coolant_and_bring_the_coolant_back(self):
+        for post_name in ("linuxcnc", "fanuc", "haas", "mach3"):
+            with self.subTest(post=post_name):
+                code = _code(render(post_name, "mill", {})[2])
+                for k, line in enumerate(code):
+                    if re.match(r"T[23] M0?6$", line):
+                        before = code[max(0, k - 6):k]
+                        self.assertIn("M5", before)
+                        self.assertIn("M9", before)
+                        self.assertIn("M8", code[k:k + 6])
+                self.assertNotIn("M9\nM5\nM9", "\n".join(code))
+                self.assertNotRegex("\n".join(code), r"(?m)^(M[59])\n\1$")
+
+    def test_a_cut_after_a_tool_change_without_a_spindle_start_is_refused(self):
+        def build(b):
+            b.event("setup", id="top", wcs="G54", plain="Top", rotary={})
+            b.begin_op(index=0, setup="top", op="pocket", plain="P", tool="T1")
+            b.event("tool", tool="T1", number=1)
+            b.rapid(x=10, y=0)
+            b.feed(z=-1, f=300)
+            b.end_op()
+
+        self.assertRefuses(lambda: get_post("linuxcnc", "mill").render(_job("linuxcnc", build)), "spindle stopped")
+
+    # 11: GRBL laser -----------------------------------------------------------------------------------------
+
+    def test_a_grbl_laser_pierces_at_constant_power_and_cuts_in_dynamic_mode(self):
+        text = get_post("grbl", "laser").render(F.cutting("laser", "grbl"))
+        self.assertIn("M3 S800\nG4 P0.4\nM4 S800\nG1", text)
+        self.assertNotIn("M7", text)
+        self.assertIn("M8", text)                          # air assist on GRBL's one coolant output
+
+    # 12: Marlin origin --------------------------------------------------------------------------------------
+
+    def test_marlin_sets_the_origin_where_the_head_starts(self):
+        text = render("marlin", "laser", {})[2]
+        self.assertIn("G92 X0 Y0", text.splitlines())
+        self.assertIn("G92 X0 Y0 Z0", render("marlin", "laser", {"z_words": True})[2].splitlines())
+
+    # 13, 14: comments ---------------------------------------------------------------------------------------
+
+    def test_comments_are_ascii_without_percent_or_semicolon_and_at_most_70_wide(self):
+        from dataclasses import replace
+
+        names = {"material": "aluminium – 6061 “T6”; 20% recycled", "part": "bracket’s (v2).step"}
+        for post_name, kind in (("grbl", "mill"), ("fanuc", "mill"), ("haas", "mill"), ("wire_edm", "wire_edm"),
+                                ("linuxcnc", "mill")):
+            with self.subTest(post=post_name):
+                program = replace(F.program(kind, post_name), **names)
+                post = get_post(post_name, kind)
+                text = "".join(t for _, t in post.render_tool_files(program))
+                self.assertTrue(all(b < 0x80 for b in text.encode("utf-8")))
+                lines = text.splitlines()
+                self.assertLessEqual(max(len(line) for line in lines), 70)
+                inner = [line[1:-1] for line in lines if line.startswith("(")] + \
+                        [line.split("(", 1)[1] for line in lines if line.startswith("O")]
+                self.assertFalse([c for c in inner if "%" in c or ";" in c], inner)
+                self.assertEqual(lines.count("%"), 2 if post_name in ("fanuc", "haas", "wire_edm") else 0)
+
+    # 15: numbers no controller should get ---------------------------------------------------------------
+
+    def test_a_nan_or_negative_feed_is_refused_naming_the_move(self):
+        for post_name in ("fanuc", "grbl", "marlin"):
+            kind = "laser" if post_name == "marlin" else "mill"
+            rpm = 0 if kind == "laser" else 10000
+
+            def negative(b):
+                _start(b, rpm=rpm)
+                b.rapid(x=10, y=0)
+                b.feed(z=-1, f=-300)
+                b.end_op()
+
+            def nan(b):
+                _start(b, rpm=rpm)
+                b.rapid(x=10, y=0)
+                b.feed(z=-1, f=300)
+                b.feed(x=float("nan"), f=600)
+                b.end_op()
+
+            with self.subTest(post=post_name):
+                self.assertRefuses(lambda: get_post(post_name, kind).render(_job(post_name, negative, kind=kind)),
+                                   "move 1", "feed is -300")
+                self.assertRefuses(lambda: get_post(post_name, kind).render(_job(post_name, nan, kind=kind)),
+                                   "operation 1 (pocket), move 2", "X is nan")
+
+    # 16: GRBL spin-up ---------------------------------------------------------------------------------------
+
+    def test_grbl_waits_for_the_spindle_only_when_it_starts_from_standstill(self):
+        program = F.mill("grbl")
+        files = get_post("grbl", "mill").render_tool_files(program)
+        self.assertEqual(["T1", "T2", "T3"], [label for label, _ in files])
+        tap = files[2][1]
+        self.assertIn("S500 M3\nG4 P3\n", tap)
+        self.assertIn("S500 M4\nZ2\n", tap)                # the reversal at the tap's bottom: no dwell there
+        quick = get_post("grbl", "mill").render_tool_files(F.mill("grbl", {"spindle_spinup_s": 0}))
+        self.assertNotIn("G4 P3", "".join(t for _, t in quick))
+
+    # 17: headers ----------------------------------------------------------------------------------------
+
+    def test_linuxcnc_tcp_says_it_needs_a_tcp_kinematics(self):
+        self.assertIn("SWITCHKINS", render("linuxcnc", "mill5_tcp", {})[2].upper())
+
+    # 18: the end of a 3+2 program ------------------------------------------------------------------------
+
+    def test_3_plus_2_and_tcp_programs_end_with_z_home_then_the_table_at_rotary_zero(self):
+        for post_name, kind, tail in (
+                ("fanuc", "mill5", ["G69", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "M30"]),
+                ("haas", "mill5", ["G255", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "M30"]),
+                ("linuxcnc", "mill5", ["G53 G0 Z0", "G53 G0 A0 C0", "M2"]),
+                ("mach3", "mill4", ["G53 G0 Z0", "G53 G0 A0", "M30"]),
+                ("linuxcnc", "mill5_tcp", ["G49", "G53 G0 Z0", "G53 G0 A0 C0", "M2"])):
+            with self.subTest(post=post_name, kind=kind):
+                code = _code(render(post_name, kind, {})[2])
+                self.assertEqual(tail, code[-len(tail):])
+
+    # 19: rotary swings ------------------------------------------------------------------------------------
+
+    def test_a_rapid_that_turns_the_table_out_of_a_cut_is_refused(self):
+        import numpy as np
+
+        from cadgen._internal.cam.ir import Toolpath
+
+        program = F.simultaneous("linuxcnc", "mill5", "ac")
+        moves = program.toolpath.moves.copy()
+        moves["a"][13:] = 0.0                              # the retract swings A back while the tool is in the cut
+        moves["c"][13:] = 0.0
+        swing = Toolpath(moves, program.toolpath.events, program.toolpath.ops, start=(0, 0, 5), rotary=("a", "c"))
+        self.assertRefuses(lambda: get_post("linuxcnc", "mill5").render(_with(program, swing)),
+                           "straight out of a cut", "move 13")
+        # From a rapid lift (in the air) the same turn is the planner's to make: posted as one TCP move.
+        lifted = np.insert(moves, 13, moves[12])
+        lifted["kind"][13] = 0
+        lifted["z"][13] = moves["z"][12] + 1.0
+        ok = Toolpath(lifted, program.toolpath.events, program.toolpath.ops, start=(0, 0, 5), rotary=("a", "c"))
+        get_post("linuxcnc", "mill5").render(_with(program, ok))
+
+    def test_a_rotary_indexed_between_passes_is_posted_under_tcp(self):
+        # A rotary op's passes "along" X turn A only on rapids between passes, and its moves are the tip in the
+        # part's frame at rotary zero: without TCP they would be posted where the turned part is not.
+        def build(b):
+            _start(b)
+            b.rapid(x=-10, y=0)
+            b.rapid(z=1)
+            b.feed(x=10, f=500)
+            b.rapid(z=5)
+            b.rotate(a=30)
+            b.rapid(x=-10, z=1)
+            b.feed(x=10, f=500)
+            b.rapid(z=5)
+            b.end_op()
+
+        text = get_post("linuxcnc", "mill4").render(_job("linuxcnc", build, kind="mill4"))
+        self.assertIn("G43.4 H1", text)
+        self.assertRefuses(lambda: get_post("mach3", "mill4").render(_job("mach3", build, kind="mill4")),
+                           "no tool centre point control")
 
 def _with(program, path):
     from dataclasses import replace

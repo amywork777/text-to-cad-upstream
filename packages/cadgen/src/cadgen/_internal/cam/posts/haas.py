@@ -6,7 +6,9 @@
 ``machine.smoothing`` (``rough``, ``medium``, ``finish``) writes ``G187 P1``..``P3 E`` (the job's tolerance) and
 resets it at the end. A 3+2 setup turns the table (``G0 A.. C..`` or ``B.. C..``) and switches on dynamic work
 offsets (``G254``, off with ``G255``): G54.. is the setup's origin with the table at zero and the machine's rotary
-centre settings must be right. Simultaneous moves post under ``G234`` tool centre point control.
+centre settings must be right. Simultaneous moves post under ``G234`` tool centre point control (rotary axes first,
+then ``G234 H``, then X Y, then Z; drilling posts expanded there). At the end Z goes home, then the table to rotary zero
+(``G91 G28 A0. C0.``).
 
 Lathe: diameter X, ``G28 U0. W0.``, ``T101``-style tool words, ``G50 S`` clamp, ``G96``/``G97``, ``G98``/``G99``,
 the one-block Haas ``G76`` thread (``X Z K D F A``), and the one-block ``G71 P Q U W D F`` roughing with its profile
@@ -33,6 +35,7 @@ class HaasPost(IsoPost):
     program_wrap = True
     o_digits = 5
     mill_end_home = ("G91 G28 Z0.", "G90")
+    index_home_lines = ("G91 G28 Z0.", "G90")
     lathe_home = ("G28 U0. W0.",)
     tilt_style = "dwo"
     tcp_code = "G234"

@@ -9,8 +9,9 @@ cadgen), so the program says so and keeps compensation off (``G40``). ``machine.
 ``G41``/``G42 D1`` around each cut (from the beam event's ``offset_side``) with D1 holding only a wear or skim
 adjustment on top of the applied offset.
 
-Each cut: the thread code (``machine.wire_thread``, default ``M50``) when the wire was cut, the taper, the contour,
-then ``G40``/``G50``, and the cut-wire code (``machine.wire_cut``, default ``M60``) when another start hole follows.
+Each cut: the thread code (``machine.wire_thread``, default ``M60``, Fanuc-format automatic wire threading) when the
+wire was cut, the taper, the contour, then ``G40``/``G50``, and the cut-wire code (``machine.wire_cut``, default
+``M50``) when another start hole follows. Both are machine keys: builders differ, check the control's manual.
 Taper (the beam event's ``taper_deg``, plus leaning the wire's top to the left of travel): ``G51 A`` (left) or
 ``G52 A`` (right), cancelled by ``G50``; or, with ``machine.uv_words: true``, explicit ``U V`` words on every move:
 the upper guide's offset from X Y at ``thickness_mm`` above the program plane, normal to the move (arcs posted as
@@ -69,12 +70,15 @@ class WireEdmPost(CheckedPost):
     canned_cycles = frozenset()
     linear_axes = "XY"
     upper_comments = True
+    #: The program starts where the wire is threaded (G92): no approach move is added before the first cut.
+    entry_moves = False
     options = {
         "wire_comp": {"type": "choice", "default": "applied", "choices": ("applied", "controller"),
                       "help": "applied: the path is the wire centre (G40); controller: G41/G42 D1 for wear only"},
         "uv_words": {"type": "bool", "default": False, "help": "taper as explicit U V words instead of G51/G52 A"},
-        "wire_thread": {"type": "text", "default": "M50", "help": "the controller's thread-the-wire code"},
-        "wire_cut": {"type": "text", "default": "M60", "help": "the controller's cut-the-wire code"},
+        "wire_thread": {"type": "text", "default": "M60", "help": "the controller's thread-the-wire code (Fanuc "
+                                                                   "AWT: M60)"},
+        "wire_cut": {"type": "text", "default": "M50", "help": "the controller's cut-the-wire code (Fanuc AWT: M50)"},
         "program_number": PROGRAM_NUMBER,
     }
 
@@ -133,7 +137,8 @@ class WireEdmPost(CheckedPost):
         number_ = int(self.option(program, "program_number"))
         if number_ > 9999:
             raise CamJobError("machine.program_number must be at most 9999 for a Fanuc-style O number")
-        title = self.comment(f"{program.job_name or program.part or 'part'} {program.setup.id}")
+        title = self.comment_line(f"{program.job_name or program.part or 'part'} {program.setup.id}",
+                                  self.comment_width - 6)
         return f"%\nO{number_:04d} {title}\n{text}%\n"
 
     def header(self, program: Program) -> list[str]:
@@ -154,6 +159,9 @@ class WireEdmPost(CheckedPost):
 
     def on_setup(self, data: dict, program: Program) -> list[str]:
         return []
+
+    def safety_lines(self, program: Program) -> list[str]:
+        return ["Verify the start hole, the wire and the guide heights first."]
 
     def on_tool(self, data: dict, program: Program, first: bool) -> list[str]:
         return [self.comment(f"Wire: {self.tool_label(program.tools[data['tool']])}")]

@@ -4,8 +4,9 @@
 with the power on Marlin's scale (``machine.laser_scale``: 255, the PWM default, or 1000), ``G4 P`` (milliseconds)
 for a pierce dwell, G1/G2/G3 with I/J, then ``M5``. ``machine.inline_power: true`` uses Marlin's inline mode
 (``M3 I``): the power rides on every cutting move as ``S`` and the first rapid after a cut carries ``S0``. Air assist
-is ``M8``/``M9`` (coolant ``air``). No Z unless ``machine.z_words`` is true; no work offsets (start the job with the
-head at the setup's origin, or send ``G92 X0 Y0`` there). The program ends ``M5``: Marlin's ``M30`` deletes a file.
+is ``M8``/``M9`` (coolant ``air``). No Z unless ``machine.z_words`` is true. No work offsets: the setup posts
+``G92 X0 Y0`` (``Z0`` too with ``z_words``), so the origin is where the head is when the job starts; jog it to the
+setup's origin first. The program ends ``M5``: Marlin's ``M30`` deletes a file.
 """
 
 from __future__ import annotations
@@ -46,7 +47,13 @@ class MarlinPost(CuttingPost):
         return ["M5 I" if self.option(program, "inline_power") else "M5"]
 
     def on_setup(self, data: dict, program: Program) -> list[str]:
-        return [self.comment(f"Setup {data.get('id', program.setup.id)}: the origin is where the head starts")]
+        axes = "X0 Y0 Z0" if "Z" in self.linear_axes else "X0 Y0"
+        return [self.comment(f"Setup {data.get('id', program.setup.id)}: the origin is where the head starts"),
+                f"G92 {axes}"]
+
+    def safety_lines(self, program: Program) -> list[str]:
+        return ["The origin is where the head starts: G92 sets it there.",
+                "Jog the head to the setup's origin and check the focus before cutting."]
 
     def on_coolant(self, data: dict, program: Program) -> list[str]:
         return [{"air": "M8", "mist": "M7", "off": "M9"}[data.get("mode", "off")]]

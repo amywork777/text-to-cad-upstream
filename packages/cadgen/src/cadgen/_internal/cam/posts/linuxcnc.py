@@ -1,14 +1,17 @@
 """``linuxcnc``: LinuxCNC 2.8/2.9 (``.ngc``) for mills, 4th/5th-axis mills and lathes.
 
-Mill: ``G21 G90 G94 G17``, ``G64 P`` path blending at the job's tolerance, ``T M6`` then ``G43 H`` at a clearance Z,
-G2/G3 with incremental I/J, the drilling cycles G81 G82 G83 G73 G85 G86 G89 natively, a tap as rigid ``G33.1`` per
-hole (LinuxCNC's G84 does not follow the spindle), dwell ``G4 P`` in seconds, ``M2`` at the end. A 3+2 setup turns the
-table (``G0 A.. C..``) after each tool change and then posts 3-axis: set the work offset on the turned part.
+Mill: ``G21 G90 G94 G17``, ``G91.1`` (incremental arc centres, whatever the config left), ``G64 P`` path blending
+at the job's tolerance, ``M5 M9`` and ``G53 G0 Z0`` (Z to the machine's top: LinuxCNC's M6 does not retract) then
+``T M6``, ``G0 X Y`` over the first point and ``G43 H`` at a clearance Z, G2/G3 with incremental I/J, the drilling cycles G81 G82 G83 G73 G85 G86 G89 natively, a tap as rigid ``G33.1`` per
+hole (LinuxCNC's G84 does not follow the spindle), dwell ``G4 P`` in seconds, ``G53 G0 Z0`` and the table to rotary zero (``G53 G0 A0 C0``)
+then ``M2`` at the end. A 3+2 setup turns the table (``G0 A.. C..``) after each tool change, with Z at the top, and
+then posts 3-axis: set the work offset on the turned part.
 Simultaneous 4/5-axis posts the rotary words on every move with ``G43.4`` tool centre point control, which stock
 LinuxCNC does not have: the machine's TCP kinematics must provide it (a switchkins config with G43.4 remapped).
 
-Lathe: ``G18``, ``G7`` diameter mode (``G8`` with ``machine.diameter_mode: false``), arcs with I as a radius, ``T M6``
-and ``G43``, ``G96 D S`` constant surface speed with its clamp, ``G95`` feed per revolution where the spindle event
+Lathe: ``G18``, ``G7`` diameter mode (``G8`` with ``machine.diameter_mode: false``), ``G91.1``, arcs with I as a
+radius, ``G30`` (the turret's safe index position, set on the machine with ``G30.1``) before ``T M6`` and ``G43`` and
+at the end, ``G96 D S`` constant surface speed with its clamp, ``G95`` feed per revolution where the spindle event
 asks, threads as LinuxCNC's one-line ``G76`` (its I, J and K are diameters in G7; tapered threads post expanded).
 Roughing always posts expanded: LinuxCNC's G71 needs the profile as an O-word subroutine and is fragile.
 """
@@ -33,19 +36,29 @@ class LinuxCncPost(IsoPost):
     left_tap_code = "G33.1"
     lathe_feed_codes = ("G94", "G95")
     native_rough = False
+    mill_tool_home = ("G53 G0 Z0",)
+    mill_end_home = ("G53 G0 Z0",)
+    index_home_lines = ("G53 G0 Z0",)
+    rotary_home_style = "g53"
+    lathe_home = ("G30",)
+    end_code = "M2"
     options = {"cycles": CYCLES_OPTION}
 
     def preamble(self, program: Program) -> list[str]:
         if self._lathe:
-            return ["G21 G90 G94 G18 G40 G49 G80", "G7" if self.diameter() else "G8"]
-        return ["G21 G90 G94 G17 G40 G49 G80", f"G64 P{number(max(program.tolerance_mm, 0.001), 4)}"]
+            return ["G21 G90 G94 G18 G40 G49 G80", "G91.1", "G7" if self.diameter() else "G8"]
+        return ["G21 G90 G94 G17 G40 G49 G80", "G91.1", f"G64 P{number(max(program.tolerance_mm, 0.001), 4)}"]
 
-    def footer(self, program: Program) -> list[str]:
-        lines = ["M5", "M9"]
-        if self._tcp_active:
-            lines.append("G49")
-            self._tcp_active = False
-        return lines + ["M2"]
+    def tcp_notes(self, program: Program) -> list[str]:
+        return ["Stock LinuxCNC has no G43.4: this program needs a TCP kinematics config, a switchkins machine "
+                "with G43.4 remapped. Without it, it will not run."]
+
+    def header(self, program: Program) -> list[str]:
+        lines = super().header(program)
+        if self._lathe:
+            lines.append(self.comment("G30 is the turret's safe index position: set it on the machine with G30.1 "
+                                      "before running."))
+        return lines
 
     def lathe_tool_words(self, n: int) -> list[str]:
         return [f"T{n} M6", f"G43 H{n}"]

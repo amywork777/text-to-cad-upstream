@@ -111,11 +111,13 @@ def _mill_path(b, *, rotary_setup=None, wcs="G54"):
     b.event("spindle", rpm=500, dir="cw")
     handle = b.begin_cycle(cycle="tap", holes=CUT_HOLES, z_bottom=-8.0, r_plane=2.0, retract="r", initial_z=5.0,
                            feed=500.0, pitch_mm=1.0)
-    for x, y, _ in CUT_HOLES:
+    for x, y, _ in CUT_HOLES:             # in at rpm x pitch, the spindle reversed, out (as drill.py expands G84)
         b.rapid(x=x, y=y)
         b.rapid(z=2)
         b.feed(z=-8, f=500)
+        b.event("spindle", rpm=500, dir="ccw")
         b.feed(z=2, f=500)
+        b.event("spindle", rpm=500, dir="cw")
     b.end_cycle(handle)
     b.rapid(z=5)
     b.end_op()
@@ -172,6 +174,7 @@ def simultaneous(post: str, kind: str = "mill5", axes: str = "ac", keys=None):
     moves = path.moves.copy()
     angles = np.zeros(len(moves))
     angles[3:13] = np.linspace(3, 30, 10)
+    angles[13:] = angles[12]               # the retract holds the tool's tilt: it never swings A in the cut
     moves["a"] = angles
     used = ("a",)
     if "c" in axes:
@@ -335,3 +338,42 @@ def program(kind: str, post: str, keys=None):
     if kind == "wire_edm":
         return wire(keys)
     return cutting(kind, post, keys)
+
+
+def with_entries(path, lathe: bool = False):
+    """``path`` as the posts move it at an entry (the program's first motion and the first after each tool change):
+    a rapid that changes both the plane's axes (X Y; a lathe's X) and Z is split into the plane's move at the height
+    it starts from, then Z. Events and cycle ends shift with the inserted moves (for read-back comparisons)."""
+    import numpy as np
+
+    from cadgen._internal.cam.ir import DWELL, RAPID, Event, Toolpath
+
+    moves = path.moves
+    entries = sorted({0} | {e.at for e in path.events if e.kind == "tool"})
+    positions = path.positions()
+    inserts = []
+    for at in entries:
+        m = next((k for k in range(at, len(moves)) if int(moves[k]["kind"]) != DWELL), None)
+        if m is None or int(moves[m]["kind"]) != RAPID:
+            continue
+        start, end = positions[m], positions[m + 1]
+        plane = [0] if lathe else [0, 1]
+        if any(abs(end[k] - start[k]) > 1e-9 for k in plane) and abs(end[2] - start[2]) > 1e-9:
+            inserts.append(m)
+    if not inserts:
+        return path
+    rows = []
+    for k in range(len(moves)):
+        if k in inserts:
+            row = moves[k].copy()
+            row["z"] = positions[k][2]
+            rows.append(row)
+        rows.append(moves[k].copy())
+    new = np.array(rows, dtype=moves.dtype)
+
+    def shift(index: int) -> int:
+        return index + sum(1 for m in inserts if m < index)
+
+    events = [Event(shift(e.at), e.kind,
+                    {**e.data, **({"end": shift(e.data["end"])} if "end" in e.data else {})}) for e in path.events]
+    return Toolpath(new, events, (), start=path.start, rotary=path.rotary, lathe=path.lathe)
