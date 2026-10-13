@@ -158,7 +158,9 @@ def create_stock_sim(kind: str, stock: StockGeometry, part, *, cell_mm: float, t
         adapted.append({"step": "stock_sim", "words": f"this cadgen has no stock simulator for a {kind} yet: the "
                         "stock is not simulated, so material left and rapids into stock are not checked"})
         cls = NullSim
-    return cls(stock, part, cell_mm=cell_mm, tolerance_mm=tolerance_mm), adapted
+    sim = cls(stock, part, cell_mm=cell_mm, tolerance_mm=tolerance_mm)
+    # A simulator that coarsened its own grid says so (``sim.adapted``: fit-ladder steps).
+    return sim, adapted + list(getattr(sim, "adapted", ()))
 
 
 # --- the starting stock --------------------------------------------------------------------------------
