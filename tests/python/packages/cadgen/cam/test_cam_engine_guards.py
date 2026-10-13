@@ -445,5 +445,39 @@ class SharedKeysAreRead(unittest.TestCase):
         self.assertIn("a drill does not use stock_to_leave_mm", result.findings[0]["summary"])
 
 
+
+class StockMeshSize(unittest.TestCase):
+    """The simulated stock in the GLB is merged into planar blocks: hundreds of kilobytes, not megabytes."""
+
+    def test_a_pocketed_block_s_stock_is_small_and_the_same_solid(self):
+        import numpy as np
+
+        from cadgen import cam
+        from cadgen._internal.cam.stock_heightfield import _block_triangles
+        from tests.python.support.cam_fixtures import block_step, floor_ref, read_glb
+
+        directory = class_directory(type(self))
+        step = block_step(directory)
+        features = cam.features(step)
+        job = mill_job([{"op": "face", "tool": "T1"},
+                        {"op": "pocket", "tool": "T1", "faces": [floor_ref(features, 17.0)]},
+                        {"op": "pocket", "tool": "T1", "faces": [floor_ref(features, 11.0)]}])
+        with quiet():
+            result = cam.plan(step, job=job, out_dir=directory)
+        document, blob = read_glb(result.glb)
+        stock = next(m for m in document["meshes"] if m["name"] == "stock")["primitives"][0]
+        size = sum(document["bufferViews"][document["accessors"][index]["bufferView"]]["byteLength"]
+                   for index in (*stock["attributes"].values(), stock["indices"]))
+        self.assertLess(size, 400_000)
+        # A flat grid is one block; a bump keeps its vertex and the cells round it, the rest still merges.
+        heights = np.full((9, 9), 3.0)
+        quad = np.ones((8, 8), dtype=bool)
+        self.assertEqual(2, len(_block_triangles(heights, quad, 9)))
+        heights[4, 4] = 3.5
+        merged = _block_triangles(heights, quad, 9)
+        self.assertLess(len(merged), 2 * 64)
+        self.assertEqual({4 * 9 + 4}, {4 * 9 + 4} & set(merged.ravel()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -23,8 +23,9 @@ walls, exact in Z). :meth:`material_left` compares each ray's stock with the par
 ray-cast the same way): a piece of stock outside the part and over its footprint (a vertical column through the part,
 as the heightfield judges) counts by its thickness, the least of its lengths along the three rays through it, so a
 thin skin left on a wall reads thin. :meth:`mesh` draws the Z dexels as boxes merged into
-one surface (each column's material as boxes one cell square, shared walls dropped): closed, exact in height, blocky
-by a cell sideways (watertight up to T-junctions). Stdlib at import; numpy inside.
+one surface (each column's material as boxes one cell square, shared walls dropped, and faces at one height or one
+span merged into rectangles, so a flat top is a few quads): closed, exact in height, blocky by a cell sideways
+(watertight up to T-junctions). Stdlib at import; numpy inside.
 """
 
 from __future__ import annotations
@@ -77,6 +78,38 @@ def _compact(lo, hi):
     hi = np.take_along_axis(hi, order, axis=1)
     width = max(1, int((~empty).sum(axis=1).max())) if len(lo) else 1
     return lo[:, :width], hi[:, :width]
+
+
+def _rectangles(keys: list, u, v):
+    """Unit cells ``(u, v)`` (integers) merged into rectangles of cells that share every key: runs along ``v``,
+    then runs that match along ``u``. ``(keys of each rectangle, u0, u1, v0, v1)``, ends exclusive. Keys are
+    compared to a nanometre (ray casts put one face's height a few ulps apart)."""
+    u = np.asarray(u, dtype=np.int64)
+    v = np.asarray(v, dtype=np.int64)
+    keys = [np.round(np.asarray(k, dtype=float), 6) for k in keys]
+    if not len(u):
+        empty = np.zeros(0, dtype=np.int64)
+        return [k[:0] for k in keys], empty, empty, empty, empty
+    order = np.lexsort((v, u, *reversed(keys)))
+    u, v, keys = u[order], v[order], [k[order] for k in keys]
+    same = np.ones(len(u), dtype=bool)
+    same[0] = False
+    for k in keys:
+        same[1:] &= k[1:] == k[:-1]
+    same[1:] &= (u[1:] == u[:-1]) & (v[1:] == v[:-1] + 1)
+    first = np.nonzero(~same)[0]
+    last = np.append(first[1:], len(u)) - 1
+    keys, u, v0, v1 = [k[first] for k in keys], u[first], v[first], v[last] + 1
+    order = np.lexsort((u, v1, v0, *reversed(keys)))
+    keys, u, v0, v1 = [k[order] for k in keys], u[order], v0[order], v1[order]
+    same = np.ones(len(u), dtype=bool)
+    same[0] = False
+    for k in keys:
+        same[1:] &= k[1:] == k[:-1]
+    same[1:] &= (v0[1:] == v0[:-1]) & (v1[1:] == v1[:-1]) & (u[1:] == u[:-1] + 1)
+    first = np.nonzero(~same)[0]
+    last = np.append(first[1:], len(u)) - 1
+    return [k[first] for k in keys], u[first], u[last] + 1, v0[first], v1[first]
 
 
 def _subtract(lo, hi, a, b):
@@ -666,16 +699,18 @@ class DexelSim:
             if len(corners):
                 quads.append(corners)
 
+        # Tops and bottoms: one rectangle per run of cells at one height (merged along y, then equal runs along x).
         live = hi > lo
         ii, jj, kk = np.nonzero(live)
-        xa, xb = x0 + ii * cell, x0 + (ii + 1) * cell
-        ya, yb = y0 + jj * cell, y0 + (jj + 1) * cell
-        top, bottom = hi[ii, jj, kk], lo[ii, jj, kk]
-        emit(np.stack([np.column_stack([xa, ya, top]), np.column_stack([xb, ya, top]),
-                       np.column_stack([xb, yb, top]), np.column_stack([xa, yb, top])], axis=1))
-        emit(np.stack([np.column_stack([xa, ya, bottom]), np.column_stack([xa, yb, bottom]),
-                       np.column_stack([xb, yb, bottom]), np.column_stack([xb, ya, bottom])], axis=1))
-        # Side walls: each column's material not in its neighbour's, on the shared face.
+        for z, up in ((hi[ii, jj, kk], True), (lo[ii, jj, kk], False)):
+            (z,), u0, u1, v0, v1 = _rectangles([z], ii, jj)
+            xa, xb = x0 + u0 * cell, x0 + u1 * cell
+            ya, yb = y0 + v0 * cell, y0 + v1 * cell
+            corners = [np.column_stack([xa, ya, z]), np.column_stack([xb, ya, z]),
+                       np.column_stack([xb, yb, z]), np.column_stack([xa, yb, z])]
+            emit(np.stack(corners if up else [corners[0], corners[3], corners[2], corners[1]], axis=1))
+        # Side walls: each column's material not in its neighbour's, on the shared face, merged along the wall where
+        # neighbouring columns show the same span.
         for axis in (0, 1):
             pad_lo = np.full((nu + 2, nv + 2, lo.shape[2]), _EMPTY_LO)
             pad_hi = np.full((nu + 2, nv + 2, lo.shape[2]), _EMPTY_HI)
@@ -698,14 +733,19 @@ class DexelSim:
                     continue
                 i, j = np.divmod(index, nv)
                 z0, z1 = a_lo[index, col], a_hi[index, col]
+                # The wall's plane is fixed by i (x walls) or j (y walls); runs go along the other index.
+                plane, along = (i, j) if axis == 0 else (j, i)
+                (plane, z0, z1), _, _, w0, w1 = _rectangles([plane.astype(float), z0, z1], np.zeros_like(along),
+                                                            along)
+                plane = plane.astype(np.int64)
                 if axis == 0:
-                    x = x0 + (i + (1 if sign > 0 else 0)) * cell
-                    ya_, yb_ = y0 + j * cell, y0 + (j + 1) * cell
+                    x = x0 + (plane + (1 if sign > 0 else 0)) * cell
+                    ya_, yb_ = y0 + w0 * cell, y0 + w1 * cell
                     p = [np.column_stack([x, ya_, z0]), np.column_stack([x, yb_, z0]),
                          np.column_stack([x, yb_, z1]), np.column_stack([x, ya_, z1])]
                 else:
-                    y = y0 + (j + (1 if sign > 0 else 0)) * cell
-                    xa_, xb_ = x0 + i * cell, x0 + (i + 1) * cell
+                    y = y0 + (plane + (1 if sign > 0 else 0)) * cell
+                    xa_, xb_ = x0 + w0 * cell, x0 + w1 * cell
                     p = [np.column_stack([xa_, y, z0]), np.column_stack([xa_, y, z1]),
                          np.column_stack([xb_, y, z1]), np.column_stack([xb_, y, z0])]
                 if sign < 0:

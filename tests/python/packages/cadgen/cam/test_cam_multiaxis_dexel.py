@@ -152,9 +152,12 @@ class Dexel(unittest.TestCase):
             b.feed(x=-8, f=500)
             b.rapid(z=30)
 
+        # Untouched, the box is drawn as its six faces: faces at one height or one span merge into rectangles.
+        self.assertEqual(12, len(sim.mesh()[1]))
         sim.cut(one_op(pocket), TOOLS, TOP)
         vertices, triangles = sim.mesh()
         self.assertAlmostEqual(sim.volume(), signed_volume(vertices, triangles), delta=1e-6 * sim.volume())
+        self.assertLess(len(triangles), 2000)
 
     def test_a_cylinder_bar_is_ray_cast_to_its_volume(self):
         vertices, triangles = _cylinder_mesh("x", (0.0, 0.0, 0.0), 15.0, -30.0, 30.0, segments=192)

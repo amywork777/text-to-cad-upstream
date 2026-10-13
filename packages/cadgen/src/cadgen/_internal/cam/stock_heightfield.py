@@ -291,7 +291,10 @@ class HeightfieldSim:
 
     def mesh(self, max_cells: int = 300):
         """The stock now as a closed-ish surface: tops and bottoms at cell centres, skirts round the edges. Grids
-        larger than ``max_cells`` a side are shown at a block size (tops by block maximum, bottoms by minimum)."""
+        larger than ``max_cells`` a side are shown at a block size (tops by block maximum, bottoms by minimum).
+        Square blocks of cells that lie on one plane to :data:`DISPLAY_MM` (the uncut top, a floor, a ramp, a
+        finish's fine scallops) are one quad each (:func:`_block_triangles`), so a part's stock is a few hundred
+        kilobytes, not megabytes; where a big block meets small ones the gap is at most that much."""
         factor = max(1, int(math.ceil(max(self.nx, self.ny) / max_cells)))
         top, bottom = self.top, self.bottom
         if factor > 1:
@@ -317,17 +320,89 @@ class HeightfieldSim:
                               np.column_stack([gx.ravel(), gy.ravel(), bottom.ravel()])])
         if mx < 2 or my < 2:
             return vertices, np.zeros((0, 3), dtype=np.int64)
+        quad = exists[:-1, :-1] & exists[1:, :-1] & exists[1:, 1:] & exists[:-1, 1:]
+        top_tris = _block_triangles(top, quad, my)
+        bottom_tris = _block_triangles(bottom, quad, my)[:, [0, 2, 1]] + count
+        # Skirts on the cell grid's own boundary (between a cell that exists and one that does not), so the merged
+        # blocks' long edges never read as boundary.
         index = np.arange(count).reshape(mx, my)
+        padded = np.zeros((mx + 1, my + 1), dtype=bool)
+        padded[1:-1, 1:-1] = quad
+        inner = padded[1:-1, 1:-1]
         a, b = index[:-1, :-1], index[1:, :-1]
         c, d = index[1:, 1:], index[:-1, 1:]
-        quad = exists[:-1, :-1] & exists[1:, :-1] & exists[1:, 1:] & exists[:-1, 1:]
-        a, b, c, d = a[quad], b[quad], c[quad], d[quad]
-        top_tris = np.vstack([np.column_stack([a, b, c]), np.column_stack([a, c, d])])
-        bottom_tris = top_tris[:, [0, 2, 1]] + count
-        edges = np.vstack([top_tris[:, [0, 1]], top_tris[:, [1, 2]], top_tris[:, [2, 0]]])
-        key = np.sort(edges, axis=1)
-        _, inverse, counts = np.unique(key, axis=0, return_inverse=True, return_counts=True)
-        boundary = edges[counts[inverse.ravel()] == 1]
+        sides = []
+        for corner_a, corner_b, open_ in ((a, b, ~padded[1:-1, :-2]), (b, c, ~padded[2:, 1:-1]),
+                                          (c, d, ~padded[1:-1, 2:]), (d, a, ~padded[:-2, 1:-1])):
+            keep = inner & open_
+            sides.append(np.column_stack([corner_a[keep], corner_b[keep]]))
+        boundary = np.vstack(sides)
         skirt = np.vstack([np.column_stack([boundary[:, 1], boundary[:, 0], boundary[:, 0] + count]),
                            np.column_stack([boundary[:, 1], boundary[:, 0] + count, boundary[:, 1] + count])])
-        return vertices, np.vstack([top_tris, bottom_tris, skirt]).astype(np.int64)
+        triangles = np.vstack([top_tris, bottom_tris, skirt]).astype(np.int64)
+        # Only the vertices the merged surface uses.
+        used, triangles = np.unique(triangles, return_inverse=True)
+        return vertices[used], triangles.reshape(-1, 3).astype(np.int64)
+
+
+#: How far a merged block's own vertices may stand off its plane (mm): far below what the viewer shows of a
+#: translucent stock, and the most a block's edge can stand off a smaller neighbour's vertex. The simulation
+#: itself, and every check, keep the full grid: only the drawing is merged.
+DISPLAY_MM = 0.02
+
+
+def _block_triangles(height, quad, my: int, tolerance: float = DISPLAY_MM):
+    """Triangles (vertex indices into a row-major ``(mx, my)`` grid) covering every cell where ``quad`` is true:
+    aligned square blocks of 2^L cells whose every vertex lies within ``tolerance`` of the plane through the block's
+    corners are two triangles each (a quadtree, judged bottom up and emitted top down), every other cell two
+    triangles of its own. Counter-clockwise seen from +Z."""
+    from numpy.lib.stride_tricks import sliding_window_view
+
+    cx, cy = quad.shape
+    h = np.asarray(height, dtype=float)
+    whole = [quad]                          # every cell of the block exists
+    levels = [None]
+    size = 1
+    while True:
+        below = whole[-1]
+        nb, mb = below.shape[0] // 2, below.shape[1] // 2
+        if not nb or not mb:
+            break
+        size *= 2
+        full = below[0:2 * nb:2, 0:2 * mb:2] & below[1:2 * nb:2, 0:2 * mb:2] & below[0:2 * nb:2, 1:2 * mb:2] \
+            & below[1:2 * nb:2, 1:2 * mb:2]
+        whole.append(full)
+        if not full.any():
+            levels.append(full)
+            break
+        window = sliding_window_view(h[:nb * size + 1, :mb * size + 1], (size + 1, size + 1))[::size, ::size]
+        corner = window[:, :, 0, 0][:, :, None, None]
+        steps = np.arange(size + 1, dtype=float)
+        slope_x = (window[:, :, size, 0] - window[:, :, 0, 0])[:, :, None, None] / size
+        slope_y = (window[:, :, 0, size] - window[:, :, 0, 0])[:, :, None, None] / size
+        plane = corner + slope_x * steps[:, None] + slope_y * steps[None, :]
+        flat = np.abs(window - plane).max(axis=(2, 3)) <= tolerance
+        levels.append(full & flat)
+    covered = np.zeros((cx, cy), dtype=bool)
+    out = []
+    for level in range(len(levels) - 1, 0, -1):
+        size = 2 ** level
+        blocks = levels[level]
+        free = ~covered[::size, ::size][:blocks.shape[0], :blocks.shape[1]]
+        emit = blocks & free
+        if not emit.any():
+            continue
+        bi, bj = np.nonzero(emit)
+        i0, j0 = bi * size, bj * size
+        a, b = i0 * my + j0, (i0 + size) * my + j0
+        c, d = (i0 + size) * my + j0 + size, i0 * my + j0 + size
+        out += [np.column_stack([a, b, c]), np.column_stack([a, c, d])]
+        mark = np.zeros_like(blocks)
+        mark[bi, bj] = True
+        grown = np.kron(mark, np.ones((size, size), dtype=bool))
+        covered[:grown.shape[0], :grown.shape[1]] |= grown
+    ci, cj = np.nonzero(quad & ~covered)
+    a, b = ci * my + cj, (ci + 1) * my + cj
+    c, d = (ci + 1) * my + cj + 1, ci * my + cj + 1
+    out += [np.column_stack([a, b, c]), np.column_stack([a, c, d])]
+    return np.vstack(out).astype(np.int64)
