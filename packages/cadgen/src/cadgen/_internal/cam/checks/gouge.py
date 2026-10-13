@@ -77,4 +77,8 @@ def run(ctx) -> list[dict]:
                 "leave, and report it if the job is right", [{"setup": op.setup, "operation": op.index,
                                                               "depth_mm": round(worst, 3), "count": count,
                                                               "at": xyz(point)}]))
+    # Lathe operations: the tool's shape swept through the half-plane against the part's turned section.
+    from cadgen._internal.cam.checks._turning import gouges
+
+    out.extend(gouges(ctx))
     return out
