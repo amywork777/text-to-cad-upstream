@@ -325,7 +325,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
                           version=__version__, part=document.name, job_name=parsed.name,
                           material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,
-                          setup_index=k, setup_count=len(setup_plans),
+                          retract_z=plan.heights.retract, setup_index=k, setup_count=len(setup_plans),
                           notes=tuple(f"lite {entry['op']}: {limit}" for entry in lite for limit in entry["limits"]
                                       if by_index[entry["operation"]].setup == plan.setup.id))
         setup_tools = {op.tool.id for op in op_plans if op.setup == plan.setup.id and op.tool is not None}
