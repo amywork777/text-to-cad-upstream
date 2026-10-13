@@ -3,7 +3,7 @@
 * :class:`Sections` slices the part's tessellation (in a setup's WCS) at a height ``z`` and returns the material
   there as shapely polygons (even-odd from the slice's closed rings). Slicing the mesh rather than the B-rep keeps it
   fast and robust; its error is the tessellation's deflection (0.01 mm by default), which the checks' tolerances
-  allow for. A slice exactly through a vertex is nudged up 1e-7 mm.
+  allow for. A slice through a vertex (a floor) is nudged up 1e-7 mm: the material just above it.
 * :func:`footprint` is a set of triangles projected onto the WCS XY plane (a floor face's outline).
 * :func:`offset` buffers with round joins at a chord tolerance (:func:`quad_segs`); :func:`rings` lists a region's
   boundary rings oriented for climb or conventional milling: climb keeps the material on the right of travel
@@ -93,6 +93,7 @@ class Sections:
         corners = self.vertices[self.triangles]
         self.zmin = corners[:, :, 2].min(axis=1)
         self.zmax = corners[:, :, 2].max(axis=1)
+        self._heights = np.unique(self.vertices[:, 2])
         self._cache: dict[float, object] = {}
         self.open_pieces = 0
 
@@ -115,14 +116,16 @@ class Sections:
         import numpy as np
         import shapely
 
-        nudges = 0
-        while True:
-            crossing = (self.zmin < z) & (self.zmax > z)
-            corners = self.vertices[self.triangles[crossing]]
-            if not np.any(np.abs(corners[:, :, 2] - z) < 1e-9) or nudges > 20:
+        # A slice through a vertex (a floor, a step's edge) is taken a hair above it, so the slice is the material
+        # just over that height and every wall standing on it is cut.
+        for _ in range(20):
+            k = int(np.searchsorted(self._heights, z))
+            near = [self._heights[i] for i in (k - 1, k) if 0 <= i < len(self._heights)]
+            if not any(abs(h - z) < 1e-9 for h in near):
                 break
             z += 1e-7
-            nudges += 1
+        crossing = (self.zmin < z) & (self.zmax > z)
+        corners = self.vertices[self.triangles[crossing]]
         if not len(corners):
             return shapely.Polygon()
         segments = []
