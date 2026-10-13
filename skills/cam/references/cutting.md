@@ -94,8 +94,11 @@ third of the sheet (1 to 3 mm) high. A tab that does not fit a small part is lef
 4. **Beam processes.** Rapid at the clearance height to the lead's start, down to the pierce
    height, beam on with the pierce dwell, down to the cut height, lead-in, the profile (slowed at
    corners, the beam off over each microjoint and re-pierced after it), lead-out, beam off.
-5. **Router.** Down to the retract plane, then for each depth a ramp along the profile and the
-   full profile, lifting over the tabs on the depths below the tab's top.
+5. **Router.** Down to the retract plane, then for each depth a ramp along the profile (never across
+   it: round a short profile in laps, forward and back over a long one's first stretch before its
+   first tab; a round profile by helical arcs) and the full profile, lifting over the tabs on the
+   depths below the tab's top. A hole exactly the bit's size is plunged (a warning says the bit must
+   cut at its centre).
 
 ## Reading the result
 
