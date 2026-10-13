@@ -167,7 +167,10 @@ def _id(lt, b, forbidden, hole, z_start, doc, rr, f, params, ctx, reach):
     import numpy as np
     import shapely
 
+    from cadgen._internal.cam.turn_profile import sweep
+
     material = lt.material()
+    shapes = _shapes(ctx, "id", reach_mm=reach)
     r = ctx.tool.nose_radius_mm
     p = lt.profile
     inner = hole - 0.2                     # inside the hole: the bar's way in and out
@@ -190,7 +193,10 @@ def _id(lt, b, forbidden, hole, z_start, doc, rr, f, params, ctx, reach):
         x_previous = x
         if band.is_empty or band.area < 1e-3:
             continue
-        _level(b, lt, x, z_end, z_start, min(z_start, float(band.bounds[3]) + lt.approach), rr, f, True)
+        begin = min(z_start, float(band.bounds[3]) + lt.approach)
+        _level(b, lt, x, z_end, z_start, begin, rr, f, True)
+        # What this pass opened is open for the next one's bar.
+        material = shapely.difference(material, sweep([(x, begin), (x, z_end), (x - rr, z_end + rr)], shapes))
         passes += 1
         deepest = z_end if deepest is None else min(deepest, z_end)
     if params["cleanup"]:

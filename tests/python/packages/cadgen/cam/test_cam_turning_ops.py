@@ -20,7 +20,7 @@ from cadgen._internal.cam.stock import build_stock
 from cadgen._internal.cam.stock_lathe import LatheSim
 from cadgen._internal.cam.turn_profile import read_profile, sweep, tool_shape
 from tests.python.support.cam_fixtures import class_directory, quiet
-from tests.python.support.cam_fixtures_turning import SECTION, face_ref, lathe_job, shaft_step
+from tests.python.support.cam_fixtures_turning import BUSH, SECTION, bush_step, face_ref, lathe_job, shaft_step
 
 
 def W(z: float) -> float:
@@ -316,6 +316,46 @@ class Turning(unittest.TestCase):
         _, ops, _ = plan_setups(parsed, parse_operations(parsed), part, stock)
         self.assertIn("not turned about the spindle axis", ops[0].meta["note"])
         self.assertNotIn("spindle axis", ops[1].meta.get("note", ""))
+
+
+class Bore(unittest.TestCase):
+    """The bushing: bored in levels from a drilled hole, grooved and threaded inside."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        step = bush_step(class_directory(cls))
+        cls.part = read_part(step)
+        cls.features = cam.features(step)
+
+    def test_bored_grooved_and_threaded_inside_without_touching_the_part(self):
+        part_region = shapely.affinity.translate(shapely.Polygon(BUSH), 0.0, -61.0)
+        bore = face_ref(self.features, 16.0, hole=True)
+        parsed = parse_job(lathe_job([
+            {"op": "turn_face", "tool": "T1"}, {"op": "turn_drill", "tool": "T6", "peck_mm": 8},
+            {"op": "turn_rough", "tool": "T7", "side": "id"}, {"op": "turn_finish", "tool": "T7", "side": "id"},
+            {"op": "turn_groove", "tool": "T8", "side": "id"},
+            {"op": "turn_thread", "tool": "T4", "side": "id", "faces": [bore]}],
+            stock={"kind": "cylinder", "diameter_mm": 32, "length_mm": 70}))
+        stock = build_stock(parsed.stock, self.part)
+        plans, ops, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
+        plan = plans[0]
+        self.assertGreaterEqual(ops[2].meta["passes"], 3, "the bore is roughed in levels")
+        self.assertEqual([[W(47.0), W(50.0)]], ops[4].meta["grooves"])
+        sim = LatheSim(stock, self.part)
+        report = sim.cut(plan.toolpath, {t.id: t for t in parsed.tools}, plan.wcs)
+        self.assertEqual([], report.rapid_hits)
+        material = shapely.affinity.translate(sim.material, 0.0, -61.0)
+        self.assertLess(shapely.difference(part_region.buffer(-0.02), material).area, 1e-6)
+        # The bore is open to the part everywhere a boring bar and a grooving blade can reach.
+        bore_left = shapely.intersection(material, shapely.box(0.0, W(30.0), 9.5, W(60.0)))
+        proud = shapely.difference(bore_left, part_region.buffer(0.03))
+        self.assertLess(proud.area, 0.05, proud.bounds)
+        cycle = next(e.data for e in plan.toolpath.events if e.kind == "cycle" and e.data["cycle"] == "thread")
+        self.assertFalse(cycle["external"])
+        self.assertAlmostEqual(8.0 + 0.5413 * 1.5, cycle["pass_list"][-1][0], places=3)
+        self.assertLess(cycle["x_clear"], 8.0)
 
 
 class EndToEnd(unittest.TestCase):

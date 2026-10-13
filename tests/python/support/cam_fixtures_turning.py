@@ -44,6 +44,12 @@ SECTION = (
 )
 
 
+#: A bushing: Ø30 outside, a Ø16 bore 10 deep (an inside thread's minor diameter), a 3 mm inside groove Ø19 behind
+#: it, then Ø14 to z 30 and Ø12 through: (radius, z) half-section.
+BUSH = ((6.0, 0.0), (15.0, 0.0), (15.0, 60.0), (8.0, 60.0), (8.0, 50.0), (9.5, 50.0), (9.5, 47.0), (7.0, 47.0),
+        (7.0, 30.0), (6.0, 30.0))
+
+
 def revolved_step(directory: Path, section, name: str, *, cross_hole: bool = False, along_x: bool = False) -> Path:
     from build123d import Axis, BuildLine, BuildPart, BuildSketch, Cylinder, Locations, Mode, Plane, Polyline, Pos, \
         export_step, make_face, revolve
@@ -66,6 +72,10 @@ def revolved_step(directory: Path, section, name: str, *, cross_hole: bool = Fal
 def shaft_step(directory: Path, name: str = "shaft", *, cross_hole: bool = False, along_x: bool = False) -> Path:
     """The shaft; ``along_x`` lies it along the part's X (front at x = 60)."""
     return revolved_step(directory, SECTION, name, cross_hole=cross_hole, along_x=along_x)
+
+
+def bush_step(directory: Path, name: str = "bush") -> Path:
+    return revolved_step(directory, BUSH, name)
 
 
 def block_step(directory: Path, name: str = "block") -> Path:
