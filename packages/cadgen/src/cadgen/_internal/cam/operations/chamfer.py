@@ -134,6 +134,7 @@ class ChamferOp(Operation):
         b.rapid(z=heights.clearance)
         ctx.meta.update({"loops": len(rings), "width_mm": width, "depth_mm": round(depth, 4),
                          "tip_z": round(lowest, 4) if lowest is not None else None, "no_gouge_check": True,
+                         "note_level": "info",
                          "note": f"chamfers {width:g} mm wide and {depth:.3g} mm deep into the modelled sharp edges "
                                  "(not judged by the gouge check)"})
         return b.build()

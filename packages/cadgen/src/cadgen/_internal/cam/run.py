@@ -11,6 +11,7 @@ at the names it would have written.
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 import time
 from pathlib import Path
@@ -22,6 +23,9 @@ from cadgen.results import CamFeaturesResult, CamPlanResult
 
 __all__ = ["headline", "list_features", "parse_operations", "plan_job", "plan_setups"]
 
+
+#: Op meta keys that steer the run rather than describe the cut, kept out of a row's facts.
+_NOT_FACTS = frozenset({"no_gouge_check", "note_level", "spindle_dir", "findings", "adapted", "unreachable"})
 
 def job_finding(message: str) -> dict:
     """A job that cannot run, as the one error finding its result carries."""
@@ -195,7 +199,13 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
         if op.meta.get("plunges"):
             warnings.append(f"{op.summary}: plunged straight in {op.meta['plunges']} time(s); the tool must cut at "
                             "its centre (most end mills do; check yours)")
-        if op.meta.get("note"):
+        if op.meta.get("note") and op.meta.get("note_level") == "info":
+            findings = list(findings)
+            # What the op did on purpose (a chamfer cut into the modelled edge): an info finding, not a warning.
+            findings.append({"check": "plan", "severity": "info", "type": "note", "summary": f"{op.summary}: "
+                             f"{op.meta['note']}", "description": op.meta["note"],
+                             "items": [{"setup": op.setup, "operation": op.index}]})
+        elif op.meta.get("note"):
             warnings.append(f"{op.summary}: {op.meta['note']}")
     mark = lap("checks_s", mark)
 
@@ -244,8 +254,11 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
                 row["name"] = op.spec.name
             if op.feeds is not None and op.feeds.clamped:
                 row["clamped"] = list(op.feeds.clamped)
-            facts = {k: v for k, v in op.meta.items() if k in ("levels", "passes", "entries", "plunges", "floor_z",
-                                                                  "bottom_z", "note", "stock_to_leave", "cut")}
+            # Every plain fact an op recorded (levels, passes, depth, thread size, ...), for the agent and the row.
+            facts = {k: v for k, v in op.meta.items() if k not in _NOT_FACTS and not k.startswith("_")
+                     and (isinstance(v, (str, bool, int)) or (isinstance(v, float) and math.isfinite(v)))}
+            if isinstance(op.meta.get("cut"), dict):
+                facts["cut"] = op.meta["cut"]
             if facts:
                 row["facts"] = facts
             ops.append(row)

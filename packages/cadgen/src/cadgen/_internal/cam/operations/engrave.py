@@ -155,6 +155,7 @@ class EngraveOp(Operation):
                 "the modelled surface (not judged by the gouge check)")
         ctx.meta.update({"levels": len(cut_levels), "passes": len(curves), "bottom_z": round(bottom, 4),
                          "length_mm": round(total, 2), "line_width_mm": round(line_width, 4), "no_gouge_check": True,
+                         "note_level": "warning" if notes else "info",
                          "note": "; ".join([note] + notes)})
         return b.build()
 

@@ -135,6 +135,7 @@ class ThreadMillOp(Operation):
         b.rapid(z=ctx.heights.clearance)
         ctx.meta.update({"threads": sizes, "passes": len(targets) * (params["passes"] or (2 if pitch >= 1.5 else 1)),
                          "turns": round(turns_total, 2), "pitch_mm": pitch, "no_gouge_check": True,
+                         "note_level": "info",
                          "note": f"mills {', '.join(sorted(set(sizes)))} beyond the modelled hole or boss (not judged "
                                  "by the gouge check)"})
         return b.build()
