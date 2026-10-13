@@ -9,7 +9,9 @@ and the run reports it as adapted).
 run of cutting moves it measures how deep the tool sits below the material within reach of its side (the reach
 check), then stamps the cutter's profile at every sample (``tool.height_at`` at each cell centre's distance from
 the tool axis). Rapids are tested, never stamped: a rapid whose cutter dips more than 0.05 mm into material is a
-hit. The grid's cell is chosen by the fit ladder; its error is about half a cell sideways and nothing vertically.
+hit. Each cell remembers the last operation whose cutter passed over it (``last_op``), so material left is judged
+against that operation's stock to leave. The grid's cell is chosen by the fit ladder; its error is about half a cell
+sideways and nothing vertically.
 
 numpy at import (the engine imports this only when it simulates).
 """
@@ -73,6 +75,8 @@ def raster_heights(vertices, triangles, x0: float, y0: float, cell: float, nx: i
 
 class HeightfieldSim:
     kind = "heightfield"
+    #: :meth:`material_left` takes ``leave_by_op`` (each cell judged by the last operation that covered it).
+    tracks_ops = True
 
     def __init__(self, stock, part=None, *, cell_mm: float, tolerance_mm: float = 0.01):
         low, high = np.asarray(stock.bounds_min, dtype=float), np.asarray(stock.bounds_max, dtype=float)
@@ -90,6 +94,9 @@ class HeightfieldSim:
         self.step = self.cell
         self.cut_from_below = False
         self._part_heights = None
+        #: The last operation whose cutter covered each cell (-1: none yet).
+        self.last_op = np.full((self.nx, self.ny), -1, dtype=np.int64)
+        self._op = -1
 
     @property
     def cells(self) -> int:
@@ -148,6 +155,7 @@ class HeightfieldSim:
     def _stamp(self, points, tool, direction: int, di, dj) -> None:
         step = max(1, _CHUNK // max(1, len(di)))
         top, bottom = self.top.ravel(), self.bottom.ravel()
+        last = self.last_op.reshape(-1)
         for s in range(0, len(points), step):
             chunk = points[s:s + step]
             flat, valid, d = self._cells(chunk, di, dj)
@@ -158,6 +166,7 @@ class HeightfieldSim:
                 np.minimum.at(top, flat[inside], surface[inside])
             else:
                 np.maximum.at(bottom, flat[inside], surface[inside])
+            last[flat[inside]] = self._op
         self.top = top.reshape(self.nx, self.ny)
         self.bottom = bottom.reshape(self.nx, self.ny)
 
@@ -203,6 +212,7 @@ class HeightfieldSim:
             rapid[0] = False
             di, dj = self._kernel(tool.radius + max(self.cell, 0.2))
             before = self.volume()
+            self._op = int(op.index)
             # Runs of consecutive samples of one class, in program order.
             classes = np.where(cutting, 1, np.where(rapid, 2, 0))
             breaks = np.nonzero(np.diff(classes))[0] + 1
@@ -244,10 +254,12 @@ class HeightfieldSim:
                                                 self.nx, self.ny)
         return self._part_heights
 
-    def material_left(self, part, *, stock_to_leave_mm: float, tolerance_mm: float) -> MaterialLeft:
+    def material_left(self, part, *, stock_to_leave_mm: float, tolerance_mm: float,
+                      leave_by_op: dict | None = None) -> MaterialLeft:
         """Stock still standing above the part (and below it, when a bottom setup was cut) by more than the stock to
         leave plus a tolerance. Columns where the part has no material are not judged (they are not over the
-        part)."""
+        part). With ``leave_by_op`` ({operation index: stock to leave}) each cell is judged by the stock to leave
+        of the last operation that covered it; ``stock_to_leave_mm`` where none did."""
         part_top, part_bottom = self._part(part)
         has_part = ~np.isnan(part_top)
         exists = self.top > self.bottom + 1e-9
@@ -255,7 +267,13 @@ class HeightfieldSim:
         if self.cut_from_below:
             below = np.where(has_part & exists, np.where(has_part, part_bottom, 0.0) - self.bottom, 0.0)
             excess = np.maximum(excess, below)
-        threshold = stock_to_leave_mm + max(0.05, tolerance_mm)
+        leave = np.full(self.last_op.shape, float(stock_to_leave_mm))
+        if leave_by_op:
+            ops = np.array(sorted(leave_by_op), dtype=np.int64)
+            values = np.array([float(leave_by_op[k]) for k in ops])
+            covered = np.isin(self.last_op, ops)
+            leave[covered] = values[np.searchsorted(ops, self.last_op[covered])]
+        threshold = leave + max(0.05, tolerance_mm)
         over = excess > threshold
         if not over.any():
             return MaterialLeft(0.0, 0.0, 0.0, None)

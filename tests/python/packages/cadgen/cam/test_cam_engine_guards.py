@@ -377,6 +377,21 @@ class ChecksSayWhatTheyDidNotJudge(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 gouges(ctx)
 
+    def test_material_left_is_judged_by_the_last_operation_over_each_place(self):
+        # A roughing face leaves 0.5; a ball finish with leave 0 runs after it at a wide stepover and leaves
+        # scallops about 0.3 high. The finish's 0 judges them, not the roughing's 0.5.
+        tools = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
+                 {"id": "T4", "type": "ball", "diameter_mm": 6, "flutes": 2, "flute_length_mm": 20, "stickout_mm": 30}]
+        rough = {"op": "face", "tool": "T1", "stock_to_leave_mm": 0.5}
+        finished = self.plan(mill_job([rough, {"op": "parallel", "tool": "T4", "stepover": 0.44}], tools=tools),
+                             "finished")
+        (left,) = [f for f in finished.findings if f["check"] == "material_left"]
+        self.assertGreater(left["items"][0]["max_mm"], 0.1)
+        self.assertLess(left["items"][0]["max_mm"], 0.5)
+        # The roughing alone, its allowance asked for: not a finding.
+        alone = self.plan(mill_job([rough], tools=tools), "alone")
+        self.assertEqual([], [f for f in alone.findings if f["check"] == "material_left"])
+
 
 if __name__ == "__main__":
     unittest.main()

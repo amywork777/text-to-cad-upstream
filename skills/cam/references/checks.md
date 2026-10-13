@@ -23,7 +23,7 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | `fixture` | error | a move enters a fixture keep-out box | change the region, move the part in the vise, another setup |
 | `machine` | error | an operation needs an axis or a process the machine does not have | another machine kind, or another operation |
 | `corner_radius` | warning | an inside corner is tighter than the tool's radius, so material stays in it | a smaller tool for those corners (`rest` or a second pocket), or accept the radius |
-| `material_left` | warning | stock is left above the part after every operation, beyond `stock_to_leave_mm` | add a finishing or rest operation where it says |
+| `material_left` | warning | stock is left above the part after every operation, beyond the `stock_to_leave_mm` of the last operation that covered that place (a roughing's allowance does not excuse what its finish left) | add a finishing or rest operation where it says |
 | `limits` | warning | a feed or speed was clamped to `max_feed_mm_min` or `max_rpm` | none needed; report it |
 
 ## What a check could not judge
