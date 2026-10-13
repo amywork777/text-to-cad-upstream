@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-__all__ = ["Budget", "display_chord", "sim_step", "stock_cell"]
+__all__ = ["Budget", "display_chord", "sample_spacing", "sim_step", "stock_cell"]
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,8 @@ class Budget:
     max_cells: int = 4_000_000
     max_sim_samples: int = 6_000_000
     max_glb_segments: int = 1_500_000
+    #: Drop-cutter points one 3D operation samples before it refines (its grid or its passes).
+    max_drop_points: int = 1_500_000
 
 
 def _mm(value: float) -> str:
@@ -82,3 +84,17 @@ def display_chord(segments_at, tolerance: float, budget: Budget) -> tuple[float,
         steps.append({"step": "display", "words": f"toolpath lines thinned to every {stride}th point to draw "
                       f"{count:,} segments", "accuracy": "the G-code keeps every move; only the drawing is thinned"})
     return chord, stride, steps
+
+
+def sample_spacing(measure: float, desired: float, budget: Budget, *, dims: int, what: str) -> tuple[float, list[dict]]:
+    """A 3D operation's sampling (mm) over ``measure`` (a path length, ``dims`` 1, or an area, ``dims`` 2), and the
+    step taken when ``desired`` would need more than :attr:`Budget.max_drop_points` points. ``what`` names the
+    sampling in the step's words ("waterline grid")."""
+    spacing = desired
+    if measure / spacing ** dims <= budget.max_drop_points:
+        return spacing, []
+    spacing = (measure / budget.max_drop_points) ** (1.0 / dims)
+    return spacing, [{"step": "sampling", "words": f"{what} sampled every {_mm(spacing)}, not every {_mm(desired)}, "
+                      f"to keep {budget.max_drop_points:,} drop-cutter points",
+                      "accuracy": f"features narrower than about {_mm(spacing)} can be missed; heights between "
+                      "samples are still checked against the part"}]
