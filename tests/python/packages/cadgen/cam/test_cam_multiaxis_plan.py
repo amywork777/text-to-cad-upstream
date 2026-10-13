@@ -69,7 +69,7 @@ class IndexedSetup(unittest.TestCase):
         result = self.result
         self.assertTrue(result.ok, result.findings)
         self.assertEqual("ready", result.verdict["status"], result.findings)
-        text = Path(next(p["file"] for p in result.posts if p["setup"] == "tilt")).read_text()
+        text = Path(next(p["file"] for p in result.posts if p["setup"] == "tilt")).read_text(encoding="utf-8")
         lines = text.splitlines()
         turn = next(i for i, line in enumerate(lines) if re.search(r"\bA30\b", line))
         cut = next(i for i, line in enumerate(lines) if line.startswith("G1"))
@@ -158,7 +158,7 @@ class Wrap(unittest.TestCase):
         self.assertTrue(result.ok, result.findings)
         self.assertEqual("ready", result.verdict["status"], result.findings)
         self.assertEqual("rotary", result.verdict["lite"][0]["op"])
-        text = Path(result.posts[0]["file"]).read_text()
+        text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
         self.assertGreater(len(re.findall(r"^G1 .*\bA-?\d|^[XYZ].*\bA-?\d", text, re.M)), 100)
         path = self.setups[0].toolpath
         self.assertEqual(("a",), path.rotary)

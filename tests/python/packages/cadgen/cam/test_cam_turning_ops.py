@@ -375,7 +375,7 @@ class EndToEnd(unittest.TestCase):
         self.assertTrue(result.ok, result.findings)
         self.assertEqual("ready", result.verdict["status"], result.findings)
         self.assertTrue(Path(result.glb).is_file())
-        text = Path(result.posts[0]["file"]).read_text()
+        text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
         self.assertIn("NOT proven on a machine", text)
         self.assertIn("G76", text)
         self.assertIn("G96", text)
