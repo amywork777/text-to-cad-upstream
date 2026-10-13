@@ -42,8 +42,7 @@ class TurnPartoffOp(TurnOperation):
         width = tool.width_mm
         z_part = params["z_mm"] if params["z_mm"] is not None else p.z_back
         z_blade = z_part - width
-        role = "partoff" if tool.type == "partoff" else "groove"
-        ctx.meta["lathe"] = {"role": role}
+        ctx.meta["lathe"] = {"role": "partoff"}
         ctx.meta["what"] = f"at Z{z_part:.4g}"
         if z_blade < lt.bar_back - 1e-6:
             raise CamJobError(f"{ctx.spec.where}: the bar ends at Z{lt.bar_back:.4g}, so a {width:g} mm blade has no "

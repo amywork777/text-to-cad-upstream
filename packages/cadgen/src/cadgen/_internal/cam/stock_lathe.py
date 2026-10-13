@@ -9,7 +9,8 @@ a part flipped for its second setup is simulated in the same frame). It starts a
 a run of cutting moves removes the region the shape sweeps (convex hulls of each piece, exact up to the chord of
 arcs), a rapid is tested, never cut: a rapid whose tool overlaps material by more than 0.05 mm is a hit. Thread
 passes are not stamped (a thread's helical groove is not a body of revolution; the part's thread is drawn as the
-toolpath only). Removed volume is Pappus's (2 pi x the section's area x its centroid radius).
+toolpath only). Once a part-off blade reaches the centre, the bar behind the cut is dropped: the part goes on to the
+next setup alone. Removed volume is Pappus's (2 pi x the section's area x its centroid radius).
 
 :meth:`material_left` compares the stock with the part's turned profile (the max-radius envelope from
 :mod:`~cadgen._internal.cam.turn_profile`) in the last setup, ignoring the bar behind the part (towards the chuck):
@@ -158,6 +159,8 @@ class LatheSim:
                         run = [i - 1]
                     run.append(i)
             flush(run)
+            if role == "partoff":
+                self._part_off(points, kinds, tool, frame)
             report.removed_mm3_by_op[op.index] = round(pappus(before) - pappus(self.material), 3)
             if hits:
                 i, (depth, at) = max(hits, key=lambda h: h[1][0])
@@ -174,6 +177,21 @@ class LatheSim:
                         report.depth_by_op[op.index] = {"depth_mm": round(depth, 3),
                                                         "at": self._part_point(tips[k], frame)}
         return report
+
+    def _part_off(self, points, kinds, tool, frame) -> None:
+        """Once the blade is through, the bar on the chuck side stays in the machine and the part goes on (to the
+        next setup, or the parts bin): keep only the material in front of the cut."""
+        s, _ = frame
+        cuts = points[kinds != RAPID]
+        if not len(cuts) or float(cuts[:, 0].min()) > 0.05:
+            return                                             # not through to the centre: still one piece
+        # The middle of the kerf (the blade's controlled point is its chuck-side corner).
+        t = cuts[int(np.argmin(cuts[:, 0])), 1] + s * tool.width_mm / 2.0
+        front = shapely.box(0.0, t, _FAR, _FAR) if s > 0 else shapely.box(0.0, -_FAR, _FAR, t)
+        kept = [g for g in shapely.get_parts(shapely.intersection(self.material, front))
+                if g.geom_type == "Polygon" and g.area > 1e-9]
+        if kept:
+            self.material = shapely.union_all(kept)
 
     def _face(self, points, kinds, role, tool, frame):
         """Where the material in front of a drill starts (t), before it cuts."""
@@ -246,7 +264,8 @@ class LatheSim:
         if not pieces:
             return None
         left = shapely.union_all(pieces)
-        coords = shapely.get_coordinates(left)
+        # How proud: the farthest point of its edge from the part (measured along the edge, not just its corners).
+        coords = shapely.get_coordinates(shapely.segmentize(left, 0.05))
         distance = shapely.distance(shapely.points(coords), target)
         k = int(np.argmax(distance))
         frame = self._frame(self.wcs)

@@ -291,6 +291,24 @@ class Turning(unittest.TestCase):
                            tolerance_mm=parsed.tolerance_mm)
         self.assertEqual([], gouges(ctx))
 
+    def test_parted_off_and_flipped_the_part_alone_goes_to_its_second_setup(self):
+        parsed = parse_job(lathe_job([], setups=[
+            {"id": "first", "orientation": "+Z", "operations": [
+                {"op": "turn_face", "tool": "T1"}, {"op": "turn_rough", "tool": "T1"},
+                {"op": "turn_partoff", "tool": "T5", "z_mm": W(-1.0)}]},
+            {"id": "second", "orientation": "-Z", "operations": [{"op": "turn_face", "tool": "T1"}]}]))
+        stock = build_stock(parsed.stock, self.part)
+        plans, ops, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
+        sim = LatheSim(stock, self.part)
+        tools = {t.id: t for t in parsed.tools}
+        sim.cut(plans[0].toolpath, tools, plans[0].wcs)
+        self.assertAlmostEqual(-1.0, sim.material.bounds[1], places=6)        # the bar behind the cut stayed
+        # Flipped, the part's back end is its front: faced from the 1 mm the part-off left, down to the part.
+        face = np.vstack(self.cutting(plans[1], next(r for r in plans[1].toolpath.ops if r.op == "turn_face")))
+        self.assertTrue(np.allclose(face[:, 1], -14.0))                        # part z 0 in the flipped WCS
+        sim.cut(plans[1].toolpath, tools, plans[1].wcs)
+        self.assertAlmostEqual(0.0, sim.material.bounds[1], places=6)
+
     def test_a_cross_hole_is_named_once_and_left(self):
         part = read_part(shaft_step(self.folder, "cross", cross_hole=True))
         parsed = parse_job(lathe_job([{"op": "turn_face", "tool": "T1"}, {"op": "turn_rough", "tool": "T1"}]))
