@@ -136,6 +136,14 @@ class Post:
     comment_open, comment_close = "(", ")"
     #: Rotary axes it can write.
     rotary_axes = ""
+    #: Linear axes it writes (a lathe ``XZ``, a cutting table ``XY``): a move's other coordinates are not posted.
+    linear_axes = "XYZ"
+    #: The IR planes it posts as G2/G3 (0 XY, 1 ZX, 2 YZ: ``ir.PLANE_*``); arcs in other planes post as lines.
+    arc_planes = frozenset({0})
+    #: Machine keys this post takes (``machine.cycles``, ...): ``{name: {"type": "bool"|"number"|"text"|"choice",
+    #: "default": ..., "choices": (...), "help": "..."}}``. The job accepts them for this post only
+    #: (:meth:`parse_options`); the parsed values ride on ``machine.post_options``.
+    options: dict = {}
 
     # --- the pieces -----------------------------------------------------------------------------------
 
@@ -151,6 +159,59 @@ class Post:
 
     def num(self, value: float) -> str:
         return number(value, self.decimals)
+
+    # --- hooks a dialect overrides (defaults keep the base's behaviour) ------------------------------------
+
+    def axis_value(self, axis: str, value: float) -> float:
+        """The number posted for linear ``axis`` (``x``, ``y``, ``z``) at IR ``value``: a lathe doubles X."""
+        return value
+
+    def feed_word(self, feed: float) -> str:
+        """The F word's number for an IR feed in mm/min (a feed-per-rev post divides by the rpm)."""
+        return self.num(round(feed, 1))
+
+    def emits_cycle(self, data: dict) -> bool:
+        """Post this ``cycle`` event natively (:meth:`cycle_lines`) instead of its expansion."""
+        return data.get("cycle") in self.canned_cycles
+
+    def modal_reset(self, kind: str) -> tuple[str, ...]:
+        """Modal state to forget after an event of ``kind`` (``motion``, ``x``.., ``f``), when the event's own lines
+        moved the machine or changed a modal word."""
+        return ()
+
+    def extra_words(self, start, end, code: str) -> list[str]:
+        """Words appended to a motion line from ``start`` to ``end`` (IR xyz): a wire EDM's U and V."""
+        return []
+
+    def option(self, program: Program, name: str):
+        """``machine.<name>`` as the job set it, else the option's default."""
+        values = getattr(program.machine, "post_options", None) or {}
+        return values[name] if name in values else self.options[name]["default"]
+
+    @classmethod
+    def parse_options(cls, raw: dict, where: str = "machine") -> dict:
+        """The post's machine keys from ``raw`` (the job's machine object), checked; absent keys are left out."""
+        from cadgen._internal.cam.job_errors import CamJobError, choice
+
+        out = {}
+        for name, spec in cls.options.items():
+            if name not in raw:
+                continue
+            value, kind, at = raw[name], spec["type"], f"{where}.{name}"
+            if kind == "bool" and not isinstance(value, bool):
+                raise CamJobError(f"{at} must be true or false ({spec['help']})")
+            if kind == "number" and (isinstance(value, bool) or not isinstance(value, (int, float))
+                                     or not math.isfinite(value) or value < spec.get("minimum", 0.0)):
+                raise CamJobError(f"{at} must be a number of at least {spec.get('minimum', 0.0):g} ({spec['help']})")
+            if kind == "text" and (not isinstance(value, str) or not value.strip()):
+                raise CamJobError(f"{at} must be a G-code word like {spec['default']!r} ({spec['help']})")
+            if kind == "choice":
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and str(value) in map(str, spec["choices"]):
+                    value = next(c for c in spec["choices"] if str(c) == str(value))
+                else:
+                    choice(value, tuple(str(c) for c in spec["choices"]), at)
+            out[name] = float(value) if kind == "number" else value
+        return out
 
     def header(self, program: Program) -> list[str]:
         """The safety block every posted file opens with."""
@@ -241,7 +302,7 @@ class Post:
     def render(self, program: Program) -> str:
         import numpy as np
 
-        from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, DWELL, FEED, PLANE_XY, PLUNGE, RAPID
+        from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, DWELL, FEED, PLUNGE, RAPID
 
         path = program.toolpath
         moves = path.moves
@@ -257,7 +318,9 @@ class Post:
         def axis_words(x, y, z, abc=None) -> list[str]:
             words = []
             for name, value in (("x", x), ("y", y), ("z", z)):
-                text = self.num(value)
+                if name.upper() not in self.linear_axes:
+                    continue
+                text = self.num(self.axis_value(name, value))
                 if state[name] != text:
                     words.append(f"{name.upper()}{text}")
                     state[name] = text
@@ -279,18 +342,23 @@ class Post:
                 state["motion"] = code
             line.extend(words)
             if feed is not None:
-                text = self.num(round(feed, 1))
+                text = self.feed_word(feed)
                 if state["f"] != text:
                     line.append(f"F{text}")
                     state["f"] = text
             out.append(" ".join(line))
 
-        def arc_line(end, centre, clockwise: bool, feed: float, start) -> None:
+        def arc_line(end, centre, clockwise: bool, feed: float, start, plane: int = 0) -> None:
             words = axis_words(end[0], end[1], end[2])
-            # A full circle has no changed axis words; write X and Y so the controller sees its end.
-            if not any(w[0] in "XY" for w in words):
-                words = [f"X{self.num(end[0])}", f"Y{self.num(end[1])}"] + [w for w in words if w[0] not in "XY"]
-            words += [f"I{self.num(centre[0] - start[0])}", f"J{self.num(centre[1] - start[1])}"]
+            u, v = {0: (0, 1), 1: (2, 0), 2: (1, 2)}[plane]
+            in_plane = "XYZ"[u] + "XYZ"[v]
+            # A full circle has no changed axis words; write the plane's two so the controller sees its end.
+            if not any(w[0] in in_plane for w in words):
+                words = [f"{'XYZ'[k]}{self.num(self.axis_value('xyz'[k], end[k]))}" for k in sorted((u, v))] + [
+                    w for w in words if w[0] not in in_plane]
+            # Centre offsets are incremental and never diameters (I stays a radius on a lathe).
+            words += [f"{'IJK'[k]}{self.num(centre[k] - start[k])}" for k in sorted((u, v))]
+            words += self.extra_words(start, end, "G2" if clockwise else "G3")
             state["motion"] = None
             motion("G2" if clockwise else "G3", words, feed)
 
@@ -315,9 +383,11 @@ class Post:
                     out += self.on_beam(event.data, program)
                 elif kind == "comment":
                     out.append(self.comment(event.data.get("text", "")))
-                elif kind == "cycle" and event.data.get("cycle") in self.canned_cycles and event.data.get("end", i) > i:
+                elif kind == "cycle" and self.emits_cycle(event.data) and event.data.get("end", i) > i:
                     out += self.cycle_lines(event.data, state)
                     skip_to = int(event.data["end"])
+                for key in self.modal_reset(kind):
+                    state[key] = None
             if i == n:
                 break
             if skip_to is not None:
@@ -332,13 +402,13 @@ class Post:
             end = (float(move["x"]), float(move["y"]), float(move["z"]))
             abc = (float(move["a"]), float(move["b"]), float(move["c"]))
             if kind == RAPID:
-                motion("G0", axis_words(*end, abc))
+                motion("G0", axis_words(*end, abc) + self.extra_words(position, end, "G0"))
             elif kind == DWELL:
                 out.append(f"G4 {self.dwell_word(float(move['p']))}")
             elif kind in (ARC_CW, ARC_CCW):
                 centre = (float(move["i"]), float(move["j"]), float(move["k"]))
-                if self.accepts_arcs and int(move["plane"]) == PLANE_XY:
-                    arc_line(end, centre, kind == ARC_CW, float(move["feed"]), position)
+                if self.accepts_arcs and int(move["plane"]) in self.arc_planes:
+                    arc_line(end, centre, kind == ARC_CW, float(move["feed"]), position, int(move["plane"]))
                 else:
                     piece = path.slice(i, i + 1).sample(tolerance)
                     for point in piece.points[1:]:
@@ -362,7 +432,7 @@ class Post:
                         position = [float(v) for v in (piece[1])]
                     i = j + 1
                     continue
-                motion("G1", axis_words(*end, abc), float(move["feed"]))
+                motion("G1", axis_words(*end, abc) + self.extra_words(position, end, "G1"), float(move["feed"]))
             position = list(end)
             i += 1
         out += self.footer(program)
