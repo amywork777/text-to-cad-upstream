@@ -148,6 +148,8 @@ def _od(lt, b, forbidden, top, z_start, doc, rr, f, params, ctx, profile, beyond
         if b.pos[2] < z_start:
             b.rapid(z=z_start)
         b.rapid(x=path[0][0])
+        if b.pos[2] > z_start:
+            b.rapid(z=z_start)
         feed_path(b, path, f)
         xl, zl = path[-1]
         b.feed(x=xl + rr, z=zl + rr, f=f)
@@ -208,6 +210,8 @@ def _id(lt, b, forbidden, hole, z_start, doc, rr, f, params, ctx, reach):
             if b.pos[2] < z_start:
                 b.rapid(z=z_start)
             b.rapid(x=path[0][0])
+            if b.pos[2] > z_start:
+                b.rapid(z=z_start)
             feed_path(b, path, f)
             xl, zl = path[-1]
             b.feed(x=xl - rr, z=zl + rr, f=f)

@@ -44,8 +44,10 @@ def gouges(ctx) -> list[dict]:
         inside = shapely.intersection(swept, section.buffer(-tol))
         if inside.is_empty or inside.area < 1e-6:
             continue
-        coords = shapely.get_coordinates(inside)
-        depth = shapely.distance(shapely.points(coords), section.boundary) + tol
+        # The deepest point is on the overlap's edge (the tool's surface inside the part): measured along it.
+        coords = shapely.get_coordinates(shapely.segmentize(inside, max(0.02, tol)))
+        coords = coords[shapely.contains_xy(section, coords[:, 0], coords[:, 1])]
+        depth = shapely.distance(shapely.points(coords), section.boundary)
         k = int(np.argmax(depth))
         at = plan.wcs.from_wcs([[coords[k, 0], 0.0, coords[k, 1]]])[0]
         out.append(finding(

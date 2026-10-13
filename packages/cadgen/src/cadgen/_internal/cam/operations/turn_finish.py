@@ -114,6 +114,8 @@ class TurnFinishOp(TurnOperation):
             if b.pos[2] < z_start:
                 b.rapid(z=z_start)
             b.rapid(x=first[0])
+            if b.pos[2] > z_start:
+                b.rapid(z=z_start)
             b.feed(z=first[1], f=f)
             feed_path(b, [*lead, *path], f)
             xl, zl = path[-1]
