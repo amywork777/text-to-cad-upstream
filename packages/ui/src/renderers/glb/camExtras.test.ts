@@ -79,3 +79,9 @@ it('reads a finding as cadgen writes it: its operations and place in items', () 
   const job = readCamJob(camScene({ extras }))!;
   expect(job.findings).toEqual([{ check: 'rapid_into_stock', level: 'error', message: 'A rapid crashes into the stock', operation: 1, operations: [1, 0], at: [20.7, 1, 12.4] }]);
 });
+
+it('reads an adapted step\'s words as cadgen writes them', () => {
+  const extras = camExtras() as any;
+  extras.adapted = [{ step: 'stock_grid', words: 'stock grid 0.5 mm -> 1 mm so the simulation fits 4,000,000 cells', accuracy: 'about 0.5 mm' }];
+  expect(readCamJob(camScene({ extras }))!.adapted).toEqual([{ step: 'stock_grid', note: 'stock grid 0.5 mm -> 1 mm so the simulation fits 4,000,000 cells' }]);
+});

@@ -187,7 +187,7 @@ export function readCamJob(root) {
     schema: number(cam.schema, 1),
     verdict: { status, headline, errors, warnings },
     setups, operations, findings,
-    adapted: list(cam.adapted).filter(plainObject).map((entry) => ({ step: text(entry.step), note: text(entry.note) })),
+    adapted: list(cam.adapted).filter(plainObject).map((entry) => ({ step: text(entry.step), note: text(entry.note) || text(entry.words) })),
     // A setup may post several files (one per tool on a controller without tool changes), each naming its `tool`.
     posts: list(cam.posts).filter(plainObject).map((entry) => ({ setup: text(entry.setup), file: text(entry.file), post: text(entry.post), tool: text(entry.tool) })),
     durationS,
