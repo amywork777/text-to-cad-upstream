@@ -267,9 +267,6 @@ class DrillOp(Operation):
                        "faces": list(h.faces)} for h, z, r in rows],
             "returns": returns,
         })
-        if tool.type == "tap":
-            # The thread is meant to cut into the wall: the 2.5D gouge check would read it as a gouge.
-            ctx.meta["no_gouge_check"] = True
         solid = self._points_in_solid(ctx, [row for row in rows if row[0].diameter is None])
         if solid:
             # The job asked for these holes where the model has none: said once, loudly, not as a gouge per point.

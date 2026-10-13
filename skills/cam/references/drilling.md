@@ -124,8 +124,14 @@ As findings in the result (`check` `drill`, warnings), besides the shared checks
 | `no_hole_in_model` | a point drills where the model is solid |
 
 `reach` (an error) compares how deep the tool goes below the material beside it with its
-`flute_length_mm` (a drill's default is ten diameters, a spot drill's one). The `gouge` check skips
-taps (a thread cuts into its wall on purpose) and point holes in solid material (said above).
+`flute_length_mm` (a drill's default is ten diameters, a spot drill's one). The `gouge` check (an
+error) judges the tool's whole body up its flutes, not just its point: a drill bigger than its hole is a
+gouge as well as a `hole_size` warning. A tap is judged as its core (the thread's minor diameter,
+`d - 1.2269 P`, for an M6x1 4.77 mm), since its thread form cuts the wall on purpose: a tap run into
+material past its hole is a gouge. Point holes in solid material are not judged (said above).
+
+Holes along one axis line are split where material stands between them: two blind holes drilled
+from either side of a web are two holes, each blind, never one through hole.
 
 ## Reading the result
 

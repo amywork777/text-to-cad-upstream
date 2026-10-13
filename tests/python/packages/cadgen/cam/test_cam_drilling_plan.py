@@ -230,7 +230,8 @@ class DrillPlate(unittest.TestCase):
         (cycle,) = self.cycles(path, rng)
         self.assertEqual(op.feeds.rpm * 1.0, cycle.data["feed"])
         self.assertEqual(1.0, cycle.data["pitch_mm"])
-        self.assertTrue(op.meta["no_gouge_check"])
+        # A tap is gouge-checked as its core (its thread form cuts the wall on purpose), not skipped.
+        self.assertNotIn("no_gouge_check", op.meta)
         dirs = [e.data["dir"] for e in path.events if e.kind == "spindle" and rng.start <= e.at < rng.end]
         self.assertEqual(["cw", "ccw", "cw", "ccw", "cw"], dirs)
         moves = path.moves[cycle.at:cycle.data["end"]]
