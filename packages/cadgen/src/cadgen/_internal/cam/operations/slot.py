@@ -160,6 +160,8 @@ class SlotOp(Operation):
             count = max(1, int(math.ceil(reach / stepover - 1e-9)))
             offsets = [reach * (k + 1) / count for k in range(count)]
         line = shapely.LineString(centre)
+        # Where the tool's centre has been at a level once it is cut: back there is a free way between levels.
+        cut = geom2d.offset(line, offsets[-1], tolerance=tol) if offsets else line.buffer(1e-3)
         unreachable: list[dict] = []
         if outline is not None:
             region = geom2d.offset(outline, -leave, tolerance=tol) if leave else outline
@@ -178,9 +180,9 @@ class SlotOp(Operation):
                 ends = (path[0], path[-1])
                 if math.dist(b.pos[:2], ends[1]) < math.dist(b.pos[:2], ends[0]):
                     path = path[::-1]
-                link(b, path[0], z_prev, clear=line.buffer(1e-3), heights=heights, f=slot_feeds.feed_mm_min)
+                link(b, path[0], z_prev, clear=cut, heights=heights, f=slot_feeds.feed_mm_min)
             else:
-                link(b, path[0], z_prev, clear=line.buffer(1e-3), heights=heights, f=slot_feeds.feed_mm_min)
+                link(b, path[0], z_prev, clear=cut, heights=heights, f=slot_feeds.feed_mm_min)
             b.feed(z=z_prev, f=slot_feeds.ramp_mm_min)
             if params["entry"] == "ramp" and ramp_along(b, path, z_prev, z, angle_deg=params["ramp_angle_deg"],
                                                          f=slot_feeds.ramp_mm_min):
