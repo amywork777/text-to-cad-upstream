@@ -377,6 +377,17 @@ class ChecksSayWhatTheyDidNotJudge(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 gouges(ctx)
 
+    def test_a_shank_the_stock_replay_cannot_judge_is_said(self):
+        tools = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30,
+                  "shank_diameter_mm": 8}]
+        job = mill_job([{"op": "face", "tool": "T1"}], tools=tools,
+                       machine={"kind": "mill4", "post": "linuxcnc", "max_rpm": 24000})
+        result = self.plan(job, "mill4")
+        self.assertTrue(result.ok)
+        (note,) = [f for f in result.findings if f["check"] == "holder_collision" and f["type"] == "not_judged"]
+        self.assertEqual("info", note["severity"])
+        self.assertEqual([{"setup": "top", "operation": 0}], note["items"])
+
     def test_material_left_is_judged_by_the_last_operation_over_each_place(self):
         # A roughing face leaves 0.5; a ball finish with leave 0 runs after it at a wide stepover and leaves
         # scallops about 0.3 high. The finish's 0 judges them, not the roughing's 0.5.

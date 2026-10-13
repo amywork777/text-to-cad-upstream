@@ -32,7 +32,9 @@ A check never passes in silence. A setup the stock simulator cannot simulate (a 
 3-axis mill's heightfield) gets a warning (`check` `checks`, `type` `setup_not_simulated`) naming
 the checks that did not judge it (`rapid_into_stock`, `material_left`, and `holder_collision`
 against the stock); a check that could not read what it judges says so with a `not_judged`
-warning. Each is an entry in the GLB's `checks.skipped` (`check`, `setup`, `why`). Tell the user
+finding. The shank and holder are judged against the stock only in top and bottom setups on a 3-axis
+mill's stock: elsewhere (a tilted or indexed setup, a mill4 or mill5) an info note says they were
+checked against the part only. Each is an entry in the GLB's `checks.skipped` (`check`, `setup`, `why`). Tell the user
 which setups went unchecked and that they must be air-cut first.
 
 ## Adapted steps
@@ -48,3 +50,7 @@ The checks know the part, the stock, the tools and the boxes you gave. They do n
 user's real vise, clamps, tool lengths, work offsets, machine kinematics beyond the job, or whether
 the stock is held well enough for the cut. Say so, and say that the program must be air-cut or run
 single-block first.
+
+The `fixture` check stands the tool along its setup's axis: a continuous 4th-axis wrap, swarf or
+5-axis finish tilts the tool along its path, and that tilt is not judged against the boxes, so check
+fixtures near those operations by hand.

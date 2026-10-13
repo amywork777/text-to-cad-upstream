@@ -12,7 +12,9 @@ or it is not judged here (a shank no wider than the cutter rubs only where the c
 * **Stock**: for top and bottom setups the stock is simulated again on a heightfield, operation by operation, and
   before each one its cylinders are checked against the stock as it stands then (the highest stock within the
   cylinder's radius over its bottom by more than 0.05 mm). Only operations with a cylinder wider than the cutter
-  cost this replay.
+  cost this replay. An operation in a setup the replay cannot cut (a side or tilted setup, or a job whose stock is
+  not a heightfield) is not judged against the stock and says so: a ``not_judged`` note per setup, unless the run
+  already warned that the whole setup went unsimulated.
 
 One error per operation and cylinder, with the worst overlap and where.
 """
@@ -108,15 +110,20 @@ def _against_stock(ctx, judged, cache) -> list[dict]:
     from cadgen._internal.cam.stock_heightfield import HeightfieldSim
 
     sim = getattr(ctx, "sim", None)
-    if sim is None or not hasattr(sim, "top"):
+    if sim is None:
         return []
+    if not hasattr(sim, "top"):
+        return _not_judged(ctx, judged, {plan.setup.id for plan in ctx.setups},
+                           "the stock replay is a heightfield and this job's stock is not")
     tools = {tool.id: tool for tool in ctx.job.tools}
     wanted = {op.index for op in judged}
     replay = HeightfieldSim(ctx.stock, ctx.part, cell_mm=max(float(sim.cell), 0.25),
                             tolerance_mm=max(0.01, ctx.tolerance_mm))
     out = []
+    unreplayed = set()
     for plan in ctx.setups:
         if replay.supports(plan.wcs):
+            unreplayed.add(plan.setup.id)
             continue
         direction = 1 if plan.wcs.tool_axis[2] > 0 else -1
         path = plan.toolpath
@@ -144,6 +151,24 @@ def _against_stock(ctx, judged, cache) -> list[dict]:
                 piece = type(piece)(piece.moves, piece.events, [op_range.shifted(-op_range.start)],
                                     start=piece.start, rotary=piece.rotary, lathe=piece.lathe)
                 replay.cut(piece, tools, plan.wcs)
+    return out + _not_judged(ctx, judged, unreplayed, "the stock replay covers top and bottom setups only")
+
+
+def _not_judged(ctx, judged, setups, why: str) -> list[dict]:
+    """One note per setup whose judged operations' shank or holder went unchecked against the stock; none where the
+    run already warns that the setup was not simulated at all."""
+    reports = getattr(ctx, "sim_reports", {}) or {}
+    out = []
+    for setup_id in sorted(setups):
+        report = reports.get(setup_id)
+        ops = [op for op in judged if op.setup == setup_id]
+        if not ops or (report is not None and report.skipped):
+            continue
+        out.append(finding(
+            "holder_collision", "info", "not_judged",
+            f"Setup '{setup_id}': the shank and holder above the flutes were checked against the part, not the stock "
+            f"({why})", "check the holder's clearance over the stock by hand on those operations",
+            [{"setup": setup_id, "operation": op.index} for op in ops]))
     return out
 
 
