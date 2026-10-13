@@ -416,9 +416,12 @@ class Post:
             elif kind in (FEED, PLUNGE):
                 # A run of short feed moves at one height and one feed may post as arcs.
                 j = i
-                if self.accepts_arcs and self.fit_arcs_to_lines:
+                # Moves that turn a rotary axis (multi-axis) post as lines, each with its A/B/C words.
+                still = not path.rotary or (i > 0 and all(moves[ax][i] == moves[ax][i - 1] for ax in path.rotary))
+                if self.accepts_arcs and self.fit_arcs_to_lines and still:
                     while (j + 1 < n and int(moves[j + 1]["kind"]) == FEED and moves[j + 1]["z"] == move["z"]
-                           and moves[j + 1]["feed"] == move["feed"] and kind == FEED and not by_index.get(j + 1)):
+                           and moves[j + 1]["feed"] == move["feed"] and kind == FEED and not by_index.get(j + 1)
+                           and all(moves[ax][j + 1] == move[ax] for ax in path.rotary)):
                         j += 1
                 if j - i + 1 >= 3:
                     run = np.vstack([[position], np.column_stack([moves["x"][i:j + 1], moves["y"][i:j + 1],
