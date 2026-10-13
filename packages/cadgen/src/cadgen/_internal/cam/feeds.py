@@ -75,6 +75,11 @@ class Feeds:
     clamped: tuple[str, ...] = ()
     source: str = "table"
     note: str = "a starting point: adjust to the machine, the tool and what you hear"
+    #: A lathe's: constant surface speed (m/min; None at a constant rpm), its rpm clamp, and the feed per revolution
+    #: (``feed_mm_min`` is it times ``rpm``, the speed the times assume). :func:`for_turn` sets them.
+    css_m_min: float | None = None
+    max_rpm: float | None = None
+    feed_mm_rev: float | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -397,3 +402,105 @@ def wire_speeds(material, thickness_mm: float, passes: int) -> list[float] | Non
     main = rate / max(thickness_mm, 0.5)
     return [round(main, 2)] + [round(main * WIRE_SKIM_FACTORS[min(k, len(WIRE_SKIM_FACTORS) - 1)], 2)
                                for k in range(max(0, passes - 1))]
+
+
+# --- turning ---------------------------------------------------------------------------------------------
+
+#: Per material, a carbide turning insert's starting numbers (Sandvik/Kennametal general turning tables, held to the
+#: conservative end for a light lathe): surface speed (m/min), roughing and finishing feed per revolution (mm/rev)
+#: and the roughing depth of cut (mm, radial).
+TURNING: dict[str, dict] = {
+    "aluminum-6061": {"vc": 300.0, "rough": 0.25, "finish": 0.10, "doc": 2.0},
+    "aluminum-7075": {"vc": 270.0, "rough": 0.25, "finish": 0.10, "doc": 2.0},
+    "steel-1018": {"vc": 180.0, "rough": 0.25, "finish": 0.10, "doc": 1.5},
+    "stainless-304": {"vc": 130.0, "rough": 0.20, "finish": 0.08, "doc": 1.0},
+    "tool-steel": {"vc": 100.0, "rough": 0.20, "finish": 0.08, "doc": 1.0},
+    "titanium-6al4v": {"vc": 50.0, "rough": 0.15, "finish": 0.08, "doc": 0.8},
+    "brass": {"vc": 220.0, "rough": 0.20, "finish": 0.08, "doc": 1.5},
+    "copper": {"vc": 160.0, "rough": 0.15, "finish": 0.08, "doc": 1.0},
+    "delrin": {"vc": 250.0, "rough": 0.20, "finish": 0.10, "doc": 2.0},
+    "acrylic": {"vc": 150.0, "rough": 0.15, "finish": 0.08, "doc": 1.0},
+    "hdpe": {"vc": 200.0, "rough": 0.25, "finish": 0.10, "doc": 2.0},
+    "nylon": {"vc": 200.0, "rough": 0.20, "finish": 0.10, "doc": 1.5},
+    "mdf": {"vc": 300.0, "rough": 0.20, "finish": 0.10, "doc": 1.5},
+    "hardwood": {"vc": 300.0, "rough": 0.20, "finish": 0.10, "doc": 1.5},
+    "plywood": {"vc": 300.0, "rough": 0.20, "finish": 0.10, "doc": 1.0},
+    "carbon-fiber": {"vc": 100.0, "rough": 0.10, "finish": 0.05, "doc": 0.5},
+    "foam": {"vc": 300.0, "rough": 0.30, "finish": 0.15, "doc": 3.0},
+}
+#: The turning kinds :func:`for_turn` knows, each a surface speed factor and the feed it starts from.
+TURN_KINDS = {"turn_rough": (1.0, "rough"), "turn_finish": (1.2, "finish"), "turn_face": (1.0, "face"),
+              "groove": (0.7, "groove"), "partoff": (0.6, "partoff"), "thread": (0.5, "thread")}
+#: The spindle cap for constant surface speed when the job names no ``machine.max_rpm`` (a G50/G92 clamp is always
+#: posted: CSS near the centre would otherwise run away).
+LATHE_MAX_RPM = 3000.0
+
+
+def _turning_numbers(material) -> dict:
+    if material.table:
+        return TURNING[material.name]
+    return {"vc": material.surface_m_min, "rough": 0.2, "finish": 0.08, "doc": 1.0}
+
+
+def turn_depth_of_cut(material, *, inside: bool = False) -> float:
+    """The default roughing depth of cut (mm, radial): the table's, 0.6 of it in a bore."""
+    return round(_turning_numbers(material)["doc"] * (0.6 if inside else 1.0), 3)
+
+
+def for_turn(material, tool, kind: str, machine, *, diameter_mm: float, feed: float | None = None,
+             speed: float | None = None, feed_mm_rev: float | None = None, css_m_min: float | None = None,
+             pitch_mm: float | None = None) -> Feeds:
+    """A lathe operation's spindle and feed (:data:`TURN_KINDS`): constant surface speed with the machine's rpm cap
+    (``rpm`` is the speed at ``diameter_mm``, the one the times assume) and a feed per revolution. A thread runs at a
+    constant rpm (the spindle must not change speed along a thread) with the feed one pitch a revolution. Overrides:
+    ``speed`` (rpm, constant), ``css_m_min``, ``feed_mm_rev``, ``feed`` (mm/min at that rpm)."""
+    if kind not in TURN_KINDS:
+        raise ValueError(f"unknown turning kind {kind!r}; one of {', '.join(TURN_KINDS)}")
+    numbers = _turning_numbers(material)
+    factor, feed_kind = TURN_KINDS[kind]
+    vc = float(css_m_min) if css_m_min is not None else numbers["vc"] * factor * (_HSS if tool.material == "hss" else 1.0)
+    cap = float(machine.max_rpm) if machine.max_rpm is not None else LATHE_MAX_RPM
+    clamped: list[str] = []
+    note = "a starting point: adjust to the machine, the insert and the chips"
+    diameter = max(float(diameter_mm), 0.5)
+    constant = kind == "thread" or speed is not None
+    wanted = float(speed) if speed is not None else 1000.0 * vc / (math.pi * diameter)
+    rpm = min(wanted, cap)
+    if wanted > cap + 1e-9:
+        if machine.max_rpm is not None:
+            clamped.append(f"{vc:.0f} m/min at Ø{diameter:g} wants {wanted:.0f} rpm, clamped to the machine's "
+                           f"{cap:.0f} rpm")
+        else:
+            note += f"; the spindle is capped at {cap:.0f} rpm (the job names no machine.max_rpm)"
+    if speed is None:
+        rpm = _round_rpm(rpm)
+    if kind == "thread":
+        per_rev = float(pitch_mm or tool.pitch_mm)
+    elif feed_mm_rev is not None:
+        per_rev = float(feed_mm_rev)
+    else:
+        rough, finish = numbers["rough"], numbers["finish"]
+        per_rev = {"rough": rough, "finish": finish, "face": 0.8 * rough,
+                   "groove": min(0.12, max(0.02, 0.25 * rough)),
+                   "partoff": min(0.1, max(0.02, 0.2 * rough))}[feed_kind]
+        if feed_kind == "finish" and tool.nose_radius_mm > 0:
+            # A finishing feed past half the nose radius leaves a rough, scalloped surface.
+            per_rev = min(per_rev, 0.5 * tool.nose_radius_mm)
+    if feed is not None and kind != "thread":
+        per_rev = float(feed) / rpm
+    cut = per_rev * rpm
+    if machine.max_feed_mm_min is not None and cut > machine.max_feed_mm_min:
+        if kind == "thread":
+            clamped.append(f"a thread must feed at rpm x pitch ({cut:.0f} mm/min), more than the machine's "
+                           f"{machine.max_feed_mm_min:.0f} mm/min: the spindle was slowed to match")
+            rpm = machine.max_feed_mm_min / per_rev
+        else:
+            clamped.append(f"feed {cut:.0f} mm/min clamped to the machine's {machine.max_feed_mm_min:.0f} mm/min")
+            per_rev = machine.max_feed_mm_min / rpm
+        cut = per_rev * rpm
+    source = "job" if (feed is not None or feed_mm_rev is not None) and (speed is not None or css_m_min is not None) \
+        else "mixed" if any(v is not None for v in (feed, speed, feed_mm_rev, css_m_min)) else "table"
+    return Feeds(rpm=round(rpm, 3), feed_mm_min=round(cut, 3), plunge_mm_min=round(cut, 3), ramp_mm_min=round(cut, 3),
+                 chipload_mm=round(per_rev, 5), surface_m_min=round(math.pi * diameter * rpm / 1000.0, 1),
+                 clamped=tuple(clamped), source=source, note=note,
+                 css_m_min=None if constant else round(vc, 2), max_rpm=cap, feed_mm_rev=round(per_rev, 5))
