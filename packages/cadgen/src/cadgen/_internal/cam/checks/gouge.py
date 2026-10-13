@@ -3,8 +3,9 @@
 For the 2.5D milling and drilling families this compares every cutting sample with the part's section just above
 the tool tip: the tool's radius at that height (a flat end mill's full radius, a cone's radius there) must stay at
 least ``radius - tolerance`` from the material, and the tip must not sit inside it. Samples are grouped by height
-on a 0.05 mm grid (rounded up), so a few hundred sections cover a part. 3D families get the full check with their
-drop-cutter (a later module); until then they are not judged here.
+on a 0.05 mm grid (rounded up), so a few hundred sections cover a part. The 3D milling family gets the full check
+against its drop-cutter (:mod:`._gouge3d`): every feed point on or over the drop-cutter height of the tool inset by the
+tolerance.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ def run(ctx) -> list[dict]:
 
     out = []
     tol = max(0.02, 2.0 * getattr(ctx.part, "deflection_mm", 0.01), 2.0 * ctx.tolerance_mm)
+    from cadgen._internal.cam.checks._gouge3d import gouges_3d
+
+    out.extend(gouges_3d(ctx, tol))
     for op in ctx.ops:
         tool = op.tool
         if tool is None or tool.family != "mill" or op.operation.family not in FAMILIES or op.meta.get("no_gouge_check"):
