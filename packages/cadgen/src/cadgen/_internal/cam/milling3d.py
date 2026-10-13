@@ -26,8 +26,8 @@ import shapely
 from cadgen._internal.cam import geom2d
 from cadgen._internal.cam.dropcutter import DropMesh, drop
 
-__all__ = ["Linker", "Silhouettes", "StockNow", "boundary", "drape", "drop_mesh", "facts_note", "simplify",
-           "silhouette", "slopes"]
+__all__ = ["Linker", "Silhouettes", "StockNow", "boundary", "drape", "drop_mesh", "mask_polygons",
+           "reference_rest_area", "simplify", "silhouette", "slopes"]
 
 #: How far above the stock as it stands a long link travels, and the tool comes down to before it feeds in (mm).
 LINK_CLEARANCE = 1.0
@@ -209,6 +209,11 @@ def slopes(points_xy, tool, mesh, *, leave: float, floor: float, step: float):
 
 # --- the stock as it stands ----------------------------------------------------------------------------------
 
+#: The last replays, so the next operation of the same job cuts only what was planned since: (stock, part, cell) ->
+#: (stock, simulator, the toolpaths it has cut).
+_REPLAYS: dict = {}
+
+
 class StockNow:
     """The stock before this operation: a heightfield simulation of every toolpath planned before it."""
 
@@ -226,10 +231,22 @@ class StockNow:
         self._dilated: dict = {}
         if not self.available:
             return
-        sim = HeightfieldSim(ctx.stock, ctx.part, cell_mm=self.cell, tolerance_mm=max(0.01, ctx.tolerance_mm))
+        history = list(getattr(ctx, "history", ()) or ())
+        key = (id(ctx.stock), id(ctx.part), round(self.cell, 6))
+        cached = _REPLAYS.get(key)
+        done = 0
+        if cached is not None and cached[0] is ctx.stock and len(cached[2]) <= len(history) and all(
+                a is b for a, b in zip(cached[2], (path for _, path in history))):
+            sim, done = cached[1], len(cached[2])
+        else:
+            sim = HeightfieldSim(ctx.stock, ctx.part, cell_mm=self.cell, tolerance_mm=max(0.01, ctx.tolerance_mm))
         tools = {tool.id: tool for tool in ctx.job.tools}
-        for wcs, path in getattr(ctx, "history", ()) or ():
+        # Operations replayed for an earlier one are not replayed again: only what is new is cut.
+        for wcs, path in history[done:]:
             sim.cut(path, tools, wcs)
+        if len(_REPLAYS) >= 2 and key not in _REPLAYS:
+            _REPLAYS.pop(next(iter(_REPLAYS)))
+        _REPLAYS[key] = (ctx.stock, sim, [path for _, path in history])
         self.sim = sim
 
     def _surface(self):
@@ -399,11 +416,6 @@ class Linker:
         self.b.rapid(z=self.heights.clearance)
         self.cutting = False
 
-
-def facts_note(meta: dict, **facts) -> None:
-    """Record plan facts in an op's meta, rounded."""
-    for key, value in facts.items():
-        meta[key] = round(value, 4) if isinstance(value, float) else value
 
 
 def reference_rest_area(ctx, reference, area, *, leave: float, threshold: float, spacing: float):
