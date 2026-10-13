@@ -126,11 +126,15 @@ class PlanBlock(unittest.TestCase):
         out.mkdir()
         stale = out / "block.cam.glb"
         stale.write_bytes(b"old")
+        from cadgen._internal.cam.operations import OPERATION_NAMES, REGISTRY, available
+
         cases = {
-            "not in this cadgen yet": mill_job([{"op": "contour", "tool": "T1", "faces": [self.lower]}]),
             "is not a face of this part": mill_job([{"op": "pocket", "tool": "T1", "faces": ["#o1.f999"]}]),
             "unknown key 'speeed'": mill_job([{"op": "face", "tool": "T1", "speeed": 1}]),
         }
+        unbuilt = [name for name in OPERATION_NAMES if not available(name) and "mill" in REGISTRY[name].machines]
+        if unbuilt:
+            cases["not in this cadgen yet"] = mill_job([{"op": unbuilt[0], "tool": "T1", "faces": [self.lower]}])
         for expected, job in cases.items():
             with self.subTest(expected=expected):
                 with quiet():
