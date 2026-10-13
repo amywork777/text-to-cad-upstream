@@ -245,7 +245,7 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
             if op.feeds is not None and op.feeds.clamped:
                 row["clamped"] = list(op.feeds.clamped)
             facts = {k: v for k, v in op.meta.items() if k in ("levels", "passes", "entries", "plunges", "floor_z",
-                                                                  "bottom_z", "note", "stock_to_leave")}
+                                                                  "bottom_z", "note", "stock_to_leave", "cut")}
             if facts:
                 row["facts"] = facts
             ops.append(row)
@@ -384,7 +384,13 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             direction = ctx.meta.get("spindle_dir", "cw")
             if feeds is not None and machine.kind not in ("laser", "plasma", "waterjet", "wire_edm") \
                     and (feeds.rpm != current["rpm"] or direction != current.get("dir", "cw")):
-                events.append(("spindle", {"rpm": feeds.rpm, "dir": direction}))
+                spindle = {"rpm": feeds.rpm, "dir": direction}
+                if getattr(feeds, "feed_mm_rev", None):
+                    # A lathe op (feeds.for_turn): feed per revolution, and constant surface speed under a clamp.
+                    spindle["feed_per_rev"] = True
+                    if feeds.css_m_min:
+                        spindle.update(css_m_min=feeds.css_m_min, max_rpm=feeds.max_rpm)
+                events.append(("spindle", spindle))
                 current["rpm"], current["dir"] = feeds.rpm, direction
             coolant = spec.coolant or parsed.coolant
             if coolant != current["coolant"]:
