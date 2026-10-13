@@ -19,7 +19,8 @@ from cadgen._internal.cam.job_errors import CamJobError
 if TYPE_CHECKING:
     from cadgen._internal.cam.posts.base import Post
 
-__all__ = ["DEFAULT_POST", "Entry", "POST_NAMES", "REGISTRY", "available", "built", "entry_for", "get_post"]
+__all__ = ["DEFAULT_POST", "Entry", "POST_NAMES", "REGISTRY", "available", "built", "entry_for", "get_post",
+           "option_keys", "parse_options"]
 
 _PACKAGE = "cadgen._internal.cam.posts"
 
@@ -78,6 +79,28 @@ def entry_for(name: object, kind: str, where: str = "machine.post") -> Entry:
         raise CamJobError(f"{where}: the {name} post does not serve a {kind}; it serves {', '.join(entry.kinds)}. "
                           f"For a {kind} use {', '.join(serving)}")
     return entry
+
+
+def _post_class(name: object):
+    entry = REGISTRY.get(name) if isinstance(name, str) else None
+    if entry is None or not available(name):
+        return None
+    return getattr(importlib.import_module(entry.module), entry.cls)
+
+
+def option_keys(machine: dict) -> tuple[str, ...]:
+    """The machine keys the job's post takes beyond the shared ones (``machine.cycles``, ``machine.laser_scale``...):
+    its ``options``. None while the kind or post is not one yet (the shared checks then teach)."""
+    kind = machine.get("kind")
+    name = machine.get("post", DEFAULT_POST.get(kind) if isinstance(kind, str) else None)
+    cls = _post_class(name)
+    return tuple(cls.options) if cls is not None else ()
+
+
+def parse_options(name: str, machine: dict) -> dict:
+    """The post's own machine keys from the job's machine object, checked (absent keys are left out)."""
+    cls = _post_class(name)
+    return cls.parse_options(machine) if cls is not None else {}
 
 
 def get_post(name: str, kind: str, where: str = "machine.post") -> "Post":

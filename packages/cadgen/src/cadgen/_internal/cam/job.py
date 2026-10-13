@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from cadgen._internal.cam import posts as post_registry
@@ -71,6 +71,8 @@ class Machine:
     tool_change_s: float = 10.0
     kinematics: str | None = None
     rotary_limits_deg: dict = field(default_factory=dict)
+    #: The post's own machine keys as the job set them (``machine.cycles``, ...): ``posts/base.py`` Post.options.
+    post_options: dict = field(default_factory=dict)
     #: A lathe's X words are diameters (true) or radii.
     diameter_mode: bool = True
     #: Cutting machines: a laser's power (W) and source (fiber, co2, diode), a plasma's current (A), whether a
@@ -97,6 +99,7 @@ class Machine:
                 out[key] = list(value) if isinstance(value, tuple) else value
         if self.rotary_limits_deg:
             out["rotary_limits_deg"] = {k: list(v) for k, v in self.rotary_limits_deg.items()}
+        out.update(self.post_options)
         if self.kind == "lathe":
             out["diameter_mode"] = self.diameter_mode
         for key in ("power_w", "laser_source", "amps"):
@@ -246,6 +249,7 @@ def parse_job(job: str | dict | None) -> Job:
         if key not in raw:
             raise CamJobError(f"the job needs \"{key}\"; a job names {', '.join(JOB_KEYS[1:6])}")
     machine = _machine(raw["machine"])
+    machine = replace(machine, post_options=post_registry.parse_options(machine.post, raw["machine"]))
     material = _material(raw["material"])
     stock = _stock(raw["stock"], machine.kind)
     tools_raw = raw["tools"]
@@ -282,7 +286,7 @@ def parse_job(job: str | dict | None) -> Job:
 def _machine(raw: object) -> Machine:
     if not isinstance(raw, dict):
         raise CamJobError("machine must be an object like {\"kind\": \"mill\", \"post\": \"grbl\"}")
-    check_keys(raw, MACHINE_KEYS, "machine")
+    check_keys(raw, MACHINE_KEYS + post_registry.option_keys(raw), "machine")
     kind = choice(raw.get("kind"), MACHINE_KINDS, "machine.kind")
     post = raw.get("post", post_registry.DEFAULT_POST[kind])
     post_registry.entry_for(post, kind)
