@@ -760,6 +760,20 @@ class Safety(unittest.TestCase):
         self.assertNotIn("M7", text)
         self.assertIn("M8", text)                          # air assist on GRBL's one coolant output
 
+    def test_a_head_with_z_words_goes_up_before_its_first_x_y_rapid(self):
+        # Where the head starts is unknown (a torch at its cut height, a laser at its focus): an X Y rapid first
+        # drags it across the sheet and the parts tipped up in it.
+        for post_name, kind, keys, first in (("plasma", "plasma", {}, "G0 Z10"), ("mach3", "plasma", {}, "G0 Z10"),
+                                             ("grbl", "laser", {}, "G0 Z5"),
+                                             ("waterjet", "waterjet", {"z_words": True}, "G0 Z5"),
+                                             ("marlin", "laser", {"z_words": True}, "G0 Z5")):
+            with self.subTest(post=post_name):
+                motion = [line for line in _code(render(post_name, kind, keys)[2]) if line.startswith(("G0", "G1"))
+                          and any(w[0] in "XYZ" for w in line.split()[1:])]
+                self.assertEqual(motion[0], first)
+        motion = [line for line in _code(render("plasma", "plasma", {"torch_z": False})[2]) if line.startswith("G0")]
+        self.assertTrue(motion[0].startswith("G0 X"))       # no torch heights: no Z at all
+
     # 12: Marlin origin --------------------------------------------------------------------------------------
 
     def test_marlin_sets_the_origin_where_the_head_starts(self):

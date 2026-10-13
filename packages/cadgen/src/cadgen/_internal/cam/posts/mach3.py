@@ -10,13 +10,14 @@ turned part), and the program ends with Z at the top and A back at zero (``G53 G
 Mach has no tool centre point control, so a toolpath that turns A while cutting (a wrap) is refused: post it with
 linuxcnc, fanuc or haas.
 
-Plasma: the torch is ``M3``/``M5`` with the pierce and cut heights, the pierce delay and optional torch height
-control codes as machine keys (``_cutting.py`` has the sequence; THC is off by default here).
+Plasma: after the work offset the torch goes up to its safe height (where it starts is unknown); then the torch is
+``M3``/``M5`` with the pierce and cut heights, the pierce delay and optional torch height control codes as machine
+keys (``_cutting.py`` has the sequence; THC is off by default here).
 """
 
 from __future__ import annotations
 
-from cadgen._internal.cam.posts._cutting import DWELL_MS, torch_off, torch_on, torch_options
+from cadgen._internal.cam.posts._cutting import DWELL_MS, torch_off, torch_on, torch_options, torch_safe
 from cadgen._internal.cam.posts._iso import CYCLES_OPTION, IsoPost
 from cadgen._internal.cam.posts.base import Program, number
 
@@ -61,6 +62,10 @@ class Mach3Post(IsoPost):
         if self._plasma:
             return (torch_off(self, program) if self._beam else []) + ["M30"]
         return super().footer(program)
+
+    def on_setup(self, data: dict, program: Program) -> list[str]:
+        lines = super().on_setup(data, program)
+        return lines + torch_safe(self, program) if self._plasma else lines
 
     def on_tool(self, data: dict, program: Program, first: bool) -> list[str]:
         if self._plasma:

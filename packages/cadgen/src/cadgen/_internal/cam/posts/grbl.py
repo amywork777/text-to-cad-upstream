@@ -64,8 +64,9 @@ class GrblPost(Post):
         # Every file starts with Z up at the clearance height in the work frame, before the spindle starts. Not
         # G53 (machine coordinates): they mean something only on a machine that homes ($22=1), and without homing
         # GRBL's machine zero is wherever it was switched on. The work Z was just zeroed on the setup's Z zero with
-        # this tool, so the clearance height is above the stock and the clamps whatever the machine.
-        return None if program.machine.kind == "laser" else float(program.clearance_z)
+        # this tool, so the clearance height is above the stock and the clamps whatever the machine. A laser's
+        # head goes up too before its first X Y move: it may sit at the focus height over the sheet.
+        return float(program.clearance_z)
 
     def spinup(self, program):
         seconds = float(self.option(program, "spindle_spinup_s"))

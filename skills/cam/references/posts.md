@@ -67,7 +67,10 @@ program to a machine. Tell the user this line when you report.
 - **The first move after a tool change** (and the program's first): Z is at the top (`G91 G28 Z0.`, `G53 G0 Z0`,
   Haas's own M06; GRBL's file starts `G0 Z<clearance>`), the rotary axes turn first, then `G0 X Y` over the first
   point, then the tool length at the clearance height (`G0 G43 Z H`; under TCP `G43.4 H`/`G234 H` comes after
-  the rotary axes and before X Y), then down. A lathe moves X, then Z.
+  the rotary axes and before X Y), then down. A lathe moves X, then Z. A cutting head with Z words goes up
+  first too (a plasma torch to `safe_height_mm` after the work offset; a GRBL laser, or a Marlin or waterjet
+  with `z_words`, to the clearance height): where it starts is unknown, and an X Y rapid at the cut height
+  drags it through tipped-up parts.
 - **Tool changes** on ISO mills stop the spindle and coolant first (`M5 M9`); the coolant comes back on after.
   A **stop** (`M0`/`M1`) switches the spindle and coolant back on before the next move.
 - **Rotary turns**: a rapid that turns a rotary axis below the clearance height is refused; under TCP it is

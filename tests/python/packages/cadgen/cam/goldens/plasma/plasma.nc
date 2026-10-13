@@ -8,6 +8,7 @@
 G21
 G90 G94 G17 G40
 G54
+G0 Z10
 (Beam: T1: 0.2 mm kerf beam)
 G0 X0 Y0
 G0 Z3.8

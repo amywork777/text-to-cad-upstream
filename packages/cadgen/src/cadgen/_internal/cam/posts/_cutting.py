@@ -5,7 +5,8 @@ into a comment naming the beam, refuses a spindle or coolant its machine does no
 posts any drilling cycle as its expansion. A ``beam`` event is the process's own on/off (:meth:`CuttingPost.beam_on`,
 :meth:`CuttingPost.beam_off`).
 
-The torch sequence (``plasma`` and ``mach3``), with every height and code a machine key::
+The torch sequence (``plasma`` and ``mach3``), with every height and code a machine key; after the work offset the
+torch first goes up to ``G0 Z<safe_height_mm>`` (where it starts is unknown)::
 
     G0 Z<pierce_height_mm>     (torch_z)
     M3                         torch on
@@ -23,7 +24,7 @@ from __future__ import annotations
 from cadgen._internal.cam.posts._iso import CheckedPost
 from cadgen._internal.cam.posts.base import Program, number
 
-__all__ = ["CuttingPost", "TORCH_OPTIONS", "torch_off", "torch_on"]
+__all__ = ["CuttingPost", "TORCH_OPTIONS", "torch_off", "torch_on", "torch_safe"]
 
 DWELL_MS = {"type": "bool", "default": False, "help": "dwell P words in milliseconds instead of seconds"}
 
@@ -63,6 +64,12 @@ def torch_on(post, data: dict, program: Program) -> list[str]:
     return lines
 
 
+def torch_safe(post, program: Program) -> list[str]:
+    """The torch up to its safe height before the first move (where it starts is unknown: it may sit at the cut
+    height over the sheet, and an X Y rapid there drags it through tipped-up parts)."""
+    return [f"G0 Z{post.num(post.option(program, 'safe_height_mm'))}"] if post.option(program, "torch_z") else []
+
+
 def torch_off(post, program: Program) -> list[str]:
     lines = [post.option(program, "thc_off")] if post.option(program, "thc") else []
     lines.append("M5")
@@ -88,6 +95,10 @@ class CuttingPost(CheckedPost):
 
     def preamble(self, program: Program) -> list[str]:
         return ["G21", "G90 G94 G17 G40"]
+
+    def tool_change_height(self, program: Program) -> float | None:
+        # Where Z words are posted, the head goes up to the clearance height before its first X Y move.
+        return float(program.clearance_z) if "Z" in self.linear_axes else None
 
     def footer(self, program: Program) -> list[str]:
         return (self.beam_off({}, program) if self._beam else []) + ["M30"]
