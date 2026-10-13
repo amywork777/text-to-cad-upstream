@@ -126,5 +126,18 @@ class Posted(unittest.TestCase):
         json.dumps(cam)
 
 
+    def test_a_drill_whose_flutes_are_shorter_than_the_hole_fails_reach(self):
+        from cadgen._internal.cam.run import plan_job
+
+        tools = [{"id": "T1", "type": "drill", "diameter_mm": 5, "flute_length_mm": 8, "stickout_mm": 30}]
+        with quiet():
+            result = plan_job(self.step, job=drill_job([{"op": "drill", "tool": "T1", "holes": {"diameter_mm": 5}}],
+                                                       tools=tools), out_dir=self.directory / "reach")
+        self.assertTrue(result.ok)
+        self.assertEqual("fix", result.verdict["status"])
+        (reach,) = [f for f in result.findings if f["check"] == "reach"]
+        self.assertEqual("reach_flutes", reach["type"])
+        self.assertGreater(reach["items"][0]["depth_mm"], 12.0)
+
 if __name__ == "__main__":
     unittest.main()
