@@ -178,8 +178,11 @@ class BracketCut(unittest.TestCase):
         self.assertAlmostEqual(3.0, cut["tab_height_mm"])
         self.assertTrue(np.any(np.isclose(cutting["z"], tab_top)))
         self.assertGreater(cut["tabs"], 0)
-        # The three Ø6 holes are the bit's own size: plunged, at each depth; everything else is ramped into.
+        # The three Ø6 holes are the bit's own size: plunged, at each depth; everything else is ramped into, the
+        # washer's round hole by helical arcs.
         self.assertEqual(3 * cut["depths"], op.meta["plunges"])
+        helical = moves[np.isin(moves["kind"], (ARC_CW, ARC_CCW))]
+        self.assertGreater(len(helical), cut["depths"])
         # The bit's radius leaves the square hole's four corners and the outline's inside corner.
         self.assertEqual(5, len(op.meta["unreachable"]))
 

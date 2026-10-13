@@ -416,16 +416,28 @@ def _prefix(coords, length: float):
 
 
 def _path_ramp(b, coords, z_from: float, z_to: float, *, angle_deg: float, f: float, limit: float) -> bool:
-    """Ramp down along the profile itself (never across it): forward and back along its first ``limit`` mm at
-    ``angle_deg``, ending over its start at ``z_to``. False (nothing added) when there is less than 0.5 mm to ramp
-    along."""
+    """Ramp down along the profile itself (never across it), ending over its start at ``z_to``: round the whole
+    profile in laps when it is shorter than the ramp and nothing (a tab) is in the way, else forward and back along
+    its first ``limit`` mm at ``angle_deg``. False (nothing added) when there is less than 0.5 mm to ramp along."""
     import numpy as np
 
     depth = z_from - z_to
     if depth <= 1e-9:
         return True
-    run = min(limit, float(np.linalg.norm(np.diff(coords, axis=0), axis=1).sum()),
-              max(1.0, depth / math.tan(math.radians(angle_deg))))
+    total = float(np.linalg.norm(np.diff(coords, axis=0), axis=1).sum())
+    need = max(1.0, depth / math.tan(math.radians(angle_deg)))
+    if limit >= total - 1e-9 and need >= total and total >= 0.5:
+        # Nothing in the way and a short profile: spiral down round it, whole laps, ending over its start.
+        laps = int(math.ceil(need / total - 1e-9))
+        cum = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(coords, axis=0), axis=1))])
+        b.feed(x=float(coords[0][0]), y=float(coords[0][1]), f=f)
+        b.feed(z=z_from, f=f)
+        for lap in range(laps):
+            for k in range(1, len(coords)):
+                b.feed(x=float(coords[k][0]), y=float(coords[k][1]),
+                       z=z_from - depth * (lap * total + cum[k]) / (laps * total), f=f)
+        return True
+    run = min(limit, total, need)
     if run < 0.5:
         return False
     leg = _prefix(coords, run)
@@ -444,6 +456,47 @@ def _path_ramp(b, coords, z_from: float, z_to: float, *, angle_deg: float, f: fl
         z = target
         forward = not forward
     return True
+
+
+def _circle_of(coords, tolerance: float):
+    """``(cx, cy, r, clockwise)`` when a closed ring is a circle within the tolerance, else None."""
+    import numpy as np
+
+    pts = np.asarray(coords, dtype=float)[:-1]
+    if len(pts) < 8:
+        return None
+    # A least-squares circle (the vertices need not be evenly spread round it).
+    design = np.column_stack([pts[:, 0], pts[:, 1], np.ones(len(pts))])
+    solution, *_ = np.linalg.lstsq(design, -(pts[:, 0] ** 2 + pts[:, 1] ** 2), rcond=None)
+    centre = np.array([-solution[0] / 2.0, -solution[1] / 2.0])
+    radii = np.hypot(pts[:, 0] - centre[0], pts[:, 1] - centre[1])
+    r = float(radii.mean())
+    if r < 0.05 or float(np.abs(radii - r).max()) > max(2.0 * tolerance, 0.005):
+        return None
+    x, y = np.asarray(coords)[:, 0], np.asarray(coords)[:, 1]
+    clockwise = float(np.sum(x[:-1] * y[1:] - x[1:] * y[:-1])) < 0
+    return float(centre[0]), float(centre[1]), r, clockwise
+
+
+def _helix_level(b, circle, start, z_from: float, z_to: float, *, angle_deg: float, f_ramp: float,
+                 f_cut: float) -> None:
+    """From over ``start`` (on the circle) at or above ``z_from``: half-turn helical arcs down to ``z_to`` at the
+    ramp angle, back to ``start``, then the full circle at ``z_to``."""
+    cx, cy, r, clockwise = circle
+    sx, sy = float(start[0]), float(start[1])
+    a0 = math.atan2(sy - cy, sx - cx)
+    b.feed(x=sx, y=sy, f=f_ramp)
+    b.feed(z=z_from, f=f_ramp)
+    pitch = max(1e-3, 2 * math.pi * r * math.tan(math.radians(angle_deg)))
+    halves = max(1, int(math.ceil((z_from - z_to) / (pitch / 2.0) - 1e-9)))
+    turn = -math.pi if clockwise else math.pi
+    for half in range(halves):
+        angle = a0 + turn * (half + 1)
+        z = z_from - (z_from - z_to) * (half + 1) / halves
+        b.arc(cx + r * math.cos(angle), cy + r * math.sin(angle), z, centre=(cx, cy, z), clockwise=clockwise, f=f_ramp)
+    if halves % 2:
+        b.arc(sx, sy, z_to, centre=(cx, cy, z_to), clockwise=clockwise, f=f_cut)
+    b.arc(sx, sy, z_to, centre=(cx, cy, z_to), clockwise=clockwise, f=f_cut)
 
 
 def _plan_router(ctx, params, profiles):
@@ -484,7 +537,14 @@ def _plan_router(ctx, params, profiles):
         linking.retract_and_move(b, float(coords[0][0]), float(coords[0][1]), heights)
         z_prev = top
         lifted = False
+        circle = _circle_of(coords, tol) if not count else None
         for z in levels:
+            if circle is not None:
+                # A round profile: helical arcs down at the ramp angle, then the full circle at depth.
+                _helix_level(b, circle, coords[0], z_prev, z, angle_deg=params["ramp_angle_deg"],
+                             f_ramp=feeds.ramp_mm_min, f_cut=feeds.feed_mm_min)
+                z_prev = z
+                continue
             points = np.column_stack([coords, np.full(len(coords), z)])
             if count and z < tab_top - 1e-9:
                 tabbed = linking.apply_tabs(points, tab_top=tab_top, count=count, width=tab_width,
