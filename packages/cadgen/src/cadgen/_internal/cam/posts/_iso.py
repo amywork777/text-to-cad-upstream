@@ -40,7 +40,8 @@ _POSITION = ("motion", "x", "y", "z", "a", "b", "c")
 #: The event kinds each machine kind can run (anything else is refused with a sentence).
 _EVENTS = {
     **{kind: {"setup", "tool", "spindle", "coolant", "cycle", "stop", "comment"} for kind in (*MILL_KINDS, "lathe")},
-    **{kind: {"setup", "tool", "beam", "coolant", "cycle", "stop", "comment"} for kind in ("laser", "plasma", "waterjet")},
+    **{kind: {"setup", "tool", "beam", "coolant", "cycle", "stop", "comment"}
+       for kind in ("laser", "plasma", "waterjet")},
     "wire_edm": {"setup", "tool", "beam", "coolant", "stop", "comment"},
 }
 
@@ -122,7 +123,8 @@ class CheckedPost(Post):
             data = event.data
             if event.kind not in allowed:
                 raise CamJobError(self._refusal(event.kind, kind, where))
-            if event.kind == "coolant" and kind in ("plasma", "waterjet", "wire_edm") and data.get("mode", "off") != "off":
+            wet = event.kind == "coolant" and data.get("mode", "off") != "off"
+            if wet and kind in ("plasma", "waterjet", "wire_edm"):
                 raise CamJobError(f"{where}: a {kind} has no coolant to switch to {data.get('mode')}; set the "
                                   "operation's coolant (or the job's) to off")
             if event.kind == "coolant" and kind == "laser" and data.get("mode", "off") == "flood":
@@ -225,6 +227,10 @@ class IsoPost(CheckedPost):
         self._block = 100
         self._tool_id = None
         self.rotary_axes = self.rotary_letters(machine)
+        tilted = any(e.kind == "setup" and any((e.data.get("rotary") or {}).values()) for e in path.events)
+        if tilted and not self._simultaneous and self.tilt_style in ("g68_2", "dwo"):
+            # The tilted plane turns the table; rotary words on the moves (the same angles) would fight it.
+            self.rotary_axes = ""
         if self._lathe:
             self.linear_axes = "XZ"
             self.arc_planes = frozenset({1})
@@ -270,13 +276,14 @@ class IsoPost(CheckedPost):
         if self._lathe:
             notes.append("X words are diameters." if self.diameter() else
                          "X words are radii: the control's diameter programming must be off.")
-        tilt = next((e.data.get("rotary") for e in program.toolpath.events if e.kind == "setup" and e.data.get("rotary")),
-                    None)
+        tilt = next((e.data.get("rotary") for e in program.toolpath.events
+                     if e.kind == "setup" and e.data.get("rotary")), None)
         if tilt and not self._simultaneous:
             notes.append(self.tilt_note(program, tilt))
         if self._simultaneous:
-            notes.append(f"Simultaneous {''.join(sorted(a.upper() for a in program.toolpath.rotary))} with tool centre "
-                         f"point control ({self.tcp_code}): X Y Z are the tool tip in {program.setup.wcs} at rotary zero.")
+            axes = "".join(sorted(a.upper() for a in program.toolpath.rotary))
+            notes.append(f"Simultaneous {axes} with tool centre point control ({self.tcp_code}): X Y Z are the tool "
+                         f"tip in {program.setup.wcs} at rotary zero.")
         return lines + [self.comment(note) for note in notes]
 
     def tilt_note(self, program: Program, tilt: dict) -> str:
@@ -473,7 +480,8 @@ class IsoPost(CheckedPost):
             second += f" R{self.num(taper)}"
         second += f" P{int(round(depth * 1000))} Q{int(round(first * 1000))} F{self.num(float(data['pitch_mm']))}"
         return [self.comment(f"thread, pitch {number(float(data['pitch_mm']))} mm"),
-                f"G76 P{spring:02d}00{angle:02d} Q{int(round(minimum * 1000))} R{self.num(float(data.get('finish_mm', 0.0)))}",
+                f"G76 P{spring:02d}00{angle:02d} Q{int(round(minimum * 1000))} "
+                f"R{self.num(float(data.get('finish_mm', 0.0)))}",
                 second]
 
     def rough_lines(self, data: dict) -> list[str]:

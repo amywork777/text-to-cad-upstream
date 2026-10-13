@@ -135,10 +135,18 @@ def tilted(post: str, kind: str, orientation: dict, keys=None):
     """A 3+2 setup: the pocket and drilling of :func:`mill` in a tilted frame (the setup event names the turn)."""
     from cadgen._internal.cam.ir import ToolpathBuilder
 
+    from cadgen._internal.cam.ir import Toolpath
+
     setup, wcs = _setup(orientation, wcs="G55", setup_id="tilt")
     b = ToolpathBuilder((0, 0, 5))
     _mill_path(b, rotary_setup=dict(wcs.rotary_deg), wcs="G55")
-    return _program(setup, wcs, b.build(), _tools(MILL_TOOLS), _machine(kind, post, keys))
+    path = b.build()
+    # Like the planners, every move carries the setup's (constant) rotary position.
+    moves = path.moves.copy()
+    for axis, value in wcs.rotary_deg:
+        moves[axis] = value
+    path = Toolpath(moves, path.events, path.ops, start=path.start, rotary=tuple(a for a, _ in wcs.rotary_deg))
+    return _program(setup, wcs, path, _tools(MILL_TOOLS), _machine(kind, post, keys))
 
 
 def simultaneous(post: str, kind: str = "mill5", axes: str = "ac", keys=None):

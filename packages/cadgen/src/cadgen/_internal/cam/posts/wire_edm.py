@@ -174,8 +174,9 @@ class WireEdmPost(CheckedPost):
                 lines += [self.comment("Cut the wire for the next start hole"), self.option(program, "wire_cut")]
                 self._wire_cut = True
             return lines
+        # A new pass without an off between (a skim, the rest after a hold): close the last pass's taper and offset.
+        lines = self._off_lines(reset_uv=False) if self._beam else []
         self._beam = True
-        lines = []
         if self._wire_cut:
             lines += [self.comment("Thread the wire"), self.option(program, "wire_thread")]
             self._wire_cut = False
@@ -196,13 +197,16 @@ class WireEdmPost(CheckedPost):
             self._comp = True
         return lines
 
-    def _off_lines(self) -> list[str]:
+    def _off_lines(self, reset_uv: bool = True) -> list[str]:
         lines = []
         if self._comp:
             lines.append("G40")
             self._comp = False
         if self._taper:
-            lines.append("G1 U0. V0." if self._uv else "G50")
+            if not self._uv:
+                lines.append("G50")
+            elif reset_uv:
+                lines.append("G1 U0. V0.")
             self._taper = 0.0
         return lines
 
