@@ -283,39 +283,10 @@ def link(b, target, z: float, *, clear, heights, f: float, above=None, z_above: 
 
 
 def ramp_along(b, path, z_from: float, z_to: float, *, angle_deg: float, f: float) -> bool:
-    """Zig-zag down along ``path`` itself ((N, 2), from its first point): out along it for a run that keeps the
-    ramp at ``angle_deg``, back, out, ... until ``z_to``, every leg following the path (never a chord across a
-    corner), ending at the path's first point at ``z_to``. False (nothing added) when the path is shorter than
-    0.5 mm."""
-    import numpy as np
-    import shapely
-    from shapely.ops import substring
+    """:func:`cadgen._internal.cam.linking.ramp`: a zig-zag that follows ``path`` itself."""
+    from cadgen._internal.cam.linking import ramp
 
-    points = np.asarray(path, dtype=float)[:, :2]
-    if len(points) < 2:
-        return False
-    line = shapely.LineString(points)
-    run = min(float(line.length), max(1.0, (z_from - z_to) / math.tan(math.radians(angle_deg))))
-    if run < 0.5:
-        return False
-    leg = np.asarray(substring(line, 0.0, run).coords)[:, :2]
-    distance = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(leg, axis=0).T))])
-    per_leg = run * math.tan(math.radians(angle_deg))
-    b.feed(x=float(leg[0, 0]), y=float(leg[0, 1]), f=f)
-    b.feed(z=z_from, f=f)
-    z = z_from
-    outward = True
-    while z > z_to + 1e-9:
-        drop = min(per_leg, z - z_to)
-        order = leg if outward else leg[::-1]
-        along = distance if outward else distance[-1] - distance[::-1]
-        heights = z - drop * along / max(along[-1], 1e-12)
-        b.polyline(np.column_stack([order[1:], heights[1:]]), f=f)
-        z -= drop
-        outward = not outward
-    if not outward:
-        b.polyline(np.column_stack([leg[::-1][1:], np.full(len(leg) - 1, z_to)]), f=f)
-    return True
+    return ramp(b, path, z_from, z_to, angle_deg=angle_deg, f=f)
 
 
 def helix_arcs(b, centre, radius: float, angle0: float, sweep: float, z_end: float, *, f: float) -> None:

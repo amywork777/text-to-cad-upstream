@@ -66,37 +66,38 @@ def helix(builder, centre, radius: float, z_from: float, z_to: float, *, angle_d
 
 
 def ramp(builder, path, z_from: float, z_to: float, *, angle_deg: float, f: float) -> bool:
-    """Zig-zag down along the start of ``path`` ((N, 2) or (N, 3)) from ``z_from`` to ``z_to`` at ``angle_deg``,
-    ending at the path's first point at ``z_to``. False (and nothing added) when the path is too short."""
+    """Zig-zag down along ``path`` itself ((N, 2) or (N, 3), from its first point) from ``z_from`` to ``z_to`` at
+    ``angle_deg``: out along it for a run that keeps the ramp at that angle, back, out, ... until ``z_to``, every leg
+    following the path (never a chord across a corner, which would cut into the wall it turns), ending at the path's
+    first point at ``z_to``. False (and nothing added) when the path is shorter than 0.5 mm."""
     import numpy as np
+    import shapely
+    from shapely.ops import substring
 
     points = np.asarray(path, dtype=float)[:, :2]
     if len(points) < 2:
         return False
-    lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
-    available = float(lengths.sum())
-    run = min(available, max(1.0, (z_from - z_to) / math.tan(math.radians(angle_deg))))
+    line = shapely.LineString(points)
+    run = min(float(line.length), max(1.0, (z_from - z_to) / math.tan(math.radians(angle_deg))))
     if run < 0.5:
         return False
-    # The ramp's far point, ``run`` along the path.
-    cumulative = np.concatenate([[0.0], np.cumsum(lengths)])
-    k = int(np.searchsorted(cumulative, run) - 1)
-    k = max(0, min(k, len(points) - 2))
-    t = (run - cumulative[k]) / max(lengths[k], 1e-12)
-    far = points[k] + (points[k + 1] - points[k]) * t
-    start = points[0]
-    builder.feed(x=float(start[0]), y=float(start[1]), f=f)
-    builder.feed(z=z_from, f=f)
+    leg = np.asarray(substring(line, 0.0, run).coords)[:, :2]
+    distance = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(leg, axis=0).T))])
     per_leg = run * math.tan(math.radians(angle_deg))
+    builder.feed(x=float(leg[0, 0]), y=float(leg[0, 1]), f=f)
+    builder.feed(z=z_from, f=f)
     z = z_from
-    out = True
+    outward = True
     while z > z_to + 1e-9:
-        z = max(z_to, z - per_leg)
-        target = far if out else start
-        builder.feed(x=float(target[0]), y=float(target[1]), z=z, f=f)
-        out = not out
-    if not out:
-        builder.feed(x=float(start[0]), y=float(start[1]), z=z_to, f=f)
+        drop = min(per_leg, z - z_to)
+        order = leg if outward else leg[::-1]
+        along = distance if outward else distance[-1] - distance[::-1]
+        heights = z - drop * along / max(along[-1], 1e-12)
+        builder.polyline(np.column_stack([order[1:], heights[1:]]), f=f)
+        z -= drop
+        outward = not outward
+    if not outward:
+        builder.polyline(np.column_stack([leg[::-1][1:], np.full(len(leg) - 1, z_to)]), f=f)
     return True
 
 
