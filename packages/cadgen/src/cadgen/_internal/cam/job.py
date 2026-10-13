@@ -40,7 +40,11 @@ WORK_OFFSETS = ("G54", "G55", "G56", "G57", "G58", "G59")
 
 JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
 MACHINE_KEYS = ("kind", "post", "name", "travel_mm", "max_rpm", "max_feed_mm_min", "rapid_mm_min", "tool_change_s",
-                "kinematics", "rotary_limits_deg", "diameter_mode")
+                "kinematics", "rotary_limits_deg", "diameter_mode", "power_w", "laser_source", "amps", "abrasive")
+#: The cutting machines' own keys and the kind each belongs to (their cutting speeds scale with them: feeds.cut_feeds).
+CUTTING_MACHINE_KEYS = {"power_w": ("laser",), "laser_source": ("laser",), "amps": ("plasma",),
+                        "abrasive": ("waterjet",)}
+LASER_SOURCES = ("fiber", "co2", "diode")
 MATERIAL_KEYS = ("name", "surface_m_min", "sfm", "chipload_mm", "drill_mm_per_rev", "stepdown_fraction")
 SETUP_KEYS = ("id", "name", "orientation", "origin", "fixture", "operations", "wcs", "clearance_mm", "retract_mm")
 #: Keys every operation takes; an operation adds its own (its reference page), validated by its ``parse``.
@@ -69,6 +73,12 @@ class Machine:
     rotary_limits_deg: dict = field(default_factory=dict)
     #: A lathe's X words are diameters (true) or radii.
     diameter_mode: bool = True
+    #: Cutting machines: a laser's power (W) and source (fiber, co2, diode), a plasma's current (A), whether a
+    #: waterjet adds abrasive. ``None`` takes the cutting table's reference machine (feeds.cut_feeds).
+    power_w: float | None = None
+    laser_source: str | None = None
+    amps: float | None = None
+    abrasive: bool = True
 
     @property
     def axes(self) -> str:
@@ -89,6 +99,11 @@ class Machine:
             out["rotary_limits_deg"] = {k: list(v) for k, v in self.rotary_limits_deg.items()}
         if self.kind == "lathe":
             out["diameter_mode"] = self.diameter_mode
+        for key in ("power_w", "laser_source", "amps"):
+            if getattr(self, key) is not None:
+                out[key] = getattr(self, key)
+        if self.kind == "waterjet":
+            out["abrasive"] = self.abrasive
         return out
 
 
@@ -294,7 +309,8 @@ def _machine(raw: object) -> Machine:
     name = raw.get("name", "")
     if not isinstance(name, str):
         raise CamJobError("machine.name must be text")
-    return Machine(
+    cutting = _cutting_keys(raw, kind)
+    return Machine(**cutting,
         kind=kind, post=post, name=name, travel_mm=travel,
         max_rpm=read_number(raw, "max_rpm", "machine"),
         max_feed_mm_min=read_number(raw, "max_feed_mm_min", "machine"),
@@ -302,6 +318,28 @@ def _machine(raw: object) -> Machine:
         tool_change_s=read_number(raw, "tool_change_s", "machine", default=_TOOL_CHANGE[kind], minimum=0.0),
         kinematics=kinematics, rotary_limits_deg=limits, diameter_mode=diameter_mode,
     )
+
+
+def _cutting_keys(raw: dict, kind: str) -> dict:
+    """A cutting machine's own keys (:data:`CUTTING_MACHINE_KEYS`), each refused on a machine it does not fit."""
+    out: dict = {}
+    for key, kinds in CUTTING_MACHINE_KEYS.items():
+        if key not in raw:
+            continue
+        if kind not in kinds:
+            raise CamJobError(f"machine.{key} is a {' or '.join(kinds)}'s setting; remove it for a {kind}")
+    if "power_w" in raw:
+        out["power_w"] = read_number(raw, "power_w", "machine", maximum=100000.0)
+    if "laser_source" in raw:
+        out["laser_source"] = choice(raw["laser_source"], LASER_SOURCES, "machine.laser_source")
+    if "amps" in raw:
+        out["amps"] = read_number(raw, "amps", "machine", minimum=10.0, maximum=400.0)
+    if "abrasive" in raw:
+        if not isinstance(raw["abrasive"], bool):
+            raise CamJobError("machine.abrasive must be true (an abrasive jet, for metal and stone) or false (pure "
+                              "water, for foam, rubber and soft plastics)")
+        out["abrasive"] = raw["abrasive"]
+    return out
 
 
 def _material(raw: object) -> Material:
