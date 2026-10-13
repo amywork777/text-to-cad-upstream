@@ -20,8 +20,9 @@ within reach of the tool's side (the reach check), on the grid most in line with
 
 **What it reports.** :meth:`volume` sums the Z rays' intervals (cell area x length: good to about half a cell on
 walls, exact in Z). :meth:`material_left` compares each ray's stock with the part's own intervals (the part mesh
-ray-cast the same way): a piece of stock outside the part counts by its thickness, the least of its lengths along the
-three rays through it, so a thin skin left on a wall reads thin. :meth:`mesh` draws the Z dexels as boxes merged into
+ray-cast the same way): a piece of stock outside the part and over its footprint (a vertical column through the part,
+as the heightfield judges) counts by its thickness, the least of its lengths along the three rays through it, so a
+thin skin left on a wall reads thin. :meth:`mesh` draws the Z dexels as boxes merged into
 one surface (each column's material as boxes one cell square, shared walls dropped): closed, exact in height, blocky
 by a cell sideways (watertight up to T-junctions). Stdlib at import; numpy inside.
 """
@@ -355,7 +356,7 @@ class DexelSim:
             s0 = np.where(flat, np.where((o < low[k]) | (o > high[k]), np.inf, s0), np.maximum(s0, np.minimum(ta, tb)))
             s1 = np.where(flat, s1, np.minimum(s1, np.maximum(ta, tb)))
         live = s1 > s0
-        start, span = s0, s1
+        start, span = np.where(live, s0, 0.0), np.where(live, s1, 0.0)
         a = tips + start[:, None] * axes
         b = tips + span[:, None] * axes
         u, v = grid.u_axis, grid.v_axis
@@ -624,7 +625,11 @@ class DexelSim:
                         ok = (first + q < last) & (o_lo[idx] - self.cell / 2 <= at) & (at <= o_hi[idx] + self.cell / 2)
                         found = np.where(ok, np.maximum(found, o_hi[idx] - o_lo[idx]), found)
                 thickness = np.minimum(thickness, found)
-            over = thickness > threshold
+            # Judged only over the part's footprint (a column through the part), as the heightfield judges.
+            column = part_grids[2].ray_at(mid[:, 0], mid[:, 1])
+            footprint = (column >= 0) & (part_grids[2].hi[np.maximum(column, 0)] >
+                                         part_grids[2].lo[np.maximum(column, 0)]).any(axis=1)
+            over = (thickness > threshold) & footprint
             if not over.any():
                 continue
             if k == 2:
