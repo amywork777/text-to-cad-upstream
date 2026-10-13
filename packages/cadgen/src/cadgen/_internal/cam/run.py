@@ -24,6 +24,7 @@ import struct
 import time
 from pathlib import Path
 
+from cadgen._internal.atomic_replace import replace_atomic
 from cadgen._internal.cam.checks.base import finding
 from cadgen._internal.cam.job_errors import CamJobError
 from cadgen.cli_logging import CliLogger
@@ -433,7 +434,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
             temporaries.append((tmp, final))
             tmp.write_text(text, encoding="utf-8", newline="\n")
         for tmp, final in temporaries:
-            os.replace(tmp, final)
+            replace_atomic(tmp, final)
             placed.append(final)
     except BaseException:
         _remove_stale([tmp for tmp, _ in temporaries] + placed)
