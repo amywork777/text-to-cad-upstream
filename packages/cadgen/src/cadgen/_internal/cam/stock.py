@@ -229,6 +229,8 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
         w = "xyz".index(spec.axis)
         others = [i for i in range(3) if i != w]
         centre = (low + high) / 2.0
+        if spec.face_stock_mm is not None:
+            centre[others] = _turning_axis(part, w, centre[others])
         corners = np.asarray(part.vertices)[:, others] - centre[others]
         reach = float(np.linalg.norm(corners, axis=1).max()) if len(corners) else 0.0
         radius = spec.diameter_mm / 2 if spec.diameter_mm else reach + spec.margin_mm[0]
@@ -239,6 +241,15 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
         if length + 1e-6 < high[w] - low[w]:
             raise CamJobError(f"stock.length_mm {length:g} is shorter than the part ({high[w] - low[w]:g} mm)")
         start, end = low[w], low[w] + length
+        if spec.face_stock_mm is not None:
+            # A lathe's bar: proud of the part's +axis end by the face stock, the rest of it back towards the chuck.
+            face = spec.face_stock_mm
+            length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + face + spec.margin_mm[0]
+            end = high[w] + face
+            start = end - length
+            if start > low[w] + 1e-6:
+                raise CamJobError(f"stock.length_mm {length:g} is shorter than the part plus face_stock_mm "
+                                  f"({high[w] - low[w] + face:g} mm); give a longer bar")
         vertices, triangles = _cylinder_mesh(spec.axis, centre, radius, start, end)
         s_low, s_high = centre.copy(), centre.copy()
         s_low[others], s_high[others] = centre[others] - radius, centre[others] + radius
@@ -265,3 +276,20 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
         raise CamJobError(f"the stock STEP {path.name} does not enclose the part; place it around the part in the "
                           "part's coordinates")
     return StockGeometry("from_step", tuple(b_low), tuple(b_high), vertices, triangles, abs(volume))
+
+
+def _turning_axis(part, w: int, fallback):
+    """Where the part's turning axis crosses the plane across axis ``w``: the line its round faces (cylinders and
+    cones along ``w``) share, weighted by area; ``fallback`` (the box's centre) when it has none."""
+    import numpy as np
+
+    others = [i for i in range(3) if i != w]
+    groups: dict[tuple, float] = {}
+    for face in getattr(part, "faces", {}).values():
+        if face.surface not in ("cylinder", "cone") or face.axis is None or abs(abs(face.axis[w]) - 1.0) > 1e-6:
+            continue
+        key = tuple(round(float(face.axis_point[i]), 4) + 0.0 for i in others)
+        groups[key] = groups.get(key, 0.0) + face.area_mm2
+    if not groups:
+        return np.asarray(fallback, dtype=float)
+    return np.asarray(max(groups, key=groups.get), dtype=float)

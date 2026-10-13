@@ -135,10 +135,13 @@ class StockSpec:
     axis: str = "z"
     thickness_mm: float | None = None
     path: str | None = None
+    #: A lathe's bar: how far it stands proud of the part's +axis end (the face to be faced off); with it the bar is
+    #: centred on the part's own turning axis and runs ``length_mm`` back from there (the rest is held in the chuck).
+    face_stock_mm: float | None = None
 
     def as_dict(self) -> dict:
         out = {"kind": self.kind}
-        for key in ("margin_mm", "size_mm", "diameter_mm", "length_mm", "thickness_mm", "path"):
+        for key in ("margin_mm", "size_mm", "diameter_mm", "length_mm", "thickness_mm", "path", "face_stock_mm"):
             value = getattr(self, key)
             if value is not None:
                 out[key] = list(value) if isinstance(value, tuple) else value
@@ -399,7 +402,7 @@ def _stock(raw: object, kind: str) -> StockSpec:
         raise CamJobError("stock must be an object like {\"kind\": \"box\", \"margin_mm\": [2, 2, 1]}")
     stock_kind = choice(raw.get("kind"), STOCK_KINDS, "stock.kind")
     allowed = {"box": ("kind", "margin_mm", "size_mm"),
-               "cylinder": ("kind", "diameter_mm", "length_mm", "axis", "margin_mm"),
+               "cylinder": ("kind", "diameter_mm", "length_mm", "axis", "margin_mm", "face_stock_mm"),
                "sheet": ("kind", "thickness_mm", "margin_mm"),
                "from_step": ("kind", "path")}[stock_kind]
     check_keys(raw, allowed, "stock", hint=f"{stock_kind} stock")
@@ -414,7 +417,9 @@ def _stock(raw: object, kind: str) -> StockSpec:
         return StockSpec(kind="cylinder", margin_mm=(margin,) * 6,
                          diameter_mm=read_number(raw, "diameter_mm", "stock"),
                          length_mm=read_number(raw, "length_mm", "stock"),
-                         axis=choice(raw.get("axis", "z"), ("x", "y", "z"), "stock.axis"))
+                         axis=choice(raw.get("axis", "z"), ("x", "y", "z"), "stock.axis"),
+                         face_stock_mm=read_number(raw, "face_stock_mm", "stock", minimum=0.0,
+                                                   default=1.0 if kind == "lathe" else None))
     if stock_kind == "sheet":
         margins = _margins(raw.get("margin_mm", 0.0), "stock.margin_mm", box=False)
         return StockSpec(kind="sheet", margin_mm=margins, thickness_mm=read_number(raw, "thickness_mm", "stock"))
