@@ -128,6 +128,10 @@ class Profile(Bracket):
         arcs = plan.toolpath.moves[(plan.toolpath.moves["kind"] == ARC_CW) | (plan.toolpath.moves["kind"] == ARC_CCW)]
         self.assertGreaterEqual(len(arcs), 2 * 3)          # a lead in and out on two levels and the finish pass
         self.assertEqual(0.3, ops[0].meta["finish_mm"])
+        # In the slot's mouth the loop is 2 mm wide: a 2 mm lead would swing into the far wall, so it shrinks.
+        plan, ops = self.plan([{"op": "contour", "tool": "T1", "faces": [self.top], "stepdown_mm": 7,
+                                "lead_in_mm": 2, "lead_out_mm": 2}])
+        self.assert_clear_of_part(plan, self.cutting(plan), 3.0)
 
     def test_a_wall_names_its_whole_loop_and_a_region_its_polygon(self):
         plan, _ = self.plan([{"op": "contour", "tool": "T1", "faces": [self.outline_wall], "stepdown_mm": 13}])

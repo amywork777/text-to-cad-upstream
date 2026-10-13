@@ -31,8 +31,6 @@ What the tool cannot reach (inside corners tighter than its radius, holes smalle
 
 from __future__ import annotations
 
-import math
-
 from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
@@ -132,7 +130,6 @@ class ContourOp(Operation):
         return out
 
     def plan(self, ctx, params):
-        import numpy as np
         import shapely
 
         from cadgen._internal.cam import geom2d
@@ -209,13 +206,15 @@ class ContourOp(Operation):
                          "without them")
         ctx.meta.update({"loops": sum(1 for p in passes if not p["finish"]),
                          "levels": max(len(p["levels"]) for p in passes),
-                         "entries": {k: v for k, v in counts.items() if v and k != "plunge"},
+                         "entries": {k: v for k, v in counts.items() if v and k in ("ramp", "air", "lead")},
                          "unreachable": unreachable, "stock_to_leave": leave,
                          "bottom_z": round(min(p["bottom"] for p in passes), 4)})
         if finish > 0:
             ctx.meta["finish_mm"] = finish
         if counts["plunge"]:
             ctx.meta["plunges"] = counts["plunge"]
+        if counts.get("lead_dropped"):
+            notes.append(f"{counts['lead_dropped']} lead(s) did not fit beside their loop and were left out")
         if notes:
             ctx.meta["note"] = "; ".join(notes)
         return b.build()
@@ -225,7 +224,6 @@ class ContourOp(Operation):
         import numpy as np
         import shapely
 
-        from cadgen._internal.cam import linking
         from cadgen._internal.cam.operations._milling2d import lift_and_go, orient, ramp_along, rotate_to_nearest
 
         tool = ctx.tool
@@ -276,9 +274,8 @@ class ContourOp(Operation):
         start = ring[0]
         d0 = _direction(ring, 0)
         d1 = _direction(ring, -1)
-        lead_in, lead_out = params["lead_in_mm"], params["lead_out_mm"]
-        lead_in_geom = linking.lead_arc(start, d0, radius=lead_in, material_on_right=climb, entering=True) if lead_in else None
-        lead_out_geom = linking.lead_arc(start, d1, radius=lead_out, material_on_right=climb, entering=False) if lead_out else None
+        lead_in_geom = _fit_lead(ring, p["material_inside"], start, d0, params["lead_in_mm"], climb, True, counts)
+        lead_out_geom = _fit_lead(ring, p["material_inside"], start, d1, params["lead_out_mm"], climb, False, counts)
         # The ramp runs along the loop up to the first tab.
         ramp_path = ring
         if spans:
@@ -341,6 +338,36 @@ class ContourOp(Operation):
             z_prev = z
         b.rapid(z=heights.retract)
         return short
+
+
+def _fit_lead(ring, material_inside: bool, point, direction, radius: float, climb: bool, entering: bool, counts):
+    """A lead arc (``linking.lead_arc``) of ``radius``, halved until it stays on the loop's air side (inside a hole's
+    loop, outside an outline's); None when no lead was asked for or none fits (counted in ``counts["lead_dropped"]``)."""
+    import numpy as np
+    import shapely
+
+    from cadgen._internal.cam import linking
+
+    if not radius:
+        return None
+    loop = shapely.Polygon(ring)
+    for _ in range(4):
+        start, centre, clockwise = linking.lead_arc(point, direction, radius=radius, material_on_right=climb,
+                                                    entering=entering)
+        a0 = np.arctan2(start[1] - centre[1], start[0] - centre[0])
+        a1 = np.arctan2(point[1] - centre[1], point[0] - centre[0])
+        sweep = (a1 - a0) % (2 * np.pi)
+        if clockwise:
+            sweep -= 2 * np.pi
+        angles = a0 + sweep * np.linspace(0.0, 1.0, 9)[:-1]
+        arc = shapely.points(centre[0] + radius * np.cos(angles), centre[1] + radius * np.sin(angles))
+        inside = shapely.contains(loop.buffer(1e-6), arc) if not material_inside else ~shapely.intersects(
+            loop.buffer(-1e-6), arc)
+        if np.all(inside):
+            return start, centre, clockwise
+        radius /= 2.0
+    counts["lead_dropped"] = counts.get("lead_dropped", 0) + 1
+    return None
 
 
 def _floor_under(ctx, ring, material, z_face: float):
