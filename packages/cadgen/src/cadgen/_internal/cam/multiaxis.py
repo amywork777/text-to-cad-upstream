@@ -39,7 +39,7 @@ import math
 from cadgen._internal.cam.job_errors import CamJobError
 
 __all__ = [
-    "PointCloud", "check_orientation", "drop_along", "hold_rotary", "machine_positions", "orientation_rotary",
+    "MoveList", "PointCloud", "check_orientation", "holder_intrusion", "intrusion_findings", "drop_along", "hold_rotary", "machine_positions", "orientation_rotary",
     "pivot_part", "rotary_axes", "solve_abc", "surface_points", "tool_axes", "tool_intrusion", "unit_axes",
 ]
 
@@ -156,14 +156,16 @@ def check_orientation(orientation: dict, machine, where: str) -> dict:
     return out
 
 
-def solve_abc(directions, machine, *, previous: dict | None = None):
-    """Rotary positions (N, 3) degrees, columns a, b, c, that bring each part direction (N, 3) to the tool on a
-    machine whose setup is not tilted, continuous from ``previous``; rows the kinematics cannot reach (or only
-    outside ``rotary_limits_deg``) are NaN."""
+def solve_abc(directions, machine, *, wcs=None, previous: dict | None = None):
+    """Rotary positions (N, 3) degrees, columns a, b, c, that bring each part direction (N, 3) to the tool,
+    continuous from ``previous`` (``{"a": .., "c": ..}``); rows the kinematics cannot reach (or only outside
+    ``rotary_limits_deg``) are NaN. ``wcs`` is the setup (a re-fixtured part turns the directions first)."""
     import numpy as np
 
     axes = rotary_axes(machine)
-    directions = np.asarray(directions, dtype=float)
+    directions = np.asarray(directions, dtype=float).reshape(-1, 3)
+    if wcs is not None:
+        directions = directions @ _setup_rotation(wcs)
     out = np.full((len(directions), 3), np.nan)
     state = dict(previous or {axis: 0.0 for axis in axes})
     for row, direction in enumerate(directions):
@@ -281,8 +283,9 @@ def machine_positions(toolpath, wcs, pivot_part_mm):
 # --- the sampled surface ---------------------------------------------------------------------------------
 
 def surface_points(vertices, triangles, spacing: float):
-    """Points on a mesh's surface no further than ``spacing`` apart along each triangle (its corners and edges
-    included): ``(points (M, 3), triangle index (M,))``."""
+    """Points on a mesh's surface about ``spacing`` apart (its corners and edges included): ``(points (M, 3), triangle
+    index (M,))``. Each triangle is walked from the corner opposite its shortest edge in rows ``spacing`` apart, each
+    row split ``spacing`` apart, so a long sliver costs its area, not its length squared."""
     import numpy as np
 
     vertices = np.asarray(vertices, dtype=float)
@@ -290,20 +293,28 @@ def surface_points(vertices, triangles, spacing: float):
     if not len(triangles):
         return np.zeros((0, 3)), np.zeros(0, dtype=np.int64)
     tri = vertices[triangles]
-    edges = np.stack([tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 1], tri[:, 0] - tri[:, 2]], axis=1)
-    longest = np.linalg.norm(edges, axis=2).max(axis=1)
-    counts = np.clip(np.ceil(longest / max(spacing, 1e-6)).astype(np.int64), 1, 400)
+    # Corner A opposite the shortest edge, B and C the ends of that edge.
+    lengths = np.linalg.norm(tri[:, [1, 2, 0]] - tri[:, [2, 0, 1]], axis=2)   # edge opposite corner 0, 1, 2
+    apex = np.argmin(lengths, axis=1)
+    rows = np.arange(len(tri))
+    a = tri[rows, apex]
+    b = tri[rows, (apex + 1) % 3]
+    c = tri[rows, (apex + 2) % 3]
+    spacing = max(spacing, 1e-6)
+    n_long = np.clip(np.ceil(np.maximum(np.linalg.norm(b - a, axis=1), np.linalg.norm(c - a, axis=1)) / spacing),
+                     1, 4000).astype(np.int64)
+    n_base = np.clip(np.ceil(np.linalg.norm(c - b, axis=1) / spacing), 1, 4000).astype(np.int64)
     points, owners = [], []
-    for n in np.unique(counts):
-        index = np.nonzero(counts == n)[0]
-        i, j = np.meshgrid(np.arange(n + 1), np.arange(n + 1), indexing="ij")
-        keep = (i + j) <= n
-        u, v = (i[keep] / n), (j[keep] / n)
-        t = tri[index]
-        grid = t[:, None, 0] + u[None, :, None] * (t[:, None, 1] - t[:, None, 0]) + \
-            v[None, :, None] * (t[:, None, 2] - t[:, None, 0])
+    for long_, base in np.unique(np.column_stack([n_long, n_base]), axis=0):
+        index = np.nonzero((n_long == long_) & (n_base == base))[0]
+        s_rows = np.arange(long_ + 1) / long_
+        widths = np.maximum(1, np.ceil(s_rows * base)).astype(np.int64)
+        s = np.repeat(s_rows, widths + 1)
+        t = np.concatenate([np.arange(w + 1) / w for w in widths])
+        pa, pb, pc = a[index], b[index], c[index]
+        grid = pa[:, None] + s[None, :, None] * ((pb - pa)[:, None] + t[None, :, None] * (pc - pb)[:, None])
         points.append(grid.reshape(-1, 3))
-        owners.append(np.repeat(index, len(u)))
+        owners.append(np.repeat(index, len(s)))
     return np.vstack(points), np.concatenate(owners)
 
 
@@ -356,6 +367,48 @@ class PointCloud:
         return np.repeat(starts - np.cumsum(counts) + counts, counts) + np.arange(int(counts.sum()))
 
 
+def _pairs_in_boxes(cloud: "PointCloud", lows, highs, budget: int = 2_000_000):
+    """(placement, point) pairs for the points bucketed in each box ``[lows[n], highs[n]]``, in chunks:
+    yields ``(placement indices, point indices)``."""
+    import numpy as np
+
+    lows = np.asarray(lows, dtype=float).reshape(-1, 3)
+    highs = np.asarray(highs, dtype=float).reshape(-1, 3)
+    if not len(cloud.keys) or not len(lows):
+        return
+    lo = np.maximum(np.floor((lows - cloud.low) / cloud.cell).astype(np.int64), 0)
+    hi = np.minimum(np.floor((highs - cloud.low) / cloud.cell).astype(np.int64), cloud.shape - 1)
+    size = np.maximum(hi - lo + 1, 0)
+    cells = size.prod(axis=1)
+    per_point = max(1.0, len(cloud.points) / max(1, len(cloud.keys)))
+    start = 0
+    while start < len(lows):
+        cum = np.cumsum(cells[start:] * per_point)
+        stop = start + max(1, int(np.searchsorted(cum, budget)))
+        rows = np.arange(start, stop)
+        start = stop
+        n = cells[rows]
+        if not n.sum():
+            continue
+        owner = np.repeat(rows, n)
+        within = np.arange(int(n.sum())) - np.repeat(np.cumsum(n) - n, n)
+        sy, sz = size[owner, 1], size[owner, 2]
+        i = lo[owner, 0] + within // (sy * sz)
+        j = lo[owner, 1] + (within // sz) % sy
+        k = lo[owner, 2] + within % sz
+        keys = (i * cloud.shape[1] + j) * cloud.shape[2] + k
+        at = np.searchsorted(cloud.keys, keys)
+        valid = at < len(cloud.keys)
+        valid[valid] = cloud.keys[at[valid]] == keys[valid]
+        owner, at = owner[valid], at[valid]
+        counts = cloud.ends[at] - cloud.starts[at]
+        total = int(counts.sum())
+        if not total:
+            continue
+        points = np.repeat(cloud.starts[at] - np.cumsum(counts) + counts, counts) + np.arange(total)
+        yield np.repeat(owner, counts), points
+
+
 def _frame(points, tip, axis):
     """Heights along ``axis`` above ``tip`` and distances from the axis line, for points (M, 3)."""
     import numpy as np
@@ -364,6 +417,23 @@ def _frame(points, tip, axis):
     h = rel @ axis
     d = np.linalg.norm(rel - h[:, None] * axis[None, :], axis=1)
     return h, d
+
+
+def _pair_frame(cloud, owner, index, tips, axes):
+    import numpy as np
+
+    rel = cloud.points[index] - tips[owner]
+    h = np.einsum("ij,ij->i", rel, axes[owner])
+    d = np.linalg.norm(rel - h[:, None] * axes[owner], axis=1)
+    return h, d
+
+
+def _boxes(tips, axes, start, end, radius):
+    import numpy as np
+
+    a = tips + np.asarray(start)[..., None] * axes
+    b = tips + np.asarray(end)[..., None] * axes
+    return np.minimum(a, b) - radius, np.maximum(a, b) + radius
 
 
 def drop_along(cloud: PointCloud, tips, axes, tool, *, above: float, below: float):
@@ -377,16 +447,12 @@ def drop_along(cloud: PointCloud, tips, axes, tool, *, above: float, below: floa
     axes = np.asarray(axes, dtype=float).reshape(-1, 3)
     r = tool.radius
     out = np.full(len(tips), np.inf)
-    for row in range(len(tips)):
-        tip, axis = tips[row], axes[row]
-        ends = np.vstack([tip - below * axis, tip + above * axis])
-        index = cloud.near(ends.min(axis=0) - r, ends.max(axis=0) + r)
-        if not len(index):
-            continue
-        h, d = _frame(cloud.points[index], tip, axis)
+    lows, highs = _boxes(tips, axes, -below, above, r)
+    for owner, index in _pairs_in_boxes(cloud, lows, highs):
+        h, d = _pair_frame(cloud, owner, index, tips, axes)
         keep = (d <= r) & (h >= -below) & (h <= above)
         if keep.any():
-            out[row] = float(np.min(tool.height_at(d[keep]) - h[keep]))
+            np.minimum.at(out, owner[keep], tool.height_at(d[keep]) - h[keep])
     return out
 
 
@@ -403,23 +469,25 @@ def tool_intrusion(cloud: PointCloud, tips, axes, tool, *, tolerance: float, len
     r = max(0.0, tool.radius - shrink)
     depth = np.zeros(len(tips))
     where = np.full((len(tips), 3), np.nan)
-    for row in range(len(tips)):
-        tip, axis = tips[row], axes[row]
-        ends = np.vstack([tip, tip + length * axis])
-        index = cloud.near(ends.min(axis=0) - r, ends.max(axis=0) + r)
-        if not len(index):
-            continue
-        points = cloud.points[index]
-        h, d = _frame(points, tip, axis)
+    lows, highs = _boxes(tips, axes, 0.0, length, r)
+    for owner, index in _pairs_in_boxes(cloud, lows, highs):
+        h, d = _pair_frame(cloud, owner, index, tips, axes)
         inside = (d < r) & (h > 0) & (h < length)
         if not inside.any():
             continue
-        floor = tool.height_at(np.minimum(d[inside], tool.radius))
-        dig = np.minimum.reduce([h[inside] - floor, r - d[inside], length - h[inside]])
-        k = int(np.argmax(dig))
-        if dig[k] > tolerance:
-            depth[row] = float(dig[k])
-            where[row] = points[np.nonzero(inside)[0][k]]
+        owner, index, h, d = owner[inside], index[inside], h[inside], d[inside]
+        floor = tool.height_at(np.minimum(d, tool.radius))
+        dig = np.minimum(np.minimum(h - floor, r - d), length - h)
+        bad = dig > tolerance
+        if not bad.any():
+            continue
+        owner, index, dig = owner[bad], index[bad], dig[bad]
+        order = np.lexsort((dig, owner))
+        last = np.r_[owner[order][1:] != owner[order][:-1], True]
+        rows, best = owner[order][last], order[last]
+        better = dig[best] > depth[rows]
+        depth[rows[better]] = dig[best][better]
+        where[rows[better]] = cloud.points[index[best][better]]
     return depth, where
 
 
@@ -436,22 +504,79 @@ def holder_intrusion(cloud: PointCloud, tips, axes, tool, *, clearance: float = 
         pieces.append((holder.stickout_mm, holder.stickout_mm + holder.holder_length_mm, holder.holder_diameter_mm / 2))
     depth = np.zeros(len(tips))
     where = np.full((len(tips), 3), np.nan)
-    for row in range(len(tips)):
-        tip, axis = tips[row], axes[row]
-        for start, end, radius in pieces:
-            if end <= start:
-                continue
-            ends = np.vstack([tip + start * axis, tip + end * axis])
-            index = cloud.near(ends.min(axis=0) - radius, ends.max(axis=0) + radius)
-            if not len(index):
-                continue
-            points = cloud.points[index]
-            h, d = _frame(points, tip, axis)
+    for start, end, radius in pieces:
+        if end <= start:
+            continue
+        lows, highs = _boxes(tips, axes, start, end, radius)
+        for owner, index in _pairs_in_boxes(cloud, lows, highs):
+            h, d = _pair_frame(cloud, owner, index, tips, axes)
             inside = (h > start) & (h < end) & (d < radius - clearance)
-            if inside.any():
-                dig = radius - d[inside]
-                k = int(np.argmax(dig))
-                if dig[k] > depth[row]:
-                    depth[row] = float(dig[k])
-                    where[row] = points[np.nonzero(inside)[0][k]]
+            if not inside.any():
+                continue
+            owner, index, dig = owner[inside], index[inside], radius - d[inside]
+            order = np.lexsort((dig, owner))
+            last = np.r_[owner[order][1:] != owner[order][:-1], True]
+            rows, best = owner[order][last], order[last]
+            better = dig[best] > depth[rows]
+            depth[rows[better]] = dig[best][better]
+            where[rows[better]] = cloud.points[index[best][better]]
     return depth, where
+
+class MoveList:
+    """Moves that set ``x y z`` and ``a b c`` together (the IR rows a multi-axis planner writes), built into a
+    :class:`~cadgen._internal.cam.ir.Toolpath` naming the machine's rotary axes. Motion of neither is dropped."""
+
+    def __init__(self, start, abc, axes: tuple[str, ...], *, op: int = 0):
+        self.start = tuple(float(v) for v in start)
+        self.pos = list(self.start)
+        self.abc = [float(v) for v in abc]
+        self.axes = tuple(axes)
+        self.op = op
+        self.rows: list[tuple] = []
+
+    def go(self, kind: int, xyz, abc=None, *, f: float = 0.0) -> None:
+        xyz = [float(v) for v in xyz]
+        abc = self.abc if abc is None else [float(v) for v in abc]
+        if xyz == self.pos and abc == self.abc:
+            return
+        self.rows.append((kind, *xyz, *abc, float(f), 0.0, 0.0, 0.0, 0, 0.0, self.op))
+        self.pos, self.abc = xyz, abc
+
+    def polyline(self, kind: int, xyz, abc, *, f: float = 0.0) -> None:
+        for point, angles in zip(xyz, abc):
+            self.go(kind, point, angles, f=f)
+
+    def build(self):
+        import numpy as np
+
+        from cadgen._internal.cam.ir import MOVE_DTYPE, Toolpath
+
+        moves = np.array(self.rows, dtype=MOVE_DTYPE) if self.rows else np.zeros(0, dtype=MOVE_DTYPE)
+        return Toolpath(moves, (), (), start=self.start, rotary=self.axes)
+
+
+def intrusion_findings(ctx, summary: str, depth, where, *, check: str = "gouge") -> list[dict]:
+    """One finding for an operation whose placed tool (``check="gouge"``: its cutter; ``"holder_collision"``: its
+    shank or holder) enters the sampled part surface: ``depth`` (N,) per placement, ``where`` (N, 3) part mm."""
+    import numpy as np
+
+    from cadgen._internal.cam.checks.base import finding, xyz
+
+    depth = np.asarray(depth, dtype=float)
+    bad = depth > 0
+    if not bad.any():
+        return []
+    k = int(np.argmax(depth))
+    if check == "gouge":
+        head = f"{summary} cuts into the part: up to {float(depth[k]):.2f} mm at {int(bad.sum())} move(s)"
+        advice = ("the tool's placement or tilt leaves the cutter inside the part: use a smaller stepover or "
+                  "sample_mm, a smaller tool, more stock to leave, or name only the faces it can reach")
+        kind = "gouge_multiaxis"
+    else:
+        head = (f"{summary}: the shank or holder hits the part, up to {float(depth[k]):.2f} mm at {int(bad.sum())} "
+                "move(s)")
+        advice = "use a longer stickout or a slimmer holder, tilt the tool more (max_tilt_deg), or cut from another setup"
+        kind = "holder_multiaxis"
+    return [finding(check, "error", kind, head, advice,
+                    [{"setup": ctx.setup.id, "operation": ctx.index, "depth_mm": round(float(depth[k]), 3),
+                      "count": int(bad.sum()), "at": xyz(where[k])}])]
