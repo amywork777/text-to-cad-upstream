@@ -161,6 +161,21 @@ def _remove_stale(paths) -> None:
             pass
 
 
+def _check_drawing_stock(document: Path, stock) -> None:
+    """A DXF has no thickness of its own: it is cut from a sheet that names one, never from a guessed 1 mm."""
+    from cadgen._internal.cam.part import DXF_SUFFIXES
+
+    if document.suffix.lower() not in DXF_SUFFIXES:
+        return
+    if stock.kind != "sheet":
+        raise CamJobError(f"{document.name} is a drawing: it is cut from a sheet, not a {stock.kind}; set stock to "
+                          "{\"kind\": \"sheet\", \"thickness_mm\": 3} with the sheet's real thickness")
+    if stock.thickness_mm is None:
+        raise CamJobError(f"{document.name} is a drawing with no thickness of its own: give the sheet's, like "
+                          "stock {\"kind\": \"sheet\", \"thickness_mm\": 3} (cutting speeds and the simulated "
+                          "sheet depend on it)")
+
+
 def _refused(document: Path, message: str, timings: dict) -> CamPlanResult:
     return CamPlanResult(ok=False, document=document, findings=(job_finding(message),), timings=timings)
 
@@ -185,6 +200,7 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
     _remove_stale(previous_outputs(document, out_dir, {entry.extension for entry in post_registry.REGISTRY.values()}))
     try:
         parsed = parse_job(job)
+        _check_drawing_stock(document, parsed.stock)
         entry = post_registry.entry_for(parsed.machine.post, parsed.machine.kind)
         operations = parse_operations(parsed)
         post = post_registry.get_post(parsed.machine.post, parsed.machine.kind)
@@ -222,6 +238,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         part = read_part(document, sheet_thickness_mm=parsed.stock.thickness_mm)
         stock = build_stock(parsed.stock, part, base_dir=parsed.base_dir)
     mark = lap("part_s", mark)
+    warnings += list(part.notes)
     logger.debug(f"part {part.occurrence or document.name}: {len(part.triangles)} triangles; stock {stock.kind}")
 
     setup_plans, op_plans, notes = plan_setups(parsed, operations, part, stock, logger)

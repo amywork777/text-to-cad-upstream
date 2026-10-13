@@ -139,7 +139,8 @@ A width the cone cannot reach (wider than its radius less the tip offset) is ref
 ## engrave: Engrave
 
 Follows curves at a shallow depth with the tool's centre on them: a DXF's lines, arcs, circles,
-ellipses, polylines and splines (open or closed; text is skipped and counted: explode it to curves),
+ellipses, polylines and splines (open or closed; blocks are expanded; text, dimensions and hatches are
+skipped and counted: explode text to curves; any other entity is refused, naming its handle),
 the edges of flat faces, or a `region`'s outline. Vee, engraver or chamfer tool. Nearest curve first;
 plunges at each start. The modelled part has no engraving, so the gouge check does not judge it.
 

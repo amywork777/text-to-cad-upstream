@@ -11,8 +11,9 @@
   not on this part; :meth:`Part.ocp_face` hands back the exact ``TopoDS_Face`` (world placement);
 * :meth:`Part.mesh_in` the mesh in a setup's WCS (cached per setup).
 
-A DXF part (``kind == "dxf"``) has ``profiles`` (shapely polygons, even-odd filled, in mm on z = 0) and a mesh
-extruded to the sheet's thickness; it has no faces. Stdlib at import; numpy, OCP and ezdxf inside.
+A DXF part (``kind == "dxf"``) has ``profiles`` (shapely polygons, even-odd filled, in mm on z = 0; blocks expanded,
+annotation skipped and said in ``notes``, any other entity refused: :func:`dxf_curves`) and a mesh extruded to the
+sheet's thickness; it has no faces. Stdlib at import; numpy, OCP and ezdxf inside.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from typing import Any
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["DXF_SUFFIXES", "FaceInfo", "Part", "read_part"]
+__all__ = ["DXF_SUFFIXES", "FaceInfo", "Part", "dxf_curves", "read_dxf_drawing", "read_dxf_profiles", "read_part"]
 
 DXF_SUFFIXES = (".dxf",)
 #: The default tessellation: fine enough that sections and checks are good to a few hundredths of a millimetre.
@@ -65,6 +66,8 @@ class Part:
     deflection_mm: float
     shape: Any = None               # build123d Shape (world placement); None for a DXF
     profiles: list = field(default_factory=list)   # DXF: shapely Polygons
+    #: What reading it skipped (a DXF's text and dimensions), in plain words, for the result's warnings.
+    notes: list = field(default_factory=list)
     _scene: Any = None
     _face_map: Any = None
     _wcs_cache: dict = field(default_factory=dict)
@@ -133,7 +136,9 @@ def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: f
     if document.suffix.lower() in DXF_SUFFIXES:
         if not document.is_file():
             raise CamJobError(f"no DXF at {document}")
-        return _read_dxf(document, thickness=sheet_thickness_mm or 1.0)
+        # A plan always names the sheet's thickness (run.py refuses a DXF job without one); read for its profiles
+        # alone (``cam features``) the drawing stays flat, at z = 0.
+        return _read_dxf(document, thickness=float(sheet_thickness_mm) if sheet_thickness_mm is not None else 0.0)
     from cadgen._internal.doors import STEP_SUFFIXES, document_target
     from cadgen.step_scene import read_scene
 
@@ -265,11 +270,21 @@ def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
 
 # --- DXF -------------------------------------------------------------------------------------------------
 
-def read_dxf_profiles(path: Path, *, tolerance_mm: float = 0.01) -> list:
-    """The DXF's closed regions as shapely polygons (mm), even-odd filled: closed polylines, circles, ellipses and
-    splines as rings, open lines and arcs joined into rings where their ends meet."""
+#: The entities a drawing's outlines are drawn with: each is followed as a path.
+DXF_CURVES = ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE")
+#: Annotation a drawing may carry beside its outlines: skipped and counted, never cut. Anything else is refused.
+DXF_ANNOTATIONS = ("TEXT", "MTEXT", "ATTRIB", "ATTDEF", "DIMENSION", "ARC_DIMENSION", "LARGE_RADIAL_DIMENSION",
+                   "LEADER", "MLEADER", "MULTILEADER", "HATCH")
+
+
+def dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
+    """Every curve a DXF's model space draws, ``([(points [(x, y)] mm, closed)], skipped {type: count})``.
+
+    Blocks (``INSERT``) are expanded, nested ones too, with their placement, scale and rotation; its ``$INSUNITS``
+    are honoured. Annotation (:data:`DXF_ANNOTATIONS`: text, dimensions, leaders, hatches) is skipped and counted;
+    any other entity, or a curve that cannot be followed as a path, is refused naming its handle and type: a part
+    is never cut with a piece of its drawing silently left out."""
     import ezdxf
-    import shapely
     from ezdxf import path as dxf_path
 
     try:
@@ -277,19 +292,69 @@ def read_dxf_profiles(path: Path, *, tolerance_mm: float = 0.01) -> list:
     except (OSError, ezdxf.DXFError) as exc:
         raise CamJobError(f"{path.name} is not a readable DXF: {exc}") from None
     scale = {1: 25.4, 2: 304.8, 5: 10.0, 6: 1000.0}.get(int(document.header.get("$INSUNITS", 4) or 4), 1.0)
+    curves: list = []
+    skipped: dict[str, int] = {}
+
+    def named(entity, inside: str) -> str:
+        handle = entity.dxf.get("handle")
+        return f"{entity.dxftype()} {handle}" if handle else f"a {entity.dxftype()} in {inside}"
+
+    def walk(entities, inside: str) -> None:
+        for entity in entities:
+            kind = entity.dxftype()
+            if kind == "INSERT":
+                block = f"block {entity.dxf.get('name', '?')} (INSERT {entity.dxf.get('handle') or inside})"
+                try:
+                    children = list(entity.virtual_entities())
+                except Exception as exc:  # noqa: BLE001 - ezdxf's reason goes into the refusal
+                    raise CamJobError(f"{path.name}: {block} cannot be expanded ({exc}); explode it in the "
+                                      "drawing") from None
+                attribs = len(getattr(entity, "attribs", ()) or ())
+                if attribs:
+                    skipped["ATTRIB"] = skipped.get("ATTRIB", 0) + attribs
+                walk(children, block)
+                continue
+            if kind in DXF_ANNOTATIONS:
+                skipped[kind] = skipped.get(kind, 0) + 1
+                continue
+            if kind not in DXF_CURVES:
+                raise CamJobError(f"{path.name}: {named(entity, inside)} is not a curve that can be cut; draw the "
+                                  f"outlines as {', '.join(DXF_CURVES[:-1]).lower()} or {DXF_CURVES[-1].lower()}s "
+                                  "and delete it (text, dimensions and hatches are skipped)")
+            try:
+                points = [(v.x * scale, v.y * scale) for v in dxf_path.make_path(entity).flattening(tolerance_mm / scale)]
+            except Exception as exc:  # noqa: BLE001 - ezdxf's reason goes into the refusal
+                raise CamJobError(f"{path.name}: {named(entity, inside)} cannot be followed as a path ({exc}); redraw "
+                                  "it as lines, arcs or a polyline") from None
+            if len(points) < 2:
+                continue
+            closed = kind == "CIRCLE" or math.dist(points[0], points[-1]) <= 1e-6 * max(1.0, scale)
+            curves.append((points, closed))
+
+    walk(document.modelspace(), "model space")
+    return curves, skipped
+
+
+def skipped_words(name: str, skipped: dict[str, int]) -> str:
+    """``bracket.dxf: 2 TEXT and 1 DIMENSION skipped (annotation is not cut ...)``, or ""."""
+    if not skipped:
+        return ""
+    parts = [f"{count} {kind}" for kind, count in sorted(skipped.items())]
+    listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return (f"{name}: {listed} skipped (annotation is not cut; explode text to curves in the drawing to cut or "
+            "engrave it)")
+
+
+def read_dxf_drawing(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
+    """The DXF's closed regions as shapely polygons (mm), even-odd filled: closed polylines, circles, ellipses and
+    splines as rings, open lines and arcs joined into rings where their ends meet; and what was skipped
+    (:func:`dxf_curves`)."""
+    import shapely
+
+    curves, skipped = dxf_curves(path, tolerance_mm=tolerance_mm)
     rings: list = []
     loose: list = []
-    for entity in document.modelspace():
-        kind = entity.dxftype()
-        if kind not in ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE"):
-            continue
-        try:
-            points = [(v.x * scale, v.y * scale) for v in dxf_path.make_path(entity).flattening(tolerance_mm / scale)]
-        except Exception:  # noqa: BLE001 - an entity ezdxf cannot path is skipped, never guessed
-            continue
-        if len(points) < 2:
-            continue
-        closed = kind in ("CIRCLE",) or math.dist(points[0], points[-1]) <= 1e-6 * max(1.0, scale)
+    for points, closed in curves:
         if closed and len(points) >= 4:
             ring = shapely.Polygon(points)
             rings.append(ring if ring.is_valid else ring.buffer(0))
@@ -301,14 +366,19 @@ def read_dxf_profiles(path: Path, *, tolerance_mm: float = 0.01) -> list:
     filled = shapely.Polygon()
     for ring in rings:
         filled = filled.symmetric_difference(ring)
-    return [p for p in shapely.get_parts(filled) if p.area > 1e-9]
+    return [p for p in shapely.get_parts(filled) if p.area > 1e-9], skipped
+
+
+def read_dxf_profiles(path: Path, *, tolerance_mm: float = 0.01) -> list:
+    """The DXF's closed regions as shapely polygons (:func:`read_dxf_drawing` without the skipped count)."""
+    return read_dxf_drawing(path, tolerance_mm=tolerance_mm)[0]
 
 
 def _read_dxf(path: Path, *, thickness: float) -> Part:
     import numpy as np
     import shapely
 
-    profiles = read_dxf_profiles(path)
+    profiles, skipped = read_dxf_drawing(path)
     if not profiles:
         raise CamJobError(f"{path.name} has no closed profile to cut; close its outlines (polylines or circles)")
     vertices: list = []
@@ -336,4 +406,4 @@ def _read_dxf(path: Path, *, thickness: float) -> Part:
     tri_array = np.vstack(triangles).astype(np.int64)
     return Part(document=path, occurrence="", kind="dxf", vertices=np.vstack(vertices), triangles=tri_array,
                 face_of_triangle=np.zeros(len(tri_array), dtype=np.int64), faces={}, deflection_mm=0.01,
-                profiles=profiles)
+                profiles=profiles, notes=[note] if (note := skipped_words(path.name, skipped)) else [])

@@ -237,9 +237,11 @@ class StockGuards(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from tests.python.support.cam_fixtures import plate_step
+        from tests.python.support.cam_fixtures_cutting import bracket_dxf
 
         cls.directory = class_directory(cls)
         cls.step = plate_step(cls.directory)
+        cls.dxf = bracket_dxf(cls.directory)
 
     def plan(self, document, job, name: str):
         from cadgen import cam
@@ -256,6 +258,71 @@ class StockGuards(unittest.TestCase):
                                                 stock={"kind": "box", "size_mm": [50, 50, 8]}), "smaller")
         self.assertFalse(smaller.ok)
         self.assertIn("smaller than the part", smaller.findings[0]["summary"])
+
+    def test_a_drawing_is_cut_from_a_sheet_that_names_its_thickness(self):
+        from tests.python.support.cam_fixtures_cutting import cut_job
+
+        job = cut_job("plasma", thickness=6.0)
+        self.assertTrue(self.plan(self.dxf, job, "six").ok)
+        for stock, words in (({"kind": "sheet"}, "thickness_mm"), ({"kind": "box", "margin_mm": 5}, "from a sheet")):
+            refused = self.plan(self.dxf, {**job, "stock": stock}, stock["kind"])
+            self.assertFalse(refused.ok)
+            self.assertIn(words, refused.findings[0]["summary"])
+
+
+class DrawingReader(unittest.TestCase):
+    """A DXF's blocks are cut where they are placed; annotation is counted; anything else is refused."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = class_directory(cls)
+
+    def drawing(self, name: str, extra=None):
+        import ezdxf
+
+        document = ezdxf.new("R2010")
+        document.header["$INSUNITS"] = 4
+        square = document.blocks.new("SQ")
+        square.add_lwpolyline([(0, 0), (10, 0), (10, 10), (0, 10)], close=True)
+        outer = document.blocks.new("OUTER")
+        outer.add_blockref("SQ", (100, 0))
+        space = document.modelspace()
+        space.add_blockref("SQ", (50, 0), dxfattribs={"rotation": 90, "xscale": 2})
+        space.add_blockref("OUTER", (0, 100))
+        space.add_text("PART 7", dxfattribs={"insert": (0, -10), "height": 3})
+        if extra is not None:
+            extra(space)
+        path = self.directory / f"{name}.dxf"
+        document.saveas(path)
+        return path
+
+    def test_blocks_are_expanded_with_their_placement_and_text_is_counted(self):
+        from cadgen._internal.cam.part import read_dxf_drawing
+
+        profiles, skipped = read_dxf_drawing(self.drawing("blocks"))
+        bounds = sorted(tuple(round(v, 3) for v in p.bounds) for p in profiles)
+        self.assertEqual([(40.0, 0.0, 50.0, 20.0), (100.0, 100.0, 110.0, 110.0)], bounds)
+        self.assertEqual({"TEXT": 1}, skipped)
+
+    def test_the_plan_says_what_it_skipped(self):
+        from cadgen import cam
+        from tests.python.support.cam_fixtures_cutting import cut_job
+
+        with quiet():
+            result = cam.plan(self.drawing("said"), job=cut_job("laser", thickness=2.0),
+                              out_dir=self.directory / "said")
+        self.assertTrue(result.ok)
+        self.assertTrue(any("1 TEXT skipped" in w for w in result.warnings), result.warnings)
+
+    def test_an_entity_that_is_not_a_curve_is_refused_by_handle(self):
+        from cadgen._internal.cam.job_errors import CamJobError
+        from cadgen._internal.cam.part import read_dxf_drawing
+
+        handles = []
+        path = self.drawing("point", lambda space: handles.append(space.add_point((5, 5)).dxf.handle))
+        with self.assertRaises(CamJobError) as caught:
+            read_dxf_drawing(path)
+        self.assertIn(f"POINT {handles[0]}", str(caught.exception))
 
 
 if __name__ == "__main__":

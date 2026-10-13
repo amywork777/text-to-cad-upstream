@@ -69,9 +69,9 @@ user's machine: say so. An operation's own `feed` (mm/min) and `speed` (rpm) ove
 
 | `kind` | keys | meaning |
 | --- | --- | --- |
-| `box` | `margin_mm` or `size_mm` | a block round the part. `margin_mm` is one number (every side but the bottom), `[x, y]`, `[x, y, z]` (z on top only) or six numbers `[-x, +x, -y, +y, -z, +z]`; `size_mm` is `[x, y, z]`, centred on the part, flush with its bottom |
+| `box` | `margin_mm` or `size_mm` | a block round the part. `margin_mm` is one number (every side but the bottom), `[x, y]`, `[x, y, z]` (z on top only) or six numbers `[-x, +x, -y, +y, -z, +z]`; `size_mm` is `[x, y, z]`, centred on the part, flush with its bottom (any size that holds the part; smaller than the part on any axis is refused) |
 | `cylinder` | `diameter_mm`, `length_mm`, `axis`, `margin_mm`, `face_stock_mm` | bar stock for a lathe or a 4th axis; `axis` `x`, `y` or `z` (default `z`); `face_stock_mm` (default 1 on a lathe) stands the bar proud of the part's +axis end, centred on its turning axis ([turning.md](turning.md#the-bar)) |
-| `sheet` | `thickness_mm`, `margin_mm` | a plate for cutting or routing |
+| `sheet` | `thickness_mm`, `margin_mm` | a plate for cutting or routing. A `.dxf` part is cut from a sheet only, and needs `thickness_mm` (a drawing has no thickness of its own) |
 | `from_step` | `path` | another STEP (a casting, a blank), relative to the job file or the part |
 
 ## Tools

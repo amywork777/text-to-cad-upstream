@@ -229,7 +229,7 @@ class Engrave(Bracket):
         line = (np.abs(floor[:, 1] + 13.0) < 1e-6) & (floor[:, 0] >= -29.0 - 1e-6) & (floor[:, 0] <= -9.0 + 1e-6)
         self.assertGreater(int(line.sum()), 10)
         self.assertEqual(4, ops[0].meta["passes"])
-        self.assertIn("1 text entity", ops[0].meta["note"])
+        self.assertIn("mark.dxf: 1 TEXT skipped", ops[0].meta["note"])
         self.assertAlmostEqual(0.1 + 2 * 0.3 * math.tan(math.radians(15)), ops[0].meta["line_width_mm"], places=4)
 
     def test_a_relative_dxf_is_found_beside_the_part_and_a_missing_one_teaches(self):

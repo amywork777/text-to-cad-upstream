@@ -4,8 +4,8 @@ What it follows, one of:
 
 * ``dxf``: a DXF's curves (path relative to the job file, else to the part; or absolute): lines, arcs, circles,
   ellipses, polylines and splines, open or closed, placed with the DXF's origin at ``origin_mm`` ``[x, y]`` in the
-  setup's WCS (default ``[0, 0]``); its ``$INSUNITS`` are honoured. Text entities are skipped (explode text to
-  curves in the drawing first) and counted in a note;
+  setup's WCS (default ``[0, 0]``); its ``$INSUNITS`` are honoured; blocks are expanded. Text, dimensions and hatches are
+  skipped (explode text to curves in the drawing first) and counted in a note; any other entity is refused;
 * ``faces``: flat faces facing the tool: the edges of their outlines and holes;
 * ``region``: ``{"polygon": [[x, y], ...]}``: its outline (with ``bottom_z``, the engraving's floor instead of
   ``surface_z - depth_mm``).
@@ -28,9 +28,6 @@ from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
 
 __all__ = ["EngraveOp", "read_dxf_curves"]
-
-_CURVES = ("LINE", "ARC", "CIRCLE", "ELLIPSE", "LWPOLYLINE", "POLYLINE", "SPLINE")
-_TEXT = ("TEXT", "MTEXT", "ATTRIB", "ATTDEF")
 
 
 class EngraveOp(Operation):
@@ -88,8 +85,9 @@ class EngraveOp(Operation):
             ox, oy = params["origin_mm"]
             curves = [np.asarray(c) + [ox, oy] for c in curves]
             if skipped:
-                notes.append(f"{skipped} text entit{'y' if skipped == 1 else 'ies'} in {path.name} skipped: explode "
-                             "text to curves in the drawing to engrave it")
+                from cadgen._internal.cam.part import skipped_words
+
+                notes.append(skipped_words(path.name, skipped))
             if not curves:
                 raise CamJobError(f"{ctx.spec.where}.dxf: {path.name} has no lines, arcs, circles, polylines or "
                                   "splines to engrave")
@@ -175,34 +173,20 @@ def _flat_face(ctx, ref):
     return z, ctx.footprint(triangles)
 
 
-def read_dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, int]:
-    """The DXF's curves as (N, 2) mm polylines (closed ones end on their start), touching open pieces joined, and how
-    many text entities were skipped."""
-    import ezdxf
+def read_dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
+    """The DXF's curves as (N, 2) mm polylines (closed ones end on their start), touching open pieces joined, and
+    the annotation skipped by type (:func:`~cadgen._internal.cam.part.dxf_curves`: blocks expanded, any entity that
+    is not a curve or annotation refused)."""
     import numpy as np
     import shapely
-    from ezdxf import path as dxf_path
 
-    try:
-        document = ezdxf.readfile(str(path))
-    except (OSError, ezdxf.DXFError) as exc:
-        raise CamJobError(f"{path.name} is not a readable DXF: {exc}") from None
-    scale = {1: 25.4, 2: 304.8, 5: 10.0, 6: 1000.0}.get(int(document.header.get("$INSUNITS", 4) or 4), 1.0)
-    curves, open_, skipped = [], [], 0
-    for entity in document.modelspace():
-        kind = entity.dxftype()
-        if kind in _TEXT:
-            skipped += 1
-            continue
-        if kind not in _CURVES:
-            continue
-        try:
-            points = [(v.x * scale, v.y * scale) for v in dxf_path.make_path(entity).flattening(tolerance_mm / scale)]
-        except Exception:  # noqa: BLE001 - an entity ezdxf cannot path is skipped, never guessed
-            continue
-        if len(points) < 2:
-            continue
-        if math.dist(points[0], points[-1]) <= 1e-6 * max(1.0, scale) and len(points) >= 3:
+    from cadgen._internal.cam.part import dxf_curves
+
+    found, skipped = dxf_curves(path, tolerance_mm=tolerance_mm)
+    curves, open_ = [], []
+    for points, closed in found:
+        if closed and len(points) >= 3:
+            points = list(points)
             points[-1] = points[0]
             curves.append(np.asarray(points))
         else:

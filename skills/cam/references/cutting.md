@@ -7,7 +7,10 @@ outline that holds them, the cut is offset to the waste side so the part comes o
 size, and each profile starts on a straight run away from corners.
 
 Read the profiles first: for a `.dxf` `cadgen cam features` lists each closed profile with its size
-and holes.
+and holes. A drawing's blocks are expanded with their placement; its text, dimensions and hatches
+are skipped and counted in a `warning:` line; any other entity (a point, a 3D face, an image) is
+refused naming its handle, so delete it or redraw it as curves. A `.dxf` is cut from a `sheet`
+stock that names its `thickness_mm` (a drawing has none of its own).
 
 ```bash
 cadgen cam features bracket.dxf
