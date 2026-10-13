@@ -65,7 +65,7 @@ program to a machine. Tell the user this line when you report.
   is the setup's origin on the part with the table at zero.
 - **Simultaneous** (rotary axes change while cutting): A/B/C on every move, no arc fitting, tool length as
   tool centre point control (`G43.4`; Haas `G234`). Stock LinuxCNC has no `G43.4`: it needs a TCP
-  kinematics configuration that provides it.
+  kinematics configuration that provides it. Mach3 has no TCP: a wrap there is refused.
 - **Lathe**: X is a diameter (radius with `machine.diameter_mode: false`), arcs are `G18` with I a radius.
   Constant surface speed posts with its rpm clamp; feed per revolution where the operation asks.
   Threading is the controller's `G76`; a tapered thread posts as plain moves on LinuxCNC. A lathe never

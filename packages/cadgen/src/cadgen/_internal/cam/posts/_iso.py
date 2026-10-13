@@ -201,6 +201,10 @@ class IsoPost(CheckedPost):
     def render(self, program: Program) -> str:
         self.begin(program)
         self.check(program)
+        if self._simultaneous and not self.tcp_code:
+            raise CamJobError(f"setup {program.setup.id}: the toolpath turns its rotary axes while cutting, and the "
+                              f"{self.name} post has no tool centre point control to post the tool tip as planned; "
+                              "use a post that has it (linuxcnc, fanuc, haas)")
         text = super().render(program)
         if self.program_wrap:
             number_ = int(self.option(program, "program_number")) if "program_number" in self.options else 1000

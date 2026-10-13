@@ -421,6 +421,11 @@ class Refusals(unittest.TestCase):
         off = Toolpath(moves, lathe.toolpath.events, lathe.toolpath.ops, start=lathe.toolpath.start, lathe=True)
         self.assertRefuses(lambda: get_post("fanuc", "lathe").render(_with(lathe, off)), "off the XZ plane")
 
+    def test_a_simultaneous_wrap_needs_tool_centre_point_control(self):
+        wrap = F.simultaneous("mach3", "mill4", "a")
+        self.assertRefuses(lambda: get_post("mach3", "mill4").render(wrap), "no tool centre point control",
+                           "linuxcnc, fanuc, haas")
+
     def test_wire_options_that_need_more_from_the_cut(self):
         self.assertRefuses(lambda: get_post("wire_edm", "wire_edm").render(F.wire({"wire_comp": "controller"})),
                            "which side")

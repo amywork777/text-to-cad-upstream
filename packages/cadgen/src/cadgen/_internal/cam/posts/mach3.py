@@ -5,6 +5,8 @@ the other way is a crash. Mill and router: ``T M6`` then ``G43 H`` at a clearanc
 cycles G81 G82 G83 (Q pecks back to R) G73 G84 G85 G86 G89 natively (a left-hand tap and fine boring post expanded),
 dwell ``G4 P`` in seconds (``machine.dwell_ms: true`` when Mach's General Config has "G4 dwell in ms" ticked), ``M30``.
 A 4th axis posts A words; a 3+2 setup turns A after each tool change (set the work offset on the turned part).
+Mach has no tool centre point control, so a toolpath that turns A while cutting (a wrap) is refused: post it with
+linuxcnc, fanuc or haas.
 
 Plasma: the torch is ``M3``/``M5`` with the pierce and cut heights, the pierce delay and optional torch height
 control codes as machine keys (``_cutting.py`` has the sequence; THC is off by default here).
