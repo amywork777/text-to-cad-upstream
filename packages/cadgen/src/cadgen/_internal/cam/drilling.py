@@ -22,8 +22,8 @@ from dataclasses import dataclass
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["Hole", "METRIC_THREADS", "holes_from_faces", "holes_from_points", "holes_matching", "order_shortest",
-           "path_length", "spot_depth", "thread_for_hole", "tip_length"]
+__all__ = ["Hole", "MAX_TWO_OPT", "METRIC_THREADS", "holes_from_faces", "holes_from_points", "holes_matching",
+           "order_shortest", "path_length", "spot_depth", "tap_problems", "thread_for_hole", "tip_length", "top_at"]
 
 #: ISO metric threads: nominal diameter -> (coarse pitch, fine pitches).
 METRIC_THREADS: dict[float, tuple[float, tuple[float, ...]]] = {
@@ -33,6 +33,8 @@ METRIC_THREADS: dict[float, tuple[float, tuple[float, ...]]] = {
     20.0: (2.5, (2.0, 1.5)), 22.0: (2.5, (2.0, 1.5)), 24.0: (3.0, (2.0, 1.5)), 27.0: (3.0, (2.0,)),
     30.0: (3.5, (2.0,)),
 }
+#: Past this many holes the order is nearest-first only (2-opt is quadratic per pass).
+MAX_TWO_OPT = 3000
 #: How far an axis may lean off the setup's Z and still be drilled from it (cosine of 0.1°).
 _ALIGNED = math.cos(math.radians(0.1))
 
@@ -267,7 +269,8 @@ def path_length(start, points) -> float:
     return float(np.linalg.norm(np.diff(pts, axis=0), axis=1).sum())
 
 
-def order_shortest(points, start, *, max_two_opt: int = 3000, max_passes: int = 60) -> tuple[list[int], bool]:
+def order_shortest(points, start, *, max_two_opt: int = MAX_TWO_OPT,
+                   max_passes: int = 60) -> tuple[list[int], bool]:
     """An order to visit ``points`` ((N, 2)) from ``start`` (x, y): nearest neighbour, then 2-opt on the open path
     (the start fixed, the end free). Returns ``(order, improved by 2-opt)``; past ``max_two_opt`` points it keeps
     the nearest-neighbour order."""
@@ -338,6 +341,6 @@ def tap_problems(tool, hole_diameter: float | None) -> list[str]:
         if abs(hole_diameter - drill) > max(0.1, 0.1 * pitch) + 1e-9 and abs(hole_diameter - nominal) > 0.05:
             looks = thread_for_hole(hole_diameter)
             like = f" (Ø{_g(hole_diameter)} is drawn for {looks[0]})" if looks else ""
-            out.append(f"{tool.id} ({tool.plain}) needs a Ø{_g(drill)} tap-drill hole (or one drawn at Ø{_g(nominal)}, "
-                       f"the thread size), but this hole is Ø{_g(hole_diameter)}{like}")
+            out.append(f"{tool.id} ({tool.plain}) needs a Ø{_g(drill)} tap-drill hole (or one drawn at "
+                       f"Ø{_g(nominal)}, the thread size), but this hole is Ø{_g(hole_diameter)}{like}")
     return out

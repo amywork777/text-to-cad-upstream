@@ -141,6 +141,31 @@ class DrillPlate(unittest.TestCase):
         self.assertAlmostEqual(30.0 - side["depth"], point[0], places=6)          # tip on the flat floor
         self.assertIn("10 matching holes along another axis", ops[0].meta["note"])
 
+    def test_a_flipped_setup_drills_a_through_hole_from_its_other_end_and_refuses_a_blind_one(self):
+        flipped = [{"id": "under", "orientation": "-Z", "origin": "stock-top-center",
+                    "operations": [{"op": "drill", "tool": "T1", "faces": self.f5[:1]}]}]
+        setups, _ = self.plan([], setups=flipped)
+        path = setups[0].toolpath
+        ((key, z),) = self.bottoms(path, path.ops[0]).items()
+        # Flipped, the hole's exit is the plate's top face (part z 12).
+        exit_z = setups[0].wcs.to_wcs([[0.0, 0.0, 12.0]])[0][2]
+        self.assertAlmostEqual(exit_z - 1.0 - tip(5.0), z, places=6)
+        point = setups[0].wcs.from_wcs([[key[0], key[1], z]])[0]
+        self.assertTrue(np.allclose(point[:2], PLATE["through5"][0]))
+        flipped[0]["operations"] = [{"op": "drill", "tool": "T2", "faces": self.f6[:1]}]
+        flipped.append({"id": "top", "orientation": "+Z", "origin": "stock-top-center",
+                        "operations": [{"op": "drill", "tool": "T1", "faces": self.f5[:1]}]})
+        with self.assertRaises(CamJobError) as caught:
+            self.plan([], setups=flipped)
+        self.assertIn("drill it in setup 'top'", str(caught.exception))
+
+    def test_points_in_solid_material_say_so_once_instead_of_gouging(self):
+        _, _, op = self.one({"op": "drill", "tool": "T1", "points": [[0, -15], [-24, -14]], "depth_mm": 3})
+        (found,) = op.meta["findings"]
+        self.assertEqual("no_hole_in_model", found["type"])
+        self.assertEqual(1, len(found["items"]))                       # (-24, -14) is one of the plate's holes
+        self.assertTrue(op.meta["no_gouge_check"])
+
     # --- cycles --------------------------------------------------------------------------------------------
 
     def test_peck_comes_back_to_r_between_pecks_and_chipbreak_backs_off_a_little(self):
@@ -321,6 +346,42 @@ class DrillPlate(unittest.TestCase):
             parse_job(drill_job([], tools=[{"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1,
                                             "hand": "sinister"}]))
         self.assertIn("use one of right, left", str(caught.exception))
+
+
+class Ordering(unittest.TestCase):
+    def test_two_opt_leaves_no_improving_swap_and_beats_nearest_neighbour(self):
+        from cadgen._internal.cam.drilling import order_shortest, path_length
+
+        rng = np.random.default_rng(7)
+        points = rng.uniform(0, 100, size=(60, 2))
+        order, improved = order_shortest(points, (0, 0))
+        self.assertEqual(sorted(order), list(range(60)))
+        nearest, _ = order_shortest(points, (0, 0), max_two_opt=0)
+        self.assertTrue(improved)
+        best = path_length((0, 0), points[order])
+        self.assertLess(best, path_length((0, 0), points[nearest]))
+        route = np.vstack([[0, 0], points[order]])
+        for i in range(1, len(route) - 1):
+            for j in range(i + 1, len(route)):
+                old = np.linalg.norm(route[i - 1] - route[i]) + (np.linalg.norm(route[j] - route[j + 1])
+                                                                 if j + 1 < len(route) else 0.0)
+                new = np.linalg.norm(route[i - 1] - route[j]) + (np.linalg.norm(route[i] - route[j + 1])
+                                                                 if j + 1 < len(route) else 0.0)
+                self.assertGreaterEqual(new, old - 1e-6)
+
+    def test_a_grid_of_holes_is_ordered_without_backtracking_and_a_big_one_stays_quick(self):
+        import time
+
+        from cadgen._internal.cam.drilling import order_shortest, path_length
+
+        grid = np.array([(x, y) for x in range(0, 50, 10) for y in range(0, 40, 10)], dtype=float)
+        order, _ = order_shortest(grid[::-1], (0, 0))
+        self.assertAlmostEqual(190.0, path_length((0, 0), grid[::-1][order]))
+        many = np.random.default_rng(3).uniform(0, 500, size=(1500, 2))
+        started = time.perf_counter()
+        order, _ = order_shortest(many, (0, 0), max_passes=8)
+        self.assertEqual(1500, len(set(order)))
+        self.assertLess(time.perf_counter() - started, 20.0)
 
 
 if __name__ == "__main__":

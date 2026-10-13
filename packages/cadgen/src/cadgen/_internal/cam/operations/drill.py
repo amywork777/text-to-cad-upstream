@@ -91,8 +91,8 @@ class DrillOp(Operation):
         chosen = [key for key, given in (("faces", bool(spec.faces)), ("holes", "holes" in extra),
                                          ("points", "points" in extra)) if given]
         if len(chosen) != 1:
-            raise CamJobError(f"{where}: a drill names its holes one way: \"faces\" (hole walls), \"holes\" (\"all\" or "
-                              "{\"diameter_mm\": 5}) or \"points\" ([[x, y], ...] with \"depth_mm\")"
+            raise CamJobError(f"{where}: a drill names its holes one way: \"faces\" (hole walls), \"holes\" "
+                              "(\"all\" or {\"diameter_mm\": 5}) or \"points\" ([[x, y], ...] with \"depth_mm\")"
                               + (f"; it has {' and '.join(chosen)}" if chosen else ""))
         cycle = choice(extra["cycle"], tuple(CYCLES), f"{where}.cycle") if "cycle" in extra else None
         if cycle is None and "peck_mm" in extra and tool.type in ("drill", "flat"):
@@ -105,8 +105,8 @@ class DrillOp(Operation):
 
         def only(key: str, cycles: tuple[str, ...]) -> None:
             if key in extra and known not in cycles:
-                raise CamJobError(f"{where}.{key} is for the {' and '.join(cycles)} cycle{'s' if len(cycles) > 1 else ''}; "
-                                  f"this one is {known}")
+                plural = "s" if len(cycles) > 1 else ""
+                raise CamJobError(f"{where}.{key} is for the {' and '.join(cycles)} cycle{plural}; this one is {known}")
 
         only("peck_mm", ("peck", "chipbreak"))
         only("retract_mm", ("chipbreak",))
@@ -133,7 +133,8 @@ class DrillOp(Operation):
             "size_tolerance_mm": read_number(extra, "size_tolerance_mm", where, default=0.05),
         }
         if "shift_mm" in extra and params["bore_mode"] != "fine":
-            raise CamJobError(f"{where}.shift_mm is for \"bore_mode\": \"fine\" (G76); this bore is {params['bore_mode']}")
+            raise CamJobError(f"{where}.shift_mm is for \"bore_mode\": \"fine\" (G76); this bore is "
+                              f"{params['bore_mode']}")
         if "holes" in extra:
             params["holes"] = _holes_selector(extra["holes"], f"{where}.holes")
         if "points" in extra:
@@ -198,7 +199,11 @@ class DrillOp(Operation):
             rows.append((hole, bottom, min(r_plane, initial)))
         # Order: nearest first then 2-opt, from where the tool is.
         if params["order"] == "shortest" and len(rows) > 1:
-            order, _ = drilling.order_shortest([(h.x, h.y) for h, _, _ in rows], ctx.start[:2])
+            order, _ = drilling.order_shortest([(h.x, h.y) for h, _, _ in rows], ctx.start[:2],
+                                               max_two_opt=drilling.MAX_TWO_OPT)
+            if len(rows) > drilling.MAX_TWO_OPT:
+                notes.append(f"{len(rows)} holes ordered nearest-first only (2-opt runs up to "
+                             f"{drilling.MAX_TWO_OPT} holes)")
             rows = [rows[k] for k in order]
         # Runs of one depth and one R plane are one cycle.
         groups: list[list] = []
@@ -265,13 +270,41 @@ class DrillOp(Operation):
         if tool.type == "tap":
             # The thread is meant to cut into the wall: the 2.5D gouge check would read it as a gouge.
             ctx.meta["no_gouge_check"] = True
+        solid = self._points_in_solid(ctx, [row for row in rows if row[0].diameter is None])
+        if solid:
+            # The job asked for these holes where the model has none: said once, loudly, not as a gouge per point.
+            ctx.meta["no_gouge_check"] = True
         notes += self._post_notes(ctx, ir_cycle)
         findings = self._findings(ctx, cycle, rows, params)
+        if solid:
+            from cadgen._internal.cam.checks.base import finding, xyz
+
+            findings.append(finding(
+                "drill", "warning", "no_hole_in_model",
+                f"{len(solid)} of the points drill{'s' if len(solid) == 1 else ''} where the model has no hole, so the "
+                "part as modelled is cut there", "add the holes to the model, or check the points (setup WCS mm)",
+                [{"setup": ctx.setup.id, "operation": ctx.index,
+                  "at": xyz(ctx.wcs.from_wcs([[h.x, h.y, h.top]])[0])} for h in solid]))
         if findings:
             ctx.meta["findings"] = findings
         if notes:
             ctx.meta["note"] = "; ".join(notes)
         return b.build()
+
+    @staticmethod
+    def _points_in_solid(ctx, rows) -> list:
+        """The point holes whose axis runs through the part's material just under their top."""
+        if not rows:
+            return []
+        import shapely
+
+        out = []
+        for hole, bottom, _ in rows:
+            z = hole.top - min(0.25, max(1e-3, (hole.top - bottom) / 2.0))
+            material = ctx.sections.at(z)
+            if not material.is_empty and material.contains(shapely.Point(hole.x, hole.y)):
+                out.append(hole)
+        return out
 
     def _bottom(self, tool, cycle: str, hole, params, tip: float) -> float:
         """The tool tip's lowest z for ``hole`` (WCS)."""
@@ -397,10 +430,11 @@ class DrillOp(Operation):
                                "it cuts them oversize")
                     advice = "use a tool the hole's size, or drill a smaller hole first and finish it with a reamer"
                 else:
-                    summary = (f"{tool.id} ({tool.plain}) is {abs(over):.3g} mm smaller than the Ø{size:g} of {count}: "
-                               "it leaves them undersize")
-                    advice = ("open them to size with a bigger drill, a reamer, a boring bar or helix_bore; if a smaller "
-                              "drill is intended (a pilot, or the tap drill of a thread drawn at its size), keep it")
+                    summary = (f"{tool.id} ({tool.plain}) is {abs(over):.3g} mm smaller than the Ø{size:g} of "
+                               f"{count}: it leaves them undersize")
+                    advice = ("open them to size with a bigger drill, a reamer, a boring bar or helix_bore; if a "
+                              "smaller drill is intended (a pilot, or the tap drill of a thread drawn at its size), "
+                              "keep it")
                     coarse, fine = drilling.METRIC_THREADS.get(round(size, 3), (None, ()))
                     for pitch in (p for p in (coarse, *fine) if p):
                         if abs(tool.diameter_mm - (size - pitch)) <= 0.1:
