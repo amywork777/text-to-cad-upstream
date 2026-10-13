@@ -131,6 +131,8 @@ def plan_rough(ctx, params, *, limit=None):
                 curves = [(c, True) for c in _rings_inside_out(piece, stepover, tol, params["climb"])]
             if not curves:
                 continue
+            # Offsets of a tessellated silhouette carry every vertex: within half the tolerance is plenty.
+            curves = [(_thin(c, tol / 2.0), closed) for c, closed in curves]
             for k, (coords, closed) in enumerate(curves):
                 start = (float(coords[0][0]), float(coords[0][1]))
                 in_air = not air_edge.contains(shapely.Point(start))
@@ -259,6 +261,18 @@ def _over(b, start, heights, previous_area, z_prev, link) -> None:
     if b.pos[2] < heights.retract - 1e-9:
         b.rapid(z=heights.retract)
     b.rapid(x=start[0], y=start[1])
+
+
+def _thin(coords, tolerance: float):
+    """A pass with the points it does not need within ``tolerance`` left out (its ends kept)."""
+    import numpy as np
+    import shapely
+
+    coords = np.asarray(coords, dtype=float)
+    if len(coords) < 4:
+        return coords
+    thinned = np.asarray(shapely.simplify(shapely.LineString(coords), tolerance, preserve_topology=False).coords)
+    return thinned if len(thinned) >= 2 else coords
 
 
 def _side_entry(start, piece, air_edge, keep_off, coords):
