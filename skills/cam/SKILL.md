@@ -17,7 +17,9 @@ setup. It also writes `<part>.cam.glb`, which the Viewer shows with the toolpath
 stock, a Job panel with the verdict and a playback of the cut. This page is a router: [Choose the
 operation](#choose-the-operation) maps what the user wants to an operation and its reference page;
 [job-file.md](references/job-file.md) holds what every job shares, [checks.md](references/checks.md)
-what the verdict and findings mean, and [posts.md](references/posts.md) the controllers.
+what the verdict and findings mean, [posts.md](references/posts.md) the controllers, and
+[machining-practice.md](references/machining-practice.md) how a machinist would plan the part:
+workholding, tool choice, operation order, cutting parameters, materials and proving the program.
 
 Modelling the part is `$cad`; this skill only reads a saved `.step` (or a `.dxf` for cutting).
 Reviewing whether a design CAN be machined well, before any toolpath, is `$dfm`. 3D printing is
@@ -86,8 +88,10 @@ seconds for time.
    position). For a `.dxf` it lists the closed profiles and holes. A face the user selected in the
    Viewer arrives as `part.step#o1.f15` and needs no lookup.
 
-2. **Pick the machine, material and stock.** Use what the user said; otherwise ask once for the
-   machine (kind and controller), and assume nothing about it silently. A material from the feeds
+2. **Pick the machine, material and stock.** Use what the user said; otherwise ask once, in one
+   message, for what [machining-practice.md](references/machining-practice.md#ask-before-you-plan)
+   lists (the machine and controller, how the part is held, the tools they own, the material and
+   temper, the critical features), and assume nothing about them silently. A material from the feeds
    table gives starting speeds and feeds ([job-file.md](references/job-file.md#material)); say they
    are starting points.
 
@@ -112,8 +116,11 @@ seconds for time.
    }
    ```
 
-   One setup per way the part is held; order operations roughing before finishing, big tools
-   before small. Each operation's own keys are on its reference page.
+   Plan it the way [machining-practice.md](references/machining-practice.md) says: hold the part
+   low and give every vise jaw and clamp as a `fixture` box; the shortest tool that reaches and the
+   largest that fits; face, rough with stock to leave, finish, then spot, drill and tap, then
+   chamfer; climb milling; helix or ramp entries, never a straight plunge. One setup per way the
+   part is held. Each operation's own keys are on its reference page.
 
 4. **Plan.**
 
@@ -144,8 +151,13 @@ Say, in the user's words:
 - The verdict, the total time and the tool list, then each setup with its operations.
 - Every warning, every lite limit an operation carries and every `adapted:` step, with its note.
 - That speeds and feeds are starting points from a table, not tuned for their machine.
-- **Always:** the G-code has not been run on a machine. Before cutting, check the work offset and
-  tool lengths, then air-cut it above the stock or run it single-block with the feed override
-  down. The same warning opens every posted file.
+- Where the plan departs from [machining-practice.md](references/machining-practice.md) (a long
+  stickout, a full-width slot, a straight plunge, a tool the user did not confirm they own), and
+  why.
+- **Always:** the G-code has not been run on a machine. Give the user the steps in
+  [Proving the program](references/machining-practice.md#proving-the-program): check the post
+  matches the controller, set the work offset and tool lengths, play the cut in the Viewer, dry-run
+  it above the part, then cut single-block with the overrides down. The same warning opens every
+  posted file.
 
 Never send G-code to a machine from this skill.

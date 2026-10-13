@@ -10,7 +10,7 @@ from pathlib import Path
 from cadgen._internal.cam import operations, posts
 
 SKILL = Path(__file__).resolve().parents[5] / "skills" / "cam"
-GENERAL = {"job-file.md", "checks.md", "posts.md"}
+GENERAL = {"job-file.md", "checks.md", "posts.md", "machining-practice.md"}
 
 
 def _table(text: str, heading: str) -> list[list[str]]:
