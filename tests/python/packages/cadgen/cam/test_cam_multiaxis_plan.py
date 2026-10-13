@@ -297,6 +297,23 @@ class SurfaceNormal(unittest.TestCase):
         self.assertTrue(np.all(np.abs(lead[near_top] - 10.0) < 1.5), lead[near_top])
         self.assertEqual(("a", "c"), self.setups[0].toolpath.rotary)
 
+    def test_every_turn_between_lines_starts_in_the_air_and_the_plan_posts(self):
+        from cadgen import cam
+        from cadgen._internal.cam.ir import RAPID
+
+        path = self.setups[0].toolpath
+        span = next(r for r in path.ops if r.index == self.ops[0].index)
+        moves = path.moves[span.start:span.end]
+        abc = np.column_stack([moves[k] for k in "ac"])
+        turning = np.nonzero(np.any(np.abs(np.diff(abc, axis=0)) > 1e-9, axis=1))[0] + 1
+        rapid_turns = [i for i in turning if moves["kind"][i] == RAPID]
+        self.assertTrue(rapid_turns)
+        # The move before a rapid that turns the table is never a cut: the tool left it up its axis first.
+        self.assertTrue(all(moves["kind"][i - 1] == RAPID for i in rapid_turns))
+        with quiet():
+            result = cam.plan(self.step, job=self.job, out_dir=self.directory / "posted")
+        self.assertTrue(result.ok, result.findings)
+
     def test_only_a_ball_may_follow_the_normal(self):
         from cadgen import cam
 

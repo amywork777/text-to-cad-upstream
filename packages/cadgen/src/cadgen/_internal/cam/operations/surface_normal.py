@@ -11,9 +11,9 @@ the setup's tool direction.
 
 Each placement is then checked against a dense sample of the whole part: where the cutter or the shank above it would
 cut into the part (a concave corner, a neighbouring wall), the tool rises up its own axis until it clears, and the
-shank and holder are tested for collisions (``holder_collision``). Lines are linked by a lift up the tool's axis and a
-short hop when the next line starts near, else by the clearance height. Undercut spots (a normal facing down) are
-skipped.
+shank and holder are tested for collisions (``holder_collision``). Lines are linked by a rapid lift up the tool's axis
+(the rotary axes held, so a turn never starts in the cut) and a short hop when the next line starts near, else by the
+clearance height. Undercut spots (a normal facing down) are skipped.
 """
 
 from __future__ import annotations
@@ -289,8 +289,10 @@ class SurfaceNormalOp(Operation):
                 add(RAPID, near, a0)
             add(FEED, start, a0, feeds.plunge_mm_min)
             add(FEED, tips, axis, feeds.feed_mm_min)
+            # Out of the cut up the tool's own axis, the rotary axes held, so any turn that follows starts in the
+            # air (a turn straight out of a cut would swing the tool through the part: the posts refuse it).
             position = tips[-1] + hop * axis[-1]
-            add(FEED, position, axis[-1], feeds.feed_mm_min)
+            add(RAPID, position, axis[-1])
             axis_now = axis[-1]
         high = above(position, axis_now)
         add(RAPID, high, axis_now)
