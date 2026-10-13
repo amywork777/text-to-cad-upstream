@@ -19,6 +19,14 @@ per revolution, and the threading and roughing cycles are read: ``G76`` (Fanuc's
 LinuxCNC's one block) into ``threads`` (and the final pass at the root as moves), ``G71`` (Fanuc's two blocks or
 Haas's one) into ``roughs`` with its profile blocks, which are skipped as motion (the tool ends where it started).
 :func:`sample` turns the moves into points for comparing with the IR's own samples.
+
+For a machine simulation (``gcode_crash``) the program also keeps ``timeline``: every move and every non-motion
+:class:`Event` in program order, each with its line number: ``tool`` (a T word), ``m6``, ``spindle`` (M3/M4/M5 with
+S), ``speed`` (an S word alone), ``stop`` (M0/M1), ``mcode`` (any other M word), ``home`` (G28/G30/G53 with the axis
+words), ``length`` (G43/G43.4/G234/G49 with H), ``tilt`` (G68.2/G53.1/G69/G254/G255), ``mode`` (G20/G21/G90/G91),
+``wcs`` (G54..G59), ``g92`` and ``rough`` (a lathe G71 with its profile). A move says which axes its line named
+(``Move.given``; a cycle's or a thread's synthesised moves name X Y Z) and which canned cycle it came from
+(``Move.cycle``); a dwell keeps its P word (``Move.p``).
 """
 
 from __future__ import annotations
@@ -46,6 +54,21 @@ class Move:
     per_rev: bool = False
     uv: tuple | None = None
     s: float | None = None
+    #: The axis letters the line named (``"XZ"``, ``"AC"``); X Y Z for a move a cycle or a thread synthesised.
+    given: str = "XYZ"
+    #: The canned cycle (``G83``, ``G84``, ``G33.1``, ``G76``...) the move is part of, else None.
+    cycle: str | None = None
+    #: A dwell's P word as written (seconds or milliseconds, by dialect).
+    p: float = 0.0
+
+
+@dataclass
+class Event:
+    """A non-motion word in program order (see the module docstring for the kinds)."""
+
+    line: int
+    kind: str
+    data: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -67,6 +90,8 @@ class Program:
     threads: list = field(default_factory=list)
     roughs: list = field(default_factory=list)
     g92: list = field(default_factory=list)
+    #: Every :class:`Move` and :class:`Event` in program order.
+    timeline: list = field(default_factory=list)
 
 
 def _strip(line: str) -> tuple[str, list[str]]:
@@ -92,10 +117,15 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
     def x_value(value: float) -> float:
         return value / 2.0 if lathe and diameter else value
 
-    def add(kind, end, *, centre=None, number=0, uv=None, s=None):
-        program.moves.append(Move(kind, tuple(pos), tuple(end), feed if kind not in ("rapid", "dwell") else 0.0,
-                                  centre, plane, number, dict(abc), per_rev and kind != "rapid", uv, s))
+    def add(kind, end, *, centre=None, number=0, uv=None, s=None, given="XYZ", cycle_code=None):
+        move = Move(kind, tuple(pos), tuple(end), feed if kind not in ("rapid", "dwell") else 0.0, centre, plane,
+                    number, dict(abc), per_rev and kind != "rapid", uv, s, given, cycle_code)
+        program.moves.append(move)
+        program.timeline.append(move)
         pos[:] = end
+
+    def event(kind, number, **data):
+        program.timeline.append(Event(number, kind, data))
 
     for number, raw in enumerate(text.splitlines(), 1):
         line, comments = _strip(raw)
@@ -144,7 +174,10 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 cycle = None
                 motion = "G80"
             elif code == "G4":
-                program.moves.append(Move("dwell", tuple(pos), tuple(pos), 0.0, None, plane, number))
+                dwell = Move("dwell", tuple(pos), tuple(pos), 0.0, None, plane, number, given="")
+                dwell.p = values.get("P", 0.0)               # the P word as written (seconds or ms by dialect)
+                program.moves.append(dwell)
+                program.timeline.append(dwell)
             elif code in ("G43.4", "G234"):
                 program.tcp.append(code)
             elif code == "G68.2":
@@ -179,6 +212,7 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 program.coolant.append(f"M{v:g}")
             if letter == "M" and v in (0, 1):
                 program.stops += 1
+        _events(event, number, gs, values, words, homing)
         if homing or "G92" in gs or "G4" in gs or "G68.2" in gs:
             continue
         if lathe and "G76" in gs:
@@ -193,6 +227,7 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
             program.roughs.append({"ns": values["P"], "nf": values["Q"], "depth": depth * scale,
                                    "u": values.get("U", 0.0), "w": values.get("W", 0.0), "start": (pos[0], pos[2]),
                                    "profile": []})
+            event("rough", number, rough=program.roughs[-1])
             program.cycles.append("G71")
             profile = {"nf": values["Q"], "points": []}
             rough_first = None
@@ -205,6 +240,8 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 cycle = {"code": motion, "initial": pos[2], "R": values.get("R", 0.0) * scale,
                          "Z": values.get("Z", 0.0) * scale, "Q": values.get("Q", 0.0) * scale}
                 program.cycles.append(motion)
+        if not lathe and ("G51" in gs or "G52" in gs):
+            values.pop("A", None)                 # a wire taper's angle, not a rotary axis
         for axis in "ABC":
             if axis in values:
                 abc[axis] = values[axis]
@@ -214,8 +251,8 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
             and not lathe else None
         if motion == "G33.1" and "Z" in values:
             top = pos[2]
-            add("feed", (pos[0], pos[1], values["Z"] * scale), number=number)
-            add("feed", (pos[0], pos[1], top), number=number)
+            add("feed", (pos[0], pos[1], values["Z"] * scale), number=number, cycle_code="G33.1")
+            add("feed", (pos[0], pos[1], top), number=number, cycle_code="G33.1")
             program.cycles.append("G33.1")
             continue
         if (motion in _DRILL or motion == "G76") and cycle is not None and has_axis:
@@ -226,44 +263,81 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
             if "Z" in values:
                 cycle["Z"] = values["Z"] * scale
             level = pos[2]
-            add("rapid", (x, y, level), number=number)
-            add("rapid", (x, y, cycle["R"]), number=number)
+            add("rapid", (x, y, level), number=number, cycle_code=cycle["code"])
+            add("rapid", (x, y, cycle["R"]), number=number, cycle_code=cycle["code"])
             if cycle["code"] in ("G83", "G73") and cycle["Q"] > 0:
                 depth = cycle["R"]
                 while depth > cycle["Z"] + 1e-9:
                     depth = max(cycle["Z"], depth - cycle["Q"])
-                    add("feed", (x, y, depth), number=number)
+                    add("feed", (x, y, depth), number=number, cycle_code=cycle["code"])
                     if depth > cycle["Z"] + 1e-9:
                         if cycle["code"] == "G83":
                             # Full retract to R, then rapid back to just over the last depth.
-                            add("rapid", (x, y, cycle["R"]), number=number)
-                            add("rapid", (x, y, depth + 0.5), number=number)
+                            add("rapid", (x, y, cycle["R"]), number=number, cycle_code=cycle["code"])
+                            add("rapid", (x, y, depth + 0.5), number=number, cycle_code=cycle["code"])
                         else:
-                            add("rapid", (x, y, depth + 0.2), number=number)
+                            add("rapid", (x, y, depth + 0.2), number=number, cycle_code=cycle["code"])
             else:
-                add("feed", (x, y, cycle["Z"]), number=number)
+                add("feed", (x, y, cycle["Z"]), number=number, cycle_code=cycle["code"])
             back = cycle["initial"] if retract == "G98" else cycle["R"]
-            add("feed" if cycle["code"] in ("G84", "G74", "G85", "G89") else "rapid", (x, y, back), number=number)
+            add("feed" if cycle["code"] in ("G84", "G74", "G85", "G89") else "rapid", (x, y, back), number=number,
+                cycle_code=cycle["code"])
             continue
-        if not has_axis and not has_rotary and uv is None and motion not in ("G2", "G3"):
-            continue
+        if not has_axis and not has_rotary and uv is None and (motion not in ("G2", "G3") or not any(
+                k in values for k in "IJK")):
+            continue                              # no motion (a full circle names its centre: I J K)
         end = list(pos)
         for i, axis in enumerate("XYZ"):
             if axis in values:
                 end[i] = (x_value(values[axis]) if i == 0 else values[axis]) * scale
         s = values.get("S") if motion in ("G0", "G1", "G2", "G3") else None
+        given = "".join(axis for axis in "XYZABC" if axis in values)
         if motion == "G0":
-            add("rapid", end, number=number, uv=uv, s=s)
+            add("rapid", end, number=number, uv=uv, s=s, given=given)
         elif motion == "G1":
-            add("feed", end, number=number, uv=uv, s=s)
+            add("feed", end, number=number, uv=uv, s=s, given=given)
         elif motion in ("G2", "G3"):
             u, v = {"G17": (0, 1), "G18": (2, 0), "G19": (1, 2)}[plane]
             offsets = {"G17": ("I", "J"), "G18": ("K", "I"), "G19": ("J", "K")}[plane]
             centre = list(pos)
             centre[u] = pos[u] + values.get(offsets[0], 0.0) * scale
             centre[v] = pos[v] + values.get(offsets[1], 0.0) * scale
-            add("arc_cw" if motion == "G2" else "arc_ccw", end, centre=tuple(centre), number=number, uv=uv, s=s)
+            add("arc_cw" if motion == "G2" else "arc_ccw", end, centre=tuple(centre), number=number, uv=uv, s=s,
+                given=given)
     return program
+
+
+def _events(event, number, gs, values, words, homing) -> None:
+    """The line's non-motion words as timeline events (before its motion, as a controller runs them)."""
+    for code in gs:
+        if code in ("G28", "G30", "G53"):
+            event("home", number, code=code, axes={k: v for k, v in values.items() if k in "XYZABCUVW"},
+                  incremental="G91" in gs)
+        elif code in ("G43", "G43.4", "G234", "G49"):
+            event("length", number, code=code, h=values.get("H"))
+        elif code in ("G68.2", "G53.1", "G69", "G254", "G255"):
+            event("tilt", number, code=code)
+        elif code == "G92":
+            event("g92", number, axes={k: v for k, v in values.items() if k in "XYZ"})
+        elif code in ("G20", "G21", "G90", "G91"):
+            event("mode", number, code=code)
+        elif code in ("G54", "G55", "G56", "G57", "G58", "G59"):
+            event("wcs", number, code=code)
+    if "T" in values:
+        event("tool", number, t=int(values["T"]))
+    for letter, v in words:
+        if letter != "M":
+            continue
+        if v == 6:
+            event("m6", number)
+        elif v in (3, 4, 5):
+            event("spindle", number, m=int(v), s=values.get("S"))
+        elif v in (0, 1):
+            event("stop", number, m=int(v))
+        else:
+            event("mcode", number, m=v, s=values.get("S"))
+    if "S" in values and not any(letter == "M" and v in (3, 4, 5) for letter, v in words):
+        event("speed", number, s=values["S"], gs=tuple(gs))
 
 
 def _thread(program, values, pos, add, number, first, x_value, scale) -> None:
@@ -286,10 +360,10 @@ def _thread(program, values, pos, add, number, first, x_value, scale) -> None:
     program.threads.append({"dialect": dialect, "root": root, "depth": depth, "pitch": pitch, "z_end": z_end,
                             "x_clear": clear, "z_start": z_start, "first": dict(first or {})})
     program.cycles.append("G76")
-    add("rapid", (root, pos[1], z_start), number=number)
-    add("feed", (root, pos[1], z_end), number=number)
-    add("rapid", (clear, pos[1], z_end), number=number)
-    add("rapid", (clear, pos[1], z_start), number=number)
+    add("rapid", (root, pos[1], z_start), number=number, cycle_code="G76")
+    add("feed", (root, pos[1], z_end), number=number, cycle_code="G76")
+    add("rapid", (clear, pos[1], z_end), number=number, cycle_code="G76")
+    add("rapid", (clear, pos[1], z_start), number=number, cycle_code="G76")
 
 
 def sample(program: Program, chord: float = 0.005, max_step: float | None = None):
