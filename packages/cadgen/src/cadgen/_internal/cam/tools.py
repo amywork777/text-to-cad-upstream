@@ -185,7 +185,8 @@ class Tool:
     def as_dict(self) -> dict:
         """The tool as the GLB's extras and the Results carry it: every set field, plus ``plain``."""
         out = {key: value for key, value in asdict(self).items() if value not in (0.0, "", None)}
-        out.update({"id": self.id, "type": self.type, "number": self.number, "plain": self.plain})
+        out.update({"id": self.id, "type": self.type, "number": self.number, "plain": self.plain,
+                    "diameter_mm": self.diameter_mm})
         return out
 
 

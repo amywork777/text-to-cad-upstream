@@ -136,5 +136,29 @@ class Registries(unittest.TestCase):
             self.assertIn(kind, posts.REGISTRY[posts.DEFAULT_POST[kind]].kinds)
 
 
+class FitLadder(unittest.TestCase):
+    def test_a_big_stock_coarsens_its_grid_and_says_so(self):
+        from cadgen._internal.cam import fit
+
+        job = parse_job(JOB)
+        small = build_stock(job.stock, fake_part((0, 0, 0), (40, 40, 10)))
+        self.assertEqual((0.75, []), fit.stock_cell(small, job.tools, fit.Budget()))
+        big = build_stock(job.stock, fake_part((0, 0, 0), (3000, 2000, 10)))
+        cell, steps = fit.stock_cell(big, job.tools, fit.Budget())
+        self.assertLessEqual(3000 * 2000 / cell ** 2, fit.Budget().max_cells)
+        self.assertEqual("stock_grid", steps[0]["step"])
+        self.assertIn("->", steps[0]["words"])
+
+    def test_the_display_chord_grows_then_thins(self):
+        from cadgen._internal.cam import fit
+
+        chord, stride, steps = fit.display_chord(lambda c: 10, 0.01, fit.Budget())
+        self.assertEqual((0.02, 1, []), (chord, stride, steps))
+        chord, stride, steps = fit.display_chord(lambda c: 5_000_000, 0.01, fit.Budget(max_glb_segments=1_000_000))
+        self.assertEqual(1.0, chord)
+        self.assertEqual(5, stride)
+        self.assertEqual(["display", "display"], [s["step"] for s in steps])
+
+
 if __name__ == "__main__":
     unittest.main()
