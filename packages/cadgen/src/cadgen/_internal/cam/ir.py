@@ -297,6 +297,15 @@ class Toolpath:
             move[rows] = index
         return Samples(points, t, op, kind, move)
 
+    def slice(self, start: int, end: int) -> "Toolpath":
+        """Moves ``[start, end)`` as a toolpath of their own, starting where move ``start`` begins (events inside the
+        range kept, op ranges dropped)."""
+        position = self.positions()[start] if start < len(self.moves) + 1 else self.positions()[-1]
+        events = [Event(e.at - start, e.kind, {**e.data, **({"end": e.data["end"] - start} if "end" in e.data else {})})
+                  for e in self.events if start <= e.at < end]
+        return Toolpath(self.moves[start:end].copy(), events, (), start=tuple(position), rotary=self.rotary,
+                        lathe=self.lathe)
+
     # --- transforms --------------------------------------------------------------------------------------
 
     def with_op(self, index: int) -> "Toolpath":

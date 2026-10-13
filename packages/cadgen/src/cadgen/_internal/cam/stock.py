@@ -1,0 +1,267 @@
+"""Stock: its starting solid, and the simulators that cut it (one per machine kind, registered lazily).
+
+:func:`build_stock` turns the job's ``stock`` into a :class:`StockGeometry` in part coordinates (bounds, a closed
+mesh, its volume): a box (a margin round the part, or a size), a cylinder (bar for a lathe or a 4th axis), a sheet,
+or another STEP (a casting).
+
+A simulator follows the :class:`StockSim` protocol::
+
+    sim = SimClass(stock: StockGeometry, part: Part, *, cell_mm: float, tolerance_mm: float)
+    sim.supports(wcs) -> str | None          # None when it can simulate that setup, else why not (plain words)
+    sim.cut(toolpath, tools, wcs) -> SimReport   # one setup's toolpath, in program order
+    sim.mesh() -> (vertices (V, 3), triangles (T, 3))   # the stock now, part mm
+    sim.volume() -> float                    # mm^3
+    sim.material_left(part, *, stock_to_leave_mm, tolerance_mm) -> MaterialLeft | None
+
+:data:`SIM_REGISTRY` maps a machine kind to ``"module:Class"``; :func:`create_stock_sim` imports it, and when that
+module is not in this cadgen it falls back (a heightfield for a multi-axis mill, else :class:`NullSim`) and says so
+as an ``adapted`` step, never a refusal. Stdlib at import; numpy inside.
+"""
+
+from __future__ import annotations
+
+import importlib
+import importlib.util
+import math
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Protocol
+
+from cadgen._internal.cam.job_errors import CamJobError
+
+__all__ = ["MaterialLeft", "NullSim", "SIM_REGISTRY", "SimReport", "StockGeometry", "StockSim", "build_stock",
+           "create_stock_sim"]
+
+_PACKAGE = "cadgen._internal.cam"
+
+#: Machine kind -> the simulator that cuts its stock.
+SIM_REGISTRY: dict[str, str] = {
+    "mill": f"{_PACKAGE}.stock_heightfield:HeightfieldSim",
+    "router": f"{_PACKAGE}.stock_heightfield:HeightfieldSim",
+    "mill4": f"{_PACKAGE}.stock_dexel:DexelSim",
+    "mill5": f"{_PACKAGE}.stock_dexel:DexelSim",
+    "lathe": f"{_PACKAGE}.stock_lathe:LatheSim",
+    "laser": f"{_PACKAGE}.stock_sheet:SheetSim",
+    "plasma": f"{_PACKAGE}.stock_sheet:SheetSim",
+    "waterjet": f"{_PACKAGE}.stock_sheet:SheetSim",
+    "wire_edm": f"{_PACKAGE}.stock_sheet:SheetSim",
+}
+#: What a kind falls back to when its own simulator is not in this cadgen.
+_FALLBACK = {"mill4": f"{_PACKAGE}.stock_heightfield:HeightfieldSim",
+             "mill5": f"{_PACKAGE}.stock_heightfield:HeightfieldSim"}
+
+
+@dataclass
+class StockGeometry:
+    kind: str
+    bounds_min: tuple[float, float, float]
+    bounds_max: tuple[float, float, float]
+    vertices: Any                 # (V, 3) closed mesh, part mm
+    triangles: Any                # (T, 3)
+    volume_mm3: float
+    #: A cylinder's axis ("x", "y", "z"), centre line point and radius.
+    cylinder: dict | None = None
+    thickness_mm: float | None = None
+
+    @property
+    def points(self):
+        return self.vertices
+
+    def as_dict(self) -> dict:
+        out = {"kind": self.kind, "min_mm": [round(v, 4) for v in self.bounds_min],
+               "max_mm": [round(v, 4) for v in self.bounds_max], "volume_mm3": round(self.volume_mm3, 3)}
+        if self.cylinder:
+            out["cylinder"] = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in self.cylinder.items()}
+        if self.thickness_mm is not None:
+            out["thickness_mm"] = self.thickness_mm
+        return out
+
+
+@dataclass
+class SimReport:
+    """What cutting one setup found. ``depth_by_op``: ``{op: {"depth_mm", "at"}}``, the deepest the tool went
+    below the material within reach of its side (for the reach check); ``rapid_hits``: one dict per operation whose
+    rapids passed through uncut stock (``op``, ``move``, ``at`` part mm, ``depth_mm``, ``count``)."""
+
+    setup: str
+    removed_mm3_by_op: dict[int, float] = field(default_factory=dict)
+    depth_by_op: dict[int, dict] = field(default_factory=dict)
+    rapid_hits: list[dict] = field(default_factory=list)
+    #: Why this setup was not simulated (plain words), or None.
+    skipped: str | None = None
+
+
+@dataclass
+class MaterialLeft:
+    volume_mm3: float
+    area_mm2: float
+    max_mm: float
+    at: tuple[float, float, float] | None
+    bounds_min: tuple[float, float, float] | None = None
+    bounds_max: tuple[float, float, float] | None = None
+
+
+class StockSim(Protocol):
+    kind: str
+
+    def supports(self, wcs) -> str | None: ...
+
+    def cut(self, toolpath, tools: dict, wcs) -> SimReport: ...
+
+    def mesh(self): ...
+
+    def volume(self) -> float: ...
+
+    def material_left(self, part, *, stock_to_leave_mm: float, tolerance_mm: float) -> MaterialLeft | None: ...
+
+
+class NullSim:
+    """No simulation: the stock stays as it started. Used when this cadgen has no simulator for a machine kind."""
+
+    kind = "none"
+
+    def __init__(self, stock: StockGeometry, part=None, *, cell_mm: float = 1.0, tolerance_mm: float = 0.01):
+        self.stock = stock
+
+    def supports(self, wcs) -> str | None:
+        return "this cadgen has no stock simulator for this machine"
+
+    def cut(self, toolpath, tools, wcs) -> SimReport:
+        return SimReport(setup=wcs.setup_id, skipped=self.supports(wcs))
+
+    def mesh(self):
+        return self.stock.vertices, self.stock.triangles
+
+    def volume(self) -> float:
+        return self.stock.volume_mm3
+
+    def material_left(self, part, *, stock_to_leave_mm: float, tolerance_mm: float):
+        return None
+
+
+def _load(target: str):
+    module, cls = target.split(":")
+    if importlib.util.find_spec(module) is None:
+        return None
+    return getattr(importlib.import_module(module), cls)
+
+
+def create_stock_sim(kind: str, stock: StockGeometry, part, *, cell_mm: float, tolerance_mm: float):
+    """``(simulator, adapted steps)`` for a machine kind."""
+    adapted: list[dict] = []
+    cls = _load(SIM_REGISTRY[kind])
+    if cls is None and kind in _FALLBACK:
+        cls = _load(_FALLBACK[kind])
+        adapted.append({"step": "stock_sim", "words": f"the {kind}'s tri-dexel stock simulator is not in this cadgen "
+                        "yet: the stock is simulated as a heightfield, so tilted and side setups are not simulated"})
+    if cls is None:
+        adapted.append({"step": "stock_sim", "words": f"this cadgen has no stock simulator for a {kind} yet: the "
+                        "stock is not simulated, so material left and rapids into stock are not checked"})
+        cls = NullSim
+    return cls(stock, part, cell_mm=cell_mm, tolerance_mm=tolerance_mm), adapted
+
+
+# --- the starting stock --------------------------------------------------------------------------------
+
+def _box_mesh(low, high):
+    import numpy as np
+
+    x0, y0, z0 = low
+    x1, y1, z1 = high
+    v = np.array([[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
+                  [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], dtype=float)
+    t = np.array([[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4],
+                  [1, 2, 6], [1, 6, 5], [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]], dtype=np.int64)
+    return v, t
+
+
+def _cylinder_mesh(axis: str, centre, radius: float, start: float, end: float, segments: int = 96):
+    import numpy as np
+
+    angles = np.linspace(0.0, 2 * math.pi, segments, endpoint=False)
+    u, v = {"z": (0, 1), "x": (1, 2), "y": (2, 0)}[axis]
+    w = "xyz".index(axis)
+    ring = np.zeros((segments, 3))
+    ring[:, u] = centre[u] + radius * np.cos(angles)
+    ring[:, v] = centre[v] + radius * np.sin(angles)
+    low, high = ring.copy(), ring.copy()
+    low[:, w], high[:, w] = start, end
+    caps = np.zeros((2, 3))
+    caps[:, u], caps[:, v] = centre[u], centre[v]
+    caps[0, w], caps[1, w] = start, end
+    vertices = np.vstack([low, high, caps])
+    tris = []
+    for i in range(segments):
+        j = (i + 1) % segments
+        tris += [[i, j, segments + j], [i, segments + j, segments + i],
+                 [2 * segments, j, i], [2 * segments + 1, segments + i, segments + j]]
+    return vertices, np.asarray(tris, dtype=np.int64)
+
+
+def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
+    """The job's stock around ``part``, in part coordinates."""
+    import numpy as np
+
+    low, high = (np.asarray(v, dtype=float) for v in part.bbox)
+    if spec.kind in ("box", "sheet"):
+        if spec.size_mm is not None:
+            size = np.asarray(spec.size_mm)
+            centre = (low + high) / 2.0
+            s_low = np.array([centre[0] - size[0] / 2, centre[1] - size[1] / 2, low[2]])
+            s_high = s_low + size
+            if np.any(s_low[:2] > low[:2] + 1e-9) or np.any(s_high > high + 1e-9):
+                raise CamJobError(f"stock.size_mm {list(spec.size_mm)} is smaller than the part "
+                                  f"({' x '.join(f'{v:g}' for v in (high - low))} mm); make it larger or use margin_mm")
+        else:
+            m = spec.margin_mm
+            s_low = low - np.array([m[0], m[2], m[4]])
+            s_high = high + np.array([m[1], m[3], m[5]])
+            if spec.kind == "sheet" and spec.thickness_mm is not None:
+                s_high[2] = s_low[2] + spec.thickness_mm
+                if spec.thickness_mm + 1e-9 < high[2] - low[2]:
+                    raise CamJobError(f"stock.thickness_mm {spec.thickness_mm:g} is thinner than the part "
+                                      f"({high[2] - low[2]:g} mm)")
+        vertices, triangles = _box_mesh(s_low, s_high)
+        volume = float(np.prod(s_high - s_low))
+        return StockGeometry(spec.kind, tuple(s_low), tuple(s_high), vertices, triangles, volume,
+                             thickness_mm=float(s_high[2] - s_low[2]) if spec.kind == "sheet" else None)
+    if spec.kind == "cylinder":
+        w = "xyz".index(spec.axis)
+        others = [i for i in range(3) if i != w]
+        centre = (low + high) / 2.0
+        corners = np.asarray(part.vertices)[:, others] - centre[others]
+        reach = float(np.linalg.norm(corners, axis=1).max()) if len(corners) else 0.0
+        radius = spec.diameter_mm / 2 if spec.diameter_mm else reach + spec.margin_mm[0]
+        if radius + 1e-6 < reach:
+            raise CamJobError(f"stock.diameter_mm {2 * radius:g} does not hold the part: it reaches {2 * reach:.3g} mm "
+                              f"across about its {spec.axis} axis")
+        length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + spec.margin_mm[0]
+        if length + 1e-6 < high[w] - low[w]:
+            raise CamJobError(f"stock.length_mm {length:g} is shorter than the part ({high[w] - low[w]:g} mm)")
+        start, end = low[w], low[w] + length
+        vertices, triangles = _cylinder_mesh(spec.axis, centre, radius, start, end)
+        s_low, s_high = centre.copy(), centre.copy()
+        s_low[others], s_high[others] = centre[others] - radius, centre[others] + radius
+        s_low[w], s_high[w] = start, end
+        return StockGeometry("cylinder", tuple(s_low), tuple(s_high), vertices, triangles,
+                             math.pi * radius * radius * length,
+                             cylinder={"axis": spec.axis, "center": [float(c) for c in centre], "radius": radius,
+                                       "start": float(start), "end": float(end)})
+    # from_step: another STEP, tessellated like the part.
+    from cadgen._internal.cam.part import read_part
+
+    path = Path(spec.path).expanduser()
+    if not path.is_absolute():
+        candidates = [d / path for d in (base_dir, part.document.parent) if d is not None]
+        path = next((c for c in candidates if c.is_file()), candidates[0] if candidates else path)
+    if not path.is_file():
+        raise CamJobError(f"stock.path: no STEP at {path}")
+    blank = read_part(path, deflection_mm=0.05)
+    vertices, triangles = np.asarray(blank.vertices), np.asarray(blank.triangles)
+    tri = vertices[triangles]
+    volume = float(np.einsum("ij,ij->i", tri[:, 0], np.cross(tri[:, 1], tri[:, 2])).sum() / 6.0)
+    b_low, b_high = vertices.min(axis=0), vertices.max(axis=0)
+    if np.any(b_low > low + 1e-6) or np.any(b_high < high - 1e-6):
+        raise CamJobError(f"the stock STEP {path.name} does not enclose the part; place it around the part in the "
+                          "part's coordinates")
+    return StockGeometry("from_step", tuple(b_low), tuple(b_high), vertices, triangles, abs(volume))

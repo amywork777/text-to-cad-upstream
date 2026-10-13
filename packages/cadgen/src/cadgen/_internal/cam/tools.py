@@ -219,7 +219,10 @@ def parse_tool(raw: object, position: int) -> Tool:
     flutes = raw.get("flutes", 1 if kind in ("vee", "engraver", "spot", "boring", "reamer") else 2)
     if isinstance(flutes, bool) or not isinstance(flutes, int) or flutes < 1:
         raise CamJobError(f"{where}.flutes must be a whole number of at least 1")
-    flute_length = read_number(raw, "flute_length_mm", where, default=max(3.0 * diameter, 1.0))
+    # Defaults from catalogue tools: a jobber drill's flutes run about ten diameters, a reamer's six, a spot
+    # drill's one; an end mill's about three.
+    flute_factor = {"drill": 10.0, "reamer": 6.0, "spot": 1.0, "tap": 3.0, "boring": 4.0}.get(kind, 3.0)
+    flute_length = read_number(raw, "flute_length_mm", where, default=max(flute_factor * diameter, 1.0))
     stickout = read_number(raw, "stickout_mm", where, default=max(flute_length * 1.25, flute_length + 5.0))
     if stickout < flute_length:
         raise CamJobError(f"{where}: stickout_mm ({stickout:g}) is shorter than flute_length_mm ({flute_length:g}); "
