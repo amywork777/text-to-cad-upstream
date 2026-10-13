@@ -282,7 +282,7 @@ class IsoPost(CheckedPost):
                          "X words are radii: the control's diameter programming must be off.")
         tilt = next((e.data.get("rotary") for e in program.toolpath.events
                      if e.kind == "setup" and e.data.get("rotary")), None)
-        if tilt and not self._simultaneous:
+        if tilt and any(tilt.values()) and not self._simultaneous:
             notes.append(self.tilt_note(program, tilt))
         if self._simultaneous:
             axes = "".join(sorted(a.upper() for a in program.toolpath.rotary))

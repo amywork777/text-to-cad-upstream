@@ -74,7 +74,7 @@ cone along Z) names the whole loop it stands on, on its air side; or give a `reg
 | `side` | `outside` (the tool's edge on the loop, outside the shape), `inside` or `on` (the tool's centre on it). A face's default is `outside`; a floor below the part's top defaults to `inside` (its walls); a wall's side is its air side |
 | `loops` | a face's `all` (default), `outer` (the outline only) or `inner` (its holes only) |
 | `bottom_z` | how deep, WCS. Default: a wall's foot, a floor's height (inside), or whatever lies under the tool (a blind slot's floor), else the part's bottom (cut through) |
-| `through_mm` | go this much below a cut through (default 0) |
+| `through_mm` | go this much below a cut through (default 0: nothing below the part is cut). Give 0.2 to 0.5 mm to break through cleanly when the part sits on parallels or a spoilboard, and add the support as a `fixture` box if it could be hit |
 | `tabs` | `{"count": 4, "width_mm": 5, "height_mm": 1.5}`: bridges left on a cut through, evenly spaced (default width 5, height a third of the cut, at most 2 mm) |
 | `lead_in_mm`, `lead_out_mm` | radius of a tangent quarter-arc lead onto and off the loop from the air side (default 0: none); the descent is then made at the lead's start |
 | `finish_mm` | leave this much for the levels and take it off in one last full-depth pass |
@@ -166,7 +166,7 @@ smaller than the hole is refused. Climb is counter-clockwise (G3).
 | `holes` | `[{"center": [x, y], "diameter_mm": d, "bottom_z": z, "top_z": z}]`, WCS (`top_z` defaults to the part's top) |
 | `pitch_mm` | depth per turn (default the step down, or less to keep the ramp at `ramp_angle_deg`) |
 | `ramp_angle_deg` | the helix's ramp angle when no pitch is given (default 3) |
-| `through_mm` | go this much below a through hole's bottom (default 0) |
+| `through_mm` | go this much below a through hole's bottom (default 0; 0.2 to 0.5 mm breaks through cleanly) |
 | `direction` | `climb` (default) or `conventional` |
 
 ## thread_mill: Thread mill
