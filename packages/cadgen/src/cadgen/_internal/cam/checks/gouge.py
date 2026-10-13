@@ -13,7 +13,8 @@ from cadgen._internal.cam.checks.base import finding, xyz
 
 __all__ = ["run", "FAMILIES"]
 
-FAMILIES = ("2.5D milling",)
+#: "Cutting" judges a router's sheet cut (its end mill); beams and wires are not mill tools and are skipped.
+FAMILIES = ("2.5D milling", "Cutting")
 GRID = 0.05
 
 
