@@ -32,7 +32,7 @@ MAX_SAMPLES = 1_200_000
 
 
 def _exact_drop():
-    """B4's drop-cutter (exact vertex, edge and facet contact), when this cadgen has it."""
+    """The drop-cutter (exact vertex, edge and facet contact), when this cadgen has it."""
     import importlib.util
 
     if importlib.util.find_spec("cadgen._internal.cam.dropcutter") is None:
@@ -115,7 +115,7 @@ class RotaryOp(Operation):
     status = "lite"
     limits = (
         "Wraps about the part's X axis through the stock's centre line; the part must be mounted on that axis.",
-        "The tool is dropped radially onto the part's tessellation (exact contact with B4's drop-cutter; without it, "
+        "The tool is dropped radially onto the part's tessellation (exact contact through the drop-cutter; without it, "
         "onto a dense sample of the surface); the gouge check reads a dense sample of the surface.",
         "Undercuts the radial direction cannot see (a face that overhangs along X) are left.",
         "Roughing cuts every pass that has material at a level, riding the finish surface where there is none, so "
