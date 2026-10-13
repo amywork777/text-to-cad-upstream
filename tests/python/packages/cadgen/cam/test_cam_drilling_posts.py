@@ -31,7 +31,8 @@ class CannedPost(Post):
 def _same_path(test, text: str, program: Program, *, tolerance: float = 0.01) -> None:
     read = gcode_reader.read(text, start=program.toolpath.start)
     points, _ = gcode_reader.sample(read, 0.002, max_step=0.25)
-    ir = program.toolpath.sample(0.002, max_step_mm=0.25).points[1:]
+    points = np.vstack([program.toolpath.start, points])            # both from the start (a first G0 Z sits on it)
+    ir = program.toolpath.sample(0.002, max_step_mm=0.25).points
     for a, b in ((points, ir), (ir, points)):
         gaps = np.min(np.linalg.norm(a[:, None, :] - b[None, :, :], axis=2), axis=1)
         test.assertLess(float(gaps.max()), tolerance)
@@ -68,7 +69,8 @@ class Posted(unittest.TestCase):
 
     def test_grbl_posts_every_cycle_expanded_and_it_reads_back_to_the_ir(self):
         program = self.program()
-        text = get_post("grbl", "mill").render(program)
+        # One file per tool (GRBL has no tool table), read as one program.
+        text = "".join(text for _, text in get_post("grbl", "mill").render_tool_files(program))
         for code in ("G81", "G82", "G83", "G73", "G84", "G85", "G98", "G99", "G80"):
             self.assertNotRegex(text, rf"\b{code}\b")
         self.assertIn("G4 P0.4", text)                                   # the dwell at the bottom
@@ -114,8 +116,7 @@ class Posted(unittest.TestCase):
         rows = [op for op in result.operations if op["op"] == "drill"]
         self.assertEqual(["Spot 10 holes with T4 6 mm spot drill", "Peck drill 2 holes with T7 4 mm drill",
                           "Drill 4 holes with T1 5 mm drill"], [row["summary"].rsplit(",", 1)[0] for row in rows])
-        text = result.posts[0]["file"]
-        posted = gcode_reader.read(open(text, encoding="utf-8").read(), start=(0, 0, 6.0))
+        posted = gcode_reader.read(gcode_reader.posted_text(result), start=(0, 0, 6.0))
         lowest = min(move.end[2] for move in posted.moves)
         self.assertAlmostEqual(-13.0 - 1.0 - 2.5 / np.tan(np.radians(59)), lowest, places=3)
         document, _ = read_glb(result.glb)

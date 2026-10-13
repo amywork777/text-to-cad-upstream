@@ -39,7 +39,7 @@ class PlanMould(unittest.TestCase):
                          [f"{op['tool']} {op['tool_plain']}" for op in result.operations])
 
     def test_the_gcode_reads_back_and_reaches_the_cavity_floor(self):
-        text = (self.directory / "mould.top.nc").read_text(encoding="utf-8")
+        text = gcode_reader.posted_text(self.result, "top")
         program = gcode_reader.read(text, start=(0.0, 0.0, 6.0))
         points, kinds = gcode_reader.sample(program, max_step=0.5)
         middle = (np.asarray(kinds) != "rapid") & (np.abs(points[:, 0]) < 10) & (np.abs(points[:, 1]) < 5)

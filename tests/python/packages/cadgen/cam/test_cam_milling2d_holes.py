@@ -179,7 +179,7 @@ class PlanBracket(unittest.TestCase):
         self.assertEqual(["face", "slot", "helix_bore", "thread_mill", "chamfer", "engrave", "contour"],
                          [op["op"] for op in result.operations])
         self.assertTrue(result.glb.is_file())
-        text = (self.directory / "bracket.top.nc").read_text(encoding="utf-8")
+        text = gcode_reader.posted_text(self.result, "top")
         program = gcode_reader.read(text, start=(0.0, 0.0, 6.0))
         cuts = [m for m in program.moves if m.kind != "rapid"]
         self.assertAlmostEqual(-13.0, min(m.end[2] for m in cuts), places=3)
@@ -189,7 +189,7 @@ class PlanBracket(unittest.TestCase):
         self.assertTrue({(-25.0, 0.0), (25.0, 15.0), (25.0, -15.0)} <= centres)
 
     def test_the_tabs_hold_in_the_posted_file(self):
-        text = (self.directory / "bracket.top.nc").read_text(encoding="utf-8")
+        text = gcode_reader.posted_text(self.result, "top")
         program = gcode_reader.read(text, start=(0.0, 0.0, 6.0))
         points, kinds = gcode_reader.sample(program, max_step=0.5)
         points = np.asarray(points)

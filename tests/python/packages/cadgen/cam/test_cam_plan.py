@@ -77,10 +77,10 @@ class PlanBlock(unittest.TestCase):
         self.assertAlmostEqual(0.011, float(positions[:, 1].min()), places=6)
 
     def test_the_gcode_reaches_the_floor_and_opens_safely(self):
-        path = self.directory / "block.top.nc"
-        self.assertEqual(str(path), self.result.posts[0]["file"])
-        text = path.read_text(encoding="utf-8")
-        self.assertIn("NOT proven on a machine", text.splitlines()[1])
+        # GRBL posts one file per tool: block.top.T1.nc, block.top.T2.nc..., read back as one program.
+        self.assertTrue(self.result.posts[0]["file"].startswith(str(self.directory / "block.top.")))
+        text = gcode_reader.posted_text(self.result, "top")
+        self.assertIn("NOT proven on a machine", text.splitlines()[2])
         program = gcode_reader.read(text, start=(0.0, 0.0, 6.0))
         self.assertIn("G54", program.offsets)
         cuts = [m for m in program.moves if m.kind != "rapid"]

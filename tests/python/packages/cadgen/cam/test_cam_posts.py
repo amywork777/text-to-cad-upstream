@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import unittest
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from cadgen._internal.cam.posts.base import Program, fit_arcs
 from cadgen._internal.cam.wcs import build_wcs
 from tests.python.support import gcode_reader
 
-GOLDEN = Path(__file__).with_name("golden") / "grbl.nc"
+GOLDENS = Path(__file__).with_name("golden")        # grbl.T1.nc, grbl.T2.nc
 
 JOB = {
     "machine": {"kind": "mill", "post": "grbl"}, "material": "aluminum-6061",
@@ -72,29 +73,70 @@ def small_program() -> Program:
 
 
 class Grbl(unittest.TestCase):
+    """GRBL has no tool table and cannot jog after M0: a two-tool setup posts one complete file per tool."""
+
     def setUp(self):
         self.program = small_program()
-        self.text = get_post("grbl", "mill").render(self.program)
+        self.post = get_post("grbl", "mill")
+        self.files = self.post.render_tool_files(self.program)
+        self.text = "".join(text for _, text in self.files)
 
-    def test_the_golden(self):
-        if not GOLDEN.exists():  # pragma: no cover - writes the golden the first time only
-            GOLDEN.write_text(self.text, encoding="utf-8")
-        self.assertEqual(GOLDEN.read_text(encoding="utf-8"), self.text)
+    def test_the_goldens(self):
+        self.assertEqual(["T1", "T2"], [label for label, _ in self.files])
+        for label, text in self.files:
+            with self.subTest(file=label):
+                golden = GOLDENS / f"grbl.{label}.nc"
+                if not golden.exists() or os.environ.get("CAM_UPDATE_GOLDENS"):  # pragma: no cover - (re)writes it
+                    golden.write_text(text, encoding="utf-8")
+                self.assertEqual(golden.read_text(encoding="utf-8"), text)
 
-    def test_it_opens_with_the_safety_block_and_is_deterministic(self):
-        head = self.text.splitlines()[:5]
-        self.assertIn("NOT proven on a machine", head[1])
-        self.assertIn("Air-cut", head[2])
-        self.assertIn("work offset G54", head[3])
-        self.assertEqual(self.text, get_post("grbl", "mill").render(small_program()))
-        self.assertNotIn("M6", self.text)
-        self.assertIn("M0", self.text)                 # the manual tool change
-        self.assertNotIn("G83", self.text)             # GRBL posts the cycle expanded
+    def test_one_program_with_two_tools_is_refused(self):
+        from cadgen._internal.cam.job_errors import CamJobError
+
+        with self.assertRaises(CamJobError) as caught:
+            self.post.render(self.program)
+        self.assertIn("one file per tool", str(caught.exception))
+
+    def test_each_file_opens_with_the_safety_block_names_its_tool_and_starts_safe(self):
+        for k, (label, text) in enumerate(self.files):
+            with self.subTest(file=label):
+                lines = text.splitlines()
+                self.assertIn("NOT proven on a machine. Air-cut it", lines[2])
+                self.assertIn("work offset G54", lines[3])
+                self.assertIn(f"File {k + 1} of 2: load {label}:", text.replace("\n(", " ").replace(")", ""))
+                self.assertNotIn("M6", text)
+                self.assertNotIn("M0", text)                   # no M0 tool change: GRBL cannot jog in Hold
+                self.assertNotIn("G83", text)                  # GRBL posts the cycle expanded
+                # Z up to the clearance height before the spindle starts, a spin-up dwell, X Y, then down.
+                body = lines[lines.index("G54") + 1:]
+                self.assertTrue(body[0].startswith(f"(Load {label}:"), body[0])
+                self.assertEqual("G0 Z5", body[1])
+                self.assertRegex(body[2], r"^S\d+ M3$")
+                self.assertEqual("G4 P3", body[3])
+                first_move = next(line for line in body[4:] if line.startswith(("G0", "G1", "X", "Y", "Z")))
+                self.assertRegex(first_move, r"^(G0 )?X-?[\d.]+ Y-?[\d.]+$")     # G0 still modal after Z
+                self.assertTrue(text.rstrip().endswith("M2"))
+        # The second file carries the coolant the first switched on (a new file starts with it off).
+        self.assertIn("M8", self.files[1][1])
+        self.assertEqual(self.text, "".join(t for _, t in get_post("grbl", "mill").render_tool_files(small_program())))
+
+    def test_a_one_tool_setup_is_one_file(self):
+        from dataclasses import replace
+
+        from cadgen._internal.cam.ir import Toolpath
+
+        path = self.program.toolpath
+        end = path.ops[0].end
+        events = [e for e in path.events if e.at < end]
+        one = replace(self.program, toolpath=Toolpath(path.moves[:end], events, path.ops[:1], start=path.start))
+        files = self.post.render_tool_files(one)
+        self.assertEqual([("T1", self.post.render(one))], files)
+        self.assertNotIn("File 1 of", files[0][1])
 
     def test_the_gcode_reads_back_to_the_ir_path(self):
         read = gcode_reader.read(self.text, start=self.program.toolpath.start)
         points, _ = gcode_reader.sample(read, 0.002, max_step=0.05)
-        ir = self.program.toolpath.sample(0.002, max_step_mm=0.05).points[1:]
+        ir = self.program.toolpath.sample(0.002, max_step_mm=0.05).points        # the start too: G0 Z5 sits on it
         # Every posted point lies on the IR's path, and every IR point on the posted path, within the tolerance.
         for a, b in ((points, ir), (ir, points)):
             gaps = np.min(np.linalg.norm(a[:, None, :] - b[None, :, :], axis=2), axis=1)
