@@ -286,8 +286,13 @@ class StockNow:
         i = np.floor((part[:, 0] - sim.x0) / sim.cell).astype(np.int64)
         j = np.floor((part[:, 1] - sim.y0) / sim.cell).astype(np.int64)
         grid = self._grid_dilated(radius + sim.cell)
-        # Off the grid: look at the nearest cell (the grid ends at the stock's edge; dilation reaches past it).
-        inside = (i >= -1) & (i <= sim.nx) & (j >= -1) & (j <= sim.ny)
+        # Off the grid (it ends at the stock's edge): a point within ``radius`` of the grid still has stock within
+        # ``radius`` of it, and the nearest cell's dilation holds it; only a point farther out sees none. (A point a
+        # tool radius past the stock's side, a finishing pass's start beside a wall, is near the stock.)
+        x1, y1 = sim.x0 + sim.nx * sim.cell, sim.y0 + sim.ny * sim.cell
+        gap_x = np.maximum(np.maximum(sim.x0 - part[:, 0], part[:, 0] - x1), 0.0)
+        gap_y = np.maximum(np.maximum(sim.y0 - part[:, 1], part[:, 1] - y1), 0.0)
+        inside = np.hypot(gap_x, gap_y) <= radius + sim.cell
         ii, jj = np.clip(i, 0, sim.nx - 1), np.clip(j, 0, sim.ny - 1)
         height = np.where(inside, grid[ii, jj], -np.inf if self.direction > 0 else np.inf)
         far = ~inside | ~np.isfinite(height)

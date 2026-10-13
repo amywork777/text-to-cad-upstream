@@ -324,6 +324,13 @@ class EveryPost(unittest.TestCase):
             {"op": "chamfer", "tool": "T5", "faces": [top], "width_mm": 0.5, "loops": "inner"},
             {"op": "contour", "tool": "T1", "faces": [top], "loops": "outer", "stepdown_mm": 4,
              "tabs": {"count": 4}, "lead_in_mm": 2, "lead_out_mm": 2}], tools=tools))
+        # A filleted block: z-level rough, then a waterline whose passes start a tool radius outside the stock's side
+        # (its links once came down there through the stock the rough left on the wall).
+        from tests.python.support import cam_fixtures_milling3d as m3d
+
+        cls.plans["mill3d"] = _plan(m3d.fillet_block_step(folder), m3d.mill3d_job([
+            {"op": "rough", "tool": "T1", "stock_to_leave_mm": 0.3, "stepdown_mm": 6},
+            {"op": "waterline", "tool": "T2", "stepdown_mm": 3.0}]))
         # A turned shaft: face, centre drill, rough and finish outside and in, groove, thread, part off.
         shaft = turning.shaft_step(folder)
         with quiet():
@@ -392,7 +399,7 @@ class EveryPost(unittest.TestCase):
         from cadgen._internal.cam.job_errors import CamJobError
         from cadgen._internal.cam.posts import REGISTRY
 
-        plans = {"mill": ("mill",), "router": ("mill",), "lathe": ("lathe",),
+        plans = {"mill": ("mill", "mill3d"), "router": ("mill",), "lathe": ("lathe",),
                  "mill4": ("mill4", "mill4_indexed"), "mill5": ("mill5_indexed", "mill5_swarf", "mill5_dome"),
                  "laser": ("laser",),
                  "plasma": ("plasma",), "waterjet": ("waterjet",), "wire_edm": ("wire_edm",)}
