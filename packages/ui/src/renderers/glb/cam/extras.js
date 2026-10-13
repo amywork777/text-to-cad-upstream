@@ -63,6 +63,37 @@ function toolDiameter(op, tools) {
   return named ? Number(named[1]) : null;
 }
 
+/** A beam's kerf (mm): the operation's tool's, from the job's tool list; null for any other tool. */
+function kerf(op, tools) {
+  const value = number(tools[text(op.tool)]?.kerf_mm);
+  return value !== null && value > 0 ? value : null;
+}
+
+/**
+ * A setup's frame in part (CAD) coordinates: `axis`, the direction its tool comes from (WCS +Z), and `across`,
+ * its WCS +X (a lathe's radial direction), from the extras' `matrix` (part -> WCS, rows WCS X, Y, Z). Without a
+ * usable matrix, the axis its `orientation` names ("+Z", "-X", ...), else +Z.
+ */
+const ORIENTATION_AXES = Object.freeze({ "+Z": [0, 0, 1], "-Z": [0, 0, -1], "+X": [1, 0, 0], "-X": [-1, 0, 0], "+Y": [0, 1, 0], "-Y": [0, -1, 0] });
+function unitRow(matrix, row) {
+  const values = list(list(matrix)[row]).slice(0, 3).map((value) => number(value));
+  if (values.length !== 3 || values.some((value) => value === null)) return null;
+  const length = Math.hypot(...values);
+  return length > 1e-9 ? values.map((value) => value / length) : null;
+}
+function setupFrame(rawSetup) {
+  const named = typeof rawSetup.orientation === "string" ? ORIENTATION_AXES[rawSetup.orientation.trim().toUpperCase()] : null;
+  return { axis: unitRow(rawSetup.matrix, 2) || named || ORIENTATION_AXES["+Z"], across: unitRow(rawSetup.matrix, 0) || [1, 0, 0] };
+}
+
+/** A setup's orientation in words: "+Z", or a 3+2 tilt's angles ("A 30° C 90°"). */
+function orientationWords(value) {
+  if (typeof value === "string") return value.trim();
+  if (!plainObject(value)) return "";
+  return Object.entries(value).map(([key, angle]) => [/^([abc])_deg$/i.exec(key)?.[1], number(angle)])
+    .filter(([axis, angle]) => axis && angle !== null && angle !== 0).map(([axis, angle]) => `${axis.toUpperCase()} ${angle}°`).join(" ") || "+Z";
+}
+
 function toolType(op, tools) {
   const own = text(op.tool_type) || text(tools[text(op.tool)]?.type);
   if (own) return own;
@@ -86,11 +117,12 @@ function readFinding(raw) {
  * The job a CAM result carries, or null for any other GLB.
  *
  * @returns {null | { schema: number, verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number },
- *   setups: { id: string, plain: string, timeS: number, orientation: string, operations: object[] }[],
- *   operations: object[], findings: object[], adapted: object[], posts: object[], durationS: number, document: string,
- *   material: string }}
- *   Each operation: `{ index, op, plain, name, tool, toolPlain, toolDiameterMm, toolType, rpm, feedMmMin, timeS, t0, t1,
- *   summary, faces, limits, setup }`, `index` the one `_CAM_OP` and a finding's `operation` name.
+ *   setups: { id: string, plain: string, timeS: number, orientation: string, axis: number[], across: number[], operations: object[] }[],
+ *   operations: object[], findings: object[], adapted: object[], posts: object[], durationS: number, machine: string,
+ *   stock: { kind: string, thicknessMm: number | null }, document: string, material: string }}
+ *   A setup's `axis` is the direction its tool comes from and `across` its WCS +X, both in part coordinates (`setupFrame`);
+ *   `orientation` is in words. Each operation: `{ index, op, plain, name, tool, toolPlain, toolDiameterMm, toolType, kerfMm,
+ *   rpm, feedMmMin, timeS, t0, t1, summary, faces, limits, setup }`, `index` the one `_CAM_OP` and a finding's `operation` name.
  */
 export function readCamJob(root) {
   if (!carriesCamJob(root)) return null;
@@ -116,7 +148,7 @@ export function readCamJob(root) {
       const toolPlain = text(rawOp.tool_plain) || text(rawOp.tool);
       const op = {
         index, op: text(rawOp.op), plain: plainWord, name: text(rawOp.name), tool: text(rawOp.tool), toolPlain,
-        toolDiameterMm: toolDiameter(rawOp, tools), toolType: toolType(rawOp, tools),
+        toolDiameterMm: toolDiameter(rawOp, tools), toolType: toolType(rawOp, tools), kerfMm: kerf(rawOp, tools),
         rpm: number(rawOp.rpm), feedMmMin: number(rawOp.feed_mm_min), timeS: timeS || t1 - t0, t0, t1,
         summary: text(rawOp.summary) || [plainWord, toolPlain && `with ${toolPlain}`].filter(Boolean).join(" "),
         faces: list(rawOp.faces).map((face) => text(face)).filter(Boolean),
@@ -127,7 +159,7 @@ export function readCamJob(root) {
       operations.push(op);
     }
     const timeS = number(rawSetup.time_s, own.reduce((sum, op) => sum + op.timeS, 0));
-    setups.push({ id, plain, timeS, orientation: text(rawSetup.orientation), operations: own });
+    setups.push({ id, plain, timeS, orientation: orientationWords(rawSetup.orientation), ...setupFrame(rawSetup), operations: own });
   }
   const findings = list(cam.findings).map(readFinding).filter(Boolean)
     .sort((a, b) => (a.level === "error" ? 0 : 1) - (b.level === "error" ? 0 : 1));
@@ -144,8 +176,11 @@ export function readCamJob(root) {
     verdict: { status, headline, errors, warnings },
     setups, operations, findings,
     adapted: list(cam.adapted).filter(plainObject).map((entry) => ({ step: text(entry.step), note: text(entry.note) })),
-    posts: list(cam.posts).filter(plainObject).map((entry) => ({ setup: text(entry.setup), file: text(entry.file), post: text(entry.post) })),
+    // A setup may post several files (one per tool on a controller without tool changes), each naming its `tool`.
+    posts: list(cam.posts).filter(plainObject).map((entry) => ({ setup: text(entry.setup), file: text(entry.file), post: text(entry.post), tool: text(entry.tool) })),
     durationS,
+    machine: text(cam.machine?.kind) || text(cam.machine),
+    stock: { kind: text(cam.stock?.kind), thicknessMm: number(cam.stock?.thickness_mm) },
     document: text(cam.document),
     material: typeof cam.material === "string" ? cam.material : text(cam.material?.name),
   };

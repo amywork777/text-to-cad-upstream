@@ -14,7 +14,9 @@ import { camOperation } from "./extras.js";
  * so they arrive as `_cam_t` and `_cam_op`. A node's extras say its setup and kind
  * (`{ setup, kind: "feed" | "rapid" }`); without them a node named for rapids is rapids, and a segment's
  * setup is its operation's. A file with no `_CAM_OP` has each segment's operation found by its time
- * (the operation whose `t0`..`t1` holds it); one with no `_CAM_T` draws every segment from the start.
+ * (the operation whose `t0`..`t1` holds it); one with no `_CAM_T` draws every segment from the start. Where the
+ * tool's axis changes along a setup (a rotary wrap, swarf, a 5-axis finish, a tapered wire) each vertex also carries
+ * it (`_CAM_AXIS`, unit, in the file's axes), and the tool is stood along it as it rides.
  *
  * Segments are sorted by time within each object, so playback reveals a path up to a moment by drawing
  * its first segments (`instanceCount`), the one under way cut where the tool is.
@@ -116,6 +118,7 @@ export function readCamSegments(THREE, root, job) {
     const position = geometry.getAttribute("position");
     const times = attribute(geometry, "_cam_t");
     const ops = attribute(geometry, "_cam_op");
+    const axes = attribute(geometry, "_cam_axis");
     const index = geometry.index;
     const vertex = (i) => (index ? index.getX(i) : i);
     const count = index ? index.count : position.count;
@@ -138,7 +141,15 @@ export function readCamSegments(THREE, root, job) {
       point.fromBufferAttribute(position, a).applyMatrix4(matrix);
       const start = point.toArray();
       point.fromBufferAttribute(position, b).applyMatrix4(matrix);
-      group.segments.push({ start, end: point.toArray(), t0: Math.min(ta, tb), t1: Math.max(ta, tb), op, setup: opSetup });
+      const end = point.toArray();
+      // A segment written end first (its times reversed) is stored start first, so the tool rides it forwards.
+      const forwards = tb >= ta;
+      const segment = { start: forwards ? start : end, end: forwards ? end : start, t0: Math.min(ta, tb), t1: Math.max(ta, tb), op, setup: opSetup, axis: null };
+      if (axes) {
+        const along = [a, b].map((vertexIndex) => point.fromBufferAttribute(axes, vertexIndex).transformDirection(matrix).toArray());
+        segment.axis = forwards ? along : along.reverse();
+      }
+      group.segments.push(segment);
     }
   }
   const all = [];
@@ -160,10 +171,18 @@ export function readCamSegments(THREE, root, job) {
   return { groups: sorted, timeline: { segments: all, starts: Float64Array.from(all, (segment) => segment.t0) } };
 }
 
+/** Two unit directions mixed by `share` and made unit again (the second where they are opposite). */
+function mixAxes([from, to], share) {
+  const mixed = from.map((value, axis) => value + (to[axis] - value) * share);
+  const length = Math.hypot(...mixed);
+  return length > 1e-9 ? mixed.map((value) => value / length) : [...to];
+}
+
 /**
  * Where the tool is at a moment of the program: on the segment under way, between its ends by time; in a
  * pause (a tool change), at the end of the last move; before the first, at its start. Null with no segments.
- * Only a setup's own segments when `setup` names one.
+ * Only a setup's own segments when `setup` names one. `axis` (the root's frame, unit) is the tool's own where the
+ * file carries it per vertex (`_CAM_AXIS`), else null: the setup's.
  */
 export function toolPositionAt(timeline, t, setup = null) {
   const { segments, starts } = timeline;
@@ -172,13 +191,13 @@ export function toolPositionAt(timeline, t, setup = null) {
   while (i >= 0 && setup && segments[i].setup !== setup) i -= 1;
   if (i < 0) {
     const first = setup ? segments.find((segment) => segment.setup === setup) : segments[0];
-    return first ? { point: [...first.start], op: first.op, setup: first.setup } : null;
+    return first ? { point: [...first.start], op: first.op, setup: first.setup, axis: first.axis ? [...first.axis[0]] : null } : null;
   }
   const segment = segments[i];
   const span = segment.t1 - segment.t0;
   const share = span > 0 ? Math.min(Math.max((t - segment.t0) / span, 0), 1) : 1;
   const point = segment.start.map((value, axis) => value + (segment.end[axis] - value) * share);
-  return { point, op: segment.op, setup: segment.setup };
+  return { point, op: segment.op, setup: segment.setup, axis: segment.axis ? mixAxes(segment.axis, share) : null };
 }
 
 /**

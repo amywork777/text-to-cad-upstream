@@ -6,7 +6,7 @@ import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { expect, it, vi } from 'vitest';
 import { readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
 import { cadFrame, camToolpathObjects, createCamPaths, readCamSegments, toolPositionAt } from '../../../dist/renderers/glb/cam/lines.js';
-import { createCamTool } from '../../../dist/renderers/glb/cam/tool.js';
+import { createCamTool, operationAxis, setupAxis, toolShape } from '../../../dist/renderers/glb/cam/tool.js';
 import { camLines, camScene } from './__tests__/camFile';
 
 // What the viewport runtime hands the paths: its screen-space line classes and its material registry.
@@ -37,7 +37,7 @@ it('finds a segment\'s operation by its time when the file has no _CAM_OP, and r
 it('says where the tool is at a moment: along the move under way, held through a pause, at the start before it', () => {
   const root = camScene();
   const { timeline } = readCamSegments(THREE, root, readCamJob(root)!);
-  expect(toolPositionAt(timeline, 5)).toEqual({ point: [5, 0, 0], op: 0, setup: 'top' });
+  expect(toolPositionAt(timeline, 5)).toEqual({ point: [5, 0, 0], op: 0, setup: 'top', axis: null });
   expect(toolPositionAt(timeline, 25)!.point).toEqual([7.5, 7.5, 2.5]);
   expect(toolPositionAt(timeline, 35)!.point).toEqual([5, 5, 5]);
   expect(toolPositionAt(timeline, 60)!.point).toEqual([5, 7, -2]);
@@ -119,4 +119,33 @@ it('sizes the riding tool in mm and stands it along the setup\'s axis, in a scen
   expect(tool.object3D.visible).toBe(false);
   tool.dispose();
   expect(root.children.includes(tool.object3D)).toBe(false);
+});
+
+it('stands a lathe\'s turning tools across the spindle and its drill along it, and draws a beam or a wire, not a cutter', () => {
+  const lathe = { machine: 'lathe', setups: [], operations: [] };
+  const setup = { id: 'turn', axis: [0, 0, 1], across: [1, 0, 0] };
+  expect(operationAxis(lathe, setup, { op: 'turn_rough' })).toEqual([1, 0, 0]);
+  expect(operationAxis(lathe, setup, { op: 'turn_drill' })).toEqual([0, 0, 1]);
+  expect(operationAxis({ machine: 'mill' }, setup, { op: 'pocket' })).toEqual([0, 0, 1]);
+  expect(setupAxis({ orientation: '-X' })).toEqual([-1, 0, 0]);
+  expect(toolShape({ machine: 'laser' }, { kerfMm: 0.2, toolDiameterMm: null })).toEqual({ kind: 'beam', radius: 0.15, ball: false });
+  expect(toolShape({ machine: 'plasma' }, { kerfMm: 1.5 })).toEqual({ kind: 'beam', radius: 0.75, ball: false });
+  expect(toolShape({ machine: 'wire_edm' }, { toolDiameterMm: 0.25 })).toEqual({ kind: 'wire', radius: 0.15, ball: false });
+  expect(toolShape({ machine: 'mill' }, { toolDiameterMm: 4, toolType: 'ball' })).toEqual({ kind: 'cutter', radius: 2, ball: true });
+});
+
+it('rides a segment\'s own axis where the file carries one per vertex, turning it along the move', () => {
+  const root = camScene();
+  const feed = root.children.find((child: any) => child.isLineSegments && child.userData.kind === 'feed') as any;
+  const tilt = Math.SQRT1_2;
+  // The face's first move turns the tool from upright to 45° about X as it goes.
+  feed.geometry.setAttribute('_cam_axis', new THREE.BufferAttribute(new Float32Array([0, 0, 1, 0, -tilt, tilt, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1]), 3));
+  const { timeline } = readCamSegments(THREE, root, readCamJob(root)!);
+  expect(toolPositionAt(timeline, 0)!.axis).toEqual([0, 0, 1]);
+  const half = toolPositionAt(timeline, 5)!.axis!;
+  expect(Math.hypot(...half)).toBeCloseTo(1, 6);
+  expect(half[1]).toBeLessThan(0);
+  // At its end, the turned axis (the next move, upright again, starts at 10).
+  toolPositionAt(timeline, 10 - 1e-9)!.axis!.forEach((value: number, i: number) => expect(value).toBeCloseTo([0, -tilt, tilt][i], 6));
+  expect(toolPositionAt(timeline, 10)!.axis).toEqual([0, 0, 1]);
 });

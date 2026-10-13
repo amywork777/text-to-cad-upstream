@@ -13,7 +13,7 @@ it('reads the job a CAM result carries: verdict, setups, operations, errors firs
   expect(job.findings.map((finding: any) => finding.level)).toEqual(['error', 'warning', 'warning']);
   expect(job.findings[0]).toMatchObject({ check: 'reach', message: 'Tool too long for this pocket', operation: 1, at: [4, 5, 6] });
   expect(job).toMatchObject({ durationS: 90, document: 'part.step', material: 'aluminum-6061', schema: 1 });
-  expect(job.posts).toEqual([{ setup: 'top', file: 'part.top.nc', post: 'grbl' }]);
+  expect(job.posts).toEqual([{ setup: 'top', file: 'part.top.nc', post: 'grbl', tool: '' }]);
   expect(operationDetail(job.operations[0])).toBe('6 mm flat · 30 s');
 });
 
@@ -54,4 +54,20 @@ it('resolves the part the job was planned from against the GLB, and says duratio
   expect(camSourcePath('/work/out/part.cam.glb', '/abs/part.step')).toBe('/abs/part.step');
   expect(camSourcePath('/work/out/part.cam.glb', '')).toBe('');
   expect([0, 0.4, 35, 59.4, 60, 2520, 3900, 7200].map(formatDuration)).toEqual(['0 s', '1 s', '35 s', '59 s', '1 min', '42 min', '1 h 5 min', '2 h']);
+});
+
+it('takes a setup\'s tool axis from its matrix (a 3+2 tilt, an indexed rotary position), else from its orientation', () => {
+  const extras = camExtras() as any;
+  const c = Math.sqrt(3) / 2;
+  extras.setups.push(
+    { id: 'tilt', orientation: { a_deg: 30, c_deg: 0 }, matrix: [[1, 0, 0, 0], [0, c, -0.5, 0], [0, 0.5, c, -20], [0, 0, 0, 1]], operations: [] },
+    { id: 'side', orientation: '-Y', operations: [] });
+  extras.machine = { kind: 'mill5', post: 'linuxcnc' };
+  extras.posts.push({ setup: 'top', file: 'part.top.T3.nc', post: 'grbl', tool: 'T3' });
+  const job = readCamJob(camScene({ extras }))!;
+  expect(job.machine).toBe('mill5');
+  expect(job.setups.map((setup: any) => [setup.id, setup.orientation, setup.axis])).toEqual([
+    ['top', '+Z', [0, 0, 1]], ['tilt', 'A 30°', [0, 0.5, c]], ['side', '-Y', [0, -1, 0]]]);
+  expect(job.setups[1].across).toEqual([1, 0, 0]);
+  expect(job.posts.map((post: any) => post.tool)).toEqual(['', 'T3']);
 });
