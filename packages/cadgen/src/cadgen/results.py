@@ -370,7 +370,8 @@ class CamPlanResult:
     ``verdict`` is the status (``status`` ready or fix, ``headline`` "Ready to cut · 42 min · 3 tools", ``errors``,
     ``warnings``). ``operations`` has one dict per planned operation in program order (``setup``, ``index``, ``op``,
     ``plain``, ``tool``, ``tool_plain``, ``rpm``, ``feed_mm_min``, ``time_s``, ``summary``, ``limits``). ``posts`` has
-    one ``{setup, file, post}`` per setup. ``findings`` are the checks' findings, errors first, in the KiCad/FEA
+    one ``{setup, file, post, tool}`` per posted file: one per setup, or one per tool where the post splits a setup
+    by tool (``tool`` its label, else None). ``findings`` are the checks' findings, errors first, in the KiCad/FEA
     shape (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). ``adapted`` lists what the run
     coarsened to fit (``step``, ``words``, ``accuracy``). A job that cannot run has ``ok`` false, a finding that says
     what to change, and wrote nothing.

@@ -3,16 +3,24 @@
 ``plan_job`` is the pipeline: parse the job (and every operation's own keys, before anything heavy) -> read the part
 -> build the stock -> per setup: its WCS, heights and sections, then each operation planned in order with the tool
 change, spindle and coolant events around it -> simulate the stock -> run the checks -> the verdict -> post each
-setup and write the GLB, to temporary names renamed into place only when everything is written. A job that cannot
-run (:class:`CamJobError`) answers ``ok: false`` with one error finding and leaves no result GLB and no posted file
-at the names it would have written.
+setup and write the GLB, to temporary names renamed into place only when everything is written.
+
+Before anything else a plan removes what an earlier plan of the same document left in the output folder (the
+result GLB, every posted file it lists, and every ``<stem>.<setup>[.<tool>].<post extension>`` file whose header
+says cadgen posted it for this document), so a job that cannot run (:class:`CamJobError`, answered ``ok: false``
+with one error finding), or one that fails any other way, leaves no result GLB and no posted file, never the last
+run's "Ready to cut". A post that writes one file per tool (``Post.split_by_tool``: GRBL cannot re-zero a tool after
+``M0``) posts a setup with several tools as ``<stem>.<setup>.<label><ext>`` per tool, in program order.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import math
 import os
+import re
+import struct
 import time
 from pathlib import Path
 
@@ -67,10 +75,82 @@ def headline(errors: int, seconds: float, tools: int) -> str:
     return f"{head} · {_duration_words(seconds)} · {tools} tool{'s' if tools != 1 else ''}"
 
 
-def _output_paths(document: Path, out_dir: Path | None, job, extension: str) -> tuple[Path, dict[str, Path]]:
+def _glb_path(document: Path, out_dir: Path | None) -> Path:
+    """The result GLB's path: the document's stem beside it, or in ``out_dir``. Needs nothing from the job."""
     folder = Path(out_dir) if out_dir is not None else document.parent
-    stem = document.stem
-    return folder / f"{stem}.cam.glb", {setup.id: folder / f"{stem}.{setup.id}{extension}" for setup in job.setups}
+    return folder / f"{document.stem}.cam.glb"
+
+
+def _naming(document: Path) -> re.Pattern:
+    """A posted file's name for this document: ``<stem>.<setup>.<ext>``, or ``<stem>.<setup>.<tool>.<ext>``."""
+    return re.compile(rf"^{re.escape(document.stem)}\.([A-Za-z0-9_-]{{1,40}})(?:\.([A-Za-z0-9_-]{{1,40}}))?"
+                      r"(\.[A-Za-z0-9]+)$")
+
+
+def _glb_cam(path: Path) -> dict | None:
+    """The plan a cadgen GLB carries (``scenes[0].extras.cam``), read from its JSON chunk alone; None for anything
+    else (not there, not a GLB, not cadgen's)."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(20)
+            if len(head) < 20:
+                return None
+            magic, _, _, length, kind = struct.unpack("<4sIIII", head)
+            if magic != b"glTF" or kind != 0x4E4F534A or length > 64 * 1024 * 1024:
+                return None
+            document = json.loads(handle.read(length))
+    except (OSError, ValueError, struct.error):
+        return None
+    scenes = document.get("scenes") if isinstance(document, dict) else None
+    extras = scenes[0].get("extras") if isinstance(scenes, list) and scenes and isinstance(scenes[0], dict) else None
+    cam = extras.get("cam") if isinstance(extras, dict) else None
+    return cam if isinstance(cam, dict) and cam.get("generator") == "cadgen cam" else None
+
+
+def _posted_for(path: Path, document: Path, setup_id: str) -> bool:
+    """Whether a posted file's header says cadgen wrote it for ``document``'s setup ``setup_id``."""
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(2048).decode("utf-8", errors="replace").lower()
+    except OSError:
+        return False
+    return "cadgen" in head and f"{document.name.lower()} - setup {setup_id.lower()}" in head
+
+
+def previous_outputs(document: Path, out_dir: Path | None, extensions) -> list[Path]:
+    """What an earlier plan of ``document`` may have left in the output folder: its result GLB, every posted file
+    that GLB lists, and every file named like a posted one (``<stem>.<setup>[.<tool>]<ext>``, ``ext`` a post's) whose
+    header says cadgen posted it for this document. Nothing outside the folder, nothing named otherwise."""
+    glb_path = _glb_path(document, out_dir)
+    folder = glb_path.parent
+    naming = _naming(document)
+    extensions = set(extensions)
+    found: dict[str, Path] = {}
+    if glb_path.is_file():
+        found[glb_path.name] = glb_path
+    cam = _glb_cam(glb_path) if glb_path.is_file() else None
+    def items(value) -> list:
+        return value if isinstance(value, list) else []
+
+    listed = []
+    if cam is not None:
+        listed += [entry.get("file") for entry in items(cam.get("posts")) if isinstance(entry, dict)]
+        for setup in items(cam.get("setups")):
+            if isinstance(setup, dict):
+                listed += [setup.get("post"), *items(setup.get("posts"))]
+    for name in listed:
+        if not isinstance(name, str) or not name or "/" in name or "\\" in name:
+            continue
+        match = naming.match(name)
+        if match and match.group(3) in extensions and (folder / name).is_file():
+            found[name] = folder / name
+    if folder.is_dir():
+        for child in folder.iterdir():
+            match = naming.match(child.name)
+            if (match and match.group(3) in extensions and child.name not in found and child.is_file()
+                    and _posted_for(child, document, match.group(1))):
+                found[child.name] = child
+    return sorted(found.values())
 
 
 def _remove_stale(paths) -> None:
@@ -81,8 +161,7 @@ def _remove_stale(paths) -> None:
             pass
 
 
-def _refused(document: Path, message: str, timings: dict, stale=()) -> CamPlanResult:
-    _remove_stale(stale)
+def _refused(document: Path, message: str, timings: dict) -> CamPlanResult:
     return CamPlanResult(ok=False, document=document, findings=(job_finding(message),), timings=timings)
 
 
@@ -101,23 +180,23 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
     document = Path(target)
     timings: dict[str, float] = {}
     started = time.perf_counter()
-    stale: tuple = ()
+    glb_path = _glb_path(document, out_dir)
+    # Whatever happens next (a refusal, a crash, a plan), the last run's outputs are not left standing beside it.
+    _remove_stale(previous_outputs(document, out_dir, {entry.extension for entry in post_registry.REGISTRY.values()}))
     try:
         parsed = parse_job(job)
         entry = post_registry.entry_for(parsed.machine.post, parsed.machine.kind)
-        glb_path, post_paths = _output_paths(document, out_dir, parsed, entry.extension)
-        stale = (glb_path, *post_paths.values())
         operations = parse_operations(parsed)
         post = post_registry.get_post(parsed.machine.post, parsed.machine.kind)
         timings["parse_s"] = round(time.perf_counter() - started, 4)
-        return _plan(document, parsed, operations, post, glb_path, post_paths, logger, timings, started)
+        return _plan(document, parsed, operations, post, glb_path, entry.extension, logger, timings, started)
     except CamJobError as exc:
         timings["total_s"] = round(time.perf_counter() - started, 4)
         logger.debug(f"refused: {exc}")
-        return _refused(document, str(exc), timings, stale)
+        return _refused(document, str(exc), timings)
 
 
-def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timings, started) -> CamPlanResult:
+def _plan(document, parsed, operations, post, glb_path, extension, logger, timings, started) -> CamPlanResult:
     from cadgen import __version__
     from cadgen._internal.cam import fit
     from cadgen._internal.cam.checks import run_checks
@@ -157,9 +236,10 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
     for plan in setup_plans:
         plan.t0 = clock
         plan.time_s = plan.toolpath.time_s(machine)
+        op_times = plan.toolpath.op_times(machine)
         for op_range in plan.toolpath.ops:
             op = by_index[op_range.index]
-            t0, t1 = plan.toolpath.op_times(machine)[op_range.index]
+            t0, t1 = op_times[op_range.index]
             op.t0, op.t1, op.time_s = clock + t0, clock + t1, t1 - t0
             op.start, op.end = op_range.start, op_range.end
         clock += plan.time_s
@@ -219,8 +299,11 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
     if lite:
         verdict["lite"] = lite
 
-    # Post every setup, then the GLB: all to temporary names first.
-    rendered = {}
+    # Post every setup, then the GLB: all to temporary names first. ``rendered``: (setup id, tool label or None,
+    # final path, text) per posted file, in program order.
+    folder = glb_path.parent
+    rendered = []
+    split = bool(getattr(post, "split_by_tool", False))
     for k, plan in enumerate(setup_plans):
         program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
                           version=__version__, part=document.name, job_name=parsed.name,
@@ -228,7 +311,21 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
                           setup_index=k, setup_count=len(setup_plans),
                           notes=tuple(f"lite {entry['op']}: {limit}" for entry in lite for limit in entry["limits"]
                                       if by_index[entry["operation"]].setup == plan.setup.id))
-        rendered[plan.setup.id] = post.render(program)
+        setup_tools = {op.tool.id for op in op_plans if op.setup == plan.setup.id and op.tool is not None}
+        if split and len(setup_tools) > 1:
+            # One file per tool (GRBL cannot re-zero a tool after M0): <stem>.<setup>.<label><ext>, in program order.
+            for label, text in post.render_tool_files(program):
+                if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", label):
+                    raise ValueError(f"post {post.name} labelled a tool file {label!r}; a label is letters, digits, "
+                                     "- or _")
+                rendered.append((plan.setup.id, label, folder / f"{document.stem}.{plan.setup.id}.{label}{extension}",
+                                 text))
+        else:
+            rendered.append((plan.setup.id, None, folder / f"{document.stem}.{plan.setup.id}{extension}",
+                             post.render(program)))
+    names = [path.name for _, _, path, _ in rendered]
+    if len(set(names)) != len(names):
+        raise ValueError(f"post {post.name} posted two files at one name: {', '.join(names)}")
     mark = lap("post_s", mark)
 
     glb_dir = glb_path.parent
@@ -268,9 +365,12 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
             "orientation": plan.setup.orientation, "wcs": plan.setup.wcs,
             "origin_part_mm": plan.wcs.origin_part_mm, "matrix": plan.wcs.matrix(), "heights": plan.heights.as_dict(),
             "time_s": round(plan.time_s, 2), "t0": round(plan.t0, 3), "t1": round(plan.t0 + plan.time_s, 3),
-            "post": _relative(post_paths[plan.setup.id], glb_dir), "operations": ops,
+            "post": next(_relative(path, glb_dir) for setup_id, _, path, _ in rendered if setup_id == plan.setup.id),
+            "posts": [_relative(path, glb_dir) for setup_id, _, path, _ in rendered if setup_id == plan.setup.id],
+            "operations": ops,
         })
-    posts_out = [{"setup": setup_id, "file": str(post_paths[setup_id]), "post": post.name} for setup_id in rendered]
+    posts_out = [{"setup": setup_id, "file": str(path), "post": post.name, "tool": label}
+                 for setup_id, label, path, _ in rendered]
     removed = removed_before - sim.volume()
     cam = {
         "schema": 1, "generator": "cadgen cam", "document": _relative(document, glb_dir),
@@ -278,8 +378,8 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
         "material": parsed.material.name, "material_plain": parsed.material.plain, "stock": stock.as_dict(),
         "tools": [tools[t].as_dict() for t in sorted(tools, key=lambda t: tools[t].number)],
         "setups": setups_out, "findings": findings, "adapted": adapted,
-        "posts": [{"setup": p["setup"], "file": _relative(Path(p["file"]), glb_dir), "post": p["post"]}
-                  for p in posts_out],
+        "posts": [{"setup": p["setup"], "file": _relative(Path(p["file"]), glb_dir), "post": p["post"],
+                   "tool": p["tool"]} for p in posts_out],
         "duration_s": round(duration, 3), "removed_mm3": round(removed, 2),
         "checks": {"ran": ran, "skipped": skipped},
         "safety": "Generated by cadgen; not proven on a machine. Air-cut or single-block it first, and check the work "
@@ -300,26 +400,26 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
         samples = dataclasses.replace(samples, points=plan.wcs.from_wcs(samples.points))
         lines += line_segments(samples, setup=plan.setup.id, t_offset=plan.t0, stride=stride, axes=axes)
 
+    # Every file to a temporary name first, then each renamed into place; a failure anywhere removes the temporaries
+    # and whatever of the new set was already in place (the old set went before planning), so nothing half-written
+    # or stale stands at the names.
     temporaries = []
+    placed = []
     try:
         suffix = f".tmp-{os.getpid()}"
         glb_tmp = glb_path.with_name(f".{glb_path.name}{suffix}")
         temporaries.append((glb_tmp, glb_path))
         write_glb(glb_tmp, part_mesh=(part.vertices, part.triangles), stock_mesh=sim.mesh(), lines=lines, cam=cam,
                   name=f"{document.stem} cam")
-        for setup_id, text in rendered.items():
-            final = post_paths[setup_id]
+        for _, _, final, text in rendered:
             tmp = final.with_name(f".{final.name}{suffix}")
             temporaries.append((tmp, final))
             tmp.write_text(text, encoding="utf-8", newline="\n")
         for tmp, final in temporaries:
             os.replace(tmp, final)
+            placed.append(final)
     except BaseException:
-        for tmp, _ in temporaries:
-            try:
-                tmp.unlink()
-            except FileNotFoundError:
-                pass
+        _remove_stale([tmp for tmp, _ in temporaries] + placed)
         raise
     lap("write_s", mark)
     timings["total_s"] = round(time.perf_counter() - started, 4)

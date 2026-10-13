@@ -59,7 +59,7 @@ class PlanBlock(unittest.TestCase):
                     "feed_mm_min"):
             self.assertIn(key, ops[1])
         self.assertEqual("+Z", cam["setups"][0]["orientation"])
-        self.assertEqual([{"setup": "top", "file": "block.top.nc", "post": "grbl"}], cam["posts"])
+        self.assertEqual([{"setup": "top", "file": "block.top.nc", "post": "grbl", "tool": None}], cam["posts"])
         kinds = {node["name"]: node.get("extras", {}).get("kind") for node in document["nodes"][1:]}
         self.assertEqual({"part": "part", "stock": "stock", "top feed": "feed", "top rapid": "rapid"}, kinds)
         feed = next(m for m in document["meshes"] if m["name"] == "top feed")["primitives"][0]
