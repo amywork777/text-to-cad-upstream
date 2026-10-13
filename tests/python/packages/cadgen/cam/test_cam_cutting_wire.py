@@ -13,7 +13,7 @@ from cadgen._internal.cam.job_errors import CamJobError
 from cadgen._internal.cam.part import read_part, read_dxf_profiles
 from cadgen._internal.cam.run import parse_operations, plan_setups
 from cadgen._internal.cam.stock import build_stock
-from tests.python.support.cam_fixtures import class_directory, quiet
+from tests.python.support.cam_fixtures import accessor_array, class_directory, quiet, read_glb
 from tests.python.support.cam_fixtures_cutting import bracket_dxf, cut_job
 
 MARGIN = 5.0
@@ -136,6 +136,13 @@ class BracketWire(unittest.TestCase):
         text = (self.directory / "wire" / "bracket.sheet.nc").read_text(encoding="utf-8")
         self.assertIn("G51 A1.", text)
         self.assertIn("M0", text)
+        # The GLB carries the wire's lean on every vertex: 1° off the plate's normal (glTF +Y) while it cuts.
+        document, blob = read_glb(result.glb)
+        feed = next(m for m in document["meshes"] if m["name"] == "sheet feed")["primitives"][0]
+        axis = accessor_array(document, blob, feed["attributes"]["_CAM_AXIS"])
+        np.testing.assert_allclose(1.0, np.linalg.norm(axis, axis=1), atol=1e-6)
+        tilt = np.degrees(np.arccos(np.clip(axis[:, 1], -1, 1)))
+        self.assertAlmostEqual(1.0, float(tilt.max()), places=4)
         # Only the outsides were meant to be cut (a punch): its openings are not material left.
         self.assertEqual([], [f for f in result.findings if f["check"] == "material_left"])
         # A die (only the openings cut): the plate is the part, and nothing is left in its openings.

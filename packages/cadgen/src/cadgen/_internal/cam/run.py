@@ -122,7 +122,7 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
     from cadgen._internal.cam import fit
     from cadgen._internal.cam.checks import run_checks
     from cadgen._internal.cam.checks.base import CheckContext
-    from cadgen._internal.cam.outputs import line_segments, write_glb
+    from cadgen._internal.cam.outputs import line_segments, sample_axes, write_glb
     from cadgen._internal.cam.part import read_part
     from cadgen._internal.cam.posts.base import Program
     from cadgen._internal.cam.stock import build_stock, create_stock_sim
@@ -295,8 +295,10 @@ def _plan(document, parsed, operations, post, glb_path, post_paths, logger, timi
     lines = []
     for plan in setup_plans:
         samples = plan.toolpath.sample(chord, machine=machine)
+        thickness = plan.heights.stock_top - plan.heights.stock_bottom if machine.kind == "wire_edm" else None
+        axes = sample_axes(plan.toolpath, plan.wcs, samples.move, thickness_mm=thickness)
         samples = dataclasses.replace(samples, points=plan.wcs.from_wcs(samples.points))
-        lines += line_segments(samples, setup=plan.setup.id, t_offset=plan.t0, stride=stride)
+        lines += line_segments(samples, setup=plan.setup.id, t_offset=plan.t0, stride=stride, axes=axes)
 
     temporaries = []
     try:

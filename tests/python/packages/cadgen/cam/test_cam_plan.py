@@ -64,6 +64,7 @@ class PlanBlock(unittest.TestCase):
         self.assertEqual({"part": "part", "stock": "stock", "top feed": "feed", "top rapid": "rapid"}, kinds)
         feed = next(m for m in document["meshes"] if m["name"] == "top feed")["primitives"][0]
         self.assertEqual(1, feed["mode"])
+        self.assertEqual({"POSITION", "_CAM_T", "_CAM_OP"}, set(feed["attributes"]))    # a 3-axis tool's axis is fixed
         t = accessor_array(document, blob, feed["attributes"]["_CAM_T"])
         op = accessor_array(document, blob, feed["attributes"]["_CAM_OP"])
         self.assertEqual({0.0, 1.0}, set(np.unique(op).tolist()))

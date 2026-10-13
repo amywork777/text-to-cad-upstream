@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tests.python.support.cam_fixtures import class_directory, quiet, read_glb
+from tests.python.support.cam_fixtures import accessor_array, class_directory, quiet, read_glb
 from tests.python.support.cam_fixtures_multiaxis import (
     ANGLED, CYLINDER, DOME, TAPER, angled_block_step, angled_normal, angled_pocket_centre, dome_step, face_ref,
     multiaxis_job, tapered_boss_step, wrapped_cylinder_step,
@@ -78,6 +78,9 @@ class IndexedSetup(unittest.TestCase):
         document, _ = read_glb(result.glb)
         setups = document["scenes"][0]["extras"]["cam"]["setups"]
         self.assertEqual({"a_deg": 30.0}, setups[1]["orientation"])
+        # The tilted setup's tool axis is its matrix's third row (WCS +Z in part coordinates); its lines carry none.
+        np.testing.assert_allclose(angled_normal(), setups[1]["matrix"][2][:3], atol=1e-9)
+        self.assertFalse(any("_CAM_AXIS" in m["primitives"][0]["attributes"] for m in document["meshes"]))
         self.assertGreater(result.summary["removed_mm3"], 0.9 * 16 * 8 * 3)
 
     def test_every_move_of_the_tilted_setup_carries_its_rotary_position(self):
@@ -163,6 +166,15 @@ class Wrap(unittest.TestCase):
         path = self.setups[0].toolpath
         self.assertEqual(("a",), path.rotary)
         self.assertAlmostEqual(0.0, float(path.moves["a"][-1]), places=6)     # unwound back to the setup's A
+        # The GLB's feed vertices carry the tool's axis (glTF axes), pointing at the bar's X axis where it cuts.
+        document, blob = read_glb(result.glb)
+        feed = next(m for m in document["meshes"] if m["name"] == "s1 feed")["primitives"][0]
+        points = accessor_array(document, blob, feed["attributes"]["POSITION"]).astype(float) * 1000.0
+        axis = accessor_array(document, blob, feed["attributes"]["_CAM_AXIS"]).astype(float)
+        cutting = np.hypot(points[:, 1], points[:, 2]) < CYLINDER["radius"] + 0.5
+        radial = points[cutting][:, 1:] / np.linalg.norm(points[cutting][:, 1:], axis=1, keepdims=True)
+        np.testing.assert_allclose(radial, axis[cutting][:, 1:], atol=1e-3)
+        np.testing.assert_allclose(0.0, axis[cutting][:, 0], atol=1e-6)
 
     def test_the_ball_never_enters_the_bar_and_reaches_the_groove_and_the_flat(self):
         tips, axes = cutting(self.setups[0], self.ops[0])
