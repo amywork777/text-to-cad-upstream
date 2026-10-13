@@ -51,6 +51,8 @@ it('a plain GLB never requests the CAM viewer', async () => {
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   expect(loaded.requested).toBe(0);
   expect(screen.queryByRole('region', { name: 'Job' })).toBeNull();
+  // It still has no tools, so no strip.
+  expect(screen.queryByRole('group', { name: 'Interaction tools' })).toBeNull();
 });
 
 it('a CAM result loads the CAM viewer, then shows Job; a row isolates its operation until it is chosen again', async () => {

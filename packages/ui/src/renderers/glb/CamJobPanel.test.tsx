@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createPromptContext, formatPromptMessage } from '@text-to-cad/core/prompt';
 import CamJobPanel, { camChoices } from '../../../dist/renderers/glb/CamJobPanel.js';
-import { camReferences, paintCam } from '../../../dist/renderers/glb/camView.js';
+import { CAM_SHOWN, camDisplaySections, camPathKinds, camReferences, paintCam } from '../../../dist/renderers/glb/camView.js';
 import { camOpColours } from '../../../dist/renderers/glb/cam/colours.js';
 import { readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
 import { camSceneMeshes } from '../../../dist/renderers/glb/cam/playback.js';
@@ -69,4 +69,17 @@ it('paints a choice as its operations isolated, and a moment as the tool on the 
   expect(paintCam({ controller: { paths, tool }, meshes: camSceneMeshes(root), job: parsed, shown, isolate: null, moment: { t: 45, setup: null } })).toBe(true);
   expect(paths.toolAt).toHaveBeenLastCalledWith(45, null);
   expect(tool.show).toHaveBeenLastCalledWith({ point: [1, 2, 3], op: 1, setup: 'top' });
+});
+
+it('gates what Display shows of a result: toolpaths, rapids, stock and part, each only where the file has it', () => {
+  const root = camScene();
+  const onChange = vi.fn();
+  const sections = camDisplaySections({ job: job(), meshes: camSceneMeshes(root), paths: camPathKinds(root), shown: CAM_SHOWN, onChange });
+  expect(sections.map((section: any) => [section.id, section.title, section.enabled])).toEqual([
+    ['cam-toolpaths', 'Toolpaths', true], ['cam-rapids', 'Rapids', true], ['cam-stock', 'Stock', false], ['cam-part', 'Part', true]]);
+  sections[2].onEnabledChange(true);
+  expect(onChange).toHaveBeenLastCalledWith({ stock: true });
+  root.remove(...camSceneMeshes(root).stock.map((entry: any) => entry.object));
+  expect(camDisplaySections({ job: job(), meshes: camSceneMeshes(root), paths: { feed: true, rapid: false }, shown: CAM_SHOWN, onChange })
+    .map((section: any) => section.title)).toEqual(['Toolpaths', 'Part']);
 });
