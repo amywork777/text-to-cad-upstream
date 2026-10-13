@@ -79,6 +79,7 @@ class DrillOp(Operation):
     status = "full"
     keys = ("cycle", "holes", "points", "depth_mm", "top_z", "depth_to", "breakthrough_mm", "peck_mm", "retract_mm",
             "dwell_s", "bore_mode", "shift_mm", "return_to", "order", "size_tolerance_mm")
+    common_keys = ("feed", "speed")
     tool_types = ("drill", "flat", "spot", "chamfer", "tap", "reamer", "boring")
     takes_faces = True
     feeds_kind = "drill"

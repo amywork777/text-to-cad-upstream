@@ -29,6 +29,7 @@ class TurnDrillOp(TurnOperation):
     name = "turn_drill"
     plain = "Centre drill"
     keys = ("depth_mm", "z_mm", "peck_mm", "chipbreak", "dwell_s", "beyond_mm")
+    common_keys = ("feed", "speed")
     tool_types = ("drill", "spot")
     feeds_kind = "drill"
 

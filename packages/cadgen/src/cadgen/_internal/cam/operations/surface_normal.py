@@ -134,6 +134,7 @@ class SurfaceNormalOp(Operation):
         "Moves are the tool tip in the part's frame with A/B/C tilting the tool (tool-centre-point style).",
     )
     keys = ("angle_deg", "lead_deg", "tilt_deg", "max_tilt_deg", "smooth", "sample_mm")
+    common_keys = ("feed", "speed", "stepover", "stepover_mm", "stock_to_leave_mm")
     tool_types = ("ball",)
     takes_faces = True
     feeds_kind = "finish"

@@ -27,6 +27,7 @@ class TurnFinishOp(TurnOperation):
     name = "turn_finish"
     plain = "Finish turn"
     keys = ("side", "face", "spring_passes", "beyond_mm", "reach_mm", *TURN_KEYS)
+    common_keys = ("feed", "speed", "stock_to_leave_mm")
     tool_types = ("turn",)
     feeds_kind = "turn_finish"
 

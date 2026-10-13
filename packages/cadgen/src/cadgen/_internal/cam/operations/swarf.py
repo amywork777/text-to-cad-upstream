@@ -178,6 +178,7 @@ class SwarfOp(Operation):
         "Moves are the tool tip in the part's frame with A/B/C tilting the tool (tool-centre-point style).",
     )
     keys = ("direction", "max_tilt_deg", "sample_mm", "lead_mm")
+    common_keys = ("feed", "speed", "stepdown_mm", "stock_to_leave_mm")
     tool_types = ("flat", "bull")
     takes_faces = True
     feeds_kind = "finish"

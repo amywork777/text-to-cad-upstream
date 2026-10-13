@@ -22,6 +22,7 @@ class TurnPartoffOp(TurnOperation):
     name = "turn_partoff"
     plain = "Part off"
     keys = ("z_mm", "x_end_mm", "peck_mm", "slow_diameter_mm", "slow_factor", *TURN_KEYS)
+    common_keys = ("feed", "speed")
     tool_types = ("partoff", "groove")
     feeds_kind = "partoff"
 

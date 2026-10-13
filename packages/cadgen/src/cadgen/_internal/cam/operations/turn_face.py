@@ -21,6 +21,7 @@ class TurnFaceOp(TurnOperation):
     name = "turn_face"
     plain = "Face"
     keys = ("z_mm", "doc_mm", "allowance_z_mm", "x_end_mm", *TURN_KEYS)
+    common_keys = ("feed", "speed")
     tool_types = ("turn",)
     feeds_kind = "turn_face"
 

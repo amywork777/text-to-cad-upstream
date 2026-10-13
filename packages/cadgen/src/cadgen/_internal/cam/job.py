@@ -178,6 +178,8 @@ class OpSpec:
     coolant: str | None = None
     name: str = ""
     extra: dict = field(default_factory=dict)
+    #: The shared keys the job wrote (a default is not a key written): an operation refuses one it does not read.
+    given: frozenset = frozenset()
 
 
 @dataclass(frozen=True)
@@ -535,4 +537,5 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
         stock_to_leave_mm=read_number(raw, "stock_to_leave_mm", where, default=0.0, minimum=0.0),
         coolant=choice(raw["coolant"], COOLANTS, f"{where}.coolant") if "coolant" in raw else None,
         name=name, extra={key: value for key, value in raw.items() if key not in OP_COMMON_KEYS},
+        given=frozenset(key for key in raw if key in OP_COMMON_KEYS),
     )

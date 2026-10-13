@@ -54,6 +54,7 @@ class ThreadMillOp(Operation):
     machines = MILLS
     status = "full"
     keys = ("thread", "pitch_mm", "major_diameter_mm", "depth_mm", "hand", "form", "passes", "direction")
+    common_keys = ("feed", "speed")
     tool_types = ("thread_mill",)
     takes_faces = True
     feeds_kind = "thread_mill"

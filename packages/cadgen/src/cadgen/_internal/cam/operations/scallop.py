@@ -33,6 +33,7 @@ class ScallopOp(Operation):
         "surface's shape follows the boundary's.",
     )
     keys = ("direction",)
+    common_keys = ("feed", "speed", "stepover", "stepover_mm", "stock_to_leave_mm")
     tool_types = ("ball", "bull", "flat")
     takes_faces = True
     takes_region = True

@@ -6,6 +6,7 @@ An operation is a small class (one module per op under ``operations/``, register
         name = "pocket"; plain = "Pocket"; family = "2.5D milling"
         machines = MILLS; status = "full"          # or "lite", with ``limits``: plain-sentence caveats
         keys = ("entry", "ramp_angle_deg", "direction")   # its own job keys, beyond OpSpec's shared ones
+        common_keys = SHARED                       # the shared tuning keys it reads (default: all of them)
         tool_types = ("flat", "bull", "ball")      # the tool types it accepts (empty: any)
         feeds_kind = "rough"                       # what it asks feeds.for_op for
 
@@ -14,7 +15,9 @@ An operation is a small class (one module per op under ``operations/``, register
         def summary(self, ctx: PlanContext, params) -> str              # "Pocket #o1.f12 with T1 6 mm flat"
 
 ``parse`` runs before the part is read (a malformed job fails fast); the base checks the op's own keys against
-``keys``, the tool's presence and type, and returns the ``extra`` dict; an op overrides it to return its own params.
+``keys``, the shared tuning keys the job wrote against ``common_keys`` (law 9: a ``stepover`` a drill never reads is
+refused, not ignored), the tool's presence and type, and returns the ``extra`` dict; an op overrides it to return
+its own params.
 ``plan`` starts at ``ctx.start`` (over the part at the clearance height) and should end at the clearance height; the
 run adds the tool change, spindle and coolant events around it and stamps the op range. Facts the checks read go
 in ``ctx.meta`` (``unreachable``: corners the tool cannot reach, for ``corner_radius``).
@@ -31,7 +34,12 @@ from typing import Any, ClassVar
 
 from cadgen._internal.cam.job_errors import CamJobError, check_keys
 
-__all__ = ["Operation", "ParseContext", "PlanContext"]
+__all__ = ["Operation", "ParseContext", "PlanContext", "SHARED"]
+
+#: The shared keys (job.OP_COMMON_KEYS) that tune an operation's cut. Each operation lists the ones it reads
+#: (``Operation.common_keys``); ``op``, ``tool``, ``name`` and ``coolant`` every operation reads, and ``faces`` and
+#: ``region`` are ``takes_faces`` and ``takes_region``.
+SHARED = ("feed", "speed", "stepdown_mm", "stepover", "stepover_mm", "stock_to_leave_mm")
 
 
 @dataclass(frozen=True)
@@ -155,6 +163,8 @@ class Operation:
     limits: ClassVar[tuple[str, ...]] = ()
     #: The op's own job keys, beyond the ones every operation shares (job.OP_COMMON_KEYS).
     keys: ClassVar[tuple[str, ...]] = ()
+    #: The shared tuning keys (:data:`SHARED`) it reads; one the job sets that it does not read is refused.
+    common_keys: ClassVar[tuple[str, ...]] = SHARED
     #: Tool types it accepts; empty accepts any.
     tool_types: ClassVar[tuple[str, ...]] = ()
     needs_tool: ClassVar[bool] = True
@@ -166,6 +176,7 @@ class Operation:
     def parse(self, spec, ctx: ParseContext) -> Any:
         """Closed keys, the tool's presence and type; returns the op's own keys (``spec.extra``)."""
         check_keys(spec.extra, self.keys, spec.where, hint=f"a {self.name}")
+        self.check_common_keys(spec, self.shared_keys(spec))
         if self.needs_tool:
             if spec.tool is None:
                 raise CamJobError(f"{spec.where}: a {self.name} needs \"tool\", one of the job's tools")
@@ -178,6 +189,19 @@ class Operation:
         if spec.region is not None and not self.takes_region:
             raise CamJobError(f"{spec.where}: a {self.name} takes no region; remove \"region\"")
         return dict(spec.extra)
+
+    def shared_keys(self, spec) -> tuple[str, ...]:
+        """The shared tuning keys this operation reads for ``spec`` (:attr:`common_keys`; ``rest`` by its ``of``)."""
+        return self.common_keys
+
+    def check_common_keys(self, spec, allowed) -> None:
+        """Refuse a shared tuning key the job set that this operation never reads (law 9)."""
+        stray = [key for key in SHARED if key in getattr(spec, "given", ()) and key not in allowed]
+        if stray:
+            reads = ", ".join(key for key in SHARED if key in allowed) or "none of them"
+            raise CamJobError(f"{spec.where}: a {self.name} does not use {' or '.join(stray)}; remove "
+                              f"{'it' if len(stray) == 1 else 'them'} (of the shared tuning keys a {self.name} "
+                              f"reads {reads})")
 
     def plan(self, ctx: PlanContext, params) -> Any:
         raise NotImplementedError

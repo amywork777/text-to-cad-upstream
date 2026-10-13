@@ -46,6 +46,7 @@ class ContourOp(Operation):
     status = "full"
     keys = ("side", "direction", "loops", "bottom_z", "through_mm", "tabs", "lead_in_mm", "lead_out_mm",
             "finish_mm", "entry", "ramp_angle_deg")
+    common_keys = ("feed", "speed", "stepdown_mm", "stock_to_leave_mm")
     tool_types = ("flat", "bull", "ball")
     takes_faces = True
     takes_region = True

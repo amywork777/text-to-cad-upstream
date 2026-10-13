@@ -137,4 +137,17 @@ Keys every operation takes:
 | `coolant` | `off`, `flood`, `mist`, `air` |
 | `name` | a name for the Viewer's row and the G-code comments |
 
-What each operation adds is on its reference page.
+What each operation adds is on its reference page. An operation refuses a shared key it does not
+read, rather than ignore it: of `feed`, `speed`, `stepdown_mm`, `stepover`, `stepover_mm` and
+`stock_to_leave_mm`,
+
+| operations | read |
+| --- | --- |
+| `face`, `pocket`, `adaptive`, `slot`, `helix_bore`, `rough`, `waterline`, `rest`, `rotary` | all of them (`rest` of `parallel`: no `stepdown_mm`) |
+| `contour`, `swarf` | `feed`, `speed`, `stepdown_mm`, `stock_to_leave_mm` |
+| `parallel`, `scallop`, `surface_normal` | `feed`, `speed`, `stepover`, `stepover_mm`, `stock_to_leave_mm` |
+| `pencil`, `turn_rough`, `turn_finish`, `turn_groove` | `feed`, `speed`, `stock_to_leave_mm` |
+| `engrave`, `cut` | `feed`, `speed`, `stepdown_mm` (a beam's `cut`: `feed` only) |
+| `drill`, `thread_mill`, `chamfer`, `turn_face`, `turn_drill`, `turn_partoff` | `feed`, `speed` (a tap: `speed` only) |
+| `turn_thread` | `speed` (a thread feeds one pitch a turn) |
+| `wire_edm` | `feed` |

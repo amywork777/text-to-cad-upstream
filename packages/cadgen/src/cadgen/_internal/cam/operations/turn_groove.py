@@ -32,6 +32,7 @@ class TurnGrooveOp(TurnOperation):
     name = "turn_groove"
     plain = "Groove"
     keys = ("side", "z_mm", "allowance_mm", "peck_mm", "dwell_s", *TURN_KEYS)
+    common_keys = ("feed", "speed", "stock_to_leave_mm")
     tool_types = ("groove",)
     takes_faces = True
     feeds_kind = "groove"

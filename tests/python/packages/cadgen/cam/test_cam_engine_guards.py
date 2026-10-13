@@ -393,5 +393,46 @@ class ChecksSayWhatTheyDidNotJudge(unittest.TestCase):
         self.assertEqual([], [f for f in alone.findings if f["check"] == "material_left"])
 
 
+
+class SharedKeysAreRead(unittest.TestCase):
+    """Law 9: a shared key an operation never reads is refused, never accepted and ignored."""
+
+    def test_every_operation_refuses_each_shared_key_it_does_not_read(self):
+        from cadgen._internal.cam.job import OpSpec
+        from cadgen._internal.cam.job_errors import CamJobError
+        from cadgen._internal.cam.operations import OPERATION_NAMES, available, get_operation
+        from cadgen._internal.cam.operations.base import SHARED
+
+        refused = 0
+        for name in OPERATION_NAMES:
+            if not available(name):
+                continue
+            operation = get_operation(name, "op")
+            for of in (("rough", "parallel", "waterline") if name == "rest" else (None,)):
+                extra = {"of": of} if of else {}
+                allowed = operation.shared_keys(OpSpec(op=name, where="op", index=0, extra=extra))
+                for key in SHARED:
+                    if key in allowed:
+                        continue
+                    spec = OpSpec(op=name, where="op", index=0, tool="T1", extra=extra, given=frozenset({key}))
+                    with self.subTest(op=name, of=of, key=key):
+                        with self.assertRaises(CamJobError) as caught:
+                            operation.parse(spec, None)
+                        self.assertIn(f"does not use {key}", str(caught.exception))
+                        refused += 1
+        self.assertGreater(refused, 30)
+
+    def test_a_stock_to_leave_on_a_drill_is_refused_in_the_plan(self):
+        from cadgen import cam
+        from tests.python.support.cam_fixtures import plate_step
+
+        directory = class_directory(type(self))
+        job = mill_job([{"op": "drill", "tool": "T2", "points": [[0, 0]], "depth_mm": 3, "stock_to_leave_mm": 0.2}])
+        with quiet():
+            result = cam.plan(plate_step(directory), job=job, out_dir=directory)
+        self.assertFalse(result.ok)
+        self.assertIn("a drill does not use stock_to_leave_mm", result.findings[0]["summary"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -59,16 +59,13 @@ class WireEdmOp(Operation):
         "tables set the real ones.",
     )
     keys = ("start_point", "profiles", "spark_gap_mm", "skims", "skim_stock_mm", "hold_mm", "taper_deg", "lead_in_mm")
+    common_keys = ("feed",)
     tool_types = ("wire",)
     feeds_kind = "finish"
 
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         where, extra = spec.where, spec.extra
-        if spec.speed is not None or spec.stepdown_mm is not None or spec.stepover is not None \
-                or spec.stepover_mm is not None:
-            raise CamJobError(f"{where}: a wire cut takes the feed only (mm/min of the rough cut); remove speed, "
-                              "stepdown and stepover")
         if not isinstance(ctx.setup.orientation, str) or ctx.setup.orientation not in ("+Z", "-Z"):
             raise CamJobError(f"{where}: a wire runs along the setup's Z; give setup '{ctx.setup.id}' the orientation "
                               "+Z (or -Z)")

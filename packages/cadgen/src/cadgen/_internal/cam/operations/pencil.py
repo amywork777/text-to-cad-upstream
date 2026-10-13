@@ -37,6 +37,7 @@ class PencilOp(Operation):
         "Creases shorter than four grid points, or bending less than crease_deg, are not traced.",
     )
     keys = ("crease_deg",)
+    common_keys = ("feed", "speed", "stock_to_leave_mm")
     tool_types = ("ball", "bull", "flat")
     takes_faces = True
     takes_region = True

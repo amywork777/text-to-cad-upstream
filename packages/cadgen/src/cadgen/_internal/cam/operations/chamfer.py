@@ -35,6 +35,7 @@ class ChamferOp(Operation):
     machines = MILLS
     status = "full"
     keys = ("width_mm", "tip_offset_mm", "loops", "direction")
+    common_keys = ("feed", "speed")
     tool_types = ("vee", "chamfer", "engraver", "spot")
     takes_faces = True
     takes_region = True

@@ -37,6 +37,7 @@ class EngraveOp(Operation):
     machines = MILLS
     status = "full"
     keys = ("dxf", "origin_mm", "depth_mm", "surface_z")
+    common_keys = ("feed", "speed", "stepdown_mm")
     tool_types = ("vee", "engraver", "chamfer")
     takes_faces = True
     takes_region = True

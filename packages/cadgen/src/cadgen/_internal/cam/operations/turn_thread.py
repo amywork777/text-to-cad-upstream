@@ -39,6 +39,7 @@ class TurnThreadOp(TurnOperation):
     plain = "Thread"
     keys = ("side", "pitch_mm", "major_diameter_mm", "minor_diameter_mm", "depth_mm", "z_start_mm", "z_end_mm",
             "lead_in_mm", "infeed", "passes", "first_depth_mm", "min_depth_mm", "spring_passes")
+    common_keys = ("speed",)
     tool_types = ("thread",)
     takes_faces = True
     feeds_kind = "thread"

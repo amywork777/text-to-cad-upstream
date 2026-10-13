@@ -30,6 +30,7 @@ class TurnRoughOp(TurnOperation):
     plain = "Rough turn"
     keys = ("side", "doc_mm", "retract_mm", "allowance_x_mm", "allowance_z_mm", "beyond_mm", "cleanup", "reach_mm",
             *TURN_KEYS)
+    common_keys = ("feed", "speed", "stock_to_leave_mm")
     tool_types = ("turn",)
     feeds_kind = "turn_rough"
 

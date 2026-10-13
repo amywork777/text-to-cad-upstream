@@ -40,6 +40,12 @@ class RestOp(Operation):
     takes_region = True
     feeds_kind = "finish"
 
+    def shared_keys(self, spec):
+        # The shared keys as the chosen operation reads them: a parallel has no step down.
+        if spec.extra.get("of") == "parallel":
+            return tuple(key for key in self.common_keys if key != "stepdown_mm")
+        return self.common_keys
+
     def parse(self, spec, ctx):
         super().parse(spec, ctx)
         extra = spec.extra

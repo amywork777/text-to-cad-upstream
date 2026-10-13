@@ -33,6 +33,7 @@ class ParallelOp(Operation):
     machines = MILLS
     status = "full"
     keys = ("angle_deg", "pattern", "min_slope_deg", "max_slope_deg")
+    common_keys = ("feed", "speed", "stepover", "stepover_mm", "stock_to_leave_mm")
     tool_types = ("ball", "bull", "flat")
     takes_faces = True
     takes_region = True

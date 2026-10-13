@@ -68,6 +68,7 @@ class CutOp(Operation):
     machines = ("laser", "plasma", "waterjet", "router")
     status = "full"
     keys = tuple(sorted({key for keys in _KEYS_BY_KIND.values() for key in keys}))
+    common_keys = ("feed", "speed", "stepdown_mm")
     tool_types = ("beam", "flat")
     feeds_kind = "slot"
 
@@ -83,8 +84,6 @@ class CutOp(Operation):
                               f"{tool.id} is a {tool.type}")
         if kind == "router" and tool.type != "flat":
             raise CamJobError(f"{where}: a router cuts sheet with a flat end mill; {tool.id} is a {tool.type}")
-        if spec.stepover is not None or spec.stepover_mm is not None:
-            raise CamJobError(f"{where}: a cut follows each profile once; remove stepover")
         if kind in BEAMS and spec.stepdown_mm is not None:
             raise CamJobError(f"{where}: a {kind} cuts through in one pass; remove stepdown_mm")
         if kind in BEAMS and spec.speed is not None:

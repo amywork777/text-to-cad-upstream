@@ -180,7 +180,7 @@ class BracketWire(unittest.TestCase):
             "skim_stock_mm must be a list of 2 numbers": cut_job("wire_edm", {"skims": 2, "skim_stock_mm": [0.1]}),
             "no removal rate for acrylic": cut_job("wire_edm", material="acrylic"),
             "a wire_edm cuts with a wire tool": cut_job("wire_edm", tool={"id": "T1", "type": "beam", "kerf_mm": 0.3}),
-            "a wire cut takes the feed only": cut_job("wire_edm", {"stepdown_mm": 2}),
+            "a wire_edm does not use stepdown_mm": cut_job("wire_edm", {"stepdown_mm": 2}),
         }
         for expected, job in cases.items():
             with self.subTest(expected=expected):
