@@ -4,7 +4,8 @@
 :class:`~cadgen.results.CamFeaturesResult` documents):
 
 * every face, with a plain ``reading`` ("flat floor at Z 12, facing +Z", "hole wall Ø5 along Z");
-* holes: the hole-wall cylinders grouped by axis and radius (a split cylinder is one hole), with their diameter,
+* holes: the hole-wall cylinders grouped by axis line and radius, then split where material stands between them
+  along the axis (a split cylinder is one hole; two blind holes either side of a web are two), with their diameter,
   depth, axis (pointing out of the opening), opening centre and whether they go through; whether an end is open is
   asked of the exact solid (OCCT's classifier), off the axis so a drill point's cone reads as a bottom;
 * floors: the flat faces square to an axis, with ``kind`` top, floor, bottom or underside, and for a +Z floor below
@@ -44,7 +45,7 @@ def _vec(vector) -> str:
 
 
 def holes(part) -> list[dict]:
-    """The part's holes: hole-wall cylinders grouped by axis line and radius."""
+    """The part's holes: hole-wall cylinders grouped by axis line and radius, split at webs (:func:`_clusters`)."""
     import numpy as np
 
     groups: list[dict] = []
@@ -65,46 +66,82 @@ def holes(part) -> list[dict]:
     triangles = np.asarray(part.triangles)
     owners = np.asarray(part.face_of_triangle)
     vertices = np.asarray(part.vertices)
+    touch = max(1e-3, 2.0 * float(getattr(part, "deflection_mm", 0.01)))
     for group in groups:
         d, p, r = group["d"], group["p"], group["r"]
-        ordinals = [info.ordinal for info in group["faces"]]
-        used = np.unique(triangles[np.isin(owners, ordinals)])
-        t = (vertices[used] - p) @ d
-        t_low, t_high = float(t.min()), float(t.max())
-        # Off the axis at 0.7 r and 0.3 r beyond each end: a drill point's cone is air on the axis but material there.
         side = np.cross(d, [1.0, 0.0, 0.0] if abs(d[0]) < 0.9 else [0.0, 1.0, 0.0])
-        side = side / np.linalg.norm(side) * 0.7 * r
-        reach = max(0.05, 0.3 * r)
-        probes = np.array([p + d * (t_high + reach) + side, p + d * (t_low - reach) + side])
-        closed_high, closed_low = (bool(v) for v in part.classify(probes))
-        through = not closed_high and not closed_low
-        if through:
-            # Point the axis the way a tool comes in: toward +Z, else +X, else +Y.
-            reference = np.asarray(_AXES["Z"])
-            for axis in (_AXES["Z"], _AXES["X"], _AXES["Y"]):
-                if abs(float(np.asarray(axis) @ d)) > 1e-6:
-                    reference = np.asarray(axis)
-                    break
-            direction = d if float(reference @ d) > 0 else -d
-        else:
-            direction = d if closed_low else -d
-        opening_t = t_high if float(direction @ d) > 0 else t_low
-        bottom_t = t_low if float(direction @ d) > 0 else t_high
-        opening = p + d * opening_t
-        bottom = p + d * bottom_t
-        depth = t_high - t_low
-        word = axis_word(direction) or _vec(direction)
-        refs = sorted((info.ref for info in group["faces"]), key=lambda ref: int(ref.rsplit("f", 1)[1]))
-        out.append({
-            "faces": refs, "diameter_mm": round(2 * r, 4), "depth_mm": round(depth, 4),
-            "axis": [round(float(v), 6) + 0.0 for v in direction], "axis_word": word,
-            "center_mm": [round(float(v), 4) + 0.0 for v in opening],
-            "bottom_mm": [round(float(v), 4) + 0.0 for v in bottom], "through": through,
-            "reading": f"Ø{_g(2 * r)} x {_g(depth)} {'through' if through else 'deep, blind'} along {word} "
-                       f"at {_vec(opening).replace('.00', '')}",
-        })
+        side = side / np.linalg.norm(side)
+        for faces, t_low, t_high in _clusters(part, group["faces"], d, p, r, side, triangles, owners, vertices, touch):
+            out.append(_hole(part, faces, d, p, r, side, t_low, t_high))
     out.sort(key=lambda hole: int(hole["faces"][0].rsplit("f", 1)[1]))
     return out
+
+
+def _clusters(part, faces, d, p, r, side, triangles, owners, vertices, touch):
+    """One axis-and-radius group split into holes, ``[(faces, t_low, t_high)]`` along the axis: faces whose spans
+    touch are one hole (a split cylinder), and so are spans with air between them (a slot or a cavity the hole
+    crosses); material between two spans (a web) makes two holes, so blind holes from both sides of a wall are
+    never read as one through hole. The gap is judged at its middle, on the axis and at 0.7 r round it."""
+    import numpy as np
+
+    spans = []
+    for info in faces:
+        used = np.unique(triangles[owners == info.ordinal])
+        t = (vertices[used] - p) @ d
+        spans.append((float(t.min()), float(t.max()), info))
+    spans.sort(key=lambda span: span[0])
+    across = np.cross(d, side)
+    clusters: list[list] = []
+    for low, high, info in spans:
+        if clusters and low > clusters[-1][2] + touch:
+            centre = p + d * (0.5 * (clusters[-1][2] + low))
+            probes = [centre] + [centre + sign * 0.7 * r * axis for axis in (side, across) for sign in (1.0, -1.0)]
+            if bool(np.any(part.classify(np.asarray(probes)))):
+                clusters.append([[info], low, high])
+                continue
+        if clusters:
+            clusters[-1][0].append(info)
+            clusters[-1][2] = max(clusters[-1][2], high)
+        else:
+            clusters.append([[info], low, high])
+    return [(cluster[0], cluster[1], cluster[2]) for cluster in clusters]
+
+
+def _hole(part, faces, d, p, r, side, t_low, t_high) -> dict:
+    """One hole's entry: whether each end is open asked of the exact solid, its axis pointing out of the opening."""
+    import numpy as np
+
+    # Off the axis at 0.7 r and 0.3 r beyond each end: a drill point's cone is air on the axis but material there.
+    offset = side * 0.7 * r
+    reach = max(0.05, 0.3 * r)
+    probes = np.array([p + d * (t_high + reach) + offset, p + d * (t_low - reach) + offset])
+    closed_high, closed_low = (bool(v) for v in part.classify(probes))
+    through = not closed_high and not closed_low
+    if through:
+        # Point the axis the way a tool comes in: toward +Z, else +X, else +Y.
+        reference = np.asarray(_AXES["Z"])
+        for axis in (_AXES["Z"], _AXES["X"], _AXES["Y"]):
+            if abs(float(np.asarray(axis) @ d)) > 1e-6:
+                reference = np.asarray(axis)
+                break
+        direction = d if float(reference @ d) > 0 else -d
+    else:
+        direction = d if closed_low else -d
+    opening_t = t_high if float(direction @ d) > 0 else t_low
+    bottom_t = t_low if float(direction @ d) > 0 else t_high
+    opening = p + d * opening_t
+    bottom = p + d * bottom_t
+    depth = t_high - t_low
+    word = axis_word(direction) or _vec(direction)
+    refs = sorted((info.ref for info in faces), key=lambda ref: int(ref.rsplit("f", 1)[1]))
+    return {
+        "faces": refs, "diameter_mm": round(2 * r, 4), "depth_mm": round(depth, 4),
+        "axis": [round(float(v), 6) + 0.0 for v in direction], "axis_word": word,
+        "center_mm": [round(float(v), 4) + 0.0 for v in opening],
+        "bottom_mm": [round(float(v), 4) + 0.0 for v in bottom], "through": through,
+        "reading": f"Ø{_g(2 * r)} x {_g(depth)} {'through' if through else 'deep, blind'} along {word} "
+                   f"at {_vec(opening).replace('.00', '')}",
+    }
 
 
 def _pocket(part, ordinal: int, z: float) -> dict | None:
