@@ -125,10 +125,11 @@ class TurnFinishOp(TurnOperation):
         cut = shapely.intersection(sweep(path, shapes), material)
         if not cut.is_empty:
             line = shapely.LineString(path)
-            coords = shapely.get_coordinates(cut)
+            coords = shapely.get_coordinates(shapely.segmentize(cut, 0.1))
             heaviest = float(shapely.distance(shapely.points(coords), line).max()) if len(coords) else 0.0
             if heaviest > max(1.0, 4.0 * leave):
-                note(ctx, f"the finish takes up to {heaviest:.2g} mm in one pass: rough it first (turn_rough)")
+                note(ctx, f"the finish takes up to {heaviest:.2g} mm in one pass where the stock was not roughed to "
+                     "the profile: rough it first (turn_rough), with an insert that reaches there")
         left = unreached(lt, path, shapes, side=role, allowance=leave)
         if left:
             where = ", ".join(f"Z{g.bounds[1]:.3g}..{g.bounds[3]:.3g}" for g in left[:4])
