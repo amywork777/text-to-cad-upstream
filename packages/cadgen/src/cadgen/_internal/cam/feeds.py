@@ -11,7 +11,7 @@ override wins over all of it; a machine's ``max_rpm``/``max_feed_mm_min`` clamps
 
 The rules (:func:`for_op`):
 
-* spindle ``rpm = 1000 * Vc / (pi * D)``, scaled per operation (drills 0.6, spot 0.8, reamers 0.5, taps 0.2,
+* spindle ``rpm = 1000 * Vc / (pi * D)``, scaled per operation (drills 0.6, spot 0.8, reamers 0.5, taps 0.06 (an HSS tap's speed, at most 1000 rpm),
   thread mills 0.8), clamped to the machine's maximum;
 * milling feed ``= rpm * flutes * fz``, with ``fz`` the table's chip load at 6 mm scaled linearly with the diameter
   (between 0.2x and 2x); a full-width slot takes 0.75x; a light radial stepover gets radial chip thinning
@@ -55,7 +55,10 @@ MATERIALS: dict[str, dict] = {
 
 #: The operation kinds the rules know: what a planner asks feeds for.
 OP_KINDS = ("rough", "slot", "finish", "face", "drill", "spot", "ream", "bore", "tap", "thread_mill", "engrave")
-_RPM_SCALE = {"drill": 0.6, "spot": 0.8, "ream": 0.5, "bore": 0.7, "tap": 0.2, "thread_mill": 0.8, "engrave": 1.0}
+_RPM_SCALE = {"drill": 0.6, "spot": 0.8, "ream": 0.5, "bore": 0.7, "tap": 0.06, "thread_mill": 0.8, "engrave": 1.0}
+#: A tap is fed at rpm x pitch, so its spindle stays slow whatever the table says: a floating holder or a hobby
+#: spindle reversing at the hole's bottom overshoots past this.
+_TAP_MAX_RPM = 1000.0
 _HSS = 0.35
 #: Spindle speed when the job's material table cannot set one (a lathe or cutting tool asks for_cut instead).
 _FALLBACK_RPM = 10000.0
@@ -118,9 +121,16 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         raise ValueError(f"unknown feeds kind {kind!r}; one of {', '.join(OP_KINDS)}")
     numbers = _material_numbers(material)
     diameter = max(tool.diameter_mm, 0.1)
-    vc = numbers["vc"] * (_HSS if tool.material == "hss" else 1.0) * _RPM_SCALE.get(kind, 1.0)
+    # Taps: the scale is already an HSS tap's surface speed (about 15 m/min in 6061, 7 in mild steel, 5 in 304),
+    # whatever the tool's material says (tools default to carbide; few taps are).
+    if kind == "tap":
+        vc = numbers["vc"] * _RPM_SCALE["tap"]
+    else:
+        vc = numbers["vc"] * (_HSS if tool.material == "hss" else 1.0) * _RPM_SCALE.get(kind, 1.0)
     clamped: list[str] = []
     rpm = float(speed) if speed is not None else 1000.0 * vc / (math.pi * diameter)
+    if kind == "tap" and speed is None:
+        rpm = min(rpm, _TAP_MAX_RPM)
     if machine.max_rpm is not None and rpm > machine.max_rpm:
         clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {machine.max_rpm:.0f} rpm")
         rpm = float(machine.max_rpm)
