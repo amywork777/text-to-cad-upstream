@@ -11,8 +11,8 @@ difference of the diameters given), ``z_start_mm``, ``z_end_mm``, ``lead_in_mm``
 the axis is up to speed; default three pitches, at least 2 mm), ``infeed`` (``flank``, the default: each pass shifts
 along the trailing flank at 29.5° so only the leading edge cuts; ``radial``; ``alternate``: flanks in turn),
 ``passes`` (cutting passes; default from ``first_depth_mm``), ``first_depth_mm`` (default 0.3 or a third of the
-depth), ``min_depth_mm`` (the smallest a pass may take; default 0.03), ``spring_passes`` (at full depth; default 1),
-``css_m_min`` and ``feed_mm_rev`` are not used: a thread runs at a constant rpm (``speed`` to set it).
+depth), ``min_depth_mm`` (the smallest a pass may take; default 0.03), ``spring_passes`` (at full depth; default 1).
+A thread runs at a constant rpm (the job's ``speed`` sets it), its feed one pitch a revolution.
 
 Each pass's depth is the thread's depth times the square root of its share (equal chip area a pass). The toolpath
 carries a ``thread`` cycle event (G76's numbers, and every pass) so a post emits G76, or G32/G33 passes; the
@@ -26,7 +26,7 @@ from __future__ import annotations
 import math
 
 from cadgen._internal.cam.job_errors import CamJobError, choice, read_number
-from cadgen._internal.cam.operations._turning import BIG, TURN_KEYS, TurnOperation, lathe
+from cadgen._internal.cam.operations._turning import BIG, TurnOperation, lathe
 
 __all__ = ["TurnThreadOp", "thread_depths"]
 
@@ -38,7 +38,7 @@ class TurnThreadOp(TurnOperation):
     name = "turn_thread"
     plain = "Thread"
     keys = ("side", "pitch_mm", "major_diameter_mm", "minor_diameter_mm", "depth_mm", "z_start_mm", "z_end_mm",
-            "lead_in_mm", "infeed", "passes", "first_depth_mm", "min_depth_mm", "spring_passes", *TURN_KEYS)
+            "lead_in_mm", "infeed", "passes", "first_depth_mm", "min_depth_mm", "spring_passes")
     tool_types = ("thread",)
     takes_faces = True
     feeds_kind = "thread"
