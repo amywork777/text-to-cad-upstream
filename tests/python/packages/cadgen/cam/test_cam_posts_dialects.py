@@ -275,7 +275,7 @@ class Dialects(unittest.TestCase):
         self.assertIn("G8", radius.splitlines())
         self.assertIn("G2 X6 Z-10 I2 K0", radius)
         mill = render("linuxcnc", "mill", {})[2]
-        self.assertIn("G33.1 Z-8 K1", mill)
+        self.assertIn("G33.1 Z-3.5 K1", mill)
         self.assertNotIn("G84", mill)
         self.assertIn("G98 G83 X-10 Y5 Z-6 R1 Q3 F300", mill)
         self.assertTrue(mill.rstrip().endswith("M2"))
@@ -284,7 +284,7 @@ class Dialects(unittest.TestCase):
         self.assertIn("M29 S500\nG99 G84", render("fanuc", "mill", {})[2])
         haas = render("haas", "mill", {"smoothing": "medium"})[2]
         self.assertNotIn("M29", haas)
-        self.assertIn("G99 G84 X-10. Y5. Z-8. R2. F500.", haas)
+        self.assertIn("G99 G84 X-10. Y5. Z-3.5 R2. F500.", haas)
         self.assertIn("G187 P2 E0.01", haas)
         self.assertIn("T1 M06", haas)
 

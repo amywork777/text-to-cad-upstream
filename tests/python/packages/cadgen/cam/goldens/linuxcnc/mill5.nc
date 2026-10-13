@@ -59,10 +59,10 @@ G0 G43 Z5 H3
 (rigid tap, 2 holes, pitch 1 mm)
 G0 X-10 Y5
 G0 Z2
-G33.1 Z-8 K1
+G33.1 Z-3.5 K1
 G0 X10 Y5
 G0 Z2
-G33.1 Z-8 K1
+G33.1 Z-3.5 K1
 G0 X10 Y5 Z5 A30 C90
 M9
 M5

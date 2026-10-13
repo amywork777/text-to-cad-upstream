@@ -109,12 +109,13 @@ def _mill_path(b, *, rotary_setup=None, wcs="G54"):
     b.begin_op(index=2, setup="top", op="drill", plain="Tap", tool="T3")
     b.event("tool", tool="T3", number=3)
     b.event("spindle", rpm=500, dir="cw")
-    handle = b.begin_cycle(cycle="tap", holes=CUT_HOLES, z_bottom=-8.0, r_plane=2.0, retract="r", initial_z=5.0,
+    # The tap stops a pitch above the drilled hole's full diameter (Z-4.5 under the 5 mm drill's point at Z-6).
+    handle = b.begin_cycle(cycle="tap", holes=CUT_HOLES, z_bottom=-3.5, r_plane=2.0, retract="r", initial_z=5.0,
                            feed=500.0, pitch_mm=1.0)
     for x, y, _ in CUT_HOLES:             # in at rpm x pitch, the spindle reversed, out (as drill.py expands G84)
         b.rapid(x=x, y=y)
         b.rapid(z=2)
-        b.feed(z=-8, f=500)
+        b.feed(z=-3.5, f=500)
         b.event("spindle", rpm=500, dir="ccw")
         b.feed(z=2, f=500)
         b.event("spindle", rpm=500, dir="cw")
