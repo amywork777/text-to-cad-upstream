@@ -25,9 +25,9 @@ point may not enter is the part grown by the reflected tool), so the path is com
 the insert's clearance by construction, and the simulator sweeps the same shapes.
 
 **The controlled point** (what the tool offsets are touched off to, so posts write G40 paths): an OD turning tool's
-lowest X and front-most... its imaginary tip ``(nose centre x - r, nose centre z - r)`` for a right-hand tool cutting
-towards the chuck, ``(x - r, z)`` for a neutral one; a boring bar's ``(nose centre x + r, z - r)``; a grooving or
-part-off blade's tip corner on the chuck side; a drill's point; a thread insert's tip.
+imaginary tip, its lowest X and its lowest Z, ``(nose centre x - r, nose centre z - r)`` for a right-hand tool
+cutting towards the chuck, ``(x - r, z)`` for a neutral one; a boring bar's ``(nose centre x + r, z - r)``; a
+grooving or part-off blade's tip corner on the chuck side; a drill's point; a thread insert's tip.
 
 numpy, shapely and OCP inside the functions.
 """
@@ -191,7 +191,8 @@ def insert_wedge(tool, *, inside: bool = False) -> tuple[float, float, tuple[flo
 def tool_shape(tool, role: str, **params) -> list:
     """The tool as convex polygons ((K, 2) arrays, half-plane x = radius, y = z) around its controlled point at the
     origin. ``role``: ``od``/``id`` (a turning insert; ``id`` takes ``reach_mm``, how far the bar may stand inward of
-    its nose), ``groove``/``groove_id`` (``reach_mm`` for the bore's), ``partoff``, ``drill``, ``thread``/``thread_id``."""
+    its nose), ``groove``/``groove_id`` (``reach_mm`` for the bore's), ``partoff``, ``drill``,
+    ``thread``/``thread_id``."""
     import numpy as np
 
     if role in ("od", "id"):
@@ -392,8 +393,8 @@ def _classify(part, wcs, tolerance: float, where: str = "") -> tuple[float, list
                 hint = (f"; its round faces run along the part's {other}: set the setup's orientation to +{other} "
                         f"(and stock.axis to \"{other.lower()}\")")
             elif offset_lines:
-                hint = (f"; its round faces turn about a line {min(offset_lines):.3g} mm from the work zero: use origin "
-                        "stock-top-center (on the bar's axis)")
+                hint = (f"; its round faces turn about a line {min(offset_lines):.3g} mm from the work zero: use "
+                        "origin stock-top-center (on the bar's axis)")
         why = (f"{where + ': ' if where else ''}the part is not a body of revolution about this setup's spindle axis "
                f"(part {name}): only {fraction:.0%} of its surface turns about it{hint}")
     return fraction, off_axis, why
@@ -522,7 +523,7 @@ def _read_profile(part, wcs, tolerance: float, where: str) -> TurnProfile:
         # A sliver from the mesh check: keep the pieces that matter.
         parts = [p for p in shapely.get_parts(region) if p.area > 1e-6]
         region = shapely.union_all(parts)
-    x0, z0, x1, z1 = region.bounds
+    _, z0, x1, z1 = region.bounds
     note = None
     if off_axis:
         shown = ", ".join(off_axis[:6]) + (f" and {len(off_axis) - 6} more" if len(off_axis) > 6 else "")
@@ -553,7 +554,8 @@ def check_coaxial(stock, wcs, where: str) -> None:
 
     cylinder = stock.cylinder
     if stock.kind != "cylinder" or not cylinder:
-        raise CamJobError(f"{where}: a lathe turns bar stock; use stock {{\"kind\": \"cylinder\", \"diameter_mm\": ..}}")
+        raise CamJobError(f"{where}: a lathe turns bar stock; use stock "
+                          "{\"kind\": \"cylinder\", \"diameter_mm\": ..}")
     w = "xyz".index(cylinder["axis"])
     bar_axis = np.zeros(3)
     bar_axis[w] = 1.0

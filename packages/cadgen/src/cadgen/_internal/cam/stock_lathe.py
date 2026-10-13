@@ -250,7 +250,6 @@ class LatheSim:
         distance = shapely.distance(shapely.points(coords), target)
         k = int(np.argmax(distance))
         frame = self._frame(self.wcs)
-        s, c = frame
         low, high = left.bounds[:2], left.bounds[2:]
         corners = [self._part_point(low, frame), self._part_point(high, frame)]
         return MaterialLeft(volume_mm3=pappus(left), area_mm2=float(left.area), max_mm=float(distance[k]),
