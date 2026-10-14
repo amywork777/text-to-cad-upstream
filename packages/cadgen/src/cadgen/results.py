@@ -383,7 +383,8 @@ class CamPlanResult:
     glb: Path | None = None
     posts: tuple[dict, ...] = ()
     verdict: dict = field(default_factory=dict)
-    #: Totals: ``duration_s``, ``tools``, ``setups``, ``operations``, ``machine``, ``material``, ``post``.
+    #: Totals: ``duration_s``, ``tools``, ``tool_changes`` (``count``, ``order``), ``setups``, ``operations``,
+    #: ``machine``, ``material``, ``post``.
     summary: dict = field(default_factory=dict)
     operations: tuple[dict, ...] = ()
     findings: tuple[dict, ...] = ()
@@ -401,6 +402,10 @@ class CamPlanResult:
                 line += f" · {op['rpm']:g} rpm · {op['feed_mm_min']:g} mm/min"
             lines.append(line)
             lines += [f"  lite: {limit}" for limit in op.get("limits", ())]
+        changes = self.summary.get("tool_changes") or {}
+        if changes.get("count"):
+            count = changes["count"]
+            lines.append(f"{count} tool change{'s' if count != 1 else ''}: {' then '.join(changes['order'])}")
         if self.glb is not None:
             lines.append(f"wrote GLB: {_display(self.glb)}")
         lines += [f"posted {post['setup']}: {_display(Path(post['file']))} ({post['post']})" for post in self.posts]

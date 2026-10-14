@@ -1,0 +1,135 @@
+"""The shop-practice checks harvested from the parallel cam build: a long stickout, a cut through the stock's bottom,
+a tap with no hole made before it, an operation that cuts nothing, a full-width cut, a tool no operation runs, the
+spindle and feed clamps said per tool, and the tool changes, warnings and fixtures the GLB carries."""
+
+from __future__ import annotations
+
+import types
+import unittest
+from unittest import mock
+
+from tests.python.support.cam_fixtures import BLOCK, block_step, class_directory, floor_ref, mill_job, quiet, read_glb
+
+_SHORT = {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 18, "stickout_mm": 24}
+_DRILL = {"id": "T2", "type": "drill", "diameter_mm": 5}
+_TAP = {"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1}
+
+
+class PracticeChecks(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        cls.directory = class_directory(cls)
+        cls.step = block_step(cls.directory)
+        cls.lower = floor_ref(cam.features(cls.step), BLOCK["lower"]["floor_z"])
+
+    def plan(self, operations, *, tools=None, machine=None, setups=None):
+        from cadgen import cam
+
+        job = mill_job(operations, tools=tools or [_SHORT, _DRILL], machine=machine, setups=setups)
+        with quiet():
+            result = cam.plan(self.step, job=job, out_dir=self.directory)
+        self.assertTrue(result.ok, result.findings)
+        return result
+
+    def of(self, result, kind):
+        return [f for f in result.findings if f["type"] == kind]
+
+    def test_a_long_stickout_is_one_warning_per_tool_naming_its_operations(self):
+        long = dict(_SHORT, stickout_mm=30)                     # 5 diameters
+        result = self.plan([{"op": "face", "tool": "T1"}, {"op": "pocket", "tool": "T1", "faces": [self.lower]}],
+                           tools=[long, _DRILL])
+        (found,) = self.of(result, "long_stickout")
+        self.assertEqual("warning", found["severity"])
+        self.assertIn("5.0 times its diameter", found["summary"])
+        self.assertIn("operations 1, 2", found["summary"])
+        self.assertEqual([0, 1], [item["operation"] for item in found["items"]])
+        self.assertEqual([], self.of(self.plan([{"op": "face", "tool": "T1"}]), "long_stickout"))   # 4 diameters
+
+    def test_a_through_drill_below_the_stock_bottom_is_said_and_a_tool_no_one_runs_is_noted(self):
+        result = self.plan([{"op": "drill", "tool": "T2", "holes": "all"}],
+                           tools=[_SHORT, _DRILL, dict(_TAP, id="T9")])
+        (below,) = self.of(result, "through_stock_bottom")
+        self.assertEqual("warning", below["severity"])
+        self.assertIn("below the stock's bottom", below["summary"])
+        self.assertGreater(below["items"][0]["depth_mm"], 0.5)
+        (unused,) = self.of(result, "unused_tool")
+        self.assertEqual("info", unused["severity"])
+        self.assertEqual([{"tool": "T1"}, {"tool": "T9"}], unused["items"])
+        self.assertIn("Tools T1 (6 mm flat), T9", unused["summary"])
+        self.assertEqual("ready", result.verdict["status"])     # notes and warnings, no errors
+
+    def test_a_tap_with_no_hole_made_before_it_is_said_and_one_drilled_first_is_not(self):
+        alone = self.plan([{"op": "drill", "tool": "T3", "holes": "all"}], tools=[_DRILL, _TAP])
+        (found,) = self.of(alone, "assumes_prepared_hole")
+        self.assertEqual(("prepared_hole", "warning"), (found["check"], found["severity"]))
+        self.assertIn("taps 4 holes no earlier operation makes", found["summary"])
+        self.assertEqual(4, len(found["items"]))
+        drilled = self.plan([{"op": "drill", "tool": "T2", "holes": "all"}, {"op": "drill", "tool": "T3", "holes": "all"}],
+                            tools=[_DRILL, _TAP])
+        self.assertEqual([], self.of(drilled, "assumes_prepared_hole"))
+        self.assertEqual({"count": 1, "order": ["T2", "T3"]}, drilled.summary["tool_changes"])
+        self.assertIn("1 tool change: T2 then T3", drilled.human_lines())
+
+    def test_an_operation_that_cuts_nothing_is_an_error(self):
+        def rapids_only(_self, ctx, params):
+            builder = ctx.builder()
+            builder.rapid(z=ctx.heights.clearance)
+            return builder.build()
+
+        with mock.patch("cadgen._internal.cam.operations.pocket.PocketOp.plan", rapids_only):
+            result = self.plan([{"op": "face", "tool": "T1"}, {"op": "pocket", "tool": "T1", "faces": [self.lower]}])
+        (found,) = self.of(result, "empty_operation")
+        self.assertEqual("error", found["severity"])
+        self.assertEqual([{"setup": "top", "operation": 1}], found["items"])
+        self.assertEqual("fix", result.verdict["status"])
+        self.assertEqual((), result.posts)
+
+    def test_a_stated_feed_under_a_spindle_clamp_says_the_chip_grows_once_per_tool(self):
+        machine = {"kind": "mill", "post": "grbl", "max_rpm": 6000, "travel_mm": [300, 200, 80]}
+        result = self.plan([{"op": "face", "tool": "T1", "feed": 900},
+                            {"op": "pocket", "tool": "T1", "faces": [self.lower], "feed": 900}], machine=machine)
+        (found,) = [f for f in self.of(result, "limits") if f["items"][0]["limit"] == "spindle"]
+        self.assertIn("T1 (6 mm flat)", found["summary"])
+        self.assertIn("operations 1, 2", found["summary"])
+        self.assertIn("bigger chip", found["description"])
+        self.assertIn("keeps the planned chip", found["description"])
+        self.assertEqual([("T1", 0), ("T1", 1)], [(i["tool"], i["operation"]) for i in found["items"]])
+        table = self.plan([{"op": "face", "tool": "T1"}], machine=machine)
+        (found,) = self.of(table, "limits")
+        self.assertIn("chip load is kept", found["description"])
+
+    def test_the_glb_carries_tool_changes_warnings_and_fixtures(self):
+        setups = [{"id": "top", "orientation": "+Z", "origin": "stock-top-center",
+                   "fixture": [{"min_mm": [-60, -50, 0], "max_mm": [-45, 50, 10], "name": "jaw"}],
+                   "operations": [{"op": "face", "tool": "T1"}, {"op": "drill", "tool": "T2", "holes": "all"}]}]
+        result = self.plan([], setups=setups)
+        cam = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]
+        self.assertEqual({"count": 1, "order": ["T1", "T2"]}, cam["tool_changes"])
+        self.assertEqual([{"name": "jaw", "min_mm": [-60.0, -50.0, 0.0], "max_mm": [-45.0, 50.0, 10.0]}],
+                         cam["setups"][0]["fixtures"])
+        self.assertEqual(list(result.warnings), cam["warnings"])
+
+
+class FullSlot(unittest.TestCase):
+    """The check reads an operation's own ``full_slot_mm`` fact; a slot is meant to cut full width."""
+
+    def ctx(self, op_name, length):
+        tool = types.SimpleNamespace(id="T1", diameter_mm=6.0)
+        op = types.SimpleNamespace(index=0, setup="top", summary="Pocket with T1", tool=tool, meta={"full_slot_mm": length},
+                                   operation=types.SimpleNamespace(name=op_name))
+        return types.SimpleNamespace(ops=[op])
+
+    def test_past_five_diameters_of_full_width_cutting_it_warns(self):
+        from cadgen._internal.cam.checks import full_slot
+
+        (found,) = full_slot.run(self.ctx("pocket", 45.0))
+        self.assertEqual(("full_slot", "warning"), (found["type"], found["severity"]))
+        self.assertIn("45 mm at T1's full width (8 diameters)", found["summary"])
+        self.assertEqual([], full_slot.run(self.ctx("pocket", 29.0)))
+        self.assertEqual([], full_slot.run(self.ctx("slot", 200.0)))
+
+
+if __name__ == "__main__":
+    unittest.main()

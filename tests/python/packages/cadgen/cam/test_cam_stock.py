@@ -96,11 +96,12 @@ class Registries(unittest.TestCase):
         from cadgen._internal.cam.checks import CHECK_NAMES, REGISTRY, available, run_checks
 
         self.assertEqual(("gouge", "holder_collision", "reach", "rapid_into_stock", "travel", "corner_radius",
-                          "material_left", "fixture", "limits", "machine"), CHECK_NAMES)
+                          "material_left", "fixture", "limits", "machine", "empty_operation", "through_stock_bottom",
+                          "long_stickout", "full_slot", "prepared_hole", "unused_tool"), CHECK_NAMES)
         ctx = SimpleNamespace(job=parse_job(JOB), part=None, stock=None, sim=None, sim_reports={}, setups=[], ops=[],
                               tolerance_mm=0.01)
         findings, ran, skipped = run_checks(ctx)
-        self.assertEqual([], findings)
+        self.assertEqual(["unused_tool"], [f["type"] for f in findings])     # no operation runs the job's tools
         self.assertEqual([entry.name for entry in REGISTRY if not available(entry)], skipped)
         self.assertIn("holder_collision", ran)
         self.assertIn("reach", ran)

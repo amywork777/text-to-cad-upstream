@@ -30,7 +30,7 @@ _PACKAGE = "cadgen._internal.cam.checks"
 @dataclass(frozen=True)
 class Entry:
     name: str
-    level: str          # the level its findings usually carry: "error" | "warning"
+    level: str          # the level its findings usually carry: "error" | "warning" | "info"
     target: str         # "cadgen._internal.cam.checks.reach:run"
     plain: str
 
@@ -50,6 +50,12 @@ REGISTRY: tuple[Entry, ...] = (
     _entry("fixture", "error", "a move enters a fixture keep-out"),
     _entry("limits", "warning", "a feed or speed was clamped by the machine"),
     _entry("machine", "error", "an operation needs an axis the machine does not have"),
+    _entry("empty_operation", "error", "an operation cuts nothing"),
+    _entry("through_stock_bottom", "warning", "a cut goes below the stock's bottom"),
+    _entry("long_stickout", "warning", "an end mill sticks out more than four times its diameter"),
+    _entry("full_slot", "warning", "an operation cuts at the tool's full width for more than five diameters"),
+    _entry("prepared_hole", "warning", "a tap or thread mill works a hole no earlier operation made"),
+    _entry("unused_tool", "info", "a tool the job lists that no operation runs"),
 )
 CHECK_NAMES = tuple(entry.name for entry in REGISTRY)
 
@@ -100,6 +106,11 @@ def run_checks(ctx) -> tuple[list[dict], list[str], list[dict]]:
         ran = [name for name in ran if not (name in ON_STOCK and ON_STOCK[name][1])]
         # ... and what it found on stock nothing cut is not a finding (material left: the whole uncut block).
         found = [item for item in found if not (item.get("check") in ON_STOCK and ON_STOCK[item["check"]][1])]
+    # A cut below the stock that already runs into a fixture box is that box's finding, not a second one.
+    into_fixture = {(where.get("setup"), where.get("operation")) for item in found if item["check"] == "fixture"
+                    for where in item["items"]}
+    found = [item for item in found if not (item["check"] == "through_stock_bottom" and all(
+        (where.get("setup"), where.get("operation")) in into_fixture for where in item["items"]))]
     # A check that could not read what it judges said so (``not_judged``): a skipped entry too.
     for item in found:
         if item.get("type") == "not_judged":
