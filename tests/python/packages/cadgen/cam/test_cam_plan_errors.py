@@ -86,6 +86,41 @@ class PlanErrors(unittest.TestCase):
                 self.assertEqual(words, _duration_words(seconds))
 
 
+class OperationHeights(unittest.TestCase):
+    """An operation's own ``clearance_mm`` and ``retract_mm`` are the heights it plans with; it ends at or above the
+    setup's clearance, so the next operation starts safe."""
+
+    def test_an_operation_travels_at_its_own_clearance(self):
+        import numpy as np
+
+        from cadgen._internal.cam.ir import RAPID
+        from cadgen._internal.cam.job import parse_job
+        from cadgen._internal.cam.part import read_part
+        from cadgen._internal.cam.run import parse_operations, plan_setups
+        from cadgen._internal.cam.stock import build_stock
+
+        directory = class_directory(type(self))
+        step = block_step(directory)
+        lower = floor_ref(__import__("cadgen.cam", fromlist=["features"]).features(step), BLOCK["lower"]["floor_z"])
+        job = parse_job(mill_job([{"op": "pocket", "tool": "T1", "faces": [lower], "clearance_mm": 20,
+                                   "retract_mm": 8},
+                                  {"op": "pocket", "tool": "T1", "faces": [lower]}]))
+        part = read_part(step)
+        stock = build_stock(job.stock, part, base_dir=job.base_dir)
+        with quiet():
+            (setup,), ops, _ = plan_setups(job, parse_operations(job), part, stock)
+        top = setup.heights.stock_top
+        moves = setup.toolpath.moves
+        ranges = setup.toolpath.ops                 # the op plans' own ranges are the caller's to fill
+        first, second = (moves[r.start:r.end] for r in ranges)
+        self.assertAlmostEqual(top + 20.0, float(np.max(first[first["kind"] == RAPID]["z"])), places=6)
+        self.assertTrue(np.any(np.isclose(first["z"], top + 8.0)))           # its retract plane
+        self.assertGreaterEqual(float(first["z"][-1]), setup.heights.clearance - 1e-9)   # ends clear for the next
+        # The next operation, with no heights of its own, travels at the setup's clearance between its cuts.
+        self.assertTrue(np.any(np.isclose(second[second["kind"] == RAPID]["z"], setup.heights.clearance)))
+        self.assertFalse(np.any(np.isclose(second["z"], top + 8.0)))
+
+
 class PlanOneOccurrence(unittest.TestCase):
     """``cam plan`` takes ``--occurrence`` as ``cam features`` does, so one part of an assembly can be machined."""
 

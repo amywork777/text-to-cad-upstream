@@ -72,6 +72,17 @@ class RouterTable(unittest.TestCase):
         self.assertNotIn("`", description)
 
 
+class Findings(unittest.TestCase):
+    def test_checks_md_names_every_finding_check_and_type(self):
+        from cadgen._internal.cam.checks.base import FINDING_TYPES
+
+        body = (SKILL / "references" / "checks.md").read_text(encoding="utf-8")
+        for check, kinds in FINDING_TYPES.items():
+            for kind in (check, *kinds):
+                with self.subTest(check=check, type=kind):
+                    self.assertIn(f"`{kind}`", body, f"checks.md does not name the finding {check}/{kind}")
+
+
 class Posts(unittest.TestCase):
     def test_posts_md_lists_every_post_with_its_extension(self):
         rows = {}

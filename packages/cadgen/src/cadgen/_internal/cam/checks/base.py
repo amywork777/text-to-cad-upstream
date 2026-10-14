@@ -19,14 +19,44 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-__all__ = ["CheckContext", "OpPlan", "SetupPlan", "by_severity", "finding", "xyz"]
+__all__ = ["CheckContext", "FINDING_TYPES", "OpPlan", "SetupPlan", "by_severity", "finding", "xyz"]
 
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
+
+#: Every finding a plan can carry, by ``check``: the closed set of its ``type`` (law 9; the skill's checks.md names
+#: each). A finding of a check or type not listed here is a bug in cadgen, refused where it is made. The plan error
+#: kinds are :data:`~cadgen._internal.cam.job_errors.PLAN_ERROR_KINDS`.
+FINDING_TYPES: dict[str, tuple[str, ...]] = {
+    "job": ("job", "internal_error"),
+    "plan": ("empty_operation", "too_deep", "unreachable", "tool_too_large", "tool_too_small", "gouge", "note"),
+    "post": ("no_post_support",),
+    "checks": ("setup_not_simulated",),
+    "gouge": ("gouge_2d", "gouge_3d", "gouge_turning", "gouge_multiaxis", "swarf_skipped", "not_judged"),
+    "holder_collision": ("shank_part", "holder_part", "shank_stock", "holder_stock", "holder_multiaxis",
+                         "not_judged"),
+    "reach": ("reach_flutes", "reach_holder"),
+    "rapid_into_stock": ("rapid_into_stock",),
+    "travel": ("travel", "rotary_travel"),
+    "corner_radius": ("corner_radius",),
+    "material_left": ("material_left", "not_judged"),
+    "fixture": ("fixture",),
+    "limits": ("limits",),
+    "machine": ("machine_axes",),
+    "empty_operation": ("empty_operation",),
+    "through_stock_bottom": ("through_stock_bottom",),
+    "long_stickout": ("long_stickout",),
+    "full_slot": ("full_slot",),
+    "prepared_hole": ("assumes_prepared_hole",),
+    "unused_tool": ("unused_tool",),
+    "drill": ("hole_size", "hole_floor", "tap_thread", "no_hole_in_model"),
+}
 
 
 def finding(check: str, severity: str, kind: str, summary: str, description: str = "", items=()) -> dict:
     if severity not in _SEVERITY:
         raise ValueError(f"severity {severity!r} is not error, warning or info")
+    if kind not in FINDING_TYPES.get(check, ()):
+        raise ValueError(f"finding type {kind!r} of check {check!r} is not in FINDING_TYPES")
     return {"check": check, "severity": severity, "type": kind, "summary": summary, "description": description,
             "items": list(items)}
 

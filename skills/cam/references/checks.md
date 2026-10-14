@@ -26,7 +26,52 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | `machine` | error | an operation needs an axis or a process the machine does not have | another machine kind, or another operation |
 | `corner_radius` | warning | an inside corner is tighter than the tool's radius, so material stays in it | a smaller tool for those corners (`rest` or a second pocket), or accept the radius |
 | `material_left` | warning | stock is left above the part after every operation, beyond the `stock_to_leave_mm` of the last operation that covered that place (a roughing's allowance does not excuse what its finish left) | add a finishing or rest operation where it says |
-| `limits` | warning | a feed or speed was clamped to `max_feed_mm_min` or `max_rpm` | none needed; report it |
+| `limits` | warning | a feed or speed was clamped to `max_feed_mm_min` or `max_rpm`, once per tool and limit, naming its operations. Under a spindle clamp a worked-out feed follows the slower spindle (the chip is kept, the cut is slower), but a feed the operation states is kept, so each tooth takes a bigger chip: the description gives the feed that keeps the planned chip. Under a feed clamp each tooth takes a thinner chip, which rubs and wears the tool. A tap slows its spindle instead, so its feed stays rpm x pitch | a spindle clamp on a worked-out feed: none, report it (a larger tool needs fewer rpm). A stated feed: lower it in step. A feed clamp: a lower `speed` on the operation, or a tool with fewer flutes |
+| `empty_operation` | error | an operation put no cutting move in the program: nothing of its feature is left above it, or it was not below the material | check its faces or region, its depth and what the operations before it took off; drop it if nothing is left to do |
+| `through_stock_bottom` | warning | a cut goes below the stock's bottom (a through drill's point, a profile's `through_mm`): whatever stands under the stock is cut too (not said where the same cut already enters a `fixture` box) | say what must be under it: a spoilboard, a sacrificial plate, or a gap between the parallels there |
+| `long_stickout` | warning | an end mill stands out of its holder more than 4 times its diameter: it deflects and chatters | hold it shorter (`stickout_mm`), or take lighter cuts; state the real stickout |
+| `full_slot` | warning | an operation cuts at the tool's full width for more than 5 of its diameters (a pocket's or adaptive clear's links from ring to ring); a `slot` is meant to | a smaller `stepdown_mm` or a lower `feed` is gentler; say it when the tool is small or the material hard |
+| `prepared_hole` | warning | `assumes_prepared_hole`: a tap or an internal thread mill works a hole no earlier operation makes (drills, bores or mills three quarters of the way down; a spot drill does not count), so the job assumes the hole is already there | add the drilling first (the tap drill for a tap), or confirm with the user the hole is made before the job runs |
+| `unused_tool` | info | a tool the job lists that no operation runs: it is not drawn, checked or posted | drop it, or check each operation's `tool` is the one meant |
+
+### Operations that cannot be planned, and posts that cannot write them
+
+An operation the part makes impossible is an error finding on that operation (`check` `plan`),
+and every other operation is still planned, so one run lists every refusal. Its `type` says
+which:
+
+| `type` | what it means | usual fix |
+| --- | --- | --- |
+| `empty_operation` | it would cut nothing: the feature is not below the material, nothing suits the tool | check the feature and the depth; drop the operation |
+| `too_deep` | it would cut below what the part allows: a depth past the feature's floor, a facing below the part's top | leave the depth out to use the feature's own, or ask for less |
+| `unreachable` | the tool cannot get there from this setup, or cannot come down there (a hole under a roof, no room to ramp, a helix pitch steeper than its ramp angle) | another setup from the side that reaches it, or what the summary names |
+| `tool_too_large` | the tool does not fit the feature: a pocket narrower than it, a drill bigger than its hole | a smaller tool, or the tool of the hole's size |
+| `tool_too_small` | the tool cannot make the feature as asked (a spot wider than the spot drill) | a larger tool |
+| `gouge` | the only path the operation has goes into the part | redraw the region inside the material, or cut the feature by its selector |
+
+A post that cannot write what the job needs (a tap on a controller with no spindle-synchronised
+feed) is a `no_post_support` error (`check` `post`) on the operation. Either way no G-code is
+written; the GLB still shows every operation that planned.
+
+### Every finding's `check` and `type`
+
+The `type`s are a closed set, so an agent can act on one by name:
+
+| `check` | `type`s |
+| --- | --- |
+| `job` | `job` (the job was refused before anything was planned), `internal_error` (a bug in cadgen: report it with the job and the part) |
+| `plan` | the kinds above (`empty_operation`, `too_deep`, `unreachable`, `tool_too_large`, `tool_too_small`, `gouge`), and `note` (info: what an operation did on purpose, such as a chamfer cut into a modelled edge) |
+| `post` | `no_post_support` |
+| `checks` | `setup_not_simulated` |
+| `gouge` | `gouge_2d`, `gouge_3d`, `gouge_turning`, `gouge_multiaxis`, `swarf_skipped` (a swarf wall it could not judge), `not_judged` |
+| `holder_collision` | `shank_part`, `holder_part`, `shank_stock`, `holder_stock`, `holder_multiaxis`, `not_judged` |
+| `reach` | `reach_flutes`, `reach_holder` |
+| `travel` | `travel`, `rotary_travel` |
+| `material_left` | `material_left`, `not_judged` |
+| `machine` | `machine_axes` |
+| `drill` | `hole_size`, `hole_floor`, `tap_thread`, `no_hole_in_model` ([drilling.md](drilling.md#what-it-checks)) |
+| `prepared_hole` | `assumes_prepared_hole` |
+| every other check | its own name: `rapid_into_stock`, `corner_radius`, `fixture`, `limits`, `empty_operation`, `through_stock_bottom`, `long_stickout`, `full_slot`, `unused_tool` |
 
 ## What a check could not judge
 

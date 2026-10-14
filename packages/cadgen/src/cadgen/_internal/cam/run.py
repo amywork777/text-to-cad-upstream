@@ -364,9 +364,8 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         if op.meta.get("note") and op.meta.get("note_level") == "info":
             findings = list(findings)
             # What the op did on purpose (a chamfer cut into the modelled edge): an info finding, not a warning.
-            findings.append({"check": "plan", "severity": "info", "type": "note", "summary": f"{op.summary}: "
-                             f"{op.meta['note']}", "description": op.meta["note"],
-                             "items": [{"setup": op.setup, "operation": op.index}]})
+            findings.append(finding("plan", "info", "note", f"{op.summary}: {op.meta['note']}", op.meta["note"],
+                                    [{"setup": op.setup, "operation": op.index}]))
         elif op.meta.get("note"):
             warnings.append(f"{op.summary}: {op.meta['note']}")
     mark = lap("checks_s", mark)
@@ -606,7 +605,14 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             operation, params = operations[(setup.id, spec.index)]
 
             tool = tools.get(spec.tool) if spec.tool else None
-            ctx = PlanContext(job=parsed, setup=setup, wcs=wcs, heights=heights, part=part, stock=stock,
+            # An operation may set its own clearance and retract over the stock top (spec.clearance_mm,
+            # spec.retract_mm); it still ends at or above the setup's clearance, below.
+            op_heights = heights
+            if spec.clearance_mm is not None or spec.retract_mm is not None:
+                clearance = spec.clearance_mm if spec.clearance_mm is not None else setup.clearance_mm
+                retract = spec.retract_mm if spec.retract_mm is not None else setup.retract_mm
+                op_heights = dataclasses.replace(heights, clearance=top + clearance, retract=top + retract)
+            ctx = PlanContext(job=parsed, setup=setup, wcs=wcs, heights=op_heights, part=part, stock=stock,
                               sections=sections, spec=spec, index=index, tool=tool, start=position,
                               tolerance_mm=tolerance, log=logger.debug, history=list(history))
             with logger.timed(f"plan {setup.id} {spec.index + 1}. {spec.op}"):
