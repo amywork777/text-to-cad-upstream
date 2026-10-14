@@ -3,7 +3,7 @@ import { BufferAttribute, BufferGeometry, Group, LineBasicMaterial, LineSegments
 /** The extras `cadgen cam plan` writes on the scene (spec §10, schema 1): one setup, a face and a pocket, one error. */
 export const camExtras = () => ({
   schema: 1,
-  verdict: { status: 'fix', headline: '1 to fix', errors: 1, warnings: 2 },
+  verdict: { status: 'fix', headline: '1 to fix', errors: 1, warnings: 2, gcode: 'G-code not written: fix 1 error first' },
   machine: { kind: 'mill', post: 'grbl' },
   material: 'aluminum-6061',
   document: 'part.step',

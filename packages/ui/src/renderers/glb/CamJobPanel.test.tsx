@@ -21,7 +21,7 @@ it('leads with the verdict and its errors, then each setup with its operations: 
   const verdict = container.querySelector('[data-cam-verdict]')!;
   expect(verdict.getAttribute('data-cam-verdict')).toBe('fix');
   expect(verdict.querySelector('[data-cam-verdict-title]')!.textContent).toBe('1 to fix');
-  expect(verdict.querySelector('[data-cam-verdict-caption]')!.textContent).toBe('2 warnings');
+  expect(verdict.querySelector('[data-cam-verdict-caption]')!.textContent).toBe('G-code not written: fix 1 error first · 2 warnings');
   // Errors alone, in plain words, under the verdict; warnings go to the agent.
   expect([...verdict.querySelectorAll('[data-cam-finding]')].map((row) => row.textContent)).toEqual(['Tool too long for this pocket']);
   const rows = [...container.querySelectorAll('[data-cam-row]')].map((row) => [row.getAttribute('data-cam-row'), row.textContent]);

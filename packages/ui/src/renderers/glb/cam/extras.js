@@ -128,7 +128,7 @@ function readFinding(raw) {
 /**
  * The job a CAM result carries, or null for any other GLB.
  *
- * @returns {null | { schema: number, verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number },
+ * @returns {null | { schema: number, verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number, gcode: string },
  *   setups: { id: string, plain: string, timeS: number, orientation: string, axis: number[], across: number[], operations: object[] }[],
  *   operations: object[], findings: object[], adapted: object[], posts: object[], durationS: number, machine: string,
  *   stock: { kind: string, thicknessMm: number | null }, document: string, material: string }}
@@ -185,7 +185,8 @@ export function readCamJob(root) {
     : ["Ready to cut", formatDuration(durationS), toolCount ? `${toolCount} tool${toolCount === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "));
   return {
     schema: number(cam.schema, 1),
-    verdict: { status, headline, errors, warnings },
+    // A plan with errors writes no G-code; its verdict says so ("G-code not written: fix 2 errors first").
+    verdict: { status, headline, errors, warnings, gcode: text(rawVerdict.gcode) },
     setups, operations, findings,
     adapted: list(cam.adapted).filter(plainObject).map((entry) => ({ step: text(entry.step), note: text(entry.note) || text(entry.words) })),
     // A setup may post several files (one per tool on a controller without tool changes), each naming its `tool`.

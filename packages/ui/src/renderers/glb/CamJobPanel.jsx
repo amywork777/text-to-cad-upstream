@@ -57,7 +57,8 @@ function CamVerdict({ job, chosen, onChoose }) {
   const tone = TONES[job.verdict.status] || TONES.ready;
   const Icon = tone.icon;
   const errors = job.findings.map((finding, index) => ({ finding, index })).filter(({ finding }) => finding.level === "error");
-  const caption = job.verdict.warnings ? plural(job.verdict.warnings, "warning") : "";
+  const caption = [job.verdict.gcode, job.verdict.warnings ? plural(job.verdict.warnings, "warning") : ""]
+    .filter(Boolean).join(" · ");
   return <section aria-label="Verdict" data-cam-verdict={job.verdict.status} className={cn("mx-1 mb-1 flex flex-col gap-1 rounded-md px-2.5 py-2", tone.surface)}>
     <div className={cn("flex items-center gap-1.5 text-xs leading-4", tone.text)}>
       <Icon className="size-3.5 shrink-0" strokeWidth={2} aria-hidden="true" />

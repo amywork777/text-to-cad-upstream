@@ -5,7 +5,7 @@ import { camExtras, camScene } from './__tests__/camFile';
 
 it('reads the job a CAM result carries: verdict, setups, operations, errors first', () => {
   const job = readCamJob(camScene())!;
-  expect(job.verdict).toEqual({ status: 'fix', headline: '1 to fix', errors: 1, warnings: 2 });
+  expect(job.verdict).toEqual({ status: 'fix', headline: '1 to fix', errors: 1, warnings: 2, gcode: 'G-code not written: fix 1 error first' });
   expect(job.setups.map((setup: any) => [setup.id, setup.plain, setup.timeS, setup.operations.length])).toEqual([['top', 'Top', 90, 2]]);
   const pocket = job.operations[1];
   expect(pocket).toMatchObject({ index: 1, op: 'pocket', plain: 'Pocket', tool: 'T3', toolPlain: '4 mm ball', toolDiameterMm: 4, toolType: 'ball',
@@ -45,7 +45,7 @@ it('says a ready job in plain words when the file has no headline', () => {
   const extras = camExtras();
   extras.verdict = { status: 'ready' } as any;
   extras.findings = [];
-  expect(readCamJob(camScene({ extras }))!.verdict).toEqual({ status: 'ready', headline: 'Ready to cut · 2 min · 2 tools', errors: 0, warnings: 0 });
+  expect(readCamJob(camScene({ extras }))!.verdict).toEqual({ status: 'ready', headline: 'Ready to cut · 2 min · 2 tools', errors: 0, warnings: 0, gcode: '' });
 });
 
 it('resolves the part the job was planned from against the GLB, and says durations plainly', () => {
