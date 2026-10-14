@@ -175,7 +175,11 @@ def plan_rough(ctx, params, *, limit=None):
                      "stock_to_leave": leave, "floor_z": round(bottom, 4)})
     if entries.get("plunge"):
         ctx.meta["plunges"] = entries["plunge"]
-    return b.build()
+    from cadgen._internal.cam.air import air_report
+
+    path = b.build()
+    ctx.meta.update(air_report(ctx, path))
+    return path
 
 
 def enter(b, region, start, z_from: float, z_to: float, *, tool_radius: float, angle_deg: float, f: float,

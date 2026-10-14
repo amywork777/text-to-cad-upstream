@@ -63,6 +63,7 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
     _entry("circular", "CircularOp", "Circular", _25D, MILLS),
     _entry("trace", "TraceOp", "Trace", _25D, MILLS),
     _entry("rough", "RoughOp", "3D rough", _3D, MILLS),
+    _entry("adaptive_3d", "Adaptive3dOp", "3D adaptive clear", _3D, MILLS, "lite"),
     _entry("parallel", "ParallelOp", "Parallel finish", _3D, MILLS),
     _entry("waterline", "WaterlineOp", "Waterline", _3D, MILLS),
     _entry("scallop", "ScallopOp", "Scallop", _3D, MILLS, "lite"),

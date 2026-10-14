@@ -2,7 +2,7 @@
 
 Curved and sculpted parts: domes, fillets, moulds, freeform surfaces, cut with the tool along Z by the
 drop-cutter (each point of a pass is as low as the tool can sit without cutting the part):
-`rough`, `parallel`, `waterline`, `scallop`, `pencil` and `rest`. Flat floors and straight walls are
+`rough`, `adaptive_3d`, `parallel`, `waterline`, `scallop`, `pencil` and `rest`. Flat floors and straight walls are
 [milling-2d.md](milling-2d.md). The keys every operation shares (`tool`, `faces`, `region`, `feed`,
 `speed`, `stepdown_mm`, `stepover`, `stepover_mm`, `stock_to_leave_mm`, `coolant`, `name`) are in
 [job-file.md](job-file.md#operations).
@@ -64,6 +64,31 @@ or ball tool; stepover defaults to 0.4 of the diameter, step-down to the materia
 | `direction` | `climb` (default) or `conventional` |
 
 On slopes the levels leave steps up to the step-down tall: finish after it.
+
+## adaptive_3d: 3D adaptive clear (lite)
+
+Roughs like `rough`, in the same Z levels round the part's 3D shape, but at a capped tool load and
+only where material stands: the adaptive clear of [milling-2d.md](milling-2d.md) at each level, the
+tool kept its radius plus `stock_to_leave_mm` off everything of the part above the level. It reads
+the stock as it stands (every earlier operation and setup replayed), so after a `rough` (or another
+setup) it cuts only what is left, and skips a level with nothing left. An open side is come into from
+the air beside the stock; a closed cavity is entered by a helix. Flat or bull tool; stepover defaults
+to 0.15 of the diameter (more than 0.5 is refused), step-down to twice the material's, within the
+flutes (deep and light). It takes a `region` (`{"polygon": [...], "bottom_z": z}`), not faces.
+
+| key | meaning |
+| --- | --- |
+| `bottom_z` | the lowest level, WCS (default: the part's bottom, or the region's `bottom_z`) |
+| `ramp_angle_deg` | helix entries (default 3) |
+| `direction` | `climb` (default) or `conventional` |
+
+Pick it over `rough` for a hard material or a deep cavity (no full-width cut in a corner), or to
+clean up after a rough with a bigger stepover. On fresh stock it is usually slower than `rough`:
+its passes are lighter. Its limits, which its result carries (quote them): engagement is capped by
+growing the cleared area, not a true adaptive solver (about twice the stepover on the first ring
+round an entry); a piece too narrow for a helix is ramped along its outline at full width; steps on
+slopes are as tall as the step-down. `air_fraction`, `air_mm` and `cut_mm` say how much of the path
+cuts nothing.
 
 ## parallel: Parallel finish
 

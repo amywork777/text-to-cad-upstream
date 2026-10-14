@@ -9,7 +9,8 @@
   move between two points would stray from the drop-cutter surface by more than the tolerance; :func:`simplify`
   removes points again within the tolerance (Douglas-Peucker in 3D).
 * :class:`StockNow`: the stock as it stands before this operation (the heightfield simulator replaying
-  ``ctx.history``), for safe link heights and for rest machining (:meth:`StockNow.rest_area`).
+  ``ctx.history``), for safe link heights, rest machining (:meth:`StockNow.rest_area`), and adaptive clearing and the
+  air report (:meth:`StockNow.standing`, :meth:`StockNow.surface_at`, :meth:`StockNow.part_surface_at`).
 * :class:`Linker`: moves between passes: a short hop feeds along the drop-cutter surface; anything longer goes
   straight up, across at a safe height over the stock as it stands, down to just above the stock and feeds in.
 
@@ -300,6 +301,73 @@ class StockNow:
         wcs_z = self.wcs.to_wcs(np.column_stack([part[:, :2], part_z]))[:, 2]
         return np.where(far, -np.inf, wcs_z)
 
+    def _cells_xy(self):
+        """Every cell's centre (part coordinates), flattened in the grid's order."""
+        sim = self.sim
+        i, j = np.meshgrid(np.arange(sim.nx), np.arange(sim.ny), indexing="ij")
+        return (sim.x0 + (i + 0.5) * sim.cell).ravel(), (sim.y0 + (j + 0.5) * sim.cell).ravel()
+
+    def _wcs_heights(self, heights):
+        """A grid of part heights as WCS z (``nan`` kept)."""
+        x, y = self._cells_xy()
+        z = self.wcs.to_wcs(np.column_stack([x, y, np.nan_to_num(heights.ravel())]))[:, 2]
+        return np.where(np.isnan(heights.ravel()), np.nan, z).reshape(heights.shape)
+
+    def _wcs_ends(self):
+        """Each cell's material toward the tool and away from it, as WCS z (the surface, then the far end); ``nan``
+        where the stock is cut through."""
+        if getattr(self, "_ends", None) is None:
+            sim = self.sim
+            exists = sim.top > sim.bottom + 1e-9
+            near, far = (sim.top, sim.bottom) if self.direction > 0 else (sim.bottom, sim.top)
+            self._ends = tuple(self._wcs_heights(np.where(exists, heights, np.nan)) for heights in (near, far))
+        return self._ends
+
+    def _at(self, grid, points_xy):
+        """``grid``'s value in the cell under each WCS point; ``-inf`` off the grid or where it is ``nan``."""
+        sim = self.sim
+        points = np.asarray(points_xy, dtype=float).reshape(-1, 2)
+        part = self.wcs.from_wcs(np.column_stack([points, np.zeros(len(points))]))
+        i = np.floor((part[:, 0] - sim.x0) / sim.cell).astype(np.int64)
+        j = np.floor((part[:, 1] - sim.y0) / sim.cell).astype(np.int64)
+        on = (i >= 0) & (i < sim.nx) & (j >= 0) & (j < sim.ny)
+        out = np.full(len(points), -np.inf)
+        values = grid[i[on], j[on]]
+        out[on] = np.where(np.isnan(values), -np.inf, values)
+        return out
+
+    def surface_at(self, points_xy):
+        """The stock's face toward the tool (WCS z) under each WCS point, from the cell it falls in; ``-inf`` off
+        the stock or where it is cut through. None when this setup is not simulated."""
+        if self.sim is None:
+            return None
+        return self._at(self._wcs_ends()[0], points_xy)
+
+    def part_surface_at(self, points_xy):
+        """The part's face toward the tool (WCS z) under each WCS point, from the cell it falls in; ``-inf`` where the
+        part has no material. None when this setup is not simulated."""
+        if self.sim is None:
+            return None
+        if getattr(self, "_part_face", None) is None:
+            part_top, part_bottom = self.sim._part(self.ctx.part)
+            self._part_face = self._wcs_heights(part_top if self.direction > 0 else part_bottom)
+        return self._at(self._part_face, points_xy)
+
+    def standing(self, z: float, *, hair: float = 0.01):
+        """Where stock stands across the WCS level ``z`` (more than ``hair`` over it, its far end under it), as WCS XY
+        polygons grown by a cell: every cell that holds material counts whole, none is cleaned away, so a thin wall
+        left by an earlier cut is never taken for air. None when this setup is not simulated."""
+        if self.sim is None:
+            return None
+        near, far = self._wcs_ends()
+        with np.errstate(invalid="ignore"):
+            mask = (near > z + hair) & (far < z)
+        if not mask.any():
+            return shapely.Polygon()
+        shape = mask_polygons(mask, self.sim.x0, self.sim.y0, self.sim.cell, transform=self._to_wcs_xy, clean=False)
+        # Grown by a cell to be safe where an earlier cut ends, never past the stock's own outline.
+        return shape.buffer(self.sim.cell, quad_segs=2).intersection(self.ctx.stock_outline)
+
     def rest_area(self, *, threshold: float):
         """Where the stock stands more than ``threshold`` over the part (WCS XY polygons), or None when this setup is
         not simulated."""
@@ -321,9 +389,9 @@ class StockNow:
         return self.wcs.to_wcs(np.column_stack([xy, np.zeros(len(xy))]))[:, :2]
 
 
-def mask_polygons(mask, x0: float, y0: float, cell: float, *, transform=None):
+def mask_polygons(mask, x0: float, y0: float, cell: float, *, transform=None, clean: bool = True):
     """The cells of an (nx, ny) boolean grid (cell ``(i, j)`` spans ``x0 + i * cell``..) as one shapely shape, opened
-    by about a cell so single-cell noise along walls drops out."""
+    by about a cell so single-cell noise along walls drops out (``clean``; else every cell is kept)."""
     boxes = []
     nx, ny = mask.shape
     for i in range(nx):
@@ -337,7 +405,8 @@ def mask_polygons(mask, x0: float, y0: float, cell: float, *, transform=None):
     if not boxes:
         return shapely.Polygon()
     shape = shapely.union_all(boxes, grid_size=cell / 1000.0)
-    shape = shape.buffer(-0.6 * cell, join_style="mitre").buffer(0.6 * cell, join_style="mitre")
+    if clean:
+        shape = shape.buffer(-0.6 * cell, join_style="mitre").buffer(0.6 * cell, join_style="mitre")
     if transform is not None and not shape.is_empty:
         shape = shapely.transform(shape, transform)
         shape = shape.buffer(0)

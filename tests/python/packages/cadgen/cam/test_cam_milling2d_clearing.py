@@ -8,6 +8,7 @@ import unittest
 
 import numpy as np
 import shapely
+from shapely.ops import substring
 
 from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, PLUNGE, RAPID
 from cadgen._internal.cam.job import parse_job
@@ -81,13 +82,16 @@ class Adaptive(unittest.TestCase):
         rates = []
         points = samples.points
         index = np.nonzero(feeds)[0]
-        # Walk the level's feed moves in runs of consecutive samples, about 3 mm of path each.
+        # Walk the level's feed moves in runs of consecutive samples, in windows of about 2 mm of path each (a fixed
+        # length, so a window's rate does not depend on how the moves happen to be sampled).
         runs = np.split(index, np.nonzero(np.diff(index) > 1)[0] + 1)
         for run in runs:
-            for chunk in np.array_split(run, max(1, len(run) // 6)):
-                if len(chunk) < 2:
-                    continue
-                path = shapely.LineString(points[np.r_[chunk[0] - 1, chunk]][:, :2])
+            if len(run) < 2:
+                continue
+            line = shapely.LineString(points[np.r_[run[0] - 1, run]][:, :2])
+            count = max(1, int(line.length // 2.0))
+            for k in range(count):
+                path = substring(line, k * line.length / count, (k + 1) * line.length / count)
                 if path.length < 0.5:
                     continue
                 swept = path.buffer(r)

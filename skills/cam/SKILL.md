@@ -34,7 +34,7 @@ The `op` key of each operation names it. Pick by what the user wants cut and on 
 | The top of the stock flattened | `face` | Face | **Runs today** | [milling-2d.md](references/milling-2d.md) |
 | An outline cut around (or inside) a shape, cut out of a plate with tabs | `contour` | Profile | **Runs today** | milling-2d.md |
 | A flat-floored pocket cleared, with or without islands | `pocket` | Pocket | **Runs today** | milling-2d.md |
-| A big pocket or open area cleared fast with constant tool load | `adaptive` | Adaptive clear | **Runs today** (lite) | milling-2d.md |
+| A big pocket or open area cleared fast with constant tool load, or what an earlier operation left there | `adaptive` | Adaptive clear | **Runs today** (lite) | milling-2d.md |
 | A slot or keyway | `slot` | Slot | **Runs today** | milling-2d.md |
 | Edges chamfered or deburred | `chamfer` | Chamfer | **Runs today** | milling-2d.md |
 | Text, a logo or a line engraved | `engrave` | Engrave | **Runs today** | milling-2d.md |
@@ -45,6 +45,7 @@ The `op` key of each operation names it. Pick by what the user wants cut and on 
 | A thread milled in a hole or on a boss | `thread_mill` | Thread mill | **Runs today** | milling-2d.md |
 | Holes drilled, pecked, tapped, reamed, bored or spotted | `drill` | Drill | **Runs today** | [drilling.md](references/drilling.md) |
 | A curved or sculpted part roughed out | `rough` | 3D rough | **Runs today** | [milling-3d.md](references/milling-3d.md) |
+| A curved part roughed at constant tool load (hard material, deep cavities), or what an earlier rough left | `adaptive_3d` | 3D adaptive clear | **Runs today** (lite) | milling-3d.md |
 | A curved surface finished smooth | `parallel` | Parallel finish | **Runs today** | milling-3d.md |
 | Steep walls finished in levels | `waterline` | Waterline | **Runs today** | milling-3d.md |
 | An even finish over mixed steep and shallow surfaces | `scallop` | Scallop | **Runs today** (lite) | milling-3d.md |

@@ -101,13 +101,18 @@ is shortened, then left out. Tell the user to cut the tabs by hand after the pro
 
 ## adaptive: Adaptive clear (lite)
 
-Clears a pocket or an open area at a capped tool load. Name it like a pocket: floor `faces`, or a
-`region` with `bottom_z`; an open side clears out to the stock's edge. Each level enters by a helix at
-the region's most open point, then grows the cleared area outward one stepover at a time (each new
-pass is the cleared area offset by the stepover, clipped to the region), so no point of a pass is
-more than a stepover from material already cut; only the stretches that meet new material are cut.
+Clears a pocket or an open area at a capped tool load, cutting only where material stands. Name it
+like a pocket: floor `faces`, or a `region` with `bottom_z`; an open side clears out to the stock's
+edge. It reads the stock as it stands (every earlier operation and setup replayed): what an earlier
+operation cut is air, and a level with nothing left is skipped. Each level grows the cleared area
+from that air, or from a helix at the region's most open point where there is none, one stepover at
+a time (each new pass is the cleared area offset by the stepover, clipped to the region), so no point
+of a pass is more than a stepover from material already cut; only the stretches that meet new
+material are cut, nearest first, so the tool works one side on before it crosses to the other.
 Stepover defaults to 0.15 of the diameter (more than 0.5 is refused); step down to twice the
-material's (deep and light), within the flutes. Flat or bull tool.
+material's (deep and light), within the flutes. Flat or bull tool. Its result's `air_fraction` is the
+share of the cutting path that removes nothing (with `air_mm` and `cut_mm`): quote it when the user
+asks how efficient the path is.
 
 | key | meaning |
 | --- | --- |
@@ -117,7 +122,8 @@ material's (deep and light), within the flutes. Flat or bull tool.
 Its limits, which its result carries (quote them): it is not a true medial-axis adaptive solver; a
 pass round a small cleared area cuts up to about twice the stepover's worth per millimetre (the first
 ring round an entry); a piece too narrow for a helix is ramped into along its outline at full width;
-it does not use rest material from earlier operations.
+the stock as it stands is read on a grid (0.1 to 0.5 mm), so the first pass beside an earlier cut
+can run up to a cell in air.
 
 ## slot: Slot
 
