@@ -17,14 +17,16 @@ Levels run from the stock top down by the step down (a full-width slot; the mate
 (plus ``stock_to_leave_mm`` on the floor and walls). Each level is entered by a ``ramp`` (default) zig-zagging along
 the centreline at ``ramp_angle_deg`` (default 3), or a ``plunge``; an open slot is cut back and forth, so each
 level ramps in where the last one ended. Square ends of a rectangular slot keep the tool's radius in their corners
-(the ``corner_radius`` check reports it).
+(the ``corner_radius`` check reports it). The centreline is cut at the tool's full width at every level: its length
+times the levels is ``meta["full_slot_mm"]``. A tool wider than the slot is refused (``tool_too_large``), and a floor
+at or above the stock top (``empty_operation``).
 """
 
 from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, check_keys, choice, number_list, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
 
@@ -142,14 +144,14 @@ class SlotOp(Operation):
             if params["width_mm"] is not None:
                 width = params["width_mm"]
         if tool.diameter_mm > width + max(2 * tol, 0.02):
-            raise CamJobError(f"{ctx.spec.where}: {tool.id} ({tool.plain}) is wider than the {width:g} mm slot; use a "
-                              "tool no wider than the slot")
+            raise PlanError("tool_too_large", f"{ctx.spec.where}: {tool.id} ({tool.plain}) is wider than the {width:g} "
+                            "mm slot; use a tool no wider than the slot")
         closed = len(centre) > 2 and math.dist(centre[0], centre[-1]) < 1e-6
         floor = bottom + leave
         top = heights.stock_top
         if floor >= top - 1e-6:
-            raise CamJobError(f"{ctx.spec.where}: the slot's floor is at or above the stock top in setup "
-                              f"'{ctx.setup.id}'; nothing to cut")
+            raise PlanError("empty_operation", f"{ctx.spec.where}: the slot's floor (Z {floor:.3f}) is at or above the "
+                            f"stock top in setup '{ctx.setup.id}', so there is nothing to cut")
         stepover = ctx.stepover(0.4)
         slot_feeds = ctx.feeds(self.feeds_kind)
         side_feeds = ctx.feeds("rough", stepover_mm=stepover)
@@ -209,6 +211,7 @@ class SlotOp(Operation):
         ctx.meta.update({"levels": len(cut_levels), "entries": {k: v for k, v in entries.items() if v},
                          "width_mm": round(width, 4), "length_mm": round(float(line.length), 4),
                          "passes": 1 + len(offsets), "floor_z": round(floor, 4), "stock_to_leave": leave,
+                         "full_slot_mm": round(float(line.length) * len(cut_levels), 3),
                          "unreachable": unreachable})
         if entries["plunge"]:
             ctx.meta["plunges"] = entries["plunge"]

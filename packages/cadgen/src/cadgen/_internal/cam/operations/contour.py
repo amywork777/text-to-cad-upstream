@@ -19,19 +19,26 @@ How: levels from the stock top down by the step down (the last exactly at the bo
 its levels before the next, holes before the outline that holds them, then the nearest. ``direction`` ``climb``
 (default) or ``conventional``. Each level is entered by a ``ramp`` along the loop (default; ``ramp_angle_deg``,
 default 3) or a ``plunge``; with ``lead_in_mm`` a tangent quarter-arc lead swings in from the air side instead (the
-descent is then made at the lead's start), and ``lead_out_mm`` swings off the same way. ``tabs``: ``{"count": 4,
-"width_mm": 5, "height_mm": 1.5}`` leaves that many bridges, evenly spaced, standing ``height_mm`` above the bottom
-of a through cut (default width 5 mm, height a third of the depth, at most 2 mm). ``finish_mm`` leaves that much on
-the walls for the levels and takes it off in one last full-depth pass (a finish pass with no lead in steps in
-sideways from the roughed slot).
+descent is then made at the lead's start), and ``lead_out_mm`` swings off the same way; a lead is shrunk, then left
+out, where it would not stay on the air side or would swing into one of the setup's fixture boxes. A level starts
+by dropping straight down only where the tool is in air (off the stock and clear of the fixtures). ``tabs``:
+``{"count": 4, "width_mm": 5, "height_mm": 1.5}`` leaves that many bridges, evenly spaced, standing ``height_mm``
+above the bottom of a through cut (default width 5 mm, height a third of the depth, at most 2 mm): a level under
+their top rises straight onto each tab and comes down off its end by zig-zagging along the loop ahead at
+``ramp_angle_deg``, never dropping straight into the material. ``finish_mm`` leaves that much on the walls for the
+levels and takes it off at the full depth in ``finish_passes`` passes (default 1; equal shares); with no
+``finish_mm``, ``finish_passes`` are spring passes at the final offset. A finish pass with no lead steps in sideways
+from the roughed slot.
 
 What the tool cannot reach (inside corners tighter than its radius, holes smaller than it) goes into
-``meta["unreachable"]`` for the ``corner_radius`` check; a loop too small for the tool is skipped and noted.
+``meta["unreachable"]`` for the ``corner_radius`` check; a loop too small for the tool is skipped and noted. Refused,
+as plan errors on the operation: every loop too small for the tool (``tool_too_large``), a bottom at or above the
+stock top (``empty_operation``), and part material at a face's own height under the tool beside it (``gouge``).
 """
 
 from __future__ import annotations
 
-from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, read_number
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, check_keys, choice, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
 
@@ -45,7 +52,7 @@ class ContourOp(Operation):
     machines = MILLS
     status = "full"
     keys = ("side", "direction", "loops", "bottom_z", "through_mm", "tabs", "lead_in_mm", "lead_out_mm",
-            "finish_mm", "entry", "ramp_angle_deg")
+            "finish_mm", "finish_passes", "entry", "ramp_angle_deg")
     common_keys = ("feed", "speed", "stepdown_mm", "stock_to_leave_mm")
     tool_types = ("flat", "bull", "ball")
     takes_faces = True
@@ -70,11 +77,21 @@ class ContourOp(Operation):
             "lead_in_mm": read_number(extra, "lead_in_mm", where, default=0.0, minimum=0.0),
             "lead_out_mm": read_number(extra, "lead_out_mm", where, default=0.0, minimum=0.0),
             "finish_mm": read_number(extra, "finish_mm", where, default=0.0, minimum=0.0),
+            "finish_passes": None,
             "entry": choice(extra.get("entry", "ramp"), ("ramp", "plunge"), f"{where}.entry"),
             "ramp_angle_deg": read_number(extra, "ramp_angle_deg", where, default=3.0, maximum=45.0),
             "tabs": None,
             "region": region_polygon(spec, where=where) if spec.region is not None else None,
         }
+        if "finish_passes" in extra:
+            count = extra["finish_passes"]
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= 10:
+                raise CamJobError(f"{where}.finish_passes must be a whole number from 0 to 10 (passes at the final "
+                                  "depth)")
+            if count == 0 and params["finish_mm"] > 0:
+                raise CamJobError(f"{where}: finish_mm {params['finish_mm']:g} needs at least one finish pass to take "
+                                  "it off; leave finish_passes out or give 1 or more")
+            params["finish_passes"] = count
         if "tabs" in extra:
             tabs = extra["tabs"]
             if not isinstance(tabs, dict):
@@ -145,7 +162,8 @@ class ContourOp(Operation):
         top = heights.stock_top
         stepdown = ctx.stepdown()
         rough_feeds = ctx.feeds(self.feeds_kind)
-        finish_feeds = ctx.feeds("finish", stepover_mm=finish) if finish > 0 else rough_feeds
+        finish_count = params["finish_passes"] if params["finish_passes"] is not None else (1 if finish > 0 else 0)
+        finish_feeds = ctx.feeds("finish", stepover_mm=finish / finish_count) if finish > 0 else rough_feeds
         notes: list[str] = []
         unreachable: list[dict] = []
         passes = []
@@ -174,8 +192,12 @@ class ContourOp(Operation):
             # A flat face's outline cut outside or on it goes down to whatever material lies under the tool there
             # (a slot's floor under a blind mouth), else through; every other loop to its target's bottom.
             floors = target.kind == "flat" and target.side != "inside" and params["bottom_z"] is None
-            finishing = _rings(base, target.side, r + leave, params["loops"], tol) if finish > 0 else []
-            for kind, rings in (("rough", rough), ("finish", finishing)):
+            # The finish passes at the final depth: finish_mm in equal shares, or spring passes at the final offset.
+            sets = [("rough", 0, rough)]
+            for j in range(1, finish_count + 1):
+                sets.append(("finish", j, _rings(base, target.side, r + leave + finish * (1.0 - j / finish_count),
+                                                 params["loops"], tol)))
+            for kind, share, rings in sets:
                 for ring, material_inside in rings:
                     floor = _floor_under(ctx, ring, base, target.z) if floors else target.bottom_z
                     through = floor is None or floor <= heights.part_bottom + 1e-6
@@ -183,20 +205,23 @@ class ContourOp(Operation):
                         floor = heights.part_bottom
                     cut_bottom = floor - params["through_mm"] if through else floor + leave
                     if cut_bottom >= top - 1e-6:
-                        raise CamJobError(f"{ctx.spec.where}: the contour's bottom (Z {cut_bottom:.3f}) is at or above "
-                                          f"the stock top in setup '{ctx.setup.id}'; give a lower bottom_z")
+                        raise PlanError("empty_operation", f"{ctx.spec.where}: the contour's bottom (Z "
+                                        f"{cut_bottom:.3f}) is at or above the stock top in setup '{ctx.setup.id}', so "
+                                        "it cuts nothing; give a lower bottom_z")
                     passes.append({"ring": ring, "material_inside": material_inside, "bottom": cut_bottom,
                                    "levels": _levels(top, cut_bottom, stepdown) if kind == "rough" else [cut_bottom],
-                                   "finish": kind == "finish", "tab_base": floor if through else None,
+                                   "finish": kind == "finish", "share": share,
+                                   "tab_base": floor if through else None,
                                    "feeds": rough_feeds if kind == "rough" else finish_feeds})
         if not passes:
-            raise CamJobError(f"{ctx.spec.where}: every loop is too small for {tool.id} ({tool.plain}); use a "
-                              "smaller tool")
+            raise PlanError("tool_too_large", f"{ctx.spec.where}: every loop is too small for {tool.id} ({tool.plain}) "
+                            "to fit inside; use a smaller tool")
         b = ctx.builder()
         counts = {"ramp": 0, "plunge": 0, "air": 0, "lead": 0}
         rough_starts = []
-        ordered = _order([p for p in passes if not p["finish"]], b.pos) + _order(
-            [p for p in passes if p["finish"]], b.pos)
+        ordered = _order([p for p in passes if not p["finish"]], b.pos)
+        for j in range(1, finish_count + 1):
+            ordered += _order([p for p in passes if p["finish"] and p["share"] == j], b.pos)
         tabs_short = 0
         for p in ordered:
             short = self._cut(ctx, params, b, p, rough_starts, counts)
@@ -212,6 +237,8 @@ class ContourOp(Operation):
                          "bottom_z": round(min(p["bottom"] for p in passes), 4)})
         if finish > 0:
             ctx.meta["finish_mm"] = finish
+        if finish_count:
+            ctx.meta["finish_passes"] = finish_count
         if counts["plunge"]:
             ctx.meta["plunges"] = counts["plunge"]
         if counts.get("lead_dropped"):
@@ -225,7 +252,9 @@ class ContourOp(Operation):
         import numpy as np
         import shapely
 
-        from cadgen._internal.cam.operations._milling2d import lift_and_go, orient, ramp_along, rotate_to_nearest
+        from cadgen._internal.cam.operations._milling2d import (
+            fixtures_clear, in_air as straight_down, lift_and_go, orient, ramp_along, rotate_to_nearest,
+        )
 
         tool = ctx.tool
         r = tool.radius
@@ -275,8 +304,15 @@ class ContourOp(Operation):
         start = ring[0]
         d0 = _direction(ring, 0)
         d1 = _direction(ring, -1)
-        lead_in_geom = _fit_lead(ring, p["material_inside"], start, d0, params["lead_in_mm"], climb, True, counts)
-        lead_out_geom = _fit_lead(ring, p["material_inside"], start, d1, params["lead_out_mm"], climb, False, counts)
+        lowest = min(p["levels"])
+
+        def clear_of_fixtures(geometry) -> bool:
+            return fixtures_clear(ctx, geometry, lowest)
+
+        lead_in_geom = _fit_lead(ring, p["material_inside"], start, d0, params["lead_in_mm"], climb, True, counts,
+                                 clear_of_fixtures)
+        lead_out_geom = _fit_lead(ring, p["material_inside"], start, d1, params["lead_out_mm"], climb, False, counts,
+                                  clear_of_fixtures)
         # The ramp runs along the loop up to the first tab.
         ramp_path = ring
         if spans:
@@ -287,7 +323,6 @@ class ContourOp(Operation):
                 ramp_path = np.asarray(substring(line, 0.0, free).coords)
             else:
                 ramp_path = ring[:1]
-        clear = ctx.stock_outline.buffer(r + 0.5)
         away = np.array([-d0[1], d0[0]]) if climb else np.array([d0[1], -d0[0]])
         z_prev = heights.stock_top
         for k, z in enumerate(p["levels"]):
@@ -301,8 +336,7 @@ class ContourOp(Operation):
                 lift_and_go(b, entry_xy, heights)
             else:
                 b.feed(x=float(entry_xy[0]), y=float(entry_xy[1]), f=feeds.feed_mm_min)
-            in_air = not clear.contains(shapely.Point(entry_xy))
-            if in_air:
+            if straight_down(ctx, entry_xy, z):
                 b.rapid(z=z)
                 counts["air"] += 1
             elif lead_in_geom is not None or p["finish"]:
@@ -330,7 +364,7 @@ class ContourOp(Operation):
                 b.feed(x=float(start[0]), y=float(start[1]), z=z, f=feeds.feed_mm_min)
             points = np.column_stack([ring, np.full(len(ring), z)])
             if tab_top is not None and z < tab_top - 1e-9 and spans:
-                points = _lift(points, spans, tab_top)
+                points = _lift(points, spans, tab_top, params["ramp_angle_deg"])
             b.polyline(points[1:], f=feeds.feed_mm_min)
             if lead_out_geom is not None:
                 end, centre, clockwise = lead_out_geom
@@ -341,9 +375,11 @@ class ContourOp(Operation):
         return short
 
 
-def _fit_lead(ring, material_inside: bool, point, direction, radius: float, climb: bool, entering: bool, counts):
+def _fit_lead(ring, material_inside: bool, point, direction, radius: float, climb: bool, entering: bool, counts,
+              clear=None):
     """A lead arc (``linking.lead_arc``) of ``radius``, halved until it stays on the loop's air side (inside a hole's
-    loop, outside an outline's); None when no lead was asked for or none fits (counted in ``counts["lead_dropped"]``)."""
+    loop, outside an outline's) and ``clear(line)`` (the setup's fixtures) passes; None when no lead was asked for or
+    none fits (counted in ``counts["lead_dropped"]``)."""
     import numpy as np
     import shapely
 
@@ -364,7 +400,8 @@ def _fit_lead(ring, material_inside: bool, point, direction, radius: float, clim
         arc = shapely.points(centre[0] + radius * np.cos(angles), centre[1] + radius * np.sin(angles))
         inside = shapely.contains(loop.buffer(1e-6), arc) if not material_inside else ~shapely.intersects(
             loop.buffer(-1e-6), arc)
-        if np.all(inside):
+        if np.all(inside) and (clear is None or clear(shapely.LineString(
+                np.vstack([shapely.get_coordinates(arc), [point[:2]]])))):
             return start, centre, clockwise
         radius /= 2.0
     counts["lead_dropped"] = counts.get("lead_dropped", 0) + 1
@@ -401,8 +438,9 @@ def _floor_under(ctx, ring, material, z_face: float):
         return None
     top = float(tris[hit][:, :, 2].max())
     if top >= z_face - 1e-3:
-        raise CamJobError(f"{ctx.spec.where}: part material at the face's own height lies under the tool beside "
-                          f"{ctx.spec.faces[0] if ctx.spec.faces else 'the loop'}; give bottom_z, or name a wall")
+        beside = ctx.spec.faces[0] if ctx.spec.faces else "the loop"
+        raise PlanError("gouge", f"{ctx.spec.where}: part material at the face's own height lies under the tool beside "
+                        f"{beside}, so cutting round it would cut the part; give bottom_z, or name a wall")
     return top
 
 
@@ -478,10 +516,14 @@ def _direction(ring, index: int):
     return np.array([1.0, 0.0])
 
 
-def _lift(points, spans, tab_top: float):
+def _lift(points, spans, tab_top: float, angle_deg: float):
     """A closed path ((N, 3), first == last) lifted to ``tab_top`` over each ``(start, end)`` span of distance along
-    it, with vertical steps at each end."""
+    it: straight up onto a tab at its start, and off its end by zig-zagging down along the path ahead at no more than
+    ``angle_deg`` (:func:`~cadgen._internal.cam.linking.ramp_points`), back to the tab's end at depth, so the tab
+    stays square and the tool never drops straight into the material beyond it."""
     import numpy as np
+
+    from cadgen._internal.cam.linking import ramp_points
 
     seg = np.linalg.norm(np.diff(points[:, :2], axis=0), axis=1)
     cumulative = np.concatenate([[0.0], np.cumsum(seg)])
@@ -508,5 +550,9 @@ def _lift(points, spans, tab_top: float):
             out.append(low)
         out.append(high)
         if i < last and not inside[i + 1]:
-            out.append(low)
+            # The ring ahead at depth, up to the next tab (round past the ring's end to the first one).
+            following = [k for k in range(i + 1, len(xyz)) if inside[k]]
+            ahead = xyz[i:following[0] + 1] if following else np.vstack(
+                [xyz[i:], xyz[1:int(np.argmax(inside)) + 1]])
+            out.extend([list(q) for q in ramp_points(ahead, high[2], angle_deg=angle_deg)] or [low])
     return np.asarray(out)

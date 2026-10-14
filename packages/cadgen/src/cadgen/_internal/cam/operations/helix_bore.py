@@ -7,21 +7,28 @@ to its bottom (plus ``stock_to_leave_mm``), a through hole to its bottom less ``
 
 How: the tool's centre circles at the hole's radius less its own (and the stock to leave); a hole wider than twice
 the tool is bored from the inside out, each circle a stepover (default 0.4 of the diameter) bigger, so no core is
-left standing. Each circle is a helix from the top of the material down to the bottom at ``pitch_mm`` per turn
-(default: the step down, or less so the ramp stays at ``ramp_angle_deg``, default 3), then one flat circle at the
-bottom; the tool then moves to the hole's centre and leaves. Climb (counter-clockwise, G3) by default
-(``direction``). A tool not smaller than the hole is refused.
+left standing. Each circle is a helix from the top of the material down to the bottom at ``pitch_mm`` per turn,
+then one flat circle at the bottom; the tool then moves to the hole's centre and leaves. The pitch defaults, per
+circle, to 0.2 of the tool's diameter (or ``stepdown_mm``, when given) or less, so the helix at the tool's centre is
+no steeper than ``ramp_angle_deg`` (default 3); a ``pitch_mm`` steeper than that on a hole's smallest circle is
+refused (``unreachable``, naming the largest pitch allowed). The feed is the table's at the cutting edge: the
+centre's feed is scaled by its circle's radius over the edge's (``rho / (rho + r)``), never under a quarter. Climb (counter-clockwise,
+G3) by default (``direction``). A tool not smaller than the hole is refused (``tool_too_large``); a hole with no depth
+under the material's top is ``empty_operation``.
 """
 
 from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, check_keys, choice, number_list, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation
 
 __all__ = ["HelixBoreOp"]
+
+#: The least share of the feed the tool's centre runs at round an internal arc (a small circle in a big tool).
+_ARC_FEED_FLOOR = 0.25
 
 
 class HelixBoreOp(Operation):
@@ -91,18 +98,20 @@ class HelixBoreOp(Operation):
         holes = self._holes(ctx, params)
         stepover = ctx.stepover(0.4)
         feeds = ctx.feeds(self.feeds_kind, stepover_mm=stepover)
-        stepdown = ctx.stepdown()
+        # A step down the job gives caps the default pitch too (the depth one turn takes).
+        stepdown = ctx.spec.stepdown_mm if ctx.spec.stepdown_mm is not None else math.inf
         sense = 1.0 if params["climb"] else -1.0     # counter-clockwise for climb round a hole's wall
         b = ctx.builder()
         circles = 0
         turns = 0.0
+        pitches: list[float] = []
         holes = linking.order_nearest(holes, b.pos, key=lambda h: h.centre)
         for hole in holes:
             final = hole.diameter_mm / 2.0 - leave - r
             if final <= max(tol, 0.01):
-                raise CamJobError(f"{ctx.spec.where}: {tool.id} ({tool.plain}) is not smaller than the "
-                                  f"Ø{hole.diameter_mm:g} hole {hole.ref} (less the stock to leave); use a smaller "
-                                  "tool, or drill it")
+                raise PlanError("tool_too_large", f"{ctx.spec.where}: {tool.id} ({tool.plain}) is not smaller than "
+                                f"the Ø{hole.diameter_mm:g} hole {hole.ref} (less the stock to leave); use a smaller "
+                                "tool, or drill it")
             radii = [final]
             while radii[-1] > r * 0.95 + 1e-9:
                 radii.append(radii[-1] - stepover)
@@ -112,12 +121,23 @@ class HelixBoreOp(Operation):
             z_top = heights.stock_top if hole.top_z >= heights.part_top - 1e-6 else hole.top_z
             z_end = hole.bottom_z - params["through_mm"] if hole.through else hole.bottom_z + leave
             if z_end >= z_top - 1e-6:
-                raise CamJobError(f"{ctx.spec.where}: the hole {hole.ref} has no depth to bore in setup "
-                                  f"'{ctx.setup.id}'")
+                raise PlanError("empty_operation", f"{ctx.spec.where}: the hole {hole.ref} has no depth to bore under "
+                                f"the material's top in setup '{ctx.setup.id}', so the bore cuts nothing")
+            slope = math.tan(math.radians(params["ramp_angle_deg"]))
+            steepest = math.floor(2 * math.pi * radii[0] * slope * 1e4) / 1e4
+            if params["pitch_mm"] is not None and params["pitch_mm"] > steepest + 1e-9:
+                angle = math.degrees(math.atan(params["pitch_mm"] / (2 * math.pi * radii[0])))
+                raise PlanError("unreachable", f"{ctx.spec.where}.pitch_mm: {params['pitch_mm']:g} mm per turn round "
+                                f"the {2 * radii[0]:.3g} mm circle {tool.id}'s centre runs in {hole.ref} is a "
+                                f"{angle:.3g} degree helix, steeper than the {params['ramp_angle_deg']:g} degrees "
+                                f"ramp_angle_deg lets the tool go down into material; give pitch_mm {steepest:g} or "
+                                "less, or a larger ramp_angle_deg")
             cx, cy = hole.centre
             for k, rho in enumerate(radii):
-                pitch = params["pitch_mm"] or min(stepdown, max(0.05, 2 * math.pi * rho *
-                                                                 math.tan(math.radians(params["ramp_angle_deg"]))))
+                pitch = params["pitch_mm"] or max(1e-3, math.floor(min(0.2 * tool.diameter_mm, stepdown,
+                                                                        2 * math.pi * rho * slope) * 1e4) / 1e4)
+                # The table's feed at the cutting edge: the centre runs a smaller circle than the edge does.
+                scale = max(_ARC_FEED_FLOOR, min(1.0, rho / (rho + r)))
                 if k == 0:
                     lift_and_go(b, (cx + rho, cy), heights)
                 else:
@@ -128,14 +148,16 @@ class HelixBoreOp(Operation):
                 b.feed(z=z_top, f=feeds.ramp_mm_min)
                 depth = z_top - z_end
                 sweep = sense * 2 * math.pi * depth / pitch
-                helix_arcs(b, (cx, cy), rho, 0.0, sweep, z_end, f=feeds.ramp_mm_min)
+                helix_arcs(b, (cx, cy), rho, 0.0, sweep, z_end, f=max(1.0, round(feeds.ramp_mm_min * scale)))
                 end_angle = sweep
-                helix_arcs(b, (cx, cy), rho, end_angle, sense * 2 * math.pi, z_end, f=feeds.feed_mm_min)
+                helix_arcs(b, (cx, cy), rho, end_angle, sense * 2 * math.pi, z_end,
+                           f=max(1.0, round(feeds.feed_mm_min * scale)))
+                pitches.append(pitch)
                 circles += 1
                 turns += depth / pitch
             b.feed(x=cx, y=cy, f=feeds.feed_mm_min)
             b.rapid(z=heights.retract)
         b.rapid(z=heights.clearance)
         ctx.meta.update({"holes": len(holes), "passes": circles, "turns": round(turns, 2),
-                         "stock_to_leave": leave})
+                         "pitch_mm": round(min(pitches), 4) if pitches else None, "stock_to_leave": leave})
         return b.build()

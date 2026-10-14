@@ -23,7 +23,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from cadgen._internal.cam.job_errors import CamJobError, number_list, read_number
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, number_list, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
 
@@ -119,8 +119,9 @@ class EngraveOp(Operation):
         if params["region"] is not None and params["region"][1] is not None:
             bottom = params["region"][1]
         if bottom >= heights.stock_top - 1e-6:
-            raise CamJobError(f"{ctx.spec.where}: the engraving's bottom (Z {bottom:.3f}) is at or above the stock top in "
-                              f"setup '{ctx.setup.id}'; give a deeper depth_mm or a lower surface_z")
+            raise PlanError("empty_operation", f"{ctx.spec.where}: the engraving's bottom (Z {bottom:.3f}) is at or "
+                            f"above the stock top in setup '{ctx.setup.id}', so it cuts nothing; give a deeper "
+                            "depth_mm or a lower surface_z")
         feeds = ctx.feeds(self.feeds_kind)
         cut_levels = levels(min(surface, heights.stock_top), bottom, ctx.stepdown())
         b = ctx.builder()

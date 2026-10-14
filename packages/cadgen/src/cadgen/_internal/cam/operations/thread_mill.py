@@ -18,8 +18,13 @@ boss), follows a helix of one pitch per turn over the thread's length, and leave
 thread is longer than the teeth; it must be the tool's own pitch). ``passes`` (default 1, 2 from 1.5 mm pitch)
 splits the thread's depth into radial passes. ``direction`` ``climb`` (default) or ``conventional``: for a right-hand
 internal thread, climb runs counter-clockwise from the bottom up; external climb runs clockwise from the top down.
-The feed is the table's at the cutting edge, scaled to the tool's centre (slower inside a hole, faster round a
-boss).
+The feed is the table's at the cutting edge, scaled to the tool's centre (slower inside a hole, never under a quarter
+of it; faster round a boss).
+
+Refused, as plan errors on the operation: a thread mill not smaller than its hole (``tool_too_large``) and a
+``depth_mm`` longer than the hole or down to a blind hole's bottom (``too_deep``). Each internal thread records the
+hole it needs made first in ``meta["needs_holes"]`` (``[x, y, z_top, z_bottom, diameter_mm]`` per hole, WCS; z_bottom
+is the thread's bottom), for the check that an earlier operation made it.
 
 The modelled hole is the tap drill, so the thread cuts beyond it by design: the ``gouge`` check does not judge this
 operation. Drill or bore the hole first.
@@ -29,12 +34,14 @@ from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.job_errors import CamJobError, choice, read_number
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, choice, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation
 
 __all__ = ["ThreadMillOp", "nominal_major"]
 
+#: The least share of the feed the tool's centre runs at round an internal arc (a small hole for the tool).
+_ARC_FEED_FLOOR = 0.25
 #: ISO 68-1: an external thread's minor diameter is ``major - 1.22687 x pitch``.
 _EXTERNAL_MINOR = 1.22687
 
@@ -96,6 +103,7 @@ class ThreadMillOp(Operation):
         feeds = ctx.feeds(self.feeds_kind)
         b = ctx.builder()
         sizes = []
+        needs: list[list[float]] = []
         turns_total = 0.0
         targets = linking.order_nearest(targets, b.pos, key=lambda t: t.centre)
         for target in targets:
@@ -111,9 +119,9 @@ class ThreadMillOp(Operation):
                     raise CamJobError(f"{ctx.spec.where}: an M{major:g} thread is not bigger than the Ø"
                                       f"{target.diameter_mm:g} hole {target.ref}; give major_diameter_mm")
                 if tool.diameter_mm >= target.diameter_mm - 1e-6:
-                    raise CamJobError(f"{ctx.spec.where}: {tool.id} ({tool.plain}, Ø{tool.diameter_mm:g}) does not fit "
-                                      f"the Ø{target.diameter_mm:g} hole {target.ref}; a thread mill must be smaller "
-                                      "than the hole")
+                    raise PlanError("tool_too_large", f"{ctx.spec.where}: {tool.id} ({tool.plain}, "
+                                    f"Ø{tool.diameter_mm:g}) does not fit the Ø{target.diameter_mm:g} hole "
+                                    f"{target.ref}; a thread mill must be smaller than the hole")
                 start_rho, final_rho = target.diameter_mm / 2.0 - r, major / 2.0 - r
             else:
                 minor = major - 2.0 * 0.5 * _EXTERNAL_MINOR * pitch
@@ -123,13 +131,18 @@ class ThreadMillOp(Operation):
             if length is None:
                 length = full if (target.through or not internal) else max(pitch, full - 2.0 * pitch)
             if length > full + 1e-6:
-                raise CamJobError(f"{ctx.spec.where}.depth_mm ({length:g}) is longer than {target.ref} "
-                                  f"({full:.3g} mm)")
+                raise PlanError("too_deep", f"{ctx.spec.where}.depth_mm ({length:g}) is longer than {target.ref} "
+                                f"({full:.3g} mm); give a depth_mm of at most {full:.3g}")
             if internal and target.through is False and length > full - 1e-6:
-                raise CamJobError(f"{ctx.spec.where}.depth_mm reaches the bottom of the blind hole {target.ref}; leave "
-                                  "room for the tool's tip (a pitch or two)")
+                raise PlanError("too_deep", f"{ctx.spec.where}.depth_mm reaches the bottom of the blind hole "
+                                f"{target.ref}; leave room for the tool's tip (a pitch or two)")
             passes = params["passes"] or (2 if pitch >= 1.5 else 1)
             radii = [start_rho + (final_rho - start_rho) * (k + 1) / passes for k in range(passes)]
+            if internal:
+                # The hole this thread needs made first (the assumes_prepared_hole check reads it), WCS.
+                needs.append([round(float(target.centre[0]), 4), round(float(target.centre[1]), 4),
+                              round(float(target.top_z), 4), round(float(target.top_z - length), 4),
+                              round(float(target.diameter_mm), 4)])
             turns = self._thread(ctx, params, b, target, radii, length, internal, feeds)
             turns_total += turns
             sizes.append(f"M{major:g}x{pitch:g} {'internal' if internal else 'external'}")
@@ -139,6 +152,8 @@ class ThreadMillOp(Operation):
                          "note_level": "info",
                          "note": f"mills {', '.join(sorted(set(sizes)))} beyond the modelled hole or boss (not judged "
                                  "by the gouge check)"})
+        if needs:
+            ctx.meta["needs_holes"] = needs
         return b.build()
 
     def _thread(self, ctx, params, b, target, radii, length, internal, feeds) -> float:
@@ -169,7 +184,8 @@ class ThreadMillOp(Operation):
         turns = 0.0
         for k, rho in enumerate(radii):
             periphery = rho + r if internal else max(1e-3, rho - r)
-            f = max(1.0, round(feeds.feed_mm_min * rho / periphery))
+            scale = rho / periphery
+            f = max(1.0, round(feeds.feed_mm_min * (max(_ARC_FEED_FLOOR, scale) if internal else scale)))
             if internal:
                 approach = (cx, cy)
                 if k == 0:

@@ -1,9 +1,10 @@
 """``full_slot``: an operation cuts at the tool's full width for more than five of its diameters.
 
 A full-width cut loads the tool hardest and packs the chips in: on a small tool or in a hard material it breaks
-tools. The length is the operation's own fact (``meta["full_slot_mm"]``: a pocket's or adaptive clear's links from
-one ring or row to the next, a slot's whole length); a ``slot`` operation is meant to cut full width, so it is not
-judged. From the parallel cam build.
+tools. The length is the operation's own fact (``meta["full_slot_mm"]``: the stretches of a pocket's links from one
+ring to the next that run into material the level has not cut yet, and its first ring after an entry; an adaptive
+clear's rings round pieces too narrow for a helix; a slot's centreline times its levels); a ``slot`` operation is
+meant to cut full width, so it is not judged. From the parallel cam build.
 """
 
 from __future__ import annotations

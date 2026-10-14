@@ -3,8 +3,9 @@
 * :class:`Heights` of a setup, in WCS mm: ``clearance`` (rapids between features), ``retract`` (the feed-to plane
   just above the stock), ``stock_top`` and ``part_top``.
 * :func:`helix` descends on a helix at a ramp angle (arcs in the IR, so posts write G2/G3 with Z) and closes with a
-  flat circle; :func:`ramp` zig-zags down along a path's first segment; :func:`entry` picks the gentlest one that
-  fits (helix, else ramp, else a plunge, which the plan reports).
+  flat circle; :func:`ramp` zig-zags down along a path's first segment (:func:`ramp_points` the same as points, for a
+  cut that comes down off a tab or onto a facing row); :func:`entry` picks the gentlest one that fits (a helix about
+  any of several centres, else a ramp, else a plunge, which the plan reports).
 * :func:`lead_arc` is a tangent quarter-arc lead in or out of a contour; :func:`apply_tabs` lifts a closed path over
   holding tabs; :func:`order_nearest` and :func:`inside_first` order features.
 * :func:`retract_and_move` is the safe link: up to clearance, across, down to the retract plane.
@@ -18,7 +19,7 @@ import math
 from dataclasses import dataclass
 
 __all__ = ["Heights", "apply_tabs", "entry", "helix", "inside_first", "lead_arc", "order_nearest", "ramp",
-           "retract_and_move"]
+           "ramp_points", "retract_and_move"]
 
 
 @dataclass(frozen=True)
@@ -103,31 +104,114 @@ def ramp(builder, path, z_from: float, z_to: float, *, angle_deg: float, f: floa
 
 def entry(builder, region, start, z_from: float, z_to: float, *, tool_radius: float, angle_deg: float, f: float,
           plunge_f: float, path=None, clockwise: bool = False) -> str:
-    """Enter material at ``start`` (x, y) from ``z_from`` down to ``z_to``: a helix when one of at least 0.25 of the
-    tool radius fits inside ``region`` (where the tool centre may go) about a point near ``start``, else a ramp along
-    ``path``, else a straight plunge. Returns ``helix``, ``ramp`` or ``plunge``; the tool ends at ``start``
-    (helix: on its circle, then fed to ``start``).
+    """Enter material at ``start`` (x, y) from ``z_from`` down to ``z_to``: a helix when one of 0.75, 0.5 or 0.25 of
+    the tool radius fits inside ``region`` (where the tool centre may go) about any of the centres
+    :func:`_helix_centre` tries (through ``start`` behind it, ahead along ``path`` or behind along it, else the
+    region's most open point), else a ramp along ``path``, else a straight plunge. Returns ``helix``, ``ramp`` or
+    ``plunge``; the tool ends at ``start`` (helix: on its circle, then fed to ``start``).
 
     The caller has put the tool at or above ``z_from`` over (or next to) ``start``, where the space between is
     clear: every entry's first moves are short horizontal feeds there, then a feed down to ``z_from``."""
-    import shapely
-
     if z_from - z_to <= 1e-9:
         builder.feed(x=start[0], y=start[1], z=z_to, f=f)
         return "none"
-    for share in (0.75, 0.5, 0.25):
-        radius = share * tool_radius
-        centre = shapely.Point(start[0] - radius, start[1])
-        if region is not None and region.buffer(-radius * 1.01).contains(centre):
-            helix(builder, (centre.x, centre.y), radius, z_from, z_to, angle_deg=angle_deg, f=f, clockwise=clockwise)
-            builder.feed(x=start[0], y=start[1], z=z_to, f=f)
-            return "helix"
+    if region is not None:
+        for share in (0.75, 0.5, 0.25):
+            centre = _helix_centre(region, start, share * tool_radius, path)
+            if centre is not None:
+                helix(builder, centre, share * tool_radius, z_from, z_to, angle_deg=angle_deg, f=f,
+                      clockwise=clockwise)
+                builder.feed(x=start[0], y=start[1], z=z_to, f=f)
+                return "helix"
     if path is not None and ramp(builder, path, z_from, z_to, angle_deg=angle_deg, f=f):
         return "ramp"
     builder.feed(x=start[0], y=start[1], f=f)
     builder.feed(z=z_from, f=f)
     builder.plunge(z=z_to, f=plunge_f)
     return "plunge"
+
+
+def _helix_centre(region, start, radius: float, path=None):
+    """Where a helix of ``radius`` may circle inside ``region`` (where the tool centre may go) to enter at ``start``:
+    the first of these whose circle fits, else None. A circle through ``start``, centred behind it along X (the helix
+    ends on ``start``), ahead of it along ``path``'s first run, or behind it along that run; else the most open point
+    of the piece of ``region`` holding ``start`` (its pole of inaccessibility), when the straight feed from the
+    helix's end to ``start`` stays inside the region."""
+    import shapely
+    from shapely.ops import polylabel
+
+    room = region.buffer(-radius * 1.01)
+    if room.is_empty:
+        return None
+    sx, sy = float(start[0]), float(start[1])
+    candidates = [(sx - radius, sy)]
+    if path is not None and len(path) >= 2:
+        for x, y in ((float(p[0]), float(p[1])) for p in path[1:]):
+            length = math.hypot(x - sx, y - sy)
+            if length > 1e-6:
+                ux, uy = (x - sx) / length, (y - sy) / length
+                candidates += [(sx + radius * ux, sy + radius * uy), (sx - radius * ux, sy - radius * uy)]
+                break
+    for cx, cy in candidates:
+        if room.contains(shapely.Point(cx, cy)):
+            return cx, cy
+    from cadgen._internal.cam.geom2d import polygons_of
+
+    piece = next((p for p in polygons_of(region) if p.buffer(1e-6).contains(shapely.Point(sx, sy))), None)
+    if piece is None:
+        return None
+    pole = polylabel(piece, tolerance=max(1e-3, radius / 20.0))
+    cx, cy = float(pole.x), float(pole.y)
+    if not room.contains(shapely.Point(cx, cy)):
+        return None
+    landing = shapely.LineString([(cx + radius, cy), (sx, sy)])
+    if landing.length > 1e-9 and not landing.within(region.buffer(1e-6)):
+        return None
+    return cx, cy
+
+
+def ramp_points(path, z_top: float, *, angle_deg: float):
+    """Points zig-zagging down from ``z_top`` over ``path[0]`` to ``path[0]`` itself (at its own height): legs forth
+    and back along the start of ``path`` ((N, 3), at the depth it is cut), each sloping evenly and never steeper than
+    ``angle_deg``, an even number of them, never below the path where it passes. The points after the start (the tool
+    is over ``path[0]`` at ``z_top``); empty when ``z_top`` is not above ``path[0]`` or the path has no length."""
+    import numpy as np
+
+    path = np.asarray(path, dtype=float)
+    z = float(path[0, 2])
+    drop = z_top - z
+    if drop <= 1e-9 or len(path) < 2:
+        return []
+    slope = math.tan(math.radians(angle_deg))
+    need = drop / (2.0 * slope)
+    stretch = [path[0]]
+    walked = 0.0
+    for point in path[1:]:
+        span = float(math.hypot(*(point[:2] - stretch[-1][:2])))
+        if span < 1e-12:
+            continue
+        if walked + span >= need:
+            t = (need - walked) / span
+            stretch.append(stretch[-1] + (point - stretch[-1]) * t)
+            walked = need
+            break
+        stretch.append(point)
+        walked += span
+    if walked < 1e-9:
+        return []
+    legs = 2 * max(1, math.ceil(drop / (2.0 * walked * slope) - 1e-9))
+    stretch = np.asarray(stretch)
+    along = np.concatenate([[0.0], np.cumsum(np.hypot(*np.diff(stretch[:, :2], axis=0).T))])
+    total = legs * walked
+    out = []
+    for leg in range(legs):
+        order = range(1, len(stretch)) if leg % 2 == 0 else range(len(stretch) - 2, -1, -1)
+        for k in order:
+            done = along[k] if leg % 2 == 0 else walked - along[k]
+            height = z_top - drop * (leg * walked + done) / total
+            out.append((float(stretch[k, 0]), float(stretch[k, 1]), max(float(stretch[k, 2]), height)))
+    out[-1] = tuple(float(c) for c in path[0])
+    return out
 
 
 def lead_arc(point, direction, *, radius: float, material_on_right: bool, entering: bool = True):

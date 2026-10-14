@@ -12,8 +12,11 @@ WCS, safe links between cuts, and helical arcs.
   spindle), on the left for conventional: material inside the ring runs clockwise for climb.
 * :func:`levels` splits a depth into even steps no deeper than the step down, the last exactly at the bottom.
 * :func:`hole_targets` reads holes (hole-wall cylinders grouped by :func:`features.holes`) and bosses (outside
-  cylinders) along the setup's Z, in WCS.
+  cylinders) along the setup's Z, in WCS; a counterbore's wall names the counterbore (its diameter, down to its
+  shoulder), any other face of the hole the hole under it.
 * :func:`link` joins two cuts at one level: a straight feed when the way is clear, else up, over and down.
+* :func:`in_air` says whether the tool may come straight down at a point: off the stock's footprint and clear of the
+  setup's fixture boxes (:func:`fixture_keepouts`, :func:`fixtures_clear`), so no op plans a plunge onto a vise jaw.
 * :func:`helix_arcs` emits a helix as arcs (at most a half turn each) so posts write G2/G3 with Z.
 
 Stdlib at import; numpy and shapely inside.
@@ -26,8 +29,8 @@ from dataclasses import dataclass, field
 
 from cadgen._internal.cam.job_errors import CamJobError, level_count
 
-__all__ = ["HoleTarget", "Target", "face_targets", "helix_arcs", "hole_targets", "levels", "link", "orient",
-           "unreachable_in"]
+__all__ = ["HoleTarget", "Target", "face_targets", "fixture_keepouts", "fixtures_clear", "helix_arcs", "hole_targets",
+           "in_air", "levels", "link", "orient", "unreachable_in"]
 
 #: A wall is within this of square to XY (|normal z|), or a cylinder's axis within this of Z (1 - |axis z|).
 _SQUARE = 1e-3
@@ -204,7 +207,7 @@ def hole_targets(ctx, refs, *, where: str, holes_ok: bool = True, bosses_ok: boo
 
     groups = None
     out: list[HoleTarget] = []
-    seen: set[str] = set()
+    seen: set = set()
     for ref in refs:
         info = ctx.face(ref)
         if info.surface != "cylinder":
@@ -217,15 +220,27 @@ def hole_targets(ctx, refs, *, where: str, holes_ok: bool = True, bosses_ok: boo
             if groups is None:
                 groups = holes(ctx.part)
             group = next((g for g in groups if info.ref in g["faces"]), None)
-            if group is None or group["faces"][0] in seen:
+            if group is None:
                 continue
-            seen.add(group["faces"][0])
+            # A counterbore's wall names the counterbore (its diameter, down to its shoulder), not the hole under it.
+            counterbore = group.get("counterbore")
+            bored = counterbore is not None and abs(2.0 * float(info.radius_mm) - counterbore["diameter_mm"]) < 1e-3
+            key = (group["faces"][0], bored)
+            if key in seen:
+                continue
+            seen.add(key)
             axis = ctx.wcs.vectors_to_wcs([group["axis"]])[0]
             if axis[2] < 1.0 - 1e-6:
                 raise CamJobError(f"{where}: the hole {ref} opens along {group['axis_word']}, not toward the tool in "
                                   f"setup '{ctx.setup.id}'; machine it from a setup that faces it")
             top = ctx.wcs.to_wcs([group["center_mm"]])[0]
             bottom = ctx.wcs.to_wcs([group["bottom_mm"]])[0]
+            if bored:
+                out.append(HoleTarget(ref=info.ref, centre=(float(top[0]), float(top[1])),
+                                      diameter_mm=float(counterbore["diameter_mm"]), top_z=float(top[2]),
+                                      bottom_z=float(top[2]) - float(counterbore["depth_mm"]), hole=True,
+                                      through=False))
+                continue
             out.append(HoleTarget(ref=group["faces"][0], centre=(float(top[0]), float(top[1])),
                                   diameter_mm=float(group["diameter_mm"]), top_z=float(top[2]),
                                   bottom_z=float(bottom[2]), hole=True, through=bool(group["through"])))
@@ -246,6 +261,40 @@ def hole_targets(ctx, refs, *, where: str, holes_ok: bool = True, bosses_ok: boo
                               diameter_mm=2.0 * float(info.radius_mm), top_z=float(np.max(points[:, 2])),
                               bottom_z=float(np.min(points[:, 2])), hole=False))
     return out
+
+
+def fixture_keepouts(ctx) -> list:
+    """The setup's fixture boxes (job ``fixture``, part coordinates) in its WCS: ``(footprint, z_low, z_high)`` per
+    box, the footprint a shapely polygon on the WCS XY plane."""
+    import numpy as np
+    import shapely
+
+    out = []
+    for box in getattr(ctx.setup, "fixtures", ()) or ():
+        low, high = np.asarray(box.min_mm, dtype=float), np.asarray(box.max_mm, dtype=float)
+        corners = np.array([[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])])
+        wcs = ctx.wcs.to_wcs(corners)
+        out.append((shapely.MultiPoint(wcs[:, :2]).convex_hull, float(wcs[:, 2].min()), float(wcs[:, 2].max())))
+    return out
+
+
+def fixtures_clear(ctx, geometry, z: float, radius: float | None = None) -> bool:
+    """The tool (``radius``, default its own) going down to ``z`` over ``geometry`` (shapely, XY: a point, a lead's
+    line) keeps clear of every fixture box standing above ``z``."""
+    r = ctx.tool.radius if radius is None else radius
+    tol = ctx.tolerance_mm
+    return all(top <= z + tol or footprint.distance(geometry) >= r + tol
+               for footprint, _, top in fixture_keepouts(ctx))
+
+
+def in_air(ctx, xy, z: float, *, margin: float = 0.5) -> bool:
+    """The tool may come straight down at ``xy`` to ``z``: its whole circle is off the stock's footprint (the whole
+    stock projected down the tool axis, nothing an earlier cut took away subtracted) by ``margin``, and the drop
+    there is clear of every fixture box standing above ``z`` (:func:`fixtures_clear`)."""
+    import shapely
+
+    point = shapely.Point(float(xy[0]), float(xy[1]))
+    return ctx.stock_outline.distance(point) >= ctx.tool.radius + margin and fixtures_clear(ctx, point, z)
 
 
 def lift_and_go(b, xy, heights, *, down_to: float | None = None) -> None:

@@ -18,7 +18,8 @@ from cadgen._internal.cam.stock import build_stock
 from tests.python.support import gcode_reader
 from tests.python.support.cam_fixtures import quiet
 from tests.python.support.cam_fixtures_milling2d import (
-    BOSS, BRACKET, boss_step, bracket_step, class_directory, engrave_dxf, face_at, job,
+    BOSS, BRACKET, COUNTERBORE, boss_step, bracket_step, class_directory, counterbore_step, engrave_dxf, face_at, job,
+    plan_error,
 )
 
 
@@ -77,10 +78,59 @@ class Holes(unittest.TestCase):
         self.assertEqual([1.0, 2.5], sorted(set(np.round(np.hypot(moves["x"], moves["y"] - 10.0), 6).tolist())))
         self.assertAlmostEqual(-4.0, float(moves["z"].min()), places=6)
 
+    def test_the_helix_keeps_to_the_ramp_angle_at_the_tools_centre_and_a_steeper_pitch_is_refused(self):
+        setup, ops = plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1", "faces": [self.bore]}])
+        moves, starts = arcs_of(setup)
+        helical = moves["z"] < starts[:, 2] - 1e-9
+        rho = np.hypot(moves["x"] + 25.0, moves["y"])[helical]
+        drop = (starts[:, 2] - moves["z"])[helical]
+        # Half turns: each drops at most pi x rho x tan(3 degrees), however wide the circle.
+        self.assertTrue(np.all(drop <= math.pi * rho * math.tan(math.radians(3.0)) * (1 + 1e-6)))
+        self.assertLessEqual(ops[0].meta["pitch_mm"], 0.2 * 6.0)
+        # The centre runs a smaller circle than the edge: its feed is scaled by rho / (rho + r), at least a quarter.
+        table = ops[0].feeds.feed_mm_min
+        flat = ~helical
+        for radius in (2.6, 5.0):
+            on = flat & np.isclose(np.hypot(moves["x"] + 25.0, moves["y"]), radius)
+            self.assertTrue(np.allclose(moves["feed"][on], round(table * max(0.25, radius / (radius + 3.0))), atol=1))
+        # 5 mm per turn round the smallest (Ø5.2) circle is a 17 degree helix.
+        _, ops = plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1", "faces": [self.bore], "pitch_mm": 5}])
+        kind, message = plan_error(ops)
+        self.assertEqual("unreachable", kind)
+        self.assertIn("steeper than the 3 degrees ramp_angle_deg", message)
+        steepest = math.floor(2 * math.pi * 2.6 * math.tan(math.radians(3.0)) * 1e4) / 1e4
+        self.assertIn(f"give pitch_mm {steepest:g} or less", message)
+        _, ops = plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1", "faces": [self.bore],
+                                           "pitch_mm": steepest}])
+        self.assertIsNone(plan_error(ops))
+
+    def test_a_counterbores_wall_names_the_counterbore_and_the_holes_wall_the_hole_under_it(self):
+        from cadgen import cam
+
+        step = counterbore_step(self.directory)
+        part = read_part(step)
+        features = cam.features(step)
+        wall = face_at(features, surface="cylinder", diameter_mm=COUNTERBORE["counterbore"])
+        hole = face_at(features, surface="cylinder", diameter_mm=COUNTERBORE["hole"])
+        # WCS zero is the stock top, 1 mm over the part's: the counterbore's shoulder at -7, the part's bottom -11.
+        setup, ops = plan(part, [{"op": "helix_bore", "tool": "T1", "faces": [wall]}])
+        self.assertIsNone(plan_error(ops))
+        moves, _ = arcs_of(setup)
+        self.assertAlmostEqual(-7.0, float(moves["z"].min()), places=6)
+        self.assertAlmostEqual(11.0 / 2 - 3.0, float(np.hypot(moves["x"], moves["y"]).max()), places=6)
+        setup, ops = plan(part, [{"op": "helix_bore", "tool": "T2", "faces": [hole]}])
+        moves, _ = arcs_of(setup)
+        self.assertAlmostEqual(-11.0, float(moves["z"].min()), places=6)
+        self.assertAlmostEqual(6.6 / 2 - 2.0, float(np.hypot(moves["x"], moves["y"]).max()), places=6)
+        # Both walls named: the counterbore and the hole, each once.
+        _, ops = plan(part, [{"op": "helix_bore", "tool": "T2", "faces": [wall, hole]}])
+        self.assertEqual(2, ops[0].meta["holes"])
+
     def test_a_bore_too_small_for_the_tool_is_refused(self):
-        with self.assertRaises(CamJobError) as caught:
-            plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1", "faces": [self.taps[0]]}])
-        self.assertIn("is not smaller than the Ø5 hole", str(caught.exception))
+        _, ops = plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1", "faces": [self.taps[0]]}])
+        kind, message = plan_error(ops)
+        self.assertEqual("tool_too_large", kind)
+        self.assertIn("is not smaller than the Ø5 hole", message)
         with self.assertRaises(CamJobError) as caught:
             plan(self.bracket_part, [{"op": "helix_bore", "tool": "T1"}])
         self.assertIn("needs the hole walls", str(caught.exception))
@@ -106,6 +156,13 @@ class Holes(unittest.TestCase):
         self.assertAlmostEqual(-13.0, float(starts[helix, 2].min()), places=6)  # through: the whole 12 mm
         self.assertAlmostEqual(-1.0, float(moves["z"][helix].max()), places=6)
         self.assertEqual(["M6x1 internal", "M6x1 internal"], ops[0].meta["threads"])
+        # The holes it needs made first, for the check that an earlier operation made them: WCS, through.
+        self.assertEqual(sorted([[25.0, 15.0, -1.0, -13.0, 5.0], [25.0, -15.0, -1.0, -13.0, 5.0]]),
+                         sorted(ops[0].meta["needs_holes"]))
+        _, ops = plan(self.bracket_part, [{"op": "thread_mill", "tool": "T4", "faces": self.taps, "depth_mm": 14}])
+        kind, message = plan_error(ops)
+        self.assertEqual("too_deep", kind)
+        self.assertIn("is longer than", message)
 
     def test_an_external_thread_runs_clockwise_down_the_stud_to_its_minor_diameter(self):
         setup, ops = plan(self.boss_part, [{"op": "thread_mill", "tool": "T5", "faces": [self.stud]}])
@@ -130,8 +187,10 @@ class Holes(unittest.TestCase):
         self.assertEqual(8.0, nominal_major(6.8, 1.25))
         self.assertEqual(10.0, nominal_major(8.5, 1.5))
         self.assertEqual(12.0, nominal_major(10.2, 1.75))
+        _, ops = plan(self.bracket_part, [{"op": "thread_mill", "tool": "T5", "faces": self.taps}])
+        self.assertEqual("tool_too_large", plan_error(ops)[0])
+        self.assertIn("a thread mill must be smaller than the hole", plan_error(ops)[1])
         cases = {
-            "a thread mill must be smaller than the hole": [{"op": "thread_mill", "tool": "T5", "faces": self.taps}],
             "cuts only its own pitch": [{"op": "thread_mill", "tool": "T4", "faces": self.taps, "form": "multi",
                                          "pitch_mm": 0.8}],
             "its thread is internal": [{"op": "thread_mill", "tool": "T4", "faces": self.taps, "thread": "external"}],

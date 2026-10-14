@@ -6,6 +6,7 @@ Parts are built with build123d in a temporary directory (never ``models/``):
   through bore at (-25, 0), two Ø5 through tap holes (M6x1) at (25, ±15) and a stadium slot 30 long and 8 wide,
   4 deep (floor z = 8), along X centred at (2, 0).
 * :func:`boss_step`, :data:`BOSS`: a 40 x 40 x 5 base with a Ø12 boss 15 tall at its centre (an M12x1.75 stud).
+* :func:`counterbore_step`, :data:`COUNTERBORE`: a block with a Ø6.6 hole under a Ø11 x 6 counterbore.
 * :func:`engrave_dxf`: a DXF with a line, an arc, a circle, an open polyline and a text entity (which engraving skips).
 
 The 80 x 60 block with a stepped pocket and an island is the core's (``cam_fixtures.block_step``).
@@ -24,6 +25,7 @@ BRACKET = {
     "slot": {"center": (2.0, 0.0), "length": 30.0, "width": 8.0, "floor_z": 8.0},
 }
 BOSS = {"base": (40.0, 40.0, 5.0), "diameter": 12.0, "height": 15.0}
+COUNTERBORE = {"size": (40.0, 40.0, 10.0), "hole": 6.6, "counterbore": 11.0, "depth": 6.0}
 
 
 def bracket_step(directory: Path, name: str = "bracket") -> Path:
@@ -51,6 +53,22 @@ def boss_step(directory: Path, name: str = "boss") -> Path:
     base = (Align.CENTER, Align.CENTER, Align.MIN)
     bx, by, bz = BOSS["base"]
     part = Box(bx, by, bz, align=base) + Pos(0, 0, bz) * Cylinder(BOSS["diameter"] / 2, BOSS["height"], align=base)
+    path = directory / f"{name}.step"
+    export_step(part, str(path))
+    return path
+
+
+def counterbore_step(directory: Path, name: str = "counterbored") -> Path:
+    """:data:`COUNTERBORE`: a 40 x 40 x 10 block on z = 0, centred, with a Ø6.6 through hole at its centre under a
+    Ø11 counterbore 6 deep (an M6 socket-head clearance)."""
+    from build123d import Align, Box, Cylinder, Pos, export_step
+
+    base = (Align.CENTER, Align.CENTER, Align.MIN)
+    sx, sy, sz = COUNTERBORE["size"]
+    part = Box(sx, sy, sz, align=base)
+    part -= Cylinder(COUNTERBORE["hole"] / 2, sz, align=base)
+    part -= Pos(0, 0, sz - COUNTERBORE["depth"]) * Cylinder(COUNTERBORE["counterbore"] / 2, COUNTERBORE["depth"],
+                                                            align=base)
     path = directory / f"{name}.step"
     export_step(part, str(path))
     return path
@@ -94,6 +112,14 @@ def job(operations: list[dict], **kwargs) -> dict:
     """A GRBL mill job on the 2.5D tool set (:func:`tools`)."""
     kwargs.setdefault("tools", tools())
     return mill_job(operations, **kwargs)
+
+
+def plan_error(ops, index: int = 0):
+    """``(kind, message)`` of the plan error operation ``index`` (an op plan list from ``plan_setups``) was refused
+    with, else None: a planner's ``PlanError`` becomes the op's ``meta["plan_error"]``, and every other op still
+    plans."""
+    found = next(op for op in ops if op.index == index).meta.get("plan_error")
+    return None if found is None else (found["kind"], found["message"])
 
 
 def face_at(features, *, surface: str, **match) -> str:
