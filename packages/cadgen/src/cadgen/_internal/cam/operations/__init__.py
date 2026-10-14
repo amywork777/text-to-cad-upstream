@@ -59,6 +59,8 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
     _entry("chamfer", "ChamferOp", "Chamfer", _25D, MILLS),
     _entry("engrave", "EngraveOp", "Engrave", _25D, MILLS),
     _entry("helix_bore", "HelixBoreOp", "Helix bore", _25D, MILLS),
+    _entry("circular", "CircularOp", "Circular", _25D, MILLS),
+    _entry("trace", "TraceOp", "Trace", _25D, MILLS),
     _entry("rough", "RoughOp", "3D rough", _3D, MILLS),
     _entry("parallel", "ParallelOp", "Parallel finish", _3D, MILLS),
     _entry("waterline", "WaterlineOp", "Waterline", _3D, MILLS),

@@ -39,6 +39,8 @@ The `op` key of each operation names it. Pick by what the user wants cut and on 
 | Edges chamfered or deburred | `chamfer` | Chamfer | **Runs today** | milling-2d.md |
 | Text, a logo or a line engraved | `engrave` | Engrave | **Runs today** | milling-2d.md |
 | A round hole too big for a drill, milled in a helix | `helix_bore` | Helix bore | **Runs today** | milling-2d.md |
+| A round pocket wider than twice the tool cleared level by level in a spiral (a narrower hole is a `helix_bore`), or the material round a round boss cleared | `circular` | Circular | **Runs today** | milling-2d.md |
+| A groove or a cut along the part's edges, on them or offset to one side | `trace` | Trace | **Runs today** | milling-2d.md |
 | A thread milled in a hole or on a boss | `thread_mill` | Thread mill | **Runs today** | milling-2d.md |
 | Holes drilled, pecked, tapped, reamed, bored or spotted | `drill` | Drill | **Runs today** | [drilling.md](references/drilling.md) |
 | A curved or sculpted part roughed out | `rough` | 3D rough | **Runs today** | [milling-3d.md](references/milling-3d.md) |
@@ -118,11 +120,12 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
    ```
 
    Plan it the way [machining-practice.md](references/machining-practice.md) says: hold the part
-   low and give every vise jaw and clamp as a `fixture` box; the shortest tool that reaches and the
-   largest that fits; face, rough with stock to leave, finish, then spot, drill and tap, then
-   chamfer; the big tool before the small one; the outline cut free last, with tabs so the part
-   stays put; climb milling; helix or ramp entries, never a straight plunge. One setup per way the
-   part is held. Each operation's own keys are on its reference page.
+   low and give what holds it as the setup's `fixture` (a `vise` or `plate`, or a box per clamp);
+   the shortest tool that reaches and the largest that fits; face, rough with stock to leave,
+   finish, then spot, drill and tap, then chamfer; the big tool before the small one; the outline
+   cut free last, with tabs so the part stays put; climb milling; helix or ramp entries, never a
+   straight plunge. One setup per way the part is held. Each operation's own keys are on its
+   reference page.
 
 4. **Plan.**
 

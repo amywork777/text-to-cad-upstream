@@ -111,7 +111,7 @@ class Registries(unittest.TestCase):
         from cadgen._internal.cam.job_errors import CamJobError
         from cadgen._internal.cam.operations import OPERATION_NAMES, REGISTRY, available, get_operation
 
-        self.assertEqual(28, len(OPERATION_NAMES))
+        self.assertEqual(30, len(OPERATION_NAMES))
         missing = [name for name in OPERATION_NAMES if not available(name)]
         if missing:
             with self.assertRaises(CamJobError) as caught:
