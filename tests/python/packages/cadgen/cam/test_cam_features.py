@@ -150,5 +150,41 @@ class HoleBlockFeatures(unittest.TestCase):
         self.assertEqual(["+X", "-X"], cross["reach"])
 
 
+class Direction(unittest.TestCase):
+    """``direction`` lists what a tool from one side can work; the generated CLI takes ``--direction -Z``."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.step = block_step(class_directory(cls))
+
+    def test_from_below_only_the_bottom_and_the_through_holes(self):
+        from cadgen import cam
+
+        under = cam.features(self.step, direction="-Z")
+        self.assertTrue(under.ok, under.findings)
+        self.assertEqual(["bottom"], [f["kind"] for f in under.floors])
+        self.assertEqual(4, len(under.holes))
+        self.assertTrue(all(f["surface"] != "plane" or f["normal"][2] < 0 for f in under.faces))
+        above = cam.features(self.step, direction="+Z")
+        self.assertIn("floor", [f["kind"] for f in above.floors])
+        self.assertEqual((), cam.features(self.step, direction="+X").holes)
+        wrong = cam.features(self.step, direction="Z")
+        self.assertFalse(wrong.ok)
+        self.assertIn("+Z, -Z", wrong.findings[0]["summary"])
+
+    def test_the_cli_takes_a_direction_that_starts_with_a_dash(self):
+        import contextlib
+        import io
+        import json
+
+        from cadgen.cli.cam_features import main
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = main([str(self.step), "--direction", "-Z", "--json"])
+        self.assertEqual(0, code)
+        self.assertEqual(["bottom"], [f["kind"] for f in json.loads(out.getvalue())["floors"]])
+
+
 if __name__ == "__main__":
     unittest.main()

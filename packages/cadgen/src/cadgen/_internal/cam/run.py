@@ -63,13 +63,41 @@ def plan_error_finding(op) -> dict:
                    "again", [{"setup": op.setup, "operation": op.index}])
 
 
-def list_features(target: Path, *, occurrence: str | None = None) -> CamFeaturesResult:
+def _toward(reading: dict, direction: str) -> dict:
+    """What a tool coming from ``direction`` (``-Z``: from under the part) can work: the holes it reaches, the floors
+    facing it, the flat faces turned toward it and the round walls and cones along it (curved faces stay: their
+    reach is not read). Occlusion by other faces is not judged here; a hole's ``reach`` is."""
+    import numpy as np
+
+    axis = np.zeros(3)
+    axis["XYZ".index(direction[1])] = 1.0 if direction[0] == "+" else -1.0
+
+    def keep(face: dict) -> bool:
+        if face["surface"] == "plane":
+            return float(np.dot(face["normal"], axis)) > 1e-6
+        if face["surface"] in ("cylinder", "cone"):
+            return abs(float(np.dot(face["axis"], axis))) > 1.0 - 1e-6
+        return True
+
+    return {"faces": [f for f in reading["faces"] if keep(f)],
+            "holes": [h for h in reading["holes"] if direction in h.get("reach", ())],
+            "floors": [f for f in reading["floors"] if f["normal"] == direction],
+            "profiles": reading["profiles"] if direction == "+Z" else []}
+
+
+def list_features(target: Path, *, occurrence: str | None = None, direction: str | None = None) -> CamFeaturesResult:
     from cadgen._internal.cam.features import read_features
+    from cadgen._internal.cam.job import ORIENTATIONS
+    from cadgen._internal.cam.job_errors import choice
     from cadgen._internal.cam.part import read_part
 
     try:
+        if direction is not None:
+            choice(direction, ORIENTATIONS, "direction")
         part = read_part(Path(target), occurrence=occurrence)
         reading = read_features(part)
+        if direction is not None:
+            reading = _toward(reading, direction)
     except CamJobError as exc:
         return CamFeaturesResult(ok=False, document=Path(target), findings=(job_finding(str(exc)),))
     except OSError as exc:

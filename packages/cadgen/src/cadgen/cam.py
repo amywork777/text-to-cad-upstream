@@ -30,16 +30,19 @@ from cadgen.results import CamFeaturesResult, CamPlanResult
 __all__ = ["features", "plan"]
 
 
-def features(target: Path, *, occurrence: str | None = None) -> CamFeaturesResult:
+def features(target: Path, *, occurrence: str | None = None, direction: str | None = None) -> CamFeaturesResult:
     """List what a CAM job can name on a part: faces with their selectors and a machining reading, holes, floors.
 
     target: the STEP/STP document holding the part, or a DXF of flat profiles.
     occurrence: which part occurrence to read (``#o1.2``) when the document is an
         assembly. Omitted, the document must hold one part.
+    direction: list only what a tool coming from this side can work (``+Z``, ``-Z``,
+        ``+X``...): the holes it reaches, the floors and faces turned toward it, the
+        walls along it. A feature no direction lists is an undercut.
     """
     from cadgen._internal.cam.run import list_features
 
-    return list_features(Path(target), occurrence=occurrence)
+    return list_features(Path(target), occurrence=occurrence, direction=direction)
 
 
 def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None = None, post: str | None = None,
