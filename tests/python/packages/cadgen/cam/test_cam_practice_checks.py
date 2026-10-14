@@ -72,7 +72,7 @@ class PracticeChecks(unittest.TestCase):
         self.assertEqual({"count": 1, "order": ["T2", "T3"]}, drilled.summary["tool_changes"])
         self.assertIn("1 tool change: T2 then T3", drilled.human_lines())
 
-    def test_an_operation_that_cuts_nothing_is_an_error(self):
+    def test_an_operation_that_cuts_nothing_where_the_job_named_faces_is_an_error(self):
         def rapids_only(_self, ctx, params):
             builder = ctx.builder()
             builder.rapid(z=ctx.heights.clearance)
@@ -85,6 +85,18 @@ class PracticeChecks(unittest.TestCase):
         self.assertEqual([{"setup": "top", "operation": 1}], found["items"])
         self.assertEqual("fix", result.verdict["status"])
         self.assertEqual((), result.posts)
+
+    def test_a_facing_pass_with_nothing_to_face_is_only_a_warning(self):
+        def rapids_only(_self, ctx, params):
+            builder = ctx.builder()
+            builder.rapid(z=ctx.heights.clearance)
+            return builder.build()
+
+        with mock.patch("cadgen._internal.cam.operations.face.FaceOp.plan", rapids_only):
+            result = self.plan([{"op": "face", "tool": "T1"}, {"op": "pocket", "tool": "T1", "faces": [self.lower]}])
+        (found,) = self.of(result, "empty_operation")
+        self.assertEqual("warning", found["severity"])
+        self.assertEqual([{"setup": "top", "operation": 0}], found["items"])
 
     def test_a_stated_feed_under_a_spindle_clamp_says_the_chip_grows_once_per_tool(self):
         machine = {"kind": "mill", "post": "grbl", "max_rpm": 6000, "travel_mm": [300, 200, 80]}

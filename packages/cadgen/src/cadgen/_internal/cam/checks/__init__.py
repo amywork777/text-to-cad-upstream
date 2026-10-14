@@ -50,7 +50,7 @@ REGISTRY: tuple[Entry, ...] = (
     _entry("fixture", "error", "a move enters a fixture keep-out"),
     _entry("limits", "warning", "a feed or speed was clamped by the machine"),
     _entry("machine", "error", "an operation needs an axis the machine does not have"),
-    _entry("empty_operation", "error", "an operation cuts nothing"),
+    _entry("empty_operation", "error", "an operation cuts nothing (a warning when it names no faces or region)"),
     _entry("through_stock_bottom", "warning", "a cut goes below the stock's bottom"),
     _entry("long_stickout", "warning", "an end mill sticks out more than four times its diameter"),
     _entry("full_slot", "warning", "an operation cuts at the tool's full width for more than five diameters"),
