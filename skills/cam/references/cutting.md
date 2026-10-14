@@ -12,6 +12,9 @@ are skipped and counted in a `warning:` line; any other entity (a point, a 3D fa
 refused naming its handle, so delete it or redraw it as curves. A `.dxf` is cut from a `sheet`
 stock that names its `thickness_mm` (a drawing has none of its own).
 
+A flat part the user sends to a cutting service rather than cuts themselves needs no toolpaths: it
+is a DXF, which the `$dxf` skill draws and `$sendcutsend` checks before upload.
+
 ```bash
 cadgen cam features bracket.dxf
 ```

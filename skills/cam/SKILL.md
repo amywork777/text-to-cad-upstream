@@ -73,7 +73,8 @@ installation, and its warm build daemon, with the `$cad` skill and the CAD app's
 - `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 python`
 
 Units are fixed: mm for lengths, mm/min for feed, rev/min for spindle speed, degrees for angles,
-seconds for time.
+seconds for time. Restate the user's numbers in those units before you write them down (a 1/4"
+end mill is 6.35 mm, 30 ipm is 762 mm/min).
 
 ## Workflow
 
@@ -119,7 +120,8 @@ seconds for time.
    Plan it the way [machining-practice.md](references/machining-practice.md) says: hold the part
    low and give every vise jaw and clamp as a `fixture` box; the shortest tool that reaches and the
    largest that fits; face, rough with stock to leave, finish, then spot, drill and tap, then
-   chamfer; climb milling; helix or ramp entries, never a straight plunge. One setup per way the
+   chamfer; the big tool before the small one; the outline cut free last, with tabs so the part
+   stays put; climb milling; helix or ramp entries, never a straight plunge. One setup per way the
    part is held. Each operation's own keys are on its reference page.
 
 4. **Plan.**
@@ -128,6 +130,7 @@ seconds for time.
    cadgen cam plan part.step --job part.cam.json
    ```
 
+   For an assembly, name the part to machine: `--occurrence '#o1.2'` (as `cam features` takes it).
    It writes `part.cam.glb` and, when no check found an error, one G-code file per setup
    (`part.top.nc`; the extension is the post's; a post that needs one file per tool names them
    `part.top.T1.nc`, `part.top.T2.nc`) beside the part, and prints one line per operation (tool, speed, feed, time), one
@@ -147,18 +150,44 @@ seconds for time.
 
 ## Report
 
-Say, in the user's words:
+Hand the program over in this order, in the user's words:
 
 - The verdict, the total time and the tool list, then each setup with its operations.
-- Every warning, every lite limit an operation carries and every `adapted:` step, with its note.
+- The post and the controller it is for, and which file runs first when there are several (one
+  per setup, or per tool on GRBL) and how the part is re-held between them.
+- The work zero and how to set it: `origin` `stock-top-center` on `G54` means X0 Y0 at the stock's
+  centre and Z0 on its top; touch off there.
+- Each tool by its number: diameter, speed and feed, and the stickout the plan assumed (a guessed
+  stickout is a guessed collision check).
+- Every warning, every info note (`unused_tool`), every lite limit an operation carries and every
+  `adapted:` step, with its note.
+- What the plan assumed that the user did not say: the material, the machine's limits, the rapid
+  rate and tool change time the cycle time uses, a stickout or a fixture box.
 - That speeds and feeds are starting points from a table, not tuned for their machine.
 - Where the plan departs from [machining-practice.md](references/machining-practice.md) (a long
   stickout, a full-width slot, a straight plunge, a tool the user did not confirm they own), and
   why.
-- **Always:** the G-code has not been run on a machine. Give the user the steps in
+- **Always:** the G-code has not been run on a machine. Say this line word for word: "Prove this
+  program on the machine: single block, feed override low, in air first." Then give the steps in
   [Proving the program](references/machining-practice.md#proving-the-program): check the post
   matches the controller, set the work offset and tool lengths, play the cut in the Viewer, dry-run
   it above the part, then cut single-block with the overrides down. The same warning opens every
   posted file.
 
 Never send G-code to a machine from this skill.
+
+## What the result means
+
+- **The plan is only as true as the job.** It knows the part, the stock, the tools and the fixture
+  boxes you gave, nothing else. A wrong stock size, a fixture that is not where the job says, or a
+  tool longer or shorter than stated makes a plan that looks right and is not.
+- **The cycle time** is the moves at their feeds, rapids at `machine.rapid_mm_min` and each tool
+  change at `machine.tool_change_s` (the machine kind's defaults when the job does not say). Spindle
+  spin-up and setting up are not in it, and a real machine slows into corners: read it as a lower
+  bound.
+- **The G-code is written for one controller.** Another controller may read the same words
+  differently: change `machine.post` and plan again rather than editing the file by hand.
+- **When the user asks for something this skill does not do** (an operation that is not in the
+  table, a process the machine kinds do not cover), say "That is not in this version." Do not stand
+  a 2.5D operation in for a 3D surface, or a lite operation in for a full one without saying so.
+  Offer the part you can cover, and say what is left uncut.
