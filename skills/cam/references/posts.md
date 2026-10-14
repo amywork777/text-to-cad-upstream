@@ -2,8 +2,9 @@
 
 A post turns each setup's toolpaths into one program for a controller, written beside the part as
 `<part>.<setup id><extension>`; a GRBL mill or router setup that uses more than one tool is one program per tool,
-`<part>.<setup id>.T1<extension>`, `.T2`... (run them in order, zeroing Z with each tool). Pick it with `machine.post` (left out, the kind's default: see
-[job-file.md](job-file.md), which also has the machine keys every post shares). The keys below are the
+`<part>.<setup id>.T1<extension>`, `.T2`... (run them in order, zeroing Z with each tool). Pick it with `machine.post`, which every job states: a
+dialect is never guessed ([job-file.md](job-file.md) has the machine keys every post shares). Tell the
+user which file runs first, and how the part is re-held between setups. The keys below are the
 post's own: put them in `machine` next to `kind` and `post`; a key another post takes is refused.
 
 ```json
@@ -21,7 +22,9 @@ machine, air-cut it or run it single-block first; what to verify for the machine
 tool length on a mill, every tool's offsets on a lathe, the focus on a laser, the torch or nozzle heights on
 a cutting table, the start hole on a wire EDM; Marlin: the origin is where the head starts); units mm,
 feeds and speeds are starting points; on a GRBL file per tool, which file it is and which tool to load and
-zero; the material and every tool. Then the post's own notes (diameter or
+zero; the material and every tool with the speeds it runs at (`T1: 6 mm flat: 13260 rpm, feed 1591 mm/min,
+plunge 477 mm/min`); for a fine bore that shifts its bar, which way the bar's tip must point at the spindle's
+orient position. Then the post's own notes (diameter or
 radius X on a lathe, how a 3+2 setup is set up, TCP, how a wire's offset is carried). Nothing sends a
 program to a machine. Tell the user this line when you report.
 
@@ -29,11 +32,11 @@ program to a machine. Tell the user this line when you report.
 
 | post | file | kinds | what it writes | its machine keys |
 | --- | --- | --- | --- | --- |
-| `grbl` | `.nc` | mill, router, laser | no tool changer and no tool table: one file per tool, each starting `G0 Z<clearance>` before the spindle; `G4 P` spin-up after every spindle start; cycles expanded; coolant `M8` only (mist, air too: stock GRBL has no M7); laser pierce in `M3 S` then cut in `M4 S` (0-1000); dwell in seconds | `spindle_spinup_s` |
-| `linuxcnc` | `.ngc` | mill, mill4, mill5, lathe | `G91.1`, `G64 P` blending, `G53 G0 Z0` before `T M6` (and at the end), `G43 H`, G81-G89 (tap as rigid `G33.1`), `M2`; lathe `G7`/`G8`, `G30` before each turret index (set it with `G30.1`), `G96 D S`, `G95`, one-line `G76`; roughing always expanded | `cycles` |
-| `fanuc` | `.nc` | mill, mill4, mill5, lathe | `%` + `O` number, upper-case comments, decimal points, `G91 G28 Z0.` before `T M6`, G73-G89 with `M29` rigid tap, fine bore `G76`, dwell ms, 3+2 `G68.2`/`G53.1`, TCP `G43.4`; lathe `T0101`, `G50 S` + `G96`, `G98`/`G99`, two-block `G76`, `G71` with `cycles` | `cycles`, `program_number` |
-| `haas` | `.nc` | mill, mill4, mill5, lathe | as Fanuc, plus `T M06`, rigid tap without M29, air `M83`/`M84`, 3+2 by `G254` dynamic work offset, TCP `G234`, `G187` smoothing; lathe `T101`, one-block `G76 X Z K D F A` and `G71 P Q U W D F` | `cycles`, `program_number`, `smoothing` |
-| `mach3` | `.tap` | mill, mill4, router, plasma | `G91.1` (incremental arc centres), `G53 G0 Z0` before `T M6`, `G43 H`, G73-G89 (left-hand tap, fine bore expanded), dwell in seconds; plasma torch `M3`/`M5` with heights | `cycles`, `dwell_ms`, the torch keys (THC off by default) |
+| `grbl` | `.nc` | mill, router, laser | no tool changer and no tool table: one file per tool, each starting `G0 Z<clearance>` before the spindle; never `G28`, `G30` or `G53` (the machine may not be homed); `G4 P` spin-up after every spindle start; cycles expanded, a tap and a shifting fine bore refused (no spindle-synchronised feed, no oriented stop); coolant `M8` flood only, mist and air a comment to switch them by hand (stock GRBL has no M7; on a laser air assist is `M8`); laser pierce in `M3 S` then cut in `M4 S` (0-1000); dwell in seconds; lines kept to 79 characters of code, 127 in all. Check: `$32=0` on a mill (in laser mode GRBL does not stop for `M3`/`M5`), and zero Z again on each tool's file | `spindle_spinup_s` |
+| `linuxcnc` | `.ngc` | mill, mill4, mill5, lathe | `G91.1`, `G64 P` blending, `G49` then `G53 G0 Z0` before `T M6` (and at the end; needs a homed machine), `G43 H`, G81-G89 (tap as rigid `G33.1`; the `G73`/`G83` clearance is LinuxCNC's own 0.254 mm), fine bore as moves with `M5` and `M19 R0 Q10`, air a by-hand comment, `M2`; lathe `G7`/`G8`, `G30` before each turret index (set it with `G30.1`), `G96 D S`, `G95`, one-line `G76`; roughing always expanded | `cycles` |
+| `fanuc` | `.nc` | mill, mill4, mill5, lathe | `%` + `O` number (one per setup), upper-case comments, decimal points on every coordinate (a Fanuc without parameter 3401 reads `X10` as 10 micrometres), `G91 G28 Z0.` before `T M6`, G73-G89 with `M29` rigid tap (some controls want `M29` before `M3`: check), fine bore `G76 Q` (the shift direction is a parameter, assumed +X; any other shift posts as moves with `M19`), dwell ms, air a by-hand comment, `G49` at the end, `N` numbers with `line_numbers`, 3+2 `G68.2`/`G53.1`, TCP `G43.4`; lathe `T0101`, `G50 S` + `G96`, `G98`/`G99`, two-block `G76`, `G71` with `cycles` | `cycles`, `program_number` |
+| `haas` | `.nc` | mill, mill4, mill5, lathe | as Fanuc, plus `N1 T1 M06`, `N2`... at each tool change (restart at a tool), rigid tap without M29 (rigid tapping is an option: check it is installed), fine bore `G76 I J` along the shift, dwell `P` in milliseconds with no decimal point (with one Haas reads seconds), the back bore is Haas's `G77`, not `G87` (cadgen posts neither), air `M83`/`M84`, 3+2 by `G254` dynamic work offset, TCP `G234`, `G187` smoothing; lathe `T101`, one-block `G76 X Z K D F A` and `G71 P Q U W D F` | `cycles`, `program_number`, `smoothing` |
+| `mach3` | `.tap` | mill, mill4, router, plasma | `G91.1` (incremental arc centres), `G0 Z<clearance>` in the work offset before `T M6` and at the end, never `G53` (many Mach3 machines are never homed, so machine Z0 may stand below the work; `homed: true` posts `G53 G0 Z0`), `G43 H`, G73-G89 (a left-hand tap and a shifting fine bore refused), `G49` at the end, dwell in seconds (turn Mach's "G04 dwell param in ms" off, or set `dwell_ms`; set its spin-up delay too); plasma torch `M3`/`M5` with heights | `cycles`, `dwell_ms`, the torch keys (THC off by default) |
 | `marlin` | `.gcode` | laser | `G21 G90`, `M3`/`M4 S` on Marlin's scale, `G4 P` ms, air assist `M8`/`M9`, ends `M5` (Marlin's M30 deletes a file), no work offsets: `G92 X0 Y0` makes the origin where the head starts | `laser_scale`, `laser_mode`, `inline_power`, `z_words` |
 | `plasma` | `.nc` | plasma | per cut: pierce height, `M3`, pierce delay, cut height, THC on; then THC off, `M5`, safe height; `M30` | the torch keys, `dwell_ms` |
 | `waterjet` | `.nc` | waterjet | per cut `M3`, pierce dwell, `M5`; X Y only; `M30` | `pierce_s`, `z_words`, `dwell_ms` |
@@ -44,7 +47,9 @@ program to a machine. Tell the user this line when you report.
 | key | posts | values (default) | what it changes |
 | --- | --- | --- | --- |
 | `cycles` | linuxcnc, fanuc, haas, mach3 | `true`, `false` (left out) | left out: drilling and threading cycles are canned cycles, lathe roughing is plain moves; `true`: every cycle the controller has (Fanuc/Haas `G71`); `false`: every cycle as plain moves |
-| `program_number` | fanuc, haas, wire_edm | 1 to 9999 (99999 Haas) (1000) | the `O` number |
+| `program_number` | fanuc, haas, wire_edm | 1 to 9999 (99999 Haas) (1000) | the first setup's `O` number; each next setup is one more, so two setups never share one |
+| `line_numbers` | fanuc | (`false`) | `N10`, `N20`... on every block |
+| `homed` | mach3 | (`false`) | the machine is homed: `G53 G0 Z0` (and `G53 G0 A0`) before tool changes and at the end |
 | `smoothing` | haas | `off`, `rough`, `medium`, `finish` (`off`) | `G187 P1`..`P3 E<tolerance>` |
 | `dwell_ms` | mach3, plasma, waterjet | `true`, `false` (`false`) | `G4 P` in milliseconds (Mach's "G4 dwell in ms" setting) |
 | `torch_z` | mach3, plasma | (`true`) | write the torch heights as Z moves |
@@ -52,7 +57,7 @@ program to a machine. Tell the user this line when you report.
 | `z_feed_mm_min` | mach3, plasma | mm/min (1000) | the feed down to cut height |
 | `pierce_delay_s` | mach3, plasma | s (0.5) | the pierce delay when the operation gives none |
 | `thc`, `thc_on`, `thc_off` | mach3, plasma | (`false` on mach3, `true` on plasma), (`M101`, `M102`) | torch height control around each cut; the codes are placeholders: set your controller's |
-| `spindle_spinup_s` | grbl | s (3) | the dwell after a spindle start from standstill before the tool cuts (GRBL does not wait for speed); not after a reversal |
+| `spindle_spinup_s` | grbl (and every post as a shared machine key) | s (3 on GRBL, else none) | the dwell after a spindle start from standstill, or a restart after a stop, before the tool cuts; not after a reversal. The cycle time counts it |
 | `pierce_s` | waterjet | s (1) | the pierce dwell when the operation gives none |
 | `laser_scale` | marlin | `255`, `1000` (255) | the S value of full power |
 | `laser_mode` | marlin | `constant`, `dynamic` (`constant`) | `M3`, or `M4` (power with speed, Marlin 2.1+) |
@@ -76,12 +81,21 @@ program to a machine. Tell the user this line when you report.
 - **Rotary turns**: a rapid that turns a rotary axis below the clearance height is refused; under TCP it is
   refused straight out of a cut (below the retract height), since it would swing the tool through the part.
 - **Arcs** shorter than the posted resolution post as lines (never as a full circle); an arc whose end is off
-  its circle is refused. Arc fitting never folds a ramp into a helix.
+  its circle is refused. Arc fitting keeps every point and every chord within the tolerance, merges a
+  straight run into one line, fits a helix as one `G2`/`G3` with Z where the post takes helical arcs, and
+  never folds a ramp into a helix.
+- **Depths** never come out deeper than planned: a cut's Z rounds up at the post's precision, a canned
+  cycle's depth toward its R plane.
+- **Spindle**: a speed that would post as `S0` is refused; a tap feeds at the posted `S` times its pitch.
+- **Coolant** a controller has no code for is a comment telling the operator to switch it on or off by
+  hand, never another coolant's code.
 - **Numbers**: a coordinate that is not a number, or a feed that is not positive, is refused naming the move.
-- **Comments** are ASCII (GRBL reads bytes of 0x80 and up as realtime commands even in a comment), have no
-  `%` or `;`, and wrap at 70 characters.
-- **The end**: `M5`, `M9` once, Z home, then a table a 3+2 setup or TCP program turned back at rotary zero
-  (`G91 G28 A0. C0.` on Fanuc/Haas, `G53 G0 A0 C0` on LinuxCNC/Mach3).
+- **Comments** keep letters, digits, spaces and `. , : / + - _ = * # ' "` only: GRBL reads `!` (feed hold),
+  `~` (cycle start), `?` and bytes of 0x80 and up as realtime commands even in a comment. `%` is written
+  "percent", `;` a comma, and they wrap at 70 characters.
+- **The end**: `M5`, `M9` once, Z home (Mach3: the clearance height), then a table a 3+2 setup or TCP program
+  turned back at rotary zero (`G91 G28 A0. C0.` on Fanuc/Haas, `G53 G0 A0 C0` on LinuxCNC, `G0 A0` on Mach3),
+  and the tool length cancelled (`G49`).
 
 ## Multi-axis and lathes
 
@@ -101,7 +115,12 @@ program to a machine. Tell the user this line when you report.
 
 ## Refusals
 
-A program the machine cannot run is refused in one sentence, and nothing is written: a beam on a mill,
+What the controller cannot do for an operation is a `no_post_support` error on that operation: no G-code
+is written, the plan and its GLB stand, and the summary says what to change (another post, or the
+operation): a tap on a post that cannot hold the feed to the spindle (GRBL, `cycles: false`, under TCP,
+a left-hand tap on Mach3), a fine bore that shifts its bar on a controller that cannot orient its
+spindle, a TCP program on Mach3, a spindle speed that would post as `S0`. A program the machine
+cannot run at all is refused in one sentence, and nothing is written: a beam on a mill,
 a spindle or coolant on a cutting table (air assist is allowed on a laser), a rotary axis the machine
 does not have, a lathe move off the XZ plane, a drilling cycle on a wire EDM, `wire_comp: controller`
 without the cut's side, `uv_words` taper without the cut's thickness, an `O` number too big, a number that

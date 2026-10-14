@@ -28,8 +28,14 @@ class CannedPost(Post):
     canned_cycles = frozenset({"drill", "spot", "peck", "chipbreak", "tap", "bore", "ream"})
 
 
-def _same_path(test, text: str, program: Program, *, tolerance: float = 0.01) -> None:
+def _same_path(test, text: str, program: Program, post, *, tolerance: float = 0.01) -> None:
+    from tests.python.support.cam_fixtures_posts import with_entries
+
     read = gcode_reader.read(text, start=program.toolpath.start)
+    # Move by move: each move's kind and feed, the spindle on through every cut, the dwells.
+    path = with_entries(program.toolpath)
+    native = [(e.at, e.data["end"]) for e in path.events if e.kind == "cycle" and post.emits_cycle(e.data)]
+    test.assertEqual([], gcode_reader.compare_moves(read, path, native=native))
     points, _ = gcode_reader.sample(read, 0.002, max_step=0.25)
     points = np.vstack([program.toolpath.start, points])            # both from the start (a first G0 Z sits on it)
     ir = program.toolpath.sample(0.002, max_step_mm=0.25).points
@@ -59,8 +65,8 @@ class Posted(unittest.TestCase):
             {"op": "drill", "tool": "T3", "faces": f5[:2]},                                   # G84
         ]
 
-    def program(self, post_name="grbl"):
-        parsed = parse_job(drill_job(self.ops))
+    def program(self, post_name="grbl", ops=None):
+        parsed = parse_job(drill_job(self.ops if ops is None else ops))
         stock = build_stock(parsed.stock, self.part)
         setups, _, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
         plan = setups[0]
@@ -68,32 +74,38 @@ class Posted(unittest.TestCase):
                        machine=parsed.machine, version="TEST", part="drill_plate.step", tolerance_mm=0.01)
 
     def test_grbl_posts_every_cycle_expanded_and_it_reads_back_to_the_ir(self):
-        program = self.program()
+        from cadgen._internal.cam.job_errors import PostRefusal
+
+        program = self.program(ops=[op for op in self.ops if op["tool"] != "T3"])
         # One file per tool (GRBL has no tool table), read as one program.
         text = "".join(text for _, text in get_post("grbl", "mill").render_tool_files(program))
         for code in ("G81", "G82", "G83", "G73", "G84", "G85", "G98", "G99", "G80"):
             self.assertNotRegex(text, rf"\b{code}\b")
         self.assertIn("G4 P0.4", text)                                   # the dwell at the bottom
-        lines = text.splitlines()
-        reversal = [k for k, line in enumerate(lines) if line.endswith("M4")]
-        self.assertEqual(2, len(reversal))                              # one per tapped hole
-        for k in reversal:
-            self.assertRegex(lines[k + 1], r"^G1 Z|^Z")                   # feeds out
-            self.assertTrue(lines[k + 2].endswith("M3"))
-        _same_path(self, text, program)
+        self.assertNotIn("M4", text)
+        _same_path(self, text, program, get_post("grbl", "mill"))
+        # A tap is refused: posted as moves (feed in, M4, feed out) the feed would not follow the spindle.
+        tapped = self.program()
+        with self.assertRaises(PostRefusal) as caught:
+            get_post("grbl", "mill").render_tool_files(tapped)
+        self.assertIn("thread mill", str(caught.exception))
+        tap = next(op for op in tapped.toolpath.ops if op.tool == "T3")
+        self.assertEqual(tap.index, caught.exception.operation)
 
     def test_a_canned_post_posts_g8x_and_it_reads_back_to_the_same_path(self):
         program = self.program()
-        text = CannedPost().render(program)
+        post = CannedPost()
+        text = post.render(program)
         read = gcode_reader.read(text, start=program.toolpath.start)
         # Spot (two cycles: the top holes and the pocket's), peck, chip-break, dwell, ream, tap.
         self.assertEqual(["G82", "G82", "G83", "G73", "G82", "G85", "G84"], read.cycles)
         self.assertIn("G98 G83", text)
         self.assertIn("G99 G73", text)                                  # the pocket holes return to R
-        self.assertRegex(text, r"G99 G73 X\S+ Y\S+ Z-15\.202 R-3 Q2 F")
+        # The depth rounds toward R (-15.2015 planned posts -15.201): never deeper than planned.
+        self.assertRegex(text, r"G99 G73 X\S+ Y\S+ Z-15\.201 R-3 Q2 F")
         self.assertEqual(text.count("G80"), sum(1 for e in program.toolpath.events if e.kind == "cycle"))
         self.assertNotIn("M4", text)                                     # G84 reverses the spindle itself
-        _same_path(self, text, program)
+        _same_path(self, text, program, post)
 
     def test_plan_end_to_end_after_the_pocket_is_ready_and_writes_the_drilling(self):
         from cadgen._internal.cam.run import plan_job
@@ -114,7 +126,7 @@ class Posted(unittest.TestCase):
         self.assertEqual([], errors)
         self.assertEqual("ready", result.verdict["status"])
         rows = [op for op in result.operations if op["op"] == "drill"]
-        self.assertEqual(["Spot 10 holes with T4 6 mm spot drill", "Peck drill 2 holes with T7 4 mm drill",
+        self.assertEqual(["Spot 8 holes with T4 6 mm spot drill", "Peck drill 2 holes with T7 4 mm drill",
                           "Drill 4 holes with T1 5 mm drill"], [row["summary"].rsplit(",", 1)[0] for row in rows])
         posted = gcode_reader.read(gcode_reader.posted_text(result), start=(0, 0, 6.0))
         lowest = min(move.end[2] for move in posted.moves)

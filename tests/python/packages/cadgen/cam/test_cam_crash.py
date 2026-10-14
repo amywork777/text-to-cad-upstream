@@ -301,7 +301,8 @@ class EveryPost(unittest.TestCase):
 
         folder = class_directory(cls)
         cls.plans = {}
-        # A 2.5D bracket: face, slot, helix bore, peck drill, tap, chamfer, profile with tabs.
+        # A 2.5D bracket: face, slot, helix bore, peck drill, chamfer, profile with tabs; and its holes drilled and
+        # tapped on their own, for the posts that can tap (one that cannot refuses the tap: no_post_support).
         step = m2d.bracket_step(folder)
         with quiet():
             features = cam.features(step)
@@ -320,10 +321,13 @@ class EveryPost(unittest.TestCase):
             {"op": "slot", "tool": "T2", "faces": [slot], "stepdown_mm": 2},
             {"op": "helix_bore", "tool": "T1", "faces": [bore]},
             {"op": "drill", "tool": "T3", "holes": {"diameter_mm": 5}, "cycle": "peck"},
-            {"op": "drill", "tool": "T4", "holes": {"diameter_mm": 5}, "cycle": "tap"},
             {"op": "chamfer", "tool": "T5", "faces": [top], "width_mm": 0.5, "loops": "inner"},
             {"op": "contour", "tool": "T1", "faces": [top], "loops": "outer", "stepdown_mm": 4,
              "tabs": {"count": 4}, "lead_in_mm": 2, "lead_out_mm": 2}], tools=tools))
+        cls.plans["mill_tap"] = _plan(step, m2d.mill_job([
+            {"op": "face", "tool": "T1"},
+            {"op": "drill", "tool": "T3", "holes": {"diameter_mm": 5}, "cycle": "peck"},
+            {"op": "drill", "tool": "T4", "holes": {"diameter_mm": 5}, "cycle": "tap"}], tools=tools))
         # A filleted block: z-level rough, then a waterline whose passes start a tool radius outside the stock's side
         # (its links once came down there through the stock the rough left on the wall).
         from tests.python.support import cam_fixtures_milling3d as m3d
@@ -399,7 +403,9 @@ class EveryPost(unittest.TestCase):
         from cadgen._internal.cam.job_errors import CamJobError
         from cadgen._internal.cam.posts import REGISTRY
 
-        plans = {"mill": ("mill", "mill3d"), "router": ("mill",), "lathe": ("lathe",),
+        from cadgen._internal.cam.job_errors import PostRefusal
+
+        plans = {"mill": ("mill", "mill3d", "mill_tap"), "router": ("mill", "mill_tap"), "lathe": ("lathe",),
                  "mill4": ("mill4", "mill4_indexed"), "mill5": ("mill5_indexed", "mill5_swarf", "mill5_dome"),
                  "laser": ("laser",),
                  "plasma": ("plasma",), "waterjet": ("waterjet",), "wire_edm": ("wire_edm",)}
@@ -408,6 +414,12 @@ class EveryPost(unittest.TestCase):
                 if kind not in entry.kinds:
                     continue
                 for name in names:
+                    if name == "mill_tap" and post_name == "grbl":
+                        # GRBL cannot hold the feed to the spindle: the tap is refused on its operation, never posted.
+                        with self.assertRaises(PostRefusal) as caught:
+                            _posted(self.plans[name], post_name, kind)
+                        self.assertIn("tap", str(caught.exception))
+                        continue
                     if post_name == "mach3" and name == "mill4":
                         # Mach has no tool centre point control: the wrap is refused, never posted.
                         with self.assertRaises(CamJobError):

@@ -1,10 +1,13 @@
 """``linuxcnc``: LinuxCNC 2.8/2.9 (``.ngc``) for mills, 4th/5th-axis mills and lathes.
 
 Mill: ``G21 G90 G94 G17``, ``G91.1`` (incremental arc centres, whatever the config left), ``G64 P`` path blending
-at the job's tolerance, ``M5 M9`` and ``G53 G0 Z0`` (Z to the machine's top: LinuxCNC's M6 does not retract) then
-``T M6``, ``G0 X Y`` over the first point and ``G43 H`` at a clearance Z, G2/G3 with incremental I/J, the drilling cycles G81 G82 G83 G73 G85 G86 G89 natively, a tap as rigid ``G33.1`` per
-hole (LinuxCNC's G84 does not follow the spindle), dwell ``G4 P`` in seconds, ``G53 G0 Z0`` and the table to rotary zero (``G53 G0 A0 C0``)
-then ``M2`` at the end. A 3+2 setup turns the table (``G0 A.. C..``) after each tool change, with Z at the top, and
+at the job's tolerance, ``M5 M9``, ``G49`` and ``G53 G0 Z0`` (the tool length off first, since a G53 move still
+applies it; Z to the machine's top: LinuxCNC's M6 does not retract) then ``T M6``, ``G0 X Y`` over the first point and
+``G43 H`` at a clearance Z, G2/G3 with incremental I/J, the drilling cycles G81 G82 G83 G73 G85 G86 G89 natively, a
+tap as rigid ``G33.1`` per hole (LinuxCNC's G84 does not follow the spindle), a fine bore as its moves (LinuxCNC's G76
+is a lathe thread) with ``M19 R0 Q10`` (orient, and wait for it) before the bar shifts, dwell ``G4 P`` in seconds,
+mist ``M7``, flood ``M8`` (air: a comment to switch it by hand), ``G49``, ``G53 G0 Z0`` and the table to rotary zero
+(``G53 G0 A0 C0``) then ``M2`` at the end. A 3+2 setup turns the table (``G0 A.. C..``) after each tool change, with Z at the top, and
 then posts 3-axis: set the work offset on the turned part.
 Simultaneous 4/5-axis posts the rotary words on every move with ``G43.4`` tool centre point control, which stock
 LinuxCNC does not have: the machine's TCP kinematics must provide it (a switchkins config with G43.4 remapped).
@@ -42,6 +45,8 @@ class LinuxCncPost(IsoPost):
     rotary_home_style = "g53"
     lathe_home = ("G30",)
     end_code = "M2"
+    length_cancel_before_home = True
+    orient_lines = ("M19 R0 Q10",)
     options = {"cycles": CYCLES_OPTION}
 
     def preamble(self, program: Program) -> list[str]:

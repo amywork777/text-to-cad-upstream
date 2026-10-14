@@ -1,6 +1,6 @@
 """``wire_edm``: a Fanuc-style 2-axis wire EDM with UV taper (``.nc``).
 
-``%``, an ``O`` number, upper-case comments, decimal points. The program starts where the wire is threaded:
+``%``, an ``O`` number (one more for each next setup), upper-case comments, decimal points. The program starts where the wire is threaded:
 ``G92 X Y`` makes the first cut's start hole the start point (everything the toolpath did before it, a rapid from the
 setup's origin, is not posted; put the wire through the start hole by hand first). Z is never posted.
 
@@ -82,8 +82,8 @@ class WireEdmPost(CheckedPost):
         "program_number": PROGRAM_NUMBER,
     }
 
-    def num(self, value: float) -> str:
-        text = number(value, self.decimals)
+    def num(self, value: float, toward: int = 0) -> str:
+        text = number(value, self.decimals, toward)
         return text if "." in text else text + "."
 
     def dwell_word(self, seconds: float) -> str:
@@ -134,9 +134,10 @@ class WireEdmPost(CheckedPost):
         self._height = 0.0
         self._program = program
         text = super().render(replace(program, toolpath=path))
-        number_ = int(self.option(program, "program_number"))
+        number_ = int(self.option(program, "program_number")) + int(program.setup_index)   # one O number a setup
         if number_ > 9999:
-            raise CamJobError("machine.program_number must be at most 9999 for a Fanuc-style O number")
+            raise CamJobError("machine.program_number must be at most 9999 for a Fanuc-style O number (setup "
+                              f"{program.setup_index + 1} of {program.setup_count} posts as O{number_})")
         title = self.comment_line(f"{program.job_name or program.part or 'part'} {program.setup.id}",
                                   self.comment_width - 6)
         return f"%\nO{number_:04d} {title}\n{text}%\n"

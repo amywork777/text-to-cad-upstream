@@ -55,8 +55,8 @@ class MarlinPost(CuttingPost):
         return ["The origin is where the head starts: G92 sets it there.",
                 "Jog the head to the setup's origin and check the focus before cutting."]
 
-    def on_coolant(self, data: dict, program: Program) -> list[str]:
-        return [{"air": "M8", "mist": "M7", "off": "M9"}[data.get("mode", "off")]]
+    #: Air assist on M8 (coolant ``air``), M7 where the firmware has a mist output; flood has no code on a laser.
+    coolant_codes = {"air": "M8", "mist": "M7"}
 
     def dwell_word(self, seconds: float) -> str:
         return f"P{int(round(seconds * 1000))}"

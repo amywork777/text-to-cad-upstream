@@ -22,7 +22,13 @@ does not have, a lathe move off the XZ plane. Its comments are plain ASCII (old 
   asks, the threading cycle natively and the roughing cycle natively only with ``machine.cycles: true``.
 
 ``machine.cycles``: left out, drilling and threading cycles post natively and lathe roughing posts expanded;
-``true`` posts every cycle the controller has natively; ``false`` posts every cycle expanded (the IR's own moves).
+``true`` posts every cycle the controller has natively; ``false`` posts every cycle expanded (the IR's own moves),
+and so refuses a tap (posted as moves it would break).
+
+Every mill program ends with no tool length in effect (``G49``, after Z goes home, or before it where the post's
+machine-coordinate move would still apply it: :attr:`IsoPost.length_cancel_before_home`). A program wrapped in ``%``
+takes ``machine.program_number`` plus the setup's index as its ``O`` number, so each setup has its own.
+
 Stdlib at import; numpy inside.
 """
 
@@ -30,8 +36,8 @@ from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.job_errors import CamJobError
-from cadgen._internal.cam.posts.base import Post, Program, ascii_text, number
+from cadgen._internal.cam.job_errors import CamJobError, PostRefusal
+from cadgen._internal.cam.posts.base import Post, Program, ascii_text, number, op_at, shift_direction
 
 __all__ = ["CheckedPost", "IsoPost", "ascii_text", "euler_zxz", "is_simultaneous"]
 
@@ -164,7 +170,8 @@ class IsoPost(CheckedPost):
     mill_end_home: tuple[str, ...] = ()
     #: Lines that take Z to the machine's top before a rotary index that is not right after a tool change.
     index_home_lines: tuple[str, ...] = ()
-    #: How the table goes back to rotary zero at the end: ``g28`` (``G91 G28 A0. C0.``) or ``g53`` (``G53 G0 A0``).
+    #: How the table goes back to rotary zero at the end: ``g28`` (``G91 G28 A0. C0.``), ``g53`` (``G53 G0 A0``) or
+    #: ``work`` (``G0 A0``, rotary zero in the work offset).
     rotary_home_style = "g28"
     #: How a 3+2 setup is posted: ``rotate`` (turn the table, set the work offset there), ``g68_2``, ``dwo``.
     tilt_style = "rotate"
@@ -185,6 +192,15 @@ class IsoPost(CheckedPost):
     dwell_ms = False
     #: The program's last word.
     end_code = "M30"
+    #: Cancel the tool length (G49) before Z goes home at a tool change and at the end (LinuxCNC: its G53 move still
+    #: applies the offset); else G49 after Z is home at the end, so no G43 is left active at the program end.
+    length_cancel_before_home = False
+    #: The direction G76 shifts its bar by Q (the machine's parameters set it; assumed +X), or None when the cycle
+    #: names it (Haas: I J). A fine bore that shifts another way is posted as its moves, with M19.
+    q_shift = (1.0, 0.0)
+    #: N1, N2... on each tool change, so the operator can restart at a tool (Haas). Separately, a post that offers
+    #: ``machine.line_numbers`` (Fanuc) puts N10, N20... on every block when it is true (:meth:`numbered`).
+    tool_line_numbers = False
 
     options = {"cycles": CYCLES_OPTION}
 
@@ -194,21 +210,49 @@ class IsoPost(CheckedPost):
         self.begin(program)
         self.check(program)
         if self._simultaneous and not self.tcp_code:
-            raise CamJobError(f"setup {program.setup.id}: the toolpath turns its rotary axes from move to move (its "
-                              "moves are the tool tip at rotary zero), and the "
-                              f"{self.name} post has no tool centre point control to post the tool tip as planned; "
-                              "use a post that has it (linuxcnc, fanuc, haas)")
+            import numpy as np
+
+            moves = program.toolpath.moves
+            abc = np.column_stack([moves["a"], moves["b"], moves["c"]])
+            first = int(np.nonzero(np.abs(abc - abc[0]).max(axis=1) > 1e-9)[0][0])
+            raise PostRefusal(f"the toolpath turns its rotary axes from move to move (its moves are the tool tip at "
+                              f"rotary zero), and the {self.name} post has no tool centre point control to post the "
+                              "tool tip as planned; use a post that has it (linuxcnc, fanuc, haas)",
+                              operation=op_at(program.toolpath, first))
         text = super().render(program)
+        if "line_numbers" in self.options and self.option(program, "line_numbers"):
+            text = self.numbered(text)
         if self.program_wrap:
-            number_ = int(self.option(program, "program_number")) if "program_number" in self.options else 1000
+            base = int(self.option(program, "program_number")) if "program_number" in self.options else 1000
+            # One O number per setup: the next setup's program is the next number, so two never overwrite each other
+            # in the control's memory.
+            number_ = base + int(program.setup_index)
             if number_ >= 10 ** self.o_digits:
                 raise CamJobError(f"machine.program_number must be at most {10 ** self.o_digits - 1} for a "
-                                  f"{self.plain} O number")
+                                  f"{self.plain} O number (setup {program.setup_index + 1} of "
+                                  f"{program.setup_count} posts as O{number_})")
             o_word = f"O{number_:0{self.o_digits}d} "
             title = self.comment_line(f"{program.job_name or program.part or 'part'} {program.setup.id}",
                                       self.comment_width - len(o_word))
             text = f"%\n{o_word}{title}\n{text}%\n"
         return text
+
+    def numbered(self, text: str) -> str:
+        """``text`` with N10, N20... on every block (comments and ``%`` stay bare); a block that already has its N
+        (a roughing cycle's profile, which G71 names by P and Q) keeps it, and no number is used twice."""
+        lines = text.splitlines()
+        used = {line.split()[0] for line in lines if line[:1] == "N" and line[1:2].isdigit()}
+        out, k = [], 0
+        for line in lines:
+            if not line or line.startswith(self.comment_open) or line == "%" or (
+                    line[:1] == "N" and line[1:2].isdigit()):
+                out.append(line)
+                continue
+            k += 10
+            while f"N{k}" in used:
+                k += 10
+            out.append(f"N{k} {line}")
+        return "\n".join(out) + "\n"
 
     def begin(self, program: Program) -> None:
         machine = program.machine
@@ -221,10 +265,11 @@ class IsoPost(CheckedPost):
         self._tilt_active = False
         self._tilted = set()                   # rotary axes a 3+2 setup turned (sent home at the end)
         self._tcp_active = False
+        self._length_on = False                # a G43 tool length is in effect
+        self._tool_count = 0
         self._length_pending = None            # the T number whose length (G43 / TCP) the entry posts
         self._rpm = 0.0
         self._per_rev = False
-        self._coolant = "off"
         self._block = 100
         self._tool_id = None
         self.rotary_axes = self.rotary_letters(machine)
@@ -246,8 +291,8 @@ class IsoPost(CheckedPost):
 
     # --- number formats -----------------------------------------------------------------------------------
 
-    def num(self, value: float) -> str:
-        text = number(value, self.decimals)
+    def num(self, value: float, toward: int = 0) -> str:
+        text = number(value, self.decimals, toward)
         return text + "." if self.decimal_point and "." not in text else text
 
     def axis_value(self, axis: str, value: float) -> float:
@@ -281,6 +326,11 @@ class IsoPost(CheckedPost):
                      if e.kind == "setup" and e.data.get("rotary")), None)
         if tilt and any(tilt.values()) and not self._simultaneous:
             notes.append(self.tilt_note(program, tilt))
+        if self.q_shift is not None and any(
+                e.kind == "cycle" and e.data.get("cycle") == "fine_bore" and shift_direction(e.data) is not None
+                and self.emits_cycle(e.data) for e in program.toolpath.events):
+            notes.append(f"G76 shifts its bar by Q along the direction the control's parameters set: it must be "
+                         f"{'+X' if self.q_shift == (1.0, 0.0) else self.q_shift}.")
         if self._simultaneous:
             axes = "".join(sorted(a.upper() for a in program.toolpath.rotary))
             notes.append(f"Simultaneous {axes} with tool centre point control ({self.tcp_code}): X Y Z are the tool "
@@ -309,17 +359,21 @@ class IsoPost(CheckedPost):
         return ["G21", "G0 G17 G40 G49 G80 G90 G94"]
 
     def footer(self, program: Program) -> list[str]:
-        """Spindle and coolant off, out of the tilted plane and TCP, Z home, the table back to rotary zero, end."""
-        lines = ["M5"] + (["M9"] if self.coolant_on() else [])
+        """Spindle and coolant off, out of the tilted plane and TCP, Z home, the table back to rotary zero, the tool
+        length cancelled (G49, before Z goes home where the post says so), end."""
+        lines = ["M5"] + self.coolant_stop(program)
         lines += self.cancel_tilt()
-        if self._tcp_active:
+        if self._tcp_active or (self._length_on and self.length_cancel_before_home):
             lines.append("G49")
-            self._tcp_active = False
+            self._tcp_active = self._length_on = False
         if self._lathe:
             lines += list(self.lathe_home)
         else:
-            lines += list(self.mill_end_home)
+            lines += self.end_home(program)
             lines += self.rotary_home(program)
+            if self._length_on:
+                lines.append("G49")
+                self._length_on = False
         return lines + [self.end_code]
 
     def rotary_home(self, program: Program) -> list[str]:
@@ -331,8 +385,9 @@ class IsoPost(CheckedPost):
         axes = [a for a in axes if a.upper() in letters]
         if not axes:
             return []
-        if self.rotary_home_style == "g53":
-            return ["G53 G0 " + " ".join(f"{a.upper()}{self.num(0.0)}" for a in axes)]
+        if self.rotary_home_style in ("g53", "work"):
+            prefix = "G53 G0 " if self.rotary_home_style == "g53" else "G0 "
+            return [prefix + " ".join(f"{a.upper()}{self.num(0.0)}" for a in axes)]
         return ["G91 G28 " + " ".join(f"{a.upper()}{self.num(0.0)}" for a in axes), "G90"]
 
     # --- setups, tools, spindle, coolant ------------------------------------------------------------------
@@ -346,6 +401,14 @@ class IsoPost(CheckedPost):
 
     def index_home(self, program: Program) -> list[str]:
         return list(self.index_home_lines)
+
+    def tool_home(self, program: Program) -> list[str]:
+        """Lines that take Z up before ``T M6`` on a mill."""
+        return list(self.mill_tool_home)
+
+    def end_home(self, program: Program) -> list[str]:
+        """Lines that take Z up at the program's end on a mill."""
+        return list(self.mill_end_home)
 
     def tilt_lines(self, program: Program) -> list[str]:
         """Turn the table to the setup's 3+2 position and enter the tilted frame (Z is at the top)."""
@@ -384,17 +447,20 @@ class IsoPost(CheckedPost):
             if self._spindle_on:
                 lines.append("M5")
                 self._spindle_on = False
+            lines += self.coolant_stop(program)
             if self.coolant_on():
-                lines.append("M9")
                 self._restore.add("coolant")
         lines += self.cancel_tilt()
-        if self._tcp_active:
+        if self._tcp_active or (self._length_on and self.length_cancel_before_home):
             lines.append("G49")
-            self._tcp_active = False
+            self._tcp_active = self._length_on = False
         lines.append(self.comment(self.tool_label(tool)))
+        self._tool_count += 1
+        number_ = f"N{self._tool_count} " if self.tool_line_numbers else ""
         if self._lathe:
-            return lines + list(self.lathe_home) + self.lathe_tool_words(n)
-        lines += list(self.mill_tool_home) + [f"T{n} M6"]
+            words = self.lathe_tool_words(n)
+            return lines + list(self.lathe_home) + [number_ + words[0]] + words[1:]
+        lines += self.tool_home(program) + [f"{number_}T{n} M6"]
         if self._tilt and not self._simultaneous:
             lines += self.tilt_lines(program)
         self._length_pending = n
@@ -414,6 +480,7 @@ class IsoPost(CheckedPost):
         if self._length_pending is None or self._lathe:
             return [], None
         n, self._length_pending = self._length_pending, None
+        self._length_on = True
         return [f"G0 G43 Z{self.num(program.clearance_z)} H{n}"], float(program.clearance_z)
 
     def lathe_tool_words(self, n: int) -> list[str]:
@@ -440,11 +507,6 @@ class IsoPost(CheckedPost):
 
     def css_words(self, css: float, clamp: int, m: str) -> list[str]:
         return [f"G50 S{clamp}", f"G96 S{int(round(css))} {m}"]
-
-    def on_coolant(self, data: dict, program: Program) -> list[str]:
-        mode = data.get("mode", "off")
-        self._coolant = mode
-        return [{"flood": "M8", "mist": "M7", "air": "M7", "off": "M9"}[mode]]
 
     def on_beam(self, data: dict, program: Program) -> list[str]:   # refused by check() first
         raise CamJobError(self._refusal("beam", program.machine.kind, f"setup {program.setup.id}"))
@@ -476,7 +538,23 @@ class IsoPost(CheckedPost):
             return False
         if name == "tap" and self.left_hand(data) and not self.left_tap_code:
             return False
+        if name == "fine_bore" and self.q_shift is not None and shift_direction(data) is not None and math.hypot(
+                shift_direction(data)[0] - self.q_shift[0], shift_direction(data)[1] - self.q_shift[1]) > 1e-9:
+            return False                     # G76 shifts one way only (the machine's parameter): posted as moves
         return not (name in ("peck", "chipbreak") and not data.get("peck_mm"))
+
+    def tap_refusal(self, data: dict, program: Program) -> str:
+        why = ("does not keep the feed in step with the spindle, so the tap would break")
+        if self.option(program, "cycles") is False:
+            return (f"with machine.cycles false the {self.name} post writes a tap as plain moves, which {why}; leave "
+                    "machine.cycles out (or true) so it taps with its cycle, or thread mill the hole (thread_mill)")
+        if self._simultaneous:
+            return (f"under tool centre point control the {self.name} post writes drilling as plain moves, and a tap "
+                    f"as plain moves {why}; tap in a 3-axis or 3+2 setup, or thread mill the hole (thread_mill)")
+        if self.left_hand(data) and not self.left_tap_code:
+            return (f"{self.plain} has no left-hand tapping cycle (G74), and a tap posted as plain moves {why}; use "
+                    "fanuc or haas (G74) or linuxcnc (G33.1), or thread mill the hole (thread_mill)")
+        return super().tap_refusal(data, program)
 
     def can_thread(self, data: dict) -> bool:
         needed = ("z_start", "z_end", "x_clear", "x_crest", "depth_mm", "pitch_mm")
@@ -505,17 +583,26 @@ class IsoPost(CheckedPost):
         for k, hole in enumerate(holes):
             words = [f"X{self.num(hole[0])}", f"Y{self.num(hole[1])}"]
             if k == 0:
-                words = [retract, code] + words + [f"Z{self.num(data['z_bottom'])}", f"R{self.num(data['r_plane'])}"]
+                words = [retract, code] + words + [f"Z{self.cycle_depth(data)}", f"R{self.num(data['r_plane'])}"]
                 if name in ("peck", "chipbreak"):
                     words.append(f"Q{self.num(data['peck_mm'])}")
                 if name == "fine_bore":
-                    words.append(f"Q{self.num(float(data.get('shift_mm', 0.1)))}")
+                    words += self.shift_words(data)
                 if name in ("spot", "tap", "bore_dwell", "fine_bore") and data.get("dwell_s"):
                     words.append(self.dwell_word(float(data["dwell_s"])))
-                words.append(f"F{self.num(round(float(data['feed']), 1))}")
+                words.append(f"F{self.cycle_feed(data)}")
             lines.append(" ".join(words))
         lines.append("G80")
         return lines
+
+    def cycle_feed(self, data: dict) -> str:
+        if data.get("cycle") == "tap":
+            return super().cycle_feed(data)
+        return self.num(round(float(data["feed"]), 1))
+
+    def shift_words(self, data: dict) -> list[str]:
+        """G76's shift: Q, the amount (the direction is the control's parameter, :attr:`q_shift`)."""
+        return [f"Q{self.num(float(data.get('shift_mm', 0.1)))}"]
 
     @staticmethod
     def thread_angle(data: dict) -> int:

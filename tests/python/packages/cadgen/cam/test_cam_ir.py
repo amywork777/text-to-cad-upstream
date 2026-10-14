@@ -31,6 +31,25 @@ class Ir(unittest.TestCase):
         self.assertEqual(0.0, lengths[3])
         self.assertAlmostEqual(10.0 + 0.6 + 1.0 + 6.0 + 0.5, path.time_s(Machine()), places=6)
 
+    def test_a_spindle_start_from_standstill_costs_the_spin_up_wait(self):
+        class Slow(Machine):
+            spindle_spinup_s = 2.0
+
+        b = ToolpathBuilder((0, 0, 10))
+        b.event("tool", tool="T1", number=1)
+        b.event("spindle", rpm=1000, dir="cw")            # from standstill: 2 s
+        b.rapid(x=60)
+        b.event("spindle", rpm=1000, dir="ccw")           # a reversal: no wait
+        b.rapid(x=0)
+        b.event("stop", optional=True)                    # started again after the stop: 2 s
+        b.rapid(x=60)
+        b.event("tool", tool="T2", number=2)              # a tool change stops it
+        b.event("spindle", rpm=1000, dir="cw")            # 2 s
+        b.rapid(x=0)
+        path = b.build()
+        self.assertAlmostEqual(4 * 0.6 + 2 * 10.0 + 3 * 2.0, path.time_s(Slow()), places=6)
+        self.assertAlmostEqual(4 * 0.6 + 2 * 10.0, path.time_s(Machine()), places=6)   # none set: no wait
+
     def test_sampling_keeps_arcs_within_the_chord_tolerance_and_times_increase(self):
         b = ToolpathBuilder((10, 0, 0))
         b.arc(-10, 0, -2, centre=(0, 0, 0), clockwise=True, f=1000)   # a helical half turn

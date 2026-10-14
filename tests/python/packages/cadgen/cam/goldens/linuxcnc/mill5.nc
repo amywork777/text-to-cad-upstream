@@ -4,9 +4,9 @@
 (Verify the work offset G55 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
-(T2: 5 mm drill)
-(T3: M6x1 tap)
+(T1: 6 mm flat: 12000 rpm, feed 1990 mm/min)
+(T2: 5 mm drill: 7600 rpm, feed 300 mm/min)
+(T3: M6x1 tap: 500 rpm, feed 500 mm/min)
 (3+2: the table turns to A30 C90 after each tool change, set G55 on)
 (the turned part at this setup's origin.)
 G21 G90 G94 G17 G40 G49 G80
@@ -34,6 +34,7 @@ G0 Z5
 M1
 M5
 M9
+G49
 (T2: 5 mm drill)
 G53 G0 Z0
 T2 M6
@@ -48,6 +49,7 @@ X10 Y5
 G80
 M5
 M9
+G49
 (T3: M6x1 tap)
 G53 G0 Z0
 T3 M6
@@ -66,6 +68,7 @@ G33.1 Z-3.5 K1
 G0 X10 Y5 Z5 A30 C90
 M9
 M5
+G49
 G53 G0 Z0
 G53 G0 A0 C0
 M2

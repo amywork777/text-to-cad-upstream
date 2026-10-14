@@ -6,7 +6,7 @@
 (File 2 of 2: load T2: 5 mm drill, keep X and Y, zero Z on the stock)
 (top with this tool, then run it. Run the files in order.)
 (Material: aluminium 6061)
-(T2: 5 mm drill)
+(T2: 5 mm drill: 7640 rpm, feed 300 mm/min)
 G90 G94 G17 G21
 G54
 (Load T2: 5 mm drill)

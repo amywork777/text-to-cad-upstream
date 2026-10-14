@@ -24,7 +24,8 @@ The rules (``Finding.rule``):
 ``holder``            the shank (above the flutes) or the holder (above the stickout) runs into the material
 ``spindle_off``       a cutting move on a spindle machine with the spindle stopped (rule 2)
 ``spinup``            GRBL: a cutting move right after a spindle start with no dwell for it to reach speed
-``tool_change``       a tool change away from the machine's top (mill ``M6`` without ``G53 Z0``/``G28 Z0``, a lathe
+``tool_change``       a tool change away from the machine's top (mill ``M6`` without ``G53 Z0``/``G28 Z0``, or on
+                      Mach3 below the program's clearance; a lathe
                       index away from ``G28 U0 W0``/``G30``), or a second tool in one GRBL file (rule 3)
 ``entry``             the first motion of a program or after a tool change is not Z up to a safe height, then X Y,
                       then Z down (rotary axes first on a 5-axis) (rule 4)
@@ -767,7 +768,11 @@ class _Sim:
             st.pos = [TOP, 0.0, TOP]
             st.entry = "high"
         else:
-            if self.post != "haas" and st.pos[2] != TOP and st.pos[2] is not None:
+            # Mach3 machines are often never homed, so its post changes tools at the program's clearance in the work
+            # offset, never G53 (machine Z0 may stand below the work): that is a safe height there.
+            clear_here = (self.post == "mach3" and self.clearance is not None and st.pos[2] not in (TOP, None)
+                          and st.pos[2] >= self.clearance - 1e-6)
+            if self.post != "haas" and st.pos[2] != TOP and st.pos[2] is not None and not clear_here:
                 self.flag("tool_change", file, line, f"M6 with Z at {st.pos[2]:g} (no G53 Z0 / G28 Z0 since): the tool "
                                                     "change happens over the work")
             if self.post != "haas" and st.pos[2] is None and st.entry != "start":

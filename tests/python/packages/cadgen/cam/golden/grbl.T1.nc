@@ -6,7 +6,7 @@
 (File 1 of 2: load T1: 6 mm flat, zero X and Y at the setup's origin)
 (and Z on the stock top, then run it. Run the files in order.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
+(T1: 6 mm flat: 13260 rpm, feed 1990 mm/min)
 G90 G94 G17 G21
 G54
 (Load T1: 6 mm flat)

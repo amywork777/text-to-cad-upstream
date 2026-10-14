@@ -18,7 +18,9 @@ revolution (``G95``, or the lathe's ``G99``: ``Move.per_rev``) and an inline las
 per revolution, and the threading and roughing cycles are read: ``G76`` (Fanuc's two blocks, Haas's one block,
 LinuxCNC's one block) into ``threads`` (and the final pass at the root as moves), ``G71`` (Fanuc's two blocks or
 Haas's one) into ``roughs`` with its profile blocks, which are skipped as motion (the tool ends where it started).
-:func:`sample` turns the moves into points for comparing with the IR's own samples.
+:func:`sample` turns the moves into points for comparing with the IR's own samples, and :func:`compare_moves` holds
+the read-back to the IR move by move: each move's kind and feed, the spindle running through every cut (each move
+keeps the spindle state it ran with: ``Move.spindle``, ``oriented`` after M19, ``stop_z``), and the dwells in order.
 
 For a machine simulation (``gcode_crash``) the program also keeps ``timeline``: every move and every non-motion
 :class:`Event` in program order, each with its line number: ``tool`` (a T word), ``m6``, ``spindle`` (M3/M4/M5 with
@@ -60,6 +62,12 @@ class Move:
     cycle: str | None = None
     #: A dwell's P word as written (seconds or milliseconds, by dialect).
     p: float = 0.0
+    #: The spindle while the move runs: ``M3``/``M4``, or None when stopped (M5, M0/M1, or never started).
+    spindle: str | None = None
+    #: The spindle was stopped oriented (M19) and has not started since.
+    oriented: bool = False
+    #: Where Z stood when the spindle last stopped (None while it runs).
+    stop_z: float | None = None
 
 
 @dataclass
@@ -117,9 +125,12 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
     def x_value(value: float) -> float:
         return value / 2.0 if lathe and diameter else value
 
+    spin = {"m": None, "oriented": False, "stop_z": None}
+
     def add(kind, end, *, centre=None, number=0, uv=None, s=None, given="XYZ", cycle_code=None):
         move = Move(kind, tuple(pos), tuple(end), feed if kind not in ("rapid", "dwell") else 0.0, centre, plane,
-                    number, dict(abc), per_rev and kind != "rapid", uv, s, given, cycle_code)
+                    number, dict(abc), per_rev and kind != "rapid", uv, s, given, cycle_code,
+                    spindle=spin["m"], oriented=spin["oriented"], stop_z=spin["stop_z"])
         program.moves.append(move)
         program.timeline.append(move)
         pos[:] = end
@@ -212,6 +223,12 @@ def read(text: str, start=(0.0, 0.0, 0.0), *, lathe: bool = False, diameter: boo
                 program.coolant.append(f"M{v:g}")
             if letter == "M" and v in (0, 1):
                 program.stops += 1
+            if letter == "M" and v in (3, 4):
+                spin.update(m=f"M{v:g}", oriented=False, stop_z=None)
+            elif letter == "M" and v in (0, 1, 5):
+                spin.update(m=None, stop_z=pos[2] if spin["stop_z"] is None else spin["stop_z"])
+            elif letter == "M" and v == 19:
+                spin.update(m=None, oriented=True, stop_z=pos[2] if spin["stop_z"] is None else spin["stop_z"])
         _events(event, number, gs, values, words, homing)
         if homing or "G92" in gs or "G4" in gs or "G68.2" in gs:
             continue
@@ -375,39 +392,154 @@ def sample(program: Program, chord: float = 0.005, max_step: float | None = None
     for move in program.moves:
         if move.kind == "dwell":
             continue
-        if move.kind in ("arc_cw", "arc_ccw"):
-            u, v, w = {"G17": (0, 1, 2), "G18": (2, 0, 1), "G19": (1, 2, 0)}[move.plane]
-            c = move.centre
-            a0 = math.atan2(move.start[v] - c[v], move.start[u] - c[u])
-            a1 = math.atan2(move.end[v] - c[v], move.end[u] - c[u])
-            radius = math.hypot(move.start[u] - c[u], move.start[v] - c[v])
-            sweep = a1 - a0
-            if move.kind == "arc_cw":
-                while sweep >= -1e-9:
-                    sweep -= 2 * math.pi
-            else:
-                while sweep <= 1e-9:
-                    sweep += 2 * math.pi
-            step = 2 * math.acos(max(-1.0, 1 - chord / radius)) if radius > chord else math.pi / 2
-            count = max(2, int(math.ceil(abs(sweep) / step)))
-            if max_step:
-                length = math.hypot(radius * abs(sweep), move.end[w] - move.start[w])
-                count = max(count, int(math.ceil(length / max_step)))
-            for k in range(1, count + 1):
-                angle = a0 + sweep * k / count
-                p = [0.0, 0.0, 0.0]
-                p[u] = c[u] + radius * math.cos(angle)
-                p[v] = c[v] + radius * math.sin(angle)
-                p[w] = move.start[w] + (move.end[w] - move.start[w]) * k / count
-                points.append(p)
-                kinds.append(move.kind)
-        else:
-            length = math.dist(move.start, move.end)
-            count = max(1, int(math.ceil(length / max_step))) if max_step else 1
-            for k in range(1, count + 1):
-                points.append([a + (b - a) * k / count for a, b in zip(move.start, move.end)])
-                kinds.append(move.kind)
+        piece = move_points(move, chord, max_step)
+        points.extend(piece)
+        kinds.extend([move.kind] * len(piece))
     return np.asarray(points, dtype=float), kinds
+
+
+def move_points(move: Move, chord: float = 0.005, max_step: float | None = None) -> list:
+    """Points along one move after its start: an arc split within ``chord``, a line into pieces no longer than
+    ``max_step`` when one is given."""
+    points = []
+    if move.kind in ("arc_cw", "arc_ccw"):
+        u, v, w = {"G17": (0, 1, 2), "G18": (2, 0, 1), "G19": (1, 2, 0)}[move.plane]
+        c = move.centre
+        a0 = math.atan2(move.start[v] - c[v], move.start[u] - c[u])
+        a1 = math.atan2(move.end[v] - c[v], move.end[u] - c[u])
+        radius = math.hypot(move.start[u] - c[u], move.start[v] - c[v])
+        sweep = a1 - a0
+        if move.kind == "arc_cw":
+            while sweep >= -1e-9:
+                sweep -= 2 * math.pi
+        else:
+            while sweep <= 1e-9:
+                sweep += 2 * math.pi
+        step = 2 * math.acos(max(-1.0, 1 - chord / radius)) if radius > chord else math.pi / 2
+        count = max(2, int(math.ceil(abs(sweep) / step)))
+        if max_step:
+            length = math.hypot(radius * abs(sweep), move.end[w] - move.start[w])
+            count = max(count, int(math.ceil(length / max_step)))
+        for k in range(1, count + 1):
+            angle = a0 + sweep * k / count
+            p = [0.0, 0.0, 0.0]
+            p[u] = c[u] + radius * math.cos(angle)
+            p[v] = c[v] + radius * math.sin(angle)
+            p[w] = move.start[w] + (move.end[w] - move.start[w]) * k / count
+            points.append(p)
+    else:
+        length = math.dist(move.start, move.end)
+        count = max(1, int(math.ceil(length / max_step))) if max_step else 1
+        for k in range(1, count + 1):
+            points.append([a + (b - a) * k / count for a, b in zip(move.start, move.end)])
+    return points
+
+
+#: Posted moves whose F is not the IR's feed by design: a thread's F is its pitch, a rigid tap's feed is the spindle's,
+#: and a tap's F is the posted S times the pitch (checked on its own).
+_FEED_EXEMPT = ("G76", "G33.1", "G84", "G74")
+
+
+def compare_moves(program: Program, path, *, planar: bool = False, spindle: bool = True, dwell_ms: bool = False,
+                  native=(), tolerance: float = 0.012) -> list[str]:
+    """What in the read-back ``program`` is not the IR ``path`` (as posted: :func:`cam_fixtures_posts.with_entries`),
+    move by move: [] when nothing. Each posted move is matched, in order, to the IR move it runs along (its middle on
+    that move's path, the same way along it), and must be of its kind (a rapid a rapid, a cut a feed, plunge or arc,
+    an arc turning the same way) at its feed (F to 0.1 mm/min; a per-revolution feed, a thread's, a rigid tap's and a
+    tap cycle's are exempt). With ``spindle`` (a mill or a lathe) every cut runs with the spindle on, and no move
+    crosses XY with the spindle stopped un-oriented (no M19) below where it stopped: a boring bar dragged across the
+    wall; and the posted dwells are the IR's, in order and length (``dwell_ms``: P is milliseconds), leaving out a G4
+    right after a spindle start (a spin-up wait) and dwells inside the ``native`` cycles (``(at, end)`` move ranges the
+    post wrote as canned cycles). (A beam's pierce dwell is the beam event's, not a move: not compared.) ``planar``
+    compares X Y only."""
+    import numpy as np
+
+    from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, DWELL, RAPID
+
+    dims = 2 if planar else 3
+    problems: list[str] = []
+    samples = path.sample(0.002)
+    positions = path.positions()
+    kinds = path.moves["kind"]
+    polylines = []
+    for k in range(len(path.moves)):
+        rows = samples.points[samples.move == k]
+        polylines.append(np.vstack([positions[k], rows])[:, :dims] if len(rows) else positions[k:k + 1, :dims])
+
+    def along(poly, probe):
+        """(distance from ``probe`` to the polyline, the direction of its nearest segment)."""
+        if len(poly) < 2:
+            return math.inf, np.zeros(dims)
+        a, b = poly[:-1], poly[1:]
+        d = b - a
+        length2 = np.maximum((d * d).sum(axis=1), 1e-18)
+        t = np.clip(((probe - a) * d).sum(axis=1) / length2, 0.0, 1.0)
+        gaps = np.linalg.norm(probe - (a + t[:, None] * d), axis=1)
+        best = int(np.argmin(gaps))
+        return float(gaps[best]), d[best] / math.sqrt(length2[best])
+
+    cursor = 0
+    for move in program.moves:
+        if move.kind == "dwell":
+            continue
+        points = np.asarray([move.start] + move_points(move, 0.002), dtype=float)[:, :dims]
+        steps = np.linalg.norm(np.diff(points, axis=0), axis=1)
+        total = float(steps.sum())
+        if total < 1e-6:
+            continue
+        cumulative = np.concatenate([[0.0], np.cumsum(steps)])
+        k = min(int(np.searchsorted(cumulative, total / 2.0)), len(steps)) - 1
+        k = max(k, 0)
+        f = (total / 2.0 - cumulative[k]) / max(steps[k], 1e-18)
+        probe = points[k] + (points[k + 1] - points[k]) * f
+        heading = (points[k + 1] - points[k]) / max(steps[k], 1e-18)
+        found = None
+        for index in range(cursor, len(path.moves)):
+            if int(kinds[index]) == DWELL:
+                continue
+            gap, direction = along(polylines[index], probe)
+            if gap <= tolerance and float(direction @ heading) > 0.0:
+                found = index
+                break
+        where = f"line {move.line} ({move.kind} to {tuple(round(v, 4) for v in move.end)})"
+        if found is None:
+            problems.append(f"{where}: no IR move from move {cursor} on runs there")
+            continue
+        cursor = found
+        ir_kind = int(kinds[found])
+        cutting = move.kind != "rapid"
+        if cutting != (ir_kind != RAPID):
+            problems.append(f"{where}: the IR's move {found} is a {('rapid', 'feed', 'plunge', 'arc_cw', 'arc_ccw')[ir_kind]}")
+        elif move.kind in ("arc_cw", "arc_ccw") and ir_kind in (ARC_CW, ARC_CCW) and (
+                (move.kind == "arc_cw") != (ir_kind == ARC_CW)):
+            problems.append(f"{where}: the IR's arc {found} turns the other way")
+        elif cutting and not move.per_rev and move.cycle not in _FEED_EXEMPT and abs(
+                move.feed - float(path.moves["feed"][found])) > 0.05 + 1e-6:
+            problems.append(f"{where}: F{move.feed:g}, the IR's move {found} feeds at {path.moves['feed'][found]:g}")
+        if spindle and cutting and move.spindle is None:
+            problems.append(f"{where}: cuts with the spindle stopped")
+        if spindle and move.spindle is None and not move.oriented and move.stop_z is not None and math.hypot(
+                move.end[0] - move.start[0], move.end[1] - move.start[1]) > 1e-6 and min(
+                move.start[2], move.end[2]) <= move.stop_z + 1e-6:
+            problems.append(f"{where}: crosses X Y with the spindle stopped un-oriented, at or below where it "
+                            "stopped")
+    if not spindle:
+        return problems
+    # Dwells, in order.
+    posted = []
+    last = None
+    for item in program.timeline:
+        if isinstance(item, Move) and item.kind == "dwell":
+            spun = isinstance(last, Event) and last.kind == "spindle" and last.data.get("m") in (3, 4) and (
+                last.line == item.line - 1)
+            if not spun:
+                posted.append((item.line, item.p / 1000.0 if dwell_ms else item.p))
+        last = item
+    inside = lambda k: any(at <= k < end for at, end in native)  # noqa: E731
+    wanted = [float(path.moves["p"][k]) for k in range(len(path.moves)) if int(kinds[k]) == DWELL and not inside(k)]
+    if len(posted) != len(wanted) or any(abs(a - b) > 1e-3 for (_, a), b in zip(posted, wanted)):
+        problems.append(f"dwells {[round(p, 4) for _, p in posted]} s posted, the IR's are {wanted}")
+    return problems
 
 
 def posted_text(result, setup: str | None = None) -> str:

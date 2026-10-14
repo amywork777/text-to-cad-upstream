@@ -12,7 +12,7 @@ import numpy as np
 
 from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, DWELL
 from cadgen._internal.cam.job import parse_job
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, PostRefusal
 from cadgen._internal.cam.posts import POST_NAMES, REGISTRY, available, get_post
 from tests.python.support import cam_fixtures_posts as F
 from tests.python.support import gcode_reader
@@ -82,6 +82,19 @@ def read_back(post, program, text):
     if machine.kind == "wire_edm":
         start = (0.0, 0.0, 0.0)
     return gcode_reader.read(text, start=start, lathe=lathe, diameter=getattr(machine, "diameter_mode", True))
+
+
+def compare(post, program, text, **overrides) -> list[str]:
+    """:func:`gcode_reader.compare_moves` of ``text`` (posted by ``post`` from ``program``) against the IR as posted."""
+    from cadgen._internal.cam.posts.base import SPINDLE_KINDS
+
+    machine = program.machine
+    path = F.with_entries(program.toolpath, lathe=machine.kind == "lathe")
+    native = [(e.at, e.data["end"]) for e in path.events if e.kind == "cycle" and post.emits_cycle(e.data)]
+    dwell_ms = bool(getattr(post, "dwell_ms", False)) or bool((machine.post_options or {}).get("dwell_ms"))
+    options = {"planar": machine.kind in ("laser", "plasma", "waterjet", "wire_edm"),
+               "spindle": machine.kind in SPINDLE_KINDS, "dwell_ms": dwell_ms, "native": native, **overrides}
+    return gcode_reader.compare_moves(read_back(post, program, text), path, **options)
 
 
 class Goldens(unittest.TestCase):
@@ -165,6 +178,15 @@ class ReadBack(unittest.TestCase):
                 if not planar:
                     self.assertTrue(np.allclose(points[-1], program.toolpath.ends()[-1], atol=1e-3))
 
+    def test_every_move_is_the_ir_moves_kind_at_its_feed(self):
+        # The read-back above is geometry; this holds each posted move to the IR move it runs along: a rapid a rapid,
+        # a cut at the IR's feed (so a modal F a post forgot to change shows), the spindle on through every cut, and
+        # the dwells in order and length in the post's own unit.
+        for post_name, kind, keys, golden in CASES:
+            with self.subTest(post=post_name, case=golden):
+                post, program, text = render(post_name, kind, keys)
+                self.assertEqual([], compare(post, program, text))
+
     def test_lathe_cycles_read_back_to_their_parameters(self):
         for post_name in ("linuxcnc", "fanuc", "haas"):
             with self.subTest(post=post_name):
@@ -217,9 +239,10 @@ class ReadBack(unittest.TestCase):
             with self.subTest(post=post_name):
                 text = render(post_name, "mill5", {})[2]
                 lines = text.splitlines()
-                for k, line in enumerate(lines):
-                    if re.match(r"T\d+ M0?6$", line):
-                        self.assertEqual(lines[k + 1], words)
+                changes = [k for k, line in enumerate(lines) if re.match(r"(N\d+ )?T\d+ M0?6$", line)]
+                self.assertEqual(3, len(changes))
+                for k in changes:
+                    self.assertEqual(lines[k + 1], words)
                 if post_name == "haas":
                     self.assertEqual(lines.count("G254"), 3)
                     self.assertEqual(lines.count("G255"), 3)
@@ -230,7 +253,7 @@ class ReadBack(unittest.TestCase):
         self.assertEqual(text.count("G69"), 3)
         moves = "\n".join(line for line in text.split("G21", 1)[1].splitlines() if "G28" not in line)
         self.assertNotIn(" A", moves)                           # G68.2 turns the table: no A/C words posted
-        self.assertTrue(text.rstrip().endswith("G91 G28 Z0.\nG90\nG91 G28 A0. C0.\nG90\nM30\n%"))
+        self.assertTrue(text.rstrip().endswith("G91 G28 Z0.\nG90\nG91 G28 A0. C0.\nG90\nG49\nM30\n%"))
 
 
 class Dialects(unittest.TestCase):
@@ -546,6 +569,13 @@ class Safety(unittest.TestCase):
 
                 with self.subTest(post=post_name, cycle=name):
                     program = _job(post_name, build)
+                    if code is None and cycle == "tap":
+                        # No left-hand tapping cycle: a tap posted as moves breaks, so it is refused.
+                        with self.assertRaises(PostRefusal) as caught:
+                            get_post(post_name, "mill").render(program)
+                        self.assertIn("thread mill", str(caught.exception))
+                        self.assertEqual(0, caught.exception.operation)
+                        continue
                     text = get_post(post_name, "mill").render(program)
                     if code:
                         self.assertRegex(text, rf"(?m)^(G9[89] )?{re.escape(code)}\b")
@@ -598,7 +628,7 @@ class Safety(unittest.TestCase):
                 text = get_post(post_name, "mill5").render(self._tcp_then_drill(post_name))
                 self.assertNotRegex(text, r"\bG8[1-9]\b")
                 code = _code(text)
-                second = code.index(next(line for line in code if re.match(r"T2 M0?6$", line)))
+                second = code.index(next(line for line in code if re.match(r"(N\d+ )?T2 M0?6$", line)))
                 # Rotaries first (the table to A0 with Z at the top), then TCP on, then X Y, then Z.
                 after = code[second + 1:]
                 self.assertRegex(after[0], r"^S7600 M3$")
@@ -647,9 +677,10 @@ class Safety(unittest.TestCase):
             b.end_op()
 
         expected = {"linuxcnc": ["G53 G0 Z0", "T1 M6", "S10000 M3", "G0 X10 Y0", "G0 G43 Z5 H1", "Z1"],
-                    "mach3": ["G53 G0 Z0", "T1 M6", "S10000 M3", "G0 X10 Y0", "G0 G43 Z5 H1", "Z1"],
+                    # Mach3 is often never homed: Z up in the work offset, the new length at once, Z up again.
+                    "mach3": ["G0 Z5", "T1 M6", "G43 H1", "G0 Z5", "S10000 M3", "G0 X10 Y0", "Z1"],
                     "fanuc": ["G91 G28 Z0.", "G90", "T1 M6", "S10000 M3", "G0 X10. Y0.", "G0 G43 Z5. H1", "Z1."],
-                    "haas": ["T1 M06", "S10000 M3", "G0 X10. Y0.", "G0 G43 Z5. H1", "Z1."],
+                    "haas": ["N1 T1 M06", "S10000 M3", "G0 X10. Y0.", "G0 G43 Z5. H1", "Z1."],
                     "grbl": ["G0 Z5", "S10000 M3", "G4 P3", "X10 Y0", "Z1"]}
         for post_name, lines in expected.items():
             with self.subTest(post=post_name):
@@ -832,10 +863,22 @@ class Safety(unittest.TestCase):
     def test_grbl_waits_for_the_spindle_only_when_it_starts_from_standstill(self):
         program = F.mill("grbl")
         files = get_post("grbl", "mill").render_tool_files(program)
-        self.assertEqual(["T1", "T2", "T3"], [label for label, _ in files])
-        tap = files[2][1]
-        self.assertIn("S500 M3\nG4 P3\n", tap)
-        self.assertIn("S500 M4\nZ2\n", tap)                # the reversal at the tap's bottom: no dwell there
+        self.assertEqual(["T1", "T2"], [label for label, _ in files])
+        for _, text in files:
+            self.assertRegex(text, r"S\d+ M3\nG4 P3\n")
+
+        def reversing(b):
+            _start(b, rpm=500)
+            b.rapid(x=10, y=0)
+            b.rapid(z=1)
+            b.feed(z=-1, f=300)
+            b.event("spindle", rpm=500, dir="ccw")
+            b.feed(z=1, f=300)
+            b.end_op()
+
+        text = get_post("grbl", "mill").render(_job("grbl", reversing))
+        self.assertIn("S500 M3\nG4 P3\n", text)
+        self.assertIn("S500 M4\nZ1\n", text)               # a reversal: no dwell there
         quick = get_post("grbl", "mill").render_tool_files(F.mill("grbl", {"spindle_spinup_s": 0}))
         self.assertNotIn("G4 P3", "".join(t for _, t in quick))
 
@@ -848,10 +891,10 @@ class Safety(unittest.TestCase):
 
     def test_3_plus_2_and_tcp_programs_end_with_z_home_then_the_table_at_rotary_zero(self):
         for post_name, kind, tail in (
-                ("fanuc", "mill5", ["G69", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "M30"]),
-                ("haas", "mill5", ["G255", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "M30"]),
-                ("linuxcnc", "mill5", ["G53 G0 Z0", "G53 G0 A0 C0", "M2"]),
-                ("mach3", "mill4", ["G53 G0 Z0", "G53 G0 A0", "M30"]),
+                ("fanuc", "mill5", ["G69", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "G49", "M30"]),
+                ("haas", "mill5", ["G255", "G91 G28 Z0.", "G90", "G91 G28 A0. C0.", "G90", "G49", "M30"]),
+                ("linuxcnc", "mill5", ["M5", "G49", "G53 G0 Z0", "G53 G0 A0 C0", "M2"]),
+                ("mach3", "mill4", ["M5", "G0 Z5", "G0 A0", "G49", "M30"]),
                 ("linuxcnc", "mill5_tcp", ["G49", "G53 G0 Z0", "G53 G0 A0 C0", "M2"])):
             with self.subTest(post=post_name, kind=kind):
                 code = _code(render(post_name, kind, {})[2])

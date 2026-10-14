@@ -1,8 +1,11 @@
 """``haas``: Haas NGC/classic controls (``.nc``) for mills (VF, UMC) and lathes (ST, DS): Fanuc-like with Haas's own.
 
-``%`` and a five-digit ``O`` number (``machine.program_number``), decimal points on every dimension word, ``T M06``
-(the Haas tool change retracts Z itself) then ``G43 H`` at a clearance Z, the canned cycles G81 G82 G83 G73 G84
-(rigid, no M29; G74 left hand) G85 G86 G89 G76, dwell ``G4 P`` in milliseconds, air blast ``M83``/``M84``.
+``%`` and a five-digit ``O`` number (``machine.program_number`` for the first setup, one more for each next one),
+decimal points on every dimension word, ``N1 T M06``, ``N2``... (an N number on each tool change, so the operator can
+restart at a tool; the Haas tool change retracts Z itself) then ``G43 H`` at a clearance Z, the canned cycles G81 G82
+G83 G73 G84 (rigid, no M29, F the posted S times the pitch; G74 left hand) G85 G86 G89 G76 (its shift ``I J`` along
+the cycle's ``shift_xy``, else ``Q`` in setting 27's direction), dwell ``G4 P`` in milliseconds, air blast
+``M83``/``M84``. The end cancels the tool length (``G49``) after Z goes home.
 ``machine.smoothing`` (``rough``, ``medium``, ``finish``) writes ``G187 P1``..``P3 E`` (the job's tolerance) and
 resets it at the end. A 3+2 setup turns the table (``G0 A.. C..`` or ``B.. C..``) and switches on dynamic work
 offsets (``G254``, off with ``G255``): G54.. is the setup's origin with the table at zero and the machine's rotary
@@ -18,7 +21,7 @@ when ``machine.cycles`` is true. The program is inline (no ``M97`` local subprog
 from __future__ import annotations
 
 from cadgen._internal.cam.posts._iso import CYCLES_OPTION, IsoPost
-from cadgen._internal.cam.posts.base import Program, number
+from cadgen._internal.cam.posts.base import Program, number, shift_direction
 from cadgen._internal.cam.posts.fanuc import PROGRAM_NUMBER
 
 __all__ = ["HaasPost"]
@@ -38,6 +41,11 @@ class HaasPost(IsoPost):
     index_home_lines = ("G91 G28 Z0.", "G90")
     lathe_home = ("G28 U0. W0.",)
     tilt_style = "dwo"
+    tool_line_numbers = True
+    q_shift = None
+    orient_lines = ("M19",)
+    coolant_codes = {"flood": "M8", "mist": "M7", "air": "M83"}
+    coolant_off_codes = {"air": "M84"}
     tcp_code = "G234"
     dwell_ms = True
     lathe_feed_codes = ("G98", "G99")
@@ -65,19 +73,18 @@ class HaasPost(IsoPost):
 
     def on_tool(self, data: dict, program: Program, first: bool) -> list[str]:
         lines = super().on_tool(data, program, first)
-        return [line.replace(" M6", " M06") if line.startswith("T") else line for line in lines]
+        return [line.replace(" M6", " M06") if line.startswith("N") else line for line in lines]
 
     def lathe_tool_words(self, n: int) -> list[str]:
         return [f"T{n}{n:02d}"]
 
-    def on_coolant(self, data: dict, program: Program) -> list[str]:
-        mode = data.get("mode", "off")
-        was = self._coolant
-        self._coolant = mode
-        if mode == "air":
-            return ["M9", "M83"] if was in ("flood", "mist") else ["M83"]
-        lines = ["M84"] if was == "air" else []
-        return lines + [{"flood": "M8", "mist": "M7", "off": "M9"}[mode]]
+    def shift_words(self, data: dict) -> list[str]:
+        """G76's shift: I and J along the cycle's own direction (``shift_xy``), else Q (setting 27's direction)."""
+        xy = shift_direction(data)
+        if xy is None:
+            return super().shift_words(data)
+        shift = float(data.get("shift_mm", 0.1))
+        return [f"I{self.num(shift * xy[0])}", f"J{self.num(shift * xy[1])}"]
 
     def thread_lines(self, data: dict) -> list[str]:
         """Haas's one-block G76: X root, Z end, K thread height (radius), D first pass depth, F lead, A tip angle."""

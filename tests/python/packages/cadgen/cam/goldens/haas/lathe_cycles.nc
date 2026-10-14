@@ -6,16 +6,16 @@ O01000 (part.step lathe)
 (Verify the work offset G54 and every tool's offsets before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: C insert turning tool)
-(T2: threading tool)
-(T3: 5 mm drill)
+(T1: C insert turning tool: 1500 rpm, feed 375 mm/min)
+(T2: threading tool: 800 rpm, feed 800 mm/min)
+(T3: 5 mm drill: 1200 rpm, feed 120 mm/min)
 (X words are diameters.)
 G21
 G0 G18 G40 G80 G98
 G54
 (T1: C insert turning tool)
 G28 U0. W0.
-T101
+N1 T101
 G99
 G50 S3000
 G96 S200 M3
@@ -42,7 +42,7 @@ X21.
 G0 Z5.
 (T3: 5 mm drill)
 G28 U0. W0.
-T303
+N2 T303
 G98
 G97 S1200 M3
 G0 X0.
@@ -59,7 +59,7 @@ G0 Z1.
 Z5.
 (T2: threading tool)
 G28 U0. W0.
-T202
+N3 T202
 G97 S800 M3
 (Check the thread gauge)
 M0

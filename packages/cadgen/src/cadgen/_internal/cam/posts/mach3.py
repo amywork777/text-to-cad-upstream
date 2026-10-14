@@ -1,12 +1,18 @@
 """``mach3``: Mach3 and Mach4 (``.tap``) for mills, 4th-axis mills, routers and plasma tables.
 
 Every program sets ``G91.1`` (incremental arc centres): Mach3's IJ mode can be configured absolute, and an arc read
-the other way is a crash. Mill and router: ``M5 M9`` and ``G53 G0 Z0`` (Z to the machine's top) then ``T M6``,
-``G0 X Y`` over the first point and ``G43 H`` at a clearance Z, G2/G3, M8/M7/M9, the canned
-cycles G81 G82 G83 (Q pecks back to R) G73 G84 G85 G86 G89 natively (a left-hand tap and fine boring post expanded),
-dwell ``G4 P`` in seconds (``machine.dwell_ms: true`` when Mach's General Config has "G4 dwell in ms" ticked), ``M30``.
-A 4th axis posts A words; a 3+2 setup turns A after each tool change, Z at the top (set the work offset on the
-turned part), and the program ends with Z at the top and A back at zero (``G53 G0 A0``).
+the other way is a crash. Many Mach3 machines are never homed, so machine Z0 is wherever Z stood at power-up and may be
+below the work: the post never moves in machine coordinates unless ``machine.homed: true`` says the machine is homed.
+Mill and router: ``M5 M9`` and ``G0 Z<clearance>`` (the setup's clearance height in the work offset) then ``T M6``,
+``G43 H`` (the new tool's length at once) and ``G0 Z<clearance>`` again, now for the new tool's tip (then a 3+2
+turn); with ``homed``,
+``G53 G0 Z0`` then ``T M6``, ``G0 X Y`` over the first point and ``G43 H`` at a clearance Z. G2/G3, M8/M7/M9 (air: a comment to switch it by hand),
+the canned cycles G81 G82 G83 (Q pecks back to R) G73 G84 (F the posted S times the pitch) G85 G86 G89 natively (a
+fine bore posts as its moves, and is refused when its bar shifts: Mach has no spindle orient; a left-hand tap is
+refused: Mach has no G74, and a tap posted as moves breaks), dwell ``G4 P`` in seconds (``machine.dwell_ms: true``
+when Mach's General Config has "G4 dwell in ms" ticked), ``G49`` after Z goes home, ``M30``.
+A 4th axis posts A words; a 3+2 setup turns A after each tool change, Z up (set the work offset on the turned part),
+and the program ends with Z up and A back at zero (``G0 A0``; ``G53 G0 A0`` with ``homed``).
 Mach has no tool centre point control, so a toolpath that turns A while cutting (a wrap) is refused: post it with
 linuxcnc, fanuc or haas.
 
@@ -34,11 +40,11 @@ class Mach3Post(IsoPost):
     drill_codes = {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "bore": "G85",
                    "ream": "G85", "bore_stop": "G86", "bore_dwell": "G89"}
     left_tap_code = ""
-    mill_tool_home = ("G53 G0 Z0",)
-    mill_end_home = ("G53 G0 Z0",)
-    index_home_lines = ("G53 G0 Z0",)
-    rotary_home_style = "g53"
-    options = {"cycles": CYCLES_OPTION, **torch_options(False), "dwell_ms": DWELL_MS}
+    rotary_home_style = "work"
+    options = {"cycles": CYCLES_OPTION, **torch_options(False), "dwell_ms": DWELL_MS,
+               "homed": {"type": "bool", "default": False,
+                         "help": "the machine is homed: Z goes to machine Z0 (G53 G0 Z0) before a tool change and at "
+                                 "the end, instead of the clearance height in the work offset"}}
 
     def begin(self, program: Program) -> None:
         super().begin(program)
@@ -47,6 +53,26 @@ class Mach3Post(IsoPost):
         if self._plasma:
             self.linear_axes = "XY"
             self.rotary_axes = ""
+
+    def z_up(self, program: Program) -> list[str]:
+        """Z up: to machine Z0 on a homed machine, else to the clearance height in the work offset (an unhomed
+        machine's Z0 is wherever Z stood at power-up, which may be below the work)."""
+        if self.option(program, "homed"):
+            return ["G53 G0 Z0"]
+        return [f"G0 Z{self.num(program.clearance_z)}"]
+
+    def tool_home(self, program: Program) -> list[str]:
+        return self.z_up(program)
+
+    def end_home(self, program: Program) -> list[str]:
+        return self.z_up(program)
+
+    def index_home(self, program: Program) -> list[str]:
+        return self.z_up(program)
+
+    def rotary_home(self, program: Program) -> list[str]:
+        self.rotary_home_style = "g53" if self.option(program, "homed") else "work"
+        return super().rotary_home(program)
 
     def dwell_word(self, seconds: float) -> str:
         if self.option(self._program, "dwell_ms"):
@@ -70,13 +96,19 @@ class Mach3Post(IsoPost):
     def on_tool(self, data: dict, program: Program, first: bool) -> list[str]:
         if self._plasma:
             return [self.comment(f"Torch: {self.tool_label(program.tools[data['tool']])}")]
-        return super().on_tool(data, program, first)
+        lines = super().on_tool(data, program, first)
+        if self.option(program, "homed"):
+            return lines
+        # Unhomed, the spindle is not at the machine's top after M6: the new tool's length goes on at once and Z goes
+        # to the clearance height for the new tool's tip, before a 3+2 turn of the table and before X Y.
+        n = program.tools[data["tool"]].number
+        self._length_pending = None
+        self._length_on = True
+        at = next(k for k, line in enumerate(lines) if line.endswith(f"T{n} M6"))
+        return lines[:at + 1] + [f"G43 H{n}", *self.z_up(program)] + lines[at + 1:]
 
     def on_spindle(self, data: dict, program: Program) -> list[str]:
         return [] if self._plasma else super().on_spindle(data, program)
-
-    def on_coolant(self, data: dict, program: Program) -> list[str]:
-        return [] if self._plasma else super().on_coolant(data, program)
 
     def emits_cycle(self, data: dict) -> bool:
         return not getattr(self, "_plasma", False) and super().emits_cycle(data)

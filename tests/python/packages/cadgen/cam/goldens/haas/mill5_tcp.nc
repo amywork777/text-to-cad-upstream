@@ -6,14 +6,14 @@ O01000 (part.step top)
 (Verify the work offset G54 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
+(T1: 6 mm flat: 10000 rpm, feed 800 mm/min)
 (Simultaneous AC with tool centre point control G234: X Y Z are the)
 (tool tip in G54 at rotary zero.)
 G21
 G0 G17 G40 G49 G80 G90 G94
 G54
 (T1: 6 mm flat)
-T1 M06
+N1 T1 M06
 S10000 M3
 G0 A0. C0.
 G234 H1

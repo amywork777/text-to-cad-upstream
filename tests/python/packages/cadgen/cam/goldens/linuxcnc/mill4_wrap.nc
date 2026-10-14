@@ -4,7 +4,7 @@
 (Verify the work offset G54 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
+(T1: 6 mm flat: 10000 rpm, feed 800 mm/min)
 (Simultaneous A with tool centre point control G43.4: X Y Z are the)
 (tool tip in G54 at rotary zero.)
 (Stock LinuxCNC has no G43.4: this program needs a TCP kinematics)

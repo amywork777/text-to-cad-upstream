@@ -60,8 +60,9 @@ a key it needs missing, posts the expansion, so the expansion must always be the
 **Operations** are :class:`OpRange` rows: the move range ``[start, end)`` of each operation, its global index, setup,
 op name, plain word, tool, and ``meta`` (planner facts a check reads, e.g. ``unreachable`` areas, ``stock_to_leave``).
 
-:meth:`Toolpath.time_s` is the cycle time (moves at their feeds, rapids at the machine's rapid rate, dwells, and
-``machine.tool_change_s`` per tool event: no acceleration, so it is an estimate);
+:meth:`Toolpath.time_s` is the cycle time (moves at their feeds, rapids at the machine's rapid rate, dwells,
+``machine.tool_change_s`` per tool event and ``machine.spindle_spinup_s`` per spindle start from standstill: no
+acceleration, so it is an estimate);
 :meth:`Toolpath.sample` returns :class:`Samples` (points, program time, op, kind, move) along the path with arcs
 sampled within a chord tolerance, the one sampler the simulator, the checks and the GLB share.
 
@@ -218,15 +219,27 @@ class Toolpath:
         return seconds
 
     def event_seconds(self, machine=None) -> np.ndarray:
-        """(N + 1,) seconds spent in events before each move (a tool change costs ``machine.tool_change_s``; the
-        last slot holds events after the last move)."""
+        """(N + 1,) seconds spent in events before each move (a tool change costs ``machine.tool_change_s``, a
+        spindle start from standstill ``machine.spindle_spinup_s``, the wait every post dwells after it, and so
+        does the restart after a stop; the last slot holds events after the last move)."""
         out = np.zeros(len(self.moves) + 1)
         change = float(getattr(machine, "tool_change_s", 0.0) or 0.0)
+        spinup = float(getattr(machine, "spindle_spinup_s", None) or 0.0)
+        turning = False
         for event in self.events:
+            at = min(event.at, len(self.moves))
             if event.kind == "tool":
-                out[min(event.at, len(self.moves))] += change
+                out[at] += change
+                turning = False                    # a tool change stops the spindle
+            elif event.kind == "spindle":
+                on = event.data.get("dir", "cw") != "off"
+                if on and not turning:
+                    out[at] += spinup
+                turning = on
+            elif event.kind == "stop" and turning:
+                out[at] += spinup                  # the spindle is started again after the stop
             elif event.kind == "beam" and event.data.get("on"):
-                out[min(event.at, len(self.moves))] += float(event.data.get("pierce_s", 0.0) or 0.0)
+                out[at] += float(event.data.get("pierce_s", 0.0) or 0.0)
         return out
 
     def times(self, machine=None) -> np.ndarray:

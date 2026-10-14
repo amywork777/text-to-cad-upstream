@@ -4,7 +4,7 @@
 (Verify the work offset G54 and the torch heights before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 0.2 mm kerf beam)
+(T1: 0.2 mm kerf beam: feed 1500 mm/min)
 G21
 G90 G94 G17 G40
 G54

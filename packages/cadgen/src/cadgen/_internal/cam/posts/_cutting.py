@@ -109,9 +109,6 @@ class CuttingPost(CheckedPost):
     def on_spindle(self, data: dict, program: Program) -> list[str]:
         return []                  # only "off" reaches here (check() refuses a spindle start)
 
-    def on_coolant(self, data: dict, program: Program) -> list[str]:
-        return []                  # only "off" reaches here on a plasma or waterjet table
-
     def dwell_word(self, seconds: float) -> str:
         if self.options.get("dwell_ms") and self.option(self._program, "dwell_ms"):
             return f"P{int(round(seconds * 1000))}"

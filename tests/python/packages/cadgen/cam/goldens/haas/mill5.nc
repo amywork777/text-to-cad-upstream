@@ -6,9 +6,9 @@ O01000 (part.step tilt)
 (Verify the work offset G55 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
-(T2: 5 mm drill)
-(T3: M6x1 tap)
+(T1: 6 mm flat: 12000 rpm, feed 1990 mm/min)
+(T2: 5 mm drill: 7600 rpm, feed 300 mm/min)
+(T3: M6x1 tap: 500 rpm, feed 500 mm/min)
 (3+2 A30 C90 by dynamic work offset G254: G55 is this setup's origin)
 (on the part with the table at rotary zero, the machine's rotary)
 (centre settings must be set.)
@@ -16,7 +16,7 @@ G21
 G0 G17 G40 G49 G80 G90 G94
 G55
 (T1: 6 mm flat)
-T1 M06
+N1 T1 M06
 G0 A30. C90.
 G254
 S12000 M3
@@ -37,7 +37,7 @@ M5
 M9
 G255
 (T2: 5 mm drill)
-T2 M06
+N2 T2 M06
 G0 A30. C90.
 G254
 S7600 M3
@@ -52,7 +52,7 @@ M5
 M9
 G255
 (T3: M6x1 tap)
-T3 M06
+N3 T3 M06
 G0 A30. C90.
 G254
 S500 M3
@@ -71,5 +71,6 @@ G91 G28 Z0.
 G90
 G91 G28 A0. C0.
 G90
+G49
 M30
 %

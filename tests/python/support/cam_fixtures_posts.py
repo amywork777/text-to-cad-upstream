@@ -33,8 +33,12 @@ def _machine(kind: str, post: str, keys: dict | None):
     registry.entry_for(post, kind)
     options = registry.parse_options(post, raw)
     kinematics = raw.get("kinematics") or ("ac_trunnion" if kind == "mill5" else None)
+    import dataclasses
+
+    shared = {"spindle_spinup_s": raw["spindle_spinup_s"]} if "spindle_spinup_s" in raw and "spindle_spinup_s" in {
+        f.name for f in dataclasses.fields(Machine)} else {}
     return Machine(kind=kind, post=post, max_rpm=raw.get("max_rpm"), kinematics=kinematics,
-                   diameter_mode=raw.get("diameter_mode", True), post_options=options, tool_change_s=5.0)
+                   diameter_mode=raw.get("diameter_mode", True), post_options=options, tool_change_s=5.0, **shared)
 
 
 def _tools(entries):
@@ -67,8 +71,14 @@ MILL_TOOLS = [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3},
               {"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1.0}]
 
 
-def _mill_path(b, *, rotary_setup=None, wcs="G54"):
-    """A rounded-square pocket pass with a helix, a dwell, a stop, a peck cycle, a tap cycle and coolant."""
+def taps(post: str, keys=None) -> bool:
+    """Whether ``post`` (with machine keys ``keys``) taps with a cycle: GRBL has none, and ``cycles: false`` posts
+    every cycle as moves; both refuse a tap (a tap posted as moves breaks), so the fixture leaves it out there."""
+    return post != "grbl" and (keys or {}).get("cycles") is not False
+
+
+def _mill_path(b, *, rotary_setup=None, wcs="G54", tap=True):
+    """A rounded-square pocket pass with a helix, a dwell, a stop, a peck cycle, a tap cycle (``tap``) and coolant."""
 
     b.event("setup", id="top", wcs=wcs, plain="Top", rotary=dict(rotary_setup or {}))
     b.begin_op(index=0, setup="top", op="pocket", plain="Pocket", tool="T1")
@@ -106,6 +116,9 @@ def _mill_path(b, *, rotary_setup=None, wcs="G54"):
         b.rapid(z=5)
     b.end_cycle(handle)
     b.end_op()
+    if not tap:
+        b.event("coolant", mode="off")
+        return
     b.begin_op(index=2, setup="top", op="drill", plain="Tap", tool="T3")
     b.event("tool", tool="T3", number=3)
     b.event("spindle", rpm=500, dir="cw")
@@ -130,7 +143,7 @@ def mill(post: str, keys=None, kind: str = "mill"):
 
     setup, wcs = _setup()
     b = ToolpathBuilder((0, 0, 5))
-    _mill_path(b)
+    _mill_path(b, tap=taps(post, keys))
     return _program(setup, wcs, b.build(), _tools(MILL_TOOLS), _machine(kind, post, keys))
 
 
@@ -142,7 +155,7 @@ def tilted(post: str, kind: str, orientation: dict, keys=None):
 
     setup, wcs = _setup(orientation, wcs="G55", setup_id="tilt")
     b = ToolpathBuilder((0, 0, 5))
-    _mill_path(b, rotary_setup=dict(wcs.rotary_deg), wcs="G55")
+    _mill_path(b, rotary_setup=dict(wcs.rotary_deg), wcs="G55", tap=taps(post, keys))
     path = b.build()
     # Like the planners, every move carries the setup's (constant) rotary position.
     moves = path.moves.copy()

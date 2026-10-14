@@ -4,23 +4,25 @@
 (Verify the work offset G55 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
-(T2: 5 mm drill)
-(T3: M6x1 tap)
+(T1: 6 mm flat: 12000 rpm, feed 1990 mm/min)
+(T2: 5 mm drill: 7600 rpm, feed 300 mm/min)
+(T3: M6x1 tap: 500 rpm, feed 500 mm/min)
 (3+2: the table turns to A30 after each tool change, set G55 on the)
 (turned part at this setup's origin.)
 G21 G90 G94 G17 G40 G49 G80
 G91.1
 G55
 (T1: 6 mm flat)
-G53 G0 Z0
+G0 Z5
 T1 M6
+G43 H1
+G0 Z5
 G0 A30
 S12000 M3
 M8
 (Pocket #o1.f12)
 G0 X10 Y0
-G0 G43 Z5 H1
+Z5
 A30
 Z1
 G1 Z0 F600
@@ -34,13 +36,15 @@ M1
 M5
 M9
 (T2: 5 mm drill)
-G53 G0 Z0
+G0 Z5
 T2 M6
+G43 H2
+G0 Z5
 G0 A30
 S7600 M3
 M8
 G0 X-10 Y5
-G0 G43 Z5 H2
+Z5
 (peck cycle, 2 holes)
 G98 G83 X-10 Y5 Z-6 R1 Q3 F300
 X10 Y5
@@ -48,13 +52,15 @@ G80
 M5
 M9
 (T3: M6x1 tap)
-G53 G0 Z0
+G0 Z5
 T3 M6
+G43 H3
+G0 Z5
 G0 A30
 S500 M3
 M8
 G0 X-10 Y5
-G0 G43 Z5 H3
+Z5
 (tap cycle, 2 holes)
 G99 G84 X-10 Y5 Z-3.5 R2 F500
 X10 Y5
@@ -62,6 +68,7 @@ G80
 G0 X10 Y5 Z5 A30
 M9
 M5
-G53 G0 Z0
-G53 G0 A0
+G0 Z5
+G0 A0
+G49
 M30

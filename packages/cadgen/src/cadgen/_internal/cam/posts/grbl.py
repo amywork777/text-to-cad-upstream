@@ -6,10 +6,18 @@ next, longer tool would rapid into the stock. So a mill or router setup that use
 file per tool (``split_by_tool``, :meth:`~cadgen._internal.cam.posts.base.Post.render_tool_files`): each a complete
 program that names its tool and says "file k of n: load T2, zero Z on the stock top, then run", carries the coolant
 in effect, and starts safe (Z up to the clearance height, then X Y, then down). :meth:`GrblPost.render` refuses a
-multi-tool setup in one file. Drilling cycles post as their expanded moves. Arcs are G2/G3 with I/J, helical with Z.
-Dwell ``G4 P`` is in seconds. ``M3`` has no spindle-at-speed feedback on GRBL, so every spindle start from standstill
-is followed by ``G4 P<machine.spindle_spinup_s>`` (3 s by default) before the tool may cut. Coolant M8 (flood); stock
-GRBL builds have no M7, so mist and air both map to M8.
+multi-tool setup in one file. Drilling cycles post as their expanded moves, except a tap: GRBL cannot keep the feed in
+step with the spindle, so a ``tap`` cycle is refused (thread mill the hole, or use a post that taps), and so is a fine
+bore that shifts its bar (GRBL cannot orient the spindle). Arcs are G2/G3 with I/J, helical with Z. Dwell ``G4 P`` is
+in seconds. ``M3`` has no spindle-at-speed feedback on GRBL, so every spindle start from standstill is followed by
+``G4 P<machine.spindle_spinup_s>`` (3 s when the job sets none) before the tool may cut. Coolant: flood is ``M8``;
+stock GRBL builds have no ``M7`` (a compile-time option), so mist and air on a mill are a comment telling the
+operator to switch them by hand, never another coolant's code. A laser's air assist is ``M8``: on a GRBL laser the
+one coolant output drives the air pump.
+
+Line length: GRBL holds a block of up to 80 characters (spaces and comments dropped) and a sender counts each line
+into GRBL's 128-byte serial buffer, so every line's code stays within 79 characters and every whole line within 127
+(:meth:`GrblPost.check_lines`; comments wrap at 70). A line past either is a cadgen bug, raised as one.
 
 A laser's beam is ``M4`` (dynamic power: off while stationary and during rapids, scaled with speed) with ``S`` out of
 GRBL's default ``$30=1000``. Because M4 fires nothing while the head is still, a pierce dwell is fired in ``M3``
@@ -45,7 +53,7 @@ class GrblPost(Post):
             raise CamJobError(f"setup {program.setup.id}: GRBL cannot change tools inside one program (no tool table, "
                               "and it cannot jog to touch off a tool after M0); post the setup one file per tool "
                               "(render_tool_files)")
-        return super().render(program)
+        return self.check_lines(super().render(program))
 
     def tool_programs(self, program):
         pieces = super().tool_programs(program)
@@ -68,13 +76,15 @@ class GrblPost(Post):
         # head goes up too before its first X Y move: it may sit at the focus height over the sheet.
         return float(program.clearance_z)
 
-    def spinup(self, program):
-        seconds = float(self.option(program, "spindle_spinup_s"))
-        return [f"G4 P{self.num(seconds)}"] if seconds > 0 and program.machine.kind != "laser" else []
+    def default_spinup_s(self, program):
+        return float(self.option(program, "spindle_spinup_s"))
 
-    def on_coolant(self, data, program):
-        # Stock GRBL 1.1 has no M7 (it is a compile-time option): mist and air both run the one coolant output.
-        return [{"flood": "M8", "mist": "M8", "air": "M8", "off": "M9"}[data.get("mode", "off")]]
+    def coolant_code(self, mode, program):
+        # Stock GRBL 1.1 has no M7 (a compile-time option): flood only on a mill; a laser's air assist is the one
+        # coolant output.
+        if program.machine.kind == "laser":
+            return {"flood": "M8", "air": "M8"}.get(mode)
+        return {"flood": "M8"}.get(mode)
 
     def on_beam(self, data, program):
         if not data.get("on"):
@@ -86,4 +96,14 @@ class GrblPost(Post):
         return [f"M4 S{power}"]
 
     def footer(self, program):
-        return ["M5"] + (["M9"] if self.coolant_on() else []) + ["M2"]
+        return ["M5"] + self.coolant_stop(program) + ["M2"]
+
+    def check_lines(self, text: str) -> str:
+        """``text``, every line of it within what GRBL and a streaming sender take: its code (spaces and comments
+        dropped) at most 79 characters, the whole line at most 127. A longer line is a bug: ValueError."""
+        for k, line in enumerate(text.splitlines(), 1):
+            code = "".join(line.split("(")[0].split())
+            if len(code) > 79 or len(line) > 127:
+                raise ValueError(f"grbl post: line {k} ({line[:40]!r}...) is {len(line)} characters, {len(code)} of "
+                                 "them code; GRBL takes 79 characters of code and a sender 127 in all (a cadgen bug)")
+        return text

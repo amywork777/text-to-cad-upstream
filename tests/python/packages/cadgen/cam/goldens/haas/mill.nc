@@ -6,15 +6,15 @@ O01000 (part.step top)
 (Verify the work offset G54 and every tool length before cutting.)
 (Units mm. Feeds and speeds are starting points.)
 (Material: aluminium 6061)
-(T1: 6 mm flat)
-(T2: 5 mm drill)
-(T3: M6x1 tap)
+(T1: 6 mm flat: 12000 rpm, feed 1990 mm/min)
+(T2: 5 mm drill: 7600 rpm, feed 300 mm/min)
+(T3: M6x1 tap: 500 rpm, feed 500 mm/min)
 G21
 G0 G17 G40 G49 G80 G90 G94
 G187 P2 E0.01
 G54
 (T1: 6 mm flat)
-T1 M06
+N1 T1 M06
 S12000 M3
 M8
 (Pocket #o1.f12)
@@ -32,7 +32,7 @@ M1
 M5
 M9
 (T2: 5 mm drill)
-T2 M06
+N2 T2 M06
 S7600 M3
 M8
 G0 X-10. Y5.
@@ -44,7 +44,7 @@ G80
 M5
 M9
 (T3: M6x1 tap)
-T3 M06
+N3 T3 M06
 S500 M3
 M8
 G0 X-10. Y5.
@@ -58,6 +58,7 @@ M9
 M5
 G91 G28 Z0.
 G90
+G49
 G187
 M30
 %
