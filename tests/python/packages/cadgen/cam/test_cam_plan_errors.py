@@ -121,6 +121,53 @@ class OperationHeights(unittest.TestCase):
         self.assertFalse(np.any(np.isclose(second["z"], top + 8.0)))
 
 
+class PostOverride(unittest.TestCase):
+    """``--post`` writes the same job for another controller under the same checks as ``machine.post``; the cycle
+    time's assumed inputs are said."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.directory = class_directory(cls)
+        cls.step = block_step(cls.directory)
+
+    def plan(self, job, **keys):
+        from cadgen import cam
+
+        with quiet():
+            return cam.plan(self.step, job=job, out_dir=self.directory, **keys)
+
+    def test_post_replaces_the_jobs_post_under_the_same_checks(self):
+        job = mill_job([{"op": "face", "tool": "T1"}])
+        haas = self.plan(job, post="haas")
+        self.assertTrue(haas.ok, haas.findings)
+        self.assertEqual(["haas"], [p["post"] for p in haas.posts])
+        self.assertEqual("haas", haas.summary["post"])
+        self.assertIn("post haas", (self.directory / "block.top.nc").read_text(encoding="utf-8"))
+        wrong = self.plan(job, post="marlin")              # a laser post, not a mill's
+        self.assertFalse(wrong.ok)
+        self.assertIn("marlin", wrong.findings[0]["summary"])
+        keyed = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "mill", "post": "fanuc", "cycles": True})
+        refused = self.plan(keyed, post="grbl")             # fanuc's own key is not grbl's
+        self.assertFalse(refused.ok)
+        self.assertIn("cycles", refused.findings[0]["summary"])
+
+    def test_the_cycle_times_assumed_rates_are_said(self):
+        result = self.plan(mill_job([{"op": "face", "tool": "T1"}]))
+        (said,) = [w for w in result.warnings if "not stated" in w]
+        self.assertIn("machine.rapid_mm_min and machine.tool_change_s not stated", said)
+        self.assertIn("rapids at 5000 mm/min", said)
+        cam = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]
+        self.assertEqual(["rapid_mm_min", "tool_change_s"], cam["machine"]["assumed"])
+        stated = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "mill", "post": "grbl",
+                                                                  "rapid_mm_min": 4000, "tool_change_s": 20})
+        self.assertEqual([], [w for w in self.plan(stated).warnings if "not stated" in w])
+
+    def test_the_generated_cli_takes_the_flag(self):
+        from cadgen.cli.cam_plan import build_parser
+
+        self.assertIn("--post", build_parser().format_help())
+
+
 class PlanOneOccurrence(unittest.TestCase):
     """``cam plan`` takes ``--occurrence`` as ``cam features`` does, so one part of an assembly can be machined."""
 

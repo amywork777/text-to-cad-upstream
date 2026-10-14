@@ -40,7 +40,7 @@ an unknown key or value is refused with a sentence naming the allowed ones, and 
 | `name` | the machine's name, for the headers |
 | `travel_mm` | axis travel `[x, y, z]` (a lathe `[x, z]`, a laser, plasma or waterjet `[x, y]` or `[x, y, z]`); with it, the `travel` check runs |
 | `max_rpm`, `max_feed_mm_min` | limits: speeds and feeds are clamped to them (the `limits` warning says where) |
-| `rapid_mm_min` | rapid traverse rate, for the cycle time (default per kind) |
+| `rapid_mm_min` | rapid traverse rate, for the cycle time (default per kind; a default is said in a `warning:` line, and in the GLB's `machine.assumed`) |
 | `tool_change_s` | seconds per tool change, for the cycle time |
 | `spindle_spinup_s` | seconds the spindle takes to reach speed (0 to 60): every post dwells that long after each spindle start, and the cycle time counts it (left out: GRBL waits 3 s, the others none) |
 | `kinematics` | a `mill5`'s: `ac_trunnion` (A tilts the table about X, C turns it) or `bc_head` (B tilts the head, C turns the table) |

@@ -125,6 +125,9 @@ class Machine:
     #: Seconds to wait after the spindle starts before cutting; ``None``: the post's own default (3 s on grbl, which
     #: does not wait for the spindle to reach speed; none on the controllers that do).
     spindle_spinup_s: float | None = None
+    #: The cycle-time inputs the job did not state, so the machine kind's defaults stand in: ``rapid_mm_min``,
+    #: ``tool_change_s``. The run says each (a cycle time is only as true as them).
+    assumed: tuple[str, ...] = ()
 
     @property
     def axes(self) -> str:
@@ -137,6 +140,8 @@ class Machine:
     def as_dict(self) -> dict:
         out = {"kind": self.kind, "post": self.post, "axes": self.axes, "rapid_mm_min": self.rapid_mm_min,
                "tool_change_s": self.tool_change_s}
+        if self.assumed:
+            out["assumed"] = list(self.assumed)
         for key in ("name", "travel_mm", "max_rpm", "max_feed_mm_min", "kinematics"):
             value = getattr(self, key)
             if value not in (None, ""):
@@ -345,8 +350,12 @@ def _refuse_constant(name: str):
     raise _NotANumber(f"{name} is not a number a job can hold")
 
 
-def parse_job(job: str | dict | None) -> Job:
+def parse_job(job: str | dict | None, *, post: str | None = None) -> Job:
+    """The job, typed and checked. ``post`` (``cadgen cam plan --post``) stands in for ``machine.post``, under the
+    same checks: the same job written for another controller without editing it."""
     raw, base = load_job(job)
+    if post is not None and isinstance(raw, dict) and isinstance(raw.get("machine"), dict):
+        raw = {**raw, "machine": {**raw["machine"], "post": post}}
     check_keys(raw, JOB_KEYS, "job")
     for key in ("machine", "material", "stock", "tools", "setups"):
         if key not in raw:
@@ -439,6 +448,7 @@ def _machine(raw: object) -> Machine:
         kinematics=kinematics, rotary_limits_deg=limits, diameter_mode=diameter_mode,
         # A minute is longer than any spindle takes to reach speed; past it the number is a units slip.
         spindle_spinup_s=read_number(raw, "spindle_spinup_s", "machine", minimum=0.0, maximum=60.0),
+        assumed=tuple(key for key in ("rapid_mm_min", "tool_change_s") if key not in raw),
     )
 
 

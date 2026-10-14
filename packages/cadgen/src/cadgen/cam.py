@@ -42,8 +42,8 @@ def features(target: Path, *, occurrence: str | None = None) -> CamFeaturesResul
     return list_features(Path(target), occurrence=occurrence)
 
 
-def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None = None, out_dir: Path | None = None,
-         verbose: bool = False) -> CamPlanResult:
+def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None = None, post: str | None = None,
+         out_dir: Path | None = None, verbose: bool = False) -> CamPlanResult:
     """Plan a CAM job on a part: toolpaths, a simulated cut, checks, and G-code per setup.
 
     target: the STEP/STP document holding the part, or a DXF of flat profiles.
@@ -53,11 +53,13 @@ def plan(target: Path, *, job: str | dict | None = None, occurrence: str | None 
         Face refs are the ones ``cadgen cam features`` prints.
     occurrence: which part occurrence to machine (``#o1.2``) when the document is an
         assembly. Omitted, the document must hold one part.
+    post: write the G-code for this post instead of the job's ``machine.post``
+        (``haas``): the same job for another controller, without editing it.
     out_dir: where the result GLB and the posted files go. Omitted, they go beside
         the document, as ``<stem>.cam.glb`` and ``<stem>.<setup>.<ext>``.
     verbose: show every progress line and the timings on stderr.
     """
     from cadgen._internal.cam.run import plan_job
 
-    return plan_job(Path(target), job=job, occurrence=occurrence, out_dir=None if out_dir is None else Path(out_dir),
-                    verbose=verbose)
+    return plan_job(Path(target), job=job, occurrence=occurrence, post=post,
+                    out_dir=None if out_dir is None else Path(out_dir), verbose=verbose)

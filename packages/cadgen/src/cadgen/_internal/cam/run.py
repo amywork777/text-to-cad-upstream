@@ -221,8 +221,8 @@ def _relative(target: Path, start: Path) -> str:
         return Path(target).resolve().as_posix()
 
 
-def plan_job(target: Path, *, job, occurrence: str | None = None, out_dir: Path | None = None,
-             verbose: bool = False) -> CamPlanResult:
+def plan_job(target: Path, *, job, occurrence: str | None = None, post: str | None = None,
+             out_dir: Path | None = None, verbose: bool = False) -> CamPlanResult:
     from cadgen._internal.cam import posts as post_registry
     from cadgen._internal.cam.job import parse_job
 
@@ -237,7 +237,7 @@ def plan_job(target: Path, *, job, occurrence: str | None = None, out_dir: Path 
         # Whatever happens next (a refusal, a crash, a plan), the last run's outputs are not left standing beside it.
         _remove_stale(previous_outputs(document, out_dir,
                                        {entry.extension for entry in post_registry.REGISTRY.values()}))
-        parsed = parse_job(job)
+        parsed = parse_job(job, post=post)
         _check_drawing_stock(document, parsed.stock)
         entry = post_registry.entry_for(parsed.machine.post, parsed.machine.kind)
         operations = parse_operations(parsed)
@@ -292,6 +292,13 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         stock = build_stock(parsed.stock, part, base_dir=parsed.base_dir)
     mark = lap("part_s", mark)
     warnings += list(part.notes)
+    # The cycle time is only as true as its inputs: say each one the job left to the machine kind's default.
+    defaults = {"rapid_mm_min": f"rapids at {machine.rapid_mm_min:g} mm/min",
+                "tool_change_s": f"{machine.tool_change_s:g} s a tool change"}
+    assumed = [key for key in machine.assumed if key != "tool_change_s" or machine.tool_change_s > 0]
+    if assumed:
+        warnings.append(f"machine.{' and machine.'.join(assumed)} not stated: the cycle time assumes "
+                        f"{' and '.join(defaults[key] for key in assumed)} (a {machine.kind}'s default)")
     logger.debug(f"part {part.occurrence or document.name}: {len(part.triangles)} triangles; stock {stock.kind}")
 
     setup_plans, op_plans, notes = plan_setups(parsed, operations, part, stock, logger)

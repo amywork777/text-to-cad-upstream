@@ -186,11 +186,13 @@ Never send G-code to a machine from this skill.
   boxes you gave, nothing else. A wrong stock size, a fixture that is not where the job says, or a
   tool longer or shorter than stated makes a plan that looks right and is not.
 - **The cycle time** is the moves at their feeds, rapids at `machine.rapid_mm_min` and each tool
-  change at `machine.tool_change_s` (the machine kind's defaults when the job does not say). Spindle
+  change at `machine.tool_change_s` (the machine kind's defaults when the job does not say, and a
+  `warning:` line says so: repeat it when you quote the time). Spindle
   spin-up and setting up are not in it, and a real machine slows into corners: read it as a lower
   bound.
 - **The G-code is written for one controller.** Another controller may read the same words
-  differently: change `machine.post` and plan again rather than editing the file by hand.
+  differently: plan again with `--post haas` (the same job for another controller, under the same
+  checks) rather than editing the file by hand.
 - **When the user asks for something this skill does not do** (an operation that is not in the
   table, a process the machine kinds do not cover), say "That is not in this version." Do not stand
   a 2.5D operation in for a 3D surface, or a lite operation in for a full one without saying so.
