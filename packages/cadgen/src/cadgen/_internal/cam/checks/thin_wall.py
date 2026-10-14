@@ -47,7 +47,8 @@ def run(ctx) -> list[dict]:
     points = cut_points(ctx)
     sections = Sections(ctx.part.vertices, ctx.part.triangles)
     out = []
-    for hole in part_holes(ctx.part):
+    holes = part_holes(ctx.part)
+    for hole in holes:
         axis = np.asarray(hole["axis"], dtype=float)
         if abs(abs(axis[2]) - 1.0) > 1e-6 or not hole_cut(hole, points):
             continue
@@ -57,7 +58,7 @@ def run(ctx) -> list[dict]:
         if wall is not None and wall < THIN_MM:
             out.append(_finding(f"the Ø{hole['diameter_mm']:g} hole {hole['faces'][0]}", wall, mid,
                                 hole["faces"][0]))
-    for pocket in pockets(ctx.part, read_features(ctx.part)["floors"]):
+    for pocket in pockets(ctx.part, read_features(ctx.part)["floors"], holes):
         if not pocket_cut(pocket, points):
             continue
         sign = 1.0 if pocket["normal"] == "+Z" else -1.0

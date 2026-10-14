@@ -163,6 +163,21 @@ class Features(unittest.TestCase):
         self.assertAlmostEqual(0.6, found["items"][0]["wall_mm"], delta=0.02)
 
 
+class CounterboreIsNotAPocket(unittest.TestCase):
+    def test_a_counterbores_shoulder_is_its_holes_face_not_a_pocket_floor(self):
+        from cadgen._internal.cam.checks._features import pockets
+        from cadgen._internal.cam.features import holes, read_features
+        from cadgen._internal.cam.part import read_part
+        from tests.python.support.cam_fixtures_drilling import counterbore_plate_step
+
+        part = read_part(counterbore_plate_step(class_directory(type(self))))
+        found = holes(part)
+        shoulders = {ref for hole in found if hole.get("counterbore") for ref in hole["faces"]}
+        floors = read_features(part)["floors"]
+        self.assertTrue(shoulders & {p["ref"] for p in pockets(part, floors)})      # read alone, a "pocket"
+        self.assertFalse(shoulders & {p["ref"] for p in pockets(part, floors, found)})
+
+
 class FullSlot(unittest.TestCase):
     """The check reads an operation's own ``full_slot_mm`` fact; a slot is meant to cut full width."""
 

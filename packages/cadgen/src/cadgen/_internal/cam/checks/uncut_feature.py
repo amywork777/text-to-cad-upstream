@@ -27,7 +27,8 @@ def run(ctx) -> list[dict]:
     out = []
     # Holes of one size the same setups reach are one warning, an item each.
     left: dict[tuple, list] = {}
-    for hole in part_holes(ctx.part):
+    holes = part_holes(ctx.part)
+    for hole in holes:
         setups = reaching_setups(ctx, hole.get("reach", ()))
         if setups and not hole_cut(hole, points):
             left.setdefault((round(hole["diameter_mm"], 4), tuple(setups)), []).append(hole)
@@ -35,7 +36,7 @@ def run(ctx) -> list[dict]:
         what = (f"the Ø{diameter:g} hole {group[0]['faces'][0]}" if len(group) == 1 else
                 f"{len(group)} Ø{diameter:g} holes ({', '.join(h['faces'][0] for h in group)})")
         out.append(_finding(what, list(setups), [(h["center_mm"], h["faces"][0]) for h in group]))
-    for pocket in pockets(ctx.part, read_features(ctx.part)["floors"]):
+    for pocket in pockets(ctx.part, read_features(ctx.part)["floors"], holes):
         setups = reaching_setups(ctx, (pocket["normal"],))
         if setups and not pocket_cut(pocket, points):
             centre = pocket["outline"].representative_point()

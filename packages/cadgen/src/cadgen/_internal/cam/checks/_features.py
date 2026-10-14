@@ -69,16 +69,18 @@ def hole_cut(hole, points) -> bool:
     return bool(inside.any() and float(along[inside].max()) >= 0.5 * length)
 
 
-def pockets(part, floors) -> list[dict]:
-    """Each +Z or -Z pocket floor with its outline (shapely, part XY), its height and the pocket's depth."""
+def pockets(part, floors, holes=()) -> list[dict]:
+    """Each +Z or -Z pocket floor with its outline (shapely, part XY), its height and the pocket's depth; a floor that
+    is a hole's own face (a counterbore's shoulder, a blind floor) is the hole's, not a pocket."""
     import numpy as np
     import shapely
     from shapely.geometry import Polygon
 
+    taken = {ref for hole in holes for ref in hole.get("faces", ())}
     out = []
     for floor in floors:
         pocket = floor.get("pocket")
-        if not pocket or floor["normal"] not in ("+Z", "-Z"):
+        if not pocket or floor["normal"] not in ("+Z", "-Z") or floor["ref"] in taken:
             continue
         ordinal = int(floor["ref"].rsplit("f", 1)[1])
         tris = np.asarray(part.triangles)[np.asarray(part.face_of_triangle) == ordinal]
