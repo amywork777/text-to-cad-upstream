@@ -34,7 +34,7 @@ FINDING_TYPES: dict[str, tuple[str, ...]] = {
     "gouge": ("gouge_2d", "gouge_3d", "gouge_turning", "gouge_multiaxis", "swarf_skipped", "not_judged"),
     "holder_collision": ("shank_part", "holder_part", "shank_stock", "holder_stock", "holder_multiaxis",
                          "not_judged"),
-    "reach": ("reach_flutes", "reach_holder"),
+    "reach": ("reach_flutes", "reach_holder", "not_judged"),
     "rapid_into_stock": ("rapid_into_stock",),
     "travel": ("travel", "rotary_travel"),
     "corner_radius": ("corner_radius",),

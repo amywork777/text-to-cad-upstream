@@ -144,7 +144,7 @@ function readFinding(raw) {
  * @returns {null | { schema: number, verdict: { status: "ready" | "fix", headline: string, errors: number, warnings: number, gcode: string },
  *   setups: { id: string, plain: string, timeS: number, orientation: string, axis: number[], across: number[], operations: object[] }[],
  *   operations: object[], findings: object[], adapted: object[], posts: object[], durationS: number, machine: string, post: string,
- *   tools: object[], toolChanges: { count: number, order: string[] }, warnings: string[],
+ *   tools: object[], toolChanges: { count: number, order: string[] }, warnings: string[], assumed: { key: string, value: string, why: string }[],
  *   stock: { kind: string, thicknessMm: number | null }, document: string, material: string }}
  *   A setup's `fixtures` are its keep-out boxes, `{ name, min, max }` in part coordinates (mm); `tools` are `readTools`'s.
  *   A setup's `axis` is the direction its tool comes from and `across` its WCS +X, both in part coordinates (`setupFrame`);
@@ -216,11 +216,33 @@ export function readCamJob(root) {
     toolChanges: readToolChanges(cam.tool_changes, operations),
     // The run's own warnings in plain words ("G-code not written: fix 2 errors first"), for the agent as the findings are.
     warnings: list(cam.warnings).map((entry) => text(entry)).filter(Boolean),
+    // What the plan took that nobody stated (a generic post, a spindle limit, a tool's catalogue flute length).
+    assumed: readAssumed(cam.assumed),
     stock: { kind: text(cam.stock?.kind), thicknessMm: number(cam.stock?.thickness_mm) },
     document: text(cam.document),
     material: typeof cam.material === "string" ? cam.material : text(cam.material?.name),
   };
 }
+
+/** An assumed value in words: "fanuc", "8000", "false", "300, 200, 80". */
+function valueWords(value) {
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value)) return value.map(valueWords).filter(Boolean).join(", ");
+  return text(value);
+}
+
+/**
+ * What the plan assumed, as cadgen writes it (`[{ key, value, why }]`): `{ key, value, why }` with the value in
+ * words. An entry with no key is left out.
+ */
+function readAssumed(value) {
+  return list(value).filter(plainObject).map((entry) => ({ key: text(entry.key), value: valueWords(entry.value), why: text(entry.why) }))
+    .filter((entry) => entry.key);
+}
+
+/** An assumption in one line: "machine.post fanuc". */
+export const assumedWords = (entry) => [entry.key, entry.value].filter(Boolean).join(" ");
 
 /** The operations in program order: by when each starts, the job's order where two start together. */
 const programOrder = (operations) => operations.map((op, order) => ({ op, order })).sort((a, b) => a.op.t0 - b.op.t0 || a.order - b.order).map(({ op }) => op);

@@ -16,7 +16,9 @@ or it is not judged here (a shank no wider than the cutter rubs only where the c
   not a heightfield) is not judged against the stock and says so: a ``not_judged`` note per setup, unless the run
   already warned that the whole setup went unsimulated.
 
-One error per operation and cylinder, with the worst overlap and where.
+One error per operation and cylinder, with the worst overlap and where. A cylinder placed by a length the job did
+not state (``Tool.assumed``: a defaulted flute length, shank or stickout) is not a collision the plan can stand
+behind: its hit is a ``not_judged`` warning naming the assumed length, as ``reach`` does.
 """
 
 from __future__ import annotations
@@ -89,18 +91,31 @@ def run(ctx) -> list[dict]:
     return out
 
 
+#: The tool lengths each cylinder stands on: a hit judged on a length the job did not state is ``not_judged``.
+_LENGTHS = {"shank": ("flute_length_mm", "shank_diameter_mm"), "holder": ("stickout_mm",)}
+
+
 def _finding(op, name, what, depth, count, at, radius):
     tool = op.tool
     word = "shank" if name == "shank" else "holder"
     fix = ("use a tool whose flutes reach (flute_length_mm), a slimmer shank, or cut this from another setup"
            if name == "shank" else "use more stickout (stickout_mm), a slimmer holder (holder_diameter_mm), or cut "
            "this from another setup")
+    items = [{"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3), "count": count, "at": xyz(at),
+              "diameter_mm": round(2 * radius, 4)}]
+    guessed = [key for key in _LENGTHS[word] if key in getattr(tool, "assumed", ())]
+    if guessed:
+        # The cylinder stands where a length the job left out puts it: not a collision the plan can stand behind.
+        return finding(
+            "holder_collision", "warning", "not_judged",
+            f"Not judged: {tool.id}'s {word} may touch the {what} in {op.summary}; with the assumed "
+            f"{' and '.join(f'{key} {getattr(tool, key):g}' for key in guessed)} it goes {depth:.2f} mm in",
+            f"the job does not give {tool.id}'s {' or '.join(guessed)}: state the real one(s) and plan again; "
+            f"if it still hits, {fix}", items)
     return finding(
         "holder_collision", "error", f"{word}_{what}",
         f"The {word} hits the {what} in {op.summary}: {tool.id}'s Ø{2 * radius:g} mm {word} goes {depth:.2f} mm into "
-        f"it at {count} point{'s' if count > 1 else ''}", fix,
-        [{"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3), "count": count, "at": xyz(at),
-          "diameter_mm": round(2 * radius, 4)}])
+        f"it at {count} point{'s' if count > 1 else ''}", fix, items)
 
 
 def _against_stock(ctx, judged, cache) -> list[dict]:

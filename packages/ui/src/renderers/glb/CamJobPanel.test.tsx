@@ -37,6 +37,19 @@ it('leads with the verdict and its errors, then each setup with its operations: 
   expect(onChoose).toHaveBeenLastCalledWith('finding:0');
 });
 
+it('says under the verdict what the plan assumed, one small line each with its reason on hover', () => {
+  const extras = camExtras();
+  extras.assumed = [{ key: 'machine.post', value: 'fanuc', why: 'no machine model or post given' }, { key: 'machine.max_rpm', value: 8000, why: 'a spindle limit' }];
+  const assumed = readCamJob(camScene({ extras }))!;
+  const { container } = render(<CamJobPanel active job={assumed} colours={{}} chosen="" onChoose={() => {}} />);
+  const lines = [...container.querySelectorAll('[data-cam-verdict] [data-cam-assumed] li')];
+  expect(lines.map((line) => line.textContent)).toEqual(['Assumed machine.post fanuc', 'Assumed machine.max_rpm 8000']);
+  expect(lines[0].getAttribute('title')).toBe('no machine model or post given');
+  cleanup();
+  const { container: plain } = render(<CamJobPanel active job={job()} colours={{}} chosen="" onChoose={() => {}} />);
+  expect(plain.querySelector('[data-cam-assumed]')).toBeNull();
+});
+
 it('marks the row chosen, and keeps the panel mounted but hidden while Select is not the tool', () => {
   const { container, rerender } = render(<CamJobPanel active job={job()} colours={{}} chosen="op:0" onChoose={() => {}} />);
   expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('true');

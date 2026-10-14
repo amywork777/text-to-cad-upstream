@@ -19,7 +19,7 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | --- | --- | --- | --- |
 | `gouge` | error | a cutting move goes into the part beyond the tolerance | a smaller tool or stepover, `stock_to_leave_mm` on the roughing, a tighter `tolerance_mm` |
 | `holder_collision` | error | the holder or shank, above the flutes, touches the stock or the part | a longer `stickout_mm`, a slimmer holder, a shallower operation from another setup |
-| `reach` | error | the cut is deeper than the flutes or the stickout. A back bore is judged by its stickout only: the holder must stay over the stock's top with the head down under the part | a longer tool, or cut it from another side; a back bore: a longer bar (`stickout_mm`) |
+| `reach` | error | the cut is deeper than the flutes or the stickout. A back bore is judged by its stickout only: the holder must stay over the stock's top with the head down under the part. Past a length the job did not state, a `not_judged` warning, not an error | a longer tool, or cut it from another side; a back bore: a longer bar (`stickout_mm`). `not_judged`: ask for the tool's real flute length and stickout |
 | `rapid_into_stock` | error | a rapid move, or any move made with the spindle stopped, passes through uncut stock. A back bore's bar going through the hole spindle stopped is judged by its neck (`shank_diameter_mm`): a hit there is the hole not drilled through | raise `clearance_mm`, reorder operations; a back bore: drill the hole through first |
 | `travel` | error | a move leaves the machine's travel (`machine.travel_mm`, `rotary_limits_deg`) | move `origin`, another setup |
 | `fixture` | error | a move enters a fixture keep-out box (a box of the job's, or a vise's jaw, floor or parallel, or a plate: [job-file.md](job-file.md#fixture)); a tip resting on a box's top is no hit | change the region, move the part in the vise, another setup |
@@ -68,7 +68,7 @@ The `type`s are a closed set, so an agent can act on one by name:
 | `checks` | `setup_not_simulated` |
 | `gouge` | `gouge_2d`, `gouge_3d`, `gouge_turning`, `gouge_multiaxis`, `swarf_skipped` (a swarf wall it could not judge), `not_judged` |
 | `holder_collision` | `shank_part`, `holder_part`, `shank_stock`, `holder_stock`, `holder_multiaxis`, `not_judged` |
-| `reach` | `reach_flutes`, `reach_holder` |
+| `reach` | `reach_flutes`, `reach_holder`, `not_judged` (a cut past a flute length or stickout the job did not state) |
 | `travel` | `travel`, `rotary_travel` |
 | `material_left` | `material_left`, `not_judged` |
 | `machine` | `machine_axes` |

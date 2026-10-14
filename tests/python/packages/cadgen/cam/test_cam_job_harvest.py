@@ -338,10 +338,13 @@ class NewTools(unittest.TestCase):
 
 
 class MachineAndLoading(unittest.TestCase):
-    def test_the_post_is_required_and_never_guessed(self):
-        message = refuse(self, "machine.post is required", job(machine={"kind": "mill"}))
-        self.assertIn("grbl, linuxcnc, fanuc, haas, mach3", message)
-        self.assertIn("plasma", refuse(self, "machine.post is required", job(machine={"kind": "plasma"})))
+    def test_a_post_left_out_is_the_kinds_usual_one_and_said(self):
+        for kind, post in (("mill", "fanuc"), ("router", "grbl")):
+            with self.subTest(kind=kind):
+                parsed = parse_job(job(machine={"kind": kind}))
+                self.assertEqual(post, parsed.machine.post)
+                (entry,) = [entry for entry in parsed.assumed if entry["key"] == "machine.post"]
+                self.assertEqual(post, entry["value"])
 
     def test_spindle_spinup_s(self):
         self.assertIsNone(parse_job(BASE).machine.spindle_spinup_s)

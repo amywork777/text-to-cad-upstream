@@ -160,11 +160,11 @@ def counterbore_plate_step(directory: Path, name: str = "counterbore_plate") -> 
 
 
 def drill_job(operations: list[dict], *, tools: list[dict] | None = None, post: str = "grbl",
-              setups: list[dict] | None = None, material: str = "aluminum-6061") -> dict:
+              setups: list[dict] | None = None, material: str = "aluminum-6061", machine: dict | None = None) -> dict:
     """A 3-axis job: T1 a 5 mm drill, T2 a 6 mm drill, T3 an M6x1 tap, T4 a 6 mm spot drill, T5 a 6 mm reamer,
-    T6 an 8 mm boring bar, T7 a 4 mm drill (stock 2 mm round, 1 mm over the top)."""
+    T6 an 8 mm boring bar, T7 a 4 mm drill (stock 2 mm round, 1 mm over the top). ``machine`` adds machine keys."""
     return {
-        "machine": {"kind": "mill", "post": post, "max_rpm": 24000, "travel_mm": [300, 200, 80]},
+        "machine": {"kind": "mill", "post": post, "max_rpm": 24000, "travel_mm": [300, 200, 80], **(machine or {})},
         "material": material,
         "stock": {"kind": "box", "margin_mm": [2, 2, 1]},
         "tools": tools or [

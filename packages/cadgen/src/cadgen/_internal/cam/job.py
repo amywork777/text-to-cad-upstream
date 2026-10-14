@@ -11,14 +11,20 @@ operation's own keys left in ``extra`` for the operation's ``parse`` (``operatio
 its own closed set. What needs the part (that a face exists, that it is flat) is checked later, against the part.
 
 Every refusal is a :class:`~cadgen._internal.cam.job_errors.CamJobError` naming the path into the job
-(``setups[0].operations[2].tool``), what is wrong and the allowed set. ``machine.post`` is required and never
-guessed: a G-code dialect is the controller's, and a wrong one can crash a machine. The stock must be one the
+(``setups[0].operations[2].tool``), what is wrong and the allowed set. The machine may name its ``model``
+(``machines.py``): the model's published numbers stand in for the keys the job leaves out, and the job's own keys win.
+What neither states takes the kind's generic value (``machines.GENERIC``: a post, a spindle limit, the cycle-time
+rates, the controller's own tapping cycle, not homed), and every such value is listed in :attr:`Job.assumed` (``{"key", "value",
+"why"}``), never taken silently; so are the tool lengths a used tool leaves to the catalogue defaults. ``tools`` is a
+list, a tool library file (``"tools": "my-tools.json"``), or a list mixing tools and ``{"library": path, "only":
+[ids]}``: a library's tools are kept when an operation uses them or ``only`` picks them. The stock must be one the
 machine starts from (:data:`STOCK_FOR_KIND`). A dict job is copied through JSON, so it reads exactly as the same job
 in a file would (tuples become lists, NaN is refused) and nothing parsed shares the caller's lists. Stdlib only.
 """
 
 from __future__ import annotations
 
+import difflib
 import json
 import math
 import re
@@ -75,9 +81,11 @@ MAX_STOCK_MM = 10_000.0
 WORK_OFFSETS = ("G54", "G55", "G56", "G57", "G58", "G59")
 
 JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
-MACHINE_KEYS = ("kind", "post", "name", "travel_mm", "max_rpm", "max_feed_mm_min", "rapid_mm_min", "tool_change_s",
-                "kinematics", "rotary_limits_deg", "diameter_mode", "power_w", "laser_source", "amps", "abrasive",
-                "spindle_spinup_s")
+MACHINE_KEYS = ("model", "kind", "post", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "rapid_mm_min",
+                "tool_change_s", "rigid_tap", "kinematics", "rotary_limits_deg", "diameter_mode", "power_w",
+                "laser_source", "amps", "abrasive", "spindle_spinup_s", "assumed")
+#: The machine keys a job may mark as its own guesses (``"assumed": ["kind"]``): listed in the plan's ``assumed``.
+GUESSABLE_KEYS = tuple(key for key in MACHINE_KEYS if key not in ("model", "assumed"))
 #: How many travel numbers each kind takes: a lathe [x, z], a mill [x, y, z], a cutting machine [x, y] or [x, y, z].
 _TRAVEL = {"lathe": ((2,), "[x, z]"), "mill": ((3,), "[x, y, z]"), "mill4": ((3,), "[x, y, z]"),
            "mill5": ((3,), "[x, y, z]"), "router": ((3,), "[x, y, z]")}
@@ -92,11 +100,6 @@ SETUP_KEYS = ("id", "name", "orientation", "origin", "fixture", "operations", "w
 OP_COMMON_KEYS = ("op", "tool", "faces", "region", "feed", "speed", "plunge_mm_min", "stepdown_mm", "stepover",
                   "stepover_mm", "stock_to_leave_mm", "coolant", "name", "clearance_mm", "retract_mm")
 
-#: Defaults per machine kind: rapid traverse (mm/min) and tool change time (s), the cycle-time model's inputs.
-_RAPID = {"mill": 5000.0, "mill4": 5000.0, "mill5": 8000.0, "router": 10000.0, "lathe": 6000.0, "laser": 12000.0,
-          "plasma": 15000.0, "waterjet": 8000.0, "wire_edm": 1000.0}
-_TOOL_CHANGE = {"mill": 10.0, "mill4": 10.0, "mill5": 8.0, "router": 30.0, "lathe": 3.0, "laser": 0.0, "plasma": 0.0,
-                "waterjet": 0.0, "wire_edm": 60.0}
 
 
 @dataclass(frozen=True)
@@ -125,9 +128,16 @@ class Machine:
     #: Seconds to wait after the spindle starts before cutting; ``None``: the post's own default (3 s on grbl, which
     #: does not wait for the spindle to reach speed; none on the controllers that do).
     spindle_spinup_s: float | None = None
-    #: The cycle-time inputs the job did not state, so the machine kind's defaults stand in: ``rapid_mm_min``,
-    #: ``tool_change_s``. The run says each (a cycle time is only as true as them).
-    assumed: tuple[str, ...] = ()
+    #: The catalog model the job names (``machines.MODELS`` id), or ``None``.
+    model: str | None = None
+    #: The slowest the spindle turns: a slower speed is raised to it (feeds.for_op).
+    min_rpm: float | None = None
+    #: Whether the controller taps rigidly; ``None``: not known, so a tap that does not say keeps the controller's own
+    #: tapping cycle (operations/drill.py), and the plan lists that as assumed.
+    rigid_tap: bool | None = None
+    #: The model's tool changer (``none``, ``manual``, ``atc``) and its pockets, for the record.
+    tool_changer: str | None = None
+    tool_capacity: int | None = None
 
     @property
     def axes(self) -> str:
@@ -140,9 +150,8 @@ class Machine:
     def as_dict(self) -> dict:
         out = {"kind": self.kind, "post": self.post, "axes": self.axes, "rapid_mm_min": self.rapid_mm_min,
                "tool_change_s": self.tool_change_s}
-        if self.assumed:
-            out["assumed"] = list(self.assumed)
-        for key in ("name", "travel_mm", "max_rpm", "max_feed_mm_min", "kinematics"):
+        for key in ("model", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "kinematics", "rigid_tap",
+                    "tool_changer", "tool_capacity"):
             value = getattr(self, key)
             if value not in (None, ""):
                 out[key] = list(value) if isinstance(value, tuple) else value
@@ -288,6 +297,9 @@ class Job:
     name: str = ""
     #: The folder relative paths in the job (``stock.path``) resolve against.
     base_dir: Path | None = None
+    #: Every value the plan takes that neither the job nor its machine model states: ``{"key", "value", "why"}``,
+    #: ``key`` the job path it stands in for (``machine.post``, ``tools.T1.flute_length_mm``).
+    assumed: tuple[dict, ...] = ()
 
     def tool(self, tool_id: str) -> Tool:
         for tool in self.tools:
@@ -350,9 +362,10 @@ def _refuse_constant(name: str):
     raise _NotANumber(f"{name} is not a number a job can hold")
 
 
-def parse_job(job: str | dict | None, *, post: str | None = None) -> Job:
+def parse_job(job: str | dict | None, *, post: str | None = None, part_dir: Path | None = None) -> Job:
     """The job, typed and checked. ``post`` (``cadgen cam plan --post``) stands in for ``machine.post``, under the
-    same checks: the same job written for another controller without editing it."""
+    same checks: the same job written for another controller without editing it. ``part_dir`` is the part's folder,
+    where a relative tool library path is looked for when it is not beside the job file."""
     raw, base = load_job(job)
     if post is not None and isinstance(raw, dict) and isinstance(raw.get("machine"), dict):
         raw = {**raw, "machine": {**raw["machine"], "post": post}}
@@ -360,52 +373,138 @@ def parse_job(job: str | dict | None, *, post: str | None = None) -> Job:
     for key in ("machine", "material", "stock", "tools", "setups"):
         if key not in raw:
             raise CamJobError(f"the job needs \"{key}\"; a job names {', '.join(JOB_KEYS[1:6])}")
-    machine = _machine(raw["machine"])
-    machine = replace(machine, post_options=post_registry.parse_options(machine.post, raw["machine"]))
+    machine, assumed = _machine(raw["machine"])
     material = _material(raw["material"])
     stock = _stock(raw["stock"], machine.kind)
-    tools_raw = raw["tools"]
-    if not isinstance(tools_raw, list) or not tools_raw:
-        raise CamJobError("tools must be a non-empty list, like [{\"id\": \"T1\", \"type\": \"flat\", \"diameter_mm\": 6}]")
-    tools = tuple(parse_tool(entry, i) for i, entry in enumerate(tools_raw))
-    seen: dict[str, int] = {}
-    numbers: dict[int, str] = {}
-    for tool in tools:
+    entries = _tool_entries(raw["tools"], base, part_dir)
+    seen: dict[str, str] = {}
+    for tool, where, _ in entries:
         if tool.id in seen:
-            raise CamJobError(f"two tools are called '{tool.id}'; every tool id must be different")
-        seen[tool.id] = tool.number
-        if tool.number in numbers:
-            raise CamJobError(f"tools '{numbers[tool.number]}' and '{tool.id}' both post as T{tool.number}; "
-                              "give one a different \"number\"")
-        numbers[tool.number] = tool.id
+            raise CamJobError(f"two tools are called '{tool.id}' ({seen[tool.id]} and {where}); every tool id must be "
+                              "different, across the job and its libraries")
+        seen[tool.id] = where
     coolant = choice(raw.get("coolant", "off"), COOLANTS, "coolant")
     setups_raw = raw["setups"]
     if not isinstance(setups_raw, list) or not setups_raw:
         raise CamJobError("setups must be a non-empty list, like [{\"id\": \"top\", \"orientation\": \"+Z\", "
                           "\"operations\": [...]}]")
-    setups = tuple(_setup(entry, i, machine, {t.id: t for t in tools}) for i, entry in enumerate(setups_raw))
+    available = {tool.id: tool for tool, _, _ in entries}
+    setups = tuple(_setup(entry, i, machine, available) for i, entry in enumerate(setups_raw))
     ids = [s.id for s in setups]
     if len(set(ids)) != len(ids):
         raise CamJobError(f"setup ids must be different (they name the posted files); got {', '.join(ids)}")
+    # A library's tools are the user's rack: only those an operation uses (or "only" picks) are the job's.
+    used = {spec.tool for setup in setups for spec in setup.operations if spec.tool}
+    tools = tuple(tool for tool, _, keep in entries if keep or tool.id in used)
+    numbers: dict[int, str] = {}
+    for tool in tools:
+        if tool.number in numbers:
+            raise CamJobError(f"tools '{numbers[tool.number]}' and '{tool.id}' both post as T{tool.number}; "
+                              "give one a different \"number\"")
+        numbers[tool.number] = tool.id
     tolerance = read_number(raw, "tolerance_mm", "job", default=0.01, minimum=0.001, maximum=1.0)
     name = raw.get("name", "")
     if not isinstance(name, str):
         raise CamJobError("job.name must be text")
+    assumed += _tap_assumed(machine, setups, available)
+    assumed += _tool_assumed([tool for tool in tools if tool.id in used])
     return Job(machine=machine, material=material, stock=stock, tools=tools, setups=setups, tolerance_mm=tolerance,
-               coolant=coolant, name=name, base_dir=base)
+               coolant=coolant, name=name, base_dir=base, assumed=tuple(assumed))
 
 
-def _machine(raw: object) -> Machine:
+def _assumed(key: str, value: object, why: str) -> dict:
+    return {"key": key, "value": list(value) if isinstance(value, tuple) else value, "why": why}
+
+
+def _post_option_default(post: str, key: str):
+    """A post's own default for one of its machine keys (grbl's ``spindle_spinup_s``), or None."""
+    import importlib
+
+    entry = post_registry.REGISTRY.get(post)
+    if entry is None or not post_registry.available(post):
+        return None
+    spec = getattr(importlib.import_module(entry.module), entry.cls).options.get(key)
+    return spec.get("default") if isinstance(spec, dict) else None
+
+
+def _machine(raw: object) -> tuple[Machine, list[dict]]:
+    """The machine and what it assumes. A ``model`` fills in what the job leaves out (the job's keys win); what
+    neither states takes the kind's generic value (``machines.GENERIC``), each listed as assumed."""
+    from cadgen._internal.cam import machines
+
     if not isinstance(raw, dict):
-        raise CamJobError("machine must be an object like {\"kind\": \"mill\", \"post\": \"grbl\"}")
-    check_keys(raw, MACHINE_KEYS + post_registry.option_keys(raw), "machine")
-    kind = choice(raw.get("kind"), MACHINE_KINDS, "machine.kind")
-    if "post" not in raw:
-        serving = [name for name, entry in post_registry.REGISTRY.items() if kind in entry.kinds]
-        raise CamJobError(f"machine.post is required and never guessed: a G-code dialect is the controller's, and a "
-                          f"wrong one can crash the machine. Name this {kind}'s controller: {', '.join(serving)}")
-    post = raw["post"]
-    post_registry.entry_for(post, kind)
+        raise CamJobError("machine must be an object like {\"kind\": \"mill\"} or {\"model\": \"haas-vf-2\"}")
+    model = machines.lookup(raw["model"]) if "model" in raw else None
+    if "kind" not in raw and model is None:
+        raise CamJobError("machine needs a model (like \"tormach-1100mx\") or a kind (" + ", ".join(MACHINE_KINDS) +
+                          "): ask the user which machine runs the job; if they do not know, write "
+                          "{\"kind\": \"mill\", \"assumed\": [\"kind\"]} and the plan lists it as assumed")
+    kind = choice(raw.get("kind", model.kind if model else None), MACHINE_KINDS, "machine.kind")
+    if model is not None and kind != model.kind and not (kind == "mill4" and model.kind == "mill" and "a" in model.rotary):
+        extra = " (or mill4 with its 4th axis)" if model.kind == "mill" and "a" in model.rotary else ""
+        raise CamJobError(f"machine.kind is {kind!r}, but the {model.plain} is a {model.kind}; remove kind, or give "
+                          f"{model.kind!r}{extra}")
+    stated = {key: value for key, value in raw.items() if key not in ("model", "assumed")}
+    machine_raw = {**(model.machine_keys() if model else {}), **stated, "kind": kind}
+    if model is not None and kind == "mill4" and "rotary_limits_deg" not in stated:
+        machine_raw.pop("rotary_limits_deg", None)
+    assumed: list[dict] = []
+    generic = machines.GENERIC[kind]
+    whose = f"the {model.plain}'s maker publishes none" if model else "no machine model given"
+    if "post" not in machine_raw:
+        machine_raw["post"] = generic["post"][0]
+        assumed.append(_assumed("machine.post", generic["post"][0], f"no machine model or post given: "
+                                                                     f"{generic['post'][1]}"))
+    post = machine_raw["post"]
+    try:
+        post_registry.entry_for(post, kind)
+    except CamJobError as exc:
+        if model is not None and "post" not in stated:
+            raise CamJobError(f"the {model.plain} runs {model.post}, which does not serve a {kind}; name machine.post "
+                              "for this kind") from None
+        raise exc
+    options = post_registry.option_keys(machine_raw)
+    check_keys(raw, MACHINE_KEYS + options, "machine")
+    if "homed" in options and "homed" not in machine_raw:
+        if model is not None and model.homed is not None:
+            machine_raw["homed"] = model.homed
+        else:
+            assumed.append(_assumed("machine.homed", False, machines.GENERIC_HOMED_WHY))
+    for key in ("max_rpm", "rapid_mm_min", "tool_change_s"):
+        if key in machine_raw or key not in generic:
+            continue
+        value, why = generic[key]
+        limit = machine_raw.get("max_feed_mm_min")
+        if key == "rapid_mm_min" and isinstance(limit, (int, float)) and not isinstance(limit, bool) and limit < value:
+            # A rapid runs no faster than the machine's top speed (GRBL rapids at its maximum rates).
+            value, why = float(limit), "the machine's maximum feed: a rapid runs no faster; it only shapes the cycle time"
+        machine_raw[key] = value
+        if key == "tool_change_s" and not value:
+            continue
+        assumed.append(_assumed(f"machine.{key}", value, f"{whose}: {why}"))
+    if "spindle_spinup_s" not in machine_raw and kind not in ("laser", "plasma", "waterjet", "wire_edm"):
+        default = _post_option_default(post, "spindle_spinup_s")
+        if default:
+            assumed.append(_assumed("machine.spindle_spinup_s", default,
+                                    f"{whose}: the {post} post dwells this long after each spindle start, as the "
+                                    "controller does not wait for the spindle to reach speed"))
+    guesses = raw.get("assumed", [])
+    if not isinstance(guesses, list) or not all(isinstance(key, str) for key in guesses):
+        raise CamJobError("machine.assumed lists the machine keys the job guessed, like [\"kind\"]")
+    for key in guesses:
+        if key not in GUESSABLE_KEYS:
+            choice(key, GUESSABLE_KEYS, "machine.assumed[]")
+        if key not in stated:
+            raise CamJobError(f"machine.assumed names {key!r}, which the machine does not give; give it, or take it "
+                              "out of assumed")
+        assumed.insert(0, _assumed(f"machine.{key}", stated[key], "the job marks it as a guess: the user did not know"))
+    machine = _machine_keys(machine_raw, kind, post, model)
+    machine = replace(machine, post_options=post_registry.parse_options(post, machine_raw))
+    return machine, assumed
+
+
+def _machine_keys(raw: dict, kind: str, post: str, model) -> Machine:
+    """The machine's keys (the job's over its model's over the kind's generic ones), checked."""
     travel = None
     if "travel_mm" in raw:
         counts, words = _TRAVEL.get(kind, ((2, 3), "[x, y] or [x, y, z]"))
@@ -433,23 +532,141 @@ def _machine(raw: object) -> Machine:
     diameter_mode = raw.get("diameter_mode", True)
     if not isinstance(diameter_mode, bool):
         raise CamJobError("machine.diameter_mode must be true or false")
+    rigid_tap = raw.get("rigid_tap")
+    if rigid_tap is not None and not isinstance(rigid_tap, bool):
+        raise CamJobError("machine.rigid_tap is true (the controller taps with the feed synchronised to the spindle) "
+                          "or false (taps run in a floating holder)")
     name = raw.get("name", "")
     if not isinstance(name, str):
         raise CamJobError("machine.name must be text")
     cutting = _cutting_keys(raw, kind)
+    # A spindle or a feed slower than 1 a minute posts as S0 or F0: a spindle that never turns, an axis that never
+    # moves.
+    max_rpm = read_number(raw, "max_rpm", "machine", minimum=1.0)
+    min_rpm = read_number(raw, "min_rpm", "machine", minimum=1.0)
+    if min_rpm is not None and max_rpm is not None and min_rpm > max_rpm:
+        raise CamJobError(f"machine.min_rpm ({min_rpm:g}) is more than machine.max_rpm ({max_rpm:g}); the spindle "
+                          "turns between them")
     return Machine(**cutting,
-        kind=kind, post=post, name=name, travel_mm=travel,
-        # A spindle or a feed slower than 1 a minute posts as S0 or F0: a spindle that never turns, an axis that never
-        # moves.
-        max_rpm=read_number(raw, "max_rpm", "machine", minimum=1.0),
+        kind=kind, post=post, name=name, travel_mm=travel, max_rpm=max_rpm, min_rpm=min_rpm,
         max_feed_mm_min=read_number(raw, "max_feed_mm_min", "machine", minimum=1.0),
-        rapid_mm_min=read_number(raw, "rapid_mm_min", "machine", default=_RAPID[kind], minimum=1.0),
-        tool_change_s=read_number(raw, "tool_change_s", "machine", default=_TOOL_CHANGE[kind], minimum=0.0),
+        rapid_mm_min=read_number(raw, "rapid_mm_min", "machine", minimum=1.0),
+        tool_change_s=read_number(raw, "tool_change_s", "machine", minimum=0.0),
         kinematics=kinematics, rotary_limits_deg=limits, diameter_mode=diameter_mode,
         # A minute is longer than any spindle takes to reach speed; past it the number is a units slip.
         spindle_spinup_s=read_number(raw, "spindle_spinup_s", "machine", minimum=0.0, maximum=60.0),
-        assumed=tuple(key for key in ("rapid_mm_min", "tool_change_s") if key not in raw),
+        rigid_tap=rigid_tap, model=model.id if model else None,
+        tool_changer=model.tool_changer if model else None, tool_capacity=model.tool_capacity if model else None,
     )
+
+
+def _tap_assumed(machine: Machine, setups, tools: dict[str, Tool]) -> list[dict]:
+    """A tap that does not say whether it is rigid, on a machine that does not say whether it taps rigidly: posted
+    with the controller's own tapping cycle (operations/drill.py), said here."""
+    from cadgen._internal.cam import machines
+
+    if machine.rigid_tap is not None:
+        return []
+    for setup in setups:
+        for spec in setup.operations:
+            tool = tools.get(spec.tool) if spec.tool else None
+            cycle = spec.extra.get("cycle") or ("tap" if tool is not None and tool.type == "tap" else None)
+            if spec.op == "drill" and cycle == "tap" and "rigid" not in spec.extra:
+                return [_assumed("machine.rigid_tap", True, machines.GENERIC_RIGID_TAP_WHY)]
+    return []
+
+
+#: What a used milling tool's unstated length stands for, and what reads it.
+_TOOL_WHY = {
+    "flute_length_mm": "no flute_length_mm given: a catalogue {plain}'s; the stepdown is held to it, and reach does "
+                       "not judge a cut deeper than it",
+    "stickout_mm": "no stickout_mm given: the flutes and a quarter more (at least 5 mm more); reach does not judge "
+                   "a cut deeper than it",
+    "shank_diameter_mm": "no shank_diameter_mm given: a cutter under 3 mm sits on a 3 mm shank; holder_collision "
+                         "judges that shank",
+}
+
+
+def _tool_assumed(tools) -> list[dict]:
+    return [_assumed(f"tools.{tool.id}.{key}", getattr(tool, key), _TOOL_WHY[key].format(plain=tool.plain))
+            for tool in tools for key in tool.assumed]
+
+
+def _tool_entries(value: object, base: Path | None, part_dir: Path | None) -> list[tuple[Tool, str, bool]]:
+    """Every tool the job can name: ``(tool, where, kept)``, ``kept`` true for a tool the job lists itself or a
+    library's ``only`` picks (a library's other tools are kept only when an operation uses them)."""
+    if isinstance(value, str):
+        value = [{"library": value}]
+    if not isinstance(value, list) or not value:
+        raise CamJobError("tools must be a non-empty list, like [{\"id\": \"T1\", \"type\": \"flat\", "
+                          "\"diameter_mm\": 6}], or a tool library file, like \"my-tools.json\"")
+    out: list[tuple[Tool, str, bool]] = []
+    for i, entry in enumerate(value):
+        if isinstance(entry, dict) and "library" in entry:
+            out += _library(entry, f"tools[{i}]", base, part_dir)
+        else:
+            out.append((parse_tool(entry, i), f"tools[{i}]", True))
+    return out
+
+
+#: The keys a tool library file's object may carry (a bare list of tools is a library too).
+LIBRARY_KEYS = ("name", "tools")
+
+
+def _library(entry: dict, where: str, base: Path | None, part_dir: Path | None) -> list[tuple[Tool, str, bool]]:
+    """A ``{"library": path, "only": [ids]}`` entry: the file's tools, each parsed as an inline one, ``only`` (when
+    given) the ids kept whether or not an operation uses them."""
+    check_keys(entry, ("library", "only"), where, hint="a tool library entry")
+    path = entry["library"]
+    if not isinstance(path, str) or not path.strip():
+        raise CamJobError(f"{where}.library names a tool library file (JSON), relative to the job file or the part")
+    found = _find_library(path, base, part_dir, where)
+    label = found.name
+    try:
+        data = json.loads(found.read_text(encoding="utf-8"), parse_constant=_refuse_constant)
+    except (UnicodeDecodeError, _NotANumber, ValueError, RecursionError) as exc:
+        detail = (f"{exc.msg} at line {exc.lineno} column {exc.colno}" if isinstance(exc, json.JSONDecodeError)
+                  else "not UTF-8 JSON" if isinstance(exc, UnicodeDecodeError) else str(exc))
+        raise CamJobError(f"the tool library {label} is not valid JSON: {detail}") from None
+    except OSError as exc:
+        raise CamJobError(f"the tool library {label} cannot be read ({exc.strerror or exc})") from None
+    if isinstance(data, dict):
+        check_keys(data, LIBRARY_KEYS, label, hint="a tool library")
+        data = data.get("tools")
+    if not isinstance(data, list) or not data:
+        raise CamJobError(f"the tool library {label} must be a non-empty JSON list of tools, or {{\"tools\": [...]}}, "
+                          "each tool as a job writes one")
+    tools = [(parse_tool(raw, k, where=f"{label} tools[{k}]"), f"{label} tools[{k}]") for k, raw in enumerate(data)]
+    only = entry.get("only")
+    if only is None:
+        return [(tool, at, False) for tool, at in tools]
+    if not isinstance(only, list) or not only or not all(isinstance(tool_id, str) for tool_id in only):
+        raise CamJobError(f"{where}.only lists tool ids from {label}, like [\"T1\", \"T4\"]")
+    ids = [tool.id for tool, _ in tools]
+    for tool_id in only:
+        if tool_id not in ids:
+            close = difflib.get_close_matches(tool_id, ids, n=1)
+            hint = f" (did you mean {close[0]!r}?)" if close else ""
+            raise CamJobError(f"{where}.only names {tool_id!r}, which {label} does not have{hint}; its tools are "
+                              f"{', '.join(ids)}")
+    return [(tool, at, False) for tool, at in tools if tool.id not in only] + \
+        [(tool, at, True) for tool, at in tools if tool.id in only]
+
+
+def _find_library(path: str, base: Path | None, part_dir: Path | None, where: str) -> Path:
+    """The library file: an absolute path, else beside the job file, else beside the part (else, with neither
+    known, from the working folder)."""
+    named = Path(path).expanduser()
+    if named.is_absolute():
+        places = [named]
+    else:
+        places = [folder / named for folder in (base, part_dir) if folder is not None] or [named]
+    for place in places:
+        if place.is_file():
+            return place
+    looked = " or ".join(str(place) for place in places)
+    raise CamJobError(f"{where}.library: no tool library at {looked}; give its path relative to the job file or the "
+                      "part, or an absolute one")
 
 
 def _cutting_keys(raw: dict, kind: str) -> dict:

@@ -136,6 +136,10 @@ class Tool:
     hand: str = ""
     #: A counterbore's pilot (0: none, a flat-bottomed counterbore); the pilot is as long as it is wide.
     pilot_diameter_mm: float = 0.0
+    #: The lengths the job left to the defaults above (``flute_length_mm``, ``stickout_mm``, and
+    #: ``shank_diameter_mm`` where it differs from the diameter): the plan lists each as assumed, and ``reach`` does
+    #: not judge a cut past an assumed length (it says ``not_judged``).
+    assumed: tuple[str, ...] = ()
 
     @property
     def family(self) -> str:
@@ -228,7 +232,8 @@ class Tool:
 
     def as_dict(self) -> dict:
         """The tool as the GLB's extras and the Results carry it: every set field, plus ``plain``."""
-        out = {key: value for key, value in asdict(self).items() if value not in (0.0, "", None)}
+        out = {key: value for key, value in asdict(self).items() if value not in (0.0, "", None, ())
+               and key != "assumed"}
         out.update({"id": self.id, "type": self.type, "number": self.number, "plain": self.plain,
                     "diameter_mm": self.diameter_mm})
         return out
@@ -238,9 +243,10 @@ def _num(value: float) -> str:
     return f"{value:g}"
 
 
-def parse_tool(raw: object, position: int) -> Tool:
-    """One entry of ``tools``: closed keys per type, defaults filled in, teaching errors naming the allowed set."""
-    where = f"tools[{position}]"
+def parse_tool(raw: object, position: int, *, where: str | None = None) -> Tool:
+    """One entry of ``tools`` (or of a tool library, ``where`` naming it): closed keys per type, defaults filled in,
+    teaching errors naming the allowed set."""
+    where = where or f"tools[{position}]"
     if not isinstance(raw, dict):
         raise CamJobError(f"{where} must be an object like {{\"id\": \"T1\", \"type\": \"flat\", \"diameter_mm\": 6}}")
     kind = choice(raw.get("type"), tuple(TOOL_TYPES), f"{where}.type")
@@ -327,6 +333,10 @@ def parse_tool(raw: object, position: int) -> Tool:
         kerf_mm=read_number(raw, "kerf_mm", where, default=0.0),
         hand=choice(raw["hand"], ("right", "left"), f"{where}.hand") if "hand" in raw else "",
         pilot_diameter_mm=pilot,
+        assumed=tuple(key for key, unstated in (
+            ("flute_length_mm", "flute_length_mm" not in raw), ("stickout_mm", "stickout_mm" not in raw),
+            ("shank_diameter_mm", "shank_diameter_mm" not in raw and shank_default != diameter))
+            if unstated and family == "mill"),
     )
     for key in TOOL_LENGTHS:
         value = getattr(tool, key)

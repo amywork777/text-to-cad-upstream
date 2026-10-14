@@ -25,8 +25,10 @@ more; a spot or chamfer tool ``spot``; a tap ``tap``; a reamer ``ream``; a borin
 ``peck``       G83        pecks of ``peck_mm`` (default one diameter), back to R after each (clears chips)
 ``chipbreak``  G73        pecks of ``peck_mm`` (default half a diameter), back ``retract_mm`` (0.2) after each
 ``tap``        G84 / G74  feed at rpm x the tap's pitch, reverse, feed out; a left-hand tap (``hand: left``) G74;
-                          ``rigid`` (left out: the controller's own tapping cycle) true asks for the feed
-                          synchronised to the spindle (refused where the controller cannot), false a floating holder
+                          ``rigid`` true asks for the feed synchronised to the spindle (refused where the
+                          controller cannot), false a floating holder; left out, a floating holder on a machine
+                          that does not tap rigidly (``machine.rigid_tap`` false), else the controller's own
+                          tapping cycle (``M29`` on Fanuc; an assumption when the machine does not say)
 ``ream``       G85 / G89  feed in, feed out; with ``dwell_s`` a dwell at the bottom (G89)
 ``bore``       G85 / G89 / G86 / G76 by ``bore_mode``: ``feed`` (feed out), ``dwell`` (dwell, feed out), ``stop``
                           (spindle stop, rapid out), ``fine`` (oriented stop, shift ``shift_mm`` (0.1) off the wall
@@ -187,6 +189,17 @@ class DrillOp(Operation):
         if "rigid" in extra and not isinstance(extra["rigid"], bool):
             raise CamJobError(f"{where}.rigid is true (rigid tapping: the feed synchronised to the spindle) or false (a "
                               f"floating, tension-compression tap holder), not {shown(extra['rigid'])}")
+        # A machine known not to tap rigidly runs a tap that does not say in a floating holder, and refuses one that
+        # asks for rigid. Not known, the tap keeps the controller's own cycle (rigid where the dialect asks for it:
+        # a controller that cannot stops with an alarm, where a floating cycle in a rigid holder breaks the tap).
+        rigid = extra.get("rigid")
+        machine_rigid = getattr(ctx.job.machine, "rigid_tap", None)
+        if known == "tap" and rigid is True and machine_rigid is False:
+            raise CamJobError(f"{where}.rigid is true, but this machine does not tap rigidly (machine.rigid_tap "
+                              "false); give the tap \"rigid\": false and run it in a floating holder, or thread mill "
+                              "the hole")
+        if known == "tap" and rigid is None and machine_rigid is False:
+            rigid = False
         params = {
             "cycle": cycle,
             "faces": tuple(spec.faces),
@@ -207,7 +220,7 @@ class DrillOp(Operation):
             "return_to": choice(extra.get("return_to", "auto"), ("auto", "r_plane", "initial"), f"{where}.return_to"),
             "order": choice(extra.get("order", "shortest"), ("shortest", "given"), f"{where}.order"),
             "size_tolerance_mm": read_number(extra, "size_tolerance_mm", where, default=0.05),
-            "rigid": extra.get("rigid"),
+            "rigid": rigid,
         }
         for key in ("shift_mm", "shift_xy"):
             if key in extra and known == "bore" and params["bore_mode"] != "fine":

@@ -322,6 +322,17 @@ class ValidationResult:
         return lines
 
 
+def _assumed_value(value: object) -> str:
+    """An assumed value as a line says it: ``fanuc``, ``8000``, ``false``, ``[300, 200, 80]``."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, float):
+        return f"{value:g}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_assumed_value(v) for v in value) + "]"
+    return str(value)
+
+
 def _finding_lines(findings: tuple[dict, ...]) -> list[str]:
     return [f"{finding['severity']}: {finding['summary']}" for finding in findings]
 
@@ -375,8 +386,9 @@ class CamPlanResult:
     one ``{setup, file, post, tool}`` per posted file: one per setup, or one per tool where the post splits a setup
     by tool (``tool`` its label, else None). ``findings`` are the checks' findings, errors first, in the KiCad/FEA
     shape (``check``, ``severity``, ``type``, ``summary``, ``description``, ``items``). ``adapted`` lists what the run
-    coarsened to fit (``step``, ``words``, ``accuracy``). A job that cannot run has ``ok`` false, a finding that says
-    what to change, and wrote nothing.
+    coarsened to fit (``step``, ``words``, ``accuracy``). ``assumed`` lists every value the plan took that neither the
+    job nor its machine model states (``key``, ``value``, ``why``: a generic post or spindle limit, a tool's catalogue
+    flute length). A job that cannot run has ``ok`` false, a finding that says what to change, and wrote nothing.
     """
 
     ok: bool
@@ -393,6 +405,7 @@ class CamPlanResult:
     adapted: tuple[dict, ...] = ()
     warnings: tuple[str, ...] = ()
     timings: dict = field(default_factory=dict)
+    assumed: tuple[dict, ...] = ()
 
     def human_lines(self) -> list[str]:
         if not self.ok:
@@ -413,6 +426,7 @@ class CamPlanResult:
         lines += [f"posted {post['setup']}: {_display(Path(post['file']))} ({post['post']})" for post in self.posts]
         lines += [f"adapted: {step['words']}" + (f" ({step['accuracy']})" if step.get("accuracy") else "")
                   for step in self.adapted]
+        lines += [f"assumed: {entry['key']} {_assumed_value(entry['value'])} ({entry['why']})" for entry in self.assumed]
         lines += _finding_lines(self.findings)
         lines += [f"warning: {warning}" for warning in self.warnings]
         lines.append("safety: the G-code is not proven on a machine; air-cut or single-block it first, "

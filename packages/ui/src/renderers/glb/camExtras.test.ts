@@ -136,3 +136,13 @@ it('reads each setup\'s fixture boxes in part coordinates, leaving out one with 
   expect(job.setups[0].fixtures).toEqual([{ name: 'vise jaw', min: [-5, -10, -20], max: [5, 10, 0] }, { name: 'Fixture 3', min: [1, 0, 0], max: [2, 1, 1] }]);
   expect(readCamJob(camScene())!.setups[0].fixtures).toEqual([]);
 });
+
+it('reads what the plan assumed: each key with its value in words and why, an entry without a key left out', () => {
+  const extras = camExtras();
+  extras.assumed = [{ key: 'machine.post', value: 'fanuc', why: 'no machine model or post given' },
+    { key: 'machine.rigid_tap', value: false, why: 'not known' }, { key: 'machine.travel_mm', value: [300, 200, 80] },
+    { value: 1 }, 'nope'];
+  expect(readCamJob(camScene({ extras }))!.assumed).toEqual([{ key: 'machine.post', value: 'fanuc', why: 'no machine model or post given' },
+    { key: 'machine.rigid_tap', value: 'false', why: 'not known' }, { key: 'machine.travel_mm', value: '300, 200, 80', why: '' }]);
+  expect(readCamJob(camScene())!.assumed).toEqual([]);
+});

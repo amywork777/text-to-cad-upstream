@@ -7,7 +7,8 @@ against diameter): aluminium 6061 is published at roughly 300-1000 m/min and 0.0
 table says 250 m/min and 0.04 mm; 1018 steel at roughly 100-200 m/min and 0.02-0.05 mm, so 120 and 0.03; stainless
 304 at 60-120 m/min, so 80; titanium Ti-6Al-4V at 40-70 m/min, so 50; plastics and woods at the low end of a router
 chart's chip loads. High-speed steel runs at about a third of carbide's surface speed. A job's ``feed``/``speed``
-override wins over all of it; a machine's ``max_rpm``/``max_feed_mm_min`` clamps it, and a clamp is reported.
+override wins over all of it; a machine's ``max_rpm``/``max_feed_mm_min`` clamps it (and its ``min_rpm`` raises a
+slower speed), and a clamp is reported.
 
 The rules (:func:`for_op`):
 
@@ -192,6 +193,14 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         limit = float(math.floor(machine.max_rpm))
         clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {limit:.0f} rpm")
         rpm = limit
+    # A spindle cannot turn slower than its slowest (a router's): raised to it, the feed with it (the chip load kept,
+    # the surface speed past the table's), and said.
+    slowest = getattr(machine, "min_rpm", None)
+    if slowest is not None and rpm < slowest:
+        floor = float(math.ceil(slowest))
+        clamped.append(f"spindle {rpm:.0f} rpm raised to the machine's slowest, {floor:.0f} rpm (a faster surface "
+                       "speed than the table's)")
+        rpm = floor
     chipload = None
     if kind == "tap":
         cut = rpm * tool.pitch_mm

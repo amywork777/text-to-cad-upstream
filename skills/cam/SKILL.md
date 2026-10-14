@@ -94,8 +94,11 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
 
 2. **Pick the machine, material and stock.** Use what the user said; otherwise ask once, in one
    message, for what [machining-practice.md](references/machining-practice.md#ask-before-you-plan)
-   lists (the machine and controller, how the part is held, the tools they own, the material and
-   temper, the critical features), and assume nothing about them silently. A material from the feeds
+   lists (the machine's make and model, or its kind and controller; how the part is held; the
+   tools they own, or their tool library file; the material and temper; the critical features).
+   The machine model and the tool list are optional: write what the user knows, leave out what
+   they do not, and the plan lists every value it assumed in their place. Never fill one in
+   yourself. A material from the feeds
    table gives starting speeds and feeds ([job-file.md](references/job-file.md#material)); say they
    are starting points.
 
@@ -165,8 +168,10 @@ Hand the program over in this order, in the user's words:
   stickout is a guessed collision check).
 - Every warning, every info note (`unused_tool`), every lite limit an operation carries and every
   `adapted:` step, with its note.
-- What the plan assumed that the user did not say: the material, the machine's limits, the rapid
-  rate and tool change time the cycle time uses, a stickout or a fixture box.
+- Every `assumed:` line, as a question the user can answer (the post, a spindle limit, the rapid
+  rate and tool change time the cycle time uses, a tool's flute length or stickout), plus anything
+  else you assumed: the material, a fixture box. An assumed post comes first: the program is in a
+  dialect nobody confirmed.
 - That speeds and feeds are starting points from a table, not tuned for their machine.
 - Where the plan departs from [machining-practice.md](references/machining-practice.md) (a long
   stickout, a full-width slot, a straight plunge, a tool the user did not confirm they own), and
@@ -186,8 +191,8 @@ Never send G-code to a machine from this skill.
   boxes you gave, nothing else. A wrong stock size, a fixture that is not where the job says, or a
   tool longer or shorter than stated makes a plan that looks right and is not.
 - **The cycle time** is the moves at their feeds, rapids at `machine.rapid_mm_min` and each tool
-  change at `machine.tool_change_s` (the machine kind's defaults when the job does not say, and a
-  `warning:` line says so: repeat it when you quote the time). Spindle
+  change at `machine.tool_change_s` (the model's numbers, else the machine kind's, listed as
+  `assumed:`: repeat that when you quote the time). Spindle
   spin-up and setting up are not in it, and a real machine slows into corners: read it as a lower
   bound.
 - **The G-code is written for one controller.** Another controller may read the same words

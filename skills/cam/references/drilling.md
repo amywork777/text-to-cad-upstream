@@ -91,7 +91,8 @@ Mach3's G84, which does not follow the spindle and so wants a floating holder. `
 be synchronised to the spindle (a rigid holder); Mach3 cannot, so it refuses the tap
 (`no_post_support`). `false`: a floating (tension-compression) holder: Fanuc's G84 without `M29`,
 LinuxCNC's own G84 (G74 left hand) instead of `G33.1`, Haas and Mach3 their G84. GRBL taps neither
-way. The planned moves are the same either way.
+way. The planned moves are the same either way. On a machine that does not tap rigidly
+(`machine.rigid_tap` false, or its model says so) a tap left out is floating, and `true` is refused.
 
 ## Counterbores and back bores
 

@@ -2,8 +2,10 @@
 
 A post turns each setup's toolpaths into one program for a controller, written beside the part as
 `<part>.<setup id><extension>`; a GRBL mill or router setup that uses more than one tool is one program per tool,
-`<part>.<setup id>.T1<extension>`, `.T2`... (run them in order, zeroing Z with each tool). Pick it with `machine.post`, which every job states: a
-dialect is never guessed ([job-file.md](job-file.md) has the machine keys every post shares). Tell the
+`<part>.<setup id>.T1<extension>`, `.T2`... (run them in order, zeroing Z with each tool). Pick it with `machine.post`, or let a `machine.model` name its
+controller's. Left out of both, the plan takes the kind's usual dialect, lists it as assumed and
+says so in every file's header: tell the user, and ask which controller runs the machine
+([job-file.md](job-file.md) has the machine keys every post shares). Tell the
 user which file runs first, and how the part is re-held between setups. The keys below are the
 post's own: put them in `machine` next to `kind` and `post`; a key another post takes is refused.
 

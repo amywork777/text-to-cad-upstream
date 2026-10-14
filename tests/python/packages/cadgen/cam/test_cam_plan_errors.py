@@ -153,14 +153,14 @@ class PostOverride(unittest.TestCase):
 
     def test_the_cycle_times_assumed_rates_are_said(self):
         result = self.plan(mill_job([{"op": "face", "tool": "T1"}]))
-        (said,) = [w for w in result.warnings if "not stated" in w]
-        self.assertIn("machine.rapid_mm_min and machine.tool_change_s not stated", said)
-        self.assertIn("rapids at 5000 mm/min", said)
+        rates = {entry["key"]: entry["value"] for entry in result.assumed}
+        self.assertEqual((5000.0, 10.0), (rates["machine.rapid_mm_min"], rates["machine.tool_change_s"]))
         cam = read_glb(result.glb)[0]["scenes"][0]["extras"]["cam"]
-        self.assertEqual(["rapid_mm_min", "tool_change_s"], cam["machine"]["assumed"])
+        self.assertEqual([dict(entry) for entry in result.assumed], cam["assumed"])
         stated = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "mill", "post": "grbl",
                                                                   "rapid_mm_min": 4000, "tool_change_s": 20})
-        self.assertEqual([], [w for w in self.plan(stated).warnings if "not stated" in w])
+        self.assertFalse({"machine.rapid_mm_min", "machine.tool_change_s"}
+                         & {entry["key"] for entry in self.plan(stated).assumed})
 
     def test_the_generated_cli_takes_the_flag(self):
         from cadgen.cli.cam_plan import build_parser

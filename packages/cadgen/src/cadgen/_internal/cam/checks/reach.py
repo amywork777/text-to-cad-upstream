@@ -5,6 +5,10 @@ to the tool, not the stock top far away), per operation, so a stepped pocket is 
 simulator skipped falls back to the setup's stock top minus the operation's lowest cutting move (conservative).
 A holder wider than the cut is judged by ``holder_collision``, not here.
 
+A length the job did not state (``Tool.assumed``: the catalogue flute length, the stickout worked from it) is not one
+the plan can judge against: a cut past it is a ``not_judged`` warning that names the assumed length and asks for the
+real one, never an error on a guess nor a silent pass.
+
 A back bore (``drill``'s ``back_bore`` cycle) is judged from its plan, not from a depth: its head cuts upward from
 under the part, so the counterbore's depth is not bounded by the head's flutes (the head rises through it), and the
 bar's neck in the hole above the head is there by design (the planner fits the head, the neck and the shift to the
@@ -48,13 +52,26 @@ def _back_bore(ctx, op, tol: float) -> list[dict]:
     if depth <= tool.stickout_mm + tol:
         return []
     at = plan.wcs.from_wcs([[rows["x"][k], rows["y"][k], rows["z"][k]]])[0]
+    item = {"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3),
+            "flute_length_mm": tool.flute_length_mm, "stickout_mm": tool.stickout_mm, "at": xyz(at)}
+    if "stickout_mm" in getattr(tool, "assumed", ()):
+        return [_not_judged(op, tool, depth, "stickout_mm", item)]
     return [finding(
         "reach", "error", "reach_holder",
         f"Bar too short for this back bore: {op.summary or op.spec.op} takes {tool.id}'s head {depth:.1f} mm under "
         f"the stock's top but {tool.id} ({tool.plain}) sticks out only {tool.stickout_mm:g} mm, so the holder hits",
         "use a longer bar or more stickout (stickout_mm): the head goes down through the hole to under the part",
-        [{"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3),
-          "flute_length_mm": tool.flute_length_mm, "stickout_mm": tool.stickout_mm, "at": xyz(at)}])]
+        [item])]
+
+
+def _not_judged(op, tool, depth: float, key: str, item: dict) -> dict:
+    """A cut deeper than a length the job did not state: the plan cannot say whether it reaches."""
+    word = "flutes" if key == "flute_length_mm" else "stickout"
+    return finding(
+        "reach", "warning", "not_judged",
+        f"Reach not judged: {op.summary or op.spec.op} goes {depth:.1f} mm deep, past {tool.id}'s assumed {word} of "
+        f"{getattr(tool, key):g} mm (the job gives no {key})",
+        f"state {tool.id}'s real {key} (and stickout_mm) and plan again: with them reach is judged", [item])
 
 
 def run(ctx) -> list[dict]:
@@ -78,12 +95,17 @@ def run(ctx) -> list[dict]:
         item = {"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3),
                 "flute_length_mm": tool.flute_length_mm, "stickout_mm": tool.stickout_mm,
                 "at": xyz(at) if at is not None else None}
-        if depth > tool.stickout_mm + tol:
+        guessed = getattr(tool, "assumed", ())
+        if depth > tool.stickout_mm + tol and "stickout_mm" in guessed:
+            out.append(_not_judged(op, tool, depth, "stickout_mm", item))
+        elif depth > tool.stickout_mm + tol:
             out.append(finding(
                 "reach", "error", "reach_holder",
                 f"Tool too short for this cut: {op.summary or op.spec.op} goes {depth:.1f} mm deep but {tool.id} "
                 f"({tool.plain}) sticks out only {tool.stickout_mm:g} mm, so the holder hits",
                 "use a longer tool or more stickout (stickout_mm), or cut less deep from this side", [item]))
+        elif "flute_length_mm" in guessed:
+            out.append(_not_judged(op, tool, depth, "flute_length_mm", item))
         else:
             out.append(finding(
                 "reach", "error", "reach_flutes",

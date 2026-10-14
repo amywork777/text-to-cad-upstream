@@ -49,14 +49,18 @@ class JobParsing(unittest.TestCase):
         self.assertEqual("G54", parsed.setups[0].wcs)
         self.assertEqual(0.01, parsed.tolerance_mm)
 
-    def test_inline_json_and_a_post_that_is_never_guessed(self):
+    def test_inline_json_and_a_post_left_out_is_assumed_never_silent(self):
         text = ('{"machine": {"kind": "lathe"}, "material": "brass", "stock": {"kind": "cylinder", '
                 '"diameter_mm": 20, "length_mm": 50}, "tools": [{"id": "T1", "type": "turn"}], '
                 '"setups": [{"operations": [{"op": "turn_face", "tool": "T1"}]}]}')
-        with self.assertRaisesRegex(CamJobError, "machine.post is required and never guessed.*linuxcnc, fanuc, haas"):
-            parse_job(text)
+        parsed = parse_job(text)
+        self.assertEqual("fanuc", parsed.machine.post)
+        (post,) = [entry for entry in parsed.assumed if entry["key"] == "machine.post"]
+        self.assertEqual("fanuc", post["value"])
+        self.assertIn("check your controller reads it", post["why"])
         parsed = parse_job(text.replace('"kind": "lathe"', '"kind": "lathe", "post": "linuxcnc"'))
         self.assertEqual("linuxcnc", parsed.machine.post)
+        self.assertNotIn("machine.post", [entry["key"] for entry in parsed.assumed])
         self.assertEqual("setup1", parsed.setups[0].id)
 
     def test_every_teaching_error_names_what_to_change(self):

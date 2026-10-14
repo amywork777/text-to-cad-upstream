@@ -11,11 +11,16 @@ machine or a long tool wants less.
 Ask once, in one message, for what you cannot see and the user has not said. Never invent any of
 these silently:
 
-- The machine and its controller, and its travel, spindle speed range and tool changer, if any.
+- The machine: its make and model (if it is in the catalog, `machine.model` brings its numbers,
+  [job-file.md](job-file.md#machine-models)), else its kind and controller, travel, spindle speed
+  range and tool changer. Any of these may be unknown: leave it out and the plan assumes the
+  kind's usual value and lists it. Never fill one in from a guess of your own.
 - How the part is held: vise, clamps, fixture plate, vacuum, chuck, collet. The vise jaw height
   and where the clamps sit become `fixture` boxes in the setup.
-- The tools they actually have, with real diameters, flute lengths and stickouts. A plan with a
-  tool they do not own is not a plan, and a guessed stickout is a guessed collision check.
+- The tools they actually have, with real diameters, flute lengths and stickouts, or their tool
+  library file (`"tools": "my-tools.json"`). A plan with a tool they do not own is not a plan, and
+  a guessed stickout is a guessed collision check: a length left out is assumed, and `reach` says
+  it could not judge a cut past it.
 - On a hobby machine or router, its spindle's speed range and its feed limit (`max_rpm`,
   `max_feed_mm_min`: a 24,000 rpm router spindle, a 1,000 mm/min feed): without them the plan
   cannot know them, and posts what the table says.

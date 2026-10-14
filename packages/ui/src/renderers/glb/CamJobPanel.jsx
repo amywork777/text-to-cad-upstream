@@ -4,7 +4,7 @@ import { Button } from "@text-to-cad/ui/primitives/button";
 import { ROW_NAME_UNDER_ACTIONS, TREE_INDENT_PX, TreeRowGuides, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@text-to-cad/ui/primitives/tree-row";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import ToolPanel, { ToolPanelClose } from "../kit/tools/ToolPanel.jsx";
-import { formatDuration, jobSummary, operationDetail, toolSpeeds } from "./cam/extras.js";
+import { assumedWords, formatDuration, jobSummary, operationDetail, toolSpeeds } from "./cam/extras.js";
 
 // The panel's id: Job keeps the tree's, as FEA's Study does, so the stack sizes it as Select's tree.
 export const CAM_JOB_PANEL_ID = "tree";
@@ -67,7 +67,8 @@ function Choosable({ id, label, chosen, onChoose, className, children }) {
 /**
  * The answer first, as FEA's verdict: the headline in its status' tone ("Ready to cut · 42 min · 3 tools",
  * "2 to fix"), what the job takes ("1 tool change · grbl controller"), whether G-code was written and how many
- * warnings went to the agent, then each error in plain words, each a row that chooses the operation it is about.
+ * warnings went to the agent, what the plan assumed that nobody stated (one small line each, its reason on hover),
+ * then each error in plain words, each a row that chooses the operation it is about.
  */
 function CamVerdict({ job, chosen, onChoose }) {
   const tone = TONES[job.verdict.status] || TONES.ready;
@@ -83,6 +84,10 @@ function CamVerdict({ job, chosen, onChoose }) {
     </div>
     {summary ? <p className="text-tiny leading-4 text-foreground/80" data-cam-summary="">{summary}</p> : null}
     {caption ? <p className="text-tiny leading-4 text-muted-foreground" data-cam-verdict-caption="">{caption}</p> : null}
+    {job.assumed.length ? <ul className="flex flex-col" aria-label="Assumed" data-cam-assumed="">
+      {job.assumed.map((entry, index) => <li key={index} title={entry.why || undefined}
+        className="min-w-0 text-tiny leading-4 text-muted-foreground [overflow-wrap:anywhere]">Assumed {assumedWords(entry)}</li>)}
+    </ul> : null}
     {errors.length ? <ul className="flex flex-col" aria-label="To fix">
       {errors.map(({ finding, index }) => <li key={index} className="min-w-0 border-t border-foreground/10" data-cam-finding={finding.check || "error"}>
         <Choosable id={`finding:${index}`} label={finding.message} chosen={chosen} onChoose={onChoose}

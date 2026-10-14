@@ -474,16 +474,28 @@ class DrillPlate(unittest.TestCase):
                                             "hand": "sinister"}]))
         self.assertIn("use one of right, left", str(caught.exception))
 
-    def test_a_tap_says_rigid_or_floating_only_when_the_job_does(self):
-        for rigid in (None, True, False):
-            with self.subTest(rigid=rigid):
+    def test_a_tap_is_rigid_only_where_the_job_or_the_machine_says_so(self):
+        # (the tap's rigid, machine.rigid_tap) -> the cycle's rigid: None is the controller's own tapping cycle (M29
+        # on Fanuc, which alarms where it cannot); a tap that does not say runs in a floating holder only on a machine
+        # known not to tap rigidly, and the controller's own cycle with the machine unknown is an assumption.
+        cases = {(None, None): None, (True, None): True, (False, None): False, (None, True): None,
+                 (False, True): False, (None, False): False}
+        for (rigid, machine_rigid), expected in cases.items():
+            with self.subTest(rigid=rigid, machine_rigid=machine_rigid):
                 op = {"op": "drill", "tool": "T3", "faces": self.f5[:1]}
                 if rigid is not None:
                     op["rigid"] = rigid
-                path, rng, _ = self.one(op)
+                machine = {} if machine_rigid is None else {"rigid_tap": machine_rigid}
+                path, rng, _ = self.one(op, machine=machine)
                 (cycle,) = self.cycles(path, rng)
-                self.assertEqual(rigid, cycle.data.get("rigid"))
-                self.assertEqual(rigid is None, "rigid" not in cycle.data)
+                self.assertEqual(expected, cycle.data.get("rigid"))
+                self.assertEqual(expected is None, "rigid" not in cycle.data)
+                assumed = [entry["key"] for entry in parse_job(drill_job([op], machine=machine)).assumed]
+                self.assertEqual(rigid is None and machine_rigid is None, "machine.rigid_tap" in assumed)
+        with self.assertRaises(CamJobError) as caught:
+            parse_operations(parse_job(drill_job([{"op": "drill", "tool": "T3", "holes": "all", "rigid": True}],
+                                                 machine={"rigid_tap": False})))
+        self.assertIn("this machine does not tap rigidly", str(caught.exception))
         cases = {"rigid is for the tap cycle": {"op": "drill", "tool": "T1", "holes": "all", "rigid": True},
                  "rigid is true (rigid tapping": {"op": "drill", "tool": "T3", "holes": "all", "rigid": "yes"}}
         for words, op in cases.items():

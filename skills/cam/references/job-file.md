@@ -23,10 +23,10 @@ an unknown key or value is refused with a sentence naming the allowed ones, and 
 | key | meaning |
 | --- | --- |
 | `name` | the job's name, for the posted files' headers |
-| `machine` | the machine and its controller ([Machine](#machine)); required |
+| `machine` | the machine: a catalog model, or its kind and whatever the user knows of it ([Machine](#machine)); required |
 | `material` | a feeds-table name or an object ([Material](#material)); required |
 | `stock` | what the part is cut from ([Stock](#stock)); required |
-| `tools` | the tool list ([Tools](#tools)) |
+| `tools` | the tool list, or the user's tool library file ([Tools](#tools)) |
 | `setups` | one per way the part is held, in order ([Setups](#setups)); required |
 | `tolerance_mm` | how closely paths follow the part (default 0.01) |
 | `coolant` | `off`, `flood`, `mist` or `air` for every operation that names none |
@@ -35,19 +35,73 @@ an unknown key or value is refused with a sentence naming the allowed ones, and 
 
 | key | meaning |
 | --- | --- |
-| `kind` | `mill` (3-axis), `mill4` (plus an A axis about X), `mill5` (two rotary axes), `router`, `lathe`, `laser`, `plasma`, `waterjet`, `wire_edm` |
-| `post` | the controller's dialect ([posts.md](posts.md)); required, never guessed: a dialect read by the wrong controller moves the machine wrongly. Ask the user which controller runs the machine |
+| `model` | a machine from the catalog ([Machine models](#machine-models)), by id or name (`"tormach-1100mx"`, `"Haas VF-2"`): its maker's numbers fill in every key below the job leaves out, and the job's own keys win |
+| `kind` | `mill` (3-axis), `mill4` (plus an A axis about X), `mill5` (two rotary axes), `router`, `lathe`, `laser`, `plasma`, `waterjet`, `wire_edm`; left out, the model's |
+| `post` | the controller's dialect ([posts.md](posts.md)). Left out, the model's, else the kind's usual one (`fanuc` for mills and lathes, `grbl` for routers and lasers): assumed, and every posted file's header says so. A dialect read by the wrong controller moves the machine wrongly, so ask which controller runs the machine and name it when the user knows |
 | `name` | the machine's name, for the headers |
 | `travel_mm` | axis travel `[x, y, z]` (a lathe `[x, z]`, a laser, plasma or waterjet `[x, y]` or `[x, y, z]`); with it, the `travel` check runs |
-| `max_rpm`, `max_feed_mm_min` | limits: speeds and feeds are clamped to them (the `limits` warning says where) |
-| `rapid_mm_min` | rapid traverse rate, for the cycle time (default per kind; a default is said in a `warning:` line, and in the GLB's `machine.assumed`) |
-| `tool_change_s` | seconds per tool change, for the cycle time |
+| `min_rpm`, `max_rpm`, `max_feed_mm_min` | limits: speeds and feeds are clamped to them, and a speed under `min_rpm` (a router's slowest) is raised to it (the `limits` warning says where). Left out, `max_rpm` is the kind's usual spindle limit, assumed |
+| `rapid_mm_min` | rapid traverse rate, for the cycle time (left out: the kind's usual one, assumed) |
+| `tool_change_s` | seconds per tool change, for the cycle time (left out: the kind's usual one, assumed) |
+| `rigid_tap` | whether the controller taps rigidly (the feed synchronised to the spindle). Left out, a tap that does not say `rigid` takes the controller's own tapping cycle (`M29` on Fanuc: a controller without rigid tapping stops with an alarm), assumed. `false`: such taps run in a floating holder, and a tap that asks for `rigid` is refused |
 | `spindle_spinup_s` | seconds the spindle takes to reach speed (0 to 60): every post dwells that long after each spindle start, and the cycle time counts it (left out: GRBL waits 3 s, the others none) |
 | `kinematics` | a `mill5`'s: `ac_trunnion` (A tilts the table about X, C turns it) or `bc_head` (B tilts the head, C turns the table) |
 | `rotary_limits_deg` | rotary travel: `{"a": [-120, 30], "c": [-360, 360]}` |
 | `diameter_mode` | a lathe's X words are diameters (default `true`) or radii |
+| `assumed` | the machine keys the job guessed because the user did not know them (`["kind"]`): the plan lists them with the rest |
 
 The cutting machines take their process keys (power, amps, quality) on [cutting.md](cutting.md).
+
+A job needs only a `model` or a `kind`: `{"model": "tormach-1100mx"}` and `{"kind": "router"}` both
+plan. If the user does not know even the kind, ask once; if they still do not know, write
+`{"kind": "mill", "assumed": ["kind"]}`.
+
+### What the plan assumes
+
+Every value the plan takes that neither the job nor its model states is listed in the result's
+`assumed:` lines (`key`, `value`, `why`), in the GLB and under the verdict in the Viewer's Job panel.
+That covers a generic post, spindle limit, rapid rate or tool change time, the controller's own tapping cycle,
+a machine that may not be homed, and a used milling tool's flute length, stickout and small-cutter
+shank. Read them to the user as questions to answer, never as facts. The checks do not stand behind
+a guess: a cut past an assumed flute length or stickout is a `not_judged` warning from `reach` (not an
+error, not a pass), and so is a shank or holder hit that rests on an assumed length
+(`holder_collision`). Stating the real number turns it back into a judged check.
+
+### Machine models
+
+Each model's numbers are its maker's published ones (the catalog keeps the page each came from);
+a number the maker does not publish is left out, and the kind's usual value stands in, assumed.
+Name another machine by its `kind` and the numbers the user knows.
+
+| id | machine | kind | post |
+| --- | --- | --- | --- |
+| `haas-vf-1` | Haas VF-1 | `mill` | `haas` |
+| `haas-vf-2` | Haas VF-2 | `mill` | `haas` |
+| `haas-mini-mill` | Haas Mini Mill | `mill` | `haas` |
+| `haas-umc-500` | Haas UMC-500 | `mill5` | `haas` |
+| `haas-st-10` | Haas ST-10 | `lathe` | `haas` |
+| `haas-tl-1` | Haas TL-1 | `lathe` | `haas` |
+| `tormach-440` | Tormach PCNC 440 | `mill` | `linuxcnc` |
+| `tormach-770mx` | Tormach 770MX | `mill` | `linuxcnc` |
+| `tormach-1100mx` | Tormach 1100MX | `mill` | `linuxcnc` |
+| `tormach-8l` | Tormach 8L | `lathe` | `linuxcnc` |
+| `tormach-15l` | Tormach 15L Slant-PRO | `lathe` | `linuxcnc` |
+| `shapeoko-5-pro` | Shapeoko 5 Pro | `router` | `grbl` |
+| `shapeoko-4-xxl` | Shapeoko 4 XXL | `router` | `grbl` |
+| `nomad-3` | Carbide 3D Nomad 3 | `mill` | `grbl` |
+| `x-carve-pro-4x4` | Inventables X-Carve Pro 4x4 | `router` | `grbl` |
+| `longmill-mk2-30x30` | Sienci LongMill MK2 30x30 | `router` | `grbl` |
+| `ortur-laser-master-3` | Ortur Laser Master 3 | `laser` | `grbl` |
+| `sculpfun-s30-pro-max` | Sculpfun S30 Pro Max | `laser` | `grbl` |
+
+Some machines cadgen cannot post for, because their controller reads no G-code file it writes as
+written: a Glowforge (its own cloud app), an OMTech CO2 laser (a Ruida controller), an xTool laser,
+the Langmuir CrossFire plasma tables (their own approved posts), a Makera Carvera (Makera's own
+firmware) and a Bantam Tools mill (a TinyG board behind Bantam's software). Naming one is refused
+with what to do instead: the maker's own software, from a STEP or a DXF.
+
+A trim router's speed (a Shapeoko's Compact Router) is set by hand on its dial, not by the program:
+tell the user which dial setting gives each posted speed.
 
 ## Material
 
@@ -111,6 +165,14 @@ Every tool has an `id` (operations name it; no spaces round it) and a `type`. Mi
 `holder_collision` and `long_stickout` checks use them. A stickout given without a flute length
 cuts the default flutes (3 diameters) back to it; a holder states both its diameter and its length;
 a cutter under 3 mm sits on a 3 mm shank unless `shank_diameter_mm` says otherwise.
+A length the job leaves out is assumed, and listed ([What the plan assumes](#what-the-plan-assumes)).
+
+The user's own tools can live in a tool library file, written once and named by every job:
+`"tools": "my-tools.json"`. The file is a JSON list of tools as a job writes them, or
+`{"name": "shop", "tools": [...]}`, found beside the job file, else beside the part. A library's
+tools are the job's when an operation names them. `tools` can also mix inline tools and libraries:
+`[{"library": "my-tools.json", "only": ["T4"]}, {"id": "T9", ...}]`, where `only` keeps those tools
+even when no operation uses them. Tool ids are unique across the job and its libraries.
 
 | `type` | its own keys | for |
 | --- | --- | --- |
