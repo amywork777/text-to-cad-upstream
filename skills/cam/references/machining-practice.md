@@ -15,7 +15,10 @@ these silently:
 - How the part is held: vise, clamps, fixture plate, vacuum, chuck, collet. The vise jaw height
   and where the clamps sit become `fixture` boxes in the setup.
 - The tools they actually have, with real diameters, flute lengths and stickouts. A plan with a
-  tool they do not own is not a plan.
+  tool they do not own is not a plan, and a guessed stickout is a guessed collision check.
+- On a hobby machine or router, its spindle's speed range and its feed limit (`max_rpm`,
+  `max_feed_mm_min`: a 24,000 rpm router spindle, a 1,000 mm/min feed): without them the plan
+  cannot know them, and posts what the table says.
 - The material and its temper: 6061-T6, not "aluminium"; annealed or hardened steel.
 - Which features are critical (fits, bores, sealing faces) and the finish they need.
 
@@ -24,14 +27,17 @@ these silently:
 - Hold it rigidly and as low as possible: the part sits above the vise jaws by the cut depth
   plus 2-3 mm, no more. Work held high chatters and moves.
 - Never cut into the vise, clamps or table. Give every jaw and clamp as a `fixture` box; the
-  `fixture` check then refuses any move into one.
+  `fixture` check then refuses any move into one, and the plan never comes down onto one. A vise
+  grips `jaw height - parallels` of the stock: a grip of 0 or less holds nothing.
 - Use as few setups as possible, and cut every feature that must line up with another in the
   same setup. Each re-clamp costs about 0.02-0.05 mm of accuracy.
 - Plan the flip. The first setup makes a flat, square face the second setup can sit on. Leave
   stock (`margin_mm` on the bottom) where the second setup faces it off.
 - Through cuts on a router or plate need a spoilboard or parallels under the part. Add a
   `through_mm` of 0.2-0.5 mm to break through, and tabs (`contour` `tabs`) so the part does
-  not come loose and get thrown by the cutter.
+  not come loose and get thrown by the cutter. Tell the user to cut the tabs by hand after the
+  program. A through drill goes the hole's depth plus its point plus `breakthrough_mm` (1 mm):
+  make sure that much stands clear under the part (`through_stock_bottom` says where).
 
 ## Choose the tools
 
@@ -41,15 +47,17 @@ these silently:
 - **Largest diameter that fits.** Use a big tool for roughing and open areas, and a small one
   only for the corners and slots that need it (`rest`, or a second `pocket` with the small tool).
 - **Fewest tools.** Every tool change is time, a length offset to set, and on a manual-change
-  machine a chance to get Z wrong.
+  machine a chance to get Z wrong. On GRBL a tool change is a pause for the operator to change the
+  tool and zero it again: each tool is its own file.
 - **Flutes by material:**
   - Aluminium and plastics: 2-3 flutes, sharp, polished or uncoated (ZrN or DLC are fine; avoid
     TiAlN).
   - Steel: 4-5 flutes, coated (TiAlN or AlTiN).
   - Wood and MDF: up-cut, down-cut or compression router bits.
-- **Inside corners.** The corner radius on the part must be bigger than the tool radius. Pick a
-  finishing tool with a radius 10-20 % below the corner radius, so it does not wrap a full 180°
-  of the corner and chatter. The `corner_radius` warning names corners no tool reaches.
+- **Inside corners.** The corner radius on the part must be bigger than the tool radius: a pocket
+  with R3 corners wants a tool of 6 mm or less. Pick a finishing tool with a radius 10-20 % below
+  the corner radius, so it does not wrap a full 180° of the corner and chatter. The
+  `corner_radius` warning names corners no tool reaches.
 - **Corner-radius (bull) end mills** survive far better than sharp corners for roughing; use one
   when the floor allows it.
 
@@ -89,13 +97,19 @@ these silently:
     s² / (8R). For example, R3 at 0.3 mm leaves 0.004 mm.
 - **Never plunge a flat end mill straight in.** Enter by helix (2-3° ramp, helix diameter at
   least 0.5 x D) or a ramp along the path. A straight plunge needs a centre-cutting tool and
-  half the feed. The run counts every plunge and warns.
+  half the feed. The run counts every plunge and warns. The planners plunge only in air: the
+  tool's whole circle off the stock and clear of the fixtures.
+- **Arcs inside a hole** run their centre slower than their edge: the feed at the tool's centre is
+  the table's scaled by the centre's radius over the edge's (never under a quarter), so the edge
+  cuts at the planned chip.
 - **Chip load.** Too light is as bad as too heavy: the tool rubs, heats and wears, and in
   stainless it work-hardens the surface. Do not cut feeds to be safe; cut depth instead.
 - **Feeds and speeds** from the table are starting points. Tell the user:
   - Start at 70-80 % on the feed override, listen, and raise it.
   - Chatter usually means a lower RPM or a shorter tool. Squealing or blue chips mean the speed
     is too high or the tool is rubbing.
+- **Thin walls** (`thin_wall`: under 1 mm to the outside) bend away from the cutter: finish them
+  with light passes, after the heavy roughing near them.
 - **Hobby and router machines** (GRBL, small routers):
   - Halve the depth of cut and keep the table's surface speed.
   - The spindle often cannot go slow enough for steel; say so rather than posting an RPM it
@@ -127,13 +141,18 @@ these silently:
   3.3 mm, M3x0.5: 2.5 mm). Blind threads need the drill at least 2-3 pitches deeper than the
   thread.
 - **Tapping:**
-  - Rigid tapping needs a spindle that synchronises (most industrial controls; not GRBL). On a
-    machine without it, use a floating holder, or thread mill instead.
+  - Rigid tapping needs a spindle that synchronises (most industrial controls; not GRBL). The
+    posts refuse a tap where the controller cannot hold the feed to the spindle: thread mill
+    instead. A tap suits a hole drilled at its tap drill (major less one pitch) or drawn at its
+    major diameter.
+  - Tap only a hole an earlier operation drilled: `prepared_hole` warns when none did.
   - Taps run slowly; the table caps them.
 - **Thread milling** is the safer choice in hard materials, big threads, and where a broken tap
   would scrap the part.
 - **Reaming:** drill 0.2-0.3 mm under size (for 6 mm and up), then ream at about half the
   drill's speed and twice its feed.
+- **Helix boring** suits a hole a little bigger than the tool; within a tenth of the tool's radius
+  of the tool's own size, drill or ream it instead.
 
 ## Turning
 

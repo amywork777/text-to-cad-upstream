@@ -55,6 +55,8 @@ REGISTRY: tuple[Entry, ...] = (
     _entry("long_stickout", "warning", "an end mill sticks out more than four times its diameter"),
     _entry("full_slot", "warning", "an operation cuts at the tool's full width for more than five diameters"),
     _entry("prepared_hole", "warning", "a tap or thread mill works a hole no earlier operation made"),
+    _entry("uncut_feature", "warning", "a hole or pocket a setup reaches that no operation cuts"),
+    _entry("thin_wall", "warning", "a hole or pocket the job cuts leaves under 1 mm of wall to the outside"),
     _entry("unused_tool", "info", "a tool the job lists that no operation runs"),
 )
 CHECK_NAMES = tuple(entry.name for entry in REGISTRY)

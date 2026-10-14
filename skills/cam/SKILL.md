@@ -38,6 +38,7 @@ The `op` key of each operation names it. Pick by what the user wants cut and on 
 | A slot or keyway | `slot` | Slot | **Runs today** | milling-2d.md |
 | Edges chamfered or deburred | `chamfer` | Chamfer | **Runs today** | milling-2d.md |
 | Text, a logo or a line engraved | `engrave` | Engrave | **Runs today** | milling-2d.md |
+| Letters, a logo or any closed shape carved with a V-bit: sharp V walls, deeper where it is wider | `vcarve` | V-carve | **Runs today** (lite) | milling-2d.md |
 | A round hole too big for a drill, milled in a helix | `helix_bore` | Helix bore | **Runs today** | milling-2d.md |
 | A round pocket wider than twice the tool cleared level by level in a spiral (a narrower hole is a `helix_bore`), or the material round a round boss cleared | `circular` | Circular | **Runs today** | milling-2d.md |
 | A groove or a cut along the part's edges, on them or offset to one side | `trace` | Trace | **Runs today** | milling-2d.md |

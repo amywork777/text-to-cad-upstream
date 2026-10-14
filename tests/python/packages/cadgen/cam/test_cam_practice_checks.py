@@ -112,6 +112,57 @@ class PracticeChecks(unittest.TestCase):
         self.assertEqual(list(result.warnings), cam["warnings"])
 
 
+class Features(unittest.TestCase):
+    """``uncut_feature`` names a hole or pocket a setup reaches that nothing cuts; ``thin_wall`` a cut feature with
+    under a millimetre of wall to the outside."""
+
+    @classmethod
+    def setUpClass(cls):
+        from build123d import Align, Box, Cylinder, Pos, export_step
+
+        from cadgen import cam
+
+        cls.directory = class_directory(cls)
+        cls.block = block_step(cls.directory)
+        cls.lower = floor_ref(cam.features(cls.block), BLOCK["lower"]["floor_z"])
+        base = (Align.CENTER, Align.CENTER, Align.MIN)
+        # A 40 x 30 x 10 plate with a Ø6 hole whose wall to the +X side is 0.6 mm, and one well inside.
+        plate = Box(40, 30, 10, align=base)
+        plate -= Pos(20 - 0.6 - 3, 0, 0) * Cylinder(3, 10, align=base)
+        plate -= Pos(-8, 0, 0) * Cylinder(3, 10, align=base)
+        cls.plate = cls.directory / "thin.step"
+        export_step(plate, str(cls.plate))
+
+    def plan(self, step, operations, tools):
+        from cadgen import cam
+
+        with quiet():
+            result = cam.plan(step, job=mill_job(operations, tools=tools), out_dir=self.directory)
+        self.assertTrue(result.ok, result.findings)
+        return result
+
+    def test_holes_and_a_pocket_no_operation_cuts_are_named(self):
+        result = self.plan(self.block, [{"op": "face", "tool": "T1"}], [_SHORT, _DRILL])
+        found = [f for f in result.findings if f["type"] == "uncut_feature"]
+        self.assertEqual("warning", found[0]["severity"])
+        holes = next(f for f in found if "Ø5 holes" in f["summary"])
+        self.assertIn("No operation cuts 4 Ø5 holes", holes["summary"])
+        self.assertIn("which setup top reaches", holes["summary"])
+        self.assertEqual(4, len(holes["items"]))
+        self.assertTrue(any("pocket on floor" in f["summary"] for f in found))
+        cut = self.plan(self.block, [{"op": "face", "tool": "T1"}, {"op": "pocket", "tool": "T1", "faces": [self.lower]},
+                                     {"op": "drill", "tool": "T2", "holes": "all"}], [_SHORT, _DRILL])
+        self.assertEqual([], [f["summary"] for f in cut.findings if f["type"] == "uncut_feature"])
+
+    def test_a_drilled_hole_with_under_a_millimetre_to_the_outside_is_a_thin_wall(self):
+        drill = {"id": "T2", "type": "drill", "diameter_mm": 6}
+        result = self.plan(self.plate, [{"op": "drill", "tool": "T2", "holes": "all"}], [_SHORT, drill])
+        (found,) = [f for f in result.findings if f["type"] == "thin_wall"]
+        self.assertEqual("warning", found["severity"])
+        self.assertIn("leaves 0.60 mm of wall", found["summary"])
+        self.assertAlmostEqual(0.6, found["items"][0]["wall_mm"], delta=0.02)
+
+
 class FullSlot(unittest.TestCase):
     """The check reads an operation's own ``full_slot_mm`` fact; a slot is meant to cut full width."""
 

@@ -143,13 +143,49 @@ A setup is one way the part is held. Each posts its own file, `<part>.<id><exten
 | --- | --- |
 | `id` | short name (letters, digits, `-`, `_`); names the posted file |
 | `name` | the plain name the Viewer shows (default from the orientation: "Top") |
-| `orientation` | which way the tool looks at the part: `+Z` (from above, default), `-Z` (flipped), `+X`, `-X`, `+Y`, `-Y`; or a tilted 3+2 position `{"a_deg": 30, "c_deg": 90}` on a mill4/mill5 ([multi-axis.md](multi-axis.md)) |
+| `orientation` | which way the tool looks at the part: `+Z` (from above, default), `-Z` (flipped), `+X`, `-X`, `+Y`, `-Y`; a planar face, `"#o1.f4"` ([below](#a-setup-on-a-face)); or a tilted 3+2 position `{"a_deg": 30, "c_deg": 90}` on a mill4/mill5 ([multi-axis.md](multi-axis.md)) |
 | `origin` | where work zero is, on the stock or the part's bounding box: `stock-top-center` (default), `stock-top-corner`, `stock-center`, `stock-bottom-center`, `stock-bottom-corner`, `part-top-center`, `part-top-corner`, `part-center`, `part-bottom-center`, `part-bottom-corner` (a corner is the setup's -X -Y one; a lathe takes no corner); or a point in part coordinates, `[x, y, z]` or `{"xyz": [x, y, z]}` |
 | `wcs` | the work offset posted: `G54`..`G59` (default G54, G55, ... by setup order) |
-| `fixture` | keep-out boxes (vise jaws, clamps) `{"min_mm": [...], "max_mm": [...], "name": "vise"}` in part coordinates; the `fixture` check refuses any move into one |
+| `fixture` | what holds the stock, one or a list: keep-out boxes (clamps, a vise's jaws) `{"min_mm": [...], "max_mm": [...], "name": "clamp"}` in part coordinates, a `{"type": "vise"}` or a `{"type": "plate"}` ([below](#fixture)); the `fixture` check refuses any move into one |
 | `clearance_mm` | height above the stock top for moves between features (default 5) |
 | `retract_mm` | height above the material for moves within a feature (default 2); at most `clearance_mm` |
 | `operations` | the operations, in cutting order |
+
+### A setup on a face
+
+`"orientation": "#o1.f4"` (on a `mill`, `router`, `mill4` or `mill5`) turns the part so that planar
+face looks up at the tool: the tool comes down its outward normal, and the part is turned by the
+smallest rotation that does it (a half turn about X for a face looking down -Z). The setup's
+`origin` keywords then sit on the stock or part box in that turned frame, so `stock-top-center`
+is over the highest stock point the tool sees. Its name is "Face #o1.f4 up", which the posted
+file's header carries. An edge, a vertex or a face that is not flat (a cylinder) is refused: it
+has no one normal to look down. On a mill4 or mill5 a face the rotary axes reach (within
+`rotary_limits_deg`) is that rotary position, as `+Y` is; one they cannot reach (a face with an X
+slope on a mill4) is a re-fixture by hand, as on a 3-axis mill.
+
+### `fixture`
+
+A box has no `type` (or `"type": "box"`): `min_mm`, `max_mm` (part coordinates) and an optional
+`name`. A vise or a plate is built around the stock's box in the setup's frame (on a mill4 or
+mill5 in a rotary position, in the part's own axes: it is bolted to the table and turns with the
+part), then written as boxes in part coordinates, which the `fixture` check, the operations'
+leads and plunges, and the Viewer use:
+
+| `type` | keys (mm; default) | what is built |
+| --- | --- | --- |
+| `vise` | `jaws_along` (`x` or `y`; across the stock's narrower side, `y` on a tie), `jaw_height_mm` (40), `grip_mm`, `parallels_mm`, `jaw_width_mm` (150), `jaw_thickness_mm` (20), `parallel_width_mm` (6), `floor_thickness_mm` (10), `name` | Two jaws on the stock's sides along `jaws_along` (`x`: its -X and +X sides), `jaw_width_mm` wide about its centre, standing on the vise's floor; the stock on two parallels `parallels_mm` tall (none at 0), under its edges along the jaws. `grip_mm`, how far the jaws reach up the stock, is `jaw_height_mm - parallels_mm`: any two give the third, and three must agree within 0.01 mm. With fewer than two the grip is 10 (at most half the stock's height). A grip of 0 or less holds nothing and is refused. |
+| `plate` | `thickness_mm` (12), `border_mm` (25), `name` | A plate under the stock, `border_mm` wider than it all round (a fixture plate, a spoilboard you must not cut). |
+
+The boxes are named after the fixture's `name` (or its type): `vise -Y jaw`, `vise +Y jaw`,
+`vise floor`, `vise -Y parallel`, `plate`. Every size the job did not state is listed in an
+`assumed_fixture` note ([checks.md](checks.md)); say which were assumed when you report, and ask
+for the real ones when the cut runs near them. A vise or plate is a mill's or a router's: a lathe
+or a cutting machine refuses one, and a setup turned onto a sloping face refuses one (its boxes
+would stand at an angle to the part's axes: give the jaws as boxes).
+
+```json
+"fixture": {"type": "vise", "jaws_along": "y", "jaw_height_mm": 40, "grip_mm": 8}
+```
 
 ## Operations
 

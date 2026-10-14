@@ -442,7 +442,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         operations_out.extend(ops)
         setups_out.append({
             "id": plan.setup.id, "plain": plan.setup.plain, "index": plan.setup.index,
-            "orientation": plan.setup.orientation, "wcs": plan.setup.wcs,
+            "orientation": _orientation_out(plan.setup.orientation), "wcs": plan.setup.wcs,
             "fixtures": [{"name": box.name or f"fixture {k + 1}", "min_mm": [round(float(v), 4) for v in box.min_mm],
                           "max_mm": [round(float(v), 4) for v in box.max_mm]}
                          for k, box in enumerate(plan.setup.fixtures)],
@@ -518,6 +518,13 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
                          adapted=tuple(adapted), warnings=tuple(warnings), timings=timings)
 
 
+def _orientation_out(orientation):
+    """A setup's orientation as the job wrote it: an axis word, a tilt, or a face's selector."""
+    from cadgen._internal.cam.wcs import FaceOrientation
+
+    return orientation.ref if isinstance(orientation, FaceOrientation) else orientation
+
+
 def _render_setup(post, plan, k, setup_plans, op_plans, tools, machine, document, parsed, tolerance, lite, by_index,
                   split, folder, extension) -> list:
     """One setup's posted files: ``[(setup id, tool label or None, final path, text)]``."""
@@ -577,9 +584,13 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     from cadgen._internal.cam.linking import Heights
     from cadgen._internal.cam.multiaxis import hold_rotary
     from cadgen._internal.cam.operations.base import PlanContext
-    from cadgen._internal.cam.wcs import build_wcs
+    from cadgen._internal.cam.wcs import build_wcs, with_face_orientations
+    from cadgen._internal.cam.workholding import holding_boxes
 
     logger = logger or CliLogger("cam")
+    # A setup turned onto a face reads that face's normal from the part (every setup, so an operation that names
+    # another setup's tool axis reads it too).
+    parsed = with_face_orientations(parsed, part)
     machine = parsed.machine
     tools = {tool.id: tool for tool in parsed.tools}
     tolerance = parsed.tolerance_mm
@@ -590,6 +601,10 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     index = 0
     for setup in parsed.setups:
         wcs = build_wcs(setup, stock_points=stock.vertices, part_points=part.vertices, machine=machine)
+        # A vise or a plate is built around the stock in this setup's frame: its boxes join the job's own.
+        held, assumed = holding_boxes(setup, wcs, stock.vertices)
+        if held:
+            setup = dataclasses.replace(setup, fixtures=setup.fixtures + held)
         part_w = wcs.to_wcs(part.vertices)
         stock_w = wcs.to_wcs(stock.vertices)
         top = float(stock_w[:, 2].max())
@@ -597,7 +612,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
                           part_top=float(part_w[:, 2].max()), stock_bottom=float(stock_w[:, 2].min()),
                           part_bottom=float(part_w[:, 2].min()))
         sections = Sections(part_w, part.triangles)
-        plan = SetupPlan(setup=setup, wcs=wcs, heights=heights, sections=sections)
+        plan = SetupPlan(setup=setup, wcs=wcs, heights=heights, sections=sections, fixture_assumed=assumed)
         position = (0.0, 0.0, heights.clearance)
         pieces = []
         current = {"tool": None, "rpm": None, "coolant": "off"}

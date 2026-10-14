@@ -39,7 +39,7 @@ FINDING_TYPES: dict[str, tuple[str, ...]] = {
     "travel": ("travel", "rotary_travel"),
     "corner_radius": ("corner_radius",),
     "material_left": ("material_left", "not_judged"),
-    "fixture": ("fixture",),
+    "fixture": ("fixture", "assumed_fixture"),
     "limits": ("limits",),
     "machine": ("machine_axes",),
     "empty_operation": ("empty_operation",),
@@ -47,6 +47,8 @@ FINDING_TYPES: dict[str, tuple[str, ...]] = {
     "long_stickout": ("long_stickout",),
     "full_slot": ("full_slot",),
     "prepared_hole": ("assumes_prepared_hole",),
+    "uncut_feature": ("uncut_feature",),
+    "thin_wall": ("thin_wall",),
     "unused_tool": ("unused_tool",),
     "drill": ("hole_size", "hole_floor", "tap_thread", "no_hole_in_model"),
 }
@@ -100,6 +102,9 @@ class SetupPlan:
     sections: Any = None            # geom2d.Sections of the part in this WCS
     t0: float = 0.0
     time_s: float = 0.0
+    #: Each vise or plate with a size the job did not state: ``{"fixture", "type", "assumed": {key: value}}``
+    #: (``workholding.holding_boxes``); the ``fixture`` check says them.
+    fixture_assumed: list = field(default_factory=list)
 
 
 @dataclass

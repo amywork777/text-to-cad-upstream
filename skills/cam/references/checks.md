@@ -22,7 +22,7 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | `reach` | error | the cut is deeper than the flutes or the stickout | a longer tool, or cut it from another side |
 | `rapid_into_stock` | error | a rapid move passes through uncut stock | raise `clearance_mm`, reorder operations |
 | `travel` | error | a move leaves the machine's travel (`machine.travel_mm`, `rotary_limits_deg`) | move `origin`, another setup |
-| `fixture` | error | a move enters a fixture keep-out box | change the region, move the part in the vise, another setup |
+| `fixture` | error | a move enters a fixture keep-out box (a box of the job's, or a vise's jaw, floor or parallel, or a plate: [job-file.md](job-file.md#fixture)); a tip resting on a box's top is no hit | change the region, move the part in the vise, another setup |
 | `machine` | error | an operation needs an axis or a process the machine does not have | another machine kind, or another operation |
 | `corner_radius` | warning | an inside corner is tighter than the tool's radius, so material stays in it | a smaller tool for those corners (`rest` or a second pocket), or accept the radius |
 | `material_left` | warning | stock is left above the part after every operation, beyond the `stock_to_leave_mm` of the last operation that covered that place (a roughing's allowance does not excuse what its finish left) | add a finishing or rest operation where it says |
@@ -32,7 +32,10 @@ setup, the operation's index, the point `at` in part mm, and the numbers).
 | `long_stickout` | warning | an end mill stands out of its holder more than 4 times its diameter: it deflects and chatters | hold it shorter (`stickout_mm`), or take lighter cuts; state the real stickout |
 | `full_slot` | warning | an operation cuts at the tool's full width for more than 5 of its diameters (a pocket's or adaptive clear's links from ring to ring); a `slot` is meant to | a smaller `stepdown_mm` or a lower `feed` is gentler; say it when the tool is small or the material hard |
 | `prepared_hole` | warning | `assumes_prepared_hole`: a tap or an internal thread mill works a hole no earlier operation makes (drills, bores or mills three quarters of the way down; a spot drill does not count), so the job assumes the hole is already there | add the drilling first (the tap drill for a tap), or confirm with the user the hole is made before the job runs |
+| `uncut_feature` | warning | a hole (along a setup's axis) or a pocket (its floor square to it) that a setup reaches and no operation cuts at least halfway down; holes of one size are one warning. Not judged on a blank from STEP | add the operation, or confirm with the user it stays as it is |
+| `thin_wall` | warning | a hole or pocket the job cuts leaves under 1 mm of wall to the part's outside, measured halfway down it: the wall bends away from the cutter and chatters | light finishing passes on it, support it, or check with the user the part needs it that thin |
 | `unused_tool` | info | a tool the job lists that no operation runs: it is not drawn, checked or posted | drop it, or check each operation's `tool` is the one meant |
+| `fixture` (`assumed_fixture`) | info | a vise or plate was modelled with sizes the job does not state; it names each with the default used (`Setup top's vise is modelled with sizes the job does not state: jaws_along y, jaw_height_mm 40, ...`) | state the real sizes in the setup's `fixture` |
 
 ### Operations that cannot be planned, and posts that cannot write them
 
@@ -71,7 +74,8 @@ The `type`s are a closed set, so an agent can act on one by name:
 | `machine` | `machine_axes` |
 | `drill` | `hole_size`, `hole_floor`, `tap_thread`, `no_hole_in_model` ([drilling.md](drilling.md#what-it-checks)) |
 | `prepared_hole` | `assumes_prepared_hole` |
-| every other check | its own name: `rapid_into_stock`, `corner_radius`, `fixture`, `limits`, `empty_operation`, `through_stock_bottom`, `long_stickout`, `full_slot`, `unused_tool` |
+| `fixture` | `fixture`, `assumed_fixture` (info: the vise or plate sizes it assumed) |
+| every other check | its own name: `rapid_into_stock`, `corner_radius`, `limits`, `empty_operation`, `through_stock_bottom`, `long_stickout`, `full_slot`, `uncut_feature`, `thin_wall`, `unused_tool` |
 
 ## What a check could not judge
 
@@ -93,7 +97,8 @@ the job's tolerance, only the simulation and checks are coarser.
 
 ## What the checks do not cover
 
-The checks know the part, the stock, the tools and the boxes you gave. They do not know the
+The checks know the part, the stock, the tools and the boxes you gave (or the vise or plate built
+from the sizes you gave, and the defaults the `assumed_fixture` note lists). They do not know the
 user's real vise, clamps, tool lengths, work offsets, machine kinematics beyond the job, or whether
 the stock is held well enough for the cut. Say so, and say that the program must be air-cut or run
 single-block first.

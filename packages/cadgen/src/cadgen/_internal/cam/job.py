@@ -32,13 +32,29 @@ from cadgen._internal.cam.operations import entry_for as operation_entry
 from cadgen._internal.cam.operations import get_operation
 from cadgen._internal.cam.tools import Tool, parse_tool
 
-__all__ = ["CamJobError", "Fixture", "Job", "Machine", "Material", "OpSpec", "Setup", "StockSpec", "load_job",
-           "parse_job", "MACHINE_KINDS", "ORIENTATIONS", "ORIGINS", "COOLANTS"]
+__all__ = ["CamJobError", "Fixture", "Holding", "Job", "Machine", "Material", "OpSpec", "Setup", "StockSpec",
+           "load_job", "parse_job", "FIXTURE_KEYS", "MACHINE_KINDS", "ORIENTATIONS", "ORIGINS", "COOLANTS"]
 
 MACHINE_KINDS = ("mill", "mill4", "mill5", "lathe", "laser", "plasma", "waterjet", "router", "wire_edm")
 #: mill5 kinematics: an A+C trunnion table, or a B+C head over a C table.
 KINEMATICS = ("ac_trunnion", "bc_head")
 ORIENTATIONS = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
+#: The machines a setup may be turned onto a face of the part (``"orientation": "#o1.f4"``): the tool looks down the
+#: face's outward normal (``wcs.with_face_orientations``).
+FACE_ORIENTATION_KINDS = ("mill", "mill4", "mill5", "router")
+#: A setup's fixture: a keep-out box in part coordinates (no ``type``, or ``"box"``), or a fixture modelled around the
+#: stock in the setup's frame and compiled to boxes where the stock and the WCS are known (``workholding.py``). The
+#: keys each takes; a size it leaves out is a default, said in an ``assumed_fixture`` finding.
+FIXTURE_KEYS = {
+    "box": ("type", "name", "min_mm", "max_mm"),
+    "vise": ("type", "name", "jaws_along", "jaw_height_mm", "grip_mm", "parallels_mm", "jaw_width_mm",
+             "jaw_thickness_mm", "parallel_width_mm", "floor_thickness_mm"),
+    "plate": ("type", "name", "thickness_mm", "border_mm"),
+}
+#: The machines a vise or a plate holds work on.
+HOLDING_KINDS = ("mill", "mill4", "mill5", "router")
+#: How closely a vise's stated ``grip_mm`` must agree with ``jaw_height_mm - parallels_mm``, mm.
+VISE_AGREE_MM = 0.01
 #: Where a setup's WCS zero sits: the stock's or the part's box, at its top, middle or bottom, at the centre of that
 #: face or its corner (min X, min Y, in the setup's WCS); or a part point ``{"xyz": [x, y, z]}`` (``[x, y, z]``).
 ORIGINS = ("stock-top-center", "stock-top-corner", "stock-center", "stock-bottom-center", "stock-bottom-corner",
@@ -192,6 +208,18 @@ class Fixture:
 
 
 @dataclass(frozen=True)
+class Holding:
+    """A vise or a plate as the job wrote it: ``stated`` holds the keys it gave (sizes in mm, a vise's ``jaws_along``
+    ``"x"``/``"y"``); the rest are defaults taken where the stock and the setup's frame are known
+    (:func:`~cadgen._internal.cam.workholding.holding_boxes`), which compiles it to :class:`Fixture` boxes."""
+
+    type: str
+    stated: dict
+    name: str = ""
+    where: str = ""
+
+
+@dataclass(frozen=True)
 class OpSpec:
     """One operation as the job wrote it: the shared keys parsed, the operation's own keys in ``extra``."""
 
@@ -223,7 +251,8 @@ class OpSpec:
 class Setup:
     id: str
     plain: str
-    #: ``+Z`` .. ``-Y``, or a 3+2 tilt ``{"a_deg": .., "c_deg": ..}`` (a dict).
+    #: ``+Z`` .. ``-Y``, a 3+2 tilt ``{"a_deg": .., "c_deg": ..}`` (a dict), or a planar face's selector (``#o1.f4``,
+    #: a str), which the plan resolves against the part to a :class:`~cadgen._internal.cam.wcs.FaceOrientation`.
     orientation: object
     #: One of :data:`ORIGINS`, or ``{"xyz": (x, y, z)}`` in part mm (a bare ``[x, y, z]`` in the job).
     origin: object
@@ -231,8 +260,11 @@ class Setup:
     wcs: str = "G54"
     clearance_mm: float = 5.0
     retract_mm: float = 2.0
+    #: Keep-out boxes in part coordinates: the job's own, then (once planned) each :class:`Holding`'s compiled.
     fixtures: tuple[Fixture, ...] = ()
     index: int = 0
+    #: The vises and plates the job names, in its order; ``plan_setups`` adds their boxes to ``fixtures``.
+    holding: tuple[Holding, ...] = ()
 
     @property
     def tilted(self) -> bool:
@@ -604,26 +636,13 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
 
         # What the machine's rotary axes (and machine.rotary_limits_deg) can reach; every axis it has, named.
         orientation = check_orientation(orientation, machine, f"{where}.orientation")
+    elif isinstance(orientation, str) and "#" in orientation:
+        orientation = _face_orientation(orientation, f"{where}.orientation", machine)
     else:
         orientation = choice(orientation, ORIENTATIONS, f"{where}.orientation")
     origin = _origin(raw.get("origin", "stock-top-center"), f"{where}.origin", machine)
     wcs = choice(raw.get("wcs", WORK_OFFSETS[min(index, 5)]), WORK_OFFSETS, f"{where}.wcs")
-    fixtures_raw = raw.get("fixture", [])
-    if isinstance(fixtures_raw, dict):
-        fixtures_raw = [fixtures_raw]
-    if not isinstance(fixtures_raw, list):
-        raise CamJobError(f"{where}.fixture must be a box {{\"min_mm\": [x, y, z], \"max_mm\": [x, y, z]}} or a list")
-    fixtures = []
-    for i, box in enumerate(fixtures_raw):
-        at = f"{where}.fixture[{i}]"
-        if not isinstance(box, dict):
-            raise CamJobError(f"{at} must be {{\"min_mm\": [x, y, z], \"max_mm\": [x, y, z]}} in part coordinates")
-        check_keys(box, ("min_mm", "max_mm", "name"), at)
-        low = number_list(box.get("min_mm"), f"{at}.min_mm", length=3)
-        high = number_list(box.get("max_mm"), f"{at}.max_mm", length=3)
-        if any(h <= lo for lo, h in zip(low, high)):
-            raise CamJobError(f"{at}: max_mm must be more than min_mm on every axis")
-        fixtures.append(Fixture(low, high, str(box.get("name", ""))))
+    fixtures, holding = _fixtures(raw.get("fixture", []), f"{where}.fixture", machine)
     clearance, retract = _heights(raw, where, 5.0, 2.0)
     ops_raw = raw.get("operations")
     if not isinstance(ops_raw, list) or not ops_raw:
@@ -635,8 +654,101 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
         raise CamJobError(f"{where}.name must be text")
     return Setup(
         id=setup_id, plain=plain, orientation=orientation, origin=origin, operations=operations, wcs=wcs,
-        clearance_mm=clearance, retract_mm=retract, fixtures=tuple(fixtures), index=index,
+        clearance_mm=clearance, retract_mm=retract, fixtures=tuple(fixtures), index=index, holding=tuple(holding),
     )
+
+
+def _face_orientation(value: str, where: str, machine: Machine) -> str:
+    """A setup turned onto a face (``#o1.f4``): a planar face's selector, kept as written; the plan reads the face's
+    outward normal from the part (``wcs.with_face_orientations``), and refuses one that is not planar."""
+    if machine.kind not in FACE_ORIENTATION_KINDS:
+        held = ("a lathe's setup is its spindle axis" if machine.kind == "lathe"
+                else f"a {machine.kind} cuts through the sheet lying flat")
+        raise CamJobError(f"{where} is {shown(value)}, a face: {held}, so it cannot be turned onto a face; "
+                          "remove orientation (or use +Z)")
+    if re.search(r"\.[ev]\d+$", value):
+        what = "an edge" if re.search(r"\.e\d+$", value) else "a vertex"
+        raise CamJobError(f"{where} is {shown(value)}, {what}: a setup looks down a flat face's outward normal, so "
+                          "name a planar face (#o1.f4; cadgen cam features lists them)")
+    if not _REF.match(value):
+        raise CamJobError(f"{where} is {shown(value)}; use one of {', '.join(ORIENTATIONS)}, a planar face's "
+                          "selector like \"#o1.f4\", or a tilt {\"a_deg\": .., \"c_deg\": ..} on a mill4 or mill5")
+    return value
+
+
+def _fixtures(value: object, where: str, machine: Machine) -> tuple[list[Fixture], list[Holding]]:
+    """A setup's ``fixture``: one entry or a list. A box (no ``type``, or ``"box"``) in part coordinates, or a
+    ``vise`` or ``plate`` (:class:`Holding`, compiled to boxes by the plan)."""
+    entries = [value] if isinstance(value, dict) else value
+    if not isinstance(entries, list):
+        raise CamJobError(f"{where} must be a box {{\"min_mm\": [x, y, z], \"max_mm\": [x, y, z]}}, a vise "
+                          "{\"type\": \"vise\"}, a plate {\"type\": \"plate\"}, or a list of them")
+    boxes, holding = [], []
+    for i, entry in enumerate(entries):
+        at = f"{where}[{i}]"
+        if not isinstance(entry, dict):
+            raise CamJobError(f"{at} must be a box {{\"min_mm\": [x, y, z], \"max_mm\": [x, y, z]}} in part "
+                              "coordinates, or a vise or plate {\"type\": \"vise\"}")
+        kind = entry.get("type", "box")
+        if kind in ("chuck", "collet"):
+            raise CamJobError(f"{at}.type is {kind!r}: cadgen does not model a {kind} (a lathe's bar behind the part, "
+                              "where it is held, is already kept from every tool); on a mill give its jaws as boxes "
+                              "{\"min_mm\", \"max_mm\"} in part coordinates")
+        kind = choice(kind, tuple(FIXTURE_KEYS), f"{at}.type")
+        check_keys(entry, FIXTURE_KEYS[kind], at, hint=f"a {kind}")
+        name = entry.get("name", "")
+        if not isinstance(name, str):
+            raise CamJobError(f"{at}.name must be text")
+        if kind == "box":
+            low = number_list(entry.get("min_mm"), f"{at}.min_mm", length=3)
+            high = number_list(entry.get("max_mm"), f"{at}.max_mm", length=3)
+            if any(h <= lo for lo, h in zip(low, high)):
+                raise CamJobError(f"{at}: max_mm must be more than min_mm on every axis")
+            boxes.append(Fixture(low, high, name))
+            continue
+        if machine.kind not in HOLDING_KINDS:
+            held = ("a lathe holds its bar in the chuck, and the bar behind the part is already kept from every tool"
+                    if machine.kind == "lathe" else f"a {machine.kind} cuts a sheet lying flat on its bed")
+            raise CamJobError(f"{at}: {held}; a {kind} is a mill's or a router's, so remove it (a box "
+                              "{\"min_mm\", \"max_mm\"} marks anything else the tool must keep out of)")
+        holding.append(Holding(kind, _holding_sizes(entry, kind, at), name, at))
+    return boxes, holding
+
+
+def _holding_sizes(entry: dict, kind: str, at: str) -> dict:
+    """The sizes a vise or plate states, checked (mm, each over 0; a vise's parallels may be 0). A vise's
+    ``grip_mm`` (how far its jaws reach up the stock's sides) is ``jaw_height_mm - parallels_mm``: any two give the
+    third, three must agree within :data:`VISE_AGREE_MM`, and a grip of 0 or less holds nothing."""
+    stated: dict = {}
+    for key in FIXTURE_KEYS[kind]:
+        if key in ("type", "name") or key not in entry:
+            continue
+        if key == "jaws_along":
+            stated[key] = choice(entry[key], ("x", "y"), f"{at}.jaws_along")
+        elif key == "parallels_mm":
+            stated[key] = read_number(entry, key, at, minimum=0.0, maximum=MAX_STOCK_MM)
+        elif key == "grip_mm":
+            stated[key] = read_number(entry, key, at, inclusive=True, maximum=MAX_STOCK_MM)
+        else:
+            stated[key] = read_number(entry, key, at, maximum=MAX_STOCK_MM)
+    if kind != "vise":
+        return stated
+    height, grip, parallels = (stated.get(k) for k in ("jaw_height_mm", "grip_mm", "parallels_mm"))
+    if grip is not None and grip <= 0:
+        raise CamJobError(f"{at}.grip_mm is {grip:g}: the jaws would hold none of the stock; grip_mm is how far "
+                          "they reach up its sides, more than 0")
+    if height is not None and parallels is not None:
+        if grip is None and height - parallels <= 0:
+            raise CamJobError(f"{at}: the jaws ({height:g} mm) are no taller than the parallels ({parallels:g} mm), "
+                              "so they hold none of the stock; raise jaw_height_mm or lower parallels_mm")
+        if grip is not None and abs(height - parallels - grip) > VISE_AGREE_MM:
+            raise CamJobError(f"{at}: grip_mm ({grip:g}) must be jaw_height_mm ({height:g}) less parallels_mm "
+                              f"({parallels:g}), {height - parallels:g}: the jaws' top stands that far over the "
+                              "stock's bottom; state two of the three")
+    elif height is not None and grip is not None and grip > height:
+        raise CamJobError(f"{at}: grip_mm ({grip:g}) is more than jaw_height_mm ({height:g}): the stock rests on the "
+                          "vise's floor at the lowest, so the jaws reach at most their own height up it")
+    return stated
 
 
 def _heights(raw: dict, where: str, clearance: float, retract: float) -> tuple[float, float]:
@@ -676,6 +788,8 @@ def _origin(value: object, where: str, machine: Machine) -> object:
 def _plain_orientation(orientation: object) -> str:
     if isinstance(orientation, dict):
         return "Tilted " + " ".join(f"{k[0].upper()}{v:g}°" for k, v in orientation.items() if v)
+    if "#" in orientation:
+        return f"Face {orientation} up"
     return {"+Z": "Top", "-Z": "Bottom", "+X": "Right", "-X": "Left", "+Y": "Back", "-Y": "Front"}[orientation]
 
 

@@ -98,7 +98,8 @@ class Registries(unittest.TestCase):
 
         self.assertEqual(("gouge", "holder_collision", "reach", "rapid_into_stock", "travel", "corner_radius",
                           "material_left", "fixture", "limits", "machine", "empty_operation", "through_stock_bottom",
-                          "long_stickout", "full_slot", "prepared_hole", "unused_tool"), CHECK_NAMES)
+                          "long_stickout", "full_slot", "prepared_hole", "uncut_feature", "thin_wall", "unused_tool"),
+                         CHECK_NAMES)
         ctx = SimpleNamespace(job=parse_job(JOB), part=None, stock=None, sim=None, sim_reports={}, setups=[], ops=[],
                               tolerance_mm=0.01)
         findings, ran, skipped = run_checks(ctx)
@@ -111,7 +112,7 @@ class Registries(unittest.TestCase):
         from cadgen._internal.cam.job_errors import CamJobError
         from cadgen._internal.cam.operations import OPERATION_NAMES, REGISTRY, available, get_operation
 
-        self.assertEqual(30, len(OPERATION_NAMES))
+        self.assertEqual(31, len(OPERATION_NAMES))
         missing = [name for name in OPERATION_NAMES if not available(name)]
         if missing:
             with self.assertRaises(CamJobError) as caught:
