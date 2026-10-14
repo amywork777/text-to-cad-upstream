@@ -232,8 +232,7 @@ class Tool:
 
     def as_dict(self) -> dict:
         """The tool as the GLB's extras and the Results carry it: every set field, plus ``plain``."""
-        out = {key: value for key, value in asdict(self).items() if value not in (0.0, "", None, ())
-               and key != "assumed"}
+        out = {key: value for key, value in asdict(self).items() if value not in (0.0, "", None) and key != "assumed"}
         out.update({"id": self.id, "type": self.type, "number": self.number, "plain": self.plain,
                     "diameter_mm": self.diameter_mm})
         return out
@@ -241,6 +240,16 @@ class Tool:
 
 def _num(value: float) -> str:
     return f"{value:g}"
+
+
+def _assumed_lengths(raw: dict, family: str, thinner_shank: bool) -> tuple[str, ...]:
+    """The milling tool lengths ``raw`` leaves to the catalogue (the shank only where it differs from the cutter)."""
+    if family != "mill":
+        return ()
+    unstated = [key for key in ("flute_length_mm", "stickout_mm") if key not in raw]
+    if thinner_shank and "shank_diameter_mm" not in raw:
+        unstated.append("shank_diameter_mm")
+    return tuple(unstated)
 
 
 def parse_tool(raw: object, position: int, *, where: str | None = None) -> Tool:
@@ -333,10 +342,7 @@ def parse_tool(raw: object, position: int, *, where: str | None = None) -> Tool:
         kerf_mm=read_number(raw, "kerf_mm", where, default=0.0),
         hand=choice(raw["hand"], ("right", "left"), f"{where}.hand") if "hand" in raw else "",
         pilot_diameter_mm=pilot,
-        assumed=tuple(key for key, unstated in (
-            ("flute_length_mm", "flute_length_mm" not in raw), ("stickout_mm", "stickout_mm" not in raw),
-            ("shank_diameter_mm", "shank_diameter_mm" not in raw and shank_default != diameter))
-            if unstated and family == "mill"),
+        assumed=_assumed_lengths(raw, family, shank_default != diameter),
     )
     for key in TOOL_LENGTHS:
         value = getattr(tool, key)

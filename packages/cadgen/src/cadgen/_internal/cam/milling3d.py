@@ -213,6 +213,14 @@ def slopes(points_xy, tool, mesh, *, leave: float, floor: float, step: float):
 #: The last replays, so the next operation of the same job cuts only what was planned since: (stock, part, cell) ->
 #: (stock, simulator, the toolpaths it has cut).
 _REPLAYS: dict = {}
+#: How many replays are kept: a job's clearing grids, its default one and a second tool's do not evict each other.
+REPLAYS_KEPT = 4
+
+
+def fine_cell(radius: float) -> float:
+    """The stock grid an adaptive clear reads the stock as it stands on: a tenth of the tool's radius, 0.2 to 0.5 mm
+    (finer costs the replay of every earlier operation far more than it gains)."""
+    return min(0.5, max(0.2, radius / 10.0))
 
 
 class StockNow:
@@ -230,6 +238,9 @@ class StockNow:
         self.cell = float(cell or min(1.0, max(0.2, radius / 3.0)))
         self.sim = None
         self._dilated: dict = {}
+        self._ends = None
+        self._part_face = None
+        self._standing: dict = {}
         if not self.available:
             return
         history = list(getattr(ctx, "history", ()) or ())
@@ -245,7 +256,7 @@ class StockNow:
         # Operations replayed for an earlier one are not replayed again: only what is new is cut.
         for wcs, path in history[done:]:
             sim.cut(path, tools, wcs)
-        if len(_REPLAYS) >= 2 and key not in _REPLAYS:
+        if len(_REPLAYS) >= REPLAYS_KEPT and key not in _REPLAYS:
             _REPLAYS.pop(next(iter(_REPLAYS)))
         _REPLAYS[key] = (ctx.stock, sim, [path for _, path in history])
         self.sim = sim
@@ -282,10 +293,8 @@ class StockNow:
         points = np.asarray(points_xy, dtype=float).reshape(-1, 2)
         if self.sim is None:
             return np.full(len(points), np.inf)
-        part = self.wcs.from_wcs(np.column_stack([points, np.zeros(len(points))]))
         sim = self.sim
-        i = np.floor((part[:, 0] - sim.x0) / sim.cell).astype(np.int64)
-        j = np.floor((part[:, 1] - sim.y0) / sim.cell).astype(np.int64)
+        part, i, j = self._cell_index(points)
         grid = self._grid_dilated(radius + sim.cell)
         # Off the grid (it ends at the stock's edge): a point within ``radius`` of the grid still has stock within
         # ``radius`` of it, and the nearest cell's dilation holds it; only a point farther out sees none. (A point a
@@ -301,22 +310,26 @@ class StockNow:
         wcs_z = self.wcs.to_wcs(np.column_stack([part[:, :2], part_z]))[:, 2]
         return np.where(far, -np.inf, wcs_z)
 
-    def _cells_xy(self):
-        """Every cell's centre (part coordinates), flattened in the grid's order."""
+    def _cell_index(self, points):
+        """WCS points (N, 2) as part coordinates and the indices of the cells they fall in."""
         sim = self.sim
-        i, j = np.meshgrid(np.arange(sim.nx), np.arange(sim.ny), indexing="ij")
-        return (sim.x0 + (i + 0.5) * sim.cell).ravel(), (sim.y0 + (j + 0.5) * sim.cell).ravel()
+        part = self.wcs.from_wcs(np.column_stack([points, np.zeros(len(points))]))
+        i = np.floor((part[:, 0] - sim.x0) / sim.cell).astype(np.int64)
+        j = np.floor((part[:, 1] - sim.y0) / sim.cell).astype(np.int64)
+        return part, i, j
 
     def _wcs_heights(self, heights):
         """A grid of part heights as WCS z (``nan`` kept)."""
-        x, y = self._cells_xy()
+        sim = self.sim
+        i, j = np.meshgrid(np.arange(sim.nx), np.arange(sim.ny), indexing="ij")
+        x, y = (sim.x0 + (i + 0.5) * sim.cell).ravel(), (sim.y0 + (j + 0.5) * sim.cell).ravel()
         z = self.wcs.to_wcs(np.column_stack([x, y, np.nan_to_num(heights.ravel())]))[:, 2]
         return np.where(np.isnan(heights.ravel()), np.nan, z).reshape(heights.shape)
 
     def _wcs_ends(self):
         """Each cell's material toward the tool and away from it, as WCS z (the surface, then the far end); ``nan``
         where the stock is cut through."""
-        if getattr(self, "_ends", None) is None:
+        if self._ends is None:
             sim = self.sim
             exists = sim.top > sim.bottom + 1e-9
             near, far = (sim.top, sim.bottom) if self.direction > 0 else (sim.bottom, sim.top)
@@ -324,49 +337,61 @@ class StockNow:
         return self._ends
 
     def _at(self, grid, points_xy):
-        """``grid``'s value in the cell under each WCS point; ``-inf`` off the grid or where it is ``nan``."""
+        """``grid``'s value in the cell under each WCS point; ``-inf`` off the grid, where it is ``nan``, or outside
+        the stock's outline (a cell along the stock's edge reaches past it)."""
         sim = self.sim
         points = np.asarray(points_xy, dtype=float).reshape(-1, 2)
-        part = self.wcs.from_wcs(np.column_stack([points, np.zeros(len(points))]))
-        i = np.floor((part[:, 0] - sim.x0) / sim.cell).astype(np.int64)
-        j = np.floor((part[:, 1] - sim.y0) / sim.cell).astype(np.int64)
+        _, i, j = self._cell_index(points)
         on = (i >= 0) & (i < sim.nx) & (j >= 0) & (j < sim.ny)
+        on &= shapely.contains_xy(self.ctx.stock_outline, points[:, 0], points[:, 1])
         out = np.full(len(points), -np.inf)
         values = grid[i[on], j[on]]
         out[on] = np.where(np.isnan(values), -np.inf, values)
         return out
 
     def surface_at(self, points_xy):
-        """The stock's face toward the tool (WCS z) under each WCS point, from the cell it falls in; ``-inf`` off
-        the stock or where it is cut through. None when this setup is not simulated."""
+        """The stock's face toward the tool (WCS z) under each WCS point; ``-inf`` off the stock or where it is cut
+        through. Where this setup is not simulated, the stock's top over its outline."""
         if self.sim is None:
-            return None
+            points = np.asarray(points_xy, dtype=float).reshape(-1, 2)
+            inside = shapely.contains_xy(self.ctx.stock_outline, points[:, 0], points[:, 1])
+            return np.where(inside, self.ctx.heights.stock_top, -np.inf)
         return self._at(self._wcs_ends()[0], points_xy)
 
     def part_surface_at(self, points_xy):
-        """The part's face toward the tool (WCS z) under each WCS point, from the cell it falls in; ``-inf`` where the
-        part has no material. None when this setup is not simulated."""
+        """The part's face toward the tool (WCS z) under each WCS point; ``-inf`` where the part has no material, and
+        everywhere where this setup is not simulated."""
         if self.sim is None:
-            return None
-        if getattr(self, "_part_face", None) is None:
+            return np.full(len(np.asarray(points_xy, dtype=float).reshape(-1, 2)), -np.inf)
+        if self._part_face is None:
             part_top, part_bottom = self.sim._part(self.ctx.part)
             self._part_face = self._wcs_heights(part_top if self.direction > 0 else part_bottom)
         return self._at(self._part_face, points_xy)
 
-    def standing(self, z: float, *, hair: float = 0.01):
-        """Where stock stands across the WCS level ``z`` (more than ``hair`` over it, its far end under it), as WCS XY
-        polygons grown by a cell: every cell that holds material counts whole, none is cleaned away, so a thin wall
-        left by an earlier cut is never taken for air. None when this setup is not simulated."""
+    def standing(self, z: float, *, part=None, leave: float = 0.0, hair: float = 0.01):
+        """Where stock stands across the WCS level ``z`` (more than ``hair`` over it, its far end under it) that an
+        operation may cut, as WCS XY polygons: every cell that holds material counts whole and is grown by a cell, so
+        a thin wall left by an earlier cut is never taken for air, and none reaches past the stock's outline. ``part``
+        (its section at the level, WCS) and the stock to leave on it are taken out. Where this setup is not simulated,
+        the whole stock's outline."""
         if self.sim is None:
-            return None
-        near, far = self._wcs_ends()
-        with np.errstate(invalid="ignore"):
-            mask = (near > z + hair) & (far < z)
-        if not mask.any():
-            return shapely.Polygon()
-        shape = mask_polygons(mask, self.sim.x0, self.sim.y0, self.sim.cell, transform=self._to_wcs_xy, clean=False)
-        # Grown by a cell to be safe where an earlier cut ends, never past the stock's own outline.
-        return shape.buffer(self.sim.cell, quad_segs=2).intersection(self.ctx.stock_outline)
+            shape = self.ctx.stock_outline
+        else:
+            near, far = self._wcs_ends()
+            with np.errstate(invalid="ignore"):
+                mask = (near > z + hair) & (far < z)
+            key = mask.tobytes()
+            if key not in self._standing:
+                shape = shapely.Polygon()
+                if mask.any():
+                    shape = mask_polygons(mask, self.sim.x0, self.sim.y0, self.sim.cell, transform=self._to_wcs_xy,
+                                          clean=False).buffer(self.sim.cell, quad_segs=2)
+                    shape = shape.intersection(self.ctx.stock_outline)
+                self._standing[key] = shape
+            shape = self._standing[key]
+        if part is not None and not part.is_empty and not shape.is_empty:
+            shape = shape.difference(geom2d.offset(part, leave + self.cell, tolerance=self.ctx.tolerance_mm))
+        return shape
 
     def rest_area(self, *, threshold: float):
         """Where the stock stands more than ``threshold`` over the part (WCS XY polygons), or None when this setup is

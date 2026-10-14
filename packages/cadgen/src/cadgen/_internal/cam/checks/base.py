@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-__all__ = ["CheckContext", "FINDING_TYPES", "OpPlan", "SetupPlan", "by_severity", "finding", "xyz"]
+__all__ = ["CheckContext", "FINDING_TYPES", "OpPlan", "SetupPlan", "assumed_lengths", "by_severity", "finding", "xyz"]
 
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 
@@ -52,6 +52,12 @@ FINDING_TYPES: dict[str, tuple[str, ...]] = {
     "unused_tool": ("unused_tool",),
     "drill": ("hole_size", "hole_floor", "tap_thread", "no_hole_in_model"),
 }
+
+
+def assumed_lengths(tool, keys) -> list[str]:
+    """The lengths among ``keys`` the job left to the catalogue (``Tool.assumed``). A finding that stands on one is a
+    ``not_judged`` warning, never an error built on a guess."""
+    return [key for key in keys if key in tool.assumed]
 
 
 def finding(check: str, severity: str, kind: str, summary: str, description: str = "", items=()) -> dict:

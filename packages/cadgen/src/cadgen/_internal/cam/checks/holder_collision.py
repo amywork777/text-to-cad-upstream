@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.checks.base import finding, xyz
+from cadgen._internal.cam.checks.base import assumed_lengths, finding, xyz
 
 __all__ = ["run"]
 
@@ -103,7 +103,7 @@ def _finding(op, name, what, depth, count, at, radius):
            "this from another setup")
     items = [{"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3), "count": count, "at": xyz(at),
               "diameter_mm": round(2 * radius, 4)}]
-    guessed = [key for key in _LENGTHS[word] if key in getattr(tool, "assumed", ())]
+    guessed = assumed_lengths(tool, _LENGTHS[word])
     if guessed:
         # The cylinder stands where a length the job left out puts it: not a collision the plan can stand behind.
         return finding(

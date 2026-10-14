@@ -24,18 +24,19 @@ in a file would (tuples become lists, NaN is refused) and nothing parsed shares 
 
 from __future__ import annotations
 
-import difflib
 import json
 import math
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from cadgen._internal.cam import machines
 from cadgen._internal.cam import posts as post_registry
-from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number, shown
+from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, is_number, number_list, read_number, shown
 from cadgen._internal.cam.operations import available as operation_built
 from cadgen._internal.cam.operations import entry_for as operation_entry
 from cadgen._internal.cam.operations import get_operation
+from cadgen._internal.cam.operations.drill import DEFAULT_CYCLE
 from cadgen._internal.cam.tools import Tool, parse_tool
 
 __all__ = ["CamJobError", "Fixture", "Holding", "Job", "Machine", "Material", "OpSpec", "Setup", "StockSpec",
@@ -135,9 +136,6 @@ class Machine:
     #: Whether the controller taps rigidly; ``None``: not known, so a tap that does not say keeps the controller's own
     #: tapping cycle (operations/drill.py), and the plan lists that as assumed.
     rigid_tap: bool | None = None
-    #: The model's tool changer (``none``, ``manual``, ``atc``) and its pockets, for the record.
-    tool_changer: str | None = None
-    tool_capacity: int | None = None
 
     @property
     def axes(self) -> str:
@@ -150,11 +148,15 @@ class Machine:
     def as_dict(self) -> dict:
         out = {"kind": self.kind, "post": self.post, "axes": self.axes, "rapid_mm_min": self.rapid_mm_min,
                "tool_change_s": self.tool_change_s}
-        for key in ("model", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "kinematics", "rigid_tap",
-                    "tool_changer", "tool_capacity"):
+        for key in ("model", "name", "travel_mm", "min_rpm", "max_rpm", "max_feed_mm_min", "kinematics", "rigid_tap"):
             value = getattr(self, key)
             if value not in (None, ""):
                 out[key] = list(value) if isinstance(value, tuple) else value
+        # The model's tool changer (none, manual, atc) and its pockets, for the record.
+        model = machines.MODELS.get(self.model) if self.model else None
+        for key in ("tool_changer", "tool_capacity"):
+            if model is not None and getattr(model, key) is not None:
+                out[key] = getattr(model, key)
         if self.rotary_limits_deg:
             out["rotary_limits_deg"] = {k: list(v) for k, v in self.rotary_limits_deg.items()}
         out.update(self.post_options)
@@ -333,22 +335,8 @@ def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
         if not path.is_file():
             what = "a folder" if path.is_dir() else "no job file"
             raise CamJobError(f"{what} at {path}; pass a JSON file path or inline JSON")
-        try:
-            text, base = path.read_text(encoding="utf-8"), path.resolve().parent
-        except UnicodeDecodeError:
-            raise CamJobError(f"the job file {path.name} is not UTF-8 text; save it as UTF-8 JSON") from None
-        except OSError as exc:
-            raise CamJobError(f"the job file {path.name} cannot be read ({exc.strerror or exc})") from None
-    try:
-        raw = json.loads(text, parse_constant=_refuse_constant)
-    except _NotANumber as exc:
-        raise CamJobError(f"the job is not valid JSON: {exc}") from None
-    except json.JSONDecodeError as exc:
-        raise CamJobError(f"the job is not valid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}") from None
-    except RecursionError:
-        raise CamJobError("the job is not a job: its JSON nests too deeply to read") from None
-    except ValueError as exc:   # an integer longer than Python reads (sys.get_int_max_str_digits)
-        raise CamJobError(f"the job is not valid JSON: {exc}") from None
+        text, base = _read_text(path, "the job file"), path.resolve().parent
+    raw = _parse_json(text, "the job")
     if not isinstance(raw, dict):
         raise CamJobError("the job must be a JSON object with machine, material, stock, tools and setups")
     return raw, base
@@ -356,6 +344,30 @@ def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
 
 class _NotANumber(ValueError):
     pass
+
+
+def _read_text(path: Path, what: str) -> str:
+    """A UTF-8 file's text, or the teaching refusal naming ``what`` (``the job file``, ``the tool library``)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise CamJobError(f"{what} {path.name} is not UTF-8 text; save it as UTF-8 JSON") from None
+    except OSError as exc:
+        raise CamJobError(f"{what} {path.name} cannot be read ({exc.strerror or exc})") from None
+
+
+def _parse_json(text: str, what: str):
+    """The JSON value in ``text``, or the teaching refusal naming ``what``: NaN and Infinity are not numbers here."""
+    try:
+        return json.loads(text, parse_constant=_refuse_constant)
+    except _NotANumber as exc:
+        raise CamJobError(f"{what} is not valid JSON: {exc}") from None
+    except json.JSONDecodeError as exc:
+        raise CamJobError(f"{what} is not valid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}") from None
+    except RecursionError:
+        raise CamJobError(f"{what} is not valid JSON: it nests too deeply to read") from None
+    except ValueError as exc:   # an integer longer than Python reads (sys.get_int_max_str_digits)
+        raise CamJobError(f"{what} is not valid JSON: {exc}") from None
 
 
 def _refuse_constant(name: str):
@@ -416,38 +428,43 @@ def _assumed(key: str, value: object, why: str) -> dict:
     return {"key": key, "value": list(value) if isinstance(value, tuple) else value, "why": why}
 
 
-def _post_option_default(post: str, key: str):
-    """A post's own default for one of its machine keys (grbl's ``spindle_spinup_s``), or None."""
-    import importlib
-
-    entry = post_registry.REGISTRY.get(post)
-    if entry is None or not post_registry.available(post):
-        return None
-    spec = getattr(importlib.import_module(entry.module), entry.cls).options.get(key)
-    return spec.get("default") if isinstance(spec, dict) else None
-
-
 def _machine(raw: object) -> tuple[Machine, list[dict]]:
     """The machine and what it assumes. A ``model`` fills in what the job leaves out (the job's keys win); what
     neither states takes the kind's generic value (``machines.GENERIC``), each listed as assumed."""
-    from cadgen._internal.cam import machines
-
     if not isinstance(raw, dict):
         raise CamJobError("machine must be an object like {\"kind\": \"mill\"} or {\"model\": \"haas-vf-2\"}")
+    model, kind, stated, machine_raw = _merged_machine(raw)
+    assumed = _fill_generic(machine_raw, kind, model, stated)
+    post = machine_raw["post"]
+    assumed = _job_guesses(raw, stated) + assumed
+    machine = _machine_keys(machine_raw, kind, post, model)
+    return replace(machine, post_options=post_registry.parse_options(post, machine_raw)), assumed
+
+
+def _merged_machine(raw: dict):
+    """``(model, kind, the job's own keys, the keys to check)``: the model's numbers under the job's own."""
     model = machines.lookup(raw["model"]) if "model" in raw else None
     if "kind" not in raw and model is None:
         raise CamJobError("machine needs a model (like \"tormach-1100mx\") or a kind (" + ", ".join(MACHINE_KINDS) +
                           "): ask the user which machine runs the job; if they do not know, write "
                           "{\"kind\": \"mill\", \"assumed\": [\"kind\"]} and the plan lists it as assumed")
     kind = choice(raw.get("kind", model.kind if model else None), MACHINE_KINDS, "machine.kind")
-    if model is not None and kind != model.kind and not (kind == "mill4" and model.kind == "mill" and "a" in model.rotary):
-        extra = " (or mill4 with its 4th axis)" if model.kind == "mill" and "a" in model.rotary else ""
+    fourth_axis = model is not None and model.kind == "mill" and "a" in model.rotary
+    if model is not None and kind != model.kind and not (kind == "mill4" and fourth_axis):
+        extra = " (or mill4 with its 4th axis)" if fourth_axis else ""
         raise CamJobError(f"machine.kind is {kind!r}, but the {model.plain} is a {model.kind}; remove kind, or give "
                           f"{model.kind!r}{extra}")
     stated = {key: value for key, value in raw.items() if key not in ("model", "assumed")}
     machine_raw = {**(model.machine_keys() if model else {}), **stated, "kind": kind}
     if model is not None and kind == "mill4" and "rotary_limits_deg" not in stated:
         machine_raw.pop("rotary_limits_deg", None)
+    return model, kind, stated, machine_raw
+
+
+def _fill_generic(machine_raw: dict, kind: str, model, stated: dict) -> list[dict]:
+    """Fill what neither the job nor its model states with the kind's generic value, in place, and say each. A
+    generic value yields to the limits that are stated: a rapid no faster than the maximum feed, no spindle limit
+    under the slowest speed."""
     assumed: list[dict] = []
     generic = machines.GENERIC[kind]
     whose = f"the {model.plain}'s maker publishes none" if model else "no machine model given"
@@ -458,49 +475,53 @@ def _machine(raw: object) -> tuple[Machine, list[dict]]:
     post = machine_raw["post"]
     try:
         post_registry.entry_for(post, kind)
-    except CamJobError as exc:
+    except CamJobError:
         if model is not None and "post" not in stated:
             raise CamJobError(f"the {model.plain} runs {model.post}, which does not serve a {kind}; name machine.post "
                               "for this kind") from None
-        raise exc
+        raise
     options = post_registry.option_keys(machine_raw)
-    check_keys(raw, MACHINE_KEYS + options, "machine")
+    check_keys(stated, MACHINE_KEYS + options, "machine")
     if "homed" in options and "homed" not in machine_raw:
         if model is not None and model.homed is not None:
             machine_raw["homed"] = model.homed
         else:
             assumed.append(_assumed("machine.homed", False, machines.GENERIC_HOMED_WHY))
+    max_feed, min_rpm = machine_raw.get("max_feed_mm_min"), machine_raw.get("min_rpm")
     for key in ("max_rpm", "rapid_mm_min", "tool_change_s"):
         if key in machine_raw or key not in generic:
             continue
         value, why = generic[key]
-        limit = machine_raw.get("max_feed_mm_min")
-        if key == "rapid_mm_min" and isinstance(limit, (int, float)) and not isinstance(limit, bool) and limit < value:
+        if key == "rapid_mm_min" and is_number(max_feed) and max_feed < value:
             # A rapid runs no faster than the machine's top speed (GRBL rapids at its maximum rates).
-            value, why = float(limit), "the machine's maximum feed: a rapid runs no faster; it only shapes the cycle time"
+            value, why = float(max_feed), "the machine's maximum feed: a rapid runs no faster; it only shapes the cycle time"
+        if key == "max_rpm" and is_number(min_rpm) and min_rpm > value:
+            continue    # a generic limit under the stated slowest speed is no limit at all: none is assumed
         machine_raw[key] = value
-        if key == "tool_change_s" and not value:
-            continue
-        assumed.append(_assumed(f"machine.{key}", value, f"{whose}: {why}"))
+        if value:
+            assumed.append(_assumed(f"machine.{key}", value, f"{whose}: {why}"))
     if "spindle_spinup_s" not in machine_raw and kind not in ("laser", "plasma", "waterjet", "wire_edm"):
-        default = _post_option_default(post, "spindle_spinup_s")
+        default = post_registry.option_default(post, "spindle_spinup_s")
         if default:
             assumed.append(_assumed("machine.spindle_spinup_s", default,
                                     f"{whose}: the {post} post dwells this long after each spindle start, as the "
                                     "controller does not wait for the spindle to reach speed"))
+    return assumed
+
+
+def _job_guesses(raw: dict, stated: dict) -> list[dict]:
+    """The machine keys the job marks as its own guesses (``"assumed": ["kind"]``), each listed first."""
     guesses = raw.get("assumed", [])
     if not isinstance(guesses, list) or not all(isinstance(key, str) for key in guesses):
         raise CamJobError("machine.assumed lists the machine keys the job guessed, like [\"kind\"]")
+    out = []
     for key in guesses:
-        if key not in GUESSABLE_KEYS:
-            choice(key, GUESSABLE_KEYS, "machine.assumed[]")
+        choice(key, GUESSABLE_KEYS, "machine.assumed[]")
         if key not in stated:
             raise CamJobError(f"machine.assumed names {key!r}, which the machine does not give; give it, or take it "
                               "out of assumed")
-        assumed.insert(0, _assumed(f"machine.{key}", stated[key], "the job marks it as a guess: the user did not know"))
-    machine = _machine_keys(machine_raw, kind, post, model)
-    machine = replace(machine, post_options=post_registry.parse_options(post, machine_raw))
-    return machine, assumed
+        out.append(_assumed(f"machine.{key}", stated[key], "the job marks it as a guess: the user did not know"))
+    return out
 
 
 def _machine_keys(raw: dict, kind: str, post: str, model) -> Machine:
@@ -556,21 +577,18 @@ def _machine_keys(raw: dict, kind: str, post: str, model) -> Machine:
         # A minute is longer than any spindle takes to reach speed; past it the number is a units slip.
         spindle_spinup_s=read_number(raw, "spindle_spinup_s", "machine", minimum=0.0, maximum=60.0),
         rigid_tap=rigid_tap, model=model.id if model else None,
-        tool_changer=model.tool_changer if model else None, tool_capacity=model.tool_capacity if model else None,
     )
 
 
 def _tap_assumed(machine: Machine, setups, tools: dict[str, Tool]) -> list[dict]:
     """A tap that does not say whether it is rigid, on a machine that does not say whether it taps rigidly: posted
     with the controller's own tapping cycle (operations/drill.py), said here."""
-    from cadgen._internal.cam import machines
-
     if machine.rigid_tap is not None:
         return []
     for setup in setups:
         for spec in setup.operations:
             tool = tools.get(spec.tool) if spec.tool else None
-            cycle = spec.extra.get("cycle") or ("tap" if tool is not None and tool.type == "tap" else None)
+            cycle = spec.extra.get("cycle") or (DEFAULT_CYCLE.get(tool.type) if tool is not None else None)
             if spec.op == "drill" and cycle == "tap" and "rigid" not in spec.extra:
                 return [_assumed("machine.rigid_tap", True, machines.GENERIC_RIGID_TAP_WHY)]
     return []
@@ -622,14 +640,7 @@ def _library(entry: dict, where: str, base: Path | None, part_dir: Path | None) 
         raise CamJobError(f"{where}.library names a tool library file (JSON), relative to the job file or the part")
     found = _find_library(path, base, part_dir, where)
     label = found.name
-    try:
-        data = json.loads(found.read_text(encoding="utf-8"), parse_constant=_refuse_constant)
-    except (UnicodeDecodeError, _NotANumber, ValueError, RecursionError) as exc:
-        detail = (f"{exc.msg} at line {exc.lineno} column {exc.colno}" if isinstance(exc, json.JSONDecodeError)
-                  else "not UTF-8 JSON" if isinstance(exc, UnicodeDecodeError) else str(exc))
-        raise CamJobError(f"the tool library {label} is not valid JSON: {detail}") from None
-    except OSError as exc:
-        raise CamJobError(f"the tool library {label} cannot be read ({exc.strerror or exc})") from None
+    data = _parse_json(_read_text(found, "the tool library"), f"the tool library {label}")
     if isinstance(data, dict):
         check_keys(data, LIBRARY_KEYS, label, hint="a tool library")
         data = data.get("tools")
@@ -642,15 +653,10 @@ def _library(entry: dict, where: str, base: Path | None, part_dir: Path | None) 
         return [(tool, at, False) for tool, at in tools]
     if not isinstance(only, list) or not only or not all(isinstance(tool_id, str) for tool_id in only):
         raise CamJobError(f"{where}.only lists tool ids from {label}, like [\"T1\", \"T4\"]")
-    ids = [tool.id for tool, _ in tools]
+    ids = tuple(tool.id for tool, _ in tools)
     for tool_id in only:
-        if tool_id not in ids:
-            close = difflib.get_close_matches(tool_id, ids, n=1)
-            hint = f" (did you mean {close[0]!r}?)" if close else ""
-            raise CamJobError(f"{where}.only names {tool_id!r}, which {label} does not have{hint}; its tools are "
-                              f"{', '.join(ids)}")
-    return [(tool, at, False) for tool, at in tools if tool.id not in only] + \
-        [(tool, at, True) for tool, at in tools if tool.id in only]
+        choice(tool_id, ids, f"{where}.only[] (a tool of {label})")
+    return [(tool, at, tool.id in only) for tool, at in tools]
 
 
 def _find_library(path: str, base: Path | None, part_dir: Path | None, where: str) -> Path:

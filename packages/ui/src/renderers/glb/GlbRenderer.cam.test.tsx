@@ -19,7 +19,8 @@ vi.mock('../../../dist/renderers/glb/useGlbScene.js', () => ({
   useGlbScene: () => ({ scene: loaded.scene, revision: 'one', busy: false, error: null, progress: null })
 }));
 vi.mock('../../../dist/renderers/glb/camView.js', async (importOriginal) => { loaded.requested += 1; return importOriginal(); });
-import GlbRenderer, { useReducedMotion } from '../../../dist/renderers/glb/GlbRenderer.js';
+import GlbRenderer from '../../../dist/renderers/glb/GlbRenderer.js';
+import { useReducedMotion } from '../../../dist/renderers/glb/cam/useCamResult.js';
 import { ViewerHostContext } from '../../../dist/host/context.js';
 import { testHost } from '../../../dist/host/testing/host.js';
 

@@ -69,7 +69,7 @@ class ToolLibrary(unittest.TestCase):
         cases = {
             "two tools are called 'T1' (shop.json tools[0] and tools[1])":
                 job([{"library": "shop.json"}, {"id": "T1", "type": "flat", "diameter_mm": 3}]),
-            "tools[0].only names 'T5', which shop.json does not have; its tools are T1, T4, T9":
+            "tools[0].only[] (a tool of shop.json) is 'T5'; use one of T1, T4, T9":
                 job([{"library": "shop.json", "only": ["T5"]}]),
             "tools[0].library: no tool library at": job("missing.json"),
             "the tool library broken.json is not valid JSON": job("broken.json"),

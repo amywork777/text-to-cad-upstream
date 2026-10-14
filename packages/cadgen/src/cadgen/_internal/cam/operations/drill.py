@@ -101,7 +101,7 @@ CYCLES: dict[str, dict] = {
     "counterbore": {"tools": ("counterbore", "flat"), "feeds": "bore", "word": "Counterbore"},
     "back_bore": {"tools": ("boring",), "feeds": "bore", "word": "Back bore"},
 }
-_DEFAULT_CYCLE = {"drill": "drill", "flat": "drill", "spot": "spot", "chamfer": "spot", "tap": "tap",
+DEFAULT_CYCLE = {"drill": "drill", "flat": "drill", "spot": "spot", "chamfer": "spot", "tap": "tap",
                   "reamer": "ream", "boring": "bore", "counterbore": "counterbore"}
 BORE_MODES = ("feed", "dwell", "stop", "fine")
 #: The IR cycle a bore mode posts as (ir.py: G85, G89, G86, G76).
@@ -148,9 +148,9 @@ class DrillOp(Operation):
             cycle = "peck"
         if cycle is not None and tool.type not in CYCLES[cycle]["tools"]:
             raise CamJobError(f"{where}: a {cycle} cycle cuts with a {' or '.join(CYCLES[cycle]['tools'])}; {tool.id} "
-                              f"is a {tool.type}" + (f" (its cycle is {_DEFAULT_CYCLE[tool.type]})"
-                                                     if tool.type in _DEFAULT_CYCLE else ""))
-        known = cycle or _DEFAULT_CYCLE[tool.type]
+                              f"is a {tool.type}" + (f" (its cycle is {DEFAULT_CYCLE[tool.type]})"
+                                                     if tool.type in DEFAULT_CYCLE else ""))
+        known = cycle or DEFAULT_CYCLE[tool.type]
 
         def only(key: str, cycles: tuple[str, ...]) -> None:
             if key in extra and known not in cycles:
@@ -193,12 +193,11 @@ class DrillOp(Operation):
         # asks for rigid. Not known, the tap keeps the controller's own cycle (rigid where the dialect asks for it:
         # a controller that cannot stops with an alarm, where a floating cycle in a rigid holder breaks the tap).
         rigid = extra.get("rigid")
-        machine_rigid = getattr(ctx.job.machine, "rigid_tap", None)
-        if known == "tap" and rigid is True and machine_rigid is False:
-            raise CamJobError(f"{where}.rigid is true, but this machine does not tap rigidly (machine.rigid_tap "
-                              "false); give the tap \"rigid\": false and run it in a floating holder, or thread mill "
-                              "the hole")
-        if known == "tap" and rigid is None and machine_rigid is False:
+        if known == "tap" and ctx.job.machine.rigid_tap is False:
+            if rigid is True:
+                raise CamJobError(f"{where}.rigid is true, but this machine does not tap rigidly (machine.rigid_tap "
+                                  "false); give the tap \"rigid\": false and run it in a floating holder, or thread "
+                                  "mill the hole")
             rigid = False
         params = {
             "cycle": cycle,
@@ -271,7 +270,7 @@ class DrillOp(Operation):
         heights = ctx.heights
         b = ctx.builder()
         notes: list[str] = []
-        cycle = params["cycle"] or _DEFAULT_CYCLE[tool.type]
+        cycle = params["cycle"] or DEFAULT_CYCLE[tool.type]
         if params["faces"]:
             holes = drilling.holes_from_faces(ctx, params["faces"], where)
             for hole in holes:
@@ -812,7 +811,7 @@ class DrillOp(Operation):
         return out
 
     def summary(self, ctx, params) -> str:
-        cycle = ctx.meta.get("cycle") or params["cycle"] or _DEFAULT_CYCLE.get(ctx.tool.type, "drill")
+        cycle = ctx.meta.get("cycle") or params["cycle"] or DEFAULT_CYCLE.get(ctx.tool.type, "drill")
         count = ctx.meta.get("hole_count", 0)
         name = f" ({ctx.spec.name})" if ctx.spec.name else ""
         return (f"{CYCLES[cycle]['word']}{name} {count} hole{'s' if count != 1 else ''} with {ctx.tool.id} "

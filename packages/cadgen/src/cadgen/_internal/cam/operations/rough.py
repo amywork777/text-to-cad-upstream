@@ -32,7 +32,7 @@ from cadgen._internal.cam.job_errors import CamJobError, choice, read_number
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation, region_polygon
 
-__all__ = ["RoughOp", "plan_rough"]
+__all__ = ["RoughOp", "keep_off", "lowest_level", "plan_rough"]
 
 
 class RoughOp(Operation):
@@ -67,6 +67,29 @@ def parse_rough(spec, extra) -> dict:
     return params
 
 
+def lowest_level(ctx, params) -> float:
+    """The lowest level a z-level rough goes to: ``bottom_z``, else its region's, else the part's bottom (or the
+    stock's, when that is higher)."""
+    heights = ctx.heights
+    region_bottom = params["region"][1] if params["region"] is not None else None
+    if params["bottom_z"] is not None:
+        return params["bottom_z"]
+    return region_bottom if region_bottom is not None else max(heights.part_bottom, heights.stock_bottom)
+
+
+def keep_off(silhouettes, z: float, radius: float, leave: float, tolerance: float):
+    """Where a tool's centre may not go at level ``z``: everything of the part above it less the stock to leave, seen
+    from the tool, grown by the radius plus the stock to leave."""
+    import shapely
+
+    from cadgen._internal.cam import geom2d
+
+    material = silhouettes.above(z - leave)
+    if material.is_empty:
+        return shapely.Polygon()
+    return geom2d.offset(material, radius + leave, tolerance=tolerance, radius=radius + leave)
+
+
 def plan_rough(ctx, params, *, limit=None):
     """The rough toolpath; ``limit`` (a shapely area, WCS) keeps the tool centre inside it (rest machining)."""
     import numpy as np
@@ -82,9 +105,8 @@ def plan_rough(ctx, params, *, limit=None):
     heights = ctx.heights
     leave = ctx.spec.stock_to_leave_mm
     top = heights.stock_top
-    user_region, region_bottom = params["region"] if params["region"] is not None else (None, None)
-    bottom = params["bottom_z"] if params["bottom_z"] is not None else (
-        region_bottom if region_bottom is not None else max(heights.part_bottom, heights.stock_bottom))
+    user_region = params["region"][0] if params["region"] is not None else None
+    bottom = lowest_level(ctx, params)
     if bottom >= top - 1e-6:
         raise CamJobError(f"{ctx.spec.where}: the rough's lowest level is at or above the stock top in setup "
                           f"'{ctx.setup.id}'; nothing to clear")
@@ -107,10 +129,8 @@ def plan_rough(ctx, params, *, limit=None):
     z_prev = top
     cut_levels = 0
     for z in levels:
-        material = silhouettes.above(z - leave)
-        keep_off = geom2d.offset(material, r + leave, tolerance=tol, radius=r + leave) if not material.is_empty \
-            else shapely.Polygon()
-        region = outer.difference(keep_off)
+        kept_off = keep_off(silhouettes, z, r, leave, tol)
+        region = outer.difference(kept_off)
         if user_region is not None:
             region = region.intersection(user_region)
         if limit is not None:
@@ -126,7 +146,7 @@ def plan_rough(ctx, params, *, limit=None):
         for piece in pieces:
             open_piece = not stock.buffer(r + 0.25).contains(piece)
             if open_piece:
-                curves = _outside_in(piece, keep_off, stepover, tol, params["climb"], zone)
+                curves = _outside_in(piece, kept_off, stepover, tol, params["climb"], zone)
             else:
                 curves = [(c, True) for c in _rings_inside_out(piece, stepover, tol, params["climb"])]
             if not curves:
@@ -139,13 +159,13 @@ def plan_rough(ctx, params, *, limit=None):
                 here = b.pos
                 link = shapely.LineString([here[:2], start]) if math.dist(here[:2], start) > 1e-9 else None
                 down_here = abs(here[2] - z) < 1e-9
-                if k and down_here and (link is None or _clear_link(link, piece, air_edge, keep_off, coords)):
+                if k and down_here and (link is None or _clear_link(link, piece, air_edge, kept_off, coords)):
                     b.feed(x=start[0], y=start[1], z=z, f=feeds.feed_mm_min)
                 elif in_air:
                     _over(b, start, heights, previous_area, z_prev, link)
                     b.rapid(z=z)
                     entries["air"] = entries.get("air", 0) + 1
-                elif open_piece and (side := _side_entry(start, piece, air_edge, keep_off, coords)) is not None:
+                elif open_piece and (side := _side_entry(start, piece, air_edge, kept_off, coords)) is not None:
                     # From the air beside the stock, straight in at the level through what is already cut.
                     _over(b, side, heights, previous_area, z_prev,
                           shapely.LineString([here[:2], side]) if math.dist(here[:2], side) > 1e-9 else None)
@@ -175,11 +195,7 @@ def plan_rough(ctx, params, *, limit=None):
                      "stock_to_leave": leave, "floor_z": round(bottom, 4)})
     if entries.get("plunge"):
         ctx.meta["plunges"] = entries["plunge"]
-    from cadgen._internal.cam.air import air_report
-
-    path = b.build()
-    ctx.meta.update(air_report(ctx, path))
-    return path
+    return b.build()
 
 
 def enter(b, region, start, z_from: float, z_to: float, *, tool_radius: float, angle_deg: float, f: float,

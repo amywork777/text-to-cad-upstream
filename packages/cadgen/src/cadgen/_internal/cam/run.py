@@ -28,10 +28,13 @@ from cadgen._internal.atomic_replace import replace_atomic
 from cadgen._internal.cam.checks.base import finding
 from cadgen._internal.cam.job_errors import CamJobError, PlanError, PostRefusal
 from cadgen.cli_logging import CliLogger
-from cadgen.results import CamFeaturesResult, CamPlanResult
+from cadgen.results import CamFeaturesResult, CamPlanResult, _assumed_value
 
 __all__ = ["headline", "list_features", "parse_operations", "plan_job", "plan_setups"]
 
+
+#: The machine keys an assumption of which only shapes the cycle time, not the posted program.
+_CYCLE_TIME_KEYS = frozenset({"machine.rapid_mm_min", "machine.tool_change_s"})
 
 #: Op meta keys that steer the run rather than describe the cut, kept out of a row's facts.
 _NOT_FACTS = frozenset({"no_gouge_check", "note_level", "spindle_dir", "findings", "adapted", "unreachable",
@@ -565,10 +568,13 @@ def _render_setup(post, plan, k, setup_plans, op_plans, tools, machine, document
 
     notes = tuple(f"lite {entry['op']}: {limit}" for entry in lite for limit in entry["limits"]
                   if by_index[entry["operation"]].setup == plan.setup.id)
-    # A dialect nobody named is said where the operator reads it, not only in the plan's report.
-    if any(entry["key"] == "machine.post" for entry in parsed.assumed):
-        notes = (f"Post {post.name} assumed, as the job names no machine or post. Check the controller reads "
-                 "this dialect before running it.",) + notes
+    # What the program rests on that nobody stated (the dialect, the spindle limit, the tapping) is said where the
+    # operator reads it, not only in the plan's report; what only shapes the cycle time is not.
+    stated_not = [f"{entry['key'][len('machine.'):]} {_assumed_value(entry['value'])}" for entry in parsed.assumed
+                  if entry["key"].startswith("machine.") and entry["key"] not in _CYCLE_TIME_KEYS]
+    if stated_not:
+        notes = (f"Assumed, not stated: {', '.join(stated_not)}. Check them against the machine before running.",
+                 ) + notes
     program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
                       version=__version__, part=document.name, job_name=parsed.name,
                       material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,

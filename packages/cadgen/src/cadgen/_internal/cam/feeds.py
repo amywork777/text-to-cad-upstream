@@ -195,7 +195,7 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         rpm = limit
     # A spindle cannot turn slower than its slowest (a router's): raised to it, the feed with it (the chip load kept,
     # the surface speed past the table's), and said.
-    slowest = getattr(machine, "min_rpm", None)
+    slowest = machine.min_rpm
     if slowest is not None and rpm < slowest:
         floor = float(math.ceil(slowest))
         clamped.append(f"spindle {rpm:.0f} rpm raised to the machine's slowest, {floor:.0f} rpm (a faster surface "

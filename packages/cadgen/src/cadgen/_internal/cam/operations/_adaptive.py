@@ -1,12 +1,12 @@
 """Adaptive clearing, shared by ``adaptive`` (2.5D) and ``adaptive_3d``: one level at a time, the tool's radial
 engagement held to the stepover, and the tool kept where material stands.
 
-A level comes as ``area``, where the tool's centre may go at that height (in tool-centre space: the region to clear
-shrunk by the radius, or kept a radius off the part), and ``standing``, the material standing across the level: the
-stock as it stands before the operation (:meth:`~cadgen._internal.cam.milling3d.StockNow.standing`, every earlier
-operation and setup replayed), or the whole stock where that is not simulated. Where the tool's circle touches none of
-it the level is already clear (``air``); where it touches some is what the level cuts (``todo``). A level with nothing
-to cut is skipped, and so is a connected piece of ``area`` with nothing in it.
+An operation hands each level as ``area``, where the tool's centre may go at that height (in tool-centre space: the
+region to clear shrunk by the radius, or kept a radius off the part), with the part's section there. The material is
+the stock as it stands before the operation (:meth:`~cadgen._internal.cam.milling3d.StockNow.standing`, every earlier
+operation and setup replayed, the part and its stock to leave taken out). Where the tool's circle touches none of it
+the level is already clear (``air``); where it touches some is what the level cuts (``todo``). A level with nothing to
+cut is skipped, and so is a connected piece of ``area`` with nothing in it.
 
 How a piece is cleared (in tool-centre space):
 
@@ -17,122 +17,187 @@ How a piece is cleared (in tool-centre space):
 * it then grows the cleared area in steps of the stepover: each new boundary is the cleared area offset by the
   stepover and clipped to the piece, so no point of a new pass is more than one stepover from where the tool has
   already been, or from where it would touch nothing: that caps the radial engagement at the stepover, walls
-  included. Only the stretches of each boundary that reach new material are cut (climb by default), the nearest one
-  first, joined by feeds through cleared space or a lift when the way is not clear. A stretch that starts in the air
-  is come down to straight; any other after a lift is ramped into along itself, or come down to straight only where
-  the level is already cut all round the tool.
+  included. Only the stretches of each boundary that reach new material are cut (climb by default);
+* the stretches are cut in dependency order, not step by step: one may go once every stretch of an earlier step
+  within twice the tool's radius is cut (everything its tool circle can reach that an earlier step cleared is then
+  cut), the nearest such one next, so the tool carries one side of a pocket on before it crosses to the other. Between
+  stretches it feeds at depth through bands already cut whole, else lifts; a stretch that starts in the air is come
+  down to straight, any other ramped into along itself, or come down to straight where the level is cut all round.
 
 What the radius cannot reach goes to the ``corner_radius`` check as in a pocket; what is cut at full width (round a
-piece too narrow for a helix) goes to ``state["full_slot"]``.
+piece too narrow for a helix) is counted in ``full_slot_mm``. :meth:`Clearing.finish` writes the facts, builds the
+path and measures its air (:mod:`cadgen._internal.cam.air`).
 """
 
 from __future__ import annotations
 
-__all__ = ["Clearing"]
+from cadgen._internal.cam.job_errors import CamJobError
+
+__all__ = ["Clearing", "check_stepover"]
+
+#: An adaptive clear's stepover when the job gives none, as a share of the tool's diameter.
+DEFAULT_STEPOVER = 0.15
+
+
+def check_stepover(spec, tool) -> None:
+    """Refuse a stepover past half the diameter: an adaptive clear's stepover is its engagement."""
+    stepover = spec.stepover_mm if spec.stepover_mm is not None else (
+        (spec.stepover if spec.stepover is not None else DEFAULT_STEPOVER) * tool.diameter_mm)
+    if stepover > 0.5 * tool.diameter_mm + 1e-9:
+        raise CamJobError(f"{spec.where}: an adaptive clear's stepover is its engagement; keep it at most half the "
+                          f"tool's diameter ({0.5 * tool.diameter_mm:g} mm), 0.1 to 0.2 is usual")
+
+
+def default_stepdown(ctx) -> float:
+    """Twice the material's step down (deep and light, as adaptive clearing runs), within the flutes."""
+    import math
+
+    from cadgen._internal.cam.feeds import default_stepdown as material_stepdown
+
+    if ctx.spec.stepdown_mm is not None:
+        return float(ctx.spec.stepdown_mm)
+    return min(ctx.tool.flute_length_mm or math.inf, 2.0 * material_stepdown(ctx.material, ctx.tool))
 
 
 class Clearing:
-    """One operation's adaptive clearing, level by level, on one builder."""
+    """One operation's adaptive clearing, level by level from the stock top down, on its own builder."""
 
-    def __init__(self, ctx, b, *, stepover: float, feeds, climb: bool, ramp_angle_deg: float):
+    def __init__(self, ctx, *, feeds_kind: str, climb: bool, ramp_angle_deg: float):
+        from cadgen._internal.cam.milling3d import StockNow, fine_cell
+
         self.ctx = ctx
-        self.b = b
-        self.stepover = stepover
-        self.feeds = feeds
+        self.b = ctx.builder()
+        self.stepover = ctx.stepover(DEFAULT_STEPOVER)
+        self.feeds = ctx.feeds(feeds_kind, stepover_mm=self.stepover)
         self.climb = climb
         self.angle = ramp_angle_deg
         self.r = ctx.tool.radius
         self.tol = ctx.tolerance_mm
         self.heights = ctx.heights
-        self.eps = max(3.0 * self.tol, 0.05 * stepover)
-        self.state = {"entries": {"helix": 0, "ramp": 0, "plunge": 0, "air": 0}, "passes": 0, "lifts": 0,
-                      "narrow": 0, "full_slot": 0.0, "skipped": 0, "cut": []}
+        self.eps = max(3.0 * self.tol, 0.05 * self.stepover)
+        self.stock_now = StockNow(ctx, cell=fine_cell(self.r))
+        # Where the level above left the tool free to come down from, and how high it was.
+        self.z_prev = ctx.heights.stock_top
+        self.previous_area = None
+        self.entries = {"helix": 0, "ramp": 0, "plunge": 0, "air": 0}
+        self.passes = self.narrow = self.levels = self.skipped = 0
+        self.full_slot = 0.0
+        self._cut_lines: list = []
 
     # --- a level -------------------------------------------------------------------------------------------------
 
-    def level(self, area, standing, z: float, z_prev: float, previous_area) -> bool:
-        """Clear ``area`` (tool-centre space) at ``z`` where ``standing`` (WCS XY; None: everything) has material.
-        False when there is nothing to cut at this level (it is skipped)."""
+    def level(self, area, z: float, *, part=None, leave: float = 0.0) -> None:
+        """Clear ``area`` (tool-centre space) at ``z`` where stock stands, ``part`` (its section here) and ``leave``
+        on it taken out; a level with nothing to cut is skipped."""
         import shapely
 
         from cadgen._internal.cam import geom2d, linking
 
-        if standing is None:
-            air = shapely.Polygon()
-            todo = area
-        else:
-            reach = geom2d.offset(standing, self.r, tolerance=self.tol) if not standing.is_empty else standing
-            todo = area.intersection(reach) if not reach.is_empty else shapely.Polygon()
-            air = area.difference(reach) if not reach.is_empty else area
+        standing = self.stock_now.standing(z, part=part, leave=leave)
+        reach = geom2d.offset(standing, self.r, tolerance=self.tol) if not standing.is_empty else standing
+        todo = area.intersection(reach) if not reach.is_empty and not area.is_empty else shapely.Polygon()
         if todo.is_empty or todo.area < 1e-6:
-            self.state["skipped"] += 1
-            return False
-        pieces = [piece for piece in geom2d.polygons_of(area) if piece.intersects(todo)
-                  and piece.intersection(todo).area >= 1e-6]
-        pieces = linking.order_nearest(pieces, self.b.pos, key=lambda p: (p.centroid.x, p.centroid.y))
-        for piece in pieces:
-            seed = air.intersection(piece) if not air.is_empty else shapely.Polygon()
-            self._clear(piece, seed, air, z, z_prev, previous_area)
-            self.b.rapid(z=min(self.heights.retract, z + 1.0))
-        return True
+            self.skipped += 1
+        else:
+            self.levels += 1
+            air = area.difference(reach) if not reach.is_empty else area
+            pieces = [piece for piece in geom2d.polygons_of(area) if piece.intersection(todo).area >= 1e-6]
+            for piece in linking.order_nearest(pieces, self.b.pos, key=lambda p: (p.centroid.x, p.centroid.y)):
+                self._clear(piece, air.intersection(piece), air, z)
+                self.b.rapid(z=min(self.heights.retract, z + 1.0))
+        self.previous_area = area
+        self.z_prev = z
 
-    def _clear(self, piece, seed, air, z, z_prev, previous_area) -> None:
+    def finish(self, meta: dict, *, nothing_left: str):
+        """The toolpath, up at the clearance height, with its facts and air report written into ``meta``."""
+        from cadgen._internal.cam.air import air_report
+
+        self.b.rapid(z=self.heights.clearance)
+        meta.update({"entries": {k: v for k, v in self.entries.items() if v}, "passes": self.passes,
+                     "full_slot_mm": round(self.full_slot, 3), "levels": self.levels})
+        if self.skipped:
+            meta["levels_already_clear"] = self.skipped
+        if self.entries["plunge"]:
+            meta["plunges"] = self.entries["plunge"]
+        if self.narrow:
+            meta["note"] = (f"{self.narrow} piece(s) too narrow for a helix entry were ramped in along their outline at "
+                            "full width")
+        if not self.levels:
+            meta["note"] = f"nothing left to clear: the stock as it stands is already clear down to {nothing_left}"
+        path = self.b.build()
+        meta.update(air_report(self.ctx, path, stock_now=self.stock_now))
+        return path
+
+    def _z_from(self, point) -> float:
+        """Where the tool may come down to before it cuts at ``point``: the level above where it cut there, else the
+        stock top."""
+        import shapely
+
+        above = self.previous_area is not None and self.previous_area.buffer(1e-6).contains(shapely.Point(point))
+        return self.z_prev if above else self.heights.stock_top
+
+    def _enter(self, paths, z_from: float, z: float) -> None:
+        """Down from ``z_from`` to ``z`` by a ramp along the first of ``paths`` long enough, else straight (counted)."""
+        from cadgen._internal.cam.operations._milling2d import ramp_along
+
+        for path in paths:
+            if ramp_along(self.b, path, z_from, z, angle_deg=self.angle, f=self.feeds.ramp_mm_min):
+                self.entries["ramp"] += 1
+                return
+        self.b.feed(z=z_from, f=self.feeds.ramp_mm_min)
+        self.b.plunge(z=z, f=self.feeds.plunge_mm_min)
+        self.entries["plunge"] += 1
+
+    def _clear(self, piece, seed, air, z: float) -> None:
         """Clear one connected piece at level ``z``, from the air in it (``seed``) or from an entry."""
         import numpy as np
         import shapely
 
         from cadgen._internal.cam import geom2d, linking
-        from cadgen._internal.cam.operations._milling2d import ramp_along, rotate_to_nearest
+        from cadgen._internal.cam.operations._milling2d import rotate_to_nearest
+        from cadgen._internal.cam.operations.pocket import _travel
 
-        b, r, tol, heights, feeds = self.b, self.r, self.tol, self.heights, self.feeds
-        state = self.state
-        state["cut"] = []
+        b, r, tol, feeds = self.b, self.r, self.tol, self.feeds
+        self._cut_lines = []
         if not seed.is_empty and seed.area >= 1e-6:
             cleared = seed
         else:
             circle = shapely.maximum_inscribed_circle(piece, tolerance=max(tol, 0.01))
             coords = np.asarray(circle.coords)
-            centre = coords[0]
+            centre = (float(coords[0][0]), float(coords[0][1]))
             inscribed = float(np.hypot(*(coords[1] - coords[0]))) if len(coords) > 1 else 0.0
             helix_r = min(0.75 * r, 0.9 * inscribed)
-            start = (float(centre[0]) + helix_r, float(centre[1]))
-            cleared_above = previous_area is not None and previous_area.buffer(1e-6).contains(shapely.Point(start))
-            z_from = z_prev if cleared_above else heights.stock_top
+            start = (centre[0] + helix_r, centre[1])
+            z_from = self._z_from(start)
             if helix_r >= 0.1 * r:
-                self._go(start, z_from)
-                linking.helix(b, (float(centre[0]), float(centre[1])), helix_r, z_from, z, angle_deg=self.angle,
-                              f=feeds.ramp_mm_min, clockwise=not self.climb)
-                state["entries"]["helix"] += 1
-                cleared = shapely.Point(centre).buffer(helix_r, quad_segs=geom2d.quad_segs(max(helix_r, tol), tol))
-                state["cut"] = [cleared.exterior]
-                cleared = cleared.intersection(piece)
+                _travel(b, start, z_from, self.heights, None, None)
+                linking.helix(b, centre, helix_r, z_from, z, angle_deg=self.angle, f=feeds.ramp_mm_min,
+                              clockwise=not self.climb)
+                self.entries["helix"] += 1
+                circle = shapely.Point(centre).buffer(helix_r, quad_segs=geom2d.quad_segs(max(helix_r, tol), tol))
+                self._cut_lines = [circle.exterior]
+                cleared = circle.intersection(piece)
             else:
-                state["narrow"] += 1
+                self.narrow += 1
                 ring = rotate_to_nearest(geom2d.rings(piece, climb=self.climb)[0], b.pos)
-                self._go((float(ring[0][0]), float(ring[0][1])), z_from)
-                if ramp_along(b, ring, z_from, z, angle_deg=self.angle, f=feeds.ramp_mm_min):
-                    state["entries"]["ramp"] += 1
-                else:
-                    b.feed(z=z_from, f=feeds.ramp_mm_min)
-                    b.plunge(z=z, f=feeds.plunge_mm_min)
-                    state["entries"]["plunge"] += 1
+                _travel(b, (float(ring[0][0]), float(ring[0][1])), z_from, self.heights, None, None)
+                self._enter([ring], z_from, z)
                 b.polyline(np.column_stack([ring[1:], np.full(len(ring) - 1, z)]), f=feeds.feed_mm_min)
                 # Round a piece too narrow for a helix the tool cuts its full width.
-                state["full_slot"] += float(shapely.LineString(ring).length)
+                self.full_slot += float(shapely.LineString(ring).length)
                 cleared = piece.intersection(shapely.LineString(ring).buffer(min(self.stepover, r) * 0.5))
-                state["cut"] = [shapely.LineString(ring)]
-        air_here = air.buffer(self.eps) if not air.is_empty else air
+                self._cut_lines = [shapely.LineString(ring)]
         runs, bands = self._grow(piece, cleared)
-        self._schedule(runs, bands, cleared, z, z_prev, previous_area, air_here)
+        self._schedule(runs, bands, cleared, z, air.buffer(self.eps) if not air.is_empty else air)
 
     # --- growing the cleared area, then cutting it in a good order ---------------------------------------------------
 
     def _grow(self, piece, cleared):
         """Every stretch that clears ``piece`` from ``cleared``, step by step, and the new band of each step.
 
-        Each stretch is a dict: ``kind``, ``points``, ``ring`` (its ring's points), ``step``, ``line``, ``before``
-        (the area cleared before its step) and ``grown``. Each band is ``[polygon, stretches bordering it]``: the
-        material a step clears between its stretches and the area cleared before it, cut once they all are."""
+        Each stretch is a dict: ``kind``, ``points``, ``ring`` (its ring's points), ``step``, ``line`` and ``before``
+        (the area cleared before its step). Each band is ``[polygon, stretches bordering it]``: the material a step
+        clears between its stretches and the area cleared before it, cut once they all are."""
         import shapely
 
         from cadgen._internal.cam import geom2d
@@ -144,27 +209,25 @@ class Clearing:
             grown = geom2d.offset(cleared, self.stepover, tolerance=tol).intersection(piece)
             grown = shapely.union_all([p for p in geom2d.polygons_of(grown) if p.intersects(cleared)])
             grown = grown.simplify(tol * 0.5).intersection(piece)
-            if grown.is_empty or grown.difference(cleared).area < 1e-3:
+            new = grown.difference(cleared) if not grown.is_empty else grown
+            if new.is_empty or new.area < 1e-3:
                 break
             first = len(runs)
             for ring in geom2d.rings(grown, climb=self.climb):
                 for kind, points, whole in self._new_runs(ring, cleared):
                     line = shapely.LineString(points) if len(points) > 1 else shapely.Point(points[0])
                     runs.append({"kind": kind, "points": points, "ring": whole, "step": step, "line": line,
-                                 "before": cleared, "grown": grown})
-            for polygon in geom2d.polygons_of(grown.difference(cleared)):
+                                 "before": cleared})
+            for polygon in geom2d.polygons_of(new):
                 members = {i for i in range(first, len(runs)) if runs[i]["line"].distance(polygon) <= self.eps}
                 bands.append([polygon, members])
-            cleared = shapely.union_all([cleared, grown])
+            # Bounded: the union keeps every near-coincident edge along the piece's boundary step after step.
+            cleared = shapely.union_all([cleared, grown]).simplify(tol * 0.1)
         return runs, bands
 
-    def _schedule(self, runs, bands, start, z, z_prev, previous_area, air) -> None:
-        """Cut ``runs``, the nearest one the tool may cut next each time.
-
-        A stretch may be cut once every stretch of an earlier step within twice the tool's radius is: everything its
-        tool circle can reach that an earlier step cleared is then cut, so it meets only its own band, at most a
-        stepover wide. That leaves the tool free to carry one side of a pocket on for many steps before it crosses to
-        the other. The tool feeds between stretches at depth only through bands whose stretches are all cut."""
+    def _schedule(self, runs, bands, start, z: float, air) -> None:
+        """Cut ``runs`` (from :meth:`_grow`), the nearest one the tool may cut next each time (see the module's
+        docstring)."""
         import numpy as np
         import shapely
 
@@ -189,15 +252,13 @@ class Clearing:
             if not members:
                 done = shapely.union_all([done, polygon])
         ready = {i for i, count in enumerate(waiting) if count == 0}
-        b = self.b
         while ready:
-            here = np.asarray(b.pos[:2])
+            here = np.asarray(self.b.pos[:2])
             i = min(ready, key=lambda k: _distance_to_start(runs[k], here))
             ready.discard(i)
             run = runs[i]
             points = self._spiral(run["points"], run["before"]) if run["kind"] == "loop" else run["points"]
-            own = shapely.union_all([done] + [bands[k][0] for k in of_run[i]])
-            self._cut(points, z, z_prev, previous_area, done.buffer(self.eps), own.buffer(1e-6), air, run["ring"])
+            self._cut(points, z, done, [bands[k][0] for k in of_run[i]], air, run["ring"])
             for k in of_run[i]:
                 left[k] -= 1
                 if left[k] == 0:
@@ -265,39 +326,23 @@ class Clearing:
 
     # --- getting there and cutting --------------------------------------------------------------------------------
 
-    def _go(self, start, z_from) -> None:
-        """Over ``start`` by the clearance plane, down to the retract plane, then to 1 mm over ``z_from``."""
-        b, heights = self.b, self.heights
-        if b.pos[2] < heights.retract - 1e-9:
-            b.rapid(z=heights.retract)
-        if (abs(b.pos[0] - start[0]) > 1e-9) or (abs(b.pos[1] - start[1]) > 1e-9):
-            if b.pos[2] < heights.clearance - 1e-9:
-                b.rapid(z=heights.clearance)
-            b.rapid(x=start[0], y=start[1])
-        b.rapid(z=heights.retract)
-        if z_from + 1.0 < heights.retract:
-            b.rapid(z=z_from + 1.0)
-
-    def _cut(self, run, z, z_prev, previous_area, safe, band, air, ring) -> None:
-        """To the start of ``run`` and along it at ``z``. A stretch the tool cannot reach at depth through cleared
-        space is come back to from the retract plane: straight down where its start is in the air, else ramped into
-        along itself (never fed straight down into material)."""
+    def _cut(self, run, z: float, done, own_bands, air, ring) -> None:
+        """To the start of ``run`` and along it at ``z``. At depth the tool steps at most a stepover into its own
+        band, or feeds through bands already cut whole (``done``); otherwise it comes back from the retract plane:
+        straight down where the start is in the air, else ramped into along the stretch itself."""
         import numpy as np
         import shapely
 
-        from cadgen._internal.cam.operations._milling2d import ramp_along
-
-        b, heights, feeds, state, r = self.b, self.heights, self.feeds, self.state, self.r
+        b, heights, feeds, r = self.b, self.heights, self.feeds, self.r
         target = (float(run[0][0]), float(run[0][1]))
         step = shapely.LineString([b.pos[:2], target])
         down = abs(b.pos[2] - z) < 1e-9
-        if down and step.length <= 1.5 * self.stepover and step.within(band):
+        if down and step.length <= 1.5 * self.stepover and _within(step, [done, *own_bands], 1e-6):
             # A step of at most a stepover into the new band (onto the first ring round an entry).
             b.feed(x=target[0], y=target[1], z=z, f=feeds.ramp_mm_min)
-        elif down and (step.length < 1e-9 or step.within(safe.buffer(1e-6))):
+        elif down and (step.length < 1e-9 or _within(step, [done], self.eps + 1e-6)):
             b.feed(x=target[0], y=target[1], z=z, f=feeds.feed_mm_min)
         else:
-            state["lifts"] += 1
             b.rapid(z=heights.retract)
             b.rapid(x=target[0], y=target[1])
             point = shapely.Point(target)
@@ -306,47 +351,43 @@ class Clearing:
                 if z + 1.0 < heights.retract:
                     b.rapid(z=z + 1.0)
                 b.feed(z=z, f=feeds.plunge_mm_min)
-                state["entries"]["air"] += 1
+                self.entries["air"] += 1
             else:
-                above = previous_area is not None and previous_area.buffer(1e-6).contains(point)
-                z_from = z_prev if above else heights.stock_top
+                z_from = self._z_from(target)
                 if z_from + 1.0 < heights.retract:
                     b.rapid(z=z_from + 1.0)
                 circle = point.buffer(r * 0.999, quad_segs=16)
-                near = [line for line in state["cut"] if line.distance(point) <= 2.0 * r]
+                near = [line for line in self._cut_lines if line.distance(point) <= 2.0 * r]
                 if near and circle.difference(shapely.union_all([line.buffer(r, quad_segs=16)
                                                                  for line in near])).area < 1e-3:
                     # This level is cut all round the tool there already: straight down through air.
                     b.feed(z=z, f=feeds.plunge_mm_min)
                 else:
                     k = int(np.argmin(np.hypot(ring[:, 0] - target[0], ring[:, 1] - target[1])))
-                    around = np.vstack([[target], ring[k:], ring[:k + 1]])
-                    if ramp_along(b, run, z_from, z, angle_deg=self.angle, f=feeds.ramp_mm_min) or ramp_along(
-                            b, around, z_from, z, angle_deg=self.angle, f=feeds.ramp_mm_min):
-                        state["entries"]["ramp"] += 1
-                    else:
-                        b.feed(z=z_from, f=feeds.ramp_mm_min)
-                        b.plunge(z=z, f=feeds.plunge_mm_min)
-                        state["entries"]["plunge"] += 1
+                    self._enter([run, np.vstack([[target], ring[k:], ring[:k + 1]])], z_from, z)
         b.polyline(np.column_stack([run[1:], np.full(len(run) - 1, z)]), f=feeds.feed_mm_min)
-        state["cut"].append(shapely.LineString(run) if len(run) > 1 else shapely.Point(run[0]))
-        state["passes"] += 1
+        self._cut_lines.append(shapely.LineString(run) if len(run) > 1 else shapely.Point(run[0]))
+        self.passes += 1
 
-    def meta(self) -> dict:
-        """The plain facts of the clearing, for the operation's meta."""
-        state = self.state
-        out = {"entries": {k: v for k, v in state["entries"].items() if v}, "passes": state["passes"],
-               "full_slot_mm": round(state["full_slot"], 3)}
-        if state["skipped"]:
-            out["levels_already_clear"] = state["skipped"]
-        return out
+
+def _within(line, regions, pad: float) -> bool:
+    """Whether ``line`` lies within the union of ``regions`` grown by ``pad``: each is cut down to a box round the
+    line first, so the growing is local, not the whole region's every time."""
+    import shapely
+
+    # The box grown from the line's bounds, never a zero-width box grown (a link straight along x or y has one).
+    margin = 2.0 * pad + 1e-6
+    x0, y0, x1, y1 = line.bounds
+    box = shapely.box(x0 - margin, y0 - margin, x1 + margin, y1 + margin)
+    local = shapely.union_all([region.intersection(box) for region in regions if not region.is_empty])
+    return not local.is_empty and line.within(local.buffer(pad))
 
 
 def _distance_to_start(run, here) -> float:
     """How far the tool is from where it would start ``run``: its first point, or a loop's nearest."""
     import numpy as np
 
-    kind, points = run["kind"], run["points"]
-    if kind == "loop":
+    points = run["points"]
+    if run["kind"] == "loop":
         return float(np.min(np.hypot(points[:, 0] - here[0], points[:, 1] - here[1])))
     return float(np.hypot(points[0][0] - here[0], points[0][1] - here[1]))

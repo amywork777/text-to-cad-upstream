@@ -58,7 +58,11 @@ class AirReport(unittest.TestCase):
             b.rapid(z=-2)
             b.polyline(np.column_stack([points[1:], np.full(len(points) - 1, -2.0)]), f=1000)
             b.rapid(z=5)
-        return air_report(self.ctx, b.build(), stock_now=SimpleNamespace(sim=None))
+        # A slab of stock 50 mm round, its top at Z 0, and no part in it.
+        slab = SimpleNamespace(
+            surface_at=lambda xy: np.where(np.abs(np.asarray(xy)).max(axis=1) < 50.0, 0.0, -np.inf),
+            part_surface_at=lambda xy: np.full(len(xy), -np.inf))
+        return air_report(self.ctx, b.build(), stock_now=slab)
 
     def test_a_pass_that_removes_nothing_is_air_and_one_that_removes_a_sliver_is_not(self):
         line = lambda y: np.column_stack([np.linspace(-20, 20, 200), np.full(200, y)])  # noqa: E731

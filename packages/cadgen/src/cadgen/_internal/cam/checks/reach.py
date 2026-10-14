@@ -18,7 +18,7 @@ down at the R plane under the part, the holder is still over the stock's top (``
 
 from __future__ import annotations
 
-from cadgen._internal.cam.checks.base import finding, xyz
+from cadgen._internal.cam.checks.base import assumed_lengths, finding, xyz
 
 __all__ = ["run"]
 
@@ -54,7 +54,7 @@ def _back_bore(ctx, op, tol: float) -> list[dict]:
     at = plan.wcs.from_wcs([[rows["x"][k], rows["y"][k], rows["z"][k]]])[0]
     item = {"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3),
             "flute_length_mm": tool.flute_length_mm, "stickout_mm": tool.stickout_mm, "at": xyz(at)}
-    if "stickout_mm" in getattr(tool, "assumed", ()):
+    if assumed_lengths(tool, ("stickout_mm",)):
         return [_not_judged(op, tool, depth, "stickout_mm", item)]
     return [finding(
         "reach", "error", "reach_holder",
@@ -95,17 +95,16 @@ def run(ctx) -> list[dict]:
         item = {"setup": op.setup, "operation": op.index, "depth_mm": round(depth, 3),
                 "flute_length_mm": tool.flute_length_mm, "stickout_mm": tool.stickout_mm,
                 "at": xyz(at) if at is not None else None}
-        guessed = getattr(tool, "assumed", ())
-        if depth > tool.stickout_mm + tol and "stickout_mm" in guessed:
-            out.append(_not_judged(op, tool, depth, "stickout_mm", item))
-        elif depth > tool.stickout_mm + tol:
+        # Each finding stands on the length it is judged by: a stated one judges, a guessed one cannot.
+        past_holder = depth > tool.stickout_mm + tol
+        if past_holder and not assumed_lengths(tool, ("stickout_mm",)):
             out.append(finding(
                 "reach", "error", "reach_holder",
                 f"Tool too short for this cut: {op.summary or op.spec.op} goes {depth:.1f} mm deep but {tool.id} "
                 f"({tool.plain}) sticks out only {tool.stickout_mm:g} mm, so the holder hits",
                 "use a longer tool or more stickout (stickout_mm), or cut less deep from this side", [item]))
-        elif "flute_length_mm" in guessed:
-            out.append(_not_judged(op, tool, depth, "flute_length_mm", item))
+        elif assumed_lengths(tool, ("flute_length_mm",)):
+            out.append(_not_judged(op, tool, depth, "stickout_mm" if past_holder else "flute_length_mm", item))
         else:
             out.append(finding(
                 "reach", "error", "reach_flutes",

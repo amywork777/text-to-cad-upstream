@@ -220,6 +220,10 @@ class AssumedInAPlan(unittest.TestCase):
         stated = self.plan("stated", {"flute_length_mm": 6, "stickout_mm": 8, "shank_diameter_mm": 2})
         (reach,) = [f for f in stated.findings if f["check"] == "reach"]
         self.assertEqual(("error", "reach_holder"), (reach["severity"], reach["type"]))
+        # A stated flute length still judges the cut when only the stickout is a guess.
+        flutes = self.plan("flutes", {"flute_length_mm": 3, "shank_diameter_mm": 2})
+        (reach,) = [f for f in flutes.findings if f["check"] == "reach"]
+        self.assertEqual(("error", "reach_flutes"), (reach["severity"], reach["type"]))
 
     def test_the_glb_and_the_header_carry_what_was_assumed(self):
         from tests.python.support.cam_fixtures import read_glb
@@ -231,7 +235,7 @@ class AssumedInAPlan(unittest.TestCase):
         cam = document["scenes"][document.get("scene", 0)]["extras"]["cam"]
         self.assertEqual([dict(entry) for entry in result.assumed], cam["assumed"])
         text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
-        self.assertIn("POST FANUC ASSUMED, AS THE JOB NAMES NO MACHINE OR POST.", text.upper())
+        self.assertIn("ASSUMED, NOT STATED: POST FANUC, MAX_RPM 8000.", text.upper())
 
 
 if __name__ == "__main__":

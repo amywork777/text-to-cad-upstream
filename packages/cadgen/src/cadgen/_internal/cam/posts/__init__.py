@@ -19,7 +19,7 @@ from cadgen._internal.cam.job_errors import CamJobError, shown
 if TYPE_CHECKING:
     from cadgen._internal.cam.posts.base import Post
 
-__all__ = ["DEFAULT_POST", "Entry", "POST_NAMES", "REGISTRY", "available", "built", "entry_for", "get_post",
+__all__ = ["DEFAULT_POST", "Entry", "POST_NAMES", "REGISTRY", "available", "built", "entry_for", "get_post", "option_default",
            "option_keys", "parse_options"]
 
 _PACKAGE = "cadgen._internal.cam.posts"
@@ -53,9 +53,10 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
 
 POST_NAMES = tuple(REGISTRY)
 
-#: The post a job gets when its machine names none.
-DEFAULT_POST = {"mill": "grbl", "router": "grbl", "laser": "grbl", "mill4": "linuxcnc", "mill5": "linuxcnc",
-                "lathe": "linuxcnc", "plasma": "plasma", "waterjet": "waterjet", "wire_edm": "wire_edm"}
+#: The post a job gets when neither its machine nor its machine's model names one: the dialect most machines of the
+#: kind read (``machines.GENERIC`` says why for each, and the plan lists it as assumed).
+DEFAULT_POST = {"mill": "fanuc", "mill4": "fanuc", "mill5": "fanuc", "lathe": "fanuc", "router": "grbl",
+                "laser": "grbl", "plasma": "plasma", "waterjet": "waterjet", "wire_edm": "wire_edm"}
 
 
 def available(name: str) -> bool:
@@ -86,6 +87,13 @@ def _post_class(name: object):
     if entry is None or not available(name):
         return None
     return getattr(importlib.import_module(entry.module), entry.cls)
+
+
+def option_default(name: str, key: str):
+    """Post ``name``'s own default for its machine key ``key`` (grbl's ``spindle_spinup_s``), or None."""
+    cls = _post_class(name)
+    spec = cls.options.get(key) if cls is not None else None
+    return spec.get("default") if isinstance(spec, dict) else None
 
 
 def option_keys(machine: dict) -> tuple[str, ...]:
