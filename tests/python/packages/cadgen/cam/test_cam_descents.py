@@ -3,9 +3,9 @@ and never rapids sideways under the retract plane: :func:`~tests.python.support.
 :func:`~tests.python.support.cam_soundness.rapids_below`, measured on the IR independently of the planners.
 
 Each operation is planned on its own (nothing an earlier operation cut hides a bad descent), except where the job
-needs an earlier one: a chamfer or an engraving after the facing that takes the stock off the part's top, a thread
-after the hole is drilled, an external thread after the stud is cleared round. What the harness passes for a reason of
-its own is written in :data:`EXCUSED`, each with that reason, and nothing else.
+needs an earlier one: a chamfer, an engraving or a V-carve after the facing that takes the stock off the part's top,
+a thread after the hole is drilled, an external thread after the stud is cleared round. What the harness passes for a
+reason of its own is written in :data:`EXCUSED`, each with that reason, and nothing else.
 """
 
 from __future__ import annotations
@@ -28,10 +28,14 @@ EXCUSED = {
     "engrave": "an engraving tool enters its line by plunging its point straight down at the plunge feed: a pointed "
                "tool cuts at its centre, and the line is only depth_mm deep (a fraction of a millimetre); the run "
                "does not count these as plunges to warn of",
+    "vcarve": "a V-bit goes down along its own carve no steeper than its cone's flank (the cone's side, not its point, "
+              "meets the material ahead), to depths where the cone's edge stays inside the shape's outline: how a "
+              "V-carve runs down its medial axis from a corner, ramps into a ring or spirals into a dot",
 }
 
 #: The operations whose soundness this suite owns: every 2.5D milling operation the bracket, block and boss plan.
-MILLING_2D = ("face", "contour", "pocket", "adaptive", "slot", "chamfer", "engrave", "helix_bore", "thread_mill")
+MILLING_2D = ("face", "contour", "pocket", "adaptive", "slot", "chamfer", "engrave", "vcarve", "helix_bore",
+              "thread_mill")
 
 DRILL = {"id": "T7", "type": "drill", "diameter_mm": 5, "flute_length_mm": 20, "stickout_mm": 30}
 REGION = {"polygon": [[-20, -10], [20, -10], [20, 10], [-20, 10]]}
@@ -42,7 +46,24 @@ def _excuse(op, start, end, kind) -> str | None:
     straight_down = abs(start[0] - end[0]) < 1e-9 and abs(start[1] - end[1]) < 1e-9
     if op.spec.op == "engrave" and kind == PLUNGE and straight_down:
         return "engrave"
+    if op.spec.op == "vcarve" and kind != PLUNGE and _along_the_cone(op, start, end):
+        return "vcarve"
     return None
+
+
+def _along_the_cone(op, start, end) -> bool:
+    """A V-carve's descent (its job gives a ``region`` and ``surface_z``) that ends with the cone's edge inside the
+    region's outline and drops no more than ``1 / tan(half angle)`` per millimetre across."""
+    import math
+
+    import shapely
+
+    tan = math.tan(math.radians(op.tool.angle_deg / 2.0))
+    depth = op.params["surface_z"] - end[2]
+    inside = op.params["region"].boundary.distance(shapely.Point(end[0], end[1]))
+    across = math.hypot(end[0] - start[0], end[1] - start[1])
+    return (op.tool.tip_diameter_mm / 2.0 + depth * tan <= inside + 1e-3
+            and start[2] - end[2] <= across / tan * (1 + 1e-3) + 1e-9)
 
 
 class Sound(unittest.TestCase):
@@ -111,6 +132,9 @@ class Bracket(Sound):
             "thread_after_drill": [{"op": "drill", "tool": "T7", "faces": taps},
                                    {"op": "thread_mill", "tool": "T4", "faces": taps}],
             "engrave_after_face": [{"op": "face", "tool": "T1"}, {"op": "engrave", "tool": "T6", "dxf": "mark.dxf"}],
+            "vcarve_after_face": [{"op": "face", "tool": "T1"},
+                                  {"op": "vcarve", "tool": "T3", "surface_z": -1, "stepdown_mm": 2,
+                                   "region": {"polygon": [[-12, 10], [12, 10], [12, 20], [-12, 20]]}}],
         }.items()}
 
     def test_face_zigzag(self):
@@ -160,6 +184,9 @@ class Bracket(Sound):
 
     def test_engrave_after_face(self):
         self.assert_sound("engrave_after_face")
+
+    def test_vcarve_after_face(self):
+        self.assert_sound("vcarve_after_face")
 
 
 class Block(Sound):

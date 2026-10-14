@@ -1,7 +1,7 @@
 # 2.5D milling
 
 Flat floors, straight walls, holes and edges, cut in levels with the tool along Z: `face`, `contour`,
-`pocket`, `adaptive`, `slot`, `chamfer`, `engrave`, `helix_bore`, `circular`, `trace` and
+`pocket`, `adaptive`, `slot`, `chamfer`, `engrave`, `vcarve`, `helix_bore`, `circular`, `trace` and
 `thread_mill`. Drilling is
 [drilling.md](drilling.md); curved surfaces are [milling-3d.md](milling-3d.md). The keys every
 operation shares (`tool`, `faces`, `region`, `feed`, `speed`, `stepdown_mm`, `stepover`,
@@ -172,6 +172,44 @@ plunges at each start. The modelled part has no engraving, so the gouge check do
 
 The line's width at the surface is `tip diameter + 2 x depth x tan(half angle)` (in its note).
 
+## vcarve: V-carve (lite)
+
+Carves closed shapes with a V-bit along their medial axis (the centres of the largest circles that
+fit inside), so the walls come out as sharp Vs: a DXF's closed profiles (even-odd, so a letter's
+counter stays; open curves and text are skipped and counted in the note: explode text to curves),
+flat `faces` (each face's own area, from its height), or a `region` polygon (no `bottom_z`). Vee,
+engraver or chamfer tool; a flat, ball or other non-pointed tool is refused. At each point the tip
+goes `(distance to the outline - tip radius) / tan(half angle)` below the surface, so the cone's
+edge just touches the outline: a narrow stroke is shallow, a wide one deep. Runs are cut nearest
+first, each entered where the tool already is, straight down onto the surface at a corner, onto a
+point already cut as deep, or zig-zagging down along itself no steeper than the cone's flank (a
+round dot spirals in); never a plunge into material. The modelled part has no carving, so the gouge
+check does not judge it.
+
+| key | meaning |
+| --- | --- |
+| `dxf` | the drawing's path, relative to the job file (else the part), or absolute |
+| `origin_mm` | where the DXF's origin goes, `[x, y]` WCS (default `[0, 0]`) |
+| `max_depth_mm` | the deepest the tip goes; wider than the cone there leaves a flat bottom (default: none) |
+| `surface_z` | the surface's height, WCS (default: the named face's, else the part's top) |
+
+`stepdown_mm` (optional) carves in levels; the default is one pass. With `max_depth_mm`, the V-bit
+also runs the outline inset `tip radius + max_depth x tan(half angle)` at that depth (the walls'
+foot), and the flat bottom inside is left: an operation has one tool, so clear it with a separate
+`pocket` and a flat tool on the outline inset `flat_inset_mm`, its `region` `bottom_z` at
+`flat_bottom_z` (both in the facts, with `flat_area_mm2`; the note says so). A DXF shape's flat
+bottom needs its outline written as that region. The facts give `shapes`, `runs`, `levels`,
+`length_mm` and `max_depth_mm`.
+
+Refused: no closed shape, or every shape too small to carve (`empty_operation`); every shape
+narrower than the tool's tip (`tool_too_large`); a shape wider than the cone is tall with no
+`max_depth_mm` (`tool_too_small`: give one, or a wider V-bit); a `max_depth_mm` deeper than the
+cone, or a carve past the flutes (`too_deep`); the part's top under uncut stock (`unreachable`:
+face it first). A face below the part's top must be cleared down to first (a pocket before it).
+Lite: the flat bottom is not cleared, and the axis is read from the outline sampled every 0.1 mm
+(finer in small shapes), so it is within about that of the true one; the depth at each point is
+exact for where the point is.
+
 ## helix_bore: Helix bore
 
 Mills round holes by helical interpolation, posted as G2/G3 arcs with Z: the tool circles the
@@ -279,6 +317,6 @@ Each operation's row says its tool, spindle speed, feed and time; its `facts` gi
 floor or bottom it reached. A `note` becomes a warning line: loops too small for the tool, tabs a loop
 was too short for, a chamfer's or an engraving's width and depth, a thread's size. Inside corners the
 tool's radius cannot reach come back as the `corner_radius` warning ([checks.md](checks.md)): finish
-them with a smaller tool. Chamfer, engrave, thread mill and a trace `on` its edges cut into the
+them with a smaller tool. Chamfer, engrave, V-carve, thread mill and a trace `on` its edges cut into the
 modelled part on purpose and are not judged by `gouge`; every other operation here is, so a gouge
 from them means a wrong face, edge, offset or `bottom_z`.

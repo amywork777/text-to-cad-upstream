@@ -213,11 +213,11 @@ read, rather than ignore it: of `feed`, `speed`, `stepdown_mm`, `stepover`, `ste
 
 | operations | read |
 | --- | --- |
-| `face`, `pocket`, `adaptive`, `slot`, `helix_bore`, `rough`, `waterline`, `rest`, `rotary` | all of them (`rest` of `parallel`: no `stepdown_mm`) |
+| `face`, `pocket`, `adaptive`, `slot`, `helix_bore`, `circular`, `rough`, `waterline`, `rest`, `rotary` | all of them (`rest` of `parallel`: no `stepdown_mm`) |
 | `contour`, `swarf` | `feed`, `speed`, `stepdown_mm`, `stock_to_leave_mm` |
 | `parallel`, `scallop`, `surface_normal` | `feed`, `speed`, `stepover`, `stepover_mm`, `stock_to_leave_mm` |
 | `pencil`, `turn_rough`, `turn_finish`, `turn_groove` | `feed`, `speed`, `stock_to_leave_mm` |
-| `engrave`, `cut` | `feed`, `speed`, `stepdown_mm` (a beam's `cut`: `feed` only) |
+| `engrave`, `vcarve`, `trace`, `cut` | `feed`, `speed`, `stepdown_mm` (a beam's `cut`: `feed` only) |
 | `drill`, `thread_mill`, `chamfer`, `turn_face`, `turn_drill`, `turn_partoff` | `feed`, `speed` (a tap: `speed` only) |
 | `turn_thread` | `speed` (a thread feeds one pitch a turn) |
 | `wire_edm` | `feed` |
