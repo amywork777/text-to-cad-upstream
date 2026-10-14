@@ -20,7 +20,11 @@ def run(ctx) -> list[dict]:
         boxes = plan.setup.fixtures
         if not boxes or plan.toolpath is None or not len(plan.toolpath):
             continue
-        samples = plan.toolpath.sample(max(ctx.tolerance_mm, 0.05), max_step_mm=1.0)
+        # Every millimetre, coarser on a path too long to hold that many samples (the 3D gouge check's budget).
+        from cadgen._internal.cam.checks._gouge3d import MAX_POINTS
+
+        step = max(1.0, float(plan.toolpath.lengths().sum()) / MAX_POINTS)
+        samples = plan.toolpath.sample(max(ctx.tolerance_mm, 0.05), max_step_mm=step)
         axis = np.asarray(plan.wcs.tool_axis)
         tips = plan.wcs.from_wcs(samples.points)
         tools = {op.index: op.tool for op in ctx.ops if op.setup == plan.setup.id}

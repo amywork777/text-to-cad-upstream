@@ -124,7 +124,7 @@ class FaceOp(Operation):
 
 def _levels(top: float, bottom: float, stepdown: float) -> list[float]:
     """Cut levels from just below ``top`` down to exactly ``bottom``, evenly split, none deeper than ``stepdown``."""
-    if stepdown <= 0:
-        raise CamJobError("stepdown_mm must be more than 0")
-    count = max(1, int(math.ceil((top - bottom) / stepdown - 1e-9)))
+    from cadgen._internal.cam.job_errors import level_count
+
+    count = level_count(top, bottom, stepdown)
     return [top - (top - bottom) * (k + 1) / count for k in range(count)]

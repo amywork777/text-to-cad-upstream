@@ -22,6 +22,7 @@ import math
 
 import numpy as np
 
+from cadgen._internal.cam.fit import op_step
 from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, FEED, PLUNGE, RAPID
 from cadgen._internal.cam.stock import MaterialLeft, SimReport
 
@@ -205,7 +206,7 @@ class HeightfieldSim:
             if tool is None or tool.family != "mill" or op.end <= op.start:
                 continue
             piece = toolpath.slice(op.start, op.end)
-            samples = piece.sample(self.tolerance, max_step_mm=self.step)
+            samples = piece.sample(self.tolerance, max_step_mm=op_step(self.step, self.cell, tool))
             points = wcs.from_wcs(samples.points)
             cutting = np.isin(samples.kind, (FEED, PLUNGE, ARC_CW, ARC_CCW))
             rapid = samples.kind == RAPID

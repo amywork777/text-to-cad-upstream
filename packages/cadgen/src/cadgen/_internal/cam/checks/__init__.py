@@ -98,6 +98,8 @@ def run_checks(ctx) -> tuple[list[dict], list[str], list[dict]]:
             [{"setup": setup_id, "checks": names}]))
     if reports and len(unsimulated) == len(reports):
         ran = [name for name in ran if not (name in ON_STOCK and ON_STOCK[name][1])]
+        # ... and what it found on stock nothing cut is not a finding (material left: the whole uncut block).
+        found = [item for item in found if not (item.get("check") in ON_STOCK and ON_STOCK[item["check"]][1])]
     # A check that could not read what it judges said so (``not_judged``): a skipped entry too.
     for item in found:
         if item.get("type") == "not_judged":

@@ -109,7 +109,9 @@ def plan_waterline(ctx, params, *, limit=None):
     if top - low < 1e-6:
         ctx.meta["note"] = "nothing to cut: the part is flat inside the boundary"
         return b.build()
-    count = max(1, int(math.ceil((top - low) / stepdown - 1e-9)))
+    from cadgen._internal.cam.job_errors import level_count
+
+    count = level_count(top, low, stepdown)
     levels = [top - (top - low) * (k + 0.5) / count for k in range(count)]
     # Never exactly on a flat: a level a hair above one finds its walls.
     flats = np.unique(np.round(grid[inside], 4))

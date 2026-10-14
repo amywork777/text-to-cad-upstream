@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, level_count
 
 __all__ = ["HoleTarget", "Target", "face_targets", "helix_arcs", "hole_targets", "levels", "link", "orient",
            "unreachable_in"]
@@ -56,7 +56,7 @@ def levels(top: float, bottom: float, stepdown: float) -> list[float]:
         raise CamJobError("stepdown_mm must be more than 0")
     if top - bottom <= 1e-9:
         return [float(bottom)]
-    count = max(1, int(math.ceil((top - bottom) / stepdown - 1e-9)))
+    count = level_count(top, bottom, stepdown)
     return [float(top - (top - bottom) * (k + 1) / count) for k in range(count)]
 
 

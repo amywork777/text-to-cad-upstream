@@ -174,7 +174,9 @@ def _levels(ctx, top: float, bottom: float, stepdown: float, leave: float) -> li
     """Even step-downs from the top to the floor, plus every upward-facing flat of the part between them."""
     import numpy as np
 
-    count = max(1, int(math.ceil((top - bottom) / stepdown - 1e-9)))
+    from cadgen._internal.cam.job_errors import level_count
+
+    count = level_count(top, bottom, stepdown)
     levels = {round(top - (top - bottom) * (k + 1) / count, 6) for k in range(count)}
     for info in ctx.part.faces.values():
         if info.surface != "plane" or info.normal is None:

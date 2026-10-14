@@ -92,6 +92,11 @@ MOVE_DTYPE = np.dtype([
 ])
 #: Rapid rate when no machine is given (mm/min).
 DEFAULT_RAPID = 5000.0
+#: The most moves one operation plans: past it a job asks for more than any program runs (a hundredth-of-a-millimetre
+#: stepover across a metre), and :class:`ToolpathBuilder` refuses it (``PlanTooBig``) before the rows fill the memory.
+MAX_MOVES = 2_000_000
+#: :meth:`Toolpath.sample` interpolates straight moves this many samples at a time.
+_SAMPLE_CHUNK = 250_000
 
 
 @dataclass(frozen=True)
@@ -289,12 +294,20 @@ class Toolpath:
         offsets = np.concatenate([[1], 1 + np.cumsum(pieces)])
         # Straight moves (and dwells) vectorised: linear interpolation between their ends.
         simple = np.nonzero(~np.isin(np.arange(n), arcs))[0]
-        if len(simple):
-            counts = pieces[simple]
-            repeat = np.repeat(simple, counts)
+        # In groups of about _SAMPLE_CHUNK samples, so the temporaries stay small on a long path (a simulator's
+        # millions of samples), whatever the output's size.
+        cumulative = np.cumsum(pieces[simple]) if len(simple) else np.zeros(0, dtype=np.int64)
+        edges = [0, *np.searchsorted(cumulative, np.arange(_SAMPLE_CHUNK, int(cumulative[-1]) if len(simple) else 0,
+                                                           _SAMPLE_CHUNK)).tolist(), len(simple)]
+        for a, b in zip(edges[:-1], edges[1:]):
+            if b <= a:
+                continue
+            group = simple[a:b]
+            counts = pieces[group]
+            repeat = np.repeat(group, counts)
             within = np.arange(int(counts.sum())) - np.repeat(np.cumsum(counts) - counts, counts)
             fraction = (within + 1) / np.repeat(counts, counts)
-            rows = np.repeat(offsets[simple], counts) + within
+            rows = np.repeat(offsets[group], counts) + within
             begin, end = pos[repeat], pos[repeat + 1]
             points[rows] = begin + (end - begin) * fraction[:, None]
             start_t = times[repeat] + waits[repeat]
@@ -393,6 +406,11 @@ class ToolpathBuilder:
              p: float = 0.0, abc=None) -> None:
         if abc is not None:
             self._abc = [float(v) for v in abc]
+        if len(self._rows) >= MAX_MOVES:
+            from cadgen._internal.cam.job_errors import PlanTooBig
+
+            raise PlanTooBig(f"it needs more than {MAX_MOVES:,} moves: use a bigger tool, a larger stepover or "
+                             "stepdown, or a smaller region")
         self._rows.append((kind, end[0], end[1], end[2], *self._abc, float(feed), *centre, plane, float(p), self._op))
         self._pos = list(end)
 

@@ -159,8 +159,11 @@ class StaleOutputs(unittest.TestCase):
 
         self.assertTrue(self.plan(mill_job([{"op": "face", "tool": "T1"}])).ok)
         with mock.patch("cadgen._internal.cam.part.read_part", side_effect=RuntimeError("boom")):
-            with self.assertRaises(RuntimeError):
-                self.plan(mill_job([{"op": "face", "tool": "T1"}]))
+            result = self.plan(mill_job([{"op": "face", "tool": "T1"}]))
+        # A crash is a refusal that says it is cadgen's bug (law 10: never a traceback), and leaves nothing.
+        self.assertFalse(result.ok)
+        self.assertEqual("internal_error", result.findings[0]["type"])
+        self.assertIn("RuntimeError: boom", result.findings[0]["summary"])
         self.assertEqual([], self.names())
 
     def test_a_setup_dropped_since_loses_its_file_and_only_cadgen_files_are_swept(self):
@@ -188,8 +191,10 @@ class StaleOutputs(unittest.TestCase):
             return real(src, dst)
 
         with mock.patch("cadgen._internal.cam.run.os.replace", side_effect=flaky):
-            with self.assertRaises(OSError):
-                self.plan(mill_job([{"op": "face", "tool": "T1"}]))
+            result = self.plan(mill_job([{"op": "face", "tool": "T1"}]))
+        # A write that fails is a refusal that says so, with nothing of the new set left.
+        self.assertFalse(result.ok)
+        self.assertIn("disk full", result.findings[0]["summary"])
         self.assertEqual(2, len(calls))
         self.assertEqual([], self.names())
 

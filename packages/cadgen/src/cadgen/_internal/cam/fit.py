@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-__all__ = ["Budget", "display_chord", "sample_spacing", "sim_step", "stock_cell"]
+__all__ = ["Budget", "display_chord", "op_step", "sample_spacing", "sim_step", "stock_cell"]
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,14 @@ def sim_step(path_length_mm: float, cell: float, budget: Budget) -> tuple[float,
                    "words": f"simulation samples every {_mm(step)} along {path_length_mm / 1000:.1f} m of path, "
                             f"not every {_mm(cell)}",
                    "accuracy": f"simulated walls may show scallops up to about {_mm(step * step / 8)} deep"}]
+
+
+def op_step(step: float, cell: float, tool) -> float:
+    """One operation's sample spacing in the stock simulator: the program's ``step``, or wider for a big tool. Stamps
+    of a radius-r cutter ``s`` apart leave a scallop of about s²/8r between them; at ``s = sqrt(2 r cell)`` that is a
+    quarter of a cell, under the grid's own accuracy, and a 25 mm face mill beside a 0.2 mm engraver (a cell of
+    0.05 mm) samples every 1.1 mm, not every 0.05 mm: 22 times less work for the same stock."""
+    return max(step, math.sqrt(2.0 * max(tool.radius, 0.0) * cell))
 
 
 def display_chord(segments_at, tolerance: float, budget: Budget) -> tuple[float, int, list[dict]]:

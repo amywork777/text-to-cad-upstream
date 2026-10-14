@@ -34,6 +34,7 @@ import math
 
 import numpy as np
 
+from cadgen._internal.cam.fit import op_step
 from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, FEED, PLUNGE, RAPID
 from cadgen._internal.cam.stock import MaterialLeft, SimReport
 
@@ -504,16 +505,18 @@ class DexelSim:
 
     # --- cutting ---------------------------------------------------------------------------------------
 
-    def _sample(self, path, abc_before):
+    def _sample(self, path, abc_before, step: float | None = None):
         """Placements along ``path`` (WCS): ``(points (M, 3), abc (M, 3), kind (M,), move (M,))``, each move split so
-        no piece is longer than :attr:`step` or turns any rotary axis more than :data:`DEG_STEP`."""
+        no piece is longer than ``step`` (:attr:`step` when none is given) or turns any rotary axis more than
+        :data:`DEG_STEP`."""
+        step = self.step if step is None else step
         moves = path.moves
         if not len(moves):
             return np.zeros((0, 3)), np.zeros((0, 3)), np.zeros(0, dtype=np.uint8), np.zeros(0, dtype=np.int64)
         abc = np.column_stack([moves["a"], moves["b"], moves["c"]])
         kinds = moves["kind"]
         if np.isin(kinds, (ARC_CW, ARC_CCW)).any():
-            samples = path.sample(self.tolerance, max_step_mm=self.step)
+            samples = path.sample(self.tolerance, max_step_mm=step)
             rows = np.maximum(samples.move, 0)
             points_abc = np.where(samples.move[:, None] >= 0, abc[rows], abc_before[None, :])
             return samples.points[1:], points_abc[1:], samples.kind[1:], samples.move[1:]
@@ -521,7 +524,7 @@ class DexelSim:
         before = np.vstack([abc_before[None, :], abc[:-1]])
         lengths = np.linalg.norm(np.diff(pos, axis=0), axis=1)
         turns = np.abs(abc - before).max(axis=1)
-        pieces = np.maximum(1, np.maximum(np.ceil(lengths / max(self.step, 1e-6)), np.ceil(turns / DEG_STEP)))
+        pieces = np.maximum(1, np.maximum(np.ceil(lengths / max(step, 1e-6)), np.ceil(turns / DEG_STEP)))
         pieces = pieces.astype(np.int64)
         move = np.repeat(np.arange(len(moves)), pieces)
         within = np.arange(int(pieces.sum())) - np.repeat(np.cumsum(pieces) - pieces, pieces)
@@ -546,7 +549,7 @@ class DexelSim:
                 abc_before = np.array([row["a"], row["b"], row["c"]], dtype=float)
             else:
                 abc_before = np.array([setup_abc.get(axis, 0.0) for axis in "abc"])
-            points_w, abc, kinds, moves = self._sample(piece, abc_before)
+            points_w, abc, kinds, moves = self._sample(piece, abc_before, op_step(self.step, self.cell, tool))
             if not len(points_w):
                 continue
             # The run's first sample is where the operation starts.

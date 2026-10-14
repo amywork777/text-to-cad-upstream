@@ -48,9 +48,17 @@ def list_features(target: Path, *, occurrence: str | None = None) -> CamFeatures
 
     try:
         part = read_part(Path(target), occurrence=occurrence)
+        reading = read_features(part)
     except CamJobError as exc:
         return CamFeaturesResult(ok=False, document=Path(target), findings=(job_finding(str(exc)),))
-    reading = read_features(part)
+    except OSError as exc:
+        return CamFeaturesResult(ok=False, document=Path(target), findings=(job_finding(
+            f"{Path(target).name} could not be read: {exc.strerror or exc}"),))
+    except Exception as exc:  # noqa: BLE001 - a bug in cadgen is a refusal that says so, never a traceback
+        return CamFeaturesResult(ok=False, document=Path(target), findings=(finding(
+            "job", "error", "internal_error",
+            f"cadgen cam failed reading this part ({type(exc).__name__}: {str(exc)[:200]})",
+            "this is a bug in cadgen, not in the part: report it with the part"),))
     low, high = part.bbox
     bbox = {"min": [round(float(v), 4) + 0.0 for v in low], "max": [round(float(v), 4) + 0.0 for v in high],
             "size": [round(float(b - a), 4) + 0.0 for a, b in zip(low, high)]}
@@ -100,7 +108,7 @@ def _glb_cam(path: Path) -> dict | None:
             if magic != b"glTF" or kind != 0x4E4F534A or length > 64 * 1024 * 1024:
                 return None
             document = json.loads(handle.read(length))
-    except (OSError, ValueError, struct.error):
+    except (OSError, ValueError, RecursionError, struct.error):
         return None
     scenes = document.get("scenes") if isinstance(document, dict) else None
     extras = scenes[0].get("extras") if isinstance(scenes, list) and scenes and isinstance(scenes[0], dict) else None
@@ -197,9 +205,12 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
     timings: dict[str, float] = {}
     started = time.perf_counter()
     glb_path = _glb_path(document, out_dir)
-    # Whatever happens next (a refusal, a crash, a plan), the last run's outputs are not left standing beside it.
-    _remove_stale(previous_outputs(document, out_dir, {entry.extension for entry in post_registry.REGISTRY.values()}))
     try:
+        if out_dir is not None and Path(out_dir).exists() and not Path(out_dir).is_dir():
+            raise CamJobError(f"out_dir {out_dir} is a file; pass the folder the outputs go in")
+        # Whatever happens next (a refusal, a crash, a plan), the last run's outputs are not left standing beside it.
+        _remove_stale(previous_outputs(document, out_dir,
+                                       {entry.extension for entry in post_registry.REGISTRY.values()}))
         parsed = parse_job(job)
         _check_drawing_stock(document, parsed.stock)
         entry = post_registry.entry_for(parsed.machine.post, parsed.machine.kind)
@@ -211,6 +222,21 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
         timings["total_s"] = round(time.perf_counter() - started, 4)
         logger.debug(f"refused: {exc}")
         return _refused(document, str(exc), timings)
+    except OSError as exc:
+        # A folder that cannot be written, a full disk, a file that cannot be read: said, with nothing written (the
+        # write removes its temporaries and whatever it had placed).
+        timings["total_s"] = round(time.perf_counter() - started, 4)
+        where = f" ({exc.filename})" if getattr(exc, "filename", None) else ""
+        return _refused(document, f"a file could not be read or written{where}: {exc.strerror or exc}; nothing was "
+                                  "written", timings)
+    except Exception as exc:  # noqa: BLE001 - the last resort: a bug in cadgen is a refusal that says so, never a traceback
+        timings["total_s"] = round(time.perf_counter() - started, 4)
+        logger.debug(f"internal error: {type(exc).__name__}: {exc}")
+        return CamPlanResult(ok=False, document=document, timings=timings, findings=(finding(
+            "job", "error", "internal_error",
+            f"cadgen cam failed while planning this job ({type(exc).__name__}: {str(exc)[:200]}); nothing was written",
+            "this is a bug in cadgen, not in the job: report it with the job and the part. Changing the job (another "
+            "tool, operation or stock) may route round it"),))
 
 
 def _plan(document, parsed, operations, post, glb_path, extension, logger, timings, started) -> CamPlanResult:
@@ -221,7 +247,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
     from cadgen._internal.cam.outputs import line_segments, sample_axes, write_glb
     from cadgen._internal.cam.part import read_part
     from cadgen._internal.cam.posts.base import Program
-    from cadgen._internal.cam.stock import build_stock, create_stock_sim
+    from cadgen._internal.cam.stock import SimReport, build_stock, create_stock_sim
 
     def lap(name: str, since: float) -> float:
         now = time.perf_counter()
@@ -264,7 +290,8 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
     duration = clock
 
     # Simulate.
-    cell, steps = fit.stock_cell(stock, parsed.tools, budget)
+    # The grid is sized by the tools that cut, not by one the job lists and never uses.
+    cell, steps = fit.stock_cell(stock, [op.tool for op in op_plans if op.tool is not None], budget)
     adapted += steps
     sim, steps = create_stock_sim(machine.kind, stock, part, cell_mm=cell, tolerance_mm=tolerance)
     adapted += steps
@@ -277,7 +304,17 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
     removed_before = sim.volume()
     with logger.timed("simulate"):
         for plan in setup_plans:
-            report = sim.cut(plan.toolpath, tools, plan.wcs)
+            # A sample spacing wider than a tool's radius (a tiny tool on a long program) stamps dots, not a cut: the
+            # stock left would be judged wrong, so the setup goes unsimulated, and says so, rather than misjudged.
+            fine = [op.tool for op in op_plans if op.setup == plan.setup.id and op.tool is not None
+                    and op.tool.family == "mill" and op.tool.radius < step]
+            if fine and hasattr(sim, "step"):
+                tool = min(fine, key=lambda t: t.radius)
+                report = SimReport(setup=plan.setup.id, skipped=(
+                    f"the simulation samples every {step:.3g} mm along the program's {length / 1000:.1f} m of path, "
+                    f"wider than {tool.id}'s {tool.radius:g} mm radius, so it cannot follow that tool's cut"))
+            else:
+                report = sim.cut(plan.toolpath, tools, plan.wcs)
             reports[plan.setup.id] = report
             if report.skipped and not any(a.get("setup") == plan.setup.id for a in adapted):
                 adapted.append({"step": "stock_sim", "setup": plan.setup.id, "words": report.skipped})
@@ -470,7 +507,8 @@ def plan_setups(parsed, operations, part, stock, logger=None):
     summary (times are filled in by the caller)."""
     from cadgen._internal.cam.checks.base import OpPlan, SetupPlan
     from cadgen._internal.cam.geom2d import Sections
-    from cadgen._internal.cam.ir import Event, OpRange, Toolpath, ToolpathBuilder, concat
+    from cadgen._internal.cam.ir import MAX_MOVES, Event, OpRange, Toolpath, ToolpathBuilder, concat
+    from cadgen._internal.cam.job_errors import PlanTooBig
     from cadgen._internal.cam.linking import Heights
     from cadgen._internal.cam.multiaxis import hold_rotary
     from cadgen._internal.cam.operations.base import PlanContext
@@ -506,7 +544,15 @@ def plan_setups(parsed, operations, part, stock, logger=None):
                               sections=sections, spec=spec, index=index, tool=tool, start=position,
                               tolerance_mm=tolerance, log=logger.debug, history=list(history))
             with logger.timed(f"plan {setup.id} {spec.index + 1}. {spec.op}"):
-                path = operation.plan(ctx, params)
+                try:
+                    path = operation.plan(ctx, params)
+                except PlanTooBig as exc:
+                    raise CamJobError(f"{spec.where} ({operation.plain}{f' with {tool.id}' if tool else ''}) is too "
+                                      f"big to plan: {exc}") from None
+            if len(path.moves) > MAX_MOVES:
+                raise CamJobError(f"{spec.where} ({operation.plain}{f' with {tool.id}' if tool else ''}) is too big "
+                                  f"to plan: it needs {len(path.moves):,} moves, more than {MAX_MOVES:,}; use a bigger "
+                                  "tool, a larger stepover or stepdown, or a smaller region")
             path = path.with_op(index)
             events = []
             feeds = ctx.chosen_feeds[0] if ctx.chosen_feeds else None

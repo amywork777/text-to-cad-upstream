@@ -81,7 +81,7 @@ def run(ctx) -> list[dict]:
 
     out = []
     tol = max(0.02, 2.0 * getattr(ctx.part, "deflection_mm", 0.01), 2.0 * ctx.tolerance_mm)
-    from cadgen._internal.cam.checks._gouge3d import gouges_3d
+    from cadgen._internal.cam.checks._gouge3d import MAX_POINTS, gouges_3d
 
     out.extend(gouges_3d(ctx, tol))
     for op in ctx.ops:
@@ -94,7 +94,10 @@ def run(ctx) -> list[dict]:
         if op.end <= op.start:
             continue
         piece = plan.toolpath.slice(op.start, op.end)
-        samples = piece.sample(ctx.tolerance_mm, max_step_mm=max(0.25, tool.radius / 2.0))
+        # Every quarter millimetre (half the radius for a big tool), coarser on a path too long to hold that many
+        # samples (a tiny tool across a big plate), as the 3D gouge check does.
+        length = float(piece.lengths()[piece.moves["kind"] != RAPID].sum())
+        samples = piece.sample(ctx.tolerance_mm, max_step_mm=max(0.25, tool.radius / 2.0, length / MAX_POINTS))
         cutting = (samples.kind != RAPID)
         cutting[0] = False
         points = samples.points[cutting]
