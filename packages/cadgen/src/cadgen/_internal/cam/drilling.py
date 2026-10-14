@@ -1,11 +1,14 @@
 """What the ``drill`` operation plans with: holes read in a setup's WCS, their order, tool tips and threads.
 
-* :class:`Hole`: one hole to drill, in WCS mm: its centre ``x, y``, its ``top`` (where the hole opens), its
-  ``bottom`` (a blind hole's floor, a through hole's exit; ``None`` for a point the job gave), its diameter (``None``
-  for a point), whether it goes through, and whether its model draws a drill point (a cone) below its floor.
+* :class:`Hole`: one hole to drill, in WCS mm: its centre ``x, y``, its ``top`` (where the hole opens on the part:
+  the top of its counterbore or countersink), its ``bottom`` (a blind hole's floor, a through hole's exit; ``None``
+  for a point the job gave), its diameter (``None`` for a point), whether it goes through, the length of the drill
+  point its model draws below its floor (``point_mm``, 0 for a flat floor) and its countersink's diameter.
 * :func:`holes_from_faces`, :func:`holes_matching` and :func:`holes_from_points` resolve an operation's ``faces``,
   ``holes`` filter or ``points``. A face hole whose axis is not the setup's Z is refused in one sentence that names
-  the setup (or the orientation) that would reach it.
+  the setup (or the orientation) that would reach it; one along it whose opening the part covers from this side
+  (a hole in the floor of a cave) is a :class:`~cadgen._internal.cam.job_errors.PlanError` ``unreachable``, and
+  ``holes`` leaves such holes out and counts them.
 * :func:`tip_length`: how far a tool's point reaches below its full diameter (a drill's 118° point, a spot drill's
   cone, a tap's lead).
 * :func:`order_shortest`: nearest neighbour, then 2-opt, an open path from a fixed start.
@@ -20,7 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, PlanError
 
 __all__ = ["Hole", "MAX_TWO_OPT", "METRIC_THREADS", "holes_from_faces", "holes_from_points", "holes_matching",
            "order_shortest", "path_length", "spot_depth", "tap_problems", "thread_for_hole", "tip_length", "top_at"]
@@ -47,13 +50,26 @@ class Hole:
     bottom: float | None
     diameter: float | None
     through: bool = False
-    point_drawn: bool = False
+    #: How far the drill point the model draws reaches below ``bottom`` (0: a flat floor, or not blind).
+    point_mm: float = 0.0
+    #: The countersink's diameter at the opening, when the hole has one.
+    countersink: float | None = None
     faces: tuple[str, ...] = ()
     label: str = ""
 
     @property
     def depth(self) -> float | None:
         return None if self.bottom is None else self.top - self.bottom
+
+    @property
+    def point_drawn(self) -> bool:
+        return self.point_mm > 0.0
+
+    @property
+    def deepest(self) -> float | None:
+        """The lowest point of a blind hole (its drawn point's tip, else its floor); None for a through hole or a
+        point."""
+        return None if self.bottom is None or self.through else self.bottom - self.point_mm
 
 
 def _g(value: float) -> str:
@@ -72,47 +88,52 @@ def _setup_axis(setup):
     return rotation_for(setup.orientation)[2]
 
 
-def _point_drawn(part, hole: dict) -> bool:
-    """Whether a cone sits on the hole's axis just beyond its floor (a drawn drill point)."""
-    import numpy as np
-
-    if hole["through"]:
-        return False
-    axis = np.asarray(hole["axis"], dtype=float)
-    bottom = np.asarray(hole["bottom_mm"], dtype=float)
-    radius = hole["diameter_mm"] / 2.0
-    for info in part.faces.values():
-        if info.surface != "cone" or info.axis is None:
-            continue
-        d = np.asarray(info.axis, dtype=float)
-        if abs(abs(float(d @ axis)) - 1.0) > 1e-6:
-            continue
-        offset = np.asarray(info.axis_point, dtype=float) - bottom
-        if np.linalg.norm(np.cross(offset, axis)) > 1e-3:
-            continue
-        along = float((np.asarray(info.center_mm) - bottom) @ axis)
-        if -2.0 * radius - 1e-6 <= along < 0.0:
-            return True
-    return False
-
-
-def _in_setup(ctx, hole: dict) -> Hole | None:
-    """The hole in the setup's WCS, or None when its axis is not the setup's Z (or a through hole's -Z)."""
-    import numpy as np
+def _in_setup(ctx, hole: dict) -> tuple[Hole | None, bool]:
+    """The hole in the setup's WCS, or None when its axis is not the setup's Z (or a through hole's -Z); and whether
+    the end it is drilled from is reached (nothing of the part covers it along the axis)."""
+    from cadgen._internal.cam.features import direction_word
 
     wcs = ctx.wcs
     axis = wcs.vectors_to_wcs([hole["axis"]])[0]
     opening, bottom = wcs.to_wcs([hole["center_mm"], hole["bottom_mm"]])
     if axis[2] >= _ALIGNED:
         top_point, low_point = opening, bottom
+        way = hole["axis"]
     elif hole["through"] and axis[2] <= -_ALIGNED:
         top_point, low_point = bottom, opening
+        way = [-v for v in hole["axis"]]
     else:
-        return None
+        return None, False
+    reached = direction_word(way) in hole.get("reach", ())
+    sink = hole.get("countersink")
     return Hole(x=float(top_point[0]), y=float(top_point[1]), top=float(top_point[2]), bottom=float(low_point[2]),
                 diameter=float(hole["diameter_mm"]), through=bool(hole["through"]),
-                point_drawn=_point_drawn(ctx.part, hole), faces=tuple(hole["faces"]),
-                label=hole["faces"][0] if hole["faces"] else f"({_g(top_point[0])}, {_g(top_point[1])})")
+                point_mm=float(hole.get("point_mm", 0.0)), countersink=float(sink["diameter_mm"]) if sink else None,
+                faces=tuple(hole["faces"]),
+                label=hole["faces"][0] if hole["faces"] else f"({_g(top_point[0])}, {_g(top_point[1])})"), reached
+
+
+def _covered_sentence(ctx, hole: dict) -> str:
+    """Why a hole along the setup's Z cannot be drilled from it: the part covers its opening; and what would."""
+    import numpy as np
+
+    from cadgen._internal.cam.features import direction_word
+
+    axis = np.asarray(hole["axis"], dtype=float)
+    ways = [axis] + ([-axis] if hole["through"] else [])
+    reached = [way for way in ways if direction_word(way) in hole.get("reach", ())]
+    kind = "through" if hole["through"] else "blind"
+    head = (f"is a Ø{_g(hole['diameter_mm'])} x {_g(hole['depth_mm'])} {kind} hole whose opening the part covers "
+            f"along setup '{ctx.setup.id}''s Z: the tool would come down through the part to reach it")
+    for setup in ctx.job.setups:
+        if setup.id == ctx.setup.id:
+            continue
+        tool_axis = np.asarray(_setup_axis(setup), dtype=float)
+        if any(float(tool_axis @ way) >= _ALIGNED for way in reached):
+            return f"{head}; drill it in setup '{setup.id}', whose tool comes from {_word(tool_axis)}"
+    if reached:
+        return f"{head}; add a setup with \"orientation\": \"{direction_word(reached[0])}\" for it"
+    return f"{head}; nothing reaches it along its axis, so mill or drill it before the part over it is there"
 
 
 def _reach_sentence(ctx, hole: dict) -> str:
@@ -156,49 +177,61 @@ def holes_from_faces(ctx, refs, where: str) -> list[Hole]:
     holes = _part_holes(ctx)
     for ref in refs:
         info = ctx.part.face(ref, where=f"{where}.faces")
-        if info.surface != "cylinder" or not info.hole:
-            what = "a round outside wall" if info.surface == "cylinder" else f"a {info.surface}"
+        # Any face of a hole names it: its walls, its counterbore's wall and shoulder, its countersink, its floor.
+        index = next((k for k, hole in enumerate(holes) if info.ref in hole["faces"]), None)
+        if index is None:
+            what = ("a round outside wall" if info.surface == "cylinder" and not info.hole
+                    else f"a {info.surface}" if info.surface != "cylinder" else "a round wall that is no hole")
             raise CamJobError(f"{where}.faces: {ref} is {what}, not a hole wall; a drill names the walls of its holes "
                               "(cadgen cam features lists them under holes), or use \"holes\": \"all\"")
-        index = next(k for k, hole in enumerate(holes) if info.ref in hole["faces"])
         if index in seen:
             continue
         seen.add(index)
         hole = holes[index]
-        placed = _in_setup(ctx, hole)
+        placed, reached = _in_setup(ctx, hole)
         if placed is None:
             kind = "through" if hole["through"] else "blind"
             raise CamJobError(
                 f"{where}.faces: {ref} is a Ø{_g(hole['diameter_mm'])} x {_g(hole['depth_mm'])} {kind} hole along "
                 f"{hole['axis_word']}, but setup '{ctx.setup.id}' drills along {_own_axis(ctx)}; "
                 + _reach_sentence(ctx, hole))
+        if not reached:
+            raise PlanError("unreachable", f"{where}.faces: {ref} {_covered_sentence(ctx, hole)}")
         found.append(placed)
     return found
 
 
-def holes_matching(ctx, selector, where: str) -> tuple[list[Hole], int]:
+def holes_matching(ctx, selector, where: str) -> tuple[list[Hole], int, int]:
     """The part's holes this setup can drill that pass ``selector`` (``"all"`` or ``{"diameter_mm", "tolerance_mm"}``),
-    and how many matching holes run along another axis (left for another setup)."""
+    how many matching holes run along another axis (left for another setup), and how many run along this one but
+    open under the part (covered: left out, since a tool would come down through the part)."""
     holes = _part_holes(ctx)
     diameter = tolerance = None
     if isinstance(selector, dict):
         diameter, tolerance = selector["diameter_mm"], selector["tolerance_mm"]
-    found, elsewhere = [], 0
+    found, elsewhere, covered = [], 0, 0
     for hole in holes:
         if diameter is not None and abs(hole["diameter_mm"] - diameter) > tolerance + 1e-9:
             continue
-        placed = _in_setup(ctx, hole)
+        placed, reached = _in_setup(ctx, hole)
         if placed is None:
             elsewhere += 1
+        elif not reached:
+            covered += 1
         else:
             found.append(placed)
+    if not found and covered:
+        want = "hole" if diameter is None else f"Ø{_g(diameter)} ±{_g(tolerance)} hole"
+        raise PlanError("unreachable", f"{where}.holes: every {want} along setup '{ctx.setup.id}''s Z "
+                        f"({_own_axis(ctx)}) opens under the part ({covered} of them), so no tool reaches one from "
+                        "this setup")
     if not found:
         sizes = sorted({(round(h["diameter_mm"], 3), h["axis_word"]) for h in holes})
         listing = ", ".join(f"Ø{_g(d)} along {w}" for d, w in sizes) or "none"
         want = "no hole" if diameter is None else f"no Ø{_g(diameter)} ±{_g(tolerance)} hole"
         raise CamJobError(f"{where}.holes: {want} runs along setup '{ctx.setup.id}''s Z ({_own_axis(ctx)}); the part's "
                           f"holes are {listing}")
-    return found, elsewhere
+    return found, elsewhere, covered
 
 
 def top_at(ctx, x: float, y: float, radius: float) -> float | None:

@@ -11,6 +11,18 @@ with
 * a 16 x 16 pocket 4 mm deep (floor z = 8) centred at (12, 0), with two Ø4 through holes in its floor at (8, -4)
   and (16, 4);
 * one Ø4 blind hole 10 mm deep drilled in from the +X side, its axis at y = 0, z = 4.
+
+The hole block (:func:`hole_block_step`, :data:`BLOCK`): 80 x 40 x 20 mm standing on z = 0, centred in x and y,
+with
+
+* a Ø5 through hole under a Ø9 x 4 counterbore at (-30, 12);
+* a Ø5 through hole under a Ø10, 90° countersink at (-15, 12);
+* a Ø6 blind hole 8 mm deep with a drawn 140° point at (0, 12), and a Ø6 blind hole 6 mm deep with a flat floor at
+  (15, 12);
+* a Ø8 cross bore along X right through the block at y = -12, z = 8, and a Ø5 hole down from the top at (-20, -12)
+  that ends in it;
+* a cave open to the +X side (x 15..40, y -6..6, z 4..10, under a 10 mm roof) with a Ø5 blind hole 3 mm deep in its
+  floor at (28, 0).
 """
 
 from __future__ import annotations
@@ -58,6 +70,49 @@ def drill_plate_step(directory: Path, name: str = "drill_plate") -> Path:
     side = PLATE["side"]
     part -= Pos(sx / 2 - side["depth"] / 2, side["y"], side["z"]) * Rot(0, 90, 0) * Cylinder(side["diameter"] / 2,
                                                                                                side["depth"])
+    path = directory / f"{name}.step"
+    export_step(part, str(path))
+    return path
+
+
+BLOCK = {
+    "size": (80.0, 40.0, 20.0),
+    "counterbore": {"center": (-30.0, 12.0), "diameter": 5.0, "bore": 9.0, "bore_depth": 4.0},
+    "countersink": {"center": (-15.0, 12.0), "diameter": 5.0, "sink": 10.0, "angle": 90.0},
+    "pointed": {"center": (0.0, 12.0), "diameter": 6.0, "depth": 8.0, "point_angle": 140.0},
+    "flat": {"center": (15.0, 12.0), "diameter": 6.0, "depth": 6.0},
+    "cross": {"y": -12.0, "z": 8.0, "diameter": 8.0, "down": (-20.0, -12.0), "down_diameter": 5.0},
+    "cave": {"x": (15.0, 40.0), "y": (-6.0, 6.0), "z": (4.0, 10.0), "hole": (28.0, 0.0), "diameter": 5.0,
+             "depth": 3.0},
+}
+
+
+def hole_block_step(directory: Path, name: str = "hole_block") -> Path:
+    from build123d import Align, Box, Cone, Cylinder, Pos, Rot, export_step
+
+    base = (Align.CENTER, Align.CENTER, Align.MIN)
+    sx, sy, sz = BLOCK["size"]
+    part = Box(sx, sy, sz, align=base)
+    cb = BLOCK["counterbore"]
+    part -= Pos(*cb["center"], 0) * Cylinder(cb["diameter"] / 2, sz, align=base)
+    part -= Pos(*cb["center"], sz - cb["bore_depth"]) * Cylinder(cb["bore"] / 2, cb["bore_depth"], align=base)
+    cs = BLOCK["countersink"]
+    part -= Pos(*cs["center"], 0) * Cylinder(cs["diameter"] / 2, sz, align=base)
+    sink = (cs["sink"] - cs["diameter"]) / 2 / math.tan(math.radians(cs["angle"] / 2))
+    part -= Pos(*cs["center"], sz - sink) * Cone(cs["diameter"] / 2, cs["sink"] / 2, sink, align=base)
+    pt = BLOCK["pointed"]
+    point = pt["diameter"] / 2 / math.tan(math.radians(pt["point_angle"] / 2))
+    part -= Pos(*pt["center"], sz - pt["depth"]) * Cylinder(pt["diameter"] / 2, pt["depth"], align=base)
+    part -= Pos(*pt["center"], sz - pt["depth"] - point) * Cone(0.0, pt["diameter"] / 2, point, align=base)
+    fl = BLOCK["flat"]
+    part -= Pos(*fl["center"], sz - fl["depth"]) * Cylinder(fl["diameter"] / 2, fl["depth"], align=base)
+    cr = BLOCK["cross"]
+    part -= Pos(0, cr["y"], cr["z"]) * Rot(0, 90, 0) * Cylinder(cr["diameter"] / 2, sx)
+    part -= Pos(*cr["down"], cr["z"]) * Cylinder(cr["down_diameter"] / 2, sz - cr["z"], align=base)
+    cave = BLOCK["cave"]
+    (x0, x1), (y0, y1), (z0, z1) = cave["x"], cave["y"], cave["z"]
+    part -= Pos((x0 + x1) / 2, (y0 + y1) / 2, z0) * Box(x1 - x0, y1 - y0, z1 - z0, align=base)
+    part -= Pos(*cave["hole"], z0 - cave["depth"]) * Cylinder(cave["diameter"] / 2, cave["depth"], align=base)
     path = directory / f"{name}.step"
     export_step(part, str(path))
     return path

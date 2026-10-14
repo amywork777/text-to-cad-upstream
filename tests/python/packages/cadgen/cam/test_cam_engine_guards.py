@@ -107,12 +107,12 @@ class DrillBodyGouge(unittest.TestCase):
             return cam.plan(self.step, job=mill_job([{"op": "drill", "tool": "T1", "holes": "all"}],
                                                     tools=[{"id": "T1", **tool}]), out_dir=self.directory / name)
 
-    def test_a_drill_bigger_than_its_hole_is_a_gouge(self):
+    def test_a_drill_bigger_than_its_hole_is_refused_and_never_drilled(self):
+        # Every hole of the plate is too small for it, so ``holes: all`` has nothing left to drill.
         result = self._plan({"type": "drill", "diameter_mm": 8}, "big")
         self.assertEqual("fix", result.verdict["status"])
-        gouges = _errors(result, "gouge")
-        self.assertEqual(1, len(gouges))
-        self.assertAlmostEqual(1.5, gouges[0]["items"][0]["depth_mm"], delta=0.05)
+        self.assertEqual(["empty_operation"], [f["type"] for f in result.findings if f["severity"] == "error"])
+        self.assertEqual([], _errors(result, "gouge"))
 
     def test_the_right_drill_is_not(self):
         result = self._plan({"type": "drill", "diameter_mm": 5}, "right")

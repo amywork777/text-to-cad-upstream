@@ -332,8 +332,10 @@ class CamFeaturesResult:
 
     ``faces`` carries one dict per face (``ref``, ``surface``, ``reading``, ``area_mm2``, ``center_mm``, and for a
     flat face its ``normal`` and ``z_mm``; for a cylinder its ``axis``, ``diameter_mm`` and whether it is a hole).
-    ``holes`` groups the cylindrical faces that make one hole (``faces``, ``diameter_mm``, ``depth_mm``, ``axis``,
-    ``center_mm``, ``through``). ``floors`` are the flat faces facing an axis (``ref``, ``z_mm``, ``normal``,
+    ``holes`` groups the faces that make one hole (``faces``: its walls first, then a counterbore's wall and
+    shoulder, a countersink's cone and a blind floor; ``diameter_mm``, ``depth_mm``, ``axis``, ``center_mm``,
+    ``through``, ``reach``: the directions that reach it, and when it has them ``counterbore``, ``countersink`` and
+    ``point_mm``, a drawn drill point's length). ``floors`` are the flat faces facing an axis (``ref``, ``z_mm``, ``normal``,
     ``kind``: top, floor or bottom). A DXF has ``profiles`` (closed outlines with their area and holes) instead.
     """
 

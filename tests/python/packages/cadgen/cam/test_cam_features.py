@@ -77,5 +77,78 @@ class BlockFeatures(unittest.TestCase):
         self.assertIn("cadgen cam features lists them", str(caught.exception))
 
 
+class HoleBlockFeatures(unittest.TestCase):
+    """Counterbores, countersinks and drawn points are part of their hole; a hole under a roof is not reached."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+        from tests.python.support.cam_fixtures import quiet
+        from tests.python.support.cam_fixtures_drilling import hole_block_step
+
+        with quiet():
+            cls.result = cam.features(hole_block_step(class_directory(cls)))
+
+    def hole(self, x, y):
+        (hole,) = [h for h in self.result.holes
+                   if abs(h["center_mm"][0] - x) < 1e-3 and abs(h["center_mm"][1] - y) < 1e-3]
+        return hole
+
+    def faces_of(self, hole, surface):
+        kinds = {face["ref"]: face for face in self.result.faces}
+        return [ref for ref in hole["faces"] if kinds[ref]["surface"] == surface]
+
+    def test_a_counterbored_hole_is_one_hole_opening_at_the_top_of_its_counterbore(self):
+        from tests.python.support.cam_fixtures_drilling import BLOCK
+
+        top = BLOCK["size"][2]
+        holes_here = [h for h in self.result.holes if abs(h["center_mm"][0] + 30) < 1e-3]
+        self.assertEqual(1, len(holes_here))                          # not a Ø9 blind hole and a Ø5 one under it
+        hole = holes_here[0]
+        self.assertAlmostEqual(5.0, hole["diameter_mm"], places=4)
+        self.assertTrue(hole["through"])
+        self.assertAlmostEqual(top, hole["center_mm"][2], places=4)   # opens at the part's top, not the shoulder
+        self.assertAlmostEqual(top, hole["depth_mm"], places=4)
+        self.assertEqual({"diameter_mm": 9.0, "depth_mm": 4.0}, hole["counterbore"])
+        self.assertIn("counterbore Ø9 x 4", hole["reading"])
+        # Its refs: the Ø5 wall first (it names the hole), the counterbore's wall and its shoulder.
+        walls = self.faces_of(hole, "cylinder")
+        self.assertEqual(2, len(walls))
+        self.assertEqual(hole["faces"][0], walls[0])
+        (shoulder,) = self.faces_of(hole, "plane")
+        self.assertEqual(top - 4.0, next(f["z_mm"] for f in self.result.floors if f["ref"] == shoulder))
+        self.assertEqual(["+Z", "-Z"], hole["reach"])
+
+    def test_a_countersunk_hole_opens_at_the_top_of_its_countersink(self):
+        hole = self.hole(-15, 12)
+        self.assertAlmostEqual(20.0, hole["center_mm"][2], places=4)
+        self.assertEqual({"diameter_mm": 10.0, "angle_deg": 90.0}, hole["countersink"])
+        self.assertEqual(1, len(self.faces_of(hole, "cone")))
+        self.assertNotIn("point_mm", hole)
+
+    def test_a_drawn_point_is_measured_and_a_flat_floor_is_a_ref(self):
+        import math
+
+        pointed = self.hole(0, 12)
+        self.assertAlmostEqual(3.0 / math.tan(math.radians(70)), pointed["point_mm"], places=3)
+        self.assertAlmostEqual(8.0, pointed["depth_mm"], places=4)
+        self.assertEqual(1, len(self.faces_of(pointed, "cone")))
+        flat = self.hole(15, 12)
+        self.assertNotIn("point_mm", flat)
+        self.assertEqual(1, len(self.faces_of(flat, "plane")))        # its floor
+
+    def test_reach_is_where_a_ray_out_of_the_opening_leaves_the_part(self):
+        cave = self.hole(28, 0)
+        self.assertFalse(cave["through"])
+        self.assertEqual([], cave["reach"])                            # the roof covers it
+        self.assertIn("no tool reaches it", cave["reading"])
+        # A hole down from the top that ends in a cross bore: through (it breaks into air), reached from the top only.
+        down = self.hole(-20, -12)
+        self.assertTrue(down["through"])
+        self.assertEqual(["+Z"], down["reach"])
+        cross = next(h for h in self.result.holes if h["axis_word"] in ("+X", "-X"))
+        self.assertEqual(["+X", "-X"], cross["reach"])
+
+
 if __name__ == "__main__":
     unittest.main()

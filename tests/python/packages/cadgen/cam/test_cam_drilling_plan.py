@@ -74,13 +74,14 @@ class DrillPlate(unittest.TestCase):
     def test_all_holes_from_the_top_are_hit_at_their_exact_centres(self):
         path, rng, op = self.one({"op": "drill", "tool": "T4", "holes": "all"})
         found = sorted(self.bottoms(path, rng))
-        expected = sorted([*PLATE["through5"], *PLATE["blind6"]["centers"], PLATE["blind8"]["center"],
-                           PLATE["through68"], *PLATE["pocket"]["holes"]])
+        # The 6 mm spot drill cannot make the Ø6.8 and Ø8 holes' spots: left out, and the note says so.
+        expected = sorted([*PLATE["through5"], *PLATE["blind6"]["centers"], *PLATE["pocket"]["holes"]])
         self.assertEqual(len(expected), len(found))
         for (x, y), (ex, ey) in zip(found, expected):
             self.assertAlmostEqual(ex, x, places=6)
             self.assertAlmostEqual(ey, y, places=6)
         self.assertIn("1 matching hole along another axis", op.meta["note"])
+        self.assertIn("2 matching holes (Ø6.8, Ø8) left out: T4 cannot make a spot as wide as them", op.meta["note"])
         # Each moves only along Z under its R plane: no sideways feed anywhere.
         moves = path.moves[rng.start:rng.end]
         cuts = moves[(moves["kind"] == PLUNGE) | (moves["kind"] == FEED)]
@@ -276,7 +277,8 @@ class DrillPlate(unittest.TestCase):
         faces = [self.f5[0], self.f5[3], self.f6[0], self.f5[1], self.f68[0], self.f5[2], self.f6[1]]
         lengths = {}
         for order in ("given", "shortest"):
-            path, rng, op = self.one({"op": "drill", "tool": "T4", "faces": faces, "order": order})
+            path, rng, op = self.one({"op": "drill", "tool": "T4", "faces": faces, "order": order,
+                                      "spot_diameter_mm": 5})
             lengths[order] = path_length((0, 0), [h["at"] for h in op.meta["holes"]])
         self.assertLess(lengths["shortest"], lengths["given"] - 1.0)
 
@@ -287,8 +289,6 @@ class DrillPlate(unittest.TestCase):
         (found,) = op.meta["findings"]
         self.assertEqual(("drill", "warning", "hole_size"), (found["check"], found["severity"], found["type"]))
         self.assertIn("smaller than the Ø6.8", found["summary"])
-        _, _, op = self.one({"op": "drill", "tool": "T2", "faces": self.f5[:1]})
-        self.assertIn("oversize", op.meta["findings"][0]["summary"])
         _, _, op = self.one({"op": "drill", "tool": "T1", "faces": self.f5})
         self.assertNotIn("findings", op.meta)
         _, _, op = self.one({"op": "drill", "tool": "T3", "faces": self.f68})
@@ -298,6 +298,124 @@ class DrillPlate(unittest.TestCase):
         tools = [{"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1.25}]
         _, _, op = self.one({"op": "drill", "tool": "T3", "faces": self.f5[:1]}, tools=tools)
         self.assertIn("pitch of 1 or 0.75", op.meta["findings"][0]["summary"])
+
+    def test_a_flat_floor_stops_the_tip_and_says_how_far_short_the_full_diameter_ends(self):
+        tools = [{"id": "T1", "type": "drill", "diameter_mm": 8}]
+        floor8 = TOP - PLATE["blind8"]["depth"]
+        for depth_to in (None, "shoulder"):
+            with self.subTest(depth_to=depth_to):
+                op = {"op": "drill", "tool": "T1", "faces": self.f8}
+                if depth_to:
+                    op["depth_to"] = depth_to
+                path, rng, planned = self.one(op, tools=tools)
+                # Never past the flat floor, whatever depth_to asks.
+                self.assertAlmostEqual(floor8, list(self.bottoms(path, rng).values())[0], places=6)
+                (found,) = planned.meta["findings"]
+                self.assertEqual(("drill", "warning", "hole_floor"), (found["check"], found["severity"], found["type"]))
+                self.assertIn(f"stops {tip(8.0):.3g} mm short of the floor of 1 blind hole", found["summary"])
+                self.assertIn("a flat floor", found["description"])
+        # A drawn point as long as the drill's: the full diameter reaches the floor, no warning.
+        _, _, planned = self.one({"op": "drill", "tool": "T2", "faces": self.f6})
+        self.assertNotIn("findings", planned.meta)
+
+    def test_a_depth_past_a_blind_holes_bottom_is_too_deep(self):
+        floor6 = TOP - PLATE["blind6"]["depth"]
+        _, _, op = self.one({"op": "drill", "tool": "T2", "faces": self.f6[:1], "depth_mm": 11})
+        self.assertEqual("too_deep", op.meta["plan_error"]["kind"])
+        self.assertIn("depth_mm: 11 mm puts the tool's tip below the bottom of", op.meta["plan_error"]["message"])
+        # Down to the drawn point's tip is in the hole; the full diameter past the floor is not.
+        path, rng, _ = self.one({"op": "drill", "tool": "T2", "faces": self.f6[:1], "depth_mm": 9.5})
+        self.assertAlmostEqual(TOP - 9.5, list(self.bottoms(path, rng).values())[0], places=6)
+        _, _, op = self.one({"op": "drill", "tool": "T2", "faces": self.f6[:1], "depth_mm": 8.5,
+                             "depth_to": "shoulder"})
+        self.assertEqual("too_deep", op.meta["plan_error"]["kind"])
+        path, rng, _ = self.one({"op": "drill", "tool": "T2", "faces": self.f6[:1], "depth_mm": 8,
+                                 "depth_to": "shoulder"})
+        self.assertAlmostEqual(floor6 - tip(6.0), list(self.bottoms(path, rng).values())[0], places=6)
+        _, _, op = self.one({"op": "drill", "tool": "T3", "faces": self.f6[:1], "depth_mm": 10})
+        self.assertEqual("too_deep", op.meta["plan_error"]["kind"])
+        # A through hole has no bottom to pass.
+        _, _, op = self.one({"op": "drill", "tool": "T1", "faces": self.f5[:1], "depth_mm": 14})
+        self.assertNotIn("plan_error", op.meta)
+
+    def test_a_tool_bigger_than_its_hole_is_refused_and_all_leaves_those_holes_out(self):
+        _, _, op = self.one({"op": "drill", "tool": "T2", "faces": self.f5[:1]})
+        error = op.meta["plan_error"]
+        self.assertEqual("tool_too_large", error["kind"])
+        self.assertIn(f"{self.f5[0]} is a Ø5 hole and T2 (6 mm drill) is 1 mm bigger, so it would cut the part",
+                      error["message"])
+        # Within size_tolerance_mm it drills; the reamer the same.
+        _, _, op = self.one({"op": "drill", "tool": "T2", "faces": self.f5[:1], "size_tolerance_mm": 1.0})
+        self.assertNotIn("plan_error", op.meta)
+        _, _, op = self.one({"op": "drill", "tool": "T5", "faces": self.f5[:1]})
+        self.assertEqual("tool_too_large", op.meta["plan_error"]["kind"])
+        # "all": the Ø5 and Ø4 holes are left out and said in the note; the Ø6, Ø6.8 and Ø8 ones are drilled.
+        path, rng, op = self.one({"op": "drill", "tool": "T2", "holes": "all"})
+        self.assertEqual(4, len(self.bottoms(path, rng)))
+        self.assertIn("6 matching holes (Ø4, Ø5) left out: T2 is bigger than they are", op.meta["note"])
+        undersize = [f for f in op.meta["findings"] if f["type"] == "hole_size"]
+        self.assertTrue(undersize and all("undersize" in f["summary"] for f in undersize))
+        _, _, op = self.one({"op": "drill", "tool": "T2", "holes": {"diameter_mm": 5}})
+        self.assertEqual("empty_operation", op.meta["plan_error"]["kind"])
+        self.assertIn("none of the 4 matching holes this setup reaches suits T2", op.meta["plan_error"]["message"])
+        # A tap whose tap drill is bigger than the hole: an M8x1.25 (6.75) in a Ø5 hole; a Ø6.8 one is its own.
+        tools = [{"id": "T9", "type": "tap", "diameter_mm": 8, "pitch_mm": 1.25}]
+        _, _, op = self.one({"op": "drill", "tool": "T9", "faces": self.f5[:1]}, tools=tools)
+        self.assertEqual("tool_too_large", op.meta["plan_error"]["kind"])
+        self.assertIn("under T9's (M8x1.25 tap) Ø6.75 tap drill", op.meta["plan_error"]["message"])
+        _, _, op = self.one({"op": "drill", "tool": "T9", "faces": self.f68}, tools=tools)
+        self.assertNotIn("plan_error", op.meta)
+
+    def test_a_spot_takes_its_diameter_and_refuses_one_it_cannot_make(self):
+        path, rng, _ = self.one({"op": "drill", "tool": "T4", "faces": self.f5[:1], "spot_diameter_mm": 4})
+        self.assertAlmostEqual(TOP - 2.0, list(self.bottoms(path, rng).values())[0], places=6)     # 90°: half of 4
+        (cycle,) = self.cycles(path, rng)
+        self.assertEqual(0.2, cycle.data["dwell_s"])                     # the spot's pause by default (G82)
+        path, rng, _ = self.one({"op": "drill", "tool": "T4", "faces": self.f5[:1], "dwell_s": 0})
+        self.assertNotIn("dwell_s", self.cycles(path, rng)[0].data)
+        _, _, op = self.one({"op": "drill", "tool": "T4", "faces": self.f8})
+        self.assertEqual("tool_too_small", op.meta["plan_error"]["kind"])
+        self.assertIn("wants a Ø8 spot (its diameter), wider than T4 (6 mm spot drill) can make",
+                      op.meta["plan_error"]["message"])
+        _, _, op = self.one({"op": "drill", "tool": "T4", "faces": self.f6[:1], "depth_mm": 10})
+        self.assertEqual("too_deep", op.meta["plan_error"]["kind"])
+        with self.assertRaises(CamJobError) as caught:
+            parse_operations(parse_job(drill_job([{"op": "drill", "tool": "T4", "holes": "all",
+                                                   "spot_diameter_mm": 7}])))
+        self.assertIn("a Ø7 spot is wider than T4", str(caught.exception))
+
+    def test_a_reamer_with_a_dwell_is_g89(self):
+        path, rng, _ = self.one({"op": "drill", "tool": "T5", "faces": self.f6[:1], "dwell_s": 0.3})
+        (cycle,) = self.cycles(path, rng)
+        self.assertEqual(("bore_dwell", 0.3), (cycle.data["cycle"], cycle.data["dwell_s"]))
+        moves = path.moves[cycle.at:cycle.data["end"]]
+        self.assertEqual([0.3], [float(m["p"]) for m in moves if m["kind"] == DWELL])
+        k = int(np.argmin(moves["z"]))
+        self.assertEqual(FEED, int([m for m in moves[k + 1:] if m["kind"] != DWELL][0]["kind"]))
+
+    def test_a_fine_bore_shifts_off_the_wall_along_shift_xy_and_back(self):
+        x, y = PLATE["blind8"]["center"]
+        path, rng, _ = self.one({"op": "drill", "tool": "T6", "faces": self.f8, "cycle": "bore", "bore_mode": "fine",
+                                 "shift_mm": 0.2, "shift_xy": [0, -3]})
+        (cycle,) = self.cycles(path, rng)
+        self.assertEqual((0.2, [0.0, -1.0]), (cycle.data["shift_mm"], cycle.data["shift_xy"]))
+        moves = path.moves[cycle.at:cycle.data["end"]]
+        k = int(np.argmin(moves["z"]))
+        after = [(float(m["x"]), float(m["y"]), float(m["z"])) for m in moves[k + 1:]]
+        bottom = float(moves[k]["z"])
+        self.assertTrue(np.allclose(after[0], (x, y - 0.2, bottom)))                       # off the wall at the bottom
+        self.assertTrue(np.allclose(after[1], (x, y - 0.2, cycle.data["r_plane"])))        # out, shifted
+        self.assertTrue(np.allclose(after[2], (x, y, cycle.data["r_plane"])))              # back on the axis
+        self.assertTrue(all(m["kind"] == RAPID for m in moves[k + 1:k + 4]))
+        stop = [e.data for e in path.events if e.kind == "spindle" and cycle.at < e.at <= cycle.data["end"]]
+        self.assertEqual([{"dir": "off", "orient": True}], stop[:1])
+        # The default way is +X; a shift of the hole's radius or more runs the bar into the far wall.
+        path, rng, _ = self.one({"op": "drill", "tool": "T6", "faces": self.f8, "cycle": "bore", "bore_mode": "fine"})
+        self.assertEqual((0.1, [1.0, 0.0]), (self.cycles(path, rng)[0].data["shift_mm"],
+                                             self.cycles(path, rng)[0].data["shift_xy"]))
+        _, _, op = self.one({"op": "drill", "tool": "T6", "faces": self.f8, "cycle": "bore", "bore_mode": "fine",
+                             "shift_mm": 4})
+        self.assertEqual("gouge", op.meta["plan_error"]["kind"])
 
     # --- teaching errors -----------------------------------------------------------------------------------
 
@@ -333,6 +451,13 @@ class DrillPlate(unittest.TestCase):
                                                       "peck_mm": 2},
             "set \"speed\" (rpm) instead": {"op": "drill", "tool": "T3", "holes": "all", "feed": 300},
             "shift_mm is for": {"op": "drill", "tool": "T6", "holes": "all", "shift_mm": 0.2},
+            "shift_xy is for": {"op": "drill", "tool": "T6", "holes": "all", "bore_mode": "stop", "shift_xy": [1, 0]},
+            "[0, 0] is no way": {"op": "drill", "tool": "T6", "holes": "all", "bore_mode": "fine", "shift_xy": [0, 0]},
+            "spot_diameter_mm is for the spot cycle": {"op": "drill", "tool": "T1", "holes": "all",
+                                                       "spot_diameter_mm": 3},
+            "not both": {"op": "drill", "tool": "T4", "holes": "all", "spot_diameter_mm": 3, "depth_mm": 1},
+            "a drill does not use stock_to_leave_mm": {"op": "drill", "tool": "T1", "holes": "all",
+                                                       "stock_to_leave_mm": 0.2},
             "top_z is for holes given as points": {"op": "drill", "tool": "T1", "holes": "all", "top_z": 0},
             "unknown key 'pecks'": {"op": "drill", "tool": "T1", "holes": "all", "pecks": 2},
             "\"all\" or": {"op": "drill", "tool": "T1", "holes": "some"},
