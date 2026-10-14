@@ -200,7 +200,7 @@ class JobFiles(Sane, unittest.TestCase):
     def test_an_output_folder_that_is_a_file_or_cannot_be_written_is_refused(self):
         job = mill_job([{"op": "face", "tool": "T1"}])
         a_file = _out_dir() / "not-a-folder"
-        a_file.write_text("x")
+        a_file.write_text("x", encoding="utf-8")
         self.refused(_PARTS["plate"], job, "out_dir a file", out_dir=a_file, contains="is a file")
         locked = _out_dir()
         locked.chmod(0o500)
@@ -626,10 +626,10 @@ class Geometry(Sane, unittest.TestCase):
 
     def test_files_that_are_not_parts_are_refused(self):
         empty = _DIR / "empty.step"
-        empty.write_text("")
+        empty.write_text("", encoding="utf-8")
         folder = _out_dir()
         text = folder / "part.txt"
-        text.write_text("hello")
+        text.write_text("hello", encoding="utf-8")
         junk = _DIR / "junk.dxf"
         junk.write_bytes(bytes(range(256)) * 4)
         job = mill_job([{"op": "face", "tool": "T1"}])
@@ -711,7 +711,7 @@ class Cli(unittest.TestCase):
         folder = _out_dir()
         job = json.dumps(mill_job([{"op": "face", "tool": "T1"}]))
         a_file = folder / "a-file"
-        a_file.write_text("x")
+        a_file.write_text("x", encoding="utf-8")
         verbs = {
             "no job": ("cam", "plan", plate),
             "malformed job": ("cam", "plan", plate, "--job", '{"machine": '),
