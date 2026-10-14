@@ -11,6 +11,7 @@ import numpy as np
 from cadgen._internal.cam.ir import ToolpathBuilder
 from cadgen._internal.cam.job import parse_job
 from cadgen._internal.cam.stock import build_stock, create_stock_sim
+from cadgen._internal.cam.tools import parse_tool
 from cadgen._internal.cam.wcs import build_wcs
 
 JOB = {
@@ -84,6 +85,77 @@ class Heightfield(unittest.TestCase):
         report = sim.cut(path, self.tools, wcs)
         self.assertEqual(1, len(report.rapid_hits))
         self.assertAlmostEqual(2.0, report.rapid_hits[0]["depth_mm"], places=6)
+
+    def test_a_move_with_the_spindle_stopped_cuts_nothing_and_is_a_crash(self):
+        sim = self.sim(cell=0.25)
+        setup = self.job.setups[0]
+        wcs = build_wcs(setup, stock_points=self.stock.vertices, part_points=self.part.vertices)
+        b = ToolpathBuilder((-15, 0, 5))
+        b.begin_op(index=0, setup=setup.id, op="slot", plain="Slot", tool="T1")
+        b.rapid(z=1.0)
+        b.event("spindle", dir="off")
+        b.feed(z=-5.0, f=300)
+        b.feed(x=15, f=600)
+        b.event("spindle", rpm=8000, dir="cw")
+        b.rapid(z=5)
+        b.end_op()
+        start = sim.volume()
+        report = sim.cut(b.build(), self.tools, wcs)
+        self.assertEqual(start, sim.volume())
+        self.assertEqual({}, report.depth_by_op)
+        (hit,) = report.rapid_hits
+        self.assertAlmostEqual(5.0, hit["depth_mm"], places=6)
+        self.assertNotIn("neck_diameter_mm", hit)
+
+    def back_bore(self, drilled: bool):
+        """A Ø6 hole through the 10 mm stock at (0, 0) (when ``drilled``), then a Ø8 x 3 back-boring head on a Ø2
+        neck: down through it shifted, spindle stopped, R 5 mm under the stock, up until the head's top is 1 mm
+        into the back face, and out."""
+        bar = parse_tool({"id": "T3", "type": "boring", "diameter_mm": 8, "flute_length_mm": 3,
+                          "shank_diameter_mm": 2, "stickout_mm": 30}, 2)
+        tools = {**self.tools, "T3": bar}
+        setup = self.job.setups[0]
+        wcs = build_wcs(setup, stock_points=self.stock.vertices, part_points=self.part.vertices)
+        b = ToolpathBuilder((0, 0, 5))
+        if drilled:
+            b.begin_op(index=0, setup=setup.id, op="drill", plain="Drill", tool="T1")
+            b.rapid(z=1.0)
+            b.plunge(z=-12.0, f=300)
+            b.rapid(z=5.0)
+            b.end_op()
+        b.begin_op(index=1, setup=setup.id, op="drill", plain="Back bore", tool="T3")
+        handle = b.begin_cycle(cycle="back_bore", holes=[[0, 0, 0]], z_bottom=-12.0, r_plane=-15.0,
+                               retract="initial", initial_z=5.0, shift_mm=1.5, shift_xy=[1.0, 0.0])
+        for z_to in (-15.0, 5.0):
+            b.event("spindle", dir="off", orient=True)
+            b.rapid(x=1.5)
+            b.rapid(z=z_to)
+            b.rapid(x=0.0)
+            b.event("spindle", rpm=2000, dir="cw")
+            if z_to < 0:
+                b.feed(z=-12.0, f=100)
+                b.feed(z=-15.0, f=100)
+        b.end_cycle(handle)
+        b.end_op()
+        sim = self.sim(cell=0.25)
+        return sim, sim.cut(b.build(), tools, wcs)
+
+    def test_a_back_bore_cuts_up_into_the_back_face_and_its_neck_passes_through_the_hole(self):
+        sim, report = self.back_bore(drilled=True)
+        self.assertEqual([], report.rapid_hits)
+        self.assertNotIn(1, report.depth_by_op)          # reach judges a back bore from its plan
+        # A Ø8 head 1 mm into the back face round the Ø6 hole: an annulus 1 mm tall, nothing over it.
+        ring = math.pi * (16 - 9) * 1.0
+        self.assertAlmostEqual(ring, report.removed_mm3_by_op[1], delta=0.1 * ring)
+        i, j = int((3.5 - sim.x0) / sim.cell), int((0.1 - sim.y0) / sim.cell)
+        self.assertEqual((10.0, 1.0), (round(float(sim.top[i, j]), 6), round(float(sim.bottom[i, j]), 6)))
+        # Without the hole the stopped bar's Ø2 neck goes through uncut stock: a crash, and it cuts nothing (only
+        # the turning head does, its Ø8 disc 1 mm up into the back face).
+        sim, report = self.back_bore(drilled=False)
+        (hit,) = report.rapid_hits
+        self.assertEqual(2.0, hit["neck_diameter_mm"])
+        self.assertGreater(hit["depth_mm"], 10.0)
+        self.assertAlmostEqual(math.pi * 16, report.removed_mm3_by_op[1], delta=0.1 * math.pi * 16)
 
     def test_the_mesh_is_the_stock(self):
         sim = self.sim(cell=0.5)

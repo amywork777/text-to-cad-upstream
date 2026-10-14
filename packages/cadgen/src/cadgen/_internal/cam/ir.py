@@ -47,7 +47,9 @@ a key it needs missing, posts the expansion, so the expansion must always be the
   back on the axis, the spindle on, a feed up to Z, the dwell, a feed back down to R, oriented and shifted again,
   rapid up to the initial level, back on the axis, the spindle on (G87 and G77 orient at Z rather than back at R: the
   shift moves the insert off the wall either way). An ``orient`` spindle stop is posted with the controller's
-  oriented stop (M19).
+  oriented stop (M19). The stock simulators read the expansion's moves with the spindle stopped as the bar's neck
+  through the hole (they cut nothing) and its feeds as the head cutting up from under the part
+  (:func:`cadgen._internal.cam.stock.move_modes`).
 - lathe ``cycle`` ``thread`` (G76): ``z_start``, ``z_end``, ``x_clear`` (the radius it starts and ends at),
   ``x_crest`` (the crest's radius: the major for an external thread, the minor for an internal one), ``depth_mm``
   (radial thread height; the root is ``x_crest`` -/+ it), ``pitch_mm`` (the lead), ``external`` (default true),

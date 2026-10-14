@@ -653,6 +653,43 @@ class Counterbores(unittest.TestCase):
                 self.assertEqual(kind, found)
                 self.assertIn(words, message)
 
+    def test_a_back_bore_job_plans_ready_and_posts_g87_and_its_real_errors_are_still_caught(self):
+        from cadgen import cam
+        from tests.python.support import gcode_reader
+
+        faces = [hole[0] for hole in self.back]
+        drill = {"op": "drill", "tool": "T4", "faces": faces}
+        bore = {"op": "drill", "tool": "T2", "faces": faces, "cycle": "back_bore", "shift_mm": 2.5}
+        bar = CB_TOOLS[1]
+
+        def plan(name, operations, tool=bar):
+            with quiet():
+                return cam.plan(self.step, job=drill_job(operations, tools=[CB_TOOLS[3], tool], post="fanuc"),
+                                out_dir=class_directory(type(self)) / name)
+
+        # The holes drilled through, then back bored: the bar's neck passes through them, the head cuts only the
+        # counterbores under the part, and the bar's 40 mm reaches down to R under the plate.
+        result = plan("ready", [drill, bore])
+        self.assertEqual("ready", result.verdict["status"], result.findings)
+        self.assertEqual([], [f for f in result.findings if f["severity"] == "error"])
+        text = gcode_reader.posted_text(result, "top")
+        self.assertIn("G87 ", text)
+        self.assertIn("Q2.5", text)
+        # Not drilled first: the stopped bar's Ø4 neck crashes into the plate.
+        result = plan("undrilled", [bore])
+        self.assertEqual("fix", result.verdict["status"])
+        (crash,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("rapid_into_stock", 4.0), (crash["check"], crash["items"][0]["neck_diameter_mm"]))
+        # A bar too short for the holder to clear the stock's top with the head at R.
+        result = plan("short", [drill, bore], {**bar, "stickout_mm": 12})
+        (short,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("reach", "reach_holder"), (short["check"], short["type"]))
+        # A head too big for the counterbore is still refused by the planner.
+        result = plan("big", [drill, bore], {**bar, "diameter_mm": 15})
+        (big,) = [f for f in result.findings if f["severity"] == "error"]
+        self.assertEqual(("plan", "tool_too_large"), (big["check"], big["type"]))
+        self.assertEqual("fix", result.verdict["status"])
+
     def test_malformed_counterbore_and_back_bore_ops_are_refused_before_planning(self):
         cases = {
             "needs \"shift_mm\"": {"op": "drill", "tool": "T2", "holes": "all", "cycle": "back_bore"},

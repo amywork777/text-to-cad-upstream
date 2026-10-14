@@ -127,6 +127,76 @@ class Dexel(unittest.TestCase):
         self.assertGreater(report.rapid_hits[0]["depth_mm"], 1.0)
         self.assertAlmostEqual(40 * 30 * 20, sim.volume(), delta=1e-6)       # rapids never cut
 
+    def test_a_move_with_the_spindle_stopped_cuts_nothing_and_is_a_crash(self):
+        sim = DexelSim(box(), cell_mm=0.5)
+
+        def stopped(b):
+            b.rapid(-10, 0)
+            b.rapid(z=21)
+            b.event("spindle", dir="off")
+            b.plunge(z=15, f=100)
+            b.feed(x=10, f=500)
+            b.event("spindle", rpm=8000, dir="cw")
+            b.rapid(z=30)
+
+        report = sim.cut(one_op(stopped), TOOLS, TOP)
+        self.assertAlmostEqual(40 * 30 * 20, sim.volume(), delta=1e-6)
+        self.assertEqual({}, report.depth_by_op)
+        (hit,) = report.rapid_hits
+        self.assertGreater(hit["depth_mm"], 1.0)
+        self.assertNotIn("neck_diameter_mm", hit)
+
+    def test_a_back_bore_cuts_up_into_the_back_face_and_its_neck_passes_through_the_hole(self):
+        bar = parse_tool({"id": "T3", "type": "boring", "diameter_mm": 8, "flute_length_mm": 3,
+                          "shank_diameter_mm": 2, "stickout_mm": 40}, 2)
+        tools = {**TOOLS, "T3": bar}
+
+        def path(drilled: bool):
+            # A Ø6 hole through the 20 mm stock at (0, 0) (when drilled), then a Ø8 x 3 head on a Ø2 neck: down
+            # through it shifted, spindle stopped, R 5 mm under the stock, up until the head's top is 1 mm into
+            # the back face, and out.
+            b = ToolpathBuilder((0, 0, 30))
+            if drilled:
+                b.begin_op(index=0, setup="top", op="drill", plain="Drill", tool="T1")
+                b.rapid(z=21)
+                b.plunge(z=-2, f=100)
+                b.rapid(z=30)
+                b.end_op()
+            b.begin_op(index=1, setup="top", op="drill", plain="Back bore", tool="T3")
+            handle = b.begin_cycle(cycle="back_bore", holes=[[0, 0, 20]], z_bottom=-2.0, r_plane=-5.0,
+                                   retract="initial", initial_z=30.0, shift_mm=1.5, shift_xy=[1.0, 0.0])
+            for z_to in (-5.0, 30.0):
+                b.event("spindle", dir="off", orient=True)
+                b.rapid(x=1.5)
+                b.rapid(z=z_to)
+                b.rapid(x=0.0)
+                b.event("spindle", rpm=2000, dir="cw")
+                if z_to < 0:
+                    b.feed(z=-2.0, f=100)
+                    b.feed(z=-5.0, f=100)
+            b.end_cycle(handle)
+            b.end_op()
+            return b.build()
+
+        sim = DexelSim(box(), cell_mm=0.25)
+        report = sim.cut(path(drilled=True), tools, TOP)
+        self.assertEqual([], report.rapid_hits)
+        self.assertNotIn(1, report.depth_by_op)          # reach judges a back bore from its plan
+        ring = math.pi * (16 - 9) * 1.0
+        self.assertAlmostEqual(ring, report.removed_mm3_by_op[1], delta=0.1 * ring)
+        # The material over the head is still there: the Z ray at x = 3.5 runs from the back face's new 1 mm to 20.
+        ray = sim.grids[2].ray_at(3.5, 0.1)
+        self.assertEqual([[1.0, 20.0]], [[round(float(lo), 3), round(float(hi), 3)]
+                                         for lo, hi in zip(sim.grids[2].lo[ray], sim.grids[2].hi[ray])
+                                         if hi > lo])
+        # Without the hole the stopped bar's Ø2 neck goes through uncut stock: a crash, and it cuts nothing (only
+        # the turning head does, its Ø8 disc 1 mm up into the back face).
+        sim = DexelSim(box(), cell_mm=0.25)
+        report = sim.cut(path(drilled=False), tools, TOP)
+        (hit,) = report.rapid_hits
+        self.assertEqual(2.0, hit["neck_diameter_mm"])
+        self.assertAlmostEqual(math.pi * 16, 40 * 30 * 20 - sim.volume(), delta=0.1 * math.pi * 16)
+
     def test_material_left_over_the_part_reads_its_thickness(self):
         stock = box(high=(20, 15, 12))
         sim = DexelSim(stock, cell_mm=0.5)

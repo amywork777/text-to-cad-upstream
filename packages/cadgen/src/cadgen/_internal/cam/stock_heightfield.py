@@ -9,9 +9,14 @@ and the run reports it as adapted).
 run of cutting moves it measures how deep the tool sits below the material within reach of its side (the reach
 check), then stamps the cutter's profile at every sample (``tool.height_at`` at each cell centre's distance from
 the tool axis). Rapids are tested, never stamped: a rapid whose cutter dips more than 0.05 mm into material is a
-hit. Each cell remembers the last operation whose cutter passed over it (``last_op``), so material left is judged
-against that operation's stock to leave. The grid's cell is chosen by the fit ladder; its error is about half a cell
-sideways and nothing vertically.
+hit. So is any move made with the spindle stopped (:func:`~cadgen._internal.cam.stock.move_modes`): a tool that is
+not turning cuts nothing. A back bore's stopped moves are its bar's neck through the hole, tested with the neck's
+radius (``shank_diameter_mm`` / 2) from the tip up. Its head feeding up from under the part cuts the column's far
+side (a top setup's bottoms up to the head's top, ``flute_length_mm`` over the tip), never the column above it: one
+column of material per cell holds a counterbore cut into the part's back face exactly (its bottom rises), and the
+reach check judges the bar from the plan, not from a depth measured here. Each cell remembers the last operation
+whose cutter passed over it (``last_op``), so material left is judged against that operation's stock to leave. The
+grid's cell is chosen by the fit ladder; its error is about half a cell sideways and nothing vertically.
 
 numpy at import (the engine imports this only when it simulates).
 """
@@ -23,8 +28,7 @@ import math
 import numpy as np
 
 from cadgen._internal.cam.fit import op_step
-from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, FEED, PLUNGE, RAPID
-from cadgen._internal.cam.stock import MaterialLeft, SimReport
+from cadgen._internal.cam.stock import BACK_CUT, CUT, IDLE, NECK, PASS, MaterialLeft, SimReport, move_modes
 
 __all__ = ["HeightfieldSim", "raster_heights"]
 
@@ -72,6 +76,17 @@ def raster_heights(vertices, triangles, x0: float, y0: float, cell: float, nx: i
     top[np.isinf(top)] = np.nan
     bottom[np.isinf(bottom)] = np.nan
     return top, bottom
+
+
+class _Neck:
+    """A back-boring bar's neck as the rapid test reads a tool: a flat cylinder of its radius from the tip up."""
+
+    def __init__(self, radius: float):
+        self.radius = float(radius)
+
+    def height_at(self, d):
+        d = np.abs(np.asarray(d, dtype=float))
+        return np.where(d <= self.radius + 1e-12, 0.0, np.inf)
 
 
 class HeightfieldSim:
@@ -153,7 +168,9 @@ class HeightfieldSim:
                 best, where = float(per[k]), s + k
         return best, where
 
-    def _stamp(self, points, tool, direction: int, di, dj) -> None:
+    def _stamp(self, points, tool, direction: int, di, dj, offset: float = 0.0) -> None:
+        """Cut the cutter's profile at every point from ``direction``'s side (+1: tops down, -1: bottoms up),
+        ``offset`` mm along part z from the point (a back bore's head top over its tip)."""
         step = max(1, _CHUNK // max(1, len(di)))
         top, bottom = self.top.ravel(), self.bottom.ravel()
         last = self.last_op.reshape(-1)
@@ -162,7 +179,7 @@ class HeightfieldSim:
             flat, valid, d = self._cells(chunk, di, dj)
             heights = tool.height_at(d)
             inside = valid & np.isfinite(heights)
-            surface = chunk[:, 2:3] + direction * heights
+            surface = chunk[:, 2:3] + offset + direction * heights
             if direction > 0:
                 np.minimum.at(top, flat[inside], surface[inside])
             else:
@@ -201,6 +218,7 @@ class HeightfieldSim:
         direction = 1 if wcs.tool_axis[2] > 0 else -1
         if direction < 0:
             self.cut_from_below = True
+        modes = move_modes(toolpath)
         for op in toolpath.ops:
             tool = tools.get(op.tool) if op.tool else None
             if tool is None or tool.family != "mill" or op.end <= op.start:
@@ -208,43 +226,54 @@ class HeightfieldSim:
             piece = toolpath.slice(op.start, op.end)
             samples = piece.sample(self.tolerance, max_step_mm=op_step(self.step, self.cell, tool))
             points = wcs.from_wcs(samples.points)
-            cutting = np.isin(samples.kind, (FEED, PLUNGE, ARC_CW, ARC_CCW))
-            rapid = samples.kind == RAPID
-            rapid[0] = False
+            # Each sample's move's mode; the first sample (where the op starts) neither cuts nor moves.
+            classes = np.where(samples.move >= 0, modes[op.start + np.maximum(samples.move, 0)], IDLE)
+            neck = _Neck(tool.holder.shank_diameter_mm / 2.0) if (classes == NECK).any() else None
             di, dj = self._kernel(tool.radius + max(self.cell, 0.2))
             before = self.volume()
             self._op = int(op.index)
             # Runs of consecutive samples of one class, in program order.
-            classes = np.where(cutting, 1, np.where(rapid, 2, 0))
             breaks = np.nonzero(np.diff(classes))[0] + 1
             starts = np.concatenate([[0], breaks])
             ends = np.concatenate([breaks, [len(classes)]])
             deepest = {"depth_mm": -np.inf, "at": None}
-            worst = {"depth_mm": 0.0, "at": None, "move": None, "count": 0}
+            worst = {mode: {"depth_mm": 0.0, "at": None, "move": None, "count": 0} for mode in (PASS, NECK)}
             for a, b in zip(starts, ends):
                 kind = classes[a]
-                if kind == 1:
+                if kind in (CUT, BACK_CUT):
                     # A cutting run starts where the previous sample ended.
                     run = points[max(0, a - 1):b]
+                    if kind == BACK_CUT:
+                        # The head feeds up from under the part: it cuts the column's far side, never its near one
+                        # (the reach of a back bore is judged by ``reach`` from the plan, not measured here).
+                        self._stamp(run, tool, -direction, di, dj, offset=direction * tool.flute_length_mm)
+                        continue
                     depth, k = self._depth(run, tool, direction, di, dj)
                     if depth > deepest["depth_mm"]:
                         deepest = {"depth_mm": depth, "at": run[k]}
                     self._stamp(run, tool, direction, di, dj)
-                elif kind == 2:
+                elif kind in (PASS, NECK):
                     run = points[a:b]
-                    dip, k = self._rapid_hit(run, tool, direction, di, dj)
+                    if kind == NECK:
+                        dip, k = self._rapid_hit(run, neck, direction, *self._kernel(neck.radius + self.cell))
+                    else:
+                        dip, k = self._rapid_hit(run, tool, direction, di, dj)
                     if dip > RAPID_TOLERANCE:
-                        worst["count"] += 1
-                        if dip > worst["depth_mm"]:
-                            worst.update(depth_mm=dip, at=run[k], move=int(op.start + samples.move[a + k]))
+                        hit = worst[kind]
+                        hit["count"] += 1
+                        if dip > hit["depth_mm"]:
+                            hit.update(depth_mm=dip, at=run[k], move=int(op.start + samples.move[a + k]))
             report.removed_mm3_by_op[op.index] = before - self.volume()
             if deepest["at"] is not None:
                 report.depth_by_op[op.index] = {"depth_mm": round(float(deepest["depth_mm"]), 4),
                                                 "at": [round(float(v), 4) for v in deepest["at"]]}
-            if worst["count"]:
-                report.rapid_hits.append({"op": op.index, "move": worst["move"], "count": worst["count"],
-                                          "depth_mm": round(worst["depth_mm"], 4),
-                                          "at": [round(float(v), 4) for v in worst["at"]]})
+            for mode, hit in worst.items():
+                if hit["count"]:
+                    report.rapid_hits.append({"op": op.index, "move": hit["move"], "count": hit["count"],
+                                              "depth_mm": round(hit["depth_mm"], 4),
+                                              "at": [round(float(v), 4) for v in hit["at"]],
+                                              **({"neck_diameter_mm": round(2 * neck.radius, 4)}
+                                                 if mode == NECK else {})})
         return report
 
     # --- results -------------------------------------------------------------------------------------------

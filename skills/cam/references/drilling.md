@@ -214,10 +214,15 @@ G77 takes none), and otherwise as its moves with an oriented stop (`M19`) before
   counterbore (or pocket or helix bore it), and a spot the countersink (`spot_diameter_mm` defaults
   to it). A spot on a counterbored hole with no countersink starts at the counterbore's top, so it
   cuts air.
-- The stock simulator and the checks that read it model a tool from its tip up, so they cannot
-  follow a back bore (a head under the part, a neck through the hole): its rapid down through the
-  hole reads as `rapid_into_stock` and its depth under the part as `reach_flutes`, both errors, so a
-  plan with a back bore is not posted yet. The `gouge` check skips the back bore (the planner checks
+- The stock simulator follows a back bore: a move made with the spindle stopped cuts nothing, and
+  the back bore's stopped moves (down through the hole, across under the part, back up) are judged
+  for `rapid_into_stock` with the neck's radius (`shank_diameter_mm` / 2), so the hole must be
+  drilled through by an earlier operation; the head feeding up cuts the counterbore from under the
+  part, never the material over it. The oriented head's own passage through the hole is the
+  planner's (the shift against the head, the neck and the hole). `reach` judges the bar's
+  `stickout_mm` (the holder must stay over the stock's top with the head down at R), not its flutes
+  (the head rises through the counterbore). The bar under the part is a `through_stock_bottom`
+  warning: leave room under the hole. The `gouge` check skips the back bore (the planner checks
   the head against the counterbore and the hole). The `uncut_feature` check does not see that a
   `counterbore` cycle cuts its counterbore's floor (the tool's tip runs on the hole's axis), and may
   warn of it as a pocket left.

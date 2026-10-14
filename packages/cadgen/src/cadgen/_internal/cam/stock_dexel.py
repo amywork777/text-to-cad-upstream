@@ -15,8 +15,13 @@ cylinder, a ball end a sphere and a cylinder, a bull nose or a cone a stack of c
 (never more than the real cutter, at most a sixth of the profile's rise short). Each ray through the solid loses the
 one interval where it is inside (the hull of the pieces' intervals, exact for a convex solid). Rapids are tested,
 never cut: a rapid whose tool overlaps material by more than :data:`RAPID_TOLERANCE` (or half a cell) along a ray is
-a hit. Before each run of cutting samples it measures how far the material along the tool's axis stands over the tip
-within reach of the tool's side (the reach check), on the grid most in line with the tool.
+a hit, and so is any move made with the spindle stopped (:func:`~cadgen._internal.cam.stock.move_modes`): a tool that
+is not turning cuts nothing. A back bore's stopped moves are its bar's neck through the hole, tested as a cylinder of
+the neck's radius (``shank_diameter_mm`` / 2) from the tip up; its head feeding up from under the part cuts only what
+the head sweeps (a cylinder ``flute_length_mm`` tall over the tip), never the material over it, and is left out of
+the reach depth (the reach check judges the bar from the plan). Before each run of cutting samples it measures how
+far the material along the tool's axis stands over the tip within reach of the tool's side (the reach check), on the
+grid most in line with the tool.
 
 **What it reports.** :meth:`volume` sums the Z rays' intervals (cell area x length: good to about half a cell on
 walls, exact in Z). :meth:`material_left` compares each ray's stock with the part's own intervals (the part mesh
@@ -35,8 +40,8 @@ import math
 import numpy as np
 
 from cadgen._internal.cam.fit import op_step
-from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, FEED, PLUNGE, RAPID
-from cadgen._internal.cam.stock import MaterialLeft, SimReport
+from cadgen._internal.cam.ir import ARC_CCW, ARC_CW
+from cadgen._internal.cam.stock import BACK_CUT, CUT, IDLE, NECK, PASS, MaterialLeft, SimReport, move_modes
 
 __all__ = ["DexelSim", "ray_intervals"]
 
@@ -439,23 +444,27 @@ class DexelSim:
         side = 2 * (radius + self.cell) / grid.cell + 1
         return side * (side + self._length / grid.cell * 0.25)
 
-    def _stamp(self, tips, axes, tool) -> None:
-        pieces = _primitives(tool, self._length)
+    def _stamp(self, tips, axes, tool, pieces=None) -> None:
+        """Remove what the placed tool sweeps: its cutter swept up its axis, or ``pieces`` when given."""
+        pieces = pieces or _primitives(tool, self._length)
+        radius = max(piece[1] for piece in pieces)
         for grid in self.grids:
-            for s, owner, rays in self._chunks(grid, tips, axes, tool.radius):
+            for s, owner, rays in self._chunks(grid, tips, axes, radius):
                 if not len(rays):
                     continue
                 t0, t1 = self._intervals(grid, owner, rays, tips[s:], axes[s:], pieces)
                 hit = t1 > t0
                 grid.remove(rays[hit], t0[hit], t1[hit])
 
-    def _rapid_hit(self, tips, axes, tool):
-        """(worst overlap, placement index) of rapid placements with the material, along any ray."""
-        pieces = _primitives(tool, self._length)
+    def _rapid_hit(self, tips, axes, tool, pieces=None):
+        """(worst overlap, placement index) of rapid placements with the material, along any ray: the cutter swept
+        up its axis, or ``pieces`` when given (a back-boring bar's neck)."""
+        pieces = pieces or _primitives(tool, self._length)
+        radius = max(piece[1] for piece in pieces)
         worst, where = 0.0, -1
         threshold = max(RAPID_TOLERANCE, self.cell / 2.0)
         for grid in self.grids:
-            for s, owner, rays in self._chunks(grid, tips, axes, tool.radius):
+            for s, owner, rays in self._chunks(grid, tips, axes, radius):
                 if not len(rays):
                     continue
                 t0, t1 = self._intervals(grid, owner, rays, tips[s:], axes[s:], pieces)
@@ -538,6 +547,7 @@ class DexelSim:
 
         report = SimReport(setup=wcs.setup_id)
         rotary = bool(toolpath.rotary) or bool(wcs.rotary_deg)
+        modes = move_modes(toolpath)
         setup_abc = dict(wcs.rotary_deg)
         for op in toolpath.ops:
             tool = tools.get(op.tool) if op.tool else None
@@ -555,41 +565,49 @@ class DexelSim:
             # The run's first sample is where the operation starts.
             points = wcs.from_wcs(np.vstack([piece.positions()[:1], points_w]))
             axes = tool_axes(np.vstack([abc_before[None, :], abc]), wcs, rotary=rotary)
-            kinds = np.concatenate([[RAPID], kinds])
             moves = np.concatenate([[-1], moves])
-            cutting = np.isin(kinds, (FEED, PLUNGE, ARC_CW, ARC_CCW))
-            rapid = kinds == RAPID
-            rapid[0] = False
+            # Each placement's move's mode; the first (where the op starts) neither cuts nor moves.
+            classes = np.where(moves >= 0, modes[op.start + np.maximum(moves, 0)], IDLE)
+            neck = [("cyl", tool.holder.shank_diameter_mm / 2.0, 0.0, self._length)]
+            head = [("cyl", tool.radius, 0.0, tool.flute_length_mm)]
             before = self.volume()
-            classes = np.where(cutting, 1, np.where(rapid, 2, 0))
             breaks = np.nonzero(np.diff(classes))[0] + 1
             starts = np.concatenate([[0], breaks])
             ends = np.concatenate([breaks, [len(classes)]])
             deepest = {"depth_mm": -np.inf, "at": None}
-            worst = {"depth_mm": 0.0, "at": None, "move": None, "count": 0}
+            worst = {mode: {"depth_mm": 0.0, "at": None, "move": None, "count": 0} for mode in (PASS, NECK)}
             for a, b in zip(starts, ends):
                 kind = classes[a]
-                if kind == 1:
+                if kind in (CUT, BACK_CUT):
                     lo = max(0, a - 1)
                     run_p, run_a = points[lo:b], axes[lo:b]
+                    if kind == BACK_CUT:
+                        # The head alone, feeding up from under the part: what it sweeps goes, never the material
+                        # over it (its neck runs in the hole). Its reach is judged by ``reach`` from the plan.
+                        self._stamp(run_p, run_a, tool, head)
+                        continue
                     depth, k = self._depth(run_p, run_a, tool)
                     if depth > deepest["depth_mm"]:
                         deepest = {"depth_mm": depth, "at": run_p[k]}
                     self._stamp(run_p, run_a, tool)
-                elif kind == 2:
-                    dip, k = self._rapid_hit(points[a:b], axes[a:b], tool)
+                elif kind in (PASS, NECK):
+                    dip, k = self._rapid_hit(points[a:b], axes[a:b], tool, neck if kind == NECK else None)
                     if dip > 0:
-                        worst["count"] += 1
-                        if dip > worst["depth_mm"]:
-                            worst.update(depth_mm=dip, at=points[a + k], move=int(op.start + moves[a + k]))
+                        hit = worst[kind]
+                        hit["count"] += 1
+                        if dip > hit["depth_mm"]:
+                            hit.update(depth_mm=dip, at=points[a + k], move=int(op.start + moves[a + k]))
             report.removed_mm3_by_op[op.index] = before - self.volume()
             if deepest["at"] is not None:
                 report.depth_by_op[op.index] = {"depth_mm": round(float(deepest["depth_mm"]), 4),
                                                 "at": [round(float(v), 4) for v in deepest["at"]]}
-            if worst["count"]:
-                report.rapid_hits.append({"op": op.index, "move": worst["move"], "count": worst["count"],
-                                          "depth_mm": round(worst["depth_mm"], 4),
-                                          "at": [round(float(v), 4) for v in worst["at"]]})
+            for mode, hit in worst.items():
+                if hit["count"]:
+                    report.rapid_hits.append({"op": op.index, "move": hit["move"], "count": hit["count"],
+                                              "depth_mm": round(hit["depth_mm"], 4),
+                                              "at": [round(float(v), 4) for v in hit["at"]],
+                                              **({"neck_diameter_mm": round(2 * neck[0][1], 4)}
+                                                 if mode == NECK else {})})
         return report
 
     # --- results -------------------------------------------------------------------------------------------

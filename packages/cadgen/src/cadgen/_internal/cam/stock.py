@@ -23,6 +23,18 @@ A simulator follows the :class:`StockSim` protocol::
 :data:`SIM_REGISTRY` maps a machine kind to ``"module:Class"``; :func:`create_stock_sim` imports it, and when that
 module is not in this cadgen it falls back (a heightfield for a multi-axis mill, else :class:`NullSim`) and says so
 as an ``adapted`` step, never a refusal. Stdlib at import; numpy inside.
+
+What a mill's simulator does with each move (:func:`move_modes`, read from the toolpath's ``spindle`` and ``cycle``
+events, so every simulator and the stock replay agree):
+
+* a move made with the spindle stopped (after a ``spindle`` ``off`` event, before the next start) removes no stock: a
+  tool that is not turning does not cut. It is judged like a rapid: material in its way is a crash.
+* a back bore's stopped moves (inside a ``back_bore`` cycle: down through the hole, across under the part, up out of
+  it) are the bar's neck passing through the hole: judged with the neck's radius (``shank_diameter_mm`` / 2) from the
+  tip up. The oriented head's own passage through the hole is the planner's (``drill``: the shift against the head,
+  the neck and the hole).
+* a back bore's cutting moves (the spindle on, inside the cycle) are its head (``flute_length_mm`` tall) feeding up
+  from under the part: it cuts from the far side, the head's top into the material, never the column above it.
 """
 
 from __future__ import annotations
@@ -36,8 +48,19 @@ from typing import Any, Protocol
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["BAR_DEFLECTION_MM", "MaterialLeft", "NullSim", "SIM_REGISTRY", "SimReport", "StockGeometry", "StockSim",
-           "build_stock", "create_stock_sim"]
+__all__ = ["BACK_CUT", "BAR_DEFLECTION_MM", "CUT", "IDLE", "MaterialLeft", "NECK", "NullSim", "PASS", "SIM_REGISTRY",
+           "SimReport", "StockGeometry", "StockSim", "build_stock", "create_stock_sim", "move_modes"]
+
+#: :func:`move_modes`: a move that cuts from the tool's side (a turning tool's feed, plunge or arc).
+CUT = 1
+#: A rapid, or any move made with the spindle stopped: it removes nothing, and material in its way is a crash.
+PASS = 2
+#: A back bore's head feeding up from under the part (the spindle on, inside a ``back_bore`` cycle).
+BACK_CUT = 3
+#: A back bore's move with the spindle stopped: the bar's neck through the hole.
+NECK = 4
+#: Anything else (a dwell): neither cuts nor moves.
+IDLE = 0
 
 #: The chord deflection (mm) the part is meshed at to measure its radius about a bar's centre line: the mesh's nodes
 #: lie on the surfaces, so a face turned about that line gives its radius exactly and any other is within this.
@@ -94,7 +117,8 @@ class StockGeometry:
 class SimReport:
     """What cutting one setup found. ``depth_by_op``: ``{op: {"depth_mm", "at"}}``, the deepest the tool went
     below the material within reach of its side (for the reach check); ``rapid_hits``: one dict per operation whose
-    rapids passed through uncut stock (``op``, ``move``, ``at`` part mm, ``depth_mm``, ``count``)."""
+    rapids (or moves with the spindle stopped) passed through uncut stock (``op``, ``move``, ``at`` part mm,
+    ``depth_mm``, ``count``), and one more when a back bore's neck did (with ``neck_diameter_mm``)."""
 
     setup: str
     removed_mm3_by_op: dict[int, float] = field(default_factory=dict)
@@ -174,6 +198,44 @@ def create_stock_sim(kind: str, stock: StockGeometry, part, *, cell_mm: float, t
     sim = cls(stock, part, cell_mm=cell_mm, tolerance_mm=tolerance_mm)
     # A simulator that coarsened its own grid says so (``sim.adapted``: fit-ladder steps).
     return sim, adapted + list(getattr(sim, "adapted", ()))
+
+
+def move_modes(toolpath):
+    """(N,) how a mill's simulator treats each move of ``toolpath``: :data:`CUT`, :data:`PASS`, :data:`BACK_CUT`,
+    :data:`NECK` or :data:`IDLE` (see the module docstring).
+
+    The spindle turns until a ``spindle`` event with ``dir`` ``off`` stops it, and again from the next ``spindle``
+    event that starts it; a toolpath with no spindle events turns throughout (a test's bare path, an operation whose
+    spindle started before it). A tool change alone does not stop it here: the operation after one starts it again
+    before its first move."""
+    import numpy as np
+
+    from cadgen._internal.cam.ir import ARC_CCW, ARC_CW, FEED, PLUNGE, RAPID
+
+    moves = toolpath.moves
+    n = len(moves)
+    stopped = np.zeros(n, dtype=bool)
+    back = np.zeros(n, dtype=bool)
+    turning, since = True, 0
+    for event in toolpath.events:
+        at = min(max(int(event.at), 0), n)
+        if event.kind == "spindle":
+            if not turning:
+                stopped[since:at] = True
+            turning, since = event.data.get("dir", "cw") != "off", at
+        elif event.kind == "cycle" and event.data.get("cycle") == "back_bore":
+            back[at:min(int(event.data.get("end", at)), n)] = True
+    if not turning:
+        stopped[since:] = True
+    kinds = moves["kind"] if n else np.zeros(0, dtype=np.uint8)
+    cutting = np.isin(kinds, (FEED, PLUNGE, ARC_CW, ARC_CCW))
+    moving = cutting | (kinds == RAPID)
+    out = np.full(n, IDLE, dtype=np.int8)
+    out[cutting & ~stopped] = CUT
+    out[moving & (stopped | (kinds == RAPID))] = PASS
+    out[cutting & ~stopped & back] = BACK_CUT
+    out[moving & stopped & back] = NECK
+    return out
 
 
 # --- the starting stock --------------------------------------------------------------------------------
