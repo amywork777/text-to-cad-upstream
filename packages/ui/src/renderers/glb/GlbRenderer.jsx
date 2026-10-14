@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { MousePointer2 } from "lucide-react";
 import { EDGELESS_VIEW_FEATURES } from "@text-to-cad/core/common/viewSettings.js";
 import RendererShell from "../kit/shell/RendererShell.jsx";
 import { readFileView } from "../kit/shell/fileView.js";
 import { useRendererShell } from "../kit/shell/useRendererShell.js";
+import { ViewerHostContext } from "../../host/context.js";
 import { useDeclinedSelectReference, useWorkspaceDocument, workspaceLoadAlert } from "../workspace/useWorkspaceDocument.js";
 import { carriesCamJob } from "./cam/detect.js";
 import { GLB_DECLINED_LIVE_COMMANDS, GLB_TOOL, GLB_TOOL_MODES } from "./tools.js";
@@ -38,6 +39,23 @@ function useCamView(root) {
   return { kit: wanted && kit ? kit : null, pending: wanted && kit === null };
 }
 
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+const systemReducesMotion = () => typeof window !== "undefined" && window.matchMedia?.(REDUCED_MOTION_QUERY)?.matches === true;
+
+/** Whether motion is reduced: the app's own setting (the host's `reducedMotion`) or the system's `prefers-reduced-motion`. */
+export function useReducedMotion() {
+  const app = useContext(ViewerHostContext)?.environment?.reducedMotion === true;
+  const [system, setSystem] = useState(systemReducesMotion);
+  useEffect(() => {
+    const query = typeof window !== "undefined" ? window.matchMedia?.(REDUCED_MOTION_QUERY) : null;
+    if (!query?.addEventListener) return undefined;
+    const change = () => setSystem(query.matches === true);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  return app || system;
+}
+
 function GlbSurface({ view, data }) {
   const document = useWorkspaceDocument({ view, data });
   const loaded = useGlbScene({ entry: document.entry, resources: document.client.resources });
@@ -68,8 +86,11 @@ function GlbSurface({ view, data }) {
     setEdited((current) => ({ ...(current || {}), ...patch }));
     shellRef.current?.scheduleStateSave();
   }, []);
+  // The operations put away by their eyes in Job, kept with Display's gates in the file's view.
+  const hidden = useMemo(() => (cam ? cv.camHidden(cam, shown) : null), [cv, cam, shown]);
+  const toggleHidden = useCallback((index) => show({ hidden: cv.toggleCamHidden(shownRef.current, index) }), [cv, show]);
 
-  // A row of Job chosen (an operation, a setup, an error): its paths isolated, and its faces and sentence for Quick Edit.
+  // A row of Job chosen (an operation, a setup, a tool, an error): its paths isolated, and its faces and sentence for Quick Edit.
   const [chosenRow, setChosenRow] = useState(NO_CAM_CHOICE);
   const choices = useMemo(() => (cam ? cv.camChoices(cam) : null), [cam]);
   const choice = cam && chosenRow.result === cam ? choices.get(chosenRow.id) || null : null;
@@ -85,15 +106,27 @@ function GlbSurface({ view, data }) {
   const camRef = useRef(null);
   const momentRef = useRef(null);
   const paintRef = useRef(null);
+  // The readout over the playbar (`CamReadout`), written as the clip plays; the playbar's speed and whether motion is reduced.
+  const readoutRef = useRef(null);
+  const speedRef = useRef(1);
+  const reducedMotion = useReducedMotion();
   paintRef.current = () => {
     if (!cam) return;
-    if (cv.paintCam({ controller: camRef.current, meshes, job: cam, shown, isolate, moment: momentRef.current })) requestRenderRef.current?.();
+    const moment = momentRef.current;
+    const painted = cv.paintCam({ controller: camRef.current, meshes, job: cam, shown, isolate, moment });
+    readoutRef.current?.(moment ? cv.camReadoutWords(cam, moment, { op: painted.place?.op ?? null, speed: speedRef.current, reducedMotion }) : null);
+    if (painted.changed) requestRenderRef.current?.();
   };
   const paint = useCallback(() => paintRef.current?.(), []);
   useEffect(() => { paint(); }, [cam, shown, isolate, paint]);
-  // Simulate, and one per setup, on Preview's playbar: the paths drawn up to the moment and the tool on them.
-  const ownClips = useMemo(() => (cam ? cv.camClips(cam, (moment) => { momentRef.current = moment; paint(); }) : EMPTY), [cam, paint]);
+  // Simulate, and one per setup, on Preview's playbar: the paths drawn up to the moment and the tool on them; with
+  // motion reduced, one operation a second.
+  const ownClips = useMemo(() => (cam ? cv.camClips(cam, (moment) => { momentRef.current = moment; paint(); }, { reducedMotion }) : EMPTY),
+    [cam, paint, reducedMotion]);
   const animation = useGlbAnimation(scene?.document || null, () => requestRenderRef.current?.(), ownClips);
+  speedRef.current = animation?.speed || 1;
+  // A new playbar speed says so in the readout at once, paused or not.
+  useEffect(() => { paint(); }, [animation?.speed, paint]);
   const shell = useRendererShell({
     view, services: document.services, resource: document.resource, modelKey: document.modelKey, revisionKey: loaded.revision,
     features: EDGELESS_VIEW_FEATURES, toolModes: GLB_TOOL_MODES, previewable: true, scene,
@@ -110,9 +143,13 @@ function GlbSurface({ view, data }) {
   // Select is a CAM result's one tool, with Job its panel; a GLB that is not a result has none.
   const selectActive = Boolean(cam) && !shell.previewing && shell.toolMode === GLB_TOOL.SELECT;
   const tools = cam ? [shell.tools.own({ id: GLB_TOOL.SELECT, label: "Select", icon: SELECT_ICON, panel: cv.JOB_PANEL })] : EMPTY;
-  const toolPanels = cam ? <cv.CamJobPanel active={selectActive} job={cam} colours={colours} chosen={choice?.id || ""} onChoose={chooseRow} /> : null;
-  const overlay = cam ? (viewport) => <cv.CamPaths runtimeRef={viewport.runtimeRef} viewerReadyTick={viewport.viewerReadyTick} root={root}
-    cadRoot={scene.object3D} job={cam} scheme={scheme} controllerRef={camRef} onChange={paint} /> : null;
+  const toolPanels = cam ? <cv.CamJobPanel active={selectActive} job={cam} colours={colours} chosen={choice?.id || ""} onChoose={chooseRow}
+    hidden={hidden} onToggleHidden={toggleHidden} /> : null;
+  const overlay = cam ? (viewport) => <>
+    <cv.CamPaths runtimeRef={viewport.runtimeRef} viewerReadyTick={viewport.viewerReadyTick} root={root}
+      cadRoot={scene.object3D} job={cam} scheme={scheme} controllerRef={camRef} onChange={paint} />
+    <cv.CamReadout readoutRef={readoutRef} />
+  </> : null;
   return <RendererShell shell={shell} tools={tools} toolPanels={toolPanels} viewportOverlay={overlay} references={references}
     onClearReferences={cam ? clearChoice : null} />;
 }

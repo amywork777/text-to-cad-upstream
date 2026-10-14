@@ -73,8 +73,12 @@ export function cadFrame(THREE, root, cadRoot = null) {
   const toLocal = matrix.clone().invert();
   return {
     mmPerUnit,
+    /** CAD space (mm, Z up) to the root's frame. */
+    toLocal,
     /** A CAD direction ([x, y, z]) in the root's frame, unit length. */
     direction: (vector) => new THREE.Vector3(...vector).transformDirection(toLocal),
+    /** A CAD point ([x, y, z], mm) in the root's frame. */
+    point: (vector) => new THREE.Vector3(...vector).applyMatrix4(toLocal),
   };
 }
 
@@ -283,17 +287,17 @@ export function createCamPaths(THREE, root, job, { context, cadRoot = null, sche
       last = "";
     },
     /**
-     * What is shown: feed moves and rapids each on or off, an isolated set of operations (the rest dimmed),
-     * and while playback runs, the moment (`time`, program seconds) the paths are drawn up to, and the setup
-     * it plays (the others' paths put away). Returns whether anything changed.
+     * What is shown: feed moves and rapids each on or off, an isolated set of operations (the rest dimmed), a
+     * hidden set (put away, whatever is isolated), and while playback runs, the moment (`time`, program seconds)
+     * the paths are drawn up to, and the setup it plays (the others' paths put away). Returns whether anything changed.
      */
-    update({ toolpaths = true, rapids = true, isolate = null, time = null, setup = null } = {}) {
-      const key = JSON.stringify([toolpaths, rapids, isolate ? [...isolate] : null, time, setup]);
+    update({ toolpaths = true, rapids = true, isolate = null, hidden = null, time = null, setup = null } = {}) {
+      const key = JSON.stringify([toolpaths, rapids, isolate ? [...isolate] : null, hidden ? [...hidden] : null, time, setup]);
       if (key === last) return false;
       last = key;
       for (const entry of drawn) {
         const feed = entry.kind === "feed";
-        entry.line.visible = (feed ? toolpaths : rapids) && (!setup || entry.setup === setup);
+        entry.line.visible = (feed ? toolpaths : rapids) && (!setup || entry.setup === setup) && !hidden?.has(entry.op);
         const dim = Boolean(isolate) && !isolate.has(entry.op);
         syncLineMaterialOpacity(entry.line.material, dim ? DIM[entry.kind] : SHOWN[entry.kind]);
         restore(entry);

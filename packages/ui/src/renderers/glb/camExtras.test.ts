@@ -1,6 +1,6 @@
 import { Group, Mesh } from 'three';
 import { expect, it } from 'vitest';
-import { camSourcePath, carriesCamJob, formatDuration, operationDetail, readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
+import { camSourcePath, carriesCamJob, formatDuration, jobSummary, operationDetail, readCamJob, toolChangeWords, toolSpeeds } from '../../../dist/renderers/glb/cam/extras.js';
 import { camExtras, camScene } from './__tests__/camFile';
 
 it('reads the job a CAM result carries: verdict, setups, operations, errors first', () => {
@@ -84,4 +84,55 @@ it('reads an adapted step\'s words as cadgen writes them', () => {
   const extras = camExtras() as any;
   extras.adapted = [{ step: 'stock_grid', words: 'stock grid 0.5 mm -> 1 mm so the simulation fits 4,000,000 cells', accuracy: 'about 0.5 mm' }];
   expect(readCamJob(camScene({ extras }))!.adapted).toEqual([{ step: 'stock_grid', note: 'stock grid 0.5 mm -> 1 mm so the simulation fits 4,000,000 cells' }]);
+});
+
+it('reads the job\'s tools in the order the program uses them, each with the speeds its operations run it at', () => {
+  const job = readCamJob(camScene())!;
+  // An old file with no tool list: each tool from its operations.
+  expect(job.tools).toEqual([
+    { id: 'T1', label: 'T1', plain: '6 mm flat', type: '', diameterMm: 6, operations: [0], rpm: [12000, 12000], feedMmMin: [1440, 1440] },
+    { id: 'T3', label: 'T3', plain: '4 mm ball', type: 'ball', diameterMm: 4, operations: [1], rpm: [15000, 15000], feedMmMin: [900, 900] }]);
+  expect(toolSpeeds(job.tools[0])).toBe('12,000 rpm · 1,440 mm/min');
+  expect(toolSpeeds({ rpm: [8000, 12000], feedMmMin: null })).toBe('8,000–12,000 rpm');
+  expect(toolSpeeds({ rpm: null, feedMmMin: null })).toBe('');
+  const extras = camExtras() as any;
+  extras.tools = [{ id: 'T1', number: 1, type: 'flat_endmill', diameter_mm: 6, plain: '6 mm flat end mill' }, { id: '', number: 7, type: 'drill', diameter_mm: 3 }];
+  const listed = readCamJob(camScene({ extras }))!;
+  expect(listed.tools.map((tool: any) => [tool.label, tool.plain, tool.type, tool.operations])).toEqual([
+    ['T1', '6 mm flat end mill', 'flat_endmill', [0]], ['T3', '4 mm ball', 'ball', [1]], ['T7', '3 mm drill', 'drill', []]]);
+});
+
+it('counts the tool changes: cadgen\'s where it writes them, else from the operations in program order', () => {
+  const job = readCamJob(camScene())!;
+  expect(job.toolChanges).toEqual({ count: 1, order: ['T1', 'T3'] });
+  expect(job.post).toBe('grbl');
+  expect(jobSummary(job)).toBe('1 tool change · grbl controller');
+  const extras = camExtras() as any;
+  extras.tool_changes = { count: 3, order: ['T1', 'T3', 'T1', 'T3'] };
+  extras.machine = { kind: 'mill' };
+  extras.posts = [{ setup: 'top', file: 'part.top.nc', post: 'linuxcnc' }];
+  extras.warnings = ['G-code not written: fix 1 error first', '', 7];
+  const written = readCamJob(camScene({ extras }))!;
+  expect(written.toolChanges).toEqual({ count: 3, order: ['T1', 'T3', 'T1', 'T3'] });
+  // The controller from the posts when the machine does not name one; the run's warnings, strings alone.
+  expect(written.post).toBe('linuxcnc');
+  expect(written.warnings).toEqual(['G-code not written: fix 1 error first', '7']);
+  expect(jobSummary(written)).toBe('3 tool changes · linuxcnc controller');
+  // One tool, no controller named.
+  const single = camExtras() as any;
+  single.setups[0].operations[1].tool = 'T1';
+  single.machine = 'mill';
+  single.posts = [];
+  expect(jobSummary(readCamJob(camScene({ extras: single }))!)).toBe('No tool changes');
+  expect([0, 1, 2].map(toolChangeWords)).toEqual(['No tool changes', '1 tool change', '2 tool changes']);
+  expect(readCamJob(camScene())!.warnings).toEqual([]);
+});
+
+it('reads each setup\'s fixture boxes in part coordinates, leaving out one with a corner missing', () => {
+  const extras = camExtras() as any;
+  extras.setups[0].fixtures = [{ name: 'vise jaw', min_mm: [-5, -10, -20], max_mm: [5, 10, 0] }, { name: 'bad', min_mm: [0, 0], max_mm: [1, 1, 1] },
+    { min_mm: ['2', 0, 0], max_mm: [1, 1, 1] }];
+  const job = readCamJob(camScene({ extras }))!;
+  expect(job.setups[0].fixtures).toEqual([{ name: 'vise jaw', min: [-5, -10, -20], max: [5, 10, 0] }, { name: 'Fixture 3', min: [1, 0, 0], max: [2, 1, 1] }]);
+  expect(readCamJob(camScene())!.setups[0].fixtures).toEqual([]);
 });

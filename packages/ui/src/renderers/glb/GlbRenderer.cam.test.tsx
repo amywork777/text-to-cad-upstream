@@ -19,7 +19,7 @@ vi.mock('../../../dist/renderers/glb/useGlbScene.js', () => ({
   useGlbScene: () => ({ scene: loaded.scene, revision: 'one', busy: false, error: null, progress: null })
 }));
 vi.mock('../../../dist/renderers/glb/camView.js', async (importOriginal) => { loaded.requested += 1; return importOriginal(); });
-import GlbRenderer from '../../../dist/renderers/glb/GlbRenderer.js';
+import GlbRenderer, { useReducedMotion } from '../../../dist/renderers/glb/GlbRenderer.js';
 import { ViewerHostContext } from '../../../dist/host/context.js';
 import { testHost } from '../../../dist/host/testing/host.js';
 
@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-function mount(root: Group, path = '/models/part.glb') {
+function mount(root: Group, path = '/models/part.glb', { state = null as unknown, onStateChange = (_: any) => {} } = {}) {
   const bounds = { min: [0, 0, 0], max: [10, 10, 5] };
   loaded.scene = { document: { scene: root, clips: [] }, object3D: root, bounds, restBounds: bounds, revision: 'one' };
   const settings = { toolStack: { panels: {}, collapsed: {} } };
@@ -37,7 +37,7 @@ function mount(root: Group, path = '/models/part.glb') {
   const preferences = { getSnapshot: () => settings, subscribe: () => () => {}, update() {} };
   const client = { resources: {}, subscribe: () => () => {}, getSnapshot: () => catalog };
   const props = { source: { id: 'one' }, file: { path, name: path.split('/').at(-1), kind: 'file' }, document: null, navbarSlot: null,
-    onReady() {}, onOpenFile() {}, appearance: { colorScheme: 'light' }, onStateChange() {}, onNavigationActionsChange() {}, reload() {},
+    onReady() {}, onOpenFile() {}, appearance: { colorScheme: 'light' }, state, onStateChange, onNavigationActionsChange() {}, reload() {},
     data: { client, entry: { path, hash: 'h' }, services: { preferences } } };
   return render(<ViewerHostContext.Provider value={testHost()}><GlbRenderer {...(props as any)} /></ViewerHostContext.Provider>);
 }
@@ -69,3 +69,34 @@ it('a CAM result loads the CAM viewer, then shows Job; a row isolates its operat
   fireEvent.click(screen.getByRole('button', { name: 'Select Face' }));
   expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('false');
 }, 30000);
+
+it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidden with Display\'s gates', async () => {
+  const onStateChange = vi.fn();
+  const view = mount(camScene(), '/models/part.cam.glb', { onStateChange });
+  expect(await screen.findByRole('region', { name: 'Job' }, { timeout: 30000 })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Hide Face' }));
+  expect(screen.getByRole('button', { name: 'Reveal Face' })).toBeTruthy();
+  // Hiding is not choosing: nothing is isolated.
+  expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('false');
+  view.unmount();
+  const record = onStateChange.mock.lastCall![0];
+  expect(record.renderer.cam.signature).toBe('cam:1');
+  expect(record.renderer.cam.value).toMatchObject({ hidden: [0], toolpaths: true, tool: true, fixtures: true, stock: false });
+  // Opened again with that view: Face is still hidden.
+  mount(camScene(), '/models/part.cam.glb', { state: record });
+  expect(await screen.findByRole('button', { name: 'Reveal Face' }, { timeout: 30000 })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Hide Pocket' })).toBeTruthy();
+}, 30000);
+
+it('reduces motion where the app says so or the system does', () => {
+  const seen: boolean[] = [];
+  function Probe() { seen.push(useReducedMotion()); return null; }
+  render(<ViewerHostContext.Provider value={testHost()}><Probe /></ViewerHostContext.Provider>);
+  expect(seen.at(-1)).toBe(false);
+  render(<ViewerHostContext.Provider value={testHost({ environment: { colorScheme: 'light', reducedMotion: true } })}><Probe /></ViewerHostContext.Provider>);
+  expect(seen.at(-1)).toBe(true);
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)', media: query,
+    addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }));
+  render(<ViewerHostContext.Provider value={testHost()}><Probe /></ViewerHostContext.Provider>);
+  expect(seen.at(-1)).toBe(true);
+});

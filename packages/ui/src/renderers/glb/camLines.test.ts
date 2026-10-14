@@ -7,7 +7,8 @@ import { expect, it, vi } from 'vitest';
 import { readCamJob } from '../../../dist/renderers/glb/cam/extras.js';
 import { cadFrame, camToolpathObjects, createCamPaths, readCamSegments, toolPositionAt } from '../../../dist/renderers/glb/cam/lines.js';
 import { createCamTool, operationAxis, setupAxis, toolShape } from '../../../dist/renderers/glb/cam/tool.js';
-import { camLines, camScene } from './__tests__/camFile';
+import { FIXTURE_LOOK, camHasFixtures, createCamFixtures, fixtureSetups } from '../../../dist/renderers/glb/cam/fixtures.js';
+import { camExtras, camLines, camScene } from './__tests__/camFile';
 
 // What the viewport runtime hands the paths: its screen-space line classes and its material registry.
 const runtime = () => ({ LineSegments2, LineSegmentsGeometry, LineMaterial, registerScreenSpaceLineMaterial: vi.fn(), unregisterScreenSpaceLineMaterial: vi.fn() });
@@ -91,7 +92,58 @@ it('isolates operations, hides a kind, and reveals the paths up to a moment, the
   // A setup's clip shows that setup's paths alone.
   paths.update({ time: 50, setup: 'other' });
   expect(face.visible).toBe(false);
+  // An operation hidden by its eye is put away, feed moves and rapids, whatever is isolated.
+  paths.update({ isolate: new Set([1]), hidden: new Set([1]) });
+  expect([face.visible, pocket.visible, rapid.visible]).toEqual([true, false, false]);
+  paths.update({ hidden: null });
+  expect([face.visible, pocket.visible, rapid.visible]).toEqual([true, true, true]);
   paths.dispose();
+});
+
+it('draws each setup\'s fixtures as see-through steel boxes, in the file\'s metres, only those of the setup in view', () => {
+  const placed = new Group();
+  placed.matrix.copy(new Matrix4().makeScale(1000, 1000, 1000).multiply(new Matrix4().makeRotationX(Math.PI / 2)));
+  placed.matrixAutoUpdate = false;
+  const extras = camExtras() as any;
+  extras.setups[0].fixtures = [{ name: 'vise jaw', min_mm: [-5, -10, -20], max_mm: [5, 10, 0] }];
+  extras.setups.push({ id: 'bottom', plain: 'Bottom', orientation: '-Z', operations: [
+    { index: 2, op: 'contour', plain: 'Profile', tool: 'T1', time_s: 10, t0: 90, t1: 100, limits: [] }],
+    fixtures: [{ name: 'soft jaw', min_mm: [0, 0, 0], max_mm: [1, 1, 1] }] });
+  const root = camScene({ extras });
+  placed.add(root);
+  const job = readCamJob(root)!;
+  expect(camHasFixtures(job)).toBe(true);
+  expect(camHasFixtures(readCamJob(camScene())!)).toBe(false);
+  const fixtures = createCamFixtures(THREE, root, job, cadFrame(THREE, root, placed), 'light');
+  expect(fixtures.count).toBe(2);
+  const [jaw, soft] = fixtures.object3D.children as any[];
+  // The box in the file's frame: 10 x 20 x 20 mm about (0, 0, -10) in the part's Z-up mm is 0.01 x 0.02 x 0.02 about (0, -0.01, 0).
+  const box = new THREE.Box3().setFromBufferAttribute(jaw.geometry.attributes.position).applyMatrix4(jaw.matrix);
+  const round = (vector: any) => vector.toArray().map((value: number) => Math.round(value * 1e6) / 1e6 + 0);
+  expect(round(box.getCenter(new THREE.Vector3()))).toEqual([0, -0.01, 0]);
+  expect(round(box.getSize(new THREE.Vector3()))).toEqual([0.01, 0.02, 0.02]);
+  // Steel blue, see-through and matte, so the part stands out.
+  expect(`#${jaw.material.color.getHexString()}`).toBe(FIXTURE_LOOK.light.colour);
+  expect([jaw.material.opacity, jaw.material.transparent, jaw.material.depthWrite, jaw.material.metalness, jaw.material.roughness]).toEqual([0.2, true, false, 0, 0.9]);
+  fixtures.style('dark');
+  expect([`#${jaw.material.color.getHexString()}`, jaw.material.opacity]).toEqual([FIXTURE_LOOK.dark.colour, 0.28]);
+  expect(jaw.userData.camDrawn).toBe(true);
+  // Which setups' fixtures are up: the one a clip plays (the tool's place first), a chosen row's, or at rest the
+  // first setup's that has any (two setups' holds drawn round one part would show a hold no setup has).
+  expect(fixtureSetups(job, { moment: { t: 95, setup: null }, playing: 'bottom' })).toEqual(new Set(['bottom']));
+  expect(fixtureSetups(job, { moment: { t: 95, setup: 'top' } })).toEqual(new Set(['top']));
+  expect(fixtureSetups(job, { isolate: new Set([0, 2]) })).toEqual(new Set(['top', 'bottom']));
+  expect(fixtureSetups(job, {})).toEqual(new Set(['top']));
+  expect(fixtureSetups({ ...job, setups: job.setups.map((setup: any) => ({ ...setup, fixtures: [] })) }, {})).toBeNull();
+  expect(fixtures.update({ setups: new Set(['bottom']) })).toBe(true);
+  expect([jaw.visible, soft.visible]).toEqual([false, true]);
+  expect(fixtures.update({ setups: new Set(['bottom']) })).toBe(false);
+  fixtures.update({ shown: false });
+  expect([jaw.visible, soft.visible]).toEqual([false, false]);
+  fixtures.update({});
+  expect([jaw.visible, soft.visible]).toEqual([true, true]);
+  fixtures.dispose();
+  expect(root.children.includes(fixtures.object3D)).toBe(false);
 });
 
 it('sizes the riding tool in mm and stands it along the setup\'s axis, in a scene the file placed in metres', () => {
