@@ -58,6 +58,14 @@ TOOL_TYPES: dict[str, dict] = {
 COMMON_KEYS = ("id", "type", "number", "name", "diameter_mm", "flutes", "flute_length_mm", "stickout_mm",
                "holder_diameter_mm", "holder_length_mm", "shank_diameter_mm", "material")
 TOOL_MATERIALS = ("carbide", "hss")
+#: A tool's lengths are refused past these (mm): beyond them a number is a units slip, and a 0.000001 mm cutter would
+#: plan millions of passes. The highest T number a controller takes.
+MIN_TOOL_MM = 0.01
+MAX_TOOL_MM = 1000.0
+MAX_TOOL_NUMBER = 9999
+TOOL_LENGTHS = ("diameter_mm", "flute_length_mm", "stickout_mm", "holder_diameter_mm", "holder_length_mm",
+                "shank_diameter_mm", "corner_radius_mm", "tip_diameter_mm", "pitch_mm", "width_mm", "nose_radius_mm",
+                "kerf_mm")
 INSERTS = ("C", "D", "V", "W")
 SIDES = ("left", "right", "neutral")
 
@@ -207,6 +215,9 @@ def parse_tool(raw: object, position: int) -> Tool:
     tool_id = raw.get("id")
     if not isinstance(tool_id, str) or not tool_id.strip():
         raise CamJobError(f"{where} needs an \"id\" (a short name the operations use, like \"T1\")")
+    if len(tool_id) > 40 or not tool_id.isprintable():
+        raise CamJobError(f"{where}.id must be a short name (40 characters at most, no line breaks) like \"T1\", "
+                          f"not {tool_id[:20]!r}...")
     for key in spec["required"]:
         if key not in raw:
             raise CamJobError(f"{where} ({tool_id}, a {kind} tool) needs \"{key}\"")
@@ -216,12 +227,16 @@ def parse_tool(raw: object, position: int) -> Tool:
         t_number = int(digits) if digits else position + 1
     elif isinstance(t_number, bool) or not isinstance(t_number, int) or t_number < 0:
         raise CamJobError(f"{where}.number must be a whole number, 0 or more (the T number posted)")
+    if t_number > MAX_TOOL_NUMBER:
+        raise CamJobError(f"{where} posts as T{str(t_number)[:12]}{'...' if len(str(t_number)) > 12 else ''}; a "
+                          f"controller's tool numbers stop at {MAX_TOOL_NUMBER}: give it a \"number\" up to "
+                          f"{MAX_TOOL_NUMBER}")
     diameter = read_number(raw, "diameter_mm", where, default=0.0)
     if spec["family"] == "mill" and diameter <= 0:
         raise CamJobError(f"{where}.diameter_mm must be more than 0")
     flutes = raw.get("flutes", 1 if kind in ("vee", "engraver", "spot", "boring", "reamer") else 2)
-    if isinstance(flutes, bool) or not isinstance(flutes, int) or flutes < 1:
-        raise CamJobError(f"{where}.flutes must be a whole number of at least 1")
+    if isinstance(flutes, bool) or not isinstance(flutes, int) or not 1 <= flutes <= 100:
+        raise CamJobError(f"{where}.flutes must be a whole number from 1 to 100")
     # Defaults from catalogue tools: a jobber drill's flutes run about ten diameters, a reamer's six, a spot
     # drill's one; an end mill's about three.
     flute_factor = {"drill": 10.0, "reamer": 6.0, "spot": 1.0, "tap": 3.0, "boring": 4.0}.get(kind, 3.0)
@@ -251,6 +266,16 @@ def parse_tool(raw: object, position: int) -> Tool:
         kerf_mm=read_number(raw, "kerf_mm", where, default=0.0),
         hand=choice(raw["hand"], ("right", "left"), f"{where}.hand") if "hand" in raw else "",
     )
+    for key in TOOL_LENGTHS:
+        value = getattr(tool, key)
+        if value is not None and value > MAX_TOOL_MM:
+            raise CamJobError(f"{where}.{key} is {value:g} mm; no cutter is over {MAX_TOOL_MM:g} mm: check the units "
+                              "(every length in a job is mm)")
+    for key in ("diameter_mm", "kerf_mm", "width_mm", "pitch_mm"):
+        value = getattr(tool, key)
+        if 0 < value < MIN_TOOL_MM:
+            raise CamJobError(f"{where}.{key} is {value:g} mm; no cutter is under {MIN_TOOL_MM:g} mm (the finest "
+                              "micro tools and EDM wires are 0.02 mm): check the units (every length in a job is mm)")
     if kind == "bull" and tool.corner_radius_mm > tool.radius:
         raise CamJobError(f"{where}: corner_radius_mm ({tool.corner_radius_mm:g}) is more than the tool's radius")
     if kind in ("vee", "chamfer", "engraver", "spot") and not 0 < tool.angle_deg < 180:

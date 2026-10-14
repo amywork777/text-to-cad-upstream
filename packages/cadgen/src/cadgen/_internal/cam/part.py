@@ -144,11 +144,19 @@ def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: f
 
     try:
         path = document_target(document, suffixes=(*STEP_SUFFIXES, *DXF_SUFFIXES))
-    except ValueError as exc:
+    except FileNotFoundError:
+        raise CamJobError(f"no STEP at {document}") from None
+    except (ValueError, OSError) as exc:
         raise CamJobError(str(exc)) from None
     if not path.is_file():
         raise CamJobError(f"no STEP at {path}")
-    scene = read_scene(path)
+    try:
+        scene = read_scene(path)
+    except (RuntimeError, ValueError, OSError) as exc:
+        # An empty, truncated or non-STEP file: the reader's first line says why.
+        why = (str(exc).strip().splitlines() or [type(exc).__name__])[0]
+        raise CamJobError(f"{path.name} is not a STEP that can be read ({why[:200]}); export it again from the CAD "
+                          "tool") from None
     leaves = list(scene.leaves())
     if occurrence:
         try:
@@ -165,6 +173,25 @@ def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: f
         owner = leaves[0]
     shape = owner.shape()
     return _tessellate(path, owner.ref, shape, scene, deflection_mm or DEFAULT_DEFLECTION_MM)
+
+
+#: The largest part (mm on any axis) CAM reads: ten metres, past any machine bed (job.MAX_STOCK_MM). A bigger one is
+#: a units slip (a drawing in metres read as mm), and meshing it to a hundredth of a millimetre would fill the memory.
+MAX_PART_MM = 10_000.0
+
+
+def _check_size(what: str, box) -> None:
+    """Refuse a part (a build123d BoundBox, or ``(low, high)`` points) bigger than :data:`MAX_PART_MM`, or with no
+    extent at all, before it is meshed."""
+    if hasattr(box, "size"):
+        size = (box.size.X, box.size.Y, box.size.Z)
+    else:
+        size = tuple(float(h) - float(l) for l, h in zip(*box))
+    if not all(math.isfinite(v) for v in size):
+        raise CamJobError(f"{what} has no finite size; export it again from the CAD tool")
+    if max(size) > MAX_PART_MM:
+        raise CamJobError(f"{what} is {max(size) / 1000:,.1f} m across; CAM machines parts up to "
+                          f"{MAX_PART_MM / 1000:g} m: check the units (cadgen reads mm)")
 
 
 def _surface_name(adaptor) -> str:
@@ -196,6 +223,7 @@ def _tessellate(path: Path, ref: str, shape, scene, deflection: float) -> Part:
     from cadgen._internal.entity_ordinals import entity_map
 
     wrapped = shape.wrapped
+    _check_size(f"{ref} of {path.name}", shape.bounding_box())
     BRepMesh_IncrementalMesh(wrapped, deflection, False, ANGULAR_DEFLECTION, True)
     face_map = entity_map(wrapped, "face")
     vertices: list = []
@@ -292,6 +320,17 @@ def dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[st
     except (OSError, ezdxf.DXFError) as exc:
         raise CamJobError(f"{path.name} is not a readable DXF: {exc}") from None
     scale = {1: 25.4, 2: 304.8, 5: 10.0, 6: 1000.0}.get(int(document.header.get("$INSUNITS", 4) or 4), 1.0)
+    # Its extent first, from control points (cheap): a drawing kilometres across is refused before it is flattened to
+    # a hundredth of a millimetre.
+    try:
+        from ezdxf import bbox as dxf_bbox
+
+        extents = dxf_bbox.extents(document.modelspace(), fast=True)
+    except Exception:  # noqa: BLE001 - an entity ezdxf cannot bound is refused below, by the walk
+        extents = None
+    if extents is not None and extents.has_data:
+        low, high = extents.extmin, extents.extmax
+        _check_size(path.name, ((low.x * scale, low.y * scale), (high.x * scale, high.y * scale)))
     curves: list = []
     skipped: dict[str, int] = {}
 
@@ -335,14 +374,23 @@ def dxf_curves(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[st
     return curves, skipped
 
 
+#: The key :func:`read_dxf_drawing` counts open curves under in its skipped dict: curves that close no profile.
+OPEN_CURVES = "open curve"
+
+
 def skipped_words(name: str, skipped: dict[str, int]) -> str:
-    """``bracket.dxf: 2 TEXT and 1 DIMENSION skipped (annotation is not cut ...)``, or ""."""
+    """``bracket.dxf: 2 TEXT and 1 DIMENSION skipped (annotation is not cut ...)``, or "". Open curves (that close no
+    profile, :data:`OPEN_CURVES`) get their own sentence."""
+    skipped = dict(skipped)
+    stray = skipped.pop(OPEN_CURVES, 0)
+    words = (f"{name}: {stray} open curve piece(s) close no profile and are not cut; close them, or delete them if "
+             "they are construction lines") if stray else ""
     if not skipped:
-        return ""
+        return words
     parts = [f"{count} {kind}" for kind, count in sorted(skipped.items())]
     listed = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
     return (f"{name}: {listed} skipped (annotation is not cut; explode text to curves in the drawing to cut or "
-            "engrave it)")
+            "engrave it)") + (f". {words}" if words else "")
 
 
 def read_dxf_drawing(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, dict[str, int]]:
@@ -362,7 +410,13 @@ def read_dxf_drawing(path: Path, *, tolerance_mm: float = 0.01) -> tuple[list, d
             loose.append(shapely.LineString(points))
     if loose:
         noded = shapely.union_all(shapely.set_precision(shapely.GeometryCollection(loose), 1e-6))
-        rings.extend(shapely.get_parts(shapely.polygonize(shapely.get_parts(noded))))
+        polygons, cuts, dangles, invalid = shapely.polygonize_full(shapely.get_parts(noded))
+        rings.extend(shapely.get_parts(polygons))
+        # What joined into no ring is not cut: counted, so the run says so rather than dropping it unseen.
+        stray = [g for g in (*shapely.get_parts(cuts), *shapely.get_parts(dangles), *shapely.get_parts(invalid))
+                 if g.length > 1e-6]
+        if stray:
+            skipped = {**skipped, OPEN_CURVES: len(stray)}
     filled = shapely.Polygon()
     for ring in rings:
         filled = filled.symmetric_difference(ring)

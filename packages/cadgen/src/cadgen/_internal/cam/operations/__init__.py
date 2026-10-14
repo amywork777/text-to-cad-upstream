@@ -18,7 +18,7 @@ import importlib.util
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, shown
 
 if TYPE_CHECKING:
     from cadgen._internal.cam.operations.base import Operation
@@ -98,7 +98,7 @@ def entry_for(name: object, where: str = "op") -> Entry:
     if not isinstance(name, str) or name not in REGISTRY:
         close = difflib.get_close_matches(name, OPERATION_NAMES, n=1) if isinstance(name, str) else []
         hint = f" (did you mean '{close[0]}'?)" if close else ""
-        raise CamJobError(f"{where}: unknown operation {name!r}{hint}; the operations are {', '.join(OPERATION_NAMES)}")
+        raise CamJobError(f"{where}: unknown operation {shown(name)}{hint}; the operations are {', '.join(OPERATION_NAMES)}")
     return REGISTRY[name]
 
 

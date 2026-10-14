@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from cadgen._internal.cam import posts as post_registry
-from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number
+from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number, shown
 from cadgen._internal.cam.operations import entry_for as operation_entry
 from cadgen._internal.cam.tools import Tool, parse_tool
 
@@ -36,6 +36,9 @@ ORIENTATIONS = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
 ORIGINS = ("stock-top-center", "stock-top-corner", "part-top-center")
 COOLANTS = ("off", "flood", "mist", "air")
 STOCK_KINDS = ("box", "cylinder", "sheet", "from_step")
+#: The largest stock (and step) a job names, in mm: ten metres, past any machine bed; beyond it a number is a units
+#: slip, and the stock grid and the paths over it stop fitting in memory.
+MAX_STOCK_MM = 10_000.0
 WORK_OFFSETS = ("G54", "G55", "G56", "G57", "G58", "G59")
 
 JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
@@ -236,12 +239,22 @@ def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
     if not text.startswith("{"):
         path = Path(text).expanduser()
         if not path.is_file():
-            raise CamJobError(f"no job file at {path}; pass a JSON file path or inline JSON")
-        text, base = path.read_text(encoding="utf-8"), path.resolve().parent
+            what = "a folder" if path.is_dir() else "no job file"
+            raise CamJobError(f"{what} at {path}; pass a JSON file path or inline JSON")
+        try:
+            text, base = path.read_text(encoding="utf-8"), path.resolve().parent
+        except UnicodeDecodeError:
+            raise CamJobError(f"the job file {path.name} is not UTF-8 text; save it as UTF-8 JSON") from None
+        except OSError as exc:
+            raise CamJobError(f"the job file {path.name} cannot be read ({exc.strerror or exc})") from None
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as exc:
         raise CamJobError(f"the job is not valid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}") from None
+    except RecursionError:
+        raise CamJobError("the job is not a job: its JSON nests too deeply to read") from None
+    except ValueError as exc:   # an integer longer than Python reads (sys.get_int_max_str_digits)
+        raise CamJobError(f"the job is not valid JSON: {exc}") from None
     if not isinstance(raw, dict):
         raise CamJobError("the job must be a JSON object with machine, material, stock, tools and setups")
     return raw, base
@@ -324,9 +337,11 @@ def _machine(raw: object) -> Machine:
     cutting = _cutting_keys(raw, kind)
     return Machine(**cutting,
         kind=kind, post=post, name=name, travel_mm=travel,
-        max_rpm=read_number(raw, "max_rpm", "machine"),
-        max_feed_mm_min=read_number(raw, "max_feed_mm_min", "machine"),
-        rapid_mm_min=read_number(raw, "rapid_mm_min", "machine", default=_RAPID[kind]),
+        # A spindle or a feed slower than 1 a minute posts as S0 or F0: a spindle that never turns, an axis that never
+        # moves.
+        max_rpm=read_number(raw, "max_rpm", "machine", minimum=1.0),
+        max_feed_mm_min=read_number(raw, "max_feed_mm_min", "machine", minimum=1.0),
+        rapid_mm_min=read_number(raw, "rapid_mm_min", "machine", default=_RAPID[kind], minimum=1.0),
         tool_change_s=read_number(raw, "tool_change_s", "machine", default=_TOOL_CHANGE[kind], minimum=0.0),
         kinematics=kinematics, rotary_limits_deg=limits, diameter_mode=diameter_mode,
     )
@@ -370,26 +385,28 @@ def _material(raw: object) -> Material:
         raise CamJobError("material needs one surface speed: surface_m_min (metres a minute) or sfm (feet a minute)")
     if "chipload_mm" not in raw:
         raise CamJobError("material needs chipload_mm, the chip load per tooth used for every milling tool")
-    speed = read_number(raw, "surface_m_min", "material") if "surface_m_min" in raw else (
-        read_number(raw, "sfm", "material") * 0.3048)
+    # Bounded well past any real material (the fastest carbide on aluminium runs ~1500 m/min, ~0.3 mm a tooth), so a
+    # typo is refused rather than posted as a feed no machine has.
+    speed = read_number(raw, "surface_m_min", "material", maximum=10000.0) if "surface_m_min" in raw else (
+        read_number(raw, "sfm", "material", maximum=33000.0) * 0.3048)
     name = raw.get("name", "custom")
     if not isinstance(name, str):
         raise CamJobError("material.name must be text")
     return Material(name=name, plain=name, table=False, surface_m_min=speed,
-                    chipload_mm=read_number(raw, "chipload_mm", "material"),
-                    drill_mm_per_rev=read_number(raw, "drill_mm_per_rev", "material"),
-                    stepdown_fraction=read_number(raw, "stepdown_fraction", "material", maximum=4.0))
+                    chipload_mm=read_number(raw, "chipload_mm", "material", maximum=5.0),
+                    drill_mm_per_rev=read_number(raw, "drill_mm_per_rev", "material", maximum=5.0),
+                    stepdown_fraction=read_number(raw, "stepdown_fraction", "material", minimum=0.001, maximum=4.0))
 
 
 def _margins(value: object, where: str, *, box: bool) -> tuple[float, ...]:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
-        if value < 0:
-            raise CamJobError(f"{where} must not be negative")
-        m = float(value)
+        m = read_number({"margin_mm": value}, "margin_mm", where.rsplit(".", 1)[0], minimum=0.0, maximum=MAX_STOCK_MM)
         return (m, m, m, m, 0.0 if box else m, m) if box else (m, m, m, m, 0.0, 0.0)
     numbers = number_list(value, where, length=(2, 3, 6))
     if any(v < 0 for v in numbers):
         raise CamJobError(f"{where} must not be negative")
+    if any(v > MAX_STOCK_MM for v in numbers):
+        raise CamJobError(f"{where} must be at most {MAX_STOCK_MM:,.0f} mm a side (check the units: a job is in mm)")
     if len(numbers) == 6:
         return numbers
     if len(numbers) == 2:
@@ -412,19 +429,23 @@ def _stock(raw: object, kind: str) -> StockSpec:
         if "margin_mm" in raw and "size_mm" in raw:
             raise CamJobError("stock: give margin_mm or size_mm, not both")
         size = number_list(raw["size_mm"], "stock.size_mm", length=3, positive=True) if "size_mm" in raw else None
+        if size is not None and max(size) > MAX_STOCK_MM:
+            raise CamJobError(f"stock.size_mm must be at most {MAX_STOCK_MM:,.0f} mm on every axis (check the units: a "
+                              "job is in mm)")
         margins = _margins(raw.get("margin_mm", 0.0), "stock.margin_mm", box=True)
         return StockSpec(kind="box", margin_mm=margins, size_mm=size)
     if stock_kind == "cylinder":
-        margin = read_number(raw, "margin_mm", "stock", default=0.0, minimum=0.0)
+        margin = read_number(raw, "margin_mm", "stock", default=0.0, minimum=0.0, maximum=MAX_STOCK_MM)
         return StockSpec(kind="cylinder", margin_mm=(margin,) * 6,
-                         diameter_mm=read_number(raw, "diameter_mm", "stock"),
-                         length_mm=read_number(raw, "length_mm", "stock"),
+                         diameter_mm=read_number(raw, "diameter_mm", "stock", maximum=MAX_STOCK_MM),
+                         length_mm=read_number(raw, "length_mm", "stock", maximum=MAX_STOCK_MM),
                          axis=choice(raw.get("axis", "z"), ("x", "y", "z"), "stock.axis"),
-                         face_stock_mm=read_number(raw, "face_stock_mm", "stock", minimum=0.0,
+                         face_stock_mm=read_number(raw, "face_stock_mm", "stock", minimum=0.0, maximum=MAX_STOCK_MM,
                                                    default=1.0 if kind == "lathe" else None))
     if stock_kind == "sheet":
         margins = _margins(raw.get("margin_mm", 0.0), "stock.margin_mm", box=False)
-        return StockSpec(kind="sheet", margin_mm=margins, thickness_mm=read_number(raw, "thickness_mm", "stock"))
+        return StockSpec(kind="sheet", margin_mm=margins,
+                         thickness_mm=read_number(raw, "thickness_mm", "stock", maximum=MAX_STOCK_MM))
     path = raw.get("path")
     if not isinstance(path, str) or not path:
         raise CamJobError("stock.path names the stock's STEP (a casting, a blank), relative to the job file or the part")
@@ -442,7 +463,7 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
     setup_id = raw.get("id", f"setup{index + 1}")
     if not isinstance(setup_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", setup_id):
         raise CamJobError(f"{where}.id must be a short name of letters, digits, - or _ (it names the posted file), "
-                          f"not {setup_id!r}")
+                          f"not {shown(setup_id)}")
     orientation = raw.get("orientation", "+Z")
     if isinstance(orientation, dict):
         check_keys(orientation, ("a_deg", "b_deg", "c_deg"), f"{where}.orientation")
@@ -492,8 +513,8 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
         raise CamJobError(f"{where}.name must be text")
     return Setup(
         id=setup_id, plain=plain, orientation=orientation, origin=origin, operations=operations, wcs=wcs,
-        clearance_mm=read_number(raw, "clearance_mm", where, default=5.0),
-        retract_mm=read_number(raw, "retract_mm", where, default=2.0),
+        clearance_mm=read_number(raw, "clearance_mm", where, default=5.0, maximum=1000.0),
+        retract_mm=read_number(raw, "retract_mm", where, default=2.0, maximum=1000.0),
         fixtures=tuple(fixtures), index=index,
     )
 
@@ -516,15 +537,16 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
     tool = raw.get("tool")
     if tool is not None:
         if not isinstance(tool, str) or tool not in tools:
-            raise CamJobError(f"{where}.tool is {tool!r}, which is not in tools; the tools are {', '.join(tools)}")
+            raise CamJobError(f"{where}.tool is {shown(tool)}, which is not in tools; the tools are {', '.join(tools)}")
     faces = raw.get("faces", [])
     if isinstance(faces, str):
         faces = [faces]
     if not isinstance(faces, list) or not all(isinstance(face, str) and _REF.match(face) for face in faces):
         raise CamJobError(f"{where}.faces must be a list of face refs like \"#o1.f12\" (cadgen cam features lists "
-                          f"them), not {raw.get('faces')!r}")
-    stepover = read_number(raw, "stepover", where, maximum=1.0)
-    stepover_mm = read_number(raw, "stepover_mm", where)
+                          f"them), not {shown(raw.get('faces'))}")
+    # A thousandth of a millimetre is finer than any machine steps; below it a number is a units slip.
+    stepover = read_number(raw, "stepover", where, minimum=0.001, maximum=1.0)
+    stepover_mm = read_number(raw, "stepover_mm", where, minimum=0.001, maximum=MAX_STOCK_MM)
     if stepover is not None and stepover_mm is not None:
         raise CamJobError(f"{where}: give stepover (a fraction of the tool diameter) or stepover_mm, not both")
     name = raw.get("name", "")
@@ -532,8 +554,9 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
         raise CamJobError(f"{where}.name must be text")
     return OpSpec(
         op=entry.name, where=where, index=index, tool=tool, faces=tuple(faces), region=raw.get("region"),
-        feed=read_number(raw, "feed", where), speed=read_number(raw, "speed", where),
-        stepdown_mm=read_number(raw, "stepdown_mm", where), stepover=stepover, stepover_mm=stepover_mm,
+        feed=read_number(raw, "feed", where), speed=read_number(raw, "speed", where, minimum=1.0),
+        stepdown_mm=read_number(raw, "stepdown_mm", where, minimum=0.001, maximum=MAX_STOCK_MM), stepover=stepover,
+        stepover_mm=stepover_mm,
         stock_to_leave_mm=read_number(raw, "stock_to_leave_mm", where, default=0.0, minimum=0.0),
         coolant=choice(raw["coolant"], COOLANTS, f"{where}.coolant") if "coolant" in raw else None,
         name=name, extra={key: value for key, value in raw.items() if key not in OP_COMMON_KEYS},

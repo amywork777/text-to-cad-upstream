@@ -14,7 +14,7 @@ import importlib.util
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, shown
 
 if TYPE_CHECKING:
     from cadgen._internal.cam.posts.base import Post
@@ -72,7 +72,7 @@ def entry_for(name: object, kind: str, where: str = "machine.post") -> Entry:
     if not isinstance(name, str) or name not in REGISTRY:
         close = difflib.get_close_matches(name, POST_NAMES, n=1) if isinstance(name, str) else []
         hint = f" (did you mean '{close[0]}'?)" if close else ""
-        raise CamJobError(f"{where}: unknown post {name!r}{hint}; the posts are {', '.join(POST_NAMES)}")
+        raise CamJobError(f"{where}: unknown post {shown(name)}{hint}; the posts are {', '.join(POST_NAMES)}")
     entry = REGISTRY[name]
     if kind not in entry.kinds:
         serving = [post for post, e in REGISTRY.items() if kind in e.kinds]
