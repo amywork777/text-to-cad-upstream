@@ -3,8 +3,10 @@
 Every `cadgen cam plan` runs every check that applies to its job and gives one verdict:
 
 - **Ready to cut** (`verdict.status` `ready`): no check found an error. Warnings may remain.
-- **N to fix** (`fix`): N errors. The G-code is still written, so the user can look at it, but
-  do not call it ready: change the job and plan again.
+- **N to fix** (`fix`): N errors. No G-code is written (`posts` is empty, `verdict.gcode` and the
+  first warning say "G-code not written: fix N errors first", and the last run's posted files are
+  gone), so nothing a machine could run stands beside the part. The GLB is still written: the
+  Viewer shows the toolpaths and where each error is. Change the job and plan again.
 
 The headline is what the Viewer's Job panel shows first: "Ready to cut · 42 min · 3 tools".
 

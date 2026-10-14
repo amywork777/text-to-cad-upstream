@@ -421,6 +421,31 @@ class JobKeys(Sane, unittest.TestCase):
         self.assertEqual([], list(out.iterdir()))
 
 
+class FixVerdict(Sane, unittest.TestCase):
+    """A plan with an error writes its GLB (the Viewer shows the problems) and no G-code at all."""
+
+    def test_a_plan_to_fix_posts_nothing_and_removes_the_last_runs_gcode(self):
+        out = _out_dir()
+        ready = self.plan(_PARTS["plate"], mill_job([{"op": "face", "tool": "T1"}]), out_dir=out)
+        self.assertEqual("ready", ready.verdict["status"])
+        self.assertEqual(["plate.cam.glb", "plate.top.nc"], sorted(p.name for p in out.iterdir()))
+        cramped = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "mill", "post": "grbl",
+                                                                    "travel_mm": [10, 10, 10]})
+        result = self.plan(_PARTS["plate"], cramped, out_dir=out)
+        self.assertTrue(result.ok)
+        self.assertEqual("fix", result.verdict["status"])
+        self.assertEqual((), result.posts)
+        errors = result.verdict["errors"]
+        words = f"G-code not written: fix {errors} error{'s' if errors != 1 else ''} first"
+        self.assertEqual(words, result.verdict["gcode"])
+        self.assertEqual(words, result.warnings[0])
+        self.assertEqual(["plate.cam.glb"], sorted(p.name for p in out.iterdir()))
+        document, _ = read_glb(result.glb)
+        cam = document["scenes"][0]["extras"]["cam"]
+        self.assertEqual([], cam["posts"])
+        self.assertEqual([None], [setup["post"] for setup in cam["setups"]])
+
+
 # --- the seeded mutator ---------------------------------------------------------------------------------------
 
 

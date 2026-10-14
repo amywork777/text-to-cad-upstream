@@ -359,7 +359,14 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
     folder = glb_path.parent
     rendered = []
     split = bool(getattr(post, "split_by_tool", False))
-    for k, plan in enumerate(setup_plans):
+    # A plan with an error posts no G-code at all, so nothing a machine could run stands beside the part; the GLB is
+    # still written, for the Viewer to show the problems (and the last run's posted files went before planning).
+    posting = errors == 0
+    if not posting:
+        unposted = f"G-code not written: fix {errors} error{'s' if errors != 1 else ''} first"
+        verdict["gcode"] = unposted
+        warnings.insert(0, unposted)
+    for k, plan in enumerate(setup_plans if posting else ()):
         program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
                           version=__version__, part=document.name, job_name=parsed.name,
                           material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,
@@ -420,7 +427,8 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
             "orientation": plan.setup.orientation, "wcs": plan.setup.wcs,
             "origin_part_mm": plan.wcs.origin_part_mm, "matrix": plan.wcs.matrix(), "heights": plan.heights.as_dict(),
             "time_s": round(plan.time_s, 2), "t0": round(plan.t0, 3), "t1": round(plan.t0 + plan.time_s, 3),
-            "post": next(_relative(path, glb_dir) for setup_id, _, path, _ in rendered if setup_id == plan.setup.id),
+            "post": next((_relative(path, glb_dir) for setup_id, _, path, _ in rendered if setup_id == plan.setup.id),
+                         None),
             "posts": [_relative(path, glb_dir) for setup_id, _, path, _ in rendered if setup_id == plan.setup.id],
             "operations": ops,
         })

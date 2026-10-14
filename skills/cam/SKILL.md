@@ -128,16 +128,17 @@ seconds for time.
    cadgen cam plan part.step --job part.cam.json
    ```
 
-   It writes `part.cam.glb` and one G-code file per setup (`part.top.nc`; the extension is the
-   post's; a post that needs one file per tool names them `part.top.T1.nc`, `part.top.T2.nc`)
-   beside the part, and prints one line per operation (tool, speed, feed, time), one
+   It writes `part.cam.glb` and, when no check found an error, one G-code file per setup
+   (`part.top.nc`; the extension is the post's; a post that needs one file per tool names them
+   `part.top.T1.nc`, `part.top.T2.nc`) beside the part, and prints one line per operation (tool, speed, feed, time), one
    `adapted:` line per step it took to fit a big part, then its findings. `--json` gives the same as
    one JSON object. Every plan first removes what the last plan of that part wrote there, so a job
    that cannot run leaves nothing (never the last run's G-code) and says, in one sentence, what to
    change.
 
 5. **Read the verdict and fix the job.** "Ready to cut" means no check failed; "N to fix" lists the
-   errors. Fix each in the JOB (a shorter tool, a smaller stepdown, another setup, a different
+   errors, and no G-code was written ("G-code not written: fix N errors first"): only the GLB, to
+   show where they are. Fix each in the JOB (a shorter tool, a smaller stepdown, another setup, a different
    tool for a corner), never by changing the part unless the user asks. Re-plan until it is ready,
    then deal with warnings ([checks.md](references/checks.md)).
 
