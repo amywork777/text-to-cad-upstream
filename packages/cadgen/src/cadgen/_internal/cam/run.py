@@ -26,7 +26,7 @@ from pathlib import Path
 
 from cadgen._internal.atomic_replace import replace_atomic
 from cadgen._internal.cam.checks.base import finding
-from cadgen._internal.cam.job_errors import CamJobError
+from cadgen._internal.cam.job_errors import CamJobError, PlanError, PostRefusal
 from cadgen.cli_logging import CliLogger
 from cadgen.results import CamFeaturesResult, CamPlanResult
 
@@ -34,12 +34,23 @@ __all__ = ["headline", "list_features", "parse_operations", "plan_job", "plan_se
 
 
 #: Op meta keys that steer the run rather than describe the cut, kept out of a row's facts.
-_NOT_FACTS = frozenset({"no_gouge_check", "note_level", "spindle_dir", "findings", "adapted", "unreachable"})
+_NOT_FACTS = frozenset({"no_gouge_check", "note_level", "spindle_dir", "findings", "adapted", "unreachable",
+                        "plan_error"})
 
 def job_finding(message: str) -> dict:
     """A job that cannot run, as the one error finding its result carries."""
     return finding("job", "error", "job", message, "the job was refused before anything was planned; nothing was "
                    "written. Change the job (or the --occurrence) as the summary says and plan again")
+
+
+def plan_error_finding(op) -> dict:
+    """The error finding of an operation that could not be planned (:class:`PlanError`): its ``kind`` is the type."""
+    error = op.meta["plan_error"]
+    where = f"operation {op.index + 1} ({op.summary}, setup {op.setup})"
+    return finding("plan", "error", error["kind"], f"{where} cannot be planned: {error['message']}",
+                   "nothing of this operation is in the program and no G-code was written; every other operation was "
+                   "planned. Change the job as the summary says (another tool, setup, depth or operation) and plan "
+                   "again", [{"setup": op.setup, "operation": op.index}])
 
 
 def list_features(target: Path, *, occurrence: str | None = None) -> CamFeaturesResult:
@@ -70,12 +81,16 @@ def list_features(target: Path, *, occurrence: str | None = None) -> CamFeatures
 # --- plan ------------------------------------------------------------------------------------------------
 
 def _duration_words(seconds: float) -> str:
-    if seconds < 60:
-        return f"{max(1, round(seconds))} s"
-    if seconds < 3600:
-        return f"{max(1, round(seconds / 60))} min"
-    hours, rest = divmod(seconds, 3600)
-    return f"{int(hours)} h {round(rest / 60)} min"
+    """``42 s``, ``4 min``, ``1 h 05 min``: rounded first, so 59.6 s is ``1 min`` and 3570 s ``1 h 00 min`` (never
+    ``60 s`` or ``1 h 60 min``)."""
+    whole = max(1, round(seconds))
+    if whole < 60:
+        return f"{whole} s"
+    minutes = max(1, round(seconds / 60))
+    if minutes < 60:
+        return f"{minutes} min"
+    hours, rest = divmod(minutes, 60)
+    return f"{hours} h {rest:02d} min"
 
 
 def headline(errors: int, seconds: float, tools: int) -> str:
@@ -196,7 +211,8 @@ def _relative(target: Path, start: Path) -> str:
         return Path(target).resolve().as_posix()
 
 
-def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = False) -> CamPlanResult:
+def plan_job(target: Path, *, job, occurrence: str | None = None, out_dir: Path | None = None,
+             verbose: bool = False) -> CamPlanResult:
     from cadgen._internal.cam import posts as post_registry
     from cadgen._internal.cam.job import parse_job
 
@@ -217,7 +233,8 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
         operations = parse_operations(parsed)
         post = post_registry.get_post(parsed.machine.post, parsed.machine.kind)
         timings["parse_s"] = round(time.perf_counter() - started, 4)
-        return _plan(document, parsed, operations, post, glb_path, entry.extension, logger, timings, started)
+        return _plan(document, parsed, operations, post, glb_path, entry.extension, logger, timings, started,
+                     occurrence=occurrence)
     except CamJobError as exc:
         timings["total_s"] = round(time.perf_counter() - started, 4)
         logger.debug(f"refused: {exc}")
@@ -239,14 +256,13 @@ def plan_job(target: Path, *, job, out_dir: Path | None = None, verbose: bool = 
             "tool, operation or stock) may route round it"),))
 
 
-def _plan(document, parsed, operations, post, glb_path, extension, logger, timings, started) -> CamPlanResult:
-    from cadgen import __version__
+def _plan(document, parsed, operations, post, glb_path, extension, logger, timings, started, *,
+          occurrence: str | None = None) -> CamPlanResult:
     from cadgen._internal.cam import fit
     from cadgen._internal.cam.checks import run_checks
     from cadgen._internal.cam.checks.base import CheckContext
     from cadgen._internal.cam.outputs import line_segments, sample_axes, write_glb
     from cadgen._internal.cam.part import read_part
-    from cadgen._internal.cam.posts.base import Program
     from cadgen._internal.cam.stock import SimReport, build_stock, create_stock_sim
 
     def lap(name: str, since: float) -> float:
@@ -262,7 +278,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
     warnings: list[str] = []
     mark = time.perf_counter()
     with logger.timed("read part"):
-        part = read_part(document, sheet_thickness_mm=parsed.stock.thickness_mm)
+        part = read_part(document, occurrence=occurrence, sheet_thickness_mm=parsed.stock.thickness_mm)
         stock = build_stock(parsed.stock, part, base_dir=parsed.base_dir)
     mark = lap("part_s", mark)
     warnings += list(part.notes)
@@ -326,6 +342,7 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
         findings, ran, skipped = run_checks(ctx)
     # An operation's own findings (ctx.meta["findings"], e.g. a drill the wrong size for its holes) join the checks'.
     planner = [item for op in op_plans for item in op.meta.get("findings", ())]
+    planner += [plan_error_finding(op) for op in op_plans if "plan_error" in op.meta]
     if planner:
         from cadgen._internal.cam.checks.base import by_severity
 
@@ -344,47 +361,38 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
             warnings.append(f"{op.summary}: {op.meta['note']}")
     mark = lap("checks_s", mark)
 
-    errors = sum(1 for f in findings if f["severity"] == "error")
-    warn_count = sum(1 for f in findings if f["severity"] == "warning")
     used_tools = sorted({op.tool.id for op in op_plans if op.tool is not None})
     lite = [{"operation": op.index, "op": op.operation.name, "limits": list(op.operation.limits)}
             for op in op_plans if op.operation.status == "lite"]
+
+    # Post every setup, then the GLB: all to temporary names first. ``rendered``: (setup id, tool label or None,
+    # final path, text) per posted file, in program order. A plan with an error posts no G-code at all, so nothing a
+    # machine could run stands beside the part; the GLB is still written, for the Viewer to show the problems (and
+    # the last run's posted files went before planning). A post that cannot write what the job needs
+    # (:class:`PostRefusal`) is one more error, on its operation, and nothing is posted.
+    folder = glb_path.parent
+    rendered = []
+    split = bool(getattr(post, "split_by_tool", False))
+    if not any(f["severity"] == "error" for f in findings):
+        try:
+            for k, plan in enumerate(setup_plans):
+                rendered += _render_setup(post, plan, k, setup_plans, op_plans, tools, machine, document, parsed,
+                                          tolerance, lite, by_index, split, folder, extension)
+        except PostRefusal as exc:
+            from cadgen._internal.cam.checks.base import by_severity
+
+            rendered = []
+            findings = by_severity(list(findings) + [post_refusal_finding(exc, post, op_plans)])
+    errors = sum(1 for f in findings if f["severity"] == "error")
+    warn_count = sum(1 for f in findings if f["severity"] == "warning")
     verdict = {"status": "ready" if errors == 0 else "fix", "headline": headline(errors, duration, len(used_tools)),
                "errors": errors, "warnings": warn_count, "duration_s": round(duration, 2), "tools": len(used_tools)}
     if lite:
         verdict["lite"] = lite
-
-    # Post every setup, then the GLB: all to temporary names first. ``rendered``: (setup id, tool label or None,
-    # final path, text) per posted file, in program order.
-    folder = glb_path.parent
-    rendered = []
-    split = bool(getattr(post, "split_by_tool", False))
-    # A plan with an error posts no G-code at all, so nothing a machine could run stands beside the part; the GLB is
-    # still written, for the Viewer to show the problems (and the last run's posted files went before planning).
-    posting = errors == 0
-    if not posting:
+    if errors:
         unposted = f"G-code not written: fix {errors} error{'s' if errors != 1 else ''} first"
         verdict["gcode"] = unposted
         warnings.insert(0, unposted)
-    for k, plan in enumerate(setup_plans if posting else ()):
-        program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
-                          version=__version__, part=document.name, job_name=parsed.name,
-                          material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,
-                          retract_z=plan.heights.retract, setup_index=k, setup_count=len(setup_plans),
-                          notes=tuple(f"lite {entry['op']}: {limit}" for entry in lite for limit in entry["limits"]
-                                      if by_index[entry["operation"]].setup == plan.setup.id))
-        setup_tools = {op.tool.id for op in op_plans if op.setup == plan.setup.id and op.tool is not None}
-        if split and len(setup_tools) > 1:
-            # One file per tool (GRBL cannot re-zero a tool after M0): <stem>.<setup>.<label><ext>, in program order.
-            for label, text in post.render_tool_files(program):
-                if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", label):
-                    raise ValueError(f"post {post.name} labelled a tool file {label!r}; a label is letters, digits, "
-                                     "- or _")
-                rendered.append((plan.setup.id, label, folder / f"{document.stem}.{plan.setup.id}.{label}{extension}",
-                                 text))
-        else:
-            rendered.append((plan.setup.id, None, folder / f"{document.stem}.{plan.setup.id}{extension}",
-                             post.render(program)))
     names = [path.name for _, _, path, _ in rendered]
     if len(set(names)) != len(names):
         raise ValueError(f"post {post.name} posted two files at one name: {', '.join(names)}")
@@ -496,6 +504,41 @@ def _plan(document, parsed, operations, post, glb_path, extension, logger, timin
                          adapted=tuple(adapted), warnings=tuple(warnings), timings=timings)
 
 
+def _render_setup(post, plan, k, setup_plans, op_plans, tools, machine, document, parsed, tolerance, lite, by_index,
+                  split, folder, extension) -> list:
+    """One setup's posted files: ``[(setup id, tool label or None, final path, text)]``."""
+    from cadgen import __version__
+    from cadgen._internal.cam.posts.base import Program
+
+    program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
+                      version=__version__, part=document.name, job_name=parsed.name,
+                      material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,
+                      retract_z=plan.heights.retract, setup_index=k, setup_count=len(setup_plans),
+                      notes=tuple(f"lite {entry['op']}: {limit}" for entry in lite for limit in entry["limits"]
+                                  if by_index[entry["operation"]].setup == plan.setup.id))
+    setup_tools = {op.tool.id for op in op_plans if op.setup == plan.setup.id and op.tool is not None}
+    if split and len(setup_tools) > 1:
+        # One file per tool (GRBL cannot re-zero a tool after M0): <stem>.<setup>.<label><ext>, in program order.
+        out = []
+        for label, text in post.render_tool_files(program):
+            if not isinstance(label, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", label):
+                raise ValueError(f"post {post.name} labelled a tool file {label!r}; a label is letters, digits, - or _")
+            out.append((plan.setup.id, label, folder / f"{document.stem}.{plan.setup.id}.{label}{extension}", text))
+        return out
+    return [(plan.setup.id, None, folder / f"{document.stem}.{plan.setup.id}{extension}", post.render(program))]
+
+
+def post_refusal_finding(exc: PostRefusal, post, op_plans) -> dict:
+    """The ``no_post_support`` error of a post that cannot write what the job needs, on its operation."""
+    op = next((op for op in op_plans if op.index == exc.operation), None)
+    items = [{"setup": op.setup, "operation": op.index}] if op is not None else []
+    where = f"operation {op.index + 1} ({op.summary}, setup {op.setup}): " if op is not None else ""
+    return finding("post", "error", "no_post_support", f"{where}{exc}",
+                   f"the {post.name} post cannot write this, so no G-code was written; the plan and its toolpaths "
+                   "stand. Change the post (machine.post) to one whose controller can, or the operation",
+                   items)
+
+
 def parse_operations(parsed) -> dict:
     """Every operation's class and parsed params, by ``(setup id, index)``; refuses before anything heavy runs."""
     from cadgen._internal.cam.operations import get_operation
@@ -557,6 +600,13 @@ def plan_setups(parsed, operations, part, stock, logger=None):
                 except PlanTooBig as exc:
                     raise CamJobError(f"{spec.where} ({operation.plain}{f' with {tool.id}' if tool else ''}) is too "
                                       f"big to plan: {exc}") from None
+                except PlanError as exc:
+                    # This operation cannot be planned on this part (a tool too big for its pocket, a hole not
+                    # reached from here): an error finding on it, no moves, and every other operation still planned,
+                    # so one run lists every refusal. Nothing is posted while it stands.
+                    ctx.meta = {"plan_error": {"kind": exc.kind, "message": str(exc)}}
+                    ctx.chosen_feeds = []
+                    path = ToolpathBuilder(position, op=index).build()
             if len(path.moves) > MAX_MOVES:
                 raise CamJobError(f"{spec.where} ({operation.plain}{f' with {tool.id}' if tool else ''}) is too big "
                                   f"to plan: it needs {len(path.moves):,} moves, more than {MAX_MOVES:,}; use a bigger "
@@ -564,7 +614,8 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             path = path.with_op(index)
             events = []
             feeds = ctx.chosen_feeds[0] if ctx.chosen_feeds else None
-            if tool is not None and tool.id != current["tool"]:
+            failed = "plan_error" in ctx.meta
+            if tool is not None and tool.id != current["tool"] and not failed:
                 events.append(("tool", {"tool": tool.id, "number": tool.number, "plain": tool.plain}))
                 current["tool"], current["rpm"] = tool.id, None
             # An op may run the spindle the other way (a left-hand tap): ctx.meta["spindle_dir"] = "ccw".
@@ -580,7 +631,7 @@ def plan_setups(parsed, operations, part, stock, logger=None):
                 events.append(("spindle", spindle))
                 current["rpm"], current["dir"] = feeds.rpm, direction
             coolant = spec.coolant or parsed.coolant
-            if coolant != current["coolant"]:
+            if coolant != current["coolant"] and not failed:
                 events.append(("coolant", {"mode": coolant}))
                 current["coolant"] = coolant
             # Every operation ends at the clearance height, so the next one starts safe.
@@ -596,8 +647,10 @@ def plan_setups(parsed, operations, part, stock, logger=None):
             pieces.append(wrapped)
             history.append((wcs, wrapped))
             position = tuple(float(v) for v in wrapped.positions()[-1])
+            summary = (f"{operation.plain}{f' with {tool.id}' if tool else ''}" if failed
+                       else operation.summary(ctx, params))
             op_plans.append(OpPlan(index=index, setup=setup.id, spec=spec, operation=operation, tool=tool, feeds=feeds,
-                                   params=params, meta=dict(ctx.meta), summary=operation.summary(ctx, params)))
+                                   params=params, meta=dict(ctx.meta), summary=summary))
             index += 1
         joined = concat(pieces, start=(0.0, 0.0, heights.clearance))
         end_events = [Event(len(joined.moves), "coolant", {"mode": "off"})] if current["coolant"] != "off" else []

@@ -11,8 +11,8 @@ import difflib
 import math
 from collections.abc import Iterable
 
-__all__ = ["CamJobError", "LARGEST", "MAX_LEVELS", "PlanTooBig", "check_keys", "choice", "is_number", "level_count",
-           "number_words", "read_number", "shown"]
+__all__ = ["CamJobError", "LARGEST", "MAX_LEVELS", "PLAN_ERROR_KINDS", "PlanError", "PlanTooBig", "PostRefusal",
+           "check_keys", "choice", "is_number", "level_count", "number_words", "read_number", "shown"]
 
 #: The largest number any job key takes unless it names its own maximum: a million (a kilometre in mm, a million
 #: rpm or mm/min). Past it a number is a typo or a fuzz, never a part, and the engine's arithmetic stops being exact.
@@ -28,6 +28,36 @@ class PlanTooBig(CamJobError):
     """An operation that would plan more depth levels or moves than any program runs (a stepdown of a thousandth of
     a millimetre, a region a kilometre wide): refused rather than left to fill the memory. The run names the
     operation in front of the message."""
+
+
+#: What an operation that cannot be planned says it is: a closed set, each a finding ``type`` (the skill's checks page
+#: lists them). ``empty_operation``: it would cut nothing; ``too_deep``: it would cut below what the part allows;
+#: ``unreachable``: the tool cannot get there from this setup (or come down there); ``tool_too_large`` and
+#: ``tool_too_small``: the tool does not suit the feature; ``gouge``: the only path it has goes into the part.
+PLAN_ERROR_KINDS = ("empty_operation", "too_deep", "unreachable", "tool_too_large", "tool_too_small", "gouge")
+
+
+class PlanError(CamJobError):
+    """An operation the job asks for that cannot be planned on this part, of a known ``kind``
+    (:data:`PLAN_ERROR_KINDS`). The run turns it into an error finding of that type on the operation, plans every
+    other operation, and posts no G-code; anywhere else (a library call) it is the job error it subclasses."""
+
+    def __init__(self, kind: str, message: str):
+        if kind not in PLAN_ERROR_KINDS:
+            raise ValueError(f"PlanError kind {kind!r} is not one of {', '.join(PLAN_ERROR_KINDS)}")
+        super().__init__(message)
+        self.kind = kind
+
+
+class PostRefusal(CamJobError):
+    """What the job needs that the named post cannot write (a tap on a controller with no spindle-synchronised feed, a
+    helix on one without helical arcs): said in one sentence naming the post and what to change, with the global
+    ``operation`` index it is about (None when it is the whole program). The run turns it into a ``no_post_support``
+    error finding on that operation and posts no G-code; the plan and its GLB still stand."""
+
+    def __init__(self, message: str, *, operation: int | None = None):
+        super().__init__(message)
+        self.operation = operation
 
 
 #: The most depth levels one operation cuts: 200 mm at a tenth of a millimetre each. Each level is a section of the
