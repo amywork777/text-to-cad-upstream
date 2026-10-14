@@ -16,7 +16,8 @@ from cadgen._internal.cam.part import read_part
 from cadgen._internal.cam.run import parse_operations, plan_setups
 from cadgen._internal.cam.stock import build_stock
 from tests.python.support.cam_fixtures import class_directory, quiet
-from tests.python.support.cam_fixtures_drilling import PLATE, drill_job, drill_plate_step, hole_faces
+from tests.python.support.cam_fixtures_drilling import (CBORE, PLATE, counterbore_plate_step, drill_job,
+                                                        drill_plate_step, hole_faces)
 
 #: WCS z = part z - 13 (stock-top-center, 1 mm of stock over the 12 mm plate).
 TOP = -1.0
@@ -472,6 +473,212 @@ class DrillPlate(unittest.TestCase):
             parse_job(drill_job([], tools=[{"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1,
                                             "hand": "sinister"}]))
         self.assertIn("use one of right, left", str(caught.exception))
+
+    def test_a_tap_says_rigid_or_floating_only_when_the_job_does(self):
+        for rigid in (None, True, False):
+            with self.subTest(rigid=rigid):
+                op = {"op": "drill", "tool": "T3", "faces": self.f5[:1]}
+                if rigid is not None:
+                    op["rigid"] = rigid
+                path, rng, _ = self.one(op)
+                (cycle,) = self.cycles(path, rng)
+                self.assertEqual(rigid, cycle.data.get("rigid"))
+                self.assertEqual(rigid is None, "rigid" not in cycle.data)
+        cases = {"rigid is for the tap cycle": {"op": "drill", "tool": "T1", "holes": "all", "rigid": True},
+                 "rigid is true (rigid tapping": {"op": "drill", "tool": "T3", "holes": "all", "rigid": "yes"}}
+        for words, op in cases.items():
+            with self.subTest(words=words):
+                with self.assertRaises(CamJobError) as caught:
+                    parse_operations(parse_job(drill_job([op])))
+                self.assertIn(words, str(caught.exception))
+
+
+#: The counterbore plate's WCS: z = part z - 13 (stock-top-center, 1 mm of stock over the 12 mm plate, none under).
+CB_TOOLS = [
+    {"id": "T1", "type": "counterbore", "diameter_mm": 14, "pilot_diameter_mm": 10},
+    # A back-boring bar: a Ø14 head 3 mm tall on a Ø4 neck.
+    {"id": "T2", "type": "boring", "diameter_mm": 14, "flute_length_mm": 3, "shank_diameter_mm": 4,
+     "stickout_mm": 40},
+    {"id": "T3", "type": "flat", "diameter_mm": 14},
+    {"id": "T4", "type": "drill", "diameter_mm": 10},
+    {"id": "T5", "type": "counterbore", "diameter_mm": 14, "pilot_diameter_mm": 5},
+]
+
+
+class Counterbores(unittest.TestCase):
+    """The ``counterbore`` cycle (G82, a pilot down the hole) and the ``back_bore`` cycle (G87: a bar's head through
+    the hole, up into a counterbore on the far side) on the counterbore plate."""
+
+    @classmethod
+    def setUpClass(cls):
+        from cadgen import cam
+
+        with quiet():
+            cls.step = counterbore_plate_step(class_directory(cls))
+            cls.features = cam.features(cls.step)
+            cls.part = read_part(cls.step)
+        at = {(round(h["center_mm"][0], 3), round(h["center_mm"][1], 3)): h["faces"] for h in cls.features.holes}
+        cls.top = at[CBORE["top"]]
+        cls.back = [at[c] for c in CBORE["back"]]
+        cls.blind = at[CBORE["blind"]["center"]]
+        cls.plain = at[CBORE["plain"]]
+
+    def one(self, op, tools=CB_TOOLS, **job):
+        parsed = parse_job(drill_job([op], tools=tools, **job))
+        stock = build_stock(parsed.stock, self.part)
+        setups, ops, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
+        path = setups[0].toolpath
+        rng = next(o for o in path.ops if o.index == 0)
+        return path, rng, ops[0]
+
+    def error(self, op, tools=CB_TOOLS):
+        _, _, planned = self.one(op, tools)
+        return planned.meta["plan_error"]["kind"], planned.meta["plan_error"]["message"]
+
+    # --- counterbore ----------------------------------------------------------------------------------------
+
+    def test_a_counterbore_stops_its_face_on_the_floor_with_its_pilot_down_the_hole_and_dwells(self):
+        path, rng, op = self.one({"op": "drill", "tool": "T1", "faces": self.top[:1]})
+        self.assertEqual("counterbore", op.meta["cycle"])
+        self.assertTrue(op.summary.startswith("Counterbore 1 hole with T1 14 mm counterbore"))
+        (cycle,) = DrillPlate.cycles(path, rng)
+        # G82: the face on the floor 3 mm under the top (z -1), the 10 mm pilot (as long as it is wide) below it.
+        self.assertEqual(("spot", 0.2), (cycle.data["cycle"], cycle.data["dwell_s"]))
+        self.assertAlmostEqual(-1.0 - 3.0 - 10.0, cycle.data["z_bottom"], places=6)
+        self.assertGreater(cycle.data["r_plane"], -1.0)
+        moves = path.moves[cycle.at:cycle.data["end"]]
+        self.assertEqual([PLUNGE, DWELL, RAPID], [int(m["kind"]) for m in moves])        # R is the initial level
+        self.assertAlmostEqual(0.2, float(moves[1]["p"]))
+        # A flat end mill its size is a counterbore with no pilot; depth_mm and dwell_s override.
+        path, rng, _ = self.one({"op": "drill", "tool": "T3", "faces": self.top[:1], "cycle": "counterbore"})
+        self.assertAlmostEqual(-4.0, DrillPlate.cycles(path, rng)[0].data["z_bottom"], places=6)
+        path, rng, _ = self.one({"op": "drill", "tool": "T3", "faces": self.top[:1], "cycle": "counterbore",
+                                 "depth_mm": 2.5, "dwell_s": 0.5})
+        (cycle,) = DrillPlate.cycles(path, rng)
+        self.assertAlmostEqual(-3.5, cycle.data["z_bottom"], places=6)
+        self.assertEqual(0.5, cycle.data["dwell_s"])
+
+    def test_all_counterbores_the_holes_it_suits_and_says_what_it_left(self):
+        path, rng, op = self.one({"op": "drill", "tool": "T1", "holes": "all"})
+        self.assertEqual([list(CBORE["top"])], [h["at"] for h in op.meta["holes"]])
+        note = op.meta["note"]
+        self.assertIn("1 matching hole (Ø10) left out: they have no counterbore", note)
+        self.assertIn("2 matching holes (Ø10) left out: their counterbore is on the far side (back_bore them)", note)
+        self.assertIn("1 matching hole (Ø10) left out: T1's pilot goes past their bottom", note)
+        # A 5 mm pilot fits the blind hole's 5 mm under its counterbore's floor.
+        path, rng, op = self.one({"op": "drill", "tool": "T5", "holes": "all"})
+        self.assertEqual(2, op.meta["hole_count"])
+        self.assertEqual({-1.0 - 3.0 - 5.0}, {round(h["bottom_z"], 6) for h in op.meta["holes"]})
+
+    def test_a_named_hole_a_counterbore_cannot_cut_is_refused_with_its_reason(self):
+        cases = [
+            ({"faces": self.plain[:1]}, CB_TOOLS, "empty_operation", "with no counterbore"),
+            ({"faces": self.back[0][:1]}, CB_TOOLS, "unreachable", "\"cycle\": \"back_bore\""),
+            ({"faces": self.blind[:1]}, CB_TOOLS, "too_deep", "would go 5 mm past its bottom"),
+            ({"faces": self.top[:1]}, [{"id": "T1", "type": "counterbore", "diameter_mm": 16,
+                                        "pilot_diameter_mm": 10}], "tool_too_large", "2 mm bigger"),
+            ({"faces": self.top[:1]}, [{"id": "T1", "type": "counterbore", "diameter_mm": 12,
+                                        "pilot_diameter_mm": 10}], "tool_too_small", "2 mm smaller"),
+            ({"faces": self.top[:1]}, [{"id": "T1", "type": "counterbore", "diameter_mm": 14,
+                                        "pilot_diameter_mm": 11}], "tool_too_large", "Ø11 pilot"),
+        ]
+        for extra, tools, kind, words in cases:
+            with self.subTest(kind=kind, words=words):
+                found, message = self.error({"op": "drill", "tool": "T1", **extra}, tools)
+                self.assertEqual(kind, found)
+                self.assertIn(words, message)
+        # Nothing on the part a 16 mm counterbore suits: an empty operation.
+        found, message = self.error({"op": "drill", "tool": "T1", "holes": "all"},
+                                    [{"id": "T1", "type": "counterbore", "diameter_mm": 16, "pilot_diameter_mm": 10}])
+        self.assertEqual("empty_operation", found)
+
+    # --- back bore ------------------------------------------------------------------------------------------
+
+    def test_a_back_bore_goes_down_through_the_hole_oriented_and_shifted_and_feeds_up_into_the_counterbore(self):
+        path, rng, op = self.one({"op": "drill", "tool": "T2", "faces": self.back[0][:1], "cycle": "back_bore",
+                                  "shift_mm": 2.5, "shift_xy": [0, 2], "dwell_s": 0.3})
+        self.assertEqual("back_bore", op.meta["cycle"])
+        self.assertTrue(op.meta["no_gouge_check"])
+        (cycle,) = DrillPlate.cycles(path, rng)
+        data = cycle.data
+        # R under the stock's bottom (z -13) by retract_mm (2) and the head (3); Z puts the head's top on the
+        # shoulder, 3 mm up from the bottom face.
+        self.assertEqual(("back_bore", "initial", 2.5, [0.0, 1.0], 0.3),
+                         (data["cycle"], data["retract"], data["shift_mm"], data["shift_xy"], data["dwell_s"]))
+        self.assertAlmostEqual(-13.0 - 2.0 - 3.0, data["r_plane"], places=6)
+        self.assertAlmostEqual(-13.0 + 3.0 - 3.0, data["z_bottom"], places=6)
+        x, y = CBORE["back"][0]
+        r, z, top = data["r_plane"], data["z_bottom"], data["initial_z"]
+        moves = path.moves[cycle.at:data["end"]]
+        got = [(int(m["kind"]), round(float(m["x"]), 6), round(float(m["y"]), 6), round(float(m["z"]), 6))
+               for m in moves]
+        self.assertEqual([(RAPID, x, y + 2.5, top), (RAPID, x, y + 2.5, r), (RAPID, x, y, r), (FEED, x, y, z),
+                          (DWELL, x, y, z), (FEED, x, y, r), (RAPID, x, y + 2.5, r), (RAPID, x, y + 2.5, top),
+                          (RAPID, x, y, top)], got)
+        spindle = [(e.at - cycle.at, e.data.get("dir"), e.data.get("orient", False)) for e in path.events
+                   if e.kind == "spindle" and cycle.at <= e.at <= data["end"]]
+        self.assertEqual([(0, "off", True), (3, "cw", False), (6, "off", True), (9, "cw", False)], spindle)
+
+    def test_all_back_bores_the_far_counterbores_in_one_cycle_and_leaves_the_rest(self):
+        path, rng, op = self.one({"op": "drill", "tool": "T2", "holes": "all", "cycle": "back_bore",
+                                  "shift_mm": 2.5})
+        (cycle,) = DrillPlate.cycles(path, rng)
+        self.assertEqual(sorted(CBORE["back"]), sorted((h[0], h[1]) for h in cycle.data["holes"]))
+        self.assertEqual(([1.0, 0.0], "initial"), (cycle.data["shift_xy"], cycle.data["retract"]))
+        self.assertNotIn("dwell_s", cycle.data)
+        note = op.meta["note"]
+        self.assertIn("left out: they have no counterbore", note)
+        self.assertIn("left out: their counterbore opens toward the tool", note)
+        self.assertIn("left out: they are blind", note)
+        self.assertAlmostEqual(-18.0, op.meta["bottom_z"], places=6)
+
+    def test_a_back_bore_refuses_holes_shifts_and_bars_that_cannot_work(self):
+        base = {"op": "drill", "tool": "T2", "cycle": "back_bore", "shift_mm": 2.5}
+        bar = CB_TOOLS[1]
+        cases = [
+            ({"faces": self.plain[:1]}, None, "empty_operation", "with no counterbore"),
+            ({"faces": self.blind[:1]}, None, "unreachable", "is a blind hole"),
+            ({"faces": self.top[:1]}, None, "unreachable", "\"cycle\": \"counterbore\""),
+            ({"faces": self.back[0][:1], "shift_mm": 2.0}, None, "tool_too_large", "at least 2.1 mm"),
+            ({"faces": self.back[0][:1], "shift_mm": 5}, None, "gouge", "at least its radius"),
+            ({"faces": self.back[0][:1]}, {**bar, "shank_diameter_mm": 6}, "tool_too_large", "shank_diameter_mm"),
+            ({"faces": self.back[0][:1]}, {k: v for k, v in bar.items() if k != "shank_diameter_mm"},
+             "tool_too_large", "at most Ø5 at this shift"),
+            ({"faces": self.back[0][:1]}, {**bar, "diameter_mm": 15}, "tool_too_large", "1 mm bigger"),
+            ({"faces": self.back[0][:1]}, {**bar, "diameter_mm": 13}, "tool_too_small", "1 mm smaller"),
+        ]
+        for extra, tool, kind, words in cases:
+            with self.subTest(kind=kind, words=words):
+                found, message = self.error({**base, **extra}, [tool or bar])
+                self.assertEqual(kind, found)
+                self.assertIn(words, message)
+
+    def test_malformed_counterbore_and_back_bore_ops_are_refused_before_planning(self):
+        cases = {
+            "needs \"shift_mm\"": {"op": "drill", "tool": "T2", "holes": "all", "cycle": "back_bore"},
+            "a back bore names its holes by": {"op": "drill", "tool": "T2", "points": [[0, 0]], "depth_mm": 3,
+                                               "cycle": "back_bore", "shift_mm": 2.5},
+            "depth_mm does not apply to a back bore": {"op": "drill", "tool": "T2", "holes": "all",
+                                                       "cycle": "back_bore", "shift_mm": 2.5, "depth_mm": 3},
+            "returns to the initial level": {"op": "drill", "tool": "T2", "holes": "all", "cycle": "back_bore",
+                                             "shift_mm": 2.5, "return_to": "r_plane"},
+            "depth_to does not apply to a counterbore": {"op": "drill", "tool": "T1", "holes": "all",
+                                                         "depth_to": "tip"},
+            "breakthrough_mm does not apply to a back_bore": {"op": "drill", "tool": "T2", "holes": "all",
+                                                              "cycle": "back_bore", "shift_mm": 2.5,
+                                                              "breakthrough_mm": 1},
+            "a counterbore cycle cuts with a counterbore or flat": {"op": "drill", "tool": "T4", "holes": "all",
+                                                                    "cycle": "counterbore"},
+            "a back_bore cycle cuts with a boring": {"op": "drill", "tool": "T1", "holes": "all",
+                                                     "cycle": "back_bore", "shift_mm": 2.5},
+            "shift_mm is for the bore and back_bore cycles": {"op": "drill", "tool": "T1", "holes": "all",
+                                                              "shift_mm": 2.5},
+        }
+        for words, op in cases.items():
+            with self.subTest(words=words):
+                with self.assertRaises(CamJobError) as caught:
+                    parse_operations(parse_job(drill_job([op], tools=CB_TOOLS)))
+                self.assertIn(words, str(caught.exception))
 
 
 class Ordering(unittest.TestCase):

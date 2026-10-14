@@ -1,4 +1,5 @@
-"""``drill``: drill, peck, chip-break, tap, ream, bore or spot a set of holes along the setup's Z, in canned cycles.
+"""``drill``: drill, peck, chip-break, tap, ream, bore, spot, counterbore or back bore a set of holes along the setup's Z,
+in canned cycles.
 
 Which holes (exactly one of):
 
@@ -15,14 +16,17 @@ A hole opens where it opens on the part: a counterbored or countersunk hole's to
 countersink (``cadgen cam features``), so its R plane is over the part, never down in the counterbore.
 
 ``cycle`` (default by tool: a drill or flat end mill ``drill``, or ``peck`` when the deepest hole is three diameters or
-more; a spot or chamfer tool ``spot``; a tap ``tap``; a reamer ``ream``; a boring bar ``bore``):
+more; a spot or chamfer tool ``spot``; a tap ``tap``; a reamer ``ream``; a boring bar ``bore``; a counterbore
+``counterbore``):
 
 =============  =========  ===================================================================================
 ``drill``      G81        feed to depth, rapid out
 ``dwell``      G82        feed to depth, dwell ``dwell_s`` (default 0.5), rapid out
 ``peck``       G83        pecks of ``peck_mm`` (default one diameter), back to R after each (clears chips)
 ``chipbreak``  G73        pecks of ``peck_mm`` (default half a diameter), back ``retract_mm`` (0.2) after each
-``tap``        G84 / G74  feed at rpm x the tap's pitch, reverse, feed out; a left-hand tap (``hand: left``) G74
+``tap``        G84 / G74  feed at rpm x the tap's pitch, reverse, feed out; a left-hand tap (``hand: left``) G74;
+                          ``rigid`` (left out: the controller's own tapping cycle) true asks for the feed
+                          synchronised to the spindle (refused where the controller cannot), false a floating holder
 ``ream``       G85 / G89  feed in, feed out; with ``dwell_s`` a dwell at the bottom (G89)
 ``bore``       G85 / G89 / G86 / G76 by ``bore_mode``: ``feed`` (feed out), ``dwell`` (dwell, feed out), ``stop``
                           (spindle stop, rapid out), ``fine`` (oriented stop, shift ``shift_mm`` (0.1) off the wall
@@ -31,6 +35,14 @@ more; a spot or chamfer tool ``spot``; a tap ``tap``; a reamer ``ream``; a borin
                           (default the hole's countersink, else its diameter; for points half the tool's), or
                           ``depth_mm`` deep
 =============  =========  ===================================================================================
+
+``counterbore`` (G82): a counterbore tool (or a flat end mill its size) down to the counterbore's floor (its depth
+from the features, or ``depth_mm``), its pilot (as long as it is wide) down the hole below, ``dwell_s`` (default 0.2)
+on the floor, rapid out. ``back_bore`` (G87; Haas G77): a boring bar's head up into a counterbore on the far side of a
+through hole: oriented stop, shift ``shift_mm`` (required) along ``shift_xy`` ([1, 0]), rapid down through the hole to
+R under the stock (``retract_mm`` under it, less the head: the bar's ``flute_length_mm``), back on the axis, spindle
+on, feed up until the head's top is on the shoulder, (``dwell_s``,) feed back down to R, oriented stop, shift, rapid
+up to the initial level (always: G98), back on the axis, spindle on.
 
 Depth: a through hole goes ``breakthrough_mm`` (default 1) past its exit with the full diameter, so the tip goes
 the point's length further; a blind hole stops its tip on the floor (``depth_to: "tip"``) or its full diameter
@@ -49,7 +61,13 @@ What it refuses to plan (:class:`~cadgen._internal.cam.job_errors.PlanError`, an
 named hole the tool is bigger than (a drill, reamer, boring bar or flat more than ``size_tolerance_mm`` over its
 diameter, a tap whose tap drill is more than 0.15 mm over it: ``tool_too_large``), a spot wider than the spot drill
 (``tool_too_small``), a covered hole (``unreachable``), a depth past a blind hole's bottom (``too_deep``) and a fine
-bore's shift of a hole's radius or more (``gouge``). ``holes`` leaves the holes the tool does not suit out, says so
+bore's shift of a hole's radius or more (``gouge``). A counterbore or back bore refuses a hole with no counterbore
+(``empty_operation``), a counterbore on the wrong side (the far side for ``counterbore``, the near side or a blind
+hole for ``back_bore``: ``unreachable``), a cutter more than ``size_tolerance_mm`` over or under the counterbore
+(``tool_too_large``, ``tool_too_small``), a pilot wider than the hole (``tool_too_large``) or one that goes past a
+blind hole's bottom (``too_deep``); a back bore also a shift too small to pass the head through the hole
+(``tool_too_large``), one of the hole's radius or more (``gouge``), and a bar (its ``shank_diameter_mm``) that does
+not fit through the hole shifted (``tool_too_large``). ``holes`` leaves the holes the tool does not suit out, says so
 in the note, and is ``empty_operation`` when none is left.
 
 Its own findings (warnings): a tool more than ``size_tolerance_mm`` (default 0.05) under the hole's diameter
@@ -61,7 +79,8 @@ from __future__ import annotations
 
 import math
 
-from cadgen._internal.cam.job_errors import CamJobError, PlanError, check_keys, choice, number_list, read_number
+from cadgen._internal.cam.job_errors import (CamJobError, PlanError, check_keys, choice, number_list, read_number,
+                                             shown)
 from cadgen._internal.cam.operations import MILLS
 from cadgen._internal.cam.operations.base import Operation
 
@@ -77,16 +96,21 @@ CYCLES: dict[str, dict] = {
     "ream": {"tools": ("reamer",), "feeds": "ream", "word": "Ream"},
     "bore": {"tools": ("boring",), "feeds": "bore", "word": "Bore"},
     "spot": {"tools": ("spot", "drill", "chamfer"), "feeds": "spot", "word": "Spot"},
+    "counterbore": {"tools": ("counterbore", "flat"), "feeds": "bore", "word": "Counterbore"},
+    "back_bore": {"tools": ("boring",), "feeds": "bore", "word": "Back bore"},
 }
 _DEFAULT_CYCLE = {"drill": "drill", "flat": "drill", "spot": "spot", "chamfer": "spot", "tap": "tap",
-                  "reamer": "ream", "boring": "bore"}
+                  "reamer": "ream", "boring": "bore", "counterbore": "counterbore"}
 BORE_MODES = ("feed", "dwell", "stop", "fine")
 #: The IR cycle a bore mode posts as (ir.py: G85, G89, G86, G76).
 _BORE_IR = {"feed": "bore", "dwell": "bore_dwell", "stop": "bore_stop", "fine": "fine_bore"}
 #: How far a G83 peck comes back down short of the last depth before feeding on (mm).
 PECK_CLEARANCE = 0.5
-#: A spot's pause at the bottom when the job gives none (s): it cleans up the cone (G82).
+#: A spot's pause at the bottom when the job gives none (s): it cleans up the cone (G82). A counterbore's at its floor.
 SPOT_DWELL_S = 0.2
+#: How much more than half the difference between a back-boring head and its hole the bar must shift to pass the
+#: head through the hole (mm).
+BACK_BORE_PASS_MM = 0.1
 #: How far under a tap's tap drill (its size less one pitch) a hole may be drawn, mm: tap drill charts round (M8's
 #: 6.8 for 8 - 1.25).
 TAP_SIZE_TOLERANCE = 0.15
@@ -100,9 +124,9 @@ class DrillOp(Operation):
     status = "full"
     keys = ("cycle", "holes", "points", "depth_mm", "top_z", "depth_to", "breakthrough_mm", "peck_mm", "retract_mm",
             "dwell_s", "bore_mode", "shift_mm", "shift_xy", "spot_diameter_mm", "return_to", "order",
-            "size_tolerance_mm")
+            "size_tolerance_mm", "rigid")
     common_keys = ("feed", "speed")
-    tool_types = ("drill", "flat", "spot", "chamfer", "tap", "reamer", "boring")
+    tool_types = ("drill", "flat", "spot", "chamfer", "tap", "reamer", "boring", "counterbore")
     takes_faces = True
     feeds_kind = "drill"
 
@@ -133,11 +157,36 @@ class DrillOp(Operation):
 
         only("peck_mm", ("peck", "chipbreak"))
         only("retract_mm", ("chipbreak",))
-        only("dwell_s", ("dwell", "spot", "tap", "ream", "bore"))
+        only("dwell_s", ("dwell", "spot", "tap", "ream", "bore", "counterbore", "back_bore"))
         only("bore_mode", ("bore",))
-        only("shift_mm", ("bore",))
-        only("shift_xy", ("bore",))
+        only("shift_mm", ("bore", "back_bore"))
+        only("shift_xy", ("bore", "back_bore"))
         only("spot_diameter_mm", ("spot",))
+        only("rigid", ("tap",))
+        if known in ("counterbore", "back_bore"):
+            for key in ("depth_to", "breakthrough_mm"):
+                if key in extra:
+                    raise CamJobError(f"{where}.{key} does not apply to a {known}: it cuts the hole's counterbore to "
+                                      "its depth" + ("; give depth_mm for another depth" if known == "counterbore"
+                                                     else ""))
+        if known == "back_bore":
+            if "points" in extra:
+                raise CamJobError(f"{where}: a back bore names its holes by \"faces\" or \"holes\": it reads the hole's "
+                                  "size (to pass its head through) and its back counterbore from the model")
+            if "depth_mm" in extra:
+                raise CamJobError(f"{where}.depth_mm does not apply to a back bore: it cuts the back counterbore the "
+                                  "model draws, to its depth")
+            if extra.get("return_to", "initial") != "initial":
+                raise CamJobError(f"{where}.return_to: a back bore returns to the initial level (G98): its R plane is "
+                                  "under the part")
+            if "shift_mm" not in extra:
+                raise CamJobError(f"{where} needs \"shift_mm\": how far the bar moves off the hole's axis (along "
+                                  "\"shift_xy\", default [1, 0]) to pass its head through the hole, at least half the "
+                                  f"head's diameter less the hole's plus {BACK_BORE_PASS_MM:g} mm, and under the hole's "
+                                  "radius")
+        if "rigid" in extra and not isinstance(extra["rigid"], bool):
+            raise CamJobError(f"{where}.rigid is true (rigid tapping: the feed synchronised to the spindle) or false (a "
+                              f"floating, tension-compression tap holder), not {shown(extra['rigid'])}")
         params = {
             "cycle": cycle,
             "faces": tuple(spec.faces),
@@ -158,9 +207,10 @@ class DrillOp(Operation):
             "return_to": choice(extra.get("return_to", "auto"), ("auto", "r_plane", "initial"), f"{where}.return_to"),
             "order": choice(extra.get("order", "shortest"), ("shortest", "given"), f"{where}.order"),
             "size_tolerance_mm": read_number(extra, "size_tolerance_mm", where, default=0.05),
+            "rigid": extra.get("rigid"),
         }
         for key in ("shift_mm", "shift_xy"):
-            if key in extra and params["bore_mode"] != "fine":
+            if key in extra and known == "bore" and params["bore_mode"] != "fine":
                 raise CamJobError(f"{where}.{key} is for \"bore_mode\": \"fine\" (G76); this bore is "
                                   f"{params['bore_mode']}")
         spot = params["spot_diameter_mm"]
@@ -256,7 +306,10 @@ class DrillOp(Operation):
             bottom, short = self._bottom(tool, cycle, hole, params, tip, where)
             if short is not None:
                 short_of_floor.append((hole, short))
-            if hole.top >= heights.part_top - 1e-6:
+            if cycle == "back_bore":
+                # Under the stock: the bar's head (its flutes) comes down through the hole and clears the back face.
+                r_plane = heights.stock_bottom - gap - tool.flute_length_mm
+            elif hole.top >= heights.part_top - 1e-6:
                 r_plane = max(hole.top + gap, initial)
             else:
                 r_plane = hole.top + gap
@@ -284,13 +337,14 @@ class DrillOp(Operation):
                 groups[-1].append(row)
             else:
                 groups.append([row])
-        ir_cycle = _BORE_IR[params["bore_mode"]] if cycle == "bore" else "spot" if cycle == "dwell" else cycle
+        ir_cycle = (_BORE_IR[params["bore_mode"]] if cycle == "bore" else "spot" if cycle in ("dwell", "counterbore")
+                    else cycle)
         dwell = params["dwell_s"]
         if cycle == "dwell" and dwell is None:
             dwell = 0.5
         if cycle == "bore" and params["bore_mode"] == "dwell" and dwell is None:
             dwell = 0.5
-        if cycle == "spot" and dwell is None:
+        if cycle in ("spot", "counterbore") and dwell is None:
             dwell = SPOT_DWELL_S
         if cycle == "ream" and dwell:
             ir_cycle = "bore_dwell"            # G89: feed in, dwell, feed out
@@ -310,7 +364,8 @@ class DrillOp(Operation):
                     b.rapid(z=initial)
                 b.rapid(x=hole0.x, y=hole0.y)
             r_plane, bottom = group[0][2], group[0][1]
-            back = self._return_to(ctx, params["return_to"], group, r_plane, initial)
+            back = ("initial" if cycle == "back_bore"
+                    else self._return_to(ctx, params["return_to"], group, r_plane, initial))
             returns[back] += 1
             data = {"cycle": ir_cycle, "holes": [[round(h.x, 6), round(h.y, 6), round(h.top, 6)] for h, _, _ in group],
                     "z_bottom": round(bottom, 6), "r_plane": round(r_plane, 6), "retract": back,
@@ -325,8 +380,10 @@ class DrillOp(Operation):
                 data["pitch_mm"] = tool.pitch_mm
                 if left:
                     data["left_hand"] = True
+                if params["rigid"] is not None:
+                    data["rigid"] = params["rigid"]
             shift = None
-            if ir_cycle == "fine_bore":
+            if ir_cycle in ("fine_bore", "back_bore"):
                 data["shift_mm"] = params["shift_mm"]
                 data["shift_xy"] = [round(v, 9) + 0.0 for v in params["shift_xy"]]
                 shift = (params["shift_mm"] * params["shift_xy"][0], params["shift_mm"] * params["shift_xy"][1])
@@ -339,7 +396,7 @@ class DrillOp(Operation):
             b.rapid(z=heights.clearance)
 
         ctx.meta.update({
-            "cycle": cycle, "hole_count": len(rows), "bottom_z": round(min(r[1] for r in rows), 4),
+            "cycle": cycle, "hole_count": len(rows), "bottom_z": round(min(min(r[1], r[2]) for r in rows), 4),
             "holes": [{"at": [round(h.x, 4), round(h.y, 4)], "top_z": round(h.top, 4), "bottom_z": round(z, 4),
                        "r_plane": round(r, 4), "diameter_mm": h.diameter, "through": h.through,
                        "faces": list(h.faces)} for h, z, r in rows],
@@ -349,7 +406,12 @@ class DrillOp(Operation):
         if solid:
             # The job asked for these holes where the model has none: said once, loudly, not as a gouge per point.
             ctx.meta["no_gouge_check"] = True
-        notes += self._post_notes(ctx, ir_cycle)
+        if cycle == "back_bore":
+            # The gouge check judges a tool from its tip up its flutes, and reads a back-boring head whose top meets the
+            # shoulder it cuts as cutting the hole above it. The head's size against the counterbore and the hole is
+            # the planner's (tool_too_large, tool_too_small, gouge: _unsuited_counterbore).
+            ctx.meta["no_gouge_check"] = True
+        notes += self._post_notes(ctx, ir_cycle, {"shift_xy": list(params["shift_xy"]), "dwell_s": dwell})
         findings = self._findings(ctx, cycle, rows, params)
         findings += self._floor_findings(ctx, short_of_floor, tip)
         if solid:
@@ -390,6 +452,8 @@ class DrillOp(Operation):
         make. Smaller tools are warnings (:meth:`_findings`)."""
         if hole.diameter is None:
             return None
+        if cycle in ("counterbore", "back_bore"):
+            return DrillOp._unsuited_counterbore(tool, cycle, hole, params)
         if cycle == "spot":
             if params["depth_mm"] is not None or params["spot_diameter_mm"] is not None:
                 return None
@@ -419,6 +483,86 @@ class DrillOp(Operation):
                     f"{tool.id} is bigger than they are")
         return None
 
+    @staticmethod
+    def _unsuited_counterbore(tool, cycle: str, hole, params) -> tuple[str, str, str] | None:
+        """Why ``tool`` cannot cut ``hole``'s counterbore in a ``counterbore`` (from the top, a pilot in the hole) or a
+        ``back_bore`` (G87: up from under the part, the head through the hole) cycle, as :meth:`_unsuited` says it."""
+        back = cycle == "back_bore"
+        if hole.counterbore is None:
+            return ("empty_operation",
+                    f"is a Ø{hole.diameter:g} hole with no counterbore, so a {cycle} has nothing to cut there; name "
+                    "a counterbored hole (cadgen cam features lists each hole's counterbore)",
+                    "they have no counterbore")
+        bore = f"Ø{hole.counterbore:g} x {hole.counterbore_depth:g}"
+        if back and not hole.through:
+            return ("unreachable",
+                    f"is a blind hole: its {bore} counterbore opens at its top, and a back bore reaches a counterbore "
+                    "on the far side of a through hole, through the hole; use \"cycle\": \"counterbore\"",
+                    "they are blind (a back bore goes through the hole)")
+        if back and not hole.counterbore_far:
+            return ("unreachable",
+                    f"has its {bore} counterbore at its top, the side the tool comes from; cut it with \"cycle\": "
+                    "\"counterbore\" (a back bore cuts a counterbore on the far side of the hole)",
+                    "their counterbore opens toward the tool (counterbore them)")
+        if not back and hole.counterbore_far:
+            return ("unreachable",
+                    f"has its {bore} counterbore on the far side of the hole, under the part from this setup; back "
+                    "bore it (\"cycle\": \"back_bore\", a boring bar through the hole), or counterbore it from a "
+                    "setup that faces that side",
+                    "their counterbore is on the far side (back_bore them)")
+        tolerance = params["size_tolerance_mm"]
+        over = tool.diameter_mm - hole.counterbore
+        if over > tolerance + 1e-9:
+            return ("tool_too_large",
+                    f"has a {bore} counterbore and {tool.id} ({tool.plain}) is {over:.3g} mm bigger, so it would cut "
+                    f"the part round it; use a tool the counterbore's size (within size_tolerance_mm, {tolerance:g} mm)",
+                    f"{tool.id} is bigger than their counterbore")
+        if -over > tolerance + 1e-9:
+            return ("tool_too_small",
+                    f"has a {bore} counterbore and {tool.id} ({tool.plain}) is {-over:.3g} mm smaller, so the "
+                    f"counterbore would come out undersize; use a tool the counterbore's size (within "
+                    f"size_tolerance_mm, {tolerance:g} mm), or pocket or helix bore it",
+                    f"{tool.id} is smaller than their counterbore")
+        if not back:
+            pilot = tool.pilot_diameter_mm if tool.type == "counterbore" else 0.0
+            if pilot - hole.diameter > tolerance + 1e-9:
+                return ("tool_too_large",
+                        f"is a Ø{hole.diameter:g} hole, too small for {tool.id}'s Ø{pilot:g} pilot, which leads the "
+                        "cutter down the hole; use a counterbore whose pilot fits the hole",
+                        f"they are smaller than {tool.id}'s Ø{pilot:g} pilot")
+            depth = params["depth_mm"] if params["depth_mm"] is not None else hole.counterbore_depth
+            deepest = hole.deepest
+            if deepest is not None and hole.top - depth - pilot < deepest - 1e-6:
+                return ("too_deep",
+                        f"is a blind hole {hole.top - deepest:.3g} mm deep, and {tool.id}'s {pilot:g} mm pilot under "
+                        f"its {depth:g} mm deep counterbore would go {deepest - (hole.top - depth - pilot):.3g} mm past "
+                        "its bottom; use a counterbore with a shorter pilot, or a flat end mill the counterbore's size",
+                        f"{tool.id}'s pilot goes past their bottom")
+            return None
+        radius = hole.diameter / 2.0
+        shift = params["shift_mm"]
+        least = (tool.diameter_mm - hole.diameter) / 2.0 + BACK_BORE_PASS_MM
+        if shift >= radius - 1e-9:
+            return ("gouge",
+                    f"is a Ø{hole.diameter:g} hole and shift_mm {shift:g} is at least its radius, so the bar runs into "
+                    f"the wall as it shifts; shift at least {least:.3g} mm and under {radius:g} mm",
+                    "shift_mm is at least their radius")
+        if shift < least - 1e-9:
+            return ("tool_too_large",
+                    f"is a Ø{hole.diameter:g} hole: {tool.id}'s Ø{tool.diameter_mm:g} head passes through it shifted "
+                    f"at least {least:.3g} mm off its axis (half the difference plus {BACK_BORE_PASS_MM:g}), not "
+                    f"shift_mm {shift:g}, or it cuts the hole's wall on the way through",
+                    f"shift_mm {shift:g} does not pass {tool.id}'s head through them")
+        neck = tool.holder.shank_diameter_mm / 2.0
+        if shift + neck > radius + 1e-9:
+            return ("tool_too_large",
+                    f"is a Ø{hole.diameter:g} hole, and {tool.id}'s bar (its shank_diameter_mm, "
+                    f"Ø{2 * neck:g}) shifted {shift:g} mm off the axis does not fit through it: a back-boring bar's neck "
+                    f"is thinner than the hole; state it as shank_diameter_mm (at most Ø{2 * (radius - shift):.3g} "
+                    "at this shift)",
+                    f"{tool.id}'s bar does not fit through them shifted")
+        return None
+
     def _bottom(self, tool, cycle: str, hole, params, tip: float, where: str) -> tuple[float, float | None]:
         """The tool tip's lowest z for ``hole`` (WCS), and how far short of a blind hole's floor the tool's full
         diameter ends when it cannot reach it (or None). A blind hole's drawn point (or its flat floor) is a hard
@@ -427,6 +571,15 @@ class DrillOp(Operation):
 
         depth = params["depth_mm"]
         deepest = hole.deepest
+        if cycle == "back_bore":
+            # The head's top (its flutes' length over the tip) reaches the back counterbore's shoulder.
+            return hole.bottom + hole.counterbore_depth - tool.flute_length_mm, None
+        if cycle == "counterbore":
+            # The cutter's face on the counterbore's floor, its pilot (as long as it is wide) down the hole below (a
+            # pilot past a blind hole's bottom is refused first: _unsuited_counterbore).
+            depth = depth if depth is not None else hole.counterbore_depth
+            pilot = tool.pilot_diameter_mm if tool.type == "counterbore" else 0.0
+            return hole.top - depth - pilot, None
         if cycle == "spot":
             if depth is None:
                 if params["spot_diameter_mm"] is not None:
@@ -497,6 +650,22 @@ class DrillOp(Operation):
         f = feeds.feed_mm_min
         rpm = feeds.rpm
         b.rapid(x=x, y=y)
+        if ir_cycle == "back_bore":
+            # From the initial level: oriented stop, the bar shifted off the axis, down through the hole to R under
+            # the part, back on the axis, the spindle on, feed up to the shoulder, (dwell,) feed back down to R, then
+            # oriented, shifted, rapid up out of the hole, back on the axis, the spindle on again.
+            for z_to in (r_plane, initial):
+                b.event("spindle", dir="off", orient=True)
+                b.rapid(x=x + shift[0], y=y + shift[1])
+                b.rapid(z=z_to)
+                b.rapid(x=x, y=y)
+                b.event("spindle", rpm=rpm, dir="cw")
+                if z_to == r_plane:
+                    b.feed(z=bottom, f=f)
+                    if dwell:
+                        b.dwell(dwell)
+                    b.feed(z=r_plane, f=f)
+            return
         b.rapid(z=r_plane)
         if cycle in ("peck", "chipbreak"):
             depth = r_plane
@@ -535,7 +704,7 @@ class DrillOp(Operation):
         if back == "initial":
             b.rapid(z=initial)
 
-    def _post_notes(self, ctx, ir_cycle: str) -> list[str]:
+    def _post_notes(self, ctx, ir_cycle: str, extra: dict | None = None) -> list[str]:
         """What a post without this canned cycle does instead (it posts the expansion)."""
         from cadgen._internal.cam import posts
 
@@ -544,9 +713,14 @@ class DrillOp(Operation):
         except CamJobError:
             return []
         data = {"cycle": ir_cycle}
+        if ir_cycle == "back_bore":
+            data.update({key: value for key, value in (extra or {}).items() if value})
         native = post.emits_cycle(data) if hasattr(post, "emits_cycle") else ir_cycle in post.canned_cycles
         if native:
             return []
+        if ir_cycle == "back_bore" and post.orient_lines:
+            return [f"the {post.name} post has no back-boring cycle for this one (G87; Haas G77, which takes no "
+                    "dwell): it is posted as its moves, with an oriented spindle stop (M19) before each shift"]
         # A tap the post cannot cycle is its refusal (no_post_support), and so is a fine bore on a controller that
         # cannot orient its spindle: those need no note.
         if ir_cycle == "fine_bore":

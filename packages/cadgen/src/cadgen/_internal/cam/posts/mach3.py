@@ -8,8 +8,10 @@ Mill and router: ``M5 M9`` and ``G0 Z<clearance>`` (the setup's clearance height
 turn); with ``homed``,
 ``G53 G0 Z0`` then ``T M6``, ``G0 X Y`` over the first point and ``G43 H`` at a clearance Z. G2/G3, M8/M7/M9 (air: a comment to switch it by hand),
 the canned cycles G81 G82 G83 (Q pecks back to R) G73 G84 (F the posted S times the pitch) G85 G86 G89 natively (a
-fine bore posts as its moves, and is refused when its bar shifts: Mach has no spindle orient; a left-hand tap is
-refused: Mach has no G74, and a tap posted as moves breaks), dwell ``G4 P`` in seconds (``machine.dwell_ms: true``
+fine bore posts as its moves, and is refused when its bar shifts, and so is a back bore: Mach has no spindle orient;
+a left-hand tap is refused: Mach has no G74, and a tap posted as moves breaks; Mach's G84 does not synchronise the
+feed to the spindle, so it is for a floating holder and a tap that says ``rigid: true`` is refused), dwell ``G4 P``
+in seconds (``machine.dwell_ms: true``
 when Mach's General Config has "G4 dwell in ms" ticked), ``G49`` after Z goes home, ``M30``.
 A 4th axis posts A words; a 3+2 setup turns A after each tool change, Z up (set the work offset on the turned part),
 and the program ends with Z up and A back at zero (``G0 A0``; ``G53 G0 A0`` with ``homed``).
@@ -40,6 +42,7 @@ class Mach3Post(IsoPost):
     drill_codes = {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "bore": "G85",
                    "ream": "G85", "bore_stop": "G86", "bore_dwell": "G89"}
     left_tap_code = ""
+    rigid_tap = False
     rotary_home_style = "work"
     options = {"cycles": CYCLES_OPTION, **torch_options(False), "dwell_ms": DWELL_MS,
                "homed": {"type": "bool", "default": False,

@@ -8,9 +8,11 @@ are upper case, and every dimension word carries a decimal point (a Fanuc reads 
 Mill: ``G21``, a safe-start block, ``G54``..``G59``, ``M5 M9`` and ``G91 G28 Z0.`` then ``T M6``, ``G0 X Y`` over the
 first point and ``G43 H`` at a clearance Z,
 G2/G3 with I/J, M8/M7/M9 (air has no standard code: a comment asks the operator to switch it by hand), the canned
-cycles G81 G82 G83 G73 G84 (``M29 S`` rigid tapping, F the posted S times the pitch; G74 left hand) G85 G86 G89 and
-G76 fine boring (Q shifts along the direction the control's parameters set, taken as +X; a bore that shifts another
-way is posted as its moves with ``M19``), dwell ``G4 P`` in milliseconds, ``G49`` after Z goes home, ``M30``. A 3+2 setup enters the tilted working plane with
+cycles G81 G82 G83 G73 G84 (``M29 S`` rigid tapping, F the posted S times the pitch; G74 left hand; no M29 for a tap
+cycle that says ``rigid: false``, a floating holder) G85 G86 G89, G76 fine boring and G87 back boring (Q shifts along
+the direction the control's parameters set, taken as +X; a bore that shifts another way is posted as its moves with
+``M19``; G87 always returns to the initial level, G98), dwell ``G4 P`` in milliseconds, ``G49`` after Z goes home,
+``M30``. A 3+2 setup enters the tilted working plane with
 ``G68.2`` (ZXZ angles of the setup's frame) and ``G53.1`` after each tool change and leaves it with ``G69``;
 simultaneous moves post their A/B/C words under ``G43.4`` tool centre point control (rotary axes first, then
 ``G43.4 H``, then X Y, then Z; drilling posts expanded there). At the end Z goes home, then the table to rotary zero

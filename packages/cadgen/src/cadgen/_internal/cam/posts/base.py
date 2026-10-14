@@ -16,7 +16,8 @@ output always opens with the safety comment block (:meth:`Post.header`): generat
 proven on a machine, air-cut or single-block it first, what to verify for the machine kind (the work offset and every
 tool length on a mill; the focus on a laser; the torch heights on a plasma table...), and one line per tool with the
 speeds it runs at, its fastest feed and its fastest plunge (``T1: 6 mm flat: 12000 rpm, feed 1990 mm/min``); a
-program with a fine bore that shifts its bar says which way, and so where the bar's tip must point at the orient.
+program with a fine bore that shifts its bar, or a back bore, says which way, and so where the bar's tip must point at
+the orient.
 
 The base walks the IR in order with modal state (only changed words are written) and calls overridable hooks for
 each event and move: :meth:`Post.preamble`, :meth:`Post.on_setup` (work offset, a 3+2 rotary position),
@@ -34,8 +35,9 @@ What the walk does for safety, whatever the controller:
   spindle speed that posts as ``S0`` (:class:`PostRefusal`, on its operation).
 - refuses (:class:`PostRefusal`, on the operation) a cycle it would post as moves that cannot do the cycle's job: a
   tap (the feed would not follow the spindle and the tap would break: thread mill it, or use a post that taps), and a
-  fine bore that shifts its bar on a controller that cannot orient its spindle (:attr:`Post.orient_lines`, the M19
-  written at the stop before the shift where it can). A tap cycle's F is the posted S times the pitch.
+  fine bore that shifts its bar, or a back bore, on a controller that cannot orient its spindle
+  (:attr:`Post.orient_lines`, the M19 written at each oriented stop before a shift where it can). A tap cycle's F is
+  the posted S times the pitch.
 - a depth is never posted deeper than planned: a cutting move's Z rounds up at the post's resolution and a canned
   cycle's Z toward its R plane; every other number rounds to nearest.
 - the first motion of the program and after every tool change (the tool is at the top, its XY unknown): rotary
@@ -473,6 +475,10 @@ class Post:
         for xy in self.bore_shifts(program):
             lines.append(self.comment(f"Fine bore: the bar shifts {direction_text(xy)} off the wall, so at the spindle "
                                       f"orient its tip must point {direction_text((-xy[0], -xy[1]))}."))
+        for xy in self.bore_shifts(program, "back_bore"):
+            lines.append(self.comment(f"Back bore: the bar shifts {direction_text(xy)} to pass its head through the "
+                                      f"hole, so at the spindle orient its tip must point "
+                                      f"{direction_text((-xy[0], -xy[1]))}."))
         lines.extend(self.comment(note) for note in program.notes)
         return lines
 
@@ -513,11 +519,12 @@ class Post:
         return out
 
     @staticmethod
-    def bore_shifts(program: Program) -> list:
-        """The directions the program's fine bores shift their bar (cycles that name one: ``shift_xy``)."""
+    def bore_shifts(program: Program, cycle: str = "fine_bore") -> list:
+        """The directions the program's fine bores (or back bores) shift their bar (cycles that name one:
+        ``shift_xy``)."""
         out = []
         for event in program.toolpath.events:
-            if event.kind == "cycle" and event.data.get("cycle") == "fine_bore":
+            if event.kind == "cycle" and event.data.get("cycle") == cycle:
                 xy = shift_direction(event.data)
                 if xy is not None and not any(math.hypot(xy[0] - a, xy[1] - b) < 1e-9 for a, b in out):
                     out.append(xy)
@@ -657,6 +664,14 @@ class Post:
         operation = op_at(program.toolpath, index)
         if name == "tap":
             raise PostRefusal(self.tap_refusal(data, program), operation=operation)
+        if name == "back_bore":
+            if not self.orient_lines:
+                raise PostRefusal(f"the {self.name} post has no back-boring cycle and cannot stop the spindle "
+                                  "oriented (M19), and a back-boring bar passes its head through the hole only with "
+                                  "the spindle oriented and the bar shifted; use a post that orients (fanuc G87, "
+                                  "haas G77, linuxcnc), or cut the counterbore from a setup that faces it",
+                                  operation=operation)
+            return {"end": int(data["end"]), "orient": True}
         if name == "fine_bore" and shift_direction(data) is not None:
             if not self.orient_lines:
                 raise PostRefusal(f"the {self.name} post posts a fine bore as plain moves and cannot stop the spindle "
@@ -1026,6 +1041,10 @@ class Post:
         while i <= n:
             skip_to = None
             for event in by_index.get(i, ()):
+                if skip_to is not None:
+                    # The events after a native cycle at its first move belong to its expansion (a back bore's
+                    # oriented stop, before it moves): the controller's cycle does them.
+                    break
                 kind = event.kind
                 if kind == "setup":
                     out += self.on_setup(event.data, program)

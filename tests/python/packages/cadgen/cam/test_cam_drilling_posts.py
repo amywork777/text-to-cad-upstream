@@ -17,7 +17,8 @@ from cadgen._internal.cam.run import parse_operations, plan_setups
 from cadgen._internal.cam.stock import build_stock
 from tests.python.support import gcode_reader
 from tests.python.support.cam_fixtures import class_directory, quiet, read_glb
-from tests.python.support.cam_fixtures_drilling import PLATE, drill_job, drill_plate_step, hole_faces
+from tests.python.support.cam_fixtures_drilling import (CBORE, PLATE, counterbore_plate_step, drill_job,
+                                                        drill_plate_step, hole_faces)
 
 
 class CannedPost(Post):
@@ -151,6 +152,85 @@ class Posted(unittest.TestCase):
         (reach,) = [f for f in result.findings if f["check"] == "reach"]
         self.assertEqual("reach_flutes", reach["type"])
         self.assertGreater(reach["items"][0]["depth_mm"], 12.0)
+
+class CounterboresPosted(unittest.TestCase):
+    """The counterbore plate's counterbore (G82) and back bore (G87 on Fanuc, G77 on Haas, its moves with M19 on
+    LinuxCNC, refused on Mach3 and GRBL), planned and posted."""
+
+    TOOLS = [{"id": "T1", "type": "counterbore", "diameter_mm": 14, "pilot_diameter_mm": 10},
+             {"id": "T2", "type": "boring", "diameter_mm": 14, "flute_length_mm": 3, "shank_diameter_mm": 4,
+              "stickout_mm": 40}]
+    OPS = [{"op": "drill", "tool": "T1", "holes": "all"},
+           {"op": "drill", "tool": "T2", "holes": "all", "cycle": "back_bore", "shift_mm": 2.5}]
+
+    @classmethod
+    def setUpClass(cls):
+        with quiet():
+            cls.directory = class_directory(cls)
+            cls.step = counterbore_plate_step(cls.directory)
+            cls.part = read_part(cls.step)
+
+    def program(self, post_name: str, ops=None):
+        parsed = parse_job(drill_job(self.OPS if ops is None else ops, tools=self.TOOLS, post=post_name))
+        stock = build_stock(parsed.stock, self.part)
+        setups, planned, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
+        self.assertEqual([], [op.meta["plan_error"] for op in planned if "plan_error" in op.meta])
+        plan = setups[0]
+        return Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools={t.id: t for t in parsed.tools},
+                       machine=parsed.machine, version="TEST", part="counterbore_plate.step", tolerance_mm=0.01)
+
+    def test_fanuc_and_haas_post_the_counterbore_as_g82_and_the_back_bore_as_their_own_cycle(self):
+        first, second = CBORE["back"]                     # nearest the start (0, 0) first
+        for post_name, back_bore in (
+                ("fanuc", f"G98 G87 X18. Y{first[1]:g}. Z-13. R-18. Q2.5 F"),
+                ("haas", f"G98 G77 X18. Y{first[1]:g}. Z-13. R-18. I2.5 J0. F")):
+            with self.subTest(post=post_name):
+                text = get_post(post_name, "mill").render(self.program(post_name))
+                self.assertRegex(text, r"G98 G82 X-18\. Y8\. Z-14\. R2\. P200 F")       # pilot 10 under the floor
+                self.assertIn(back_bore, text)
+                self.assertIn(f"\nX18. Y{second[1]:g}.\nG80\n", text)
+                self.assertNotIn("M19", text)
+
+    def test_linuxcnc_posts_the_back_bore_as_its_moves_and_they_read_back_to_the_ir(self):
+        program = self.program("linuxcnc")
+        post = get_post("linuxcnc", "mill")
+        text = post.render(program)
+        self.assertNotRegex(text, r"\bG87\b")
+        self.assertEqual(4, text.count("M5\nM19 R0 Q10\n"))                 # two holes, in and out of each
+        self.assertIn("G1 Z-13 F", text)
+        _same_path(self, text, program, post)
+
+    def test_mach3_and_grbl_refuse_the_back_bore_and_post_the_counterbore(self):
+        from cadgen._internal.cam.job_errors import PostRefusal
+
+        for post_name in ("mach3", "grbl"):
+            with self.subTest(post=post_name):
+                program = self.program(post_name)
+                post = get_post(post_name, "mill")
+                with self.assertRaises(PostRefusal) as caught:
+                    post.render_tool_files(program) if post_name == "grbl" else post.render(program)
+                self.assertIn("cannot stop the spindle oriented", str(caught.exception))
+                bore = next(op for op in program.toolpath.ops if op.tool == "T2")
+                self.assertEqual(bore.index, caught.exception.operation)
+                program = self.program(post_name, self.OPS[:1])
+                text = ("".join(t for _, t in post.render_tool_files(program)) if post_name == "grbl"
+                        else post.render(program))
+                _same_path(self, text, program, post)
+
+    def test_a_counterbore_job_plans_ready_and_posts(self):
+        from cadgen._internal.cam.run import plan_job
+
+        with quiet():
+            result = plan_job(self.step, job=drill_job([{"op": "drill", "tool": "T3", "holes": "all"},
+                                                        *self.OPS[:1]],
+                                                       tools=[*self.TOOLS, {"id": "T3", "type": "drill",
+                                                                            "diameter_mm": 10}], post="fanuc"),
+                              out_dir=self.directory / "ready")
+        self.assertTrue(result.ok, result.findings)
+        self.assertEqual([], [f for f in result.findings if f["severity"] == "error"])
+        self.assertEqual("ready", result.verdict["status"])
+        self.assertIn("G98 G82 X-18. Y8. Z-14. R2. P200 F", gcode_reader.posted_text(result))
+
 
 if __name__ == "__main__":
     unittest.main()

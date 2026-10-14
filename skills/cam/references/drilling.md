@@ -1,8 +1,8 @@
-# Drilling: drill, peck, tap, ream, bore and spot holes
+# Drilling: drill, peck, tap, ream, bore, spot and counterbore holes
 
 One operation, `drill`, cuts round holes along the setup's Z in canned cycles: spot them, drill or
-peck them, tap, ream or bore them. Each is its own operation in the job, one tool each, usually in
-that order. The posted file carries the controller's cycles (G81, G83, G84, ...) where the post has
+peck them, tap, ream or bore them, counterbore them from the top or back bore a counterbore on their
+far side. Each is its own operation in the job, one tool each, usually in that order. The posted file carries the controller's cycles (G81, G83, G84, ...) where the post has
 them, and the same moves spelled out where it does not (GRBL has none).
 
 Read the holes first: `cadgen cam features` lists each one with its diameter, depth, through or
@@ -62,7 +62,7 @@ one ([multi-axis.md](multi-axis.md)).
 
 `cycle` picks what the tool does in each hole. Left out, the tool decides: a drill or flat end mill
 `drill` (or `peck` when the deepest hole is three diameters or more), a spot or chamfer tool `spot`,
-a tap `tap`, a reamer `ream`, a boring bar `bore`.
+a tap `tap`, a reamer `ream`, a boring bar `bore`, a counterbore `counterbore`.
 
 | `cycle` | posted as | tools | what it does |
 | --- | --- | --- | --- |
@@ -70,10 +70,12 @@ a tap `tap`, a reamer `ream`, a boring bar `bore`.
 | `dwell` | G82 | drill, flat, spot | feed to depth, wait `dwell_s` (default 0.5 s), rapid out: clean spot faces |
 | `peck` | G83 | drill, flat | pecks of `peck_mm` (default one diameter) from the R plane, back to R after each to clear chips, then down to 0.5 mm over the last depth |
 | `chipbreak` | G73 | drill, flat | pecks of `peck_mm` (default half a diameter), backing off `retract_mm` (default 0.2) after each to break the chip |
-| `tap` | G84, G74 for a left-hand tap | tap | feed at exactly rpm x the tap's pitch, reverse the spindle at the bottom, feed out |
+| `tap` | G84, G74 for a left-hand tap | tap | feed at exactly rpm x the tap's pitch, reverse the spindle at the bottom, feed out; `rigid` says the tap holder (below) |
 | `ream` | G85, or G89 with `dwell_s` | reamer | feed in, (wait,) feed out |
 | `bore` | G85, G89, G86 or G76 by `bore_mode` | boring | see below |
 | `spot` | G82 (dwell `dwell_s`, default 0.2 s) | spot, drill, chamfer | a short cone to start the drill true, `spot_diameter_mm` wide at the hole's top (default the countersink's diameter, else the hole's, else half the tool at a point), or `depth_mm` deep (not both). A spot wider than the tool is refused (a default one is `tool_too_small` on a named hole, and `holes` leaves it out); one past a blind hole's deepest point is `too_deep` |
+| `counterbore` | G82 (dwell `dwell_s`, default 0.2 s) | counterbore, flat | the hole's counterbore from the top: the cutter's face down to its floor, the pilot in the hole below; see below |
+| `back_bore` | G87 (Haas G77) | boring | a counterbore on the far side of a through hole, from the top: the bar's head through the hole and up into it; see below |
 
 `bore_mode`: `feed` (G85, feed out; the default), `dwell` (G89, wait `dwell_s`, feed out), `stop`
 (G86, spindle stop, rapid out), `fine` (G76: oriented spindle stop, shift `shift_mm`, default 0.1,
@@ -82,6 +84,51 @@ is refused), rapid out, shift back). A shift of the hole's radius or more is a `
 
 A left-hand tap says so on the tool: `{"id": "T3", "type": "tap", "diameter_mm": 6, "pitch_mm": 1,
 "hand": "left"}`; the spindle runs backwards into the hole.
+
+`rigid` (a tap only) says what holds the tap. Left out, the post writes its controller's own tapping
+cycle, as it always has: rigid on Fanuc (`M29 S`, then G84), Haas (G84) and LinuxCNC (`G33.1`), and
+Mach3's G84, which does not follow the spindle and so wants a floating holder. `true`: the feed must
+be synchronised to the spindle (a rigid holder); Mach3 cannot, so it refuses the tap
+(`no_post_support`). `false`: a floating (tension-compression) holder: Fanuc's G84 without `M29`,
+LinuxCNC's own G84 (G74 left hand) instead of `G33.1`, Haas and Mach3 their G84. GRBL taps neither
+way. The planned moves are the same either way.
+
+## Counterbores and back bores
+
+`cadgen cam features` reads a counterbore as part of the hole under it (`counterbore`
+`{diameter_mm, depth_mm}`); on a through hole it may open at either end. The two cycles cut it:
+
+- `counterbore` (G82): a `counterbore` tool (its `pilot_diameter_mm` pilot, as long as it is wide,
+  leads it down the hole) or a flat end mill the counterbore's size (no pilot) goes down until its
+  face is on the counterbore's floor (its depth from the features, or `depth_mm` below the hole's top),
+  dwells `dwell_s` (default 0.2 s) and comes out. Only a counterbore that opens toward the tool.
+- `back_bore` (G87; Haas's G77): a counterbore on the far side of a through hole, cut from the top
+  with a back-boring bar (a `boring` tool): the head is its `diameter_mm` and its `flute_length_mm`
+  tall, and its `shank_diameter_mm` is the thin neck that goes through the hole. At the initial level
+  the spindle stops oriented, the bar shifts `shift_mm` (required) along `shift_xy` (`[x, y]` in the
+  setup's plane, default `[1, 0]`) so the head passes through the hole, rapids down to its R plane
+  under the stock (`retract_mm` under the stock's bottom, less the head), shifts back, starts the
+  spindle, feeds up until the head's top is on the counterbore's shoulder, waits `dwell_s` (none by
+  default), feeds back down to R, stops oriented, shifts, rapids up out of the hole to the initial
+  level, shifts back and starts the spindle. It always returns to the initial level (G98).
+  `shift_mm` must be at least half the head's diameter less the hole's plus 0.1 mm, and less than
+  the hole's radius by at least half the neck.
+
+What each refuses on a named hole (`holes` leaves such holes out and says why in the note, and is
+`empty_operation` when none is left):
+
+| refusal | when |
+| --- | --- |
+| `empty_operation` | the hole has no counterbore |
+| `unreachable` | `counterbore`: its counterbore is on the far side (back bore it, or cut it from a setup facing that side); `back_bore`: the hole is blind, or its counterbore opens toward the tool |
+| `tool_too_large` | the cutter is more than `size_tolerance_mm` over the counterbore; a pilot wider than the hole; a back bore's shift too small to pass the head through the hole, or a neck (`shank_diameter_mm`, which defaults to the head's diameter: state it) that does not fit through the hole shifted |
+| `tool_too_small` | the cutter is more than `size_tolerance_mm` under the counterbore (pocket or helix bore it instead) |
+| `too_deep` | a pilot that would go past a blind hole's bottom (use a shorter pilot, or a flat end mill) |
+| `gouge` | a back bore's `shift_mm` of the hole's radius or more |
+
+`holes` `{"diameter_mm": ..}` picks by the hole's diameter, not its counterbore's. `depth_to` and
+`breakthrough_mm` do not apply to either; a back bore takes no `points`, no `depth_mm` and no
+`return_to` but `initial`.
 
 ## How deep
 
@@ -153,13 +200,24 @@ left-hand tap) refuses it: a `no_post_support` error, no G-code; thread mill the
 (`thread_mill`) or use a post that taps. A fine bore that shifts its bar posts as G76 with its
 shift on Fanuc (when the shift is +X) and Haas (`I J`), as moves with an oriented stop (`M19`) on
 LinuxCNC (and Fanuc for another direction), and is refused on Mach3 and GRBL, which cannot orient
-the spindle; the file's header says which way the bar's tip must point.
+the spindle; the file's header says which way the bar's tip must point. A back bore posts the same
+way: `G87 ... Q` on Fanuc (a +X shift, its dwell as `P`), `G77 ... I J` on Haas (without a dwell:
+G77 takes none), and otherwise as its moves with an oriented stop (`M19`) before each shift
+(LinuxCNC, Fanuc for another direction, Haas with a dwell, `cycles: false`); Mach3 and GRBL refuse it.
 
 ## Limits
 
 - Holes run along the setup's Z only; there is no cross-hole or angled-hole drilling within a setup.
 - On a controller's own G73 the back-off distance is the controller's setting, not `retract_mm`
   (the expanded moves use `retract_mm`).
-- A counterbore or countersink is part of its hole, but `drill` makes neither: pocket or helix bore
-  the counterbore, and spot the countersink (`spot_diameter_mm` defaults to it). A spot on a
-  counterbored hole with no countersink starts at the counterbore's top, so it cuts air.
+- A counterbore or countersink is part of its hole: the `counterbore` and `back_bore` cycles cut the
+  counterbore (or pocket or helix bore it), and a spot the countersink (`spot_diameter_mm` defaults
+  to it). A spot on a counterbored hole with no countersink starts at the counterbore's top, so it
+  cuts air.
+- The stock simulator and the checks that read it model a tool from its tip up, so they cannot
+  follow a back bore (a head under the part, a neck through the hole): its rapid down through the
+  hole reads as `rapid_into_stock` and its depth under the part as `reach_flutes`, both errors, so a
+  plan with a back bore is not posted yet. The `gouge` check skips the back bore (the planner checks
+  the head against the counterbore and the hole). The `uncut_feature` check does not see that a
+  `counterbore` cycle cuts its counterbore's floor (the tool's tip runs on the hole's axis), and may
+  warn of it as a pocket left.

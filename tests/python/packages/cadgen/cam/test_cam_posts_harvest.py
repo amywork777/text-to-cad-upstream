@@ -3,7 +3,8 @@
 Comments a GRBL cannot misread, one O number a setup, no S0, a tap's F that follows its posted S, the header's speeds
 per tool, depths never deeper than planned, arc fitting within its tolerance everywhere (straight runs, helices), a
 read-back held to every move's kind and feed, taps and un-oriented fine bores refused where they would break, the
-spin-up wait on every post, line numbers, GRBL's line length, the fine bore's shift, no G43 left at the end, coolant a
+spin-up wait on every post, line numbers, GRBL's line length, the fine bore's shift, the back bore (G87, Haas G77, or
+its moves with M19), rigid and floating taps, no G43 left at the end, coolant a
 controller has no code for, no machine-coordinate move on an unhomed Mach3, and the mutations the read-back catches.
 """
 
@@ -409,6 +410,149 @@ class FineBore(unittest.TestCase):
         self.assertIn("G98 G76 X10. Y5. Z-6. R2. Q0.1 F200.", fanuc)
         self.assertNotIn("FINE BORE:", fanuc)
         self.assertNotIn("M19", get_post("mach3", "mill").render(_job("mach3", _fine_bore(None, 0.1))))
+
+
+def _back_bore(shift_xy=(1.0, 0.0), shift=2.5, dwell=None, holes=((10.0, 5.0),)):
+    """Back-bored holes, their expansion as the drilling op writes it: from the initial level an oriented stop, the
+    bar shifted, down through the hole to R under the part, back on the axis, the spindle on, a feed up to Z, (a
+    dwell,) a feed back down to R, oriented and shifted again, up to the initial level, back on the axis, the spindle
+    on."""
+    def build(b):
+        _start(b, tool="T2", rpm=3000)
+        b.rapid(x=holes[0][0], y=holes[0][1])
+        data = {"cycle": "back_bore", "holes": [[x, y, 0] for x, y in holes], "z_bottom": -6.0, "r_plane": -20.0,
+                "retract": "initial", "initial_z": 5.0, "feed": 200.0, "shift_mm": shift,
+                "shift_xy": list(shift_xy)}
+        if dwell:
+            data["dwell_s"] = dwell
+        h = b.begin_cycle(**data)
+        sx, sy = shift * shift_xy[0], shift * shift_xy[1]
+        for x, y in holes:
+            b.rapid(x=x, y=y)
+            for z_to in (-20.0, 5.0):
+                b.event("spindle", dir="off", orient=True)
+                b.rapid(x=x + sx, y=y + sy)
+                b.rapid(z=z_to)
+                b.rapid(x=x, y=y)
+                b.event("spindle", rpm=3000, dir="cw")
+                if z_to < 0:
+                    b.feed(z=-6, f=200)
+                    if dwell:
+                        b.dwell(dwell)
+                    b.feed(z=-20, f=200)
+        b.end_cycle(h)
+        b.end_op()
+
+    return build
+
+
+class BackBore(unittest.TestCase):
+    def test_fanuc_posts_g87_with_its_q_shift_and_haas_g77_with_i_j(self):
+        fanuc = get_post("fanuc", "mill").render(_job("fanuc", _back_bore(holes=((10.0, 5.0), (20.0, 5.0)))))
+        self.assertIn("G98 G87 X10. Y5. Z-6. R-20. Q2.5 F200.\nX20. Y5.\nG80\n", fanuc)
+        joined = fanuc.replace(")\n(", " ")
+        self.assertIn("BACK BORE: THE BAR SHIFTS +X TO PASS ITS HEAD THROUGH THE HOLE, SO AT THE SPINDLE ORIENT ITS "
+                      "TIP MUST POINT -X.", joined)
+        self.assertIn("G87 SHIFTS ITS BAR BY Q ALONG THE DIRECTION THE CONTROL'S PARAMETERS SET: IT MUST BE +X.", joined)
+        # The controller's cycle stops, orients and restarts the spindle itself: none of the expansion's M5/M19.
+        self.assertNotIn("M19", fanuc)
+        self.assertEqual(1, fanuc.count("M5\n"))                                       # the program's end
+        self.assertIn("G98 G87 X10. Y5. Z-6. R-20. Q2.5 P300 F200.",
+                      get_post("fanuc", "mill").render(_job("fanuc", _back_bore(dwell=0.3))))
+        haas = get_post("haas", "mill").render(_job("haas", _back_bore((0.0, -1.0))))
+        self.assertIn("G98 G77 X10. Y5. Z-6. R-20. I0. J-2.5 F200.", haas)
+        self.assertNotRegex(haas, r"\bG87\b")
+        self.assertIn("shifts -Y to pass its head through the hole, so at the spindle orient its tip must point +Y",
+                      haas.replace(")\n(", " "))
+
+    def test_a_back_bore_the_cycle_cannot_make_posts_as_moves_with_an_oriented_stop_before_each_shift(self):
+        for post_name, build, keys, orient in (("linuxcnc", _back_bore(), None, "M19 R0 Q10"),
+                                               ("fanuc", _back_bore((0.0, 1.0)), None, "M19"),
+                                               ("fanuc", _back_bore(), {"cycles": False}, "M19"),
+                                               ("haas", _back_bore(dwell=0.3), None, "M19")):
+            with self.subTest(post=post_name, keys=keys):
+                post, program = get_post(post_name, "mill"), _job(post_name, build, keys=keys)
+                text = post.render(program)
+                self.assertNotRegex(text, r"\bG(87|77)\b")
+                self.assertEqual(2, text.count(f"M5\n{orient}\n"))
+                self.assertEqual([], compare(post, program, text))
+                # Without the orient the bar crosses the hole's wall with the spindle stopped anywhere.
+                self.assertNotEqual([], compare(post, program, text.replace(f"{orient}\n", "", 1)))
+
+    def test_a_post_that_cannot_orient_refuses_a_back_bore(self):
+        for post_name in ("mach3", "grbl"):
+            with self.subTest(post=post_name):
+                with self.assertRaises(PostRefusal) as caught:
+                    get_post(post_name, "mill").render(_job(post_name, _back_bore()))
+                self.assertIn("cannot stop the spindle oriented (M19)", str(caught.exception))
+                self.assertIn("fanuc G87, haas G77, linuxcnc", str(caught.exception))
+                self.assertEqual(0, caught.exception.operation)
+
+
+class TapHolders(unittest.TestCase):
+    """``rigid`` on a tap cycle: true asks for the feed synchronised to the spindle, false a floating holder, left out
+    the controller's own tapping cycle (as before)."""
+
+    @staticmethod
+    def build(rigid=None, left=False):
+        def build(b):
+            _start(b, tool="T3", rpm=500)
+            b.rapid(x=-10, y=5)
+            data = {"cycle": "tap", "holes": [[-10, 5, 0]], "z_bottom": -6.0, "r_plane": 2.0, "retract": "initial",
+                    "initial_z": 5.0, "feed": 500.0, "pitch_mm": 1.0}
+            if rigid is not None:
+                data["rigid"] = rigid
+            if left:
+                data["left_hand"] = True
+            h = b.begin_cycle(**data)
+            b.rapid(z=2)
+            b.feed(z=-6, f=500)
+            b.event("spindle", rpm=500, dir="cw" if left else "ccw")
+            b.feed(z=2, f=500)
+            b.event("spindle", rpm=500, dir="ccw" if left else "cw")
+            b.rapid(z=5)
+            b.end_cycle(h)
+            b.end_op()
+
+        return build
+
+    def test_each_post_writes_its_rigid_or_floating_tap(self):
+        cases = [
+            ("fanuc", None, False, "M29 S500\nG98 G84 X-10. Y5. Z-6. R2. F500."),
+            ("fanuc", True, False, "M29 S500\nG98 G84 X-10. Y5. Z-6. R2. F500."),
+            ("fanuc", False, False, ")\nG98 G84 X-10. Y5. Z-6. R2. F500."),
+            ("haas", True, False, "G98 G84 X-10. Y5. Z-6. R2. F500."),
+            ("haas", False, False, "G98 G84 X-10. Y5. Z-6. R2. F500."),
+            ("linuxcnc", None, False, "G33.1 Z-6 K1"),
+            ("linuxcnc", True, False, "G33.1 Z-6 K1"),
+            ("linuxcnc", False, False, "G98 G84 X-10 Y5 Z-6 R2 F500"),
+            ("linuxcnc", False, True, "G98 G74 X-10 Y5 Z-6 R2 F500"),
+            ("mach3", None, False, "G98 G84 X-10 Y5 Z-6 R2 F500"),
+            ("mach3", False, False, "G98 G84 X-10 Y5 Z-6 R2 F500"),
+        ]
+        for post_name, rigid, left, words in cases:
+            with self.subTest(post=post_name, rigid=rigid, left=left):
+                tools = [*F.MILL_TOOLS[:2], {**F.MILL_TOOLS[2], **({"hand": "left"} if left else {})}]
+                post, program = get_post(post_name, "mill"), _job(post_name, self.build(rigid, left), tools=tools)
+                text = post.render(program)
+                self.assertIn(words, text)
+                if rigid is False:
+                    self.assertNotIn("M29", text)
+                    self.assertNotIn("G33.1", text)
+                self.assertEqual([], compare(post, program, text))
+
+    def test_a_rigid_tap_on_mach3_is_refused_and_a_floating_one_is_not(self):
+        with self.assertRaises(PostRefusal) as caught:
+            get_post("mach3", "mill").render(_job("mach3", self.build(True)))
+        message = str(caught.exception)
+        self.assertIn("cannot synchronise the feed to the spindle", message)
+        self.assertIn("\"rigid\": false", message)
+        self.assertIn("thread_mill", message)
+        self.assertEqual(0, caught.exception.operation)
+        # GRBL taps neither way.
+        for rigid in (True, False):
+            with self.assertRaises(PostRefusal):
+                get_post("grbl", "mill").render(_job("grbl", self.build(rigid)))
 
 
 class Taps(unittest.TestCase):

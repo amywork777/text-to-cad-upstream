@@ -38,7 +38,16 @@ What the posts read beyond that (every key optional unless said; a post that can
 a key it needs missing, posts the expansion, so the expansion must always be the whole truth):
 
 - more drilling ``cycle`` names: ``bore_stop`` (G86), ``bore_dwell`` (G89), ``fine_bore`` (G76 on a mill, with
-  ``shift_mm``); ``left_hand`` true on a ``tap`` (G74).
+  ``shift_mm``); ``left_hand`` true on a ``tap`` (G74); ``rigid`` on a ``tap`` when the job says (true: the feed
+  synchronised to the spindle, refused where the controller cannot; false: a floating holder; absent: the
+  controller's own tapping cycle); ``back_bore`` (G87, Haas G77: ``shift_mm`` and ``shift_xy`` as a fine bore's,
+  ``retract`` always ``initial``) whose ``r_plane`` is under the part and whose ``z_bottom`` is the cycle's Z word
+  above it, the tip's highest point (the head's top on the back counterbore's shoulder). Its expansion, per hole
+  from the initial level: a ``spindle`` off event with ``orient`` true, the shift, rapid down through the hole to R,
+  back on the axis, the spindle on, a feed up to Z, the dwell, a feed back down to R, oriented and shifted again,
+  rapid up to the initial level, back on the axis, the spindle on (G87 and G77 orient at Z rather than back at R: the
+  shift moves the insert off the wall either way). An ``orient`` spindle stop is posted with the controller's
+  oriented stop (M19).
 - lathe ``cycle`` ``thread`` (G76): ``z_start``, ``z_end``, ``x_clear`` (the radius it starts and ends at),
   ``x_crest`` (the crest's radius: the major for an external thread, the minor for an internal one), ``depth_mm``
   (radial thread height; the root is ``x_crest`` -/+ it), ``pitch_mm`` (the lead), ``external`` (default true),

@@ -9,7 +9,7 @@ does not have, a lathe move off the XZ plane. Its comments are plain ASCII (old 
 
 - mills: work offset, tool change (``M5 M9``, Z home, ``T M6``, the 3+2 turn; then, at the first move, ``G0 X Y``
   and ``G0 G43 Z H`` at the clearance Z; coolant back on), spindle, coolant, the drilling
-  cycles natively (G81 G82 G83 G73 G84/G74 G85 G86 G89 G76, the set each controller has; the rest post expanded),
+  cycles natively (G81 G82 G83 G73 G84/G74 G85 G86 G89 G76 G87, the set each controller has; the rest post expanded),
   arcs fitted in XY.
 - ``mill4``/``mill5``: rotary words on the moves. A 3+2 setup (the setup event's ``rotary``) turns the table after the
   tool change, then posts 3-axis in the tilted frame: plain rotation (LinuxCNC, Mach3: set the work offset on the
@@ -179,10 +179,15 @@ class IsoPost(CheckedPost):
     tcp_code = "G43.4"
     #: Drilling cycles this controller has: cycle name -> G code.
     drill_codes = {"drill": "G81", "spot": "G82", "peck": "G83", "chipbreak": "G73", "tap": "G84", "bore": "G85",
-                   "ream": "G85", "bore_stop": "G86", "bore_dwell": "G89", "fine_bore": "G76"}
+                   "ream": "G85", "bore_stop": "G86", "bore_dwell": "G89", "fine_bore": "G76", "back_bore": "G87"}
     left_tap_code = "G74"
-    #: Fanuc rigid tapping: ``M29 S`` before G84.
+    #: Fanuc rigid tapping: ``M29 S`` before G84 (left out for a tap cycle that says ``rigid: false``).
     rigid_tap_m29 = False
+    #: The controller taps with the feed synchronised to the spindle (rigid); a tap cycle that says ``rigid: true`` is
+    #: refused where it cannot (Mach3: a floating holder only).
+    rigid_tap = True
+    #: The back-boring cycle (G87) takes a dwell at the top (P); Haas's G77 does not (one with a dwell posts as moves).
+    back_bore_dwell = True
     #: Lathe: feed per minute / per revolution words, the threading dialect, native G71, the tool word.
     lathe_feed_codes = ("G94", "G95")
     thread_style = "fanuc"
@@ -326,11 +331,12 @@ class IsoPost(CheckedPost):
                      if e.kind == "setup" and e.data.get("rotary")), None)
         if tilt and any(tilt.values()) and not self._simultaneous:
             notes.append(self.tilt_note(program, tilt))
-        if self.q_shift is not None and any(
-                e.kind == "cycle" and e.data.get("cycle") == "fine_bore" and shift_direction(e.data) is not None
-                and self.emits_cycle(e.data) for e in program.toolpath.events):
-            notes.append(f"G76 shifts its bar by Q along the direction the control's parameters set: it must be "
-                         f"{'+X' if self.q_shift == (1.0, 0.0) else self.q_shift}.")
+        for name in ("fine_bore", "back_bore"):
+            if self.q_shift is not None and any(
+                    e.kind == "cycle" and e.data.get("cycle") == name and shift_direction(e.data) is not None
+                    and self.emits_cycle(e.data) for e in program.toolpath.events):
+                notes.append(f"{self.drill_codes[name]} shifts its bar by Q along the direction the control's "
+                             f"parameters set: it must be {'+X' if self.q_shift == (1.0, 0.0) else self.q_shift}.")
         if self._simultaneous:
             axes = "".join(sorted(a.upper() for a in program.toolpath.rotary))
             notes.append(f"Simultaneous {axes} with tool centre point control ({self.tcp_code}): X Y Z are the tool "
@@ -536,11 +542,16 @@ class IsoPost(CheckedPost):
             return False
         if name not in self.drill_codes or not all(key in data for key in ("holes", "z_bottom", "r_plane", "feed")):
             return False
-        if name == "tap" and self.left_hand(data) and not self.left_tap_code:
+        if name == "tap" and self.left_hand(data) and not self.tap_code(data):
             return False
-        if name == "fine_bore" and self.q_shift is not None and shift_direction(data) is not None and math.hypot(
-                shift_direction(data)[0] - self.q_shift[0], shift_direction(data)[1] - self.q_shift[1]) > 1e-9:
-            return False                     # G76 shifts one way only (the machine's parameter): posted as moves
+        if name == "tap" and data.get("rigid") is True and not self.rigid_tap:
+            return False                     # refused (tap_refusal): the controller cannot synchronise the feed
+        if name in ("fine_bore", "back_bore") and self.q_shift is not None and shift_direction(data) is not None and \
+                math.hypot(shift_direction(data)[0] - self.q_shift[0], shift_direction(data)[1] - self.q_shift[1]) > 1e-9:
+            return False                     # G76/G87 shift one way only (the machine's parameter): posted as moves
+        if name == "back_bore" and ((data.get("dwell_s") and not self.back_bore_dwell)
+                                    or data.get("retract", "initial") != "initial"):
+            return False
         return not (name in ("peck", "chipbreak") and not data.get("peck_mm"))
 
     def tap_refusal(self, data: dict, program: Program) -> str:
@@ -551,10 +562,19 @@ class IsoPost(CheckedPost):
         if self._simultaneous:
             return (f"under tool centre point control the {self.name} post writes drilling as plain moves, and a tap "
                     f"as plain moves {why}; tap in a 3-axis or 3+2 setup, or thread mill the hole (thread_mill)")
-        if self.left_hand(data) and not self.left_tap_code:
+        if data.get("rigid") is True and not self.rigid_tap:
+            return (f"{self.plain} cannot synchronise the feed to the spindle, so it has no rigid tapping (its G84 "
+                    "is for a floating, tension-compression holder), and the tap says rigid: true; give the tap "
+                    "\"rigid\": false and run it in a floating holder, use a post that taps rigidly (fanuc, haas, "
+                    "linuxcnc), or thread mill the hole (thread_mill)")
+        if self.left_hand(data) and not self.tap_code(data):
             return (f"{self.plain} has no left-hand tapping cycle (G74), and a tap posted as plain moves {why}; use "
                     "fanuc or haas (G74) or linuxcnc (G33.1), or thread mill the hole (thread_mill)")
         return super().tap_refusal(data, program)
+
+    def tap_code(self, data: dict) -> str:
+        """The G code of a tap cycle: G84, or G74 for a left-hand tap ("" where the controller has none)."""
+        return self.left_tap_code if self.left_hand(data) else self.drill_codes["tap"]
 
     def can_thread(self, data: dict) -> bool:
         needed = ("z_start", "z_end", "x_clear", "x_crest", "depth_mm", "pitch_mm")
@@ -572,23 +592,23 @@ class IsoPost(CheckedPost):
 
     def drill_lines(self, data: dict) -> list[str]:
         name = data["cycle"]
-        code = self.left_tap_code if name == "tap" and self.left_hand(data) else self.drill_codes[name]
+        code = self.tap_code(data) if name == "tap" else self.drill_codes[name]
         if name == "spot" and not data.get("dwell_s"):
             code = self.drill_codes["drill"]                 # a spot without a dwell is a plain drill cycle
         holes = data["holes"]
         lines = [self.comment(f"{name} cycle, {len(holes)} hole{'s' if len(holes) != 1 else ''}")]
-        if code in ("G84", "G74") and self.rigid_tap_m29:
+        if code in ("G84", "G74") and self.rigid_tap_m29 and data.get("rigid") is not False:
             lines.append(f"M29 S{int(round(self._rpm))}")
-        retract = "G98" if data.get("retract", "r") == "initial" else "G99"
+        retract = "G98" if data.get("retract", "r") == "initial" or name == "back_bore" else "G99"
         for k, hole in enumerate(holes):
             words = [f"X{self.num(hole[0])}", f"Y{self.num(hole[1])}"]
             if k == 0:
                 words = [retract, code] + words + [f"Z{self.cycle_depth(data)}", f"R{self.num(data['r_plane'])}"]
                 if name in ("peck", "chipbreak"):
                     words.append(f"Q{self.num(data['peck_mm'])}")
-                if name == "fine_bore":
+                if name in ("fine_bore", "back_bore"):
                     words += self.shift_words(data)
-                if name in ("spot", "tap", "bore_dwell", "fine_bore") and data.get("dwell_s"):
+                if name in ("spot", "tap", "bore_dwell", "fine_bore", "back_bore") and data.get("dwell_s"):
                     words.append(self.dwell_word(float(data["dwell_s"])))
                 words.append(f"F{self.cycle_feed(data)}")
             lines.append(" ".join(words))
@@ -601,7 +621,7 @@ class IsoPost(CheckedPost):
         return self.num(round(float(data["feed"]), 1))
 
     def shift_words(self, data: dict) -> list[str]:
-        """G76's shift: Q, the amount (the direction is the control's parameter, :attr:`q_shift`)."""
+        """G76's and G87's shift: Q, the amount (the direction is the control's parameter, :attr:`q_shift`)."""
         return [f"Q{self.num(float(data.get('shift_mm', 0.1)))}"]
 
     @staticmethod

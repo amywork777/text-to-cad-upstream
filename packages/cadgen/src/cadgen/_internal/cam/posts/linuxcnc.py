@@ -4,8 +4,10 @@ Mill: ``G21 G90 G94 G17``, ``G91.1`` (incremental arc centres, whatever the conf
 at the job's tolerance, ``M5 M9``, ``G49`` and ``G53 G0 Z0`` (the tool length off first, since a G53 move still
 applies it; Z to the machine's top: LinuxCNC's M6 does not retract) then ``T M6``, ``G0 X Y`` over the first point and
 ``G43 H`` at a clearance Z, G2/G3 with incremental I/J, the drilling cycles G81 G82 G83 G73 G85 G86 G89 natively, a
-tap as rigid ``G33.1`` per hole (LinuxCNC's G84 does not follow the spindle), a fine bore as its moves (LinuxCNC's G76
-is a lathe thread) with ``M19 R0 Q10`` (orient, and wait for it) before the bar shifts, dwell ``G4 P`` in seconds,
+tap as rigid ``G33.1`` per hole (LinuxCNC's G84 does not follow the spindle), or, when the tap cycle says ``rigid:
+false`` (a floating, tension-compression holder), as LinuxCNC's ``G84`` (``G74`` left hand), a fine bore and a back
+bore as their moves (LinuxCNC's G76 is a lathe thread, and it has no G87) with ``M19 R0 Q10`` (orient, and wait for
+it) before the bar shifts, dwell ``G4 P`` in seconds,
 mist ``M7``, flood ``M8`` (air: a comment to switch it by hand), ``G49``, ``G53 G0 Z0`` and the table to rotary zero
 (``G53 G0 A0 C0``) then ``M2`` at the end. A 3+2 setup turns the table (``G0 A.. C..``) after each tool change, with Z at the top, and
 then posts 3-axis: set the work offset on the turned part.
@@ -74,8 +76,14 @@ class LinuxCncPost(IsoPost):
     def can_thread(self, data: dict) -> bool:
         return super().can_thread(data) and abs(float(data.get("taper_mm", 0.0))) < 1e-9
 
+    def tap_code(self, data: dict) -> str:
+        """G33.1 (rigid, synchronised to the spindle), or G84/G74 for a floating holder (``rigid: false``)."""
+        if data.get("rigid") is False:
+            return "G74" if self.left_hand(data) else "G84"
+        return "G33.1"
+
     def drill_lines(self, data: dict) -> list[str]:
-        if data["cycle"] != "tap":
+        if data["cycle"] != "tap" or data.get("rigid") is False:
             return super().drill_lines(data)
         # Rigid tapping: G33.1 feeds in synchronised with the spindle, reverses and comes back to where it started.
         pitch = float(data.get("pitch_mm") or (float(data["feed"]) / self._rpm if self._rpm else 0.0))

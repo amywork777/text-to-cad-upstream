@@ -3,7 +3,9 @@
 * :class:`Hole`: one hole to drill, in WCS mm: its centre ``x, y``, its ``top`` (where the hole opens on the part:
   the top of its counterbore or countersink), its ``bottom`` (a blind hole's floor, a through hole's exit; ``None``
   for a point the job gave), its diameter (``None`` for a point), whether it goes through, the length of the drill
-  point its model draws below its floor (``point_mm``, 0 for a flat floor) and its countersink's diameter.
+  point its model draws below its floor (``point_mm``, 0 for a flat floor), its countersink's diameter, and its
+  counterbore's diameter and depth with the end it opens at in this setup (``counterbore_far``: at the hole's
+  bottom, a back counterbore of a through hole; else at its top, the end the tool comes in by).
 * :func:`holes_from_faces`, :func:`holes_matching` and :func:`holes_from_points` resolve an operation's ``faces``,
   ``holes`` filter or ``points``. A face hole whose axis is not the setup's Z is refused in one sentence that names
   the setup (or the orientation) that would reach it; one along it whose opening the part covers from this side
@@ -54,6 +56,11 @@ class Hole:
     point_mm: float = 0.0
     #: The countersink's diameter at the opening, when the hole has one.
     countersink: float | None = None
+    #: The counterbore's diameter and depth, when the hole has one, and whether it opens at the hole's bottom in this
+    #: setup (a back counterbore on the far side of a through hole) rather than at its top.
+    counterbore: float | None = None
+    counterbore_depth: float | None = None
+    counterbore_far: bool = False
     faces: tuple[str, ...] = ()
     label: str = ""
 
@@ -106,11 +113,30 @@ def _in_setup(ctx, hole: dict) -> tuple[Hole | None, bool]:
         return None, False
     reached = direction_word(way) in hole.get("reach", ())
     sink = hole.get("countersink")
+    bore = hole.get("counterbore")
+    far = bore is not None and _counterbore_far(ctx, hole, float(top_point[2]), float(low_point[2]))
     return Hole(x=float(top_point[0]), y=float(top_point[1]), top=float(top_point[2]), bottom=float(low_point[2]),
                 diameter=float(hole["diameter_mm"]), through=bool(hole["through"]),
                 point_mm=float(hole.get("point_mm", 0.0)), countersink=float(sink["diameter_mm"]) if sink else None,
+                counterbore=float(bore["diameter_mm"]) if bore else None,
+                counterbore_depth=float(bore["depth_mm"]) if bore else None, counterbore_far=far,
                 faces=tuple(hole["faces"]),
                 label=hole["faces"][0] if hole["faces"] else f"({_g(top_point[0])}, {_g(top_point[1])})"), reached
+
+
+def _counterbore_far(ctx, hole: dict, top: float, bottom: float) -> bool:
+    """Whether a hole's counterbore opens at its bottom in this setup (WCS z ``top`` over ``bottom``): its wall (the
+    hole's face of the counterbore's diameter) sits in the lower half of the hole. A blind hole's counterbore is at its
+    opening, always."""
+    if not hole["through"]:
+        return False
+    radius = float(hole["counterbore"]["diameter_mm"]) / 2.0
+    for ref in hole["faces"]:
+        info = ctx.part.face(ref)
+        if info.surface == "cylinder" and info.radius_mm is not None and abs(float(info.radius_mm) - radius) < 1e-3:
+            z = float(ctx.wcs.to_wcs([info.center_mm])[0][2])
+            return z < (top + bottom) / 2.0
+    return False
 
 
 def _covered_sentence(ctx, hole: dict) -> str:

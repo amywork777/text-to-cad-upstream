@@ -23,6 +23,15 @@ with
   that ends in it;
 * a cave open to the +X side (x 15..40, y -6..6, z 4..10, under a 10 mm roof) with a Ø5 blind hole 3 mm deep in its
   floor at (28, 0).
+
+The counterbore plate (:func:`counterbore_plate_step`, :data:`CBORE`): 60 x 40 x 12 mm standing on z = 0, centred in
+x and y, every hole Ø10 and every counterbore Ø14 x 3, with
+
+* a through hole counterbored at the top at (-18, 8);
+* two through holes counterbored at the bottom (back counterbores, for a back bore from the top) at (18, 8) and
+  (18, -10);
+* a blind hole 8 mm deep (counterbore included: its flat floor at z = 4) counterbored at the top at (0, -10);
+* a plain through hole, no counterbore, at (-18, -10).
 """
 
 from __future__ import annotations
@@ -113,6 +122,38 @@ def hole_block_step(directory: Path, name: str = "hole_block") -> Path:
     (x0, x1), (y0, y1), (z0, z1) = cave["x"], cave["y"], cave["z"]
     part -= Pos((x0 + x1) / 2, (y0 + y1) / 2, z0) * Box(x1 - x0, y1 - y0, z1 - z0, align=base)
     part -= Pos(*cave["hole"], z0 - cave["depth"]) * Cylinder(cave["diameter"] / 2, cave["depth"], align=base)
+    path = directory / f"{name}.step"
+    export_step(part, str(path))
+    return path
+
+
+CBORE = {
+    "size": (60.0, 40.0, 12.0),
+    "diameter": 10.0,
+    "bore": 14.0,
+    "bore_depth": 3.0,
+    "top": (-18.0, 8.0),
+    "back": ((18.0, 8.0), (18.0, -10.0)),
+    "blind": {"center": (0.0, -10.0), "depth": 8.0},
+    "plain": (-18.0, -10.0),
+}
+
+
+def counterbore_plate_step(directory: Path, name: str = "counterbore_plate") -> Path:
+    from build123d import Align, Box, Cylinder, Pos, export_step
+
+    base = (Align.CENTER, Align.CENTER, Align.MIN)
+    sx, sy, sz = CBORE["size"]
+    r, rb, depth = CBORE["diameter"] / 2, CBORE["bore"] / 2, CBORE["bore_depth"]
+    part = Box(sx, sy, sz, align=base)
+    for x, y in (CBORE["top"], *CBORE["back"], CBORE["plain"]):
+        part -= Pos(x, y, 0) * Cylinder(r, sz, align=base)
+    part -= Pos(*CBORE["top"], sz - depth) * Cylinder(rb, depth, align=base)
+    for x, y in CBORE["back"]:
+        part -= Pos(x, y, 0) * Cylinder(rb, depth, align=base)
+    blind = CBORE["blind"]
+    part -= Pos(*blind["center"], sz - blind["depth"]) * Cylinder(r, blind["depth"], align=base)
+    part -= Pos(*blind["center"], sz - depth) * Cylinder(rb, depth, align=base)
     path = directory / f"{name}.step"
     export_step(part, str(path))
     return path

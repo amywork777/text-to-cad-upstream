@@ -3,8 +3,10 @@
 ``%`` and a five-digit ``O`` number (``machine.program_number`` for the first setup, one more for each next one),
 decimal points on every dimension word, ``N1 T M06``, ``N2``... (an N number on each tool change, so the operator can
 restart at a tool; the Haas tool change retracts Z itself) then ``G43 H`` at a clearance Z, the canned cycles G81 G82
-G83 G73 G84 (rigid, no M29, F the posted S times the pitch; G74 left hand) G85 G86 G89 G76 (its shift ``I J`` along
-the cycle's ``shift_xy``, else ``Q`` in setting 27's direction), dwell ``G4 P`` in milliseconds, air blast
+G83 G73 G84 (rigid, no M29, F the posted S times the pitch; G74 left hand; the same G84 for a floating holder) G85
+G86 G89 G76 (its shift ``I J`` along the cycle's ``shift_xy``, else ``Q`` in setting 27's direction), the back bore
+as Haas's ``G77`` (not G87, which is another cycle on a Haas; shift ``I J`` the same way; it takes no dwell, so a back
+bore with one posts as its moves with ``M19``), dwell ``G4 P`` in milliseconds, air blast
 ``M83``/``M84``. The end cancels the tool length (``G49``) after Z goes home.
 ``machine.smoothing`` (``rough``, ``medium``, ``finish``) writes ``G187 P1``..``P3 E`` (the job's tolerance) and
 resets it at the end. A 3+2 setup turns the table (``G0 A.. C..`` or ``B.. C..``) and switches on dynamic work
@@ -44,6 +46,8 @@ class HaasPost(IsoPost):
     tool_line_numbers = True
     q_shift = None
     orient_lines = ("M19",)
+    drill_codes = {**IsoPost.drill_codes, "back_bore": "G77"}
+    back_bore_dwell = False
     coolant_codes = {"flood": "M8", "mist": "M7", "air": "M83"}
     coolant_off_codes = {"air": "M84"}
     tcp_code = "G234"
@@ -79,7 +83,8 @@ class HaasPost(IsoPost):
         return [f"T{n}{n:02d}"]
 
     def shift_words(self, data: dict) -> list[str]:
-        """G76's shift: I and J along the cycle's own direction (``shift_xy``), else Q (setting 27's direction)."""
+        """G76's and G77's shift: I and J along the cycle's own direction (``shift_xy``), else Q (setting 27's
+        direction)."""
         xy = shift_direction(data)
         if xy is None:
             return super().shift_words(data)
