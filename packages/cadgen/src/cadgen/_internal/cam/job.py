@@ -11,19 +11,25 @@ operation's own keys left in ``extra`` for the operation's ``parse`` (``operatio
 its own closed set. What needs the part (that a face exists, that it is flat) is checked later, against the part.
 
 Every refusal is a :class:`~cadgen._internal.cam.job_errors.CamJobError` naming the path into the job
-(``setups[0].operations[2].tool``), what is wrong and the allowed set. Stdlib only.
+(``setups[0].operations[2].tool``), what is wrong and the allowed set. ``machine.post`` is required and never
+guessed: a G-code dialect is the controller's, and a wrong one can crash a machine. The stock must be one the
+machine starts from (:data:`STOCK_FOR_KIND`). A dict job is copied through JSON, so it reads exactly as the same job
+in a file would (tuples become lists, NaN is refused) and nothing parsed shares the caller's lists. Stdlib only.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from cadgen._internal.cam import posts as post_registry
 from cadgen._internal.cam.job_errors import CamJobError, check_keys, choice, number_list, read_number, shown
+from cadgen._internal.cam.operations import available as operation_built
 from cadgen._internal.cam.operations import entry_for as operation_entry
+from cadgen._internal.cam.operations import get_operation
 from cadgen._internal.cam.tools import Tool, parse_tool
 
 __all__ = ["CamJobError", "Fixture", "Job", "Machine", "Material", "OpSpec", "Setup", "StockSpec", "load_job",
@@ -33,9 +39,20 @@ MACHINE_KINDS = ("mill", "mill4", "mill5", "lathe", "laser", "plasma", "waterjet
 #: mill5 kinematics: an A+C trunnion table, or a B+C head over a C table.
 KINEMATICS = ("ac_trunnion", "bc_head")
 ORIENTATIONS = ("+Z", "-Z", "+X", "-X", "+Y", "-Y")
-ORIGINS = ("stock-top-center", "stock-top-corner", "part-top-center")
+#: Where a setup's WCS zero sits: the stock's or the part's box, at its top, middle or bottom, at the centre of that
+#: face or its corner (min X, min Y, in the setup's WCS); or a part point ``{"xyz": [x, y, z]}`` (``[x, y, z]``).
+ORIGINS = ("stock-top-center", "stock-top-corner", "stock-center", "stock-bottom-center", "stock-bottom-corner",
+           "part-top-center", "part-top-corner", "part-center", "part-bottom-center", "part-bottom-corner")
 COOLANTS = ("off", "flood", "mist", "air")
 STOCK_KINDS = ("box", "cylinder", "sheet", "from_step")
+#: The stock each machine kind starts from, and how a refusal says it: a lathe turns bar, a beam or a jet cuts
+#: through a sheet (its thickness is the cut's), a wire EDM through a plate or block.
+STOCK_FOR_KIND = {"mill": STOCK_KINDS, "mill4": STOCK_KINDS, "mill5": STOCK_KINDS, "router": STOCK_KINDS,
+                  "lathe": ("cylinder",), "laser": ("sheet",), "plasma": ("sheet",), "waterjet": ("sheet",),
+                  "wire_edm": ("sheet", "box")}
+_STOCK_WORDS = {"lathe": "a lathe turns bar stock", "laser": "a laser cuts from a sheet",
+                "plasma": "a plasma cuts from a sheet", "waterjet": "a waterjet cuts from a sheet",
+                "wire_edm": "a wire EDM cuts through a sheet or a block"}
 #: The largest stock (and step) a job names, in mm: ten metres, past any machine bed; beyond it a number is a units
 #: slip, and the stock grid and the paths over it stop fitting in memory.
 MAX_STOCK_MM = 10_000.0
@@ -43,7 +60,11 @@ WORK_OFFSETS = ("G54", "G55", "G56", "G57", "G58", "G59")
 
 JOB_KEYS = ("name", "machine", "material", "stock", "tools", "setups", "tolerance_mm", "coolant")
 MACHINE_KEYS = ("kind", "post", "name", "travel_mm", "max_rpm", "max_feed_mm_min", "rapid_mm_min", "tool_change_s",
-                "kinematics", "rotary_limits_deg", "diameter_mode", "power_w", "laser_source", "amps", "abrasive")
+                "kinematics", "rotary_limits_deg", "diameter_mode", "power_w", "laser_source", "amps", "abrasive",
+                "spindle_spinup_s")
+#: How many travel numbers each kind takes: a lathe [x, z], a mill [x, y, z], a cutting machine [x, y] or [x, y, z].
+_TRAVEL = {"lathe": ((2,), "[x, z]"), "mill": ((3,), "[x, y, z]"), "mill4": ((3,), "[x, y, z]"),
+           "mill5": ((3,), "[x, y, z]"), "router": ((3,), "[x, y, z]")}
 #: The cutting machines' own keys and the kind each belongs to (their cutting speeds scale with them: feeds.cut_feeds).
 CUTTING_MACHINE_KEYS = {"power_w": ("laser",), "laser_source": ("laser",), "amps": ("plasma",),
                         "abrasive": ("waterjet",)}
@@ -51,8 +72,9 @@ LASER_SOURCES = ("fiber", "co2", "diode")
 MATERIAL_KEYS = ("name", "surface_m_min", "sfm", "chipload_mm", "drill_mm_per_rev", "stepdown_fraction")
 SETUP_KEYS = ("id", "name", "orientation", "origin", "fixture", "operations", "wcs", "clearance_mm", "retract_mm")
 #: Keys every operation takes; an operation adds its own (its reference page), validated by its ``parse``.
-OP_COMMON_KEYS = ("op", "tool", "faces", "region", "feed", "speed", "stepdown_mm", "stepover", "stepover_mm",
-                  "stock_to_leave_mm", "coolant", "name")
+#: ``clearance_mm``/``retract_mm`` override the setup's for this operation; ``plunge_mm_min`` its plunge feed.
+OP_COMMON_KEYS = ("op", "tool", "faces", "region", "feed", "speed", "plunge_mm_min", "stepdown_mm", "stepover",
+                  "stepover_mm", "stock_to_leave_mm", "coolant", "name", "clearance_mm", "retract_mm")
 
 #: Defaults per machine kind: rapid traverse (mm/min) and tool change time (s), the cycle-time model's inputs.
 _RAPID = {"mill": 5000.0, "mill4": 5000.0, "mill5": 8000.0, "router": 10000.0, "lathe": 6000.0, "laser": 12000.0,
@@ -84,6 +106,9 @@ class Machine:
     laser_source: str | None = None
     amps: float | None = None
     abrasive: bool = True
+    #: Seconds to wait after the spindle starts before cutting; ``None``: the post's own default (3 s on grbl, which
+    #: does not wait for the spindle to reach speed; none on the controllers that do).
+    spindle_spinup_s: float | None = None
 
     @property
     def axes(self) -> str:
@@ -105,7 +130,7 @@ class Machine:
         out.update(self.post_options)
         if self.kind == "lathe":
             out["diameter_mode"] = self.diameter_mode
-        for key in ("power_w", "laser_source", "amps"):
+        for key in ("power_w", "laser_source", "amps", "spindle_spinup_s"):
             if getattr(self, key) is not None:
                 out[key] = getattr(self, key)
         if self.kind == "waterjet":
@@ -115,13 +140,15 @@ class Machine:
 
 @dataclass(frozen=True)
 class Material:
-    """A feeds-table material (``table`` true) or the job's own numbers."""
+    """A feeds-table material (``table`` true; ``name`` its canonical row, an alias resolved), its numbers the
+    table's unless the job overrides one; or the job's own numbers (``table`` false)."""
 
     name: str
     plain: str
     table: bool
     surface_m_min: float | None = None
-    chipload_mm: float | None = None
+    #: One chip load (mm a tooth) for every tool, or ``((tool diameter mm, chip load), ...)``, smallest first.
+    chipload_mm: float | tuple[tuple[float, float], ...] | None = None
     drill_mm_per_rev: float | None = None
     stepdown_fraction: float | None = None
 
@@ -130,7 +157,9 @@ class Material:
 class StockSpec:
     kind: str
     #: Box/sheet: added on each side, ``(x-, x+, y-, y+, z-, z+)`` in mm. A box's z margin goes on top only unless
-    #: six numbers are given.
+    #: six numbers are given. Cylinder: ``(radial, axial)``; one number is both. The radial margin goes all round
+    #: (none with a stated ``diameter_mm``); the axial margin at each end (none with a stated ``length_mm``), except on
+    #: a lathe, where the +axis end is ``face_stock_mm`` and the axial margin goes at the chuck end only.
     margin_mm: tuple[float, ...] = (0.0,) * 6
     size_mm: tuple[float, float, float] | None = None
     diameter_mm: float | None = None
@@ -181,6 +210,11 @@ class OpSpec:
     coolant: str | None = None
     name: str = ""
     extra: dict = field(default_factory=dict)
+    #: The plunge feed override (mm/min), and the heights above the stock top this operation moves at instead of its
+    #: setup's (``None``: the setup's); retract is at or under clearance.
+    plunge_mm_min: float | None = None
+    clearance_mm: float | None = None
+    retract_mm: float | None = None
     #: The shared keys the job wrote (a default is not a key written): an operation refuses one it does not read.
     given: frozenset = frozenset()
 
@@ -191,7 +225,7 @@ class Setup:
     plain: str
     #: ``+Z`` .. ``-Y``, or a 3+2 tilt ``{"a_deg": .., "c_deg": ..}`` (a dict).
     orientation: object
-    #: One of :data:`ORIGINS`, or ``{"xyz": [x, y, z]}`` in part mm.
+    #: One of :data:`ORIGINS`, or ``{"xyz": (x, y, z)}`` in part mm (a bare ``[x, y, z]`` in the job).
     origin: object
     operations: tuple[OpSpec, ...]
     wcs: str = "G54"
@@ -226,16 +260,25 @@ class Job:
 
 
 def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
-    """The job as a dict, and the folder a job file sits in: a dict as given, inline JSON text, or a path."""
+    """The job as a dict, and the folder a job file sits in: a dict (copied through JSON: NaN, infinity and anything
+    that is not plain JSON refused), inline JSON text, or a path. JSON's NaN and Infinity are refused too."""
     if job is None:
         raise CamJobError("a plan needs a job: pass --job job.cam.json, or inline JSON like "
                           "'{\"machine\": {\"kind\": \"mill\"}, \"material\": \"aluminum-6061\", ...}'")
-    if isinstance(job, dict):
-        return job, None
-    if not isinstance(job, str):
-        raise CamJobError(f"the job must be JSON text, a path to a JSON file, or a dict, not {type(job).__name__}")
-    text = job.strip()
     base = None
+    if isinstance(job, dict):
+        # Through JSON, so a library dict reads exactly as the same job in a file would and shares nothing with the
+        # caller (what is parsed keeps its own lists).
+        try:
+            text = json.dumps(job, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise CamJobError(f"the job is not plain JSON: {exc}") from None
+        except RecursionError:
+            raise CamJobError("the job is not a job: it nests too deeply to read") from None
+    elif not isinstance(job, str):
+        raise CamJobError(f"the job must be JSON text, a path to a JSON file, or a dict, not {type(job).__name__}")
+    else:
+        text = job.strip()
     if not text.startswith("{"):
         path = Path(text).expanduser()
         if not path.is_file():
@@ -248,7 +291,9 @@ def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
         except OSError as exc:
             raise CamJobError(f"the job file {path.name} cannot be read ({exc.strerror or exc})") from None
     try:
-        raw = json.loads(text)
+        raw = json.loads(text, parse_constant=_refuse_constant)
+    except _NotANumber as exc:
+        raise CamJobError(f"the job is not valid JSON: {exc}") from None
     except json.JSONDecodeError as exc:
         raise CamJobError(f"the job is not valid JSON: {exc.msg} at line {exc.lineno} column {exc.colno}") from None
     except RecursionError:
@@ -258,6 +303,14 @@ def load_job(job: str | dict | None) -> tuple[dict, Path | None]:
     if not isinstance(raw, dict):
         raise CamJobError("the job must be a JSON object with machine, material, stock, tools and setups")
     return raw, base
+
+
+class _NotANumber(ValueError):
+    pass
+
+
+def _refuse_constant(name: str):
+    raise _NotANumber(f"{name} is not a number a job can hold")
 
 
 def parse_job(job: str | dict | None) -> Job:
@@ -306,11 +359,19 @@ def _machine(raw: object) -> Machine:
         raise CamJobError("machine must be an object like {\"kind\": \"mill\", \"post\": \"grbl\"}")
     check_keys(raw, MACHINE_KEYS + post_registry.option_keys(raw), "machine")
     kind = choice(raw.get("kind"), MACHINE_KINDS, "machine.kind")
-    post = raw.get("post", post_registry.DEFAULT_POST[kind])
+    if "post" not in raw:
+        serving = [name for name, entry in post_registry.REGISTRY.items() if kind in entry.kinds]
+        raise CamJobError(f"machine.post is required and never guessed: a G-code dialect is the controller's, and a "
+                          f"wrong one can crash the machine. Name this {kind}'s controller: {', '.join(serving)}")
+    post = raw["post"]
     post_registry.entry_for(post, kind)
     travel = None
     if "travel_mm" in raw:
-        travel = number_list(raw["travel_mm"], "machine.travel_mm", length=(2, 3), positive=True)
+        counts, words = _TRAVEL.get(kind, ((2, 3), "[x, y] or [x, y, z]"))
+        if not isinstance(raw["travel_mm"], (list, tuple)) or len(raw["travel_mm"]) not in counts:
+            raise CamJobError(f"machine.travel_mm: a {kind}'s travel_mm is {words} in mm, not "
+                              f"{shown(raw['travel_mm'])}")
+        travel = number_list(raw["travel_mm"], "machine.travel_mm", length=counts, positive=True)
     kinematics = None
     if "kinematics" in raw:
         if kind != "mill5":
@@ -344,6 +405,8 @@ def _machine(raw: object) -> Machine:
         rapid_mm_min=read_number(raw, "rapid_mm_min", "machine", default=_RAPID[kind], minimum=1.0),
         tool_change_s=read_number(raw, "tool_change_s", "machine", default=_TOOL_CHANGE[kind], minimum=0.0),
         kinematics=kinematics, rotary_limits_deg=limits, diameter_mode=diameter_mode,
+        # A minute is longer than any spindle takes to reach speed; past it the number is a units slip.
+        spindle_spinup_s=read_number(raw, "spindle_spinup_s", "machine", minimum=0.0, maximum=60.0),
     )
 
 
@@ -370,32 +433,70 @@ def _cutting_keys(raw: dict, kind: str) -> dict:
 
 
 def _material(raw: object) -> Material:
-    from cadgen._internal.cam.feeds import MATERIALS
+    """A table name (or an alias of one); a table name with some of its numbers overridden, like
+    ``{"name": "aluminum-6061", "surface_m_min": 300}`` (the rest of the row stands); or a material of the job's
+    own, which states its surface speed and chip load. The chip load is one number for every tool, or one per tool
+    diameter, ``{"3": 0.02, "6": 0.04}``, interpolated by the tool's diameter (``feeds.chipload_at``)."""
+    from cadgen._internal.cam.feeds import MATERIAL_ALIASES, MATERIALS
 
+    names = (*MATERIALS, *MATERIAL_ALIASES)
     if isinstance(raw, str):
-        entry = MATERIALS.get(raw)
-        if entry is None:
-            choice(raw, tuple(MATERIALS), "material")
-        return Material(name=raw, plain=entry["plain"], table=True)
+        name = MATERIAL_ALIASES.get(raw, raw)
+        if name not in MATERIALS:
+            choice(raw, names, "material")
+        return Material(name=name, plain=MATERIALS[name]["plain"], table=True)
     if not isinstance(raw, dict):
-        raise CamJobError(f"material must be a name ({', '.join(MATERIALS)}) or an object with "
-                          "surface_m_min (or sfm) and chipload_mm")
+        raise CamJobError(f"material must be a name ({', '.join(names)}) or an object with surface_m_min (or sfm) "
+                          "and chipload_mm")
     check_keys(raw, MATERIAL_KEYS, "material")
-    if ("surface_m_min" in raw) == ("sfm" in raw):
-        raise CamJobError("material needs one surface speed: surface_m_min (metres a minute) or sfm (feet a minute)")
-    if "chipload_mm" not in raw:
-        raise CamJobError("material needs chipload_mm, the chip load per tooth used for every milling tool")
-    # Bounded well past any real material (the fastest carbide on aluminium runs ~1500 m/min, ~0.3 mm a tooth), so a
-    # typo is refused rather than posted as a feed no machine has.
-    speed = read_number(raw, "surface_m_min", "material", maximum=10000.0) if "surface_m_min" in raw else (
-        read_number(raw, "sfm", "material", maximum=33000.0) * 0.3048)
     name = raw.get("name", "custom")
     if not isinstance(name, str):
         raise CamJobError("material.name must be text")
-    return Material(name=name, plain=name, table=False, surface_m_min=speed,
-                    chipload_mm=read_number(raw, "chipload_mm", "material", maximum=5.0),
+    name = MATERIAL_ALIASES.get(name, name)
+    table = name in MATERIALS
+    if "surface_m_min" in raw and "sfm" in raw:
+        raise CamJobError("material: give one surface speed, surface_m_min (metres a minute) or sfm (feet a minute), "
+                          "not both")
+    if not table and "surface_m_min" not in raw and "sfm" not in raw:
+        raise CamJobError(f"material needs one surface speed: surface_m_min (metres a minute) or sfm (feet a minute); "
+                          f"{shown(name)} is not in the table ({', '.join(names)}), whose rows need none")
+    if not table and "chipload_mm" not in raw:
+        raise CamJobError("material needs chipload_mm, the chip load per tooth used for every milling tool (or one "
+                          "per tool diameter, like {\"3\": 0.02, \"6\": 0.04})")
+    # Bounded well past any real material (the fastest carbide on aluminium runs ~1500 m/min, ~0.3 mm a tooth), so a
+    # typo is refused rather than posted as a feed no machine has.
+    speed = None
+    if "surface_m_min" in raw:
+        speed = read_number(raw, "surface_m_min", "material", maximum=10000.0)
+    elif "sfm" in raw:
+        speed = read_number(raw, "sfm", "material", maximum=33000.0) * 0.3048
+    return Material(name=name, plain=MATERIALS[name]["plain"] if table else name, table=table, surface_m_min=speed,
+                    chipload_mm=_chipload(raw["chipload_mm"]) if "chipload_mm" in raw else None,
                     drill_mm_per_rev=read_number(raw, "drill_mm_per_rev", "material", maximum=5.0),
                     stepdown_fraction=read_number(raw, "stepdown_fraction", "material", minimum=0.001, maximum=4.0))
+
+
+def _chipload(value: object) -> float | tuple[tuple[float, float], ...]:
+    """One chip load (mm a tooth), or ``{"<tool diameter mm>": chip load}``: each key a diameter over 0, once."""
+    if not isinstance(value, dict):
+        return read_number({"chipload_mm": value}, "chipload_mm", "material", maximum=5.0)
+    if not value:
+        raise CamJobError("material.chipload_mm: give a chip load, or one per tool diameter like {\"3\": 0.02, "
+                          "\"6\": 0.04}")
+    bands: dict[float, float] = {}
+    for key, load in value.items():
+        try:
+            diameter = float(key)
+        except ValueError:
+            diameter = math.nan
+        if not (math.isfinite(diameter) and 0 < diameter <= MAX_STOCK_MM):
+            raise CamJobError(f"material.chipload_mm: {shown(key)} is not a tool diameter in mm; key each chip load "
+                              "by the diameter it is for, like {\"3\": 0.02, \"6\": 0.04}")
+        if diameter in bands:
+            raise CamJobError(f"material.chipload_mm: the {diameter:g} mm tool diameter is listed twice "
+                              f"({shown(key)}); give each diameter once")
+        bands[diameter] = read_number({key: load}, key, "material.chipload_mm", maximum=5.0)
+    return tuple(sorted(bands.items()))
 
 
 def _margins(value: object, where: str, *, box: bool) -> tuple[float, ...]:
@@ -420,6 +521,10 @@ def _stock(raw: object, kind: str) -> StockSpec:
     if not isinstance(raw, dict):
         raise CamJobError("stock must be an object like {\"kind\": \"box\", \"margin_mm\": [2, 2, 1]}")
     stock_kind = choice(raw.get("kind"), STOCK_KINDS, "stock.kind")
+    allowed_kinds = STOCK_FOR_KIND[kind]
+    if stock_kind not in allowed_kinds:
+        words = _STOCK_WORDS.get(kind, f"a {kind} starts from {', '.join(allowed_kinds)}")
+        raise CamJobError(f"stock.kind is {stock_kind!r}: {words}; use {' or '.join(allowed_kinds)}")
     allowed = {"box": ("kind", "margin_mm", "size_mm"),
                "cylinder": ("kind", "diameter_mm", "length_mm", "axis", "margin_mm", "face_stock_mm"),
                "sheet": ("kind", "thickness_mm", "margin_mm"),
@@ -435,8 +540,23 @@ def _stock(raw: object, kind: str) -> StockSpec:
         margins = _margins(raw.get("margin_mm", 0.0), "stock.margin_mm", box=True)
         return StockSpec(kind="box", margin_mm=margins, size_mm=size)
     if stock_kind == "cylinder":
-        margin = read_number(raw, "margin_mm", "stock", default=0.0, minimum=0.0, maximum=MAX_STOCK_MM)
-        return StockSpec(kind="cylinder", margin_mm=(margin,) * 6,
+        margin = raw.get("margin_mm", 0.0)
+        if isinstance(margin, (list, tuple)):
+            radial, axial = number_list(margin, "stock.margin_mm", length=2)
+            if min(radial, axial) < 0 or max(radial, axial) > MAX_STOCK_MM:
+                raise CamJobError(f"stock.margin_mm is [radial, axial] in mm, each 0 to {MAX_STOCK_MM:,.0f}, not "
+                                  f"{shown(margin)}")
+        else:
+            radial = axial = read_number(raw, "margin_mm", "stock", default=0.0, minimum=0.0, maximum=MAX_STOCK_MM)
+        if "diameter_mm" in raw and radial > 0:
+            raise CamJobError(f"stock: a bar of a stated diameter_mm takes no radial margin (margin_mm gives "
+                              f"{radial:g} mm all round); give diameter_mm or a radial margin_mm, not both (margin_mm "
+                              "[0, axial] keeps an axial one)")
+        if "length_mm" in raw and axial > 0:
+            raise CamJobError(f"stock: a bar of a stated length_mm takes no axial margin (margin_mm gives {axial:g} mm "
+                              "at the ends); give length_mm or an axial margin_mm, not both (margin_mm [radial, 0] "
+                              "keeps a radial one)")
+        return StockSpec(kind="cylinder", margin_mm=(radial, axial),
                          diameter_mm=read_number(raw, "diameter_mm", "stock", maximum=MAX_STOCK_MM),
                          length_mm=read_number(raw, "length_mm", "stock", maximum=MAX_STOCK_MM),
                          axis=choice(raw.get("axis", "z"), ("x", "y", "z"), "stock.axis"),
@@ -447,8 +567,13 @@ def _stock(raw: object, kind: str) -> StockSpec:
         return StockSpec(kind="sheet", margin_mm=margins,
                          thickness_mm=read_number(raw, "thickness_mm", "stock", maximum=MAX_STOCK_MM))
     path = raw.get("path")
-    if not isinstance(path, str) or not path:
+    if not isinstance(path, str) or not path.strip():
         raise CamJobError("stock.path names the stock's STEP (a casting, a blank), relative to the job file or the part")
+    # An absolute path is checked now; a relative one is found beside the job file or, failing that, the part
+    # (stock.build_stock), which is not known until the part is read.
+    where = Path(path).expanduser()
+    if where.is_absolute() and not where.is_file():
+        raise CamJobError(f"stock.path: no STEP at {where}")
     return StockSpec(kind="from_step", path=path)
 
 
@@ -481,12 +606,7 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
         orientation = check_orientation(orientation, machine, f"{where}.orientation")
     else:
         orientation = choice(orientation, ORIENTATIONS, f"{where}.orientation")
-    origin = raw.get("origin", "stock-top-center")
-    if isinstance(origin, dict):
-        check_keys(origin, ("xyz",), f"{where}.origin")
-        origin = {"xyz": number_list(origin.get("xyz"), f"{where}.origin.xyz", length=3)}
-    else:
-        origin = choice(origin, ORIGINS, f"{where}.origin")
+    origin = _origin(raw.get("origin", "stock-top-center"), f"{where}.origin", machine)
     wcs = choice(raw.get("wcs", WORK_OFFSETS[min(index, 5)]), WORK_OFFSETS, f"{where}.wcs")
     fixtures_raw = raw.get("fixture", [])
     if isinstance(fixtures_raw, dict):
@@ -504,19 +624,53 @@ def _setup(raw: object, index: int, machine: Machine, tools: dict[str, Tool]) ->
         if any(h <= lo for lo, h in zip(low, high)):
             raise CamJobError(f"{at}: max_mm must be more than min_mm on every axis")
         fixtures.append(Fixture(low, high, str(box.get("name", ""))))
+    clearance, retract = _heights(raw, where, 5.0, 2.0)
     ops_raw = raw.get("operations")
     if not isinstance(ops_raw, list) or not ops_raw:
         raise CamJobError(f"{where}.operations must be a non-empty list, like [{{\"op\": \"face\", \"tool\": \"T1\"}}]")
-    operations = tuple(_operation(op, f"{where}.operations[{i}]", i, machine, tools) for i, op in enumerate(ops_raw))
+    operations = tuple(_operation(op, f"{where}.operations[{i}]", i, machine, tools, (clearance, retract))
+                       for i, op in enumerate(ops_raw))
     plain = raw.get("name") or _plain_orientation(orientation)
     if not isinstance(plain, str):
         raise CamJobError(f"{where}.name must be text")
     return Setup(
         id=setup_id, plain=plain, orientation=orientation, origin=origin, operations=operations, wcs=wcs,
-        clearance_mm=read_number(raw, "clearance_mm", where, default=5.0, maximum=1000.0),
-        retract_mm=read_number(raw, "retract_mm", where, default=2.0, maximum=1000.0),
-        fixtures=tuple(fixtures), index=index,
+        clearance_mm=clearance, retract_mm=retract, fixtures=tuple(fixtures), index=index,
     )
+
+
+def _heights(raw: dict, where: str, clearance: float, retract: float) -> tuple[float, float]:
+    """``clearance_mm`` and ``retract_mm`` (heights above the stock top, each defaulting to the one given): both over
+    0, the retract at or under the clearance (the tool lifts to the retract between passes and to the clearance
+    between features)."""
+    clearance = read_number(raw, "clearance_mm", where, default=clearance, maximum=1000.0)
+    retract = read_number(raw, "retract_mm", where, default=retract, maximum=1000.0)
+    if retract > clearance:
+        raise CamJobError(f"{where}.retract_mm ({retract:g} mm) must be at or under {where}.clearance_mm "
+                          f"({clearance:g} mm): the tool lifts to the retract between passes and to the clearance "
+                          "between features; lower retract_mm or raise clearance_mm")
+    return clearance, retract
+
+
+def _origin(value: object, where: str, machine: Machine) -> object:
+    """One of :data:`ORIGINS`, ``{"xyz": [x, y, z]}`` or a bare ``[x, y, z]`` (both kept as ``{"xyz": (...)}``)."""
+    if isinstance(value, list):
+        return {"xyz": number_list(value, where, length=3)}
+    if isinstance(value, dict):
+        check_keys(value, ("xyz",), where)
+        return {"xyz": number_list(value.get("xyz"), f"{where}.xyz", length=3)}
+    if isinstance(value, str) and value not in ORIGINS:
+        # Another spelling of one of ours (stock_top_center, part_bbox_bottom_corner) is named outright; difflib's
+        # nearest word could be the wrong corner.
+        ours = value.lower().replace("_", "-").replace("bbox-", "").replace("centre", "center")
+        if ours in ORIGINS:
+            raise CamJobError(f"{where} is {shown(value)} (did you mean '{ours}'?); use one of {', '.join(ORIGINS)}, "
+                              "or a part point [x, y, z]")
+    origin = choice(value, ORIGINS, where)
+    if machine.kind == "lathe" and origin.endswith("corner"):
+        raise CamJobError(f"{where}: a lathe's work zero sits on the spindle axis; {origin} is off it: use "
+                          "stock-top-center (or part-top-center on a round part)")
+    return origin
 
 
 def _plain_orientation(orientation: object) -> str:
@@ -525,12 +679,16 @@ def _plain_orientation(orientation: object) -> str:
     return {"+Z": "Top", "-Z": "Bottom", "+X": "Right", "-X": "Left", "+Y": "Back", "-Y": "Front"}[orientation]
 
 
-def _operation(raw: object, where: str, index: int, machine: Machine, tools: dict[str, Tool]) -> OpSpec:
+def _operation(raw: object, where: str, index: int, machine: Machine, tools: dict[str, Tool],
+               heights: tuple[float, float] = (5.0, 2.0)) -> OpSpec:
     if not isinstance(raw, dict):
         raise CamJobError(f"{where} must be an object like {{\"op\": \"pocket\", \"tool\": \"T1\", \"faces\": [\"#o1.f12\"]}}")
     if "op" not in raw:
         raise CamJobError(f"{where} needs \"op\", the operation's name")
     entry = operation_entry(raw["op"], f"{where}.op")
+    # A shared key the operation also has as its own (a drill's chip-break retract_mm) is the operation's.
+    own = set(get_operation(entry.name).keys) if operation_built(entry.name) else set()
+    common = tuple(key for key in OP_COMMON_KEYS if key not in own)
     if machine.kind not in entry.machines:
         raise CamJobError(f"{where}: a {machine.kind} cannot {entry.plain.lower()} ('{entry.name}' runs on "
                           f"{', '.join(entry.machines)}); change the machine or the operation")
@@ -544,6 +702,9 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
     if not isinstance(faces, list) or not all(isinstance(face, str) and _REF.match(face) for face in faces):
         raise CamJobError(f"{where}.faces must be a list of face refs like \"#o1.f12\" (cadgen cam features lists "
                           f"them), not {shown(raw.get('faces'))}")
+    for i, face in enumerate(faces):
+        if face in faces[:i]:
+            raise CamJobError(f"{where}.faces: {face!r} is listed twice; name each face once")
     # A thousandth of a millimetre is finer than any machine steps; below it a number is a units slip.
     stepover = read_number(raw, "stepover", where, minimum=0.001, maximum=1.0)
     stepover_mm = read_number(raw, "stepover_mm", where, minimum=0.001, maximum=MAX_STOCK_MM)
@@ -552,6 +713,8 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
     name = raw.get("name", "")
     if not isinstance(name, str):
         raise CamJobError(f"{where}.name must be text")
+    clearance, retract = _heights({key: raw[key] for key in ("clearance_mm", "retract_mm") if key in common and key in raw},
+                                  where, *heights)
     return OpSpec(
         op=entry.name, where=where, index=index, tool=tool, faces=tuple(faces), region=raw.get("region"),
         feed=read_number(raw, "feed", where), speed=read_number(raw, "speed", where, minimum=1.0),
@@ -559,6 +722,9 @@ def _operation(raw: object, where: str, index: int, machine: Machine, tools: dic
         stepover_mm=stepover_mm,
         stock_to_leave_mm=read_number(raw, "stock_to_leave_mm", where, default=0.0, minimum=0.0),
         coolant=choice(raw["coolant"], COOLANTS, f"{where}.coolant") if "coolant" in raw else None,
-        name=name, extra={key: value for key, value in raw.items() if key not in OP_COMMON_KEYS},
-        given=frozenset(key for key in raw if key in OP_COMMON_KEYS),
+        name=name, extra={key: value for key, value in raw.items() if key not in common},
+        given=frozenset(key for key in raw if key in common),
+        plunge_mm_min=read_number(raw, "plunge_mm_min", where) if "plunge_mm_min" in common else None,
+        clearance_mm=clearance if "clearance_mm" in raw and "clearance_mm" in common else None,
+        retract_mm=retract if "retract_mm" in raw and "retract_mm" in common else None,
     )

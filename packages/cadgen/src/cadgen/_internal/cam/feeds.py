@@ -11,14 +11,24 @@ override wins over all of it; a machine's ``max_rpm``/``max_feed_mm_min`` clamps
 
 The rules (:func:`for_op`):
 
-* spindle ``rpm = 1000 * Vc / (pi * D)``, scaled per operation (drills 0.6, spot 0.8, reamers 0.5, taps 0.06 (an HSS tap's speed, at most 1000 rpm),
-  thread mills 0.8), clamped to the machine's maximum;
-* milling feed ``= rpm * flutes * fz``, with ``fz`` the table's chip load at 6 mm scaled linearly with the diameter
-  (between 0.2x and 2x); a full-width slot takes 0.75x; a light radial stepover gets radial chip thinning
-  ``D / (2 sqrt(D ae - ae^2))``, capped at 2x;
-* drilling feed ``= rpm * f``, ``f`` per revolution proportional to the diameter; tapping ``= rpm * pitch`` exactly;
-* plunge at 0.3x and ramp at 0.5x the milling feed; the default step down is a fraction of the diameter per
-  material (half the diameter in aluminium, a quarter in steel).
+* spindle ``rpm = 1000 * Vc / (pi * D)``, scaled per operation (drills 0.6, spot 0.8, reamers 0.5, taps 0.06 (an
+  HSS tap's speed, at most 1000 rpm), thread mills 0.8), rounded to 10 rpm, then held to the machine's maximum
+  (a whole rpm at or under ``max_rpm``: the rounding never lifts it past);
+* milling feed ``= rpm * flutes * fz``, with ``fz`` the table's chip load at 6 mm scaled along
+  :data:`CHIPLOAD_CURVE` by the diameter (interpolated between its diameters, in proportion to the diameter under
+  1 mm so a 0.5 mm cutter takes half a 1 mm one's chip, held past 20 mm); a full-width slot takes 0.75x, an
+  engraver and a thread mill (its whole thread form is in the cut) 0.5x; a light radial stepover gets radial chip
+  thinning ``D / (2 sqrt(D ae - ae^2))``, capped at 2x;
+* drilling feed ``= rpm * f``, ``f`` per revolution proportional to the diameter; tapping ``= rpm * pitch`` exactly,
+  and a tap the machine's feed limit slows turns a whole rpm (``floor(max_feed / pitch)``) so the two still agree;
+* plunge at 0.3x the feed worked out from the plain chip load (chip thinning is a side cut's: a plunge takes a
+  full-width chip whatever the stepover) and ramp at 0.5x the milling feed; the default step down is a fraction of
+  the diameter per material (half the diameter in aluminium, a quarter in steel).
+
+A material is a table row by name (or an alias, :data:`MATERIAL_ALIASES`), a table row with some of its numbers
+overridden by the job, or the job's own numbers. A job's chip load is one number for every tool, or one per tool
+diameter (``{"3": 0.02, "6": 0.04}``) interpolated the way the curve is. An operation's ``feed``/``speed``/``plunge``
+override wins over the computed numbers and is still held to the machine's limits.
 
 Cutting processes (laser, plasma, waterjet) have a speed table per material and thickness (:func:`for_cut`), also
 starting points: a 1-2 kW fibre laser, a 45 A air plasma, a 50 hp abrasive waterjet. Stdlib only.
@@ -29,7 +39,8 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-__all__ = ["CUT_SPEEDS", "Feeds", "MATERIALS", "OP_KINDS", "default_stepdown", "for_cut", "for_op"]
+__all__ = ["CHIPLOAD_CURVE", "CUT_SPEEDS", "Feeds", "MATERIALS", "MATERIAL_ALIASES", "OP_KINDS", "chipload_at",
+           "default_stepdown", "for_cut", "for_op"]
 
 #: Per material: plain name, carbide surface speed (m/min), carbide chip load per tooth at 6 mm (mm), drill feed per
 #: revolution per mm of diameter (mm/rev/mm), and the default step down as a fraction of the diameter.
@@ -52,6 +63,16 @@ MATERIALS: dict[str, dict] = {
     "carbon-fiber": {"plain": "carbon fibre", "vc": 150.0, "fz6": 0.030, "drill": 0.010, "stepdown": 0.25},
     "foam": {"plain": "foam", "vc": 500.0, "fz6": 0.200, "drill": 0.050, "stepdown": 2.0},
 }
+#: Other names a job may give a table material: the job's material then is the canonical row, by its own name.
+MATERIAL_ALIASES: dict[str, str] = {"mild-steel": "steel-1018", "acetal": "delrin"}
+
+#: The chip load per tooth against the tool's diameter (mm), as a multiple of the table's 6 mm number. Its shape is
+#: the vendors' charts' (Harvey/Helical, Kennametal: chip load grows about in proportion to the diameter, then flattens
+#: as the cutter's rigidity, not its size, sets the chip): the median of a dozen materials' published rows, held to
+#: the lower side. Under the first diameter it falls in proportion (a 0.5 mm cutter takes half a 1 mm one's chip);
+#: past the last it holds rather than extrapolating.
+CHIPLOAD_CURVE: tuple[tuple[float, float], ...] = (
+    (1.0, 0.2), (3.0, 0.5), (6.0, 1.0), (10.0, 1.5), (12.0, 1.75), (20.0, 2.5))
 
 #: The operation kinds the rules know: what a planner asks feeds for.
 OP_KINDS = ("rough", "slot", "finish", "face", "drill", "spot", "ream", "bore", "tap", "thread_mill", "engrave")
@@ -88,12 +109,44 @@ class Feeds:
         return asdict(self)
 
 
+def chipload_at(bands, diameter_mm: float) -> float:
+    """A value of ``bands`` (``((diameter mm, value), ...)``, smallest first) at a tool diameter: interpolated
+    linearly between two diameters, in proportion to the diameter under the first, held past the last."""
+    first_d, first_v = bands[0]
+    if diameter_mm <= first_d:
+        return first_v * diameter_mm / first_d
+    for (d0, v0), (d1, v1) in zip(bands, bands[1:]):
+        if diameter_mm <= d1:
+            return v0 + (v1 - v0) * (diameter_mm - d0) / (d1 - d0)
+    return bands[-1][1]
+
+
 def _material_numbers(material) -> dict:
+    """The material's numbers: its table row (by name) with the job's overrides, or the job's own."""
     if material.table:
-        return MATERIALS[material.name]
-    return {"vc": material.surface_m_min, "fz6": material.chipload_mm, "fixed_fz": True,
-            "drill": None if material.drill_mm_per_rev is None else material.drill_mm_per_rev,
-            "stepdown": material.stepdown_fraction or 0.5}
+        numbers = dict(MATERIALS[material.name])
+    else:
+        numbers = {"plain": material.plain, "vc": None, "fz6": None, "drill": None, "stepdown": 0.5}
+    if material.surface_m_min is not None:
+        numbers["vc"] = material.surface_m_min
+    if material.chipload_mm is not None:
+        numbers["chipload"] = material.chipload_mm
+    if material.drill_mm_per_rev is not None:
+        numbers["drill"] = material.drill_mm_per_rev
+    if material.stepdown_fraction is not None:
+        numbers["stepdown"] = material.stepdown_fraction
+    return numbers
+
+
+def _chipload(numbers: dict, diameter: float) -> float:
+    """The chip load per tooth for a cutter of ``diameter``: the job's (one number for every tool, or interpolated
+    per diameter), else the table's 6 mm number along :data:`CHIPLOAD_CURVE`."""
+    stated = numbers.get("chipload")
+    if stated is None:
+        return numbers["fz6"] * chipload_at(CHIPLOAD_CURVE, diameter)
+    if isinstance(stated, (int, float)):
+        return float(stated)
+    return chipload_at(stated, diameter)
 
 
 def default_stepdown(material, tool) -> float:
@@ -114,9 +167,10 @@ def _round_rpm(rpm: float) -> float:
 
 
 def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = None, feed: float | None = None,
-           speed: float | None = None) -> Feeds:
+           speed: float | None = None, plunge: float | None = None) -> Feeds:
     """The spindle speed and feeds for ``tool`` doing an operation of ``kind`` (:data:`OP_KINDS`) in ``material`` on
-    ``machine``; ``feed``/``speed`` are the job's overrides (mm/min, rpm)."""
+    ``machine``; ``feed``/``speed``/``plunge`` are the job's overrides (mm/min, rpm, mm/min). A tap's plunge is its
+    feed, rpm x pitch, whatever ``plunge`` says."""
     if kind not in OP_KINDS:
         raise ValueError(f"unknown feeds kind {kind!r}; one of {', '.join(OP_KINDS)}")
     numbers = _material_numbers(material)
@@ -131,16 +185,20 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
     rpm = float(speed) if speed is not None else 1000.0 * vc / (math.pi * diameter)
     if kind == "tap" and speed is None:
         rpm = min(rpm, _TAP_MAX_RPM)
+    if speed is None:
+        rpm = _round_rpm(rpm)
+    # Held after the rounding, to a whole rpm the machine can turn: rounding never lifts it past max_rpm.
     if machine.max_rpm is not None and rpm > machine.max_rpm:
-        clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {machine.max_rpm:.0f} rpm")
-        rpm = float(machine.max_rpm)
-    rpm = _round_rpm(rpm) if speed is None else rpm
+        limit = float(math.floor(machine.max_rpm))
+        clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {limit:.0f} rpm")
+        rpm = limit
     chipload = None
     if kind == "tap":
         cut = rpm * tool.pitch_mm
-        plunge = cut
+        plunge_f = cut
     elif kind in ("drill", "spot", "ream", "bore"):
-        per_rev = numbers["drill"] * diameter if numbers.get("drill") is not None else 2.0 * numbers["fz6"]
+        per_rev = (numbers["drill"] * diameter if numbers.get("drill") is not None
+                   else 2.0 * _chipload(numbers, diameter))
         if kind == "ream":
             per_rev *= 2.0
         if kind == "spot":
@@ -149,35 +207,51 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
             per_rev *= 0.8
         chipload = per_rev
         cut = rpm * per_rev
-        plunge = cut
+        plunge_f = cut
     else:
-        fz = numbers["fz6"] if numbers.get("fixed_fz") else numbers["fz6"] * min(2.0, max(0.2, diameter / 6.0))
+        fz = _chipload(numbers, diameter)
         if kind == "slot":
             fz *= 0.75
-        if kind == "engrave":
+        if kind in ("engrave", "thread_mill"):
             fz *= 0.5
+        # A plunge takes a full-width chip whatever the stepover: it is worked out before the thinning.
+        plunge_f = 0.3 * rpm * max(1, tool.flutes) * fz
         fz *= _chip_thinning(diameter, stepover_mm)
         chipload = fz
         cut = rpm * max(1, tool.flutes) * fz
-        plunge = 0.3 * cut
     ramp = 0.5 * cut if kind not in ("drill", "spot", "ream", "bore", "tap") else cut
     if feed is not None:
         scale = float(feed) / cut if cut > 0 else 1.0
-        cut, plunge, ramp = float(feed), plunge * scale, ramp * scale
-    if machine.max_feed_mm_min is not None and cut > machine.max_feed_mm_min:
-        if kind == "tap":
-            clamped.append(f"a tap must feed at rpm x pitch ({cut:.0f} mm/min), more than the machine's "
-                           f"{machine.max_feed_mm_min:.0f} mm/min: the spindle was slowed to match")
-            rpm = machine.max_feed_mm_min / tool.pitch_mm
-            cut = plunge = ramp = rpm * tool.pitch_mm
-        else:
-            clamped.append(f"feed {cut:.0f} mm/min clamped to the machine's {machine.max_feed_mm_min:.0f} mm/min")
-            ratio = machine.max_feed_mm_min / cut
-            cut, plunge, ramp = machine.max_feed_mm_min, plunge * ratio, ramp * ratio
-    source = "job" if (feed is not None and speed is not None) else "mixed" if (feed is not None or speed is not None) else "table"
+        cut, plunge_f, ramp = float(feed), plunge_f * scale, ramp * scale
+    if plunge is not None and kind != "tap":
+        plunge_f = float(plunge)
+    limit = machine.max_feed_mm_min
+    if limit is not None and kind == "tap" and cut > limit:
+        slower = float(math.floor(limit / tool.pitch_mm))
+        if slower < 1:
+            from cadgen._internal.cam.job_errors import CamJobError
+
+            raise CamJobError(f"a {tool.pitch_mm:g} mm pitch tap feeds {tool.pitch_mm:g} mm/min at 1 rpm, more than "
+                              f"the machine's {limit:g} mm/min; raise machine.max_feed_mm_min")
+        clamped.append(f"a tap must feed at rpm x pitch ({cut:.0f} mm/min), more than the machine's {limit:.0f} "
+                       f"mm/min: the spindle was slowed to {slower:.0f} rpm to match")
+        rpm = slower
+        cut = plunge_f = ramp = rpm * tool.pitch_mm
+    elif limit is not None:
+        if cut > limit:
+            clamped.append(f"feed {cut:.0f} mm/min clamped to the machine's {limit:.0f} mm/min")
+            ratio = limit / cut
+            cut, ramp = limit, ramp * ratio
+            if plunge is None:
+                plunge_f *= ratio
+        if plunge_f > limit:
+            clamped.append(f"plunge {plunge_f:.0f} mm/min clamped to the machine's {limit:.0f} mm/min")
+            plunge_f = limit
+    given = [v is not None for v in (feed, speed, plunge)]
+    source = "job" if (feed is not None and speed is not None) else "mixed" if any(given) else "table"
     if kind != "tap":
-        cut, plunge, ramp = (float(max(1.0, round(v))) for v in (cut, plunge, ramp))
-    return Feeds(rpm=round(rpm, 3), feed_mm_min=round(cut, 3), plunge_mm_min=round(plunge, 3),
+        cut, plunge_f, ramp = (float(max(1.0, round(v))) for v in (cut, plunge_f, ramp))
+    return Feeds(rpm=round(rpm, 3), feed_mm_min=round(cut, 3), plunge_mm_min=round(plunge_f, 3),
                  ramp_mm_min=round(ramp, 3), chipload_mm=None if chipload is None else round(chipload, 5),
                  surface_m_min=round(math.pi * diameter * rpm / 1000.0, 1), clamped=tuple(clamped), source=source)
 
@@ -447,8 +521,12 @@ LATHE_MAX_RPM = 3000.0
 
 
 def _turning_numbers(material) -> dict:
+    """The turning row by name (its surface speed the job's when it overrides one), or the job's own speed."""
     if material.table:
-        return TURNING[material.name]
+        numbers = dict(TURNING[material.name])
+        if material.surface_m_min is not None:
+            numbers["vc"] = material.surface_m_min
+        return numbers
     return {"vc": material.surface_m_min, "rough": 0.2, "finish": 0.08, "doc": 1.0}
 
 

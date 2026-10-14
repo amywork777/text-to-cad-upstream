@@ -14,7 +14,8 @@ from cadgen._internal.cam.stock import build_stock, create_stock_sim
 from cadgen._internal.cam.wcs import build_wcs
 
 JOB = {
-    "machine": {"kind": "mill"}, "material": "aluminum-6061", "stock": {"kind": "box", "margin_mm": [0, 0, 0]},
+    "machine": {"kind": "mill", "post": "grbl"}, "material": "aluminum-6061",
+    "stock": {"kind": "box", "margin_mm": [0, 0, 0]},
     "tools": [{"id": "T1", "type": "flat", "diameter_mm": 6}, {"id": "T2", "type": "ball", "diameter_mm": 6}],
     "setups": [{"id": "top", "operations": [{"op": "face", "tool": "T1"}]},
                {"id": "under", "orientation": "-Z", "operations": [{"op": "face", "tool": "T1"}]}],

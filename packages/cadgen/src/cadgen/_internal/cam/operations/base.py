@@ -24,7 +24,7 @@ in ``ctx.meta`` (``unreachable``: corners the tool cannot reach, for ``corner_ra
 
 :class:`PlanContext` hands a planner everything in WCS: ``part`` and its mesh (``mesh``), ``sections`` (material at
 a height), ``face``/``floor``/``footprint`` lookups, ``stock`` and its ``stock_outline``, ``heights``, the ``tool``,
-``feeds(kind)`` with the job's overrides applied, ``stepover``/``stepdown`` with the op's defaults, and a ``log``.
+``feeds(kind)`` with the job's overrides (feed, speed, plunge) applied, ``stepover``/``stepdown`` with the op's defaults, and a ``log``.
 """
 
 from __future__ import annotations
@@ -37,9 +37,14 @@ from cadgen._internal.cam.job_errors import CamJobError, check_keys
 __all__ = ["Operation", "ParseContext", "PlanContext", "SHARED"]
 
 #: The shared keys (job.OP_COMMON_KEYS) that tune an operation's cut. Each operation lists the ones it reads
-#: (``Operation.common_keys``); ``op``, ``tool``, ``name`` and ``coolant`` every operation reads, and ``faces`` and
-#: ``region`` are ``takes_faces`` and ``takes_region``.
-SHARED = ("feed", "speed", "stepdown_mm", "stepover", "stepover_mm", "stock_to_leave_mm")
+#: (``Operation.common_keys``); ``op``, ``tool``, ``name``, ``coolant``, ``clearance_mm`` and ``retract_mm`` every
+#: operation reads, and ``faces`` and ``region`` are ``takes_faces`` and ``takes_region``. ``plunge_mm_min`` is read by
+#: every operation that has a plunge, whatever its ``common_keys`` say (:meth:`Operation.with_plunge`).
+SHARED = ("feed", "speed", "stepdown_mm", "stepover", "stepover_mm", "stock_to_leave_mm", "plunge_mm_min")
+#: The feeds kinds (feeds.OP_KINDS) whose cut has a plunge: a milling cutter coming down along its axis at its own,
+#: slower feed. A hole maker feeds along its axis at its feed, a lathe tool by the revolution, and a beam or a wire
+#: never plunges, so their operations refuse ``plunge_mm_min``.
+PLUNGE_KINDS = ("rough", "slot", "finish", "face", "engrave", "thread_mill")
 
 
 @dataclass(frozen=True)
@@ -92,7 +97,7 @@ class PlanContext:
         from cadgen._internal.cam.feeds import for_op
 
         chosen = for_op(self.material, self.tool, kind, self.machine, stepover_mm=stepover_mm, feed=self.spec.feed,
-                        speed=self.spec.speed)
+                        speed=self.spec.speed, plunge=getattr(self.spec, "plunge_mm_min", None))
         self.chosen_feeds.append(chosen)
         return chosen
 
@@ -184,6 +189,9 @@ class Operation:
             if self.tool_types and tool.type not in self.tool_types:
                 raise CamJobError(f"{spec.where}: a {self.name} cuts with a {', '.join(self.tool_types)} tool; "
                                   f"{tool.id} is a {tool.type}")
+            if "plunge_mm_min" in getattr(spec, "given", ()) and tool.family != "mill":
+                raise CamJobError(f"{spec.where}: a {tool.type} does not plunge (it cuts through the sheet where it "
+                                  "starts); remove plunge_mm_min")
         if spec.faces and not self.takes_faces:
             raise CamJobError(f"{spec.where}: a {self.name} takes no faces; remove \"faces\"")
         if spec.region is not None and not self.takes_region:
@@ -191,11 +199,22 @@ class Operation:
         return dict(spec.extra)
 
     def shared_keys(self, spec) -> tuple[str, ...]:
-        """The shared tuning keys this operation reads for ``spec`` (:attr:`common_keys`; ``rest`` by its ``of``)."""
-        return self.common_keys
+        """The shared tuning keys this operation reads for ``spec`` (:attr:`common_keys`; ``rest`` by its ``of``),
+        ``plunge_mm_min`` among them exactly when it plunges (:meth:`with_plunge`)."""
+        return self.with_plunge(self.common_keys)
+
+    def with_plunge(self, allowed) -> tuple[str, ...]:
+        """``allowed`` with ``plunge_mm_min`` in it exactly when this operation reads it: it asks
+        :func:`feeds.for_op` for a milling cut (it reads ``feed`` and ``speed``, and its feeds kind plunges:
+        :data:`PLUNGE_KINDS`)."""
+        allowed = tuple(key for key in allowed if key != "plunge_mm_min")
+        if "feed" in allowed and "speed" in allowed and self.feeds_kind in PLUNGE_KINDS:
+            allowed += ("plunge_mm_min",)
+        return allowed
 
     def check_common_keys(self, spec, allowed) -> None:
         """Refuse a shared tuning key the job set that this operation never reads (law 9)."""
+        allowed = self.with_plunge(allowed)
         stray = [key for key in SHARED if key in getattr(spec, "given", ()) and key not in allowed]
         if stray:
             reads = ", ".join(key for key in SHARED if key in allowed) or "none of them"

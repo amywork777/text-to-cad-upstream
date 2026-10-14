@@ -90,6 +90,10 @@ def pocketed_plate_step(directory: Path, name: str = "pocketed") -> Path:
     return path
 
 
+_POSTS = {"router": "grbl", "laser": "grbl", "plasma": "plasma", "waterjet": "waterjet", "wire_edm": "wire_edm",
+          "mill": "grbl"}
+
+
 def cut_job(kind: str, operation: dict | None = None, *, thickness: float = 3.0, material: str = "steel-1018",
             tool: dict | None = None, machine: dict | None = None, margin: float = 5.0) -> dict:
     """One sheet-cut job: a laser, plasma or waterjet with a beam (T1), a router with a 6 mm flat (T1), or a wire EDM
@@ -101,8 +105,11 @@ def cut_job(kind: str, operation: dict | None = None, *, thickness: float = 3.0,
              "plasma": {"id": "T1", "type": "beam", "kerf_mm": 1.5},
              "waterjet": {"id": "T1", "type": "beam", "kerf_mm": 0.9}}
     op = {"op": "wire_edm" if kind == "wire_edm" else "cut", "tool": "T1", **(operation or {})}
+    # A job names its post (never guessed): the fixture's is the usual one for the kind.
+    machine = dict(machine or {"kind": kind})
+    machine.setdefault("post", _POSTS[machine.get("kind", kind)])
     return {
-        "machine": machine or {"kind": kind},
+        "machine": machine,
         "material": material,
         "stock": {"kind": "sheet", "thickness_mm": thickness, "margin_mm": margin},
         "tools": [tool or tools[kind]],

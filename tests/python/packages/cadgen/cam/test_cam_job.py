@@ -49,10 +49,13 @@ class JobParsing(unittest.TestCase):
         self.assertEqual("G54", parsed.setups[0].wcs)
         self.assertEqual(0.01, parsed.tolerance_mm)
 
-    def test_inline_json_and_a_default_post(self):
-        parsed = parse_job('{"machine": {"kind": "lathe"}, "material": "brass", "stock": {"kind": "cylinder", '
-                           '"diameter_mm": 20, "length_mm": 50}, "tools": [{"id": "T1", "type": "turn"}], '
-                           '"setups": [{"operations": [{"op": "turn_face", "tool": "T1"}]}]}')
+    def test_inline_json_and_a_post_that_is_never_guessed(self):
+        text = ('{"machine": {"kind": "lathe"}, "material": "brass", "stock": {"kind": "cylinder", '
+                '"diameter_mm": 20, "length_mm": 50}, "tools": [{"id": "T1", "type": "turn"}], '
+                '"setups": [{"operations": [{"op": "turn_face", "tool": "T1"}]}]}')
+        with self.assertRaisesRegex(CamJobError, "machine.post is required and never guessed.*linuxcnc, fanuc, haas"):
+            parse_job(text)
+        parsed = parse_job(text.replace('"kind": "lathe"', '"kind": "lathe", "post": "linuxcnc"'))
         self.assertEqual("linuxcnc", parsed.machine.post)
         self.assertEqual("setup1", parsed.setups[0].id)
 

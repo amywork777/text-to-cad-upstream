@@ -4,6 +4,13 @@
 mesh, its volume): a box (a margin round the part, or a size), a cylinder (bar for a lathe or a 4th axis), a sheet,
 or another STEP (a casting).
 
+A cylinder's radius is measured on the exact part, meshed finely for it (:data:`BAR_DEFLECTION_MM`), never on the
+part's display tessellation, whose chords can cut inside the part: the bar is never thinner than the part. Its
+radial margin goes all round; its axial margin at each end (a lathe's bar: at the chuck end, the face end being
+``face_stock_mm``). A STEP blank holds the part when its box holds the part's and the part less the blank (a
+boolean cut) leaves no volume: a blank with a pocket where the part stands out is refused, though its box holds the
+part's. A stock that does not hold the part is refused: a plan cut from it would be plausible and wrong.
+
 A simulator follows the :class:`StockSim` protocol::
 
     sim = SimClass(stock: StockGeometry, part: Part, *, cell_mm: float, tolerance_mm: float)
@@ -29,8 +36,14 @@ from typing import Any, Protocol
 
 from cadgen._internal.cam.job_errors import CamJobError
 
-__all__ = ["MaterialLeft", "NullSim", "SIM_REGISTRY", "SimReport", "StockGeometry", "StockSim", "build_stock",
-           "create_stock_sim"]
+__all__ = ["BAR_DEFLECTION_MM", "MaterialLeft", "NullSim", "SIM_REGISTRY", "SimReport", "StockGeometry", "StockSim",
+           "build_stock", "create_stock_sim"]
+
+#: The chord deflection (mm) the part is meshed at to measure its radius about a bar's centre line: the mesh's nodes
+#: lie on the surfaces, so a face turned about that line gives its radius exactly and any other is within this.
+BAR_DEFLECTION_MM = 1e-4
+#: The part's volume a STEP blank may leave outside it, as a fraction of the part's (the boolean's own noise).
+_OUTSIDE_FRACTION = 1e-6
 
 _PACKAGE = "cadgen._internal.cam"
 
@@ -234,20 +247,22 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
         centre = (low + high) / 2.0
         if spec.face_stock_mm is not None:
             centre[others] = _turning_axis(part, w, centre[others])
-        corners = np.asarray(part.vertices)[:, others] - centre[others]
-        reach = float(np.linalg.norm(corners, axis=1).max()) if len(corners) else 0.0
-        radius = spec.diameter_mm / 2 if spec.diameter_mm else reach + spec.margin_mm[0]
+        reach = _reach_about(part, others, centre[others])
+        radial, axial = spec.margin_mm[0], spec.margin_mm[1]
+        radius = spec.diameter_mm / 2 if spec.diameter_mm else reach + radial
         if radius + 1e-6 < reach:
-            raise CamJobError(f"stock.diameter_mm {2 * radius:g} does not hold the part: it reaches {2 * reach:.3g} mm "
+            raise CamJobError(f"stock.diameter_mm {2 * radius:g} does not hold the part: it reaches {2 * reach:.4g} mm "
                               f"across about its {spec.axis} axis")
-        length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + spec.margin_mm[0]
+        length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + 2 * axial
         if length + 1e-6 < high[w] - low[w]:
             raise CamJobError(f"stock.length_mm {length:g} is shorter than the part ({high[w] - low[w]:g} mm)")
-        start, end = low[w], low[w] + length
+        # A stated length starts at the part's -axis end; a margin goes on both ends.
+        start = low[w] if spec.length_mm else low[w] - axial
+        end = start + length
         if spec.face_stock_mm is not None:
             # A lathe's bar: proud of the part's +axis end by the face stock, the rest of it back towards the chuck.
             face = spec.face_stock_mm
-            length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + face + spec.margin_mm[0]
+            length = spec.length_mm if spec.length_mm else (high[w] - low[w]) + face + axial
             end = high[w] + face
             start = end - length
             if start > low[w] + 1e-6:
@@ -278,7 +293,81 @@ def build_stock(spec, part, *, base_dir: Path | None = None) -> StockGeometry:
     if np.any(b_low > low + 1e-6) or np.any(b_high < high - 1e-6):
         raise CamJobError(f"the stock STEP {path.name} does not enclose the part; place it around the part in the "
                           "part's coordinates")
+    outside = _volume_outside(getattr(part, "shape", None), getattr(blank, "shape", None))
+    if outside is not None:
+        raise CamJobError(f"the stock STEP {path.name} does not hold the part: {outside:,.4g} mm3 of the part stands "
+                          "outside it, though its bounding box holds the part's; model the blank where it sits round "
+                          "the part, in the part's coordinates")
     return StockGeometry("from_step", tuple(b_low), tuple(b_high), vertices, triangles, abs(volume))
+
+
+def _volume_outside(part_shape, blank_shape) -> float | None:
+    """The part's volume outside the blank (mm3) when it is more than the boolean's noise, else None; None too when
+    either has no solid (a drawing's part: the box check above is then the whole check)."""
+    if part_shape is None or blank_shape is None:
+        return None
+    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+    from OCP.BRepGProp import BRepGProp
+    from OCP.GProp import GProp_GProps
+
+    def volume(shape) -> float:
+        props = GProp_GProps()
+        BRepGProp.VolumeProperties_s(shape, props)
+        return abs(props.Mass())
+
+    solid = getattr(part_shape, "wrapped", part_shape)
+    cut = BRepAlgoAPI_Cut(solid, getattr(blank_shape, "wrapped", blank_shape))
+    if not cut.IsDone():
+        raise CamJobError("stock.path: the kernel could not compare the blank with the part; check both are solids")
+    outside = volume(cut.Shape())
+    return outside if outside > _OUTSIDE_FRACTION * max(volume(solid), 1.0) else None
+
+
+def _reach_about(part, others: list[int], centre) -> float:
+    """The part's largest distance from the centre line through ``centre`` (its coordinates across the bar's axis):
+    over its display mesh's vertices and, when the part has an exact shape, the nodes of a copy of it meshed at
+    :data:`BAR_DEFLECTION_MM` (the display mesh's chords can stand inside a face that is not turned about the line)."""
+    import numpy as np
+
+    points = [np.asarray(part.vertices, dtype=float)]
+    shape = getattr(part, "shape", None)
+    if shape is not None:
+        points.append(_fine_nodes(getattr(shape, "wrapped", shape)))
+    across = np.vstack([p for p in points if len(p)])[:, others] - np.asarray(centre, dtype=float)
+    return float(np.sqrt((across * across).sum(axis=1)).max()) if len(across) else 0.0
+
+
+def _fine_nodes(shape):
+    """The vertices of ``shape`` and the nodes of a copy of it meshed at :data:`BAR_DEFLECTION_MM` ((N, 3) mm); the
+    copy, because meshing writes into the shape."""
+    import numpy as np
+    from OCP.BRep import BRep_Tool
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+    from OCP.BRepMesh import BRepMesh_IncrementalMesh
+    from OCP.TopAbs import TopAbs_FACE, TopAbs_VERTEX
+    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopLoc import TopLoc_Location
+    from OCP.TopoDS import TopoDS
+
+    copy = BRepBuilderAPI_Copy(shape).Shape()
+    BRepMesh_IncrementalMesh(copy, BAR_DEFLECTION_MM, False, 0.1, False)
+    nodes: list[tuple[float, float, float]] = []
+    explorer = TopExp_Explorer(copy, TopAbs_VERTEX)
+    while explorer.More():
+        point = BRep_Tool.Pnt_s(TopoDS.Vertex_s(explorer.Current()))
+        nodes.append((point.X(), point.Y(), point.Z()))
+        explorer.Next()
+    explorer = TopExp_Explorer(copy, TopAbs_FACE)
+    while explorer.More():
+        location = TopLoc_Location()
+        triangulation = BRep_Tool.Triangulation_s(TopoDS.Face_s(explorer.Current()), location)
+        if triangulation is not None:
+            trsf = location.Transformation()
+            for index in range(1, triangulation.NbNodes() + 1):
+                point = triangulation.Node(index).Transformed(trsf)
+                nodes.append((point.X(), point.Y(), point.Z()))
+        explorer.Next()
+    return np.asarray(nodes, dtype=float).reshape(-1, 3)
 
 
 def _turning_axis(part, w: int, fallback):

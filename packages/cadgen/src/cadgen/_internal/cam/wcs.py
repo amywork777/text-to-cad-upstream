@@ -2,8 +2,10 @@
 
 A setup's ``orientation`` names the part direction the tool comes from (``+Z``: from above, the part as modelled;
 ``-Z``: flipped; ``+X``: lying so its +X side faces up; ...) or a 3+2 tilt ``{"a_deg", "c_deg"}`` (the table turned
-C about Z, then tilted A about X). Its ``origin`` puts WCS zero at the stock's top centre or top corner, the part's
-top centre, or a part point ``{"xyz": [...]}``. Every toolpath is planned and posted in WCS; the GLB maps it back.
+C about Z, then tilted A about X). Its ``origin`` puts WCS zero on the stock's or the part's box (in the setup's WCS
+axes): at its top, middle or bottom (``stock-top-*``, ``stock-center``, ``stock-bottom-*``, and the same for
+``part``), at the centre of that level or its corner (min X, min Y); or at a part point ``{"xyz": [...]}``. Every
+toolpath is planned and posted in WCS; the GLB maps it back.
 
 :class:`WCS` is the transform: ``to_wcs(p) = R p - o`` and ``from_wcs(w) = R^T (w + o)``, both over (N, 3) numpy
 arrays in mm, with ``R`` a proper rotation (part -> WCS axes) and ``o`` the origin in rotated coordinates. A lathe
@@ -132,10 +134,11 @@ def build_wcs(setup, *, stock_points, part_points, machine=None) -> WCS:
         if not len(rotated):
             raise CamJobError(f"setup '{setup.id}': there is no stock to put the origin on")
         low, high = rotated.min(axis=0), rotated.max(axis=0)
+        z = high[2] if "-top-" in origin else low[2] if "-bottom-" in origin else (low[2] + high[2]) / 2.0
         if origin.endswith("corner"):
-            o = np.array([low[0], low[1], high[2]])
+            o = np.array([low[0], low[1], z])
         else:
-            o = np.array([(low[0] + high[0]) / 2.0, (low[1] + high[1]) / 2.0, high[2]])
+            o = np.array([(low[0] + high[0]) / 2.0, (low[1] + high[1]) / 2.0, z])
     rotary = ()
     if indexed is not None:
         rotary = tuple((axis[0], float(value)) for axis, value in indexed.items())

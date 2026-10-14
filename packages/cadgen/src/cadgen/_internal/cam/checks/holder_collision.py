@@ -121,9 +121,16 @@ def _against_stock(ctx, judged, cache) -> list[dict]:
                             tolerance_mm=max(0.01, ctx.tolerance_mm))
     out = []
     unreplayed = set()
+    reports = getattr(ctx, "sim_reports", {}) or {}
     for plan in ctx.setups:
         if replay.supports(plan.wcs):
             unreplayed.add(plan.setup.id)
+            continue
+        report = reports.get(plan.setup.id)
+        if report is not None and report.skipped:
+            # The run did not simulate this setup and its warning says the shank and holder were judged against the
+            # part only there: replaying it here would cost what the simulator declined (a micro tool's path over a
+            # big plate) to judge what the run already said it does not.
             continue
         direction = 1 if plan.wcs.tool_axis[2] > 0 else -1
         path = plan.toolpath

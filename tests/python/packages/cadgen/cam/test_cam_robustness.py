@@ -582,7 +582,7 @@ class Geometry(Sane, unittest.TestCase):
     def test_a_two_metre_plate_adapts_and_does_not_hang(self):
         huge = _step("huge", _box(2000, 1000, 10))
         self.assertEqual([2000.0, 1000.0, 10.0], self.features(huge).bbox_mm["size"])
-        job = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "router"})
+        job = mill_job([{"op": "face", "tool": "T1"}], machine={"kind": "router", "post": "grbl"})
         result = self.plan(huge, job, what="2 m plate", seconds=60)
         self.assertTrue(result.ok)
 
