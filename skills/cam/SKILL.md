@@ -97,9 +97,12 @@ end mill is 6.35 mm, 30 ipm is 762 mm/min).
    message, for what [machining-practice.md](references/machining-practice.md#ask-before-you-plan)
    lists (the machine's make and model, or its kind and controller; how the part is held; the
    tools they own, or their tool library file; the material and temper; the critical features).
-   The machine model and the tool list are optional: write what the user knows, leave out what
-   they do not, and the plan lists every value it assumed in their place. Never fill one in
-   yourself. A material from the feeds
+   The machine model is optional: name it when the user knows it, else give the kind and what
+   they know, and the plan lists every value it assumed in its place. Tools are required: use
+   the user's tool list or tool library file; with none, propose the fewest tools that fit,
+   mark each one proposed when you report, and ask before you plan with them. Leave out a
+   length or flute count the user does not know: the plan assumes it and says so. Never fill
+   one in yourself. A material from the feeds
    table gives starting speeds and feeds ([job-file.md](references/job-file.md#material)); say they
    are starting points.
 

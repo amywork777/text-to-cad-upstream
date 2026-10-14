@@ -614,7 +614,9 @@ class DrillOp(Operation):
                 return hole.top - depth, None
             if hole.through:
                 return hole.bottom - params["breakthrough_mm"] - tip, None
-            return hole.bottom + tool.pitch_mm, None
+            # A floating holder gives and the spindle coasts on the reverse: three pitches short of a blind floor, one
+            # for a tap held rigidly.
+            return hole.bottom + (3 if params["rigid"] is False else 1) * tool.pitch_mm, None
         point = tip if cycle not in ("ream", "bore") else 0.0
         shoulder = params["depth_to"] == "shoulder"
         if depth is not None:
@@ -638,7 +640,9 @@ class DrillOp(Operation):
         return bottom, (short if short > 1e-6 else None)
 
     def _return_to(self, ctx, mode: str, group, r_plane: float, initial: float) -> str:
-        """``r`` (G99) or ``initial`` (G98) for one cycle: R when every link at R clears the part (``auto``)."""
+        """``r`` (G99) or ``initial`` (G98) for one cycle: R when every link at R clears the part (``auto``). Most
+        controls rapid each axis at its own rate, so a link is a dog-leg anywhere in the box between its holes, not
+        the straight line: the whole box must clear."""
         if mode == "r_plane":
             return "r"
         if mode == "initial" or r_plane >= initial - 1e-9 or len(group) == 1:
@@ -650,7 +654,7 @@ class DrillOp(Operation):
             return "r"
         reach = ctx.tool.radius + 0.5
         for (a, _, _), (c, _, _) in zip(group, group[1:]):
-            link = shapely.LineString([(a.x, a.y), (c.x, c.y)]).buffer(reach)
+            link = shapely.box(min(a.x, c.x), min(a.y, c.y), max(a.x, c.x), max(a.y, c.y)).buffer(reach)
             if link.intersects(material):
                 return "initial"
         return "r"

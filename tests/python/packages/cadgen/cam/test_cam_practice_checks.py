@@ -112,6 +112,15 @@ class PracticeChecks(unittest.TestCase):
         (found,) = self.of(table, "limits")
         self.assertIn("chip load is kept", found["description"])
 
+    def test_a_spindle_raised_to_the_machines_slowest_says_so_and_what_to_check(self):
+        # A 6 mm cutter wants ~13300 rpm in aluminium; this spindle turns no slower than 15000.
+        machine = {"kind": "mill", "post": "grbl", "min_rpm": 15000, "max_rpm": 24000, "travel_mm": [300, 200, 80]}
+        result = self.plan([{"op": "face", "tool": "T1"}], machine=machine)
+        (found,) = self.of(result, "limits")
+        self.assertEqual("raised", found["items"][0]["limit"])
+        self.assertIn("min_rpm (15000)", found["description"])
+        self.assertIn("Check the tool maker's chart at this speed", found["description"])
+
     def test_the_glb_carries_tool_changes_warnings_and_fixtures(self):
         setups = [{"id": "top", "orientation": "+Z", "origin": "stock-top-center",
                    "fixture": [{"min_mm": [-60, -50, 0], "max_mm": [-45, 50, 10], "name": "jaw"}],

@@ -136,9 +136,10 @@ class Tool:
     hand: str = ""
     #: A counterbore's pilot (0: none, a flat-bottomed counterbore); the pilot is as long as it is wide.
     pilot_diameter_mm: float = 0.0
-    #: The lengths the job left to the defaults above (``flute_length_mm``, ``stickout_mm``, and
-    #: ``shank_diameter_mm`` where it differs from the diameter): the plan lists each as assumed, and ``reach`` does
-    #: not judge a cut past an assumed length (it says ``not_judged``).
+    #: What the job left to the defaults above that a plan rests on: the lengths (``flute_length_mm``,
+    #: ``stickout_mm``, and ``shank_diameter_mm`` where it differs from the diameter), a milling cutter's ``flutes``
+    #: and a hole maker's ``material``. The plan lists each as assumed, and ``reach`` and ``holder_collision`` do not
+    #: judge a cut past an assumed length (they say ``not_judged``).
     assumed: tuple[str, ...] = ()
 
     @property
@@ -242,13 +243,22 @@ def _num(value: float) -> str:
     return f"{value:g}"
 
 
-def _assumed_lengths(raw: dict, family: str, thinner_shank: bool) -> tuple[str, ...]:
-    """The milling tool lengths ``raw`` leaves to the catalogue (the shank only where it differs from the cutter)."""
+#: The milling cutters whose feed rests on their flute count, and the hole makers whose speed rests on their material.
+_FLUTED = ("flat", "ball", "bull", "face_mill")
+_HOLE_MAKERS = ("drill", "spot", "reamer", "boring", "counterbore")
+
+
+def _assumed_keys(raw: dict, kind: str, family: str, thinner_shank: bool) -> tuple[str, ...]:
+    """What ``raw`` leaves to the defaults that a plan rests on (:attr:`Tool.assumed`)."""
     if family != "mill":
         return ()
     unstated = [key for key in ("flute_length_mm", "stickout_mm") if key not in raw]
     if thinner_shank and "shank_diameter_mm" not in raw:
         unstated.append("shank_diameter_mm")
+    if kind in _FLUTED and "flutes" not in raw:
+        unstated.append("flutes")
+    if kind in _HOLE_MAKERS and "material" not in raw:
+        unstated.append("material")
     return tuple(unstated)
 
 
@@ -342,7 +352,7 @@ def parse_tool(raw: object, position: int, *, where: str | None = None) -> Tool:
         kerf_mm=read_number(raw, "kerf_mm", where, default=0.0),
         hand=choice(raw["hand"], ("right", "left"), f"{where}.hand") if "hand" in raw else "",
         pilot_diameter_mm=pilot,
-        assumed=_assumed_lengths(raw, family, shank_default != diameter),
+        assumed=_assumed_keys(raw, kind, family, shank_default != diameter),
     )
     for key in TOOL_LENGTHS:
         value = getattr(tool, key)

@@ -16,13 +16,20 @@ __all__ = ["run"]
 
 
 def _kind(note: str) -> str:
-    """``tap`` (a tap or thread slowed its spindle to keep rpm x pitch), ``spindle`` or ``feed``."""
+    """``tap`` (a tap or thread slowed its spindle to keep rpm x pitch), ``raised`` (a spindle sped up to the machine's
+    slowest), ``spindle`` or ``feed``."""
     if note.startswith(("a tap ", "a thread ")):
         return "tap"
+    if "raised to the machine's slowest" in note:
+        return "raised"
     return "spindle" if "rpm" in note.split("clamped", 1)[0] else "feed"
 
 
 def _description(kind: str, ops, tool, machine) -> str:
+    if kind == "raised":
+        return (f"the spindle turns no slower than the machine's min_rpm ({machine.min_rpm:g}), past the table's "
+                "surface speed for this tool: the chip load is kept, so the feed is faster too. Check the tool maker's "
+                "chart at this speed; a smaller tool wants more rpm")
     if kind == "tap":
         return ("the spindle was slowed so the feed stays rpm x pitch under the machine's max_feed_mm_min: the "
                 "thread is right, the cut is slower")

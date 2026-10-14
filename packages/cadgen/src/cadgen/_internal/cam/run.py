@@ -21,6 +21,7 @@ import math
 import os
 import re
 import struct
+import sys
 import time
 from pathlib import Path
 
@@ -295,6 +296,11 @@ def plan_job(target: Path, *, job, occurrence: str | None = None, post: str | No
             f"cadgen cam failed while planning this job ({type(exc).__name__}: {str(exc)[:200]}); nothing was written",
             "this is a bug in cadgen, not in the job: report it with the job and the part. Changing the job (another "
             "tool, operation or stock) may route round it"),))
+    finally:
+        # The stock replays an operation kept for the next one (StockNow) belong to this plan, not the process.
+        replays = getattr(sys.modules.get("cadgen._internal.cam.milling3d"), "_REPLAYS", None)
+        if replays is not None:
+            replays.clear()
 
 
 def _plan(document, parsed, operations, post, glb_path, extension, logger, timings, started, *,
@@ -574,7 +580,8 @@ def _render_setup(post, plan, k, setup_plans, op_plans, tools, machine, document
                   if entry["key"].startswith("machine.") and entry["key"] not in _CYCLE_TIME_KEYS]
     if stated_not:
         notes = (f"Assumed, not stated: {', '.join(stated_not)}. Check them against the machine before running.",
-                 ) + notes
+                 ) + tuple(f"Spindle {entry['value']}: {entry['why']}." for entry in parsed.assumed
+                           if entry["key"] == "machine.spindle") + notes
     program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath, tools=tools, machine=machine,
                       version=__version__, part=document.name, job_name=parsed.name,
                       material=parsed.material.plain, tolerance_mm=tolerance, clearance_z=plan.heights.clearance,

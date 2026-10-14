@@ -108,6 +108,23 @@ class Posted(unittest.TestCase):
         self.assertNotIn("M4", text)                                     # G84 reverses the spindle itself
         _same_path(self, text, program, post)
 
+    def test_mach3_taps_in_a_floating_holder_and_the_header_says_so(self):
+        parsed = parse_job(drill_job([{"op": "drill", "tool": "T3", "faces": hole_faces(self.features, 6.0)[:1]}],
+                                     post="mach3"))
+        self.assertIs(False, parsed.machine.rigid_tap)
+        stock = build_stock(parsed.stock, self.part)
+        setups, _, _ = plan_setups(parsed, parse_operations(parsed), self.part, stock)
+        plan = setups[0]
+        program = Program(setup=plan.setup, wcs=plan.wcs, toolpath=plan.toolpath,
+                          tools={t.id: t for t in parsed.tools}, machine=parsed.machine, version="TEST",
+                          part="drill_plate.step", tolerance_mm=0.01)
+        text = get_post("mach3", "mill").render(program)
+        self.assertIn("M6x1 tap in a floating tension/compression holder", text)
+        (cycle,) = [e for e in plan.toolpath.events if e.kind == "cycle"]
+        self.assertIs(False, cycle.data["rigid"])
+        # A rigid post's header says nothing of it.
+        self.assertNotIn("floating", CannedPost().render(self.program(ops=[self.ops[-1]])))
+
     def test_plan_end_to_end_after_the_pocket_is_ready_and_writes_the_drilling(self):
         from cadgen._internal.cam.run import plan_job
 

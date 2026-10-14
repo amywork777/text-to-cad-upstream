@@ -17,7 +17,6 @@ Stdlib only at import.
 from __future__ import annotations
 
 import importlib
-import importlib.util
 from dataclasses import dataclass
 
 from cadgen._internal.cam.checks.base import by_severity
@@ -62,10 +61,6 @@ REGISTRY: tuple[Entry, ...] = (
 CHECK_NAMES = tuple(entry.name for entry in REGISTRY)
 
 
-def available(entry: Entry) -> bool:
-    return importlib.util.find_spec(entry.target.split(":")[0]) is not None
-
-
 #: Checks judged on the simulated stock, and what a setup the simulator skipped goes without. ``whole``: the check
 #: judges nothing else, so it did not run at all when no setup was simulated.
 ON_STOCK = {
@@ -83,10 +78,9 @@ def run_checks(ctx) -> tuple[list[dict], list[str], list[dict]]:
     found: list[dict] = []
     ran: list[str] = []
     skipped: list[dict] = []
+    # Every registered check is built: one that cannot be imported fails the plan (nothing is written), never a
+    # check quietly left out of a verdict that says "Ready to cut".
     for entry in REGISTRY:
-        if not available(entry):
-            skipped.append({"check": entry.name, "why": "this cadgen does not have it yet"})
-            continue
         module, function = entry.target.split(":")
         found.extend(getattr(importlib.import_module(module), function)(ctx))
         ran.append(entry.name)

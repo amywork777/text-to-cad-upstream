@@ -7,7 +7,7 @@ of ten diameters is normal, and it cuts along its axis. From the parallel cam bu
 
 from __future__ import annotations
 
-from cadgen._internal.cam.checks.base import finding
+from cadgen._internal.cam.checks.base import assumed_lengths, finding
 
 __all__ = ["RATIO", "run"]
 
@@ -28,13 +28,16 @@ def run(ctx) -> list[dict]:
         if ratio <= RATIO + 1e-9:
             continue
         names = ", ".join(str(op.index + 1) for op in ops)
+        guessed = bool(assumed_lengths(tool, ("stickout_mm",)))
         out.append(finding(
             "long_stickout", "warning", "long_stickout",
-            f"{tool.id} ({tool.plain}) sticks out {tool.stickout_mm:g} mm, {ratio:.1f} times its diameter: expect it "
-            f"to deflect and chatter (operation{'s' if len(ops) > 1 else ''} {names})",
-            f"past {RATIO:g} diameters an end mill bends away from the cut. Hold it shorter (stickout_mm, the length "
-            "out of the holder, flutes included), or take lighter cuts (a smaller stepdown_mm and stepover); state "
-            "the real stickout_mm if this one was assumed",
+            f"{tool.id} ({tool.plain}) sticks out {tool.stickout_mm:g} mm{' (assumed)' if guessed else ''}, "
+            f"{ratio:.1f} times its diameter: expect it to deflect and chatter "
+            f"(operation{'s' if len(ops) > 1 else ''} {names})",
+            ("the job gives no stickout_mm, so this one is the catalogue's guess: ask for the real one (the length "
+             "out of the holder, flutes included) and plan again. " if guessed else "") +
+            f"Past {RATIO:g} diameters an end mill bends away from the cut: hold it shorter, or take lighter cuts (a "
+            "smaller stepdown_mm and stepover)",
             [{"setup": op.setup, "operation": op.index, "tool": tool.id, "stickout_mm": tool.stickout_mm,
               "diameter_mm": tool.diameter_mm} for op in ops]))
     return out

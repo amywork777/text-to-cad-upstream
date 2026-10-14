@@ -4,12 +4,13 @@
 :class:`~cadgen.results.CamFeaturesResult` documents):
 
 * every face, with a plain ``reading`` ("flat floor at Z 12, facing +Z", "hole wall Ø5 along Z");
-* holes: the hole-wall cylinders grouped by axis line and radius, then split where material stands between them
-  along the axis (a split cylinder is one hole; two blind holes either side of a web are two), with their diameter,
-  depth, axis (pointing out of the opening), opening centre and whether they go through; whether an end is open is
-  asked of the exact solid (OCCT's classifier), off the axis so a drill point's cone reads as a bottom. A
-  counterbore (a wider coaxial cylinder stepped onto an open end) and a countersink (a cone widening out of one) are
-  part of the hole: it opens where they open on the part, ``depth_mm`` runs from there, and its entry carries
+* holes: the hole-wall cylinders grouped by axis line and radius, kept where they wrap (nearly) all the way round their
+  axis (a pocket's rounded corner, a fillet or a slot's end is not a hole: its faces read "rounded corner"), then split
+  where material stands between them along the axis (a split cylinder is one hole; two blind holes either side of a web
+  are two), with their diameter, depth, axis (pointing out of the opening), opening centre and whether they go through;
+  whether an end is open is asked of the exact solid (OCCT's classifier), off the axis so a drill point's cone reads as
+  a bottom. A counterbore (a wider coaxial cylinder stepped onto an open end) and a countersink (a cone widening out of
+  one) are part of the hole: it opens where they open on the part, ``depth_mm`` runs from there, and its entry carries
   ``counterbore`` ``{diameter_mm, depth_mm}`` and ``countersink`` ``{diameter_mm, angle_deg}``; a blind hole's drawn
   drill point is ``point_mm`` (its length past the full diameter). ``faces`` lists the walls first, then the
   counterbore's wall and shoulder, the cones and a blind hole's floor, so any of them names the hole. ``reach`` lists
@@ -75,14 +76,18 @@ def holes(part) -> list[dict]:
     owners = np.asarray(part.face_of_triangle)
     vertices = np.asarray(part.vertices)
     touch = max(1e-3, 2.0 * float(getattr(part, "deflection_mm", 0.01)))
+    points = _FacePoints(part, triangles, owners, vertices)
     runs = []
     for group in groups:
         d, p, r = group["d"], group["p"], group["r"]
         side = np.cross(d, [1.0, 0.0, 0.0] if abs(d[0]) < 0.9 else [0.0, 1.0, 0.0])
         side = side / np.linalg.norm(side)
+        # A hole's wall goes (nearly) all the way round its axis: a pocket's rounded corner, a fillet or a slot's
+        # end is a part of a cylinder, not a hole to drill.
+        if _wrap_deg(points, group["faces"], d, p, side) < HOLE_WRAP_DEG:
+            continue
         for faces, t_low, t_high in _clusters(part, group["faces"], d, p, r, side, triangles, owners, vertices, touch):
             runs.append(_run(part, faces, d, p, r, side, t_low, t_high))
-    points = _FacePoints(part, triangles, owners, vertices)
     runs = _counterbores(part, runs, points, touch)
     out = []
     for run in runs:
@@ -90,6 +95,27 @@ def holes(part) -> list[dict]:
         out.append(_hole(part, run, points, touch))
     out.sort(key=lambda hole: int(hole["faces"][0].rsplit("f", 1)[1]))
     return out
+
+
+#: How far round its axis a concave cylinder must wrap to be a hole (degrees): a coarse tessellation of a full hole
+#: still covers 300 and more; a pocket corner covers 90, a slot's end 180.
+HOLE_WRAP_DEG = 270.0
+
+
+def _wrap_deg(points, faces, d, p, side) -> float:
+    """How far round the axis ``d`` through ``p`` the cylinder faces ``faces`` reach (degrees): the circle less its
+    widest gap between their tessellation vertices."""
+    import numpy as np
+
+    other = np.cross(d, side)
+    xyz = [points.of(info.ordinal) for info in faces]
+    xyz = np.vstack([v for v in xyz if len(v)]) if any(len(v) for v in xyz) else np.zeros((0, 3))
+    if len(xyz) < 3:
+        return 0.0
+    rel = xyz - p
+    angles = np.sort(np.degrees(np.arctan2(rel @ other, rel @ side)) % 360.0)
+    gaps = np.diff(np.concatenate([angles, [angles[0] + 360.0]]))
+    return float(360.0 - gaps.max())
 
 
 class _FacePoints:
@@ -463,6 +489,8 @@ def read_features(part) -> dict:
         return {"faces": [], "holes": [], "floors": [], "profiles": _profiles(part)}
     low, high = (np.asarray(v) for v in part.bbox)
     faces, floors = [], []
+    found = holes(part)
+    in_hole = {ref for hole in found for ref in hole["faces"]}
     for ordinal, info in sorted(part.faces.items()):
         entry = {"ref": info.ref, "surface": info.surface, "area_mm2": round(info.area_mm2, 3),
                  "center_mm": [round(v, 4) + 0.0 for v in info.center_mm]}
@@ -495,9 +523,16 @@ def read_features(part) -> dict:
                 reading = f"flat, tilted, facing {_vec(info.normal)}"
         elif info.surface == "cylinder":
             word = axis_word(info.axis) or _vec(info.axis)
-            entry.update({"axis": list(info.axis), "diameter_mm": round(2 * info.radius_mm, 4), "hole": info.hole})
-            reading = (f"hole wall Ø{_g(2 * info.radius_mm)} along {word.lstrip('+-')}" if info.hole
-                       else f"round wall Ø{_g(2 * info.radius_mm)} along {word.lstrip('+-')} (outside)")
+            hole = bool(info.hole) and info.ref in in_hole
+            entry.update({"axis": list(info.axis), "diameter_mm": round(2 * info.radius_mm, 4), "hole": hole})
+            along = word.lstrip("+-")
+            if hole:
+                reading = f"hole wall Ø{_g(2 * info.radius_mm)} along {along}"
+            elif info.hole:
+                reading = (f"rounded corner R{_g(info.radius_mm)} along {along} (a fillet or a pocket's corner, not "
+                           "a hole)")
+            else:
+                reading = f"round wall Ø{_g(2 * info.radius_mm)} along {along} (outside)"
         elif info.surface == "cone":
             word = axis_word(info.axis) or _vec(info.axis)
             entry["axis"] = list(info.axis)
@@ -506,7 +541,7 @@ def read_features(part) -> dict:
             reading = f"curved ({info.surface})"
         entry["reading"] = f"{reading}, {_g(info.area_mm2, 1)} mm²"
         faces.append(entry)
-    return {"faces": faces, "holes": holes(part), "floors": floors, "profiles": []}
+    return {"faces": faces, "holes": found, "floors": floors, "profiles": []}
 
 
 def _profiles(part) -> list[dict]:

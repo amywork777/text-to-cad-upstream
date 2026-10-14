@@ -253,7 +253,8 @@ class ContourOp(Operation):
         import shapely
 
         from cadgen._internal.cam.operations._milling2d import (
-            fixtures_clear, in_air as straight_down, lift_and_go, orient, ramp_along, rotate_to_nearest,
+            down_in_air, fixtures_clear, in_air as straight_down, lift_and_go, orient, ramp_along,
+            rotate_to_nearest,
         )
 
         tool = ctx.tool
@@ -337,7 +338,7 @@ class ContourOp(Operation):
             else:
                 b.feed(x=float(entry_xy[0]), y=float(entry_xy[1]), f=feeds.feed_mm_min)
             if straight_down(ctx, entry_xy, z):
-                b.rapid(z=z)
+                down_in_air(b, heights, z, f=feeds.plunge_mm_min)
                 counts["air"] += 1
             elif lead_in_geom is not None or p["finish"]:
                 if p["finish"] and lead_in_geom is None:

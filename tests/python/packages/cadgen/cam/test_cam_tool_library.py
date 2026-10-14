@@ -11,7 +11,7 @@ from pathlib import Path
 from cadgen._internal.cam.job import CamJobError, parse_job
 
 LIBRARY = {"name": "shop", "tools": [
-    {"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 20, "stickout_mm": 30},
+    {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 20, "stickout_mm": 30},
     {"id": "T4", "type": "drill", "diameter_mm": 5},
     {"id": "T9", "type": "flat", "diameter_mm": 2, "number": 1},
 ]}

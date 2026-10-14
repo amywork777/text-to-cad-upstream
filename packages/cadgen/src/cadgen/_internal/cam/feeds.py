@@ -130,7 +130,10 @@ def _material_numbers(material) -> dict:
         numbers = {"plain": material.plain, "vc": None, "fz6": None, "drill": None, "stepdown": 0.5}
     if material.surface_m_min is not None:
         numbers["vc"] = material.surface_m_min
-    if material.chipload_mm is not None:
+    # One chip load is the 6 mm tool's, as the table's is (scaled along the curve); one per diameter is the job's own.
+    if isinstance(material.chipload_mm, (int, float)):
+        numbers["fz6"] = float(material.chipload_mm)
+    elif material.chipload_mm is not None:
         numbers["chipload"] = material.chipload_mm
     if material.drill_mm_per_rev is not None:
         numbers["drill"] = material.drill_mm_per_rev
@@ -140,13 +143,11 @@ def _material_numbers(material) -> dict:
 
 
 def _chipload(numbers: dict, diameter: float) -> float:
-    """The chip load per tooth for a cutter of ``diameter``: the job's (one number for every tool, or interpolated
-    per diameter), else the table's 6 mm number along :data:`CHIPLOAD_CURVE`."""
+    """The chip load per tooth for a cutter of ``diameter``: the job's per diameter (interpolated), else the 6 mm
+    number (the table's or the job's) along :data:`CHIPLOAD_CURVE`."""
     stated = numbers.get("chipload")
     if stated is None:
         return numbers["fz6"] * chipload_at(CHIPLOAD_CURVE, diameter)
-    if isinstance(stated, (int, float)):
-        return float(stated)
     return chipload_at(stated, diameter)
 
 
@@ -165,6 +166,13 @@ def _chip_thinning(diameter: float, stepover_mm: float | None) -> float:
 
 def _round_rpm(rpm: float) -> float:
     return float(max(10.0, round(rpm / 10.0) * 10.0))
+
+
+#: The hole makers' feeds kinds: a speed raised past the table burns their point first.
+HOLE_KINDS = ("drill", "spot", "ream", "bore")
+#: How far past the table's surface speed a machine's slowest spindle speed may raise a hole maker, or any tool in a
+#: metal, before the plan refuses it.
+RAISE_LIMIT = 1.3
 
 
 def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = None, feed: float | None = None,
@@ -194,10 +202,26 @@ def for_op(material, tool, kind: str, machine, *, stepover_mm: float | None = No
         clamped.append(f"spindle {rpm:.0f} rpm clamped to the machine's {limit:.0f} rpm")
         rpm = limit
     # A spindle cannot turn slower than its slowest (a router's): raised to it, the feed with it (the chip load kept,
-    # the surface speed past the table's), and said.
+    # the surface speed past the table's), and said. Never a tap (its feed is rpm x pitch: a router spindle cannot tap),
+    # and not far past the table for a hole maker or in a metal, where that speed burns the tool.
     slowest = machine.min_rpm
     if slowest is not None and rpm < slowest:
+        from cadgen._internal.cam.job_errors import CamJobError
+
         floor = float(math.ceil(slowest))
+        if kind == "tap":
+            raise CamJobError(f"{tool.id} ({tool.plain}) taps at about {rpm:.0f} rpm, but this machine's spindle turns "
+                              f"no slower than {floor:.0f} rpm (machine.min_rpm): no tap runs that fast. Mill the "
+                              "thread (thread_mill) or tap it by hand")
+        metal = not material.table or material.name in METALS
+        if speed is None and floor > RAISE_LIMIT * rpm and (kind in HOLE_KINDS or metal):
+            smaller = ("mill the hole with a smaller end mill (circular)" if kind in HOLE_KINDS
+                       else "use a smaller tool (it wants more rpm)")
+            raise CamJobError(f"{tool.id} ({tool.plain}) wants about {rpm:.0f} rpm in {numbers['plain']}, but this "
+                              f"machine's spindle turns no slower than {floor:.0f} rpm (machine.min_rpm): "
+                              f"{floor / rpm:.1f} times the surface speed burns it. {smaller.capitalize()}, use a "
+                              "machine whose spindle turns slower, or state the operation's speed where the tool "
+                              "maker's chart allows it")
         clamped.append(f"spindle {rpm:.0f} rpm raised to the machine's slowest, {floor:.0f} rpm (a faster surface "
                        "speed than the table's)")
         rpm = floor

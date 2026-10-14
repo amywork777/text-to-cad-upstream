@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from cadgen._internal.cam.job_errors import CamJobError, level_count
 
 __all__ = ["HoleTarget", "Target", "face_targets", "fixture_keepouts", "fixtures_clear", "helix_arcs", "hole_targets",
-           "in_air", "levels", "link", "orient", "unreachable_in"]
+           "down_in_air", "in_air", "levels", "link", "orient", "unreachable_in"]
 
 #: A wall is within this of square to XY (|normal z|), or a cylinder's axis within this of Z (1 - |axis z|).
 _SQUARE = 1e-3
@@ -295,6 +295,19 @@ def in_air(ctx, xy, z: float, *, margin: float = 0.5) -> bool:
 
     point = shapely.Point(float(xy[0]), float(xy[1]))
     return ctx.stock_outline.distance(point) >= ctx.tool.radius + margin and fixtures_clear(ctx, point, z)
+
+
+def down_in_air(b, heights, z: float, *, f: float) -> None:
+    """Straight down beside the stock to ``z`` where :func:`in_air` says it is clear: a rapid only to a millimetre over
+    the stock's top, then fed, so stock bigger than the job says (sawn, or a guessed margin) is met at a feed, never a
+    rapid."""
+    above = heights.stock_top + 1.0
+    if z < above and b.pos[2] > above:
+        b.rapid(z=above)
+    if b.pos[2] > z and z < above:
+        b.feed(z=z, f=f)
+    elif b.pos[2] > z:
+        b.rapid(z=z)
 
 
 def lift_and_go(b, xy, heights, *, down_to: float | None = None) -> None:

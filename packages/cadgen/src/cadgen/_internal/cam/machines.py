@@ -64,6 +64,9 @@ class Model:
     #: A laser's source and optical power (W).
     laser_source: str | None = None
     power_w: float | None = None
+    #: The spindle its speeds are for, and how it is run, where the program does not set its speed (a trim router's
+    #: dial): ``(name, how)``. A job that names the model and states no speeds lists it as assumed.
+    spindle: tuple[str, str] = ()
     #: Anything the plain numbers do not say (an option the numbers are for, a source that is not the maker's).
     note: str = ""
 
@@ -81,6 +84,12 @@ class Model:
 
 
 _HAAS = "Haas control (NGC)"
+#: Carbide 3D's Compact Router: the Shapeokos' usual spindle (Carbide 3D's dial table: 1 is about 11,000 rpm, 6 about
+#: 31,000).
+_COMPACT_ROUTER = ("Carbide Compact Router", "its speed is set by hand on its dial, not by the program (the S word "
+                   "does nothing): dial 1 is about 11,000 rpm and 6 about 31,000, so set it to the speed each tool's "
+                   "header line gives. With Carbide 3D's VFD spindle (8,000 to 24,000 rpm, set by the program) state "
+                   "min_rpm 8000 and max_rpm 24000")
 _PATHPILOT = "PathPilot (LinuxCNC)"
 
 #: The catalog: popular machines across the kinds, by id. Every number is the maker's own (``source``); a model
@@ -143,13 +152,13 @@ MODELS: dict[str, Model] = {model.id: model for model in (
        note="no longer sold (2026); the 8-station turret, gang tooling and quick-change post are options"),
     # Hobby and desktop machines whose makers publish them as GRBL machines. A trim router's speed is set by hand on its
     # dial (the S word does nothing): its range is the router's, and the posted speed is the dial setting to choose.
-    Model(id="shapeoko-5-pro", plain="Shapeoko 5 Pro", maker="Carbide 3D", kind="router",
+    Model(id="shapeoko-5-pro", plain="Shapeoko 5 Pro", maker="Carbide 3D", kind="router", spindle=_COMPACT_ROUTER,
        controller="Carbide 3D electronics run from Carbide Motion (GRBL)", post="grbl",
        source="https://carbide3d.com/shapeoko/shapeoko5pro-specs/",
        travel_mm=(1237.0, 1237.0, 155.0), min_rpm=12000.0, max_rpm=30000.0, tool_changer="manual", homed=True,
        note="the 4x4 (the 4x2 is 1237 x 623 mm); speeds are for the Carbide Compact Router, set by hand on its dial "
             "(the S word does nothing); the VFD spindle kit runs 8000-24000 rpm under G-code"),
-    Model(id="shapeoko-4-xxl", plain="Shapeoko 4 XXL", maker="Carbide 3D", kind="router",
+    Model(id="shapeoko-4-xxl", plain="Shapeoko 4 XXL", maker="Carbide 3D", kind="router", spindle=_COMPACT_ROUTER,
        controller="Carbide 3D V3 electronics, GRBL 1.1, run from Carbide Motion 5", post="grbl",
        source="https://shop.carbide3d.com/products/shapeoko4",
        travel_mm=(838.2, 838.2, 101.6), min_rpm=12000.0, max_rpm=30000.0, tool_changer="manual", homed=True,
@@ -168,6 +177,8 @@ MODELS: dict[str, Model] = {model.id: model for model in (
        note="the 4x4 (the 4x2 is 1219.2 x 609.6 mm); a 1.5 kW VFD spindle. Inventables' own pages do not name the "
             "firmware or the homing switches: Easel's machine page gives GRBL 1.1h"),
     Model(id="longmill-mk2-30x30", plain="Sienci LongMill MK2 30x30", maker="Sienci Labs", kind="router",
+       spindle=("Sienci AutoSpin T1 router", "10,000 to 30,000 rpm, set by hand on its dial unless it runs in its "
+                "spindle mode (then the program sets it): set the dial to the speed each tool's header line gives"),
        controller="Sienci LongBoard (GRBL 1.1h), run from gSender", post="grbl",
        source="https://resources.sienci.com/view/lmk2-mk2-specs/",
        travel_mm=(820.0, 868.0, 126.0), min_rpm=10000.0, max_rpm=30000.0, max_feed_mm_min=4000.0,

@@ -69,7 +69,7 @@ class FaceOp(Operation):
         import shapely
 
         from cadgen._internal.cam import geom2d
-        from cadgen._internal.cam.operations._milling2d import fixtures_clear, in_air
+        from cadgen._internal.cam.operations._milling2d import down_in_air, fixtures_clear, in_air
 
         tool = ctx.tool
         r = tool.radius
@@ -127,7 +127,7 @@ class FaceOp(Operation):
                     else:
                         _over(b, start, heights)
                         if in_air(ctx, start, z):
-                            b.rapid(z=z)
+                            down_in_air(b, heights, z, f=feeds.plunge_mm_min)
                             counts["air"] += 1
                         else:
                             self._enter(b, row, above, angle, feeds, counts)
@@ -147,7 +147,7 @@ class FaceOp(Operation):
                 else:
                     _over(b, start, heights)
                     if in_air(ctx, start, z):
-                        b.rapid(z=z)
+                        down_in_air(b, heights, z, f=feeds.plunge_mm_min)
                         counts["air"] += 1
                     else:
                         if above + 1.0 < heights.retract:

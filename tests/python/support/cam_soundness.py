@@ -10,6 +10,8 @@
   suites write each one out with its reason.
 * :func:`rapids_below`: the rapids that move sideways with either end under the retract plane (straight down onto a
   height the planner knows is clear, or straight up, are not counted).
+* :func:`rapids_down_beside_stock`: the rapids down beside the stock to under 1 mm over its top: the last
+  millimetre is fed.
 
 Reads only the IR (:mod:`cadgen._internal.cam.ir`): the setup's toolpath, its op ranges, the setup's heights, fixtures
 and WCS, and the stock.
@@ -179,3 +181,22 @@ def rapids_below(setup_plan, index: int) -> list[int]:
         if math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-6 and min(a[2], b[2]) < retract - 1e-6:
             found.append(m - rng.start)
     return found
+
+
+def rapids_down_beside_stock(setup_plan, index: int, stock) -> list[int]:
+    """The moves of operation ``index`` (counted from its first) that rapid down beside the stock to under 1 mm over
+    its top: that descent is fed, so a stock bigger than the job says is met at a feed. (Down into a floor the job
+    cut, inside the stock's outline, the planner knows the height.)"""
+    import shapely
+
+    from cadgen._internal.cam.ir import RAPID
+
+    tp = setup_plan.toolpath
+    rng = next(o for o in tp.ops if o.index == index)
+    positions = tp.positions()
+    near = setup_plan.heights.stock_top + 1.0
+    outline = stock_outline(setup_plan, stock)
+    return [m - rng.start for m in range(rng.start, rng.end)
+            if int(tp.moves["kind"][m]) == RAPID and positions[m + 1][2] < positions[m][2] - 1e-9
+            and positions[m + 1][2] < near - 1e-6
+            and not outline.contains(shapely.Point(positions[m + 1][0], positions[m + 1][1]))]

@@ -425,6 +425,8 @@ def parse_job(job: str | dict | None, *, post: str | None = None, part_dir: Path
 
 
 def _assumed(key: str, value: object, why: str) -> dict:
+    if isinstance(value, float):
+        value = round(value, 4)
     return {"key": key, "value": list(value) if isinstance(value, tuple) else value, "why": why}
 
 
@@ -482,11 +484,18 @@ def _fill_generic(machine_raw: dict, kind: str, model, stated: dict) -> list[dic
         raise
     options = post_registry.option_keys(machine_raw)
     check_keys(stated, MACHINE_KEYS + options, "machine")
+    # A post whose tapping cycle does not follow the spindle (Mach3's G84) says the machine taps floating: a fact of
+    # the post, not a guess.
+    post_class = post_registry._post_class(post)
+    if "rigid_tap" not in machine_raw and post_class is not None and not getattr(post_class, "rigid_tap", True):
+        machine_raw["rigid_tap"] = False
     if "homed" in options and "homed" not in machine_raw:
         if model is not None and model.homed is not None:
             machine_raw["homed"] = model.homed
         else:
             assumed.append(_assumed("machine.homed", False, machines.GENERIC_HOMED_WHY))
+    if model is not None and model.spindle and not {"min_rpm", "max_rpm"} & set(stated):
+        assumed.append(_assumed("machine.spindle", model.spindle[0], model.spindle[1]))
     max_feed, min_rpm = machine_raw.get("max_feed_mm_min"), machine_raw.get("min_rpm")
     for key in ("max_rpm", "rapid_mm_min", "tool_change_s"):
         if key in machine_raw or key not in generic:
@@ -602,6 +611,10 @@ _TOOL_WHY = {
                    "a cut deeper than it",
     "shank_diameter_mm": "no shank_diameter_mm given: a cutter under 3 mm sits on a 3 mm shank; holder_collision "
                          "judges that shank",
+    "material": "no material given: carbide, the speeds' table; an HSS {plain} wants about a third of that speed, so "
+                "state \"material\": \"hss\" if it is one",
+    "flutes": "no flutes given: {plain}'s usual count; the feed is per tooth, so a tool with fewer flutes would be "
+              "fed too hard",
 }
 
 
@@ -700,8 +713,9 @@ def _cutting_keys(raw: dict, kind: str) -> dict:
 def _material(raw: object) -> Material:
     """A table name (or an alias of one); a table name with some of its numbers overridden, like
     ``{"name": "aluminum-6061", "surface_m_min": 300}`` (the rest of the row stands); or a material of the job's
-    own, which states its surface speed and chip load. The chip load is one number for every tool, or one per tool
-    diameter, ``{"3": 0.02, "6": 0.04}``, interpolated by the tool's diameter (``feeds.chipload_at``)."""
+    own, which states its surface speed and chip load. The chip load is a 6 mm tool's, scaled with the diameter as the
+    table's is, or one per tool diameter, ``{"3": 0.02, "6": 0.04}``, interpolated by the tool's diameter
+    (``feeds.chipload_at``)."""
     from cadgen._internal.cam.feeds import MATERIAL_ALIASES, MATERIALS
 
     names = (*MATERIALS, *MATERIAL_ALIASES)
@@ -726,8 +740,8 @@ def _material(raw: object) -> Material:
         raise CamJobError(f"material needs one surface speed: surface_m_min (metres a minute) or sfm (feet a minute); "
                           f"{shown(name)} is not in the table ({', '.join(names)}), whose rows need none")
     if not table and "chipload_mm" not in raw:
-        raise CamJobError("material needs chipload_mm, the chip load per tooth used for every milling tool (or one "
-                          "per tool diameter, like {\"3\": 0.02, \"6\": 0.04})")
+        raise CamJobError("material needs chipload_mm, the chip load per tooth for a 6 mm tool (scaled with the "
+                          "diameter), or one per tool diameter, like {\"3\": 0.02, \"6\": 0.04}")
     # Bounded well past any real material (the fastest carbide on aluminium runs ~1500 m/min, ~0.3 mm a tooth), so a
     # typo is refused rather than posted as a feed no machine has.
     speed = None

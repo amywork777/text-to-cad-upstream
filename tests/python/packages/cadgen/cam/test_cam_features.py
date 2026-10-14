@@ -150,6 +150,32 @@ class HoleBlockFeatures(unittest.TestCase):
         self.assertEqual(["+X", "-X"], cross["reach"])
 
 
+class PartCylinders(unittest.TestCase):
+    """A plate with an R2-cornered pocket, a slot with round ends, and a Ø6.6 and a Ø10 hole through it."""
+
+    @classmethod
+    def setUpClass(cls):
+        from build123d import Align, Axis, Box, Cylinder, Pos, SlotCenterToCenter, export_step, extrude, fillet
+
+        from cadgen import cam
+
+        base = (Align.CENTER, Align.CENTER, Align.MIN)
+        pocket = fillet((Pos(-10, 0, 5) * Box(30, 20, 6, align=base)).edges().filter_by(Axis.Z), 2)
+        slot = Pos(-10, 0, 0) * extrude(SlotCenterToCenter(14, 6), 10)
+        part = (Box(76, 44, 10, align=base) - pocket - slot - Pos(25, 10, 0) * Cylinder(3.3, 10, align=base)
+                - Pos(25, -10, 0) * Cylinder(5, 10, align=base))
+        step = class_directory(cls) / "bracket.step"
+        export_step(part, str(step))
+        cls.result = cam.features(step)
+
+    def test_a_rounded_corner_or_a_slots_end_is_not_a_hole(self):
+        self.assertEqual([(6.6, True), (10.0, True)],
+                         sorted((round(h["diameter_mm"], 3), h["through"]) for h in self.result.holes))
+        corners = [f for f in self.result.faces if f["reading"].startswith("rounded corner R2 along Z")]
+        self.assertEqual(4, len(corners))
+        self.assertFalse(any(f["hole"] for f in corners))
+
+
 class Direction(unittest.TestCase):
     """``direction`` lists what a tool from one side can work; the generated CLI takes ``--direction -Z``."""
 

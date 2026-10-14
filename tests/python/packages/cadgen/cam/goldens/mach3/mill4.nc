@@ -7,6 +7,8 @@
 (T1: 6 mm flat: 12000 rpm, feed 1990 mm/min)
 (T2: 5 mm drill: 7600 rpm, feed 300 mm/min)
 (T3: M6x1 tap: 500 rpm, feed 500 mm/min)
+(T3: M6x1 tap in a floating tension/compression holder: the program)
+(does not hold the feed to the spindle.)
 (3+2: the table turns to A30 after each tool change, set G55 on the)
 (turned part at this setup's origin.)
 G21 G90 G94 G17 G40 G49 G80

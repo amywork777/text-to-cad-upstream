@@ -112,6 +112,9 @@ class DrillPlate(unittest.TestCase):
         self.assertAlmostEqual(TOP - 8.0 + 1.0, list(self.bottoms(path, rng).values())[0], places=6)
         path, rng, _ = self.one({"op": "drill", "tool": "T3", "faces": self.f5[:1]})
         self.assertAlmostEqual(BOTTOM - 1.0 - 3 * 1.0, list(self.bottoms(path, rng).values())[0], places=6)
+        # A floating holder gives and the spindle coasts on the reverse: three pitches short.
+        path, rng, _ = self.one({"op": "drill", "tool": "T3", "faces": self.f6[:1], "rigid": False})
+        self.assertAlmostEqual(TOP - 8.0 + 3.0, list(self.bottoms(path, rng).values())[0], places=6)
 
     def test_a_spot_makes_a_cone_as_wide_as_the_hole(self):
         path, rng, op = self.one({"op": "drill", "tool": "T4", "faces": self.f5[:1] + self.f4[:1]})
@@ -271,6 +274,23 @@ class DrillPlate(unittest.TestCase):
         for event in groups[1:]:
             before = path.positions()[event.at]
             self.assertAlmostEqual(2.0, before[2])
+
+    def test_a_link_at_r_is_judged_by_the_box_a_dog_leg_rapid_can_take(self):
+        from types import SimpleNamespace
+
+        import shapely
+
+        from cadgen._internal.cam.operations.drill import DrillOp
+
+        # Material in the corner of the box between two holes: clear of the straight line, in the dog-leg's way.
+        corner = shapely.box(8.0, 0.0, 10.0, 2.0)
+        ctx = SimpleNamespace(sections=SimpleNamespace(at=lambda z: corner), tool=SimpleNamespace(radius=1.0))
+        group = [(SimpleNamespace(x=0.0, y=0.0), None, None), (SimpleNamespace(x=10.0, y=10.0), None, None)]
+        self.assertGreater(shapely.LineString([(0, 0), (10, 10)]).distance(corner), 1.5)
+        self.assertEqual("initial", DrillOp._return_to(None, ctx, "auto", group, -3.0, 2.0))
+        clear = SimpleNamespace(sections=SimpleNamespace(at=lambda z: shapely.box(20.0, 0.0, 22.0, 2.0)),
+                                tool=ctx.tool)
+        self.assertEqual("r", DrillOp._return_to(None, clear, "auto", group, -3.0, 2.0))
 
     def test_order_is_shorter_than_the_order_given(self):
         from cadgen._internal.cam.drilling import path_length

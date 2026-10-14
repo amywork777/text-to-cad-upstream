@@ -1,6 +1,8 @@
-"""Every 2.5D milling operation, planned on the suites' parts, goes down into material no steeper than its ramp angle
-and never rapids sideways under the retract plane: :func:`~tests.python.support.cam_soundness.bad_descents` and
-:func:`~tests.python.support.cam_soundness.rapids_below`, measured on the IR independently of the planners.
+"""Every 2.5D milling operation, planned on the suites' parts, goes down into material no steeper than its ramp angle,
+never rapids sideways under the retract plane and feeds the last millimetre down beside the stock:
+:func:`~tests.python.support.cam_soundness.bad_descents`, :func:`~tests.python.support.cam_soundness.rapids_below` and
+:func:`~tests.python.support.cam_soundness.rapids_down_beside_stock`, measured on the IR independently of the
+planners.
 
 Each operation is planned on its own (nothing an earlier operation cut hides a bad descent), except where the job
 needs an earlier one: a chamfer, an engraving or a V-carve after the facing that takes the stock off the part's top,
@@ -21,7 +23,7 @@ from tests.python.support.cam_fixtures import BLOCK, block_step, floor_ref, mill
 from tests.python.support.cam_fixtures_milling2d import (
     boss_step, bracket_step, class_directory, engrave_dxf, face_at, job, plan_error, tools,
 )
-from tests.python.support.cam_soundness import bad_descents, rapids_below
+from tests.python.support.cam_soundness import bad_descents, rapids_below, rapids_down_beside_stock
 
 #: The descents the harness passes for a reason of its own, and why each is sound.
 EXCUSED = {
@@ -90,6 +92,7 @@ class Sound(unittest.TestCase):
             with self.subTest(case=name, op=op.spec.op, index=op.index):
                 self.assertEqual([], bad_descents(setup, ops, op.index, stock=stock, excuse=_excuse))
                 self.assertEqual([], rapids_below(setup, op.index))
+                self.assertEqual([], rapids_down_beside_stock(setup, op.index, stock))
         self.assertGreater(checked, 0)
 
 

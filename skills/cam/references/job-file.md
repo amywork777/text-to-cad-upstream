@@ -40,10 +40,10 @@ an unknown key or value is refused with a sentence naming the allowed ones, and 
 | `post` | the controller's dialect ([posts.md](posts.md)). Left out, the model's, else the kind's usual one (`fanuc` for mills and lathes, `grbl` for routers and lasers): assumed, and every posted file's header says so. A dialect read by the wrong controller moves the machine wrongly, so ask which controller runs the machine and name it when the user knows |
 | `name` | the machine's name, for the headers |
 | `travel_mm` | axis travel `[x, y, z]` (a lathe `[x, z]`, a laser, plasma or waterjet `[x, y]` or `[x, y, z]`); with it, the `travel` check runs |
-| `min_rpm`, `max_rpm`, `max_feed_mm_min` | limits: speeds and feeds are clamped to them, and a speed under `min_rpm` (a router's slowest) is raised to it (the `limits` warning says where). Left out, `max_rpm` is the kind's usual spindle limit, assumed |
+| `min_rpm`, `max_rpm`, `max_feed_mm_min` | limits: speeds and feeds are clamped to them, and a speed under `min_rpm` (a router's slowest) is raised to it (the `limits` warning says where). A tap is never raised (no tap runs at a router's speed), nor a drill, spot, reamer or boring bar, or any tool in a metal, more than 1.3 times: the plan refuses it with what to do instead. Left out, `max_rpm` is the kind's usual spindle limit, assumed |
 | `rapid_mm_min` | rapid traverse rate, for the cycle time (left out: the kind's usual one, assumed) |
 | `tool_change_s` | seconds per tool change, for the cycle time (left out: the kind's usual one, assumed) |
-| `rigid_tap` | whether the controller taps rigidly (the feed synchronised to the spindle). Left out, a tap that does not say `rigid` takes the controller's own tapping cycle (`M29` on Fanuc: a controller without rigid tapping stops with an alarm), assumed. `false`: such taps run in a floating holder, and a tap that asks for `rigid` is refused |
+| `rigid_tap` | whether the controller taps rigidly (the feed synchronised to the spindle). Left out, a tap that does not say `rigid` takes the controller's own tapping cycle (`M29` on Fanuc: a controller without rigid tapping stops with an alarm), assumed. `false`: such taps run in a floating holder (stopping three pitches short of a blind floor, not one, and the header says so), and a tap that asks for `rigid` is refused. The `mach3` post's tapping cycle does not follow the spindle, so with it this is `false` |
 | `spindle_spinup_s` | seconds the spindle takes to reach speed (0 to 60): every post dwells that long after each spindle start, and the cycle time counts it (left out: GRBL waits 3 s, the others none) |
 | `kinematics` | a `mill5`'s: `ac_trunnion` (A tilts the table about X, C turns it) or `bc_head` (B tilts the head, C turns the table) |
 | `rotary_limits_deg` | rotary travel: `{"a": [-120, 30], "c": [-360, 360]}` |
@@ -61,8 +61,9 @@ plan. If the user does not know even the kind, ask once; if they still do not kn
 Every value the plan takes that neither the job nor its model states is listed in the result's
 `assumed:` lines (`key`, `value`, `why`), in the GLB and under the verdict in the Viewer's Job panel.
 That covers a generic post, spindle limit, rapid rate or tool change time, the controller's own tapping cycle,
-a machine that may not be homed, and a used milling tool's flute length, stickout and small-cutter
-shank. Read them to the user as questions to answer, never as facts. The checks do not stand behind
+a machine that may not be homed, a model's hand-set spindle (a trim router's dial: the header says how to set
+it), a used milling tool's flute length, stickout, small-cutter shank and flute count, and a hole maker's
+material (carbide). Read them to the user as questions to answer, never as facts. The checks do not stand behind
 a guess: a cut past an assumed flute length or stickout is a `not_judged` warning from `reach` (not an
 error, not a pass), and so is a shank or holder hit that rests on an assumed length
 (`holder_collision`). Stating the real number turns it back into a judged check.

@@ -193,7 +193,7 @@ class TraceOp(Operation):
         import numpy as np
 
         from cadgen._internal.cam.operations._milling2d import (
-            in_air, levels, lift_and_go, ramp_along, rotate_to_nearest,
+            down_in_air, in_air, levels, lift_and_go, ramp_along, rotate_to_nearest,
         )
 
         heights = ctx.heights
@@ -215,7 +215,7 @@ class TraceOp(Operation):
 
         def descend(path, z_from: float, z: float) -> None:
             if in_air(ctx, path[0], z):
-                b.rapid(z=z)
+                down_in_air(b, heights, z, f=feeds.plunge_mm_min)
                 counts["air"] += 1
                 return
             b.feed(z=z_from, f=feeds.ramp_mm_min)

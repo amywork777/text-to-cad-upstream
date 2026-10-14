@@ -21,7 +21,8 @@ SKILL = Path(__file__).resolve().parents[5] / "skills" / "cam"
 
 def job(machine: dict, **extra) -> dict:
     return {"machine": machine, "material": "aluminum-6061", "stock": {"kind": "box", "margin_mm": [2, 2, 1]},
-            "tools": [{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 18, "stickout_mm": 25}],
+            "tools": [{"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 3, "flute_length_mm": 18,
+                       "stickout_mm": 25}],
             "setups": [{"id": "top", "operations": [{"op": "face", "tool": "T1"}]}], **extra}
 
 
@@ -164,18 +165,70 @@ class Assumed(unittest.TestCase):
         with self.assertRaises(CamJobError) as caught:
             parse_job(job({"kind": "router", "post": "grbl", "min_rpm": 30000, "max_rpm": 24000}))
         self.assertIn("machine.min_rpm (30000) is more than machine.max_rpm (24000)", str(caught.exception))
-        parsed = parse_job(job({"kind": "router", "post": "grbl", "min_rpm": 18000, "max_rpm": 24000},
-                               tools=[{"id": "T1", "type": "flat", "diameter_mm": 25}]))
+        router = {"kind": "router", "post": "grbl", "min_rpm": 18000, "max_rpm": 24000}
+        # A 5 mm cutter wants ~15900 rpm in aluminium: raised a little, and said.
+        parsed = parse_job(job(router, tools=[{"id": "T1", "type": "flat", "diameter_mm": 5}]))
         cut = for_op(parsed.material, parsed.tool("T1"), "rough", parsed.machine)
         self.assertEqual(18000, cut.rpm)
         self.assertTrue(any("raised to the machine's slowest, 18000 rpm" in line for line in cut.clamped))
+        # A 25 mm one wants ~3200: 5.7 times its surface speed burns it in metal, so it is refused with what to do.
+        parsed = parse_job(job(router, tools=[{"id": "T1", "type": "flat", "diameter_mm": 25}]))
+        with self.assertRaises(CamJobError) as caught:
+            for_op(parsed.material, parsed.tool("T1"), "rough", parsed.machine)
+        self.assertIn("5.7 times the surface speed", str(caught.exception))
+        self.assertIn("Use a smaller tool", str(caught.exception))
+        # In wood a router runs a big cutter fast every day: raised, not refused.
+        parsed = parse_job(job(router, material="hardwood", tools=[{"id": "T1", "type": "flat", "diameter_mm": 25}]))
+        self.assertEqual(18000, for_op(parsed.material, parsed.tool("T1"), "rough", parsed.machine).rpm)
+
+    def test_a_tap_or_a_hole_maker_too_slow_for_the_spindle_is_refused_even_in_wood(self):
+        router = {"kind": "router", "post": "grbl", "min_rpm": 18000, "max_rpm": 24000}
+        parsed = parse_job(job(router, material="hardwood", tools=[
+            {"id": "T1", "type": "flat", "diameter_mm": 6, "flutes": 2},
+            {"id": "T2", "type": "tap", "diameter_mm": 6, "pitch_mm": 1},
+            {"id": "T3", "type": "drill", "diameter_mm": 20}]))
+        with self.assertRaises(CamJobError) as caught:
+            for_op(parsed.material, parsed.tool("T2"), "tap", parsed.machine)
+        self.assertIn("no tap runs that fast. Mill the thread (thread_mill)", str(caught.exception))
+        # A drill's chip is its whole width at the centre, where the surface speed is nil: past 1.3x it burns in wood
+        # too, and a smaller drill makes a smaller hole.
+        with self.assertRaises(CamJobError) as caught:
+            for_op(parsed.material, parsed.tool("T3"), "drill", parsed.machine)
+        self.assertIn("Mill the hole with a smaller end mill (circular)", str(caught.exception))
+        # A speed the job states is the user's call: raised to the floor, not refused.
+        self.assertEqual(18000, for_op(parsed.material, parsed.tool("T3"), "drill", parsed.machine, speed=9000).rpm)
+
+    def test_a_model_whose_spindle_speed_is_a_dial_says_how_to_set_it(self):
+        parsed = parse_job(job({"model": "shapeoko-5-pro"}))
+        (spindle,) = [entry for entry in parsed.assumed if entry["key"] == "machine.spindle"]
+        self.assertIn("dial 1", spindle["why"])
+        self.assertIn("min_rpm 8000", spindle["why"])
+        stated = parse_job(job({"model": "shapeoko-5-pro", "min_rpm": 8000, "max_rpm": 24000}))
+        self.assertNotIn("machine.spindle", assumed(stated))
+
+    def test_used_hole_makers_and_fluted_tools_say_the_material_and_flutes_they_take(self):
+        parsed = parse_job(job({"kind": "mill", "post": "grbl", "max_rpm": 24000, "rapid_mm_min": 5000,
+                                "tool_change_s": 10},
+                               tools=[{"id": "T1", "type": "flat", "diameter_mm": 6, "flute_length_mm": 18,
+                                       "stickout_mm": 25},
+                                      {"id": "T4", "type": "drill", "diameter_mm": 5}],
+                               setups=[{"id": "top", "operations": [
+                                   {"op": "face", "tool": "T1"},
+                                   {"op": "drill", "tool": "T4", "points": [[0, 0]], "depth_mm": 3}]}]))
+        got = assumed(parsed)
+        self.assertEqual(2, got["tools.T1.flutes"])
+        self.assertEqual("carbide", got["tools.T4.material"])
+        self.assertNotIn("tools.T4.flutes", got)                       # a drill's feed is per revolution
+        (why,) = [entry["why"] for entry in parsed.assumed if entry["key"] == "tools.T4.material"]
+        self.assertIn("\"material\": \"hss\"", why)
 
     def test_used_milling_tools_list_the_lengths_they_leave_to_the_catalogue(self):
         parsed = parse_job(job({"kind": "mill", "post": "grbl", "max_rpm": 24000, "rapid_mm_min": 5000,
                                 "tool_change_s": 10}, tools=[{"id": "T1", "type": "flat", "diameter_mm": 2},
                                                               {"id": "T2", "type": "flat", "diameter_mm": 8}]))
         self.assertEqual({"tools.T1.flute_length_mm": 6.0, "tools.T1.stickout_mm": 11.0,
-                          "tools.T1.shank_diameter_mm": 3.0, "machine.spindle_spinup_s": 3.0}, assumed(parsed))
+                          "tools.T1.shank_diameter_mm": 3.0, "tools.T1.flutes": 2, "machine.spindle_spinup_s": 3.0},
+                         assumed(parsed))
 
     def test_the_result_says_each_assumption_on_its_own_line(self):
         result = CamPlanResult(ok=True, document=Path("part.step"), glb=None, posts=(),
@@ -236,6 +289,14 @@ class AssumedInAPlan(unittest.TestCase):
         self.assertEqual([dict(entry) for entry in result.assumed], cam["assumed"])
         text = Path(result.posts[0]["file"]).read_text(encoding="utf-8")
         self.assertIn("ASSUMED, NOT STATED: POST FANUC, MAX_RPM 8000.", text.upper())
+
+    def test_a_dial_spindle_tells_the_operator_how_to_set_its_speed_in_the_header(self):
+        result = self.plan("dial", {"flute_length_mm": 12, "stickout_mm": 20, "shank_diameter_mm": 2, "flutes": 2},
+                           machine={"model": "shapeoko-5-pro"})
+        text = " ".join(Path(post["file"]).read_text(encoding="utf-8") for post in result.posts).upper()
+        text = text.replace(")\n(", " ")                                  # header comments wrap
+        self.assertIn("SPINDLE CARBIDE COMPACT ROUTER: ITS SPEED IS SET BY HAND ON ITS DIAL", text)
+        self.assertIn("DIAL 1 IS ABOUT 11,000 RPM", text)
 
 
 if __name__ == "__main__":

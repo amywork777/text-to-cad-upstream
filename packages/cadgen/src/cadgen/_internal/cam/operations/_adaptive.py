@@ -37,6 +37,9 @@ __all__ = ["Clearing", "check_stepover"]
 
 #: An adaptive clear's stepover when the job gives none, as a share of the tool's diameter.
 DEFAULT_STEPOVER = 0.15
+#: How far a link through cleared space lifts off the floor (mm), never above the level above: the tool crosses
+#: clear of the floor's last skin at the machine's top feed, not at the cutting feed (a micro-lift).
+LINK_LIFT_MM = 0.2
 
 
 def check_stepover(spec, tool) -> None:
@@ -75,6 +78,9 @@ class Clearing:
         self.tol = ctx.tolerance_mm
         self.heights = ctx.heights
         self.eps = max(3.0 * self.tol, 0.05 * self.stepover)
+        machine = ctx.machine
+        # A link crosses at the machine's top feed (its rapid rate where it gives none), never slower than the cut.
+        self.link_feed = max(self.feeds.feed_mm_min, machine.max_feed_mm_min or machine.rapid_mm_min or 0.0)
         self.stock_now = StockNow(ctx, cell=fine_cell(self.r))
         # Where the level above left the tool free to come down from, and how high it was.
         self.z_prev = ctx.heights.stock_top
@@ -330,6 +336,8 @@ class Clearing:
         """To the start of ``run`` and along it at ``z``. At depth the tool steps at most a stepover into its own
         band, or feeds through bands already cut whole (``done``); otherwise it comes back from the retract plane:
         straight down where the start is in the air, else ramped into along the stretch itself."""
+        import math
+
         import numpy as np
         import shapely
 
@@ -341,7 +349,18 @@ class Clearing:
             # A step of at most a stepover into the new band (onto the first ring round an entry).
             b.feed(x=target[0], y=target[1], z=z, f=feeds.ramp_mm_min)
         elif down and (step.length < 1e-9 or _within(step, [done], self.eps + 1e-6)):
-            b.feed(x=target[0], y=target[1], z=z, f=feeds.feed_mm_min)
+            lift = min(LINK_LIFT_MM, max(0.0, self.z_prev - z) / 2.0)
+            run_in = lift / math.tan(math.radians(self.angle))
+            if lift > 0.0 and step.length > max(2.0 * self.stepover, 2.0 * run_in):
+                # Through cut bands: up off the floor, across at the top feed, and back down along the link's end no
+                # steeper than the ramp, as the run's start meets the material.
+                t = 1.0 - run_in / step.length
+                b.feed(z=z + lift, f=feeds.feed_mm_min)
+                b.feed(x=b.pos[0] + t * (target[0] - b.pos[0]), y=b.pos[1] + t * (target[1] - b.pos[1]), z=z + lift,
+                       f=self.link_feed)
+                b.feed(x=target[0], y=target[1], z=z, f=feeds.feed_mm_min)
+            else:
+                b.feed(x=target[0], y=target[1], z=z, f=feeds.feed_mm_min)
         else:
             b.rapid(z=heights.retract)
             b.rapid(x=target[0], y=target[1])

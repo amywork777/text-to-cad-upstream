@@ -72,8 +72,12 @@ class BlockOperations(unittest.TestCase):
     def test_face_takes_the_top_down_to_the_part_from_outside_the_stock(self):
         plan, ops = self.plan([{"op": "face", "tool": "T1"}])
         points, _ = self.cutting(plan, 0)
-        self.assertTrue(np.allclose(points[:, 2], -1.0))
         sx, sy, _ = BLOCK["size"]
+        # Every pass is at Z -1; above it is only the fed last millimetre of a descent beside the stock (top at 0).
+        above = points[points[:, 2] > -1.0 + 1e-6]
+        self.assertTrue(len(above) and np.all(above[:, 2] <= 1.0 + 1e-6))
+        self.assertTrue(np.all((np.abs(above[:, 0]) > sx / 2 + 2) | (np.abs(above[:, 1]) > sy / 2 + 2)))
+        self.assertTrue(np.allclose(points[points[:, 2] <= -1.0 + 1e-6][:, 2], -1.0))
         self.assertLess(float(points[:, 0].min()), -(sx / 2 + 2 + 3))     # passes start beyond the stock
         self.assertLessEqual(float(points[:, 1].min()), -(sy / 2 + 2) + 1e-6)
         self.assertGreaterEqual(float(points[:, 1].max()), sy / 2 + 2 - 1e-6)

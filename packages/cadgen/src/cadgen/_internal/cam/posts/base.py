@@ -472,6 +472,9 @@ class Post:
             if plunge:
                 rates.append(f"plunge {number(round(plunge, 1))} mm/min")
             lines.append(self.comment(self.tool_label(tool) + (": " + ", ".join(rates) if rates else "")))
+        for tool_id in self.floating_taps(program):
+            lines.append(self.comment(f"{self.tool_label(program.tools[tool_id])} in a floating tension/compression "
+                                      "holder: the program does not hold the feed to the spindle."))
         for xy in self.bore_shifts(program):
             lines.append(self.comment(f"Fine bore: the bar shifts {direction_text(xy)} off the wall, so at the spindle "
                                       f"orient its tip must point {direction_text((-xy[0], -xy[1]))}."))
@@ -481,6 +484,20 @@ class Post:
                                       f"{direction_text((-xy[0], -xy[1]))}."))
         lines.extend(self.comment(note) for note in program.notes)
         return lines
+
+    def floating_taps(self, program: Program) -> list:
+        """The tools that tap in a floating holder in this program: a tap cycle that says ``rigid: false``, or any
+        tap where this post's own tapping cycle does not follow the spindle."""
+        out: list = []
+        current = None
+        for event in program.toolpath.events:
+            if event.kind == "tool":
+                current = event.data.get("tool")
+            elif event.kind == "cycle" and "pitch_mm" in event.data and current is not None and current not in out:
+                rigid = event.data.get("rigid")
+                if rigid is False or (rigid is None and not getattr(self, "rigid_tap", True)):
+                    out.append(current)
+        return out
 
     @staticmethod
     def tool_speeds(program: Program) -> dict:

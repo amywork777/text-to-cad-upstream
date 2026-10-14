@@ -71,7 +71,7 @@ def _not_judged(op, tool, depth: float, key: str, item: dict) -> dict:
         "reach", "warning", "not_judged",
         f"Reach not judged: {op.summary or op.spec.op} goes {depth:.1f} mm deep, past {tool.id}'s assumed {word} of "
         f"{getattr(tool, key):g} mm (the job gives no {key})",
-        f"state {tool.id}'s real {key} (and stickout_mm) and plan again: with them reach is judged", [item])
+        f"state {tool.id}'s real flute_length_mm and stickout_mm and plan again: with them reach is judged", [item])
 
 
 def run(ctx) -> list[dict]:

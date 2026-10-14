@@ -267,7 +267,7 @@ class CircularOp(Operation):
         import numpy as np
         import shapely
 
-        from cadgen._internal.cam.operations._milling2d import helix_arcs, in_air, lift_and_go
+        from cadgen._internal.cam.operations._milling2d import down_in_air, helix_arcs, in_air, lift_and_go
 
         tool = ctx.tool
         r = tool.radius
@@ -309,7 +309,7 @@ class CircularOp(Operation):
                 # Out along the level just cleared to the outer ring.
                 b.feed(x=ring[0], y=ring[1], f=feeds.feed_mm_min)
             if in_air(ctx, ring, z):
-                b.rapid(z=z)
+                down_in_air(b, heights, z, f=feeds.plunge_mm_min)
                 counts["air"] += 1
             else:
                 b.feed(z=z_prev, f=feeds.ramp_mm_min)

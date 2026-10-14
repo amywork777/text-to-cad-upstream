@@ -217,6 +217,15 @@ class Materials(unittest.TestCase):
                job(material={"name": "aluminum-6061", "surface_m_min": 300, "sfm": 900}))
         refuse(self, "material needs chipload_mm", job(material={"name": "bronze", "surface_m_min": 90}))
 
+    def test_one_chip_load_is_a_6mm_tools_scaled_with_the_diameter_as_the_tables_is(self):
+        material = {"name": "bronze", "surface_m_min": 90, "chipload_mm": 0.04}
+        loads = {d: feeds(material=material, type="flat", diameter_mm=d, flutes=2)[1]().chipload_mm for d in (1, 3, 6)}
+        self.assertEqual({1: 0.008, 3: 0.02, 6: 0.04}, loads)
+        # On a table row it replaces the row's 6 mm number, so it scales the same way.
+        _, table = feeds(type="flat", diameter_mm=3, flutes=2)
+        _, half = feeds(material={"name": "aluminum-6061", "chipload_mm": 0.02}, type="flat", diameter_mm=3, flutes=2)
+        self.assertAlmostEqual(table().chipload_mm / 2, half().chipload_mm, places=5)
+
     def test_a_chip_load_per_tool_diameter_is_interpolated(self):
         material = {"name": "bronze", "surface_m_min": 90, "chipload_mm": {"3": 0.02, "6": 0.04}}
         loads = {d: feeds(material=material, type="flat", diameter_mm=d, flutes=2)[1]().chipload_mm
