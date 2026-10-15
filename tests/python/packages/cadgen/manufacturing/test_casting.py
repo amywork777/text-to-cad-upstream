@@ -191,14 +191,15 @@ class Feeding(unittest.TestCase):
         top = next(face.ref for face in faces if face.normal and face.normal[2] > 0.99 and face.center_mm[2] > 15)
         study = {**BASE, "mesh": {"size_mm": 2.0}}
         cls.top_faces = [top]
-        # Fed from the end through the command an agent runs, gated as CI gates it: its exit code, its lines, and the
-        # sidecar beside the part it reads the fixes from.
+        # Fed from the end through the command an agent runs, its study beside the part as the skill names it, gated as
+        # CI gates it: its exit code, its lines, and the sidecar beside the part it reads the fixes from.
+        cls.study_file = directory / "bossbar.casting.json"
+        cls.study_file.write_text(json.dumps({**study, "feeders": [{"faces": [end]}]}), encoding="utf-8")
         out = io.StringIO()
         with redirect_stdout(out), quiet():
-            cls.end_code = main([str(step), "--study", json.dumps({**study, "feeders": [{"faces": [end]}]}),
-                                 "--fail-on", "error"])
+            cls.end_code = main([str(step), "--study", str(cls.study_file), "--fail-on", "error"])
         cls.end_lines = out.getvalue().splitlines()
-        cls.from_end = json.loads((directory / "bossbar.casting.json").read_text(encoding="utf-8"))
+        cls.from_end = json.loads((directory / "bossbar.casting.result.json").read_text(encoding="utf-8"))
         cls.from_top = check(step, {**study, "feeders": [{"faces": [top]}]})
 
     def test_the_boss_is_an_isolated_hot_spot_when_fed_from_the_bars_end(self):
@@ -212,8 +213,10 @@ class Feeding(unittest.TestCase):
         self.assertGreater(spot["volume_mm3"], 0.5 * 16 ** 3)          # the boss, at least half of it, still liquid
 
     def test_fed_from_the_end_it_fails_its_gate_and_the_fix_is_a_riser_on_the_boss_top(self):
-        # It ran and wrote its result, and the error fails --fail-on error: exit 3, as a failing CI check, never 1.
+        # It ran and wrote its result beside the study, never over it, and the error fails --fail-on error: exit 3, as a
+        # failing CI check, never 1.
         self.assertEqual(self.end_code, 3)
+        self.assertEqual(json.loads(self.study_file.read_text(encoding="utf-8"))["process"], "casting")
         verdict = self.from_end["verdict"]
         self.assertEqual((verdict["status"], verdict["errors"], verdict["headline"]), ("fix", 1, "1 to fix · shrinkage hot spot"))
         spot = next(f for f in self.from_end["findings"] if f["type"] == "shrinkage_hot_spot")

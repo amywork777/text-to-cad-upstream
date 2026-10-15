@@ -63,6 +63,23 @@ class OneDoor(unittest.TestCase):
                       value_error(self, read_study, {"process": "casting", "alloy": "a356", "mold": "sand", "gate": 1}))
 
 
+class Results(unittest.TestCase):
+    def test_a_study_named_as_the_result_is_refused_and_left_as_it_is(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        from cadgen import manufacturing
+
+        with tempfile.TemporaryDirectory() as directory:
+            study = Path(directory) / "part.casting.result.json"
+            study.write_text(json.dumps({"process": "casting", "alloy": "a356", "mold": "sand"}), encoding="utf-8")
+            message = value_error(self, manufacturing.check, Path(directory) / "part.step", study=study)
+            self.assertIn("part.casting.result.json is where the check writes its result; name the study "
+                          "part.casting.json", message)
+            self.assertTrue(study.is_file())
+
+
 class Registry(unittest.TestCase):
     def test_every_process_is_its_registered_class_and_imports_stdlib_only(self):
         self.assertEqual(PROCESS_NAMES, ("casting", "molding", "heat_treatment", "machining", "printing", "welding",

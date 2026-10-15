@@ -3,7 +3,8 @@
 One verb, mirrored by a generated CLI (``cadgen manufacturing check``; README law 6): ``check`` reads a study that
 names its process (casting, molding, heat_treatment, machining, printing, welding or sheet_metal), simulates the part
 being made on fea's mesh and solvers, and writes ``<stem>.<process>.glb`` (what the viewer draws, coloured by what
-the process judges) and its ``.json`` sidecar beside the part. Its findings read as a CI check: each says what it
+the process judges) and its sidecar ``<stem>.<process>.result.json`` beside the part, where the study is
+``<stem>.<process>.json``. Its findings read as a CI check: each says what it
 measured against its limit and the fix that makes it pass, and the verdict is ready or fix; ``fail_on`` makes a
 failing verdict exit 3 from the CLI.
 
@@ -33,7 +34,8 @@ def check(target: Path, *, study: str | dict | None = None, occurrence: str | No
         (casting, molding, heat_treatment, machining, printing, welding or sheet_metal), and the rest is that process's
         own keys (an alloy and its mould, a resin, a steel and its quenchant, the cut, the printer, the welds, the
         sheet); see the manufacturing-sim skill for each. Face refs are the ones ``cadgen fea faces`` prints. Writes
-        ``<stem>.<process>.glb`` and its ``.json`` sidecar beside the document, replacing an earlier check's.
+        ``<stem>.<process>.glb`` and its sidecar ``<stem>.<process>.result.json`` beside the document, replacing an
+        earlier check's.
     occurrence: check only this part occurrence (``#o1.2``) when the document holds several parts; a process checks
         one part.
     mesh_size: target element size in mm, overriding the study's mesh.size_mm. Omitted, the study's, else one

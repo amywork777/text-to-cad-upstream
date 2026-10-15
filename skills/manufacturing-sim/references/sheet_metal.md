@@ -37,7 +37,7 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
    ```
 
    This writes `part.sheet_metal.glb` (coloured by each bend's springback, drawn as it comes off the brake) and
-   `part.sheet_metal.json` (every number per bend, the study, the findings and the verdict) beside the part, and exits
+   `part.sheet_metal.result.json` (every number per bend, the study, the findings and the verdict) beside the part, and exits
    3 while an error stands. A part with no
    bends, or not of one thickness, is refused in a sentence before it is meshed; so is a study with an unknown sheet,
    naming the field. Its lines end on the checklist, failures first, then the verdict:

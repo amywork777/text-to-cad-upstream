@@ -23,7 +23,7 @@ before you report.
    tolerance on the cut faces.
 3. **Check**: `cadgen manufacturing check part.step --study part.machining.json --fail-on error`
    (with the `fea` extra, as the skill's Setup says). It writes `part.machining.glb` and
-   `part.machining.json` beside the part, and exits 3 while an error stands.
+   `part.machining.result.json` beside the part, and exits 3 while an error stands.
 4. **Read the findings**: each is a check, with what it measured against its limit and the fix that
    makes it pass ([Findings](#findings)); the lines end with them as a checklist (FAIL, WARN, PASS).
    The sidecar's and the result's `verdict` reads them as a CI check does: `ready` with no error

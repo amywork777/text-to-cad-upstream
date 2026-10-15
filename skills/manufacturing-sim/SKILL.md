@@ -124,7 +124,7 @@ rpm for a spindle, kJ/mm for a weld's heat input.
    ```
 
    This writes `part.casting.glb` (the casting coloured by the time to fully solid: the last to
-   freeze is red) and `part.casting.json` (the verdict, every finding and number, the study, the
+   freeze is red) and `part.casting.result.json` (the verdict, every finding and number, the study, the
    mesh and timings) beside the part, replacing an earlier check's. Progress lines print to stderr;
    `--json` prints the result as one JSON line. It exits 0 when the verdict passes the gate, 3 when it
    ran and an error stands, and 1 when it could not run: a study with an unknown key, an unknown
@@ -155,7 +155,7 @@ fix what it finds and run it again until it passes, then tell the user what chan
    Verdict: 1 to fix · shrinkage hot spot · 1 failed, 1 warning, 2 passed; fails --fail-on error
    ```
 
-2. **Read the verdict and every fix** from the sidecar (`part.casting.json`): `verdict.status` is
+2. **Read the verdict and every fix** from the sidecar (`part.casting.result.json`): `verdict.status` is
    `ready` (no error) or `fix`. Each error and warning carries `measured` (its `value` against its
    `limit`, `units`, `pass_when`) and `fix`: `action`, `where` (face refs or points), `params` (the
    target values), `summary`, and `alternatives` for when the first cannot be made.

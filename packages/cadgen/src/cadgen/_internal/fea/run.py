@@ -574,7 +574,7 @@ def one_blas_thread():
 
 
 def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None = None, mesh_size: float | None = None,
-                vtu: bool = False, verbose: bool = False) -> FeaResult:
+                vtu: bool = False, verbose: bool = False, sidecar: Path | None = None) -> FeaResult:
     """Mesh, solve and check one study, then write its GLB and sidecar, with BLAS on one thread (:func:`one_blas_thread`).
 
     The study's analysis (static by default) does the physics: its ``parse``, ``solve``, checks, findings and
@@ -591,14 +591,15 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
     has them) is the result's and the sidecar's.
 
     ``study`` may be a :class:`~cadgen._internal.fea.study.Study` its caller parsed with an analysis of its own (one
-    fea's registry does not hold: ``cadgen manufacturing check``'s processes), which then solves it here as any other.
+    fea's registry does not hold: ``cadgen manufacturing check``'s processes), which then solves it here as any other;
+    ``sidecar`` names where its sidecar goes when that is not the GLB's name with ``.json`` (``None``).
     """
     with one_blas_thread():
-        return _solve_study(Path(target), out, study, occurrence, mesh_size, vtu, verbose)
+        return _solve_study(Path(target), out, study, occurrence, mesh_size, vtu, verbose, sidecar)
 
 
 def _solve_study(document: Path, out: Path | None, study, occurrence: str | None, mesh_size: float | None, vtu: bool,
-                 verbose: bool) -> FeaResult:
+                 verbose: bool, sidecar: Path | None = None) -> FeaResult:
     from cadgen._internal.fea.analyses import get_analysis
     from cadgen._internal.fea.study import Study, parse_study
 
@@ -611,7 +612,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     glb_path = Path(out) if out is not None else document.with_name(f"{document.stem}.fea.glb")
     if glb_path.suffix.lower() != ".glb":
         raise ValueError(f"OUT names the result GLB and must end in .glb: {out}")
-    sidecar_path = glb_path.with_suffix(".json")
+    sidecar_path = Path(sidecar) if sidecar is not None else glb_path.with_suffix(".json")
     vtu_path = glb_path.with_suffix(".vtu") if vtu else None
 
     from cadgen._internal.fea import checks

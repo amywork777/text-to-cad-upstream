@@ -4,7 +4,9 @@ The study names its process (``"process": "casting"``), an analysis of fea's pro
 reads the study with it (fea's parser, the process named by ``process`` where an fea study names its ``analysis``),
 removes what an earlier check of the same process left beside the part, and hands the parsed study to fea's pipeline
 (:func:`cadgen._internal.fea.run.solve_study`): the mesh, the fit-the-budget ladder, the solve, and the GLB and its
-sidecar, ``<stem>.<process>.glb`` and ``<stem>.<process>.json`` beside the part. What it returns is the process's
+sidecar, ``<stem>.<process>.glb`` and ``<stem>.<process>.result.json`` beside the part (the study itself is
+``<stem>.<process>.json`` there, as a CAM job is ``<stem>.cam.json``, so the result never takes its name). What it
+returns is the process's
 findings, held to its closed set (:func:`cadgen._internal.manufacturing.processes.base.closed`), their verdict, and the
 gate ``fail_on`` sets (:mod:`cadgen._internal.checklist`).
 
@@ -34,6 +36,13 @@ def process_of(document: dict):
     return get_process(document["process"])
 
 
+def _study_path(study) -> Path | None:
+    """The file a study was read from, resolved; ``None`` for a dict or inline JSON."""
+    if isinstance(study, Path) or (isinstance(study, str) and not study.strip().startswith("{")):
+        return Path(study).expanduser().resolve()
+    return None
+
+
 def read_study(study):
     """The study (a path, inline JSON or a dict) parsed with the process it names: fea's :class:`Study`, whose
     ``analysis_object`` is the process. Stdlib only."""
@@ -57,15 +66,20 @@ def check_part(target: Path, *, study, occurrence: str | None = None, mesh_size:
     source = load_document(study)
     process = process_of(source)
     glb = document.with_name(f"{document.stem}.{process.name}.glb")
-    sidecar = glb.with_suffix(".json")
+    sidecar = document.with_name(f"{document.stem}.{process.name}.result.json")
     written = (glb, sidecar)
+    named = _study_path(study)
+    if named is not None and any(named == path.resolve() for path in written):
+        raise ValueError(f"study: {named.name} is where the check writes its result; name the study "
+                         f"{document.stem}.{process.name}.json")
     for stale in written:
         stale.unlink(missing_ok=True)
     parsed = parse_study(source, analysis=process, named_by="process")  # stdlib, before any heavy import
 
     from cadgen._internal.fea.run import solve_study
 
-    solved = solve_study(document, glb, study=parsed, occurrence=occurrence, mesh_size=mesh_size, verbose=verbose)
+    solved = solve_study(document, glb, study=parsed, occurrence=occurrence, mesh_size=mesh_size, verbose=verbose,
+                         sidecar=sidecar)
     if not solved.ok:  # only an assembly stops before its solve, and a process solves one part
         raise ValueError(f"{process.name}: {document.name} holds several parts and a {process.name} check solves one: "
                          "name it with --occurrence")
