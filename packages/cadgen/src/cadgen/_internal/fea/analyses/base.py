@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 __all__ = [
     "Analysis", "AnalysisBase", "AnalysisResult", "CheckSpec", "FieldSpec", "Inputs", "Rung", "Scaling", "Series",
     "SeriesFrame", "SeriesKind", "SolveContext", "Tier", "by_severity", "finding", "frame_attributes", "plan_value",
-    "max_frames", "mirrored", "unfold_result", "xyz",
+    "max_frames", "mirrored", "unfold_result", "verdict", "xyz",
 ]
 
 Tier = Literal[1, 2, 3]
@@ -183,10 +183,25 @@ class AnalysisBase:
         return f"{stem} {self.extras_word}"
 
 
-def finding(severity: str, kind: str, summary: str, description: str, items=()) -> dict:
-    """One entry of a study's findings."""
-    return {"check": "fea", "severity": severity, "type": kind, "summary": summary, "description": description,
-            "items": list(items)}
+def finding(severity: str, kind: str, summary: str, description: str, items=(), *,
+            measured: dict | None = None, fix: dict | None = None) -> dict:
+    """One entry of a study's findings: a check an engineer reads and an agent acts on.
+
+    severity: ``error`` (fails: the part as designed is likely to fail or be defective), ``warning`` (a risk
+        to fix or confirm), ``info`` (passed, or a note).
+    measured: the number judged, when there is one: ``{"value", "limit", "units", "pass_when"}`` with
+        ``pass_when`` ``"below"`` or ``"above"`` the limit.
+    fix: what to change so it passes: ``{"action", "summary", "where", "params"}``; ``action`` a short verb
+        id (``add_feeder``, ``thicken``, ``increase_radius``...), ``summary`` the sentence an engineer reads,
+        ``where`` face refs or points, ``params`` the target values (``{"thickness_mm": 4}``).
+    """
+    entry = {"check": "fea", "severity": severity, "type": kind, "summary": summary, "description": description,
+             "items": list(items)}
+    if measured is not None:
+        entry["measured"] = dict(measured)
+    if fix is not None:
+        entry["fix"] = dict(fix)
+    return entry
 
 
 _SEVERITY = {"error": 0, "warning": 1, "info": 2}
@@ -195,6 +210,15 @@ _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 def by_severity(found: list[dict]) -> list[dict]:
     """Findings errors first, then warnings, then notes; stable within each."""
     return sorted(found, key=lambda item: _SEVERITY[item["severity"]])
+
+
+def verdict(found: list[dict]) -> dict:
+    """The study's verdict, as a CI check reads one: ``fail`` on any error, ``warn`` on any warning, else ``pass``."""
+    errors = sum(1 for item in found if item["severity"] == "error")
+    warnings = sum(1 for item in found if item["severity"] == "warning")
+    status = "fail" if errors else "warn" if warnings else "pass"
+    return {"status": status, "errors": errors, "warnings": warnings,
+            "notes": sum(1 for item in found if item["severity"] == "info")}
 
 
 def xyz(point, digits: int = 3) -> list[float]:
