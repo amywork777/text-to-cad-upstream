@@ -240,11 +240,12 @@ RULES: tuple[Rule, ...] = (
     Rule(MCP_CODE, _mcp_change, final=True),
     Rule(("packages/cadgen/**", "scripts/bundle/**"), CADGEN_CONSUMERS),
     # The stress solver's own tests need the optional cadgen[fea] stack, which no other job
-    # installs: it, its commands, the result types it returns, the extra's pins and its skill.
+    # installs: it, its commands, the result types it returns, the extra's pins and the skills
+    # whose tables its suites hold to the registry (fea, and manufacturing-sim for its processes).
     Rule((
         f"{CADGEN_SRC}/_internal/fea/**", f"{CADGEN_SRC}/fea.py", f"{CADGEN_SRC}/cli/fea_*",
         f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", "skills/fea/**",
-        f"{CADGEN_SUITE}/test_fea*.py",
+        "skills/manufacturing-sim/**", f"{CADGEN_SUITE}/test_fea*.py",
     ), select(flags=["fea"])),
 
     # The shared UI and the apps. The snapshot runtime is built from core alone, so ui

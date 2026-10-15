@@ -194,6 +194,12 @@ export const skillGroups = [
       "Runs a linear static stress study on a STEP part, reporting peak stress, safety factor and displacement with a colour-mapped result.",
   },
   {
+    name: "Manufacturing Sim",
+    path: "skills/manufacturing-sim",
+    summary:
+      "Simulates a casting freezing in its mould (hot spots, porosity, thin sections that may not fill) and gives labelled hand estimates for moulding, printing, machining, sheet metal, welding, reflow and forming.",
+  },
+  {
     name: "G-code",
     path: "skills/gcode",
     summary:
