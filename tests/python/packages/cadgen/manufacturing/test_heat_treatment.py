@@ -115,7 +115,7 @@ class ThinAndThick(unittest.TestCase):
     def test_a_surface_under_the_target_fails_with_what_it_measured_and_the_fix(self):
         soft = next(f for f in self.water.findings if f["type"] == "soft_spot")
         self.assertEqual(soft["severity"], "error")
-        self.assertEqual(set(soft["measured"]), {"value", "limit", "units", "pass_when"})
+        self.assertEqual(set(soft["measured"]), {"quantity", "value", "limit", "units", "pass_when"})
         self.assertEqual((soft["measured"]["limit"], soft["measured"]["pass_when"]), (55.0, "above"))
         self.assertLess(soft["measured"]["value"], 55.0)
         self.assertIn(soft["fix"]["action"], {"change_material", "change_quenchant", "thin"})

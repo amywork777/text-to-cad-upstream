@@ -343,8 +343,8 @@ class HeatTreatmentProcess(Process):
             return []
         hrc, nodes, depth = result.fields["hardness"], result.dof_locations, result.scalars["depth"]
         soft = hrc < target
-        measured_surface = {"value": round(float(hrc[surface].min()), 2), "limit": target, "units": "HRC",
-                            "pass_when": "above"}
+        measured_surface = {"quantity": "softest surface hardness", "value": round(float(hrc[surface].min()), 2),
+                            "limit": target, "units": "HRC", "pass_when": "above"}
         if not (soft & surface).any():
             if not soft.any():
                 words = f"hardens through: every point reaches {target:g} HRC, the core {float(hrc[core]):.3g}"
@@ -405,7 +405,8 @@ class HeatTreatmentProcess(Process):
                 "where": [xyz(point)], "params": {"quenchant": slower}}
 
         when = f"at {time_words(run.spread_s)}, when the part spans {run.spread_C:.0f} °C"
-        measured = {"value": round(value, 2), "limit": round(limit, 2), "units": "MPa", "pass_when": "below"}
+        measured = {"quantity": "peak quench tension (elastic) against the strength there", "value": round(value, 2),
+                    "limit": round(limit, 2), "units": "MPa", "pass_when": "below"}
         item = [{"text": "the peak tension", "ref": None, "at": xyz(nodes[peak])}]
         yields = value > limit
         if not yields:
@@ -429,14 +430,15 @@ class HeatTreatmentProcess(Process):
         words = (f"Distorts up to {float(moved[far]):.3g} mm at {xyz(nodes[far])} mm while it cools unevenly ({when}), "
                  "against the part shrunk evenly")
         item = [{"text": "the largest distortion", "ref": None, "at": xyz(nodes[far])}]
+        distortion = {"quantity": "largest distortion (elastic)", "value": round(float(moved[far]), 4), "units": "mm"}
         if yields:
             found.append(finding("warning", "distortion", words + ": it yields as it does, so part of this stays",
                                  "elastic thermal strain only; the permanent share needs the plasticity and the "
                                  "transformation, not modelled: read this as where and which way it moves", item,
-                                 fix=gentler(nodes[far])))
+                                 measured=distortion, fix=gentler(nodes[far])))
         else:
             found.append(finding("info", "distortion", words + ": elastic, it springs back as the temperature evens out",
-                                 "elastic thermal strain only; no transformation strain", item))
+                                 "elastic thermal strain only; no transformation strain", item, measured=distortion))
         return found
 
     def _crack_risk(self, ctx: SolveContext, result: AnalysisResult, inputs: HeatTreatmentInputs, strength) -> dict:
@@ -468,7 +470,8 @@ class HeatTreatmentProcess(Process):
                            f"the most, {float(tension[worst]):.0f} MPa against {float(strength[worst]):.0f} MPa, at "
                            f"{xyz(nodes[worst])} mm", detail,
                            [{"text": "the most loaded sharp edge", "ref": None, "at": xyz(nodes[worst])}],
-                           measured={"value": round(float(tension[worst]), 2),
+                           measured={"quantity": "tension at a sharp edge against its strength",
+                                     "value": round(float(tension[worst]), 2),
                                      "limit": round(float(strength[worst]), 2), "units": "MPa", "pass_when": "below"})
         worst = max(over, key=lambda node: float(tension[node] - strength[node]))
         faces = edges[worst]
@@ -479,7 +482,8 @@ class HeatTreatmentProcess(Process):
                        f"as it turns to martensite ({float(spread[worst]):.0f} °C, under Ms {ms:.0f} °C); "
                        f"{len(over)} sharp-edge point{'s' if len(over) != 1 else ''} in all", detail,
                        [{"text": "the sharp edge", "ref": ref, "at": xyz(nodes[worst])} for ref in faces],
-                       measured={"value": round(float(tension[worst]), 2), "limit": round(float(strength[worst]), 2),
+                       measured={"quantity": "tension at a sharp edge against its strength",
+                                 "value": round(float(tension[worst]), 2), "limit": round(float(strength[worst]), 2),
                                  "units": "MPa", "pass_when": "below"},
                        fix={"action": "add_fillet",
                             "summary": f"Round the edge where {' and '.join(faces)} meet, {radius:g} mm or more, or "
@@ -505,7 +509,8 @@ class HeatTreatmentProcess(Process):
         face = ctx.volume.faces.get(ordinal) if ordinal is not None else None
         items = [{"text": f"the thickest section, about {thick:.2g} mm", "ref": None, "at": xyz(nodes[core])},
                  {"text": f"a {thin:.2g} mm section", "ref": face.ref if face else None, "at": xyz(cut.middle[thinnest])}]
-        measure = {"value": round(ratio, 3), "limit": SECTION_RATIO, "units": "", "pass_when": "below"}
+        measure = {"quantity": "thickest section against the thinnest", "value": round(ratio, 3), "limit": SECTION_RATIO,
+                   "units": "×", "pass_when": "below"}
         if ratio <= SECTION_RATIO:
             return [finding("info", "section_change",
                             f"No thick-to-thin transition: the thickest section, about {thick:.2g} mm, is "
@@ -537,7 +542,8 @@ class HeatTreatmentProcess(Process):
                    f"{inputs.coefficient:g} W/(m² K) (H = {s['grossmann_H']:.2g} per inch) cools at {expected:.3g} °C/s "
                    f"at its centre at 700 °C; the simulation's {'centre' if exact else 'deepest point'} cools at "
                    f"{simulated:.3g} °C/s ({ratio:.2g} times)")
-        measured = {"value": round(ratio, 4), "limit": tolerance, "units": "times the hand check", "pass_when": "below"}
+        measured = {"quantity": "simulation against the hand check", "value": round(ratio, 4), "limit": tolerance,
+                    "units": "×", "pass_when": "below"}
         if 1.0 / tolerance <= ratio <= tolerance:
             return finding("info", "hand_check", summary,
                            "the exact conduction solution with the same h and austenite's properties"

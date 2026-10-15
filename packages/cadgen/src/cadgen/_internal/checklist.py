@@ -94,14 +94,17 @@ def _figure(value: float) -> str:
 
 
 def _measured_words(measured: dict) -> str:
-    """"liquid cut off: 6780 mm³, needs below 13.6 mm³": the value against its limit, and which side passes. A unit
-    written against its number takes no space: "1.1×", "26%", "0.724°"."""
+    """"liquid cut off: 6780 mm³, needs below 13.6 mm³": the value against its limit, and which side passes, or the
+    value alone when the check judges no limit ("largest distortion: 0.43 mm"). A unit written against its number
+    takes no space: "1.1×", "26%", "0.724°"."""
     units = str(measured.get("units") or "")
 
     def amount(number) -> str:
         return f"{_figure(number)}{'' if units in _CLOSE_UNITS else ' '}{units}"
 
     head = f"{measured['quantity']}: " if measured.get("quantity") else ""
+    if measured.get("limit") is None:
+        return f"{head}{amount(measured['value'])}"
     return f"{head}{amount(measured['value'])}, needs {measured.get('pass_when', 'below')} {amount(measured['limit'])}"
 
 

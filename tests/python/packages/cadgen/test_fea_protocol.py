@@ -423,6 +423,10 @@ class Checklist(unittest.TestCase):
         bend = {"severity": "info", "type": "springback_within_tolerance", "summary": "s", "items": [],
                 "measured": {"quantity": "bend 1 springback", "value": 0.7241, "limit": 3.0, "units": "°", "pass_when": "below"}}
         self.assertEqual(checklist_lines([bend])[0], "PASS  springback_within_tolerance  bend 1 springback: 0.724°, needs below 3°")
+        # A quantity the check judges no limit for is reported as it is.
+        moved = {"severity": "warning", "type": "distortion", "summary": "s", "items": [],
+                 "measured": {"quantity": "largest distortion (elastic)", "value": 0.06374, "units": "mm"}}
+        self.assertEqual(checklist_lines([moved])[0], "WARN  distortion  largest distortion (elastic): 0.0637 mm")
 
     def test_the_verdict_is_cams_shape_and_a_gate_fails_on_what_it_names(self):
         from cadgen._internal.checklist import exit_code, fail_on_value, gate_failed, verdict
