@@ -55,8 +55,9 @@ Not in this version: phase change, distortion and hardness after a quench.
 
 ## 3D printing
 
-Not in this version: the layer-by-layer build, warp, curl and residual stress. Printability (walls,
-overhangs, supports, orientation) is `$dfam-check`'s.
+The layer-by-layer build, its warp, curl and residual stress run today as `printing`
+([printing.md](printing.md)); these remain its estimates by hand. Printability (walls, overhangs,
+supports, orientation) is `$dfam-check`'s.
 
 - **FDM warp.** Each layer shrinks by the thermal strain α (T_glass - T_bed) as it cools to the bed,
   and a long flat part curls up at its ends: about 0.6 % for ABS (α ≈ 90 × 10⁻⁶ /K, 100 to 30 °C),
@@ -117,7 +118,9 @@ are the same hand checks without a STEP, and the draw's.
 
 ## Welding
 
-Not in this version: the weld's heat, its distortion and its residual stress as a simulation.
+A weld's distortion and residual stress run today as `welding` ([welding.md](welding.md)), from
+the inherent strain of its zone; these remain its estimates by hand. Not in this version: the weld's
+heat as a simulation.
 
 - **Transverse shrinkage** of a butt weld, in mm: about 0.2 × (weld cross-sectional area in mm² /
   plate thickness in mm) + 0.05 × root opening in mm [6]. A 16 mm plate with a 102 mm² weld and a

@@ -28,7 +28,7 @@ SPEC_2_1 = ("cfd_turbulent", "cfd_compressible", "creep", "composite", "bolt", "
 LATER = (("topology", "Lighten it"), ("acoustic", "Sound"), ("fracture", "Cracks"), ("conjugate_heat", "Cooled by flow"),
          ("rotordynamics", "Spinning"), ("fsi", "Flow and bending"), ("piezo", "Piezo"), ("multiphase", "Two fluids"),
          ("casting", "Casting"), ("heat_treatment", "Heat treatment"), ("machining", "Machining"),
-         ("molding", "Injection molding"))
+         ("molding", "Injection molding"), ("printing", "3D printing"), ("welding", "Welding"))
 
 
 def planned_entry(name: str):

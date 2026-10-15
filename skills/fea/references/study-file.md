@@ -70,6 +70,8 @@ none is registered so today.
 | `machining` | Machining | runs today (lite: a milling or turning cut's deflection and stress, and its chatter stability lobes, the tool rigid) | `$manufacturing-sim`'s machining reference |
 | `sheet_metal` | Sheet metal | runs today, as an estimate per bend (springback, cracking, bend allowance) | `$manufacturing-sim`'s sheet metal reference |
 | `molding` | Injection molding | runs today (lite: a moulded part cooling in its mould to ejection and its warp from uneven shrinkage, the cavity starting full and packed) | `$manufacturing-sim`'s molding reference |
+| `printing` | 3D printing | runs today (lite: a part built band by band, each band's inherent strain shrinking it on the part below, then off the plate) | `$manufacturing-sim`'s printing reference |
+| `welding` | Welding | runs today (lite: the inherent strain of each weld's zone by the classical relations, all welds at once) | `$manufacturing-sim`'s welding reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 
