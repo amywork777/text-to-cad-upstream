@@ -65,6 +65,9 @@ before you report.
   features up to 6 mm [11], and the result says so.
 - `damping_ratio`: every mode's, 0.02 (2 %) when left out: typical for a clamped part, not measured
   (a tap test measures it).
+- `max_spindle_rpm`: the fastest the machine's spindle turns. Left out, 24 000 rpm, the high-speed
+  spindle of a common small VMC [13]; give the machine's own, always for a lathe, whose spindle is
+  far slower. A chatter fix never asks for a speed past it, and a `spindle_rpm` past it is refused.
 - Shared keys, as in `$fea`'s study file: `mesh` (`size_mm`, `refine`), `output`, `margin` (the
   safety factor the stress keeps, 2 by default), `fit` and `view` (controls, presets, sections and
   show; there are no `checks`: its findings are its verdict).
@@ -158,8 +161,8 @@ solver's. Values marked * are estimates (see [Numbers not verified](#numbers-not
   and where, `yield_MPa`, `safety_factor`, `modes` (each `frequency_Hz` and
   `modal_stiffness_N_per_mm` at the cut), `dominant_mode` and its
   `dominant_modal_stiffness_N_per_mm`, `residual_compliance_mm_per_N`, and `chatter`
-  (`limit_mm` at `spindle_rpm`, `stable`, `absolute_limit_mm` and its frequency,
-  `nearest_stable_rpm` below and above, `pockets`, `tooth_frequency_Hz`, `damping_ratio`,
+  (`limit_mm` at `spindle_rpm`, `max_spindle_rpm`, `stable`, `absolute_limit_mm` and its frequency,
+  `nearest_stable_rpm` below and above and `pockets`, up to `max_spindle_rpm`, `tooth_frequency_Hz`, `damping_ratio`,
   `cutting_coefficient_MPa` (K), `drawn_to_mm`).
 - CLI: "under the cut: 0.691 mm at [40, 16, 30] mm (tolerance ±0.02 mm); peak stress 418 MPa (yield
   276 MPa)", "cutting force 242 N into the face (Kienzle k_c 2266 N/mm² at a 0.0155 mm chip)", "rings
@@ -185,7 +188,7 @@ points in mm, `params`: the values to set), most with `alternatives` in the same
 | `clamp_stress_close` | warning | Its safety factor is under the margin. | `reduce_depth`: `depth_mm` that keeps the margin |
 | `yields_under_cut` | error | The cut bends the part past yield: it stays bent. A sharp inside corner's peak grows as the mesh is refined: read it a little away. | `reduce_depth`, as above; or clamp it closer to the cut |
 | `chatter_stable` | info | The depth is under 80 % of the limit at the spindle speed (or no lobe comes near it). | |
-| `chatter_close` | warning | It is within 20 % of the limit: the damping and the cutting force are about that uncertain. | `change_speed`: `spindle_rpm`, the nearest pocket that clears it; else `reduce_depth` |
+| `chatter_close` | warning | It is within 20 % of the limit: the damping and the cutting force are about that uncertain. | `reduce_depth`: `depth_mm`, 80 % of the limit at its own speed; alternative `change_speed`: `spindle_rpm`, the nearest pocket that clears it, only where one lies within `max_spindle_rpm` |
 | `chatter` | error | The depth is past the limit: the cut chatters, leaving a wavy face and hammering the tool. | as `chatter_close` |
 | `hand_check` | info | The dominant mode's frequency, stiffness and damping, Tlusty's one-mode limit, and the lobes' lowest against it. | |
 | `cutting_force_estimated` | info | The material has no published Kienzle values (Delrin): its cutting force is an estimate. | |
@@ -262,6 +265,8 @@ thicker part can take a coarser `mesh.size_mm`.
 11. ISO 2768-1:1989, general tolerances for linear dimensions: fine class ±0.05 mm from 0.5 to 6 mm.
 12. The estimates' source [4] in [estimates.md](estimates.md#sources): Altintas's cutting forces and
     stability lobes, and Sandvik Coromant's handbook.
+13. FANUC, ROBODRILL α-DiB Plus series (compact vertical machining centres): a 10 000 min⁻¹ spindle
+    as standard and a 24 000 min⁻¹ high-speed spindle as an option.
 
 ## Numbers not verified
 

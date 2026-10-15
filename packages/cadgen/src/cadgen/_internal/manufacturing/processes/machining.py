@@ -15,7 +15,9 @@ on, the ``fixtures`` the vise or the chuck holds, and the workpiece ``material``
 3. The part's transfer function at that patch along the normal, from the modes (with ``damping_ratio``) and the
    static solve's residual compliance, gives the regenerative stability lobes (Altintas and Budak's zero-order
    solution for milling, Tlusty's orthogonal cut for turning): the depth the cut stays stable to at the study's
-   speed, at any speed, and the nearest stable speeds.
+   speed, at any speed, and the nearest stable speeds the spindle reaches (``max_spindle_rpm``). A cut past its limit
+   is fixed by the depth that is stable at its own speed; a stable pocket's speed is the alternative, only within the
+   spindle's reach.
 
 Fields: the displacement under the cut, the von Mises stress, and the shape the part rings in at the cut (the
 dominant mode's, its largest motion 1 mm). There are no view checks: the findings are the verdict, each with what it
@@ -65,6 +67,10 @@ DEFAULT_TOLERANCE_MM = 0.05
 DEFLECTION_CLOSE = 0.5
 #: A depth over this share of the chatter limit is close: the damping and the cutting force are this uncertain.
 CHATTER_CLOSE = 0.8
+#: The fastest the spindle turns when the study gives no max_spindle_rpm: 24,000 rpm, the high-speed spindle of a
+#: common small VMC (FANUC ROBODRILL α-DiB's 24,000 min⁻¹ option; the machining reference's source [13]). A chatter fix
+#: never asks for a speed past it.
+DEFAULT_MAX_SPINDLE_RPM = 24_000.0
 #: A wall is thin, and bends like a plate, when its reach from the clamp is this many times its thickness.
 THIN_WALL = 3.0
 #: The spindle speeds the lobes are drawn over, as multiples of the study's, and how many.
@@ -93,6 +99,8 @@ class MachiningInputs(Inputs):
     tolerance_mm: float = DEFAULT_TOLERANCE_MM
     tolerance_given: bool = False
     damping: float = DEFAULT_DAMPING
+    #: The fastest the spindle turns: a speed a fix gives is never past it.
+    max_spindle_rpm: float = DEFAULT_MAX_SPINDLE_RPM
     #: What the solve found of the cut (the face the cutter pushed on, and the force), for the study's echo.
     solved: dict = field(default_factory=dict, compare=False, hash=False)
 
@@ -147,7 +155,7 @@ class MachiningProcess(Process):
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = frozenset({
         "operation", "tool", "spindle_rpm", "feed_per_tooth_mm", "depth_mm", "width_mm", "milling", "cut_faces",
-        "fixtures", "tolerance_mm", "damping_ratio",
+        "fixtures", "tolerance_mm", "damping_ratio", "max_spindle_rpm",
     })
     material_needs: ClassVar[frozenset[str]] = frozenset({"density", "yield_strength"})
     # The displacement first: the viewer opens on it, the deflection under the cut. The stress colours the file.
@@ -197,6 +205,13 @@ class MachiningProcess(Process):
                          "depth_mm": "the depth of cut, mm (milling: axial)"}[key]
                 raise ValueError(f"study.{key}: {words}")
         rpm = kinds.number(document["spindle_rpm"], where="spindle_rpm", positive=True)
+        fastest = DEFAULT_MAX_SPINDLE_RPM
+        if "max_spindle_rpm" in document:
+            fastest = kinds.number(document["max_spindle_rpm"], where="max_spindle_rpm", positive=True)
+        if rpm > fastest:
+            raise ValueError(f"spindle_rpm: {rpm:g} rpm is past the spindle's {fastest:g} rpm (max_spindle_rpm"
+                             + ("" if "max_spindle_rpm" in document else f", {DEFAULT_MAX_SPINDLE_RPM:g} unless given")
+                             + "); give the machine's own max_spindle_rpm")
         feed = kinds.number(document["feed_per_tooth_mm"], where="feed_per_tooth_mm", positive=True)
         depth = kinds.number(document["depth_mm"], where="depth_mm", positive=True)
         width, milling = 0.0, "down"
@@ -233,7 +248,7 @@ class MachiningProcess(Process):
         return MachiningInputs(refs, anchors, True, material=material, operation=operation, diameter_mm=diameter,
                                flutes=flutes, spindle_rpm=rpm, feed_mm=feed, depth_mm=depth, width_mm=width,
                                milling=milling, cut_faces=cut, fixtures=fixtures, tolerance_mm=tolerance,
-                               tolerance_given=given, damping=damping)
+                               tolerance_given=given, damping=damping, max_spindle_rpm=fastest)
 
     # -- the ladder ----------------------------------------------------------------------------------
 
@@ -566,16 +581,7 @@ class MachiningProcess(Process):
         if depth <= CHATTER_CLOSE * limit:
             return [finding("info", "chatter_stable", f"{head}; it cuts {depth:g} mm: no chatter",
                             "the regenerative stability lobe at this spindle speed", item, measured=measured)]
-        safe = round_down(CHATTER_CLOSE * limit)
-        shallower = {"action": "reduce_depth", "where": [point], "params": {"depth_mm": safe},
-                     "summary": f"Cut about {safe:g} mm deep (depth_mm) at {speed}, under the chatter limit"}
-        better = _better_speed(lobes, rpm, depth)
-        if better is not None:
-            fix = {"action": "change_speed", "where": [point], "params": {"spindle_rpm": round(better)},
-                   "summary": f"Run the spindle at about {better:.0f} rpm (spindle_rpm), a stable pocket for {depth:g} mm",
-                   "alternatives": [shallower]}
-        else:
-            fix = shallower
+        fix = _chatter_fix(lobes, inputs, limit, point)
         if depth > limit:
             return [finding("error", "chatter", f"{head}; it cuts {depth:g} mm, so it chatters: a rough, wavy face and a "
                             "hammered tool", "the regenerative stability lobe at this spindle speed: past it, the "
@@ -620,18 +626,20 @@ class MachiningProcess(Process):
         def finite(value) -> float | None:
             return round(float(value), 6) if value is not None and math.isfinite(value) else None
 
-        chatter: dict[str, Any] = {"spindle_rpm": inputs.spindle_rpm, "depth_mm": inputs.depth_mm,
+        chatter: dict[str, Any] = {"spindle_rpm": inputs.spindle_rpm, "max_spindle_rpm": inputs.max_spindle_rpm,
+                                   "depth_mm": inputs.depth_mm,
                                    "tooth_frequency_Hz": round(inputs.spindle_rpm * inputs.teeth / 60.0, 4),
                                    "damping_ratio": inputs.damping, "cutting_coefficient_MPa": round(s["coefficient"], 4)}
         if lobes is not None:
             limit = float(lobes.envelope_mm[np.searchsorted(lobes.rpm, inputs.spindle_rpm)])
-            below, above = _stable_neighbours(lobes, inputs.spindle_rpm, inputs.depth_mm)
+            below, above = _stable_neighbours(lobes, inputs.spindle_rpm, inputs.depth_mm, inputs.max_spindle_rpm)
             chatter.update({
                 "limit_mm": finite(limit), "stable": bool(inputs.depth_mm <= limit),
                 "absolute_limit_mm": finite(lobes.absolute_mm),
                 "absolute_limit_at_Hz": round(lobes.absolute_omega / (2 * math.pi), 4),
                 "nearest_stable_rpm": {"below": finite(below), "above": finite(above)},
-                "pockets": [{"rpm": round(n, 1), "limit_mm": round(a, 6)} for n, a in _pockets(lobes, inputs.spindle_rpm)],
+                "pockets": [{"rpm": round(n, 1), "limit_mm": round(a, 6)} for n, a in _pockets(lobes, inputs.spindle_rpm)
+                            if n <= inputs.max_spindle_rpm],
                 "lobes": lobes.lobes, "drawn_to_mm": finite(s["drawn_to_mm"]),
             })
         summary = {
@@ -695,6 +703,7 @@ class MachiningProcess(Process):
                                  "group": inputs.material.group, "estimated": inputs.material.estimated},
             "spindle_rpm": inputs.spindle_rpm, "feed_per_tooth_mm": inputs.feed_mm, "depth_mm": inputs.depth_mm,
             "tolerance_mm": inputs.tolerance_mm, "damping_ratio": inputs.damping,
+            "max_spindle_rpm": inputs.max_spindle_rpm,
             "cut_force_N": round(abs(forces["normal_N"]), 4),
         }
         if inputs.solved.get("face"):
@@ -843,27 +852,46 @@ def _pockets(lobes, rpm: float, count: int = 3) -> list[tuple[float, float]]:
     return [(float(lobes.rpm[i]), float(env[i])) for i in sorted(order, key=lambda i: lobes.rpm[i])]
 
 
-def _better_speed(lobes, rpm: float, depth: float) -> float | None:
-    """The nearest speed whose pocket keeps ``depth`` clear of :data:`CHATTER_CLOSE`: a pocket's peak where one does,
-    else the nearest speed that does; ``None`` when no speed drawn does."""
+def _chatter_fix(lobes, inputs: MachiningInputs, limit: float, point) -> dict:
+    """The fix of a cut at or near its chatter limit: the depth that keeps it clear of :data:`CHATTER_CLOSE` at the
+    spindle's speed, always; a stable pocket's speed for the depth it cuts as an alternative, only where one lies within
+    the spindle's ``max_spindle_rpm``."""
+    rpm, depth = inputs.spindle_rpm, inputs.depth_mm
+    safe = round_down(CHATTER_CLOSE * limit)
+    fix = {"action": "reduce_depth", "where": [point], "params": {"depth_mm": safe},
+           "summary": f"Cut about {safe:g} mm deep (depth_mm) at {rpm:g} rpm, under the chatter limit"}
+    better = _better_speed(lobes, rpm, depth, inputs.max_spindle_rpm)
+    if better is not None:
+        fix["alternatives"] = [{
+            "action": "change_speed", "where": [point], "params": {"spindle_rpm": round(better)},
+            "summary": f"Or run the spindle at about {better:.0f} rpm (spindle_rpm), a stable pocket for {depth:g} mm "
+                       f"within its {inputs.max_spindle_rpm:g} rpm; the pocket stands on the lobes' damping, so cut a "
+                       "test piece there first"}]
+    return fix
+
+
+def _better_speed(lobes, rpm: float, depth: float, fastest: float) -> float | None:
+    """The nearest speed up to ``fastest`` whose pocket keeps ``depth`` clear of :data:`CHATTER_CLOSE`: a pocket's peak
+    where one does, else the nearest speed that does; ``None`` when no speed drawn under ``fastest`` does."""
     import numpy as np
 
     env = lobes.envelope_mm
     wanted = depth / CHATTER_CLOSE
-    peaks = [(n, a) for n, a in _pockets(lobes, rpm, count=len(env)) if a >= wanted and math.isfinite(a)]
+    peaks = [(n, a) for n, a in _pockets(lobes, rpm, count=len(env)) if a >= wanted and math.isfinite(a) and n <= fastest]
     if peaks:
         return min(peaks, key=lambda pair: abs(math.log(pair[0] / rpm)))[0]
-    clear = np.flatnonzero(env >= wanted)
+    clear = np.flatnonzero((env >= wanted) & (lobes.rpm <= fastest))
     if not len(clear):
         return None
     return float(lobes.rpm[clear[np.argmin(np.abs(np.log(lobes.rpm[clear] / rpm)))]])
 
 
-def _stable_neighbours(lobes, rpm: float, depth: float) -> tuple[float | None, float | None]:
-    """The nearest speeds below and above ``rpm`` (inclusive) at which ``depth`` is stable, among those drawn."""
+def _stable_neighbours(lobes, rpm: float, depth: float, fastest: float) -> tuple[float | None, float | None]:
+    """The nearest speeds below and above ``rpm`` (inclusive) at which ``depth`` is stable, among those drawn up to the
+    spindle's ``fastest``."""
     import numpy as np
 
-    stable = lobes.envelope_mm >= depth
+    stable = (lobes.envelope_mm >= depth) & (lobes.rpm <= fastest)
     below = np.flatnonzero(stable & (lobes.rpm <= rpm))
     above = np.flatnonzero(stable & (lobes.rpm >= rpm))
     return (float(lobes.rpm[below[-1]]) if len(below) else None, float(lobes.rpm[above[0]]) if len(above) else None)

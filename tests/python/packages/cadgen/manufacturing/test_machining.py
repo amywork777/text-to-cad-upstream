@@ -57,6 +57,9 @@ class StudyFile(unittest.TestCase):
 
     def test_the_errors_name_the_field(self):
         cases = [
+            (MILL, {"spindle_rpm": 30000}, "spindle_rpm: 30000 rpm is past the spindle's 24000 rpm (max_spindle_rpm, "
+                                           "24000 unless given)"),
+            (MILL, {"max_spindle_rpm": 0}, "max_spindle_rpm: must be > 0"),
             (MILL, {"operation": None}, "study.operation: how it is cut, one of milling, turning"),
             (MILL, {"operation": "drilling"}, 'study.operation: how it is cut, one of milling, turning; got "drilling"'),
             (MILL, {"material": "unobtainium"}, "material: 'unobtainium' is not a material machining knows"),
@@ -144,6 +147,33 @@ class Lobes(unittest.TestCase):
         pocket = 60 * self.f_n / self.teeth
         near = np.abs(rpm / pocket - 1) < 0.08
         self.assertGreater(float(lobes.envelope_mm[near].max()), 5 * tlusty)
+
+    def test_a_chatter_fix_cuts_shallower_at_its_speed_and_offers_a_pocket_only_within_the_spindles_reach(self):
+        import numpy as np
+
+        from cadgen._internal.manufacturing.processes.machining import CHATTER_CLOSE, _chatter_fix
+
+        # 9000 rpm, between lobes; the pockets, where the tooth passes at the mode's frequency over a whole number, are
+        # at 15 000 and 30 000 rpm.
+        rpm = np.unique(np.concatenate([np.geomspace(3_000, 60_000, 8_000), [9_000.0]]))
+        lobes = self.lobes(rpm)
+        limit = float(lobes.envelope_mm[np.searchsorted(lobes.rpm, 9_000.0)])
+
+        def fix(**study):
+            cut = read_study({**MILL, "spindle_rpm": 9000, "depth_mm": round(3 * limit, 4), **study}).inputs
+            return cut, _chatter_fix(lobes, cut, limit, [0, 0, 0])
+
+        cut, first = fix()
+        self.assertEqual(cut.max_spindle_rpm, 24_000.0)                  # a common VMC spindle when the study says none
+        # The fix is the depth that is stable at its own speed; a pocket the spindle reaches is the alternative.
+        self.assertEqual(first["action"], "reduce_depth")
+        self.assertLessEqual(first["params"]["depth_mm"], CHATTER_CLOSE * limit)
+        [speed] = first["alternatives"]
+        self.assertEqual(speed["action"], "change_speed")
+        self.assertTrue(14_000 < speed["params"]["spindle_rpm"] <= 24_000, speed)
+        # A spindle that reaches no pocket gets the depth alone, never a speed it cannot turn.
+        _, slow = fix(max_spindle_rpm=10_000)
+        self.assertEqual((slow["action"], slow.get("alternatives")), ("reduce_depth", None))
 
 
 def wall_and_block(directory: Path) -> tuple[Path, Path]:
