@@ -13,7 +13,9 @@ runs on linear tets. It writes the time to fully solid at every node (the defaul
 hottest), temperature and liquid fraction per frame, the Niyama value G / √(cooling rate) near the end of
 solidification, and the cooling rate there. Its findings are the founder's: isolated hot spots (shrinkage
 porosity), low Niyama, sections that freeze before the mould fills (misrun, cold shut), and Chvorinov's rule as a
-hand check of the total time. There are no view checks: a casting's verdict is its findings. Stdlib only at import.
+hand check of the total time. Each says what it measured against its limit, a pass included, and each error and
+warning the fix that makes it pass (a riser sized by Chvorinov's rule, a thicker section, a hotter mould...). There
+are no view checks: a casting's verdict is its findings. Stdlib only at import.
 """
 
 from __future__ import annotations
@@ -53,6 +55,10 @@ MOST_POCKETS = 5
 #: A held feeder is held this many times Chvorinov's time for the casting at most: a riser of 1.2 times its modulus
 #: stays liquid 1.2² times as long.
 HOLD_FOR = 1.44
+#: A riser feeds a section when its modulus is this many times the section's (so it stays liquid HOLD_FOR times as long).
+RISER_FACTOR = 1.2
+#: A cylinder riser as tall as it is wide, standing on the casting, has a modulus V/A of a fifth of its diameter.
+RISER_DIAMETER_PER_MODULUS = 5.0
 FEEDER_KEYS = {"faces", "h_W_m2K", "held_C"}
 NIYAMA_UNITS = "(°C·s)^½/mm"
 
@@ -131,6 +137,32 @@ def time_words(seconds: float) -> str:
     from cadgen._internal.fea.analyses.thermal_transient import time_label
 
     return time_label(seconds)
+
+
+def rule_s(inputs: CastingInputs, modulus_mm: float, mold_C: float | None = None) -> float:
+    """Chvorinov's time (s) for a section of modulus V/A ``modulus_mm`` in this study's mould (or one at ``mold_C``)."""
+    from cadgen._internal.fea.foundry import chvorinov
+
+    return chvorinov(inputs.alloy, inputs.process, pour_C=inputs.pour_C, h=inputs.h, modulus_mm=modulus_mm,
+                     mold_C=inputs.mold_C if mold_C is None else mold_C)["estimate_s"]
+
+
+def least(rising: Callable[[float], float], target: float, low: float, high: float) -> float | None:
+    """The least x in [low, high] where ``rising(x)``, a rising function, reaches ``target``; None if it never does."""
+    if rising(high) < target:
+        return None
+    if rising(low) >= target:
+        return low
+    for _ in range(60):
+        middle = 0.5 * (low + high)
+        low, high = (low, middle) if rising(middle) >= target else (middle, high)
+    return high
+
+
+def modulus_for(inputs: CastingInputs, seconds: float) -> float:
+    """The modulus V/A (mm) Chvorinov's rule gives a section that freezes in ``seconds`` in this mould: a region's own
+    modulus, read off when the simulation says it froze."""
+    return least(lambda modulus: rule_s(inputs, modulus), seconds, 1e-4, 1e4) or 1e4
 
 
 class CastingAnalysis(AnalysisBase):
@@ -336,6 +368,25 @@ class CastingAnalysis(AnalysisBase):
         return result
 
     # -- findings ------------------------------------------------------------------------------------
+    #
+    # Each check says FAIL, WARN or PASS (an info with what it measured), and every error and warning carries the fix
+    # that makes it pass, sized from Chvorinov's rule. Which are errors and which warnings, as a founder judges them:
+    #
+    # - An ERROR is a likely defect in the part as poured. A section solid through before the mould has filled is a
+    #   misrun or a cold shut: the metal does not reach it, or does not knit there. A hot spot no feeder reaches (cut
+    #   off from every named feeder while still liquid; with none named, the region that freezes last) takes the
+    #   shrinkage of the metal around it as porosity or a cavity: a void that weakens a structural casting, leaks
+    #   under pressure and pits a polished one. By the study's own terms nothing feeds it, so it fails until a feeder
+    #   does (naming the gate or riser that really feeds it is a fix too).
+    # - A WARNING is a risk the run cannot settle. A section solid within 3 times the fill time may still fill (the
+    #   instant fill is optimistic, but the margin is the founder's call). Low Niyama marks where porosity is likely,
+    #   not how much, against a threshold measured for some alloys, and it sits beside the hot spots that fail on
+    #   their own. Chvorinov's rule far from the simulation doubts the inputs, not the part; a run that ended before
+    #   solid, or at its time limit, doubts the run.
+
+    def ready_words(self, summary: dict) -> str:
+        """The verdict's headline when nothing is to fix."""
+        return f"Ready to cast · solid in {time_words(summary['solidification_time_s'])}"
 
     def findings(self, ctx: SolveContext, result: AnalysisResult, inputs: CastingInputs,
                  check_results: list[dict], *, assembly: bool) -> list[dict]:
@@ -347,11 +398,19 @@ class CastingAnalysis(AnalysisBase):
         if run.stopped_at is not None:
             found.append(stopped_finding(s["analysis_warnings"][0]))
         if run.cut_short:
+            longer = math.ceil(2.0 * run.end_s)
+            fix = ({"action": "set_duration", "where": [], "params": {"duration_s": longer},
+                    "summary": f"Give the study a duration_s of {longer:g} s or more, or check the alloy, the mould "
+                               "temperature and h"}
+                   if run.cut_short.startswith("still not fully solid") else
+                   {"action": "coarsen_mesh", "where": [], "params": {},
+                    "summary": "Give the study a coarser mesh.size_mm, or check the alloy, the mould temperature and h"})
             found.append(finding("warning", "not_solid", f"Not fully solid at the end: {run.cut_short}",
-                                 "the time to solid of the points still liquid is the end of the run, a lower bound"))
+                                 "the time to solid of the points still liquid is the end of the run, a lower bound",
+                                 fix=fix))
         found += self._misrun(ctx, result, inputs)
-        found += self._hot_spots(result, inputs)
-        found += self._niyama(result, inputs)
+        found += self._hot_spots(ctx, result, inputs)
+        found += self._niyama(ctx, result, inputs)
         found.append(self._hand_check(result, inputs))
         if not inputs.feeders:
             found.append(finding("info", "no_feeder", "No feeder named: every region that freezes last reads as unfed; "
@@ -364,6 +423,78 @@ class CastingAnalysis(AnalysisBase):
                                  "the hot spots"))
         return found
 
+    def _nearest_face(self, ctx: SolveContext, result: AnalysisResult, point) -> str | None:
+        """The face of the casting nearest ``point`` (mm): where a feeder or a chill goes for what is there."""
+        import numpy as np
+
+        triangles = np.asarray(result.boundary_quadratic)[:, :3]
+        middles = np.asarray(result.dof_locations)[triangles].mean(axis=1)
+        row = int(np.argmin(np.linalg.norm(middles - np.asarray(point, dtype=float), axis=1)))
+        face = ctx.volume.faces.get(int(ctx.volume.boundary_ordinal[row]))
+        return face.ref if face else None
+
+    def _feed_fix(self, ctx: SolveContext, result: AnalysisResult, inputs: CastingInputs, point, freeze_s: float,
+                  cut_s: float | None = None) -> dict:
+        """Feed what freezes at ``point`` at ``freeze_s``: a riser on the nearest face, of 1.2 times the modulus
+        Chvorinov's rule gives that freezing time (a cylinder as tall as it is wide, five times that across). Or, cut
+        off from its feeders at ``cut_s``, thin it to the modulus that freezes by then; or chill it."""
+        at = [round(float(c), 3) for c in point]
+        face = self._nearest_face(ctx, result, point)
+        place = face or f"the face nearest {at} mm"
+        where = [face] if face else [at]
+        modulus = modulus_for(inputs, freeze_s)
+        riser = RISER_FACTOR * modulus
+        across = math.ceil(RISER_DIAMETER_PER_MODULUS * riser)
+        params = {"riser_modulus_mm": round(riser, 2), "riser_diameter_mm": across, "riser_height_mm": across,
+                  "hot_spot_modulus_mm": round(modulus, 2)}
+        size = (f"a riser of modulus {riser:.2g} mm or more (a cylinder about {across:g} mm across and as tall, "
+                f"{RISER_FACTOR:g} times the {modulus:.2g} mm of what it feeds)")
+        feeding = {ref for feeder in inputs.feeders for ref in feeder.faces}
+        if face and any(ctx.volume.faces[ctx.ordinal_of[ref]].ref == face for ref in feeding):
+            fix = {"action": "enlarge_feeder", "where": where, "params": params,
+                   "summary": f"The feeder on {face} does not reach it: make it {size}, or hold it hot (held_C)"}
+        else:
+            fix = {"action": "add_feeder", "where": where, "params": params,
+                   "summary": f"Feed it from {place}: {size} there, named in the study's feeders"}
+        alternatives = []
+        if cut_s is not None:
+            thin = modulus_for(inputs, cut_s)
+            alternatives.append({
+                "action": "thin", "where": [at], "params": {"modulus_mm": round(thin, 2), "thickness_mm": round(2 * thin, 1)},
+                "summary": f"Thin it to a modulus of {thin:.2g} mm or less (a wall about {2 * thin:.2g} mm thick), so it "
+                           f"is solid before its feed path freezes at {time_words(cut_s)}"})
+        alternatives.append({"action": "add_chill", "where": where, "params": {},
+                             "summary": f"Chill it: a metal chill in the mould against {place}, so it freezes before "
+                                        "its feed path does"})
+        fix["alternatives"] = alternatives
+        return fix
+
+    def _fill_fix(self, inputs: CastingInputs, thickness: float, solid_s: float, needs_s: float, item: dict) -> dict:
+        """Make a section stay liquid ``needs_s``: thicken it, by Chvorinov's rule scaled to its simulated time (a wall's
+        modulus is half its thickness); or preheat the mould by the same rule; or gate closer to it."""
+        scale = solid_s / max(rule_s(inputs, thickness / 2.0), 1e-12)
+        place = item["ref"] or f"{item['at']} mm"
+        where = [item["ref"]] if item["ref"] else [item["at"]]
+        fixes = []
+        thicker = least(lambda d: scale * rule_s(inputs, d / 2.0), needs_s, thickness, 100.0 * thickness)
+        if thicker is not None:
+            target = math.ceil(thicker * 10.0) / 10.0
+            fixes.append({"action": "thicken", "where": where, "params": {"thickness_mm": target, "from_mm": round(thickness, 2)},
+                          "summary": f"Thicken the {thickness:.2g} mm section at {place} to {target:g} mm or more, so it "
+                                     f"stays liquid {time_words(needs_s)}, {MISRUN_CLOSE:g} times the fill time"})
+        hotter = least(lambda mould: scale * rule_s(inputs, thickness / 2.0, mold_C=mould), needs_s, inputs.mold_C,
+                       inputs.alloy.solidus - 1.0)
+        if hotter is not None:
+            mould = float(min(math.ceil(hotter / 5.0) * 5.0, inputs.alloy.solidus - 1.0))
+            fixes.append({"action": "raise_mold_temperature", "where": [], "params": {"mold_temperature_C": mould},
+                          "summary": f"Preheat the mould to {mould:g} °C (mold_temperature_C), so the section stays "
+                                     f"liquid {time_words(needs_s)}"})
+        fixes.append({"action": "move_gate", "where": where, "params": {},
+                      "summary": f"Gate closer to {place}, so the metal reaches it before it freezes"})
+        fix = fixes[0]
+        fix["alternatives"] = fixes[1:]
+        return fix
+
     def _misrun(self, ctx: SolveContext, result: AnalysisResult, inputs: CastingInputs) -> list[dict]:
         import numpy as np
 
@@ -374,6 +505,7 @@ class CastingAnalysis(AnalysisBase):
             return []
         fill_words = (f"about {time_words(fill)}, estimated from its {s['mass_kg'] * 1000:.3g} g"
                       if s["fill_estimated"] else f"{time_words(fill)}, the study's fill_time_s")
+        needs = MISRUN_CLOSE * fill
 
         def where(index: int) -> dict:
             row = int(rows_of[index])
@@ -382,7 +514,11 @@ class CastingAnalysis(AnalysisBase):
             return {"text": f"a {cut.thickness[index]:.2g} mm section", "ref": face.ref if face else None,
                     "at": xyz(cut.middle[index])}
 
-        for severity, kind, limit in (("error", "misrun", fill), ("warning", "misrun_risk", MISRUN_CLOSE * fill)):
+        def solid(index: int, limit: float) -> dict:
+            return {"quantity": "section solid through", "value": round(float(cut.freeze_s[index]), 6),
+                    "limit": round(float(limit), 6), "units": "s", "pass_when": "above"}
+
+        for severity, kind, limit in (("error", "misrun", fill), ("warning", "misrun_risk", needs)):
             risky = np.flatnonzero(measured & (cut.freeze_s < limit))
             if len(risky):
                 thinnest = int(risky[np.argmin(cut.thickness[risky])])
@@ -396,21 +532,26 @@ class CastingAnalysis(AnalysisBase):
                                f"{MISRUN_CLOSE:g} times the fill time ({fill_words}): metal stops flowing before it is "
                                "solid, so it may not fill")
                 faces = len({int(rows_of[i]) for i in risky})
+                item = where(thinnest)
                 return [finding(severity, kind, summary,
                                 f"{faces} surface triangle{'s' if faces != 1 else ''}' sections freeze that soon; the "
                                 "cavity started full, so the real front, cooling as it flows, freezes sooner still",
-                                [where(thinnest)])]
+                                [item], measured=solid(thinnest, limit),
+                                fix=self._fill_fix(inputs, float(cut.thickness[thinnest]), float(cut.freeze_s[thinnest]),
+                                                   needs, item))]
         thinnest = int(np.flatnonzero(measured)[np.argmin(cut.thickness[measured])])
         return [finding("info", "thinnest_section",
                         f"The thinnest section, {cut.thickness[thinnest]:.2g} mm, is solid through at "
                         f"{time_words(cut.freeze_s[thinnest])}, well after the mould fills ({fill_words})",
-                        "each face's section is measured along its inward normal; its time is when its middle froze",
-                        [where(thinnest)])]
+                        "each face's section is measured along its inward normal; its time is when its middle froze; "
+                        f"every section stays liquid {MISRUN_CLOSE:g} times the fill time or more",
+                        [where(thinnest)], measured=solid(thinnest, needs))]
 
-    def _hot_spots(self, result: AnalysisResult, inputs: CastingInputs) -> list[dict]:
+    def _hot_spots(self, ctx: SolveContext, result: AnalysisResult, inputs: CastingInputs) -> list[dict]:
         s = result.scalars
         found = []
         nodes = result.dof_locations
+        counts = POCKET_VOLUME * s["volume_mm3"]   # a pocket this big or bigger is a hot spot
         for pocket in s["pockets"][:MOST_POCKETS]:
             size = (6.0 * pocket.volume_mm3 / math.pi) ** (1.0 / 3.0)
             item = {"text": "freezes last here", "ref": None, "at": xyz(nodes[pocket.peak])}
@@ -426,10 +567,30 @@ class CastingAnalysis(AnalysisBase):
                            "thin it or chill it so it freezes toward a feeder")
                 detail = ("it freezes after everything around it, and the metal between it and every feeder froze "
                           "first")
-            found.append(finding("warning", "shrinkage_hot_spot", summary, detail, [item]))
-        return found
+            found.append(finding(
+                "error", "shrinkage_hot_spot", summary, detail, [item],
+                measured={"quantity": "liquid with no feeder" if pocket.unfed else "liquid cut off",
+                          "value": round(pocket.volume_mm3, 4), "limit": round(counts, 4), "units": "mm³",
+                          "pass_when": "below"},
+                fix=self._feed_fix(ctx, result, inputs, nodes[pocket.peak], pocket.freeze_s,
+                                   None if pocket.unfed else pocket.cut_s)))
+        if found or not inputs.feeders:
+            return found
+        # Fed: the largest pocket cut off from the feeders at all, smaller than a hot spot (none: 0).
+        from cadgen._internal.fea import solidification
 
-    def _niyama(self, result: AnalysisResult, inputs: CastingInputs) -> list[dict]:
+        freeze = result.fields["solidification_time"]
+        small = solidification.pockets(freeze, s["graph"], s["node_volumes"], s["feeder_nodes"],
+                                       min_life_s=POCKET_LIFE * float(freeze.max()), min_volume_mm3=0.0)
+        largest = max((pocket.volume_mm3 for pocket in small), default=0.0)
+        return [finding("info", "no_hot_spot",
+                        f"Freezes toward its feeders: no liquid pocket of {counts:.3g} mm³ or more is cut off from them "
+                        f"(the largest, {largest:.3g} mm³)",
+                        "every region stays joined to a feeder by liquid metal until it is solid, so the feeders make "
+                        "up its shrinkage", measured={"quantity": "liquid cut off", "value": round(largest, 4),
+                                                      "limit": round(counts, 4), "units": "mm³", "pass_when": "below"})]
+
+    def _niyama(self, ctx: SolveContext, result: AnalysisResult, inputs: CastingInputs) -> list[dict]:
         import numpy as np
 
         s = result.scalars
@@ -446,23 +607,31 @@ class CastingAnalysis(AnalysisBase):
         if not judged.any():
             return []
         lowest = int(np.flatnonzero(judged)[np.argmin(niyama[judged])])
-        item = [{"text": "the lowest Niyama", "ref": None, "at": xyz(result.dof_locations[lowest])}]
+        point = result.dof_locations[lowest]
+        item = [{"text": "the lowest Niyama", "ref": None, "at": xyz(point)}]
         if alloy.niyama is None:
             return [finding("info", "niyama_no_threshold",
                             f"No critical Niyama value is published for {alloy.name}: the lowest, "
-                            f"{niyama[lowest]:.2g} {NIYAMA_UNITS}, is at {xyz(result.dof_locations[lowest])} mm; compare "
+                            f"{niyama[lowest]:.2g} {NIYAMA_UNITS}, is at {xyz(point)} mm; compare "
                             "the field with a casting of this alloy known to be sound", "Niyama = G / √(cooling rate) "
                             "near the end of freezing; low where the last liquid is fed by no temperature gradient",
                             item)]
+        measured = {"quantity": "lowest Niyama", "value": round(float(niyama[lowest]), 6), "limit": alloy.niyama,
+                    "units": NIYAMA_UNITS, "pass_when": "above"}
         low = judged & (niyama < alloy.niyama)
         if not low.any():
-            return []
+            return [finding("info", "niyama_ok",
+                            f"Niyama stays at {alloy.niyama:g} {NIYAMA_UNITS} or more away from the feeders (porosity "
+                            f"is likely under it in {alloy.name}); lowest {niyama[lowest]:.2g} at {xyz(point)} mm",
+                            "Niyama = G / √(cooling rate) near the end of freezing", item, measured=measured)]
         share = float(m[low].sum()) / float(m.sum())
+        freeze = float(result.fields["solidification_time"][lowest])
         return [finding("warning", "low_niyama",
                         f"Niyama is under {alloy.niyama:g} {NIYAMA_UNITS} (porosity likely in {alloy.name}) over "
-                        f"{share:.1%} of the casting, lowest {niyama[lowest]:.2g} at {xyz(result.dof_locations[lowest])} mm",
+                        f"{share:.1%} of the casting, lowest {niyama[lowest]:.2g} at {xyz(point)} mm",
                         "Niyama marks where shrinkage porosity is likely, not how much; it is lowest where the casting "
-                        "freezes last, so read it with the hot spots", item)]
+                        "freezes last, so read it with the hot spots", item, measured=measured,
+                        fix=self._feed_fix(ctx, result, inputs, point, freeze))]
 
     def _hand_check(self, result: AnalysisResult, inputs: CastingInputs) -> dict:
         s = result.scalars
@@ -472,12 +641,18 @@ class CastingAnalysis(AnalysisBase):
                 else "Chvorinov's rule with the mould contact in series")
         summary = (f"{rule}: {time_words(hand['estimate_s'])} for its V/A of {hand['modulus_mm']:.3g} mm; the "
                    f"simulation's last point freezes at {time_words(total)} ({ratio:.2g} times)")
-        if 1.0 / HAND_FACTOR <= ratio <= HAND_FACTOR:
+        apart = max(ratio, 1.0 / ratio) if ratio > 0 else math.inf
+        measured = {"quantity": "simulation against the rule", "value": round(apart, 4) if math.isfinite(apart) else 1e9,
+                    "limit": HAND_FACTOR, "units": "×", "pass_when": "below"}
+        if apart <= HAND_FACTOR:
             return finding("info", "hand_check", summary, "a hand estimate from the whole casting's modulus; a thick "
-                           "section in a thin part freezes later than the part's average says")
+                           "section in a thin part freezes later than the part's average says", measured=measured)
         return finding("warning", "hand_check_far", summary + f": more than {HAND_FACTOR:g} times apart; check the "
                        "alloy, the process and h, and that the part's thick section is not far thicker than its average",
-                       "a hand estimate from the whole casting's modulus")
+                       "a hand estimate from the whole casting's modulus", measured=measured,
+                       fix={"action": "check_inputs", "where": [], "params": {},
+                            "summary": "Check the alloy, the process, the pour and mould temperatures and h against the "
+                                       "foundry's; one thick section in thin walls freezes later than the average V/A says"})
 
     # -- what is written -----------------------------------------------------------------------------
 

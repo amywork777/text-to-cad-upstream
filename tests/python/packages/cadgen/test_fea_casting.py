@@ -7,8 +7,9 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
   the rule's B (V/A)²;
 - a thin fin freezes, through its whole length, before the block it hangs from has started to freeze at its core,
   and the thinnest section reads the fin's 3 mm;
-- a thick boss on a thin bar is an isolated hot spot when the feeder is at the bar's end, and none when the boss's own
-  top is the feeder, insulated or held hot (the hold puts its heat in, and lets go);
+- a thick boss on a thin bar is an isolated hot spot when the feeder is at the bar's end, an error whose fix is a feeder
+  on the boss's top, and none when the boss's own top is the feeder, insulated or held hot (the hold puts its heat in,
+  and lets go): fed there the casting is ready, and the command's lines end on the checklist and the verdict;
 - energy: every joule the metal gave up (its sensible heat and all of its latent heat) left through the mould.
 
 The manufacturing-sim skill's router table and its casting reference stay in step with the registry and the tables.
@@ -17,11 +18,14 @@ Parse tests run everywhere; solves need the fea extra.
 
 from __future__ import annotations
 
+import io
+import json
 import re
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import box_step, class_directory, needs_fea, solve, solve_keeping, value_error
+from tests.python.support.fea_fixtures import box_step, class_directory, needs_fea, quiet, solve, solve_keeping, value_error
 
 SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
 BASE = {"analysis": "casting", "alloy": "a356", "process": "sand"}
@@ -153,6 +157,7 @@ class FinAndBlock(unittest.TestCase):
         thinnest = next(f for f in self.result.findings if f["type"] == "thinnest_section")
         self.assertEqual(thinnest["severity"], "info")
         self.assertIn("well after the mould fills", thinnest["summary"])
+        self.assertGreater(thinnest["measured"]["value"], thinnest["measured"]["limit"])     # a pass, and what it measured
         self.assertTrue(summary["fill_time_estimated"])
 
     def test_a_fill_slower_than_the_fin_freezes_is_a_misrun(self):
@@ -163,16 +168,23 @@ class FinAndBlock(unittest.TestCase):
         self.assertEqual(misrun["severity"], "error")
         self.assertGreater(misrun["items"][0]["at"][0], 20.0)          # in the fin
         self.assertTrue(misrun["summary"].startswith("A 3 mm section"), misrun["summary"])
+        self.assertEqual((misrun["measured"]["limit"], misrun["measured"]["pass_when"]), (30.0, "above"))
+        # Thicken the fin to stay liquid three times the fill, by Chvorinov's rule scaled to it; or preheat, or gate.
+        fix = misrun["fix"]
+        self.assertEqual((fix["action"], fix["where"]), ("thicken", [misrun["items"][0]["ref"]]))
+        self.assertGreater(fix["params"]["thickness_mm"], 3.0)
+        self.assertEqual(fix["alternatives"][-1]["action"], "move_gate")
 
 
 @needs_fea
 class Feeding(unittest.TestCase):
-    """A thick boss on a thin bar freezes after the bar around it: fed from the bar's end it is cut off, fed on its own
-    top it is not."""
+    """A thick boss on a thin bar freezes after the bar around it: fed from the bar's end it is cut off, and the fix
+    names its top to feed; fed on its own top it is not, and the casting is ready."""
 
     @classmethod
     def setUpClass(cls):
         from cadgen import fea
+        from cadgen.cli.fea_solve import main
 
         directory = class_directory(cls)
         step = bar_with_boss(directory)
@@ -181,22 +193,53 @@ class Feeding(unittest.TestCase):
         top = next(face.ref for face in faces if face.normal and face.normal[2] > 0.99 and face.center_mm[2] > 15)
         study = {**BASE, "mesh": {"size_mm": 2.0}}
         cls.top_faces = [top]
-        cls.from_end = solve(step, directory / "end.glb", {**study, "feeders": [{"faces": [end]}]})
+        # Fed from the end through the command an agent runs: its lines, and the sidecar it reads the fixes from.
+        out = io.StringIO()
+        with redirect_stdout(out), quiet():
+            cls.end_code = main([str(step), str(directory / "end.glb"), "--study",
+                                 json.dumps({**study, "feeders": [{"faces": [end]}]})])
+        cls.end_lines = out.getvalue().splitlines()
+        cls.from_end = json.loads((directory / "end.json").read_text(encoding="utf-8"))
         cls.from_top = solve(step, directory / "top.glb", {**study, "feeders": [{"faces": [top]}]})
 
     def test_the_boss_is_an_isolated_hot_spot_when_fed_from_the_bars_end(self):
-        spots = [f for f in self.from_end.findings if f["type"] == "shrinkage_hot_spot"]
+        spots = [f for f in self.from_end["findings"] if f["type"] == "shrinkage_hot_spot"]
         self.assertEqual(len(spots), 1)
-        self.assertEqual(spots[0]["severity"], "warning")
+        self.assertEqual(spots[0]["severity"], "error")
         x, y, z = spots[0]["items"][0]["at"]
         self.assertTrue(42 <= x <= 58 and abs(y) <= 8 and 6 <= z <= 16, (x, y, z))
-        spot = self.from_end.summary["hot_spots"][0]
+        spot = self.from_end["summary"]["hot_spots"][0]
         self.assertLess(spot["cut_off_at_s"], spot["freezes_at_s"])
         self.assertGreater(spot["volume_mm3"], 0.5 * 16 ** 3)          # the boss, at least half of it, still liquid
+
+    def test_fed_from_the_end_it_fails_and_the_fix_is_a_riser_on_the_boss_top(self):
+        self.assertEqual(self.end_code, 0)                              # it solved; a failing part is still a result
+        verdict = self.from_end["verdict"]
+        self.assertEqual((verdict["status"], verdict["errors"], verdict["headline"]), ("fix", 1, "1 to fix · shrinkage hot spot"))
+        spot = next(f for f in self.from_end["findings"] if f["type"] == "shrinkage_hot_spot")
+        self.assertEqual(spot["measured"]["pass_when"], "below")
+        self.assertGreater(spot["measured"]["value"], spot["measured"]["limit"])
+        fix = spot["fix"]
+        self.assertEqual((fix["action"], fix["where"]), ("add_feeder", self.top_faces))
+        params = fix["params"]
+        self.assertAlmostEqual(params["riser_modulus_mm"], 1.2 * params["hot_spot_modulus_mm"], delta=0.01)
+        self.assertEqual([other["action"] for other in fix["alternatives"]], ["thin", "add_chill"])
+        # The command's lines end on the checklist, the failure first and naming the face to feed, then the verdict.
+        checks = [line for line in self.end_lines if line[:4] in ("FAIL", "WARN", "PASS")]
+        self.assertTrue(checks[0].startswith("FAIL  shrinkage_hot_spot  liquid cut off: "), checks)
+        self.assertIn(f"fix: Feed it from {self.top_faces[0]}: a riser of modulus", checks[0])
+        self.assertTrue(self.end_lines[-1].startswith("Verdict: 1 to fix · shrinkage hot spot · 1 failed, "), self.end_lines[-1])
 
     def test_a_feeder_on_the_boss_feeds_it(self):
         self.assertEqual([f for f in self.from_top.findings if f["type"] == "shrinkage_hot_spot"], [])
         self.assertEqual(self.from_top.summary["hot_spots"], [])
+        # Fed where the fix said, it is ready to cast, and says so check by check.
+        self.assertEqual(self.from_top.verdict["status"], "ready")
+        fed = next(f for f in self.from_top.findings if f["type"] == "no_hot_spot")
+        self.assertLess(fed["measured"]["value"], fed["measured"]["limit"])
+        lines = self.from_top.human_lines()
+        self.assertTrue(any(line.startswith("PASS  no_hot_spot") for line in lines), lines)
+        self.assertTrue(lines[-1].startswith("Verdict: Ready to cast · solid in "), lines[-1])
 
     def test_a_riser_held_hot_feeds_it_puts_its_heat_in_and_lets_go(self):
         directory = class_directory(type(self))
@@ -207,10 +250,13 @@ class Feeding(unittest.TestCase):
         self.assertEqual(summary["hot_spots"], [])
         self.assertGreater(summary["heat_from_held_feeders_J"], 0.0)
         self.assertLess(summary["energy_balance"], 1e-6)
-        # Held at most 1.44 times Chvorinov's time, then it freezes too, last, under the riser.
+        # Its heat keeps the casting liquid longer than the same face insulated; held at most 1.44 times Chvorinov's
+        # time, it lets go and freezes too, last, under the riser: inside the held face's 16 mm square, in the upper
+        # half of the 16 mm boss.
+        self.assertGreater(summary["solidification_time_s"], self.from_top.summary["solidification_time_s"])
         self.assertGreater(summary["solidification_time_s"], 1.44 * summary["hand_check"]["estimate_s"])
-        x, _, z = summary["last_to_freeze_at_mm"]
-        self.assertTrue(42 <= x <= 58 and z >= 12, summary["last_to_freeze_at_mm"])
+        x, y, z = summary["last_to_freeze_at_mm"]
+        self.assertTrue(42 <= x <= 58 and abs(y) <= 8 and 8 <= z <= 16, summary["last_to_freeze_at_mm"])
 
 
 @needs_fea
