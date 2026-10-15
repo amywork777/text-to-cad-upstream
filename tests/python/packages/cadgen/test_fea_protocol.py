@@ -419,6 +419,10 @@ class Checklist(unittest.TestCase):
         ])
         self.assertEqual(checklist_lines(self.FINDINGS[:2], fail_on="warning")[-1],
                          "Verdict: Ready · 0 failed, 0 warnings, 1 passed; passes --fail-on warning")
+        # A degree, as a percent or a factor, is written against its number.
+        bend = {"severity": "info", "type": "springback_within_tolerance", "summary": "s", "items": [],
+                "measured": {"quantity": "bend 1 springback", "value": 0.7241, "limit": 3.0, "units": "°", "pass_when": "below"}}
+        self.assertEqual(checklist_lines([bend])[0], "PASS  springback_within_tolerance  bend 1 springback: 0.724°, needs below 3°")
 
     def test_the_verdict_is_cams_shape_and_a_gate_fails_on_what_it_names(self):
         from cadgen._internal.checklist import exit_code, fail_on_value, gate_failed, verdict
