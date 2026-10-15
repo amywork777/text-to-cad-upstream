@@ -28,6 +28,7 @@ import fracture from "./fracture.js";
 import fsi from "./fsi.js";
 import harmonic from "./harmonic.js";
 import impact from "./impact.js";
+import machining from "./machining.js";
 import modal from "./modal.js";
 import multiphase from "./multiphase.js";
 import nonlinear from "./nonlinear.js";
@@ -55,6 +56,7 @@ export const ANALYSES = Object.freeze({
   piezo,
   multiphase,
   casting,
+  machining,
 });
 
 /** Every analysis this viewer knows, by name. */
