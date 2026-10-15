@@ -34,6 +34,9 @@ Not in this version: the fill, pack and warp of a moulded part.
 
 ## Heat treatment and quenching
 
+Runs today as `heat_treatment` ([heat-treatment.md](heat-treatment.md)); this estimate stays its hand
+check.
+
 Not in this version: phase change, distortion and hardness after a quench.
 
 - **How fast it cools** runs today: `$fea`'s `thermal_transient` (heat over time) with the part at
