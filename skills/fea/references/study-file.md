@@ -68,6 +68,7 @@ none is registered so today.
 | `casting` | Casting | runs today (lite: a casting freezing in its mould from the pour, the cavity starting full) | `$manufacturing-sim`'s casting reference |
 | `heat_treatment` | Heat treatment | runs today (lite: a steel part quench hardened, thermal only, hardness through its Jominy curve) | `$manufacturing-sim`'s heat-treatment reference |
 | `machining` | Machining | runs today (lite: a milling or turning cut's deflection and stress, and its chatter stability lobes, the tool rigid) | `$manufacturing-sim`'s machining reference |
+| `sheet_metal` | Sheet metal | runs today, as an estimate per bend (springback, cracking, bend allowance) | `$manufacturing-sim`'s sheet metal reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 

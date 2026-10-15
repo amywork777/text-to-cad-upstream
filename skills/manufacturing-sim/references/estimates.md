@@ -93,8 +93,10 @@ wear, the tool's own flexibility, and the chip's formation.
 
 ## Sheet metal
 
-Not in this version: the bend, the draw, and springback as a simulation. Bend rules (radii,
-reliefs, flange lengths, hole distances) are `$dfm`'s.
+Bends run today as `sheet_metal`, an estimate per bend read from the STEP: springback, cracking and
+the bend allowance ([sheet_metal.md](sheet_metal.md)). Not in this version: the bend or the draw as a
+simulation. Bend rules (radii, reliefs, flange lengths, hole distances) are `$dfm`'s. The forms below
+are the same hand checks without a STEP, and the draw's.
 
 - **Springback** of an air bend, from the inside radius R_i before release to R_f after [5]:
 

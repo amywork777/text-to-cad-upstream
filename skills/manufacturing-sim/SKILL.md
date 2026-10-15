@@ -26,7 +26,8 @@ there is no shrinkage-driven flow, gas porosity or microstructure. Say so when y
 
 ## Choose the process
 
-Match the user's question to a row first. Only a **Runs today** row is a simulation.
+Match the user's question to a row first. Only a **Runs today** row runs in cadgen, and one whose status
+says estimate runs hand formulas on the part, not a simulation.
 
 | The user asks | `analysis` | Plain word | Status | Reference |
 | --- | --- | --- | --- | --- |
@@ -35,7 +36,7 @@ Match the user's question to a row first. Only a **Runs today** row is a simulat
 | Heat treatment and quenching: "how hard will it be", "will the core harden", "will it crack or distort in the quench", "oil or water" | `heat_treatment` | Heat treatment | **Runs today** (lite: thermal only, no transformation; a constant h per quenchant; hardness through the grade's Jominy curve; elastic stress at the largest gradient; the estimate stays its hand check) | [heat-treatment.md](references/heat-treatment.md) |
 | 3D printing (FDM, resin, SLS/MJF, metal powder bed): "will it warp or curl", "residual stress" | none yet | 3D printing | **Estimate** (thermal strain by hand; printability is `$dfam-check`'s) | [estimates.md](references/estimates.md#3d-printing) |
 | CNC machining: "will this thin wall deflect under the cutter or the clamp", "will it chatter", "which spindle speeds are chatter-free", milling or turning | `machining` | Machining | **Runs today** (lite: Kienzle's force at the most flexible point of the cut faces, only the part flexes, zero-order lobes along the face's normal; the hand estimates are its hand checks) | [machining.md](references/machining.md) |
-| Sheet metal: "how much will it spring back", "will it crack at this bend", "how thin does the draw get" | none yet | Sheet metal | **Estimate** (springback, minimum bend radius and draw ratio by hand; bend rules are `$dfm`'s) | [estimates.md](references/estimates.md#sheet-metal) |
+| Sheet metal bending: "how much will it spring back", "what overbend", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (estimate: per bend from the STEP by hand formulas, Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor; no forming simulation; bend rules are `$dfm`'s) | [sheet_metal.md](references/sheet_metal.md) |
 | Welding: "how much will it distort", "residual stress at the weld" | none yet | Welding | **Estimate** (shrinkage and angular distortion by hand) | [estimates.md](references/estimates.md#welding) |
 | Reflow soldering of a board: "how hot do the parts get through the profile", "is the big connector above liquidus long enough" | none yet | Reflow | **Estimate** (the temperatures run today in `$fea` as heat over time with the oven's profile; no solder flow) | [estimates.md](references/estimates.md#reflow-soldering) |
 | Forging, extrusion and deep drawing: "what press force", "will the die fill" | none yet | Forming | **Estimate** (slab-method forging load, extrusion pressure, deep-drawing force by hand; no die fill) | [estimates.md](references/estimates.md#forging-extrusion-and-deep-drawing) |

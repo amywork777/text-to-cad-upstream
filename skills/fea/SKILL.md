@@ -72,6 +72,7 @@ it is `static`.
 | A casting freezing in its mould: "will it cast", where it shrinks or is porous, whether a thin section fills | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure) | `$manufacturing-sim`, its casting reference |
 | A steel part quench hardened: how hard it gets at the surface and the core, whether it cracks or distorts in the quench | `heat_treatment` | Heat treatment | **Runs today** (lite: thermal only, no transformation, a constant h per quenchant, hardness through the Jominy curve) | `$manufacturing-sim`, its heat-treatment reference |
 | A part being milled or turned: "will this wall deflect under the cutter", "will it chatter", which spindle speeds are stable | `machining` | Machining | **Runs today** (lite: Kienzle's force at the most flexible point of the cut faces, the part flexible and the tool rigid, zero-order lobes along the face's normal) | `$manufacturing-sim`, its machining reference |
+| A bent sheet off the press brake: "how much will it spring back", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (an estimate per bend: Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor) | `$manufacturing-sim`, its sheet metal reference |
 
 Each reference holds its analysis's full schema. A test keeps this table and the study file's
 `analysis` table in step with what cadgen registers.

@@ -37,6 +37,7 @@ import piezo from "./piezo.js";
 import random_vibration from "./random_vibration.js";
 import rotordynamics from "./rotordynamics.js";
 import shock from "./shock.js";
+import sheet_metal from "./sheet_metal.js";
 import staticAnalysis from "./static.js";
 import { planned } from "./stub.js";
 import thermal from "./thermal.js";
@@ -59,6 +60,7 @@ export const ANALYSES = Object.freeze({
   casting,
   heat_treatment,
   machining,
+  sheet_metal,
 });
 
 /** Every analysis this viewer knows, by name. */

@@ -12,7 +12,7 @@ describe('the analyses', () => {
     expect(FEA_ANALYSES).toEqual(['static', 'modal', 'buckling', 'thermal', 'thermal_transient', 'thermal_stress', 'harmonic', 'random_vibration',
       'shock', 'transient', 'fatigue', 'drop', 'cfd', 'impact', 'nonlinear', 'contact', 'bolt', 'creep', 'composite', 'electromagnetic',
       'cfd_turbulent', 'cfd_compressible', 'topology', 'acoustic', 'conjugate_heat', 'fracture', 'rotordynamics', 'fsi', 'piezo',
-      'multiphase', 'casting', 'heat_treatment', 'machining']);
+      'multiphase', 'casting', 'heat_treatment', 'machining', 'sheet_metal']);
     for (const name of FEA_ANALYSES) {
       const analysis = ANALYSES[name];
       expect(analysis.name).toBe(name);
@@ -49,7 +49,7 @@ describe('the analyses', () => {
       ['fatigue', null], ['drop', 'Load ramp'], ['cfd', null], ['impact', 'Play'], ['nonlinear', 'Play'], ['contact', 'Play'], ['bolt', null],
       ['creep', 'Play'], ['composite', null], ['electromagnetic', null], ['cfd_turbulent', null], ['cfd_compressible', null],
       ['topology', 'Watch it form'], ['acoustic', null], ['conjugate_heat', null], ['fracture', 'Load ramp'], ['rotordynamics', 'Whirl'], ['fsi', null], ['piezo', null],
-      ['multiphase', 'Play'], ['casting', 'Play'], ['heat_treatment', 'Play'], ['machining', 'Load ramp']]);
+      ['multiphase', 'Play'], ['casting', 'Play'], ['heat_treatment', 'Play'], ['machining', 'Load ramp'], ['sheet_metal', 'Spring back']]);
     // Play needs frames to play.
     expect(routine('transient')).toBeNull();
   });
