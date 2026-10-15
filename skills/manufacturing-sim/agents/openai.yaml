@@ -1,0 +1,4 @@
+interface:
+  display_name: "Manufacturing Sim"
+  short_description: "Casting simulation and process estimates"
+  default_prompt: "Use $manufacturing-sim to check whether this part will cast soundly: where it freezes last, where shrinkage porosity forms and whether its thin sections fill."

@@ -69,9 +69,14 @@ it is `static`.
 | "Will this crack grow", "how big a crack can it take", a flaw found in inspection, "how many cycles until it breaks" with a crack | `fracture` | Cracks | **Runs today** (lite: linear-elastic fracture mechanics on a crack the study describes, K against K_IC, Paris crack growth; no ductile tearing) | [fracture.md](references/fracture.md) |
 | A spinning shaft, spindle, rotor, fan or disc: "will it run through a critical speed", a Campbell diagram, "how big is the orbit with this unbalance", "is the whirl stable", the spinning stress in a disc | `rotordynamics` | Spinning | **Runs today** (lite: a Timoshenko rotor line cut from the CAD with gyroscopic terms, linear bearings, bending whirl only; the spinning stress on the solid) | [rotordynamics.md](references/rotordynamics.md) |
 | Liquid inside the part moving over time: "will it spill when the tank is shaken or brakes", how high the water climbs the walls, the sloshing force on the tank and its frequency, filling or draining a cavity, a rising bubble | `multiphase` | Two fluids | **Runs today** (lite: laminar, incompressible, the interface a few elements thick; no evaporation, boiling or mixing) | [multiphase.md](references/multiphase.md) |
+| A casting freezing in its mould: "will it cast", where it shrinks or is porous, whether a thin section fills | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure) | `$manufacturing-sim`, its casting reference |
 
 Each reference holds its analysis's full schema. A test keeps this table and the study file's
 `analysis` table in step with what cadgen registers.
+
+Questions about how the part is made ("will it cast", "will it warp when printed", "will it spring
+back when bent") belong to `$manufacturing-sim`: it runs `casting` and gives labelled estimates for
+the processes not simulated yet.
 
 ### When the question needs an analysis that is not here
 
