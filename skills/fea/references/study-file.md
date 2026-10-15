@@ -66,6 +66,7 @@ none is registered so today.
 | `rotordynamics` | Spinning | runs today (lite: a rotor line cut from the CAD, gyroscopic whirl, critical speeds, unbalance response, linear bearings; the spinning stress on the solid) | [rotordynamics.md](rotordynamics.md) |
 | `multiphase` | Two fluids | runs today (lite: a liquid and a gas inside the part over time, laminar, incompressible; sloshing, filling and draining, a rising bubble) | [multiphase.md](multiphase.md) |
 | `casting` | Casting | runs today (lite: a casting freezing in its mould from the pour, the cavity starting full) | `$manufacturing-sim`'s casting reference |
+| `printing` | 3D printing | runs today (lite: a part built band by band, each band's inherent strain shrinking it on the part below, then off the plate) | `$manufacturing-sim`'s printing reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 

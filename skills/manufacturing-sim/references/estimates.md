@@ -52,8 +52,9 @@ Not in this version: phase change, distortion and hardness after a quench.
 
 ## 3D printing
 
-Not in this version: the layer-by-layer build, warp, curl and residual stress. Printability (walls,
-overhangs, supports, orientation) is `$dfam-check`'s.
+The layer-by-layer build, its warp, curl and residual stress run today as `printing`
+([printing.md](printing.md)); these remain its estimates by hand. Printability (walls, overhangs,
+supports, orientation) is `$dfam-check`'s.
 
 - **FDM warp.** Each layer shrinks by the thermal strain α (T_glass - T_bed) as it cools to the bed,
   and a long flat part curls up at its ends: about 0.6 % for ABS (α ≈ 90 × 10⁻⁶ /K, 100 to 30 °C),
