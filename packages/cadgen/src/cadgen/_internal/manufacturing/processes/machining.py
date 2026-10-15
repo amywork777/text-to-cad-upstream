@@ -4,9 +4,9 @@ The study names the cut: the ``operation`` (``milling`` or ``turning``), the ``t
 flutes), ``spindle_rpm``, ``feed_per_tooth_mm`` (turning: per revolution), ``depth_mm`` (milling: the axial depth;
 turning: the depth of cut, the chip's width), ``width_mm`` (milling: the radial depth), the ``cut_faces`` the cutter is
 on, the ``fixtures`` the vise or the chuck holds, and the workpiece ``material``
-(:data:`cadgen._internal.fea.cutting.WORK_MATERIALS`, with its Kienzle k_c1.1 and m_c).
+(:data:`cadgen._internal.manufacturing.processes.cutting.WORK_MATERIALS`, with its Kienzle k_c1.1 and m_c).
 
-1. The cut's force (:mod:`cadgen._internal.fea.cutting`): Kienzle's, summed over the teeth in the cut through one
+1. The cut's force (:mod:`cadgen._internal.manufacturing.processes.cutting`): Kienzle's, summed over the teeth in the cut through one
    tooth period (milling, straight flutes) or the turning tool's one edge; the part feels its component along the
    cut face's inward normal.
 2. The modes of the clamped part (the lowest :data:`MODES`) say where on the cut faces it is most flexible along
@@ -31,11 +31,15 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, xyz,
+    AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, xyz,
 )
 from cadgen._internal.fea.study import Fixture, parse_fixtures
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["LIMITS", "MachiningAnalysis", "MachiningInputs"]
+__all__ = ["LIMITS", "MachiningInputs", "MachiningProcess"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("machining")
 
 LIMITS = (
     "The cutting force is Kienzle's for a sharp tool, straight flutes (no helix), no run-out or wear, from the "
@@ -98,7 +102,7 @@ class MachiningInputs(Inputs):
         return self.flutes if self.operation == "milling" else 1
 
     def forces(self) -> dict:
-        from cadgen._internal.fea import cutting
+        from cadgen._internal.manufacturing.processes import cutting
 
         if self.operation == "turning":
             return cutting.turning_forces(self.material, self.depth_mm, self.feed_mm)
@@ -108,7 +112,7 @@ class MachiningInputs(Inputs):
 
     def coefficient(self, forces: dict) -> float:
         """K, N/mm²: how much the force along the normal grows per mm² of chip as the part moves along the normal."""
-        from cadgen._internal.fea import cutting
+        from cadgen._internal.manufacturing.processes import cutting
 
         if self.operation == "turning":
             return self.material.kr * forces["kc_MPa"]
@@ -136,7 +140,7 @@ def _parse_tool(document: dict, operation: str) -> tuple[float, int]:
     return diameter, flutes
 
 
-class MachiningAnalysis(AnalysisBase):
+class MachiningProcess(Process):
     name: ClassVar[str] = "machining"
     word: ClassVar[str] = "Machining"
     extras_word: ClassVar[str] = "machining"
@@ -164,7 +168,7 @@ class MachiningAnalysis(AnalysisBase):
 
     def material_from_spec(self, spec):
         """The study's ``material``, a workpiece material with its cutting force (the material hook)."""
-        from cadgen._internal.fea.cutting import work_material_from_spec
+        from cadgen._internal.manufacturing.processes.cutting import work_material_from_spec
 
         return work_material_from_spec(spec)
 
@@ -172,7 +176,7 @@ class MachiningAnalysis(AnalysisBase):
 
     def parse(self, document: dict) -> MachiningInputs:
         from cadgen._internal.fea.analyses.modal import parse_damping
-        from cadgen._internal.fea.cutting import MILLING, work_material_from_spec
+        from cadgen._internal.manufacturing.processes.cutting import MILLING, work_material_from_spec
 
         for key in ("parts", "connections"):
             if key in document:
@@ -251,7 +255,8 @@ class MachiningAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import cutting, operators, solidification, solve
+        from cadgen._internal.fea import operators, solve
+        from cadgen._internal.manufacturing.processes import cutting, solidification
         from cadgen._internal.fea.analyses.modal import held_supports, solver_method
         from cadgen._internal.fea.superposition import find_modes
 

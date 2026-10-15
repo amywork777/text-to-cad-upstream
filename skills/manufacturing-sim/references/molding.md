@@ -16,10 +16,11 @@ tolerance. Lite: read [Limits](#limits) before you report.
 ## The study
 
 ```json
-{"analysis": "molding", "resin": "abs", "melt_temperature_C": 230, "mold_temperature_C": 60,
+{"process": "molding", "resin": "abs", "melt_temperature_C": 230, "mold_temperature_C": 60,
  "ejection_temperature_C": 90, "h_W_m2K": 2500, "warp_tolerance_mm": 0.1, "mesh": {"size_mm": 0.5}}
 ```
 
+- `process` (required): `molding`.
 - `resin` (required): a name from [The resins](#the-resins), or one of its plain names (`ABS`,
   `polycarbonate`, `PC/ABS`, `polypropylene`, `nylon 6`, `nylon 66`, `nylon`, `glass-filled nylon`,
   `acetal`, `delrin`, `acrylic`, ...).
@@ -120,7 +121,7 @@ none. Values marked * are estimates, listed under [Numbers not verified](#number
 
 ## What comes out
 
-- `part.fea.glb`, coloured by `ejection_time` (s), when each point reaches the ejection temperature:
+- `part.molding.glb`, coloured by `ejection_time` (s), when each point reaches the ejection temperature:
   the last to cool is red. The other fields: `temperature` per frame (up to 24, from the melt to
   ejectable; the Time scrubber opens on the last frame with a point still too hot), `cooling_rate`
   (°C/s, the mean from the melt to ejection), `shrinkage` (% linear) and `warp` (mm, a vector; the
@@ -143,7 +144,8 @@ none. Values marked * are estimates, listed under [Numbers not verified](#number
 
 ## Findings
 
-Every check says pass (an `info` with what it `measured`) or what to change (a `fix`).
+Every check says pass (an `info` with what it `measured`) or what to change (a `fix`); [checks.md](checks.md#molding)
+lists every type and the fix actions it can carry.
 
 | Finding | Severity | What it means | What to do |
 | --- | --- | --- | --- |
@@ -160,10 +162,12 @@ Every check says pass (an `info` with what it `measured`) or what to change (a `
 | `hand_check` | info (pass) | The plate formula for the thickest wall against the simulation's last point, within 3 times. | Quote it as the check. |
 | `hand_check_far` | warning | The two are more than 3 times apart. | Check the resin, the temperatures and `h_W_m2K`; a boss cools sooner than a plate of its thickness, which is not an error. |
 | `cooling_time` | info | When every point is ejectable, and the last to cool. | Quote it; filling, packing and opening add to the cycle. |
-| `melt_window`, `mold_window` | info (pass) | The melt and the mould are within the resin's window, measured against the nearer end. | Quote it. |
-| `melt_outside_window`, `mold_outside_window` | warning | Outside the window. | `change_process` to the window's middle, or confirm the grade's own datasheet. |
+| `melt_window` | info (pass) | The melt is within the resin's window, measured against the nearer end. | Quote it. |
+| `melt_outside_window` | warning | The melt is outside the window. | `change_process` to the window's middle, or confirm the grade's own datasheet. |
+| `mold_window` | info (pass) | The mould is within the resin's window, measured against the nearer end. | Quote it. |
+| `mold_outside_window` | warning | The mould is outside the window. | `change_process` to the window's middle, or confirm the grade's own datasheet. |
 | `mesh_across_wall` | info (pass) | About three elements or more across the nominal wall. | Quote it. |
-| `coarse_mesh` | warning | Fewer: the middle of the wall cools too slowly (a fifth too slowly at two across) and a wall one element thick at once. | `refine_mesh` to a third of the wall (`params.mesh_size_mm`) and solve again. |
+| `coarse_mesh` | warning | Fewer: the middle of the wall cools too slowly (a fifth too slowly at two across) and a wall one element thick at once. | `refine_mesh` to a third of the wall (`params.mesh_size_mm`) and check again. |
 | `fibre_filled` | info | PA66-GF30 shrinks about half as much along the flow as across it; the warp here takes it as the same every way. | Say so with the warp. |
 | `not_ejectable` | warning | Not ejectable everywhere after 50 times the hand estimate: the times there are lower bounds. | Check the temperatures and `h_W_m2K`. |
 | `time_limit` | warning | It stopped at its time limit (twice `fit.seconds`, at least 30 s). | A larger `fit.seconds`, or a coarser mesh. |

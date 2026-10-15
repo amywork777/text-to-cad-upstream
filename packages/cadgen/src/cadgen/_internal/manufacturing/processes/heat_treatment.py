@@ -1,11 +1,11 @@
 """Heat treatment (lite): a steel part quench hardened, from the furnace to under 500 °C.
 
-The study names the ``steel`` (:data:`cadgen._internal.fea.hardening.GRADES`) and the ``quenchant``
-(:data:`~cadgen._internal.fea.hardening.QUENCHANTS`: a constant heat transfer coefficient h on every face, and its
+The study names the ``steel`` (:data:`cadgen._internal.manufacturing.processes.hardening.GRADES`) and the ``quenchant``
+(:data:`~cadgen._internal.manufacturing.processes.hardening.QUENCHANTS`: a constant heat transfer coefficient h on every face, and its
 bath temperature). ``austenitize_C`` overrides the grade's hardening temperature, ``h_W_m2K`` the quenchant's
 coefficient, and ``target_hrc`` is the hardness the part must reach.
 
-The march (:mod:`cadgen._internal.fea.quench`) runs on linear tets. Each node's cooling rate at 700 °C reads the
+The march (:mod:`cadgen._internal.manufacturing.processes.quench`) runs on linear tets. Each node's cooling rate at 700 °C reads the
 grade's Jominy curve through the end-quench test's own rates: the ``hardness`` field (the default view; HRC, as
 quenched), with the ``cooling_rate`` and the equivalent ``jominy_distance`` beside it and the ``temperature`` per frame.
 At the moment the spread between the hottest and the coolest point is largest, the temperatures' thermal strain gives
@@ -26,11 +26,14 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, finding, frame_attributes,
-    max_frames, xyz,
+    AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, frame_attributes, max_frames, xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["HeatTreatmentAnalysis", "HeatTreatmentInputs", "LIMITS"]
+__all__ = ["HeatTreatmentInputs", "HeatTreatmentProcess", "LIMITS"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("heat_treatment")
 
 LIMITS = (
     "Thermal only: the steel is austenite through the quench with constant properties, and it does not transform: "
@@ -84,7 +87,7 @@ class HeatTreatmentInputs(Inputs):
 
 def austenite_material():
     """The austenite the part is through the quench, as the operators read a material."""
-    from cadgen._internal.fea.hardening import AUSTENITE
+    from cadgen._internal.manufacturing.processes.hardening import AUSTENITE
     from cadgen._internal.fea.materials import Material
 
     return Material("Austenite (quenched steel)", AUSTENITE.E, AUSTENITE.nu, None, AUSTENITE.density * 1e-12,
@@ -98,14 +101,12 @@ def time_words(seconds: float) -> str:
     return time_label(seconds)
 
 
-class HeatTreatmentAnalysis(AnalysisBase):
+class HeatTreatmentProcess(Process):
     name: ClassVar[str] = "heat_treatment"
     word: ClassVar[str] = "Heat treatment"
     extras_word: ClassVar[str] = "quench hardness"
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = STUDY_KEYS
-    #: The steel is the study's ``steel`` (its own table), never a ``material``.
-    material_required: ClassVar[bool] = False
     #: Linear tets: their lumped capacity keeps the march monotone, so each node passes 700 °C once.
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -132,7 +133,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> HeatTreatmentInputs:
-        from cadgen._internal.fea.hardening import A1_C, GRADES, QUENCHANTS, lookup_grade, lookup_quenchant
+        from cadgen._internal.manufacturing.processes.hardening import A1_C, GRADES, QUENCHANTS, lookup_grade, lookup_quenchant
 
         if "material" in document:
             raise ValueError(f"study.material: a heat treatment names its steel with 'steel', one of {', '.join(GRADES)}")
@@ -191,7 +192,8 @@ class HeatTreatmentAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import hardening, quench, solidification, timestep
+        from cadgen._internal.fea import timestep
+        from cadgen._internal.manufacturing.processes import hardening, quench, solidification
         from cadgen._internal.fea.analyses.thermal import plan_solver, space_result
         from cadgen._internal.fea.operators import DIRECT_SOLVE_BELOW
 
@@ -277,9 +279,14 @@ class HeatTreatmentAnalysis(AnalysisBase):
         if run.stopped_at is not None:
             found.append(stopped_finding(s["analysis_warnings"][0]))
         if run.cut_short:
+            fix = ({"action": "check_inputs", "where": [], "params": {},
+                    "summary": "Check the quenchant, h_W_m2K and the austenitising temperature against the shop's"}
+                   if run.cut_short.startswith("still above") else
+                   {"action": "coarsen_mesh", "where": [], "params": {},
+                    "summary": "Give the study a coarser mesh.size_mm and run it again"})
             found.append(finding("warning", "not_cooled", f"Not cooled through at the end: {run.cut_short}",
                                  "a point that never reached 700 °C reads the slowest rate that did, an upper bound "
-                                 "on its hardness"))
+                                 "on its hardness", fix=fix))
         surface, core = self._surface_and_core(ctx, result)
         found.append(self._hardness(result, inputs, surface, core))
         found += self._target(ctx, result, inputs, surface, core)
@@ -329,7 +336,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
                 core: int) -> list[dict]:
         import numpy as np
 
-        from cadgen._internal.fea.hardening import GRADES, QUENCHANT_ORDER
+        from cadgen._internal.manufacturing.processes.hardening import GRADES, QUENCHANT_ORDER
 
         target = inputs.target_hrc
         if target is None:
@@ -356,7 +363,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
                   if not grade.core_only and grade.hardness(distance) >= target]
         current = QUENCHANT_ORDER.index(inputs.quenchant.key)
         faster = QUENCHANT_ORDER[current + 1] if current + 1 < len(QUENCHANT_ORDER) else None
-        where = {"points_mm": [xyz(nodes[worst])], "faces": face_refs_at(ctx, result, worst)}
+        where = [*face_refs_at(ctx, result, worst), xyz(nodes[worst])]
         if better:
             fix = {"action": "change_material",
                    "summary": f"Use a steel that holds {target:g} HRC this far along its Jominy curve: "
@@ -380,7 +387,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
     def _stress(self, ctx: SolveContext, result: AnalysisResult, inputs: HeatTreatmentInputs) -> list[dict]:
         import numpy as np
 
-        from cadgen._internal.fea.hardening import QUENCHANT_ORDER, hot_strength
+        from cadgen._internal.manufacturing.processes.hardening import QUENCHANT_ORDER, hot_strength
 
         s = result.scalars
         run, nodes = s["run"], result.dof_locations
@@ -395,7 +402,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
             return None if slower is None else {
                 "action": "change_quenchant",
                 "summary": f"Quench it more gently, in {slower}, if its hardness still reaches what the part needs",
-                "where": {"points_mm": [xyz(point)]}, "params": {"quenchant": slower}}
+                "where": [xyz(point)], "params": {"quenchant": slower}}
 
         when = f"at {time_words(run.spread_s)}, when the part spans {run.spread_C:.0f} °C"
         measured = {"value": round(value, 2), "limit": round(limit, 2), "units": "MPa", "pass_when": "below"}
@@ -435,7 +442,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
     def _crack_risk(self, ctx: SolveContext, result: AnalysisResult, inputs: HeatTreatmentInputs, strength) -> dict:
         """A quench crack starts at a sharp edge pulled past the steel's strength as it turns to martensite: under Ms,
         where the steel has gone hard and brittle (hot austenite above it yields instead)."""
-        from cadgen._internal.fea.hardening import martensite_start
+        from cadgen._internal.manufacturing.processes.hardening import martensite_start
 
         tension, nodes, spread = result.fields["tension"], result.dof_locations, result.scalars["run"].spread_state
         ms = martensite_start(inputs.grade.composition)
@@ -477,7 +484,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
                        fix={"action": "add_fillet",
                             "summary": f"Round the edge where {' and '.join(faces)} meet, {radius:g} mm or more, or "
                                        "quench more gently",
-                            "where": {"faces": list(faces), "points_mm": [xyz(nodes[worst])]},
+                            "where": [*faces, xyz(nodes[worst])],
                             "params": {"radius_mm": radius}})
 
     def _sections(self, ctx: SolveContext, result: AnalysisResult) -> list[dict]:
@@ -513,7 +520,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
                         items, measured=measure,
                         fix={"action": "thin", "summary": f"Thin the thick section toward {SECTION_RATIO * thin:.2g} mm "
                                                           "(core it out, or split it), or thicken the thin one",
-                             "where": {"points_mm": [xyz(nodes[core])], "faces": [face.ref] if face else []},
+                             "where": [*([face.ref] if face else []), xyz(nodes[core])],
                              "params": {"thickness_mm": round(SECTION_RATIO * thin, 2)}})]
 
     def _hand_check(self, result: AnalysisResult, inputs: HeatTreatmentInputs, core: int) -> dict:
@@ -542,7 +549,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
                        + ("" if exact else "; an equivalent round is a rough guide for this shape"),
                        measured=measured,
                        fix={"action": "refine_mesh", "summary": "Mesh it finer and solve again",
-                            "where": {"points_mm": [xyz(nodes[centre])]},
+                            "where": [xyz(nodes[centre])],
                             "params": {"size_mm": round(size / 2.0, 3)} if size else {}})
 
     # -- what is written -----------------------------------------------------------------------------
@@ -558,7 +565,7 @@ class HeatTreatmentAnalysis(AnalysisBase):
     def summary(self, result: AnalysisResult, inputs: HeatTreatmentInputs, check_results: list[dict]) -> dict:
         import numpy as np
 
-        from cadgen._internal.fea.hardening import critical_diameters, hot_strength, martensite_start
+        from cadgen._internal.manufacturing.processes.hardening import critical_diameters, hot_strength, martensite_start
 
         s = result.scalars
         run, hand, shape = s["run"], s["hand"], s["shape"]

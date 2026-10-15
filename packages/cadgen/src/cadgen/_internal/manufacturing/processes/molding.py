@@ -1,18 +1,18 @@
 """Injection molding (lite): a moulded part cooling in its mould from the melt until it can be ejected, and its warp.
 
-The study names the ``resin`` (:data:`cadgen._internal.fea.resins.RESINS`); the melt and mould temperatures default to
+The study names the ``resin`` (:data:`cadgen._internal.manufacturing.processes.resins.RESINS`); the melt and mould temperatures default to
 the middle of the resin's processing window and the ejection temperature to the resin's, and ``melt_temperature_C``,
 ``mold_temperature_C`` and ``ejection_temperature_C`` override them. The mould is a heat transfer coefficient
 ``h_W_m2K`` (default :data:`STEEL_H`, a steel mould's contact with the plastic) to the mould temperature on every
 face. The cavity starts full and packed at the melt temperature (there is no fill), and casting's enthalpy march
-(:mod:`cadgen._internal.fea.solidification`) cools it until every point is below the ejection temperature, a
+(:mod:`cadgen._internal.manufacturing.processes.solidification`) cools it until every point is below the ejection temperature, a
 semi-crystalline resin releasing its crystallisation heat over its crystallisation range.
 
 It writes the time each point reaches the ejection temperature (the default view: the last to eject is hottest), the
 temperature per frame, the mean cooling rate from the melt to ejection, and the warp: each point shrinks by the
 resin's mould shrinkage, from the low end of its range at the thinnest wall toward the high end the longer it stayed
-hot (:func:`cadgen._internal.fea.resins.linear_shrinkage`); the shrinkage's mean is what the cavity is cut oversize
-for, and what differs from it is an inherent strain, solved on the part held 3-2-1 (:mod:`cadgen._internal.fea.warp`).
+hot (:func:`cadgen._internal.manufacturing.processes.resins.linear_shrinkage`); the shrinkage's mean is what the cavity is cut oversize
+for, and what differs from it is an inherent strain, solved on the part held 3-2-1 (:mod:`cadgen._internal.manufacturing.processes.warp`).
 Its findings are the moulder's checklist, each saying pass or what to change: the cooling time against the plate
 formula for the thickest wall (the hand check), sink and void risk where a section stays hot long after the nominal
 wall, the warp against ``warp_tolerance_mm``, and walls outside the resin's recommended range. Stdlib only at import.
@@ -27,11 +27,14 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, finding, frame_attributes,
-    max_frames, xyz,
+    AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, frame_attributes, max_frames, xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["LIMITS", "MoldingAnalysis", "MoldingInputs"]
+__all__ = ["LIMITS", "MoldingInputs", "MoldingProcess"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("molding")
 
 LIMITS = (
     "The cavity starts full and packed at the melt temperature: filling and packing are not simulated, so a thin "
@@ -97,7 +100,7 @@ def _rib_share(ratio: float) -> float:
     return 2.0 * math.sqrt(max(math.sqrt(ratio) - 1.0, 0.0))
 
 
-class MoldingAnalysis(AnalysisBase):
+class MoldingProcess(Process):
     name: ClassVar[str] = "molding"
     word: ClassVar[str] = "Injection molding"
     extras_word: ClassVar[str] = "molding"
@@ -105,8 +108,6 @@ class MoldingAnalysis(AnalysisBase):
     study_keys: ClassVar[frozenset[str]] = frozenset({
         "resin", "melt_temperature_C", "mold_temperature_C", "ejection_temperature_C", "h_W_m2K", "warp_tolerance_mm",
     })
-    #: The plastic is the study's ``resin`` (its own table), never a ``material``.
-    material_required: ClassVar[bool] = False
     #: Linear tets: their lumped capacity is positive, which the enthalpy march needs (the warp elevates them).
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -131,7 +132,7 @@ class MoldingAnalysis(AnalysisBase):
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> MoldingInputs:
-        from cadgen._internal.fea.resins import RESINS, lookup_resin
+        from cadgen._internal.manufacturing.processes.resins import RESINS, lookup_resin
 
         if "material" in document:
             raise ValueError(f"study.material: a molding study names its plastic with 'resin', one of {', '.join(RESINS)}")
@@ -207,7 +208,8 @@ class MoldingAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import solidification, timestep, warp
+        from cadgen._internal.fea import timestep
+        from cadgen._internal.manufacturing.processes import solidification, warp
         from cadgen._internal.fea.analyses.thermal import plan_solver, space_result
         from cadgen._internal.fea.operators import DIRECT_SOLVE_BELOW
 
@@ -701,7 +703,7 @@ def _walls(space, eject) -> Walls:
     import numpy as np
     from scipy.spatial import cKDTree
 
-    from cadgen._internal.fea import solidification
+    from cadgen._internal.manufacturing.processes import solidification
 
     cut = solidification.sections(space, eject)
     rows = solidification.boundary_facet_rows(space)
@@ -750,7 +752,7 @@ def _hand(resin, inputs: MoldingInputs, wall_mm: float) -> dict:
     """The plate formula for the thickest wall: to its mean and its middle with the mould face at the mould
     temperature (the handbook's), and to its middle through the mould's h with any crystallisation heat folded into
     the heat capacity (the best hand estimate, which the march starts from)."""
-    from cadgen._internal.fea.resins import diffusivity, plate_cooling
+    from cadgen._internal.manufacturing.processes.resins import diffusivity, plate_cooling
 
     alpha = diffusivity(resin)
     temperatures = (inputs.melt_C, inputs.mold_C, inputs.eject_C)

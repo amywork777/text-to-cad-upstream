@@ -589,6 +589,9 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
 
     The findings' verdict (:func:`cadgen._internal.checklist.verdict`, with the analysis's ``ready_words`` when it
     has them) is the result's and the sidecar's.
+
+    ``study`` may be a :class:`~cadgen._internal.fea.study.Study` its caller parsed with an analysis of its own (one
+    fea's registry does not hold: ``cadgen manufacturing check``'s processes), which then solves it here as any other.
     """
     with one_blas_thread():
         return _solve_study(Path(target), out, study, occurrence, mesh_size, vtu, verbose)
@@ -597,10 +600,10 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
 def _solve_study(document: Path, out: Path | None, study, occurrence: str | None, mesh_size: float | None, vtu: bool,
                  verbose: bool) -> FeaResult:
     from cadgen._internal.fea.analyses import get_analysis
-    from cadgen._internal.fea.study import parse_study
+    from cadgen._internal.fea.study import Study, parse_study
 
-    parsed = parse_study(study)  # stdlib, before any heavy import
-    analysis = get_analysis(parsed.analysis)
+    parsed = study if isinstance(study, Study) else parse_study(study)  # stdlib, before any heavy import
+    analysis = parsed.analysis_object or get_analysis(parsed.analysis)
     inputs = parsed.inputs
     static = parsed.analysis == _STATIC
     logger = CliLogger("fea", verbose=verbose)

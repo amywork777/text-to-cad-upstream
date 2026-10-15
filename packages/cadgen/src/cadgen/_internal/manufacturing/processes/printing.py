@@ -1,11 +1,11 @@
 """3D printing (lite): a part built layer by layer, each height band shrinking on the part below it.
 
-The study names the ``process`` (``fdm``, ``powder_bed_metal``, ``sls``, ``resin``) and its material (``alloy`` for
-metal, ``polymer`` for the rest; :mod:`cadgen._internal.fea.additive`). The build direction is ``build_direction``
+The study names the ``technology`` (``fdm``, ``powder_bed_metal``, ``sls``, ``resin``) and its material (``alloy`` for
+metal, ``polymer`` for the rest; :mod:`cadgen._internal.manufacturing.processes.additive`). The build direction is ``build_direction``
 (+Z by default) and the plate is the part's lowest face along it. The part is cut into ``bands`` height bands (12 by
-default); each is born on the bands below, as they have deformed, and carries the process's inherent strain (in the
+default); each is born on the bands below, as they have deformed, and carries the technology's inherent strain (in the
 plane across the layers, and along the build), the plate holding the bottom
-(:class:`cadgen._internal.fea.inherent_strain.Build`). Once built, the plate lets go (``release_from_plate``, default
+(:class:`cadgen._internal.manufacturing.processes.inherent_strain.Build`). Once built, the plate lets go (``release_from_plate``, default
 true) and the part springs back. An SLS part has no plate: it floats in its powder, held only against rigid motion.
 
 It writes the residual stress (von Mises), the distortion and what is printed so far at every band, and off the plate,
@@ -25,11 +25,15 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, finding, frame_attributes,
-    max_frames, plan_value, xyz,
+    AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, frame_attributes, max_frames, plan_value,
+    xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["LIMITS", "PrintingAnalysis", "PrintingInputs"]
+__all__ = ["LIMITS", "PrintingInputs", "PrintingProcess"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("printing")
 
 LIMITS = (
     "Layers are lumped into height bands, each carrying one inherent strain for the whole part: the scan pattern, the "
@@ -55,7 +59,7 @@ STRAIN_KEYS = {"in_plane", "build"}
 
 @dataclass(frozen=True)
 class PrintingInputs(Inputs):
-    process: Any = None
+    technology: Any = None
     material: Any = None
     #: The build direction, a unit vector.
     direction: tuple[float, float, float] = (0.0, 0.0, 1.0)
@@ -103,17 +107,15 @@ def _parse_strain(raw) -> tuple[float | None, float | None]:
     return out[0], out[1]
 
 
-class PrintingAnalysis(AnalysisBase):
+class PrintingProcess(Process):
     name: ClassVar[str] = "printing"
     word: ClassVar[str] = "3D printing"
     extras_word: ClassVar[str] = "printing"
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = frozenset({
-        "process", "alloy", "polymer", "build_direction", "bands", "release_from_plate", "tolerance_mm",
+        "technology", "alloy", "polymer", "build_direction", "bands", "release_from_plate", "tolerance_mm",
         "layer_thickness_mm", "chamber_temperature_C", "bed_adhesion_MPa", "inherent_strain",
     })
-    #: The material is the process's (``alloy`` or ``polymer``, its own table), never a ``material``.
-    material_required: ClassVar[bool] = False
     mesh_orders: ClassVar[tuple[int, ...]] = (2, 1)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec("von_mises", "_VON_MISES", "residual stress (von Mises)", "MPa", per_frame=True),
@@ -134,24 +136,24 @@ class PrintingAnalysis(AnalysisBase):
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> PrintingInputs:
-        from cadgen._internal.fea.additive import PROCESSES, lookup_material, lookup_process
+        from cadgen._internal.manufacturing.processes.additive import TECHNOLOGIES, lookup_material, lookup_technology
 
         if "material" in document:
-            raise ValueError("study.material: a printing study names its material by the process: 'alloy' for "
+            raise ValueError("study.material: a printing study names its material by the technology: 'alloy' for "
                              "powder_bed_metal, 'polymer' for fdm, sls and resin")
         for key in ("parts", "connections"):
             if key in document:
                 raise ValueError(f"study.{key}: a printing study solves one part; solve one occurrence with --occurrence")
-        if "process" not in document:
-            raise ValueError(f"study.process: how it is printed, one of {', '.join(PROCESSES)}")
-        process = lookup_process(document["process"])
-        other = "polymer" if process.material_key == "alloy" else "alloy"
+        if "technology" not in document:
+            raise ValueError(f"study.technology: how it is printed, one of {', '.join(TECHNOLOGIES)}")
+        technology = lookup_technology(document["technology"])
+        other = "polymer" if technology.material_key == "alloy" else "alloy"
         if other in document:
-            raise ValueError(f"study.{other}: {process.key} prints a{'n' if process.material_key == 'alloy' else ''} "
-                             f"{process.material_key}; name it with '{process.material_key}'")
-        if process.material_key not in document:
-            raise ValueError(f"study.{process.material_key}: what it is printed in, for {process.key}")
-        material = lookup_material(document[process.material_key], process)
+            raise ValueError(f"study.{other}: {technology.key} prints a{'n' if technology.material_key == 'alloy' else ''} "
+                             f"{technology.material_key}; name it with '{technology.material_key}'")
+        if technology.material_key not in document:
+            raise ValueError(f"study.{technology.material_key}: what it is printed in, for {technology.key}")
+        material = lookup_material(document[technology.material_key], technology)
         direction = _unit(document.get("build_direction", [0, 0, 1]), "build_direction")
         bands = kinds.whole(document.get("bands", BANDS), where="bands",
                             words=f"how many height bands to build it in, 2 to {MOST_BANDS}", low=2, high=MOST_BANDS)
@@ -166,9 +168,9 @@ class PrintingAnalysis(AnalysisBase):
             layer = kinds.number(document["layer_thickness_mm"], where="layer_thickness_mm", positive=True)
         chamber = None
         for key in ("chamber_temperature_C", "bed_adhesion_MPa"):
-            if key in document and process.key != "fdm":
-                raise ValueError(f"{key}: FDM's alone; {process.key} does not take it")
-        if process.key == "fdm":
+            if key in document and technology.key != "fdm":
+                raise ValueError(f"{key}: FDM's alone; {technology.key} does not take it")
+        if technology.key == "fdm":
             chamber = 25.0
             if "chamber_temperature_C" in document:
                 chamber = kinds.number(document["chamber_temperature_C"], where="chamber_temperature_C")
@@ -184,7 +186,7 @@ class PrintingAnalysis(AnalysisBase):
             given = True
             in_plane = in_plane if own_plane is None else own_plane
             along = along if own_along is None else own_along
-        return PrintingInputs((), (), False, process=process, material=material, direction=direction, bands=bands,
+        return PrintingInputs((), (), False, technology=technology, material=material, direction=direction, bands=bands,
                               release=release, tolerance_mm=tolerance, layer_mm=layer, chamber_C=chamber,
                               adhesion_MPa=adhesion, in_plane=in_plane, along=along, given=given)
 
@@ -210,7 +212,7 @@ class PrintingAnalysis(AnalysisBase):
         from scipy.sparse import csr_matrix
         from scipy.sparse.csgraph import connected_components
 
-        from cadgen._internal.fea import inherent_strain as IS
+        from cadgen._internal.manufacturing.processes import inherent_strain as IS
         from cadgen._internal.fea.analyses.thermal import space_result
         from cadgen._internal.fea.materials import Material
 
@@ -219,7 +221,7 @@ class PrintingAnalysis(AnalysisBase):
                              "--occurrence")
         started = time.perf_counter()
         space, volume = ctx.space, ctx.volume
-        stock, process = inputs.material, inputs.process
+        stock, technology = inputs.material, inputs.technology
         material = Material(stock.name, stock.E, stock.nu, stock.yield_strength, 1e-9)
         d = np.asarray(inputs.direction)
         points = space.dof_locations
@@ -235,7 +237,7 @@ class PrintingAnalysis(AnalysisBase):
         plate_rows = (height[corners] <= z0 + tolerance_close).all(axis=1)
         tri = points[corners[plate_rows]]
         plate_area = float(0.5 * np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1).sum())
-        if process.plate and not plate_area > 1e-6 * volume.bbox_diagonal ** 2:
+        if technology.plate and not plate_area > 1e-6 * volume.bbox_diagonal ** 2:
             raise ValueError(f"printing: the part has no flat face at its lowest point along build_direction "
                              f"{[round(c, 4) for c in inputs.direction]}, so it cannot sit on the build plate; turn it "
                              "(build_direction) so a flat face is down, or give it a flat base")
@@ -246,7 +248,7 @@ class PrintingAnalysis(AnalysisBase):
         method = {"iterative": "iterative", "matrix_free": "iterative"}.get(plan_value(ctx, "solver", "direct"))
         build = IS.Build(space, material, method=method, log=ctx.log)
         held_vertices = np.zeros(space.vertices, dtype=bool)
-        if process.plate:
+        if technology.plate:
             build.hold(IS.vector_dofs(space, plate_nodes))
             held_vertices[plate_nodes[plate_nodes < space.vertices]] = True
         tets = np.asarray(space.mesh.t)                      # (4, E) corner vertices
@@ -284,7 +286,7 @@ class PrintingAnalysis(AnalysisBase):
                 vertices = np.flatnonzero(pieces == piece)
                 if held_vertices[vertices].any():
                     continue
-                if process.plate:
+                if technology.plate:
                     low = IS.lowest_nodes(space, vertices, d, max(0.25 * band_mm, tolerance_close))
                     build.hold(IS.vector_dofs(space, low))
                     held_vertices[low] = True
@@ -315,7 +317,7 @@ class PrintingAnalysis(AnalysisBase):
         built = frames[-1]
         reactions = space.nodal(build.reactions())
         released = None
-        if inputs.release and process.plate:
+        if inputs.release and technology.plate:
             pieces = components(born)
             keep = np.concatenate([IS.hold_free(space, np.flatnonzero(pieces == piece))
                                    for piece in np.unique(pieces[pieces >= 0])])
@@ -339,7 +341,7 @@ class PrintingAnalysis(AnalysisBase):
         vm = built["von_mises"]
         ninety_nine = float(np.quantile(vm[nodal_mask], 0.99)) if nodal_mask.any() else 0.0
         pull = (_plate_pull(space, triangles[plate_rows], reactions, d, max(band_mm, 2.0 * volume.max_h))
-                if process.plate else None)
+                if technology.plate else None)
         size = float(max(np.ptp(points, axis=0)))
         tolerance = inputs.tolerance_mm if inputs.tolerance_mm is not None else IS.default_tolerance_mm(size)
         hand = _hand_check(space, material, sigma_built, born, band_of, d, inputs)
@@ -392,7 +394,7 @@ class PrintingAnalysis(AnalysisBase):
                                      f"the {tolerance:g} mm tolerance ({source})",
                                      "the bottom face's flatness once the plate lets go, its rigid tilt taken out", item,
                                      measured=measured))
-        when = "off the plate" if s["released"] else ("as printed, on the plate" if inputs.process.plate else "as printed")
+        when = "off the plate" if s["released"] else ("as printed, on the plate" if inputs.technology.plate else "as printed")
         measured = {"value": round(s["shape_max_mm"], 6), "limit": tolerance, "units": "mm", "pass_when": "below",
                     "quantity": "distortion"}
         item = [{"text": "distorts most here", "ref": None, "at": s["shape_at"]}]
@@ -407,9 +409,9 @@ class PrintingAnalysis(AnalysisBase):
             found.append(finding("info", kind, f"{when.capitalize()} it distorts {s['shape_max_mm']:.3g} mm at most, "
                                  f"within the {tolerance:g} mm tolerance ({source})", detail, item, measured=measured))
         found.append(self._stress(inputs, s))
-        if inputs.process.recoater:
+        if inputs.technology.recoater:
             found.append(self._recoater(inputs, s))
-        if inputs.process.key == "fdm" and s["pull"] is not None:
+        if inputs.technology.key == "fdm" and s["pull"] is not None:
             found.append(self._pull(inputs, s))
         if s["supports"]:
             count = len(s["supports"])
@@ -418,7 +420,7 @@ class PrintingAnalysis(AnalysisBase):
                                  "held where it starts, as a support would hold it; give it supports to print it",
                                  "supports are not modelled; $dfam-check reviews overhangs and supports",
                                  [{"text": "starts in mid-air", "ref": None, "at": item_["at"]} for item_ in s["supports"]]))
-        if inputs.process.key == "sls":
+        if inputs.technology.key == "sls":
             found.append(finding("info", "sls_no_build_shrinkage", "SLS: the bed holds the part above crystallisation, so "
                                  "no band shrinks on another and nothing distorts in the build; the warp of thick flat areas "
                                  "as the cake cools afterwards is not in this version",
@@ -428,11 +430,11 @@ class PrintingAnalysis(AnalysisBase):
 
     def _fix(self, inputs: PrintingInputs, s: dict) -> dict:
         """The change most likely to bring the distortion within tolerance, as the agent applies it."""
-        material, process = inputs.material, inputs.process
+        material, technology = inputs.material, inputs.technology
         worst = max(s["warp"]["mm"] if s["warp"] else 0.0, s["shape_max_mm"])
         ratio = s["tolerance_mm"] / worst if worst > 0 else 1.0
         where = [s["warp"]["at"]] if s["warp"] else [s["shape_at"]]
-        if process.key == "fdm" and not inputs.given:
+        if technology.key == "fdm" and not inputs.given:
             gap = material.sets_C - inputs.chamber_C
             target = material.sets_C - ratio * gap
             if target - inputs.chamber_C >= 5.0:
@@ -448,7 +450,7 @@ class PrintingAnalysis(AnalysisBase):
                     "summary": "Turn it so its shortest side is along the build direction: a squat part keeps its "
                                "shrinkage locked in evenly and curls less once it is cut off",
                     "where": where, "params": {"build_direction": [round(c, 6) for c in best]}}
-        if process.key == "powder_bed_metal":
+        if technology.key == "powder_bed_metal":
             return {"action": "stress_relieve",
                     "summary": "Stress-relieve it on the plate before it is cut off, so the stress the plate holds is "
                                "gone before it can curl it",
@@ -467,7 +469,7 @@ class PrintingAnalysis(AnalysisBase):
         detail = (f"von Mises as printed: {value:.4g} MPa at the 99th percentile, {peak:.4g} MPa at the peak (a corner "
                   f"against the plate is singular){pull_words}")
         if value > material.yield_strength:
-            metal = inputs.process.key == "powder_bed_metal"
+            metal = inputs.technology.key == "powder_bed_metal"
             risk = ("it may crack, or tear off its plate or supports" if metal
                     else "it may crack or peel off the plate")
             return finding("warning", "residual_stress", f"As printed the residual stress reaches {value:.4g} MPa, past "
@@ -482,11 +484,11 @@ class PrintingAnalysis(AnalysisBase):
         """What brings the residual stress under yield: a metal stress-relieved on its plate; an FDM polymer printed
         warmer, its shrinkage (and so its stress) falling with the gap to where it sets; else a turn."""
         material = inputs.material
-        if inputs.process.key == "powder_bed_metal":
+        if inputs.technology.key == "powder_bed_metal":
             return {"action": "stress_relieve", "summary": "Stress-relieve it on the plate before it is cut off, and "
                     "soften the corner it peaks at (a fillet where it meets the plate)", "where": [at],
                     "params": {"before_release": True}}
-        if inputs.process.key == "fdm" and not inputs.given:
+        if inputs.technology.key == "fdm" and not inputs.given:
             target = material.sets_C - 0.9 * ratio * (material.sets_C - inputs.chamber_C)
             if target - inputs.chamber_C >= 5.0:
                 target = round(min(target, material.sets_C - 5.0))
@@ -556,7 +558,7 @@ class PrintingAnalysis(AnalysisBase):
             return finding("warning", "hand_check_far", summary + ": further apart than the hand check allows; check the "
                            "build direction and the inherent strain", detail, measured=measured, fix={
                                "action": "check_inputs", "summary": "Check that the build direction puts the part's "
-                               "flat base on the plate and that the inherent strain is the process's",
+                               "flat base on the plate and that the inherent strain is the technology's",
                                "where": [s["shape_at"]], "params": {"build_direction": list(inputs.direction)}})
         return finding("info", "hand_check", summary, detail, measured=measured)
 
@@ -566,7 +568,7 @@ class PrintingAnalysis(AnalysisBase):
         s = result.scalars
         material = inputs.material
         summary = {
-            "process": inputs.process.key,
+            "technology": inputs.technology.key,
             "material": material.name,
             "build_direction": [round(c, 6) for c in inputs.direction],
             "bands": inputs.bands,
@@ -587,8 +589,8 @@ class PrintingAnalysis(AnalysisBase):
             "released_max_von_mises_MPa": round(s["vm_final_max"], 4) if s["released"] else None,
             "tolerance_mm": s["tolerance_mm"],
             "tolerance_source": "study" if s["tolerance_given"] else f"ISO 2768-2 K for {s['size_mm']:.4g} mm",
-            "recoater_rise_mm": round(s["rise"]["mm"], 6) if inputs.process.recoater else None,
-            "recoater_rise_at_mm": s["rise"]["at"] if inputs.process.recoater else None,
+            "recoater_rise_mm": round(s["rise"]["mm"], 6) if inputs.technology.recoater else None,
+            "recoater_rise_at_mm": s["rise"]["at"] if inputs.technology.recoater else None,
             "plate_pull_MPa": None if s["pull"] is None else round(s["pull"]["MPa"], 4),
             "plate_pull_at_mm": None if s["pull"] is None else s["pull"]["at"],
             "starts_in_air": len(s["supports"]),
@@ -634,7 +636,7 @@ class PrintingAnalysis(AnalysisBase):
         echo = {
             # The viewer's "Made of" reads the material's name.
             "material": {"name": inputs.material.name},
-            "process": inputs.process.key,
+            "technology": inputs.technology.key,
             "print_material": inputs.material.as_dict(),
             "build_direction": list(inputs.direction),
             "bands": inputs.bands,
@@ -653,7 +655,7 @@ class PrintingAnalysis(AnalysisBase):
     def human_lines(self, summary: dict) -> list[str]:
         strain = summary["inherent_strain"]
         lines = [
-            f"{summary['material']} by {summary['process']}, {summary['bands']} bands of {summary['band_mm']:.3g} mm, "
+            f"{summary['material']} by {summary['technology']}, {summary['bands']} bands of {summary['band_mm']:.3g} mm, "
             f"inherent strain {strain['in_plane']:.3g} in the plane, {strain['build']:.3g} along the build",
             f"as printed: residual stress {summary['von_mises_p99_MPa']:.4g} MPa (99th percentile; yield "
             f"{summary['yield_MPa']:g} MPa)",
@@ -739,11 +741,11 @@ def _hand_check(space, material, sigma, born, band_of, d, inputs) -> dict:
     the first band's middle (the half of its elements nearest its middle) reads ``first_band_MPa``."""
     import numpy as np
 
-    from cadgen._internal.fea import inherent_strain as IS
+    from cadgen._internal.manufacturing.processes import inherent_strain as IS
     from cadgen._internal.fea import operators
 
     out: dict[str, Any] = {}
-    if not inputs.process.plate:
+    if not inputs.technology.plate:
         return out
     volumes = IS.element_volumes(space)
     centroids = IS.element_centroids(space)

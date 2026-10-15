@@ -1,7 +1,7 @@
-"""The 3D printing processes and materials a ``printing`` study names, and the inherent strain each leaves.
+"""The 3D printing technologies and materials a ``printing`` study names, and the inherent strain each leaves.
 
 A printed band shrinks as it cools or cures on the part below it; held by that part and the plate, it cannot, and
-what it would have taken up is its inherent strain (:mod:`cadgen._internal.fea.inherent_strain`): an in-plane value
+what it would have taken up is its inherent strain (:mod:`cadgen._internal.manufacturing.processes.inherent_strain`): an in-plane value
 (across the layers, negative for a shrinkage) and one along the build direction. Along the build direction it is taken
 as zero, the hypothesis of the cantilever calibrations of metal powder bed fusion: the next layer is laid at the
 nominal height, which takes up the layer's own vertical shrinkage. In the plane:
@@ -26,11 +26,11 @@ from dataclasses import dataclass
 
 from cadgen._internal.fea.analyses.kinds import json_text
 
-__all__ = ["MATERIALS", "PROCESSES", "PrintMaterial", "PrintProcess", "lookup_material", "lookup_process"]
+__all__ = ["MATERIALS", "PrintMaterial", "TECHNOLOGIES", "Technology", "lookup_material", "lookup_technology"]
 
 
 @dataclass(frozen=True)
-class PrintProcess:
+class Technology:
     key: str
     #: How a sentence names it: "metal powder bed fusion".
     words: str
@@ -42,14 +42,14 @@ class PrintProcess:
     recoater: bool
 
 
-PROCESSES: dict[str, PrintProcess] = {process.key: process for process in (
-    PrintProcess("fdm", "fused filament (FDM)", "polymer", plate=True, recoater=False),
-    PrintProcess("powder_bed_metal", "metal powder bed fusion", "alloy", plate=True, recoater=True),
-    PrintProcess("sls", "polymer powder bed fusion (SLS)", "polymer", plate=False, recoater=False),
-    PrintProcess("resin", "resin (SLA, DLP)", "polymer", plate=True, recoater=False),
+TECHNOLOGIES: dict[str, Technology] = {technology.key: technology for technology in (
+    Technology("fdm", "fused filament (FDM)", "polymer", plate=True, recoater=False),
+    Technology("powder_bed_metal", "metal powder bed fusion", "alloy", plate=True, recoater=True),
+    Technology("sls", "polymer powder bed fusion (SLS)", "polymer", plate=False, recoater=False),
+    Technology("resin", "resin (SLA, DLP)", "polymer", plate=True, recoater=False),
 )}
 
-_PROCESS_ALIASES = {
+_TECHNOLOGY_ALIASES = {
     "fff": "fdm", "filament": "fdm", "lpbf": "powder_bed_metal", "slm": "powder_bed_metal", "dmls": "powder_bed_metal",
     "pbf_lb": "powder_bed_metal", "metal": "powder_bed_metal", "powder_bed": "powder_bed_metal", "mjf": "sls",
     "sla": "resin", "dlp": "resin", "msla": "resin",
@@ -60,8 +60,8 @@ _PROCESS_ALIASES = {
 class PrintMaterial:
     key: str
     name: str
-    #: The process it prints in.
-    process: str
+    #: The technology it prints in.
+    technology: str
     #: Young's modulus and the yield strength as printed, MPa; Poisson's ratio.
     E: float
     nu: float
@@ -133,26 +133,26 @@ def _key(name: str) -> str:
     return "-".join(name.strip().lower().replace("_", " ").split())
 
 
-def lookup_process(name) -> PrintProcess:
-    """A printing process by name; a ValueError naming ``process`` and listing them otherwise."""
+def lookup_technology(name) -> Technology:
+    """A printing technology by name; a ValueError naming ``technology`` and listing them otherwise."""
     key = _key(name).replace("-", "_") if isinstance(name, str) else None
-    key = _PROCESS_ALIASES.get(key, key)
-    if key not in PROCESSES:
-        raise ValueError(f"process: {json_text(name)} is not a printing process cadgen knows; use one of "
-                         f"{', '.join(PROCESSES)}")
-    return PROCESSES[key]
+    key = _TECHNOLOGY_ALIASES.get(key, key)
+    if key not in TECHNOLOGIES:
+        raise ValueError(f"technology: {json_text(name)} is not a printing technology cadgen knows; use one of "
+                         f"{', '.join(TECHNOLOGIES)}")
+    return TECHNOLOGIES[key]
 
 
-def lookup_material(name, process: PrintProcess) -> PrintMaterial:
-    """The process's material by its table name or an alias; a ValueError naming the study key otherwise."""
-    own = [key for key, material in MATERIALS.items() if material.process == process.key]
-    where = process.material_key
+def lookup_material(name, technology: Technology) -> PrintMaterial:
+    """The technology's material by its table name or an alias; a ValueError naming the study key otherwise."""
+    own = [key for key, material in MATERIALS.items() if material.technology == technology.key]
+    where = technology.material_key
     if not isinstance(name, str) or not name.strip():
-        raise ValueError(f"{where}: name the {process.words} material, one of {', '.join(own)}; got {json_text(name)}")
+        raise ValueError(f"{where}: name the {technology.words} material, one of {', '.join(own)}; got {json_text(name)}")
     key = _key(name)
     key = key if key in MATERIALS else _MATERIAL_ALIASES.get(key, key)
-    if process.key == "sls" and key == "pa":
+    if technology.key == "sls" and key == "pa":
         key = "pa12"
-    if key not in MATERIALS or MATERIALS[key].process != process.key:
-        raise ValueError(f"{where}: {name!r} is not a {process.words} material cadgen knows; use one of {', '.join(own)}")
+    if key not in MATERIALS or MATERIALS[key].technology != technology.key:
+        raise ValueError(f"{where}: {name!r} is not a {technology.words} material cadgen knows; use one of {', '.join(own)}")
     return MATERIALS[key]

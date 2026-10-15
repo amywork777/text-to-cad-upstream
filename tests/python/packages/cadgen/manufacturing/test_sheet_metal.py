@@ -1,4 +1,4 @@
-"""Sheet metal bending (`"analysis": "sheet_metal"`, a Tier 2 estimate): the study, Gardiner's springback, cracking.
+"""Sheet metal bending (`"process": "sheet_metal"`, a Tier 2 estimate): the study, Gardiner's springback, cracking.
 
 Each solve reads a bent sheet build123d writes into a temporary directory (a profile of flats and arcs, extruded):
 
@@ -12,8 +12,8 @@ Each solve reads a bent sheet build123d writes into a temporary directory (a pro
 
 Each fresh STEP costs a document compile of several seconds, so two fixtures carry every solve.
 
-The manufacturing-sim skill's router table and its sheet metal reference stay in step with the registry and the table.
-Parse and formula tests run everywhere; solves need the fea extra.
+The sheet metal reference stays in step with the table. Parse and formula tests run everywhere; checks need the fea
+extra.
 """
 
 from __future__ import annotations
@@ -23,10 +23,11 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import class_directory, needs_fea, solve, solve_keeping, value_error
+from tests.python.support.fea_fixtures import check, check_keeping, class_directory, needs_fea, read_study, value_error
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-BASE = {"analysis": "sheet_metal", "material": "5052-h32"}
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+BASE = {"process": "sheet_metal", "material": "5052-h32"}
 
 
 def bent_solid(*, t: float, radius: float, legs: list[float], bends: list[float], width: float = 25.0):
@@ -85,9 +86,7 @@ def gardiner_by_hand(radius: float, t: float, yield_MPa: float, E_MPa: float, an
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
-
-        return parse_study({**BASE, **changes})
+        return read_study({**BASE, **changes})
 
     def test_the_sheet_and_the_study_keys(self):
         study = self.parse()
@@ -101,8 +100,6 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((own.thickness_mm, own.tolerance_deg, own.face_refs, own.grain), (2.0, 0.5, ("#o1.f3",), (0.0, 1.0, 0.0)))
 
     def test_the_errors_name_the_field(self):
-        from cadgen._internal.fea.study import parse_study
-
         cases = [
             ({"material": None}, "study.material: the sheet"),
             ({"material": "unobtainium"}, "material: 'unobtainium' is not a sheet"),
@@ -122,19 +119,12 @@ class StudyFile(unittest.TestCase):
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
-
-    def test_it_is_registered_as_a_tier_2_estimate(self):
-        from cadgen._internal.fea.analyses import REGISTRY, get_analysis
-
-        entry = REGISTRY["sheet_metal"]
-        self.assertEqual((entry.tier, entry.word, entry.planned), (2, "Sheet metal", False))
-        self.assertTrue(get_analysis("sheet_metal").estimate_only)
+                self.assertIn(fragment, value_error(self, read_study, document))
 
 
 class Formulas(unittest.TestCase):
     def test_gardiners_springback_of_the_references_hand_check(self):
-        from cadgen._internal.fea.brake import gardiner, lookup_sheet
+        from cadgen._internal.manufacturing.processes.brake import gardiner, lookup_sheet
 
         sheet = lookup_sheet("5052-H32")
         g = gardiner(3.0, 1.5, sheet)
@@ -145,7 +135,7 @@ class Formulas(unittest.TestCase):
         self.assertTrue(gardiner(2000.0, 1.5, sheet)["elastic"])     # too gentle to yield: it springs back flat
 
     def test_the_minimum_bend_follows_temper_and_thickness(self):
-        from cadgen._internal.fea.brake import k_factor, lookup_sheet
+        from cadgen._internal.manufacturing.processes.brake import k_factor, lookup_sheet
 
         t6, h32 = lookup_sheet("6061-t6"), lookup_sheet("5052-h32")
         self.assertAlmostEqual(t6.min_ratio(1.5), 1.445, places=3)    # between 1/32" (1t) and 1/16" (1.5t)
@@ -172,10 +162,10 @@ class SingleBend(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = class_directory(cls)
-        cls.result, cls.solved = solve_keeping("sheet_metal", tab_on_plate(directory), directory / "plate.glb", BASE)
+        cls.result, cls.solved = check_keeping(tab_on_plate(directory), BASE)
 
     def test_it_springs_back_gardiners_angle(self):
-        from cadgen._internal.fea.brake import lookup_sheet
+        from cadgen._internal.manufacturing.processes.brake import lookup_sheet
 
         sheet = lookup_sheet("5052-h32")
         [bend] = self.result.summary["bends"]
@@ -218,8 +208,8 @@ class TwoBends(unittest.TestCase):
         step = bent_sheet(directory, "u", t=1.5, radius=1.5, legs=[20, 30, 20], bends=[90, 90])
         cls.flange = next(face.ref for face in fea.faces(step).faces if face.normal and face.normal[2] < -0.99
                           and face.center_mm[2] < 0.1)
-        cls.t6 = solve(step, directory / "t6.glb", {**BASE, "material": "6061-t6"})
-        cls.h32 = solve(step, directory / "h32.glb", {**BASE, "fixed_face": cls.flange})
+        cls.t6 = check(step, {**BASE, "material": "6061-t6"})
+        cls.h32 = check(step, {**BASE, "fixed_face": cls.flange})
 
     def test_it_finds_both_bends_and_held_by_a_flange_the_other_is_off_by_both(self):
         summary = self.h32.summary
@@ -256,7 +246,7 @@ class NotSheet(unittest.TestCase):
     def test_a_block_is_refused_in_a_sentence(self):
         from build123d import Box
 
-        from cadgen._internal.fea.bends import read_sheet
+        from cadgen._internal.manufacturing.processes.bends import read_sheet
 
         block = Box(20, 20, 20)
         message = value_error(self, read_sheet, block.wrapped, part="#o1", volume_mm3=block.volume, area_mm2=block.area)
@@ -264,7 +254,7 @@ class NotSheet(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    """The manufacturing-sim skill says what the registry and the table say."""
+    """The sheet metal reference lists what the table holds."""
 
     def _rows(self, path: Path, heading: str) -> list[list[str]]:
         text = path.read_text(encoding="utf-8")
@@ -272,14 +262,8 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
-    def test_the_router_runs_sheet_metal_as_an_estimate(self):
-        [row] = [cells for cells in self._rows(SKILL / "SKILL.md", "## Choose the process") if "`sheet_metal`" in cells[1]]
-        self.assertEqual(row[2], "Sheet metal")
-        self.assertTrue(row[3].startswith("**Runs today** (estimate"), row[3])
-        self.assertIn("references/sheet_metal.md", row[4])
-
     def test_the_reference_lists_every_sheet(self):
-        from cadgen._internal.fea.brake import SHEETS
+        from cadgen._internal.manufacturing.processes.brake import SHEETS
 
         found = [re.fullmatch(r"`([a-z0-9-]+)`", cells[0]) for cells in self._rows(SKILL / "references" / "sheet_metal.md", "## The sheets")]
         self.assertEqual([match.group(1) for match in found if match], list(SHEETS))

@@ -15,12 +15,13 @@ stress along the welds. Lite: read [Limits](#limits) before you report.
 ## The study
 
 ```json
-{"analysis": "welding", "alloy": "s355",
+{"process": "welding", "alloy": "s355",
  "welds": [{"faces": ["#o1.f3", "#o1.f8"], "process": "gmaw", "volts": 26, "amps": 220,
             "travel_speed_mm_s": 5, "passes": 1, "label": "web to flange, left"}],
  "tolerance_mm": 0.5, "fatigue_critical": true}
 ```
 
+- `process` (required): `welding`.
 - `alloy` (required): the base metal, a name from [The base metals](#the-base-metals) or a plain
   name (`mild-steel`, `s235jr`, `stainless`, `6061`, ...).
 - `welds` (required): each weld, in any order (they are applied together):
@@ -28,7 +29,7 @@ stress along the welds. Lite: read [Limits](#limits) before you report.
     on a T: the flange's top beside the web, then the web's side); the weld runs along the edge they
     share. Or one face with `line_mm`, `[[x, y, z], [x, y, z]]`, its two ends (a butt weld across a
     plate's face, two coplanar faces of two plates). The faces must be flat; the weld straight.
-  - `process` (required): `gmaw` (`mig`, `mag`), `gtaw` (`tig`), `smaw` (`stick`) or `laser`
+  - `process` (required): the weld's own, `gmaw` (`mig`, `mag`), `gtaw` (`tig`), `smaw` (`stick`) or `laser`
     ([The processes](#the-processes)).
   - Its heat, one way: `heat_input_kJ_mm`, the net heat input per pass (EN 1011-1's Q, the thermal
     efficiency included); or `volts`, `amps` and `travel_speed_mm_s` (`power_W` and
@@ -103,7 +104,7 @@ distortion [11]):
 
 ## What comes out
 
-- `part.fea.glb`, coloured by the residual stress (von Mises, MPa) and deformed by the distortion
+- `part.welding.glb`, coloured by the residual stress (von Mises, MPa) and deformed by the distortion
   (mm, its rigid motion taken out). The other fields: `longitudinal_stress` (MPa, along the nearest
   weld, signed) and `weld_zone` (1 in a weld's zones). No frames: the welds act together.
 - Summary: `alloy`, `yield_MPa`, `welds` (each `label`, `process`, `joint` (`fillet` or `butt`),
@@ -121,13 +122,15 @@ distortion [11]):
 ## Findings
 
 Every check says what it measured against its limit (`measured`), passes included; every error and
-warning carries the `fix` that makes it pass.
+warning carries the `fix` that makes it pass ([checks.md](checks.md#welding) lists every type and the
+fix actions it can carry).
 
 | Finding | Severity | What it measures | Fix |
 | --- | --- | --- | --- |
 | `distortion` | error past `tolerance_mm`, else info | The largest distance any point moved from the CAD, its rigid motion taken out; the weld that turns its joint most. | `reduce_heat_input` (`params.weld`, `params.heat_input_kJ_mm`), with `alternatives`: `balance_welds` (weld the other side too), `preset` (`params.preset_deg`), `thicken` (`params.thickness_mm`, a plate on the rising side of θ only). |
 | `angular_distortion` | info | Each weld's joint closing, in degrees, its joint, heat and passes. | |
-| `hand_check` | info within 2×, else `hand_check_far` (warning) | The weld whose angle is furthest from Satoh and Terasaki's, against it. | `check_inputs`: the faces (the plate the weld lies on first), the heat input and the thicknesses. |
+| `hand_check` | info | The weld whose angle is furthest from Satoh and Terasaki's, against it, within 2 times. | |
+| `hand_check_far` | warning | The two are more than 2 times apart. | `check_inputs`: the faces (the plate the weld lies on first), the heat input and the thicknesses. |
 | `bowing` | info within 2× of beam theory, else warning | The bow along the weld that bows the part most, against beam theory's. | `check_inputs`. |
 | `residual_stress` | warning past 80 % of yield when `fatigue_critical`, else info | The tension along the welds, the 90th percentile of the weld zones (a note when not fatigue-critical). | `stress_relieve` (a post-weld heat treatment, or peening the toes). |
 

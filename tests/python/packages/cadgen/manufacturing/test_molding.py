@@ -1,4 +1,4 @@
-"""Injection molding (`"analysis": "molding"`): the study it reads, the plate formula, sink, warp and the checklist.
+"""Injection molding (`"process": "molding"`): the study it reads, the plate formula, sink, warp and the checklist.
 
 Benchmarks, each through the whole analysis on a part build123d writes into a temporary directory:
 
@@ -10,8 +10,7 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
 - a plate with a thick bar along one side bows toward the bar (its ends swing toward it, the bar's side concave),
   several times more than the uniform plate warps anywhere.
 
-The skill's router and the molding reference stay in step with the registry and the resin table. Parse tests run
-everywhere; solves need the fea extra.
+The molding reference stays in step with the resin table. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
@@ -21,10 +20,11 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import class_directory, needs_fea, solve_keeping, value_error
+from tests.python.support.fea_fixtures import check_keeping, class_directory, needs_fea, read_study, value_error
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-BASE = {"analysis": "molding", "resin": "abs"}
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+BASE = {"process": "molding", "resin": "abs"}
 
 
 def plate_step(directory: Path, name: str, *, bar: bool = False, boss: bool = False) -> Path:
@@ -46,9 +46,7 @@ def plate_step(directory: Path, name: str, *, bar: bool = False, boss: bool = Fa
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
-
-        return parse_study({**BASE, **changes})
+        return read_study({**BASE, **changes})
 
     def test_the_resin_sets_the_temperatures_and_the_study_overrides_them(self):
         study = self.parse()
@@ -78,15 +76,14 @@ class StudyFile(unittest.TestCase):
             ({"mesh": {"order": 2}}, "study.mesh.order: molding studies take order 1"),
             ({"gate": "#o1.f1"}, "unknown keys ['gate']"),
         ]
-        from cadgen._internal.fea.study import parse_study
 
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
     def test_the_plate_formula_is_the_handbooks_and_a_finite_contact_slows_it(self):
-        from cadgen._internal.fea.resins import RESINS, diffusivity, linear_shrinkage, plate_cooling
+        from cadgen._internal.manufacturing.processes.resins import RESINS, diffusivity, linear_shrinkage, plate_cooling
 
         # A 2 mm wall, α = 0.1 mm²/s, melt 240 °C, mould 60 °C, ejection 90 °C: about 8 s to its middle.
         scale = 4.0 / (math.pi ** 2 * 0.1)
@@ -109,7 +106,7 @@ class PlateFormula(unittest.TestCase):
     def setUpClass(cls):
         directory = class_directory(cls)
         study = {**BASE, "h_W_m2K": 1e6, "mesh": {"size_mm": 0.5}}
-        cls.result, cls.solved = solve_keeping("molding", plate_step(directory, "plate"), directory / "plate.glb", study)
+        cls.result, cls.solved = check_keeping(plate_step(directory, "plate"), study)
 
     def test_the_plate_is_ejectable_when_the_formula_for_its_middle_says(self):
         summary = self.result.summary
@@ -143,8 +140,7 @@ class Boss(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = class_directory(cls)
-        cls.result, _ = solve_keeping("molding", plate_step(directory, "boss", boss=True), directory / "boss.glb",
-                                      {**BASE, "mesh": {"size_mm": 0.67}})
+        cls.result, _ = check_keeping(plate_step(directory, "boss", boss=True), {**BASE, "mesh": {"size_mm": 0.67}})
 
     def test_a_thick_boss_on_a_thin_plate_is_a_sink_and_it_says_what_to_change(self):
         sinks = [f for f in self.result.findings if f["type"] in ("sink_void", "sink_risk")]
@@ -175,7 +171,7 @@ class Warp(unittest.TestCase):
         import numpy as np
 
         directory = class_directory(type(self))
-        result, solved = solve_keeping("molding", plate_step(directory, "bar", bar=True), directory / "bar.glb",
+        result, solved = check_keeping(plate_step(directory, "bar", bar=True),
                                        {**BASE, "mesh": {"size_mm": 0.67}, "warp_tolerance_mm": 0.001})
         nodes, u = solved.dof_locations, solved.fields["warp"]
         bottom = np.isclose(nodes[:, 2], 0.0) & (nodes[:, 1] < 4.0)
@@ -194,7 +190,7 @@ class Warp(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    """The manufacturing-sim skill runs molding today, and its reference lists every resin."""
+    """The molding reference lists every resin."""
 
     def _rows(self, path: Path, heading: str) -> list[list[str]]:
         text = path.read_text(encoding="utf-8")
@@ -202,16 +198,8 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
-    def test_the_router_runs_molding_today(self):
-        from cadgen._internal.fea.analyses import REGISTRY
-
-        row = next(cells for cells in self._rows(SKILL / "SKILL.md", "## Choose the process") if "`molding`" in cells[1])
-        self.assertEqual(row[2], REGISTRY["molding"].word)
-        self.assertTrue(row[3].startswith("**Runs today** (lite"), row[3])
-        self.assertIn("references/molding.md", row[4])
-
     def test_the_molding_reference_lists_every_resin(self):
-        from cadgen._internal.fea.resins import RESINS
+        from cadgen._internal.manufacturing.processes.resins import RESINS
 
         resins = [re.fullmatch(r"`([a-z0-9-]+)`", cells[0]) for cells in self._rows(SKILL / "references" / "molding.md", "## The resins")]
         self.assertEqual([found.group(1) for found in resins if found], list(RESINS))

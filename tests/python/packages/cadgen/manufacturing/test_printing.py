@@ -1,4 +1,4 @@
-"""3D printing (`"analysis": "printing"`): the study it reads, the shared inherent-strain method, warp and release.
+"""3D printing (`"process": "printing"`): the study it reads, the shared inherent-strain method, warp and release.
 
 Benchmarks, each through the whole analysis on a part build123d writes into a temporary directory:
 
@@ -8,37 +8,38 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
 - letting go of the plate changes the distortion, and the frames build the part band by band, then let it go;
 - every check says what it measured, passes included, and a failing one carries the fix that makes it pass.
 
-The manufacturing-sim skill's printing reference stays in step with the tables. Parse tests run everywhere; solves need
-the fea extra.
+The printing reference stays in step with the tables. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
 
 import re
+import shutil
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import box_step, box_volume, class_directory, needs_fea, solve, value_error
+from tests.python.support.fea_fixtures import (
+    box_step, box_volume, check, class_directory, needs_fea, read_study, value_error,
+)
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-BASE = {"analysis": "printing", "process": "powder_bed_metal", "alloy": "316l"}
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+BASE = {"process": "printing", "technology": "powder_bed_metal", "alloy": "316l"}
 FIX_KEYS = {"action", "summary", "where", "params"}
 
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
+        return read_study({key: value for key, value in {**BASE, **changes}.items() if value is not None}).inputs
 
-        return parse_study({key: value for key, value in {**BASE, **changes}.items() if value is not None}).inputs
-
-    def test_the_process_and_material_set_the_strain_and_the_study_overrides_it(self):
+    def test_the_technology_and_material_set_the_strain_and_the_study_overrides_it(self):
         inputs = self.parse()
-        self.assertEqual((inputs.process.key, inputs.material.key, inputs.direction, inputs.bands, inputs.release),
+        self.assertEqual((inputs.technology.key, inputs.material.key, inputs.direction, inputs.bands, inputs.release),
                          ("powder_bed_metal", "316l", (0.0, 0.0, 1.0), 12, True))
         self.assertAlmostEqual(inputs.in_plane, -480 / 193_000)
         self.assertEqual((inputs.along, inputs.given, inputs.layer_mm, inputs.requires_anchor), (0.0, False, 0.04, False))
         self.assertAlmostEqual(self.parse(alloy="Ti64").in_plane, -0.0056)
-        fdm = self.parse(process="fdm", polymer="ABS", alloy=None, chamber_temperature_C=45)
+        fdm = self.parse(technology="fdm", polymer="ABS", alloy=None, chamber_temperature_C=45)
         self.assertAlmostEqual(fdm.in_plane, -90e-6 * (105 - 45))
         own = self.parse(inherent_strain={"in_plane": -0.002, "build": -0.0005}, build_direction=[0, 2, 0], bands=6,
                          release_from_plate=False, tolerance_mm=0.1)
@@ -46,16 +47,14 @@ class StudyFile(unittest.TestCase):
                          (-0.002, -0.0005, True, (0.0, 1.0, 0.0), 6, False, 0.1))
 
     def test_the_errors_name_the_field(self):
-        from cadgen._internal.fea.study import parse_study
-
         cases = [
-            ({"process": None}, "study.process: how it is printed"),
-            ({"process": "inkjet"}, 'process: "inkjet" is not a printing process'),
+            ({"technology": None}, "study.technology: how it is printed"),
+            ({"technology": "inkjet"}, 'technology: "inkjet" is not a printing technology'),
             ({"alloy": None}, "study.alloy: what it is printed in"),
             ({"alloy": "unobtainium"}, "alloy: 'unobtainium' is not a metal powder bed fusion material"),
             ({"polymer": "abs"}, "study.polymer: powder_bed_metal prints an alloy; name it with 'alloy'"),
-            ({"process": "fdm", "alloy": None, "polymer": "316l"}, "polymer: '316l' is not a fused filament"),
-            ({"material": "steel"}, "study.material: a printing study names its material by the process"),
+            ({"technology": "fdm", "alloy": None, "polymer": "316l"}, "polymer: '316l' is not a fused filament"),
+            ({"material": "steel"}, "study.material: a printing study names its material by the technology"),
             ({"parts": {"a": {}}}, "study.parts: a printing study solves one part"),
             ({"build_direction": [0, 0, 0]}, "build_direction: [0, 0, 0] points nowhere"),
             ({"build_direction": "up"}, "build_direction: the build direction as [x, y, z]"),
@@ -63,7 +62,7 @@ class StudyFile(unittest.TestCase):
             ({"release_from_plate": "yes"}, "release_from_plate: true or false"),
             ({"tolerance_mm": 0}, "tolerance_mm: must be > 0"),
             ({"chamber_temperature_C": 40}, "chamber_temperature_C: FDM's alone"),
-            ({"process": "fdm", "alloy": None, "polymer": "pla", "chamber_temperature_C": 70},
+            ({"technology": "fdm", "alloy": None, "polymer": "pla", "chamber_temperature_C": 70},
              "chamber_temperature_C: 70 °C is not below where PLA sets (60 °C)"),
             ({"inherent_strain": {"in_plane": -0.2}}, "inherent_strain.in_plane: -0.2 is a strain of 20%"),
             ({"inherent_strain": {"shrink": 1}}, "inherent_strain: unknown keys ['shrink']"),
@@ -73,7 +72,7 @@ class StudyFile(unittest.TestCase):
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
 
 @needs_fea
@@ -84,7 +83,7 @@ class InherentStrainMethod(unittest.TestCase):
     def setUpClass(cls):
         import numpy as np
 
-        from cadgen._internal.fea import inherent_strain
+        from cadgen._internal.manufacturing.processes import inherent_strain
         from cadgen._internal.fea.femspace import FemSpace
         from cadgen._internal.fea.materials import Material
 
@@ -98,7 +97,7 @@ class InherentStrainMethod(unittest.TestCase):
     def test_a_thin_cantilever_plate_curls_as_beam_theory_says(self):
         import numpy as np
 
-        from cadgen._internal.fea import inherent_strain
+        from cadgen._internal.manufacturing.processes import inherent_strain
 
         space = self.space
         clamp = inherent_strain.vector_dofs(space, np.flatnonzero(space.dof_locations[:, 0] < 1e-9))
@@ -111,7 +110,7 @@ class InherentStrainMethod(unittest.TestCase):
     def test_a_free_plate_bows_with_no_stress_and_a_build_of_one_band_is_one_solve(self):
         import numpy as np
 
-        from cadgen._internal.fea import inherent_strain
+        from cadgen._internal.manufacturing.processes import inherent_strain
 
         space = self.space
         held = inherent_strain.hold_free(space)
@@ -140,9 +139,11 @@ class TallAndSquat(unittest.TestCase):
         cls.directory = directory
         cls.wall_step, block = wall_and_block(directory)
         study = {**BASE, "mesh": {"size_mm": 2.5}, "bands": 8}
-        cls.wall = solve(cls.wall_step, directory / "wall.glb", study)
-        cls.block = solve(block, directory / "block.glb", study)
-        cls.held = solve(cls.wall_step, directory / "held.glb", {**study, "release_from_plate": False})
+        cls.wall = check(cls.wall_step, study)
+        cls.block = check(block, study)
+        # Its own copy: a check writes <stem>.printing.glb, and the released wall's frames are read below.
+        held = shutil.copy(cls.wall_step, directory / "held.step")
+        cls.held = check(Path(held), {**study, "release_from_plate": False})
 
     def test_a_tall_thin_wall_curls_and_lifts_more_than_a_squat_block(self):
         wall, block = self.wall.summary, self.block.summary
@@ -184,8 +185,7 @@ class TallAndSquat(unittest.TestCase):
         self.assertEqual(kinds["residual_stress"]["severity"], "warning")  # linear 316L passes its yield
 
     def test_a_failing_print_carries_what_it_measured_and_the_fix(self):
-        tight = solve(self.wall_step, self.directory / "tight.glb",
-                      {**BASE, "mesh": {"size_mm": 2.5}, "bands": 8, "tolerance_mm": 0.01})
+        tight = check(self.wall_step, {**BASE, "mesh": {"size_mm": 2.5}, "bands": 8, "tolerance_mm": 0.01})
         warp = next(found for found in tight.findings if found["type"] == "warp")
         self.assertEqual(warp["severity"], "error")
         self.assertEqual((warp["measured"]["limit"], warp["measured"]["pass_when"]), (0.01, "below"))
@@ -200,16 +200,16 @@ class Filament(unittest.TestCase):
     def test_an_fdm_part_that_warps_is_fixed_by_a_warmer_chamber(self):
         directory = class_directory(type(self))
         step = box_step(directory, "plate", (40.0, 20.0, 4.0), "corner")
-        study = {"analysis": "printing", "process": "fdm", "polymer": "abs", "mesh": {"size_mm": 2.5}, "bands": 6,
+        study = {"process": "printing", "technology": "fdm", "polymer": "abs", "mesh": {"size_mm": 2.5}, "bands": 6,
                  "tolerance_mm": 0.05, "bed_adhesion_MPa": 100.0}
-        result = solve(step, directory / "plate.glb", study)
+        result = check(step, study)
         failing = [found for found in result.findings if found["severity"] == "error"]
         self.assertTrue(failing, result.findings)
         fix = failing[0]["fix"]
         self.assertEqual(fix["action"], "raise_chamber_temperature")
         warmer = fix["params"]["chamber_temperature_C"]
         self.assertTrue(25 < warmer < 105, warmer)
-        again = solve(step, directory / "warmer.glb", {**study, "chamber_temperature_C": warmer})
+        again = check(step, {**study, "chamber_temperature_C": warmer})
         self.assertLess(again.summary["max_distortion_mm"], result.summary["max_distortion_mm"])
         adhesion = next(found for found in result.findings if found["type"] == "bed_adhesion")
         self.assertEqual((adhesion["severity"], adhesion["measured"]["limit"]), ("info", 100.0))
@@ -224,13 +224,13 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
-    def test_the_reference_lists_every_material_and_process(self):
-        from cadgen._internal.fea.additive import MATERIALS, PROCESSES
+    def test_the_reference_lists_every_material_and_technology(self):
+        from cadgen._internal.manufacturing.processes.additive import MATERIALS, TECHNOLOGIES
 
         materials = [re.fullmatch(r"`([a-z0-9-]+)`", cells[0]) for cells in self._rows("## The materials")]
         self.assertEqual([found.group(1) for found in materials if found], list(MATERIALS))
-        processes = [re.fullmatch(r"`([a-z_]+)`", cells[0]) for cells in self._rows("## The processes")]
-        self.assertEqual([found.group(1) for found in processes if found], list(PROCESSES))
+        technologies = [re.fullmatch(r"`([a-z_]+)`", cells[0]) for cells in self._rows("## The technologies")]
+        self.assertEqual([found.group(1) for found in technologies if found], list(TECHNOLOGIES))
 
 
 if __name__ == "__main__":

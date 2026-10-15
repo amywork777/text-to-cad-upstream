@@ -24,20 +24,21 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
    cadgen fea faces part.step
    ```
 
-2. **Write the study** as `bend.json` beside the part:
+2. **Write the study** as `part.sheet_metal.json` beside the part:
 
    ```json
-   {"analysis": "sheet_metal", "material": "5052-h32", "tolerance_deg": 1}
+   {"process": "sheet_metal", "material": "5052-h32", "tolerance_deg": 1}
    ```
 
-3. **Solve.**
+3. **Check.**
 
    ```bash
-   cadgen fea solve part.step --study bend.json
+   cadgen manufacturing check part.step --study part.sheet_metal.json --fail-on error
    ```
 
-   This writes `part.fea.glb` (coloured by each bend's springback, drawn as it comes off the brake) and
-   `part.fea.json` (every number per bend, the study, the findings and the verdict) beside the part. A part with no
+   This writes `part.sheet_metal.glb` (coloured by each bend's springback, drawn as it comes off the brake) and
+   `part.sheet_metal.json` (every number per bend, the study, the findings and the verdict) beside the part, and exits
+   3 while an error stands. A part with no
    bends, or not of one thickness, is refused in a sentence before it is meshed; so is a study with an unknown sheet,
    naming the field. Its lines end on the checklist, failures first, then the verdict:
 
@@ -74,10 +75,11 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
 ## The study
 
 ```json
-{"analysis": "sheet_metal", "material": "6061-t6", "thickness_mm": 1.5, "tolerance_deg": 0.5,
+{"process": "sheet_metal", "material": "6061-t6", "thickness_mm": 1.5, "tolerance_deg": 0.5,
  "fixed_face": "#o1.f7", "grain_direction": [1, 0, 0]}
 ```
 
+- `process` (required): `sheet_metal`.
 - `material` (required): a sheet from [The sheets](#the-sheets) or one of its plain names (`5052`, `6061`, `304`,
   `crs`, `hsla`, `c110`, `brass`, ...), or an object with your own numbers: one that names a sheet changes only what
   it gives (`{"name": "5052-h32", "yield_MPa": 205}` for a mill certificate's yield); one that names none gives
@@ -133,7 +135,7 @@ gives several, they are by thickness and interpolated between.
 
 ## What comes out
 
-- `part.fea.glb`, coloured by `springback` (°), each bend's own (the flats read 0), and drawn true to scale as it comes
+- `part.sheet_metal.glb`, coloured by `springback` (°), each bend's own (the flats read 0), and drawn true to scale as it comes
   off the brake: each bend opened by its springback and every flat past it turned with it, out from the held flat. The
   other fields: `strain_ratio` (each bend's outer strain over the limit its minimum R/t allows: past 1 it may crack)
   and `displacement` (mm, the springback's). The Deformation control exaggerates it; Spring back plays it.
@@ -152,7 +154,8 @@ gives several, they are by thickness and interpolated between.
 ## Findings
 
 Each check says pass (an `info` with `measured`) or fail, per bend where it is a bend's; a failing one carries
-`measured` and `fix` (with `alternatives` where there are any). A note measures nothing.
+`measured` and `fix` (with `alternatives` where there are any). A note measures nothing. [checks.md](checks.md#sheet_metal)
+lists every type and the fix actions it can carry.
 
 | Finding | Severity | What it means | Fix |
 | --- | --- | --- | --- |
@@ -181,7 +184,7 @@ radius R = 3 mm, R/t = 2:
   R / R_f = 4x³ - 3x + 1 = 0.98353, so R_f = 3.050 mm.
 - The bend's mid-thickness keeps its length, so it keeps K_s = (2R/t + 1) / (2R_f/t + 1) = 5 / 5.0670 = 0.98678 of its
   angle: 88.81°. **Springback 1.19°**; to land on 90° bend it to 90 / 0.98678 = 91.21°, an overbend of 1.21°. The
-  analysis reads 1.19° on a STEP of this bend (its test holds it to 0.005°).
+  check reads 1.19° on a STEP of this bend (its test holds it to 0.005°).
 - With work hardening (Hosford and Caddell [3]): K = UTS (e / n)^n = 228 × (2.718 / 0.13)^0.13 = 338 MPa, in plane
   strain K' = (2/√3)^1.13 K = 398 MPa and E' = E / (1 - ν²) = 78 900 MPa; at the mid-thickness radius ρ = 3.75 mm the
   curvature unloads Δ(1/ρ) = 6 K' (t / 2ρ)^n / ((n + 2) E' t) = 0.00769 /mm, to ρ_f = 3.861 mm: K_s = 0.9711,

@@ -79,7 +79,7 @@ class Resin:
 
 @dataclass(frozen=True)
 class SolvedResin:
-    """A resin as :func:`cadgen._internal.fea.solidification.march` reads an alloy."""
+    """A resin as :func:`cadgen._internal.manufacturing.processes.solidification.march` reads an alloy."""
 
     name: str
     density: float

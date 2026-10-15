@@ -69,20 +69,11 @@ it is `static`.
 | "Will this crack grow", "how big a crack can it take", a flaw found in inspection, "how many cycles until it breaks" with a crack | `fracture` | Cracks | **Runs today** (lite: linear-elastic fracture mechanics on a crack the study describes, K against K_IC, Paris crack growth; no ductile tearing) | [fracture.md](references/fracture.md) |
 | A spinning shaft, spindle, rotor, fan or disc: "will it run through a critical speed", a Campbell diagram, "how big is the orbit with this unbalance", "is the whirl stable", the spinning stress in a disc | `rotordynamics` | Spinning | **Runs today** (lite: a Timoshenko rotor line cut from the CAD with gyroscopic terms, linear bearings, bending whirl only; the spinning stress on the solid) | [rotordynamics.md](references/rotordynamics.md) |
 | Liquid inside the part moving over time: "will it spill when the tank is shaken or brakes", how high the water climbs the walls, the sloshing force on the tank and its frequency, filling or draining a cavity, a rising bubble | `multiphase` | Two fluids | **Runs today** (lite: laminar, incompressible, the interface a few elements thick; no evaporation, boiling or mixing) | [multiphase.md](references/multiphase.md) |
-| A casting freezing in its mould: "will it cast", where it shrinks or is porous, whether a thin section fills | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure) | `$manufacturing-sim`, its casting reference |
-| A steel part quench hardened: how hard it gets at the surface and the core, whether it cracks or distorts in the quench | `heat_treatment` | Heat treatment | **Runs today** (lite: thermal only, no transformation, a constant h per quenchant, hardness through the Jominy curve) | `$manufacturing-sim`, its heat-treatment reference |
-| A part being milled or turned: "will this wall deflect under the cutter", "will it chatter", which spindle speeds are stable | `machining` | Machining | **Runs today** (lite: Kienzle's force at the most flexible point of the cut faces, the part flexible and the tool rigid, zero-order lobes along the face's normal) | `$manufacturing-sim`, its machining reference |
-| A bent sheet off the press brake: "how much will it spring back", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (an estimate per bend: Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor) | `$manufacturing-sim`, its sheet metal reference |
-| An injection-moulded part: how long it cools before ejection, where it sinks, how far it warps, walls too thin or thick for the resin | `molding` | Injection molding | **Runs today** (lite: the cavity starts full and packed, the mould is a heat transfer coefficient, the warp is uneven shrinkage the same every way) | `$manufacturing-sim`, its molding reference |
-| A 3D print warping as it is built: "will it curl off the plate", the residual stress, whether the recoater hits it | `printing` | 3D printing | **Runs today** (lite: layer-by-layer inherent strain in height bands, linear elastic, a rigid plate) | `$manufacturing-sim`, its printing reference |
-| Welds distorting the part: how far a joint closes, how far it bows, the stress at the weld | `welding` | Welding | **Runs today** (lite: each weld's zone an inherent strain by the classical relations, all welds at once, linear elastic) | `$manufacturing-sim`, its welding reference |
 
 Each reference holds its analysis's full schema. A test keeps this table and the study file's
 `analysis` table in step with what cadgen registers.
 
-Questions about how the part is made ("will it cast", "will it warp when printed", "will it spring
-back when bent") belong to `$manufacturing-sim`: it runs `casting` and gives labelled estimates for
-the processes not simulated yet.
+How the part fares while it is made (cast, moulded, quenched, printed, machined, welded or bent) is `$manufacturing-sim`'s.
 
 ### When the question needs an analysis that is not here
 

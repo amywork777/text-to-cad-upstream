@@ -26,9 +26,7 @@ TIER_1 = ("static", "modal", "buckling", "thermal", "thermal_transient", "therma
 SPEC_2_1 = ("cfd_turbulent", "cfd_compressible", "creep", "composite", "bolt", "electromagnetic")
 # Built after spec 2.1's names, each registered after them: tier 3, its word.
 LATER = (("topology", "Lighten it"), ("acoustic", "Sound"), ("fracture", "Cracks"), ("conjugate_heat", "Cooled by flow"),
-         ("rotordynamics", "Spinning"), ("fsi", "Flow and bending"), ("piezo", "Piezo"), ("multiphase", "Two fluids"),
-         ("casting", "Casting"), ("heat_treatment", "Heat treatment"), ("machining", "Machining"),
-         ("molding", "Injection molding"), ("printing", "3D printing"), ("welding", "Welding"))
+         ("rotordynamics", "Spinning"), ("fsi", "Flow and bending"), ("piezo", "Piezo"), ("multiphase", "Two fluids"))
 
 
 def planned_entry(name: str):

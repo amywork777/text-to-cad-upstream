@@ -1,4 +1,4 @@
-"""Heat treatment (`"analysis": "heat_treatment"`): the study it reads, hardening through the Jominy curve, the hand check.
+"""Heat treatment (`"process": "heat_treatment"`): the study it reads, hardening through the Jominy curve, the hand check.
 
 Benchmarks, each through the whole analysis on a part build123d writes into a temporary directory:
 
@@ -9,8 +9,7 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
   H rests on, and every joule the part gave up went to the bath;
 - a surface under the study's target hardness is an error that says what it measured and how to fix it.
 
-The manufacturing-sim skill's router table and its heat-treatment reference stay in step with the registry and the
-tables. Parse tests run everywhere; solves need the fea extra.
+The heat-treatment reference stays in step with the tables. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
@@ -20,10 +19,11 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import box_step, class_directory, needs_fea, solve, value_error
+from tests.python.support.fea_fixtures import box_step, check, class_directory, needs_fea, read_study, value_error
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-BASE = {"analysis": "heat_treatment", "steel": "1045", "quenchant": "still_water"}
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+BASE = {"process": "heat_treatment", "steel": "1045", "quenchant": "still_water"}
 
 
 def round_step(directory: Path, diameter: float, length: float) -> Path:
@@ -37,9 +37,7 @@ def round_step(directory: Path, diameter: float, length: float) -> Path:
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
-
-        return parse_study({**BASE, **changes})
+        return read_study({**BASE, **changes})
 
     def test_the_grade_and_quenchant_set_the_quench_and_the_study_overrides_them(self):
         study = self.parse()
@@ -68,17 +66,16 @@ class StudyFile(unittest.TestCase):
             ({"mesh": {"order": 2}}, "study.mesh.order: heat_treatment studies take order 1"),
             ({"temper_C": 200}, "unknown keys ['temper_C']"),
         ]
-        from cadgen._internal.fea.study import parse_study
 
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
 
 class Hardenability(unittest.TestCase):
     def test_a_jominy_curve_starts_at_its_carbons_hardness_and_never_rises(self):
-        from cadgen._internal.fea.hardening import GRADES, jominy_distance, jominy_rate
+        from cadgen._internal.manufacturing.processes.hardening import GRADES, jominy_distance, jominy_rate
 
         for grade in GRADES.values():
             with self.subTest(grade=grade.key):
@@ -99,9 +96,9 @@ class ThinAndThick(unittest.TestCase):
         directory = class_directory(cls)
         thin = box_step(directory, "thin", (10.0, 10.0, 40.0))
         thick = box_step(directory, "thick", (30.0, 30.0, 60.0))
-        cls.thin = solve(thin, directory / "thin.glb", {**BASE, "mesh": {"size_mm": 2.0}})
-        cls.water = solve(thick, directory / "water.glb", {**BASE, "mesh": {"size_mm": 3.5}, "target_hrc": 55})
-        cls.oil = solve(thick, directory / "oil.glb", {**BASE, "quenchant": "slow_oil", "mesh": {"size_mm": 3.5}})
+        cls.thin = check(thin, {**BASE, "mesh": {"size_mm": 2.0}})
+        cls.water = check(thick, {**BASE, "mesh": {"size_mm": 3.5}, "target_hrc": 55})
+        cls.oil = check(thick, {**BASE, "quenchant": "slow_oil", "mesh": {"size_mm": 3.5}})
 
     def test_a_thin_bar_hardens_through_and_a_thick_one_keeps_a_soft_core(self):
         thin, thick = self.thin.summary, self.water.summary
@@ -122,7 +119,7 @@ class ThinAndThick(unittest.TestCase):
         self.assertEqual((soft["measured"]["limit"], soft["measured"]["pass_when"]), (55.0, "above"))
         self.assertLess(soft["measured"]["value"], 55.0)
         self.assertIn(soft["fix"]["action"], {"change_material", "change_quenchant", "thin"})
-        self.assertTrue(soft["fix"]["params"] and soft["fix"]["where"]["points_mm"])
+        self.assertTrue(soft["fix"]["params"] and isinstance(soft["fix"]["where"][-1], list))   # its faces, then the point
         self.assertEqual(self.water.verdict["status"], "fix")
         self.assertTrue(self.oil.verdict["headline"].startswith("Ready to quench · core "), self.oil.verdict)
         # Every finding says what it is, and every error or warning that has a fix carries one.
@@ -137,13 +134,13 @@ class ThinAndThick(unittest.TestCase):
 class HandCheck(unittest.TestCase):
     def test_a_rounds_centre_cools_as_the_series_solution_says_and_its_heat_goes_to_the_bath(self):
         directory = class_directory(type(self))
-        result = solve(round_step(directory, 20.0, 60.0), directory / "round.glb", {**BASE, "mesh": {"size_mm": 2.0}})
+        result = check(round_step(directory, 20.0, 60.0), {**BASE, "mesh": {"size_mm": 2.0}})
         hand = result.summary["hand_check"]
         self.assertEqual((hand["shape"], hand["dims_mm"]), ("round", [20.0, 60.0]))
         self.assertAlmostEqual(hand["simulated_rate_700_C_s"] / hand["centre_rate_700_C_s"], 1.0, delta=0.10)
         self.assertAlmostEqual(hand["simulated_t85_s"] / hand["centre_t85_s"], 1.0, delta=0.10)
-        check = next(f for f in result.findings if f["type"] == "hand_check")
-        self.assertEqual(check["severity"], "info")
+        hand_check = next(f for f in result.findings if f["type"] == "hand_check")
+        self.assertEqual(hand_check["severity"], "info")
         self.assertLess(result.summary["energy_balance"], 1e-9)
         # Grossmann's ideal critical diameter of 1045 is about an inch; a still-water quench hardens less.
         self.assertTrue(15.0 < hand["ideal_critical_diameter_mm"] < 35.0, hand)
@@ -151,7 +148,7 @@ class HandCheck(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    """The manufacturing-sim skill says what the registry and the tables say."""
+    """The heat-treatment reference lists what the tables hold."""
 
     def _rows(self, path: Path, heading: str) -> list[list[str]]:
         text = path.read_text(encoding="utf-8")
@@ -159,17 +156,8 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
-    def test_the_router_runs_heat_treatment_today(self):
-        from cadgen._internal.fea.analyses import REGISTRY
-
-        rows = [cells for cells in self._rows(SKILL / "SKILL.md", "## Choose the process") if "`heat_treatment`" in cells[1]]
-        self.assertEqual(len(rows), 1)
-        self.assertTrue(rows[0][3].startswith("**Runs today** (lite"), rows[0][3])
-        self.assertEqual(rows[0][2], REGISTRY["heat_treatment"].word)
-        self.assertIn("references/heat-treatment.md", rows[0][4])
-
     def test_the_reference_lists_every_steel_and_quenchant(self):
-        from cadgen._internal.fea.hardening import GRADES, QUENCHANTS
+        from cadgen._internal.manufacturing.processes.hardening import GRADES, QUENCHANTS
 
         page = SKILL / "references" / "heat-treatment.md"
         steels = [re.fullmatch(r"`([a-z0-9]+)`", cells[0]) for cells in self._rows(page, "## The steels")]

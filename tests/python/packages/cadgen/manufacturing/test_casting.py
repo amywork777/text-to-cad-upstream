@@ -1,4 +1,4 @@
-"""Casting (`"analysis": "casting"`): the study it reads, Chvorinov's rule, where shrinkage collects, the latent heat.
+"""Casting (`"process": "casting"`): the study it reads, Chvorinov's rule, where shrinkage collects, the latent heat.
 
 Benchmarks, each through the whole analysis on a part build123d writes into a temporary directory:
 
@@ -9,11 +9,11 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
   and the thinnest section reads the fin's 3 mm;
 - a thick boss on a thin bar is an isolated hot spot when the feeder is at the bar's end, an error whose fix is a feeder
   on the boss's top, and none when the boss's own top is the feeder, insulated or held hot (the hold puts its heat in,
-  and lets go): fed there the casting is ready, and the command's lines end on the checklist and the verdict;
+  and lets go): fed there the casting is ready; fed from the end it fails `--fail-on error` and the command exits 3,
+  its lines ending on the checklist and the verdict;
 - energy: every joule the metal gave up (its sensible heat and all of its latent heat) left through the mould.
 
-The manufacturing-sim skill's router table and its casting reference stay in step with the registry and the tables.
-Parse tests run everywhere; solves need the fea extra.
+The casting reference stays in step with the tables. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
@@ -25,10 +25,13 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import box_step, class_directory, needs_fea, quiet, solve, solve_keeping, value_error
+from tests.python.support.fea_fixtures import (
+    box_step, check, check_keeping, class_directory, needs_fea, quiet, read_study, value_error,
+)
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-BASE = {"analysis": "casting", "alloy": "a356", "process": "sand"}
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+BASE = {"process": "casting", "alloy": "a356", "mold": "sand"}
 
 
 def bar_with_boss(directory: Path) -> Path:
@@ -55,16 +58,14 @@ def block_with_fin(directory: Path) -> Path:
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
+        return read_study({**BASE, **changes})
 
-        return parse_study({**BASE, **changes})
-
-    def test_the_process_sets_the_pour_and_the_mould_and_the_study_overrides_them(self):
+    def test_the_mould_sets_the_pour_and_its_temperature_and_the_study_overrides_them(self):
         study = self.parse()
         inputs = study.inputs
-        self.assertEqual((inputs.alloy.key, inputs.process.key, inputs.pour_C, inputs.mold_C), ("a356", "sand", 715.0, 25.0))
+        self.assertEqual((inputs.alloy.key, inputs.mold.key, inputs.pour_C, inputs.mold_C), ("a356", "sand", 715.0, 25.0))
         self.assertEqual((study.mesh_order, study.material, inputs.requires_anchor), (1, None, False))
-        own = self.parse(alloy="Sterling", process="investment", pour_temperature_C=980, mold_temperature_C=500,
+        own = self.parse(alloy="Sterling", mold="investment", pour_temperature_C=980, mold_temperature_C=500,
                          feeders=[{"faces": ["#o1.f3"]}, {"faces": ["#o1.f4"], "h_W_m2K": 40},
                                   {"faces": ["#o1.f5"], "held_C": 1000}]).inputs
         self.assertEqual((own.alloy.key, own.pour_C, own.mold_C), ("sterling-silver-925", 980.0, 500.0))
@@ -76,11 +77,11 @@ class StudyFile(unittest.TestCase):
         cases = [
             ({"alloy": None}, "study.alloy: the casting alloy"),
             ({"alloy": "unobtainium"}, "alloy: 'unobtainium' is not a casting alloy"),
-            ({"process": None}, "study.process: how it is cast"),
-            ({"process": "3d print"}, "process: \"3d print\" is not a casting process"),
+            ({"mold": None}, "study.mold: the mould it is cast in"),
+            ({"mold": "3d print"}, "mold: \"3d print\" is not a casting mould"),
             ({"pour_temperature_C": 600}, "pour_temperature_C: 600 °C is not above the liquidus"),
             ({"mold_temperature_C": 560}, "mold_temperature_C: 560 °C is not below the solidus"),
-            ({"process": "investment"}, "mold_temperature_C: the investment preset's mould (600 °C)"),
+            ({"mold": "investment"}, "mold_temperature_C: the investment preset's mould (600 °C)"),
             ({"h_W_m2K": -5}, "h_W_m2K: must be > 0"),
             ({"feeders": [{"faces": ["#o1.f1"], "riser": True}]}, "feeders[0]: unknown keys ['riser']"),
             ({"feeders": [{"faces": ["#o1.f1"], "h_W_m2K": 5, "held_C": 700}]}, "feeders[0]: give h_W_m2K or held_C"),
@@ -94,19 +95,17 @@ class StudyFile(unittest.TestCase):
             ({"mesh": {"order": 2}}, "study.mesh.order: casting studies take order 1"),
             ({"gate": "#o1.f1"}, "unknown keys ['gate']"),
         ]
-        from cadgen._internal.fea.study import parse_study
-
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
     def test_an_insulating_moulds_coefficient_falls_as_it_heats_and_passes_its_heat_over_any_step(self):
         import math
 
-        from cadgen._internal.fea.foundry import lookup_process, mould_h
+        from cadgen._internal.manufacturing.processes.foundry import lookup_mold, mould_h
 
-        sand, die = lookup_process("sand"), lookup_process("die")
+        sand, die = lookup_mold("sand"), lookup_mold("die")
         self.assertEqual(mould_h(die.h, die.effusivity, 0.0, 10.0), 5000.0)
         # e / √(π t) integrated over [0, t] is 2 e √(t / π): one step from the pour passes what any split of it does.
         whole = mould_h(sand.h, sand.effusivity, 0.0, 100.0) * 100.0
@@ -118,7 +117,7 @@ class StudyFile(unittest.TestCase):
 def freeze_ratio(directory: Path, side: float) -> tuple[float, float]:
     """(the simulated freezing time, Chvorinov's) of an A356 cube in sand meshed at an eighth of its side."""
     step = box_step(directory, f"cube{side:g}", (side, side, side), "corner")
-    result = solve(step, directory / f"cube{side:g}.glb", {**BASE, "mesh": {"size_mm": side / 8}})
+    result = check(step, {**BASE, "mesh": {"size_mm": side / 8}})
     return result.summary["solidification_time_s"], result.summary["hand_check"]["estimate_s"]
 
 
@@ -138,8 +137,7 @@ class FinAndBlock(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = class_directory(cls)
-        cls.result, cls.solved = solve_keeping("casting", block_with_fin(directory), directory / "fin.glb",
-                                               {**BASE, "mesh": {"size_mm": 2.0}})
+        cls.result, cls.solved = check_keeping(block_with_fin(directory), {**BASE, "mesh": {"size_mm": 2.0}})
 
     def test_the_fin_is_solid_before_the_blocks_core_starts_to_freeze(self):
         import numpy as np
@@ -163,7 +161,7 @@ class FinAndBlock(unittest.TestCase):
     def test_a_fill_slower_than_the_fin_freezes_is_a_misrun(self):
         directory = class_directory(type(self))
         step = block_with_fin(directory)
-        slow = solve(step, directory / "slow.glb", {**BASE, "mesh": {"size_mm": 2.0}, "fill_time_s": 30})
+        slow = check(step, {**BASE, "mesh": {"size_mm": 2.0}, "fill_time_s": 30})
         misrun = next(f for f in slow.findings if f["type"] == "misrun")
         self.assertEqual(misrun["severity"], "error")
         self.assertGreater(misrun["items"][0]["at"][0], 20.0)          # in the fin
@@ -184,7 +182,7 @@ class Feeding(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from cadgen import fea
-        from cadgen.cli.fea_solve import main
+        from cadgen.cli.manufacturing_check import main
 
         directory = class_directory(cls)
         step = bar_with_boss(directory)
@@ -193,14 +191,15 @@ class Feeding(unittest.TestCase):
         top = next(face.ref for face in faces if face.normal and face.normal[2] > 0.99 and face.center_mm[2] > 15)
         study = {**BASE, "mesh": {"size_mm": 2.0}}
         cls.top_faces = [top]
-        # Fed from the end through the command an agent runs: its lines, and the sidecar it reads the fixes from.
+        # Fed from the end through the command an agent runs, gated as CI gates it: its exit code, its lines, and the
+        # sidecar beside the part it reads the fixes from.
         out = io.StringIO()
         with redirect_stdout(out), quiet():
-            cls.end_code = main([str(step), str(directory / "end.glb"), "--study",
-                                 json.dumps({**study, "feeders": [{"faces": [end]}]})])
+            cls.end_code = main([str(step), "--study", json.dumps({**study, "feeders": [{"faces": [end]}]}),
+                                 "--fail-on", "error"])
         cls.end_lines = out.getvalue().splitlines()
-        cls.from_end = json.loads((directory / "end.json").read_text(encoding="utf-8"))
-        cls.from_top = solve(step, directory / "top.glb", {**study, "feeders": [{"faces": [top]}]})
+        cls.from_end = json.loads((directory / "bossbar.casting.json").read_text(encoding="utf-8"))
+        cls.from_top = check(step, {**study, "feeders": [{"faces": [top]}]})
 
     def test_the_boss_is_an_isolated_hot_spot_when_fed_from_the_bars_end(self):
         spots = [f for f in self.from_end["findings"] if f["type"] == "shrinkage_hot_spot"]
@@ -212,8 +211,9 @@ class Feeding(unittest.TestCase):
         self.assertLess(spot["cut_off_at_s"], spot["freezes_at_s"])
         self.assertGreater(spot["volume_mm3"], 0.5 * 16 ** 3)          # the boss, at least half of it, still liquid
 
-    def test_fed_from_the_end_it_fails_and_the_fix_is_a_riser_on_the_boss_top(self):
-        self.assertEqual(self.end_code, 0)                              # it solved; a failing part is still a result
+    def test_fed_from_the_end_it_fails_its_gate_and_the_fix_is_a_riser_on_the_boss_top(self):
+        # It ran and wrote its result, and the error fails --fail-on error: exit 3, as a failing CI check, never 1.
+        self.assertEqual(self.end_code, 3)
         verdict = self.from_end["verdict"]
         self.assertEqual((verdict["status"], verdict["errors"], verdict["headline"]), ("fix", 1, "1 to fix · shrinkage hot spot"))
         spot = next(f for f in self.from_end["findings"] if f["type"] == "shrinkage_hot_spot")
@@ -229,6 +229,7 @@ class Feeding(unittest.TestCase):
         self.assertTrue(checks[0].startswith("FAIL  shrinkage_hot_spot  liquid cut off: "), checks)
         self.assertIn(f"fix: Feed it from {self.top_faces[0]}: a riser of modulus", checks[0])
         self.assertTrue(self.end_lines[-1].startswith("Verdict: 1 to fix · shrinkage hot spot · 1 failed, "), self.end_lines[-1])
+        self.assertTrue(self.end_lines[-1].endswith("; fails --fail-on error"), self.end_lines[-1])
 
     def test_a_feeder_on_the_boss_feeds_it(self):
         self.assertEqual([f for f in self.from_top.findings if f["type"] == "shrinkage_hot_spot"], [])
@@ -244,7 +245,7 @@ class Feeding(unittest.TestCase):
     def test_a_riser_held_hot_feeds_it_puts_its_heat_in_and_lets_go(self):
         directory = class_directory(type(self))
         study = {**BASE, "mesh": {"size_mm": 2.0}, "feeders": [{"faces": self.top_faces, "held_C": 720}]}
-        held = solve(bar_with_boss(directory), directory / "held.glb", study)
+        held = check(bar_with_boss(directory), study)
         summary = held.summary
         self.assertTrue(summary["fully_solid"], held.findings)
         self.assertEqual(summary["hot_spots"], [])
@@ -262,12 +263,12 @@ class Feeding(unittest.TestCase):
 @needs_fea
 class LatentHeat(unittest.TestCase):
     def test_the_heat_to_the_mould_is_the_metals_sensible_heat_and_all_its_latent_heat(self):
-        from cadgen._internal.fea import solidification
-        from cadgen._internal.fea.foundry import lookup_alloy
+        from cadgen._internal.manufacturing.processes import solidification
+        from cadgen._internal.manufacturing.processes.foundry import lookup_alloy
 
         directory = class_directory(type(self))
         step = box_step(directory, "cube", (12.0, 12.0, 12.0), "corner")
-        result, solved = solve_keeping("casting", step, directory / "cube.glb", {**BASE, "mesh": {"size_mm": 2.0}})
+        result, solved = check_keeping(step, {**BASE, "mesh": {"size_mm": 2.0}})
         run = solved.scalars["run"]
         m = solved.scalars["node_volumes"]
         enthalpy = solidification.Enthalpy.of(lookup_alloy("a356"))
@@ -280,7 +281,7 @@ class LatentHeat(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    """The manufacturing-sim skill says what the registry and the tables say."""
+    """The casting reference says what the tables say."""
 
     def _rows(self, path: Path, heading: str) -> list[list[str]]:
         text = path.read_text(encoding="utf-8")
@@ -288,37 +289,13 @@ class SkillDocs(unittest.TestCase):
         lines = [line for line in section.splitlines() if line.startswith("|") and "---" not in line]
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
-    def test_the_router_runs_today_only_what_is_registered_and_estimates_the_rest(self):
-        from cadgen._internal.fea.analyses import REGISTRY
-
-        rows = self._rows(SKILL / "SKILL.md", "## Choose the process")
-        self.assertGreaterEqual(len(rows), 9)
-        running = {}
-        for cells in rows:
-            with self.subTest(row=cells[0]):
-                self.assertEqual(len(cells), 5, cells)
-                status, analysis = cells[3], re.match(r"`([a-z_]+)`", cells[1])
-                if status.startswith("**Runs today**"):
-                    self.assertIsNotNone(analysis, cells)
-                    running[analysis.group(1)] = cells
-                else:
-                    self.assertTrue(status.startswith("**Estimate**"), status)
-                    self.assertIn("references/estimates.md", cells[4])
-        self.assertIn("casting", running)
-        for name in running:
-            with self.subTest(analysis=name):
-                self.assertIn(name, REGISTRY)
-                self.assertFalse(REGISTRY[name].planned)
-                self.assertEqual(running[name][2], REGISTRY[name].word)
-        self.assertIn("(lite", running["casting"][3])
-
-    def test_the_casting_reference_lists_every_alloy_and_process(self):
-        from cadgen._internal.fea.foundry import ALLOYS, PROCESSES
+    def test_the_casting_reference_lists_every_alloy_and_mould(self):
+        from cadgen._internal.manufacturing.processes.foundry import ALLOYS, MOLDS
 
         alloys = [re.fullmatch(r"`([a-z0-9-]+)`", cells[0]) for cells in self._rows(SKILL / "references" / "casting.md", "## The alloys")]
         self.assertEqual([found.group(1) for found in alloys if found], list(ALLOYS))
-        processes = [re.fullmatch(r"`([a-z_]+)`", cells[0]) for cells in self._rows(SKILL / "references" / "casting.md", "## The processes")]
-        self.assertEqual([found.group(1) for found in processes if found], list(PROCESSES))
+        molds = [re.fullmatch(r"`([a-z_]+)`", cells[0]) for cells in self._rows(SKILL / "references" / "casting.md", "## The moulds")]
+        self.assertEqual([found.group(1) for found in molds if found], list(MOLDS))
 
 
 if __name__ == "__main__":

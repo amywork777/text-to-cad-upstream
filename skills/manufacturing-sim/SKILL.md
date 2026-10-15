@@ -1,6 +1,6 @@
 ---
 name: manufacturing-sim
-description: Simulate or estimate what happens to a part while it is made - casting (sand, investment and lost-wax jewellery, permanent mould, die), injection moulding, heat treatment and quenching, 3D printing, machining, sheet metal, welding, reflow soldering, forging and extrusion. Casting runs as a simulation of the metal freezing in its mould; the other processes get hand estimates, labelled as estimates. Use when the user asks whether a part will cast or fill, where shrinkage or porosity forms, how long it takes to freeze or cool, whether it will sink, warp or curl, spring back or crack when bent, chatter when machined, distort when welded, or how hot its parts get through a reflow oven.
+description: Check how a part fares while it is made by simulating its process with cadgen - casting (sand, investment and lost-wax jewellery, permanent mould, die), injection moulding, heat treatment and quenching, 3D printing (FDM, resin, SLS, metal powder bed), CNC milling and turning, welding and sheet metal bending - with labelled hand estimates for reflow soldering, forging, extrusion and deep drawing. Each check ends on a verdict and the fix for every problem, so a design is checked, fixed and checked again as CI checks code. Use when the user asks whether a part will cast or fill, where shrinkage or porosity forms, how long it takes to freeze or cool, whether it will sink, warp or curl, harden or crack in the quench, deflect or chatter when machined, distort when welded, spring back or crack when bent, or how hot its parts get through a reflow oven.
 license: MIT
 ---
 
@@ -11,168 +11,167 @@ Use the installed local skill files as the runtime source of truth; the reposito
 provenance and release review.
 
 Use this skill for questions about a process rather than about the finished part in service: will
-it cast soundly, will it fill, will it warp when printed or spring back when bent. It is a router,
-the way `$fea` is for engineering questions: [Choose the process](#choose-the-process) maps the
-user's question to a process and its reference page. A process cadgen simulates today runs as an
-analysis of the same solver `$fea` uses (`cadgen fea solve` with the study's `analysis` naming the
-process); every other process gets an honest hand estimate, labelled as one, from
-[estimates.md](references/estimates.md) until its simulation is built.
+it cast soundly, will it sink or warp when moulded, will the core harden in the quench, will it
+curl off the plate when printed, will the wall chatter under the cutter, will the weldment stay
+square, will it spring back or crack when bent. It is a router: [Choose the
+process](#choose-the-process) maps the user's question to a process and its reference page.
 
-Casting runs today: the metal poured into the mould, freezing from the pour until it is solid, with
-where it freezes last (where shrinkage collects), whether the feeders reach it, the Niyama
-porosity indicator and whether thin sections freeze before the mould fills. It is lite: the cavity
-starts full (filling is not simulated), the mould is a heat transfer coefficient (not meshed), and
-there is no shrinkage-driven flow, gas porosity or microstructure. Say so when you report.
+Seven processes run today, each as `cadgen manufacturing check` with a study that names its
+`process`: `casting`, `molding`, `heat_treatment`, `printing`, `machining`, `welding` and
+`sheet_metal`. The check meshes the saved STEP, simulates the part being made on the same mesher and
+solvers `$fea` uses, and writes a result the Viewer draws beside a sidecar with every number. Its
+findings read as a CI check: each says what it measured against its limit, passes included, and
+each error and warning carries the fix that makes it pass; the verdict is ready or fix, and
+`--fail-on error` makes a failing check exit 3. [checks.md](references/checks.md) lists every
+check, its severity and its fixes. Each simulation is lite (its reference says what it leaves out)
+and sheet metal is an estimate by hand formulas: say so when you report. Reflow soldering and
+forming get honest hand estimates, labelled as such, from [estimates.md](references/estimates.md).
 
 ## Choose the process
 
-Match the user's question to a row first. Only a **Runs today** row runs in cadgen, and one whose status
-says estimate runs hand formulas on the part, not a simulation.
+Match the user's question to a row first. Only a **Runs today** row runs in cadgen; one whose
+status says estimate runs hand formulas on the part, not a simulation.
 
-| The user asks | `analysis` | Plain word | Status | Reference |
+| The user asks | `process` | Plain word | Status | Reference |
 | --- | --- | --- | --- | --- |
-| "Will it cast", "where will it shrink or be porous", "will this 1 mm frame fill", "how long until it is solid", "where do I put the riser or the sprue": sand, investment (lost-wax jewellery), permanent mould or die casting | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure) | [casting.md](references/casting.md) |
-| Injection moulding: "how long to cool", "will it sink", "will it warp", "is this wall too thin or too thick for the resin", "will it fill" | `molding` | Injection molding | **Runs today** (lite: the cavity starts full and packed, no fill or pack; the mould is a heat transfer coefficient; the warp is differential shrinkage, the same every way) | [molding.md](references/molding.md); its hand check, [estimates.md](references/estimates.md#injection-moulding) |
-| Heat treatment and quenching: "how hard will it be", "will the core harden", "will it crack or distort in the quench", "oil or water" | `heat_treatment` | Heat treatment | **Runs today** (lite: thermal only, no transformation; a constant h per quenchant; hardness through the grade's Jominy curve; elastic stress at the largest gradient; the estimate stays its hand check) | [heat-treatment.md](references/heat-treatment.md) |
-| 3D printing (FDM, resin, SLS/MJF, metal powder bed): "will it warp or curl", "will the corners lift", "how much does it move off the plate", "residual stress", "will the recoater hit it" | `printing` | 3D printing | **Runs today** (lite: layers lumped into bands of one inherent strain each, linear elastic, a rigid plate; no thermal history, no supports; printability is `$dfam-check`'s) | [printing.md](references/printing.md); by hand: [estimates.md](references/estimates.md#3d-printing) |
-| CNC machining: "will this thin wall deflect under the cutter or the clamp", "will it chatter", "which spindle speeds are chatter-free", milling or turning | `machining` | Machining | **Runs today** (lite: Kienzle's force at the most flexible point of the cut faces, only the part flexes, zero-order lobes along the face's normal; the hand estimates are its hand checks) | [machining.md](references/machining.md) |
-| Sheet metal bending: "how much will it spring back", "what overbend", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (estimate: per bend from the STEP by hand formulas, Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor; no forming simulation; bend rules are `$dfm`'s) | [sheet_metal.md](references/sheet_metal.md) |
-| Welding: "how much will it distort", "how far will the joint close", "will it bow", "residual stress at the weld" | `welding` | Welding | **Runs today** (lite: each weld's zone an inherent strain from its heat input by the classical relations, all welds at once, linear elastic; no sequence or clamping) | [welding.md](references/welding.md); by hand: [estimates.md](references/estimates.md#welding) |
+| "Will it cast", "where will it shrink or be porous", "will this 1 mm frame fill", "how long until it is solid", "where do I put the riser or the sprue": sand, investment (lost-wax jewellery), permanent mould or die casting | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure; `cadgen manufacturing check part.step --study part.casting.json`) | [casting.md](references/casting.md) |
+| Injection moulding: "how long to cool", "will it sink", "will it warp", "is this wall too thin or too thick for the resin", "will it fill" | `molding` | Injection molding | **Runs today** (lite: the cavity starts full and packed, no fill or pack; the mould is a heat transfer coefficient; the warp is an estimate from differential shrinkage, the same every way; `cadgen manufacturing check part.step --study part.molding.json`) | [molding.md](references/molding.md); its hand check, [estimates.md](references/estimates.md#injection-moulding) |
+| Heat treatment and quenching: "how hard will it be", "will the core harden", "will it crack or distort in the quench", "oil or water" | `heat_treatment` | Heat treatment | **Runs today** (lite: thermal only, no transformation; a constant h per quenchant; hardness through the grade's Jominy curve; elastic stress at the largest gradient; `cadgen manufacturing check part.step --study part.heat_treatment.json`) | [heat-treatment.md](references/heat-treatment.md) |
+| 3D printing (FDM, resin, SLS/MJF, metal powder bed): "will it warp or curl", "will the corners lift", "how much does it move off the plate", "residual stress", "will the recoater hit it" | `printing` | 3D printing | **Runs today** (lite: layers lumped into bands of one inherent strain each, linear elastic, a rigid plate; no thermal history, no supports; printability is `$dfam-check`'s; `cadgen manufacturing check part.step --study part.printing.json`) | [printing.md](references/printing.md); by hand: [estimates.md](references/estimates.md#3d-printing) |
+| CNC machining: "will this thin wall deflect under the cutter or the clamp", "will it chatter", "which spindle speeds are chatter-free", milling or turning | `machining` | Machining | **Runs today** (lite: Kienzle's force at the most flexible point of the cut faces, only the part flexes, zero-order lobes along the face's normal; `cadgen manufacturing check part.step --study part.machining.json`) | [machining.md](references/machining.md) |
+| Welding: "how much will it distort", "how far will the joint close", "will it bow", "residual stress at the weld" | `welding` | Welding | **Runs today** (lite: each weld's zone an inherent strain from its heat input by the classical relations, all welds at once, linear elastic; no sequence or clamping; `cadgen manufacturing check part.step --study part.welding.json`) | [welding.md](references/welding.md); by hand: [estimates.md](references/estimates.md#welding) |
+| Sheet metal bending: "how much will it spring back", "what overbend", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (estimate: per bend from the STEP by hand formulas, Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor; no forming simulation; bend rules are `$dfm`'s; `cadgen manufacturing check part.step --study part.sheet_metal.json`) | [sheet_metal.md](references/sheet_metal.md) |
 | Reflow soldering of a board: "how hot do the parts get through the profile", "is the big connector above liquidus long enough" | none yet | Reflow | **Estimate** (the temperatures run today in `$fea` as heat over time with the oven's profile; no solder flow) | [estimates.md](references/estimates.md#reflow-soldering) |
 | Forging, extrusion and deep drawing: "what press force", "will the die fill" | none yet | Forming | **Estimate** (slab-method forging load, extrusion pressure, deep-drawing force by hand; no die fill) | [estimates.md](references/estimates.md#forging-extrusion-and-deep-drawing) |
 
-A test keeps this table's **Runs today** rows in step with what cadgen registers.
+A test keeps this table's **Runs today** rows in step with the processes cadgen checks.
 
 ### When the process is an estimate
 
 - Say "estimate" every time you quote one, and give its assumptions and its source with the
   number. Never pass an estimate off as a simulation, or a simulation of something else (a static
   stress, a temperature) off as the process's.
-- Say plainly what is not in this version, in the user's words: "a warp simulation of a moulded
-  part is not in this version".
-- Where `$fea` honestly answers part of the question, offer it and say which part: a thin wall's
-  deflection under a cutting force is `static`; a part's natural frequency for chatter is `modal`;
-  a quench's or a reflow oven's temperatures over time are `thermal_transient`. Each estimate in
+- Say plainly what is not in this version, in the user's words: "a mould filling simulation is not
+  in this version".
+- Where `$fea` honestly answers part of the question, offer it and say which part: a reflow oven's
+  temperatures over time are `thermal_transient`. Each estimate in
   [estimates.md](references/estimates.md) says how to set that study up.
 - Geometry rules (draft, rib to wall ratios, bend reliefs, overhangs) are `$dfm`'s and
   `$dfam-check`'s: send the user there for a review rather than restating them.
 
 ## Say what the run did
 
-- **Lite limits.** Every casting result carries its limits (the sidecar's `limits`, the GLB's
-  `analysis.limits`). Quote them whenever you quote its numbers.
-- **Instant fill.** The cavity starts full at the pour temperature. A thin section far from the gate
-  freezes sooner in reality, because the metal cools as it flows to it: treat a `misrun_risk`
-  warning as a real risk, and a section the run says fills in time as optimistic.
-- **Feeders.** A named feeder is taken to stay liquid until the casting is solid (a riser sized for
-  it). Whether it really does is a separate check: its own modulus should be about 1.2 times the
-  section it feeds or more ([casting.md](references/casting.md#hand-checks)).
-- **Estimated fill time.** Without `fill_time_s` the fill time is estimated from the mass; say it
-  was estimated, and ask for the real one when the misrun answer depends on it.
-- **Niyama.** It marks where porosity is likely, not how much, and some alloys have no published
-  threshold: say which.
+- **Lite limits.** Every result carries what its simulation leaves out: the `lite:` lines of the
+  command's output (`estimate:` for sheet metal), the sidecar's `limits`. Quote them whenever you
+  quote its numbers.
+- **The process's own cautions.** Each reference's Limits say what to warn about: a casting's
+  instant fill makes a thin section look better than it is, and its feeders are taken to stay
+  liquid; a moulding's warp is an estimate; a print's strain is lumped into bands. Say so.
+- **Values it estimated.** A fill time from the mass, a tolerance from ISO 2768, a cutting force or
+  a Jominy curve that is an estimate: the result says so in a finding. Say it was estimated, and
+  ask for the real one when the answer depends on it.
 - **Adapted steps.** As in `$fea`: report every `adapted:` line and `fit_` finding.
 
 ## Setup
 
 Run cadgen through [uv](https://docs.astral.sh/uv/). `cadgen fea faces` shares one installation
-with the `$cad` skill and the CAD app's server; `cadgen fea solve` needs the `fea` extra, so it runs
-from its own installation, made the first time it is needed (below):
+with the `$cad` skill and the CAD app's server; `cadgen manufacturing check` needs the `fea` extra,
+so it runs from its own installation, made the first time it is needed (below):
 
 - `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 cadgen`
 - `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 python`
 
-Solving needs cadgen's opt-in `fea` extra (the mesher and the solver). The first time a study runs,
-`cadgen fea solve` fails with "cadgen's fea extra is not installed"; that is a missing install, not
-a modelling error. Run the same command with the extra in the requirement, and keep using that form
-for `fea solve` from then on (the first run downloads the mesher and solver; later runs reuse them):
+Checking needs cadgen's opt-in `fea` extra (the mesher and the solver). The first time a check runs,
+`cadgen manufacturing check` fails with "cadgen's fea extra is not installed"; that is a missing
+install, not a modelling error. Run the same command with the extra in the requirement, and keep
+using that form for `manufacturing check` from then on (the first run downloads the mesher and
+solver; later runs reuse them):
 
 ```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.21" cadgen fea solve part.step --study casting.json
+uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.21" cadgen manufacturing check part.step --study part.casting.json
 ```
 
-Units: mm for geometry, °C for temperatures, s for times, W/(m² K) for a heat transfer coefficient.
+Units: mm for geometry, °C for temperatures, s for times, W/(m² K) for a heat transfer coefficient,
+rpm for a spindle, kJ/mm for a weld's heat input.
 
-## Workflow (casting)
+## Workflow
 
-1. **List the faces.** A casting study names faces only for its feeders: the gate, the riser and
-   the sprue's contact with the part. Prefer faces the user selected in the Viewer
+1. **List the faces** the study names, if it names any (a casting's feeders, a cut's faces and the
+   faces held, a weld's faces, a sheet's held flat). Prefer faces the user selected in the Viewer
    (`part.step#o1.f12`); otherwise list them and match by description.
 
    ```bash
    cadgen fea faces part.step
    ```
 
-2. **Write the study** as `casting.json` beside the part ([casting.md](references/casting.md)):
+2. **Write the study** as `part.<process>.json` beside the part, from the process's reference page.
+   A casting of a silver pendant, `part.casting.json`:
 
    ```json
-   {"analysis": "casting", "alloy": "sterling-silver-925", "process": "investment",
+   {"process": "casting", "alloy": "sterling-silver-925", "mold": "investment",
     "feeders": [{"faces": ["#o1.f12"]}], "fill_time_s": 0.5}
    ```
 
-   `alloy` and `process` are required; the process sets the mould's temperature, the pour's
-   superheat and the mould's heat transfer coefficient, and `pour_temperature_C`,
-   `mold_temperature_C` and `h_W_m2K` override them when the user knows theirs (a jeweller's flask
-   temperature, a foundry's pour temperature). Leave `mesh` out on the first run.
+   Every study names its `process`; the rest is that process's own keys (here the alloy, its mould,
+   the feeders and the fill time), and the user's own numbers override the defaults when they know
+   them (a jeweller's flask temperature, a foundry's pour temperature). Leave `mesh` out on the
+   first run.
 
-3. **Solve.**
+3. **Check.**
 
    ```bash
-   cadgen fea solve part.step --study casting.json
+   cadgen manufacturing check part.step --study part.casting.json --fail-on error
    ```
 
-   This writes `part.fea.glb` (coloured by the time to fully solid: the last to freeze is red) and
-   `part.fea.json` (every number, the study, the mesh and timings) beside the part. Progress lines
-   print to stderr; `--json` prints the result as one JSON line. A study with an unknown alloy, a
-   pour below the liquidus or a mould above the solidus is refused with a message naming the field.
+   This writes `part.casting.glb` (the casting coloured by the time to fully solid: the last to
+   freeze is red) and `part.casting.json` (the verdict, every finding and number, the study, the
+   mesh and timings) beside the part, replacing an earlier check's. Progress lines print to stderr;
+   `--json` prints the result as one JSON line. It exits 0 when the verdict passes the gate, 3 when it
+   ran and an error stands, and 1 when it could not run: a study with an unknown key, an unknown
+   alloy or a pour below the liquidus is refused with a message naming the field, and nothing is
+   left beside the part.
 
-4. **Read the findings**, one line each after the numbers ([casting.md](references/casting.md#findings)).
+4. **Read the findings**: the lines end on the checklist and the verdict
+   ([checks.md](references/checks.md)), and the process's reference says what each means.
 
-5. **Report**, in this order: when it is fully solid and where it freezes last; every hot spot with
-   its place (mm) and size; the thinnest section, when it is solid through, and the fill time (and
-   whether it was estimated); the Niyama finding; the hand check against Chvorinov's rule; the
-   limits. Then what would change the answer most: a feeder on the hot spot, a thicker thin
-   section, a hotter pour or mould. Show the result GLB with `$cad` (its Show the model step),
-   beside the STEP; the Time scrubber plays the temperature and the liquid fraction through the
-   freezing.
+5. **Report**: the verdict and its headline; each FAIL and WARN with where it is and its fix; the
+   numbers the user asked about, from the summary; the hand check; the limits. Show the result GLB
+   with `$cad` (its Show the model step), beside the STEP: each process opens on what it judges, and
+   one that changes over time (a freeze, a quench, a build) plays it.
 
 ## Check, fix, check again
 
-<!-- TODO(amy): when the manufacturing verb lands, step 1 runs
-`cadgen manufacturing check part.step --study part.casting.json --fail-on error`, which exits 3 while the
-verdict fails the gate, and the sidecar named below becomes its result. Until then it is `cadgen fea solve`. -->
+A check is a gate on the design, as CI is on code: when the user wants a part that can be made,
+fix what it finds and run it again until it passes, then tell the user what changed.
 
-A study is a check on the design, as CI is on code: when the user wants a part that casts, fix what
-it finds and run it again until it passes, then tell the user what changed.
-
-1. **Run it** (Workflow step 3). Its lines end on a checklist, failures first, then the verdict:
+1. **Run it** with the gate (Workflow step 3). It exits 3 while the verdict fails `--fail-on
+   error`, and its lines end on a checklist, failures first, then the verdict:
 
    ```text
    FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at [50.263, -1.105, 14.134] mm; fix: Feed it from #o1.f7: ...
    WARN  low_niyama          lowest Niyama: 0.044 (°C·s)^½/mm, needs above 0.3 (°C·s)^½/mm; at [49.665, 1.287, 12.304] mm; fix: ...
    PASS  thinnest_section    section solid through: 20.8 s, needs above 0.876 s; at #o1.f5 [0.667, -4.333, 3.0] mm
    PASS  hand_check          simulation against the rule: 1.11×, needs below 3×
-   Verdict: 1 to fix · shrinkage hot spot · 1 failed, 1 warning, 2 passed
+   Verdict: 1 to fix · shrinkage hot spot · 1 failed, 1 warning, 2 passed; fails --fail-on error
    ```
 
-2. **Read the verdict and every fix** from the sidecar (`part.fea.json`): `verdict.status` is `ready`
-   (no error) or `fix`. Each error and warning carries `measured` (its `value` against its `limit`,
-   `units`, `pass_when`) and `fix`: `action`, `where` (face refs or points), `params` (the target
-   values), `summary`, and `alternatives` for when the first cannot be made.
-3. **Make the fix** its `action` names:
-   - `add_feeder`, `enlarge_feeder`: add `where`'s face to the study's `feeders`; the riser it needs
-     is `params` (`riser_diameter_mm`, `riser_height_mm`), modelled on that face only if the user wants
-     the gating in the model.
-   - `thicken`, `thin`: change that section in the model script (`$cad`) to `params.thickness_mm`
-     (or under it, for `thin`), and rebuild the STEP.
-   - `raise_mold_temperature`, `move_gate`: the study's `mold_temperature_C`, or a feeder at `where`;
-     only where the user's foundry can.
-   - `add_chill`: a chill is in the mould, not the part, and the run does not model one: tell the user
-     where, and take the next alternative.
-   - `check_inputs`, `set_duration`, `coarsen_mesh`, `raise_time_limit`: the study, not the part.
+2. **Read the verdict and every fix** from the sidecar (`part.casting.json`): `verdict.status` is
+   `ready` (no error) or `fix`. Each error and warning carries `measured` (its `value` against its
+   `limit`, `units`, `pass_when`) and `fix`: `action`, `where` (face refs or points), `params` (the
+   target values), `summary`, and `alternatives` for when the first cannot be made.
+3. **Make the fix** its `action` names, by who makes it ([checks.md](references/checks.md#the-fix-actions)):
+   - the model (`thicken`, `thin`, `add_rib`, `add_fillet`, `add_relief`, a bend's radius): change
+     the model script with `$cad` to `params`, and rebuild the STEP;
+   - the study's own settings (`add_feeder`, `enlarge_feeder`, `set_duration`, a mesh, a time
+     limit, `check_inputs`): change the study;
+   - the user's process choices (a mould or melt temperature, a steel or quenchant, a depth of cut
+     or spindle speed, a chamber temperature, a build direction, a weld's heat input): ask first;
+   - the shop's (a chill, a gate, support, stress relief, a brim, an overbend, a test bend): tell
+     the user what and where; the run does not model it, so the finding stays.
 
-   Never change the alloy, the process or the fill time to clear a finding: they are the user's.
-4. **Rebuild and run again** until the verdict is `ready`, weighing each warning left. After three
-   rounds that do not converge, stop and ask the user.
-5. **Report the checklist**: each FAIL and WARN with the fix made, the PASS lines, the verdict and the
-   limits.
+   Never change the alloy, the material, the resin, the steel or the user's tolerances to clear a
+   finding: they are the user's.
+4. **Rebuild and run again** until the command exits 0 (the verdict is `ready`), weighing each
+   warning left. After three rounds that do not converge, stop and ask the user.
+5. **Report the checklist**: each FAIL and WARN with the fix made, the PASS lines, the verdict and
+   the limits.

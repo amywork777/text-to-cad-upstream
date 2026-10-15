@@ -15,7 +15,7 @@ Lite: read [Limits](#limits) before you report.
 ## The study
 
 ```json
-{"analysis": "casting", "alloy": "a356", "process": "sand",
+{"process": "casting", "alloy": "a356", "mold": "sand",
  "pour_temperature_C": 720, "mold_temperature_C": 25,
  "feeders": [{"faces": ["#o1.f12"]}, {"faces": ["#o1.f3"], "h_W_m2K": 50}],
  "fill_time_s": 4, "mesh": {"size_mm": 2}}
@@ -23,15 +23,16 @@ Lite: read [Limits](#limits) before you report.
 
 - `alloy` (required): a name from [The alloys](#the-alloys), or one of its plain names (`sterling`,
   `925`, `14k`, `18k`, `bronze`, `brass`, `zamak`, `gray-iron`, `cast-steel`, `316`, ...).
-- `process` (required): `sand`, `investment`, `permanent_mold` or `die`
-  ([The processes](#the-processes)). It sets the mould's temperature, the pour's superheat and the
+- `process` (required): `casting`.
+- `mold` (required): `sand`, `investment`, `permanent_mold` or `die`
+  ([The moulds](#the-moulds)). It sets the mould's temperature, the pour's superheat and the
   mould's heat transfer coefficient.
 - `pour_temperature_C`: the metal's temperature as it goes in; above the liquidus. Default: the
-  liquidus plus the process's superheat.
+  liquidus plus the mould's superheat.
 - `mold_temperature_C`: the mould's temperature at the pour (a flask's or a die's preheat); below
-  the solidus. Default: the process's.
+  the solidus. Default: the mould's.
 - `h_W_m2K`: a constant heat transfer coefficient from the metal to the mould, replacing the
-  process's mould (a coated die, a chill you have a number for).
+  mould's own (a coated die, a chill you have a number for).
 - `feeders`: the faces metal feeds from while the casting freezes: the gate, the riser, the sprue's
   contact, by the Viewer's selectors. Each entry takes `faces`, and optionally `h_W_m2K` (its own
   coefficient to the mould temperature; left out, the face is insulated, as a riser's metal sits on
@@ -39,7 +40,7 @@ Lite: read [Limits](#limits) before you report.
   Chvorinov's time for the casting, as long as a riser of 1.2 times its modulus stays liquid; then
   cooled like the mould). A feeder is taken to stay liquid until the casting is solid.
 - `fill_time_s`: how long the mould takes to fill. Left out, it is estimated from the mass (see
-  [The processes](#the-processes)), and the result says so.
+  [The moulds](#the-moulds)), and the result says so.
 - `duration_s`: how long to follow it. Left out, until every point is solid.
 - Shared keys, as in `$fea`'s study file: `mesh` (`size_mm`, `refine`; elements are linear, order 1,
   the only order a casting takes), `output`, `fit` (`iterative`, `defeature`) and `view` (controls,
@@ -47,9 +48,9 @@ Lite: read [Limits](#limits) before you report.
 - Not taken: `material` (the metal is the `alloy`), `parts` and `connections` (one part: name it
   with `--occurrence` in a document of several).
 
-## The processes
+## The moulds
 
-| `process` | the mould | mould temperature, °C | superheat, °C | heat transfer | fill time estimate |
+| `mold` | the mould | mould temperature, °C | superheat, °C | heat transfer | fill time estimate |
 | --- | --- | --- | --- | --- | --- |
 | `sand` | sand, at room temperature | 25 | 100 | the sand heats as it takes heat in: h = e / √(π t), e = 1000 W s^½/(m² K) | 2 s per √kg |
 | `investment` | a jeweller's flask or a ceramic shell, preheated | 600 | 100 | as sand, e = 600 W s^½/(m² K) | 2 s per √kg |
@@ -153,18 +154,18 @@ Niyama is lowest and says no threshold is known.
 - The thresholds: WCB's 0.775 is Niyama's own, 1 (°C·min)^½/cm, in these units [10]; CF8M's 1.0 is
   the value Carlson and Beckermann used for nickel alloys and austenitic stainless steels [11]; A356's
   0.3 is the upper end of the 0.2-0.3 one study found for centrifugally cast A356 [12]. Thresholds
-  depend on the alloy and the process and are not established for most alloys [13].
+  depend on the alloy and the mould and are not established for most alloys [13].
 
 ## What comes out
 
-- `part.fea.glb`, coloured by `solidification_time` (s), the time each point is fully solid: the
+- `part.casting.glb`, coloured by `solidification_time` (s), the time each point is fully solid: the
   last to freeze is red. The other fields: `temperature` and `liquid_fraction` per frame (up to 24,
   from the pour to fully solid; the Viewer's Time scrubber opens on the last frame with liquid),
   `niyama` ((°C·s)^½/mm, at a tenth of the freezing range above the solidus, near the end of
   solidification) and `cooling_rate` (°C/s, there). Nothing deforms.
 - Curve `liquid_percent`: the share of the volume still liquid against time (the sidecar's `curves`).
 - Summary: `solidification_time_s` and `last_to_freeze_at_mm`, `first_solid_s`, `fully_solid`,
-  `alloy`, `process`, `pour_temperature_C`, `mold_temperature_C`, `mould` (in words), `volume_mm3`,
+  `alloy`, `mold`, `pour_temperature_C`, `mold_temperature_C`, `mold_words`, `volume_mm3`,
   `mass_g`, `modulus_mm` (V/A of the cooled faces), `hand_check`, `fill_time_s` and
   `fill_time_estimated`, `hot_spots` (each `at_mm`, `freezes_at_s`, `cut_off_at_s`, `volume_mm3`,
   `unfed`), `thinnest_section_mm` and `thinnest_section_solid_s`, `min_niyama`, `niyama_critical`,
@@ -177,19 +178,25 @@ Niyama is lowest and says no threshold is known.
 
 ## Findings
 
+Each check says what it measured against its limit, passes included, and each error and warning
+carries the fix that makes it pass ([checks.md](checks.md#casting) lists every type and the fix
+actions it can carry).
+
 | Finding | Severity | What it means | What to do |
 | --- | --- | --- | --- |
-| `misrun` | error | A section is solid through before the mould has filled (its thickness, place and time): a misrun or cold shut. | Thicken it, gate closer to it, pour hotter or preheat the mould; with an estimated fill time, ask for the real one first. |
+| `misrun` | error | A section is solid through before the mould has filled (its thickness, place and time): a misrun or cold shut. | Thicken it to the `params.thickness_mm` that stays liquid 3 times the fill, preheat the mould, or gate closer to it; with an estimated fill time, ask for the real one first. |
 | `misrun_risk` | warning | A section freezes within 3 times the fill time: metal stops flowing before it is solid, and the run's instant fill is optimistic. | As for `misrun`. |
-| `thinnest_section` | info | No section freezes that soon: the thinnest, its thickness and when it is solid through, against the fill time. | Quote it; it is the user's margin. |
-| `shrinkage_hot_spot` | warning | A region that freezes after everything around it, cut off from every feeder while still liquid (its place, the liquid volume cut off, when): shrinkage porosity collects there. With no feeder named, the region that freezes last. | Put a feeder on it (a riser, or the gate), or make the path to the feeder freeze after it: taper the section toward the feeder, thin the hot spot, or chill it. |
+| `thinnest_section` | info | Passes: no section freezes that soon. The thinnest, its thickness and when it is solid through, against 3 times the fill time. | Quote it; it is the user's margin. |
+| `shrinkage_hot_spot` | error | A region that freezes after everything around it, cut off from every feeder while still liquid (its place, the liquid volume cut off, when): shrinkage porosity collects there. With no feeder named, the region that freezes last. | Feed it: a riser on its nearest face, of 1.2 times its modulus by Chvorinov's rule (`add_feeder`, or `enlarge_feeder` for one that does not reach it); or thin it so it freezes before its feed path, or chill it. |
+| `no_hot_spot` | info | Passes: it freezes toward its feeders, no liquid pocket cut off from them (the largest that is, against a hot spot's size). | Quote it. |
 | `low_niyama` | warning | Niyama is under the alloy's critical value over a share of the casting (the lowest and where): porosity is likely there. Near a feeder's faces it is left out (the feeder's own). | Read it with the hot spots: the same cures. It marks where, not how much. |
+| `niyama_ok` | info | Passes: Niyama stays at the alloy's critical value or above away from the feeders (the lowest and where). | Quote it. |
 | `niyama_no_threshold` | info | The alloy has no published critical Niyama: the lowest value and where. | Compare the field with a sound casting of the alloy; read the hot spots. |
-| `hand_check` | info | Chvorinov's rule for the whole casting's V/A against the simulation's last point. | Quote it as the check. |
-| `hand_check_far` | warning | The two are more than 3 times apart. | Check the alloy, process and `h_W_m2K`; a part with one thick section in thin walls freezes later than its average modulus says, which is not an error. |
-| `no_feeder` | info | No feeder named: every region that freezes last reads as unfed. | Name the gate or riser faces as `feeders` and solve again. |
+| `hand_check` | info | Chvorinov's rule for the whole casting's V/A against the simulation's last point, within 3 times. | Quote it as the check. |
+| `hand_check_far` | warning | The two are more than 3 times apart. | Check the alloy, the mould and `h_W_m2K`; a part with one thick section in thin walls freezes later than its average modulus says, which is not an error. |
+| `no_feeder` | info | No feeder named: every region that freezes last reads as unfed. | Name the gate or riser faces as `feeders` and check again. |
 | `pure_metal` | info | A pure metal (fine silver): solved over 1 °C; Niyama means little for it. | Read the hot spots. |
-| `not_solid` | warning | Not solid at the end (past `duration_s`, or 50 times the hand estimate): times to solid there are lower bounds. | Run longer, or check the inputs. |
+| `not_solid` | warning | Not solid at the end (past `duration_s`, or 50 times the hand estimate): times to solid there are lower bounds. | A longer `duration_s`, a coarser mesh, or check the inputs. |
 | `time_limit` | warning | It stopped at its time limit (twice `fit.seconds`, at least 30 s): nothing after is solved. | A larger `fit.seconds`, or a coarser mesh. |
 
 ## Hand checks

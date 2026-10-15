@@ -15,10 +15,11 @@ Lite: read [Limits](#limits) before you report.
 ## The study
 
 ```json
-{"analysis": "heat_treatment", "steel": "4140", "quenchant": "fast_oil",
+{"process": "heat_treatment", "steel": "4140", "quenchant": "fast_oil",
  "target_hrc": 50, "mesh": {"size_mm": 2.5}}
 ```
 
+- `process` (required): `heat_treatment`.
 - `steel` (required): a grade from [The steels](#the-steels), or one of its plain names (`aisi 4140`,
   `42crmo4`, `100cr6`, `c45`, `ss410`, ...).
 - `quenchant` (required): one of [The quenchants](#the-quenchants); it sets the heat transfer
@@ -103,7 +104,7 @@ still water about 1 per inch took room-temperature steel's, about twice as high.
 
 ## What comes out
 
-- `part.fea.glb`, coloured by `hardness` (HRC, as quenched): soft reads cold. The other fields:
+- `part.heat_treatment.glb`, coloured by `hardness` (HRC, as quenched): soft reads cold. The other fields:
   `cooling_rate` (°C/s, as each point passes 700 °C), `jominy_distance` (mm: the place on a Jominy bar
   that cools as fast), `temperature` per frame (up to 24, from the furnace to under 500 °C; the Time
   scrubber opens on the moment of the largest spread), and, at that moment, `quench_stress` (von
@@ -117,8 +118,8 @@ still water about 1 per inch took room-temperature steel's, about twice as high.
   temperature, `hot_strength_MPa` there, `martensite_start_C`, `distortion_mm` and where,
   `hand_check` (the shape, the Biot number, the series' and the simulation's centre rate and t8/5,
   the half-martensite hardness, Grossmann's ideal critical diameter and this quench's), the heat
-  (`heat_to_bath_J`, `heat_released_J`, `energy_balance`, at round-off), `steps`, `frames`, and the
-  `verdict` (`fail` on an error, `warn` on a warning, else `pass`).
+  (`heat_to_bath_J`, `heat_released_J`, `energy_balance`, at round-off), `steps`, `frames`. The
+  sidecar's `verdict` is the checklist's; ready reads "Ready to quench · core 54 HRC".
 - CLI: "AISI 4140 from 845 °C into a fast quench oil, still at 60 °C, h = 2000 W/(m² K): surface
   56.8 to 58.2 HRC, core 54 HRC", "the core cools at 30.2 °C/s at 700 °C, t8/5 11 s", "target 50 HRC:
   through-hardened", "peak quench tension 868 MPa against a hot strength of 267 MPa", "hand check
@@ -128,7 +129,8 @@ still water about 1 per inch took room-temperature steel's, about twice as high.
 
 A checklist: every check says when it passes, as an `info`. A check that compares a number with a
 limit carries `measured` (`value`, `limit`, `units`, `pass_when`); every error and warning that has a
-cure carries a `fix` (`action`, `summary`, `where`, `params`) an agent can apply and solve again.
+cure carries a `fix` (`action`, `summary`, `where`, `params`) an agent can apply and check again;
+[checks.md](checks.md#heat_treatment) lists every type and the fix actions it can carry.
 
 | Finding | Severity | What it means | Fix |
 | --- | --- | --- | --- |
@@ -145,8 +147,8 @@ cure carries a `fix` (`action`, `summary`, `where`, `params`) an agent can apply
 | `beyond_jominy` | info | A share of the part cools slower than the grade's curve goes: it reads the curve's last value there. | |
 | `estimated_curve` | info | The grade's Jominy curve is an estimate (52100, O1, D2, H13, 410). | |
 | `core_only` | info | 8620: the core's hardness alone. | |
-| `not_cooled` | warning | It stopped (50 times the hand estimate, or 20 000 steps) before the part was under 500 °C. | |
-| `time_limit` | warning | It stopped at its time limit (twice `fit.seconds`, at least 30 s). | |
+| `not_cooled` | warning | It stopped (50 times the hand estimate, or 20 000 steps) before the part was under 500 °C. | `check_inputs` (the quenchant and h, still above 500 °C), or `coarsen_mesh` (out of steps). |
+| `time_limit` | warning | It stopped at its time limit (twice `fit.seconds`, at least 30 s). | A larger `fit.seconds`, or a coarser mesh. |
 
 - **The hardness.** Each point's cooling rate at 700 °C is matched to the place on a Jominy bar that
   cools as fast, from the end-quench test's own rates [9] (log-log between its 1/16-inch stations:
@@ -168,7 +170,7 @@ cure carries a `fix` (`action`, `summary`, `where`, `params`) an agent can apply
   θ = Σ Cₙ exp(-λₙ² a t / R²), λₙ J₁(λₙ) = Bi J₀(λₙ), Bi = h R / k, Cₙ = 2 J₁(λₙ) / (λₙ (J₀² + J₁²));
   a slab of half-thickness L as Σ Cₙ exp(-λₙ² a t / L²), λₙ tan λₙ = Bi, Cₙ = 4 sin λₙ / (2 λₙ + sin
   2 λₙ); a finite round, or a block, is the product of its round's and its slabs' [11]. Grossmann's
-  H = h / 2k makes Bi = H D: the conduction his critical diameters rest on [7]. The analysis checks
+  H = h / 2k makes Bi = H D: the conduction his critical diameters rest on [7]. The check holds
   a round's or a block's centre against it (the simulation reads within 3 % on a 2 mm mesh); any
   other shape against a long round as thick as its thickest section, an estimate.
 - **The ideal critical diameter.** The half-martensite hardness, 44 √C + 14 HRC (Just [2], carbon at

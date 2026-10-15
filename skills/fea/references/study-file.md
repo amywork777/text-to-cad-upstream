@@ -65,13 +65,6 @@ none is registered so today.
 | `fracture` | Cracks | runs today (lite: linear-elastic fracture mechanics on a crack the study describes, Paris crack growth) | [fracture.md](fracture.md) |
 | `rotordynamics` | Spinning | runs today (lite: a rotor line cut from the CAD, gyroscopic whirl, critical speeds, unbalance response, linear bearings; the spinning stress on the solid) | [rotordynamics.md](rotordynamics.md) |
 | `multiphase` | Two fluids | runs today (lite: a liquid and a gas inside the part over time, laminar, incompressible; sloshing, filling and draining, a rising bubble) | [multiphase.md](multiphase.md) |
-| `casting` | Casting | runs today (lite: a casting freezing in its mould from the pour, the cavity starting full) | `$manufacturing-sim`'s casting reference |
-| `heat_treatment` | Heat treatment | runs today (lite: a steel part quench hardened, thermal only, hardness through its Jominy curve) | `$manufacturing-sim`'s heat-treatment reference |
-| `machining` | Machining | runs today (lite: a milling or turning cut's deflection and stress, and its chatter stability lobes, the tool rigid) | `$manufacturing-sim`'s machining reference |
-| `sheet_metal` | Sheet metal | runs today, as an estimate per bend (springback, cracking, bend allowance) | `$manufacturing-sim`'s sheet metal reference |
-| `molding` | Injection molding | runs today (lite: a moulded part cooling in its mould to ejection and its warp from uneven shrinkage, the cavity starting full and packed) | `$manufacturing-sim`'s molding reference |
-| `printing` | 3D printing | runs today (lite: a part built band by band, each band's inherent strain shrinking it on the part below, then off the plate) | `$manufacturing-sim`'s printing reference |
-| `welding` | Welding | runs today (lite: the inherent strain of each weld's zone by the classical relations, all welds at once) | `$manufacturing-sim`'s welding reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 

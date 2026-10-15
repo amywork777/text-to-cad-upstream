@@ -18,11 +18,12 @@ before you report.
 1. **List the faces** (`cadgen fea faces part.step`, as in `$fea`): the faces the cutter is on (the
    wall being finished, the diameter being turned) and the faces the vise jaws, clamps or chuck hold.
    Prefer faces the user selected in the Viewer (`part.step#o1.f12`).
-2. **Write the study** as `machining.json` beside the part ([The study](#the-study)), from the
+2. **Write the study** as `part.machining.json` beside the part ([The study](#the-study)), from the
    user's cutting data: the cutter, the spindle speed, the feed, the depths, and the drawing's
    tolerance on the cut faces.
-3. **Solve**: `cadgen fea solve part.step --study machining.json` (with the `fea` extra, as the
-   skill's Setup says). It writes `part.fea.glb` and `part.fea.json` beside the part.
+3. **Check**: `cadgen manufacturing check part.step --study part.machining.json --fail-on error`
+   (with the `fea` extra, as the skill's Setup says). It writes `part.machining.glb` and
+   `part.machining.json` beside the part, and exits 3 while an error stands.
 4. **Read the findings**: each is a check, with what it measured against its limit and the fix that
    makes it pass ([Findings](#findings)); the lines end with them as a checklist (FAIL, WARN, PASS).
    The sidecar's and the result's `verdict` reads them as a CI check does: `ready` with no error
@@ -30,19 +31,20 @@ before you report.
 5. **Report**, in this order: the verdict; the deflection at the cut against the tolerance, and
    where the cut was put; the stress against yield; the chatter limit at the spindle speed against
    the depth, the limit at any speed, and the nearest stable speeds; the hand check; the limits. Then
-   the fixes, each with its numbers. To fix the model, apply a fix's `params` and solve again until
+   the fixes, each with its numbers. To fix the model, apply a fix's `params` and check again until
    it passes.
 
 ## The study
 
 ```json
-{"analysis": "machining", "material": "6061-t6", "operation": "milling",
+{"process": "machining", "material": "6061-t6", "operation": "milling",
  "tool": {"diameter_mm": 10, "flutes": 3}, "spindle_rpm": 8000, "feed_per_tooth_mm": 0.05,
  "depth_mm": 5, "width_mm": 1, "milling": "down",
  "cut_faces": ["#o1.f10"], "fixtures": [{"faces": ["#o1.f5"]}],
  "tolerance_mm": 0.02, "damping_ratio": 0.02}
 ```
 
+- `process` (required): `machining`.
 - `material` (required): a name from [The materials](#the-materials) or one of its plain names
   (`6061`, `7075`, `1018`, `mild-steel`, `c45`, `4140`, `42crmo4`, `304`, `316`, `titanium`,
   `ti64`, `brass`, `c360`, `delrin`, `acetal`, `pom`), or an object that extends a table entry
@@ -143,7 +145,7 @@ solver's. Values marked * are estimates (see [Numbers not verified](#numbers-not
 
 ## What comes out
 
-- `part.fea.glb`, opening on the displacement under the cut (deformed by it), and coloured by the
+- `part.machining.glb`, opening on the displacement under the cut (deformed by it), and coloured by the
   von Mises stress: fields `displacement` (mm), `von_mises` (MPa) and `mode_shape` (the dominant
   mode at the cut, rung along the normal, its largest motion 1 mm).
 - Curve `stability_lobes`: the depth (mm) the cut stays stable to against the spindle speed (rpm),
@@ -169,7 +171,8 @@ solver's. Values marked * are estimates (see [Numbers not verified](#numbers-not
 Every check says it passed, as an `info` with what it measured, when it does: the checklist's PASS
 lines. A finding that judges a number carries `measured` (`quantity`, `value`, `limit`, `units`,
 `pass_when`); every error and warning carries `fix` (`action`, `summary`, `where`: face refs and
-points in mm, `params`: the values to set), most with `alternatives` in the same shape.
+points in mm, `params`: the values to set), most with `alternatives` in the same shape;
+[checks.md](checks.md#machining) lists every type and the fix actions it can carry.
 
 | Finding | Severity | What it means | Fix (`action`: `params`) |
 | --- | --- | --- | --- |

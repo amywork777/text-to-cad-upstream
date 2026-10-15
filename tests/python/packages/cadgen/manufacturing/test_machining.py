@@ -1,4 +1,4 @@
-"""Machining (`"analysis": "machining"`): the study it reads, Kienzle's force, the stability lobes, the cut on a part.
+"""Machining (`"process": "machining"`): the study it reads, Kienzle's force, the stability lobes, the cut on a part.
 
 Hand checks, each a contract:
 
@@ -10,8 +10,7 @@ Hand checks, each a contract:
   a block under the same cut, and fails with what it measured and the fix; a bar turned from the chuck deflects as a
   cantilever, P L³ / 3 E I, and rings at the Euler-Bernoulli frequency.
 
-The manufacturing-sim skill's router runs machining today and its reference lists every material. Parse tests run
-everywhere; solves need the fea extra.
+The machining reference lists every material. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
@@ -22,22 +21,21 @@ import unittest
 from pathlib import Path
 
 from tests.python.support.fea_fixtures import (
-    class_directory, glb_attribute_names, needs_fea, sidecar, solve, value_error,
+    check, class_directory, glb_attribute_names, needs_fea, read_study, sidecar, value_error,
 )
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
-MILL = {"analysis": "machining", "material": "6061-t6", "operation": "milling", "tool": {"diameter_mm": 10, "flutes": 3},
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
+MILL = {"process": "machining", "material": "6061-t6", "operation": "milling", "tool": {"diameter_mm": 10, "flutes": 3},
         "spindle_rpm": 8000, "feed_per_tooth_mm": 0.05, "depth_mm": 3, "width_mm": 0.5,
         "cut_faces": ["#o1.f4"], "fixtures": [{"faces": ["#o1.f5"]}]}
-TURN = {"analysis": "machining", "material": "1018", "operation": "turning", "spindle_rpm": 1200,
+TURN = {"process": "machining", "material": "1018", "operation": "turning", "spindle_rpm": 1200,
         "feed_per_tooth_mm": 0.1, "depth_mm": 1, "cut_faces": ["#o1.f1"], "fixtures": [{"faces": ["#o1.f3"]}]}
 
 
 class StudyFile(unittest.TestCase):
     def parse(self, base=MILL, **changes):
-        from cadgen._internal.fea.study import parse_study
-
-        return parse_study({**base, **changes})
+        return read_study({**base, **changes})
 
     def test_a_milling_cut_reads_its_cutter_and_a_turning_cut_its_one_edge(self):
         study = self.parse()
@@ -58,8 +56,6 @@ class StudyFile(unittest.TestCase):
         self.assertTrue(self.parse(material="Delrin").inputs.material.estimated)
 
     def test_the_errors_name_the_field(self):
-        from cadgen._internal.fea.study import parse_study
-
         cases = [
             (MILL, {"operation": None}, "study.operation: how it is cut, one of milling, turning"),
             (MILL, {"operation": "drilling"}, 'study.operation: how it is cut, one of milling, turning; got "drilling"'),
@@ -91,12 +87,12 @@ class StudyFile(unittest.TestCase):
         for base, changes, fragment in cases:
             document = {key: value for key, value in {**base, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
 
 class Kienzle(unittest.TestCase):
     def test_a_turning_cuts_force_is_kc11_b_h_to_the_one_minus_mc(self):
-        from cadgen._internal.fea.cutting import lookup_work_material, turning_forces
+        from cadgen._internal.manufacturing.processes.cutting import lookup_work_material, turning_forces
 
         steel = lookup_work_material("1018")
         forces = turning_forces(steel, depth_mm=2.0, feed_mm=0.2)
@@ -106,7 +102,7 @@ class Kienzle(unittest.TestCase):
         self.assertAlmostEqual(forces["normal_N"], 0.3 * by_hand, places=9)
 
     def test_a_milling_teeth_chips_are_fz_sin_phi_and_a_slots_mean_chip_is_2_fz_over_pi(self):
-        from cadgen._internal.fea.cutting import lookup_work_material, mean_chip_mm, milling_forces
+        from cadgen._internal.manufacturing.processes.cutting import lookup_work_material, mean_chip_mm, milling_forces
 
         aluminium = lookup_work_material("6061")
         self.assertAlmostEqual(mean_chip_mm(0.1, 10.0, 10.0), 0.2 / math.pi, places=12)
@@ -127,7 +123,7 @@ class Lobes(unittest.TestCase):
     def lobes(self, rpm):
         import numpy as np
 
-        from cadgen._internal.fea.cutting import stability
+        from cadgen._internal.manufacturing.processes.cutting import stability
 
         w_n = 2 * math.pi * self.f_n
         omega = np.linspace(0.5 * w_n, 3 * w_n, 200_000)
@@ -183,7 +179,7 @@ class WallAndBlock(unittest.TestCase):
             side, bottom = cut_and_held(step)
             study = {**MILL, "cut_faces": [side], "fixtures": [{"faces": [bottom]}], "tolerance_mm": 0.02,
                      "mesh": {"size_mm": 2.5}}
-            cls.results[step.stem] = solve(step, directory / f"{step.stem}.glb", study)
+            cls.results[step.stem] = check(step, study)
 
     def test_a_thick_block_deflects_far_less_than_a_thin_wall_under_the_same_cut(self):
         wall, block = self.results["wall"].summary, self.results["block"].summary
@@ -245,8 +241,7 @@ class TurnedBar(unittest.TestCase):
         faces = fea.faces(step).faces
         chuck = next(f.ref for f in faces if f.normal and f.normal[0] < -0.99)
         od = next(f.ref for f in faces if f.surface != "plane")
-        cls.result = solve(step, directory / "bar.glb", {**TURN, "cut_faces": [od], "fixtures": [{"faces": [chuck]}],
-                                                          "mesh": {"size_mm": 2.0}})
+        cls.result = check(step, {**TURN, "cut_faces": [od], "fixtures": [{"faces": [chuck]}], "mesh": {"size_mm": 2.0}})
 
     def test_it_deflects_as_a_cantilever_and_rings_at_euler_bernoullis_frequency(self):
         summary = self.result.summary
@@ -263,16 +258,9 @@ class TurnedBar(unittest.TestCase):
 
 
 class SkillDocs(unittest.TestCase):
-    def test_the_router_runs_machining_and_its_reference_lists_every_material(self):
-        from cadgen._internal.fea.analyses import REGISTRY
-        from cadgen._internal.fea.cutting import WORK_MATERIALS
+    def test_the_machining_reference_lists_every_material(self):
+        from cadgen._internal.manufacturing.processes.cutting import WORK_MATERIALS
 
-        text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
-        row = next(line for line in text.splitlines() if line.startswith("|") and "`machining`" in line)
-        cells = [cell.strip() for cell in row.strip().strip("|").split("|")]
-        self.assertEqual(cells[2], REGISTRY["machining"].word)
-        self.assertTrue(cells[3].startswith("**Runs today** (lite"), cells[3])
-        self.assertIn("references/machining.md", cells[4])
         reference = (SKILL / "references" / "machining.md").read_text(encoding="utf-8")
         section = re.split(r"\n#{2,3} ", reference.split("## The materials", 1)[1], maxsplit=1)[0]
         listed = re.findall(r"^\| `([a-z0-9-]+)` \|", section, re.M)

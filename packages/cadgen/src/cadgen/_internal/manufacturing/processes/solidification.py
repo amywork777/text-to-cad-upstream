@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     import numpy as np
 
     from cadgen._internal.fea.femspace import FemSpace
-    from cadgen._internal.fea.foundry import CastingAlloy
+    from cadgen._internal.manufacturing.processes.foundry import CastingAlloy
 
 __all__ = [
     "Cooling", "Enthalpy", "Film", "Held", "NIYAMA_SHARE", "Pocket", "Section", "boundary_facet_rows", "march",

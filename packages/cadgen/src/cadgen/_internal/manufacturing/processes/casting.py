@@ -1,14 +1,14 @@
 """Casting (lite): a casting freezing in its mould, from the pour to fully solid.
 
-The study names the ``alloy`` (:data:`cadgen._internal.fea.foundry.ALLOYS`) and the ``process`` (``sand``,
-``investment``, ``permanent_mold``, ``die``), which sets the mould: its temperature, the pour's superheat, and its heat
+The study names the ``alloy`` (:data:`cadgen._internal.manufacturing.processes.foundry.ALLOYS`) and the ``mold``
+(``sand``, ``investment``, ``permanent_mold``, ``die``), which sets it: its temperature, the pour's superheat, and its heat
 transfer coefficient h on every outer face (a sand or investment mould's falls as it heats, e / √(π t); a metal
 mould's is constant). ``pour_temperature_C``, ``mold_temperature_C`` and ``h_W_m2K`` override them. ``feeders`` are
 the faces metal feeds from (gates, risers, a sprue's contact): insulated unless an entry gives ``h_W_m2K``, or held at
 ``held_C`` while the rest freezes (at most :data:`HOLD_FOR` times Chvorinov's time for the casting). ``fill_time_s`` is how long the mould takes to fill (estimated from the mass when
 left out), ``duration_s`` how long to follow it (until fully solid when left out).
 
-The cavity starts full at the pour temperature; the enthalpy march (:mod:`cadgen._internal.fea.solidification`)
+The cavity starts full at the pour temperature; the enthalpy march (:mod:`cadgen._internal.manufacturing.processes.solidification`)
 runs on linear tets. It writes the time to fully solid at every node (the default view: the last to freeze is
 hottest), temperature and liquid fraction per frame, the Niyama value G / √(cooling rate) near the end of
 solidification, and the cooling rate there. Its findings are the founder's: isolated hot spots (shrinkage
@@ -27,11 +27,14 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, finding, frame_attributes,
-    max_frames, xyz,
+    AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, frame_attributes, max_frames, xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["CastingAnalysis", "CastingInputs", "Feeder", "LIMITS"]
+__all__ = ["CastingInputs", "CastingProcess", "Feeder", "LIMITS"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("casting")
 
 LIMITS = (
     "The cavity starts full at the pour temperature: filling is not simulated, and a thin section far from the gate "
@@ -75,10 +78,10 @@ class Feeder:
 @dataclass(frozen=True)
 class CastingInputs(Inputs):
     alloy: Any = None
-    process: Any = None
+    mold: Any = None
     pour_C: float = 0.0
     mold_C: float = 0.0
-    #: The study's own constant h, W/(m² K); ``None`` for the process's mould.
+    #: The study's own constant h, W/(m² K); ``None`` for the mould's own.
     h: float | None = None
     feeders: tuple[Feeder, ...] = ()
     #: The study's fill time, s; ``None`` to estimate it.
@@ -87,21 +90,21 @@ class CastingInputs(Inputs):
 
     def h_of(self) -> Callable[[float, float], float]:
         """The mould's mean coefficient over a step, W/(m² K)."""
-        from cadgen._internal.fea.foundry import mould_h
+        from cadgen._internal.manufacturing.processes.foundry import mould_h
 
         if self.h is not None:
             return lambda t0, t1, h=self.h: h
-        process = self.process
-        return lambda t0, t1: mould_h(process.h, process.effusivity, t0, t1)
+        mold = self.mold
+        return lambda t0, t1: mould_h(mold.h, mold.effusivity, t0, t1)
 
     def mould_words(self) -> str:
         """"a sand mould at 25 °C, h falling as it heats (e = 1000 W s^½/(m² K))"."""
-        words = f"{self.process.words} at {self.mold_C:g} °C"
+        words = f"{self.mold.words} at {self.mold_C:g} °C"
         if self.h is not None:
             return f"{words}, h = {self.h:g} W/(m² K) (the study's)"
-        if self.process.effusivity is not None:
-            return f"{words}, h falling as it heats (e = {self.process.effusivity:g} W s^½/(m² K))"
-        return f"{words}, h = {self.process.h:g} W/(m² K)"
+        if self.mold.effusivity is not None:
+            return f"{words}, h falling as it heats (e = {self.mold.effusivity:g} W s^½/(m² K))"
+        return f"{words}, h = {self.mold.h:g} W/(m² K)"
 
 
 def _parse_feeders(document: dict, alloy) -> tuple[Feeder, ...]:
@@ -141,9 +144,9 @@ def time_words(seconds: float) -> str:
 
 def rule_s(inputs: CastingInputs, modulus_mm: float, mold_C: float | None = None) -> float:
     """Chvorinov's time (s) for a section of modulus V/A ``modulus_mm`` in this study's mould (or one at ``mold_C``)."""
-    from cadgen._internal.fea.foundry import chvorinov
+    from cadgen._internal.manufacturing.processes.foundry import chvorinov
 
-    return chvorinov(inputs.alloy, inputs.process, pour_C=inputs.pour_C, h=inputs.h, modulus_mm=modulus_mm,
+    return chvorinov(inputs.alloy, inputs.mold, pour_C=inputs.pour_C, h=inputs.h, modulus_mm=modulus_mm,
                      mold_C=inputs.mold_C if mold_C is None else mold_C)["estimate_s"]
 
 
@@ -165,17 +168,15 @@ def modulus_for(inputs: CastingInputs, seconds: float) -> float:
     return least(lambda modulus: rule_s(inputs, modulus), seconds, 1e-4, 1e4) or 1e4
 
 
-class CastingAnalysis(AnalysisBase):
+class CastingProcess(Process):
     name: ClassVar[str] = "casting"
     word: ClassVar[str] = "Casting"
     extras_word: ClassVar[str] = "casting"
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = frozenset({
-        "alloy", "process", "pour_temperature_C", "mold_temperature_C", "h_W_m2K", "feeders", "fill_time_s",
+        "alloy", "mold", "pour_temperature_C", "mold_temperature_C", "h_W_m2K", "feeders", "fill_time_s",
         "duration_s",
     })
-    #: The metal is the study's ``alloy`` (its own table), never a ``material``.
-    material_required: ClassVar[bool] = False
     #: Linear tets: their lumped capacity is positive, which the enthalpy march needs.
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -199,7 +200,7 @@ class CastingAnalysis(AnalysisBase):
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> CastingInputs:
-        from cadgen._internal.fea.foundry import ALLOYS, PROCESSES, lookup_alloy, lookup_process
+        from cadgen._internal.manufacturing.processes.foundry import ALLOYS, MOLDS, lookup_alloy, lookup_mold
 
         if "material" in document:
             raise ValueError(f"study.material: a casting study names its metal with 'alloy', one of {', '.join(ALLOYS)}")
@@ -210,23 +211,23 @@ class CastingAnalysis(AnalysisBase):
         if "alloy" not in document:
             raise ValueError(f"study.alloy: the casting alloy, one of {', '.join(ALLOYS)}")
         alloy = lookup_alloy(document["alloy"])
-        if "process" not in document:
-            raise ValueError(f"study.process: how it is cast, one of {', '.join(PROCESSES)}")
-        process = lookup_process(document["process"])
-        pour = alloy.liquidus + process.superheat_C
+        if "mold" not in document:
+            raise ValueError(f"study.mold: the mould it is cast in, one of {', '.join(MOLDS)}")
+        mold = lookup_mold(document["mold"])
+        pour = alloy.liquidus + mold.superheat_C
         if "pour_temperature_C" in document:
             pour = kinds.number(document["pour_temperature_C"], where="pour_temperature_C")
             if pour <= alloy.liquidus:
                 raise ValueError(f"pour_temperature_C: {pour:g} °C is not above the liquidus of {alloy.name} "
                                  f"({alloy.liquidus:g} °C): it would not pour")
-        mould = process.mold_C
+        mould = mold.mold_C
         if "mold_temperature_C" in document:
             mould = kinds.number(document["mold_temperature_C"], where="mold_temperature_C")
             if mould >= alloy.solidus:
                 raise ValueError(f"mold_temperature_C: {mould:g} °C is not below the solidus of {alloy.name} "
                                  f"({alloy.solidus:g} °C): the casting would never freeze")
         elif mould >= alloy.solidus:
-            raise ValueError(f"mold_temperature_C: the {process.key} preset's mould ({mould:g} °C) is not below the "
+            raise ValueError(f"mold_temperature_C: the {mold.key} preset's mould ({mould:g} °C) is not below the "
                              f"solidus of {alloy.name} ({alloy.solidus:g} °C); give the mould's own preheat")
         h = None
         if "h_W_m2K" in document:
@@ -239,7 +240,7 @@ class CastingAnalysis(AnalysisBase):
         if "duration_s" in document:
             duration = kinds.number(document["duration_s"], where="duration_s", positive=True)
         refs = tuple(dict.fromkeys(ref for feeder in feeders for ref in feeder.faces))
-        return CastingInputs(refs, (), False, alloy=alloy, process=process, pour_C=pour, mold_C=mould, h=h,
+        return CastingInputs(refs, (), False, alloy=alloy, mold=mold, pour_C=pour, mold_C=mould, h=h,
                              feeders=feeders, fill_s=fill, duration_s=duration)
 
     # -- the ladder ----------------------------------------------------------------------------------
@@ -263,7 +264,8 @@ class CastingAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import foundry, solidification, timestep
+        from cadgen._internal.fea import timestep
+        from cadgen._internal.manufacturing.processes import foundry, solidification
         from cadgen._internal.fea.analyses.thermal import plan_solver, space_result
         from cadgen._internal.fea.analyses.thermal_transient import time_label
         from cadgen._internal.fea.operators import DIRECT_SOLVE_BELOW
@@ -302,7 +304,7 @@ class CastingAnalysis(AnalysisBase):
             if feeder.held_C is None and feeder.h > 0:
                 cooled |= np.isin(ordinals, [ctx.ordinal_of[ref] for ref in feeder.faces])
         modulus = part_volume / max(float(areas[cooled].sum()), 1e-12)
-        hand = foundry.chvorinov(alloy, inputs.process, pour_C=inputs.pour_C, mold_C=inputs.mold_C, h=inputs.h,
+        hand = foundry.chvorinov(alloy, inputs.mold, pour_C=inputs.pour_C, mold_C=inputs.mold_C, h=inputs.h,
                                  modulus_mm=modulus)
         held = None
         if held_dofs:
@@ -346,7 +348,7 @@ class CastingAnalysis(AnalysisBase):
             for i, (t, _) in enumerate(run.frames)
         ])
         mass_kg = alloy.density * part_volume * 1000.0
-        fill = inputs.fill_s if inputs.fill_s is not None else inputs.process.fill_estimate(mass_kg)
+        fill = inputs.fill_s if inputs.fill_s is not None else inputs.mold.fill_estimate(mass_kg)
         warnings = []
         if run.stopped_at is not None:
             warnings.append(timestep.stopped_sentence(time_label(run.stopped_at), "fully solid", timestep.time_limit(ctx)))
@@ -577,7 +579,7 @@ class CastingAnalysis(AnalysisBase):
         if found or not inputs.feeders:
             return found
         # Fed: the largest pocket cut off from the feeders at all, smaller than a hot spot (none: 0).
-        from cadgen._internal.fea import solidification
+        from cadgen._internal.manufacturing.processes import solidification
 
         freeze = result.fields["solidification_time"]
         small = solidification.pockets(freeze, s["graph"], s["node_volumes"], s["feeder_nodes"],
@@ -648,10 +650,10 @@ class CastingAnalysis(AnalysisBase):
             return finding("info", "hand_check", summary, "a hand estimate from the whole casting's modulus; a thick "
                            "section in a thin part freezes later than the part's average says", measured=measured)
         return finding("warning", "hand_check_far", summary + f": more than {HAND_FACTOR:g} times apart; check the "
-                       "alloy, the process and h, and that the part's thick section is not far thicker than its average",
+                       "alloy, the mould and h, and that the part's thick section is not far thicker than its average",
                        "a hand estimate from the whole casting's modulus", measured=measured,
                        fix={"action": "check_inputs", "where": [], "params": {},
-                            "summary": "Check the alloy, the process, the pour and mould temperatures and h against the "
+                            "summary": "Check the alloy, the mould, the pour and mould temperatures and h against the "
                                        "foundry's; one thick section in thin walls freezes later than the average V/A says"})
 
     # -- what is written -----------------------------------------------------------------------------
@@ -674,10 +676,10 @@ class CastingAnalysis(AnalysisBase):
             "fully_solid": bool(run.solid),
             "end_s": round(run.end_s, 6),
             "alloy": inputs.alloy.name,
-            "process": inputs.process.key,
+            "mold": inputs.mold.key,
             "pour_temperature_C": round(inputs.pour_C, 4),
             "mold_temperature_C": round(inputs.mold_C, 4),
-            "mould": inputs.mould_words(),
+            "mold_words": inputs.mould_words(),
             "volume_mm3": round(s["volume_mm3"], 4),
             "mass_g": round(s["mass_kg"] * 1000.0, 4),
             "modulus_mm": round(s["modulus_mm"], 4),
@@ -730,7 +732,7 @@ class CastingAnalysis(AnalysisBase):
             # The viewer's "Made of" reads the material's name: the alloy is the casting's material.
             "material": {"name": inputs.alloy.name},
             "alloy": inputs.alloy.as_dict(),
-            "process": inputs.process.key,
+            "mold": inputs.mold.key,
             "pour_temperature_C": inputs.pour_C,
             "mold_temperature_C": inputs.mold_C,
             "feeders": [{"faces": bare(feeder.faces),
@@ -739,10 +741,10 @@ class CastingAnalysis(AnalysisBase):
         }
         if inputs.h is not None:
             echo["h_W_m2K"] = inputs.h
-        elif inputs.process.effusivity is not None:
-            echo["mold_effusivity"] = inputs.process.effusivity
+        elif inputs.mold.effusivity is not None:
+            echo["mold_effusivity"] = inputs.mold.effusivity
         else:
-            echo["h_W_m2K"] = inputs.process.h
+            echo["h_W_m2K"] = inputs.mold.h
         if inputs.fill_s is not None:
             echo["fill_time_s"] = inputs.fill_s
         if inputs.duration_s is not None:
@@ -753,7 +755,7 @@ class CastingAnalysis(AnalysisBase):
         lines = [
             f"solid in {time_words(summary['solidification_time_s'])}; the last to freeze at "
             f"{summary['last_to_freeze_at_mm']} mm",
-            f"{summary['alloy']} poured at {summary['pour_temperature_C']:g} °C into {summary['mould']}",
+            f"{summary['alloy']} poured at {summary['pour_temperature_C']:g} °C into {summary['mold_words']}",
             f"Chvorinov's rule: {time_words(summary['hand_check']['estimate_s'])} for V/A {summary['modulus_mm']:g} mm",
         ]
         hot = summary["hot_spots"]

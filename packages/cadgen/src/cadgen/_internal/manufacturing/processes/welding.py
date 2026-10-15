@@ -1,17 +1,17 @@
 """Welding (lite): the distortion and residual stress welds leave in the part they join, by inherent strain.
 
-The study names the base metal (``alloy``: :data:`cadgen._internal.fea.weldments.METALS`) and its ``welds``. A weld
+The study names the base metal (``alloy``: :data:`cadgen._internal.manufacturing.processes.weldments.METALS`) and its ``welds``. A weld
 runs along the edge two faces share (``faces``: the plate it lies on, then the plate that meets it, as a fillet on a
 T joint) or along a line between two points on a face (``line_mm`` and the face, as a butt weld across a plate); it
 has its ``process`` (``gmaw``/``mig``, ``gtaw``/``tig``, ``smaw``, ``laser``), its net heat input per pass
 (``heat_input_kJ_mm``, or volts, amps and travel speed, or a laser's power and speed, with the process's thermal
 efficiency) and its ``passes``.
 
-Each weld gets the inherent strain of its zone (:mod:`cadgen._internal.fea.weldments`): along the weld, -σ_y / E over
+Each weld gets the inherent strain of its zone (:mod:`cadgen._internal.manufacturing.processes.weldments`): along the weld, -σ_y / E over
 the material nearest it whose area matches the tendon force (F_T / σ_y); across it, in a strip of each plate a plate
 thickness wide, a strain varying through the plate's thickness whose integrals are the classical transverse shrinkage
 and angular distortion for the plate's Q / h². Every weld is applied at once and the part, free, held only against
-rigid motion, is solved once (:func:`cadgen._internal.fea.inherent_strain.solve_once`).
+rigid motion, is solved once (:func:`cadgen._internal.manufacturing.processes.inherent_strain.solve_once`).
 
 It writes the distortion (its rigid motion taken out), the residual stress (von Mises, and the longitudinal stress near
 the welds), and the weld zone. Its findings are a checklist: the distortion against ``tolerance_mm``, each weld's
@@ -28,10 +28,14 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, finding, plan_value, xyz,
+    AnalysisResult, FieldSpec, Inputs, SolveContext, plan_value, xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["LIMITS", "Weld", "WeldingAnalysis", "WeldingInputs"]
+__all__ = ["LIMITS", "Weld", "WeldingInputs", "WeldingProcess"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("welding")
 
 LIMITS = (
     "Every weld is applied at once, not in sequence, and the part is free: in this linear model neither the order of "
@@ -121,7 +125,7 @@ def _heat(entry: dict, process, where: str) -> tuple[float, str]:
 
 
 def _parse_weld(entry: dict, index: int) -> Weld:
-    from cadgen._internal.fea.weldments import PROCESSES, lookup_process
+    from cadgen._internal.manufacturing.processes.weldments import PROCESSES, lookup_process
 
     where = f"welds[{index}]"
     kinds.known(entry, WELD_KEYS, where, "a weld takes faces (and line_mm), process, its heat (heat_input_kJ_mm, or "
@@ -161,14 +165,12 @@ def _parse_weld(entry: dict, index: int) -> Weld:
     return Weld(label, faces, line, process, heat, passes, thickness, words)
 
 
-class WeldingAnalysis(AnalysisBase):
+class WeldingProcess(Process):
     name: ClassVar[str] = "welding"
     word: ClassVar[str] = "Welding"
     extras_word: ClassVar[str] = "welding"
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = frozenset({"alloy", "welds", "tolerance_mm", "fatigue_critical"})
-    #: The base metal is the study's ``alloy`` (its own table), never a ``material``.
-    material_required: ClassVar[bool] = False
     mesh_orders: ClassVar[tuple[int, ...]] = (2, 1)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
         FieldSpec("von_mises", "_VON_MISES", "residual stress (von Mises)", "MPa"),
@@ -190,7 +192,7 @@ class WeldingAnalysis(AnalysisBase):
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> WeldingInputs:
-        from cadgen._internal.fea.weldments import METALS, lookup_metal
+        from cadgen._internal.manufacturing.processes.weldments import METALS, lookup_metal
 
         if "material" in document:
             raise ValueError(f"study.material: a welding study names its base metal with 'alloy', one of {', '.join(METALS)}")
@@ -236,7 +238,7 @@ class WeldingAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import inherent_strain as IS
+        from cadgen._internal.manufacturing.processes import inherent_strain as IS
         from cadgen._internal.fea.analyses.thermal import space_result
         from cadgen._internal.fea.materials import Material
 
@@ -583,7 +585,7 @@ def _weld_plan(space, weld: Weld, ctx: SolveContext, ordinals, triangles, metal)
     and the classical relations' tendon force, transverse shrinkage and angle for each."""
     import numpy as np
 
-    from cadgen._internal.fea import weldments
+    from cadgen._internal.manufacturing.processes import weldments
 
     points = space.dof_locations
     faces = []

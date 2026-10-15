@@ -1,15 +1,19 @@
-# Estimates: the processes not simulated yet
+# Estimates: the hand checks, and what is not simulated
 
-Hand methods for the processes cadgen does not simulate in this version. Each is an **estimate**:
-say so every time you quote one, with its assumptions and its source, and never present it as a
-simulation. Where `$fea` simulates part of the question, the section says which part and how to set
-the study up; say which part that answers, and that the rest is an estimate.
+Hand methods, two kinds. For a process `cadgen manufacturing check` simulates, they are its hand
+checks: the order of magnitude to hold the result to, and the answer without a STEP. For what is not
+simulated in this version (a mould's filling, reflow soldering, forging, extrusion and deep drawing),
+they are the answer, an **estimate**: say so every time you quote one, with its assumptions and its
+source, and never present it as a simulation. Where `$fea` simulates part of the question, the
+section says which part and how to set the study up; say which part that answers, and that the rest
+is an estimate.
 
 Work in the units each formula gives; restate the result in the user's.
 
 ## Injection moulding
 
-Not in this version: the fill, pack and warp of a moulded part.
+The cooling, the sink and the warp (an estimate) run today as `molding` ([molding.md](molding.md));
+these are its hand checks. Not in this version: the fill and the pack.
 
 - **Cooling time** of a wall of thickness s (the part's thickest wall sets the cycle), cooled from
   both sides, until its middle reaches the ejection temperature [1]:
@@ -29,34 +33,34 @@ Not in this version: the fill, pack and warp of a moulded part.
 - **Fill.** Whether a long thin wall fills depends on the grade's flow length to thickness ratio
   (its datasheet's spiral flow, typically 100-250 for a 1-2 mm wall); a flow path longer than that
   ratio times the wall is a short-shot risk. An estimate; the moulder's flow simulation answers it.
-- **Warp.** No honest hand method: say it is not in this version, and name the causes to look at
-  (uneven walls, uneven cooling, a fibre-filled grade's orientation).
+- **Warp.** No honest hand method: `molding` estimates it from how long each region stays hot; by
+  hand, name the causes to look at (uneven walls, uneven cooling, a fibre-filled grade's
+  orientation).
 
 ## Heat treatment and quenching
 
-Runs today as `heat_treatment` ([heat-treatment.md](heat-treatment.md)); this estimate stays its hand
-check.
+The cooling, the hardness as quenched and the quench's elastic stress and distortion run today as
+`heat_treatment` ([heat-treatment.md](heat-treatment.md)); these are its hand checks. Not in this
+version: the transformation itself and the permanent distortion and residual stress it leaves.
 
-Not in this version: phase change, distortion and hardness after a quench.
-
-- **How fast it cools** runs today: `$fea`'s `thermal_transient` (heat over time) with the part at
-  its austenitising or solution temperature (`initial_C`) and a `convection` entry on every face at
-  the quench's coefficient and temperature. Coefficients are ranges, from still air about 10, forced
-  air 25-100, oil a few hundred to about 2000, to water and brine a few thousand W/(m² K) and more,
-  depending on agitation and the vapour blanket [2]; the steel's own properties come from
-  `$fea`'s material table. Report the time the core and the surface take to pass the temperatures
-  that matter for the steel (for example 800 to 500 °C), and say the coefficient is a range.
-- **Distortion and residual stress.** `$fea`'s `thermal_stress` gives the elastic stress of one
-  temperature field, which is not a quench's: a quench yields the part and transforms its
-  structure. No honest number: say it is not in this version. Uneven sections and one-sided
-  cooling are what distort.
-- **Hardness.** From the steel's own Jominy curve and the cooling rate at the point (the cooling
-  above): a lookup, not a simulation, and only with the grade's Jominy data from the user [2].
+- **How fast it cools.** Coefficients are ranges, from still air about 10, forced air 25-100, oil a
+  few hundred to about 2000, to water and brine a few thousand W/(m² K) and more, depending on
+  agitation and the vapour blanket [2]. `heat_treatment` takes one per quenchant; Grossmann's H and
+  the series solution for a round's centre are its hand check. For a solution treatment or another
+  alloy, `$fea`'s `thermal_transient` (heat over time) with the part at its furnace temperature
+  (`initial_C`) and a `convection` entry on every face gives the temperatures; say the coefficient
+  is a range.
+- **Distortion and residual stress.** A quench yields the part and transforms its structure; the
+  elastic thermal stress `heat_treatment` reports shows where and which way it moves, not how much
+  stays. Uneven sections and one-sided cooling are what distort.
+- **Hardness.** From the steel's own Jominy curve and the cooling rate at the point: the lookup
+  `heat_treatment` makes for the grades it lists; for another, the same lookup by hand, and only
+  with the grade's Jominy data from the user [2].
 
 ## 3D printing
 
 The layer-by-layer build, its warp, curl and residual stress run today as `printing`
-([printing.md](printing.md)); these remain its estimates by hand. Printability (walls, overhangs,
+([printing.md](printing.md)); these are its hand checks. Printability (walls, overhangs,
 supports, orientation) is `$dfam-check`'s.
 
 - **FDM warp.** Each layer shrinks by the thermal strain α (T_glass - T_bed) as it cools to the bed,
@@ -119,7 +123,7 @@ are the same hand checks without a STEP, and the draw's.
 ## Welding
 
 A weld's distortion and residual stress run today as `welding` ([welding.md](welding.md)), from
-the inherent strain of its zone; these remain its estimates by hand. Not in this version: the weld's
+the inherent strain of its zone; these are its hand checks. Not in this version: the weld's
 heat as a simulation.
 
 - **Transverse shrinkage** of a butt weld, in mm: about 0.2 × (weld cross-sectional area in mm² /

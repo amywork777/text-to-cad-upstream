@@ -197,7 +197,7 @@ export const skillGroups = [
     name: "Manufacturing Sim",
     path: "skills/manufacturing-sim",
     summary:
-      "Simulates a casting freezing in its mould (hot spots, porosity, thin sections that may not fill) and gives labelled hand estimates for moulding, printing, machining, sheet metal, welding, reflow and forming.",
+      "Checks a part through its process as CI checks code: simulates casting, injection moulding, quench hardening, 3D printing, machining and welding, estimates sheet metal bending, and gives each problem's fix; labelled hand estimates for reflow and forming.",
   },
   {
     name: "G-code",

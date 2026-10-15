@@ -15,11 +15,12 @@ rises into the recoater. Lite: read [Limits](#limits) before you report.
 ## The study
 
 ```json
-{"analysis": "printing", "process": "powder_bed_metal", "alloy": "316l",
+{"process": "printing", "technology": "powder_bed_metal", "alloy": "316l",
  "build_direction": [0, 0, 1], "bands": 12, "release_from_plate": true, "tolerance_mm": 0.2}
 ```
 
-- `process` (required): `fdm`, `powder_bed_metal`, `sls` or `resin` ([The processes](#the-processes)).
+- `process` (required): `printing`.
+- `technology` (required): `fdm`, `powder_bed_metal`, `sls` or `resin` ([The technologies](#the-technologies)).
 - Its material (required): `alloy` for `powder_bed_metal`, `polymer` for the rest: a name from
   [The materials](#the-materials) or a plain name (`ti64`, `inconel`, `17-4`, `nylon`, `resin`, ...).
 - `build_direction`: the direction the part grows in, `[x, y, z]` (default `[0, 0, 1]`). The plate is
@@ -39,12 +40,12 @@ rises into the recoater. Lite: read [Limits](#limits) before you report.
   (negative: a shrinkage), replacing the table's. Give it whenever the user has a calibration.
 - Shared keys, as in `$fea`'s study file: `mesh` (`size_mm`, `order` 2 or 1), `output`, `fit`
   (`iterative`, `defeature`, `linear_elements`) and `view` (no `checks`: its findings are its verdict).
-- Not taken: `material` (name it by the process's key), `parts` and `connections` (one part: name it
+- Not taken: `material` (name it by the technology's key), `parts` and `connections` (one part: name it
   with `--occurrence` in a document of several).
 
-## The processes
+## The technologies
 
-| `process` | names its material | held by | its inherent strain in the plane | along the build | recoater check |
+| `technology` | names its material | held by | its inherent strain in the plane | along the build | recoater check |
 | --- | --- | --- | --- | --- | --- |
 | `fdm` | `polymer` | the bed, its lowest face | α (T_set - T_chamber): the layer cooling from where it sets to the chamber [7] | 0 | no |
 | `powder_bed_metal` | `alloy` | the plate, its lowest face | Ti-6Al-4V's measured; the rest σ_y / E, the assumed strain [2], [4] | 0 [1] | yes |
@@ -54,7 +55,7 @@ rises into the recoater. Lite: read [Limits](#limits) before you report.
 - **Along the build: zero.** The cantilever calibrations of metal powder bed fusion take the inherent
   strain along the build direction as zero: the next layer is laid at the nominal height, which takes
   up the layer's own vertical shrinkage [1]; the high-fidelity calculation finds it negligible [2].
-  The same holds for each process here, whose next layer is also laid at its nominal height.
+  The same holds for each technology here, whose next layer is also laid at its nominal height.
 - **In the plane: one number.** A scan that rotates from layer to layer makes the inherent strain the
   same in every direction in the plane [1]; one stripe direction would not (its transverse strain is
   about a third of its longitudinal [1]). This version takes one number.
@@ -78,7 +79,7 @@ rises into the recoater. Lite: read [Limits](#limits) before you report.
 As-printed values: E, Poisson's ratio and the expansion are the wrought alloy's or the polymer's
 handbook values, the yield the printer maker's as-built figure (the lower of its build directions).
 
-| `polymer` / `alloy` | name | process | E, GPa | Poisson | yield, MPa | expansion, 10⁻⁶/K | sets at, °C | layer, mm | in-plane strain | sources |
+| `polymer` / `alloy` | name | technology | E, GPa | Poisson | yield, MPa | expansion, 10⁻⁶/K | sets at, °C | layer, mm | in-plane strain | sources |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `316l` | Stainless steel 316L | `powder_bed_metal` | 193 | 0.29 | 480 | 16.0 | | 0.04 | -0.00249 (σ_y / E) | [5], [6], [4] |
 | `ti-6al-4v` | Ti-6Al-4V | `powder_bed_metal` | 113.8 | 0.342 | 1100 | 8.6 | | 0.06 | -0.0056 (measured) | [5], [6], [2] |
@@ -113,12 +114,12 @@ lumped into bands.
 
 ## What comes out
 
-- `part.fea.glb`, coloured by the residual stress (von Mises, MPa) and deformed by the distortion
+- `part.printing.glb`, coloured by the residual stress (von Mises, MPa) and deformed by the distortion
   (mm). Fields per frame: `von_mises`, `displacement` and `printed` (1 where printed so far). One
   frame per band ("Band 3/12 · 7.5 mm"), then "Off the plate"; the Viewer's Build scrubber opens on
   the last and Play builds it, band by band, then lets it go.
 - Curve `max_distortion_mm` against the band.
-- Summary: `process`, `material`, `build_direction`, `bands`, `band_mm`, `height_mm`,
+- Summary: `technology`, `material`, `build_direction`, `bands`, `band_mm`, `height_mm`,
   `layer_thickness_mm`, `inherent_strain` (`in_plane`, `build`, `basis`), `yield_MPa`,
   `max_von_mises_MPa`, `von_mises_p99_MPa` and where, `released`, `max_distortion_mm` and where
   (off the plate, its rigid motion taken out), `warp_mm` and `warp_at_mm` (the bottom's flatness off
@@ -134,18 +135,21 @@ lumped into bands.
 ## Findings
 
 Every check says what it measured against its limit (`measured`), passes included; every error and
-warning carries the `fix` that makes it pass.
+warning carries the `fix` that makes it pass ([checks.md](checks.md#printing) lists every type and the
+fix actions it can carry).
 
 | Finding | Severity | What it measures | Fix |
 | --- | --- | --- | --- |
 | `warp` | error past `tolerance_mm`, else info | Off the plate, the bottom's flatness: the range of its points' lift about their best-fit plane, and where it lifts most (a corner, usually). | `change_orientation` (`params.build_direction`: the part's shortest axis up), `raise_chamber_temperature` (FDM, `params.chamber_temperature_C`), `stress_relieve` (metal, on the plate before it is cut off), `add_rib`. |
-| `release_distortion` (`distortion` when not released) | error past `tolerance_mm`, else info | The largest distance any point moved from the CAD, its rigid motion taken out once off the plate. A free shrinkage counts: give a scaled CAD's tolerance if the printer compensates it. | As `warp`. |
-| `residual_stress` | warning past yield, else info | The as-printed von Mises' 99th percentile against the yield (the peak, at a corner against the plate, is singular). Past yield the part yields and holds about yield: a cracking risk, and a metal part may tear off its plate or supports. The plate's pull is in its description. | `stress_relieve` (metal), `change_orientation` (polymers). |
+| `release_distortion` | error past `tolerance_mm`, else info | The largest distance any point moved from the CAD, its rigid motion taken out once off the plate. A free shrinkage counts: give a scaled CAD's tolerance if the printer compensates it. | As `warp`. |
+| `distortion` | error past `tolerance_mm`, else info | The same as printed, on the plate, when the study keeps it there (`release_from_plate: false`). | As `warp`. |
+| `residual_stress` | warning past yield, else info | The as-printed von Mises' 99th percentile against the yield (the peak, at a corner against the plate, is singular). Past yield the part yields and holds about yield: a cracking risk, and a metal part may tear off its plate or supports. The plate's pull is in its description. | `stress_relieve` (metal), `raise_chamber_temperature` (FDM), else `change_orientation`. |
 | `recoater_collision` | warning past the layer, else info (metal) | The most a band's top rises along the build while it is printed, against `layer_thickness_mm`. | `support` the edge that rises, or turn it. |
 | `bed_adhesion` | warning past `bed_adhesion_MPa`, else info (FDM) | The bed's pull on the part per area, averaged near where it pulls hardest; a note without `bed_adhesion_MPa`. | `add_brim` (`params.brim_mm`). |
 | `starts_in_air` | info | A region with nothing under it, held where it starts. | Supports: `$dfam-check`. |
 | `sls_no_build_shrinkage` | info | SLS shrinks nothing in the build; the cooling warp is not in this version. | The printer's design guide. |
-| `hand_check` | info within 2×, else `hand_check_far` (warning) | [Hand checks](#hand-checks): the first band's middle against a band fully held. | `check_inputs`. |
+| `hand_check` | info | [Hand checks](#hand-checks): the first band's middle against a band fully held, within 2 times. | |
+| `hand_check_far` | warning | The two are more than 2 times apart. | `check_inputs`: the build direction and the inherent strain. |
 
 ## Hand checks
 
@@ -173,14 +177,14 @@ make the fix, run it again until it is `ready`. The fixes a printing study gives
 - `change_orientation`: the study's `build_direction` to `params.build_direction` (the part's
   shortest axis): a squat part keeps its shrinkage locked in evenly and curls less once cut off.
 - `raise_chamber_temperature`: the study's `chamber_temperature_C`, only if the user's printer has
-  an enclosure that reaches it; else `change_material` to a polymer that warps less (PETG, PLA).
+  an enclosure that reaches it; else, with the user's word, a polymer that warps less (PETG, PLA).
 - `stress_relieve`: a heat treatment on the plate before it is cut off; the run does not model one,
   so tell the user and judge the as-printed result with `release_from_plate: false`.
 - `support`, `add_brim`, `add_rib`: the part or the print setup (`$cad`, the slicer); a rib changes
   the model, so rebuild the STEP.
 - `check_inputs`: the study, not the part.
 
-Never change the process or the material to clear a finding without the user's word.
+Never change the technology or the material to clear a finding without the user's word.
 
 ## Limits
 

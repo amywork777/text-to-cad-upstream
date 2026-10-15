@@ -4,7 +4,10 @@ The registry is written once, here, in the order the skill and the viewer list
 them: the Tier 1 solvers, the Tier 2 estimate, then the Tier 3 lite solvers.
 Every entry is built today (none is ``planned``). Each entry names the module
 and class that implement it; an entry whose module is not in this cadgen makes
-:func:`get_analysis` say so in a sentence, never an ImportError. Stdlib only: the modules import lazily.
+:func:`get_analysis` say so in a sentence, never an ImportError. A manufacturing
+process (casting, molding, ...) is not here: it is ``cadgen manufacturing
+check``'s (``cadgen._internal.manufacturing.processes``), and naming one as an
+analysis says so. Stdlib only: the modules import lazily.
 """
 
 from __future__ import annotations
@@ -83,20 +86,6 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
     _entry("rotordynamics", 3, "RotordynamicsAnalysis", "Spinning"),
     # Two fluids: a liquid and a gas inside the part over time (sloshing, filling, draining, a rising bubble).
     _entry("multiphase", 3, "MultiphaseAnalysis", "Two fluids"),
-    # Manufacturing processes, routed by the manufacturing-sim skill. A casting freezing in its mould, pour to solid.
-    _entry("casting", 3, "CastingAnalysis", "Casting"),
-    # A steel part quench hardened: its cooling, its hardness through the Jominy curve, the quench's stress.
-    _entry("heat_treatment", 3, "HeatTreatmentAnalysis", "Heat treatment"),
-    # CNC milling or turning: the part's deflection under the cut, and whether the cut chatters (stability lobes).
-    _entry("machining", 3, "MachiningAnalysis", "Machining"),
-    # A bent sheet off the press brake, per bend by hand formulas (Tier 2): springback, cracking, the flat pattern.
-    _entry("sheet_metal", 2, "SheetMetalAnalysis", "Sheet metal"),
-    # A plastic part cooling in its injection mould from the melt to ejection, and how it warps.
-    _entry("molding", 3, "MoldingAnalysis", "Injection molding"),
-    # A part 3D printed band by band, each band's inherent strain shrinking it on the part below: warp and residual stress.
-    _entry("printing", 3, "PrintingAnalysis", "3D printing"),
-    # Welds shrinking the part they join, by the inherent strain of their zones: angular distortion, bowing, stress.
-    _entry("welding", 3, "WeldingAnalysis", "Welding"),
 )}
 ANALYSIS_NAMES: tuple[str, ...] = tuple(REGISTRY)
 
@@ -126,6 +115,12 @@ def get_analysis(name: str) -> "Analysis":
         return _INSTANCES[name]
     entry = REGISTRY.get(name) if isinstance(name, str) else None
     if entry is None:
+        from cadgen._internal.manufacturing.processes import PROCESS_NAMES  # stdlib only
+
+        if name in PROCESS_NAMES:
+            raise ValueError(f"analysis: {name!r} is a manufacturing process, not an analysis: check it with "
+                             f"`cadgen manufacturing check part.step --study study.json`, the study naming "
+                             f"\"process\": \"{name}\" in place of \"analysis\"")
         raise ValueError(f"analysis: {name!r} is not an analysis cadgen knows; use one of {', '.join(ANALYSIS_NAMES)}")
     module = _module(entry)
     if module is None or not hasattr(module, entry.cls):

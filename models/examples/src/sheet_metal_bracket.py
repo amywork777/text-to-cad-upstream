@@ -1,4 +1,4 @@
-"""A bent sheet bracket for the sheet metal estimate (`cadgen fea solve` with `"analysis": "sheet_metal"`).
+"""A bent sheet bracket for the sheet metal estimate (`cadgen manufacturing check` with `"process": "sheet_metal"`).
 
 A 1.5 mm sheet: a channel 40 mm across with two 20 mm flanges bent up at an inside radius of 1.5 mm (R = t), 50 mm
 long, and a 15 mm tab bent down at R = 3 mm (2t) out of the middle of the base's back edge, with no relief cut. In

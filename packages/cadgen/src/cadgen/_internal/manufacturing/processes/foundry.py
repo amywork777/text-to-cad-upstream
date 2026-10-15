@@ -1,4 +1,4 @@
-"""The casting alloys and the processes a ``casting`` study names.
+"""The casting alloys and the moulds a ``casting`` study names.
 
 An alloy is what solidification needs: density, conductivity, specific heat, latent heat, liquidus and solidus, and the
 critical Niyama value below which shrinkage porosity is likely where one is published for it (``None`` where none is).
@@ -7,7 +7,7 @@ Units are the ones people write them in (kg/m³ is converted to the engine's ton
 in the manufacturing-sim skill's casting reference. A pure metal freezes at one temperature; it is given a freezing
 range of :data:`PURE_RANGE_C` so the enthalpy is a function of temperature.
 
-A process is the mould: its temperature, the pour's usual superheat, and how it takes heat out. A sand or investment
+A mould (the study's ``mold``: sand, investment, a permanent mould or a die) is its temperature, the pour's usual superheat, and how it takes heat out. A sand or investment
 mould heats up as it takes heat in, so its heat transfer coefficient falls with time as a semi-infinite body's does,
 h(t) = e / √(π t) for a mould of effusivity e = √(k ρ c) (:func:`mould_h`), the contact with the metal taken as
 perfect; this is what makes the freezing time grow with the square of the section (Chvorinov's rule). A metal mould
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from cadgen._internal.fea.analyses.kinds import json_text
 
 __all__ = [
-    "ALLOYS", "CastingAlloy", "PROCESSES", "PURE_RANGE_C", "Process", "chvorinov", "lookup_alloy", "lookup_process",
+    "ALLOYS", "CastingAlloy", "MOLDS", "Mold", "PURE_RANGE_C", "chvorinov", "lookup_alloy", "lookup_mold",
     "mould_h",
 ]
 
@@ -104,7 +104,7 @@ _ALIASES = {
 
 
 @dataclass(frozen=True)
-class Process:
+class Mold:
     key: str
     #: How a sentence names the mould: "a sand mould".
     words: str
@@ -128,12 +128,12 @@ class Process:
         return self.fill_s_per_sqrt_kg * math.sqrt(max(mass_kg, 0.0))
 
 
-# Sources per value: the manufacturing-sim skill's casting reference ("The processes").
-PROCESSES: dict[str, Process] = {process.key: process for process in (
-    Process("sand", "a sand mould", 25.0, 100.0, effusivity=1000.0, fill_s_per_sqrt_kg=2.0),
-    Process("investment", "an investment (lost-wax) mould", 600.0, 100.0, effusivity=600.0, fill_s_per_sqrt_kg=2.0),
-    Process("permanent_mold", "a permanent (gravity die) mould", 300.0, 100.0, h=1000.0, fill_s_per_sqrt_kg=2.0),
-    Process("die", "a die (high-pressure die casting)", 200.0, 60.0, h=5000.0, fill_s=0.05),
+# Sources per value: the manufacturing-sim skill's casting reference ("The moulds").
+MOLDS: dict[str, Mold] = {mold.key: mold for mold in (
+    Mold("sand", "a sand mould", 25.0, 100.0, effusivity=1000.0, fill_s_per_sqrt_kg=2.0),
+    Mold("investment", "an investment (lost-wax) mould", 600.0, 100.0, effusivity=600.0, fill_s_per_sqrt_kg=2.0),
+    Mold("permanent_mold", "a permanent (gravity die) mould", 300.0, 100.0, h=1000.0, fill_s_per_sqrt_kg=2.0),
+    Mold("die", "a die (high-pressure die casting)", 200.0, 60.0, h=5000.0, fill_s=0.05),
 )}
 
 
@@ -152,15 +152,15 @@ def lookup_alloy(name) -> CastingAlloy:
     return ALLOYS[key]
 
 
-def lookup_process(name) -> Process:
-    """A casting process by name; a ValueError naming ``process`` and listing them otherwise."""
+def lookup_mold(name) -> Mold:
+    """A casting mould by name; a ValueError naming ``mold`` and listing them otherwise."""
     key = _key(name).replace("-", "_") if isinstance(name, str) else None
     key = {"permanent_mould": "permanent_mold", "gravity_die": "permanent_mold", "lost_wax": "investment",
            "high_pressure_die": "die", "die_casting": "die"}.get(key, key)
-    if key not in PROCESSES:
-        raise ValueError(f"process: {json_text(name)} is not a casting process cadgen knows; use one of "
-                         f"{', '.join(PROCESSES)}")
-    return PROCESSES[key]
+    if key not in MOLDS:
+        raise ValueError(f"mold: {json_text(name)} is not a casting mould cadgen knows; use one of "
+                         f"{', '.join(MOLDS)}")
+    return MOLDS[key]
 
 
 def mould_h(h: float | None, effusivity: float | None, t0: float, t1: float) -> float:
@@ -175,7 +175,7 @@ def mould_h(h: float | None, effusivity: float | None, t0: float, t1: float) -> 
     return 2.0 * effusivity / (math.sqrt(math.pi) * (a + b))
 
 
-def chvorinov(alloy: CastingAlloy, process: Process, *, pour_C: float, mold_C: float, h: float | None,
+def chvorinov(alloy: CastingAlloy, mold: Mold, *, pour_C: float, mold_C: float, h: float | None,
               modulus_mm: float) -> dict:
     """The casting's freezing time by hand, from its modulus V/A (mm): Chvorinov's rule, an estimate.
 
@@ -189,10 +189,10 @@ def chvorinov(alloy: CastingAlloy, process: Process, *, pour_C: float, mold_C: f
     heat = alloy.latent_heat + alloy.specific_heat * (pour_C - alloy.solidus)
     drop = 0.5 * (alloy.liquidus + alloy.solidus) - mold_C
     M = modulus_mm / 1000.0
-    if h is None and process.effusivity is not None:
-        B = math.pi / 4.0 * (rho * heat / (process.effusivity * drop)) ** 2
+    if h is None and mold.effusivity is not None:
+        B = math.pi / 4.0 * (rho * heat / (mold.effusivity * drop)) ** 2
         return {"rule": "B (V/A)^2", "B_s_per_mm2": B * 1e-6, "modulus_mm": modulus_mm, "estimate_s": B * M * M}
-    coefficient = float(h if h is not None else process.h)
+    coefficient = float(h if h is not None else mold.h)
     contact = rho * heat * M / (coefficient * drop)
     conduction = rho * heat * M * M / (2.0 * alloy.conductivity * drop)
     return {"rule": "(V/A) / h + (V/A)^2 / 2k", "modulus_mm": modulus_mm, "estimate_s": contact + conduction,

@@ -1,4 +1,4 @@
-"""Welding (`"analysis": "welding"`): the study it reads, the classical relations, and a T joint's angular distortion.
+"""Welding (`"process": "welding"`): the study it reads, the classical relations, and a T joint's angular distortion.
 
 Benchmarks, each through the whole analysis on a part build123d writes into a temporary directory:
 
@@ -9,8 +9,7 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
 - the same weld on both sides turns each side's joint less (the web stays square);
 - a failing case says what it measured against the tolerance and carries the fix.
 
-The manufacturing-sim skill's welding reference stays in step with the tables. Parse tests run everywhere; solves need
-the fea extra.
+The welding reference stays in step with the tables. Parse tests run everywhere; checks need the fea extra.
 """
 
 from __future__ import annotations
@@ -19,19 +18,18 @@ import re
 import unittest
 from pathlib import Path
 
-from tests.python.support.fea_fixtures import class_directory, needs_fea, solve, value_error
+from tests.python.support.fea_fixtures import check, class_directory, needs_fea, read_study, value_error
+from tests.python.support.paths import REPO_ROOT
 
-SKILL = Path(__file__).resolve().parents[4] / "skills" / "manufacturing-sim"
+SKILL = REPO_ROOT / "skills" / "manufacturing-sim"
 WELD = {"faces": ["#o1.f3", "#o1.f8"], "process": "gmaw", "heat_input_kJ_mm": 1.0}
-BASE = {"analysis": "welding", "alloy": "s235", "welds": [WELD]}
+BASE = {"process": "welding", "alloy": "s235", "welds": [WELD]}
 FIX_KEYS = {"action", "summary", "where", "params"}
 
 
 class StudyFile(unittest.TestCase):
     def parse(self, **changes):
-        from cadgen._internal.fea.study import parse_study
-
-        return parse_study({**BASE, **changes}).inputs
+        return read_study({**BASE, **changes}).inputs
 
     def test_the_heat_input_is_given_or_made_from_the_arc_and_the_weld_takes_its_faces(self):
         inputs = self.parse()
@@ -51,8 +49,6 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((laser.heat_J_mm, laser.line), (75.0, ((0.0, 0.0, 10.0), (0.0, 100.0, 10.0))))
 
     def test_the_errors_name_the_field(self):
-        from cadgen._internal.fea.study import parse_study
-
         cases = [
             ({"alloy": None}, "study.alloy: the base metal"),
             ({"alloy": "mithril"}, "alloy: 'mithril' is not a base metal"),
@@ -78,12 +74,12 @@ class StudyFile(unittest.TestCase):
         for changes, fragment in cases:
             document = {key: value for key, value in {**BASE, **changes}.items() if value is not None}
             with self.subTest(changes=changes):
-                self.assertIn(fragment, value_error(self, parse_study, document))
+                self.assertIn(fragment, value_error(self, read_study, document))
 
 
 class Relations(unittest.TestCase):
     def test_satoh_and_terasaki_are_continuous_and_peak_where_the_heat_reaches_through(self):
-        from cadgen._internal.fea.weldments import METALS, angular_200, heat_shares, tendon_force_N, transverse_200
+        from cadgen._internal.manufacturing.processes.weldments import METALS, angular_200, heat_shares, tendon_force_N, transverse_200
 
         steel = METALS["s235"]
         h = 10.0
@@ -140,9 +136,9 @@ class TJoint(unittest.TestCase):
         faces = joint_faces(cls.step)
         cls.left = {"faces": [faces["top_left"], faces["web_left"]], "process": "gmaw", "heat_input_kJ_mm": 1.0}
         right = {"faces": [faces["top_right"], faces["web_right"]], "process": "gmaw", "heat_input_kJ_mm": 1.0}
-        cls.study = {"analysis": "welding", "alloy": "s235", "mesh": {"size_mm": 5.0}}
-        cls.single = solve(cls.step, directory / "single.glb", {**cls.study, "welds": [cls.left]})
-        cls.double = solve(cls.step, directory / "double.glb", {**cls.study, "welds": [cls.left, right]})
+        cls.study = {"process": "welding", "alloy": "s235", "mesh": {"size_mm": 5.0}}
+        cls.single = check(cls.step, {**cls.study, "welds": [cls.left]})
+        cls.double = check(cls.step, {**cls.study, "welds": [cls.left, right]})
 
     def test_a_single_fillet_closes_its_joint_within_a_quarter_of_satoh_and_terasaki(self):
         weld = self.single.summary["welds"][0]
@@ -169,8 +165,7 @@ class TJoint(unittest.TestCase):
         self.assertTrue(all(abs(web) < 0.1 * single for web in webs), webs)   # the web stays square
 
     def test_a_failing_weld_carries_what_it_measured_and_the_fix(self):
-        tight = solve(self.step, self.directory / "tight.glb", {**self.study, "welds": [self.left], "tolerance_mm": 0.05,
-                                                               "fatigue_critical": True})
+        tight = check(self.step, {**self.study, "welds": [self.left], "tolerance_mm": 0.05, "fatigue_critical": True})
         distortion = next(found for found in tight.findings if found["type"] == "distortion")
         self.assertEqual(distortion["severity"], "error")
         self.assertEqual((distortion["measured"]["limit"], distortion["measured"]["units"]), (0.05, "mm"))
@@ -198,7 +193,7 @@ class SkillDocs(unittest.TestCase):
         return [[cell.strip() for cell in line.strip().strip("|").split("|")] for line in lines[1:]]
 
     def test_the_reference_lists_every_base_metal_and_process(self):
-        from cadgen._internal.fea.weldments import METALS, PROCESSES
+        from cadgen._internal.manufacturing.processes.weldments import METALS, PROCESSES
 
         metals = [re.fullmatch(r"`([a-z0-9-]+)`", cells[0]) for cells in self._rows("## The base metals")]
         self.assertEqual([found.group(1) for found in metals if found], list(METALS))

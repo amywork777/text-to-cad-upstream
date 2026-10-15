@@ -1,8 +1,8 @@
 """Sheet metal bending (estimate): every bend of a bent sheet off the press brake. Tier 2.
 
-The part is read from its STEP as a bent sheet (:mod:`cadgen._internal.fea.bends`): flats joined by bends whose inside
+The part is read from its STEP as a bent sheet (:mod:`cadgen._internal.manufacturing.processes.bends`): flats joined by bends whose inside
 and outside are cylinders of one axis, one thickness apart. A part with no bends, or not of one thickness, is refused
-in a sentence. For each bend, by hand formulas (:mod:`cadgen._internal.fea.brake`), each an estimate:
+in a sentence. For each bend, by hand formulas (:mod:`cadgen._internal.manufacturing.processes.brake`), each an estimate:
 
 - springback: Gardiner's radius after release and the angle it keeps, the springback and the overbend that brings it
   back to the CAD's angle; beside it Hosford and Caddell's power-law value, which counts work hardening;
@@ -10,7 +10,7 @@ in a sentence. For each bend, by hand formulas (:mod:`cadgen._internal.fea.brake
   thickness, and along the grain where the study gives the rolling direction and the sheet a value for it);
 - the flat pattern: DIN 6935's K-factor, the bend allowance and the bend deduction.
 
-The study names the ``material`` (:data:`cadgen._internal.fea.brake.SHEETS`, or an object with its own numbers), and may
+The study names the ``material`` (:data:`cadgen._internal.manufacturing.processes.brake.SHEETS`, or an object with its own numbers), and may
 give ``thickness_mm`` (else measured), ``tolerance_deg`` (the springback a bend may have, 1° by default), ``fixed_face``
 (a face of the flat held still, else the largest flat) and ``grain_direction`` (the rolling direction). It writes, on the
 mesh only to show it, each bend's springback and its outer strain as a share of its limit, and the displacement off the
@@ -27,10 +27,14 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, xyz,
+    AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, xyz,
 )
+from cadgen._internal.manufacturing.processes.base import Process, finding_of
 
-__all__ = ["DEFAULT_TOLERANCE_DEG", "LIMITS", "SheetMetalAnalysis", "SheetMetalInputs"]
+__all__ = ["DEFAULT_TOLERANCE_DEG", "LIMITS", "SheetMetalInputs", "SheetMetalProcess"]
+
+#: This process's findings, held to its closed set (``base.FINDING_TYPES``).
+finding = finding_of("sheet_metal")
 
 DEFAULT_TOLERANCE_DEG = 1.0
 #: The study's thickness and the measured one differ by more than this share: a warning.
@@ -82,7 +86,7 @@ def _parse_grain(raw) -> tuple[float, float, float]:
     return tuple(c / size for c in components)  # type: ignore[return-value]
 
 
-class SheetMetalAnalysis(AnalysisBase):
+class SheetMetalProcess(Process):
     name: ClassVar[str] = "sheet_metal"
     tier: ClassVar[int] = 2
     word: ClassVar[str] = "Sheet metal"
@@ -90,8 +94,6 @@ class SheetMetalAnalysis(AnalysisBase):
     estimate_only: ClassVar[bool] = True
     limits: ClassVar[tuple[str, ...]] = LIMITS
     study_keys: ClassVar[frozenset[str]] = frozenset({"thickness_mm", "tolerance_deg", "fixed_face", "grain_direction"})
-    #: ``material`` is a sheet from its own table (brake.SHEETS), read in parse, never the solver's material table.
-    material_required: ClassVar[bool] = False
     #: The mesh only carries the fields to the viewer: linear tets are enough.
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -109,14 +111,10 @@ class SheetMetalAnalysis(AnalysisBase):
     ladder: ClassVar[tuple[str, ...]] = ()
     noun: ClassVar[str] = "this bend"
 
-    def material_from_spec(self, spec):
-        """Nothing: the study's ``material`` is a sheet, read in parse from the sheets' own table (the material hook)."""
-        return None
-
     # -- parse ---------------------------------------------------------------------------------------
 
     def parse(self, document: dict) -> SheetMetalInputs:
-        from cadgen._internal.fea.brake import SHEETS, sheet_from_spec
+        from cadgen._internal.manufacturing.processes.brake import SHEETS, sheet_from_spec
 
         for key in ("parts", "connections"):
             if key in document:
@@ -153,7 +151,7 @@ class SheetMetalAnalysis(AnalysisBase):
         return Estimate(dofs=0, memory_bytes=0, seconds=0.0)
 
     def _read(self, ctx: SolveContext, inputs: SheetMetalInputs):
-        from cadgen._internal.fea.bends import read_sheet
+        from cadgen._internal.manufacturing.processes.bends import read_sheet
 
         geometry = ctx.geometry
         return read_sheet(geometry.shape, part=geometry.occurrence_ref or ctx.part_name, volume_mm3=geometry.volume_mm3,
@@ -171,8 +169,8 @@ class SheetMetalAnalysis(AnalysisBase):
 
         import numpy as np
 
-        from cadgen._internal.fea import bends as sheet_bends
-        from cadgen._internal.fea import brake
+        from cadgen._internal.manufacturing.processes import bends as sheet_bends
+        from cadgen._internal.manufacturing.processes import brake
         from cadgen._internal.fea.analyses.thermal import space_result
 
         if ctx.assembly is not None:
