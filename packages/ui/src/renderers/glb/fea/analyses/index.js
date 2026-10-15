@@ -32,6 +32,7 @@ import modal from "./modal.js";
 import multiphase from "./multiphase.js";
 import nonlinear from "./nonlinear.js";
 import piezo from "./piezo.js";
+import printing from "./printing.js";
 import random_vibration from "./random_vibration.js";
 import rotordynamics from "./rotordynamics.js";
 import shock from "./shock.js";
@@ -42,6 +43,7 @@ import thermal_stress from "./thermal_stress.js";
 import thermal_transient from "./thermal_transient.js";
 import topology from "./topology.js";
 import transient from "./transient.js";
+import welding from "./welding.js";
 
 export const ANALYSES = Object.freeze({
   static: staticAnalysis, modal, buckling, thermal, thermal_transient, thermal_stress, harmonic, random_vibration, shock, transient,
@@ -55,6 +57,8 @@ export const ANALYSES = Object.freeze({
   piezo,
   multiphase,
   casting,
+  printing,
+  welding,
 });
 
 /** Every analysis this viewer knows, by name. */
