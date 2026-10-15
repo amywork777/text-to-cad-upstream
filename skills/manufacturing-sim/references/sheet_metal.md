@@ -37,13 +37,34 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
    ```
 
    This writes `part.fea.glb` (coloured by each bend's springback, drawn as it comes off the brake) and
-   `part.fea.json` (every number per bend, the study, the findings and its verdict) beside the part. A part with no
-   bends, or not of one thickness, is refused in a sentence; so is a study with an unknown sheet, naming the field.
+   `part.fea.json` (every number per bend, the study, the findings and the verdict) beside the part. A part with no
+   bends, or not of one thickness, is refused in a sentence before it is meshed; so is a study with an unknown sheet,
+   naming the field. Its lines end on the checklist, failures first, then the verdict:
 
-4. **Read the findings**: one pass or fail per bend and check, then the part's ([Findings](#findings)). Each failing
-   one carries what it measured against its limit (`measured`) and the change that makes it pass (`fix`): a larger
-   inside radius, an overbend, a relief cut. Change the model where the fix is a change to it and solve again until
-   the verdict passes; an overbend is a note for the press brake, not a change to the model.
+   ```text
+   FAIL  bend_may_crack               bend 1 outer strain: 33.3%, needs below 25.7%; at #o1.f2 [21.591, 12.5, 1.409] mm; fix: Open bend 1 to an inside radius of at least 2.2 mm (1.44t).
+   FAIL  bend_may_crack               bend 2 outer strain: 33.3%, needs below 25.7%; at #o1.f4 [21.591, 12.5, 34.591] mm; fix: Open bend 2 to an inside radius of at least 2.2 mm (1.44t).
+   PASS  springback_within_tolerance  bend 1 springback: 0.724 °, needs below 3 °; at #o1.f2 [21.591, 12.5, 1.409] mm
+   ...
+   PASS  reliefs                      bend ends with no relief: 0, needs below 1
+   Verdict: 2 to fix · bend may crack · 2 failed, 0 warnings, 5 passed
+   ```
+
+   (A U of 1.5 mm 6061-T6 with both bends at R = t and a 3° tolerance.)
+
+4. **Check, fix, check again**, as for a casting (the skill's own section): read `verdict.status` (`ready` or `fix`)
+   and each error's and warning's `fix` from the sidecar, make it, rebuild and run again until it is `ready`:
+   - `increase_radius`, `reduce_radius`: change that bend's inside radius in the model script (`$cad`) to
+     `params.inner_radius_mm` (the flanges keep their lengths), and rebuild the STEP. Its alternatives are the user's
+     to choose: `turn_blank` (bend across the grain: where the blank is nested, and the study's `grain_direction`),
+     `softer_temper` and `form_in_die`.
+   - `add_relief`: cut a relief at each of `where`'s points, `params.width_mm` wide and `params.depth_mm` deep into
+     the flat; or `extend_bend`, the bend run out to the flat's edge.
+   - `overbend`, `test_bend`: a press brake setting, not a change to the model. Report it to the user for the shop;
+     the warning stays, as springback does.
+   - `set_thickness`: the model's sheet or the study's `thickness_mm`, whichever the user says is right.
+
+   Never change the material, the thickness or the tolerance to clear a finding: they are the user's.
 
 5. **Report**, in this order: each bend's angle, inside radius and R/t; whether it cracks (its outer strain against
    the limit); its springback, the overbend, and the work-hardening value beside it; the far flat's angle off; any
@@ -106,7 +127,7 @@ gives several, they are by thickness and interpolated between.
   Copper C110 H02's 0.5t is not from a table.
 - n is the power-law exponent of σ = K ε^n. Kalpakjian gives 0.45 for annealed 304, 0.05 for 6061-T6 and 0.13 for
   5052-O [1]; the cold-worked tempers' (5052-H32, 3003-H14, the H02 coppers) are lower than their soft tempers' and
-  are taken as marked. n only moves the work-hardening value, never the verdicts.
+  are taken as marked. n moves only the work-hardening value and its check.
 - Shops bend tighter than these tables where their tooling allows (Protocase bends 1.5 mm cold-rolled steel and 1.6 mm
   5052-H32 at about R/t 0.55 [14]): the tables are the material's limit without a test, not the tooling's.
 
@@ -122,29 +143,32 @@ gives several, they are by thickness and interpolated between.
   `overbend_deg`, `springback_hardening_deg`, `gardiner_x` (R Y / (E t)), `kept` (K_s), `grain`, `min_r_over_t`,
   `outer_strain`, `strain_limit`, `strain_ratio`, `may_crack`, `k_factor`, `bend_allowance_mm`, `bend_deduction_mm`.
   Per flat (`flats`): its `faces`, `area_mm2` and `angle_error_deg` (how far it turns off its CAD angle). Then
-  `max_springback_deg`, `max_strain_ratio`, `cracking_bends`, `far_flat`, `max_angle_error_deg`, `missing_reliefs`
-  and `verdict` (`pass`, `warn` or `fail`, as a CI check reads it).
+  `max_springback_deg`, `max_strain_ratio`, `cracking_bends`, `far_flat`, `max_angle_error_deg` and
+  `missing_reliefs`. The sidecar's `verdict`: `ready` (no error) or `fix`, its headline ("Ready to bend · 2 bends ·
+  overbend up to 1.21°", "2 to fix · bend may crack"), and how many errors, warnings and passed checks.
 - CLI: "bend 1: 90° at R 3 mm (R/t 2), 25 mm long, joins flats 1 and 2; springs back 1.19° (2.6° with work hardening),
   overbend 1.21°; outer strain 20% of 36% allowed; K 0.40, BA 5.66 mm, BD 3.34 mm".
 
 ## Findings
 
-Each check says pass (`info`) or fail, per bend where it is a bend's; a failing one carries `measured` and `fix`.
+Each check says pass (an `info` with `measured`) or fail, per bend where it is a bend's; a failing one carries
+`measured` and `fix` (with `alternatives` where there are any). A note measures nothing.
 
 | Finding | Severity | What it means | Fix |
 | --- | --- | --- | --- |
-| `bend_may_crack` | error | The bend's outer fibre stretches past the strain at the sheet's minimum R/t: it may crack on its outside. `measured`: the outer strain against that limit. | `increase_radius`: open it to `inner_radius_mm` (the minimum R/t times t, rounded up to 0.1 mm), bend across the grain, or a softer temper. |
+| `bend_may_crack` | error | The bend's outer fibre stretches past the strain at the sheet's minimum R/t: it may crack on its outside. `measured`: the outer strain (%) against that limit. | `increase_radius`: open it to `inner_radius_mm` (the minimum R/t times t, rounded up to 0.1 mm); else `turn_blank` (along the grain) or `softer_temper`. |
 | `bend_formable` | info | It passes: the outer strain and the limit. | |
-| `bend_takes_no_set` | error | The radius is so large the sheet never yields through its thickness (R Y / (E t) at 1/2 or more): it springs back flat. | `reduce_radius`, under `inner_radius_mm`. |
+| `bend_takes_no_set` | error | The radius is so large the sheet never yields through its thickness (R Y / (E t) at 1/2 or more): it springs back flat. | `reduce_radius`, under `inner_radius_mm`; else `form_in_die`. |
 | `springback_over_tolerance` | warning | It springs back more than `tolerance_deg`. `measured`: the springback. | `overbend`: `overbend_deg` on the press brake (`bend_to_deg`). |
 | `springback_within_tolerance` | info | It passes, with its overbend all the same. | |
 | `angle_error_over_tolerance` | warning | The flat farthest off its CAD angle (the bends between it and the held flat each turn it) is past the tolerance. | `overbend` each bend between (`params.bends`). |
 | `angle_error_within_tolerance` | info | It passes. | |
-| `springback_work_hardening` | warning | A bend passes on Gardiner's springback but not on the work-hardening value. | `test_bend`: measure a test piece before setting the overbend. |
-| `springback_range` | info | Gardiner's and the work-hardening value are more than 1.5 times apart: the springback is between them. | |
-| `relief_missing` | warning | A bend ends inside a flat with no relief cut: the sheet beside its end tears or bulges. Its ends are the items. | `add_relief`: at least t/2 wide and R + t + 0.5 mm deep [13] (`$dfm` checks the shop's own rule), or run the bend out to the edge. |
+| `springback_work_hardening` | warning | A bend passes on Gardiner's springback but not on the work-hardening value. `measured`: the most of those bends' work-hardening springback. | `test_bend`: measure a test piece before setting the overbend. |
+| `springback_work_hardening_within_tolerance` | info | Every bend Gardiner passes passes with work hardening too. | |
+| `relief_missing` | warning | A bend ends inside a flat with no relief cut: the sheet beside its end tears or bulges. Its ends are the items. | `add_relief`: at least t/2 wide and R + t + 0.5 mm deep [13] (`$dfm` checks the shop's own rule); else `extend_bend`. |
 | `reliefs` | info | Every bend ends at an edge or a relief. | |
-| `thickness_differs` | warning | The study's `thickness_mm` is more than 5 % off the measured thickness. | `set_thickness`. |
+| `thickness_differs` | warning | The study's `thickness_mm` is more than 5 % off the measured thickness. | `set_thickness` (the model); else `set_study_thickness`. |
+| `thickness_matches` | info | The study's `thickness_mm` is the part's. | |
 | `bend_closes_loop` | info | A bend closes a loop of flats (a box closed on itself): its springback is held by the rest, not solved. | |
 | `sheet_metal_estimate` | info | This is an estimate by hand formulas. | |
 

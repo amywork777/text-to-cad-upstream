@@ -27,7 +27,7 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, verdict, xyz,
+    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, xyz,
 )
 
 __all__ = ["DEFAULT_TOLERANCE_DEG", "LIMITS", "SheetMetalAnalysis", "SheetMetalInputs"]
@@ -35,8 +35,6 @@ __all__ = ["DEFAULT_TOLERANCE_DEG", "LIMITS", "SheetMetalAnalysis", "SheetMetalI
 DEFAULT_TOLERANCE_DEG = 1.0
 #: The study's thickness and the measured one differ by more than this share: a warning.
 THICKNESS_DIFFERS = 0.05
-#: Hosford and Caddell's springback this many times Gardiner's is worth a note.
-HARDENING_NOTE = 1.5
 #: A bend this close to taking no set (R Y / (E t) of 1/2) is drawn with this share of its angle kept at least.
 _KEPT_FLOOR = 0.01
 #: A bend whose axis is within this angle of the rolling direction runs along the grain.
@@ -229,6 +227,15 @@ class SheetMetalAnalysis(AnalysisBase):
         return requested if requested is not None else 1.0
 
     # -- findings ------------------------------------------------------------------------------------
+    # Every check says pass (an info with what it measured) or fail (with the fix that makes it pass); notes measure
+    # nothing.
+
+    def ready_words(self, summary: dict) -> str:
+        """The verdict's headline when nothing is to fix: "Ready to bend · 2 bends · overbend up to 1.21°"."""
+        count = len(summary["bends"])
+        overbends = [b["overbend_deg"] for b in summary["bends"] if b["overbend_deg"] is not None]
+        tail = f" · overbend up to {_degrees(max(overbends))}" if overbends else ""
+        return f"Ready to bend · {count} bend{'s' if count != 1 else ''}{tail}"
 
     def findings(self, ctx: SolveContext, result: AnalysisResult, inputs: SheetMetalInputs,
                  check_results: list[dict], *, assembly: bool) -> list[dict]:
@@ -240,15 +247,8 @@ class SheetMetalAnalysis(AnalysisBase):
         found += self._angle_error(s, inputs)
         found += self._hardening(s, inputs)
         found += self._reliefs(s, t)
-        if inputs.thickness_mm is not None and abs(t - sheet.thickness) > THICKNESS_DIFFERS * sheet.thickness:
-            found.append(finding(
-                "warning", "thickness_differs",
-                f"The study's thickness_mm, {_figure(t)} mm, is not the {_figure(sheet.thickness)} mm the part measures: "
-                f"the numbers here use {_figure(t)} mm",
-                "the bends' inside and outside cylinders are the measured thickness apart",
-                measured={"value": sheet.thickness, "limit": t, "units": "mm", "pass_when": "below"},
-                fix={"action": "set_thickness", "summary": f"Model the sheet {_figure(t)} mm thick, or give the measured "
-                     f"{_figure(sheet.thickness)} mm as thickness_mm", "where": [], "params": {"thickness_mm": t}}))
+        if inputs.thickness_mm is not None:
+            found.append(self._thickness(s, t))
         for bend in sheet.bends:
             if bend.parent_side is None:
                 found.append(finding(
@@ -261,9 +261,7 @@ class SheetMetalAnalysis(AnalysisBase):
             f"This is an estimate of {len(sheet.bends)} bend{'s' if len(sheet.bends) != 1 else ''} by hand formulas, "
             f"{NOT_FORMING}: the shop's bend table and a test bend set the real overbend",
             LIMITS[0]))
-        found = by_severity(found)
-        s["findings"] = found
-        return found
+        return by_severity(found)
 
     def _refs(self, s: dict, bend) -> list[str]:
         return [s["faces"][o] for o in bend.ordinals if o in s["faces"]]
@@ -285,58 +283,65 @@ class SheetMetalAnalysis(AnalysisBase):
                           "give the sheet's min_r_t_along_grain from its mill certificate")
         where = (f"at R {_figure(record['radius'])} mm, R/t {_figure(record['r_over_t'])}, in "
                  f"{_figure(t)} mm {sheet.name}{grain}")
-        strain = {"value": round(record["strain"], 6), "limit": round(record["limit"], 6), "units": "mm/mm",
-                  "pass_when": "below"}
+        strain = {"quantity": f"bend {n} outer strain", "value": round(100.0 * record["strain"], 4),
+                  "limit": round(100.0 * record["limit"], 4), "units": "%", "pass_when": "below"}
+        how = "the outer fibre's strain e = 1 / (2R/t + 1) against the strain at the sheet's minimum R/t" + grain_note
         if record["ratio"] > 1.0 + 1e-9:
             needed = math.ceil(record["min_r_t"] * t * 10.0 - 1e-9) / 10.0
-            turn = ", or turn the blank so it bends across the grain" if record["along"] else ""
+            alternatives = [{"action": "softer_temper", "summary": f"Use a softer temper or alloy whose minimum R/t is "
+                             f"{_figure(record['r_over_t'])} or less at {_figure(t)} mm", "where": refs,
+                             "params": {"min_r_t": round(record["r_over_t"], 4)}}]
+            if record["along"]:
+                alternatives.insert(0, {"action": "turn_blank", "summary": f"Turn the blank so bend {n} runs across the "
+                                        "grain", "where": refs, "params": {"grain": "across"}})
             found.append(finding(
                 "error", "bend_may_crack",
                 f"Bend {n} may crack on its outside: {where}, it stretches its outer fibre {record['strain']:.0%}, past the "
                 f"{record['limit']:.0%} its minimum R/t of {_figure(record['min_r_t'])} allows",
-                "the outer fibre's strain e = 1 / (2R/t + 1) against the strain at the sheet's minimum R/t" + grain_note,
-                item, measured=strain,
+                how, item, measured=strain,
                 fix={"action": "increase_radius",
-                     "summary": f"Open bend {n} to an inside radius of at least {needed:g} mm "
-                                f"({_figure(record['min_r_t'])}t){turn}, or use a softer temper",
-                     "where": refs, "params": {"inner_radius_mm": needed}}))
+                     "summary": f"Open bend {n} to an inside radius of at least {needed:g} mm ({_figure(record['min_r_t'])}t).",
+                     "where": refs, "params": {"inner_radius_mm": needed}, "alternatives": alternatives}))
         else:
             found.append(finding(
                 "info", "bend_formable",
                 f"Bend {n} bends without cracking: {where}, it stretches its outer fibre {record['strain']:.0%}, within the "
                 f"{record['limit']:.0%} its minimum R/t of {_figure(record['min_r_t'])} allows",
-                "the outer fibre's strain e = 1 / (2R/t + 1) against the strain at the sheet's minimum R/t" + grain_note,
-                item, measured=strain))
+                how, item, measured=strain))
         tolerance = inputs.tolerance_deg
-        measured = {"value": round(record["springback"], 6), "limit": tolerance, "units": "°", "pass_when": "below"}
+        measured = {"quantity": f"bend {n} springback", "value": round(record["springback"], 6), "limit": tolerance,
+                    "units": "°", "pass_when": "below"}
+        hardening = f" ({_degrees(record['hardening'])} with work hardening)"
         if record["gardiner"]["elastic"]:
-            gentlest = 0.4 * sheet.E * t / sheet.yield_strength
+            gentlest = round(0.4 * sheet.E * t / sheet.yield_strength, 1)
             found.append(finding(
                 "error", "bend_takes_no_set",
                 f"Bend {n} takes no set: at R {_figure(record['radius'])} mm the {_figure(t)} mm {sheet.name} never yields "
                 "through its thickness, so it springs back flat",
                 "Gardiner's relation: R Y / (E t) at or past 1/2 is an elastic bend", item, measured=measured,
-                fix={"action": "reduce_radius", "summary": f"Bend {n} to an inside radius under {gentlest:.3g} mm, or form "
-                     "it in a die rather than a press brake", "where": refs, "params": {"inner_radius_mm": gentlest}}))
+                fix={"action": "reduce_radius", "summary": f"Bend {n} to an inside radius under {gentlest:g} mm.",
+                     "where": refs, "params": {"inner_radius_mm": gentlest},
+                     "alternatives": [{"action": "form_in_die", "summary": f"Form bend {n} in a die rather than a press "
+                                       "brake", "where": refs, "params": {}}]}))
         elif record["springback"] > tolerance:
             found.append(finding(
                 "warning", "springback_over_tolerance",
-                f"Bend {n} springs back {_degrees(record['springback'])}, to {_degrees(record['final_angle'])} at R "
-                f"{_figure(record['gardiner']['final_radius_mm'])} mm, past the ±{_degrees(tolerance)} tolerance: "
+                f"Bend {n} springs back {_degrees(record['springback'])}{hardening}, to {_degrees(record['final_angle'])} "
+                f"at R {_figure(record['gardiner']['final_radius_mm'])} mm, past the ±{_degrees(tolerance)} tolerance: "
                 f"overbend it {_degrees(record['overbend'])} on the press brake",
                 "Gardiner's springback for the CAD's radius and angle; the overbend is the angle it springs back from to "
                 "land on the CAD's", item, measured=measured,
                 fix={"action": "overbend",
-                     "summary": f"Overbend bend {n} by {_degrees(record['overbend'])} on the press brake (bend it to "
-                                f"{_degrees(record['angle'] + record['overbend'])} so it springs back to "
-                                f"{_degrees(record['angle'])})",
+                     "summary": f"Overbend bend {n} by {_degrees(record['overbend'])} on the press brake, to "
+                                f"{_degrees(record['angle'] + record['overbend'])}, so it springs back to "
+                                f"{_degrees(record['angle'])}.",
                      "where": refs, "params": {"overbend_deg": round(record["overbend"], 4),
                                                "bend_to_deg": round(record["angle"] + record["overbend"], 4)}}))
         else:
             found.append(finding(
                 "info", "springback_within_tolerance",
-                f"Bend {n} springs back {_degrees(record['springback'])}, within the ±{_degrees(tolerance)} tolerance "
-                f"(overbend {_degrees(record['overbend'])} to land on {_degrees(record['angle'])})",
+                f"Bend {n} springs back {_degrees(record['springback'])}{hardening}, within the ±{_degrees(tolerance)} "
+                f"tolerance (overbend {_degrees(record['overbend'])} to land on {_degrees(record['angle'])})",
                 "Gardiner's springback for the CAD's radius and angle", item, measured=measured))
         return found
 
@@ -349,7 +354,8 @@ class SheetMetalAnalysis(AnalysisBase):
         path = self._path(sheet, far)
         between = ", ".join(f"bend {sheet.bends[b].number} by {_degrees(records[b]['overbend'])}" for b in path)
         held = sheet.flats[sheet.fixed].number
-        measured = {"value": round(error, 6), "limit": inputs.tolerance_deg, "units": "°", "pass_when": "below"}
+        measured = {"quantity": f"flat {flat.number} off its angle", "value": round(error, 6),
+                    "limit": inputs.tolerance_deg, "units": "°", "pass_when": "below"}
         item = [{"text": f"flat {flat.number}", "ref": s["faces"].get(flat.ordinals[0]) if flat.ordinals else None,
                  "at": xyz(flat.centre) if flat.centre is not None else None}]
         words = (f"flat {flat.number}, {len(path)} bend{'s' if len(path) != 1 else ''} from the held flat {held}, ends "
@@ -360,7 +366,8 @@ class SheetMetalAnalysis(AnalysisBase):
                 f"The far flat is off: {words}, past the ±{_degrees(inputs.tolerance_deg)} tolerance"
                 + ("; it carries the springback of every bend between" if len(path) > 1 else ""),
                 "each flat turned by the springback of every bend between it and the held flat", item, measured=measured,
-                fix={"action": "overbend", "summary": f"Overbend each bend between: {between}",
+                fix={"action": "overbend", "summary": f"Overbend each bend between flat {held} and flat {flat.number}: "
+                     f"{between}.",
                      "where": [ref for b in path for ref in self._refs(s, sheet.bends[b])],
                      "params": {"bends": [{"bend": sheet.bends[b].number,
                                            "overbend_deg": round(records[b]["overbend"], 4)} for b in path]}})]
@@ -379,41 +386,43 @@ class SheetMetalAnalysis(AnalysisBase):
         return path[::-1]
 
     def _hardening(self, s: dict, inputs: SheetMetalInputs) -> list[dict]:
+        """With work hardening, the bends Gardiner passes: past the tolerance, a warning to confirm by a test bend. A
+        bend Gardiner already fails is that check's, and with none passing there is nothing to judge here."""
         records, sheet = s["records"], inputs.sheet
         tolerance = inputs.tolerance_deg
-        hidden = [r for r in records if not r["gardiner"]["elastic"] and r["springback"] <= tolerance < r["hardening"]]
-        if hidden:
-            worst = max(hidden, key=lambda r: r["hardening"])
-            bend = worst["bend"]
+        passing = [r for r in records if not r["gardiner"]["elastic"] and r["springback"] <= tolerance]
+        if not passing:
+            return []
+        worst = max(passing, key=lambda r: r["hardening"])
+        bend = worst["bend"]
+        measured = {"quantity": f"bend {bend.number} springback with work hardening",
+                    "value": round(worst["hardening"], 6), "limit": tolerance, "units": "°", "pass_when": "below"}
+        how = ("Hosford and Caddell's power-law moment, the sheet hardening as σ = K ε^n; Gardiner's relation takes it "
+               "perfectly plastic at its yield")
+        if worst["hardening"] > tolerance:
             overbend = worst["angle"] * worst["hardening"] / max(worst["angle"] - worst["hardening"], 1e-9)
             return [finding(
                 "warning", "springback_work_hardening",
                 f"With {sheet.name}'s work hardening (n {_figure(sheet.n)}), bend {bend.number} may spring back "
                 f"{_degrees(worst['hardening'])}, past the ±{_degrees(tolerance)} tolerance Gardiner's "
                 f"{_degrees(worst['springback'])} passes: confirm with a test bend",
-                "Hosford and Caddell's power-law moment, the sheet hardening as σ = K ε^n; Gardiner's relation takes it "
-                "perfectly plastic at its yield", [self._item(s, bend)],
-                measured={"value": round(worst["hardening"], 6), "limit": tolerance, "units": "°", "pass_when": "below"},
+                how, [self._item(s, bend)], measured=measured,
                 fix={"action": "test_bend", "summary": f"Bend a test piece of this sheet to bend {bend.number}'s radius and "
-                     f"measure its springback before setting the overbend (about {_degrees(overbend)} by this estimate)",
+                     f"measure its springback before setting the overbend (about {_degrees(overbend)} by this estimate).",
                      "where": self._refs(s, bend), "params": {"overbend_deg": round(overbend, 4)}})]
-        apart = [r for r in records if not r["gardiner"]["elastic"] and r["hardening"] > HARDENING_NOTE * r["springback"]]
-        if apart:
-            worst = max(apart, key=lambda r: r["hardening"] / max(r["springback"], 1e-12))
-            return [finding(
-                "info", "springback_range",
-                f"Springback is a range for {sheet.name}: bend {worst['bend'].number} reads "
-                f"{_degrees(worst['springback'])} by Gardiner and {_degrees(worst['hardening'])} with work hardening "
-                f"(n {_figure(sheet.n)}); expect between them",
-                "Hosford and Caddell's power-law moment beside Gardiner's perfectly plastic one",
-                [self._item(s, worst["bend"])])]
-        return []
+        return [finding(
+            "info", "springback_work_hardening_within_tolerance",
+            f"With {sheet.name}'s work hardening (n {_figure(sheet.n)}) too, every bend springs back within "
+            f"±{_degrees(tolerance)}: the most, bend {bend.number}, {_degrees(worst['hardening'])}",
+            how, [self._item(s, bend)], measured=measured)]
 
     def _reliefs(self, s: dict, t: float) -> list[dict]:
         sheet, missing = s["sheet"], s["reliefs"]
+        how = "probed just past each end of every bend, a quarter thickness into each flat it joins"
         if not missing:
             return [finding("info", "reliefs", "Every bend ends at an edge or a relief cut: nothing tears at a bend's end",
-                            "probed just past each end of every bend, a quarter thickness into each flat it joins")]
+                            how, measured={"quantity": "bend ends with no relief", "value": 0, "limit": 1, "units": "",
+                                           "pass_when": "below"})]
         found = []
         for b in sorted({m[0] for m in missing}, key=lambda b: sheet.bends[b].number):
             bend = sheet.bends[b]
@@ -424,13 +433,37 @@ class SheetMetalAnalysis(AnalysisBase):
                 "warning", "relief_missing",
                 f"Bend {bend.number} ends inside flat {sheet.flats[ends[0][2]].number} at {len(ends)} "
                 f"end{'s' if len(ends) != 1 else ''} with no relief cut: the sheet beside it tears or bulges there",
-                "the sheet is there just past the bend's end, a quarter thickness into the flat",
-                [{"text": f"bend {bend.number}'s end", "ref": None, "at": point} for _, point, _ in ends],
+                how, [{"text": f"bend {bend.number}'s end", "ref": None, "at": point} for _, point, _ in ends],
+                measured={"quantity": f"bend {bend.number} ends with no relief", "value": len(ends), "limit": 1,
+                          "units": "", "pass_when": "below"},
                 fix={"action": "add_relief",
                      "summary": f"Cut a relief at each end of bend {bend.number}, at least {width:g} mm wide (t/2) and "
-                                f"{depth:g} mm deep (R + t + 0.5 mm), or run the bend out to the edge",
-                     "where": [point for _, point, _ in ends], "params": {"width_mm": width, "depth_mm": depth}}))
+                                f"{depth:g} mm deep (R + t + 0.5 mm).",
+                     "where": [point for _, point, _ in ends], "params": {"width_mm": width, "depth_mm": depth},
+                     "alternatives": [{"action": "extend_bend", "summary": f"Run bend {bend.number} out to the edge of "
+                                       "the flat", "where": self._refs(s, bend), "params": {}}]}))
         return found
+
+    def _thickness(self, s: dict, t: float) -> dict:
+        """The study's thickness against the measured one, when the study gives one."""
+        sheet = s["sheet"]
+        off = abs(t - sheet.thickness) / sheet.thickness
+        measured = {"quantity": "thickness_mm off the measured", "value": round(100.0 * off, 4),
+                    "limit": 100.0 * THICKNESS_DIFFERS, "units": "%", "pass_when": "below"}
+        how = "the bends' inside and outside cylinders are the measured thickness apart"
+        if off > THICKNESS_DIFFERS:
+            return finding(
+                "warning", "thickness_differs",
+                f"The study's thickness_mm, {_figure(t)} mm, is not the {_figure(sheet.thickness)} mm the part measures: "
+                f"the numbers here use {_figure(t)} mm", how, measured=measured,
+                fix={"action": "set_thickness", "summary": f"Model the sheet {_figure(t)} mm thick, as the study says.",
+                     "where": [ref for bend in sheet.bends for ref in self._refs(s, bend)],
+                     "params": {"thickness_mm": t},
+                     "alternatives": [{"action": "set_study_thickness", "summary": f"Give the measured "
+                                       f"{_figure(sheet.thickness)} mm as thickness_mm", "where": [],
+                                       "params": {"thickness_mm": round(sheet.thickness, 4)}}]})
+        return finding("info", "thickness_matches", f"The study's thickness_mm, {_figure(t)} mm, is the part's", how,
+                       measured=measured)
 
     # -- what is written -----------------------------------------------------------------------------
 
@@ -484,7 +517,6 @@ class SheetMetalAnalysis(AnalysisBase):
             "max_angle_error_deg": None if far is None else far["angle_error_deg"],
             "max_displacement_mm": round(float(magnitude.max()), 6),
             "missing_reliefs": [{"bend": sheet.bends[b].number, "at_mm": point} for b, point, _ in s["reliefs"]],
-            "verdict": verdict(s.get("findings", [])),
             "checks": check_results,
         }
         return summary
@@ -539,6 +571,4 @@ class SheetMetalAnalysis(AnalysisBase):
         if summary["far_flat"] is not None:
             lines.append(f"held flat {summary['held_flat']}; the farthest off is flat {summary['far_flat']}, "
                          f"{_degrees(summary['max_angle_error_deg'])} off its CAD angle")
-        status = summary["verdict"]
-        lines.append(f"verdict: {status['status']} ({status['errors']} errors, {status['warnings']} warnings)")
         return lines

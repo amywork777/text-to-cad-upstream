@@ -239,9 +239,17 @@ class TwoBends(unittest.TestCase):
         self.assertEqual(crack["fix"]["action"], "increase_radius")
         self.assertAlmostEqual(crack["fix"]["params"]["inner_radius_mm"], 2.2)      # 1.445 x 1.5 mm, rounded up
         self.assertTrue(crack["fix"]["where"])
-        self.assertEqual(self.t6.summary["verdict"]["status"], "fail")
+        self.assertEqual((self.t6.verdict["status"], self.t6.verdict["headline"]), ("fix", "2 to fix · bend may crack"))
         self.assertEqual([f["type"] for f in self.h32.findings if f["type"].startswith("bend_")], ["bend_formable"] * 2)
         self.assertEqual(self.h32.summary["cracking_bends"], [])
+        # Every check it makes says so when it passes: two bends, two checks each, the far flat, the reliefs, the
+        # thickness it was not given; work hardening takes 5052-H32's 0.5° past the 1° tolerance, a warning.
+        passed = sorted(f["type"] for f in self.h32.findings if f["severity"] == "info" and f.get("measured"))
+        self.assertEqual(passed, ["angle_error_within_tolerance", "bend_formable", "bend_formable", "reliefs",
+                                  "springback_within_tolerance", "springback_within_tolerance"])
+        self.assertEqual([f["type"] for f in self.h32.findings if f["severity"] == "warning"], ["springback_work_hardening"])
+        self.assertEqual(self.h32.verdict, {"status": "ready", "headline": "Ready to bend · 2 bends · overbend up to 0.498°",
+                                            "errors": 0, "warnings": 1, "passed": 6})
 
 
 class NotSheet(unittest.TestCase):
