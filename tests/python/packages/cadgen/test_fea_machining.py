@@ -190,13 +190,16 @@ class WallAndBlock(unittest.TestCase):
         self.assertEqual(wall["force_normal_N"], block["force_normal_N"])
         self.assertGreater(abs(wall["deflection_at_cut_mm"]), 20 * abs(block["deflection_at_cut_mm"]))
         self.assertAlmostEqual(wall["section_at_cut_mm"], 2.0, delta=0.2)
-        self.assertEqual(self.results["block"].summary["verdict"]["status"], "pass")
-        passed = {f["type"] for f in self.results["block"].findings if f["severity"] == "info"}
-        self.assertTrue({"deflection_within_tolerance", "clamp_stress_ok", "chatter_stable"} <= passed, passed)
+        # Every check says so when it passes, with what it measured: the verdict counts those.
+        block = self.results["block"]
+        passed = {f["type"] for f in block.findings if f["severity"] == "info" and f.get("measured")}
+        self.assertEqual(passed, {"deflection_within_tolerance", "clamp_stress_ok", "chatter_stable"})
+        self.assertEqual((block.verdict["status"], block.verdict["passed"]), ("ready", 3))
+        self.assertTrue(block.verdict["headline"].startswith("Ready to cut · "), block.verdict)
 
     def test_the_thin_wall_fails_with_what_it_measured_and_the_fix(self):
         result = self.results["wall"]
-        self.assertEqual(result.summary["verdict"]["status"], "fail")
+        self.assertEqual(result.verdict["status"], "fix")
         over = next(f for f in result.findings if f["type"] == "deflection_over_tolerance")
         self.assertEqual(over["severity"], "error")
         self.assertGreater(over["measured"]["value"], over["measured"]["limit"])
@@ -206,7 +209,10 @@ class WallAndBlock(unittest.TestCase):
         thin = next(f for f in result.findings if f["type"] == "thin_wall_too_flexible")
         self.assertEqual(thin["fix"]["action"], "thicken")
         self.assertGreater(thin["fix"]["params"]["thickness_mm"], 2.0)
-        self.assertTrue(all("fix" in f for f in result.findings if f["severity"] != "info"))
+        for found in (f for f in result.findings if f["severity"] != "info"):
+            with self.subTest(finding=found["type"]):
+                self.assertLessEqual({"action", "summary", "where", "params"}, set(found["fix"]))
+                self.assertTrue(found["measured"]["quantity"])
 
     def test_it_writes_the_lobes_the_mode_it_rings_in_and_its_limits(self):
         result = self.results["wall"]

@@ -24,8 +24,9 @@ before you report.
 3. **Solve**: `cadgen fea solve part.step --study machining.json` (with the `fea` extra, as the
    skill's Setup says). It writes `part.fea.glb` and `part.fea.json` beside the part.
 4. **Read the findings**: each is a check, with what it measured against its limit and the fix that
-   makes it pass ([Findings](#findings)). The summary's `verdict` is the CI-style status: `fail` on
-   an error, `warn` on a warning, else `pass`.
+   makes it pass ([Findings](#findings)); the lines end with them as a checklist (FAIL, WARN, PASS).
+   The sidecar's and the result's `verdict` reads them as a CI check does: `ready` with no error
+   ("Ready to cut · 0.0185 mm under the cut · stable to 0.54 mm at 18000 rpm"), else `fix`.
 5. **Report**, in this order: the verdict; the deflection at the cut against the tolerance, and
    where the cut was put; the stress against yield; the chatter limit at the spindle speed against
    the depth, the limit at any speed, and the nearest stable speeds; the hand check; the limits. Then
@@ -147,7 +148,7 @@ solver's. Values marked * are estimates (see [Numbers not verified](#numbers-not
   mode at the cut, rung along the normal, its largest motion 1 mm).
 - Curve `stability_lobes`: the depth (mm) the cut stays stable to against the spindle speed (rpm),
   the study's speed among them (the sidecar's `curves`).
-- Summary: `verdict` (`status`, `errors`, `warnings`, `notes`), `operation`, `material`, `cut`,
+- Summary: `operation`, `material`, `cut`,
   `kienzle` (`kc11_MPa`, `mc`, `kr`, `chip_mm`, `kc_MPa`, `estimated`), `force_tangential_N`,
   `force_normal_N`, `force_resultant_N`, `cut_at_mm`, `cut_normal`, `patch_radius_mm`,
   `deflection_at_cut_mm`, `tolerance_mm` and `tolerance_given`, `max_displacement_mm`,
@@ -161,21 +162,22 @@ solver's. Values marked * are estimates (see [Numbers not verified](#numbers-not
 - CLI: "under the cut: 0.691 mm at [40, 16, 30] mm (tolerance ±0.02 mm); peak stress 418 MPa (yield
   276 MPa)", "cutting force 242 N into the face (Kienzle k_c 2266 N/mm² at a 0.0155 mm chip)", "rings
   at the cut at 6116 Hz (mode 2, 860 N/mm along the normal)", "stable to 0.0966 mm at 8000 rpm
-  (cutting 5 mm), to 0.092 mm at any speed", "verdict: fail".
+  (cutting 5 mm), to 0.092 mm at any speed", then the checklist and the verdict.
 
 ## Findings
 
-Every check says it passed, as a note, when it does. A finding that judges a number carries
-`measured` (`value`, `limit`, `units`, `pass_when`); every error and warning carries `fix` (`action`,
-`summary`, `where`, `params`).
+Every check says it passed, as an `info` with what it measured, when it does: the checklist's PASS
+lines. A finding that judges a number carries `measured` (`quantity`, `value`, `limit`, `units`,
+`pass_when`); every error and warning carries `fix` (`action`, `summary`, `where`: face refs and
+points in mm, `params`: the values to set), most with `alternatives` in the same shape.
 
 | Finding | Severity | What it means | Fix (`action`: `params`) |
 | --- | --- | --- | --- |
 | `deflection_within_tolerance` | info | The face moves under half the tolerance where the cutter pushes. | |
 | `deflection_close_to_tolerance` | warning | It moves over half the tolerance: little is left for every other error. | `reduce_depth`: `depth_mm` that keeps it under half (the force grows with the depth) |
 | `deflection_over_tolerance` | error | It moves more than the tolerance: the face is cut out of tolerance. | `reduce_depth`: `depth_mm`, as above; or support it |
-| `thin_wall_too_flexible` | error or warning | With the deflection over (or near) the tolerance, the wall at the cut reaches 3 times its thickness or more from the clamp: it bends like a plate. | `thicken`: `thickness_mm` (a plate's stiffness grows as the cube of its thickness) and `stiffness_factor`; or rough both sides before it is thinned, or support it |
-| `slender_part_too_flexible` | error or warning | The same for a turned part reaching 3 diameters or more from the chuck. | `support` (a tailstock centre or a steady rest): `stiffness_factor`, and `diameter_mm` (a round bar's stiffness grows as the fourth power of its diameter) |
+| `thin_wall_too_flexible` | error or warning | With the deflection over (or near) the tolerance, the wall at the cut reaches 3 times its thickness or more from the clamp: it bends like a plate. | `thicken`: `thickness_mm` (a plate's stiffness grows as the cube of its thickness) and `stiffness_factor`; alternatives `rough_before_finishing` (rough both sides before it is thinned) and `support` |
+| `slender_part_too_flexible` | error or warning | The same for a turned part reaching 3 diameters or more from the chuck. | `support` (a tailstock centre or a steady rest): `stiffness_factor`; alternative `thicken`: `diameter_mm` (a round bar's stiffness grows as the fourth power of its diameter) |
 | `clamp_stress_ok` | info | The stress the cut puts in the part keeps the study's margin under yield. | |
 | `clamp_stress_close` | warning | Its safety factor is under the margin. | `reduce_depth`: `depth_mm` that keeps the margin |
 | `yields_under_cut` | error | The cut bends the part past yield: it stays bent. A sharp inside corner's peak grows as the mesh is refined: read it a little away. | `reduce_depth`, as above; or clamp it closer to the cut |

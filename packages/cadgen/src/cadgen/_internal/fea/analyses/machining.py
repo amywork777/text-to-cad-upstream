@@ -31,7 +31,7 @@ from typing import Any, ClassVar
 
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
-    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, verdict, xyz,
+    AnalysisBase, AnalysisResult, FieldSpec, Inputs, SolveContext, by_severity, finding, xyz,
 )
 from cadgen._internal.fea.study import Fixture, parse_fixtures
 
@@ -417,16 +417,26 @@ class MachiningAnalysis(AnalysisBase):
                                  f"No tolerance_mm: the deflection is judged against ±{DEFAULT_TOLERANCE_MM:g} mm, "
                                  "ISO 2768-1's fine class for features up to 6 mm",
                                  "give the drawing's tolerance on the cut faces as tolerance_mm"))
-        result.scalars["findings"] = list(found)
         return by_severity(found)
+
+    def ready_words(self, summary: dict) -> str:
+        """The verdict's headline when nothing is to fix: "Ready to cut · 0.0185 mm under the cut · stable to 0.54 mm at
+        18000 rpm"."""
+        words = f"Ready to cut · {abs(summary['deflection_at_cut_mm']):.3g} mm under the cut"
+        chatter = summary["chatter"]
+        if chatter.get("limit_mm") is not None:
+            words += f" · stable to {chatter['limit_mm']:.3g} mm at {chatter['spindle_rpm']:g} rpm"
+        return words
 
     def _deflection(self, ctx: SolveContext, result: AnalysisResult, inputs: MachiningInputs) -> list[dict]:
         s = result.scalars
         moved, tolerance = abs(s["deflection"]), inputs.tolerance_mm
         point = xyz(s["point"])
-        where = {"faces": list(_bare(ctx, inputs.cut_faces)), "points_mm": [point]}
-        item = [{"text": "the cutter here moves the face most", "ref": _face_at(ctx, s["patch_rows"]), "at": point}]
-        measured = {"value": round(moved, 6), "limit": tolerance, "units": "mm", "pass_when": "below"}
+        face = _face_at(ctx, s["patch_rows"])
+        where = [face, point] if face else [point]
+        item = [{"text": "the cutter here moves the face most", "ref": face, "at": point}]
+        measured = {"quantity": "deflection under the cut", "value": round(moved, 6), "limit": tolerance, "units": "mm",
+                    "pass_when": "below"}
         force = abs(s["forces"]["normal_N"])
         head = (f"Under the cut ({force:.3g} N into the face) the part moves {moved:.3g} mm at {point} mm, where the "
                 "cut faces give most")
@@ -437,9 +447,12 @@ class MachiningAnalysis(AnalysisBase):
                             "where the cutter pushes; it is cut away as the cutter passes, so it is the error it leaves",
                             item, measured=measured)]
         depth = round_down(inputs.depth_mm * DEFLECTION_CLOSE * tolerance / moved)
-        fix = {"action": "reduce_depth", "where": where,
-               "summary": f"Take the cut in lighter passes, about {depth:g} mm deep, or support the face behind the cut",
-               "params": {"depth_mm": depth}}
+        fix = {"action": "reduce_depth", "where": where, "params": {"depth_mm": depth},
+               "summary": f"Take the cut in lighter passes, about {depth:g} mm deep (depth_mm), so it moves under half "
+                          "the tolerance",
+               "alternatives": [{"action": "support", "where": where, "params": {},
+                                 "summary": f"Support the face behind the cut at {point} mm (a backing block, a "
+                                            "clamp nearer the cut, or wax or filler behind a thin wall)"}]}
         if moved > tolerance:
             found.append(finding("error", "deflection_over_tolerance",
                                  f"{head}: more than the ±{tolerance:g} mm tolerance, so the face is cut out of "
@@ -456,7 +469,6 @@ class MachiningAnalysis(AnalysisBase):
             return found
         stiffer = moved / (DEFLECTION_CLOSE * tolerance)
         severity = "error" if moved > tolerance else "warning"
-        measured = {"value": round(moved, 6), "limit": tolerance, "units": "mm", "pass_when": "below"}
         why = "the stiffness asked for keeps the deflection under half the tolerance"
         if inputs.operation == "turning":
             # A round bar's bending stiffness grows as the fourth power of its diameter.
@@ -467,9 +479,12 @@ class MachiningAnalysis(AnalysisBase):
                 f"slender for this cut. It needs to be {stiffer:.2g} times stiffer: support its end (a tailstock centre "
                 f"or a steady rest), hold it shorter, or make it about {wider:g} mm across",
                 f"a round bar bends as the fourth power of its diameter; {why}", item, measured=measured,
-                fix={"action": "support", "where": where,
-                     "summary": "Support the free end with a tailstock centre or a steady rest, or hold it shorter",
-                     "params": {"stiffness_factor": round(stiffer, 3), "diameter_mm": wider}}))
+                fix={"action": "support", "where": where, "params": {"stiffness_factor": round(stiffer, 3)},
+                     "summary": f"Support the free end with a tailstock centre or a steady rest, {stiffer:.2g} times "
+                                "stiffer at the cut",
+                     "alternatives": [{"action": "thicken", "where": where,
+                                       "params": {"diameter_mm": wider, "from_mm": round(thickness, 2)},
+                                       "summary": f"Make it about {wider:g} mm across, or hold it shorter in the chuck"}]}))
             return found
         thicker = round_up(thickness * stiffer ** (1.0 / 3.0))
         found.append(finding(
@@ -479,8 +494,14 @@ class MachiningAnalysis(AnalysisBase):
             "the wall is thinned (rough both sides first and finish it in light passes from the free edge down), or "
             "support it behind the cut", f"a plate bends as the cube of its thickness; {why}", item, measured=measured,
             fix={"action": "thicken", "where": where,
-                 "summary": f"Thicken the wall to about {thicker:g} mm, or rough it before it is thinned, or support it",
-                 "params": {"thickness_mm": thicker, "stiffness_factor": round(stiffer, 3)}}))
+                 "params": {"thickness_mm": thicker, "from_mm": round(thickness, 2), "stiffness_factor": round(stiffer, 3)},
+                 "summary": f"Thicken the wall to about {thicker:g} mm, {stiffer:.2g} times stiffer at the cut",
+                 "alternatives": [
+                     {"action": "rough_before_finishing", "where": where, "params": {},
+                      "summary": "Rough both sides of the wall first, then finish it in light passes from the free edge "
+                                 "down, while the stock below still stiffens it"},
+                     {"action": "support", "where": where, "params": {},
+                      "summary": "Support the wall behind the cut (a backing block, wax or low-melt filler)"}]}))
         return found
 
     def _stress(self, ctx: SolveContext, result: AnalysisResult, inputs: MachiningInputs, margin: float) -> list[dict]:
@@ -493,15 +514,17 @@ class MachiningAnalysis(AnalysisBase):
         item = [{"text": "the stress the cut puts in it peaks here", "ref": None, "at": point}]
         words = " (the tangential force's too)" if inputs.operation == "turning" else ""
         head = f"The cut puts {stress:.3g} MPa{words} in the part at {point} mm, against its {yield_MPa:g} MPa yield"
-        measured = {"value": round(stress, 4), "limit": round(yield_MPa / margin, 4), "units": "MPa", "pass_when": "below"}
+        measured = {"quantity": "stress from the cut (yield over the margin)", "value": round(stress, 4),
+                    "limit": round(yield_MPa / margin, 4), "units": "MPa", "pass_when": "below"}
         if factor >= margin:
             return [finding("info", "clamp_stress_ok", f"{head}: a safety factor of {floor3(factor):g}",
                             "the peak away from where the cutter pushes, judged against yield over the study's margin",
                             item, measured=measured)]
         depth = round_down(inputs.depth_mm * factor / margin)
-        fix = {"action": "reduce_depth", "where": {"points_mm": [point]},
-               "summary": f"Cut about {depth:g} mm deep, or clamp it closer to the cut or support it there",
-               "params": {"depth_mm": depth}}
+        fix = {"action": "reduce_depth", "where": [point], "params": {"depth_mm": depth},
+               "summary": f"Cut about {depth:g} mm deep (depth_mm), so the stress keeps the {margin:g} margin under yield",
+               "alternatives": [{"action": "support", "where": [point], "params": {},
+                                 "summary": f"Clamp it closer to the cut, or support it near {point} mm"}]}
         if factor < 1:
             return [finding("error", "yields_under_cut", f"{head}: it yields, and the part is bent for good",
                             "the peak away from where the cutter pushes; the force grows with the depth of cut. A sharp "
@@ -524,27 +547,31 @@ class MachiningAnalysis(AnalysisBase):
                             "the averaged directional factor of this engagement is zero")]
         limit = float(lobes.envelope_mm[np.searchsorted(lobes.rpm, rpm)])
         speed = f"{rpm:g} rpm"
+        quantity = f"{what} against the chatter limit at {speed}"
         if not math.isfinite(limit):
             drawn = s["drawn_to_mm"]
             return [finding("info", "chatter_stable", f"At {speed} no stability lobe comes under {drawn:.3g} mm {what}: "
                             f"it cuts {depth:g} mm, no chatter", "the lobes are drawn to "
                             f"{DRAWN_TO:g} times the deeper of the cut and the lowest limit",
-                            measured={"value": depth, "limit": round(drawn, 6), "units": "mm", "pass_when": "below"})]
-        measured = {"value": depth, "limit": round(limit, 6), "units": "mm", "pass_when": "below"}
-        item = [{"text": "chatter starts here", "ref": None, "at": xyz(s["point"])}]
+                            measured={"quantity": quantity, "value": depth, "limit": round(drawn, 6), "units": "mm",
+                                      "pass_when": "below"})]
+        measured = {"quantity": quantity, "value": depth, "limit": round(limit, 6), "units": "mm", "pass_when": "below"}
+        point = xyz(s["point"])
+        item = [{"text": "chatter starts here", "ref": inputs.solved.get("face"), "at": point}]
         head = f"At {speed} the cut stays stable to {limit:.3g} mm {what}"
         if depth <= CHATTER_CLOSE * limit:
             return [finding("info", "chatter_stable", f"{head}; it cuts {depth:g} mm: no chatter",
                             "the regenerative stability lobe at this spindle speed", item, measured=measured)]
+        safe = round_down(CHATTER_CLOSE * limit)
+        shallower = {"action": "reduce_depth", "where": [point], "params": {"depth_mm": safe},
+                     "summary": f"Cut about {safe:g} mm deep (depth_mm) at {speed}, under the chatter limit"}
         better = _better_speed(lobes, rpm, depth)
         if better is not None:
-            fix = {"action": "change_speed", "where": {"points_mm": [xyz(s["point"])]},
-                   "summary": f"Run the spindle at about {better:.0f} rpm, a stable pocket for {depth:g} mm",
-                   "params": {"spindle_rpm": round(better)}}
+            fix = {"action": "change_speed", "where": [point], "params": {"spindle_rpm": round(better)},
+                   "summary": f"Run the spindle at about {better:.0f} rpm (spindle_rpm), a stable pocket for {depth:g} mm",
+                   "alternatives": [shallower]}
         else:
-            safe = round_down(CHATTER_CLOSE * limit)
-            fix = {"action": "reduce_depth", "where": {"points_mm": [xyz(s["point"])]},
-                   "summary": f"Cut about {safe:g} mm deep at this speed", "params": {"depth_mm": safe}}
+            fix = shallower
         if depth > limit:
             return [finding("error", "chatter", f"{head}; it cuts {depth:g} mm, so it chatters: a rough, wavy face and a "
                             "hammered tool", "the regenerative stability lobe at this spindle speed: past it, the "
@@ -640,7 +667,6 @@ class MachiningAnalysis(AnalysisBase):
             "residual_compliance_mm_per_N": s["residual"],
             "chatter": chatter,
             "deformation_scale": s["deformation_scale"],
-            "verdict": verdict(s.get("findings", [])),
             "checks": check_results,
         }
         return summary
@@ -696,7 +722,6 @@ class MachiningAnalysis(AnalysisBase):
                          f"{chatter['depth_mm']:g} mm), to {chatter['absolute_limit_mm']:.3g} mm at any speed"
                          + (f"; stable for this depth at {nearest['below']:.0f} or {nearest['above']:.0f} rpm"
                             if not chatter["stable"] and nearest["below"] and nearest["above"] else ""))
-        lines.append(f"verdict: {summary['verdict']['status']}")
         return lines
 
 
@@ -717,10 +742,6 @@ def round_up(value: float) -> float:
 
 def floor3(value: float) -> float:
     return math.floor(value * 1000) / 1000
-
-
-def _bare(ctx: SolveContext, refs) -> list[str]:
-    return [ctx.volume.faces[ctx.ordinal_of[ref]].ref for ref in refs]
 
 
 def _face_at(ctx: SolveContext, rows) -> str | None:
