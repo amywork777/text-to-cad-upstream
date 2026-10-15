@@ -146,6 +146,7 @@ class Analysis(Protocol):
     upstream: ClassVar[tuple[str, ...]]                # solved first, on the same mesh, same study document
     ladder: ClassVar[tuple[Rung, ...]]                 # rungs it may take, in order (section 9)
 
+    def material_from_spec(self, spec: Any) -> "Material | None": ...  # the study's ``material``, as it solves with it
     def parse(self, document: dict) -> Inputs: ...                     # stdlib; ValueError names the field
     def estimate(self, ctx: SolveContext, inputs: Inputs) -> "Estimate": ...   # cost of the current ctx.plan
     def apply(self, rung: Rung, ctx: SolveContext, inputs: Inputs) -> "Step | None": ...  # changes ctx.plan; None if it does not apply
@@ -175,6 +176,15 @@ class AnalysisBase:
     upstream: ClassVar[tuple[str, ...]] = ()
     #: What follows the document's stem in the GLB's extras name: "bracket creep".
     extras_word: ClassVar[str] = ""
+
+    def material_from_spec(self, spec: Any) -> "Material | None":
+        """The study's ``material`` as the solve takes it: a name from the material table, or an object of numbers
+        (:func:`cadgen._internal.fea.materials.material_from_spec`). The one hook for an analysis that reads its material
+        its own way: a table of its own with numbers the solver's has not (a workpiece's cutting force), or a ``material``
+        its ``parse`` reads (``None`` here)."""
+        from cadgen._internal.fea.materials import material_from_spec
+
+        return material_from_spec(spec)
 
     def needs_finer(self, result: AnalysisResult, inputs: Inputs, check_results: list[dict]) -> bool:
         return False

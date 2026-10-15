@@ -162,9 +162,8 @@ class MachiningAnalysis(AnalysisBase):
     ladder: ClassVar[tuple[str, ...]] = ("iterative", "defeature", "linear_elements")
     noun: ClassVar[str] = "this cut"
 
-    @staticmethod
-    def material_from_spec(spec):
-        """The study's ``material``, a workpiece material with its cutting force: study.parse_study reads it so."""
+    def material_from_spec(self, spec):
+        """The study's ``material``, a workpiece material with its cutting force (the material hook)."""
         from cadgen._internal.fea.cutting import work_material_from_spec
 
         return work_material_from_spec(spec)

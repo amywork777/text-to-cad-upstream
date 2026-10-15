@@ -92,7 +92,6 @@ class SheetMetalAnalysis(AnalysisBase):
     study_keys: ClassVar[frozenset[str]] = frozenset({"thickness_mm", "tolerance_deg", "fixed_face", "grain_direction"})
     #: ``material`` is a sheet from its own table (brake.SHEETS), read in parse, never the solver's material table.
     material_required: ClassVar[bool] = False
-    own_material: ClassVar[bool] = True
     #: The mesh only carries the fields to the viewer: linear tets are enough.
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -109,6 +108,10 @@ class SheetMetalAnalysis(AnalysisBase):
     }
     ladder: ClassVar[tuple[str, ...]] = ()
     noun: ClassVar[str] = "this bend"
+
+    def material_from_spec(self, spec):
+        """Nothing: the study's ``material`` is a sheet, read in parse from the sheets' own table (the material hook)."""
+        return None
 
     # -- parse ---------------------------------------------------------------------------------------
 
