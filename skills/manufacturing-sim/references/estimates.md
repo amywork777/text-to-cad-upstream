@@ -18,8 +18,10 @@ Not in this version: the fill, pack and warp of a moulded part.
 
   with α the plastic's thermal diffusivity (about 0.08-0.12 mm²/s for most unfilled plastics; the
   grade's datasheet gives k, ρ and c, α = k / (ρ c)) and the three temperatures from the grade's
-  processing sheet. A 2 mm ABS wall, α = 0.1 mm²/s, melt 240 °C, mould 60 °C, ejection 90 °C: about
-  8 s. It grows with the square of the wall: a 4 mm wall takes four times as long.
+  processing sheet (the ejection temperature is usually its heat deflection temperature or a little
+  under). A 2 mm ABS wall, α = 0.1 mm²/s, melt 240 °C, mould 60 °C, ejection 90 °C: 8.2 s. It
+  grows with the square of the wall: a 4 mm wall takes four times as long. The formula is the
+  one-dimensional solution for a flat wall; ribs and bosses cool slower [1].
 - **Sink risk.** A rib or boss thicker than about 0.5-0.6 of the wall it joins leaves a sink mark
   opposite it; a wall that varies more than about 25 % warps and sinks where it is thick [1]. These
   are the moulders' rules of thumb: `$dfm` reviews a part against them with measurements, so send a
@@ -95,10 +97,11 @@ reliefs, flange lengths, hole distances) are `$dfm`'s.
 
   R_i / R_f = 4 (R_i Y / (E t))³ - 3 (R_i Y / (E t)) + 1
 
-  with Y the yield strength, E the modulus and t the thickness; the bend angle opens by the same
-  ratio, θ_f = θ_i (R_i / R_f) for the bend's arc. A 1.5 mm 5052-H32 sheet (Y 193 MPa, E 70 GPa) bent
-  to R_i = 3 mm opens by about 2 %; a stainless sheet at a large radius springs back far more. Over-bend
-  by the ratio.
+  with Y the yield strength, E the modulus and t the thickness. The bend's neutral axis keeps its
+  length, so the bend angle (the arc's) opens as θ_f / θ_i = (2 R_i / t + 1) / (2 R_f / t + 1), the
+  springback factor [5]; not by R_i / R_f, which overstates it. A 1.5 mm 5052-H32 sheet (Y 193 MPa,
+  E 70 GPa) bent to R_i = 3 mm: R_i / R_f = 0.983, and the angle opens by 1.3 % (90° to 88.8°); a
+  stainless sheet at a large radius springs back far more. Over-bend by the factor.
 - **Cracking at a tight bend.** The minimum bend radius for a sheet whose tensile reduction of area
   is r percent is R_min / t = 50 / r - 1 [5]; a tighter bend, or one along the rolling direction in
   a cold-worked temper, cracks on the outside. The supplier's bend table overrides it.
@@ -111,8 +114,9 @@ reliefs, flange lengths, hole distances) are `$dfm`'s.
 
 Not in this version: the weld's heat, its distortion and its residual stress as a simulation.
 
-- **Transverse shrinkage** of a butt weld: about 0.2 × (weld cross-sectional area / plate thickness)
-  + 0.05 × root opening [6].
+- **Transverse shrinkage** of a butt weld, in mm: about 0.2 × (weld cross-sectional area in mm² /
+  plate thickness in mm) + 0.05 × root opening in mm [6]. A 16 mm plate with a 102 mm² weld and a
+  3 mm root opening shrinks about 1.4 mm across the weld.
 - **Longitudinal shrinkage** along the weld is much smaller, but bows a long member welded off its
   neutral axis [6]: balance the welds about it.
 - **Angular distortion** of a fillet or one-sided butt weld grows with the weld size over the
@@ -146,10 +150,13 @@ Not in this version: die fill, the flow of the metal, and laps as a simulation.
   Y_f the flow stress at that strain and temperature (much below the yield for hot forging: from
   the alloy's hot-working data). μ is about 0.1 lubricated cold, 0.2 or more hot.
 - **Closed-die forging:** F = K_p Y_f A, with A the projected area of the forging and its flash and
-  K_p about 3-5 for simple shapes, 5-8 for simple shapes with flash and 8-12 for complex ones [5].
-- **Extrusion pressure** (Johnson's formula) [5]: p = Y_avg (a + b ln R), R the extrusion ratio
-  (billet area over extrudate area), a ≈ 0.8, b ≈ 1.2-1.5; the ram force is p × billet area, plus
-  the billet's friction on the container in direct extrusion.
+  K_p about 3-5 for simple shapes without flash, 5-8 for simple shapes with flash and 8-12 for
+  complex ones with flash [5] (other texts give 5-6 for the middle row).
+- **Extrusion pressure** (Johnson's formula) [8]: p = Y_avg (a + b ln R), R the extrusion ratio
+  (billet area over extrudate area), Y_avg the average flow stress over the ideal strain ln R,
+  a ≈ 0.8, b ≈ 1.2-1.5 (rising with the die angle); the ram force is p × billet area in indirect
+  extrusion. In direct extrusion the billet's friction on the container adds to it:
+  p = Y_avg (a + b ln R + 2 L / D_0), L the billet length still to extrude and D_0 its diameter [8].
 - **Deep drawing force** (the maximum punch force) [5]: F = π D_p t UTS (D_0 / D_p - 0.7), D_p the
   punch diameter, D_0 the blank's, t the thickness.
 
@@ -157,16 +164,29 @@ Not in this version: die fill, the flow of the metal, and laps as a simulation.
 
 1. Menges, Michaeli and Mohren, How to Make Injection Molds, 3rd ed. (Hanser, 2001), chapter on
    cooling, for the cooling time; Malloy, Plastic Part Design for Injection Molding (Hanser, 2010)
-   for the rib and wall ratios.
+   for the rib and wall ratios. The cooling-time formula as given here is checked against Fictiv's
+   and RJG's published breakdowns of it (the same s² / (π² α) ln((4/π) ...) form, the ejection
+   temperature at or under the heat deflection temperature); the books' pages were not seen.
 2. Totten (ed.), Steel Heat Treatment Handbook (CRC, 2006): quenchants' heat transfer coefficients,
    Jominy hardenability.
 3. Gibson, Rosen and Stucker, Additive Manufacturing Technologies, 2nd ed. (Springer, 2015): warp,
    curl and residual stress by process; the polymers' expansion coefficients from their datasheets.
 4. Altintas, Manufacturing Automation, 2nd ed. (Cambridge, 2012): cutting forces and stability
-   lobes; Sandvik Coromant's handbook for specific cutting force k_c by material group.
-5. Kalpakjian and Schmid, Manufacturing Engineering and Technology (Pearson): springback, minimum
-   bend radius, limiting draw ratio, forging (slab method and K_p), extrusion and deep-drawing
-   forces.
-6. Lincoln Electric, The Procedure Handbook of Arc Welding, 14th ed. (2000), section on controlling
-   distortion: transverse and longitudinal shrinkage, angular distortion, residual stress.
+   lobes; Sandvik Coromant's handbook for specific cutting force k_c by material group (the k_c
+   ranges here not rechecked). The best speeds, where the tooth-passing frequency is the most
+   flexible mode's natural frequency or a whole fraction of it: "Maximum speed may be the worst
+   speed", Cutting Tool Engineering (ctemag.com).
+5. Kalpakjian and Schmid, Manufacturing Engineering and Technology (Pearson): springback (the
+   radius relation, as MIT 2.008's problem sets reproduce it, and the springback factor from the
+   neutral axis's constant length), minimum bend radius, limiting draw ratio (2.0-2.2 is what
+   press-shop tests of many materials find), forging (slab method and K_p, as course notes
+   reproduce them) and deep-drawing force.
+6. Blodgett, Design of Welded Structures (James F. Lincoln Arc Welding Foundation, 1966), on
+   controlling distortion: the transverse-shrinkage equation, as later papers on butt-weld
+   distortion cite it and welding course notes reproduce it (the book's page was not seen);
+   Lincoln Electric, The Procedure Handbook of Arc Welding, 14th ed. (2000): longitudinal shrinkage,
+   angular distortion, residual stress.
 7. IPC/JEDEC J-STD-020: the lead-free reflow profile and peak temperatures.
+8. Groover, Fundamentals of Modern Manufacturing (Wiley): Johnson's extrusion strain a + b ln R with
+   a ≈ 0.8, b ≈ 1.2-1.5, and the container-friction term 2 L / D_0 of direct extrusion, as course
+   notes reproduce them (the book's page was not seen).

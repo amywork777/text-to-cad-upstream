@@ -241,9 +241,10 @@ RULES: tuple[Rule, ...] = (
     Rule(("packages/cadgen/**", "scripts/bundle/**"), CADGEN_CONSUMERS),
     # The stress solver's own tests need the optional cadgen[fea] stack, which no other job
     # installs: it, its commands, the result types it returns, the extra's pins and the skills
-    # whose tables its suites hold to the registry (fea, and manufacturing-sim for its processes).
+    # whose tables its suites hold to the registry (fea, and manufacturing-sim for its processes), and the checklist
+    # its results end on.
     Rule((
-        f"{CADGEN_SRC}/_internal/fea/**", f"{CADGEN_SRC}/fea.py", f"{CADGEN_SRC}/cli/fea_*",
+        f"{CADGEN_SRC}/_internal/fea/**", f"{CADGEN_SRC}/_internal/checklist.py", f"{CADGEN_SRC}/fea.py", f"{CADGEN_SRC}/cli/fea_*",
         f"{CADGEN_SRC}/results.py", "packages/cadgen/pyproject.toml", "skills/fea/**",
         "skills/manufacturing-sim/**", f"{CADGEN_SUITE}/test_fea*.py",
     ), select(flags=["fea"])),

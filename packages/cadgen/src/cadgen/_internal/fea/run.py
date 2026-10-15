@@ -423,7 +423,10 @@ class _NotConnected(Exception):
 
 def _unsolved(document: Path, occurrence_ref: str, findings: list[dict]) -> FeaResult:
     """The result of a study that was stopped before the solve, by errors a person fixes in the study."""
-    return FeaResult(ok=False, document=document, occurrence=occurrence_ref, glb=None, sidecar=None, findings=tuple(findings))
+    from cadgen._internal.checklist import verdict
+
+    return FeaResult(ok=False, document=document, occurrence=occurrence_ref, glb=None, sidecar=None, findings=tuple(findings),
+                     verdict=verdict(findings))
 
 
 def _mesh_assembly(mesh_assembly, scene, plan: _Plan, parsed, resolved, ordinal_of: dict[str, int], max_h: float | None, log, refine: float = 1.0, **mesh_options):
@@ -583,6 +586,9 @@ def solve_study(target: Path, out: Path | None, *, study, occurrence: str | None
     finer by the same ratio at curved features, and solved again. When that succeeds its numbers are the ones
     written, reported and checked (the first solve's peak is kept for convergence only); when it fails the GLB
     stays the first solve's and the result carries one warning saying why.
+
+    The findings' verdict (:func:`cadgen._internal.checklist.verdict`, with the analysis's ``ready_words`` when it
+    has them) is the result's and the sidecar's.
     """
     with one_blas_thread():
         return _solve_study(Path(target), out, study, occurrence, mesh_size, vtu, verbose)
@@ -647,6 +653,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
 
     import numpy as np
 
+    from cadgen._internal.checklist import verdict
     from cadgen._internal.fea import fit, solve
     from cadgen._internal.fea.analyses.base import SolveContext
     from cadgen._internal.fea.femspace import FemSpace
@@ -969,6 +976,8 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
                  "size_mm": round(volume.max_h, 4), "order": fit_plan.order, "mesher": "netgen", "solver": result.solver}
     timings = {"mesh_s": round(volume.seconds, 3), **{k: round(v, 3) for k, v in result.timings.items()}}
     fixtures = getattr(inputs, "fixtures", None)
+    # Optional: `ready_words(summary) -> str`, the verdict's headline when nothing is to fix ("Ready to cast · ...").
+    found_verdict = verdict(findings, **({"ready": analysis.ready_words(summary)} if hasattr(analysis, "ready_words") else {}))
     sidecar = {
         "generator": "cadgen fea",
         "document": str(document),
@@ -988,6 +997,8 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
         "timings": timings,
         "warnings": warnings,
         "findings": findings,
+        # The findings read as a CI check reads them: ready or fix, a headline, and how many of each (the result's too).
+        "verdict": found_verdict,
         # An assembly: how its parts are joined (the parts' own results are in the summary).
         **({} if plan is None else {"connections": connections}),
         # An assembly: the pairs of parts whose solids overlap (never bonded).
@@ -1013,4 +1024,4 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
     logger.debug(f"wrote {glb_path.name}, {sidecar_path.name}" + (f", {vtu_path.name}" if vtu_path else ""))
     return FeaResult(ok=True, document=document, occurrence=occurrence_ref, glb=glb_path, sidecar=sidecar_path, vtu=vtu_path,
                      summary=summary, mesh=mesh_info, timings=timings, warnings=tuple(warnings), findings=tuple(findings),
-                     analysis=analysis.name, fit=tuple(fit_steps))
+                     analysis=analysis.name, fit=tuple(fit_steps), verdict=found_verdict)

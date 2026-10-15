@@ -477,7 +477,10 @@ class FeaResult:
     ``summary`` carries the answer an engineer asks for first (static: max von Mises, nodal and Gauss-point, the
     safety factor, max displacement, the applied-versus-reaction balance) and each check judged (``checks``);
     another ``analysis`` writes its own summary and CLI lines. ``findings`` is what an engineer would say about it,
-    errors first, in the KiCad findings' shape. The JSON sidecar holds this whole result plus the study.
+    errors first, in the KiCad findings' shape; each may carry what it ``measured`` against its limit and the ``fix``
+    that makes it pass. ``verdict`` reads them as a CI check does (``cadgen._internal.checklist``), and the lines end
+    with them as a checklist. The JSON sidecar holds this whole result plus the study. ``ok`` says the study was
+    solved, nothing more: a part that fails every check is still ``ok``.
     """
 
     ok: bool
@@ -496,6 +499,10 @@ class FeaResult:
     analysis: str = "static"
     #: The fit-the-budget ladder's steps, in order (``rung``, ``words``, ``accuracy``, ...); empty when none was taken.
     fit: tuple[dict, ...] = ()
+    #: The findings read as a CI check reads them, the sidecar's ``verdict`` too: ``status`` ``ready`` (no error) or
+    #: ``fix``, the ``headline`` ("Ready to cast · solid in 41 s", "1 to fix · shrinkage hot spot"), and how many
+    #: ``errors``, ``warnings`` and ``passed`` checks.
+    verdict: dict = field(default_factory=dict)
 
     def human_lines(self) -> list[str]:
         from cadgen._internal.fea.checks import safety_factor_text  # stdlib only; kept out of module import time
@@ -529,7 +536,9 @@ class FeaResult:
         lines += [f"adapted: {step['words']}" + (f" ({step['accuracy']})" if step.get("accuracy") else "") for step in self.fit]
         lines += [f"{finding['severity']}: {finding['summary']}" for finding in self.findings]
         lines += [f"warning: {warning}" for warning in self.warnings]
-        return lines
+        from cadgen._internal.checklist import checklist_lines  # stdlib only
+
+        return lines + checklist_lines(self.findings, self.verdict)
 
 
 @dataclass(frozen=True)
