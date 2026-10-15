@@ -345,7 +345,7 @@ class WeldingAnalysis(AnalysisBase):
         found = [self._distortion(inputs, s), self._angles(plans), self._hand_check(plans)]
         bows = [plan for plan in plans if plan.get("bow_mm") is not None]
         if bows:
-            found.append(self._bowing(max(bows, key=lambda plan: plan["bow_mm"])))
+            found.append(self._bowing(max(bows, key=lambda plan: plan["bow_mm"]), s["tolerance_mm"]))
         found.append(self._residual(inputs, s))
         return found
 
@@ -363,7 +363,7 @@ class WeldingAnalysis(AnalysisBase):
         plans = s["plans"]
         worst = max(plans, key=lambda plan: abs(plan["angle_rad"]))
         ratio = 0.9 * tolerance / value
-        heat = round(worst["heat_J_mm"] * ratio / 1000.0, 4)
+        heat = round(worst["heat_J_mm"] * ratio / 1000.0, 3)
         alternatives = [
             {"action": "balance_welds", "summary": f"Weld the other side of {worst['label']}'s joint as well, or "
                        "alternate sides pass by pass, so the shrinkage balances", "where": [worst["middle"]],
@@ -421,16 +421,21 @@ class WeldingAnalysis(AnalysisBase):
                                           "thickness_mm": [round(p["thickness_mm"], 3) for p in plan["plates"]]}})
         return finding("info", "hand_check", summary, detail, measured=measured)
 
-    def _bowing(self, plan: dict) -> dict:
-        """The bow along the longest-bowing weld, beside beam theory's: a check of the simulation's bow."""
+    def _bowing(self, plan: dict, tolerance: float) -> dict:
+        """The bow along the longest-bowing weld, beside beam theory's: a check of the simulation's bow. A bow under a
+        tenth of the tolerance is too small to tell from the part's own bending: it passes against the tolerance."""
         item = [{"text": "the middle of the weld", "ref": None, "at": plan["middle"]}]
         summary = f"Along {plan['label']} ({plan['length_mm']:.3g} mm) the part bows {plan['bow_mm']:.3g} mm"
         detail = ("the sagitta of the weld line's own displacement across it, the part's rigid motion taken out; a weld "
                   "off the section's neutral axis bows it, a balanced pair does not. Beam theory: the welds' tendon forces "
                   "F_T, each e off the mid-length section's centroid, bow it Σ F_T e L² / (8 E I)")
         beam = plan.get("bow_beam_mm")
-        if beam is None or max(beam, plan["bow_mm"]) <= 1e-6:
-            return finding("info", "bowing", summary + "; the section is too short to set beside beam theory", detail, item)
+        if beam is None or max(beam, plan["bow_mm"]) < 0.1 * tolerance:
+            words = "the section is too short to set beside beam theory" if beam is None else (
+                f"beam theory gives {beam:.3g} mm; both under a tenth of the {tolerance:g} mm tolerance")
+            return finding("info", "bowing", f"{summary}; {words}", detail, item, measured={
+                "value": round(plan["bow_mm"], 6), "limit": tolerance, "units": "mm", "pass_when": "below",
+                "quantity": "bow along the weld"})
         ratio = plan["bow_mm"] / beam if beam > 0 else math.inf
         spread = max(ratio, 1.0 / ratio) if ratio > 0 else math.inf
         measured = {"value": round(spread, 4), "limit": HAND_FACTOR, "units": "×", "pass_when": "below",

@@ -217,7 +217,7 @@ def thickness_along(space, starts: "np.ndarray", direction: "np.ndarray") -> flo
             q = np.cross(s, e1)
             v = (q @ d) / det
             t = (q * e2).sum(axis=1) / det
-        ok = usable & (u >= -1e-9) & (v >= -1e-9) & (u + v <= 1 + 1e-9) & (t > 1e-6)
+            ok = usable & (u >= -1e-9) & (v >= -1e-9) & (u + v <= 1 + 1e-9) & (t > 1e-6)
         if ok.any():
             hits.append(float(t[ok].min()))
     return float(np.median(hits)) if hits else None

@@ -4,14 +4,15 @@ The study names the ``process`` (``fdm``, ``powder_bed_metal``, ``sls``, ``resin
 metal, ``polymer`` for the rest; :mod:`cadgen._internal.fea.additive`). The build direction is ``build_direction``
 (+Z by default) and the plate is the part's lowest face along it. The part is cut into ``bands`` height bands (12 by
 default); each is born on the bands below, as they have deformed, and carries the process's inherent strain (in the
-plane across the layers, and along the build), the plate holding the bottom (:class:`cadgen._internal.fea.inherent_strain.Build`).
-Once built, the plate lets go (``release_from_plate``, default true) and the part springs back. An SLS part has no
-plate: it floats in its powder, held only against rigid motion.
+plane across the layers, and along the build), the plate holding the bottom
+(:class:`cadgen._internal.fea.inherent_strain.Build`). Once built, the plate lets go (``release_from_plate``, default
+true) and the part springs back. An SLS part has no plate: it floats in its powder, held only against rigid motion.
 
 It writes the residual stress (von Mises), the distortion and what is printed so far at every band, and off the plate,
 as frames, so the viewer's Play builds it. Its findings are a checklist: the warp off the plate and the distortion
 against ``tolerance_mm``, the residual stress against yield (a crack and plate-detach risk), a metal edge rising past
-a layer (recoater collision), the plate's pull against the bed's adhesion (FDM), and beam theory as the hand check.
+a layer (recoater collision), the plate's pull against the bed's adhesion (FDM), and plate theory as the hand check
+(the first band against a band fully held).
 Stdlib only at import.
 """
 
@@ -45,8 +46,6 @@ LIMITS = (
 )
 #: Bands the part is cut into when the study does not say, and the most it takes.
 BANDS, MOST_BANDS = 12, 40
-#: Hand check and simulation more than this many times apart: a warning.
-HAND_FACTOR = 3.0
 #: The plate-stress hand check: the first band's middle within this factor of the fully held band's stress.
 PLATE_FACTOR = 2.0
 #: Strains past this are not a process's (a few percent at most).
@@ -465,23 +464,39 @@ class PrintingAnalysis(AnalysisBase):
         item = [{"text": "the peak residual stress", "ref": None, "at": at}]
         pull = s["pull"]
         pull_words = (f"; the plate pulls hardest, {pull['MPa']:.3g} MPa, at {pull['at']} mm" if pull else "")
-        detail = (f"von Mises as printed: {value:.3g} MPa at the 99th percentile, {peak:.3g} MPa at the peak (a corner "
+        detail = (f"von Mises as printed: {value:.4g} MPa at the 99th percentile, {peak:.4g} MPa at the peak (a corner "
                   f"against the plate is singular){pull_words}")
         if value > material.yield_strength:
             metal = inputs.process.key == "powder_bed_metal"
             risk = ("it may crack, or tear off its plate or supports" if metal
                     else "it may crack or peel off the plate")
-            return finding("warning", "residual_stress", f"As printed the residual stress reaches {value:.3g} MPa, past "
+            return finding("warning", "residual_stress", f"As printed the residual stress reaches {value:.4g} MPa, past "
                            f"{material.name}'s {material.yield_strength:g} MPa yield: in the part it yields and holds "
-                           f"about yield, and {risk}", detail, item, measured=measured, fix={
-                               "action": "stress_relieve" if metal else "change_orientation",
-                               "summary": ("Stress-relieve it on the plate before it is cut off, and soften the corner "
-                                           "it peaks at (a fillet where it meets the plate)") if metal else
-                                          "Turn it so less of it is held flat on the plate, or print it in an enclosure",
-                               "where": [at], "params": {"before_release": True} if metal else {}})
+                           f"about yield, and {risk}", detail, item, measured=measured,
+                           fix=self._stress_fix(inputs, s, at, material.yield_strength / value))
         return finding("info", "residual_stress", f"As printed the residual stress stays under {material.name}'s "
-                       f"{material.yield_strength:g} MPa yield ({value:.3g} MPa at the 99th percentile)", detail, item,
+                       f"{material.yield_strength:g} MPa yield ({value:.4g} MPa at the 99th percentile)", detail, item,
                        measured=measured)
+
+    def _stress_fix(self, inputs: PrintingInputs, s: dict, at, ratio: float) -> dict:
+        """What brings the residual stress under yield: a metal stress-relieved on its plate; an FDM polymer printed
+        warmer, its shrinkage (and so its stress) falling with the gap to where it sets; else a turn."""
+        material = inputs.material
+        if inputs.process.key == "powder_bed_metal":
+            return {"action": "stress_relieve", "summary": "Stress-relieve it on the plate before it is cut off, and "
+                    "soften the corner it peaks at (a fillet where it meets the plate)", "where": [at],
+                    "params": {"before_release": True}}
+        if inputs.process.key == "fdm" and not inputs.given:
+            target = material.sets_C - 0.9 * ratio * (material.sets_C - inputs.chamber_C)
+            if target - inputs.chamber_C >= 5.0:
+                target = round(min(target, material.sets_C - 5.0))
+                return {"action": "raise_chamber_temperature", "summary": f"Print it enclosed at about {target:g} °C, so "
+                        f"each layer shrinks less as it cools from the {material.sets_C:g} °C where it sets",
+                        "where": [at], "params": {"chamber_temperature_C": target}}
+        best = _shortest_axis(s)
+        return {"action": "change_orientation", "summary": "Turn it so less of it is held flat on the plate, its shortest "
+                "side along the build direction", "where": [at],
+                "params": {"build_direction": [round(c, 6) for c in best]} if best else {}}
 
     def _recoater(self, inputs: PrintingInputs, s: dict) -> dict:
         rise, layer = s["rise"], inputs.layer_mm
