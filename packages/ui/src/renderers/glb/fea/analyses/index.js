@@ -12,6 +12,7 @@
 import { FEA_CHECK_KINDS } from "../checkKinds.js";
 import acoustic from "./acoustic.js";
 import bolt from "./bolt.js";
+import casting from "./casting.js";
 import buckling from "./buckling.js";
 import cfd from "./cfd.js";
 import cfd_compressible from "./cfd_compressible.js";
@@ -53,6 +54,7 @@ export const ANALYSES = Object.freeze({
   fsi,
   piezo,
   multiphase,
+  casting,
 });
 
 /** Every analysis this viewer knows, by name. */
