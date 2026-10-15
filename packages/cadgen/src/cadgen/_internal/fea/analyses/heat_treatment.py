@@ -55,6 +55,8 @@ THIN_PERCENTILE = 5.0
 FILLET_MIN_MM = 1.0
 #: A shape is a block or a round when its volume is within this share of the box's or the cylinder's.
 SHAPE_TOLERANCE = 0.03
+#: The core is the slowest-cooling point at least this share as deep as the deepest.
+CORE_DEPTH = 0.9
 #: The Rockwell C scale it reads hardness on.
 HRC_RANGE = (20.0, 70.0)
 STUDY_KEYS = frozenset({"steel", "quenchant", "austenitize_C", "h_W_m2K", "target_hrc"})
@@ -680,14 +682,14 @@ class HeatTreatmentAnalysis(AnalysisBase):
         surface = summary["surface_hrc"]
         lines = [
             f"{summary['steel']} from {summary['austenitize_C']:g} °C into {summary['quench']}: surface "
-            f"{surface[0]:g} to {surface[1]:g} HRC, core {summary['core_hrc']:g} HRC at {summary['core_at_mm']} mm",
-            f"the core cools at {summary['cooling_rate_core_C_s']:g} °C/s at 700 °C"
+            f"{surface[0]:.3g} to {surface[1]:.3g} HRC, core {summary['core_hrc']:.3g} HRC at {summary['core_at_mm']} mm",
+            f"the core cools at {summary['cooling_rate_core_C_s']:.3g} °C/s at 700 °C"
             + (f", t8/5 {time_words(summary['t85_core_s'])}" if summary["t85_core_s"] is not None else ""),
         ]
         if summary["target_hrc"] is not None:
             lines.append(f"target {summary['target_hrc']:g} HRC: " + (
                 "through-hardened" if summary["through_hardened"] else
-                f"hard to {summary['depth_to_target_mm']:g} mm deep" if summary["depth_to_target_mm"] is not None
+                f"hard to {summary['depth_to_target_mm']:.3g} mm deep" if summary["depth_to_target_mm"] is not None
                 else "not reached"))
         hand = summary["hand_check"]
         lines.append(f"peak quench tension {summary['peak_tension_MPa']:.0f} MPa against a hot strength of "
@@ -702,12 +704,15 @@ class HeatTreatmentAnalysis(AnalysisBase):
 
 
 def surface_and_core(result: AnalysisResult):
-    """The surface nodes, and the core: the point deepest under the surface, the middle of the thickest section."""
+    """The surface nodes, and the core: the middle of the thickest section, the slowest to cool of the points within
+    :data:`CORE_DEPTH` of the deepest (a long bar's centreline is all as deep; its middle cools last)."""
     import numpy as np
 
     surface = np.zeros(len(result.dof_locations), dtype=bool)
     surface[np.unique(np.asarray(result.boundary_quadratic)[:, :3])] = True
-    return surface, int(np.argmax(result.scalars["depth"]))
+    depth = result.scalars["depth"]
+    deep = np.flatnonzero(depth >= CORE_DEPTH * float(depth.max()))
+    return surface, int(deep[np.argmin(result.fields["cooling_rate"][deep])])
 
 
 def nearest(nodes, point) -> int:
