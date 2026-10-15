@@ -86,17 +86,19 @@ Not in this version: the cut itself, tool wear, and chatter as a simulation.
 
 ## Sheet metal
 
-Not in this version: the bend, the draw, and springback as a simulation. Bend rules (radii,
-reliefs, flange lengths, hole distances) are `$dfm`'s.
+Bends run today as `sheet_metal`, an estimate per bend read from the STEP: springback, cracking and
+the bend allowance ([sheet_metal.md](sheet_metal.md)). Not in this version: the bend or the draw as a
+simulation. Bend rules (radii, reliefs, flange lengths, hole distances) are `$dfm`'s. The forms below
+are the same hand checks without a STEP, and the draw's.
 
 - **Springback** of an air bend, from the inside radius R_i before release to R_f after [5]:
 
   R_i / R_f = 4 (R_i Y / (E t))³ - 3 (R_i Y / (E t)) + 1
 
-  with Y the yield strength, E the modulus and t the thickness; the bend angle opens by the same
-  ratio, θ_f = θ_i (R_i / R_f) for the bend's arc. A 1.5 mm 5052-H32 sheet (Y 193 MPa, E 70 GPa) bent
-  to R_i = 3 mm opens by about 2 %; a stainless sheet at a large radius springs back far more. Over-bend
-  by the ratio.
+  with Y the yield strength, E the modulus and t the thickness; the bend keeps
+  K_s = θ_f / θ_i = (2R_i/t + 1) / (2R_f/t + 1) of its angle (its mid-thickness keeps its length). A
+  1.5 mm 5052-H32 sheet (Y 193 MPa, E 70 GPa) bent 90° to R_i = 3 mm keeps 98.7 %: it springs back
+  1.2°; a stainless sheet at a large radius springs back far more. Over-bend to θ_i / K_s.
 - **Cracking at a tight bend.** The minimum bend radius for a sheet whose tensile reduction of area
   is r percent is R_min / t = 50 / r - 1 [5]; a tighter bend, or one along the rolling direction in
   a cold-worked temper, cracks on the outside. The supplier's bend table overrides it.

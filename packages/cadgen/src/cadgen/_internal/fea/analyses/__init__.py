@@ -85,6 +85,8 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
     _entry("multiphase", 3, "MultiphaseAnalysis", "Two fluids"),
     # Manufacturing processes, routed by the manufacturing-sim skill. A casting freezing in its mould, pour to solid.
     _entry("casting", 3, "CastingAnalysis", "Casting"),
+    # A bent sheet off the press brake, per bend by hand formulas (Tier 2): springback, cracking, the flat pattern.
+    _entry("sheet_metal", 2, "SheetMetalAnalysis", "Sheet metal"),
 )}
 ANALYSIS_NAMES: tuple[str, ...] = tuple(REGISTRY)
 

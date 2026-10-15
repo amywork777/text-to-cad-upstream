@@ -26,7 +26,8 @@ there is no shrinkage-driven flow, gas porosity or microstructure. Say so when y
 
 ## Choose the process
 
-Match the user's question to a row first. Only a **Runs today** row is a simulation.
+Match the user's question to a row first. Only a **Runs today** row runs in cadgen, and one whose status
+says estimate runs hand formulas on the part, not a simulation.
 
 | The user asks | `analysis` | Plain word | Status | Reference |
 | --- | --- | --- | --- | --- |
@@ -35,7 +36,7 @@ Match the user's question to a row first. Only a **Runs today** row is a simulat
 | Heat treatment and quenching: "will it distort", "how fast does the core cool", "how hard will it be" | none yet | Heat treatment | **Estimate** (the cooling runs today as `$fea`'s heat over time; no phase change, distortion or hardness) | [estimates.md](references/estimates.md#heat-treatment-and-quenching) |
 | 3D printing (FDM, resin, SLS/MJF, metal powder bed): "will it warp or curl", "residual stress" | none yet | 3D printing | **Estimate** (thermal strain by hand; printability is `$dfam-check`'s) | [estimates.md](references/estimates.md#3d-printing) |
 | CNC machining: "will this thin wall deflect under the cutter or the clamp", "which spindle speeds are chatter-free" | none yet | Machining | **Estimate** (the deflection and the natural frequency run today in `$fea` as `static` and `modal`; chatter by hand) | [estimates.md](references/estimates.md#cnc-machining) |
-| Sheet metal: "how much will it spring back", "will it crack at this bend", "how thin does the draw get" | none yet | Sheet metal | **Estimate** (springback, minimum bend radius and draw ratio by hand; bend rules are `$dfm`'s) | [estimates.md](references/estimates.md#sheet-metal) |
+| Sheet metal bending: "how much will it spring back", "what overbend", "will it crack at this bend", the bend allowance | `sheet_metal` | Sheet metal | **Runs today** (estimate: per bend from the STEP by hand formulas, Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor; no forming simulation; bend rules are `$dfm`'s) | [sheet_metal.md](references/sheet_metal.md) |
 | Welding: "how much will it distort", "residual stress at the weld" | none yet | Welding | **Estimate** (shrinkage and angular distortion by hand) | [estimates.md](references/estimates.md#welding) |
 | Reflow soldering of a board: "how hot do the parts get through the profile", "is the big connector above liquidus long enough" | none yet | Reflow | **Estimate** (the temperatures run today in `$fea` as heat over time with the oven's profile; no solder flow) | [estimates.md](references/estimates.md#reflow-soldering) |
 | Forging, extrusion and deep drawing: "what press force", "will the die fill" | none yet | Forming | **Estimate** (slab-method forging load, extrusion pressure, deep-drawing force by hand; no die fill) | [estimates.md](references/estimates.md#forging-extrusion-and-deep-drawing) |
