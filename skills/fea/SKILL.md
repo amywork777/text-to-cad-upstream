@@ -71,6 +71,7 @@ it is `static`.
 | Liquid inside the part moving over time: "will it spill when the tank is shaken or brakes", how high the water climbs the walls, the sloshing force on the tank and its frequency, filling or draining a cavity, a rising bubble | `multiphase` | Two fluids | **Runs today** (lite: laminar, incompressible, the interface a few elements thick; no evaporation, boiling or mixing) | [multiphase.md](references/multiphase.md) |
 | A casting freezing in its mould: "will it cast", where it shrinks or is porous, whether a thin section fills | `casting` | Casting | **Runs today** (lite: the cavity starts full, the mould is a heat transfer coefficient, no shrinkage flow or microstructure) | `$manufacturing-sim`, its casting reference |
 | A 3D print warping as it is built: "will it curl off the plate", the residual stress, whether the recoater hits it | `printing` | 3D printing | **Runs today** (lite: layer-by-layer inherent strain in height bands, linear elastic, a rigid plate) | `$manufacturing-sim`, its printing reference |
+| Welds distorting the part: how far a joint closes, how far it bows, the stress at the weld | `welding` | Welding | **Runs today** (lite: each weld's zone an inherent strain by the classical relations, all welds at once, linear elastic) | `$manufacturing-sim`, its welding reference |
 
 Each reference holds its analysis's full schema. A test keeps this table and the study file's
 `analysis` table in step with what cadgen registers.

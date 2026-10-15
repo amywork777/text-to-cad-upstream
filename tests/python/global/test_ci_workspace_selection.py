@@ -279,6 +279,7 @@ class ChangesRunWhatCanBreak(unittest.TestCase):
         self.assertEqual(jobs_for("skills/fea/SKILL.md"), fea)
         self.assertEqual(jobs_for("skills/manufacturing-sim/references/casting.md"), fea)
         self.assertEqual(jobs_for("skills/manufacturing-sim/references/printing.md"), fea)
+        self.assertEqual(jobs_for("skills/manufacturing-sim/references/welding.md"), fea)
         self.assertEqual(jobs_for(f"{CADGEN}/test_fea.py"), {"cadgen-linux", "cadgen-windows", "fea", "skills"})
         self.assertNotIn("fea", jobs_for("packages/cadgen/src/cadgen/step.py"))
 

@@ -67,6 +67,7 @@ none is registered so today.
 | `multiphase` | Two fluids | runs today (lite: a liquid and a gas inside the part over time, laminar, incompressible; sloshing, filling and draining, a rising bubble) | [multiphase.md](multiphase.md) |
 | `casting` | Casting | runs today (lite: a casting freezing in its mould from the pour, the cavity starting full) | `$manufacturing-sim`'s casting reference |
 | `printing` | 3D printing | runs today (lite: a part built band by band, each band's inherent strain shrinking it on the part below, then off the plate) | `$manufacturing-sim`'s printing reference |
+| `welding` | Welding | runs today (lite: the inherent strain of each weld's zone by the classical relations, all welds at once) | `$manufacturing-sim`'s welding reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 

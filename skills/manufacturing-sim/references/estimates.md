@@ -111,7 +111,9 @@ reliefs, flange lengths, hole distances) are `$dfm`'s.
 
 ## Welding
 
-Not in this version: the weld's heat, its distortion and its residual stress as a simulation.
+A weld's distortion and residual stress run today as `welding` ([welding.md](welding.md)), from
+the inherent strain of its zone; these remain its estimates by hand. Not in this version: the weld's
+heat as a simulation.
 
 - **Transverse shrinkage** of a butt weld, in mm: about 0.2 × (weld cross-sectional area in mm² /
   plate thickness in mm) + 0.05 × root opening in mm [6]. A 16 mm plate with a 102 mm² weld and a

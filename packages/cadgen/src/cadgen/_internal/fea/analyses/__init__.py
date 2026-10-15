@@ -87,6 +87,8 @@ REGISTRY: dict[str, Entry] = {entry.name: entry for entry in (
     _entry("casting", 3, "CastingAnalysis", "Casting"),
     # A part 3D printed band by band, each band's inherent strain shrinking it on the part below: warp and residual stress.
     _entry("printing", 3, "PrintingAnalysis", "3D printing"),
+    # Welds shrinking the part they join, by the inherent strain of their zones: angular distortion, bowing, stress.
+    _entry("welding", 3, "WeldingAnalysis", "Welding"),
 )}
 ANALYSIS_NAMES: tuple[str, ...] = tuple(REGISTRY)
 

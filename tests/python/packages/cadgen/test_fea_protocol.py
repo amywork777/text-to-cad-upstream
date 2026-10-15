@@ -27,7 +27,7 @@ SPEC_2_1 = ("cfd_turbulent", "cfd_compressible", "creep", "composite", "bolt", "
 # Built after spec 2.1's names, each registered after them: tier 3, its word.
 LATER = (("topology", "Lighten it"), ("acoustic", "Sound"), ("fracture", "Cracks"), ("conjugate_heat", "Cooled by flow"),
          ("rotordynamics", "Spinning"), ("fsi", "Flow and bending"), ("piezo", "Piezo"), ("multiphase", "Two fluids"),
-         ("casting", "Casting"), ("printing", "3D printing"))
+         ("casting", "Casting"), ("printing", "3D printing"), ("welding", "Welding"))
 
 
 def planned_entry(name: str):
