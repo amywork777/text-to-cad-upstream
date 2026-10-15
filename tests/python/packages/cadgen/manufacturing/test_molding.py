@@ -187,6 +187,11 @@ class Warp(unittest.TestCase):
         self.assertGreater(swing, 0.005)
         over = next(f for f in result.findings if f["type"] == "warp_over_tolerance")
         self.assertEqual((over["severity"], over["measured"]["limit"], over["fix"]["action"]), ("error", 0.001, "thin"))
+        # The warp's shrinkage scaling is cadgen's own model: the finding, the command's lines and the limits say so.
+        self.assertIn("(an estimate)", over["summary"])
+        self.assertIn("not a published law", over["description"])
+        self.assertTrue(any("not a published law" in limit for limit in result.limits), result.limits)
+        self.assertTrue(any("warp about" in line and "(an estimate)" in line for line in result.human_lines()))
 
 
 class SkillDocs(unittest.TestCase):

@@ -11,7 +11,8 @@ semi-crystalline resin releasing its crystallisation heat over its crystallisati
 It writes the time each point reaches the ejection temperature (the default view: the last to eject is hottest), the
 temperature per frame, the mean cooling rate from the melt to ejection, and the warp: each point shrinks by the
 resin's mould shrinkage, from the low end of its range at the thinnest wall toward the high end the longer it stayed
-hot (:func:`cadgen._internal.manufacturing.processes.resins.linear_shrinkage`); the shrinkage's mean is what the cavity is cut oversize
+hot (:func:`cadgen._internal.manufacturing.processes.resins.linear_shrinkage`, a model of cadgen's own, not a published
+law: the warp is an estimate, and its findings say so); the shrinkage's mean is what the cavity is cut oversize
 for, and what differs from it is an inherent strain, solved on the part held 3-2-1 (:mod:`cadgen._internal.manufacturing.processes.warp`).
 Its findings are the moulder's checklist, each saying pass or what to change: the cooling time against the plate
 formula for the thickest wall (the hand check), sink and void risk where a section stays hot long after the nominal
@@ -43,8 +44,11 @@ LIMITS = (
     "and a core or a corner of the mould that runs hot is not seen.",
     "Constant room-temperature properties; crystallisation releases its heat evenly over a fixed range, whatever the "
     "cooling rate.",
-    "The warp is lite: each point's shrinkage is the resin's mould shrinkage scaled by how long it stayed hot, the same "
-    "in every direction (no flow or fibre orientation, no pressure history), applied elastically after ejection.",
+    "The warp is an estimate from a model of cadgen's own, not a published law: each point's shrinkage is placed in the "
+    "resin's published mould shrinkage range by how long it stayed hot (the low end where the thinnest wall cooled, "
+    "toward the high end, as 1 - t_thin / t, where it stayed hot longer), the same in every direction (no flow or "
+    "fibre orientation, no pressure history), applied elastically after ejection. Read its pattern and its order of "
+    "magnitude, never its last digit, and confirm a warp that matters with the moulder's own simulation or a trial.",
 )
 #: A steel mould's contact coefficient with the plastic, W/(m² K): Moldflow's standard value.
 STEEL_H = 2500.0
@@ -498,22 +502,24 @@ class MoldingProcess(Process):
         spread = (f"shrinkage {float(result.fields['shrinkage'].min()):.2g}-{float(result.fields['shrinkage'].max()):.2g} "
                   f"% (mean {100 * s['mean_shrinkage']:.2g} %, which the cavity is cut oversize for)")
         item = [{"text": "warps most here", "ref": None, "at": at}]
-        how = f"held 3-2-1 at {held[0]}, {held[1]} and {held[2]} mm; {spread}"
+        how = (f"an estimate from cadgen's own shrinkage model, not a published law; held 3-2-1 at {held[0]}, {held[1]} "
+               f"and {held[2]} mm; {spread}")
         tolerance = inputs.warp_tolerance_mm
         if tolerance is None:
-            return finding("info", "warp", f"Warps {warp:.3g} mm at most, at {at} mm, held 3-2-1 at three corners; give "
-                           "warp_tolerance_mm to judge it", how, item)
-        measured = {"quantity": "warp", "value": round(warp, 6), "limit": tolerance, "units": "mm", "pass_when": "below"}
+            return finding("info", "warp", f"Warps about {warp:.3g} mm at most (an estimate), at {at} mm, held 3-2-1 at "
+                           "three corners; give warp_tolerance_mm to judge it", how, item)
+        measured = {"quantity": "warp (an estimate)", "value": round(warp, 6), "limit": tolerance, "units": "mm",
+                    "pass_when": "below"}
         if warp > tolerance:
-            return finding("error", "warp_over_tolerance", f"Warps {warp:.3g} mm at {at} mm, over the {tolerance:g} mm "
-                           "tolerance", how + "; the region that stays hot longest shrinks most and pulls the part "
+            return finding("error", "warp_over_tolerance", f"Warps about {warp:.3g} mm at {at} mm (an estimate), over "
+                           f"the {tolerance:g} mm tolerance", how + "; the region that stays hot longest shrinks most and pulls the part "
                            "toward it", item, measured=measured,
                            fix={"action": "thin", "where": [late],
                                 "params": {"thickness_mm": round(s["walls"].nominal_mm, 3)},
                                 "summary": f"Even the walls: thin the section that cools last toward the nominal "
                                            f"{s['walls'].nominal_mm:.2g} mm wall, or choose a resin that shrinks less"})
-        return finding("info", "warp_within_tolerance", f"Warps {warp:.3g} mm at most, within the {tolerance:g} mm "
-                       "tolerance", how, item, measured=measured)
+        return finding("info", "warp_within_tolerance", f"Warps about {warp:.3g} mm at most (an estimate), within the "
+                       f"{tolerance:g} mm tolerance", how, item, measured=measured)
 
     def _window(self, inputs: MoldingInputs) -> list[dict]:
         """The melt and the mould each inside the resin's processing window: a check each, measured against the bound
@@ -638,7 +644,7 @@ class MoldingProcess(Process):
             f"{time_words(hand['best_s'])} to its middle with the mould's h",
             f"walls {summary['thinnest_wall_mm']:g} to {summary['thickest_wall_mm']:g} mm (nominal "
             f"{summary['nominal_wall_mm']:g} mm); {len(summary['hot_spots'])} hot spot"
-            f"{'s' if len(summary['hot_spots']) != 1 else ''}; warp {summary['max_warp_mm']:.3g} mm",
+            f"{'s' if len(summary['hot_spots']) != 1 else ''}; warp about {summary['max_warp_mm']:.3g} mm (an estimate)",
         ]
         return lines
 

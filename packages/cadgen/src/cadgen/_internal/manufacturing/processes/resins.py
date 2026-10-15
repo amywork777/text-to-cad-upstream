@@ -187,7 +187,9 @@ def plate_cooling(s_mm: float, alpha_mm2_s: float, melt_C: float, mold_C: float,
 def linear_shrinkage(resin, stayed_hot: float) -> float:
     """The linear shrinkage, %, of a point that took ``stayed_hot`` times as long as the thinnest wall to reach the
     ejection temperature: the low end of the resin's range at the thinnest wall (and anything that cools sooner),
-    rising toward the high end the longer it stayed hot, low + (high - low) (1 - 1 / ratio)."""
+    rising toward the high end the longer it stayed hot, low + (high - low) (1 - 1 / ratio). This scaling is cadgen's
+    own model, not a published law (the range's ends are the resin's published shrinkage): the warp it drives is an
+    estimate."""
     low, high = resin.shrinkage
     if not stayed_hot > 1.0:
         return low

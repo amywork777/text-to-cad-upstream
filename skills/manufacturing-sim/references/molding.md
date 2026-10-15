@@ -3,7 +3,8 @@
 A plastic part cooling in its injection mould, from the cavity full of melt until every point can be
 ejected, and how far it warps once it is out: how long the mould has to stay shut, where thick
 sections stay hot and sink, which walls are outside the resin's range, and the warp against a
-tolerance. Lite: read [Limits](#limits) before you report.
+tolerance. Lite, and the warp is an estimate from a model of cadgen's own: read [Limits](#limits)
+before you report.
 
 ## When to use it
 
@@ -109,9 +110,12 @@ none. Values marked * are estimates, listed under [Numbers not verified](#number
   as long. Three times as long (a section about 1.7 times the wall, a boss) is an error: it shrinks
   after its skin has set, so it sinks or voids. Hot means to the ejection temperature, or for a resin
   that crystallises above it, to where it starts to crystallise.
-- **Warp.** Each point shrinks by the resin's mould shrinkage: the low end of its range where it
-  reached the ejection temperature as soon as the thinnest wall did, toward the high end the longer it
-  stayed hot, low + (high - low) (1 - t_thin / t). The cavity is cut oversize by the part's mean
+- **Warp, an estimate.** Each point shrinks by the resin's mould shrinkage: the low end of its range
+  where it reached the ejection temperature as soon as the thinnest wall did, toward the high end the
+  longer it stayed hot, low + (high - low) (1 - t_thin / t). The range's ends are the resin's published
+  shrinkage ([The resins](#the-resins), [1]); this scaling between them is cadgen's own model, not a published
+  law: it gives the right direction (the region that stays hot longest shrinks most and pulls the
+  part toward it) and a plausible size, nothing more. The cavity is cut oversize by the part's mean
   shrinkage, so what differs from the mean is an inherent strain, applied the same in every direction
   in a linear static solve on quadratic tets made from the same linear ones. The part is held 3-2-1 as
   a fixture holds it to measure it: at three corners far apart, the first in x, y and z, the second
@@ -156,9 +160,9 @@ lists every type and the fix actions it can carry.
 | `thinnest_wall` | info (pass) | The thinnest wall is within the range. | Quote it. |
 | `thick_wall` | warning | The thickest section is over the resin's range: a long cycle, and sink or voids. | `thin` it to the range's high end, keeping the wall even. |
 | `thickest_wall` | info (pass) | The thickest section is within the range. | Quote it. |
-| `warp_over_tolerance` | error | The warp is over `warp_tolerance_mm` (how much, where, the hold). | `thin` the section that cools last toward the nominal wall (it shrinks most and pulls the part toward it), or a resin that shrinks less. |
-| `warp_within_tolerance` | info (pass) | The warp is within the tolerance. | Quote it. |
-| `warp` | info | No tolerance given: the warp, where, the hold and the shrinkage range. | Give `warp_tolerance_mm` to judge it. |
+| `warp_over_tolerance` | error | The warp estimate is over `warp_tolerance_mm` (how much, where, the hold). Say it is an estimate from cadgen's own model. | `thin` the section that cools last toward the nominal wall (it shrinks most and pulls the part toward it), or a resin that shrinks less. |
+| `warp_within_tolerance` | info (pass) | The warp estimate is within the tolerance. | Quote it as an estimate. |
+| `warp` | info | No tolerance given: the warp estimate, where, the hold and the shrinkage range. | Give `warp_tolerance_mm` to judge it. |
 | `hand_check` | info (pass) | The plate formula for the thickest wall against the simulation's last point, within 3 times. | Quote it as the check. |
 | `hand_check_far` | warning | The two are more than 3 times apart. | Check the resin, the temperatures and `h_W_m2K`; a boss cools sooner than a plate of its thickness, which is not an error. |
 | `cooling_time` | info | When every point is ejectable, and the last to cool. | Quote it; filling, packing and opening add to the cycle. |
@@ -203,10 +207,12 @@ lists every type and the fix actions it can carry.
   channels, and a mould core or corner that runs hot is not seen.
 - Constant room-temperature properties; crystallisation releases its heat evenly over a fixed range,
   whatever the cooling rate (a fast-cooled skin crystallises lower, and less).
-- The warp is lite: each point's shrinkage is the resin's mould shrinkage scaled by how long it
-  stayed hot, the same in every direction, with no flow or fibre orientation, no pressure history and
-  no mould constraint, applied elastically once the part is out. Read its pattern and its order of
-  magnitude, not its last digit.
+- **The warp is an estimate from cadgen's own model, not a published law.** Each point's shrinkage
+  is placed in the resin's published range by how long it stayed hot (1 - t_thin / t), a scaling
+  cadgen chose, not one a source gives; it is the same in every direction, with no flow or fibre
+  orientation, no pressure history and no mould constraint, applied elastically once the part is
+  out. Say "estimate" with every warp number, read its pattern and its order of magnitude, never its
+  last digit, and confirm a warp that matters with the moulder's own simulation or a trial shot.
 
 ## When the model is big
 
