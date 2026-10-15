@@ -68,9 +68,11 @@ overhangs, supports, orientation) is `$dfam-check`'s.
 
 ## CNC machining
 
-Not in this version: the cut itself, tool wear, and chatter as a simulation.
+The cut's deflection, its stress and its chatter run today as `machining`
+([machining.md](machining.md)); these hand estimates are its hand checks. Not in this version: tool
+wear, the tool's own flexibility, and the chip's formation.
 
-- **A thin wall's deflection under the cutter** runs today in `$fea` as `static`: the faces the vise
+- **A thin wall's deflection under the cutter** also runs in `$fea` as `static`: the faces the vise
   or fixture holds `fixed`, and the cutting force as a `force` on the face the cutter is on. The
   tangential force is about k_c × a_p × f_z (specific cutting force × axial depth × feed per tooth)
   for one engaged tooth, with k_c about 500-900 N/mm² for aluminium alloys and 1500-2500 for steels
