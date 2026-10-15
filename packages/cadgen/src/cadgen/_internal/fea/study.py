@@ -655,7 +655,9 @@ def parse_study(study: str | dict | Path | None) -> Study:
     material_required = getattr(analysis, "material_required", True)
     if "material" not in document and material_required:
         raise ValueError("study: 'material' is required (a table name or {E_MPa, nu, yield_MPa})")
-    material = material_from_spec(document["material"]) if "material" in document else None
+    # An analysis whose material carries numbers the solver's table has not (a machining study's cutting force) reads it.
+    material_of = getattr(analysis, "material_from_spec", material_from_spec)
+    material = material_of(document["material"]) if "material" in document else None
 
     inputs = analysis.parse(document)
     fixtures = tuple(getattr(inputs, "fixtures", ()))
