@@ -69,6 +69,7 @@ none is registered so today.
 | `heat_treatment` | Heat treatment | runs today (lite: a steel part quench hardened, thermal only, hardness through its Jominy curve) | `$manufacturing-sim`'s heat-treatment reference |
 | `machining` | Machining | runs today (lite: a milling or turning cut's deflection and stress, and its chatter stability lobes, the tool rigid) | `$manufacturing-sim`'s machining reference |
 | `sheet_metal` | Sheet metal | runs today, as an estimate per bend (springback, cracking, bend allowance) | `$manufacturing-sim`'s sheet metal reference |
+| `molding` | Injection molding | runs today (lite: a moulded part cooling in its mould to ejection and its warp from uneven shrinkage, the cavity starting full and packed) | `$manufacturing-sim`'s molding reference |
 
 Nothing is planned beyond these today: [planned-next.md](planned-next.md).
 

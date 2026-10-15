@@ -167,6 +167,13 @@ class Cooling:
     #: Why it ended early, in words ("still not solid after ..."), or "".
     cut_short: str = ""
     solver: str = ""
+    #: The volume's mean temperature, °C, and the share of it not yet past the stop temperature, percent, at each
+    #: ``curve_t`` (a moulding's: its mean and the share still too hot to eject).
+    curve_mean: list = field(default_factory=list)
+    curve_above: list = field(default_factory=list)
+    #: Each node's time to fall below the march's ``watch_C``, s (the end of the march where it never did); ``None``
+    #: when no temperature was watched.
+    watch_s: "np.ndarray | None" = None
 
 
 def node_volumes(space: "FemSpace") -> "np.ndarray":
@@ -308,9 +315,17 @@ def march(
     iterative: bool = False,
     log: Callable[[str], None] | None = None,
     limit_s: float | None = None,
+    stop_C: float | None = None,
+    goal: str = "fully solid",
+    watch_C: float | None = None,
 ) -> Cooling:
     """The casting from the pour (every node at ``pour_C``, held nodes at their temperature) to fully solid, or to
     ``end_s`` when given (cooling on after it is solid).
+
+    ``stop_C`` moves the goal from the solidus to that temperature: the march runs until every node is below it, and
+    ``freeze_s`` is when each passed it (a moulding's ejection temperature, below or within its crystallisation
+    range). ``goal`` names it in the words of a run cut short. ``watch_C``: each node's time to fall below it is kept
+    too (a semi-crystalline moulding's crystallisation onset).
 
     The step starts at ``first_step_s`` and adapts to the targets above (:data:`STEP_SHARE_T`, :data:`STEP_LIQUID`,
     :data:`STEP_NODE_H`; ``span_C`` is pour to mould); a step that moved more than :data:`REJECT_ABOVE` times them, or
@@ -358,9 +373,11 @@ def march(
         T[fixed] = held.celsius
     H = enthalpy.H(T)
     H_solid = enthalpy.H_solid
+    H_stop = H_solid if stop_C is None else float(enthalpy.H(stop_C))
     T_niyama = enthalpy.solidus + NIYAMA_SHARE * (enthalpy.liquidus - enthalpy.solidus)
     volume = float(m.sum())
     freeze = np.full(n, np.nan)
+    watch = np.full(n, np.nan)
     niyama = np.full(n, np.nan)
     rate = np.full(n, np.nan)
     G = gradient(T)
@@ -376,6 +393,7 @@ def march(
     next_frame = spacing
     liquid_now = 100.0 * float(m @ enthalpy.liquid(T)) / volume
     curve_t, curve_liquid = [0.0], [liquid_now]
+    curve_mean, curve_above = [float(m @ T) / volume], [100.0 * float(m[H > H_stop].sum()) / volume]
     t, dt = 0.0, float(first_step_s)
     steps = rejected = passes = 0
     smallest, largest = math.inf, 0.0
@@ -383,7 +401,7 @@ def march(
     stopped_at, cut_short = None, ""
 
     def solid_everywhere() -> bool:
-        return bool((H[~is_fixed] <= H_solid).all())
+        return bool((H[~is_fixed] <= H_stop).all())
 
     def step(Tn, t0: float, dt: float):
         """T at t0 + dt from Tn, and whether its iterations settled."""
@@ -441,8 +459,9 @@ def march(
         elif not hold and solid_everywhere():
             break
         if end_s is None and t > PATIENCE * hand_s:
-            cut_short = (f"still not fully solid after {t:.4g} s, {PATIENCE:g} times the hand estimate; give the study "
-                         "a duration_s, or check the alloy, the mould temperature and h")
+            advice = ("give the study a duration_s, or check the alloy, the mould temperature and h" if stop_C is None
+                      else "check the temperatures and h")
+            cut_short = f"still not {goal} after {t:.4g} s, {PATIENCE:g} times the hand estimate; {advice}"
             break
         if steps >= MAX_STEPS:
             cut_short = f"stopped after {MAX_STEPS} steps at t = {t:.4g} s"
@@ -464,10 +483,14 @@ def march(
             heat_in += float(residual[fixed].sum()) * dt
         G1 = gradient(T1)
         # Each node's time to fully solid (its enthalpy through the solidus's), and the Niyama temperature's crossing.
-        crossed = np.isnan(freeze) & (H1 <= H_solid) & (H > H_solid)
+        crossed = np.isnan(freeze) & (H1 <= H_stop) & (H > H_stop)
         if crossed.any():
-            share = (H[crossed] - H_solid) / (H[crossed] - H1[crossed])
+            share = (H[crossed] - H_stop) / (H[crossed] - H1[crossed])
             freeze[crossed] = t + share * dt
+        if watch_C is not None:
+            falling = np.isnan(watch) & (T1 <= watch_C) & (T > watch_C)
+            if falling.any():
+                watch[falling] = t + (T[falling] - watch_C) / (T[falling] - T1[falling]) * dt
         passing = np.isnan(niyama) & (T1 <= T_niyama) & (T > T_niyama)
         if passing.any():
             share = (T[passing] - T_niyama) / (T[passing] - T1[passing])
@@ -481,6 +504,8 @@ def march(
         smallest, largest = min(smallest, dt), max(largest, dt)
         curve_t.append(t)
         curve_liquid.append(liquid_now)
+        curve_mean.append(float(m @ T) / volume)
+        curve_above.append(100.0 * float(m[H > H_stop].sum()) / volume)
         if t >= next_frame * (1 - 1e-9):
             kept.append((t, T.copy()))
             next_frame = t + spacing
@@ -496,19 +521,24 @@ def march(
             free, solver_next = build(entries, is_fixed)
             solver_next.builds, solver_next.iterations = solver.builds, solver.iterations
             solver = solver_next
-        clock.tell(lambda: f"freezing: t = {t:.4g} s, {curve_liquid[-1]:.3g} % still liquid, {steps} steps")
+        if stop_C is None:
+            clock.tell(lambda: f"freezing: t = {t:.4g} s, {curve_liquid[-1]:.3g} % still liquid, {steps} steps")
+        else:
+            clock.tell(lambda: f"cooling: t = {t:.4g} s, {curve_above[-1]:.3g} % still above {stop_C:g} °C, {steps} steps")
         if clock.over():
             stopped_at = t
             break
     if kept[-1][0] != t:
         kept.append((t, T.copy()))
     chosen = _evenly(kept, frames)
-    solid = bool((H <= H_solid).all())
+    solid = bool((H <= H_stop).all())
     freeze = np.where(np.isnan(freeze), t, freeze)
+    watched = None if watch_C is None else np.where(np.isnan(watch), np.where(T <= watch_C, 0.0, t), watch)
     if len(curve_t) > CURVE_POINTS:
         every = math.ceil(len(curve_t) / CURVE_POINTS)
         picks = sorted({0, len(curve_t) - 1, *range(0, len(curve_t), every)})
         curve_t, curve_liquid = [curve_t[i] for i in picks], [curve_liquid[i] for i in picks]
+        curve_mean, curve_above = [curve_mean[i] for i in picks], [curve_above[i] for i in picks]
     how = ("multigrid-preconditioned CG" if iterative else "CG preconditioned by a SuperLU factor") + \
         f", backward Euler on the enthalpy, {steps} adaptive steps ({solver.builds} factorisations, " \
         f"{solver.iterations} CG iterations)"
@@ -517,6 +547,7 @@ def march(
         rejected=rejected, passes=passes, smallest_step=smallest if steps else 0.0, largest_step=largest,
         heat_out=heat_out, heat_in=heat_in, energy_start=energy_start, energy_end=float(m @ H), curve_t=curve_t,
         curve_liquid=curve_liquid, final=T, stopped_at=stopped_at, cut_short=cut_short, solver=how,
+        curve_mean=curve_mean, curve_above=curve_above, watch_s=watched,
     )
 
 
@@ -716,8 +747,8 @@ def boundary_facet_rows(space: "FemSpace") -> "np.ndarray":
     ``mesh.boundary_facets()`` order: how a section's ray names its face."""
     import numpy as np
 
-    triangles = np.sort(np.asarray(space.boundary_quadratic)[:, :3], axis=1)
-    facets = np.sort(space.mesh.facets[:, space.mesh.boundary_facets()].T, axis=1)
+    triangles = np.sort(np.asarray(space.boundary_quadratic)[:, :3].astype(np.int64), axis=1)
+    facets = np.sort(space.mesh.facets[:, space.mesh.boundary_facets()].T.astype(np.int64), axis=1)
     n = space.mesh.p.shape[1]
     keys = (triangles[:, 0] * n + triangles[:, 1]) * n + triangles[:, 2]
     wanted = (facets[:, 0] * n + facets[:, 1]) * n + facets[:, 2]

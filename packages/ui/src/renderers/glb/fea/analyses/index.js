@@ -31,6 +31,7 @@ import heat_treatment from "./heat_treatment.js";
 import impact from "./impact.js";
 import machining from "./machining.js";
 import modal from "./modal.js";
+import molding from "./molding.js";
 import multiphase from "./multiphase.js";
 import nonlinear from "./nonlinear.js";
 import piezo from "./piezo.js";
@@ -61,6 +62,7 @@ export const ANALYSES = Object.freeze({
   heat_treatment,
   machining,
   sheet_metal,
+  molding,
 });
 
 /** Every analysis this viewer knows, by name. */
