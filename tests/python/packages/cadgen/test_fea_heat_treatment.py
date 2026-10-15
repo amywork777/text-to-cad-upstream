@@ -123,7 +123,8 @@ class ThinAndThick(unittest.TestCase):
         self.assertLess(soft["measured"]["value"], 55.0)
         self.assertIn(soft["fix"]["action"], {"change_material", "change_quenchant", "thin"})
         self.assertTrue(soft["fix"]["params"] and soft["fix"]["where"]["points_mm"])
-        self.assertEqual(self.water.summary["verdict"]["status"], "fail")
+        self.assertEqual(self.water.verdict["status"], "fix")
+        self.assertTrue(self.oil.verdict["headline"].startswith("Ready to quench · core "), self.oil.verdict)
         # Every finding says what it is, and every error or warning that has a fix carries one.
         for found in self.water.findings:
             with self.subTest(finding=found["type"]):

@@ -27,7 +27,7 @@ from typing import Any, ClassVar
 from cadgen._internal.fea.analyses import kinds
 from cadgen._internal.fea.analyses.base import (
     AnalysisBase, AnalysisResult, FieldSpec, Inputs, Series, SeriesFrame, SolveContext, finding, frame_attributes,
-    max_frames, verdict, xyz,
+    max_frames, xyz,
 )
 
 __all__ = ["HeatTreatmentAnalysis", "HeatTreatmentInputs", "LIMITS"]
@@ -263,6 +263,10 @@ class HeatTreatmentAnalysis(AnalysisBase):
 
     # -- findings ------------------------------------------------------------------------------------
 
+    def ready_words(self, summary: dict) -> str:
+        """The verdict's headline when nothing is to fix: "Ready to quench · core 52 HRC"."""
+        return f"Ready to quench · core {summary['core_hrc']:.3g} HRC"
+
     def findings(self, ctx: SolveContext, result: AnalysisResult, inputs: HeatTreatmentInputs,
                  check_results: list[dict], *, assembly: bool) -> list[dict]:
         from cadgen._internal.fea.timestep import stopped_finding
@@ -302,7 +306,6 @@ class HeatTreatmentAnalysis(AnalysisBase):
                                  f"{inputs.grade.name} is a carburising grade: this is the core's hardness; the "
                                  "carburised case, harder and shallower, is not modelled",
                                  "the case's hardness and depth follow the carburising, which this does not simulate"))
-        s["findings"] = list(found)
         return found
 
     def _surface_and_core(self, ctx: SolveContext, result: AnalysisResult):
@@ -632,7 +635,6 @@ class HeatTreatmentAnalysis(AnalysisBase):
             "smallest_step_s": round(run.smallest_step, 9),
             "largest_step_s": round(run.largest_step, 9),
             "frames": len(run.frames),
-            "verdict": verdict(s.get("findings", [])),
             "checks": check_results,
         }
         if run.stopped_at is not None:
