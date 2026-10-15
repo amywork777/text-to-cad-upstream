@@ -129,6 +129,9 @@ class Held:
     celsius: float
     #: Once the hold ends, these films take over on the same faces (the mould's own); none leaves them insulated.
     after: list = field(default_factory=list)
+    #: The hold ends here, s, if the rest is not solid sooner (a face held above the liquidus keeps its neighbours
+    #: liquid for as long as it is held).
+    until_s: float = math.inf
 
 
 @dataclass
@@ -312,8 +315,8 @@ def march(
     The step starts at ``first_step_s`` and adapts to the targets above (:data:`STEP_SHARE_T`, :data:`STEP_LIQUID`,
     :data:`STEP_NODE_H`; ``span_C`` is pour to mould); a step that moved more than :data:`REJECT_ABOVE` times them, or
     whose iterations did not settle, is taken again shorter. With no ``end_s`` it stops when every node is solid, or
-    past :data:`PATIENCE` times ``hand_s`` (saying so). ``held`` faces are held until every other node is solid, then
-    handed to their ``after`` films. Frames are kept about every ``hand_s / (frames - 1)``, the spacing doubling as
+    past :data:`PATIENCE` times ``hand_s`` (saying so). ``held`` faces are held until every other node is solid or
+    ``held.until_s``, then handed to their ``after`` films. Frames are kept about every ``hand_s / (frames - 1)``, the spacing doubling as
     they fill. ``log`` gets a progress line at most every ``timestep.PROGRESS_S``; past ``limit_s`` seconds of wall
     time it stops after the step it is on.
     """
@@ -485,8 +488,8 @@ def march(
                 kept = kept[::2]
                 spacing *= 2
         dt *= min(1.5, max(0.5, 0.8 / moved)) if moved > 0 else 1.5
-        if hold and solid_everywhere():
-            # Everything but the held faces is solid: the riser has done its work; the mould takes those faces too.
+        if hold and (solid_everywhere() or t >= held.until_s):
+            # The rest is solid, or the riser's time is up: the mould takes the held faces too.
             hold = False
             is_fixed[:] = False
             entries = active + later

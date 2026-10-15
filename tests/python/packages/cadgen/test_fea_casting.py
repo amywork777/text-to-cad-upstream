@@ -8,7 +8,7 @@ Benchmarks, each through the whole analysis on a part build123d writes into a te
 - a thin fin freezes, through its whole length, before the block it hangs from has started to freeze at its core,
   and the thinnest section reads the fin's 3 mm;
 - a thick boss on a thin bar is an isolated hot spot when the feeder is at the bar's end, and none when the boss's own
-  top is the feeder;
+  top is the feeder, insulated or held hot (the hold puts its heat in, and lets go);
 - energy: every joule the metal gave up (its sensible heat and all of its latent heat) left through the mould.
 
 The manufacturing-sim skill's router table and its casting reference stay in step with the registry and the tables.
@@ -180,6 +180,7 @@ class Feeding(unittest.TestCase):
         end = next(face.ref for face in faces if face.normal and face.normal[0] < -0.99)
         top = next(face.ref for face in faces if face.normal and face.normal[2] > 0.99 and face.center_mm[2] > 15)
         study = {**BASE, "mesh": {"size_mm": 2.0}}
+        cls.top_faces = [top]
         cls.from_end = solve(step, directory / "end.glb", {**study, "feeders": [{"faces": [end]}]})
         cls.from_top = solve(step, directory / "top.glb", {**study, "feeders": [{"faces": [top]}]})
 
@@ -196,6 +197,20 @@ class Feeding(unittest.TestCase):
     def test_a_feeder_on_the_boss_feeds_it(self):
         self.assertEqual([f for f in self.from_top.findings if f["type"] == "shrinkage_hot_spot"], [])
         self.assertEqual(self.from_top.summary["hot_spots"], [])
+
+    def test_a_riser_held_hot_feeds_it_puts_its_heat_in_and_lets_go(self):
+        directory = class_directory(type(self))
+        study = {**BASE, "mesh": {"size_mm": 2.0}, "feeders": [{"faces": self.top_faces, "held_C": 720}]}
+        held = solve(bar_with_boss(directory), directory / "held.glb", study)
+        summary = held.summary
+        self.assertTrue(summary["fully_solid"], held.findings)
+        self.assertEqual(summary["hot_spots"], [])
+        self.assertGreater(summary["heat_from_held_feeders_J"], 0.0)
+        self.assertLess(summary["energy_balance"], 1e-6)
+        # Held at most 1.44 times Chvorinov's time, then it freezes too, last, under the riser.
+        self.assertGreater(summary["solidification_time_s"], 1.44 * summary["hand_check"]["estimate_s"])
+        x, _, z = summary["last_to_freeze_at_mm"]
+        self.assertTrue(42 <= x <= 58 and z >= 12, summary["last_to_freeze_at_mm"])
 
 
 @needs_fea

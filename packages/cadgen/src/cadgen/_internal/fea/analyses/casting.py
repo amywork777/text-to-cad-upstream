@@ -5,7 +5,7 @@ The study names the ``alloy`` (:data:`cadgen._internal.fea.foundry.ALLOYS`) and 
 transfer coefficient h on every outer face (a sand or investment mould's falls as it heats, e / √(π t); a metal
 mould's is constant). ``pour_temperature_C``, ``mold_temperature_C`` and ``h_W_m2K`` override them. ``feeders`` are
 the faces metal feeds from (gates, risers, a sprue's contact): insulated unless an entry gives ``h_W_m2K``, or held at
-``held_C`` while the rest freezes. ``fill_time_s`` is how long the mould takes to fill (estimated from the mass when
+``held_C`` while the rest freezes (at most :data:`HOLD_FOR` times Chvorinov's time for the casting). ``fill_time_s`` is how long the mould takes to fill (estimated from the mass when
 left out), ``duration_s`` how long to follow it (until fully solid when left out).
 
 The cavity starts full at the pour temperature; the enthalpy march (:mod:`cadgen._internal.fea.solidification`)
@@ -50,6 +50,9 @@ POCKET_LIFE, POCKET_VOLUME = 0.03, 0.002
 HAND_FACTOR = 3.0
 #: Hot spots named, at most.
 MOST_POCKETS = 5
+#: A held feeder is held this many times Chvorinov's time for the casting at most: a riser of 1.2 times its modulus
+#: stays liquid 1.2² times as long.
+HOLD_FOR = 1.44
 FEEDER_KEYS = {"faces", "h_W_m2K", "held_C"}
 NIYAMA_UNITS = "(°C·s)^½/mm"
 
@@ -257,9 +260,6 @@ class CastingAnalysis(AnalysisBase):
             elif feeder.h > 0:
                 films.append(solidification.Film(space.facets_of_rows(rows), inputs.mold_C,
                                                  lambda t0, t1, h=feeder.h: h))
-        held = None
-        if held_dofs:
-            held = solidification.Held(np.unique(np.concatenate(held_dofs)), float(held_C), held_after)
         nodes = space.dof_locations
         m = solidification.node_volumes(space)
         part_volume = float(m.sum())
@@ -272,6 +272,10 @@ class CastingAnalysis(AnalysisBase):
         modulus = part_volume / max(float(areas[cooled].sum()), 1e-12)
         hand = foundry.chvorinov(alloy, inputs.process, pour_C=inputs.pour_C, mold_C=inputs.mold_C, h=inputs.h,
                                  modulus_mm=modulus)
+        held = None
+        if held_dofs:
+            held = solidification.Held(np.unique(np.concatenate(held_dofs)), float(held_C), held_after,
+                                       until_s=HOLD_FOR * hand["estimate_s"])
         timings = {"assemble_s": time.perf_counter() - started}
         started = time.perf_counter()
         iterative = plan_solver(ctx) is not None or len(nodes) >= DIRECT_SOLVE_BELOW

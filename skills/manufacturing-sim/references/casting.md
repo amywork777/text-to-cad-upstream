@@ -35,8 +35,9 @@ Lite: read [Limits](#limits) before you report.
 - `feeders`: the faces metal feeds from while the casting freezes: the gate, the riser, the sprue's
   contact, by the Viewer's selectors. Each entry takes `faces`, and optionally `h_W_m2K` (its own
   coefficient to the mould temperature; left out, the face is insulated, as a riser's metal sits on
-  it) or `held_C` (held at that temperature until the rest is solid, then cooled like the mould: a
-  riser that outlasts the casting). A feeder is taken to stay liquid until the casting is solid.
+  it) or `held_C` (held at that temperature until the rest is solid, or at most 1.44 times
+  Chvorinov's time for the casting, as long as a riser of 1.2 times its modulus stays liquid; then
+  cooled like the mould). A feeder is taken to stay liquid until the casting is solid.
 - `fill_time_s`: how long the mould takes to fill. Left out, it is estimated from the mass (see
   [The processes](#the-processes)), and the result says so.
 - `duration_s`: how long to follow it. Left out, until every point is solid.
