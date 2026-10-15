@@ -29,6 +29,7 @@ import fsi from "./fsi.js";
 import harmonic from "./harmonic.js";
 import heat_treatment from "./heat_treatment.js";
 import impact from "./impact.js";
+import machining from "./machining.js";
 import modal from "./modal.js";
 import multiphase from "./multiphase.js";
 import nonlinear from "./nonlinear.js";
@@ -57,6 +58,7 @@ export const ANALYSES = Object.freeze({
   multiphase,
   casting,
   heat_treatment,
+  machining,
 });
 
 /** Every analysis this viewer knows, by name. */
