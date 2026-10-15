@@ -135,3 +135,44 @@ Units: mm for geometry, °C for temperatures, s for times, W/(m² K) for a heat 
    section, a hotter pour or mould. Show the result GLB with `$cad` (its Show the model step),
    beside the STEP; the Time scrubber plays the temperature and the liquid fraction through the
    freezing.
+
+## Check, fix, check again
+
+<!-- TODO(amy): when the manufacturing verb lands, step 1 runs
+`cadgen manufacturing check part.step --study part.casting.json --fail-on error`, which exits 3 while the
+verdict fails the gate, and the sidecar named below becomes its result. Until then it is `cadgen fea solve`. -->
+
+A study is a check on the design, as CI is on code: when the user wants a part that casts, fix what
+it finds and run it again until it passes, then tell the user what changed.
+
+1. **Run it** (Workflow step 3). Its lines end on a checklist, failures first, then the verdict:
+
+   ```text
+   FAIL  shrinkage_hot_spot  liquid cut off: 6667 mm³, needs below 15.9 mm³; at [50.263, -1.105, 14.134] mm; fix: Feed it from #o1.f7: ...
+   WARN  low_niyama          lowest Niyama: 0.044 (°C·s)^½/mm, needs above 0.3 (°C·s)^½/mm; at [49.665, 1.287, 12.304] mm; fix: ...
+   PASS  thinnest_section    section solid through: 20.8 s, needs above 0.876 s; at #o1.f5 [0.667, -4.333, 3.0] mm
+   PASS  hand_check          simulation against the rule: 1.11×, needs below 3×
+   Verdict: 1 to fix · shrinkage hot spot · 1 failed, 1 warning, 2 passed
+   ```
+
+2. **Read the verdict and every fix** from the sidecar (`part.fea.json`): `verdict.status` is `ready`
+   (no error) or `fix`. Each error and warning carries `measured` (its `value` against its `limit`,
+   `units`, `pass_when`) and `fix`: `action`, `where` (face refs or points), `params` (the target
+   values), `summary`, and `alternatives` for when the first cannot be made.
+3. **Make the fix** its `action` names:
+   - `add_feeder`, `enlarge_feeder`: add `where`'s face to the study's `feeders`; the riser it needs
+     is `params` (`riser_diameter_mm`, `riser_height_mm`), modelled on that face only if the user wants
+     the gating in the model.
+   - `thicken`, `thin`: change that section in the model script (`$cad`) to `params.thickness_mm`
+     (or under it, for `thin`), and rebuild the STEP.
+   - `raise_mold_temperature`, `move_gate`: the study's `mold_temperature_C`, or a feeder at `where`;
+     only where the user's foundry can.
+   - `add_chill`: a chill is in the mould, not the part, and the run does not model one: tell the user
+     where, and take the next alternative.
+   - `check_inputs`, `set_duration`, `coarsen_mesh`, `raise_time_limit`: the study, not the part.
+
+   Never change the alloy, the process or the fill time to clear a finding: they are the user's.
+4. **Rebuild and run again** until the verdict is `ready`, weighing each warning left. After three
+   rounds that do not converge, stop and ask the user.
+5. **Report the checklist**: each FAIL and WARN with the fix made, the PASS lines, the verdict and the
+   limits.

@@ -11,6 +11,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Protocol
 
+# The study's verdict is every judging verb's: CAM's shape, read off the findings (`cadgen._internal.checklist`).
+from cadgen._internal.checklist import verdict
+
 if TYPE_CHECKING:
     import numpy as np
     from cadgen._internal.fea.femspace import FemSpace
@@ -161,7 +164,7 @@ class AnalysisBase:
     """The protocol's defaults: a subclass states only what is its own.
 
     Optional hooks that ``run.py`` and ``fit.py`` probe with ``hasattr`` (``governing``, ``refined_record``,
-    ``upstream_for``, ``settle_steps``, ``write_files``, ``symmetric_about``) are never defined here."""
+    ``upstream_for``, ``settle_steps``, ``write_files``, ``symmetric_about``, ``ready_words``) are never defined here."""
 
     tier: ClassVar[Tier] = 3
     estimate_only: ClassVar[bool] = False
@@ -190,10 +193,14 @@ def finding(severity: str, kind: str, summary: str, description: str, items=(), 
     severity: ``error`` (fails: the part as designed is likely to fail or be defective), ``warning`` (a risk
         to fix or confirm), ``info`` (passed, or a note).
     measured: the number judged, when there is one: ``{"value", "limit", "units", "pass_when"}`` with
-        ``pass_when`` ``"below"`` or ``"above"`` the limit.
+        ``pass_when`` ``"below"`` or ``"above"`` the limit, and optionally ``"quantity"``, what the value is in
+        a few words (``"liquid cut off"``). An ``info`` with ``measured`` is a check that passed; every check
+        an analysis makes should say so when it passes, so the checklist lists the passes too.
     fix: what to change so it passes: ``{"action", "summary", "where", "params"}``; ``action`` a short verb
         id (``add_feeder``, ``thicken``, ``increase_radius``...), ``summary`` the sentence an engineer reads,
-        ``where`` face refs or points, ``params`` the target values (``{"thickness_mm": 4}``).
+        ``where`` face refs or points, ``params`` the target values (``{"thickness_mm": 4}``). It may carry
+        ``alternatives``: other fixes of the same shape, in order of preference, for when the first cannot be
+        made. Every ``error`` and ``warning`` should carry one.
     """
     entry = {"check": "fea", "severity": severity, "type": kind, "summary": summary, "description": description,
              "items": list(items)}
@@ -210,15 +217,6 @@ _SEVERITY = {"error": 0, "warning": 1, "info": 2}
 def by_severity(found: list[dict]) -> list[dict]:
     """Findings errors first, then warnings, then notes; stable within each."""
     return sorted(found, key=lambda item: _SEVERITY[item["severity"]])
-
-
-def verdict(found: list[dict]) -> dict:
-    """The study's verdict, as a CI check reads one: ``fail`` on any error, ``warn`` on any warning, else ``pass``."""
-    errors = sum(1 for item in found if item["severity"] == "error")
-    warnings = sum(1 for item in found if item["severity"] == "warning")
-    status = "fail" if errors else "warn" if warnings else "pass"
-    return {"status": status, "errors": errors, "warnings": warnings,
-            "notes": sum(1 for item in found if item["severity"] == "info")}
 
 
 def xyz(point, digits: int = 3) -> list[float]:
