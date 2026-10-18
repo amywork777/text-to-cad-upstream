@@ -4,9 +4,11 @@ import type { CadKernelVariant, CadWorkspaceService } from '@text-to-cad/core/cl
 import { Button } from '../primitives/button.jsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from '../primitives/dropdown-menu.jsx';
 import { FLOATING_SURFACE_CLASS } from '../lib/floatingSurface.js';
+import { useI18n } from '../i18n/index.js';
 import { cn } from '../lib/utils.js';
 
 // The model's own build is build123d's, on OpenCASCADE; every other kernel is named by its folder.
+// Kernels are named, not translated: each name is the same in every language.
 const KERNEL_NAMES: Record<string, string> = { brep: 'BREP', 'usd-brep': 'NVIDIA usd-brep', sdm: 'Emergent Matter SDM', implicit: 'Implicits', manifold: 'Manifold', three: 'three.js' };
 export const kernelName = (kernel: string) => KERNEL_NAMES[kernel] ?? kernel;
 
@@ -32,23 +34,27 @@ export function useKernelVariants(client: CadWorkspaceService, file: string): re
 }
 
 /**
- * The Kernel menu in the navbar: which kernel's build of the model is on screen, and the others to
- * switch to. Choosing one shows that file in this view, as the explorer's pick would; nothing is
- * built. Drawn only for a model with another kernel's build.
+ * The Kernel menu at the navbar's right, first after the host's update: which kernel's build of the
+ * model is on screen, and the others to switch to. It reads as the file's name does, in the navbar's
+ * text with the chevron that says it opens, muted until the pointer is on it or it is open; its
+ * name says what it is, so it has no hint. Choosing a build shows that file in this view, as the
+ * explorer's pick would; nothing is built. Drawn only for a model with another kernel's build.
  */
 export function KernelMenu({ variants, onOpen }: { variants: readonly CadKernelVariant[]; onOpen(file: string): void }) {
+  const { t } = useI18n();
   const current = variants.find(variant => variant.current);
   if (variants.length < 2 || !current) return null;
-  return <DropdownMenu>
+  return <DropdownMenu modal={false}>
     <DropdownMenuTrigger asChild>
-      <Button type="button" variant="ghost" size="xs" aria-label={`Kernel: ${kernelName(current.kernel)}`} data-kernel-menu=""
-        className="h-6 gap-1 px-1.5 text-tiny text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground">
-        {kernelName(current.kernel)}<ChevronDown className="size-3" aria-hidden="true" />
+      <Button type="button" variant="ghost" size="xs" aria-label={t('navbar.kernelCurrent', { name: kernelName(current.kernel) })} data-kernel-menu=""
+        className="h-6 gap-0.5 px-1 text-sm font-normal text-muted-foreground hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground">
+        {kernelName(current.kernel)}
+        <ChevronDown className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
       </Button>
     </DropdownMenuTrigger>
-    <DropdownMenuContent align="end" sideOffset={6} collisionPadding={8} aria-label="Kernel" data-kernel-menu-content=""
+    <DropdownMenuContent align="end" sideOffset={6} collisionPadding={8} aria-label={t('navbar.kernel')} data-kernel-menu-content=""
       className={cn(FLOATING_SURFACE_CLASS, 'min-w-48 data-[state=closed]:animate-none!')}>
-      <DropdownMenuLabel inset={false} className="text-tiny text-muted-foreground">Kernel</DropdownMenuLabel>
+      <DropdownMenuLabel inset={false} className="text-tiny text-muted-foreground">{t('navbar.kernel')}</DropdownMenuLabel>
       <DropdownMenuRadioGroup value={current.file} onValueChange={(file: string) => { if (file !== current.file) onOpen(file); }}>
         {variants.map(variant => <DropdownMenuRadioItem key={variant.file} value={variant.file} className="text-tiny">
           {kernelName(variant.kernel)}

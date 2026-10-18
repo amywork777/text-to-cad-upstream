@@ -28,8 +28,8 @@ STEP (faces, edges and refs work); a kernel's STL is a mesh.
 Run the skill with cadgen's Python, so a kernel runs a model with the same
 build123d the model's own build uses:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 python`
+- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
+- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
 
 A kernel's own runtime (a venv, Node packages) is installed once by its
 `setup.sh` into `~/.cache/text-to-cad/kernels/<kernel>` (or

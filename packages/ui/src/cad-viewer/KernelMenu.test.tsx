@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
+import { I18nProvider } from '../i18n/index.js';
 import { KernelMenu, useKernelVariants } from './KernelMenu.js';
 Object.assign(globalThis, { React });
 afterEach(cleanup);
@@ -20,6 +21,13 @@ test('the Kernel menu names the build on screen and shows another in its place',
     .toEqual([['BREP', 'true'], ['Emergent Matter SDM', 'false'], ['NVIDIA usd-brep', 'false']]);
   fireEvent.click(screen.getByRole('menuitemradio', { name: 'NVIDIA usd-brep' }));
   expect(opened).toEqual(['/m/STEP/.kernels/usd-brep/a.step']);
+});
+
+test('the menu reads in the host\'s language; a kernel\'s name is the same in every one', () => {
+  render(<I18nProvider locale="ja"><KernelMenu variants={family} onOpen={() => {}} /></I18nProvider>);
+  fireEvent.keyDown(screen.getByRole('button', { name: 'カーネル: BREP' }), { key: 'Enter' });
+  expect(screen.getByText('カーネル')).toBeTruthy();
+  expect(screen.getByRole('menuitemradio', { name: 'NVIDIA usd-brep' })).toBeTruthy();
 });
 
 test('a model built on one kernel has no menu', () => {
