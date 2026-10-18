@@ -3,11 +3,11 @@ import { cn } from "@text-to-cad/ui/utils";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { ROW_NAME_UNDER_ACTIONS, TREE_INDENT_PX, TreeRowGuides, TreeRowLabel, TreeRowSurface, treeRowActionsClass } from "@text-to-cad/ui/primitives/tree-row";
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
-import ToolPanel, { ToolPanelClose } from "../kit/tools/ToolPanel.jsx";
+import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { assumedWords, formatDuration, jobSummary, operationDetail, toolSpeeds } from "./cam/extras.js";
 
-// The panel's id: Job keeps the tree's, as FEA's Study does, so the stack sizes it as Select's tree.
-export const CAM_JOB_PANEL_ID = "tree";
+// The section's id in the file sidebar: its size is its own (`sidebar:job`), not the Model tree's.
+export const CAM_JOB_SECTION_ID = "job";
 
 // The verdict's status in the theme's own status tones, FEA's verdict's: green to cut, red to fix.
 const TONES = Object.freeze({
@@ -23,8 +23,11 @@ const ROW_ACTIONS_WIDTH = "1.5rem";
 /** A tool's row: how the machine names it and what it is ("T1 6 mm flat"), its speed and feed beside it. */
 export const toolRowLabel = (tool) => [tool.label, tool.plain].filter(Boolean).join(" ");
 
-/** What a row chooses: its id, the operations it isolates, the faces Quick Edit names and the sentence it reads. */
-const opChoice = (op) => ({ id: `op:${op.index}`, ops: [op.index], faces: op.faces, summary: op.summary });
+/**
+ * What a row chooses: its id, its name (Quick Edit's chip), the operations it isolates, the faces Quick Edit names
+ * and the sentence it reads.
+ */
+const opChoice = (op) => ({ id: `op:${op.index}`, label: op.name || op.plain, ops: [op.index], faces: op.faces, summary: op.summary });
 
 /** The choices the panel's rows make, by row: a setup chooses all its operations; an error, the operation it is about. */
 export function camChoices(job) {
@@ -32,7 +35,8 @@ export function camChoices(job) {
   for (const op of job.operations) choices.set(`op:${op.index}`, opChoice(op));
   for (const setup of job.setups) {
     choices.set(`setup:${setup.id}`, {
-      id: `setup:${setup.id}`, ops: setup.operations.map((op) => op.index), faces: [...new Set(setup.operations.flatMap((op) => op.faces))],
+      id: `setup:${setup.id}`, label: `${setup.plain} setup`, ops: setup.operations.map((op) => op.index),
+      faces: [...new Set(setup.operations.flatMap((op) => op.faces))],
       summary: `${setup.plain} setup: ${setup.operations.map((op) => op.plain).join(", ")}, ${formatDuration(setup.timeS)}`,
     });
   }
@@ -41,7 +45,7 @@ export function camChoices(job) {
     const ops = job.operations.filter((op) => tool.operations.includes(op.index));
     const speeds = toolSpeeds(tool).replace(" · ", ", ");
     choices.set(`tool:${tool.id}`, {
-      id: `tool:${tool.id}`, ops: ops.map((op) => op.index), faces: [...new Set(ops.flatMap((op) => op.faces))],
+      id: `tool:${tool.id}`, label: toolRowLabel(tool), ops: ops.map((op) => op.index), faces: [...new Set(ops.flatMap((op) => op.faces))],
       summary: `${toolRowLabel(tool)}${speeds ? ` at ${speeds}` : ""}${ops.length ? `: ${ops.map((op) => op.plain).join(", ")}` : ", unused"}`,
     });
   }
@@ -49,7 +53,8 @@ export function camChoices(job) {
     if (finding.level !== "error") return;
     const ops = job.operations.filter((entry) => (finding.operations || [finding.operation]).includes(entry.index));
     const op = ops[0] || null;
-    choices.set(`finding:${index}`, { id: `finding:${index}`, ops: ops.map((entry) => entry.index), faces: [...new Set(ops.flatMap((entry) => entry.faces))],
+    choices.set(`finding:${index}`, { id: `finding:${index}`, label: finding.message, ops: ops.map((entry) => entry.index),
+      faces: [...new Set(ops.flatMap((entry) => entry.faces))],
       summary: op ? `${finding.message} (${ops.map((entry) => entry.summary).join("; ")})` : finding.message });
   });
   return choices;
@@ -152,20 +157,62 @@ function JobTools({ job, chosen, onChoose }) {
 }
 
 /**
- * A CAM result's Select panel, **Job**, closable as the Features tree is: the verdict first, its errors under
- * it, then each setup with its operations under it (the plain word, the tool, the time), in the job's order,
- * then the job's tools with their speeds. Every row is a choice (`onChoose(id)`; `chosen` is the row chosen):
- * it isolates its paths, and Quick Edit gets its faces and its sentence. An operation's swatch is its paths'
+ * What the view draws of the job beyond the part's surfaces, under a muted **Show** heading: a row each for what the
+ * file has (`gates`: Toolpaths, Rapids, Tool, Stock, Fixtures, Part), its words on hover, and its eye, as a layer's
+ * is: on hover, kept while it is put away. `onToggleGate(id, on)` turns one on or off.
+ */
+function JobShow({ gates, onToggleGate }) {
+  if (!gates?.length) return null;
+  return <section aria-label="Show" className="flex flex-col px-1 pb-1 text-tiny" data-cam-show="">
+    <h3 className="flex h-6 items-center pl-4 text-tiny font-normal text-muted-foreground">Show</h3>
+    <ul>
+      {gates.map((gate) => {
+        const away = !gate.on;
+        const eye = away ? "Reveal" : "Hide";
+        return <li key={gate.id} className="min-w-0">
+          <TreeRowSurface dense className="group/row gap-0 pr-0" style={{ paddingLeft: TREE_INDENT_PX, "--row-actions": ROW_ACTIONS_WIDTH }}
+            data-cam-gate={gate.id} data-cam-hidden={away ? "" : undefined}>
+            <TreeRowGuides depth={1} column={16} />
+            <span className="w-4 shrink-0" aria-hidden="true" />
+            <TooltipHint content={gate.hint}>
+              <span className={cn("flex h-full min-w-0 flex-1 items-center pr-2", away ? ROW_NAME_UNDER_ACTIONS.shown : ROW_NAME_UNDER_ACTIONS.hover,
+                away && "text-muted-foreground")}>
+                <TreeRowLabel className="flex-1">{gate.title}</TreeRowLabel>
+              </span>
+            </TooltipHint>
+            <div data-row-actions="" className={treeRowActionsClass(away)}>
+              <TooltipHint content={eye}>
+                <Button type="button" variant="ghost" size="icon-xs" aria-label={`${eye} ${gate.title.toLowerCase()}`} aria-pressed={away}
+                  className="h-5 w-4 text-muted-foreground" onClick={() => onToggleGate(gate.id, away)}>
+                  {away ? <EyeOff className="size-3" aria-hidden="true" /> : <Eye className="size-3" aria-hidden="true" />}
+                </Button>
+              </TooltipHint>
+            </div>
+          </TreeRowSurface>
+        </li>;
+      })}
+    </ul>
+  </section>;
+}
+
+/**
+ * A CAM result's **Job**, a section of the file sidebar (its tile a tree's, named Job), there whatever tool is in
+ * hand: the verdict first, its errors under it, then each setup with its operations under it (the plain word, the
+ * tool, the time), in the job's order, then the job's tools with their speeds, then what the view shows of the job
+ * (`gates`). Every setup, operation, tool and error row is a choice (`onChoose(id)`; `chosen` is the row chosen): it
+ * isolates its paths, and Quick Edit gets its faces and its sentence as a chip. An operation's swatch is its paths'
  * colour (`colours`, by index), and its Hide/Reveal eye puts its paths away and back (`hidden`, `onToggleHidden(index)`).
  *
- * @param {{ active: boolean, job: object, colours: Record<number, string>, chosen: string, onChoose(id: string): void,
- *   hidden?: Set<number> | null, onToggleHidden?(index: number): void }} props
+ * @param {{ job: object, colours: Record<number, string>, chosen: string, onChoose(id: string): void,
+ *   hidden?: Set<number> | null, onToggleHidden?(index: number): void,
+ *   gates?: { id: string, title: string, hint: string, on: boolean }[] | null, onToggleGate?(id: string, on: boolean): void }} props
  */
-export default function CamJobPanel({ active, job, colours, chosen, onChoose, hidden = null, onToggleHidden = null }) {
+export default function CamJobPanel({ job, colours, chosen, onChoose, hidden = null, onToggleHidden = null, gates = null, onToggleGate = () => {} }) {
   const away = hidden || NONE;
-  return <ToolPanel id={CAM_JOB_PANEL_ID} title="Job" label="Job" actions={<ToolPanelClose />} fit="tree" resizable fitContent closable collapsible={false}
-    hidden={!active}>
-    <CamVerdict job={job} chosen={chosen} onChoose={onChoose} />
+  return <ToolPanel id={CAM_JOB_SECTION_ID} title="Job" label="Job" fit="tree" collapsible={false}>
+    <div className="pt-1">
+      <CamVerdict job={job} chosen={chosen} onChoose={onChoose} />
+    </div>
     <ul className="flex flex-col px-1 pb-1 text-tiny" aria-label="Setups">
       {job.setups.map((setup) => <li key={setup.id} className="min-w-0 [&:not(:first-child)]:pt-1">
         <ul>
@@ -178,5 +225,6 @@ export default function CamJobPanel({ active, job, colours, chosen, onChoose, hi
       </li>)}
     </ul>
     <JobTools job={job} chosen={chosen} onChoose={onChoose} />
+    <JobShow gates={gates} onToggleGate={onToggleGate} />
   </ToolPanel>;
 }

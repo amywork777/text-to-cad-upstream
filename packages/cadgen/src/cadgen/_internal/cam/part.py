@@ -34,6 +34,15 @@ DEFAULT_DEFLECTION_MM = 0.01
 ANGULAR_DEFLECTION = 0.15
 
 
+
+def resolve_one(scene, ref: str):
+    """The one selection ``ref`` names. ``StepScene.resolve`` reads a reference line, one selection per ref in it
+    (``#o1.f1,o1.f2``); a job names one ref per entry, so a line of several raises as an unresolved one does."""
+    selections = scene.resolve(ref)
+    if len(selections) != 1:
+        raise ValueError(f"it names {len(selections)} references; give each its own entry")
+    return selections[0]
+
 @dataclass(frozen=True)
 class FaceInfo:
     ref: str
@@ -83,7 +92,7 @@ class Part:
         if self.kind != "step":
             raise CamJobError(f"{where}: {ref} names a face, but a DXF has no faces; name its profiles with region")
         try:
-            selection = self._scene.resolve(ref)
+            selection = resolve_one(self._scene, ref)
         except ValueError as exc:
             raise CamJobError(f"{where}: {ref} is not a face of this part ({exc}); cadgen cam features lists them") from None
         if selection.kind != "face":
@@ -160,7 +169,7 @@ def read_part(document: Path, *, occurrence: str | None = None, deflection_mm: f
     leaves = list(scene.leaves())
     if occurrence:
         try:
-            owner = scene.resolve(occurrence)
+            owner = resolve_one(scene, occurrence)
         except ValueError as exc:
             raise CamJobError(f"occurrence {occurrence}: {exc}") from None
         if owner.kind != "occurrence" or owner.ref not in {leaf.ref for leaf in leaves}:

@@ -213,9 +213,11 @@ export function toolPositionAt(timeline, t, setup = null) {
  * @param {typeof import("three")} THREE
  * @param {import("three").Object3D} root  The GLB's scene (the glTF scene root).
  * @param {object} job  `readCamJob(root)`.
- * @param {{ context: object, cadRoot?: import("three").Object3D | null, scheme?: "light" | "dark", pixelRatio?: number }} options
+ * @param {{ context: object, cadRoot?: import("three").Object3D | null, scheme?: "light" | "dark", pixelRatio?: number,
+ *   parent?: import("three").Object3D }} options  `parent`: what the lines hang from, placed where `root` is (the
+ *   viewer's holder beside the scene, `camView.jsx`); the root itself by default.
  */
-export function createCamPaths(THREE, root, job, { context, cadRoot = null, scheme = "light", pixelRatio = 1 } = {}) {
+export function createCamPaths(THREE, root, job, { context, cadRoot = null, scheme = "light", pixelRatio = 1, parent = root } = {}) {
   if (!root || !job || !context?.LineSegments2 || !context.LineSegmentsGeometry || !context.LineMaterial) return null;
   const frame = cadFrame(THREE, root, cadRoot);
   const { groups, timeline } = readCamSegments(THREE, root, job);
@@ -243,7 +245,7 @@ export function createCamPaths(THREE, root, job, { context, cadRoot = null, sche
     line.raycast = noRaycast;
     line.userData.camDrawn = true;
     syncLineMaterialOpacity(line.material, SHOWN[group.kind]);
-    root.add(line);
+    parent.add(line);
     drawn.push({ ...group, line, cut: null });
   }
   for (const { object } of native) object.visible = false;

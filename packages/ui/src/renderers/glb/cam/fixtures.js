@@ -32,7 +32,8 @@ export function fixtureSetups(job, { isolate = null, moment = null, playing = nu
 
 /**
  * @param {typeof import("three")} THREE
- * @param {import("three").Object3D} root  Where the paths are drawn, the boxes beside them.
+ * @param {import("three").Object3D} root  Where the paths are drawn (`createCamPaths`'s parent, in the scene root's frame),
+ *   the boxes beside them.
  * @param {object} job  `readCamJob`.
  * @param {{ toLocal: import("three").Matrix4 }} frame  `cadFrame`: CAD space (mm) to the root's frame.
  * @returns {{ object3D: import("three").Group, count: number, style(scheme: string): void,

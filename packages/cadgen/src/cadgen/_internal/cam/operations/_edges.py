@@ -21,6 +21,7 @@ import re
 from dataclasses import dataclass
 
 from cadgen._internal.cam.job_errors import CamJobError, PlanError, shown
+from cadgen._internal.cam.part import resolve_one
 
 __all__ = ["Chain", "EDGE_REF", "chains", "edge_points", "edge_refs", "material_heights", "resolve_edge"]
 
@@ -66,7 +67,7 @@ def resolve_edge(ctx, ref: str, where: str):
     if part.kind != "step" or part._scene is None:
         raise CamJobError(f"{where}: {ref} names an edge, but a DXF has no edges; follow its profiles with region")
     try:
-        selection = part._scene.resolve(ref)
+        selection = resolve_one(part._scene, ref)
     except ValueError as exc:
         raise CamJobError(f"{where}: {ref} is not an edge of this part ({exc}); select the edges in the Viewer") from None
     if selection.kind != "edge":

@@ -39,7 +39,8 @@ export function toolShape(job, op) {
 
 /**
  * @param {typeof import("three")} THREE
- * @param {import("three").Object3D} root  Where the paths are drawn (`createCamPaths`), the tool beside them.
+ * @param {import("three").Object3D} root  Where the paths are drawn (`createCamPaths`'s parent, in the scene root's frame),
+ *   the tool beside them.
  * @param {object} job  `readCamJob`.
  * @param {{ mmPerUnit: number, direction(vector: number[]): import("three").Vector3 }} frame  `cadFrame`.
  */

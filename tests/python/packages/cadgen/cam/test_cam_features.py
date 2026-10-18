@@ -59,7 +59,7 @@ class BlockFeatures(unittest.TestCase):
         part = read_part(self.step)
         for ordinal, info in part.faces.items():
             with self.subTest(face=info.ref):
-                selection = part._scene.resolve(info.ref)
+                (selection,) = part._scene.resolve(info.ref)
                 centre = selection.shape().center()
                 rows = np.asarray(part.triangles)[np.asarray(part.face_of_triangle) == ordinal]
                 points = np.asarray(part.vertices)[np.unique(rows)]

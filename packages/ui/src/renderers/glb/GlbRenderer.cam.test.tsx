@@ -1,11 +1,11 @@
 import React, { forwardRef, useEffect, useImperativeHandle } from 'react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { BufferAttribute, BufferGeometry, Group, Mesh } from 'three';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { camScene } from './__tests__/camFile';
 
 // The CAM result viewer is a chunk of its own (`camView.jsx`): a plain GLB never fetches it, and a result loads it
-// before it is drawn, then shows Job. Only what loads the file and the WebGL viewport are replaced.
+// before it is drawn, then offers Job in the file sidebar. Only what loads the file and the WebGL viewport are replaced.
 const loaded = vi.hoisted(() => ({ scene: null as any, requested: 0, overlays: 0 }));
 vi.mock('../../../dist/renderers/kit/shell/ShellViewport.js', () => ({
   default: forwardRef(function StandInViewport(props: any, ref) {
@@ -51,42 +51,75 @@ it('a plain GLB never requests the CAM viewer', async () => {
   mount(root);
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   expect(loaded.requested).toBe(0);
-  expect(screen.queryByRole('region', { name: 'Job' })).toBeNull();
-  // It still has no tools, so no strip.
-  expect(screen.queryByRole('group', { name: 'Interaction tools' })).toBeNull();
+  expect(document.querySelector('[data-file-sidebar-tool="job"]')).toBeNull();
+  expect(document.querySelector('[data-tool-panel-id="job"]')).toBeNull();
 });
 
-it('a CAM result loads the CAM viewer, then shows Job; a row isolates its operation until it is chosen again', async () => {
+/** Job's tile in the file sidebar, once the result has loaded; pressed, it opens the section. */
+async function openJob() {
+  const tile = await waitFor(() => {
+    const found = document.querySelector<HTMLElement>('[data-file-sidebar-tool="job"]');
+    if (!found) throw new Error('no Job tile yet');
+    return found;
+  }, { timeout: 30000 });
+  expect(tile.getAttribute('aria-label')).toBe('Job');
+  // None is open as a file opens.
+  expect(tile.getAttribute('aria-pressed')).toBe('false');
+  fireEvent.click(tile);
+  expect(tile.getAttribute('aria-pressed')).toBe('true');
+  return screen.getByRole('region', { name: 'Job' });
+}
+
+it('a CAM result loads the CAM viewer, then offers Job in the file sidebar; a row isolates its operation until it is chosen again', async () => {
   mount(camScene(), '/models/part.cam.glb');
   // The model waits as the file loading while the chunk comes in.
-  expect(screen.queryByRole('region', { name: 'Job' })).toBeNull();
-  expect(await screen.findByRole('region', { name: 'Job' }, { timeout: 30000 })).toBeTruthy();
+  expect(document.querySelector('[data-file-sidebar-tool="job"]')).toBeNull();
+  expect(await openJob()).toBeTruthy();
   expect(loaded.requested).toBe(1);
+  // A result never explodes: its nodes are the part, the stock and the paths.
+  expect(screen.queryByRole('button', { name: 'Explode' })).toBeNull();
   const pocket = screen.getByRole('button', { name: 'Select Pocket' });
   fireEvent.click(pocket);
   expect(pocket.getAttribute('aria-pressed')).toBe('true');
+  // The row chosen is Quick Edit's chip: the part the job was planned from, by the operation's faces.
+  const chip = await waitFor(() => {
+    const found = document.querySelector('[data-quick-edit-ref="cam:op:1"]');
+    if (!found) throw new Error('no chip yet');
+    return found;
+  });
+  expect(chip.textContent).toContain('Pocket');
   fireEvent.click(screen.getByRole('button', { name: 'Select Face' }));
   expect(screen.getByRole('button', { name: 'Select Pocket' }).getAttribute('aria-pressed')).toBe('false');
   fireEvent.click(screen.getByRole('button', { name: 'Select Face' }));
   expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('false');
+  expect(document.querySelector('[data-quick-edit-ref^="cam:"]')).toBeNull();
+  // Its chip's X lets go of the choice, as a second press of its row does.
+  fireEvent.click(screen.getByRole('button', { name: 'Select Pocket' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Remove Pocket' }));
+  expect(screen.getByRole('button', { name: 'Select Pocket' }).getAttribute('aria-pressed')).toBe('false');
 }, 30000);
 
-it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidden with Display\'s gates', async () => {
+it('an operation\'s eye hides its paths, and the file\'s view keeps what is hidden with Job\'s Show rows', async () => {
   const onStateChange = vi.fn();
   const view = mount(camScene(), '/models/part.cam.glb', { onStateChange });
-  expect(await screen.findByRole('region', { name: 'Job' }, { timeout: 30000 })).toBeTruthy();
+  await openJob();
   fireEvent.click(screen.getByRole('button', { name: 'Hide Face' }));
   expect(screen.getByRole('button', { name: 'Reveal Face' })).toBeTruthy();
   // Hiding is not choosing: nothing is isolated.
   expect(screen.getByRole('button', { name: 'Select Face' }).getAttribute('aria-pressed')).toBe('false');
+  // What Display used to gate is Job's Show rows: the stock starts put away, and its eye brings it out.
+  fireEvent.click(screen.getByRole('button', { name: 'Reveal stock' }));
+  expect(screen.getByRole('button', { name: 'Hide stock' })).toBeTruthy();
   view.unmount();
   const record = onStateChange.mock.lastCall![0];
   expect(record.renderer.cam.signature).toBe('cam:1');
-  expect(record.renderer.cam.value).toMatchObject({ hidden: [0], toolpaths: true, tool: true, fixtures: true, stock: false });
-  // Opened again with that view: Face is still hidden.
+  expect(record.renderer.cam.value).toMatchObject({ hidden: [0], toolpaths: true, tool: true, fixtures: true, stock: true });
+  // Opened again with that view: Face is still hidden, and the stock still shown.
   mount(camScene(), '/models/part.cam.glb', { state: record });
-  expect(await screen.findByRole('button', { name: 'Reveal Face' }, { timeout: 30000 })).toBeTruthy();
+  await openJob();
+  expect(screen.getByRole('button', { name: 'Reveal Face' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Hide Pocket' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Hide stock' })).toBeTruthy();
 }, 30000);
 
 it('reduces motion where the app says so or the system does', () => {

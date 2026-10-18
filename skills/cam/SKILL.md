@@ -73,8 +73,8 @@ keeps this table in step with what cadgen builds.
 Run cadgen through [uv](https://docs.astral.sh/uv/), so this skill's commands share one
 installation, and its warm build daemon, with the `$cad` skill and the CAD app's server:
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 python`
+- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
+- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
 
 Units are fixed: mm for lengths, mm/min for feed, rev/min for spindle speed, degrees for angles,
 seconds for time. Restate the user's numbers in those units before you write them down (a 1/4"

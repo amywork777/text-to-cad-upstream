@@ -1,22 +1,20 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { MousePointer2 } from "lucide-react";
 import { readFileView } from "../../kit/shell/fileView.js";
 import { ViewerHostContext } from "../../../host/context.js";
-import { GLB_TOOL } from "../tools.js";
 import { carriesCamJob } from "./detect.js";
 
 /**
  * What GlbRenderer needs to show a CAM result (`cadgen cam plan`): the result's own viewer, loaded as its own chunk
- * (`camView.jsx`), the job read from the file, Display's gates over its paths, stock, fixtures and tool, the playbar
- * clips that run the cut, and Select with its Job panel. A GLB that is not a result gets nulls throughout.
+ * (`camView.jsx`), the job read from the file, what the view shows of its paths, stock, fixtures and tool, the
+ * routines that run the cut, and Job, a section of the file sidebar whose rows are Quick Edit's chips. A GLB that is
+ * not a result gets nulls throughout.
  *
- * `useCamResult` runs before the shell is made (what the shell is given), `useCamChrome` after it (the tool, its panel
- * and the viewport overlay, which read the shell).
+ * `useCamResult` runs before the shell is made (what the shell is given), `useCamChrome` after it (the sidebar
+ * section, the chips and the viewport overlay, which read the shell).
  */
 
 const EMPTY = Object.freeze([]);
-const SELECT_ICON = <MousePointer2 className="size-3" strokeWidth={2} aria-hidden="true" />;
-// What a CAM result's Display gates keep in the file's view, written against the result's schema.
+// What a CAM result's Show rows keep in the file's view, written against the result's schema.
 const CAM_SIGNATURE = "cam:1";
 const NO_CAM_CHOICE = Object.freeze({ result: null, id: "" });
 
@@ -59,13 +57,14 @@ export function useReducedMotion() {
 }
 
 /**
- * A CAM result's state, before the shell: `cam` (the job; null for any other GLB), its playbar clips (`ownClips`) and
- * what the shell takes from it (`shellOptions`, spread over the renderer's own; null for any other GLB).
- * `requestRenderRef` is the renderer's, filled once the shell exists.
+ * A CAM result's state, before the shell: `cam` (the job; null for any other GLB), its routines (`ownClips`), the
+ * renderer's slice of the file's view (`rendererState`: the Show rows and the hidden operations; null for any other
+ * GLB), the row chosen in Job (`choice`) and what Quick Edit carries for it (`references`).
+ * `shellRef` is the renderer's, filled once the shell exists: its frames and its view saves.
  */
-export function useCamResult({ cv, scene, view, requestRenderRef }) {
+export function useCamResult({ cv, scene, view, shellRef }) {
   // A CAM result carries its job in the file: its verdict, setups and operations (Job), its toolpaths and its
-  // simulated stock. What Display shows of it is this renderer's one slice of the file's view.
+  // simulated stock. What the view shows of it is this renderer's one slice of the file's view.
   const root = scene?.document?.scene || null;
   const cam = useMemo(() => (cv && root ? cv.readCamJob(root) : null), [cv, root]);
   const scheme = view.appearance?.colorScheme === "dark" ? "dark" : "light";
@@ -79,31 +78,32 @@ export function useCamResult({ cv, scene, view, requestRenderRef }) {
   const shownRef = useRef(shown);
   shownRef.current = shown;
   const rendererState = useMemo(() => (cam ? { signatures: { cam: CAM_SIGNATURE }, read: () => ({ cam: shownRef.current }) } : null), [cam]);
-  const shellRef = useRef(null);
   const show = useCallback((patch) => {
     setEdited((current) => ({ ...(current || {}), ...patch }));
     shellRef.current?.scheduleStateSave();
-  }, []);
-  // The operations put away by their eyes in Job, kept with Display's gates in the file's view.
+  }, [shellRef]);
+  // The operations put away by their eyes in Job, kept with the Show rows in the file's view.
   const hidden = useMemo(() => (cam ? cv.camHidden(cam, shown) : null), [cv, cam, shown]);
   const toggleHidden = useCallback((index) => show({ hidden: cv.toggleCamHidden(shownRef.current, index) }), [cv, show]);
+  const gates = useMemo(() => (cam ? cv.camGates({ job: cam, meshes, paths: pathKinds, shown }) : null), [cv, cam, meshes, pathKinds, shown]);
+  const toggleGate = useCallback((id, on) => show({ [id]: on }), [show]);
 
   // A row of Job chosen (an operation, a setup, a tool, an error): its paths isolated, and its faces and sentence for Quick Edit.
   const [chosenRow, setChosenRow] = useState(NO_CAM_CHOICE);
   const choices = useMemo(() => (cam ? cv.camChoices(cam) : null), [cam]);
   const choice = cam && chosenRow.result === cam ? choices.get(chosenRow.id) || null : null;
-  const clearChoice = useCallback(() => setChosenRow(NO_CAM_CHOICE), []);
+  const clearChoice = useCallback(() => setChosenRow((current) => (current.id ? NO_CAM_CHOICE : current)), []);
   const chooseRow = useCallback((id) => setChosenRow((current) => (current.result === cam && current.id === id ? NO_CAM_CHOICE : { result: cam, id })), [cam]);
   const isolate = useMemo(() => (choice ? new Set(choice.ops) : null), [choice]);
   // The part the job was planned from, the file a choice's references name.
   const source = useMemo(() => (cam ? cv.camSourcePath(view.file.path, cam.document) : ""), [cam, view.file.path]);
-  const references = useMemo(() => (cam ? cv.camReferences(source, choice) : null), [cam, source, choice]);
+  const references = useMemo(() => (cam ? cv.camReferences(source, choice) : EMPTY), [cam, source, choice]);
 
   // The toolpaths and the tool, once the viewport has drawn them (`CamPaths`); the moment a Simulate clip plays.
   const camRef = useRef(null);
   const momentRef = useRef(null);
   const paintRef = useRef(null);
-  // The readout over the playbar (`CamReadout`), written as the clip plays; the playbar's speed and whether motion is reduced.
+  // The readout at the view's foot (`CamReadout`), written as the clip plays; the routine's speed and whether motion is reduced.
   const readoutRef = useRef(null);
   const speedRef = useRef(1);
   const reducedMotion = useReducedMotion();
@@ -112,45 +112,38 @@ export function useCamResult({ cv, scene, view, requestRenderRef }) {
     const moment = momentRef.current;
     const painted = cv.paintCam({ controller: camRef.current, meshes, job: cam, shown, isolate, moment });
     readoutRef.current?.(moment ? cv.camReadoutWords(cam, moment, { op: painted.place?.op ?? null, speed: speedRef.current, reducedMotion }) : null);
-    if (painted.changed) requestRenderRef.current?.();
+    if (painted.changed) shellRef.current?.requestRender();
   };
   const paint = useCallback(() => paintRef.current?.(), []);
   useEffect(() => { paint(); }, [cam, shown, isolate, paint]);
-  // Simulate, and one per setup, on Preview's playbar: the paths drawn up to the moment and the tool on them; with
-  // motion reduced, one operation a second.
+  // Simulate, and one per setup, among the file's routines (the file sidebar's Animation section): the paths drawn up
+  // to the moment and the tool on them; with motion reduced, one operation a second.
   const ownClips = useMemo(() => (cam ? cv.camClips(cam, (moment) => { momentRef.current = moment; paint(); }, { reducedMotion }) : EMPTY),
     [cam, paint, reducedMotion]);
   return {
-    cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, references, ownClips,
-    shellOptions: cam ? {
-      rendererState,
-      displaySections: cv.camDisplaySections({ job: cam, meshes, paths: pathKinds, shown, onChange: show }),
-      // Escape lets go of the row chosen.
-      escape: { active: Boolean(choice), handle: () => { if (!choice) return false; clearChoice(); return true; } },
-    } : null,
-    refs: { shellRef, camRef, readoutRef, speedRef }, paint,
+    cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, gates, toggleGate, references, ownClips,
+    rendererState, refs: { camRef, readoutRef, speedRef }, paint,
   };
 }
 
 /**
- * A CAM result's chrome, after the shell: the RendererShell props that draw it (Select with its Job panel, the toolpaths
- * and readout over the viewport, the chosen row's references), or null for any other GLB.
+ * A CAM result's chrome, after the shell, or null for any other GLB: Job, its file sidebar section (`sidebar`); the
+ * chosen row as Quick Edit's chip (`chips`, with `references`); and what is drawn over the viewport (`overlay`): the
+ * toolpaths, the tool and the fixtures, and the readout while a routine plays.
  */
-export function useCamChrome({ result, shell, scene, animation }) {
-  const { cv, cam, root, scheme, colours, choice, chooseRow, hidden, toggleHidden, refs, paint } = result;
-  refs.shellRef.current = shell;
+export function useCamChrome({ result, scene, animation }) {
+  const { cv, cam, root, scheme, colours, choice, chooseRow, clearChoice, hidden, toggleHidden, gates, toggleGate, references, refs, paint } = result;
   refs.speedRef.current = animation?.speed || 1;
-  // A new playbar speed says so in the readout at once, paused or not.
+  // A new routine speed says so in the readout at once, paused or not.
   useEffect(() => { paint(); }, [animation?.speed, paint]);
+  const chips = useMemo(() => (cam ? cv.camChips(choice, references, { colours, onRemove: clearChoice }) : EMPTY),
+    [cv, cam, choice, references, colours, clearChoice]);
   if (!cam) return null;
-  // Select is a CAM result's one tool, with Job its panel.
-  const selectActive = !shell.previewing && shell.toolMode === GLB_TOOL.SELECT;
   return {
-    tools: [shell.tools.own({ id: GLB_TOOL.SELECT, label: "Select", icon: SELECT_ICON, panel: cv.JOB_PANEL })],
-    toolPanels: <cv.CamJobPanel active={selectActive} job={cam} colours={colours} chosen={choice?.id || ""} onChoose={chooseRow}
-      hidden={hidden} onToggleHidden={toggleHidden} />,
-    references: result.references, onClearReferences: result.clearChoice,
-    viewportOverlay: (viewport) => <>
+    sidebar: <cv.CamJobPanel job={cam} colours={colours} chosen={choice?.id || ""} onChoose={chooseRow}
+      hidden={hidden} onToggleHidden={toggleHidden} gates={gates} onToggleGate={toggleGate} />,
+    references, chips,
+    overlay: (viewport) => <>
       <cv.CamPaths runtimeRef={viewport.runtimeRef} viewerReadyTick={viewport.viewerReadyTick} root={root}
         cadRoot={scene.object3D} job={cam} scheme={scheme} controllerRef={refs.camRef} onChange={paint} />
       <cv.CamReadout readoutRef={refs.readoutRef} />
