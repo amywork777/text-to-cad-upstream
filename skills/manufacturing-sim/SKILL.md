@@ -78,8 +78,8 @@ Run cadgen through [uv](https://docs.astral.sh/uv/). `cadgen fea faces` shares o
 with the `$cad` skill and the CAD app's server; `cadgen manufacturing check` needs the `fea` extra,
 so it runs from its own installation, made the first time it is needed (below):
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.21 python`
+- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
+- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
 
 Checking needs cadgen's opt-in `fea` extra (the mesher and the solver). The first time a check runs,
 `cadgen manufacturing check` fails with "cadgen's fea extra is not installed"; that is a missing
@@ -88,7 +88,7 @@ using that form for `manufacturing check` from then on (the first run downloads 
 solver; later runs reuse them):
 
 ```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.21" cadgen manufacturing check part.step --study part.casting.json
+uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.24" cadgen manufacturing check part.step --study part.casting.json
 ```
 
 Units: mm for geometry, °C for temperatures, s for times, W/(m² K) for a heat transfer coefficient,

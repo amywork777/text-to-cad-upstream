@@ -9,8 +9,8 @@
 import { fieldAndDeformation } from "../controls.js";
 import { planned } from "./stub.js";
 
-/** Spring back: the part released from the press brake, from its CAD shape to its shape off the brake (GlbRenderer
- * plays it as a load ramp). */
+/** Spring back: the part released from the press brake, from its CAD shape to its shape off the brake (FeaSurface
+ * plays it as a load ramp, from the sidebar's Animation section). */
 export const SPRING_BACK = Object.freeze({ id: "fea:spring-back", label: "Spring back", kind: "load_ramp" });
 
 export default planned({

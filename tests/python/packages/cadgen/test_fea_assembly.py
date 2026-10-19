@@ -75,7 +75,8 @@ def _face_where(scene, part_ref: str, axis: int, value: float) -> str:
     """The ref of the part's face whose centre is at ``value`` along ``axis`` (0 = X, 2 = Z)."""
     from cadgen._internal.fea.mesh import face_area_center
 
-    for selection in scene.resolve(part_ref).entities("face"):
+    (part,) = scene.resolve(part_ref)
+    for selection in part.entities("face"):
         _, centre = face_area_center(selection.shape())
         if abs(centre[axis] - value) < 1e-6:
             return selection.ref

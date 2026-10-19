@@ -216,7 +216,8 @@ def _joint(directory: Path, width: float | None):
 def _face(scene, part_ref: str, axis: int, value: float, area: float | None = None) -> str:
     from cadgen._internal.fea.mesh import face_area_center
 
-    for selection in scene.resolve(part_ref).entities("face"):
+    (part,) = scene.resolve(part_ref)
+    for selection in part.entities("face"):
         found, centre = face_area_center(selection.shape())
         if abs(centre[axis] - value) < 1e-6 and (area is None or abs(found - area) < 1.0):
             return selection.ref

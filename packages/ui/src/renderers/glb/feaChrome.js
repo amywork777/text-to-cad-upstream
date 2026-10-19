@@ -7,6 +7,9 @@
  * `colourBarCover`, `panelInset`, `framingInset`).
  */
 
+// The line the colour bar stands on over the view's bottom edge: Preview's playbar's (`PreviewPlaybar.jsx`, `bottom-4`).
+export const FEA_BOTTOM_LINE = "1rem";
+
 /**
  * The box the tool strip and its open panels cover, in the viewport host's own pixels (`{ left, top,
  * right, bottom }`), from the page as it is laid out now: the union of the strip and every panel of the
@@ -20,7 +23,9 @@ export function chromeCover(host, { strip = true } = {}) {
   const groups = viewer?.querySelector?.("[data-cad-tool-groups]");
   if (!groups) return null;
   const base = host.getBoundingClientRect();
-  const shown = [strip ? groups.firstElementChild : null, ...groups.querySelectorAll("[data-tool-panel]")]
+  // The strip, the tool stack's panels, and the file sidebar's tiles and open section (Study, Parts).
+  const sidebar = viewer.querySelector("[data-file-sidebar-room]");
+  const shown = [strip ? groups.firstElementChild : null, ...groups.querySelectorAll("[data-tool-panel]"), ...(sidebar ? sidebar.children : [])]
     .filter((element) => element && !element.closest("[hidden]"))
     .map((element) => element.getBoundingClientRect())
     .filter((box) => box.width > 0 && box.height > 0);

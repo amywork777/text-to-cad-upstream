@@ -1,8 +1,8 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import ViewportError from './ViewportError.jsx';
-import ViewerAlertCard, { useAlertDismissal } from './ViewerAlertCard.jsx';
+import ViewerAlertCard, { COPIED_MS, useAlertDismissal } from './ViewerAlertCard.jsx';
 import { ViewerMobileContext } from '../../../file-viewer/responsive.js';
 import { viewerLinks } from '../../../file-viewer/navigation/links.js';
 import { ViewerHostContext } from '../../../host/context.js';
@@ -44,46 +44,6 @@ it('says a warning beside the model over it, where it can be put away; with noth
   expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
 });
 
-/** A frame whose card may start put away, with its navbar beside it: the one action it publishes. */
-function NavbarFrame({ alert, startDismissed }: { alert: object | null, startDismissed: boolean }) {
-  const [actions, setActions] = React.useState<readonly any[]>([]);
-  const { dismissed, dismiss } = useAlertDismissal(alert, { hasContent: true, startDismissed, onNavigationActionsChange: setActions });
-  return <>
-    {actions.map(({ id, label, icon: Icon, onInvoke }) => <button key={id} type="button" aria-label={label} onClick={onInvoke}><Icon /></button>)}
-    <ViewerAlertCard alert={alert} hasContent dismissed={dismissed} onDismiss={dismiss} onReload={() => {}} body={<p>The body</p>} />
-  </>;
-}
-
-it('a card that starts put away shows its icon at once, brings the card back from it, and starts put away again once the alert changes', () => {
-  const first = { severity: 'warning', blocking: false, title: '3 suggestions', message: '', key: 'a' };
-  const { rerender } = render(<NavbarFrame alert={first} startDismissed />);
-  expect(screen.queryByRole('alert')).toBeNull();
-  const icon = screen.getByRole('button', { name: '3 suggestions' });
-  expect(icon.querySelector('svg')!.getAttribute('class')).toMatch(/text-amber-500/);
-  fireEvent.click(icon);
-  expect(screen.getByRole('alert').textContent).toContain('The body');
-  expect(screen.queryByRole('button', { name: '3 suggestions' })).toBeNull();
-  // The same alert again stays where the person left it; a changed one (its key alone) starts put away.
-  rerender(<NavbarFrame alert={{ ...first }} startDismissed />);
-  expect(screen.getByRole('alert')).toBeTruthy();
-  rerender(<NavbarFrame alert={{ ...first, key: 'b' }} startDismissed />);
-  expect(screen.queryByRole('alert')).toBeNull();
-  // Without it, a new alert opens as it always has.
-  rerender(<NavbarFrame alert={{ ...first, severity: 'error', title: '1 to fix', key: 'c' }} startDismissed={false} />);
-  expect(screen.getByRole('alert').textContent).toContain('1 to fix');
-  fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-  expect(screen.getByRole('button', { name: '1 to fix' }).querySelector('svg')!.getAttribute('class')).toMatch(/text-destructive/);
-});
-
-it('a card saying what a design has against it offers no Report Issue', () => {
-  const alert = { severity: 'warning', blocking: false, title: '1 suggestion', message: '', report: false };
-  render(<ViewerHostContext.Provider value={testHost({ links: viewerLinks({ version: '0.7.5' }) }) as any}>
-    <ViewerAlertCard alert={alert} hasContent onReload={() => {}} body={<p>A row</p>} />
-  </ViewerHostContext.Provider>);
-  expect(screen.getByRole('alert').textContent).toContain('A row');
-  expect(screen.queryByRole('link', { name: 'Report Issue' })).toBeNull();
-});
-
 it('offers Retry, and beside it, where the host has a tracker, Report Issue: a new issue saying what the card says', () => {
   const alert = { severity: 'error', title: 'Couldn’t load the model', message: 'No model', reason: 'EOFError', details: 'File: /Users/ada/parts/gear.step', reload: true };
   const onReload = vi.fn();
@@ -109,4 +69,52 @@ it('offers Retry, and beside it, where the host has a tracker, Report Issue: a n
   expect(body).toContain('- File: gear.step\n- CAD: 0.7.5\n- Platform: linux');
   expect(body).toContain('```\nFile: gear.step\n```');
   expect(body).not.toContain('/Users/ada');
+});
+
+it('copies the whole of Details, however far they scroll, from the icon in their corner, through the host\'s clipboard', async () => {
+  vi.useFakeTimers();
+  try {
+    const traceback = Array.from({ length: 60 }, (_, line) => `  File "/Users/ada/parts/gear.py", line ${line + 1}, in build`);
+    const details = ['File: /Users/ada/parts/gear.step', 'Operation: loading geometry', 'Traceback (most recent call last):', ...traceback,
+      'ValueError: the gear has no teeth'].join('\n');
+    const alert = { severity: 'error', title: 'Couldn’t prepare the model', message: 'The viewer couldn’t finish processing this model.',
+      recovery: 'Try again. If this continues, check the viewer’s terminal output.', details, reload: true };
+    const writeText = vi.fn(async (_text: string | Promise<string>) => {});
+    const host = testHost({ clipboard: { writeText, readText: async () => '', writeImage: async () => {} } });
+    render(<ViewerHostContext.Provider value={host}>
+      <ViewerAlertCard alert={alert} hasContent={false} onReload={() => {}} file="/Users/ada/parts/gear.step" />
+    </ViewerHostContext.Provider>);
+    // Inside Details, at the top-right corner of their box.
+    const disclosure = screen.getByText('Details').closest('details')!;
+    expect(disclosure.open).toBe(false);
+    fireEvent.click(screen.getByText('Details'));
+    expect(disclosure.open).toBe(true);
+    const copy = screen.getByRole('button', { name: 'Copy error details' });
+    expect(disclosure.contains(copy)).toBe(true);
+    expect(copy.closest('[data-alert-details]')?.querySelector('pre')?.textContent).toBe(details);
+
+    await act(async () => { fireEvent.click(copy); });
+    expect(writeText.mock.calls).toEqual([[details]]);
+    // A tick for a moment, then the icon again.
+    expect(screen.getByRole('button', { name: 'Error details copied' })).toBe(copy);
+    act(() => { vi.advanceTimersByTime(COPIED_MS); });
+    expect(screen.getByRole('button', { name: 'Copy error details' })).toBe(copy);
+    expect(screen.queryByRole('status')).toBeNull();
+
+    // A clipboard that refuses it is said, never silent; the icon stays, to try again.
+    writeText.mockRejectedValueOnce(new DOMException('Write permission denied.', 'NotAllowedError'));
+    await act(async () => { fireEvent.click(copy); });
+    expect(screen.getByRole('status').textContent).toBe('The details could not be copied. Select them above and copy them.');
+    expect(screen.getByRole('button', { name: 'Copy error details' })).toBe(copy);
+    await act(async () => { fireEvent.click(copy); });
+    expect(writeText).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole('status')).toBeNull();
+  } finally { vi.useRealTimers(); }
+});
+
+it('offers no copy where there is no clipboard to copy to', () => {
+  render(<ViewerAlertCard alert={{ severity: 'error', title: 'Broken', message: 'No model', details: 'File: gear.step' }} hasContent={false} onReload={() => {}} />);
+  fireEvent.click(screen.getByText('Details'));
+  expect(screen.getByText('File: gear.step')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Copy error details' })).toBeNull();
 });

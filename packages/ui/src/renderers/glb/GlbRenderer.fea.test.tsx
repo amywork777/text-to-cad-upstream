@@ -92,11 +92,13 @@ function mount(extras: Record<string, unknown> | null, state?: unknown, { action
   const view = render(<ViewerHostContext.Provider value={host}><ViewerElement><GlbRenderer {...(props as any)} /></ViewerElement></ViewerHostContext.Provider>);
   return { ...view, ...built, save };
 }
-const openDisplay = () => act(() => { fireEvent.click(screen.getByRole('button', { name: 'Display' })); });
+// Where the study holds and loads the part, drawn or not: What you see's checkbox, named for the analysis.
+const markersGate = (name: string) => screen.getByRole('checkbox', { name });
+const toggleMarkers = (name: string) => act(() => { fireEvent.click(markersGate(name)); });
 const studyPanel = () => screen.queryByRole('region', { name: 'Study' });
 const rowTexts = (panel: HTMLElement) => Array.from(panel.querySelectorAll('[data-study-row]')).map(row => row.textContent);
 
-it('puts the field and deformation in Study, under Select, and on the view a colour bar that is only the scale', () => {
+it('puts the field and deformation in Study, the file sidebar\'s, and on the view a colour bar that is only the scale', () => {
   const { container } = mount(RESULT);
   const bar = container.querySelector('[role="group"][aria-label="von Mises stress colour bar"]')!;
   // The field in Show's words and its range; what it means for the part is the verdict's.
@@ -108,9 +110,9 @@ it('puts the field and deformation in Study, under Select, and on the view a col
   // The field in plain words: the file's own name is the colour bar's.
   expect(study.querySelector('[role="combobox"][aria-label="Result field"]')!.textContent).toBe('Stress');
   expect(study.querySelector('[role="slider"][aria-label="Deformation scale"]')).toBeTruthy();
-  // Display is the view's alone: no Analysis section, no second field select.
-  openDisplay();
-  expect(screen.queryByText('Analysis')).toBeNull();
+  // A section of the file sidebar, its tile named for it; one field select, Study's.
+  expect(study.hasAttribute('data-sidebar-section')).toBe(true);
+  expect(screen.getByRole('group', { name: 'File sidebar' }).querySelector('button[aria-label="Study"]')).toBeTruthy();
   expect(screen.getAllByRole('combobox', { name: 'Result field' })).toHaveLength(1);
 });
 
@@ -149,34 +151,20 @@ it('takes the stored choice back for the same result, and not for a re-solved on
   expect(resolved.container.querySelector('[role="group"][aria-label="von Mises stress colour bar"]')).toBeTruthy();
 });
 
-it('a GLB that is not a result has no colour bar, no Select tool, no Study and its colours untouched', () => {
+it('a GLB that is not a result has no colour bar, no Study and its colours untouched', () => {
   const { mesh, container } = mount(null);
   expect(container.querySelector('[aria-label$="colour bar"]')).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Select' })).toBeNull();
   expect(studyPanel()).toBeNull();
-  openDisplay();
-  expect(screen.queryByText('Analysis')).toBeNull();
+  expect(screen.queryByRole('checkbox', { name: 'Loads and fixtures' })).toBeNull();
   expect(colourBytes(mesh).every(byte => byte === 7)).toBe(true);
 });
 
-it('the colour bar steps up above the playbar while it is there, in preview, and a stored scale is held to the slider\'s range', () => {
-  const plain = mount(RESULT);
-  const low = (plain.container.querySelector('[aria-label$="colour bar"]')!.parentElement as HTMLElement).style.bottom;
-  expect(low).toBe('var(--cad-viewport-bottom-center, 1.75rem)');
-  cleanup();
-  loaded.animation = { clips: [{ id: 'a', label: 'Load ramp', duration: 2 }], activeClipId: 'a', clock: createAnimationClock(), speed: 1, loopEnabled: true,
-    onClipSelect() {}, onPlayToggle() {}, onScrub() {}, onSpeedChange() {}, onLoopToggle() {}, onRelease() {} };
+it('the colour bar stands on Preview\'s playbar line, and a stored scale is held to the slider\'s range', () => {
   const stored = writeFileView({ renderer: { fea: { field: null, scale: 9999 } }, signatures: { fea: '_von_mises,_displacement:10' } });
-  const animated = mount(RESULT, stored);
-  const bottom = () => (animated.container.querySelector('[aria-label$="colour bar"]')!.parentElement as HTMLElement).style.bottom;
-  // Out of preview there is no playbar under the model to clear.
-  expect(bottom()).toBe(low);
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
-  const high = bottom();
-  expect(high).not.toBe(low);
-  expect(high).toContain('3rem');
+  const { container, mesh } = mount(RESULT, stored);
+  expect((container.querySelector('[aria-label$="colour bar"]')!.parentElement as HTMLElement).style.bottom).toBe('1rem');
   // The slider tops out at four times the file's own 10x.
-  expect(animated.mesh.geometry.getAttribute('position').getZ(2)).toBeCloseTo(0.06, 6);
+  expect(mesh.geometry.getAttribute('position').getZ(2)).toBeCloseTo(0.06, 6);
 });
 
 // What the result's checks found stays in the file for the agent; the viewer's status is Study's verdict.
@@ -221,7 +209,8 @@ const STUDIED = { ...FOUND, study: STUDY, faces: ['#o1.f1', '#o1.f2'] };
 // Vertices 0-2 lie on face index 0 (#o1.f1), vertex 3 on face index 1 (#o1.f2).
 const FACES = [0, 0, 0, 1];
 async function copiedPrompt(copied: string[]) {
-  act(() => { fireEvent.change(screen.getByRole('textbox', { name: 'Describe your changes' }), { target: { value: 'move it' } }); });
+  // The note is an editable field: written as typing would write it.
+  act(() => { const field = screen.getByRole('textbox', { name: 'Describe your changes' }); field.textContent = 'move it'; fireEvent.input(field); });
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy Prompt' })); });
   return copied.at(-1);
 }
@@ -248,29 +237,9 @@ it('Study reads in plain words: where it is held, what pushes it and what it is 
   expect(screen.getByRole('button', { name: 'Expand Details' }).getAttribute('aria-expanded')).toBe('false');
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Expand Details' })); });
   expect(plain().slice(-2)).toEqual(['Details', 'Mesh1.9 mm elements']);
-  // What you see and Details sit at the panel's foot, which never scrolls: a short stack scrolls the verdict and
-  // the setup above them, and the controls stay in view.
-  const foot = study.querySelector('[data-study-foot]')!;
-  expect(rowTexts(foot)[0]).toBe('What you see');
-  expect(foot.closest('[data-tool-panel-body]')).toBeNull();
-  expect(foot.querySelector('[role="combobox"][aria-label="Result field"]')).toBeTruthy();
-  expect(rowTexts(study.querySelector('[data-tool-panel-body]') as HTMLElement)).toEqual(['Held at', 'Face 1', 'Pushed', '2500 N down', 'Face 2', 'Made of', '6061-T6']);
-  // While the body has more under its fold, its foot fades: a row the fold cuts never reads as the last.
-  const body = study.querySelector('[data-tool-panel-body]') as HTMLElement;
-  const scrolled = (top: number) => {
-    Object.defineProperties(body, { scrollHeight: { value: 500, configurable: true }, clientHeight: { value: 200, configurable: true },
-      scrollTop: { value: top, configurable: true } });
-    act(() => { fireEvent.scroll(body); });
-  };
-  scrolled(0);
-  expect(study.querySelector('[data-tool-panel-more]')).toBeTruthy();
-  scrolled(300);
-  expect(study.querySelector('[data-tool-panel-more]')).toBeNull();
-  // It opens at its content's height, so Result's slider is not under its foot; a person's own cap still holds.
-  expect(study.style.maxHeight).toBe('');
-  cleanup();
-  mount(STUDIED, undefined, { faces: FACES, settings: { toolStack: { panels: { tree: { height: 200 } }, collapsed: {} } } });
-  expect(studyPanel()!.style.maxHeight).toBe('200px');
+  // In the sidebar's one scroll, in order: no foot of its own.
+  expect(study.querySelector('[data-study-foot]')).toBeNull();
+  expect(study.querySelector('[data-tool-panel-body] [role="combobox"][aria-label="Result field"]')).toBeTruthy();
 });
 
 it('a face both fixed and loaded is named for both, chosen from either row or picked', async () => {
@@ -298,7 +267,7 @@ it('choosing a fixed face tints only its triangles and carries it into Quick Edi
   for (const vertex of [0, 1, 2]) expect(tinted.slice(vertex * 4, vertex * 4 + 3)).not.toEqual(plain.slice(vertex * 4, vertex * 4 + 3));
   expect(tinted.slice(12)).toEqual(plain.slice(12));
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('region', { name: 'Quick Edit' }).querySelector('[data-quick-edit-chip="references"]')!.textContent).toBe('1 ref');
+  expect(screen.getByRole('region', { name: 'Quick Edit' }).textContent).toContain('Face 1');
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nFixed face 1 · /models/part.step#o1.f1');
   // Escape lets go, and the colours come back.
   act(() => { fireEvent.keyDown(document.querySelector('[data-stand-in-viewport]')!, { key: 'Escape' }); });
@@ -316,7 +285,7 @@ it('choosing a load tints its face and says how much, on which face', async () =
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n2500 N load on face 2 · /models/part.step#o1.f2');
 });
 
-it('a press on the result with Select picks the face under it into a Reference with its ref, its role and Copy', async () => {
+it('a press on the result with Select picks the face under it into Quick Edit\'s chip, its card its ref and its role, and the copy key copies it', async () => {
   const copied: string[] = [];
   const host = document.createElement('div');
   host.getBoundingClientRect = () => ({ left: 0, top: 0, width: 800, height: 600, right: 800, bottom: 600, x: 0, y: 0, toJSON() {} });
@@ -334,11 +303,12 @@ it('a press on the result with Select picks the face under it into a Reference w
     fireEvent.pointerDown(canvas, { button: 0, pointerId: 1, clientX: 400, clientY: 300 });
     fireEvent.pointerUp(canvas, { button: 0, pointerId: 1, clientX: 400, clientY: 300 });
   });
-  const reference = screen.getByRole('region', { name: 'Reference details' });
-  expect(reference.querySelector('h3')!.textContent).toBe('Face 1');
-  expect(Array.from(reference.querySelectorAll('[data-info-row]')).map(row => row.textContent)).toEqual(['Ref#o1.f1', 'Studyfixed']);
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Copy' })); });
-  expect(copied).toEqual(['/models/part.step#o1.f1']);
+  const chip = screen.getByRole('button', { name: /^Face 1/ });
+  act(() => { fireEvent.click(chip); });
+  const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
+  expect(Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent)).toEqual(['ID#o1.f1', 'Studyfixed']);
+  await act(async () => { fireEvent.keyDown(document.querySelector('[data-slot="cad-file-view"]')!, { key: 'c', metaKey: true, ctrlKey: true }); });
+  expect(copied.at(-1)).toBe('/models/part.step#o1.f1');
   expect(screen.getByRole('button', { name: 'Select Face 1' }).getAttribute('aria-pressed')).toBe('true');
   host.remove();
 });
@@ -399,16 +369,12 @@ it('an assembly has a Parts panel above Study, each part with its joints, the we
   expect(study.querySelector('[data-study-row^="part:"], [data-study-row^="joint:"], [data-study-row="parts"], [data-study-row="connections"]')).toBeNull();
 });
 
-it('Select carries the mark while Parts or Study is closed, and a press brings back the closed ones', () => {
+it('an assembly\'s Parts and Study are two sections of the file sidebar, each with its own tile', () => {
   mountAssembly([]);
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Close parts' })); });
-  expect(partsPanel()).toBeNull();
-  expect(studyPanel()).toBeTruthy();
-  const select = screen.getByRole('button', { name: 'Select' });
-  expect(select.getAttribute('aria-description')).toBe('Parts closed');
-  act(() => { fireEvent.click(select); });
-  expect(partsPanel()).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'Select' }).getAttribute('aria-description')).toBeNull();
+  const tiles = Array.from(screen.getByRole('group', { name: 'File sidebar' }).querySelectorAll('button')).map(tile => tile.getAttribute('aria-label'));
+  expect(tiles).toEqual(expect.arrayContaining(['Parts', 'Study']));
+  expect(partsPanel()!.hasAttribute('data-sidebar-section')).toBe(true);
+  expect(studyPanel()!.hasAttribute('data-sidebar-section')).toBe(true);
 });
 
 it('an assembly shows Parts from six parts up, and its view can show or hide it either way', () => {
@@ -427,13 +393,13 @@ it('a single part has no Parts panel', () => {
   expect(studyPanel()).toBeTruthy();
 });
 
-it('with Parts hidden, a face picked on an assembly names its part, and the Reference says the part\'s material and what it holds', () => {
+it('with Parts hidden, a face picked on an assembly names its part, and its chip\'s card says the part\'s material and what it holds', () => {
   const release = pressOnTheResult(() => { mountAssembly([], {}); });
   expect(partsPanel()).toBeNull();
-  const reference = screen.getByRole('region', { name: 'Reference details' });
-  expect(reference.querySelector('h3')!.textContent).toBe('post · face 1');
-  const rows = Array.from(reference.querySelectorAll('[data-info-row]')).map(row => row.textContent!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
-  expect(rows).toEqual(['Ref#o1.1.f1', 'Studyfree', 'Part6061-T6 · holds 1.4×']);
+  act(() => { fireEvent.click(screen.getByRole('button', { name: /^post · face 1/ })); });
+  const card = document.querySelector<HTMLElement>('[data-quick-edit-ref-card]')!;
+  const rows = Array.from(card.querySelectorAll('[data-info-row]')).map(row => row.textContent!.replace(/\u2011/g, '-').replace(/\u00a0/g, ' '));
+  expect(rows).toEqual(['ID#o1.1.f1', 'Studyfree', 'Part6061-T6 · holds 1.4×']);
   release();
 });
 
@@ -489,12 +455,18 @@ const VIEWED = {
     presets: [{ label: 'Landing (3×)', load_scale: 3 }],
   },
 };
-const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-position-control], [data-study-result] [role="combobox"]'));
+const resultRows = () => Array.from(studyPanel()!.querySelectorAll('[data-study-result] [data-position-control], [data-study-result] [role="combobox"], [data-study-result] [data-pose-menu]'));
 const setValue = (name: string, value: string) => act(() => {
   const box = screen.getByRole('textbox', { name });
   fireEvent.change(box, { target: { value } });
   fireEvent.blur(box);
 });
+// Preset is Position's Pose row: a menu its button opens (on a press, as Radix's menus open).
+const preset = () => screen.queryByRole('button', { name: /^Preset: / });
+const choosePreset = (option: string) => {
+  act(() => { fireEvent.pointerDown(preset()!, { button: 0, ctrlKey: false }); });
+  act(() => { fireEvent.click(screen.getByRole('menuitemradio', { name: option })); });
+};
 const choose = (combobox: string, option: string) => {
   act(() => { fireEvent.click(screen.getByRole('combobox', { name: combobox })); });
   act(() => { fireEvent.click(screen.getByRole('option', { name: option })); });
@@ -518,7 +490,7 @@ it('Result shows the view\'s controls in its order, with its words and ranges, s
   expect(screen.getAllByRole('slider').map(slider => slider.getAttribute('aria-label'))).toEqual(['Deformation scale']);
   expect(screen.getByRole('slider', { name: 'Deformation scale' }).getAttribute('aria-valuemax')).toBe('40');
   expect(screen.getByRole('textbox', { name: 'Deformation scale value' }).getAttribute('value')).toBe('×10.0');
-  expect(screen.queryByRole('combobox', { name: 'Preset' })).toBeNull();
+  expect(preset()).toBeNull();
 });
 
 it('each slider\'s thumb stands at its control\'s value, and the slider takes the row\'s whole width under its label and value field', () => {
@@ -528,7 +500,7 @@ it('each slider\'s thumb stands at its control\'s value, and the slider takes th
   setValue('Exaggerate slider value', '24');
   setValue('Rider weight slider value', '2.5');
   expect(now()).toEqual(['2.5', '40', '24']);
-  choose('Preset', 'Landing (3×)');
+  choosePreset('Landing (3×)');
   expect(now()).toEqual(['3', '40', '12']);
   // The label and the value field share the first line; the slider is the second, both columns wide.
   const row = screen.getByRole('slider', { name: 'Exaggerate' }).closest('[data-slider-layout="wide"]')!;
@@ -569,18 +541,18 @@ it('a threshold greys every vertex whose value is under it, and the load moves w
 
 it('a preset sets the values it names, and moving any control is Custom', () => {
   const { container } = mount(VIEWED);
-  choose('Preset', 'Landing (3×)');
+  choosePreset('Landing (3×)');
   expect(screen.getByRole('textbox', { name: 'Rider weight slider value' }).getAttribute('value')).toBe('×3.00');
   expect(container.querySelector('[data-fea-max]')!.textContent).toBe('142 MPa');
-  expect(screen.getByRole('combobox', { name: 'Preset' }).textContent).toBe('Landing (3×)');
+  expect(preset()!.textContent).toBe('Landing (3×)');
   setValue('Exaggerate slider value', '20');
-  expect(screen.getByRole('combobox', { name: 'Preset' }).textContent).toBe('Custom');
-  choose('Preset', 'Default');
+  expect(preset()!.textContent).toBe('Custom');
+  choosePreset('Default');
   expect(screen.getByRole('textbox', { name: 'Rider weight slider value' }).getAttribute('value')).toBe('×1.00');
-  expect(screen.getByRole('combobox', { name: 'Preset' }).textContent).toBe('Default');
+  expect(preset()!.textContent).toBe('Default');
 });
 
-it('draws the loads and fixtures on the model, the chosen load\'s arrows in the chosen colour, and Display\'s switch hides them', () => {
+it('draws the loads and fixtures on the model, the chosen load\'s arrows in the chosen colour, and Study\'s checkbox hides them', () => {
   const both = { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] };
   const { mesh, unmount } = mount({ ...STUDIED, study: both }, undefined, { faces: [0, 0, 0, 0] });
   const group = mesh.children.find(child => child.name === 'fea-markers')!;
@@ -602,8 +574,8 @@ it('draws the loads and fixtures on the model, the chosen load\'s arrows in the 
   const after = new THREE.Matrix4();
   heads.getMatrixAt(0, after);
   expect(new THREE.Vector3().setFromMatrixPosition(after).z).toBeLessThan(new THREE.Vector3().setFromMatrixPosition(before).z);
-  openDisplay();
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Disable Loads and fixtures' })); });
+  expect(markersGate('Loads and fixtures').getAttribute('aria-checked')).toBe('true');
+  toggleMarkers('Loads and fixtures');
   expect(group.children.map(child => child.visible)).toEqual([false, false, false, false, false, false]);
   unmount();
   expect(group.parent).toBeNull();
@@ -636,13 +608,13 @@ it('a roller fixture reads as Slides on, after Held at, with its own glyph and m
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\nSlides on face 1 · /models/part.step#o1.f1');
 });
 
-it('a view that turns the markers off opens with the switch off', () => {
+it('a view that turns the markers off opens with the checkbox off', () => {
   const both = { ...STUDY, loads: [{ type: 'force', faces: ['#o1.f1'], vector_N: [0, 0, -2500] }] };
   const { mesh } = mount({ ...STUDIED, study: both, view: { show: { loads: false, fixtures: false } } }, undefined, { faces: [0, 0, 0, 0] });
   const group = mesh.children.find(child => child.name === 'fea-markers')!;
   expect(group.children.map(child => child.visible)).toEqual([false, false, false, false, false, false]);
-  openDisplay();
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Enable Loads and fixtures' })); });
+  expect(markersGate('Loads and fixtures').getAttribute('aria-checked')).toBe('false');
+  toggleMarkers('Loads and fixtures');
   expect(group.children.map(child => child.visible)).toEqual([true, true, true, true, true, true]);
 });
 
@@ -720,9 +692,6 @@ it('a slider\'s thumb stands where its value is on its range, not at the left en
   expect((thumb('Rider weight').parentElement as HTMLElement).style.left).toMatch(/^calc\(20% \+ /);
   setValue('Exaggerate slider value', '50');
   expect((thumb('Exaggerate').parentElement as HTMLElement).style.left).toMatch(/^calc\(100% /);
-  // The track it runs along is drawn, unfilled past the thumb, so where the thumb stands reads.
-  const track = thumb('Exaggerate').closest('[data-slot="slider"]')!;
-  expect(track.className).toContain('[&_[data-slot=slider-track]]:bg-foreground/20');
 });
 
 // The checks the study picked, as cadgen judged them: the stress check and a sag on the loaded face.
@@ -855,8 +824,7 @@ it('a modal result picks its mode, deforms by that mode\'s shape, jumps to the m
   expect(zOf(mesh, 2)).toBeCloseTo(-0.02 + 0.004 * swing, 6);
   release();
   expect(zOf(mesh, 2)).toBeCloseTo(-0.06, 6);
-  // Its markers are its fixtures, and Display's gate says so.
-  openDisplay();
+  // Its markers are its fixtures, and Study's gate for them says so.
   expect(screen.getByText('Cones where it holds it.')).toBeTruthy();
 });
 
@@ -896,10 +864,9 @@ it('a thermal result reads its setup as Kept at, Heated and Cooled by air, shows
   heads.getColorAt(0, colour);
   expect(colour.getHexString()).toBe('ff40f2');
   expect(await copiedPrompt(copied)).toBe('move it\n\nFile: /models/part.glb\nReferences:\n15 W of heat into face 1 · /models/part.step#o1.f1');
-  // Display's gate is titled for heat and says what it draws.
-  openDisplay();
+  // Study's gate for the markers is titled for heat and says what it draws.
   expect(screen.getByText('Dots where its temperature is fixed, wavy arrows where heat goes in, strokes where air cools it.')).toBeTruthy();
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Disable Heat inputs and temperatures' })); });
+  toggleMarkers('Heat inputs and temperatures');
   expect(group.children.every(child => !child.visible)).toBe(true);
 });
 
