@@ -203,7 +203,7 @@ Explode or Clip with its effect set takes it up again, as it is; unset, it start
 | Tool | Pressing it | Its sub-toolbar | Leaving it |
 | --- | --- | --- | --- |
 | Select | The default tool of every 3D file but an STL; picks what its filter ticks, or a GLB's nodes, a 3MF's objects (Shift adds; Delete deletes annotations and measurements); what is picked is Quick Edit's chips | None: its filter is the chevron after its button | The selection stays, lit and in Quick Edit, under any tool |
-| Annotate | Draws on the view | Its tools, what is drawn next, Undo, Redo and Clear annotations (on a phone, the menu of a chevron after its tile instead) | The annotations stay in the model, their chip in Quick Edit; the tool in hand stays, the strip's Annotate showing its icon |
+| Annotate | Draws on the view | Three rows: its drawing tools, what is drawn next, then the eraser, Clear annotations, Undo and Redo (on a phone, the menu of a chevron after its tile instead) | The annotations stay in the model, their chip in Quick Edit; the tool in hand stays, the strip's Annotate showing its icon |
 | Measure | Arms picking between points on the model, snapped to what its filter ticks (a STEP's exact vertices, edges and faces; a mesh's corners, sides and faces, approximately, in its file's unit; a drawing's ends, centres and lines, in the unit it declares, else "units"); each result a chip in Quick Edit, in its colour | None: its filter is the chevron after its button (a 3D file's) | Unfinished picks are cancelled; completed measurements stay, Quick Edit's chips |
 | Explode / Clip | The effect as it is set, or neutral; an edit applies it (Explode's, as a motion: see below) | The slider, its amount beside it, Reset (Clip's: its axis first, whose dropdown holds its settings) | The effect stays on the model |
 
@@ -292,22 +292,23 @@ buttons of their own, which would squeeze the slider: they are the dropdown of w
 (Clip's axis).
 
 **Annotate.** Its sub-toolbar, "Annotation controls", while Annotate is up
-(`annotation/toolbar.jsx`'s `AnnotationToolbar`): **Annotation tools**, a button each — Pen,
-Line, Arrow, Rectangle, Ellipse, Text (a mark put down in place) and Eraser — then a rule and
+(`annotation/toolbar.jsx`'s `AnnotationToolbar`), is three rows, one over the other from the
+left, parted by thin rules, as the phone's menu parts its sections: **Annotation tools**, a
+button each — Pen, Line, Arrow, Rectangle, Ellipse and Text (a mark put down in place); then
 **Annotation style**, what is drawn next, each a dropdown whose button shows its value, no
-chevron: **Color** (a grid of swatches, unnamed but for assistive technology: the neons and
+chevron, laid out as the strip's menus are (headed with its name, a row per choice, the check
+on the right): **Color** (a grid of swatches, unnamed but for assistive technology: the neons and
 one neutral that reads against the viewer, white in dark mode and near-black in light, then
 the colour wheel, which opens the system's colour picker for any other colour, kept once the
 picker closes), **Stroke width** (Thin, Medium, Bold — a shape's 1, 2 or 4px, the pen drawn to
 look the same weight, its glyph a dot 3, 5 or 7px across) and **Line style** (Solid, Dashed,
 Dotted — a shape's line; the pen's freehand ink is always solid; its glyph a diagonal line
-drawn in the style), each a row of glyphs alone, the current one marked, and **Placement**
+drawn in the style), each a row per choice, its glyph and its name, and **Placement**
 (**Draw on surface**, the default, its glyph a sphere: ink carried with the part under it;
 **Draw on plane**, on a plane facing the view through the orbit point, on no part, its glyph a
-plane), its glyphs with their names; then **Annotation history** — **Undo**, **Redo** — and
-**Clear annotations** (the trash), each disabled while there is nothing for it, with no rule
-before them. In a view narrower than 32rem the seven tools and the seven after them are two
-rows, column for column, with no rule. Annotate has no Select or Pan of its own (Select picks
+plane), its glyphs with their names; then **Erase and history** — the **Eraser**, **Clear
+annotations** (the trash), **Undo** and **Redo**, each action disabled while there is nothing
+for it. The rows are the same at every width. Annotate has no Select or Pan of its own (Select picks
 annotations, a right drag or Space orbits). Never a restyle of ink already down: the
 annotations Select picks have their own bar, a small floating toolbar on the tool strip's
 surface just above them — Color, Stroke width and Line style dropdowns, Fill for a closed
