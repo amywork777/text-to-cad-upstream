@@ -4,10 +4,11 @@ import { TREE_INDENT_PX, TreeRowChevron, TreeRowGuides, TreeRowLabel, TreeRowSur
 import { TooltipHint } from "@text-to-cad/ui/primitives/tooltip";
 import { Button } from "@text-to-cad/ui/primitives/button";
 import { Pause, Play } from "lucide-react";
-import { InfoRow, MonoValue } from "../kit/inspector/referenceRows.jsx";
+import { Checkbox } from "@text-to-cad/ui/primitives/checkbox";
+import { InfoRow } from "../kit/inspector/referenceRows.jsx";
 import { KinematicsPoseRow } from "../kit/inspector/kinematicsControls.jsx";
 import { parameterRow } from "../kit/inspector/parameterRow.jsx";
-import ToolPanel, { ToolPanelClose, ToolPanelFooterButton } from "../kit/tools/ToolPanel.jsx";
+import ToolPanel from "../kit/tools/ToolPanel.jsx";
 import { formatValue } from "./feaResult.js";
 import { frameText } from "./fea/series.js";
 import FeaVerdict from "./FeaVerdict.jsx";
@@ -25,8 +26,10 @@ const controlText = (value, control) => frameText(control, value)
  * parameter row as Position's joints are (`parameterRow`), under a Preset select when the view names
  * presets (Default, each preset, Custom once a control has moved). The file carries every field and
  * the true displacement (feaResult.js), so each is a choice, not a readout. `values` by control id.
+ * `markers`: whether the model shows where the study holds and loads it (its title, "Loads and fixtures";
+ * `text`, what it draws), a checkbox after the controls.
  */
-function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, motionPlay = null }) {
+function FeaResultControls({ controls, values, presets, preset, onChange, onPreset, onReset, motionPlay = null, markers = null }) {
   // A motion's Time row has a play/pause beside its value: it plays the timeline in place, the row following it.
   const playButton = motionPlay ? <TooltipHint content={motionPlay.playing ? "Pause" : "Play the motion"}>
     <Button type="button" variant="ghost" size="icon-xs" className="size-6 text-muted-foreground" data-fea-motion-play=""
@@ -43,6 +46,11 @@ function FeaResultControls({ controls, values, presets, preset, onChange, onPres
         action: control.drives === "motion" ? playButton : null,
         onChange: (value) => onChange(control.id, value),
       }))}
+      {markers ? <div className="flex min-w-0 items-center gap-2 px-2 text-tiny" data-fea-markers="">
+        <Checkbox checked={markers.on} onCheckedChange={(on) => markers.onChange(on === true)} aria-label={markers.title} />
+        <span className="shrink-0" aria-hidden="true">{markers.title}</span>
+        <TooltipHint content={markers.text} overflowOnly><span className="min-w-0 truncate text-micro text-muted-foreground">{markers.text}</span></TooltipHint>
+      </div> : null}
     </div>
   );
 }
@@ -145,29 +153,23 @@ function StudyRow({ row, depth, chosen, collapsed, toggle, onChoose, contents })
 }
 
 /**
- * One closable panel of rows, headed by its title and its X: Parts or Study. `fit`: how it gives way
- * when the stack is short (`ToolPanel`). `startsCollapsed`: the
- * rows it opens with shut (every part but the weakest). Which rows are open is the panel's own, kept
- * while it is mounted (closed or not).
+ * One section of the file sidebar, headed by its title: Parts or Study, its rows in the sidebar's one scroll.
+ * `startsCollapsed`: the rows it opens with shut (every part but the weakest). Which rows are open is the
+ * section's own, kept while it is mounted (open in the sidebar or not).
  */
-function StudyTreePanel({ id, title, blocks, foot = NONE, startsCollapsed, fit, hidden, chosen, onChoose, contents }) {
+function StudyTreePanel({ id, title, blocks, startsCollapsed, fit, chosen, onChoose, contents }) {
   const [collapsed, setCollapsed] = useState(() => new Set(startsCollapsed));
   const toggle = (rowId) => setCollapsed((current) => {
     const next = new Set(current);
     if (!next.delete(rowId)) next.add(rowId);
     return next;
   });
-  const draw = (list) => list.map((block, index) => (block.rows
-    ? <ul key={index} className="flex flex-col px-1 pb-1 text-tiny" aria-label={title}>
-      {block.rows.map((row) => <StudyRow key={row.id} row={row} depth={0} {...{ chosen, collapsed, toggle, onChoose, contents }} />)}
-    </ul>
-    : <div key={index} className={index ? "pt-1" : undefined}>{block.element}</div>));
-  // What you see (and Details after it) at the panel's foot, which never scrolls: when the stack is short and the
-  // panel gives way, the verdict and the setup scroll above it and the controls stay in view.
-  const footer = foot.length ? <div className="shrink-0 border-t border-foreground/10 pt-1" data-study-foot="">{draw(foot)}</div> : null;
-  return <ToolPanel id={id} title={title} label={title} actions={<ToolPanelClose />} fit={fit} resizable fitContent closable collapsible={false} hidden={hidden}
-    footer={footer}>
-    {draw(blocks)}
+  return <ToolPanel id={id} title={title} label={title} fit={fit} collapsible={false}>
+    {blocks.map((block, index) => (block.rows
+      ? <ul key={index} className="flex flex-col px-1 pb-1 text-tiny" aria-label={title}>
+        {block.rows.map((row) => <StudyRow key={row.id} row={row} depth={0} {...{ chosen, collapsed, toggle, onChoose, contents }} />)}
+      </ul>
+      : <div key={index} className={index ? "pt-1" : undefined}>{block.element}</div>))}
   </ToolPanel>;
 }
 
@@ -192,18 +194,6 @@ function studyBlocks(sections, { verdict, setup, controls, details }) {
   return blocks;
 }
 
-/**
- * Study's sections split where the panel's foot begins: What you see, when it comes after everything but
- * Details, goes to the foot with Details after it (`foot`), so it stays in view while the rest (`body`)
- * scrolls; a view that puts it earlier keeps every section in the body, in its order.
- */
-function footSections(sections) {
-  const at = sections.indexOf("controls");
-  const after = at < 0 ? [] : sections.slice(at + 1);
-  if (at < 0 || after.some((name) => name !== "details")) return { body: sections, foot: NONE };
-  return { body: sections.slice(0, at), foot: sections.slice(at) };
-}
-
 // What the view shows and how: the study view's controls, under the setup and above Details by default.
 const RESULT_ROW = Object.freeze({ id: "result", label: "What you see", detail: "" });
 const NONE = Object.freeze([]);
@@ -212,58 +202,46 @@ const DEFAULT_SECTIONS = Object.freeze(["verdict", "setup", "controls", "details
 /** The ids of the rows that open shut (`collapsed`: a load's faces), at any depth. */
 const collapsedIds = (rows) => rows.flatMap((row) => [...(row.collapsed ? [row.id] : []), ...collapsedIds(row.children || NONE)]);
 
-// The panel ids: Study keeps the tree's, so a single part's is as it always was; Parts is its own.
+// The sidebar sections' ids, under which the person's size for each is kept.
 export const FEA_PARTS_PANEL_ID = "parts";
-export const FEA_STUDY_PANEL_ID = "tree";
+export const FEA_STUDY_PANEL_ID = "study";
 
 /**
- * An FEA result's Select panels, each closable as the Features tree is, and the **Reference** for a
- * face picked on the result. They are composed from what the file holds: **Parts** only for an
- * assembly whose panel shows (`parts`: `partRows`, each part with its joints under it, the weakest
- * part open; `feaShowsParts`, from six parts up unless the view says), then
- * **Study**, its sections in the view's order (`sections`, `feaSections`; by default all four): the
- * verdict at the load shown (`verdict`: `feaVerdict`, none where the file cannot say), the setup
- * (`setup`, `studySections`: where it is held, what pushes it, what it is made of, each only where the
- * file records it), What you see: the study view's controls shown at the moment (`result`:
- * `FeaResultControls`' props, by default the field and deformation; none, none shown), and Details
- * (`details`), shut. A result written before its study was recorded has its verdict and What you see
- * alone. Choosing a row that stands for faces or parts is `onChoose(row)`; `chosen` is the row (or
- * picked face) chosen.
+ * An FEA result's sections of the file sidebar, whatever the tool, composed from what the file holds:
+ * **Parts** only for an assembly whose panel shows (`parts`: `partRows`, each part with its joints under it,
+ * the weakest part open; `feaShowsParts`, from six parts up unless the view says), then **Study**, its
+ * sections in the view's order (`sections`, `feaSections`; by default all four): the verdict at the load shown
+ * (`verdict`: `feaVerdict`, none where the file cannot say), the setup (`setup`, `studySections`: where it is
+ * held, what pushes it, what it is made of, each only where the file records it), What you see: the study
+ * view's controls shown at the moment and the markers' gate (`result`: `FeaResultControls`' props, by default
+ * the field and deformation), and Details (`details`), shut. A result written before its study was recorded
+ * has its verdict and What you see alone. Choosing a row that stands for faces or parts is `onChoose(row)`;
+ * `chosen` is the row (or picked face) chosen. A face picked on the result is Quick Edit's chip, its card
+ * `FaceCard`.
  *
- * @param {{ active: boolean, parts?: object[], openPart?: number, setup: object[], details: object[], sections?: string[],
+ * @param {{ parts?: object[], openPart?: number, setup: object[], details: object[], sections?: string[],
  *   verdict?: object | null, chosen: string, onChoose(row: object): void,
  *   result: { controls: object[], values: Record<string, unknown>, presets: object[], preset: string,
- *     onChange(id: string, value: unknown): void, onPreset(value: string): void, onReset(): void },
- *   reference: { title: string, ref: string, role: string, part?: string } | null, onClearSelection(): void,
- *   copy: { label: string, shortcut: string, onCopy(): unknown } | null }} props
+ *     onChange(id: string, value: unknown): void, onPreset(value: string): void, onReset(): void,
+ *     markers?: { title: string, text: string, on: boolean, onChange(on: boolean): void } | null } }} props
  */
-export default function FeaStudyPanel({ active, parts = NONE, openPart = -1, setup, details, sections = DEFAULT_SECTIONS, verdict = null, chosen, onChoose, result,
-  reference, onClearSelection, copy }) {
+export default function FeaStudyPanel({ parts = NONE, openPart = -1, setup, details, sections = DEFAULT_SECTIONS, verdict = null, chosen, onChoose, result }) {
   const contents = {
     [RESULT_ROW.id]: <FeaResultControls {...result} />,
   };
-  const controls = result.controls.length || result.presets.length ? [RESULT_ROW] : NONE;
+  const controls = result.controls.length || result.presets.length || result.markers ? [RESULT_ROW] : NONE;
   const studied = { verdict: verdict ? <FeaVerdict verdict={verdict} chosen={chosen} onChoose={onChoose} /> : null, setup, controls, details };
-  // With no controls there is nothing to keep in view: every section stays in the body.
-  const split = controls.length ? footSections(sections) : { body: sections, foot: NONE };
   const panels = [
     parts.length ? { id: FEA_PARTS_PANEL_ID, title: "Parts", blocks: [{ rows: parts }], startsCollapsed: parts.filter((_, index) => index !== openPart).map((row) => row.id), fit: "tree" } : null,
-    // Under Parts, Study gives way only after Parts has, as a details panel does, so Result stays in view.
-    { id: FEA_STUDY_PANEL_ID, title: "Study", startsCollapsed: collapsedIds([...setup, ...details]), fit: parts.length ? "details" : "tree",
-      blocks: studyBlocks(split.body, studied), foot: controls.length ? studyBlocks(split.foot, studied) : NONE },
+    { id: FEA_STUDY_PANEL_ID, title: "Study", startsCollapsed: collapsedIds([...setup, ...details]), fit: "tree", blocks: studyBlocks(sections, studied) },
   ].filter(Boolean);
+  return <>{panels.map((panel) => <StudyTreePanel key={panel.id} {...panel} chosen={chosen} onChoose={onChoose} contents={contents} />)}</>;
+}
+
+/** A face picked on the result, as its Quick Edit chip's card under the ref the chip names: what the study does to it, and its part. */
+export function FaceCard({ face }) {
   return <>
-    {/* Each headed with its X; Select, pressed while it is the tool, opens the closed ones again. */}
-    {panels.map((panel) => <StudyTreePanel key={panel.id} {...panel} hidden={!active} chosen={chosen} onChoose={onChoose} contents={contents} />)}
-    {/* The face picked, sized on its own under Study: its ref, what the study does to it, and Copy. */}
-    {reference ? <ToolPanel id="reference" title={reference.title} label="Reference details" closeLabel="Clear selection" fit="details" resizable fitContent
-      collapsible={false} hidden={!active} onClose={onClearSelection}
-      footer={copy ? <ToolPanelFooterButton label={copy.label} shortcut={copy.shortcut} onClick={copy.onCopy} /> : null}>
-      <div className="px-2 pb-1.5">
-        <InfoRow label="Ref"><MonoValue>{reference.ref}</MonoValue></InfoRow>
-        <InfoRow label="Study">{reference.role}</InfoRow>
-        {reference.part ? <InfoRow label="Part">{unbroken(reference.part)}</InfoRow> : null}
-      </div>
-    </ToolPanel> : null}
+    <InfoRow label="Study">{face.role}</InfoRow>
+    {face.part ? <InfoRow label="Part">{unbroken(face.part)}</InfoRow> : null}
   </>;
 }

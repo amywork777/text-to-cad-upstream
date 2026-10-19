@@ -104,60 +104,21 @@ it('Play in preview steps a heat-over-time result\'s colours through its frames,
   expect(position.version).toBe(placed);
 });
 
-it('Clip cuts a result open: on the strip after Select, a neutral panel that an edit makes a cut on the mesh, its colours and colour bar untouched', async () => {
+it('a result has a GLB\'s tools, Clip among them, and a cut never recolours it or its colour bar', () => {
   const mesh = mount();
-  const material = mesh.material as any;
-  // What the viewport's next frame sets on whatever material the mesh draws with.
-  const drawnPlanes = () => { mesh.onBeforeRender(null as any, null as any, null as any, mesh.geometry, material, null as any); return material.clippingPlanes || []; };
   const colours = Array.from(mesh.geometry.getAttribute('color').array as Uint8Array);
-  expect(screen.getAllByRole('button').map(button => button.getAttribute('aria-label')).filter(name => name === 'Select' || name === 'Clip')).toEqual(['Select', 'Clip']);
-  expect(screen.queryByRole('region', { name: 'Clip controls' })).toBeNull();
-  // A press opens the panel neutral: no cut yet.
+  // The tools any GLB has, Select first: Clip is the viewer's (`kit/tools/model-effects`), the cut the viewport's.
+  const strip = Array.from(document.querySelectorAll('[data-cad-toolbar] button')).map(button => button.getAttribute('aria-label'));
+  expect(strip[0]).toBe('Select');
+  expect(strip).toContain('Clip');
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Clip' })); });
-  expect(screen.getByRole('region', { name: 'Clip controls' }).textContent).toContain('0%');
-  expect(drawnPlanes()).toHaveLength(0);
-  // Clip takes no pointer: Select stays the tool, so Study stays up over the Clip panel.
-  expect(screen.getByRole('region', { name: 'Study' })).toBeTruthy();
-  // An edit cuts: all the way along X keeps x <= 0, the near half facing the default camera.
   act(() => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Clip amount' }), { key: 'End' }); });
-  expect(screen.getByRole('region', { name: 'Clip controls' }).textContent).toContain('100%');
-  // The cut is drawn once the viewport has applied the view (`useAppliedViewSettings`).
-  await waitFor(() => expect(drawnPlanes()).toHaveLength(1));
-  const [plane] = drawnPlanes();
-  expect(plane.distanceToPoint(new Vector3(1, 0, 0))).toBeLessThan(0);
-  expect(plane.distanceToPoint(new Vector3(0, 0, 0))).toBeCloseTo(0, 9);
-  // The cut discards; it never recolours. The colour bar stays the reading it was.
+  // A cut discards; it never recolours. The colour bar stays the reading it was, and Study stays the sidebar's.
   expect(Array.from(mesh.geometry.getAttribute('color').array as Uint8Array)).toEqual(colours);
   expect(document.querySelector('[aria-label="temperature colour bar"]')).toBeTruthy();
-  // Preview suspends the tool effects: the whole result, cut again on the way back.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
-  expect(drawnPlanes()).toHaveLength(0);
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Exit preview' })); });
-  expect(drawnPlanes()).toHaveLength(1);
-  // Study and the applied cut's panel are both up, Study first, with no trip through Select.
-  const stack = screen.getAllByRole('region').map(region => region.getAttribute('aria-label'));
-  expect(stack.indexOf('Study')).toBeGreaterThanOrEqual(0);
-  expect(stack.indexOf('Study')).toBeLessThan(stack.indexOf('Clip controls'));
-  // Flip keeps the other side of the same plane: just short of all the way, the sliver past it.
-  act(() => { fireEvent.keyDown(screen.getByRole('slider', { name: 'Clip amount' }), { key: 'PageDown' }); });
-  await waitFor(() => expect(drawnPlanes()[0]?.distanceToPoint(new Vector3(1, 0, 0))).toBeLessThan(0));
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Flip clip side' })); });
-  expect(screen.getByRole('button', { name: 'Flip clip side' }).getAttribute('aria-pressed')).toBe('true');
-  await waitFor(() => expect(drawnPlanes()[0]?.distanceToPoint(new Vector3(1, 0, 0))).toBeGreaterThan(0));
-  expect(drawnPlanes()[0].distanceToPoint(new Vector3(0, 0, 0))).toBeLessThan(0);
-  // Its X removes the cut and the panel.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Close clip controls' })); });
-  expect(screen.queryByRole('region', { name: 'Clip controls' })).toBeNull();
-  await waitFor(() => expect(drawnPlanes()).toHaveLength(0));
+  expect(screen.getByRole('region', { name: 'Study' })).toBeTruthy();
 });
 
-it('a GLB that is not a result has no Clip', () => {
-  mount(null);
-  expect(screen.queryByRole('button', { name: 'Clip' })).toBeNull();
-});
-
-// A 1 m drop (estimate) as `cadgen fea solve` writes one with its fall: landing flat on its y = 0 edge (glTF), falling
-// straight down, stopping in 2 mm (0.9 ms). Its motion is moved as kinematics is: a Time row, named states, the playbar.
 const DROPPED = {
   generator: 'cadgen fea', name: 'plate drop (estimate)', deformation_scale: 1, document: 'part.step', occurrence: 'o1', faces: ['#o1.f1', '#o1.f2'],
   analysis: { type: 'drop', tier: 2, word: 'Drop (estimate)', estimate: true, limits: [], noun: 'this drop', warnings: [],
@@ -166,7 +127,7 @@ const DROPPED = {
   study: { drop: { height_mm: 1000, onto: ['#o1.f1'], stop_mm: 2, direction: [0, 0, -1] }, material: { name: 'ABS', yield_MPa: 40 } },
 };
 
-it('a drop moves as kinematics does: a Time row and named states pose it in the tools view, and Preview plays the fall', () => {
+it('a drop moves as kinematics does: a Time row and named states pose it, and the sidebar\'s Animation plays the fall', () => {
   const mesh = mount(DROPPED);
   const height = () => { mesh.updateMatrixWorld(true); return new Vector3().setFromMatrixPosition(mesh.matrixWorld).y; };
   // It opens on the peak of the stop, on the floor, its Time row saying the real time from landing.
@@ -181,8 +142,7 @@ it('a drop moves as kinematics does: a Time row and named states pose it in the 
   act(() => { fireEvent.keyDown(time, { key: 'End' }); });
   expect(height()).toBeCloseTo(0, 6);
   expect(said()).toBe('At rest');
-  // Preview's playbar plays the same timeline as Drop: from its height, falling, the readout in plain words.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Preview' })); });
+  // The file sidebar's Animation plays the same timeline as Drop: from its height, falling, the readout in plain words.
   act(() => { fireEvent.click(screen.getByRole('button', { name: 'Play animation' })); });
   frame(0);
   frame(100);
@@ -195,8 +155,8 @@ it('a drop moves as kinematics does: a Time row and named states pose it in the 
   expect(floor.visible).toBe(true);
   frame(1200);
   expect(document.querySelector('[data-fea-fall-scale]')!.textContent).toBe('slowed 2,000×');
-  // Leaving preview puts it back where the Time row has it, the readout gone.
-  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Exit preview' })); });
+  // Reset puts it back where the Time row has it, the readout gone.
+  act(() => { fireEvent.click(screen.getByRole('button', { name: 'Reset animation' })); });
   expect(height()).toBeCloseTo(0, 6);
   expect((document.querySelector('[data-fea-fall-clock]') as HTMLElement).style.display).toBe('none');
 });

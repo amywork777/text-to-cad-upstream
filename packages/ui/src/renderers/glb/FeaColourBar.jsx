@@ -1,6 +1,6 @@
 import { cn } from "@text-to-cad/ui/utils";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
-import { VIEWPORT_BOTTOM_CENTER } from "../kit/shell/viewportLayout.js";
+import { FEA_BOTTOM_LINE } from "./feaChrome.js";
 import { feaAnalysis } from "./fea/analyses/index.js";
 import { fieldInfo, fieldWord } from "./fea/fields.js";
 import { isRms, sigmaScale } from "./fea/series.js";
@@ -54,7 +54,7 @@ export default function FeaColourBar({ result, field, loadScale = 1, sigma = nul
   const scale = (feaAnalysis(result).scalesWithLoad ? loadScale : 1) * sigmaScale(field, sigma);
   const shown = colourBarText(field, scale, sigma);
   return (
-    <div className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" style={{ bottom: raised ? `calc(${VIEWPORT_BOTTOM_CENTER} + ${PLAYBAR_CLEARANCE})` : VIEWPORT_BOTTOM_CENTER }}>
+    <div className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" style={{ bottom: raised ? `calc(${FEA_BOTTOM_LINE} + ${PLAYBAR_CLEARANCE})` : FEA_BOTTOM_LINE }}>
       <div
         className={cn("flex w-80 max-w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-micro tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}
         role="group"

@@ -1624,7 +1624,7 @@ const raycaster = new Raycaster();
  * The source face of the result's triangle under a world-space ray: `{ id, ref, point }`, the
  * scene contract's pick (`kit/scene.js`), with `ref` the file's face ref. null over nothing, and
  * over a triangle the mesher matched to no face. `clip`: a world-space plane the view cuts the result
- * with (`feaClip.js`): what lies past it is not there to pick, so the ray goes on to what the cut shows.
+ * with (the view's Clip, `runtime.activeClipPlanes`): what lies past it is not there to pick, so the ray goes on to what the cut shows.
  */
 export function pickFace(result, ray, clip = null) {
   const faces = vertexIndex(result.mesh, "_face");

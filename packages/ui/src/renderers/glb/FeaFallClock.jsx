@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from "react";
 import { cn } from "@text-to-cad/ui/utils";
 import { FLOATING_CHROME_SURFACE_CLASS } from "../../lib/floatingSurface.js";
-import { VIEWPORT_BOTTOM_CENTER } from "../kit/shell/viewportLayout.js";
+import { FEA_BOTTOM_LINE } from "./feaChrome.js";
 
 // Above the colour bar, which is itself one playbar's height above the playbar's line.
 const ABOVE_COLOUR_BAR = "5.5rem";
@@ -30,7 +30,7 @@ export default function FeaFallClock({ clockRef }) {
   }, [clockRef]);
   return (
     <div ref={boxRef} className="pointer-events-none absolute inset-x-0 z-20 flex justify-center px-3" aria-hidden="true" data-fea-fall-clock=""
-      style={{ display: "none", bottom: `calc(${VIEWPORT_BOTTOM_CENTER} + ${ABOVE_COLOUR_BAR})` }}>
+      style={{ display: "none", bottom: `calc(${FEA_BOTTOM_LINE} + ${ABOVE_COLOUR_BAR})` }}>
       <div className={cn("flex items-center gap-2 rounded-md px-2.5 py-1 text-micro tabular-nums text-muted-foreground", FLOATING_CHROME_SURFACE_CLASS)}>
         <span ref={timeRef} className="text-foreground" data-fea-fall-time="" />
         <span ref={scaleRef} data-fea-fall-scale="" />

@@ -28,12 +28,22 @@ def _open(target: Path) -> "StepScene":
     return read_scene(document_target(target, suffixes=STEP_SUFFIXES))
 
 
+def _resolve_one(scene: "StepScene", ref: str) -> "Selection":
+    """The one face, part or occurrence ``ref`` names. A study names one per entry: a line the viewer copies with
+    several (``#o1.f1,o1.f2``) is refused with the entries to write instead."""
+    found = scene.resolve(ref)
+    if len(found) != 1:
+        entries = ", ".join(f'"{selection.ref}"' for selection in found)
+        raise ValueError(f"{ref} names {len(found)} references; give each its own entry in the study's list: {entries}")
+    return found[0]
+
+
 def _resolve_faces(scene: "StepScene", refs: "tuple[str, ...]") -> tuple[dict[str, "Selection"], set[str]]:
     """Each face ref resolved, and the occurrences they belong to."""
     resolved: dict[str, Selection] = {}
     owners: set[str] = set()
     for ref in refs:
-        selection = scene.resolve(ref)
+        selection = _resolve_one(scene, ref)
         if selection.kind != "face":
             raise ValueError(f"{ref} is a {selection.kind} reference; fixtures, loads and checks take faces (#o1.f17)")
         resolved[ref] = selection
@@ -50,14 +60,14 @@ def _single_occurrence(scene: "StepScene", owners: set[str], chosen: str | None 
             "a study solves one part, so every face must be on the same occurrence"
         )
     if owners:
-        return scene.resolve(next(iter(owners)))  # type: ignore[return-value]
+        return _resolve_one(scene, next(iter(owners)))  # type: ignore[return-value]
     if chosen is None:
         leaves = list(scene.leaves())
         if len(leaves) != 1:
             raise ValueError(f"the study names no face and the document has {len(leaves)} parts; "
                              "choose one with --occurrence")
         chosen = leaves[0].ref
-    return scene.resolve(chosen)  # type: ignore[return-value]
+    return _resolve_one(scene, chosen)  # type: ignore[return-value]
 
 
 def _axis_word(normal: tuple[float, float, float]) -> str:
@@ -83,7 +93,7 @@ def list_faces(target: Path, *, occurrence: str | None = None, verbose: bool = F
     logger = CliLogger("fea", verbose=verbose)
     scene = _open(Path(target))
     if occurrence:
-        owner = scene.resolve(occurrence)
+        owner = _resolve_one(scene, occurrence)
         if owner.kind != "occurrence":
             raise ValueError(f"{occurrence} is not an occurrence reference")
     else:
@@ -624,7 +634,7 @@ def _solve_study(document: Path, out: Path | None, study, occurrence: str | None
                     f"--occurrence {occurrence} solves that part alone: the study's "
                     f"{' and '.join(k for k, v in (('parts', parsed.parts), ('connections', parsed.connections)) if v)} are ignored"
                 )
-            chosen = scene.resolve(occurrence)
+            chosen = _resolve_one(scene, occurrence)
             if chosen.kind != "occurrence" or chosen.ref not in {leaf.ref for leaf in scene.leaves()}:
                 raise ValueError(f"{occurrence} is not a part occurrence of {document.name}")
             if stray := sorted(owners - {chosen.ref}):
