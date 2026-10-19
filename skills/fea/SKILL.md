@@ -150,8 +150,8 @@ Run cadgen through [uv](https://docs.astral.sh/uv/). `cadgen fea faces` and `cad
 share one installation with the `$cad` skill and the CAD app's server; `cadgen fea solve` needs the
 `fea` extra, so it runs from its own installation, made the first time it is needed (below):
 
-- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.23 cadgen`
-- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.23 python`
+- `cadgen` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 cadgen`
+- `python` below means `uvx --no-config --managed-python --python 3.13 --from cadgen==0.7.24 python`
 
 Solving needs cadgen's opt-in `fea` extra, which brings the mesher (netgen) and the solver
 (scikit-fem, pyamg); `fea faces` and `fea parts` work without it. The first time a study runs, `cadgen fea solve` fails with "cadgen's fea extra
@@ -161,7 +161,7 @@ form for `fea solve` from then on (the first run downloads the mesher and solver
 reuse them):
 
 ```bash
-uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.23" cadgen fea solve part.step --study study.json
+uvx --no-config --managed-python --python 3.13 --from "cadgen[fea]==0.7.24" cadgen fea solve part.step --study study.json
 ```
 
 The analyses CalculiX solves run on it, faster, and the first of them downloads it once (`cadgen:
