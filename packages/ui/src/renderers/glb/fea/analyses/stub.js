@@ -1,5 +1,5 @@
 /**
- * An analysis whose viewer file its own track has not filled yet: static's Display gate, the generic
+ * An analysis whose viewer file its own track has not filled yet: static's markers' checkbox, the generic
  * controls (`seriesControls`: a mode picker or a scrubber over its series, the field, the deformation
  * where it has one, the sigma level for RMS fields) and every setup group whose entries the study
  * records (`SETUP_GROUPS`), with the facts the spec already fixes (its word, noun, tier, checks,

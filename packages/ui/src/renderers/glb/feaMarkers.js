@@ -50,7 +50,7 @@ export const floorPlaneMaterial = (THREE) => new THREE.MeshBasicMaterial({ color
  * the ink of what drives the part, the muted grey of what holds it or takes from it), which of the
  * study's `view.show` switches it follows (`bucket`: loads or fixtures), where it stands (`on`: its
  * faces, the model's middle, a side of its box, a plane) and at most how many stand on one face
- * (`most`; `on: "front"` stands at a crack's front's stations). `phrase`: what Display's gate says of it.
+ * (`most`; `on: "front"` stands at a crack's front's stations). `phrase`: what the markers' checkbox says of it.
  */
 export const MARKER_KINDS = Object.freeze({
   load: Object.freeze({ shape: "arrow", tone: "load", bucket: "loads", on: "faces", most: MAX_PER_FACE, phrase: "arrows where the study loads the part" }),
@@ -81,7 +81,7 @@ function crackFront(result) {
   return Array.isArray(front) ? front.filter((point) => Array.isArray(point) && point.length === 3 && point.every((c) => Number.isFinite(c))) : [];
 }
 
-/** What Display's gate says it draws, over these kinds, in the table's order: "Arrows where the study loads the part, cones where it holds it." */
+/** What the markers' checkbox says it draws, over these kinds, in the table's order: "Arrows where the study loads the part, cones where it holds it." */
 export function markerGateText(kinds) {
   const phrases = Object.keys(MARKER_KINDS).filter((kind) => kinds.includes(kind)).map((kind) => MARKER_KINDS[kind].phrase);
   if (!phrases.length) return "";

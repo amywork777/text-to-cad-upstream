@@ -339,7 +339,7 @@ coarser mesh, to follow it to the end.
 
 ## `view`
 
-What the Viewer's Study panel shows for the result, all picked from closed vocabularies: the
+What the Viewer's Study shows for the result, all picked from closed vocabularies: the
 `checks` its verdict judges, the `sections` it shows, the `controls` of What you see (each shown
 `when` it helps), named `presets` of them, and what is drawn (`show`). Optional; without it the
 verdict is the stress check and Study shows every section, with a field select over every field,
@@ -390,11 +390,11 @@ check's findings are the yields and margin findings already made.
 The parts of Study, in order, from `verdict`, `setup` (Held at, Pushed, Made of, each only where
 the study has it), `controls` (What you see) and `details` (the mesh). Default all four, in that
 order; list them only to leave something out (`["verdict", "controls"]` for a quick look). A
-section listed twice or unknown is refused. Parts stays its own panel (`show.parts`).
+section listed twice or unknown is refused. Parts stays its own sidebar section (`show.parts`).
 
 ### `controls`
 
-`controls` are listed in the order the panel shows them, at most one per `drives`. The agent picks
+`controls` are listed in the order Study shows them, at most one per `drives`. The agent picks
 the words (`label`, `unit`) and ranges; the Viewer decides what dragging one does:
 
 | `drives` | `type` | what it moves | keys |
@@ -436,7 +436,7 @@ whatever `load_scale` is set to.
   minimum greys nothing, so it does nothing until dragged.
 - `show`: `loads` and `fixtures`, `true` or `false` (default both true): whether the arrows on the
   loaded faces and the cones on the fixed faces are drawn when the result opens. The person can
-  still turn them on in Display. `parts`, `true` or `false`: whether an assembly's Parts panel is
+  still turn them on with the checkbox in What you see. `parts`, `true` or `false`: whether an assembly's Parts section is
   shown. Left out, it shows from six parts up; under that, a face picked on the model names its
   part, the part's material and its margin, and the findings name the joints. Set it `true` when
   the user asked about the parts or joints of a small assembly.

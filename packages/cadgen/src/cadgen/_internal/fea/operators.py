@@ -576,17 +576,20 @@ class ElementChunkOperator:
         """Jacobi-preconditioned CG on the free DOF; the fixed DOF are zero."""
         import numpy as np
         import scipy.sparse.linalg as spla
+        from scipy.sparse.linalg import LinearOperator
 
         n = self.shape[0]
         inverse = 1.0 / self.diagonal()[free]
 
-        def product(v):
+        def product(v: "np.ndarray") -> "np.ndarray":
             full = np.zeros(n)
             full[free] = v
-            return self.matvec(full)[free]
+            return np.asarray(self.matvec(full))[free]
 
-        operator = spla.LinearOperator((len(free), len(free)), matvec=product)
-        preconditioner = spla.LinearOperator((len(free), len(free)), matvec=lambda v: inverse * v)
+        # LinearOperator's __new__ hands this call to scipy's _CustomLinearOperator, which takes matvec; a checker
+        # reads LinearOperator.__init__ (dtype, shape) alone.
+        operator = LinearOperator((len(free), len(free)), matvec=product, dtype=float)  # type: ignore[unexpected-keyword, bad-keyword-argument]
+        preconditioner = LinearOperator((len(free), len(free)), matvec=lambda v: inverse * v, dtype=float)
         count = 0
 
         def tick(_):
