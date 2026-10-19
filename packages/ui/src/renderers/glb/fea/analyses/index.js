@@ -7,7 +7,7 @@
  * when the view names none (`defaultControls(result)`), Study's setup groups (`setupGroups`), its
  * preview routine (`routine(result)`, a descriptor or null), its motion where its part moves as a whole
  * (`motion(result)`, optional: `../motion.js`), the marker kinds it draws (`markers`)
- * and its Display gate's title (`displayTitle`). Pure: no three.js, no React.
+ * and its markers' checkbox title (`displayTitle`). Pure: no three.js, no React.
  */
 import { FEA_CHECK_KINDS } from "../checkKinds.js";
 import acoustic from "./acoustic.js";

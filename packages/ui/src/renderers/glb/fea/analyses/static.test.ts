@@ -54,7 +54,7 @@ describe('the analyses', () => {
     expect(routine('transient')).toBeNull();
   });
 
-  it('title the Display gate per analysis', () => {
+  it('title the markers checkbox per analysis', () => {
     expect(['static', 'thermal', 'harmonic', 'cfd'].map((name) => ANALYSES[name].displayTitle))
       .toEqual(['Loads and fixtures', 'Heat inputs and temperatures', 'Shaker and fixtures', 'Flow openings']);
   });

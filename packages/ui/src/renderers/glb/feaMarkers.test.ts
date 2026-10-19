@@ -381,7 +381,7 @@ describe('every other kind of marker', () => {
       .toBe('Speakers where sound is made, plates on its electrodes, rings where bearings carry the shaft.');
   });
 
-  it('says in Display what it draws, and words a drop and a shake plainly', () => {
+  it('says beside its checkbox what it draws, and words a drop and a shake plainly', () => {
     expect(markerGateText(['fixture', 'load'])).toBe('Arrows where the study loads the part, cones where it holds it.');
     expect(markerGateText(['temperature', 'heat', 'convection'])).toBe('Dots where its temperature is fixed, wavy arrows where heat goes in, strokes where air cools it.');
     expect(markerGateText([])).toBe('');
