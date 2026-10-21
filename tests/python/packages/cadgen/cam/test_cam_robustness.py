@@ -18,7 +18,6 @@ import json
 import os
 import random
 import re
-import resource
 import shutil
 import subprocess
 import sys
@@ -746,9 +745,12 @@ class Cli(unittest.TestCase):
                 self.assertNotIn("Traceback", out + err, what)
                 self.assertEqual("", out.strip(), what)
 
+    @unittest.skipIf(os.name == "nt", "Windows has no resource module to read a child's peak memory")
     def test_a_tiny_tool_over_a_big_area_stays_within_memory(self):
         # Before: a 0.1 mm tool on this plate peaked at 2.1 GB and misjudged the stock (dots, not a cut); now the
         # simulator says it cannot follow the tool, and the run stays well under that.
+        import resource
+
         job = json.dumps(mill_job([{"op": "face", "tool": "T1"}], tools=[{"id": "T1", "type": "flat",
                                                                           "diameter_mm": 0.1}]))
         script = ("import sys; from cadgen import cli; raise SystemExit(cli.main(sys.argv[1:]))")
