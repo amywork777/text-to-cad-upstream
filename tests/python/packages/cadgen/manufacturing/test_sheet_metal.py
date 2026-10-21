@@ -4,7 +4,7 @@ Each solve reads a bent sheet build123d writes into a temporary directory (a pro
 
 - a single 90° bend of 1.5 mm 5052-H32 at R = 2t, a tab out of a plate's edge, springs back Gardiner's 1.19° (the
   skill's hand check); the tab turns rigidly by exactly that while the held plate stays put, and its two ends, with no
-  relief cut, are flagged;
+  relief cut, are flagged; given the shop's ``k_factor``, its bend allowance takes it in place of DIN 6935's;
 - a U with both bends at R = t cracks in 6061-T6 (its minimum R/t at 1.5 mm is 1.44) and not in 5052-H32 (0.89), the
   failing bends carrying what they measured and the fix; it finds both bends at 90°, and held by one flange the other
   ends twice one bend's springback off;
@@ -99,6 +99,10 @@ class StudyFile(unittest.TestCase):
         self.assertEqual((own.sheet.key, own.sheet.yield_strength, own.sheet.E), ("aluminum-6061-t6", 290.0, 68_900.0))
         self.assertEqual((own.thickness_mm, own.tolerance_deg, own.face_refs, own.grain), (2.0, 0.5, ("#o1.f3",), (0.0, 1.0, 0.0)))
 
+    def test_the_shops_k_factor_is_optional(self):
+        self.assertIsNone(self.parse().inputs.k_factor)
+        self.assertEqual(self.parse(k_factor=0.44).inputs.k_factor, 0.44)
+
     def test_the_errors_name_the_field(self):
         cases = [
             ({"material": None}, "study.material: the sheet"),
@@ -111,6 +115,8 @@ class StudyFile(unittest.TestCase):
             ({"fixed_face": 3}, "fixed_face: a face of the flat to hold still"),
             ({"grain_direction": [0, 0, 0]}, "grain_direction: the direction is zero"),
             ({"grain_direction": "x"}, "grain_direction: the sheet's rolling direction as [x, y, z]"),
+            ({"k_factor": 0}, "k_factor: must be > 0"),
+            ({"k_factor": 0.6}, "k_factor: the shop's K-factor, at most 0.5"),
             ({"parts": {"a": {"material": "steel"}}}, "study.parts: a sheet metal study reads one part"),
             ({"mesh": {"order": 2}}, "study.mesh.order: sheet_metal studies take order 1"),
             ({"view": {"checks": [{"kind": "stress"}]}}, "view.checks[0].kind"),
@@ -162,7 +168,9 @@ class SingleBend(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = class_directory(cls)
-        cls.result, cls.solved = check_keeping(tab_on_plate(directory), BASE)
+        step = tab_on_plate(directory)
+        cls.result, cls.solved = check_keeping(step, BASE)
+        cls.shop = check(step, {**BASE, "k_factor": 0.44})
 
     def test_it_springs_back_gardiners_angle(self):
         from cadgen._internal.manufacturing.processes.brake import lookup_sheet
@@ -189,6 +197,17 @@ class SingleBend(unittest.TestCase):
         # Each bend's springback colours its bend and nothing else.
         springback = self.solved.fields["springback"]
         self.assertTrue((springback[plate] == 0).all() and springback.max() > 1.1)
+
+    def test_the_shops_k_factor_replaces_din_6935s_in_the_flat_pattern(self):
+        [din], [shop] = self.result.summary["bends"], self.shop.summary["bends"]
+        self.assertAlmostEqual(din["k_factor"], 0.4, delta=1e-3)    # DIN 6935 at R/t 2
+        self.assertIsNone(self.result.summary["k_factor"])
+        self.assertIn("DIN 6935's K-factor", self.result.summary["estimate_line"])
+        self.assertEqual((shop["k_factor"], self.shop.summary["k_factor"]), (0.44, 0.44))
+        self.assertAlmostEqual(shop["bend_allowance_mm"], math.radians(90) * (3.0 + 0.44 * 1.5), places=4)
+        self.assertIn("the study's K-factor 0.44", self.shop.summary["estimate_line"])
+        # Only the flat pattern moves: the bend springs back the same.
+        self.assertEqual(shop["springback_deg"], din["springback_deg"])
 
     def test_a_bend_ending_inside_the_plate_needs_a_relief_at_both_ends(self):
         [relief] = [f for f in self.result.findings if f["type"] == "relief_missing"]

@@ -8,11 +8,13 @@ in a sentence. For each bend, by hand formulas (:mod:`cadgen._internal.manufactu
   back to the CAD's angle; beside it Hosford and Caddell's power-law value, which counts work hardening;
 - cracking: the outer fibre's strain e = 1 / (2R/t + 1) against the sheet's at its minimum R/t (by temper and
   thickness, and along the grain where the study gives the rolling direction and the sheet a value for it);
-- the flat pattern: DIN 6935's K-factor, the bend allowance and the bend deduction.
+- the flat pattern: the K-factor (DIN 6935's from the bend's R/t, or the study's ``k_factor``, the shop's, for every
+  bend), the bend allowance and the bend deduction.
 
 The study names the ``material`` (:data:`cadgen._internal.manufacturing.processes.brake.SHEETS`, or an object with its own numbers), and may
 give ``thickness_mm`` (else measured), ``tolerance_deg`` (the springback a bend may have, 1° by default), ``fixed_face``
-(a face of the flat held still, else the largest flat) and ``grain_direction`` (the rolling direction). It writes, on the
+(a face of the flat held still, else the largest flat), ``grain_direction`` (the rolling direction) and ``k_factor``
+(the shop's K-factor, so the bend allowances match a flat pattern drawn at it). It writes, on the
 mesh only to show it, each bend's springback and its outer strain as a share of its limit, and the displacement off the
 brake: each bend opens by its springback and the flats past it turn with it, out from the held flat, so the part is
 drawn as it comes off the brake. Its findings are its verdict, one pass or fail per bend and check. Stdlib only at import.
@@ -46,7 +48,8 @@ _ALONG_GRAIN_DEG = 45.0
 NOT_FORMING = "not a forming simulation"
 LIMITS = (
     "An estimate per bend by hand formulas, " + NOT_FORMING + ": Gardiner's springback (the sheet elastic-perfectly "
-    "plastic at its yield strength), the outer-fibre strain against the sheet's minimum R/t, DIN 6935's K-factor.",
+    "plastic at its yield strength), the outer-fibre strain against the sheet's minimum R/t, DIN 6935's K-factor "
+    "unless the study gives the shop's.",
     "The inside radius is the CAD's: an air bend takes a radius the die opening sets, not the punch's, and springs back "
     "more at a larger one; the shop's own bend table and a test bend override these numbers.",
     "Work hardening is not in Gardiner's relation: a sheet that hardens strongly (annealed stainless, n 0.45) springs "
@@ -65,6 +68,8 @@ class SheetMetalInputs(Inputs):
     fixed_face: str | None = None
     #: The rolling direction (unit); ``None`` when the study does not give it.
     grain: tuple[float, float, float] | None = None
+    #: The shop's K-factor for every bend; ``None`` for DIN 6935's from each bend's R/t.
+    k_factor: float | None = None
 
 
 def _figure(value: float) -> str:
@@ -93,7 +98,8 @@ class SheetMetalProcess(Process):
     extras_word: ClassVar[str] = "sheet metal (estimate)"
     estimate_only: ClassVar[bool] = True
     limits: ClassVar[tuple[str, ...]] = LIMITS
-    study_keys: ClassVar[frozenset[str]] = frozenset({"thickness_mm", "tolerance_deg", "fixed_face", "grain_direction"})
+    study_keys: ClassVar[frozenset[str]] = frozenset({"thickness_mm", "tolerance_deg", "fixed_face", "grain_direction",
+                                                    "k_factor"})
     #: The mesh only carries the fields to the viewer: linear tets are enough.
     mesh_orders: ClassVar[tuple[int, ...]] = (1,)
     fields: ClassVar[tuple[FieldSpec, ...]] = (
@@ -137,8 +143,14 @@ class SheetMetalProcess(Process):
                                  f"{kinds.json_text(fixed)}")
             fixed = fixed.strip()
         grain = _parse_grain(document["grain_direction"]) if "grain_direction" in document else None
+        k_factor = None
+        if "k_factor" in document:
+            k_factor = kinds.number(document["k_factor"], where="k_factor", positive=True)
+            if k_factor > 0.5:
+                raise ValueError(f"k_factor: the shop's K-factor, at most 0.5 (the neutral fibre lies between the inside "
+                                 f"and the middle of the sheet); got {_figure(k_factor)}")
         return SheetMetalInputs((fixed,) if fixed else (), (), False, sheet=sheet, thickness_mm=thickness,
-                                tolerance_deg=tolerance, fixed_face=fixed, grain=grain)
+                                tolerance_deg=tolerance, fixed_face=fixed, grain=grain, k_factor=k_factor)
 
     # -- the ladder: nothing to fit (the formulas are per bend; the mesh only carries the fields) -----
 
@@ -192,7 +204,7 @@ class SheetMetalProcess(Process):
                 along = abs(float(np.dot(bend.inner.axis, inputs.grain))) >= math.cos(math.radians(_ALONG_GRAIN_DEG))
             minimum = material.min_ratio(t, bool(along))
             strain, limit = brake.outer_strain(radius, t), brake.strain_limit(minimum)
-            K = brake.k_factor(radius / t)
+            K = inputs.k_factor if inputs.k_factor is not None else brake.k_factor(radius / t)
             records.append({
                 "index": b, "bend": bend, "radius": radius, "angle": angle, "r_over_t": radius / t, "gardiner": g,
                 "kept": g["kept"], "springback": angle * (1.0 - g["kept"]),
@@ -216,7 +228,8 @@ class SheetMetalProcess(Process):
         timings = {"estimate_s": time.perf_counter() - started}
         result = space_result(
             ctx.space, {"springback": springback, "strain_ratio": strain_ratio, "displacement": displacement},
-            solver="hand formulas (Gardiner, DIN 6935)", timings=timings,
+            solver="hand formulas (Gardiner)" if inputs.k_factor is not None else "hand formulas (Gardiner, DIN 6935)",
+            timings=timings,
             scalars={"sheet": sheet, "records": records, "thickness": t, "turned": turned, "reliefs": reliefs,
                      "faces": {o: fp.ref for o, fp in ctx.volume.faces.items()}, "part": part},
         )
@@ -502,11 +515,12 @@ class SheetMetalProcess(Process):
         magnitude = np.linalg.norm(result.fields["displacement"], axis=1)
         summary = {
             "estimate": True,
-            "estimate_line": self.estimate_line(len(sheet.bends), t, inputs.sheet.name),
+            "estimate_line": self.estimate_line(len(sheet.bends), t, inputs.sheet.name, inputs.k_factor),
             "material": inputs.sheet.name,
             "thickness_mm": round(t, 4),
             "thickness_measured_mm": round(sheet.thickness, 4),
             "tolerance_deg": inputs.tolerance_deg,
+            "k_factor": inputs.k_factor,
             "held_flat": sheet.flats[sheet.fixed].number,
             "grain_direction": None if inputs.grain is None else [round(c, 6) for c in inputs.grain],
             "bends": bends,
@@ -523,9 +537,10 @@ class SheetMetalProcess(Process):
         return summary
 
     @staticmethod
-    def estimate_line(count: int, t: float, name: str) -> str:
+    def estimate_line(count: int, t: float, name: str, k_factor: float | None = None) -> str:
+        k = "DIN 6935's K-factor" if k_factor is None else f"the study's K-factor {_figure(k_factor)}"
         return (f"Estimate: {count} bend{'s' if count != 1 else ''} in {_figure(t)} mm {name} by hand formulas "
-                f"(Gardiner's springback, the outer strain against the minimum R/t, DIN 6935's K-factor); {NOT_FORMING}")
+                f"(Gardiner's springback, the outer strain against the minimum R/t, {k}); {NOT_FORMING}")
 
     def field_ranges(self, summary: dict, result: AnalysisResult) -> dict[str, tuple[float, float]]:
         return {
@@ -554,6 +569,8 @@ class SheetMetalProcess(Process):
             echo["fixed_face"] = bare((inputs.fixed_face,))[0]
         if inputs.grain is not None:
             echo["grain_direction"] = list(inputs.grain)
+        if inputs.k_factor is not None:
+            echo["k_factor"] = inputs.k_factor
         return echo
 
     def human_lines(self, summary: dict) -> list[str]:

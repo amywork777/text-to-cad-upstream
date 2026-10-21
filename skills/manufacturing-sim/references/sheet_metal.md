@@ -12,7 +12,8 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
 - Not for a deep draw, a stamping or a roll-formed section (the draw ratio and the draw's force are hand estimates in
   [estimates.md](estimates.md#forging-extrusion-and-deep-drawing)), nor for the bend rules a shop checks (flange
   lengths, holes near bends, relief sizes): those are `$dfm`'s, which this complements. Where the shop has a bend
-  table, its K-factor and radius are the production numbers; these are estimates beside them.
+  table, its K-factor and radius are the production numbers; these are estimates beside them (give its K-factor as
+  `k_factor`).
 
 ## The workflow
 
@@ -94,6 +95,9 @@ a forming simulation: say "estimate" every time you quote it, and read [Limits](
   the grain (the hard way) and is judged on the sheet's along-the-grain minimum where it has one; every sheet in the
   table has one value for either direction, so give `min_r_t_along_grain` from the mill certificate when the grain
   matters.
+- `k_factor`: the shop's K-factor (from its bend table, or the one a flat pattern is drawn at), above 0 and at most
+  0.5. Every bend's bend allowance and bend deduction take it, so they match a flat pattern drawn at the same K; the
+  springback and cracking checks don't use it. Left out, each bend takes DIN 6935's from its own R/t.
 - Shared keys, as in `$fea`'s study file: `mesh` (`size_mm`; linear elements, order 1: the mesh only carries the
   fields to the viewer), `output` (`deformation_scale`: 1, true scale, by default) and `view` (controls and presets; no
   `checks`: its findings are its verdict).
@@ -140,7 +144,7 @@ gives several, they are by thickness and interpolated between.
   other fields: `strain_ratio` (each bend's outer strain over the limit its minimum R/t allows: past 1 it may crack)
   and `displacement` (mm, the springback's). The Deformation control exaggerates it; Spring back plays it.
 - Summary: `estimate`, `estimate_line`, `material`, `thickness_mm` and `thickness_measured_mm`, `tolerance_deg`,
-  `held_flat`, `grain_direction`, and per bend (`bends`): its `faces`, `at_mm`, the flats it `joins`,
+  `k_factor` (the study's, `null` when each bend takes DIN 6935's), `held_flat`, `grain_direction`, and per bend (`bends`): its `faces`, `at_mm`, the flats it `joins`,
   `inner_radius_mm`, `r_over_t`, `angle_deg`, `length_mm`, `final_radius_mm`, `final_angle_deg`, `springback_deg`,
   `overbend_deg`, `springback_hardening_deg`, `gardiner_x` (R Y / (E t)), `kept` (K_s), `grain`, `min_r_over_t`,
   `outer_strain`, `strain_limit`, `strain_ratio`, `may_crack`, `k_factor`, `bend_allowance_mm`, `bend_deduction_mm`.
@@ -207,7 +211,7 @@ radius R = 3 mm, R/t = 2:
   a typical one: a mill certificate's (give it in the material object) moves the springback in proportion.
 - The minimum R/t is a table's, for either direction unless the sheet has an along-the-grain value.
 - The K-factor is DIN 6935's estimate, held within 0.30 to 0.50 (the range bend tables give [13]): the shop's
-  measured K-factor is the production number.
+  measured K-factor is the production number, so give it as `k_factor` when you have it.
 
 ## What could not be verified
 
