@@ -99,7 +99,14 @@ _LAYERS = {
     "CENTER": (4, "CENTER", 0.18),
     "DIM": (1, "CONTINUOUS", 0.18),
     "NOTES": (3, "CONTINUOUS", 0.25),
+    # A section's cut faces: 45-degree lines, thin, as ISO 128-50 hatches them.
+    "HATCH": (8, "CONTINUOUS", 0.18),
 }
+#: Letters a section may be named by: ISO 128-40 leaves out I, O and Q, which read
+#: as 1, 0 and O on a print.
+_SECTION_LETTERS = "ABCDEFGHJKLMNPRSTUVWXYZ"
+#: ANSI31 at this scale is 45-degree lines 3.2 mm apart: legible on A4, not grey on A0.
+_HATCH_SCALE = 1.0
 
 #: Projection conventions the title block may name. The two differ only in WHERE a
 #: view is placed: third angle puts the view from above above the front view and the
@@ -173,6 +180,8 @@ class View:
     _dims: list[_Dim] = field(default_factory=list)
     #: Which overall sizes ``overall()`` asked for: {"width", "height"}, or empty.
     _overall: frozenset = frozenset()
+    #: ``(letter, model point or None)`` when :meth:`section` made this a section.
+    _section: tuple | None = None
     #: ``(bounding-box size, gap, iso)`` when :meth:`Sheet.three_views` placed this
     #: view, so the off-frame guard can lay the same arrangement out again at a
     #: candidate scale. None for a hand-placed ``at=``, which does not move.
@@ -274,6 +283,27 @@ class View:
         if not (math.isfinite(dx) and math.isfinite(dy)):
             raise ValueError(f"note offset must be finite, got {offset!r}")
         self._dims.append(_Dim("note", _p3(at), None, 0.0, str(text), None, radius=dx, angle=dy))
+        return self
+
+    def section(self, letter: str = "A", *, through=None) -> "View":
+        """Draw this view as a full section, the way a drawing shows what hidden
+        lines cannot: the part cut by the plane through ``through`` (a model
+        point; the middle of the part by default) square to the line of sight,
+        the half nearer the viewer taken away, the cut faces hatched at 45
+        degrees, and no hidden lines. The cutting plane is drawn, with ``letter``
+        at both ends and arrows in the viewing direction, on a view of the same
+        part that sees it edge-on, and this view is labelled ``SECTION A-A``.
+        Dimensions and callouts are given in model coordinates as on any view."""
+        if self.name == "iso":
+            raise ValueError("section() cuts an orthographic view; an isometric is drawn whole")
+        letter = str(letter).upper()
+        if len(letter) != 1 or letter not in _SECTION_LETTERS:
+            raise ValueError(f"section letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O "
+                             f"and Q), got {letter!r}")
+        self._section = (letter, None if through is None else _p3(through))
+        self.hidden = False
+        if self.label is None:
+            self.label = f"SECTION {letter}-{letter}"
         return self
 
     def overall(self, *, width: bool = True, height: bool = True) -> "View":
@@ -627,7 +657,10 @@ class _Projection:
     """The affine map a build123d viewport applies, recovered from the viewport
     itself, so dimension points land exactly where the geometry did."""
 
-    def __init__(self, shape, name: str) -> None:
+    def __init__(self, shape, name: str, draw=None) -> None:
+        """``draw`` is what to project, when it is not ``shape`` itself: a section
+        draws the cut part through the whole part's map, so it lines up with the
+        views beside it."""
         from build123d import Axis, Edge, Vector
 
         direction, up = VIEW_DIRECTIONS[name]
@@ -637,7 +670,7 @@ class _Projection:
         d = Vector(*direction).normalized()
         origin = centre + d * (radius * 10.0)
         self.origin, self.up, self.look_at = origin, up, centre
-        self.visible, self.hidden = _project_to_viewport(shape, origin, up, centre)
+        self.visible, self.hidden = _project_to_viewport(shape if draw is None else draw, origin, up, centre)
         # Recover the map from three unit lines along the model axes.
         probes = []
         for axis in ((1, 0, 0), (0, 1, 0), (0, 0, 1)):
@@ -1571,6 +1604,98 @@ def _projection_symbol(msp, x: float, y: float, *, first_angle: bool) -> float:
     return right
 
 
+#: For a section in each view, the views that see its cutting plane edge-on, in the
+#: order a drawing shows it: a front section's plane on the top view, and so on.
+_PLANE_SHOWN_ON = {
+    "front": ("top", "bottom", "right", "left"), "back": ("top", "bottom", "right", "left"),
+    "right": ("front", "top", "back", "bottom"), "left": ("front", "top", "back", "bottom"),
+    "top": ("front", "right", "back", "left"), "bottom": ("front", "right", "back", "left"),
+}
+
+
+def _cut(view: View) -> tuple:
+    """The part a section view draws: (the half beyond the plane, its cut faces,
+    the point the plane passes through)."""
+    from build123d import Compound, GeomType, Keep, Plane
+
+    letter, through = view._section
+    shape = view.shape
+    point = through if through is not None else tuple(shape.bounding_box().center())
+    look = VIEW_DIRECTIONS[view.name][0]
+    kept = shape.split(Plane(origin=point, z_dir=look), keep=Keep.BOTTOM)
+    if isinstance(kept, (list, tuple)):
+        kept = Compound(list(kept))
+    faces = []
+    for face in (kept.faces() if kept is not None else []):
+        if face.geom_type != GeomType.PLANE:
+            continue
+        normal, centre = face.normal_at(), face.center()
+        if (abs(abs(_dot((normal.X, normal.Y, normal.Z), look)) - 1) < 1e-6
+                and abs(_dot((centre.X - point[0], centre.Y - point[1], centre.Z - point[2]), look)) < 1e-6):
+            faces.append(face)
+    if not faces:
+        raise ValueError(
+            f"{view.name}.section({letter!r}): the plane through {_where(point)} square to the {view.name} "
+            "view's line of sight does not cut the part. Give through= a model point inside it."
+        )
+    return kept, faces, point
+
+
+def _model_to_sheet(proj, at, centre, scale, point) -> tuple[float, float]:
+    """Where a model point lands on the sheet in a placed view."""
+    x, y = proj.point(point)
+    return (at[0] + (x - centre[0]) * scale, at[1] + (y - centre[1]) * scale)
+
+
+def _bbox_bounds(shape, proj) -> tuple[float, float, float, float]:
+    """A part's projected (x0, x1, y0, y1), from its bounding box's corners."""
+    bb = shape.bounding_box()
+    points = [proj.point((x, y, z)) for x in (bb.min.X, bb.max.X) for y in (bb.min.Y, bb.max.Y)
+              for z in (bb.min.Z, bb.max.Z)]
+    return (min(p[0] for p in points), max(p[0] for p in points),
+            min(p[1] for p in points), max(p[1] for p in points))
+
+
+def _wire_points(wire) -> list[tuple[float, float, float]]:
+    """A closed wire as points close enough together that a hatch fills its arcs."""
+    count = max(24, min(720, int(wire.length / 0.5)))
+    return [tuple(wire.position_at(i / count)) for i in range(count)]
+
+
+def _draw_cutting_plane(msp, parent: tuple, point, look, letter: str, text, th: float) -> None:
+    """ISO 128-40's cutting plane on the view that sees it edge-on: a thin chain line
+    across the view, thick at its ends, with arrows in the direction the section is
+    viewed and the section's letter at each."""
+    from ezdxf.enums import TextEntityAlignment
+
+    _view, model_to_sheet, box = parent
+    parent_look = VIEW_DIRECTIONS[_view.name][0]
+    along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
+             parent_look[0] * look[1] - parent_look[1] * look[0])
+    p0 = model_to_sheet(point)
+    p1 = model_to_sheet(tuple(a + b for a, b in zip(point, along)))
+    length = math.hypot(p1[0] - p0[0], p1[1] - p0[1]) or 1.0
+    u = ((p1[0] - p0[0]) / length, (p1[1] - p0[1]) / length)
+    ts = [(x - p0[0]) * u[0] + (y - p0[1]) * u[1] for x in box[:2] for y in box[2:]]
+    a = (p0[0] + u[0] * (min(ts) - 6.0), p0[1] + u[1] * (min(ts) - 6.0))
+    b = (p0[0] + u[0] * (max(ts) + 6.0), p0[1] + u[1] * (max(ts) + 6.0))
+    msp.add_line(a, b, dxfattribs={"layer": "CENTER"})
+    # The section is viewed looking AWAY from where its viewer stands.
+    q = model_to_sheet(tuple(c - d for c, d in zip(point, look)))
+    run = math.hypot(q[0] - p0[0], q[1] - p0[1]) or 1.0
+    d = ((q[0] - p0[0]) / run, (q[1] - p0[1]) / run)
+    for end, inward in ((a, u), (b, (-u[0], -u[1]))):
+        # Thick at the ends, at the outline's weight, but not on VISIBLE: that layer
+        # is the part's edges and nothing else.
+        msp.add_line(end, (end[0] + inward[0] * 7.0, end[1] + inward[1] * 7.0),
+                     dxfattribs={"layer": "NOTES", "lineweight": int(round(_LAYERS["VISIBLE"][2] * 100))})
+        head = (end[0] + d[0] * 9.0, end[1] + d[1] * 9.0)
+        msp.add_leader([head, end], dxfattribs={"layer": "DIM"},
+                       override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
+        text(letter, head[0] + d[0] * (th + 1.0), head[1] + d[1] * (th + 1.0), th + 1.5,
+             TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+
+
 def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: list | None = None,
                   facts: dict | None = None):
     """Build the ezdxf document for one sheet. Returns the document.
@@ -1673,18 +1798,28 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     # planned before anything is placed, so the layout knows what each view carries.
     s = sheet.scale
     work = []
+    cuts: dict[int, tuple] = {}
     for view in sheet.views:
-        proj = _Projection(view.shape, view.name)
+        cut = _cut(view) if view._section else None
+        proj = _Projection(view.shape, view.name, draw=cut[0] if cut else None)
         bounds = _edges_bounds(list(proj.visible) + (list(proj.hidden) if view.hidden else []))
         if not bounds:
             continue
+        if cut:
+            # Centred on the WHOLE part, so the section lines up with the views
+            # beside it even when the half it keeps is not symmetric.
+            cuts[id(view)] = cut
+            corners = _bbox_bounds(view.shape, proj)
+            centre = ((corners[0] + corners[1]) / 2, (corners[2] + corners[3]) / 2)
+        else:
+            centre = ((bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2)
         items = _resolve_view(view, proj, bounds, part_holes, warnings)
-        work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet)))
+        work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet), centre))
 
     # A standard arrangement is laid out again from the room its views' annotation
     # takes; a view placed by hand stays where its author put it.
     arranged: dict[int, tuple] = {}
-    for view, _proj, _bounds, _items, plan in work:
+    for view, _proj, _bounds, _items, plan, _centre in work:
         if view._arranged is not None:
             arranged.setdefault(id(view._arranged), (view._arranged, {}, {}))
             arranged[id(view._arranged)][1][view.name] = view
@@ -1700,12 +1835,12 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         groups.append((by_name, shape, size, gap, iso, room))
 
     placed = []
-    for view, proj, bounds, _items, _plan in work:
+    for view, proj, bounds, _items, _plan, (cx, cy) in work:
         bx0, bx1, by0, by1 = bounds
         sv = view.scale or s
-        half_w, half_h = (bx1 - bx0) * sv / 2, (by1 - by0) * sv / 2
-        placed.append((view, proj, bounds, (bx0 + bx1) / 2, (by0 + by1) / 2,
-                       (view.at[0] - half_w, view.at[0] + half_w, view.at[1] - half_h, view.at[1] + half_h)))
+        placed.append((view, proj, bounds, cx, cy,
+                       (view.at[0] + (bx0 - cx) * sv, view.at[0] + (bx1 - cx) * sv,
+                        view.at[1] + (by0 - cy) * sv, view.at[1] + (by1 - cy) * sv)))
     boxes = [box for (_, _, _, _, _, box) in placed]
     _assert_views_fit(sheet, placed, index=index, groups=groups)
     m = _MARGIN
@@ -1721,8 +1856,10 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 return True
         return False
 
-    for (view, proj, bounds, items, plan), (_v, _p, _b, cx, cy, own_box) in zip(work, placed):
+    drawn: dict[int, tuple] = {}
+    for (view, proj, bounds, items, plan, _centre), (_v, _p, _b, cx, cy, own_box) in zip(work, placed):
         sv = view.scale or s
+        cut = cuts.get(id(view))
         record = None
         if facts is not None:
             record = facts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
@@ -1736,6 +1873,10 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
 
         def model_to_sheet(p3):
             return to_sheet(proj.point(p3))
+
+        # Bound now, not looked up later: the closures above read this loop's
+        # variables, which belong to the last view by the time the loop is done.
+        drawn[id(view)] = (view, functools.partial(_model_to_sheet, proj, view.at, (cx, cy), sv), own_box)
 
         # One set for the whole view, not one per pass. HLR returns an edge from
         # every face that bounds it, so an edge on the silhouette comes back
@@ -1804,19 +1945,38 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         put(proj.visible, "VISIBLE")
         if view.hidden:
             put(proj.hidden, "HIDDEN")
+        if cut:
+            from ezdxf import const
+
+            # The cut faces, hatched: what the section is there to show.
+            for face in cut[1]:
+                hatch = msp.add_hatch(dxfattribs={"layer": "HATCH"})
+                hatch.set_pattern_fill("ANSI31", scale=_HATCH_SCALE)
+                for k, wire in enumerate([face.outer_wire(), *face.inner_wires()]):
+                    hatch.paths.add_polyline_path(
+                        [to_sheet(proj.point(point)) for point in _wire_points(wire)], is_closed=True,
+                        flags=const.BOUNDARY_PATH_EXTERNAL if k == 0 else const.BOUNDARY_PATH_DEFAULT)
         if view.centre_marks:
             # One cross per CENTRE, sized to the largest circle on it. A counterbore
             # is two concentric circles, and two crosses drawn over each other fill
             # the CENTER linetype's gaps in: the centre line printed solid, which is
             # the one thing its dashes are there to say it is not.
-            for centre, radius in _centres(_circles(proj.visible) + _end_on(view, proj, part_axes(view.shape))):
+            # A section cuts its bores and bosses in half, which leaves no full
+            # cylinder to find their axes by; the whole part's axes that lie on the
+            # kept side of the plane (or in it) are the section's.
+            turned = part_axes(view.shape)
+            if cut:
+                look = VIEW_DIRECTIONS[view.name][0]
+                turned = [a for a in turned if max(_dot(tuple(e - c for e, c in zip(end, cut[2])), look)
+                                                   for end in (a.start, a.end)) <= 1e-6]
+            for centre, radius in _centres(_circles(proj.visible) + _end_on(view, proj, turned)):
                 c = to_sheet(centre)
                 arm = radius * sv + 2.0
                 msp.add_line((c[0] - arm, c[1]), (c[0] + arm, c[1]), dxfattribs={"layer": "CENTER"})
                 msp.add_line((c[0], c[1] - arm), (c[0], c[1] + arm), dxfattribs={"layer": "CENTER"})
             # And a centre line down every turned feature seen from the side: a
             # shaft's axis, a bore drawn hidden through a plate.
-            for a, b in _axis_lines(view, proj, part_axes(view.shape), to_sheet):
+            for a, b in _axis_lines(view, proj, turned, to_sheet):
                 msp.add_line(a, b, dxfattribs={"layer": "CENTER"})
         vx0, vx1, vy0, vy1 = own_box
 
@@ -2001,6 +2161,23 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         # dimension on the bottom side never sits on it.
         text((view.label or view.name).upper(), view.at[0], vy0 - reach["bottom"] - 6, 3.5,
              TextEntityAlignment.TOP_CENTER, "NOTES")
+
+    # Each section's cutting plane, on a view that sees it edge-on.
+    for view_id, (kept, _faces, point) in cuts.items():
+        view = drawn[view_id][0]
+        letter, look = view._section[0], VIEW_DIRECTIONS[view.name][0]
+        parent = next((drawn[id(other)] for name in _PLANE_SHOWN_ON[view.name]
+                       for other in sheet.views
+                       if other.name == name and other.shape is view.shape and other._section is None
+                       and id(other) in drawn), None)
+        if parent is None:
+            if warnings is not None:
+                warnings.append(
+                    f"SECTION {letter}-{letter} has no view on this sheet that sees its cutting plane edge-on, "
+                    f"so the plane is not shown; add the {_PLANE_SHOWN_ON[view.name][0]} view."
+                )
+            continue
+        _draw_cutting_plane(msp, parent, point, look, letter, text, th)
     return doc
 
 

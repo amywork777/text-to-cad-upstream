@@ -1365,6 +1365,81 @@ class UnstatedTests(unittest.TestCase):
         self.assertEqual(self._unstated(build(True)), [], "⌀30 is the shaft's size in Y and in Z too")
 
 
+class SectionTests(unittest.TestCase):
+    """A section shows what hidden lines can only hint at."""
+
+    def _sheet(self, part=None, **section):
+        from cadgen.eng_drawing import Sheet
+
+        sheet = Sheet("A3")
+        top, front, _right = sheet.three_views(part if part is not None else _counterbored())
+        front.section("A", **section)
+        return sheet, top, front
+
+    def test_a_section_hatches_what_it_cuts_and_leaves_hidden_lines_out(self) -> None:
+        from cadgen.eng_drawing import _render_sheet
+
+        sheet, _top, front = self._sheet()
+        doc = _render_sheet(sheet, index=1, count=1, label="sec")
+        msp = doc.modelspace()
+        hatches = list(msp.query("HATCH"))
+        self.assertEqual(len(hatches), 3, "two counterbores split the cut face into three")
+        self.assertTrue(all(h.dxf.pattern_name == "ANSI31" for h in hatches))
+        labels = [e.dxf.text for e in msp.query("TEXT[layer=='NOTES']")]
+        self.assertIn("SECTION A-A", labels)
+        hidden_in_section = [e for e in msp.query("LINE LWPOLYLINE") if e.dxf.layer == "HIDDEN"
+                             and all(abs(x - front.at[0]) <= 31 and abs(y - front.at[1]) <= 7
+                                     for x, y in _points(e))]
+        self.assertEqual(hidden_in_section, [], "a section draws no hidden lines")
+        self.assertEqual(list(doc.audit().errors), [])
+
+    def test_the_cutting_plane_is_drawn_where_it_is_seen_edge_on(self) -> None:
+        from cadgen.eng_drawing import _render_sheet
+
+        sheet, top, _front = self._sheet(through=(0, 5, 0))
+        msp = _render_sheet(sheet, index=1, count=1, label="sec").modelspace()
+        plane_y = top.at[1] + 5  # the top view draws model Y up, at 1:1
+        chain = [e for e in msp.query("LINE") if e.dxf.layer == "CENTER"
+                 and abs(e.dxf.start.y - plane_y) < 1e-6 and abs(e.dxf.end.y - plane_y) < 1e-6]
+        self.assertEqual(len(chain), 1, "one chain line across the top view, at the plane")
+        self.assertGreater(abs(chain[0].dxf.end.x - chain[0].dxf.start.x), 60, "across the whole view")
+        letters = [e for e in msp.query("TEXT[layer=='NOTES']") if e.dxf.text == "A"]
+        self.assertEqual(len(letters), 2, "the letter at both ends")
+        arrows = [l for l in msp.query("LEADER") if abs(l.vertices[1][1] - plane_y) < 1e-6]
+        self.assertEqual(len(arrows), 2)
+        for arrow in arrows:
+            self.assertGreater(arrow.vertices[0][1], plane_y, "the front section is looked at toward +Y")
+
+    def test_a_section_lines_up_with_the_view_above_it(self) -> None:
+        """The half it keeps need not be symmetric; the drawing still aligns."""
+        from build123d import Align, Box, Pos
+        from cadgen.eng_drawing import _render_sheet
+
+        align = (Align.MIN, Align.MIN, Align.MIN)
+        step = Box(60, 20, 10, align=align) + Pos(0, 20, 0) * Box(30, 20, 25, align=align)
+        sheet, top, front = self._sheet(step, through=(0, 30, 0))
+        msp = _render_sheet(sheet, index=1, count=1, label="sec").modelspace()
+
+        def xs(view):
+            return [x for e in msp.query("LINE LWPOLYLINE") if e.dxf.layer == "VISIBLE"
+                    for x, y in _points(e) if abs(y - view.at[1]) < 20 and abs(x - view.at[0]) < 40]
+
+        self.assertAlmostEqual(min(xs(front)), min(xs(top)), places=6)
+        self.assertLess(max(xs(front)), max(xs(top)) - 20, "it keeps only the 30 mm step, not the 60 mm base")
+
+    def test_a_section_that_cannot_be_drawn_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet, _top, _front = self._sheet(through=(0, 500, 0))
+        with self.assertRaisesRegex(ValueError, "does not cut the part"):
+            _render_sheet(sheet, index=1, count=1, label="miss")
+        view = Sheet("A4").view(_plate(), "front", at=(150, 100))
+        with self.assertRaisesRegex(ValueError, "ISO 128-40"):
+            view.section("I")
+        with self.assertRaisesRegex(ValueError, "isometric"):
+            Sheet("A4").view(_plate(), "iso", at=(150, 100)).section()
+
+
 def _points(entity):
     kind = entity.dxftype()
     if kind == "LINE":
