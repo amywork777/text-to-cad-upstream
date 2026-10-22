@@ -12,6 +12,7 @@ cover the document that reaches disk.
 
 from __future__ import annotations
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -32,7 +33,7 @@ def _sheet(part):
     top = sheet.view(part, "top", at=(100, 120))
     front = sheet.view(part, "front", at=(100, 50))
     top.overall()
-    top.diameter((10, 5, 10), 3, text="%%c6 THRU")
+    top.diameter((10, 5, 10), text="%%c6 THRU")
     front.dim((20, -15, 0), (20, -15, 10), offset=12)
     return sheet
 
@@ -63,7 +64,7 @@ class DrawingSheetTests(unittest.TestCase):
             by_layer[entity.dxf.layer] += 1
         self.assertGreater(by_layer.get("VISIBLE", 0), 0)
         self.assertGreater(by_layer.get("HIDDEN", 0), 0, "the hole is hidden in the front view")
-        self.assertEqual(by_layer.get("CENTER", 0), 2, "one centre mark: two lines")
+        self.assertEqual(by_layer.get("CENTER", 0), 3, "one centre mark (two lines) and the bore's axis in the front view")
         # Measured, not typed: the overall dimensions read the box.
         texts = _dim_texts(doc)
         self.assertIn("40", texts)
@@ -82,7 +83,10 @@ class DrawingSheetTests(unittest.TestCase):
         self.assertAlmostEqual(max(xs) - min(xs), 297 - 20, places=6)
         title_text = [e.dxf.text for e in msp.query("TEXT")]
         self.assertIn("TEST BLOCK", title_text)
-        self.assertTrue(any("SHEET 1 OF 2" in t and "REV B" in t for t in title_text))
+        for caption, value in (("DWG NO.", "T-1"), ("REV", "B"), ("SHEET", "1 OF 2"), ("SCALE", "1:1"),
+                               ("SIZE", "A4"), ("UNITS", "MM")):
+            self.assertIn(caption, title_text)
+            self.assertIn(value, title_text)
 
     def test_every_layer_linetype_exists_in_the_table(self) -> None:
         """A layer naming a linetype the document does not define draws continuous.
@@ -174,8 +178,10 @@ class DrawingSheetTests(unittest.TestCase):
         texts = _dim_texts(_render_sheet(sheet, index=1, count=1, label="tol"))
         self.assertTrue(any("80" in t and "±0.10" in t for t in texts), texts)
 
-    def test_an_unplaced_dimension_takes_the_next_free_row(self) -> None:
-        """`dim()` used to default to the row `overall()` writes into."""
+    def test_an_unplaced_dimension_takes_the_next_free_row_on_its_own_side(self) -> None:
+        """`dim()` used to default to the row `overall()` writes into, and then to
+        the top of the view whatever it measured: a pitch along the bottom edge ran
+        its extension lines up across the whole part to a row above it."""
         from cadgen.eng_drawing import Sheet, _render_sheet
 
         part = _part()
@@ -185,13 +191,14 @@ class DrawingSheetTests(unittest.TestCase):
         top.dim((-20, 15, 10), (20, 15, 10))
         top.dim((-20, -15, 10), (20, -15, 10))
         doc = _render_sheet(sheet, index=1, count=1, label="rows")
-        # The three horizontal dimensions: the overall width and the two unplaced ones.
         rows = sorted(round(d.dxf.defpoint.y, 3) for d in doc.modelspace().query("DIMENSION")
                       if abs(float(d.dxf.angle)) < 1e-9)
         self.assertEqual(len(rows), 3)
-        self.assertEqual(len(set(rows)), 3, f"two dimensions share a row: {rows}")
-        self.assertEqual([round(b - a, 3) for a, b in zip(rows, rows[1:])], [12.0, 12.0],
-                         "one clear row apart")
+        below, above = [r for r in rows if r < 105], [r for r in rows if r > 105]
+        self.assertEqual(len(below), 1, "the bottom edge's dimension sits below the view")
+        self.assertEqual(len(above), 2, "the top edge's, and the overall width, above it")
+        self.assertAlmostEqual(above[1] - above[0], 12.0, places=3, msg="one clear row apart, overall outermost")
+        self.assertAlmostEqual(105 - 15 - below[0], 12.0, places=3, msg="the first row under the view")
 
     def test_views_that_run_off_the_frame_are_refused_with_a_scale_that_fits(self) -> None:
         from build123d import Align, Box
@@ -220,9 +227,9 @@ class DrawingSheetTests(unittest.TestCase):
         title has to be cut or merely shrunk is that font's business. That it
         ends up inside its cell is not.
         """
-        from cadgen.eng_drawing import _MIN_TEXT_MM, Sheet, _render_sheet, _text_width
+        from cadgen.eng_drawing import _MIN_TEXT_MM, _TITLE_FIT, Sheet, _render_sheet, _text_width
 
-        cell = min(180.0, 297 - 20) * 0.6 - 6
+        cell = _TITLE_FIT
         for title in ("ENCLOSURE",
                       "ELECTRONICS ENCLOSURE BASE",
                       "ELECTRONICS ENCLOSURE BASE, LOWER HALF, REVISION C, MACHINED FROM 6061-T6 BILLET",
@@ -232,7 +239,7 @@ class DrawingSheetTests(unittest.TestCase):
                 sheet.view(_part(), "top", at=(150, 120))
                 doc = _render_sheet(sheet, index=1, count=1, label="long")
                 drawn = next(e for e in doc.modelspace().query("TEXT[layer=='TITLE']")
-                             if e.dxf.text and title.startswith(e.dxf.text.rstrip("…")[:4]))
+                             if len(e.dxf.text.rstrip("…")) >= 4 and title.startswith(e.dxf.text.rstrip("…")))
                 self.assertGreaterEqual(drawn.dxf.height, _MIN_TEXT_MM, "still legible")
                 self.assertLessEqual(_text_width(drawn.dxf.text, drawn.dxf.height), cell + 1e-6,
                                      f"{drawn.dxf.text!r} at {drawn.dxf.height} runs into the SCALE cell")
@@ -318,7 +325,7 @@ class DrawingSheetTests(unittest.TestCase):
         front.dim((20, -15, 0), (20, -15, 10), offset=12, tol=0.1)
         front.dim((-20, -15, 0), (20, -15, 0), offset=-12, tol=(0.05, 0.02), fit="h6")
         top.hole((10, 5, 10), 6, thru=True, count=1)
-        top.hole((10, 5, 10), 6.6, depth=12, cbore=(11, 6.5), thread="M6x1 - 6H")
+        top.hole((10, 5, 10), thread="M6x1 - 6H")
         doc = _render_sheet(sheet, index=1, count=1, label="tagged")
         msp = doc.modelspace()
         texts = _dim_texts(doc)
@@ -330,7 +337,8 @@ class DrawingSheetTests(unittest.TestCase):
         self.assertIn("DESCRIPTION", title_texts)
         self.assertIn("HOLE MOVED", title_texts)
         callouts = [e.dxf.text for e in msp.query("TEXT[layer=='DIM']")]
-        self.assertIn("1× %%c6 THRU", callouts)
+        self.assertIn("%%c6 THRU", callouts, "one hole is not '1×'")
+        self.assertIn("M6x1 - 6H THRU", callouts, "a thread replaces the diameter; THRU is still the part's")
         self.assertEqual(hole_callout_text({"diameter": 6.6, "depth": 12, "thru": False, "cbore": (11, 6.5), "csk": None,
                                             "thread": "M6x1 - 6H", "count": None}), "M6x1 - 6H ↧12   ⌴ %%c11 ↧6.5")
 
@@ -385,21 +393,23 @@ class SheetWarningTests(unittest.TestCase):
         from cadgen.eng_drawing import Sheet, _render_sheet
 
         def build(gap):
-            # The default gap reserves two dimension rows. Asking the front view
-            # for three puts its outermost row where the top view's label hangs.
+            # A fixed gap of 47 mm reserves two dimension rows. Asking the front
+            # view for three puts its outermost row where the top view's label hangs.
             sheet = Sheet("A3")
             _top, front, _right = sheet.three_views(_part(), gap=gap)
             front.overall()
-            front.dim((-20, -15, 0), (20, -15, 0))
-            front.dim((-20, -15, 10), (20, -15, 10))
+            # Both along the top edge, so both take rows above the view.
+            front.dim((-20, -15, 10), (0, -15, 10))
+            front.dim((0, -15, 10), (20, -15, 10))
             notices: list[str] = []
             _render_sheet(sheet, index=1, count=1, label="rows", warnings=notices)
             return [n for n in notices if "annotation overlaps" in n]
 
-        crowded = build(None)
+        crowded = build(47)
         self.assertTrue(crowded, "three rows into a two-row gap should be reported")
         self.assertIn("three_views(gap=", crowded[0])
         self.assertEqual(build(70), [], "given the room, the same sheet is quiet")
+        self.assertEqual(build(None), [], "left to itself, the layout makes the room")
 
 
 class DrawingVocabularyTests(unittest.TestCase):
@@ -435,8 +445,10 @@ class DrawingVocabularyTests(unittest.TestCase):
             self.view.hole((0, 0, 0), 6, cbore=(11, -2))
         with self.assertRaisesRegex(ValueError, "THRU"):
             self.view.hole((0, 0, 0), 6, thru=True, depth=12)
-        with self.assertRaisesRegex(ValueError, "radius"):
-            self.view.diameter((0, 0, 0), 0)
+        with self.assertRaisesRegex(ValueError, "size"):
+            self.view.diameter((0, 0, 0), size=0)
+        with self.assertRaisesRegex(TypeError, "measures the circle"):
+            self.view.diameter((0, 0, 0), 3)
 
     def test_a_tolerance_that_is_not_a_tolerance_is_refused(self) -> None:
         with self.assertRaises(TypeError):
@@ -891,11 +903,14 @@ class ScaleSuggestionTests(unittest.TestCase):
         from build123d import Box
         from cadgen.eng_drawing import Sheet
 
+        from cadgen.eng_drawing import _STANDARD_SCALES, _scale_label
+
         sheet = Sheet("A3", title="ISO", scale=2.0)
-        iso = sheet.three_views(Box(90, 60, 40), iso=True)[3]
+        iso = sheet.three_views(Box(150, 90, 60), iso=True)[3]
         self.assertIsNotNone(iso.scale)
-        self.assertGreater(iso.scale, 1.0, "drawn larger than full size")
-        self.assertTrue(iso.label.endswith(":1"), f"{iso.label} reads as a reduction")
+        self.assertLess(iso.scale, 2.0, "too big for the corner at the sheet's 2:1")
+        self.assertIn(iso.scale, _STANDARD_SCALES, "a pictorial still states a scale a reader can use")
+        self.assertEqual(iso.label, f"ISOMETRIC {_scale_label(iso.scale)}")
 
         full = Sheet("A3", title="ISO", scale=2.0).three_views(Box(30, 20, 10), iso=True)[3]
         self.assertIsNone(full.scale, "it fitted at the sheet's own scale")
@@ -1037,6 +1052,317 @@ class OverallRowTests(unittest.TestCase):
         self.assertEqual(len(rows), len(set(rows)), f"two dimension lines share a row: {sorted(rows)}")
         self.assertGreater(max(rows) - sorted(rows)[-2], 1.0,
                            "overall() is outermost, and clear of the row below it")
+
+
+def _plate():
+    """80 x 50 x 6 with four ⌀5.5 holes at (±30, ±18) and a ⌀20 bore in the middle."""
+    from build123d import Align, Box, Cylinder, Pos
+
+    align = (Align.CENTER, Align.CENTER, Align.MIN)
+    part = Box(80, 50, 6, align=align) - Cylinder(10, 6, align=align)
+    for x in (-30, 30):
+        for y in (-18, 18):
+            part -= Pos(x, y, 0) * Cylinder(2.75, 6, align=align)
+    return part
+
+
+def _counterbored():
+    from build123d import Align, Box, BuildPart, CounterBoreHole, Locations, Pos
+
+    with BuildPart() as part:
+        Box(60, 40, 12, align=(Align.CENTER, Align.CENTER, Align.MIN))
+        with Locations(Pos(-15, 0, 12), Pos(15, 0, 12)):
+            CounterBoreHole(radius=3.3, counter_bore_radius=5.5, counter_bore_depth=6.5)
+    return part.part
+
+
+def _shaft():
+    from build123d import Align, Cylinder, Pos, Rot
+
+    align = (Align.CENTER, Align.CENTER, Align.MIN)
+    along_x = Rot(0, 90, 0)
+    return (Pos(-50, 0, 0) * along_x * Cylinder(10, 30, align=align)
+            + Pos(-20, 0, 0) * along_x * Cylinder(15, 40, align=align)
+            + Pos(20, 0, 0) * along_x * Cylinder(10, 30, align=align))
+
+
+def _callouts(doc) -> list[str]:
+    return [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+
+
+class FromThePartTests(unittest.TestCase):
+    """A callout's numbers are the part's: read off it, or checked against it."""
+
+    def test_a_hole_callout_reads_every_size_off_the_part(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "top", at=(140, 120)).hole((15, 0, 12))
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="cb")),
+                         ["2× %%c6.6 THRU   ⌴ %%c11 ↧6.5"])
+
+    def test_a_typed_size_the_part_contradicts_is_refused(self) -> None:
+        """A callout that says ⌀6 over a ⌀6.6 bore is machined faithfully, and wrong."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        for given, named in (({"diameter": 6}, "diameter=6"), ({"count": 3}, "count=3"),
+                             ({"depth": 8}, "depth=8"), ({"cbore": (12, 6.5)}, "cbore=(12, 6.5)")):
+            with self.subTest(given=given):
+                sheet = Sheet("A4")
+                sheet.view(_counterbored(), "top", at=(140, 120)).hole((15, 0, 12), **given)
+                with self.assertRaises(ValueError) as caught:
+                    _render_sheet(sheet, index=1, count=1, label="cb")
+                self.assertIn(named, str(caught.exception))
+                self.assertIn("2× ⌀6.6 THRU", str(caught.exception), "the message states what the part has")
+        # What agrees with the part is accepted and changes nothing.
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "top", at=(140, 120)).hole((15, 0, 12), 6.6, thru=True, count=2,
+                                                               cbore=(11, 6.5))
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="cb")),
+                         ["2× %%c6.6 THRU   ⌴ %%c11 ↧6.5"])
+
+    def test_a_callout_where_there_is_no_hole_names_the_holes_there_are(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "top", at=(140, 120)).hole((0, 0, 12))
+        with self.assertRaisesRegex(ValueError, r"no hole runs along .* at \(-15, 0, 12\)"):
+            _render_sheet(sheet, index=1, count=1, label="none")
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "front", at=(140, 120)).hole((15, 0, 12))
+        with self.assertRaisesRegex(ValueError, "looks down no hole"):
+            _render_sheet(sheet, index=1, count=1, label="side")
+
+    def test_a_counterbore_on_the_far_side_belongs_to_the_other_view(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_counterbored(), "bottom", at=(140, 120)).hole((15, 0, 0))
+        with self.assertRaisesRegex(ValueError, "top view"):
+            _render_sheet(sheet, index=1, count=1, label="far")
+
+    def test_holes_calls_out_each_kind_of_hole_once(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 120)).holes()
+        self.assertEqual(sorted(_callouts(_render_sheet(sheet, index=1, count=1, label="all"))),
+                         sorted(["4× %%c5.5 THRU", "%%c20 THRU"]))
+
+    def test_diameter_and_radius_are_measured_off_the_view(self) -> None:
+        from build123d import Align, Box, fillet, Axis
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        right = sheet.view(_shaft(), "right", at=(140, 120))
+        right.diameter((0, 0, 0))
+        with self.assertRaisesRegex(ValueError, r"share that centre \(⌀20, ⌀30\); pass size="):
+            _render_sheet(sheet, index=1, count=1, label="d")
+        sheet = Sheet("A4")
+        sheet.view(_shaft(), "right", at=(140, 120)).diameter((0, 0, 0), size=30)
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="d")), ["%%c30"])
+        sheet = Sheet("A4")
+        sheet.view(_shaft(), "right", at=(140, 120)).diameter((0, 0, 0), size=25)
+        with self.assertRaisesRegex(ValueError, "no circle of that size"):
+            _render_sheet(sheet, index=1, count=1, label="d")
+
+        corners = fillet(Box(60, 40, 5, align=(Align.CENTER, Align.CENTER, Align.MIN)).edges().filter_by(Axis.Z), 6)
+        sheet = Sheet("A4")
+        sheet.view(corners, "top", at=(140, 120)).radius((24, 14, 5))
+        self.assertEqual(_callouts(_render_sheet(sheet, index=1, count=1, label="r")), ["R6"])
+
+    def test_a_leader_points_at_the_centre_of_its_circle(self) -> None:
+        """ISO 128 and ASME Y14.2 both: a leader to a circle is radial."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 120)).hole((30, 18, 6), angle=70)
+        doc = _render_sheet(sheet, index=1, count=1, label="radial")
+        leader = doc.modelspace().query("LEADER")[0]
+        start, knee = leader.vertices[0], leader.vertices[1]
+        centre = (140 + 30, 120 + 18)
+        self.assertAlmostEqual(math.hypot(start[0] - centre[0], start[1] - centre[1]), 2.75, places=4,
+                               msg="the arrow stops on the circle")
+        cross = (start[0] - centre[0]) * (knee[1] - centre[1]) - (start[1] - centre[1]) * (knee[0] - centre[0])
+        self.assertAlmostEqual(cross, 0.0, places=6, msg="and its line runs through the centre")
+
+
+class LayoutTests(unittest.TestCase):
+    def test_dimensions_nest_shortest_nearest_the_view(self) -> None:
+        """Given longest first, they would cross: the long one's extension lines
+        through the short one's dimension line."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 100)).dim((-40, 25, 6), (40, 25, 6)).dim((-30, 25, 6), (30, 25, 6))
+        doc = _render_sheet(sheet, index=1, count=1, label="nest")
+        rows = {round(abs(d.dxf.defpoint3.x - d.dxf.defpoint2.x)): d.dxf.defpoint.y
+                for d in doc.modelspace().query("DIMENSION")}
+        self.assertLess(rows[60], rows[80])
+
+    def test_a_vertical_dimension_goes_on_its_own_side(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_plate(), "top", at=(140, 100)).dim((-30, -18, 6), (-30, 18, 6))
+        dim = _render_sheet(sheet, index=1, count=1, label="left").modelspace().query("DIMENSION")[0]
+        self.assertLess(dim.dxf.defpoint.x, 140 - 40, "left of the view, beside the holes it measures")
+
+    def test_views_are_spaced_for_the_annotation_they_carry(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        def top_view_lift(rows: int) -> float:
+            sheet = Sheet("A3")
+            top, front, _right = sheet.three_views(_plate())
+            front.overall()
+            for i in range(rows):
+                front.dim((-40 + 5 * i, -25, 6), (40, -25, 6))
+            notices: list[str] = []
+            _render_sheet(sheet, index=1, count=1, label="room", warnings=notices)
+            self.assertEqual([n for n in notices if "overlaps" in n], [])
+            return top.at[1] - front.at[1]
+
+        self.assertGreater(top_view_lift(4), top_view_lift(0) + 4 * 12 - 1e-6,
+                           "four more rows above the front view push the top view up by four rows")
+
+    def test_a_value_wider_than_its_extension_lines_is_set_beside_them(self) -> None:
+        """Centred, "3 WALL" printed with both witness lines through its glyphs."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        right = sheet.view(_plate(), "right", at=(140, 100))
+        right.dim((40, -25, 0), (40, -25, 3), text="<> FLOOR")
+        right.dim((40, 25, 0), (40, 25, 6))
+        doc = _render_sheet(sheet, index=1, count=1, label="narrow")
+        for dim in doc.modelspace().query("DIMENSION"):
+            low, high = sorted((dim.dxf.defpoint2.y, dim.dxf.defpoint3.y))
+            mtext = next(e for e in doc.blocks.get(dim.dxf.geometry) if e.dxftype() == "MTEXT")
+            inside = low < mtext.dxf.insert.y < high
+            if "FLOOR" in mtext.text:
+                self.assertFalse(inside, "the wide value moved beside its 3 mm")
+            else:
+                self.assertTrue(inside, "a value that fits stays centred; only its arrows go outside")
+
+    def test_a_turned_part_seen_from_the_side_has_one_centre_line_end_to_end(self) -> None:
+        from cadgen.eng_drawing import _CENTRE_OVERSHOOT, Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        sheet.view(_shaft(), "front", at=(140, 100))
+        lines = [e for e in _render_sheet(sheet, index=1, count=1, label="axis").modelspace().query("LINE")
+                 if e.dxf.layer == "CENTER"]
+        self.assertEqual(len(lines), 1, "three steps, one axis")
+        xs = sorted((lines[0].dxf.start.x, lines[0].dxf.end.x))
+        self.assertAlmostEqual(xs[1] - xs[0], 100 + 2 * _CENTRE_OVERSHOOT, places=6)
+        self.assertAlmostEqual(lines[0].dxf.start.y, 100, places=6, msg="on the axis")
+
+
+class SheetFurnitureTests(unittest.TestCase):
+    def test_the_border_is_zoned(self) -> None:
+        """ISO 5457: numbered columns and lettered rows, about 50 mm each, so a
+        note or a phone call can say "see C4"."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3", revision="X1")  # not a zone letter, so every A..F below is a zone's
+        sheet.view(_plate(), "top", at=(200, 150))
+        texts = [e.dxf.text for e in _render_sheet(sheet, index=1, count=1, label="z").modelspace().query("TEXT")]
+        for label in [str(n) for n in range(1, 9)] + list("ABCDEF"):
+            self.assertEqual(texts.count(label), 2, f"zone {label} marked on both edges")
+        self.assertNotIn("G", texts)
+
+    def test_the_projection_symbol_is_drawn_in_the_projection_it_names(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        def symbol(projection: str) -> tuple[float, float]:
+            sheet = Sheet("A3", projection=projection)
+            sheet.view(_plate(), "top", at=(200, 150))
+            msp = _render_sheet(sheet, index=1, count=1, label="p").modelspace()
+            circles = [c for c in msp.query("CIRCLE") if c.dxf.layer == "TITLE"]
+            cone = next(p for p in msp.query("LWPOLYLINE") if p.dxf.layer == "TITLE" and len(p) == 4
+                        and len({round(y, 3) for _x, y in p.get_points("xy")}) == 4)
+            self.assertEqual(sorted(round(c.dxf.radius, 3) for c in circles), [1.5, 3.0])
+            xs = [x for x, _y in cone.get_points("xy")]
+            return circles[0].dxf.center.x, sum(xs) / len(xs)
+
+        circles_x, cone_x = symbol("THIRD ANGLE")
+        self.assertGreater(circles_x, cone_x, "third angle: the end view right of the cone")
+        circles_x, cone_x = symbol("FIRST ANGLE")
+        self.assertLess(circles_x, cone_x, "first angle: the end view left of it")
+
+    def test_a_field_not_given_is_an_empty_captioned_cell(self) -> None:
+        """No material is not "ABS": the cell says the drawing states none."""
+        from cadgen.eng_drawing import _MARGIN, _TITLE_CELLS, _TITLE_W, Sheet, _render_sheet
+
+        sheet = Sheet("A3", title="T")
+        sheet.view(_plate(), "top", at=(200, 150))
+        msp = _render_sheet(sheet, index=1, count=1, label="m").modelspace()
+        x, y, w, h = _TITLE_CELLS["MATERIAL"]
+        x0, y0 = 420 - _MARGIN - _TITLE_W + x, _MARGIN + y
+        inside = [e.dxf.text for e in msp.query("TEXT")
+                  if x0 <= e.dxf.insert.x <= x0 + w and y0 <= e.dxf.insert.y <= y0 + h]
+        self.assertEqual(inside, ["MATERIAL"])
+
+    def test_a_unit_the_sheet_does_not_measure_in_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        with self.assertRaisesRegex(ValueError, "25.4"):
+            Sheet("A3", units="in")
+
+
+class UnstatedTests(unittest.TestCase):
+    """The drawing says what it leaves out, read off the part."""
+
+    def _unstated(self, build) -> list[str]:
+        from cadgen.eng_drawing import _render_sheet, _unstated
+
+        facts: dict = {}
+        _render_sheet(build(), index=1, count=1, label="u", facts=facts)
+        return _unstated(facts)
+
+    def test_holes_and_sizes_left_out_are_named_with_the_call_that_states_them(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        def build():
+            sheet = Sheet("A3")
+            top, _front, _right = sheet.three_views(_plate())
+            top.overall()
+            return sheet
+
+        lines = self._unstated(build)
+        self.assertEqual(len(lines), 3, lines)
+        self.assertTrue(any("4× ⌀5.5 THRU is not called out" in line and "top.holes()" in line for line in lines))
+        self.assertTrue(any("⌀20 THRU is not called out" in line for line in lines))
+        self.assertTrue(any("along Z (6)" in line and "front.overall()" in line for line in lines))
+
+    def test_a_drawing_that_states_the_part_reports_nothing(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        def build():
+            sheet = Sheet("A3")
+            top, front, _right = sheet.three_views(_plate())
+            top.overall()
+            top.holes()
+            front.overall(width=False)
+            return sheet
+
+        self.assertEqual(self._unstated(build), [])
+
+    def test_a_turned_diameter_is_stated_and_states_the_width_across_it(self) -> None:
+        from cadgen.eng_drawing import Sheet
+
+        def build(stated: bool):
+            def make():
+                sheet = Sheet("A3")
+                _top, front, _right = sheet.three_views(_shaft())
+                front.overall(height=False)
+                if stated:
+                    front.dim((-35, 0, -10), (-35, 0, 10), text="%%c<>")
+                    front.dim((0, 0, -15), (0, 0, 15), text="%%c<>")
+                return sheet
+            return make
+
+        lines = self._unstated(build(False))
+        self.assertTrue(any("⌀30" in line for line in lines) and any("⌀20" in line for line in lines), lines)
+        self.assertEqual(self._unstated(build(True)), [], "⌀30 is the shaft's size in Y and in Z too")
 
 
 def _points(entity):
