@@ -146,8 +146,8 @@ test("a placement is in its part's frame: drawn where the part stands, and writt
 // (`__fixtures__/pmi_plate`), as its code placed its PMI (v1), with no placement at all (every
 // default: a feature's point, a distance at the face's edge, each turned from the last), with each
 // basic dimension's ends swapped and unplaced (a hole's axis first: anchored on its centre line),
-// and after the edit that left the hole's callouts invalid (v3: a basic from the front crossing the
-// square cut's face, one from the left measuring to it). A deliberate change to the layout changes
+// and after the edit that left the hole's callouts invalid (v3: its name now a flat face's, where it
+// named a round one). A deliberate change to the layout changes
 // this file (`PMI_GOLDEN=write node --test ...` writes it) and the port follows it.
 test("the constructions cadgen's stills are held to are the ones this layout makes", async () => {
   const { parseEngineRef } = await import("../cadRefs.js");

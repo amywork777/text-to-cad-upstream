@@ -209,7 +209,7 @@ test("a change the document now says is settled, and one it does not yet say is 
 
 // The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`):
 // as made (v1), and after an edit put a square cut where the hole was (v3): the hole's name now on a
-// flat face, which a diameter cannot stand on, and a basic from the front crosses.
+// flat face, which a diameter cannot stand on, and which the basics to it named as a round one last build.
 test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", async () => {
   const { readFileSync } = await import("node:fs");
   const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));
@@ -224,4 +224,8 @@ test("the PMI the engine serves reads whole, and a reference an edit left on the
   assert.match(pmiStatusText(hole), /is a plane face; a diameter is on a cylinder face/);
   const fromFront = cut.find(entry => entry.id === "hole-from-front");
   assert.deepEqual([fromFront.status, fromFront.dimension.basic, pmiCallout(fromFront).text], ["invalid", true, "? basic"]);
+  // One that could stand on the flat face is still marked: its ref named a cylinder last build.
+  const fromLeft = cut.find(entry => entry.id === "hole-from-left");
+  assert.deepEqual([fromLeft.status, fromLeft.dimension.nominal], ["invalid", null]);
+  assert.match(pmiStatusText(fromLeft), /named a cylinder face on the last build and names a plane face now/);
 });

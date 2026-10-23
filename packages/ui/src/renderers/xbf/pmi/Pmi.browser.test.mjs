@@ -210,7 +210,7 @@ test('a change to PMI goes to Quick Edit as the code it asks for, and a rebuild 
 // mm thick with a Ø10 hole, located by basic distances from the front and the left side to its axis,
 // then 12 mm with a Ø12 hole (every name kept: the same annotations, measured anew), then with a
 // square cut where the hole was (the hole's name now on a flat face, where a diameter and a position
-// cannot stand, and which a basic from the front crosses: one from the left now measures to it).
+// cannot stand, and which the basics to it must not measure to: it named a round face last build).
 test('PMI the engine built follows the model through edits: nominals measured anew, and a reference that can no longer stand marked', async (t) => {
   const { page, pane, errors, label, drawn, labels, view, settle, capture, update, loaded } = await openBracket(t, { fixture: 'pmi_plate/v1' });
   await view({ position: [120, -160, 140], target: [0, 0, 0], up: [0, 0, 1], orthographicHalfHeight: 60 });
@@ -240,7 +240,9 @@ test('PMI the engine built follows the model through edits: nominals measured an
   assert.equal(await label('hole-position').getAttribute('data-pmi-status'), 'invalid');
   assert.equal(await label('thickness').getAttribute('data-pmi-status'), 'ok');
   assert.equal(await label('hole-from-front').getAttribute('data-pmi-status'), 'invalid');
-  assert.equal(await label('hole-from-left').getAttribute('aria-label'), '44 basic');
+  // A basic could stand on the cut's flat face, but its ref named a round one on the last build: marked, not measured to it.
+  assert.equal(await label('hole-from-left').getAttribute('data-pmi-status'), 'invalid');
+  assert.match(await label('hole-from-left').getAttribute('aria-label'), /^\? basic: f:edit_plate\.cut\.1;M:edit_plate\.body named a cylinder face on the last build and names a plane face now/);
   // Drawn where the code placed it, its nominal unknown; its row says what the engine said.
   assert.equal(await label('hole-diameter').getAttribute('aria-label'), '\u2300? +0.1/0: f:edit_plate.cut.1;M:edit_plate.body is a plane face; a diameter is on a cylinder face');
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();

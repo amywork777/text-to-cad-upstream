@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792744247441604306-23425",
+ "version": "1792745777234273627-24461",
  "units": "mm",
  "prototypes": [
   {
@@ -241,7 +241,7 @@
    "kind": "dimension",
    "label": null,
    "status": "invalid",
-   "problem": "f:edit_plate.body_make_box1.3 and f:edit_plate.cut.1;M:edit_plate.body are not parallel planes",
+   "problem": "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: it names another face than the annotation was made on. Point the ref at the face meant (written anew, it is held to that face's kind), or remove the annotation",
    "part": null,
    "refs": [
     {
@@ -258,7 +258,7 @@
      "status": "invalid",
      "ref": "f:edit_plate.cut.1;M:edit_plate.body",
      "candidates": null,
-     "problem": "f:edit_plate.body_make_box1.3 and f:edit_plate.cut.1;M:edit_plate.body are not parallel planes"
+     "problem": "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: it names another face than the annotation was made on. Point the ref at the face meant (written anew, it is held to that face's kind), or remove the annotation"
     }
    ],
    "presentation": {
@@ -285,25 +285,25 @@
    "id": "hole-from-left",
    "kind": "dimension",
    "label": null,
-   "status": "ok",
-   "problem": null,
-   "part": 0,
+   "status": "invalid",
+   "problem": "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: it names another face than the annotation was made on. Point the ref at the face meant (written anew, it is held to that face's kind), or remove the annotation",
+   "part": null,
    "refs": [
     {
      "role": "from",
      "written": "f:edit_plate.body_make_box1.1",
      "status": "ok",
-     "ref": "plate/f:edit_plate.body_make_box1.1",
+     "ref": "f:edit_plate.body_make_box1.1",
      "candidates": null,
      "problem": null
     },
     {
      "role": "to",
      "written": "f:edit_plate.cut.1;M:edit_plate.body",
-     "status": "ok",
-     "ref": "plate/f:edit_plate.cut.1;M:edit_plate.body",
+     "status": "invalid",
+     "ref": "f:edit_plate.cut.1;M:edit_plate.body",
      "candidates": null,
-     "problem": null
+     "problem": "f:edit_plate.cut.1;M:edit_plate.body named a cylinder face on the last build and names a plane face now: it names another face than the annotation was made on. Point the ref at the face meant (written anew, it is held to that face's kind), or remove the annotation"
     }
    ],
    "presentation": {
@@ -322,11 +322,7 @@
    "dimension": {
     "type": "distance",
     "basic": true,
-    "nominal": {
-     "value": 44.0,
-     "unit": "mm",
-     "source": "geometry"
-    },
+    "nominal": null,
     "tolerance": null
    }
   },
