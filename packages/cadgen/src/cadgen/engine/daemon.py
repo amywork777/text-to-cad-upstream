@@ -89,8 +89,11 @@ def state_dir() -> Path:
 
 
 def _tag() -> str:
-    """One daemon per installation: the interpreter and the engine it runs."""
-    material = f"{sys.executable}|{Path(__file__).resolve().parent}|{PROTOCOL}"
+    """One daemon per installation: the interpreter and the engine it runs. The interpreter's
+    path is normalized (``..`` and ``.`` gone), never resolved: a script run as
+    ``../.venv/bin/python`` holds ``sys.executable`` as typed while the daemon it starts holds it
+    normalized, and a venv's interpreter is a link to its base's, which is another installation."""
+    material = f"{os.path.abspath(sys.executable)}|{Path(__file__).resolve().parent}|{PROTOCOL}"
     return hashlib.sha256(material.encode()).hexdigest()[:12]
 
 

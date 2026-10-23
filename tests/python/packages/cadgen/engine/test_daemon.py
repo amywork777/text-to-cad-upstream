@@ -151,6 +151,21 @@ class ConnectTest(unittest.TestCase):
         self.assertEqual([w for w in caught if issubclass(w.category, ResourceWarning)], [])
 
 
+    def test_one_interpreter_spelled_two_ways_is_one_daemon(self) -> None:
+        """A script run as ``../.venv/bin/python`` holds ``sys.executable`` as typed, ``..`` and all,
+        while the daemon it starts holds it normalized: both must name the same socket."""
+        from unittest import mock
+
+        from cadgen.engine import daemon
+
+        here = Path(sys.executable)
+        roundabout = os.path.join(str(here.parent), "..", here.parent.name, ".", here.name)
+        self.assertNotEqual(roundabout, sys.executable)
+        plain = daemon._tag()
+        with mock.patch.object(sys, "executable", roundabout):
+            self.assertEqual(daemon._tag(), plain)
+
+
 class DaemonTest(unittest.TestCase):
     def setUp(self) -> None:
         self.folder = Path(tempfile.mkdtemp(prefix="engine-daemon-")).resolve()
@@ -314,6 +329,18 @@ if __name__ == '__main__':
         self.assertTrue((self.folder / 'saved.step').is_file())
         self.assertTrue((self.folder / 'XBF/document.xbf').is_file())
         self.assertFalse((self.folder / 'XBF/bare.xbf').exists())
+
+    def test_a_script_run_by_a_relative_interpreter_path_reaches_its_daemon(self) -> None:
+        """``../../.venv/bin/python model.py``: the script finds the daemon it started (it used to
+        wait a minute on a socket of another name, then say the daemon did not start)."""
+        self.script.write_text(textwrap.dedent(MODEL.format(size=3)), encoding="utf-8")
+        relative = os.path.relpath(sys.executable, self.folder)
+        self.assertTrue(relative.startswith(".."), relative)
+        started = time.monotonic()
+        done = engine_daemon.run([relative, "block.py"], cwd=self.folder, env=self.env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue((self.folder / "XBF/block.xbf").is_file())
+        self.assertLess(time.monotonic() - started, 50, "a daemon reached at once, not after the client's timeout")
 
     def test_a_warm_worker_keeps_its_memo_between_builds(self) -> None:
         cold = self.build(10)
