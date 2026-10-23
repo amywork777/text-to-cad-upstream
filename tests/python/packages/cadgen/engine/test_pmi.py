@@ -44,7 +44,7 @@ import build123d as bd
 from cadgen.engine import pmi, step, xbf
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, {thickness}) - bd.Cylinder({radius}, {thickness})
@@ -243,7 +243,7 @@ import build123d as bd
 from cadgen.engine import step, xbf
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
@@ -260,7 +260,7 @@ import build123d as bd
 from cadgen.engine import pmi, step, xbf
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
@@ -289,7 +289,7 @@ def pin():
                                            tolerance=pmi.plus_minus(0, -0.01)))
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
 def pmi_plate():
     base = bd.Box(100, 60, 10)
@@ -336,7 +336,7 @@ import build123d as bd
 from cadgen.engine import pmi, step, xbf
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 @step(out="pmi_plate.step")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
@@ -404,7 +404,7 @@ import build123d as bd
 from cadgen.engine import pmi, xbf
 
 
-@xbf
+@xbf(out="XBF/pmi_plate.xbf")
 def pmi_plate():
     body = bd.Box(100, 60, 10)
     pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
