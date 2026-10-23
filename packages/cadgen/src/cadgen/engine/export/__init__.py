@@ -351,6 +351,15 @@ def _subtree(structure: dict[str, Any], part: str) -> tuple[dict[str, Any], tupl
 # --- the one call ------------------------------------------------------------------------------
 
 
+def pmi_kept(source: Any) -> None:
+    """An xbf written from a source holding PMI is refused, by name: it is a document made again from
+    the view (``tree.tree_of``), which carries none. (A posed or partial STEP: ``step.write``.)"""
+    annotations = source.structure.get("pmi") or []
+    if annotations:
+        raise ExportRefused(f"{source.name} holds {len(annotations)} PMI annotation(s), and an xbf written from it "
+                            "is a document made again, which carries none yet: export it as built, whole")
+
+
 def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, part: str | None = None) -> int:
     """Write ``document`` (a ``Source``, or the path of an ``.xbf``/``.step``) to ``path``
     as ``kind`` (from the suffix when None); returns the file's size."""
@@ -366,12 +375,8 @@ def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, p
             raise ExportRefused("a posed xbf is refused: a pose is a request, never a document")
         if not source.foreign and part is None and source.path is not None and source.path.suffix.lower() == ".xbf":
             raise ExportRefused("an xbf is written from another xbf only with --part: the document already is one")
-    annotations = source.structure.get("pmi") or []
-    if annotations and (kind == "xbf" or (kind == "step" and (pose is not None or part is not None))):
-        # Either is a document made again from the view (``tree.tree_of``), which carries no PMI.
-        raise ExportRefused(f"{source.name} holds {len(annotations)} PMI annotation(s), and "
-                            f"{'an xbf written from it' if kind == 'xbf' else 'a posed or partial STEP'} is a document "
-                            "made again, which carries none yet: export it as built, whole")
+    if kind == "xbf":
+        pmi_kept(source)
     view = source.view(pose=pose, part=part)
     path.parent.mkdir(parents=True, exist_ok=True)
     spec = KINDS[kind]

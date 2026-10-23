@@ -26,10 +26,27 @@ class ViewerExportsTest(unittest.TestCase):
             with patch.object(building, 'held', return_value=source), \
                  patch('cadgen.engine.export.viewer.check'), \
                  patch('cadgen.engine.export.translate', side_effect=write), \
-                 patch('cadgen._internal.pmi_verification.verify', return_value={'matched': 1}) as check:
+                 patch('cadgen.engine.export.ap242.verify', return_value={'matched': 1}) as check:
                 result = _export({'source': {'path': str(output)}, 'expected': {'version': 'v'}, 'destinations': [str(output)]}, lambda _: None)
                 check.assert_called_once_with([entry], output)
                 self.assertEqual(result['files'][0]['pmiVerification']['matched'], 1)
+            # A document without PMI: its STEP is not checked, and its result carries no verification.
+            source.structure = {}
+            with patch.object(building, 'held', return_value=source), \
+                 patch('cadgen.engine.export.viewer.check'), \
+                 patch('cadgen.engine.export.translate', side_effect=write), \
+                 patch('cadgen.engine.export.ap242.verify') as check:
+                result = _export({'source': {'path': str(output)}, 'expected': {'version': 'v'}, 'destinations': [str(output)]}, lambda _: None)
+                check.assert_not_called()
+                self.assertNotIn('pmiVerification', result['files'][0])
+
+    def test_a_pmi_document_offers_step_as_carrying_its_pmi(self):
+        fixture = Path(__file__).resolve().parent / "pmi_golden" / "pmi_plate.xbf"
+        source = Source.read(fixture)
+        request = {"source": {"path": str(fixture)}, "expected": {"version": source.structure["version"]},
+                   "destinations": [], "inspect": True}
+        step = next(r for r in _export(request, lambda _: None)["formats"] if r["format"] == "step")
+        self.assertEqual((step["label"], step["pmi"], step["reason"]), ("STEP (AP242)", True, None))
 
     def test_formats_version_pinning_and_live_model_never_rebuilds(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -44,6 +61,7 @@ class ViewerExportsTest(unittest.TestCase):
             formats = _export(request, lambda _: None)["formats"]
             allowed = {r["format"] for r in formats if not r["reason"]}
             self.assertEqual(allowed, {"step", "glb", "stl", "threemf", "original"})
+            self.assertIs(next(r for r in formats if r["format"] == "step")["pmi"], False)
             output = root / "export.stl"
             request.update(inspect=False, destinations=[str(output)])
             self.assertGreater(_export(request, lambda _: None)["files"][0]["bytes"], 84)

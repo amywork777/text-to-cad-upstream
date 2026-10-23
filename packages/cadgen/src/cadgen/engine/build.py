@@ -537,14 +537,6 @@ def _build(script: Path, functions: list[str] | None = None, *, log: Callable[[s
             if not row["ok"]:
                 report["ok"] = False
                 report.setdefault("error", f"{identity}: {row['error']}")
-        # Annotations given to a shape no model's result held (one a later operation replaced):
-        # said, never dropped in silence.
-        from cadgen.engine import pmi
-
-        lost = pmi.unattached()
-        if lost:
-            report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost
-            log(f"pmi: {', '.join(lost)} given to a shape that is not in the result (annotate the shape returned)")
     return reports
 
 
@@ -621,9 +613,9 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
         tokens.append(cached.token)
         built[cached.key] = cached
     document.merge(tree)
-    if tree.pmi:
-        from cadgen.engine import pmi
+    from cadgen.engine import pmi
 
+    if tree.pmi:
         # Each ref held to the kind of face it named on the model's last build: this process's, or
         # after a restart its xbf's (a ref whose face changed kind is flagged, not measured anew).
         remembered = _WRITTEN.get(f"{model.script}::{model.name}")
@@ -638,6 +630,12 @@ def _finish(model: Any, result: Any, run: Any, report: dict[str, Any], log: Call
         report["pmi"] = {"annotations": sum(len(given) for _part, given in tree.pmi), "problems": pmi.problems(tree)}
         for problem in report["pmi"]["problems"]:
             log(f"pmi {problem['part']}/{problem['id']}: {problem['status']}: {problem['problem']}")
+    # Annotations this model's body gave a shape its result does not hold (one a later operation
+    # replaced): said, never dropped in silence.
+    lost = pmi.unattached(run, f"{model.script}::{model.name}", tree)
+    if lost:
+        report.setdefault("pmi", {"annotations": 0, "problems": []})["unattached"] = lost
+        log(f"pmi: {', '.join(lost)} given to a shape that is not in the result (annotate the shape returned)")
     signature = (_signature(tree), tuple(tokens), tree.closure)
     timings["names"] = round(time.perf_counter() - clock, 4)
     report["parts"] = len(tree.parts)

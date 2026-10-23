@@ -63,7 +63,7 @@ inline or as a JSON file: `mode`, `grid`, `appearance` (`light` or `dark`), `cam
 (`{"enabled": true, "amount": 0.5}`). `parts` and `exploded` are refused for a
 document of one part. Unknown keys and out-of-range values are refused.
 
-A document carrying PMI (`pmi.annotate`, `docs/pmi/README.md`) has it drawn as the
+A document carrying PMI ([`pmi.annotate`](pmi.md)) has it drawn as the
 viewer shows it: each callout at its placement, its leader to the feature, a callout
 whose reference broke in red (missing, invalid) or amber (ambiguous) at the place the
 code gave it. Read those before the picture: the reference no longer names what the

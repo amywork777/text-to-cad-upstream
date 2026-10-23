@@ -220,7 +220,7 @@ def _occurrences(data: bytes) -> bytes:
 
 
 # The kernel's writer gets three PMI records wrong, found by an AP242 reader of no OCCT
-# (the repository's AP242 PMI report, with the standard's EXPRESS):
+# (``ap242.py``, and the standard's EXPRESS):
 # - a tolerance's bounds, ``TOLERANCE_VALUE``'s, as ``MEASURE_WITH_UNIT(0.2,#u)``: the value
 #   untyped, where ``measure_value`` is a select a strict reader needs typed. They are written as
 #   the CAx-IF practice has them, ``LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#u)``, where

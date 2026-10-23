@@ -1,18 +1,16 @@
 """Semantic PMI (``cadgen.engine.pmi``): a plate's datums, dimensions and geometric tolerances
 written into its xbf as XCAF's GD&T objects and read back the same from the file as from the
-build; its AP242 STEP read by OCCT and by a reader of no OCCT (``scripts/pmi/ap242_pmi_report``),
+build; its AP242 STEP read by OCCT and by a reader of no OCCT (``export/ap242.py``),
 which agree on values, units, datum frames and the faces each annotation is on; a warm rebuild,
 an edit of the geometry and of a tolerance, a ref the model no longer satisfies (missing,
 ambiguous, invalid) kept in the document and refused by a STEP; what is not supported refused
-by name; and the committed fixture (``docs/pmi``) the same as a fresh build's."""
+by name; and the committed fixture (``pmi_golden``) the same as a fresh build's."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import shutil
-import sys
 import tempfile
 import textwrap
 import time
@@ -21,21 +19,9 @@ from pathlib import Path
 
 from cadgen.engine import build as engine_build
 from cadgen.engine import document, export, pmi
+from cadgen.engine.export import ap242
 
-ROOT = Path(__file__).resolve().parents[5]
-FIXTURE = ROOT / "docs" / "pmi"
-
-
-def _reporter():
-    """The AP242 reader of no OCCT (``scripts/pmi``), loaded by its path."""
-    held = sys.modules.get("ap242_pmi_report")
-    if held is not None:
-        return held
-    spec = importlib.util.spec_from_file_location("ap242_pmi_report", ROOT / "scripts" / "pmi" / "ap242_pmi_report.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["ap242_pmi_report"] = module
-    spec.loader.exec_module(module)
-    return module
+FIXTURE = Path(__file__).resolve().parent / "pmi_golden"
 
 
 # The fixture's model (``models/examples/src/pmi_plate.py``): tolerance values ILLUSTRATIVE.
@@ -171,7 +157,7 @@ class PlateTest(_Folder):
 
         self.assertEqual(sorted(map(meaning, theirs)), sorted(map(meaning, ours.values())))
         # The reader of no OCCT: AP242's entities, their values, units and faces, and nothing malformed.
-        found = _reporter().report(self.step)
+        found = ap242.report(self.step)
         self.assertEqual(found["schema"].split(" ")[0], "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF")
         self.assertEqual(found["problems"], [])
         names = {letter: ours[letter]["refs"][0]["ref"].split("/", 1)[1] for letter in "ABC"}
@@ -206,8 +192,7 @@ class PlateTest(_Folder):
         self.build(plate())
         again = self.folder / "again.step"
         export.translate(self.xbf, "step", again)
-        reporter = _reporter()
-        fresh, reopened = reporter.report(self.step), reporter.report(again)
+        fresh, reopened = ap242.report(self.step), ap242.report(again)
         fresh.pop("file"), reopened.pop("file")
         self.assertEqual(reopened, fresh)
 
@@ -227,7 +212,7 @@ class PlateTest(_Folder):
         # The tolerances are the code's, unchanged by the geometry.
         self.assertEqual(found["thickness"]["dimension"]["tolerance"]["upper"], 0.2)
         self.assertTrue(all(entry["status"] == "ok" for entry in found.values()))
-        report = _reporter().report(self.step)
+        report = ap242.report(self.step)
         self.assertEqual(sorted((entry["entity"], entry["nominal"]["value"], bool(entry["notes"]))
                                 for entry in report["dimensions"]),
                          [("DIMENSIONAL_LOCATION", 12.0, False), ("DIMENSIONAL_LOCATION", 30.0, True),
@@ -238,7 +223,7 @@ class PlateTest(_Folder):
         self.build(plate(thickness_tolerance=0.3))
         found = _by_id(pmi.read(self.xbf))
         self.assertEqual(found["thickness"]["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.3, "lower": -0.3})
-        location = next(e for e in _reporter().report(self.step)["dimensions"]
+        location = next(e for e in ap242.report(self.step)["dimensions"]
                         if e["entity"] == "DIMENSIONAL_LOCATION" and not e["notes"])
         self.assertEqual((location["tolerance"]["lower"], location["tolerance"]["upper"]), (-0.3, 0.3))
 
@@ -257,7 +242,7 @@ def pmi_plate():
     return body
 ''')
         self.assertNotIn("pmi", document.Loaded(self.xbf).structure())
-        self.assertEqual(_reporter().report(self.step)["datums"], [])
+        self.assertEqual(ap242.report(self.step)["datums"], [])
 
 
 # A plate whose hole is named by its element name, as a viewer's Quick Edit writes it.
@@ -303,7 +288,7 @@ class BasicTest(_Folder):
 
     def test_the_step_marks_them_theoretical_to_occt_and_to_a_reader_of_no_occt(self) -> None:
         self.build(plate())
-        report = _reporter().report(self.step)
+        report = ap242.report(self.step)
         self.assertEqual(report["problems"], [])
         basic = sorted((d["nominal"]["value"], d["nominal"]["unit"], d["tolerance"], d["notes"],
                         [f["surface"]["type"] for f in d["features"]])
@@ -470,7 +455,7 @@ def pmi_plate():
         self.assertTrue(found["pin-diameter"]["refs"][0]["ref"].startswith("fixture/pin.1/"), found["pin-diameter"]["refs"])
         self.assertEqual(_face(loaded, found["pin-diameter"]), ("cylinder", {"radius": 3.0}))
         # The STEP: each annotation once, on the part's own face.
-        report = _reporter().report(self.step)
+        report = ap242.report(self.step)
         self.assertEqual(report["problems"], [])
         self.assertEqual([datum["identification"] for datum in report["datums"]], ["A"])
         [size] = report["dimensions"]
@@ -500,7 +485,7 @@ def pmi_plate():
     body.label = "plate"
     return pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
 ''')
-        [tolerance] = _reporter().report(self.step)["tolerances"]
+        [tolerance] = ap242.report(self.step)["tolerances"]
         self.assertEqual((tolerance["magnitude"]["value"], tolerance["magnitude"]["unit"]), (0.05, "mm"))
         self.assertNotIn(b"SI_UNIT($,.METRE.)", self.step.read_bytes())
         self.assertEqual(pmi.read(self.step)[0]["geometric_tolerance"]["value"], 0.05)
@@ -569,6 +554,31 @@ def pmi_plate():
     return body
 ''')
         self.assertEqual(report["pmi"]["unattached"], ["top"])
+
+    def test_each_model_of_a_script_says_only_the_annotations_its_own_body_lost(self) -> None:
+        # The first model keeps its annotations: a run's record taken by its first report would
+        # say the second's loss there.
+        script = self.folder / "two.py"
+        script.write_text(textwrap.dedent('''
+            import build123d as bd
+            from cadgen.engine import pmi, xbf
+
+
+            @xbf(out="XBF/whole.xbf")
+            def whole():
+                body = bd.Box(100, 60, 10)
+                return pmi.annotate(body, pmi.flatness("kept", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+
+
+            @xbf(out="XBF/lossy.xbf")
+            def lossy():
+                body = bd.Box(100, 60, 10)
+                pmi.annotate(body, pmi.flatness("top", body.faces().sort_by(bd.Axis.Z)[-1], 0.05))
+                return bd.fillet(body.edges().filter_by(bd.Axis.Z), 2)
+        '''), encoding="utf-8")
+        reports = {report["source"]["name"]: report for report in engine_build.build(script, None, cwd=self.folder)}
+        self.assertEqual(reports["lossy"]["pmi"]["unattached"], ["top"])
+        self.assertNotIn("unattached", reports["whole"]["pmi"])
 
 
 class RefusedTest(_Folder):
@@ -641,11 +651,10 @@ class ForeignTest(unittest.TestCase):
 
 class FixtureTest(_Folder):
     def test_the_committed_fixture_is_a_fresh_builds_pmi(self) -> None:
-        """``docs/pmi/pmi_plate.step`` says what a build of the example says, to a reader of no OCCT;
-        and ``docs/pmi/pmi_plate.pmi.json`` is the structure's ``pmi`` a viewer is served."""
+        """``pmi_golden/pmi_plate.step`` says what a build of the example says, to a reader of no OCCT;
+        and ``pmi_golden/pmi_plate.pmi.json`` is the structure's ``pmi`` a viewer is served."""
         self.build(plate())
-        reporter = _reporter()
-        fresh, committed = reporter.report(self.step), reporter.report(FIXTURE / "pmi_plate.step")
+        fresh, committed = ap242.report(self.step), ap242.report(FIXTURE / "pmi_plate.step")
         for found in (fresh, committed):
             found.pop("file")
         self.assertEqual(committed, fresh)

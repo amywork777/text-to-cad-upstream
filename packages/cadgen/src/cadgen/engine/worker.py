@@ -323,11 +323,12 @@ def _export(request: dict[str, Any], log: Callable[[str], None]) -> dict[str, An
         seconds = time.perf_counter() - clock
         files.append({"path": str(target), "kind": export.kind_of(target), "bytes": size,
                       "seconds": round(seconds, 4)})
-        if request.get("expected") and export.kind_of(target) == "step":
-            from cadgen._internal.pmi_verification import verify
+        # A STEP of a document with PMI is checked in the file written (``export/ap242.py``).
+        if request.get("expected") and export.kind_of(target) == "step" and source.structure.get("pmi"):
+            from cadgen.engine.export.ap242 import verify
             if progress is not None:
                 progress.stage("write", detail="Checking PMI in " + target.name)
-            files[-1]["pmiVerification"] = verify(source.structure.get("pmi") or [], target)
+            files[-1]["pmiVerification"] = verify(source.structure["pmi"], target)
     drawn = None
     if request.get("draw"):
         from cadgen.engine import snapshot

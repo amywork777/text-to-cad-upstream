@@ -44,6 +44,7 @@ and a failure as `{"ok": false, "error": ...}` with exit status 1, as every comm
   every face, edge and vertex, so a STEP read back keeps them. It drops the rest of a
   material's look and physical fields, a face's material (the face keeps its colour),
   and the mechanism: a STEP is placements only, as built or as `--pose` puts them.
+  A part's PMI is written as AP242 semantic PMI on its faces ([PMI](pmi.md#export)).
 - **GLB**: glTF 2.0, Y up, in metres. One mesh per part, a node per placement named
   by its occurrence, a PBR material per look (with the glTF extensions for IOR,
   transmission, clear coat, anisotropy and emission where a material has them), and

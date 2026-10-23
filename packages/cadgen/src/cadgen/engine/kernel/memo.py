@@ -924,6 +924,9 @@ class _Run:
         # The model whose body is running (``scope``): its calls are counted, and keyed,
         # as its own.
         self.scope: str | None = None
+        # The annotations each model body's ``pmi.annotate`` calls gave, by its scope: those its
+        # document does not hold are said (``pmi.unattached``).
+        self.pmi: dict[str | None, list[str]] = {}
         # The logs of the model bodies running, innermost last (``body``), and the bodies
         # this run has run or replayed: each is in the trace once.
         self.bodies: list[_BodyLog] = []

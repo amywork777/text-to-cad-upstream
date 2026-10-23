@@ -260,10 +260,6 @@ RULES: tuple[Rule, ...] = (
     Rule(("packages/ui/src/renderers/robot/__fixtures__/**",), select(cadgen=[f"{CADGEN_SUITE}/test_robot_payload.py"])),
     Rule(("tests/browser/**", "tests/fixtures/cad/**"), select(flags=["web_viewer", "packaging"])),
 
-    # The AP242 PMI reader of no OCCT and the committed PMI fixture: the engine's PMI suite reads
-    # both (the fixture it holds to a fresh build, the reader it checks every export with).
-    Rule(("scripts/pmi/**", "docs/pmi/**"), select(cadgen=[f"{CADGEN_SUITE}/engine/test_pmi.py"])),
-
     # Tests: a test file runs itself.
     Rule((f"{CADGEN_SUITE}/**",), _test_file(CADGEN_SUITE, whole=CADGEN_SUITE)),
     Rule((f"{POLICY_SUITE}/**",), _test_file(POLICY_SUITE, whole=POLICY_SUITE)),

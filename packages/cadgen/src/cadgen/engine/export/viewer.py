@@ -33,8 +33,9 @@ def check(source, expected: dict) -> None:
 
 
 def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict]:
-    from cadgen.engine.export import ExportRefused
+    from cadgen.engine.export import ExportRefused, pmi_kept
     from cadgen.engine.export.dxf import dxf_bytes
+    from cadgen.engine.export.step import _pmi_written_whole
 
     view = source.view(pose=pose, part=part)
     rows = [{"format": kind, "label": label, "extension": extension, "reason": None}
@@ -43,7 +44,7 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
                                            ("dxf", "DXF", ".dxf"), ("xbf", "XBF", ".xbf"))]
     for row in rows:
         if row["format"] == "step":
-            from cadgen.engine.export.step import _pmi_written_whole
+            row["pmi"] = bool(source.structure.get("pmi"))
             try:
                 _pmi_written_whole(view)
             except ExportRefused as error:
@@ -58,6 +59,11 @@ def options(source, *, pose=None, part=None, original_allowed=True) -> list[dict
                 row["reason"] = "XBF stores the authored document, not a requested pose."
             elif source.path and source.path.suffix.lower() == ".xbf" and part is None and not source.foreign:
                 row["reason"] = "Use Download original XBF, or select a part to extract."
+            else:
+                try:
+                    pmi_kept(source)
+                except ExportRefused as error:
+                    row["reason"] = str(error)
     if original_allowed and source.path and source.path.suffix.lower() == ".xbf" and part is None and pose is None:
         rows.append({"format": "original", "label": "Download original XBF", "extension": ".xbf", "reason": None})
     return rows

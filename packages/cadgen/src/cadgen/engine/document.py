@@ -51,7 +51,6 @@ from __future__ import annotations
 
 import functools
 import hashlib
-import json
 import os
 import re
 import threading
@@ -139,6 +138,10 @@ class Tree:
     # The model's build closure (``previous.manifest``, as text), written on the main label;
     # None for none.
     closure: str | None = None
+    # What each annotation's refs named on the model's last build (``pmi.remember``), and the
+    # annotations resolved against the parts as built (``pmi.resolve``), made once.
+    pmi_previous: dict = field(default_factory=dict)
+    pmi_resolved: list | None = None
 
     @property
     def pmi(self) -> list[tuple["Part", tuple]]:
@@ -338,6 +341,8 @@ def merge(tree: Tree) -> None:
     materials or annotated apart stay apart. Once the parts are named and keyed (``build``); the first
     in the tree's order stands for the others, its name the prototype's, each placement's
     own name and colour on its component."""
+    from cadgen.engine.pmi import _text as pmi_text
+
     first: dict[tuple, Part] = {}
     replaced: dict[int, Part] = {}
     for part in tree.parts:
@@ -345,7 +350,7 @@ def merge(tree: Tree) -> None:
         signature = (part.key, *(tuple(names.get(kind) or ()) for kind in ("faces", "edges", "vertices")),
                      part.color, tuple(sorted(part.face_colors.items())), part.material,
                      tuple(sorted(part.face_materials.items(), key=lambda item: item[0])),
-                     json.dumps(part.pmi, sort_keys=True) if part.pmi else None)
+                     tuple(map(pmi_text, part.pmi or ())))
         found = first.setdefault(signature, part)
         if found is not part:
             replaced[id(part)] = found

@@ -565,13 +565,13 @@ it); a ref that names nothing is refused by name); `--json` reports what was dra
 and each stage's milliseconds (`serveMs`, `meshMs`, `sceneMs` when a scene is made, `presentMs`,
 `frameMs`, `drawMs`, `renderMs`, `totalMs`; a file no document: `readMs` its reader, `openMs` its
 render process opening it). `parts` and `exploded` for a document that places one
-part are refused by name before anything renders. A document's PMI (`docs/pmi/README.md`) is drawn
+part are refused by name before anything renders. A document's PMI (**PMI**) is drawn
 as the viewer shows it: each callout's words, leader and dimension at its placement, a callout whose
 reference broke at its code placement in its status's colour, a leader to a feature the model hides
 faint; the camera's fit takes the callouts in, and `--json` reports how many were drawn (`pmi`).
 `pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
-shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi`,
-`display.pmi` true), or of a document that carries none, is refused by name. `--annotation FILE` draws the viewer's annotation over the
+shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi` or
+`pmi=on`, `display.pmi` true), or of a document that carries none, is refused by name. `--annotation FILE` draws the viewer's annotation over the
 model -- each mark on the part it was drawn on, wherever the picture places that part -- from an
 annotation file or the Quick Edit packet that carries one (the `.snapshot.json` the viewer writes),
 and `--measurements FILE` Measure's dimensions (`[{start, end, label, color}]`). A mark names the
@@ -1029,8 +1029,10 @@ prototype; the file is the cold build's bytes.
 
 ## PMI
 
-A part's manufacturing requirements, on its own faces (`pmi.py`; the entries `pmi.read` returns
-are the structure's `pmi`, the contract a viewer and a downstream reader build on):
+A part's manufacturing requirements, on its own faces (`pmi.py`): datums, measured dimensions
+with explicit tolerances, basic dimensions and geometric tolerances, authored in the model and
+kept in its document. `pmi.read` returns them as the structure's `pmi`, the contract a viewer and a
+downstream reader build on:
 
 ```python
 return pmi.annotate(body,
@@ -1042,31 +1044,73 @@ return pmi.annotate(body,
     pmi.basic("hole-from-B", front, hole))      # the true position: basic, no tolerance
 ```
 
-A ref is a `Face` of the annotated shape or a ref of the grammar (**References**). A
-dimension's nominal is measured from the geometry; a tolerance is held only where the code gives
-one. Each build resolves every ref against the part as built: `ok`, `missing`, `ambiguous` or
-`invalid` (a face the annotation cannot stand on, or, for a ref written as text, another kind of
-face than it named on the model's last build: its xbf or this process's previous document); the
-build report's `pmi` lists every one not ok, the document keeps it with its status and links it to no geometry, and a STEP export refuses
-to drop it. The document holds the values, units, kinds and face links in XCAF's
-`XCAFDimTolObjects` on the GD&T tool (the STEP writer's input), and beside each one cadgen
-attribute (JSON) for what XCAF has no place for: the id, the refs as written, the status, and the
-presentation (`pmi.place`, never in a STEP). A document holding PMI is converted whole on a warm
-build (GD&T labels link the sub-shape labels a patch remakes). Verified, and nothing else
-written: datums on planes and cylinders; diameter and linear-distance dimensions with plus-minus
-tolerances; basic distances (plane to plane, plane to a hole's axis, axis to axis), marked
-'theoretical' as AP242 marks them; flatness; position with an ordered datum frame and a diametral
-zone. Every other
-characteristic, dimension type, tolerance form and assembly-level PMI is refused by name
-(`PMIUnsupported`). A STEP another system wrote lists its PMI in the structure too, what is not
-modelled as `unsupported` with its XCAF type.
+- **Authoring.** `annotate` takes one part (an annotated assembly is refused: annotate its
+  parts) and returns it; a `Face` given as a ref is numbered against it at once, so annotations
+  given to a shape a later operation replaces never reach the result and the build report lists
+  them `unattached`. Ids are the author's, unique on a part; a datum's id is its letter, and a
+  datum holds one place in every frame that names it (XCAF holds one position per datum). A
+  ref is a `Face` or a ref of the grammar (**References**). A nominal is measured from the
+  geometry: a cylinder's diameter, or a distance between parallel planes, from a plane to a
+  hole's axis, or between parallel axes. A tolerance is held only where the code gives one
+  (`plus_minus(upper, lower=None)`, signed deviations). A basic dimension (`pmi.basic`) has
+  none, and a tolerance on one is refused. `presentation=pmi.place(anchor, offset)` (millimetres,
+  the part's frame) is where a viewer draws the callout, never a requirement and never in a STEP.
+- **Resolution.** Each build resolves every ref against the part as built: `ok`, `missing` (it
+  names no face; the problem gives the name's atom now, where there is one), `ambiguous` (several:
+  `candidates` lists them) or `invalid` (a face the annotation cannot stand on). A ref written as
+  text is also held to the kind of face, plane or cylinder, it named on the model's last build --
+  this process's previous document, else the model's xbf on disk -- and is `invalid` when it names
+  another kind now: a hole whose name passed to a flat side of the cut that replaced it. The flag
+  stays until the code writes that ref anew; a ref selected as a `Face` is never held to a kind.
+  The build report's `pmi` is `{"annotations", "problems", "unattached"}`; the document keeps an
+  annotation that is not `ok` with its status and values, linked to no geometry, and a STEP export
+  refuses to drop it, naming each one.
+- **The document.** The values, units, kinds and face links are XCAF's `XCAFDimTolObjects` on the
+  GD&T tool, linked to the faces' sub-shape labels (the STEP writer's input), and beside each one
+  cadgen attribute (JSON) holds what XCAF has no place for: the id, the label, the refs as
+  written, the status and its problem, and the presentation; an unlinked annotation's values too,
+  since XCAF gives values meaning only through geometry. A document without PMI holds nothing new.
+  A document holding PMI is converted whole on a warm build (GD&T labels link the sub-shape labels
+  a patch remakes).
+- **An entry** of `pmi.read` (an xbf or a STEP): `id`, `kind` (`datum`, `dimension`,
+  `geometric_tolerance`, or `unsupported` for what a STEP another system wrote holds and this does
+  not model, with its `xcaf_type` and values), `label`, `status`, `problem`, `part` (the
+  structure's prototype index, None when unlinked), `refs` (each `role`, the canonical `ref` when
+  resolved, `written`, `status`, `candidates`, `problem`), `presentation`, and one of `datum`
+  (`letter`), `dimension` (`type` `diameter` or `distance`, `basic`, `nominal` `{value, unit}`,
+  `tolerance`) or `geometric_tolerance` (`characteristic`, `value`, `unit`, `zone`, `datums` in
+  order).
 
-OCCT's writer gets three PMI records wrong, and the STEP export puts them right (`export/step.py`,
-`_pmi_records`; found and checked by an AP242 reader with no OCCT in it, against the standard's
-EXPRESS): a
-plus-minus tolerance's bounds untyped (`MEASURE_WITH_UNIT(0.2,#u)`); a two-attribute
-`RUNOUT_ZONE_DEFINITION` beside every diametral zone; and, in a document with no dimension,
-every tolerance magnitude in a bare metre while its value is millimetres.
+Verified, and nothing else written: datums on planes and cylinders; diameter and linear-distance
+dimensions with plus-minus tolerances; basic distances, marked 'theoretical' as AP242 marks them
+(CAx-IF PMI Recommended Practices 5.3, a dimensional note on the dimension's representation);
+flatness; position with an ordered datum frame of up to three and a diametral zone. Every other
+characteristic, dimension type, tolerance form (limits and fits, modifiers), a basic diameter or
+angle, and assembly-level PMI is refused by name (`PMIUnsupported`), never approximated.
+
+**The STEP.** `@step` and `cadgen export` write the PMI as AP242's semantic PMI: `DATUM` and
+`DATUM_FEATURE`; `DIMENSIONAL_SIZE('diameter')` and `DIMENSIONAL_LOCATION('linear distance')`
+with their `SHAPE_DIMENSION_REPRESENTATION` and `PLUS_MINUS_TOLERANCE`; `FLATNESS_TOLERANCE`;
+`POSITION_TOLERANCE` with its `DATUM_SYSTEM` of ordered compartments and a
+`TOLERANCE_ZONE_FORM('cylindrical or circular')`; each on its `ADVANCED_FACE` (named with the
+element's name) through a `GEOMETRIC_ITEM_SPECIFIC_USAGE`, every measure in millimetres. A STEP
+carries no annotation id (the writer leaves every name empty) and no graphical PMI. The exports
+that rebuild the document from a view would carry none, so they are refused while it holds PMI: a
+posed STEP, a STEP or xbf of one part (`--part`), and an xbf from a STEP. OCCT's writer gets three
+PMI records wrong, and the STEP export puts them right (`export/step.py`, `_pmi_records`; found and
+checked by the AP242 reader below): a plus-minus tolerance's bounds untyped
+(`MEASURE_WITH_UNIT(0.2,#u)`); a two-attribute `RUNOUT_ZONE_DEFINITION` beside every diametral
+zone; and, in a document with no dimension, every tolerance magnitude in a bare metre while its
+value is millimetres. OCCT's own reader finds a datum only through a tolerance that names it.
+
+**The viewer's check.** A viewer export lists STEP as "STEP (AP242)", unavailable with the reason
+where it would drop PMI. For a document holding PMI, after writing the file the worker reads it back
+with `export/ap242.py` -- a Part 21 reader of AP242's PMI entities with no OCCT in it -- and matches
+every entry to one record of the file by face name, kind, values, units, datum order, zone and a
+basic dimension's note (`verify`). The result, `{"matched", "total", "problems", "sha256"}` (the
+digest of the bytes checked), travels with the export job as `pmiVerification`. Nothing is
+guessed: a face name the file uses twice, two parts reusing one, a repeated datum letter, an entity
+the reader does not read, or a schema other than AP242 verifies nothing.
 
 ## Materials
 
