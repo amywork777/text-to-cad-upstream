@@ -96,8 +96,8 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  * What an annotation is drawn as, in the scene's coordinates, or null where it cannot be: a
  * reference that names no element on the page and no placement to stand at.
  *
- * - `anchor`: where its leader starts on its feature (a distance's: on its first face); null where its
- *   feature is not on the page (a broken reference), the label then standing where it was placed.
+ * - `anchor`: where its leader starts on its feature (a distance's: on its first face); where its
+ *   feature is not on the page (a broken reference), where the code anchored it, and `broken`.
  * - `label`: where its text stands.
  * - `dimension`: a distance's dimension line (`from`, `to`: on each face's plane, through the label)
  *   and its extension lines (`extensions`), else null; a distance has no leader.
@@ -121,7 +121,7 @@ export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, plac
     const from = geometry.from, to = geometry.to;
     const n = outward(from);
     if (!from || !to || !n || to.surface?.type !== "plane" || from.surface?.type !== "plane") {
-      return at ? { anchor: null, label: add(at.anchor, at.offset), dimension: null, presentation: at, placed } : null;
+      return at ? { anchor: at.anchor, label: add(at.anchor, at.offset), dimension: null, presentation: at, placed, broken: true } : null;
     }
     // Each plane through its own origin, along the first face's normal.
     const level = point => dot(point, n);
@@ -143,7 +143,7 @@ export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, plac
   }
   const feature = geometry.feature;
   const out = outward(feature);
-  if (!feature || !out) return at ? { anchor: null, label: add(at.anchor, at.offset), dimension: null, presentation: at, placed } : null;
+  if (!feature || !out) return at ? { anchor: at.anchor, label: add(at.anchor, at.offset), dimension: null, presentation: at, placed, broken: true } : null;
   const anchor = at ? at.anchor : pmiFeaturePoint(feature, centre);
   const offset = at ? at.offset : defaultOffset({ anchor, out, centre, reach, turn });
   return { anchor, label: add(anchor, offset), dimension: null, presentation: { anchor, offset }, placed };

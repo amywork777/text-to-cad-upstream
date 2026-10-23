@@ -102,7 +102,12 @@ function drawItem(context, item, at, ink) {
   const end = boxEdge(at.anchor, at.box);
   line(at.anchor, end);
   context.setLineDash([]);
-  if (item.kind === "datum") datumTriangle(context, at.anchor, end); else arrowHead(context, at.anchor, end);
+  // A feature not on the page: an open ring where the code anchored it, nothing pointing at a face.
+  if (at.broken) {
+    context.beginPath();
+    context.arc(at.anchor.x, at.anchor.y, ARROW_HALF_PX + 1, 0, Math.PI * 2);
+    context.stroke();
+  } else if (item.kind === "datum") datumTriangle(context, at.anchor, end); else arrowHead(context, at.anchor, end);
 }
 
 /**
@@ -196,7 +201,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
           from: project(construction.dimension.from), to: project(construction.dimension.to),
           extensions: construction.dimension.extensions.map(([a, b]) => [project(a), project(b)])
         } : null;
-        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension }, ink);
+        drawItem(context, item, { anchor: project(construction?.anchor), box, dimension, broken: Boolean(construction?.broken) }, ink);
       }
       context.globalAlpha = 1;
       context.setLineDash([]);

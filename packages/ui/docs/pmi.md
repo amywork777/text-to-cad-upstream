@@ -43,7 +43,8 @@ face the annotation cannot stand on: a diameter on a flat face, say). A dimensio
 broke has no nominal, there being nothing to measure: it says `?`. The engine resolves
 them on every build; the page finds the same element (`xbf/pmi/pmiRefs.js`) by spelling each
 candidate's canonical ref as the tree does and keeping exact matches, and finds none for a ref
-that is not `ok`. An annotation whose reference broke is drawn where its code placed it, its box
+that is not `ok`. An annotation whose reference broke is drawn where its code placed it, its
+leader ending in an open ring where the code anchored it (there is no face to point at), its box
 and leader dashed in the status colour (missing and invalid red, ambiguous amber), and its row and
 values say why — the engine's own words where it gives them. A reference that resolved is named as
 a pick's chip names it ("plate · face 7"), its canonical ref its copy.

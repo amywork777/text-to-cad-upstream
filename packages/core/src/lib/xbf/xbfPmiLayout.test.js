@@ -94,7 +94,8 @@ test("a distance is drawn square between its faces, through its label", async ()
 
 test("a feature not on the page draws at its placement or not at all, and a move changes only the offset", () => {
   const broken = pmiConstruction(flatness({ anchor: [0, 0, 2], offset: [0, 0, 6] }), { geometry: { feature: null }, bounds: BOUNDS });
-  assert.equal(broken.anchor, null);
+  assert.equal(broken.broken, true);
+  nearPoint(broken.anchor, [0, 0, 2], "where the code anchored it");
   nearPoint(broken.label, [0, 0, 8]);
   assert.equal(pmiConstruction(flatness(), { geometry: { feature: null }, bounds: BOUNDS }), null);
   assert.deepEqual(pmiMovedPlacement({ anchor: [1, 2, 3], offset: [0, 0, 1] }, [4, 2, 9]), { anchor: [1, 2, 3], offset: [3, 0, 6] });
