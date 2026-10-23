@@ -7,7 +7,8 @@ parses the Part 21 file (its own tokenizer, or the third-party ``steputils`` par
 AP242's PMI entities as ISO 10303-242 and the CAx-IF Recommended Practices for PMI define them:
 
 - dimensions: ``DIMENSIONAL_SIZE`` / ``DIMENSIONAL_LOCATION``, their nominal from the
-  ``DIMENSIONAL_CHARACTERISTIC_REPRESENTATION``'s ``SHAPE_DIMENSION_REPRESENTATION``, and their
+  ``DIMENSIONAL_CHARACTERISTIC_REPRESENTATION``'s ``SHAPE_DIMENSION_REPRESENTATION``, its
+  descriptive notes (a basic dimension's ``'theoretical'``), and their
   ``PLUS_MINUS_TOLERANCE``'s ``TOLERANCE_VALUE`` (lower, upper);
 - datums: ``DATUM`` (its identification), the ``DATUM_FEATURE`` a ``SHAPE_ASPECT_RELATIONSHIP``
   ties to it;
@@ -318,6 +319,7 @@ class Report:
                     entry["name"] = values[0]
                     entry["features"] = [self.face_of_aspect(values[2].id), self.face_of_aspect(values[3].id)]
                 entry["nominal"] = self.nominal(number)
+                entry["notes"] = self.notes(number)
                 entry["tolerance"] = self.plus_minus(number)
                 found.append(entry)
         return found
@@ -333,11 +335,26 @@ class Report:
             self.note(representation)
             items = self.part(representation, "SHAPE_DIMENSION_REPRESENTATION")[1]
             for item in items:
+                if "DESCRIPTIVE_REPRESENTATION_ITEM" in self.types(item.id):
+                    continue  # a note (``notes``), not the value
                 measure = self.measure(item.id)
                 names = [values[0] for name, values in self.records[item.id] if name == "REPRESENTATION_ITEM"]
                 measure["role"] = names[0] if names else None
                 return measure
         return None
+
+    def notes(self, dimension: int) -> list[list[str]]:
+        """A dimension's descriptive items, [name, description] each: CAx-IF's dimension modifiers
+        (5.3), ``['dimensional note', 'theoretical']`` for a basic dimension."""
+        found = []
+        for holder in self.referring(dimension, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"):
+            representation = self.part(holder, "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")[1].id
+            for item in self.part(representation, "SHAPE_DIMENSION_REPRESENTATION")[1]:
+                if "DESCRIPTIVE_REPRESENTATION_ITEM" in self.types(item.id):
+                    self.note(item.id)
+                    name, description = self.part(item.id, "DESCRIPTIVE_REPRESENTATION_ITEM")
+                    found.append([name, description])
+        return found
 
     def plus_minus(self, dimension: int) -> dict[str, Any] | None:
         for holder in self.referring(dimension, "PLUS_MINUS_TOLERANCE"):
