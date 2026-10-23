@@ -114,3 +114,55 @@ test("a placement is in its part's frame: drawn where the part stands, and writt
   nearPoint(back.offset, placed.offset);
   assert.equal(pmiPresentationToScene(placed, null), placed, "no placement, one frame");
 });
+
+// The constructions cadgen's stills are held to (`cadgen/engine/render/pmi.py`, through
+// `tests/python/packages/cadgen/engine/test_render_pmi.py`): for the plate the engine served
+// (`__fixtures__/pmi_plate`), as its code placed its PMI (v1), with no placement at all (every
+// default: a feature's point, a distance at the face's edge, each turned from the last), and after
+// the edit that left the hole's callouts invalid (v3). A deliberate change to the layout changes
+// this file (`PMI_GOLDEN=write node --test ...` writes it) and the port follows it.
+test("the constructions cadgen's stills are held to are the ones this layout makes", async () => {
+  const { parseEngineRef } = await import("../cadRefs.js");
+  const { readXbfPmi } = await import("./xbfPmi.js");
+  const variants = { "v1": structure => structure, "v1-unplaced": structure => ({ ...structure, pmi: structure.pmi.map(item => ({ ...item, presentation: null })) }),
+    "v3": structure => structure };
+  const made = {};
+  for (const [name, change] of Object.entries(variants)) {
+    const version = name.split("-")[0];
+    const served = JSON.parse(read(`pmi_plate/${version}/structure.json`));
+    const structure = change(served);
+    const fetch = async (url) => {
+      if (url.endsWith("/api/look")) return new Response(read("look.json"));
+      if (url.endsWith("/api/look/environment")) return new Response(ENVIRONMENT);
+      const part = /\/part\/([^/]+)$/.exec(url);
+      return new Response(part ? read(`pmi_plate/${version}/${part[1]}.xbm`) : JSON.stringify(structure));
+    };
+    const scene = createXbfScene(THREE, await loadXbfDocument("http://127.0.0.1:9/api/doc/pmi_plate", { fetch }));
+    // One part, one occurrence: a ref's element is its name among the part's faces.
+    const ordinals = new Map(Object.entries(structure.prototypes[0].faceNames).map(([ordinal, faceName]) => [faceName, Number(ordinal)]));
+    const idOf = (ref) => {
+      const element = parseEngineRef(ref)?.selectors[0]?.element;
+      const ordinal = typeof element === "string" ? ordinals.get(element) : element?.ordinal;
+      return Number.isInteger(ordinal) ? `i0/face/${ordinal}` : null;
+    };
+    const turns = new Map();
+    made[name] = readXbfPmi(structure).filter(entry => entry.supported).map((entry) => {
+      const ids = entry.refs.map(ref => (ref.status === "ok" ? idOf(ref.ref) : null));
+      const geometry = Object.fromEntries(entry.refs.map((ref, index) => [ref.role, ids[index] ? scene.elementGeometry(ids[index], { points: true }) : null]));
+      const first = ids[0] || entry.id;
+      const turn = turns.get(first) || 0;
+      turns.set(first, turn + 1);
+      return { id: entry.id, construction: pmiConstruction(entry, { geometry, bounds: scene.restBounds, turn }) };
+    });
+  }
+  const file = path.join(FIXTURES, "pmi_plate", "constructions.json");
+  if (process.env.PMI_GOLDEN === "write") fs.writeFileSync(file, `${JSON.stringify(made, null, 1)}\n`);
+  const golden = JSON.parse(fs.readFileSync(file, "utf8"));
+  const close = (actual, expected, where) => {
+    if (Array.isArray(expected)) { assert.equal(actual.length, expected.length, where); expected.forEach((value, index) => close(actual[index], value, `${where}[${index}]`)); return; }
+    if (expected && typeof expected === "object") { assert.deepEqual(Object.keys(actual).sort(), Object.keys(expected).sort(), where); for (const key of Object.keys(expected)) close(actual[key], expected[key], `${where}.${key}`); return; }
+    if (typeof expected === "number") { assert.ok(Math.abs(actual - expected) < 1e-9, `${where}: ${actual} is not ${expected}`); return; }
+    assert.equal(actual, expected, where);
+  };
+  close(JSON.parse(JSON.stringify(made)), golden, "constructions");
+});

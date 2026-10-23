@@ -329,7 +329,7 @@ class Held:
         """``still`` (a ``snapshot.Still``) drawn: the PNG's bytes and what was drawn."""
         from cadgen.engine.mechanism import posed_structure
         from cadgen.engine.render.occt import FOCAL_LENGTH
-        from cadgen.engine.snapshot import SnapshotRefused, exploded_amount, hidden_instances, refusals
+        from cadgen.engine.snapshot import SnapshotRefused, exploded_amount, hidden_instances, pmi_drawn, refusals
 
         if self.structure is None:
             raise RuntimeError("the renderer holds no document")
@@ -345,6 +345,7 @@ class Held:
                 raise SnapshotRefused(f"--pose: {error}") from None
             posed = shown["kinematics"]["pose"]
         refusals(still, shown, self.path.name)
+        drawing_pmi = pmi_drawn(still, self.structure, self.path.name)
         hidden = hidden_instances(shown, still.display, self.path.name)
         clock = time.perf_counter()
         scene, fresh = self._scene(still.preview, still.drawn)
@@ -362,6 +363,8 @@ class Held:
             self.last = (display, still.size)
         scene.explode(exploded_amount(display))
         scene.show(display, preview=still.preview)
+        # Before the camera: a fitted frame takes the callouts in.
+        drawn_pmi = scene.pmi(display.get("appearance") or "light") if drawing_pmi else 0
         timings["presentMs"] = round((time.perf_counter() - clock) * 1000)
         clock = time.perf_counter()
         lens = display.get("camera") or {}
@@ -400,6 +403,7 @@ class Held:
                       "displayMode": display.get("mode", "solid"), "preview": still.preview,
                       "parts": len(self.structure["prototypes"]), "instances": len(shown["instances"]),
                       "unmeshed": unmeshed, "pose": posed, "exploded": exploded_amount(display) or None,
+                      **({"pmi": drawn_pmi} if drawing_pmi else {}),
                       "renderer": "occt", **({"font": ", ".join(sorted(scene.fonts))} if scene.fonts else {}),
                       **({"kind": self.kind, "warnings": self.warnings} if self.kind else {}), "timings": timings}
 

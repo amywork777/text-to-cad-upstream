@@ -198,6 +198,9 @@ class Scene:
         self.structures: list[Any] = []  # presentations made below AIS: the text quads
         self.text_quads: list[tuple[np.ndarray, str]] = []  # their world corners and colours
         self.screen_marks: list[dict[str, Any]] = []  # painted over the frame: Measure's
+        self.pmi_drawn: list[tuple[dict[str, Any], Any]] = []  # painted over the frame: the PMI's callouts
+        self.pmi_points: np.ndarray | None = None  # their labels and dimension lines, which a fitted frame takes in
+        self.pmi_appearance = "light"
         self.fonts: set[str] = set()  # the faces the words of the frame were set in (text.face_source)
         self.stage: list[Any] = []  # Preview's studio: its floor and the floor's shadow
         self.studio = False
@@ -414,6 +417,9 @@ class Scene:
             if len(positions):
                 m = self.placement(index)
                 chunks.append(positions.astype(float) @ m[:3, :3].T + m[:3, 3])
+        # The PMI drawn stands beside the part: a fitted frame takes in its callouts too, so none is cut off.
+        if self.pmi_points is not None:
+            chunks.append(self.pmi_points)
         return np.concatenate(chunks)
 
     def _pinned(self, camera: dict[str, Any], projection: str, focal_length: float) -> dict[str, Any]:
@@ -457,6 +463,8 @@ class Scene:
         boxes = [placed_box(self.boxes[i["prototype"]], self.placement(n))
                  for n, i in enumerate(self.structure["instances"])
                  if i["prototype"] in self.boxes and n not in self.hidden]
+        if self.pmi_points is not None:
+            boxes.append((self.pmi_points.min(0), self.pmi_points.max(0)))
         lo, hi = np.min([b[0] for b in boxes], 0), np.max([b[1] for b in boxes], 0)
         return np.array([[x, y, z] for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2])])
 
@@ -563,6 +571,8 @@ class Scene:
         self.structures = []
         self.text_quads = []
         self.screen_marks = []
+        self.pmi_drawn = []
+        self.pmi_points = None
         self.fonts = set()
 
     def _pixel_size(self, point: np.ndarray) -> float:
@@ -734,6 +744,32 @@ class Scene:
         self.screen_marks = list(marks)
         if any(str(mark.get("label") or "").strip() for mark in marks):
             self.fonts.add(face(*LABEL_FACE).name)
+
+    def pmi(self, appearance: str = "light") -> int:
+        """The document's PMI (``structure["pmi"]``), painted over the finished frame as the viewer
+        draws it over its page (``pmi.py``): each callout the viewer draws, where its layout puts it
+        in the document at rest. Made before the camera is framed: a fitted frame takes in each
+        callout's label and dimension line (``placed_points``), so none is cut off. Returns how many
+        are drawn."""
+        from cadgen.engine.render import pmi
+        from cadgen.engine.render.explode import part_box, placed_box
+        from cadgen.engine.render.text import face
+
+        boxes = []
+        for index, instance in enumerate(self.rest_structure["instances"]):
+            box = part_box(self.meshes[self.prototypes[instance["prototype"]]["key"]])
+            if box is not None:
+                boxes.append(placed_box(box, self.rest[index]))
+        bounds = ([min(box[0][axis] for box in boxes) for axis in range(3)], [max(box[1][axis] for box in boxes) for axis in range(3)]) if boxes else None
+        self.pmi_drawn = [(entry, made) for entry, made in pmi.constructions(self.rest_structure, self.meshes, bounds) if made is not None]
+        self.pmi_bounds = bounds
+        points = [made["label"] for _entry, made in self.pmi_drawn]
+        points += [point for _entry, made in self.pmi_drawn if made["dimension"] for point in (made["dimension"]["from"], made["dimension"]["to"])]
+        self.pmi_points = np.array(points, float) if points else None
+        self.pmi_appearance = appearance
+        if self.pmi_drawn:
+            self.fonts.add(face(*pmi.TEXT).name)
+        return len(self.pmi_drawn)
 
     # --- preview ------------------------------------------------------------------------------
 
@@ -1218,13 +1254,19 @@ class Scene:
 
     def painter(self) -> Any:
         """What paints over the finished frame (sRGB bytes, in place): the text marks as three lays
-        them, then Measure's marks; None when there is nothing to paint."""
-        if not (self.text_quads or self.screen_marks):
+        them, then the PMI's callouts, then Measure's marks; None when there is nothing to paint."""
+        if not (self.text_quads or self.screen_marks or self.pmi_drawn):
             return None
 
         def paint(frame: np.ndarray) -> None:
             if self.text_quads:
                 self._relay_text(frame)
+            if self.pmi_drawn:
+                from cadgen.engine.render import pmi
+
+                bounds = self.pmi_bounds
+                size = float(np.linalg.norm(np.subtract(bounds[1], bounds[0]))) if bounds else 0.0
+                pmi.paint(frame, self.pmi_drawn, self.project, pmi.Hidden(self, max(0.05, size * 1e-3)), self.pmi_appearance)
             if self.screen_marks:
                 from cadgen.engine.render.overlay import paint_measurements
 
