@@ -38,11 +38,10 @@ class Models:
                                              "builtAt": time.time(), "version": version,
                                              "files": list(report.get("files") or {})}
                 self.daemon.builders[os.path.normcase(address)] = worker
-                if not report.get("files") or old and old.get("opened"):
-                    server, ident = self.register_page(address)
-                    app = getattr(server.http, "app", None)
-                    token = app.token if app is not None else ""
-                    report["url"] = f"{server.url}/?doc={ident}" + (f"&token={token}" if token else "")
+                server, ident = self.register_page(address)
+                app = getattr(server.http, "app", None)
+                token = app.token if app is not None else ""
+                report["url"] = f"{server.url}/?doc={ident}" + (f"&token={token}" if token else "")
 
     def register_page(self, address: str) -> tuple[Any, str]:
         server = self.daemon.serve({})
@@ -76,10 +75,12 @@ class Models:
 
     def serve(self, address: str, request: dict) -> tuple[Any, str]:
         address = str(parse(address))
-        source = self.resolve(address)
         with self.lock:
             record = self.records.get(address)
         if record is None or not self.daemon.pool.holds(record["worker"]):
+            if request.get("build") is False:
+                raise ValueError(f"no live model {address}; build it before inspecting")
+            source = self.resolve(address)
             replies = []
             self.daemon.handle({"op": "build", "script": source["script"],
                                 "functions": [source["function"]], "env": request.get("env", {}),
@@ -111,7 +112,9 @@ class Models:
         for key, size in done["shapes"]:
             shapes[key] = payload[at:at + size]
             at += size
-        return {**done["structure"], "path": address, "address": address, "closure": done.get("closure"), "version": f"{version}-0"}, shapes
+        from cadgen.engine.export.viewer import fingerprint
+
+        return {**done["structure"], "exportRevision": fingerprint(done["structure"]), "path": address, "address": address, "closure": done.get("closure"), "version": f"{version}-0"}, shapes
 
     def prune(self) -> None:
         with self.lock:

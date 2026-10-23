@@ -28,7 +28,7 @@ HERE = Path(__file__).resolve().parent
 NAMES = {{"peg", "pin", "dowel", "stud", "post", "spigot"}}
 
 
-@xbf
+@xbf("XBF/peg.xbf")
 def peg():
     size = json.loads((HERE / "peg.json").read_text())["size"]
     peg = bd.Box(size, size, {peg})
@@ -36,14 +36,14 @@ def peg():
     return peg
 
 
-@xbf
+@xbf("XBF/cap.xbf")
 def cap():
     cap = read_step(HERE / "inputs" / "cap.step")
     cap.label = "cap"
     return cap
 
 
-@xbf
+@xbf("XBF/kit.xbf")
 def kit():
     left = peg().moved(bd.Location((10, 0, 0)))
     right = peg().moved(bd.Location((-10, 0, 0)))
@@ -288,7 +288,7 @@ import dims
 HERE = Path(__file__).resolve().parent
 
 
-@xbf
+@xbf("XBF/plate.xbf")
 def plate():
     try:
         depth = json.loads((HERE / "depth.json").read_text())["depth"]
@@ -357,7 +357,7 @@ class ClosureTest(unittest.TestCase):
         self.assertEqual(record["key"], previous.key(record))
         # The same record, whole, through every door that reads it.
         self.assertEqual(document.Loaded(self.xbf).closure, record)
-        self.assertEqual(api.where(self.xbf), record)
+        self.assertEqual(api.inspect(self.xbf), record)
         self.assertIn(b"cadgen " + version.encode(), self.xbf.read_bytes()[:4096])
 
     def test_a_comment_changes_no_module_and_a_code_edit_names_its_module(self) -> None:

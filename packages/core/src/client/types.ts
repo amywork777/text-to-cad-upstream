@@ -34,7 +34,7 @@ export interface CadRecent {
   thumbnail: string | null; pictured: number | null;
 }
 /** Whether the person's usage stats are sent (`/__cad/analytics`; nothing asks): `reason` says who decided. */
-export interface CadConsent { sharing: boolean; reason: 'default' | 'untold' | 'choice' | 'environment' | 'unavailable'; policy: string }
+export interface CadConsent { sharing: boolean; reason: 'default' | 'untold' | 'choice' | 'environment' | 'unavailable'; policy: string; saved?: boolean }
 /** A newer text-to-cad, as cadgen's version check says it (`/__cad/version`). */
 export interface CadUpdateNotice { latest: string; version: string; text: string; prompt: string; instructions: string }
 export interface CadCatalog { entries: CadEntry[]; [key: string]: unknown }
@@ -144,6 +144,7 @@ export interface CadRenderSession {
 }
 /** Domain service consumed by renderers; HTTP metadata stays on its adapter. */
 export interface CadWorkspaceService {
+  exports?: ExportService;
   getSnapshot(): CadCatalogSnapshot;
   subscribe(listener: () => void): () => void;
   refresh(options?: CadRequestOptions & {file?: string;markRefreshing?: boolean}): Promise<CadCatalog>;
@@ -166,8 +167,6 @@ export interface CadWorkspaceService {
   reveal(path: string): Promise<void>;
   /** Whether the person's usage stats are sent; with `share`, their answer (the app menu's toggle). */
   consent(share?: boolean): Promise<CadConsent>;
-  /** The features the person can turn off, as they left them; with `change`, their change of some. */
-  features(change?: Record<string, boolean>): Promise<Record<string, boolean>>;
   /** The language the person chose for every CAD view, or null (Automatic); with `locale`, their choice (null clears it). */
   language(locale?: string | null): Promise<{ locale: string | null }>;
   /** Whether a newer text-to-cad is out: the update button's notice, or null. */
@@ -223,4 +222,23 @@ export interface CadActivity {
   touched?: boolean;
   quickEdit?: boolean;
   crash?: CadPageCrash;
+}
+
+export type ExportFormat = 'step' | 'glb' | 'stl' | 'threemf' | 'dxf' | 'xbf' | 'original';
+export interface ExportSource { doc: string; revision: string; part: string | null; pose: Record<string, number> | null }
+export interface ExportOption { format: ExportFormat; label: string; extension: string; reason: string | null }
+export interface ExportRequest { requestId: string; epoch: string; source: ExportSource; format: ExportFormat }
+export interface ExportJob {
+  id: string; requestId: string; epoch: string; filename: string;
+  state: 'queued' | 'running' | 'cancelling' | 'cancelled' | 'failed' | 'ready' | 'expired';
+  stage: string; sequence: number; createdAt: number; finishedAt: number; expiresAt: number;
+  bytes?: number; error?: string;
+}
+export interface ExportService {
+  options(source: ExportSource, signal: AbortSignal): Promise<{ epoch: string; formats: ExportOption[] }>;
+  create(request: ExportRequest, signal?: AbortSignal): Promise<ExportJob>;
+  status(id: string, sequence?: number, signal?: AbortSignal): Promise<ExportJob>;
+  cancel(id: string): Promise<ExportJob>;
+  release(id: string): Promise<ExportJob>;
+  download(id: string, signal: AbortSignal): Promise<Response>;
 }

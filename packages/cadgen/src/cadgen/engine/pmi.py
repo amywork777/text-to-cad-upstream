@@ -5,7 +5,7 @@ A model gives its part annotations, each on faces of that part, and returns the 
 
     from cadgen.engine import pmi, step, xbf
 
-    @xbf
+    @xbf(out="XBF/plate.xbf")
     @step("plate.step")
     def plate():
         body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
