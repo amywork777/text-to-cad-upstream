@@ -11,10 +11,10 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, NamedTuple
 
-from cadgen._internal.drawing_assembly import _BALLOON_LEAD, _BALLOON_R, _balloon_axis
+from cadgen._internal.drawing_assembly import _BALLOON_AIR, _BALLOON_LEAD, _BALLOON_R, _balloon_axis
 from cadgen._internal.drawing_base import (
-    _DIM_ROW, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS, _SIDES, _dot, _fmt, _ink_width, _look, _looks_down, _near,
-    _shown, _spans, _text_width, _where,
+    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _DIM_ROW, _LABEL_ROOM, _OPPOSITE, _SECTION_LETTERS, _SIDES,
+    _dot, _fmt, _ink_width, _look, _looks_down, _near, _shown, _spans, _text_width, _where,
 )
 from cadgen._internal.drawing_features import Slot
 from cadgen._internal.drawing_sheet import _CAPTION_HEIGHT
@@ -480,7 +480,8 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
-            room[side] = max(room[side], rowed[side] + 10.0 + 8.0 + _ink_width(_callout_value(dim), th) + 2.0)
+            room[side] = max(room[side], rowed[side] + _CALLOUT_CLEAR + _CALLOUT_LANDING + _CALLOUT_GAP
+                             + _ink_width(_callout_value(dim), th) + _CALLOUT_GAP)
         elif dim.kind == "note":
             p = proj.point(dim.p1)
             width = _text_width(dim.text, th) + 4.0
@@ -495,7 +496,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
     if view._balloons:
         # A column of balloons each side of a tall view, a row above and below a wide one.
         for side in (("left", "right") if _balloon_axis(bounds) else ("bottom", "top")):
-            room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + 2.0
+            room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + _BALLOON_AIR
     room["bottom"] += _LABEL_ROOM  # the view's label hangs under everything below it
     return {"rows": rows, "overall": overall, "room": room}
 

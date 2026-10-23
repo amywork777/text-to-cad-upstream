@@ -623,7 +623,7 @@ def _assembly_room(size: tuple[float, float], overall: set) -> dict:
     if "height" in overall:
         room["left"] += row
     for side in (("left", "right") if size[1] >= size[0] else ("bottom", "top")):
-        room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + 2.0
+        room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + _BALLOON_AIR
     room["bottom"] += _LABEL_ROOM
     return room
 

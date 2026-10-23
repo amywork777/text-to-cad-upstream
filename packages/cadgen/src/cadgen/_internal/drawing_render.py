@@ -22,10 +22,11 @@ from cadgen._internal.drawing_annotation import (
 )
 from cadgen._internal.drawing_assembly import _draw_balloons, _refresh_from_item, _refuse_balloons_on
 from cadgen._internal.drawing_base import (
-    _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE,
-    SHEET_SIZES, _STANDARD_SCALES, _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot,
-    _draw_dimension_symbols, _draw_symbol, _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label,
-    _shown, _spans, _text_box, _text_width, _where,
+    _CALLOUT_CLEAR, _CALLOUT_GAP, _CALLOUT_LANDING, _CENTRE_OVERSHOOT, _DIM_ROW, _HATCH_SCALE, _LABEL_GAP,
+    _LABEL_HEIGHT, _LAYERS, _MARGIN, _MIN_TEXT_MM, _PLANE_ROOM, _SAME_PLACE, SHEET_SIZES, _STANDARD_SCALES,
+    _SYMBOL_ADVANCE, _TITLE_H, _TITLE_W, _cross, _dimstyle, _dirs, _dot, _draw_dimension_symbols, _draw_symbol,
+    _fmt, _ink_width, _look, _looks_down, _mtext_extent, _runs, _scale_label, _shown, _spans, _text_box,
+    _text_width, _where,
 )
 from cadgen._internal.drawing_report import _Facts, _member_key, _merge_facts
 from cadgen._internal.drawing_sheet import (
@@ -939,7 +940,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             check(dim.kind, dim.index, centre)
             r = dim.radius * sv
             value = _callout_value(dim)
-            text_w = 8.0 + _ink_width(value, th)
+            text_w = _CALLOUT_LANDING + _CALLOUT_GAP + _ink_width(value, th)
             # Exit on the hole's own side of the view (the short way out), unless the
             # landing there would run into another view or off the frame; then the
             # other side. A leader across the whole part is the last resort.
@@ -948,7 +949,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             prefer_right = centre[0] > (vx0 + vx1) / 2 + 1e-6
             choice = None
             for go_right in (prefer_right, not prefer_right):
-                clear_try = reach["right" if go_right else "left"] + 10.0
+                clear_try = reach["right" if go_right else "left"] + _CALLOUT_CLEAR
                 knee_try = (vx1 + clear_try) if go_right else (vx0 - clear_try)
                 land_x0, land_x1 = (knee_try, knee_try + text_w) if go_right else (knee_try - text_w, knee_try)
                 if not blocked(land_x0, land_x1, centre[1] - th, centre[1] + r + 6.0 + th, own_box):
@@ -963,7 +964,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     "the same kind nearer the other edge."
                 )
             side = "right" if go_right else "left"
-            knee_x = (vx1 + reach[side] + 10.0) if go_right else (vx0 - reach[side] - 10.0)
+            knee_x = (vx1 + reach[side] + _CALLOUT_CLEAR) if go_right else (vx0 - reach[side] - _CALLOUT_CLEAR)
             exit_angle = math.radians(dim.angle if dim.angle is not None else 45.0)
             land_y = free_landing_y(side, centre[1] + r * math.sin(exit_angle) + 6.0)
             sign = 1.0 if go_right else -1.0
@@ -972,13 +973,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # stops on the circle; then it runs level to the text.
             run = math.hypot(knee[0] - centre[0], knee[1] - centre[1]) or 1.0
             start = (centre[0] + r * (knee[0] - centre[0]) / run, centre[1] + r * (knee[1] - centre[1]) / run)
-            landing = (knee[0] + sign * 6.0, knee[1])
+            landing = (knee[0] + sign * _CALLOUT_LANDING, knee[1])
             msp.add_leader([start, knee, landing], dxfattribs={"layer": "DIM"},
                            override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
             align = TextEntityAlignment.MIDDLE_LEFT if go_right else TextEntityAlignment.MIDDLE_RIGHT
-            text(value, landing[0] + sign * 2.0, landing[1], th, align, "DIM")
-            tip = landing[0] + sign * (2.0 + _ink_width(value, th))
-            callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if go_right else vx0)) + 2.0)
+            text(value, landing[0] + sign * _CALLOUT_GAP, landing[1], th, align, "DIM")
+            tip = landing[0] + sign * (_CALLOUT_GAP + _ink_width(value, th))
+            callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if go_right else vx0)) + _CALLOUT_GAP)
             if record is not None:
                 # A hole callout states its hole; a diameter callout states a diameter.
                 # A leader's radius is neither, so it is not a stated value.
@@ -1026,7 +1027,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
 
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.
-        text((view.label or view.name).upper(), view.at[0], vy0 - reach["bottom"] - 6, 3.5,
+        text((view.label or view.name).upper(), view.at[0], vy0 - reach["bottom"] - _LABEL_GAP, _LABEL_HEIGHT,
              TextEntityAlignment.TOP_CENTER, "NOTES")
 
     for table in tables.values():

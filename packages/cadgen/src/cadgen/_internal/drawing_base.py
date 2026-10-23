@@ -76,8 +76,18 @@ _NOTE_HEIGHT = 2.5
 _NOTE_INSET = 3.0
 #: One row of dimensions: the line's distance from the last, with room for its text.
 _DIM_ROW = 12.0
-#: A view's label: its gap below everything under the view, its height, and air.
-_LABEL_ROOM = 6.0 + 3.5 + 2.0
+#: A view's label: its gap below everything under the view, and its height.
+_LABEL_GAP = 6.0
+_LABEL_HEIGHT = 3.5
+#: What a view's label takes below the view, with air under it.
+_LABEL_ROOM = _LABEL_GAP + _LABEL_HEIGHT + 2.0
+#: A callout's leader: how far past the view's annotation its knee stands, the
+#: level landing from the knee, and the gap between the landing and the text,
+#: which is also the air the text keeps beyond it. The layout plans with these
+#: and the drawing draws with them.
+_CALLOUT_CLEAR = 10.0
+_CALLOUT_LANDING = 6.0
+_CALLOUT_GAP = 2.0
 #: The text height a sheet draws at unless told otherwise.
 _DEFAULT_TEXT = 3.5
 #: The smallest text a print stays legible at. Below it, text is cut, not shrunk.

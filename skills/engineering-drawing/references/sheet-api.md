@@ -115,7 +115,8 @@ gets the circle and the letter. `scale` defaults to the largest standard scale,
 at least twice the parent's, that keeps the circle within 60 mm, and steps down
 when the paper has no room for it. Left without `at=`, it goes in the free paper
 nearest its parent, clear of every view and its annotation; a scale you give
-that finds no room is refused. A detail of a section keeps its hatching. Give
+that finds no room is refused. A detail of a section keeps its hatching; to cut
+a detail, cut its parent. Give
 it dimensions, callouts and notes like any view; `holes()` on it calls out only
 what its circle holds.
 
@@ -123,7 +124,9 @@ what its circle holds.
 
 An auxiliary view: the part seen square to the flat face through `point` (a
 model point on it; the middle of a face with a hole in it will do), so an
-inclined face shows its true shape and its holes as circles. Labelled `VIEW C`;
+inclined face shows its true shape and its holes as circles. `view` must see
+that face edge-on, as a line; a face inclined in every principal view would need
+a secondary auxiliary view, which is refused. Labelled `VIEW C`;
 `view` gets an arrow pointing the way it looks, with the letter. Drawn with the
 face's slope running up the sheet, at `view`'s scale unless `scale` is given,
 in the free paper nearest `view` unless `at` places it. `partial` (the default)
@@ -161,7 +164,8 @@ sheet millimetres.
   nearest the view's edge. Identical holes equally spaced round a turned axis
   of the part read `6× ⌀6 THRU EQ SP ON ⌀60`, and their pitch circle is drawn.
   A blind or counterbored hole that opens on the far side belongs to the
-  opposite view.
+  opposite view. An isometric looks down no hole, so callouts on one are
+  refused.
 - `view.hole_table(origin=None, at=None)`: tabulate the holes and slots the
   view looks down instead of calling them out: each tagged on the view (A1, A2
   for one kind, B1 for the next), an X and Y origin marked (the lower-left
@@ -173,7 +177,7 @@ sheet millimetres.
   one callout on the hole whose axis passes through `point`, in a view looking
   down that axis. Every size and the count come from the part; a value given is
   checked and a contradiction is refused, naming what the part has. `thread`
-  (`"M6x1 - 6H"`) replaces the diameter; `label` is appended (`"EQ SP ON %%c60"`).
+  (`"M6x1 - 6H"`) replaces the diameter; `label` is appended (`"WHEEL"`).
   A through hole opened out at both ends reads `BOTH ENDS` or `FAR SIDE ...`.
   Pieces of one bore separated by air (a clevis's arms, a cross hole) are one
   hole; a groove or a pocket with material inside is not a hole.

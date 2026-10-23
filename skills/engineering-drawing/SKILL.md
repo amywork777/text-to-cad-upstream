@@ -55,8 +55,9 @@ The first run downloads that installation; later runs reuse it.
    feature is too small to dimension at the sheet's scale (a chamfer, a groove,
    a thin wall), `sheet.detail(front, (x, y, z), radius)` draws DETAIL B larger,
    in free paper near its parent, which gets the circle and the letter. Where a
-   face is inclined to every principal view (a bent tab, a sloped boss),
-   `sheet.auxiliary(front, point_on_face)` draws VIEW C square onto it. Where a
+   flat face is inclined in one view and seen as a line there (a bent tab, a
+   sloped boss), `sheet.auxiliary(front, point_on_face)` draws VIEW C square
+   onto it, from that view. Where a
    long part is the same section along most of its length (a shaft, a rail),
    `front.broken(start, end)` takes that stretch out of the views that show it;
    dimensions across the break still state the true length.
@@ -182,9 +183,10 @@ Parts lists, balloons on a custom GA, and what the script prints about them:
 - Every dimension without `tol=`/`fit=` is nominal, governed by the general
   tolerance if one is given. Say which requirements came from the user.
 - Full sections and circular details only: no half, offset or broken-out
-  sections. Auxiliary views are partial (the face and what lies within its
-  outline) and drawn unrotated; a view takes one break. Say what a view does not
-  show.
+  sections. Auxiliary views are projected from a view that sees the face
+  edge-on (no secondary auxiliaries), drawn unrotated, and by default partial
+  (the face and what lies within its outline); a view takes one break. Say what
+  a view does not show.
 - Holes, slots, overall sizes, turned diameters, fillets, rounds and chamfers
   are checked for completeness; pockets and other features are not, and are
   stated with `dim`, a detail or a `note`. A bolt circle's clocking (where its
