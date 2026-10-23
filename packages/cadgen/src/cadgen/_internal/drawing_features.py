@@ -43,7 +43,7 @@ import math
 from dataclasses import dataclass
 
 __all__ = ["Hole", "Axis", "Slot", "BoltCircle", "Blend", "Chamfer", "holes", "axes", "slots", "bolt_circles",
-           "turned_diameters", "blends", "chamfers"]
+           "turned_diameters", "blends", "chamfers", "sharp_edges"]
 
 #: Model millimetres two positions on an axis may differ by and still touch. A
 #: counterbore's floor and the bore below it meet at one plane, so their ranges
@@ -684,7 +684,7 @@ def _surface_key(face) -> tuple | None:
     surface = BRepAdaptor_Surface(face)
     kind = surface.GetType()
     if kind == GeomAbs_Cylinder:
-        gp, radii = surface.Cylinder(), None
+        gp = surface.Cylinder()
         radii = (round(gp.Radius(), 4),)
     elif kind == GeomAbs_Torus:
         gp = surface.Torus()
@@ -697,25 +697,16 @@ def _surface_key(face) -> tuple | None:
     return ("cyl" if kind == GeomAbs_Cylinder else "torus",) + _line_key(d, foot) + radii
 
 
-def blends(shape) -> list[Blend]:
-    """The part's fillets and rounds: each cylinder or torus face, not a whole
-    turned surface, that meets two other faces tangent along its edges. A slot's
-    rounded end is tangent to the slot's sides too, and is the slot's, not a
-    blend."""
-    from OCP.BRepAdaptor import BRepAdaptor_Surface
+def _blend_faces(shape) -> list[tuple]:
+    """Each blend face of the part with what it is, as ``(face, Blend)``."""
+    from build123d import GeomType
     from OCP.BRepTools import BRepTools
-    from OCP.GeomAbs import GeomAbs_Cylinder
 
     found = _edge_faces(shape)
-    faces = list(shape.faces())  # one list: keys below are by object identity
-    keys = {}
+    keyed = [(face, _surface_key(face.wrapped)) for face in shape.faces()]
     spans: dict[tuple, float] = {}
-    for face in faces:
-        key = _surface_key(face.wrapped)
-        if key is None:
-            continue
-        keys[id(face)] = key
-        if key[0] == "cyl":
+    for face, key in keyed:
+        if key is not None and key[0] == "cyl":
             u0, u1, _v0, _v1 = BRepTools.UVBounds_s(face.wrapped)
             spans[key] = spans.get(key, 0.0) + (u1 - u0)
     slot_ends = set()
@@ -724,52 +715,155 @@ def blends(shape) -> list[Blend]:
             d, foot = _canonical(slot.axis, end)
             slot_ends.add(("cyl",) + _line_key(d, foot) + (round(slot.width / 2, 4),))
     out = []
-    for face in faces:
-        key = keys.get(id(face))
+    for face, key in keyed:
         if key is None or key in slot_ends or (key[0] == "cyl" and spans[key] >= 2 * math.pi - 1e-6):
             continue
-        tangent = []
-        for edge in face.edges():
-            middle = edge.position_at(0.5)
-            point = (middle.X, middle.Y, middle.Z)
-            mine = _normal(face.wrapped, point)
-            for other in _others(found, edge, face):
-                if _surface_key(other) == key or any(other.IsSame(t) for t in tangent):
-                    continue
-                theirs = _normal(other, point)
-                if mine and theirs and sum(a * b for a, b in zip(mine, theirs)) > _TANGENT:
-                    tangent.append(other)
+        tangent = _tangent_neighbours(found, face, key)
         if len(tangent) < 2:
             continue
-        surface = BRepAdaptor_Surface(face.wrapped)
-        at = face.position_at(0.5, 0.5)
-        n = face.normal_at(at)
-        if surface.GetType() == GeomAbs_Cylinder:
-            gp = surface.Cylinder()
-            ax = gp.Axis()
-            d, foot = _canonical((ax.Direction().X(), ax.Direction().Y(), ax.Direction().Z()),
-                                 (ax.Location().X(), ax.Location().Y(), ax.Location().Z()))
-            rel = (at.X - foot[0], at.Y - foot[1], at.Z - foot[2])
-            along = sum(a * b for a, b in zip(rel, d))
-            centre = tuple(f + along * k for f, k in zip(foot, d))
-            radius = gp.Radius()
-        else:
-            gp = surface.Torus()
-            ax = gp.Axis()
-            d = (ax.Direction().X(), ax.Direction().Y(), ax.Direction().Z())
-            o = (ax.Location().X(), ax.Location().Y(), ax.Location().Z())
-            rel = (at.X - o[0], at.Y - o[1], at.Z - o[2])
-            along = sum(a * b for a, b in zip(rel, d))
-            radial = tuple(c - along * k for c, k in zip(rel, d))
-            reach = math.sqrt(sum(c * c for c in radial)) or 1.0
-            centre = tuple(oo + along * k + gp.MajorRadius() * c / reach for oo, k, c in zip(o, d, radial))
-            radius = gp.MinorRadius()
-        # Concave when the outward normal points at the circle's centre: the air
-        # is on the inside of the curve, an inside corner rounded.
-        toward = tuple(c - p for c, p in zip(centre, (at.X, at.Y, at.Z)))
-        concave = sum(a * b for a, b in zip(toward, (n.X, n.Y, n.Z))) > 0
-        out.append(Blend(round(radius, 6), concave, (at.X, at.Y, at.Z)))
+        if key[0] == "cyl" and _full_round_end(face, tangent):
+            continue
+        out.append((face, _blend_of(face)))
     return out
+
+
+def _tangent_neighbours(found, face, key) -> list:
+    """The faces that meet ``face`` tangent along an edge, other than pieces of its
+    own surface."""
+    tangent: list = []
+    for edge in face.edges():
+        middle = edge.position_at(0.5)
+        point = (middle.X, middle.Y, middle.Z)
+        mine = _normal(face.wrapped, point)
+        for other in _others(found, edge, face):
+            if _surface_key(other) == key or any(other.IsSame(t) for t in tangent):
+                continue
+            theirs = _normal(other, point)
+            if mine and theirs and sum(a * b for a, b in zip(mine, theirs)) > _TANGENT:
+                tangent.append(other)
+    return tangent
+
+
+def _full_round_end(face, tangent: list) -> bool:
+    """Whether a half cylinder between two parallel flat faces facing apart is the
+    rounded end of a notch or a link, the whole width of the feature, rather than
+    a blend of a corner."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.BRepTools import BRepTools
+    from OCP.GeomAbs import GeomAbs_Plane
+
+    u0, u1, _v0, _v1 = BRepTools.UVBounds_s(face.wrapped)
+    if abs((u1 - u0) - math.pi) > 1e-3 or len(tangent) != 2:
+        return False
+    normals = []
+    for other in tangent:
+        surface = BRepAdaptor_Surface(other)
+        if surface.GetType() != GeomAbs_Plane:
+            return False
+        axis = surface.Plane().Axis().Direction()
+        flip = -1.0 if other.Orientation() == 1 else 1.0  # TopAbs_REVERSED
+        normals.append((axis.X() * flip, axis.Y() * flip, axis.Z() * flip))
+    return sum(a * b for a, b in zip(*normals)) < -1 + 1e-6
+
+
+def _blend_of(face) -> Blend:
+    """A blend face's radius, and whether it rounds an inside corner."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cylinder
+
+    surface = BRepAdaptor_Surface(face.wrapped)
+    at = face.position_at(0.5, 0.5)
+    n = face.normal_at(at)
+    if surface.GetType() == GeomAbs_Cylinder:
+        gp = surface.Cylinder()
+        ax = gp.Axis()
+        d, foot = _canonical((ax.Direction().X(), ax.Direction().Y(), ax.Direction().Z()),
+                             (ax.Location().X(), ax.Location().Y(), ax.Location().Z()))
+        rel = (at.X - foot[0], at.Y - foot[1], at.Z - foot[2])
+        along = sum(a * b for a, b in zip(rel, d))
+        centre = tuple(f + along * k for f, k in zip(foot, d))
+        radius = gp.Radius()
+    else:
+        gp = surface.Torus()
+        ax = gp.Axis()
+        d = (ax.Direction().X(), ax.Direction().Y(), ax.Direction().Z())
+        o = (ax.Location().X(), ax.Location().Y(), ax.Location().Z())
+        rel = (at.X - o[0], at.Y - o[1], at.Z - o[2])
+        along = sum(a * b for a, b in zip(rel, d))
+        radial = tuple(c - along * k for c, k in zip(rel, d))
+        reach = math.sqrt(sum(c * c for c in radial)) or 1.0
+        centre = tuple(oo + along * k + gp.MajorRadius() * c / reach for oo, k, c in zip(o, d, radial))
+        radius = gp.MinorRadius()
+    # Concave when the outward normal points at the circle's centre: the air is
+    # on the inside of the curve, an inside corner rounded.
+    toward = tuple(c - p for c, p in zip(centre, (at.X, at.Y, at.Z)))
+    concave = sum(a * b for a, b in zip(toward, (n.X, n.Y, n.Z))) > 0
+    return Blend(round(radius, 6), concave, (at.X, at.Y, at.Z))
+
+
+def blends(shape) -> list[Blend]:
+    """The part's fillets and rounds: each cylinder or torus face, not a whole
+    turned surface, that meets two other faces tangent along its edges. A slot's
+    rounded end is tangent to the slot's sides too, and is the slot's; the
+    rounded end of a notch or a link, as wide as the feature, is its end."""
+    return [blend for _face, blend in _blend_faces(shape)]
+
+
+def _strip_chamfer(face, found) -> Chamfer | None:
+    """A flat face that is a chamfer: a narrow strip between two faces that meet
+    square, bevelling their outside corner."""
+    from build123d import GeomType
+
+    if face.geom_type != GeomType.PLANE:
+        return None
+    lines = sorted((e for e in face.edges() if e.geom_type == GeomType.LINE), key=lambda e: -e.length)
+    pair = None
+    for i, a in enumerate(lines):
+        da = (a.position_at(1) - a.position_at(0)).normalized()
+        for b in lines[i + 1:]:
+            if abs(abs(da.dot((b.position_at(1) - b.position_at(0)).normalized())) - 1) < 1e-6:
+                pair = (a, b)
+                break
+        if pair:
+            break
+    if pair is None:
+        return None
+    a, b = pair
+    along = (a.position_at(1) - a.position_at(0)).normalized()
+    gap = b.position_at(0.5) - a.position_at(0.5)
+    width = (gap - along * gap.dot(along)).length
+    if not (1e-6 < width <= _CHAMFER_SHARE * min(a.length, b.length)) or width > _CHAMFER_MAX * math.sqrt(2):
+        return None
+    mine = _normal(face.wrapped, tuple(a.position_at(0.5)))
+    sides = []
+    for edge in (a, b):
+        others = _others(found, edge, face)
+        sides.append(_normal(others[0], tuple(edge.position_at(0.5))) if len(others) == 1 else None)
+    if mine is None or None in sides:
+        return None
+    n1, n2 = sides
+
+    def dot(p, q) -> float:
+        return sum(x * y for x, y in zip(p, q))
+
+    if abs(dot(n1, n2)) > 1e-3 or dot(mine, n1) <= 1e-3 or dot(mine, n2) <= 1e-3:
+        return None
+    legs = (width * dot(mine, n1), width * dot(mine, n2))
+    if max(legs) > _CHAMFER_MAX:
+        return None
+    at = face.position_at(0.5, 0.5)
+    return Chamfer((round(legs[0], 6), round(legs[1], 6)), (at.X, at.Y, at.Z))
+
+
+def _cone_bevel(seg: _Segment) -> bool:
+    """Whether a turned cone is a chamfer: convex, short, between 15 and 75
+    degrees, and stopping short of its axis (a cone that reaches it is a point)."""
+    axial, radial = seg.hi - seg.lo, abs(seg.r_hi - seg.r_lo)
+    if seg.concave or axial < 1e-6 or radial < 1e-6 or max(axial, radial) > _CHAMFER_MAX:
+        return False
+    if min(seg.r_lo, seg.r_hi) < 1e-6:
+        return False
+    return 15.0 <= math.degrees(math.atan2(radial, axial)) <= 75.0
 
 
 def chamfers(shape) -> list[Chamfer]:
@@ -777,63 +871,90 @@ def chamfers(shape) -> list[Chamfer]:
     bevelling their outside corner, and a short convex cone between 15 and 75
     degrees bevelling a turned part's end. A chamfer at a hole's mouth is the
     hole's: its callout states it."""
-    from build123d import GeomType
-
     found = _edge_faces(shape)
-    out = []
-    for face in shape.faces():
-        if face.geom_type != GeomType.PLANE:
-            continue
-        lines = sorted((e for e in face.edges() if e.geom_type == GeomType.LINE), key=lambda e: -e.length)
-        pair = None
-        for i, a in enumerate(lines):
-            da = a.position_at(1) - a.position_at(0)
-            for b in lines[i + 1:]:
-                db = b.position_at(1) - b.position_at(0)
-                if abs(abs(da.normalized().dot(db.normalized())) - 1) < 1e-6:
-                    pair = (a, b)
-                    break
-            if pair:
-                break
-        if pair is None:
-            continue
-        a, b = pair
-        length = min(a.length, b.length)
-        ua = (a.position_at(1) - a.position_at(0)).normalized()
-        gap = b.position_at(0.5) - a.position_at(0.5)
-        width = (gap - ua * gap.dot(ua)).length
-        if not (1e-6 < width <= _CHAMFER_SHARE * length) or width > _CHAMFER_MAX * math.sqrt(2):
-            continue
-        middle_a, middle_b = a.position_at(0.5), b.position_at(0.5)
-        mine = _normal(face.wrapped, (middle_a.X, middle_a.Y, middle_a.Z))
-        sides = []
-        for edge, middle in ((a, middle_a), (b, middle_b)):
-            others = _others(found, edge, face)
-            sides.append(_normal(others[0], (middle.X, middle.Y, middle.Z)) if len(others) == 1 else None)
-        if mine is None or None in sides:
-            continue
-        n1, n2 = sides
-        dot = lambda p, q: sum(x * y for x, y in zip(p, q))
-        if abs(dot(n1, n2)) > 1e-3 or dot(mine, n1) <= 1e-3 or dot(mine, n2) <= 1e-3:
-            continue
-        legs = (width * dot(mine, n1), width * dot(mine, n2))
-        if max(legs) > _CHAMFER_MAX:
-            continue
-        at = face.position_at(0.5, 0.5)
-        out.append(Chamfer((round(legs[0], 6), round(legs[1], 6)), (at.X, at.Y, at.Z)))
+    out = [c for c in (_strip_chamfer(face, found) for face in shape.faces()) if c is not None]
     for d, foot, segments in _surface_segments(shape).values():
         for seg in _merge_split_faces(segments):
-            if seg.kind != "cone" or seg.concave:
-                continue
-            axial, radial = seg.hi - seg.lo, abs(seg.r_hi - seg.r_lo)
-            if axial < 1e-6 or radial < 1e-6 or max(axial, radial) > _CHAMFER_MAX:
-                continue
-            if not 15.0 <= math.degrees(math.atan2(radial, axial)) <= 75.0:
-                continue  # a taper, not a bevel
-            mid = (seg.lo + seg.hi) / 2
-            point = tuple(f + mid * k for f, k in zip(foot, d))
-            out.append(Chamfer((round(axial, 6), round(radial, 6)), point))
+            if seg.kind == "cone" and _cone_bevel(seg):
+                mid = (seg.lo + seg.hi) / 2
+                out.append(Chamfer((round(seg.hi - seg.lo, 6), round(abs(seg.r_hi - seg.r_lo), 6)),
+                                   tuple(f + mid * k for f, k in zip(foot, d))))
     return out
+
+
+#: Two faces whose normals differ by more than this meet at a sharp edge.
+_SHARP = math.cos(math.radians(10.0))
+
+
+def sharp_edges(shape) -> tuple[int, int]:
+    """How many of the part's edges are sharp and left unbroken -- neither of their
+    faces a blend or a chamfer -- as ``(outside, inside)``. A general note that
+    governs unspecified edges is true only when it leaves none of its kind sharp:
+    "FILLETS R3 UNLESS OTHERWISE SPECIFIED" over a sharp inside corner asks for a
+    radius the part does not have."""
+    from build123d import Vector
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.GeomAbs import GeomAbs_Cone
+
+    found = _edge_faces(shape)
+    breaks = [face.wrapped for face, _blend in _blend_faces(shape)]
+    breaks += [face.wrapped for face in shape.faces() if _strip_chamfer(face, found) is not None]
+    for face in shape.faces():
+        if BRepAdaptor_Surface(face.wrapped).GetType() == GeomAbs_Cone:
+            segment = _cone_segment(face)
+            if segment is not None and _cone_bevel(segment):
+                breaks.append(face.wrapped)
+    outside = inside = 0
+    for edge in shape.edges():
+        faces = list(found.FindFromKey(edge.wrapped)) if found.Contains(edge.wrapped) else []
+        if len(faces) != 2 or faces[0].IsSame(faces[1]) or any(f.IsSame(b) for f in faces for b in breaks):
+            continue
+        middle = edge.position_at(0.5)
+        point = (middle.X, middle.Y, middle.Z)
+        normals = [_normal(_as_face(f), point) for f in faces]
+        if None in normals or sum(a * b for a, b in zip(*normals)) > _SHARP:
+            continue
+        # Step off the edge onto the first face: that face runs away from the
+        # second face's outward normal at an outside corner, toward it inside.
+        tangent = edge.tangent_at(0.5)
+        across = Vector(*normals[0]).cross(tangent)
+        first = _as_face(faces[0])
+        step = across * 0.05
+        if _distance_to_face(first, middle + step) > _distance_to_face(first, middle - step):
+            step = -step
+        if step.dot(Vector(*normals[1])) < 0:
+            outside += 1
+        else:
+            inside += 1
+    return outside, inside
+
+
+def _as_face(shape):
+    from OCP.TopoDS import TopoDS
+
+    return TopoDS.Face_s(shape)
+
+
+def _distance_to_face(face, point) -> float:
+    """How far a point is from a face (a TopoDS face)."""
+    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
+    from OCP.BRepExtrema import BRepExtrema_DistShapeShape
+    from OCP.gp import gp_Pnt
+
+    vertex = BRepBuilderAPI_MakeVertex(gp_Pnt(point.X, point.Y, point.Z)).Vertex()
+    return BRepExtrema_DistShapeShape(vertex, face).Value()
+
+
+def _cone_segment(face) -> _Segment | None:
+    """A conical face as a turned segment, for :func:`_cone_bevel`."""
+    from build123d import Compound
+
+    lines = _surface_segments(Compound([face]))
+    for _d, _foot, segments in lines.values():
+        for seg in segments:
+            if seg.kind == "cone":
+                return seg
+    return None
 
 
 def _tidy(values) -> tuple[float, ...]:

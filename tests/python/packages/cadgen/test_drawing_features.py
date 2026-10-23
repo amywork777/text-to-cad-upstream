@@ -280,3 +280,16 @@ class EdgeTests(unittest.TestCase):
         shaft = chamfer(shaft.edges().group_by(Axis.Z)[0], 1)
         self.assertEqual([(b.radius, b.concave) for b in blends(shaft)], [(2.0, True)])
         self.assertEqual(sorted(c.legs for c in chamfers(shaft)), [(1.0, 1.0), (1.0, 1.0)])
+
+    def test_full_round_ends_and_points_are_neither_blends_nor_chamfers(self) -> None:
+        from build123d import Align, Box, Cone, Cylinder, Pos
+        from cadgen._internal.drawing_features import blends, chamfers
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        notch = Box(40, 20, 10, align=up) - Pos(20, 0, 0) * (Box(20, 10, 10, align=up)
+                                                             + Pos(-10, 0, 0) * Cylinder(5, 10, align=up))
+        link = Box(40, 20, 6, align=up) + Pos(20, 0, 0) * Cylinder(10, 6, align=up) \
+            + Pos(-20, 0, 0) * Cylinder(10, 6, align=up)
+        self.assertEqual(blends(notch) + blends(link), [], "the end of a notch or a link is its full round")
+        pin = Cylinder(3, 20, align=up) + Pos(0, 0, 20) * Cone(3, 0, 3, align=up)
+        self.assertEqual(chamfers(pin), [], "a cone that reaches its axis is a point")

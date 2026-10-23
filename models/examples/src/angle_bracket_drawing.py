@@ -9,7 +9,7 @@ from pathlib import Path
 
 import cadgen
 from angle_bracket import TAB_FACE_POINT
-from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
+from cadgen.eng_drawing import Sheet, eng_drawing
 
 STEP = Path(__file__).parent / "../STEP/angle_bracket.step"
 
@@ -18,7 +18,7 @@ STEP = Path(__file__).parent / "../STEP/angle_bracket.step"
 def angle_bracket_drawing():
     part = cadgen.read_step(STEP)
     sheet = Sheet(size=None, scale=None, title="ANGLE BRACKET", part_number="AB-030", revision="A",
-                  author="text-to-cad", general_tolerance="ISO 2768-m", notes=geometry_notes(part))
+                  author="text-to-cad", general_tolerance="ISO 2768-m")
     top, front, right, iso = sheet.three_views(part, iso=True)
     top.overall()
     top.holes()

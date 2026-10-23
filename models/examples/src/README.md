@@ -32,7 +32,7 @@ fixtures to work against.
 | `cam_follower_roller.py` | `STEP/cam_follower_roller.step` | Cam follower roller with central bearing bore and rounded outer profile |
 | `centrifugal_impeller.py` | `STEP/centrifugal_impeller.step` | Single solid centrifugal impeller |
 | `circular_flange.py` | `STEP/circular_flange.step` | Circular flange model |
-| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: the bolt circle (count, size and pitch circle) and bore called out from the part, a section through the holes, the edge radius in a general note read off the part. Run the model above first. |
+| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: the bolt circle (count, size and pitch circle) and bore called out from the part, a section through the holes, the edge radius called out where the section shows it. Run the model above first. |
 | `clevis_bracket_lightening_cutouts.py` | `STEP/clevis_bracket_lightening_cutouts.step` | Clevis bracket model |
 | `cylindrical_cap.py` | `STEP/cylindrical_cap.step` | Cylindrical cap with hollow interior, top boss, and rounded external edges |
 | `cylindrical_spacer_sleeve.py` | `STEP/cylindrical_spacer_sleeve.step` | Cylindrical spacer sleeve with a central through-bore and rounded rim edges |
@@ -40,7 +40,7 @@ fixtures to work against.
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of that part: a section through the standoffs, measured dimensions, hole and boss callouts read off the part, title block. Run the model above first. |
 | `flywheel_disk.py` | `STEP/flywheel_disk.step` | Flywheel disk with central bore, annular rim, and lightening holes |
 | `guide_bar.py` | `STEP/guide_bar.step` | 600 mm round bar with an end spigot, a cross hole near each end and a chamfered end |
-| `guide_bar_drawing.py` | `PDF/guide_bar_drawing.pdf` | **Engineering drawing** of the bar: front and top views broken, the overall length still stated true, diameters on the profile, the chamfer in a general note. Run the model above first. |
+| `guide_bar_drawing.py` | `PDF/guide_bar_drawing.pdf` | **Engineering drawing** of the bar: front and top views broken, the overall length still stated true, diameters on the profile, the end chamfer called out. Run the model above first. |
 | `gusset_plate.py` | `STEP/gusset_plate.step` | Gusset plate with a triangular web, base holes, and softened perimeter edges |
 | `keyed_shaft_hub.py` | `STEP/keyed_shaft_hub.step` | Keyed shaft hub with central bore, keyway slot, and bolt-hole pattern |
 | `l_bracket.py` | `STEP/l_bracket.step` | L-bracket model |
@@ -49,7 +49,7 @@ fixtures to work against.
 | `mounting_plate_drawing.py` | `PDF/mounting_plate_drawing.pdf` | **Engineering drawing** of the plate: its holes and slot called out from the part, the hole pitch, the slot's position and the corner radius. Run the model above first. |
 | `open_top_electronics_enclosure.py` | `STEP/open_top_electronics_enclosure.step` | Open-top electronics enclosure model |
 | `perforated_plate.py` | `STEP/perforated_plate.step` | Plate with two rows of holes, dowel holes, a bore, a slot and rounded corners |
-| `perforated_plate_drawing.py` | `PDF/perforated_plate_drawing.pdf` | **Engineering drawing** of the plate: a hole table (each hole and the slot tagged, positioned from the corner, sized from the part), the corner radius in a general note. Run the model above first. |
+| `perforated_plate_drawing.py` | `PDF/perforated_plate_drawing.pdf` | **Engineering drawing** of the plate: a hole table (each hole and the slot tagged, positioned from the corner, sized from the part), the corner radius called out. Run the model above first. |
 | `print_in_place_hinge.py` | `STEP/print_in_place_hinge.step` | Print-in-place barrel hinge for FDM printing |
 | `print_in_place_multi_pivot_phone_holder.py` | `STEP/print_in_place_multi_pivot_phone_holder.step` | Print-in-place multi-pivot holder with a phone/tablet cradle for FDM printing |
 | `pulley_wheel.py` | `STEP/pulley_wheel.step` | Pulley wheel with a central hub, outer groove, and circular through-bore |

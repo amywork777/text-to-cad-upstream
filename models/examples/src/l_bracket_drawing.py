@@ -8,7 +8,7 @@ constant a dimension references comes from the model module.
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
+from cadgen.eng_drawing import Sheet, eng_drawing
 from l_bracket import (
     BACK_CENTER_Y,
     BACK_HOLE_LOCATIONS,
@@ -21,6 +21,7 @@ from l_bracket import (
     GUSSET_HEIGHT,
     GUSSET_X_LOCATIONS,
     GUSSET_X_THICKNESS,
+    TRANSITION_FILLET,
 )
 
 STEP = Path(__file__).parent / "../STEP/l_bracket.step"
@@ -31,7 +32,7 @@ def l_bracket_drawing():
     part = cadgen.read_step(STEP)
     sheet = Sheet(
         "A3", title="L BRACKET", part_number="LB-001", revision="A", author="text-to-cad",
-        general_tolerance="ISO 2768-m", notes=geometry_notes(part),   # the bend's fillet radius, read off it
+        general_tolerance="ISO 2768-m",
     )
     top, front, right, iso = sheet.three_views(part, iso=True)
     back_face = BACK_CENTER_Y - BACK_THICKNESS / 2  # the back plate's front face
@@ -63,6 +64,8 @@ def l_bracket_drawing():
     right.dim((edge, BASE_WIDTH / 2, 0), (edge, BASE_WIDTH / 2, BASE_THICKNESS))
     right.dim((edge, back_face, top_z), (edge, BASE_WIDTH / 2, top_z))
     right.dim((edge, back_face, BASE_THICKNESS), (edge, back_face, top_z))
+    # The fillet where the base meets the back plate, seen end-on as an arc.
+    right.radius((0, back_face - TRANSITION_FILLET, BASE_THICKNESS + TRANSITION_FILLET), size=TRANSITION_FILLET)
     return sheet
 
 

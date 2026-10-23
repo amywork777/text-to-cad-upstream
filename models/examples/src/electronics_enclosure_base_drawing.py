@@ -10,11 +10,13 @@ so moving a standoff in the model moves the dimension here.
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
+from cadgen.eng_drawing import Sheet, eng_drawing
 from electronics_enclosure_base import (
     FLOOR_THICKNESS,
+    OUTER_CORNER_FILLET_RADIUS,
     OUTER_HEIGHT,
     OUTER_LENGTH,
+    OUTER_WIDTH,
     STANDOFF_DIAMETER,
     STANDOFF_HEIGHT,
     STANDOFF_LOCATIONS,
@@ -30,7 +32,7 @@ def electronics_enclosure_base_drawing():
     sheet = Sheet(
         "A3", title="ELECTRONICS ENCLOSURE BASE", part_number="ENC-001", material="ABS",
         revision="A", author="text-to-cad", general_tolerance="ISO 2768-m",
-        notes=[*geometry_notes(part), "BREAK SHARP EDGES."],   # its corner radius, read off it
+        notes=["BREAK SHARP EDGES."],
     )
     top, front, right, iso = sheet.three_views(part, iso=True)
     xs = sorted({x for x, _ in STANDOFF_LOCATIONS})
@@ -44,6 +46,8 @@ def electronics_enclosure_base_drawing():
     top.dim((xs[-1], ys[0], OUTER_HEIGHT), (xs[-1], ys[-1], OUTER_HEIGHT))   # and in Y
     top.holes()                                                              # 4× ⌀3 ↧8, from the part
     top.diameter((xs[-1], ys[-1], 0), size=STANDOFF_DIAMETER)                 # the boss around each hole
+    corner = OUTER_CORNER_FILLET_RADIUS
+    top.radius((-OUTER_LENGTH / 2 + corner, OUTER_WIDTH / 2 - corner, OUTER_HEIGHT), size=corner, angle=135)
 
     y = ys[0]  # the section plane: points on it lie on the cut faces
     front.overall(width=False)  # the width is the top view's
