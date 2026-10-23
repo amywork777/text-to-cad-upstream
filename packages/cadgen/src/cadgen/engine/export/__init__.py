@@ -366,6 +366,12 @@ def translate(document: Any, kind: str | None, path: Any, *, pose: Any = None, p
             raise ExportRefused("a posed xbf is refused: a pose is a request, never a document")
         if not source.foreign and part is None and source.path is not None and source.path.suffix.lower() == ".xbf":
             raise ExportRefused("an xbf is written from another xbf only with --part: the document already is one")
+    annotations = source.structure.get("pmi") or []
+    if annotations and (kind == "xbf" or (kind == "step" and (pose is not None or part is not None))):
+        # Either is a document made again from the view (``tree.tree_of``), which carries no PMI.
+        raise ExportRefused(f"{source.name} holds {len(annotations)} PMI annotation(s), and "
+                            f"{'an xbf written from it' if kind == 'xbf' else 'a posed or partial STEP'} is a document "
+                            "made again, which carries none yet: export it as built, whole")
     view = source.view(pose=pose, part=part)
     path.parent.mkdir(parents=True, exist_ok=True)
     spec = KINDS[kind]

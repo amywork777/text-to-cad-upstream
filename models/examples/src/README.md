@@ -18,6 +18,7 @@ Every script of `models/examples/src`, ported to `cadgen.engine`: one `@xbf` eac
 | `flywheel_disk.py` | `XBF/flywheel_disk.xbf` | Flywheel disk with central bore, annular rim, and lightening holes (Steel 1018) |
 | `gusset_plate.py` | `XBF/gusset_plate.xbf` | Gusset plate with a triangular web, base holes, and softened perimeter edges (Steel A36) |
 | `keyed_shaft_hub.py` | `XBF/keyed_shaft_hub.xbf` | Keyed shaft hub with central bore, keyway slot, and bolt-hole pattern (Steel 1018) |
+| `pmi_plate.py` | `XBF/pmi_plate.xbf`, `XBF/pmi_plate.step` | **Semantic PMI**: a plate with a through-hole, datums A/B/C, thickness and hole-diameter dimensions with plus-minus tolerances, flatness, and the hole's position to A\|B\|C, exported as AP242 semantic PMI (tolerance values illustrative; `docs/pmi/README.md`) |
 | `mounting_plate.py` | `XBF/mounting_plate.xbf` | Mounting plate with central cutout, side slot, four corner holes, rounded edges; also `XBF/mounting_plate.stl`, `.3mf`, `.glb` (Aluminum 6061-T6) |
 | `open_top_electronics_enclosure.py` | `XBF/open_top_electronics_enclosure.xbf` | Open-top electronics enclosure with corner bosses (ABS) |
 | `print_in_place_hinge.py` | `XBF/print_in_place_hinge.xbf` | Print-in-place barrel hinge for FDM printing: two leaves, one revolute joint (PLA) |

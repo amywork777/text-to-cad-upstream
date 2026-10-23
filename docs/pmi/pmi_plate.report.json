@@ -1,0 +1,250 @@
+{
+  "file": "pmi_plate.step",
+  "parser": "builtin",
+  "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF {1 0 10303 442 1 1 4 }",
+  "dimensions": [
+    {
+      "record": "#487",
+      "entity": "DIMENSIONAL_SIZE",
+      "name": "diameter",
+      "features": [
+        {
+          "face": "#420",
+          "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+          "surface": {
+            "type": "cylinder",
+            "radius": 5.0,
+            "origin": [
+              0.0,
+              0.0,
+              -5.0
+            ],
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ],
+      "nominal": {
+        "value": 10.0,
+        "unit": "mm",
+        "type": "POSITIVE_LENGTH_MEASURE",
+        "role": "nominal value"
+      },
+      "tolerance": {
+        "lower": 0.0,
+        "upper": 0.1,
+        "unit": "mm",
+        "types": [
+          "LENGTH_MEASURE",
+          "LENGTH_MEASURE"
+        ]
+      }
+    },
+    {
+      "record": "#477",
+      "entity": "DIMENSIONAL_LOCATION",
+      "name": "linear distance",
+      "features": [
+        {
+          "face": "#360",
+          "name": "f:pmi_plate.body_make_box1.5;M:pmi_plate.body",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        },
+        {
+          "face": "#231",
+          "name": "f:pmi_plate.body_make_box1.6;M:pmi_plate.body",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              5.0
+            ],
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "T"
+        }
+      ],
+      "nominal": {
+        "value": 10.0,
+        "unit": "mm",
+        "type": "POSITIVE_LENGTH_MEASURE",
+        "role": "nominal value"
+      },
+      "tolerance": {
+        "lower": -0.2,
+        "upper": 0.2,
+        "unit": "mm",
+        "types": [
+          "LENGTH_MEASURE",
+          "LENGTH_MEASURE"
+        ]
+      }
+    }
+  ],
+  "datums": [
+    {
+      "record": "#460",
+      "identification": "A",
+      "features": [
+        {
+          "face": "#360",
+          "name": "f:pmi_plate.body_make_box1.5;M:pmi_plate.body",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ]
+    },
+    {
+      "record": "#464",
+      "identification": "B",
+      "features": [
+        {
+          "face": "#155",
+          "name": "f:pmi_plate.body_make_box1.3",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              -0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ]
+    },
+    {
+      "record": "#468",
+      "identification": "C",
+      "features": [
+        {
+          "face": "#35",
+          "name": "f:pmi_plate.body_make_box1.1",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              1.0,
+              0.0,
+              -0.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ]
+    }
+  ],
+  "tolerances": [
+    {
+      "record": "#495",
+      "entity": "FLATNESS_TOLERANCE",
+      "magnitude": {
+        "value": 0.05,
+        "unit": "mm",
+        "type": "LENGTH_MEASURE"
+      },
+      "datums": [],
+      "zone": null,
+      "features": [
+        {
+          "face": "#231",
+          "name": "f:pmi_plate.body_make_box1.6;M:pmi_plate.body",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              5.0
+            ],
+            "normal": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "T"
+        }
+      ]
+    },
+    {
+      "record": "#503",
+      "entity": "POSITION_TOLERANCE",
+      "magnitude": {
+        "value": 0.1,
+        "unit": "mm",
+        "type": "LENGTH_MEASURE"
+      },
+      "datums": [
+        "A",
+        "B",
+        "C"
+      ],
+      "zone": "cylindrical or circular",
+      "features": [
+        {
+          "face": "#420",
+          "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+          "surface": {
+            "type": "cylinder",
+            "radius": 5.0,
+            "origin": [
+              0.0,
+              0.0,
+              -5.0
+            ],
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ]
+    }
+  ],
+  "problems": []
+}
