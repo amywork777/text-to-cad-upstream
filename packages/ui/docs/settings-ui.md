@@ -400,7 +400,7 @@ Model tree (`STEP_PART_VIEW_FEATURES`).
 whatever tool is in hand — the strip is for using tools, the sidebar for reading the file: a STEP
 assembly's **Model tree** (a part file, whose tree would be its one row, has none), then
 **Position**, where the file has joints to move, then **PMI**, where an engine document carries
-PMI or is an `.xbf` (its manufacturing annotations, [PMI](pmi.md)); a robot's **Links**, an `.sdf`'s **SDF**, then
+PMI or one is being made for it (its manufacturing annotations, [PMI](pmi.md)); a robot's **Links**, an `.sdf`'s **SDF**, then
 **Position**, where a joint can be driven; a drawing's **Layers**, where it has four or more
 layers or any block reference (a flat pattern's CUT and BEND has none): each layer's pen, name,
 entity count and eye, its block references under it; and, after them, the shell's own **Animation** for a
