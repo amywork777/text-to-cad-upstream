@@ -185,9 +185,10 @@ class View:
     _overall: frozenset = frozenset()
     #: ``(letter, model point or None)`` when :meth:`section` made this a section.
     _section: tuple | None = None
-    #: ``(bounding-box size, gap, iso)`` when :meth:`Sheet.three_views` placed this
-    #: view, so the off-frame guard can lay the same arrangement out again at a
-    #: candidate scale. None for a hand-placed ``at=``, which does not move.
+    #: ``(bounding-box size, gap, iso extent or False)`` when :meth:`Sheet.three_views`
+    #: placed this view, one tuple shared by the arrangement's views: the render
+    #: lays them out again from it, and the off-frame guard does at each candidate
+    #: scale. None for a hand-placed ``at=``, which does not move.
     _arranged: tuple | None = None
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
