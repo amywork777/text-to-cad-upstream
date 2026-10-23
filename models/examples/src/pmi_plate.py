@@ -2,7 +2,8 @@ from __future__ import annotations
 
 # Prompt: A 100 x 60 x 10 mm plate with a 10 mm through-hole at its centre, carrying semantic PMI:
 # datums A (bottom), B (front side) and C (left side), the plate's thickness and the hole's
-# diameter with explicit tolerances, the top's flatness, and the hole's position to A|B|C.
+# diameter with explicit tolerances, the top's flatness, and the hole's position to A|B|C, its true
+# position located by basic dimensions from B and C.
 #
 # Every tolerance value below is ILLUSTRATIVE: chosen to exercise the PMI export, not taken from
 # any drawing, standard or process capability. Do not manufacture to them.
@@ -38,6 +39,9 @@ def pmi_plate():
         # Illustrative: position diameter 0.1 to A|B|C.
         pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"],
                      presentation=pmi.place((-5, 0, 5), (-15, 15, 0))),
+        # The hole's true position: basic (theoretically exact) distances from B and C, measured.
+        pmi.basic("hole-from-B", front, hole, presentation=pmi.place((0, -15, 5), (6, 0, 0))),
+        pmi.basic("hole-from-C", left, hole, presentation=pmi.place((-25, 0, 5), (0, 6, 0))),
     )
 
 
