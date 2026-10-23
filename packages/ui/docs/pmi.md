@@ -110,7 +110,9 @@ from code here: its PMI, where the engine serves any, is read alone.
 
 - No leader routing: labels the code placed can cover each other, and a leader can cross the
   model.
-- Not drawn under Explode or a pose; not drawn in Preview or in snapshots.
+- Not drawn under Explode or a pose, or in Preview. `cadgen snapshot` draws it as this does, on the
+  parts as made (the engine README's snapshot section); a label moved here and not yet in the code
+  is drawn where the document places it.
 - Only the supported subset is drawn and made: distance, diameter, datum, flatness, position.
 - A moved label returns to the document's placement if its change is dropped or sent before the
   code has it.

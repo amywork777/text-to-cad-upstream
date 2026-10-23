@@ -267,7 +267,7 @@ is explicitly restarted. Session state is memory only and is recreated after res
 | `access.py` | which pages may read a served document from another origin: loopback ones |
 | `snapshot.py` | `cadgen snapshot`: one dispatcher by suffix -- a document, a mesh file, a robot or a DXF drawn by OCCT (`render/`) into a PNG; a script's model drawn from its worker's memory |
 | `formats/` | the files the stills draw that are not documents, each read into a structure and part buffers: STL (numpy), 3MF (zip + XML), GLB (OCCT's glTF reader, textures and all), URDF/SDF/SRDF (XML, the viewer's forward kinematics), DXF (group codes, flattened as the viewer's pane draws it) |
-| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
+| `render/` | the stills drawn by OCCT from the engine's meshes: a document held and drawn, and the daemon's render process per served document and per file (`service.py`); the scene (`occt.py`); a DXF drawn in the 2D look (`drawing.py`); the viewer's Explode, ported (`explode.py`); a document's PMI drawn as the viewer shows it, its layout ported (`pmi.py`); a part's buffer as OCCT shapes (`shapes.py`); the headless OpenGL context per platform (`context.py`) |
 | `daemon.py`, `worker.py`, `client.py` | one daemon per installation, one warm worker per model script, at most one per core alive (`Pool`), connect-or-start; a worker's memory cap |
 | `progress.py` | where a build is: the author's `report` and `track`, the engine's stages heard where they begin, the frames, and the terminal's bar |
 | `atomic_replace.py` | the one rename every written file is moved into place with: cadgen's bounded Windows retry, kept in the engine |
@@ -565,7 +565,13 @@ it); a ref that names nothing is refused by name); `--json` reports what was dra
 and each stage's milliseconds (`serveMs`, `meshMs`, `sceneMs` when a scene is made, `presentMs`,
 `frameMs`, `drawMs`, `renderMs`, `totalMs`; a file no document: `readMs` its reader, `openMs` its
 render process opening it). `parts` and `exploded` for a document that places one
-part are refused by name before anything renders. `--annotation FILE` draws the viewer's annotation over the
+part are refused by name before anything renders. A document's PMI (`docs/pmi/README.md`) is drawn
+as the viewer shows it: each callout's words, leader and dimension at its placement, a callout whose
+reference broke at its code placement in its status's colour, a leader to a feature the model hides
+faint; the camera's fit takes the callouts in, and `--json` reports how many were drawn (`pmi`).
+`pmi=off` (`display.pmi` false) draws none. PMI is shown only on the parts as made, as the viewer
+shows it: an exploded, posed or Preview picture draws none, and asking for it there (`pmi`,
+`display.pmi` true), or of a document that carries none, is refused by name. `--annotation FILE` draws the viewer's annotation over the
 model -- each mark on the part it was drawn on, wherever the picture places that part -- from an
 annotation file or the Quick Edit packet that carries one (the `.snapshot.json` the viewer writes),
 and `--measurements FILE` Measure's dimensions (`[{start, end, label, color}]`). A mark names the
@@ -612,8 +618,9 @@ of the file's warm render process; `--no-daemon` serves each file once for all i
 **The OCCT stills.** A document is drawn by OCCT's own OpenGL renderer from the engine's meshes
 (`render/`): one presentation per part and look, each
 instance a connected object of it; the modes, the camera fit, clip, grid and Preview are the
-page's, Explode is the viewer's layout ported to Python (held to the viewer by one golden its own
-scene made), and the annotation's ink and the measurements are drawn over the picture. Through the daemon, a served document a snapshot asks
+page's, Explode and PMI are the viewer's layouts ported to Python (`render/explode.py`,
+`render/pmi.py`: each held to the viewer by one golden its own code made), and the PMI, the
+annotation's ink and the measurements are drawn over the picture. Through the daemon, a served document a snapshot asks
 for gets a render process of its own, started on its first picture and holding the document --
 each part's buffer from the daemon's one mesh cache (nothing meshed again), its OCCT shapes, a
 scene and its presentations on a hidden OpenGL context: a picture of it is a frame of that

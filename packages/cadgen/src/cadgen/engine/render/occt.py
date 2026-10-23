@@ -200,7 +200,6 @@ class Scene:
         self.screen_marks: list[dict[str, Any]] = []  # painted over the frame: Measure's
         self.pmi_drawn: list[tuple[dict[str, Any], Any]] = []  # painted over the frame: the PMI's callouts
         self.pmi_points: np.ndarray | None = None  # their labels and dimension lines, which a fitted frame takes in
-        self.pmi_appearance = "light"
         self.fonts: set[str] = set()  # the faces the words of the frame were set in (text.face_source)
         self.stage: list[Any] = []  # Preview's studio: its floor and the floor's shadow
         self.studio = False
@@ -745,7 +744,7 @@ class Scene:
         if any(str(mark.get("label") or "").strip() for mark in marks):
             self.fonts.add(face(*LABEL_FACE).name)
 
-    def pmi(self, appearance: str = "light") -> int:
+    def pmi(self) -> int:
         """The document's PMI (``structure["pmi"]``), painted over the finished frame as the viewer
         draws it over its page (``pmi.py``): each callout the viewer draws, where its layout puts it
         in the document at rest. Made before the camera is framed: a fitted frame takes in each
@@ -766,7 +765,6 @@ class Scene:
         points = [made["label"] for _entry, made in self.pmi_drawn]
         points += [point for _entry, made in self.pmi_drawn if made["dimension"] for point in (made["dimension"]["from"], made["dimension"]["to"])]
         self.pmi_points = np.array(points, float) if points else None
-        self.pmi_appearance = appearance
         if self.pmi_drawn:
             self.fonts.add(face(*pmi.TEXT).name)
         return len(self.pmi_drawn)
@@ -1266,7 +1264,7 @@ class Scene:
 
                 bounds = self.pmi_bounds
                 size = float(np.linalg.norm(np.subtract(bounds[1], bounds[0]))) if bounds else 0.0
-                pmi.paint(frame, self.pmi_drawn, self.project, pmi.Hidden(self, max(0.05, size * 1e-3)), self.pmi_appearance)
+                pmi.paint(frame, self.pmi_drawn, self.project, pmi.Hidden(self, max(0.05, size * 1e-3)))
             if self.screen_marks:
                 from cadgen.engine.render.overlay import paint_measurements
 

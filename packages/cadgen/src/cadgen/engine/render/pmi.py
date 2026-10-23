@@ -467,9 +467,11 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tup
 
 # ---- drawn over the picture (PmiOverlay.jsx, PmiLabel.jsx) ----------------------------------
 
-# Ink on paper, the theme's: the foreground on the background, as a label reads over any part.
-INK = {"light": (10, 10, 10), "dark": (250, 250, 250)}
-PAPER = {"light": (255, 255, 255), "dark": (10, 10, 10)}
+# Ink on paper, the light theme's: the foreground on the background, as a label reads over any
+# part. A document's picture is drawn on the light look's backdrop whatever its appearance (which
+# only a drawing's paper takes), so its callouts are the light theme's too.
+INK = (10, 10, 10)
+PAPER = (255, 255, 255)
 PAPER_ALPHA, BORDER_ALPHA, RULE_ALPHA, LEADER_ALPHA, BEHIND_ALPHA = 0.95, 0.6, 0.4, 0.85, 0.3
 # A reference the engine could not stand the annotation on: it names nothing, or a face it cannot
 # stand on (failed, red), or several (a warning, amber).
@@ -688,7 +690,7 @@ class Hidden:
         return bool(t[hit].min() < float((point - origin) @ direction) - self.tolerance)
 
 
-def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]], project: Any, hidden: Any, appearance: str = "light") -> None:
+def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]], project: Any, hidden: Any) -> None:
     """The callouts painted over ``frame`` (sRGB bytes, (h, w, 3), in place), as the viewer's
     overlay paints its canvas and lays its labels: ``drawn`` each entry with its construction,
     ``project`` world points to output pixels, ``hidden`` whether the model hides a world point."""
@@ -697,7 +699,7 @@ def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]],
     height = frame.shape[0]
     scale = height / REFERENCE_HEIGHT
     painter = Painter(frame, scale)
-    ink, paper = INK.get(appearance, INK["light"]), PAPER.get(appearance, PAPER["light"])
+    ink, paper = INK, PAPER
     to_px = lambda point: tuple(v / scale for v in project(np.array([point], float))[0])  # noqa: E731
     boxes = []
     for entry, made in drawn:

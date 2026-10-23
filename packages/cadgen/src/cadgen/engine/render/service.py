@@ -364,7 +364,7 @@ class Held:
         scene.explode(exploded_amount(display))
         scene.show(display, preview=still.preview)
         # Before the camera: a fitted frame takes the callouts in.
-        drawn_pmi = scene.pmi(display.get("appearance") or "light") if drawing_pmi else 0
+        drawn_pmi = scene.pmi() if drawing_pmi else 0
         timings["presentMs"] = round((time.perf_counter() - clock) * 1000)
         clock = time.perf_counter()
         lens = display.get("camera") or {}

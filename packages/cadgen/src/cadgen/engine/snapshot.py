@@ -23,7 +23,10 @@ The request is the snapshot contract's where it applies (``--display`` mode or J
 refused by name before anything renders: ``parts`` and ``exploded`` for a file that places a single
 part, ``--pose`` for a mesh, and everything but ``appearance`` for a drawing. ``--display
 exploded=0.6`` (or ``display.exploded``) moves the parts apart as the viewer's Explode does, by its
-amount (0.5 unless one is given). ``--annotation FILE`` draws the viewer's annotation over the
+amount (0.5 unless one is given). A document's PMI is drawn as the viewer shows it, on the parts
+as made (``render/pmi.py``); ``pmi=off`` (``display.pmi`` false) draws none, and asking for it
+(``pmi``, ``display.pmi`` true) of a document that carries none, or exploded, posed or in Preview,
+is refused by name. ``--annotation FILE`` draws the viewer's annotation over the
 model (its ink on the parts it was drawn on, wherever they stand): an annotation file, or the Quick
 Edit packet that carries one (a ``.snapshot.json``). ``--measurements FILE`` draws Measure's
 dimensions. ``--camera authored`` draws the picture from the view the ink was drawn in, exactly
@@ -1034,8 +1037,9 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
                              "dimensions, at its output settings (padding, tightFrame, transparent, renderScale, "
                              "sizeProfile); the other flags override every job")
     parser.add_argument("--display", help="a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT "
-                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), or "
-                                          "the display JSON object (mode, grid, appearance, camera, clip, exploded, "
+                                          "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), pmi=off "
+                                          "(a document's PMI not drawn; pmi asks for it), or "
+                                          "the display JSON object (mode, grid, appearance, camera, clip, exploded, pmi, "
                                           "hidden, isolated: part refs the picture leaves out, or alone draws), or "
                                           "a JSON file of it; a drawing takes appearance alone: light or dark, as the word "
                                           "or as {\"appearance\": ...}")
