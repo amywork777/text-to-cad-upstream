@@ -51,7 +51,8 @@ function unsupportedReason(entry) {
   if (!PMI_KINDS.includes(entry.kind)) return `${entry.kind || "an annotation"} is not one the viewer draws`;
   if (entry.kind === "dimension") {
     if (!PMI_DIMENSION_TYPES.includes(entry.dimension?.type)) return `a ${entry.dimension?.type || "dimension"} dimension is not one the viewer draws`;
-    if (entry.dimension.nominal === null) return "it has no nominal";
+    // A broken reference leaves nothing to measure: no nominal, said as unknown. One that resolved has one.
+    if (entry.dimension.nominal === null && entry.status === "ok") return "it has no nominal";
   }
   if (entry.kind === "datum" && !entry.datum?.letter) return "it has no letter";
   if (entry.kind === "geometric_tolerance") {
@@ -153,7 +154,9 @@ export function pmiCallout(entry) {
   if (!entry?.supported) return { kind: "unsupported", title: entry?.label || entry?.id || "", text: entry?.xcafType || entry?.kind || "PMI" };
   if (entry.kind === "dimension") {
     const tolerance = pmiToleranceText(entry.dimension.tolerance);
-    const nominal = pmiNumber(entry.dimension.nominal, tolerance ? Math.max(tolerance.places, 0) : Math.min(decimalsOf(entry.dimension.nominal), 2));
+    // No nominal where the reference broke: there is nothing to measure it on.
+    const nominal = entry.dimension.nominal === null ? "?"
+      : pmiNumber(entry.dimension.nominal, tolerance ? Math.max(tolerance.places, 0) : Math.min(decimalsOf(entry.dimension.nominal), 2));
     const diameter = entry.dimension.type === "diameter";
     return { kind: "dimension", type: entry.dimension.type, diameter, nominal, tolerance, unit: entry.dimension.unit,
       title: DIMENSION_NAMES[entry.dimension.type],

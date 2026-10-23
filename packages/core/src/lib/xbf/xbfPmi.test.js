@@ -54,6 +54,17 @@ test("an entry the viewer does not draw is kept and says why, never dropped or g
   assert.match(read[3].unsupported, /no nominal/);
 });
 
+test("a dimension whose reference broke has no nominal, and is said as unknown, not unsupported", () => {
+  const [broken] = readXbfPmi({ pmi: [{ id: "thickness", kind: "dimension", status: "missing", problem: null,
+    refs: [{ role: "from", ref: BOTTOM, written: BOTTOM, status: "ok" }, { role: "to", ref: "plate/f:gone", written: "plate/f:gone", status: "missing", candidates: null }],
+    dimension: { type: "distance", nominal: null, tolerance: { type: "plus_minus", upper: 0.2, lower: -0.2 } }, presentation: { anchor: [0, 0, -2], offset: [8, 0, 2] } }] });
+  assert.equal(broken.supported, true);
+  assert.equal(pmiCallout(broken).text, "? ±0.2");
+  // The engine's foreign entries name no written ref: theirs is read as nothing, never "null".
+  const [foreign] = readXbfPmi({ pmi: [{ id: "datum", kind: "datum", status: "ok", refs: [{ role: "feature", ref: TOP, written: null, status: "ok", candidates: null }], datum: { letter: "B" } }] });
+  assert.deepEqual([foreign.refs[0].ref, foreign.refs[0].written], [TOP, TOP]);
+});
+
 test("a tolerance the code did not supply is none, and a malformed one is none too", () => {
   const read = readXbfPmi({ pmi: [
     { id: "a", kind: "dimension", status: "ok", refs: [], dimension: { type: "distance", nominal: { value: 4, unit: "mm" }, tolerance: null } },

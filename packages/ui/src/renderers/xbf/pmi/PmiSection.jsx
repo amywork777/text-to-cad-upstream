@@ -103,8 +103,9 @@ function EntryDetails({ entry, pmi, letters }) {
     </p> : null}
     {!entry.supported ? <FileSheetStatusText className="px-0">{`Not shown: ${entry.unsupported}.`}</FileSheetStatusText> : null}
     {entry.kind === "dimension" && entry.supported ? <>
-      <InfoRow label="Nominal" title="Measured on the geometry by the engine"><MonoValue>{mm(entry.callout.diameter ? `⌀${pmiNumber(entry.dimension.nominal, 3)}` : pmiNumber(entry.dimension.nominal, 3), entry.dimension.unit)}</MonoValue>
-        <span className="text-muted-foreground">{entry.dimension.source === "geometry" ? ", measured" : ""}</span></InfoRow>
+      {entry.dimension.nominal === null ? <InfoRow label="Nominal" copy={false}>Unknown: nothing to measure</InfoRow>
+        : <InfoRow label="Nominal" title="Measured on the geometry by the engine"><MonoValue>{mm(entry.callout.diameter ? `⌀${pmiNumber(entry.dimension.nominal, 3)}` : pmiNumber(entry.dimension.nominal, 3), entry.dimension.unit)}</MonoValue>
+          <span className="text-muted-foreground">{entry.dimension.source === "geometry" ? ", measured" : ""}</span></InfoRow>}
       {editable ? <ToleranceField value={given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance")}
         onCommit={tolerance => pmi.edit(entry.id, { tolerance })} />
         : <InfoRow label="Tolerance">{entry.dimension.tolerance ? <MonoValue>{mm(pmiToleranceText(entry.dimension.tolerance).text, entry.dimension.unit)}</MonoValue> : "None given"}</InfoRow>}
