@@ -79,6 +79,12 @@ test("a distance is drawn square between its faces, through its label", async ()
   nearPoint(drawn.dimension.to, [26, 0, 2], "on the top's plane");
   nearPoint(drawn.dimension.extensions[0][0], [20, 0, -2], "from the anchor");
   nearPoint(drawn.dimension.extensions[1][0], [20, 0, 2], "from its foot on the top");
+  // An anchor the code put off the face (on the side, mid-height) still extends from each face's plane.
+  const mid = pmiConstruction({ ...thickness, presentation: { anchor: [20, 0, 0], offset: [6, 0, 1] } },
+    { geometry: { from: scene.elementGeometry(BOTTOM, { points: true }), to: scene.elementGeometry(TOP, { points: true }) }, bounds: BOUNDS });
+  nearPoint(mid.dimension.extensions[0][0], [20, 0, -2], "from the bottom's plane");
+  nearPoint(mid.dimension.extensions[1][0], [20, 0, 2], "from the top's plane");
+  nearPoint(mid.dimension.extensions[0][1], [26, 0, -2]);
   // Placed by no code, it stands halfway between them, out to the side.
   const free = pmiConstruction({ ...thickness, presentation: null }, { geometry: { from: scene.elementGeometry(BOTTOM, { points: true }), to: scene.elementGeometry(TOP, { points: true }) }, bounds: BOUNDS });
   near(free.label[2], 0, "halfway up");

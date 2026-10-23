@@ -133,10 +133,12 @@ export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, plac
       return add(scale(n, (level(to.surface.origin) - level(anchor)) / 2), scale(side, reach * 0.5));
     })();
     const label = add(anchor, offset);
-    const onFrom = sub(label, scale(n, level(label) - level(from.surface.origin)));
-    const onTo = sub(label, scale(n, level(label) - level(to.surface.origin)));
-    const foot = sub(anchor, scale(n, level(anchor) - level(to.surface.origin)));
-    return { anchor, label, dimension: { from: onFrom, to: onTo, extensions: [[anchor, onFrom], [foot, onTo]] },
+    // Each plane's point under a point, along the normal: the extension lines run square to it,
+    // from the anchor's foot on each face's plane (an anchor the code put off the face, at its side's
+    // mid-height, still extends from the face) out to the dimension line through the label.
+    const onPlane = (point, face) => sub(point, scale(n, level(point) - level(face.surface.origin)));
+    const onFrom = onPlane(label, from), onTo = onPlane(label, to);
+    return { anchor, label, dimension: { from: onFrom, to: onTo, extensions: [[onPlane(anchor, from), onFrom], [onPlane(anchor, to), onTo]] },
       presentation: { anchor, offset }, placed };
   }
   const feature = geometry.feature;
