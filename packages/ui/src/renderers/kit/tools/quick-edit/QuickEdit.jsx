@@ -73,7 +73,7 @@ export function quickEditReferenceIds(selection) {
  *   references?: readonly import("@text-to-cad/core/prompt").PromptReference[],
  *   chips?: readonly import("./ReferenceChips.jsx").ReferenceChip[] | null,
  *   annotation?: { present: boolean, clear?: () => void } | null,
- *   requests?: ReadonlyArray<import("./ReferenceChips.jsx").ReferenceChip & { request: string }>,
+ *   requests?: ReadonlyArray<import("./ReferenceChips.jsx").ReferenceChip & { request: string }> | null,
  *   prompt?: { views(): { label: string }[], files(views: { label: string }[]): Promise<object> | null,
  *     read(path: string): Promise<Blob>, annotation(): object | null, unavailable?(): string } | null,
  *   nameReference?: ((reference: import("@text-to-cad/core/prompt").PromptReference) => string | import("../../inspector/pickGlyph.jsx").CompactName) | null,
@@ -87,7 +87,7 @@ export function quickEditReferenceIds(selection) {
  *   with a note keeps it, and Escape only hands the keyboard back to the view. `hidden`: out of
  *   sight with all it holds (the view is loading).
  */
-export default function QuickEdit({ resource, references = EMPTY, chips = null, annotation = null, requests = EMPTY, prompt = null, nameReference = null, onCopy, onEscape, onClear, disabled = false,
+export default function QuickEdit({ resource, references = EMPTY, chips = null, annotation = null, requests = null, prompt = null, nameReference = null, onCopy, onEscape, onClear, disabled = false,
   hidden = false, docked = false, className, style }) {
   const host = useViewerHost();
   const destination = usePromptDestination();
@@ -101,7 +101,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
   const selection = useMemo(() => quickEditSelection(references), [references]);
   const referenceIds = useMemo(() => quickEditReferenceIds(selection), [selection]);
   const annotated = Boolean(annotation?.present);
-  const requested = requests.length > 0;
+  const requested = Boolean(requests?.length);
   const attached = referenceIds.length > 0 || annotated || requested;
   const written = Boolean(text.trim());
   const replayUnavailable = prompt?.unavailable?.() || "";
@@ -245,7 +245,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
       const files = views.length ? prompt.files(views) : null;
       void files?.catch(() => {});
       const context = createQuickEditContext({ resource, references: selection, text, views, files, read: prompt?.read, viewUnavailable: unavailable,
-        requests: requests.map(item => item.request).filter(Boolean) });
+        requests: (requests || EMPTY).map(item => item.request).filter(Boolean) });
       if (action === "send") outcome = host.promptContext.send(context);
       else if (action === "queue") outcome = host.promptContext.deliver(context);
       else outcome = host.clipboard.writeText(copiedQuickEdit(context)).then(() => ({ status: "copied" }));
@@ -386,7 +386,7 @@ export default function QuickEdit({ resource, references = EMPTY, chips = null, 
   const order = useRef(new Map());
   const copiedChips = useRef(new Map());
   const shownChips = useMemo(() => {
-    const all = [annotationChip, ...requests, ...(chips || EMPTY)].filter(Boolean);
+    const all = [annotationChip, ...(requests || EMPTY), ...(chips || EMPTY)].filter(Boolean);
     const seen = order.current;
     const keys = new Set(all.map(chip => chip.key));
     for (const key of [...seen.keys()]) if (!keys.has(key)) seen.delete(key);

@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Clapperboard, FileText, ListTree, Menu, X } from "lucide-react";
-import { ChangedDot, PositionIcon } from "./ChangedDot.jsx";
+import { ChangedDot, PmiIcon, PositionIcon } from "./ChangedDot.jsx";
 import { ToggleGroup, ToggleGroupItem } from "@text-to-cad/ui/primitives/toggle-group";
 import { ScrollArea } from "@text-to-cad/ui/primitives/scroll-area";
 import { cn } from "@text-to-cad/ui/utils";
@@ -22,7 +22,8 @@ const PHONE_PANEL_WIDTH = 288;
  * of its own at the viewer's top-left, one tile per section (`ToolPanel`s drawn as sections,
  * `ToolStackContext`'s `sidebar`): a tree by its name (**Model tree**, **Links**: a tree icon, its
  * filter heading the panel), **Position**
- * for a model's joints, **Animation** for its routines, and any other section by its name. None is open as a file opens; a tile
+ * for a model's joints, **Animation** for its routines, **PMI** for its manufacturing annotations (a
+ * feature control frame), and any other section by its name. None is open as a file opens; a tile
  * opens its section in a panel under the toolbar, a second press on it closes it, and so does the
  * section's own collapse button; another tile opens its section instead. One section at a time.
  * The panel is read for as long as it is open, so it has its own surface (`FILE_SIDEBAR_SURFACE_CLASS`):
@@ -217,9 +218,7 @@ export default function FileSidebar({ layout: stored, onLayoutChange, hidden = f
   }), [reveal, shown, closeSection, tabbed, register, measured.viewer, layout, settle]);
   const tiles = ids.map(id => {
     const section = meta.current.get(id) || {};
-    // A section that brings its own icon (`ToolPanel`'s `icon`) shows it; else a tree's, Position's,
-    // Animation's, or a page.
-    const tile = section.icon ? { label: section.title || id, Icon: section.icon }
+    const tile = id === "pmi" ? { label: "PMI", Icon: PmiIcon }
       : section.fit === "tree" ? { label: section.title || "Tree", Icon: ListTree }
       : id === "position" ? { label: "Position", Icon: PositionIcon }
         : id === "animation" ? { label: "Animation", Icon: Clapperboard }

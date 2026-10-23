@@ -408,16 +408,8 @@ file with routines (`kit/tools/playbar/AnimationSection.jsx`). A file with none 
 sidebar. It is a toolbar of its own at the view's top-left, 8px in, on the strip's line and of
 its surface, padding and 24px tiles (`data-file-sidebar-tools`, "File sidebar"): one tile per
 section, a tree's a tree icon named for it (Model tree, Links), Position's a spline, Animation's a
-clapperboard, PMI's a feature control frame (a section may bring its own, `ToolPanel`'s `icon`), any
-other section's a page named for it. Preview offers its Position and
+clapperboard, PMI's a feature control frame, any other section's a page named for it. Preview offers its Position and
 Animation alone, their tiles bare in its top-left corner; the rest stay mounted, out of sight.
-
-PMI's selection filter, current size limits and datum-reference highlights stay
-in this existing section, using its rows and controls. **Show all PMI**
-switches from the selected feature's requirements to the full list. Datum highlights
-are distinct from the existing datum-assignment controls. AP242 uses the shared Export
-menu. Its job result includes the check's scope and the untested factory importer.
-See [PMI review](pmi.md#reviewing-requirements-and-the-export).
 
 - **One section at a time.** None is open as a file opens. A tile opens its section in a panel
   under the toolbar, 8px below it, and is pressed while it is open; another tile opens its

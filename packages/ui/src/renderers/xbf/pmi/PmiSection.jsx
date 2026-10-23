@@ -10,9 +10,9 @@ import { FileSheetStatusText, FileSheetValueInput } from "../../kit/inspector/Fi
 import { InfoRow, MonoValue } from "../../kit/inspector/referenceRows.jsx";
 import ToolPanel, { TOOL_PANEL_BUTTON_CLASS, ToolPanelHeadAction } from "../../kit/tools/ToolPanel.jsx";
 import { ToolStackContext } from "../../kit/tools/ToolStack.jsx";
-import { PmiGlyph, PmiIcon } from "./pmiGlyphs.jsx";
+import { PmiGlyph } from "./pmiGlyphs.jsx";
 import { MAX_DATUMS, parseToleranceInput, pmiCreateOptions, toggleDatum } from "./pmiCreate.js";
-import { datumRelationships, dimensionLimits, featureRequirements } from './pmiReview.js';
+import { datumDependents, datumRelationships, dimensionLimits, featureRequirements } from "./pmiReview.js";
 
 // An engine document's **PMI**, a section of the file sidebar for a document that carries any:
 // every annotation, a row each -- its glyph and what its callout says, and its eye -- in the
@@ -24,14 +24,15 @@ import { datumRelationships, dimensionLimits, featureRequirements } from './pmiR
 // here, a label moved in the view, a placement pinned or a new annotation is a change Quick Edit
 // carries to the agent (`useXbfPmi`): nothing here writes the file.
 
+const EMPTY = Object.freeze([]);
 const ROW_ACTIONS_WIDTH = "1.5rem";
 const ROLE_NAMES = Object.freeze({ feature: "Feature", from: "From", to: "To" });
 const STATUS_WORDS = Object.freeze({ ok: "", missing: "Missing", ambiguous: "Ambiguous", invalid: "Invalid" });
-const STATUS_TEXT = Object.freeze({ missing: "text-red-500", invalid: "text-red-500", ambiguous: "text-amber-500" });
+const STATUS_TEXT = Object.freeze({ missing: "text-destructive", invalid: "text-destructive", ambiguous: "text-amber-500" });
 const mm = (value, unit = "mm") => `${value} ${unit}`;
 
 function RowEye({ id, hidden, onToggle }) {
-  const action = hidden ? "Show" : "Hide";
+  const action = hidden ? "Reveal" : "Hide";
   return <div data-row-actions="" className={treeRowActionsClass(hidden)}>
     <TooltipHint content={action}>
       <Button type="button" variant="ghost" size="icon-xs" aria-label={`${action} ${id}`} aria-pressed={hidden} className="h-5 w-4 text-muted-foreground"
@@ -103,7 +104,7 @@ function EntryDetails({ entry, pmi, letters, onSelectRelated }) {
   const given = key => (Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined);
   const limits = dimensionLimits(entry);
   const datumLinks = datumRelationships(entry, pmi.entries);
-  const dependents = entry.kind === 'datum' ? pmi.entries.filter(item => item.part === entry.part && item.tolerance?.datums.includes(entry.datum.letter)) : [];
+  const dependents = datumDependents(entry, pmi.entries);
   return <div className="px-2 pb-1.5 pt-0.5" data-pmi-details={entry.id}>
     {entry.statusText ? <p className={cn("flex items-start gap-1 py-0.5 text-tiny", STATUS_TEXT[entry.status])} role="status">
       <CircleAlert className="mt-0.5 size-3 shrink-0" aria-hidden="true" /><span className="min-w-0 [overflow-wrap:anywhere]">{entry.statusText}</span>
@@ -118,7 +119,7 @@ function EntryDetails({ entry, pmi, letters, onSelectRelated }) {
         : editable ? <ToleranceField value={given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance")}
         onCommit={tolerance => pmi.edit(entry.id, { tolerance })} />
         : <InfoRow label="Tolerance">{entry.dimension.tolerance ? <MonoValue>{mm(pmiToleranceText(entry.dimension.tolerance).text, entry.dimension.unit)}</MonoValue> : "None given"}</InfoRow>}
-      {limits ? <InfoRow label="Current limits" copy={false}><MonoValue>{limits.lower.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 12 })}–{limits.upper.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 12 })} {limits.unit}</MonoValue></InfoRow> : null}
+      {limits ? <InfoRow label="Current limits" copy={false}><MonoValue>{mm(`${pmiNumber(limits.lower, limits.places)}–${pmiNumber(limits.upper, limits.places)}`, limits.unit)}</MonoValue></InfoRow> : null}
     </> : null}
     {entry.kind === "datum" && entry.supported ? <InfoRow label="Letter">{entry.datum.letter}</InfoRow> : null}
     {entry.kind === "geometric_tolerance" && entry.supported ? <>
@@ -133,7 +134,7 @@ function EntryDetails({ entry, pmi, letters, onSelectRelated }) {
       <p className="pb-1 text-tiny text-muted-foreground">Highlight datum references</p>
       {datumLinks.map(({ letter, role, entry: datum }) => <button key={letter} type="button"
         aria-label={`Highlight ${role.toLowerCase()} datum ${letter}`} aria-pressed={Boolean(datum && pmi.datumFocus === datum.id)}
-        disabled={!datum || datum.status !== 'ok'} onClick={() => pmi.focusDatum(datum.id)}
+        disabled={!datum || datum.status !== "ok"} onClick={() => pmi.focusDatum(datum.id)}
         className="flex h-6 w-full items-center justify-between gap-2 rounded px-1 text-tiny hover:bg-accent aria-pressed:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50">
         <span>{role}</span><span>{letter}</span>
       </button>)}
@@ -181,21 +182,22 @@ function NewEntry({ option, letters, onAdd, onCancel }) {
 
 /**
  * @param {{ pmi: ReturnType<typeof import("./useXbfPmi.jsx").useXbfPmi>, picked: Parameters<typeof pmiCreateOptions>[0]["picked"],
- *   moving: boolean, request?: { kind: string, key: number } | null, onRequestDone?: () => void }} props
- *   `picked`: the faces Select has picked, what New can make of; `moving`: the parts stand elsewhere
- *   than built, so the PMI is not drawn; `request`: a kind asked for from a face's menu ("Add
- *   datum"), which opens the section on its form; `onRequestDone`: the form has gone (added or
- *   cancelled).
+ *   selectedFeatureIds?: readonly string[], moving: boolean, request?: { kind: string, key: number } | null,
+ *   onRequestDone?: () => void }} props
+ *   `picked`: the faces Select has picked, what New can make of; `selectedFeatureIds`: the faces,
+ *   edges and vertices Select has picked, whose requirements the list narrows to while no
+ *   annotation is picked; `moving`: the parts stand elsewhere than built, so the PMI is not drawn;
+ *   `request`: a kind asked for from a face's menu ("Add datum"), which opens the section on its
+ *   form; `onRequestDone`: the form has gone (added or cancelled).
  */
-export default function PmiSection({ pmi, picked, moving, request = null, onRequestDone, selectedFeatureIds = [] }) {
+export default function PmiSection({ pmi, picked, selectedFeatureIds = EMPTY, moving, request = null, onRequestDone }) {
   // What is already asked for counts as taken: a second new one never reuses a pending id or letter.
-  const pending = useMemo(() => pmi.changes.filter(change => change.kind === "add").map(change => change.call), [pmi.changes]);
-  const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending }), [picked, pmi.entries, pending]);
+  const options = useMemo(() => pmiCreateOptions({ picked, entries: pmi.entries, pending: pmi.pending }), [picked, pmi.entries, pmi.pending]);
   const letters = useMemo(() => pmi.entries.filter(entry => entry.kind === "datum" && entry.datum?.letter).map(entry => entry.datum.letter), [pmi.entries]);
   const [draft, setDraft] = useState(null);
   const featureIds = pmi.selectedEntry ? pmi.selectedEntry.featureIds : selectedFeatureIds;
   const selectionKey = JSON.stringify(featureIds);
-  const [showAllFor, setShowAllFor] = useState('');
+  const [showAllFor, setShowAllFor] = useState("");
   const filtered = featureIds.length > 0 && showAllFor !== selectionKey;
   const visible = filtered ? featureRequirements(pmi.entries, featureIds) : pmi.entries;
   const selectRelated = id => { setShowAllFor(selectionKey); pmi.select(id); };
@@ -211,7 +213,7 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
   }, [request?.key]);
   const closeDraft = () => { setDraft(null); onRequestDone?.(); };
   const shownCount = pmi.entries.filter(entry => entry.supported).length;
-  return <ToolPanel id="pmi" title="PMI" label="PMI" fit="tree" resizable collapsible={false} icon={PmiIcon}>
+  return <ToolPanel id="pmi" title="PMI" label="PMI" fit="tree" resizable collapsible={false}>
     <ToolPanelHeadAction>
       {pmi.editable ? <DropdownMenu modal={false}>
         <TooltipHint content="New PMI" side="bottom">
@@ -229,8 +231,8 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
           </DropdownMenuItem>)}
         </DropdownMenuContent>
       </DropdownMenu> : null}
-      {shownCount ? <TooltipHint content={pmi.off ? "Show PMI" : "Hide PMI"} side="bottom">
-        <button type="button" aria-label={pmi.off ? "Show PMI" : "Hide PMI"} aria-pressed={pmi.off} data-pmi-visibility-all=""
+      {shownCount ? <TooltipHint content={pmi.off ? "Reveal PMI" : "Hide PMI"} side="bottom">
+        <button type="button" aria-label={pmi.off ? "Reveal PMI" : "Hide PMI"} aria-pressed={pmi.off} data-pmi-visibility-all=""
           className={TOOL_PANEL_BUTTON_CLASS} onClick={() => pmi.setOff(!pmi.off)}>
           {pmi.off ? <EyeOff className="size-3" aria-hidden="true" /> : <Eye className="size-3" aria-hidden="true" />}
         </button>
@@ -241,8 +243,8 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
     {moving ? <FileSheetStatusText className="py-1">Not drawn while the parts are moved: a tolerance is of the part as made.</FileSheetStatusText> : null}
     {!pmi.entries.length && !draft ? <FileSheetStatusText className="py-1">No PMI yet: right-click a face to add some.</FileSheetStatusText> : null}
     {featureIds.length ? <div className="flex flex-wrap items-center justify-between gap-1 border-b border-border/60 px-2 py-1 text-tiny">
-      <span className="text-muted-foreground">{filtered ? `${visible.length} requirement${visible.length === 1 ? '' : 's'} for selection` : 'All PMI'}</span>
-      <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={() => setShowAllFor(filtered ? selectionKey : '')}>{filtered ? 'Show all PMI' : 'For selection'}</Button>
+      <span className="text-muted-foreground">{filtered ? `${visible.length} requirement${visible.length === 1 ? "" : "s"} for selection` : "All PMI"}</span>
+      <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={() => setShowAllFor(filtered ? selectionKey : "")}>{filtered ? "Show all PMI" : "For selection"}</Button>
     </div> : null}
     {filtered && !visible.length ? <FileSheetStatusText className="py-1">No PMI is attached to this selection. This does not establish that no requirement is needed.</FileSheetStatusText> : null}
     <ul className={cn("px-1 py-1 text-tiny", pmi.off && "opacity-60")} aria-label="PMI" data-pmi-rows="">

@@ -186,7 +186,6 @@ export interface CadWorkspaceService {
    * engine leaves it out, and the xbf renderer says it cannot open the file.
    */
   engineDocument?(file: string, options?: CadRequestOptions): Promise<CadEngineDocument>;
-  /** Explicit temporary AP242 export, independently read; no output file is retained. */
   /** Whether the engine holds a read of the document now (`GET /__cad/xbf?held=1`), asked without starting one. */
   engineHolds?(file: string, options?: CadRequestOptions): Promise<boolean>;
   readonly resources: CadResourceProvider;
@@ -227,7 +226,11 @@ export interface CadActivity {
 
 export type ExportFormat = 'step' | 'glb' | 'stl' | 'threemf' | 'dxf' | 'xbf' | 'original';
 export interface ExportSource { doc: string; revision: string; part: string | null; pose: Record<string, number> | null }
-export interface ExportOption { format: ExportFormat; label: string; extension: string; reason: string | null }
+export interface ExportOption {
+  format: ExportFormat; label: string; extension: string; reason: string | null;
+  /** STEP only: the document carries PMI, which the export writes and checks in the file. */
+  pmi?: boolean;
+}
 export interface ExportRequest { requestId: string; epoch: string; source: ExportSource; format: ExportFormat }
 export interface ExportJob {
   id: string; requestId: string; epoch: string; filename: string;

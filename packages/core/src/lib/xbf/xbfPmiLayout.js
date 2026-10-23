@@ -41,7 +41,7 @@ const REACH_SHARE = 0.18, REACH_MIN = 4;
 const boxCentre = bounds => (bounds ? scale(add(bounds.min, bounds.max), 0.5) : [0, 0, 0]);
 const boxDiagonal = bounds => (bounds ? length(sub(bounds.max, bounds.min)) : 0);
 /** How far out from its feature a label the code never placed stands. */
-export const pmiReach = bounds => Math.max(REACH_MIN, boxDiagonal(bounds) * REACH_SHARE);
+const pmiReach = bounds => Math.max(REACH_MIN, boxDiagonal(bounds) * REACH_SHARE);
 
 /**
  * A point on a face to start a leader from: one of its own nodes, so it is on the face whatever its
@@ -114,6 +114,15 @@ function measuredAlong(from, to) {
   }
   if (!n) return null;
   return [from, to].every(end => !end.axis || Math.abs(dot(end.axis, n)) <= SQUARE) ? n : null;
+}
+
+/**
+ * The direction a distance between two faces is measured along (each an `elementGeometry`, or
+ * anything with its `surface`), as it is drawn (`measuredAlong`), or null where they make none.
+ */
+export function pmiDistanceAlong(a, b) {
+  const from = distanceEnd(a), to = distanceEnd(b);
+  return from && to ? measuredAlong(from, to) : null;
 }
 
 /**

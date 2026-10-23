@@ -21,9 +21,10 @@ function Tolerance({ tolerance }) {
 
 /** A callout's words in their box: `pmiCallout`'s pieces, the box in its state's colour. */
 export default function PmiLabel({ callout, status = "ok", selected = false, hovered = false, moved = false, className }) {
-  const border = status === "missing" || status === "invalid" ? "border-red-500 border-dashed" : status === "ambiguous" ? "border-amber-500 border-dashed"
-    : selected ? "border-[#2979ff] ring-2 ring-[#2979ff]/35" : hovered ? "border-foreground" : "border-foreground/60";
-  const box = cn(BOX, border, moved && "outline-dashed outline-1 outline-offset-2 outline-[#2979ff]", className);
+  // Picked or moved, in the selection blue the overlay draws its leaders in (`--pmi-selected`, `PmiOverlay.jsx`).
+  const border = status === "missing" || status === "invalid" ? "border-destructive border-dashed" : status === "ambiguous" ? "border-amber-500 border-dashed"
+    : selected ? "border-(--pmi-selected) ring-2 ring-(--pmi-selected)/35" : hovered ? "border-foreground" : "border-foreground/60";
+  const box = cn(BOX, border, moved && "outline-dashed outline-1 outline-offset-2 outline-(--pmi-selected)", className);
   if (callout.kind === "dimension") {
     return <span className={cn(box, CELL, "gap-px py-px")} data-pmi-callout="dimension">
       {callout.diameter ? <PmiGlyph name="diameter" className={GLYPH} aria-hidden="true" /> : null}

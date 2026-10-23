@@ -48,8 +48,8 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   const [hiddenIds, setHiddenIds] = useState(EMPTY);
   const [off, setOff] = useState(false);
   const [changes, setChanges] = useState(NO_CHANGES);
-  const [datumFocus, setDatumFocus] = useState('');
-  useEffect(() => { setDatumFocus(''); }, [selectedId, structure]);
+  const [datumFocus, setDatumFocus] = useState("");
+  useEffect(() => { setDatumFocus(""); }, [selectedId, structure]);
   const restore = useCallback((slice) => { setHiddenIds(slice?.hidden || EMPTY); setOff(Boolean(slice?.off)); }, []);
   const known = useMemo(() => new Set(entries.map(entry => entry.id)), [entries]);
   const selected = known.has(selectedId) ? selectedId : "";
@@ -91,7 +91,7 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   // What the picked annotation's (and the one under the pointer's) features light.
   const selectedEntry = entries.find(entry => entry.id === selected) || null;
   const hoveredEntry = entries.find(entry => entry.id === hovered) || null;
-  const focusedDatum = entries.find(entry => entry.id === datumFocus && entry.kind === 'datum' && entry.part === selectedEntry?.part);
+  const focusedDatum = entries.find(entry => entry.id === datumFocus && entry.kind === "datum" && entry.part === selectedEntry?.part);
   const highlight = useMemo(() => ({ selected: focusedDatum?.featureIds || selectedEntry?.featureIds || EMPTY, hovered: hoveredEntry?.featureIds[0] || null }),
     [selectedEntry, hoveredEntry, focusedDatum]);
 
@@ -111,6 +111,8 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   useEffect(() => {
     setChanges(now => (now.some(change => pmiChangeSettled(change, entries)) ? now.filter(change => !pmiChangeSettled(change, entries)) : now));
   }, [entries]);
+  // The new annotations asked for (their calls), whose ids and letters a next one must not take.
+  const pending = useMemo(() => changes.filter(change => change.kind === "add").map(change => change.call), [changes]);
   const add = useCallback(call => setChanges(now => [...now.filter(change => change.key !== `add:${call.id}`), { key: `add:${call.id}`, kind: "add", id: call.id, call }]), []);
   const remove = useCallback(key => setChanges(now => now.filter(change => change.key !== key)), []);
   const clearChanges = useCallback(() => setChanges(now => (now.length ? NO_CHANGES : now)), []);
@@ -138,10 +140,10 @@ export function useXbfPmi({ scene, tree, bounds, moving, editable, selectedId, o
   return {
     entries, items, constructions, selectedId: selected, hoveredId: hovered, selectedEntry, highlight,
     select: onSelect, hover: setHoveredId, datumFocus,
-    focusDatum: id => setDatumFocus(now => now === id ? '' : id),
+    focusDatum: id => setDatumFocus(now => (now === id ? "" : id)),
     hiddenIds, off, setOff, restore,
     toggleHidden: id => setHiddenIds(now => (now.includes(id) ? now.filter(item => item !== id) : [...now, id])),
     slice,
-    editable, changes, edit, add, remove, clearChanges, move, pin, changeChips
+    editable, changes, pending, edit, add, remove, clearChanges, move, pin, changeChips
   };
 }

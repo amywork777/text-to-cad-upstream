@@ -1,4 +1,5 @@
 import { pmiFreshId } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
+import { pmiDistanceAlong } from "@text-to-cad/core/lib/xbf/xbfPmiLayout.js";
 
 // What a new annotation can be made of the faces Select has picked, as the supported subset has
 // them: a datum or a flatness on one flat face, a distance between two parallel flat faces, a basic
@@ -12,29 +13,18 @@ import { pmiFreshId } from "@text-to-cad/core/lib/xbf/xbfPmi.js";
 // ASME Y14.5 leaves I, O and Q out of datum letters: they read as 1, 0 and O.
 const DATUM_LETTERS = "ABCDEFGHJKLMNPRSTUVWXYZ".split("");
 const PARALLEL = 1 - 1e-6;
-// How far an axis may lean off square to a plane's normal, or off another axis (sin), as the layout allows.
-const SQUARE = 1e-3;
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const length = a => Math.hypot(a[0], a[1], a[2]);
 
 /**
  * What two faces a basic dimension goes between measure, or null where they make none: two parallel
- * planes, a plane and an axis square to its normal (a hole's centre line), or two parallel axes.
+ * planes, a plane and an axis square to its normal (a hole's centre line), or two parallel axes
+ * apart -- along what the layout draws it along (`pmiDistanceAlong`).
  */
 function basicSeparation(a, b) {
-  const plane = item => item.surface.type === "plane", round = item => item.surface.type === "cylinder";
-  if (plane(a) && plane(b)) return Math.abs(dot(a.surface.normal, b.surface.normal)) >= PARALLEL ? Math.abs(dot(sub(b.surface.origin, a.surface.origin), a.surface.normal)) : null;
-  if (round(a) && round(b)) {
-    const axis = a.surface.axis;
-    if (length(cross(axis, b.surface.axis)) > SQUARE) return null;
-    const between = sub(b.surface.origin, a.surface.origin);
-    return length(sub(between, axis.map(value => value * dot(between, axis))));
-  }
-  const [flat, hole] = plane(a) ? [a, b] : [b, a];
-  if (!plane(flat) || !round(hole) || Math.abs(dot(hole.surface.axis, flat.surface.normal)) > SQUARE) return null;
-  return Math.abs(dot(sub(hole.surface.origin, flat.surface.origin), flat.surface.normal));
+  const planes = a.surface.type === "plane" && b.surface.type === "plane";
+  const along = planes && Math.abs(dot(a.surface.normal, b.surface.normal)) < PARALLEL ? null : pmiDistanceAlong(a, b);
+  return along ? Math.abs(dot(sub(b.surface.origin, a.surface.origin), along)) : null;
 }
 
 /** The first datum letter none of `entries` has, nor any new datum asked for (`pending` calls). */

@@ -118,37 +118,36 @@ The PMI section follows the selected annotation's faces, or the selected geometr
 no annotation is picked. It lists every attached requirement, including hidden callouts.
 **Show all PMI** restores the whole list; **For selection** returns to the filter. A selection
 with no attached PMI says so without implying that it needs no requirements. A dimension
-with explicit tolerances also shows **Current limits** (nominal plus each signed deviation),
-from the saved document, never a guessed tolerance or an unapplied Quick Edit.
+with explicit tolerances also shows **Current limits** (nominal plus each signed deviation, at
+the tolerance's places), from the saved document, never a guessed tolerance or an unapplied Quick Edit.
 
 A position tolerance lists its datum references in primary, secondary and tertiary order.
 These buttons highlight the datum's geometry without changing its assignment or adding a
 Quick Edit. Selecting a datum lists the tolerances that use it under **Used by**. Both
 directions resolve within the annotation's part.
 
-**Export** in the shared top-right toolbar offers **STEP (AP242)**. The writer includes
-all semantic PMI in the built document. Pending Quick Edit requests are not part of the
-built document. The existing export service pins the viewed revision, owns the job and
-artifact, and never executes model source. Posed or partial STEP exports that would drop
-PMI are unavailable, with a reason.
+**Export** in the top-right toolbar offers **STEP (AP242)**, written from the built document
+with all its semantic PMI; a Quick Edit request not yet built is not in it. Where the document
+carries PMI, the menu says so under the format. The export service pins the revision on screen,
+holds the job and its file, and never runs the model's code. A STEP of a pose or of one part would
+drop the PMI, so it is unavailable, the menu saying why.
 
-After writing the STEP, the worker independently parses that exact output and compares
-its supported annotations with the source one-to-one: values, units, datum order,
-tolerance-zone form and named face associations. The result and artifact SHA-256 travel
-with the export job, including after navigating to another model. No separate check
-endpoint or temporary check-only export is needed. The browser's normal save flow writes
-that artifact; a failed save never says Saved.
+Once the STEP is written, the worker reads that same file back on its own and compares its
+supported annotations with the document's, one to one: values, units, datum order, tolerance-zone
+form and the faces each is on, by name. The result and the file's SHA-256 go with the export job,
+and stay with it when another model opens: the check is part of the export, with no endpoint or
+export of its own. The browser's save writes that file; a save that fails never says Saved.
 
-Missing or extra annotations, no PMI, parser problems and non-AP242 schemas cannot pass.
-Both signed deviations' units are checked. Face names are scanned across all geometry,
-including unannotated faces. Ambiguous names, colliding source refs, repeated datum letters,
-unsupported modifiers, or missing uniqueness metadata make verification incomplete. The
-file stays available for inspection; an incomplete check is explicitly shown in its result.
+Missing or extra annotations, no PMI, a parser problem or a schema other than AP242 fail the
+check. Both signed deviations' units are checked. Face names are looked for across all the
+geometry, faces with no annotation included. An ambiguous name, two source refs that collide, a
+datum letter used twice, an unsupported modifier or missing uniqueness metadata leave the check
+incomplete, and its result says so; the file stays, to inspect.
 
-This check does not establish a complete manufacturing definition or compatibility with
-a factory importer. The latter remains explicitly untested in the result. Graphical
-callouts and author annotation IDs are not exported by this implementation (basic dimensions
-are, marked theoretical, and are checked like any other dimension). The deliverable for interoperability testing is the actual exported STEP.
+The check does not establish a complete manufacturing definition, nor that a factory's importer
+reads the file: the result says that is untested. Graphical callouts and the author's annotation
+ids are not exported; basic dimensions are, marked theoretical, and are checked as any other
+dimension is. What interoperability is tested with is the exported STEP itself.
 
 ## Known limits
 

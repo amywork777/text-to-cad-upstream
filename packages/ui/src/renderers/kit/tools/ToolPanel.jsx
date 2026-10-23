@@ -81,8 +81,7 @@ const REVEAL_CLASS = "animate-in fade-in-0 zoom-in-75 duration-150 motion-reduce
  *   actions?: import("react").ReactNode,
  *   header?: import("react").ReactNode, collapsible?: boolean, onClose?: (() => void) | null, closeLabel?: string,
  *   fit?: "fixed" | "tree" | "details", resizable?: boolean, hidden?: boolean, defaultCollapsed?: boolean,
- *   lead?: boolean, icon?: import("react").ComponentType<{ className?: string }> | null, children?: import("react").ReactNode }} props
- *   `icon`: a file sidebar section's tile, where its own says more than a page would (PMI's frame).
+ *   lead?: boolean, children?: import("react").ReactNode }} props
  *   `label` names the panel for assistive technology ("Clip controls"), with a heading or
  *   without; the chevron, the X and the grip take their names from it, unless the X says
  *   what it does itself (`closeLabel`, "Clear selection").
@@ -100,7 +99,7 @@ export function ToolPanelHeadAction({ children }) {
 }
 
 export default function ToolPanel({ id, title = null, name = "", label, summary = null, actions = null, header = null, collapsible = true, onClose = null, closeLabel = "", changed = false,
-  fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, icon = null, children }) {
+  fit = "fixed", resizable = false, hidden = false, defaultCollapsed = false, lead = false, children }) {
   const [headSlot, setHeadSlot] = useState(null);
   const stack = useContext(ToolStackContext);
   const kept = Boolean(stack && id);
@@ -116,7 +115,7 @@ export default function ToolPanel({ id, title = null, name = "", label, summary 
   const closedInSidebar = inSidebar && stack.openSection !== id;
   const register = inSidebar ? stack.register : null;
   const tileTitle = typeof title === "string" ? title : name || label;
-  useLayoutEffect(() => { if (register && id && !hidden) register(id, { title: tileTitle, fit, changed, icon }); }, [register, id, hidden, tileTitle, fit, changed, icon]);
+  useLayoutEffect(() => { if (register && id && !hidden) register(id, { title: tileTitle, fit, changed }); }, [register, id, hidden, tileTitle, fit, changed]);
   // Folded: the person's, kept by the stack across files; a panel drawn alone keeps its own.
   const [ownCollapsed, setOwnCollapsed] = useState(defaultCollapsed);
   const collapsed = collapsible && (kept ? stack.collapsed(id, defaultCollapsed) : ownCollapsed);

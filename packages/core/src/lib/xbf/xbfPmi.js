@@ -11,19 +11,19 @@
 //
 // The document is made from code (`pmi.annotate(body, pmi.datum("A", ...), ...)` in the model), so
 // a change asked for in the viewer is the call it would write there (`pmiCallText`,
-// `pmiPlacementText`): what Quick Edit hands the agent, which writes it into the model and builds.
+// `pmiPlaceText`): what Quick Edit hands the agent, which writes it into the model and builds.
 
 /** The kinds the viewer draws; any other an entry names is told, not drawn. */
-export const PMI_KINDS = Object.freeze(["dimension", "datum", "geometric_tolerance"]);
+const PMI_KINDS = Object.freeze(["dimension", "datum", "geometric_tolerance"]);
 /** The dimension types the viewer draws. */
-export const PMI_DIMENSION_TYPES = Object.freeze(["distance", "diameter"]);
+const PMI_DIMENSION_TYPES = Object.freeze(["distance", "diameter"]);
 /** The geometric characteristics the viewer draws. */
-export const PMI_CHARACTERISTICS = Object.freeze(["flatness", "position"]);
+const PMI_CHARACTERISTICS = Object.freeze(["flatness", "position"]);
 /**
  * What a reference's or an annotation's status may be, best first: it names one face it can
  * stand on; several; nothing; or a face it cannot stand on (a diameter on a plane, say).
  */
-export const PMI_STATUSES = Object.freeze(["ok", "ambiguous", "missing", "invalid"]);
+const PMI_STATUSES = Object.freeze(["ok", "ambiguous", "missing", "invalid"]);
 
 const MINUS = "−";
 const finite = value => (typeof value === "number" && Number.isFinite(value) ? value : null);
@@ -219,7 +219,7 @@ export function pmiPlaceText(presentation) {
 }
 
 /** The `pmi.plus_minus(...)` a tolerance is in code; the lower deviation left out where it is the upper's negative. */
-export function pmiPlusMinusText(tolerance) {
+function pmiPlusMinusText(tolerance) {
   const symmetric = Math.abs(tolerance.upper + tolerance.lower) < 1e-12;
   return symmetric ? `pmi.plus_minus(${pyNumber(tolerance.upper)})` : `pmi.plus_minus(${pyNumber(tolerance.upper)}, ${pyNumber(tolerance.lower)})`;
 }
@@ -312,7 +312,7 @@ export function pmiFreshId(stem, taken) {
  * What an edit sets, each as the call writes it: `tolerance=...` (or that it has none), its value,
  * `datums=[...]`, `presentation=...` (or that it is placed beside its feature).
  */
-export function pmiEditSettings(values) {
+function pmiEditSettings(values) {
   const set = [];
   if (Object.prototype.hasOwnProperty.call(values, "tolerance")) set.push(values.tolerance ? `tolerance=${pmiPlusMinusText(values.tolerance)}` : "no tolerance (drop tolerance=)");
   if (Object.prototype.hasOwnProperty.call(values, "value")) set.push(`its tolerance value ${pyNumber(values.value)}`);

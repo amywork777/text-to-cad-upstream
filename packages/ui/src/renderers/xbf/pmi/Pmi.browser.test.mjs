@@ -121,7 +121,7 @@ test('PMI is drawn on the model and stays legible as the camera moves; a pick li
   await page.evaluate(() => window.cadHarness.mounted(true));
   await loaded();
   await pane.getByRole('button', { name: 'PMI', exact: true }).click();
-  await pane.getByRole('button', { name: 'Show PMI', exact: true }).click();
+  await pane.getByRole('button', { name: 'Reveal PMI', exact: true }).click();
   await drawn();
   assert.deepEqual(await labels(), ['A', 'thickness']);
   assert.deepEqual(errors, []);

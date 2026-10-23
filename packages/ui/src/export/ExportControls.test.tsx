@@ -116,6 +116,19 @@ it('restored requests reconnect by the same identity and ask for a new local des
   expect(service.create).toHaveBeenCalledTimes(1);
 });
 
+it('says a STEP carries PMI only where the document has PMI', async () => {
+  const { service } = server();
+  mount(service, { choose: vi.fn() });
+  const user = userEvent.setup();
+  await open(user);
+  expect(screen.queryByText(/Includes the built model’s PMI/)).toBeNull();
+  cleanup();
+  service.options.mockResolvedValue({ ...formats, formats: [{ ...formats.formats[0], pmi: true }] });
+  mount(service, { choose: vi.fn() });
+  await open(user);
+  expect(screen.getByText(/Includes the built model’s PMI/)).toBeTruthy();
+});
+
 it('shows verification from the completed STEP job with its importer limitation', async () => {
   const { service, waiting, jobs } = server();
   mount(service, { choose: vi.fn(async () => destination()) });

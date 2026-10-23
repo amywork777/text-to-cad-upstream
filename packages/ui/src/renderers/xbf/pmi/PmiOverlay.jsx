@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { ANNOTATION_HIDDEN_OPACITY } from "@text-to-cad/core/common/annotation.js";
 import { cn } from "@text-to-cad/ui/utils";
 import { capturePointer, releasePointer } from "../../../lib/pointerCapture.js";
 import PmiLabel from "./PmiLabel.jsx";
@@ -17,11 +18,10 @@ import { separateLabels } from "./separateLabels.js";
 // stood -- which is where it is drawn, never what it says. Under any other tool the labels take no
 // pointer: ink, a measurement or a pick goes through to the model.
 
-// What Select has picked, as the annotations and the measurements are: the one selection blue.
-const SELECTED_COLOR = "#2979ff";
-// A reference the engine could not stand the annotation on: it names nothing, or a face it cannot
-// stand on (failed), or several (a warning).
-const STATUS_COLOR = Object.freeze({ missing: "#ef4444", invalid: "#ef4444", ambiguous: "#f59e0b" });
+// The canvas's inks: what Select has picked, as the annotations and the measurements are, in the one
+// selection blue (the labels' too, `--pmi-selected`); and a reference the engine could not stand the
+// annotation on: it names nothing, or a face it cannot stand on (failed), or several (a warning).
+const COLOR = Object.freeze({ selected: "#2979ff", missing: "#ef4444", invalid: "#ef4444", ambiguous: "#f59e0b" });
 const ARROW_PX = 7, ARROW_HALF_PX = 2.6, DATUM_PX = 6;
 const FINE_SLOP_PX = 4, COARSE_SLOP_PX = 12;
 // How far a distance's words stand off its dimension line.
@@ -46,10 +46,6 @@ function boxEdge(from, box) {
   return { x: box.x + dx * s, y: box.y + dy * s };
 }
 
-// Drawn behind the model: what of a callout the model hides, faint, as hidden ink is
-// (core's `ANNOTATION_HIDDEN_OPACITY`), its marker hollow.
-const BEHIND_ALPHA = 0.3;
-
 function arrowHead(context, tip, from, hollow = false) {
   const angle = Math.atan2(tip.y - from.y, tip.x - from.x);
   context.beginPath();
@@ -73,7 +69,7 @@ function datumTriangle(context, base, from, hollow = false) {
 }
 
 function drawItem(context, item, at, ink) {
-  const color = item.status !== "ok" ? STATUS_COLOR[item.status] || ink : item.selected ? SELECTED_COLOR : ink;
+  const color = item.status !== "ok" ? COLOR[item.status] || ink : item.selected ? COLOR.selected : ink;
   context.strokeStyle = color;
   context.fillStyle = color;
   const alpha = item.hovered || item.selected ? 1 : 0.85;
@@ -83,9 +79,9 @@ function drawItem(context, item, at, ink) {
   const line = (a, b) => { if (!a || !b) return; context.beginPath(); context.moveTo(a.x, a.y); context.lineTo(b.x, b.y); context.stroke(); };
   if (at.dimension) {
     const { from, to } = at.dimension;
-    // An extension line from a face the model hides is drawn faint.
+    // An extension line from a face the model hides is drawn faint, as hidden ink is.
     at.dimension.extensions.forEach(([a, b], index) => {
-      context.globalAlpha = at.dimension.behind?.[index] ? alpha * BEHIND_ALPHA : alpha;
+      context.globalAlpha = at.dimension.behind?.[index] ? alpha * ANNOTATION_HIDDEN_OPACITY : alpha;
       line(a, b);
     });
     context.globalAlpha = alpha;
@@ -110,8 +106,8 @@ function drawItem(context, item, at, ink) {
   }
   if (!at.anchor || !at.box) return;
   const end = boxEdge(at.anchor, at.box);
-  // A leader to a face the model hides from this side: faint, its marker hollow, so it reads as behind.
-  if (at.behind) context.globalAlpha = alpha * BEHIND_ALPHA;
+  // A leader to a face the model hides from this side: faint, as hidden ink is, its marker hollow, so it reads as behind.
+  if (at.behind) context.globalAlpha = alpha * ANNOTATION_HIDDEN_OPACITY;
   line(at.anchor, end);
   context.setLineDash([]);
   // A feature not on the page: an open ring where the code anchored it, nothing pointing at a face.
@@ -284,7 +280,7 @@ export default function PmiOverlay({ viewport, items, interactive, onSelect, onH
     element.addEventListener("pointercancel", cancel);
   };
 
-  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" data-cad-pmi="">
+  return <div ref={rootRef} className="pointer-events-none absolute inset-0 z-10 overflow-hidden text-foreground" style={{ "--pmi-selected": COLOR.selected }} data-cad-pmi="">
     <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden="true" />
     {items.map(item => <button key={item.id} type="button" ref={node => { if (node) labels.current.set(item.id, node); else labels.current.delete(item.id); }}
       tabIndex={interactive ? 0 : -1} aria-label={`${item.callout.text}${item.problem ? `: ${item.problem}` : ""}`} aria-pressed={item.selected}

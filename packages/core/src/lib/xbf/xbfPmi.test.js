@@ -207,9 +207,10 @@ test("a change the document now says is settled, and one it does not yet say is 
   assert.equal(pmiChangeSettled({ ...change, id: "gone" }, read), false);
 });
 
-// The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`):
-// as made (v1), and after an edit put a square cut where the hole was (v3): the hole's name now on a
-// flat face, which a diameter cannot stand on, and which the basics to it named as a round one last build.
+// The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`,
+// which its `make_fixtures.py` builds and captures again): as made (v1), and after an edit put a
+// square cut where the hole was (v3): the hole's name now on a flat face, which a diameter cannot
+// stand on, and which the basics to it named as a round one last build.
 test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", async () => {
   const { readFileSync } = await import("node:fs");
   const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));

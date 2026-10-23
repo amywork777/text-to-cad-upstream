@@ -19,3 +19,10 @@ export function ChangedDot({ className }) {
 export const PositionIcon = forwardRef(function PositionIcon({ className, ...props }, ref) {
   return <Spline ref={ref} className={cn("rotate-90", className)} {...props} />;
 });
+
+/** PMI's icon (the sidebar's tile and tab): a feature control frame, its two cells, on lucide's grid and stroke. */
+export function PmiIcon(props) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <rect x="2.5" y="7" width="19" height="10" rx="1" /><path d="M9.5 7v10" />
+  </svg>;
+}

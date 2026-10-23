@@ -142,7 +142,7 @@ function ExportToast({ attempt, service, downloads, reveal, onRemove, onActivity
       <details className="text-muted-foreground"><summary className="cursor-pointer rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">{t('export.pmiDetails')}</summary>
         {verification.problems.length ? <ul className="mt-1 list-disc space-y-1 pl-4">{verification.problems.map((problem, i) => <li key={i}>{problem}</li>)}</ul> : null}
         <p className="mt-1">{t('export.pmiLimits')}</p>
-        <p className="mt-1 break-all">SHA-256: {verification.sha256}</p>
+        <p className="mt-1 break-all">{t('export.sha256', { digest: verification.sha256 })}</p>
       </details>
       <p className="text-muted-foreground">{t('export.pmiImporter')}</p>
     </div> : null}
@@ -185,6 +185,7 @@ export function ExportControls({ service, downloads, file, children }: {
     return () => controller.abort();
   }, [open, spec, service, downloads?.unavailable]);
   const selected = options?.formats.find(row => row.format === format);
+  const step = options?.formats.find(row => row.format === 'step');
   useEffect(() => {
     if (options && (!selected || selected.reason)) setFormat(options.formats.find(row => !row.reason)?.format || 'step');
   }, [options, selected]);
@@ -219,8 +220,8 @@ export function ExportControls({ service, downloads, file, children }: {
         <p className="text-tiny text-muted-foreground">{snapshot.preview ? t('export.preview') + ' ' : ''}{t('export.geometry')}</p>
         {options ? <label className="block space-y-1"><span>{t('export.format')}</span><Select value={format} onValueChange={setFormat}><SelectTrigger size="sm" aria-label={t('export.format')}><SelectValue /></SelectTrigger><SelectContent>{options.formats.filter(row => !row.reason).map(row => <SelectItem key={row.format} value={row.format}>{row.format === 'original' ? t('export.original') : row.label}</SelectItem>)}</SelectContent></Select></label>
           : !error ? <p role="status" className="flex items-center gap-2 text-tiny"><Spinner className="size-3" />{t('export.checking')}</p> : null}
-        {selected?.format === 'step' ? <p className="text-tiny text-muted-foreground">{t('export.pmiIncluded')}</p> : null}
-        {options?.formats.find(row => row.format === 'step')?.reason ? <p className="text-tiny text-muted-foreground">STEP (AP242): {options.formats.find(row => row.format === 'step')?.reason}</p> : null}
+        {selected?.format === 'step' && selected.pmi ? <p className="text-tiny text-muted-foreground">{t('export.pmiIncluded')}</p> : null}
+        {step?.reason ? <p className="text-tiny text-muted-foreground">{t('export.formatUnavailable', { label: step.label, reason: step.reason })}</p> : null}
         <Button className="w-full" size="sm" disabled={!selected || Boolean(selected.reason) || choosing} onClick={() => { void begin(); }}>{choosing ? t('export.choosing') : t('export.start')}</Button>
       </> : <p className="text-tiny text-muted-foreground">{t('export.open')}</p>}
       {error ? <p role="alert" className="text-tiny text-destructive">{error}</p> : null}
