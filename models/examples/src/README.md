@@ -26,17 +26,21 @@ fixtures to work against.
 
 | Script | Artifact | Description |
 |--------|----------|-------------|
+| `angle_bracket.py` | `STEP/angle_bracket.step` | Base plate with a tab leaning 30 degrees, a hole square through the tab |
+| `angle_bracket_drawing.py` | `PDF/angle_bracket_drawing.pdf` | **Engineering drawing** of the bracket: an auxiliary view (VIEW C) square onto the inclined tab, its hole called out there; the sheet chooses its own size and scale. Run the model above first. |
 | `basic_shape_mating_test_fixture.py` | `STEP/basic_shape_mating_test_fixture.step + 3MF/basic_shape_mating_test_fixture.3mf` | Primitive-shape mating fixture (box/cone/sphere/cylinder on a base plate) |
 | `cam_follower_roller.py` | `STEP/cam_follower_roller.step` | Cam follower roller with central bearing bore and rounded outer profile |
 | `centrifugal_impeller.py` | `STEP/centrifugal_impeller.step` | Single solid centrifugal impeller |
 | `circular_flange.py` | `STEP/circular_flange.step` | Circular flange model |
-| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: the bolt circle (count, size and pitch circle) and bore called out from the part, a section through the holes. Run the model above first. |
+| `circular_flange_drawing.py` | `PDF/circular_flange_drawing.pdf` | **Engineering drawing** of the flange on A4: the bolt circle (count, size and pitch circle) and bore called out from the part, a section through the holes, the edge radius in a general note read off the part. Run the model above first. |
 | `clevis_bracket_lightening_cutouts.py` | `STEP/clevis_bracket_lightening_cutouts.step` | Clevis bracket model |
 | `cylindrical_cap.py` | `STEP/cylindrical_cap.step` | Cylindrical cap with hollow interior, top boss, and rounded external edges |
 | `cylindrical_spacer_sleeve.py` | `STEP/cylindrical_spacer_sleeve.step` | Cylindrical spacer sleeve with a central through-bore and rounded rim edges |
 | `electronics_enclosure_base.py` | `STEP/electronics_enclosure_base.step` | Single solid open-top electronics enclosure base |
 | `electronics_enclosure_base_drawing.py` | `PDF/electronics_enclosure_base_drawing.pdf` | **Engineering drawing** (`@eng_drawing`) of that part: a section through the standoffs, measured dimensions, hole and boss callouts read off the part, title block. Run the model above first. |
 | `flywheel_disk.py` | `STEP/flywheel_disk.step` | Flywheel disk with central bore, annular rim, and lightening holes |
+| `guide_bar.py` | `STEP/guide_bar.step` | 600 mm round bar with an end spigot, a cross hole near each end and a chamfered end |
+| `guide_bar_drawing.py` | `PDF/guide_bar_drawing.pdf` | **Engineering drawing** of the bar: front and top views broken, the overall length still stated true, diameters on the profile, the chamfer in a general note. Run the model above first. |
 | `gusset_plate.py` | `STEP/gusset_plate.step` | Gusset plate with a triangular web, base holes, and softened perimeter edges |
 | `keyed_shaft_hub.py` | `STEP/keyed_shaft_hub.step` | Keyed shaft hub with central bore, keyway slot, and bolt-hole pattern |
 | `l_bracket.py` | `STEP/l_bracket.step` | L-bracket model |
@@ -44,6 +48,8 @@ fixtures to work against.
 | `mounting_plate.py` | `STEP/mounting_plate.step + STL/mounting_plate.stl, 3MF/mounting_plate.3mf, GLB/mounting_plate.glb` | Mounting plate with central circular cutout, elongated side slot, four corner holes, and rounded edges |
 | `mounting_plate_drawing.py` | `PDF/mounting_plate_drawing.pdf` | **Engineering drawing** of the plate: its holes and slot called out from the part, the hole pitch, the slot's position and the corner radius. Run the model above first. |
 | `open_top_electronics_enclosure.py` | `STEP/open_top_electronics_enclosure.step` | Open-top electronics enclosure model |
+| `perforated_plate.py` | `STEP/perforated_plate.step` | Plate with two rows of holes, dowel holes, a bore, a slot and rounded corners |
+| `perforated_plate_drawing.py` | `PDF/perforated_plate_drawing.pdf` | **Engineering drawing** of the plate: a hole table (each hole and the slot tagged, positioned from the corner, sized from the part), the corner radius in a general note. Run the model above first. |
 | `print_in_place_hinge.py` | `STEP/print_in_place_hinge.step` | Print-in-place barrel hinge for FDM printing |
 | `print_in_place_multi_pivot_phone_holder.py` | `STEP/print_in_place_multi_pivot_phone_holder.step` | Print-in-place multi-pivot holder with a phone/tablet cradle for FDM printing |
 | `pulley_wheel.py` | `STEP/pulley_wheel.step` | Pulley wheel with a central hub, outer groove, and circular through-bore |

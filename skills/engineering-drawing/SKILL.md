@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section and detail views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts read off the model, notes and an ISO title block on a zoned sheet, and for an assembly a general arrangement with balloons and a parts list plus a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, an assembly drawing, a parts list or BOM sheet, a print, or "2D views of this part".
+description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section, detail, auxiliary and broken views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts or a hole table read off the model, fillet and chamfer notes, and an ISO title block on a zoned sheet sized to fit, and for an assembly a general arrangement with balloons and a parts list plus a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, an assembly drawing, a parts list or BOM sheet, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -42,16 +42,24 @@ The first run downloads that installation; later runs reuse it.
    rather than retyping them, so moving a feature moves its dimension. If the
    model keeps them inside a function, read them from its source and say so in
    the handoff; `holes()` and `overall()` need none.
-3. **Choose the views.** `sheet.three_views(part, iso=True)` returns top, front,
-   right and an isometric, in the projection the sheet names. The sheet lays
-   them out again when it renders, spacing each pair for the dimensions they
-   end up carrying, so add annotation freely. Where hidden lines would be the
-   only way to show something (walls, floors, a bore's depth, a keyway), cut
-   that view: `front.section("A", through=(x, y, z))` draws SECTION A-A,
-   hatched, with its cutting plane on the view that sees it edge-on. Where a
+3. **Choose the sheet and the views.** `Sheet(size=None, scale=None)` lets the
+   sheet choose: the smallest of A4 to A2 that draws the part at 1:1 or larger,
+   else A3 reduced; give either to fix it. `sheet.three_views(part, iso=True)`
+   returns top, front, right and an isometric, in the projection the sheet
+   names. The sheet lays them out again when it renders, spacing each pair for
+   the dimensions they end up carrying, so add annotation freely. Where hidden
+   lines would be the only way to show something (walls, floors, a bore's
+   depth, a keyway), cut that view: `front.section("A", through=(x, y, z))`
+   draws SECTION A-A, hatched, with its cutting plane on the view that sees it
+   edge-on. Where a
    feature is too small to dimension at the sheet's scale (a chamfer, a groove,
    a thin wall), `sheet.detail(front, (x, y, z), radius)` draws DETAIL B larger,
-   in free paper near its parent, which gets the circle and the letter.
+   in free paper near its parent, which gets the circle and the letter. Where a
+   face is inclined to every principal view (a bent tab, a sloped boss),
+   `sheet.auxiliary(front, point_on_face)` draws VIEW C square onto it. Where a
+   long part is the same section along most of its length (a shaft, a rail),
+   `front.broken(start, end)` takes that stretch out of the views that show it;
+   dimensions across the break still state the true length.
 4. **Dimension what a maker needs**, in MODEL coordinates:
    - `view.overall()` for overall size; `overall(height=False)` where another
      dimension already states it (a turned part's height is its diameter).
@@ -70,7 +78,12 @@ The first run downloads that installation; later runs reuse it.
      type is checked, and a value the part contradicts stops the script.
      Only `thread=` (which the geometry cannot carry) and `label=` are yours.
      A chamfered bore end is part of its hole: it is called out as `⌵`, with
-     `BOTH ENDS` or `FAR SIDE` when the other end is opened out too.
+     `BOTH ENDS` or `FAR SIDE` when the other end is opened out too. For a part
+     with many holes, `view.hole_table()` tags each one (A1, B1 ...) and lists
+     its position and size in a table instead.
+   - `Sheet(notes=geometry_notes(part))` states the part's commonest fillet or
+     round radius and 45-degree chamfer as general notes, read off the part;
+     any other size still needs a `radius()`, a `dim` or a note.
    - `view.diameter(center)` / `view.radius(center)` measure the circle or arc
      there; pass `size=` only to pick one of several concentric ones.
    - `tol=`, `fit=` and `general_tolerance=` only from the design requirements
@@ -78,8 +91,9 @@ The first run downloads that installation; later runs reuse it.
      a field you leave blank prints as an empty, captioned cell, which says the
      drawing does not state it.
 5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
-   - *"incomplete: …"*: a hole or slot not called out, an overall size or a
-     turned diameter not dimensioned. Each line names the call that states it.
+   - *"incomplete: …"*: a hole or slot not called out, an overall size, a
+     turned diameter, a fillet, round or chamfer not stated. Each line names
+     the call that states it.
    - *"measures blank paper"*: a dimension's points miss the view. Usually the
      part was built from a corner and the script assumed it was centred.
    - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*:
@@ -91,9 +105,13 @@ The first run downloads that installation; later runs reuse it.
    - *"separate solids"*: the part is in pieces, usually a cut that runs right
      through the model. Fix the model before drawing it, or, if it is an
      assembly, draw it as one (below).
+   - *"hides some of the part"*: a break covers a stretch where the part
+     changes; move it to where the section is constant.
    - A refusal (an exception, no PDF): a typed size the part contradicts, a
-     hole called out where no hole is, views that run off the frame. The
-     message says what the part has, or which scale fits.
+     hole called out where no hole is, views that run off the frame on a sheet
+     whose scale you fixed. The message says what the part has, or which scale
+     fits. A sheet that chose its own scale takes a larger sheet or the next
+     scale down instead.
 
    Set `MPLCONFIGDIR` to a writable directory when running unattended.
 6. **Read the PDF** (render a page to PNG if you cannot view PDFs). Check that
@@ -113,6 +131,7 @@ keys every part to a parts list with a balloon, and one sheet per distinct part.
 ```python
 # in the @eng_drawing function; from cadgen.eng_drawing import assembly_sheets, parts_list
 parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
+parts.merge("eye:upper", "eye:lower")              # one part the model names twice
 parts.set("base_plate", material="6061-T6")        # only what the requirements state
 sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100")
 sheets.part("base_plate").views[1].section("A")   # refine any part's sheet
@@ -120,27 +139,26 @@ return sheets
 ```
 
 - `parts_list` reads the parts off the STEP: one item per distinct part, with
-  its quantity. Occurrences sharing a prototype are one part, and so are two
-  with one name (`eye:upper`, `eye:lower`) when one is an exact translated
-  copy of the other. The description is the model's own name for the part
-  (`piston_rod:chrome` reads `PISTON ROD, CHROME`); PART NO. and MATERIAL stay
-  blank unless `parts.set(...)` states them. Label the model's parts
-  (`label_shape`, `shape.label`) before drawing it: an unnamed part has an
-  empty description.
+  its quantity. Occurrences are one part only when they share a name, a colour
+  and their geometry; the description is the model's own name for the part
+  (`piston_rod:chrome` reads `PISTON ROD, CHROME`). Two names on one shape stay
+  two items, and the report says so: `parts.merge(a, b)` lists them as one after
+  checking the shapes match. PART NO. and MATERIAL stay blank unless
+  `parts.set(...)` states them. Label the model's parts before drawing it: an
+  unnamed part has an empty description.
 - `assembly_sheets` makes the GA (front view, whichever of top and right shows
   more, an isometric, overall sizes, balloons, the parts list on the title
   block, continued on further sheets when long) and a first-pass sheet per part
-  (three views and an isometric in the part's own frame, at the largest
-  standard scale that fits, overall sizes, every hole and slot called out). Each
-  is an ordinary `Sheet`: add sections, details and dimensions to
-  `sheets.part(name)` as on any sheet, then run and read the report.
+  (three views and an isometric in the part's own frame on a sheet it chooses,
+  overall sizes, every hole and slot called out). Each is an ordinary `Sheet`:
+  add sections, details and dimensions to `sheets.part(name)`, then run and read
+  the report. Merge items before `assembly_sheets`; `set()` works after it too.
 - The report says, per sheet, what each part's sheet leaves unstated, and names
-  any item no balloon keys (a part every ballooned view hides).
+  any item no balloon keys.
 
-For a custom GA, compose it yourself: `sheet.parts_list(parts)` draws the
-table, and `view.balloons(parts)` on a view of `parts.assembly` balloons what
-it shows; each item is ballooned once per sheet, in the first view that shows
-it.
+For a custom GA, `sheet.parts_list(parts)` draws the table and
+`view.balloons(parts)` on a view of `parts.assembly` balloons what it shows
+([assemblies reference](references/assemblies.md)).
 
 ## What the sheet contains
 
@@ -156,6 +174,9 @@ it.
   SHEET, MATERIAL, FINISH, SCALE, SIZE, DRAWN, DATE, UNITS and the ISO 5456-2
   projection symbol), numbered notes with the general tolerance as note 1, and
   a revision table when `revisions=` is given.
+- Hole tables: each hole and slot tagged on the view, an X and Y origin, and a
+  table of TAG, X, Y and SIZE. Auxiliary views labelled VIEW C with the viewing
+  arrow on their parent; broken views with a zigzag break line across each cut.
 - On an assembly's GA, balloons (item number in a circle, a leader ending in a
   dot on the part) in even columns whose leaders do not cross, and an ISO 7573
   parts list standing on the title block: ITEM, QTY, DESCRIPTION, PART NO.,
@@ -168,13 +189,19 @@ it.
 - Every dimension without `tol=`/`fit=` is nominal, governed by the general
   tolerance if one is given. Say which requirements came from the user.
 - Full sections and circular details only: no half, offset or broken-out
-  sections, no auxiliary views. Say what a view does not show.
-- Holes, slots, overall sizes and turned diameters are checked for
-  completeness; chamfers, fillets and pockets are not, and are stated with
-  `dim`, `radius`, a detail or a `note`. A bolt circle's clocking (where its
+  sections. Auxiliary views are partial (the face and what lies within its
+  outline) and drawn unrotated; a view takes one break. Say what a view does not
+  show.
+- Holes, slots, overall sizes, turned diameters, fillets, rounds and chamfers
+  are checked for completeness; pockets and other features are not, and are
+  stated with `dim`, a detail or a `note`. A bolt circle's clocking (where its
   first hole sits) is a `dim` or an `angle` you add.
 - Millimetres only; one part per arrangement.
 - Assembly sheets: balloons go on whole views, not on sections or details; a
   part sheet always starts from three views; parts are drawn in their model
-  frame; copies rotated relative to one another are listed as separate items
-  unless they share a prototype. Say which part sheets are still a first pass.
+  frame. Say which part sheets are still a first pass.
+
+## References
+
+- Sheets, views and every annotation call, with a template: `references/sheet-api.md`
+- Assembly drawings, parts lists and balloons: `references/assemblies.md`

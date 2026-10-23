@@ -1,7 +1,7 @@
 # `cadgen.eng_drawing` reference
 
 ```python
-from cadgen.eng_drawing import eng_drawing, Sheet, parts_list, assembly_sheets
+from cadgen.eng_drawing import eng_drawing, Sheet, geometry_notes
 ```
 
 ## Template
@@ -60,20 +60,6 @@ def shaft_drawing():
     return sheet
 ```
 
-An assembly is a drawing set: a general arrangement keyed to a parts list,
-then a sheet per part, each one refined like any sheet:
-
-```python
-@eng_drawing(out="../PDF/rig_drawing.pdf")
-def rig_drawing():
-    parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
-    parts.set("base_plate", material="6061-T6", part_number="RIG-101")   # stated, never guessed
-    sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100", general_tolerance="ISO 2768-m")
-    top, front, right, iso = sheets.part("base_plate").views
-    front.section("A")
-    return sheets
-```
-
 ## `@eng_drawing(out="<path>.pdf")`
 
 Declares the drawing. The function returns a `Sheet` or a list of them. Calling
@@ -86,8 +72,15 @@ script. Both are checked when the module is imported. There is no CLI verb: a
 
 ## `Sheet(size="A3", scale=1.0, title=..., part_number="", material="", finish="", revision="A", author="", date="", units="mm", projection="THIRD ANGLE", notes=(), ink="mono", text_height=3.5, general_tolerance="", revisions=())`
 
-- `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid.
+- `size`: `A4`, `A3`, `A2`, `A1`, `A0`, landscape, with an ISO 5457 zone grid;
+  `None` lets `three_views` choose the smallest of A4 to A2 that draws the part
+  at 1:1 or larger, else A3.
 - `scale`: 1 = 1:1, 0.5 = 1:2, 2 = 2:1. Values stay true size at any scale.
+  `None` lets `three_views` choose the largest standard scale, up to 10:1, that
+  fits. A chosen scale is chosen again when the sheet renders, from the
+  annotation each view carries; should it still run out of paper, a chosen
+  sheet tries the next size up, then the next scale down. A size or scale you
+  set afterwards is yours.
 - `title`, `part_number` (DWG NO.), `material`, `finish`, `revision`, `author`
   (DRAWN), `date`: title block cells. A field left empty prints as an empty,
   captioned cell. Nothing is stamped from the clock. The drawing function's
@@ -97,6 +90,8 @@ script. Both are checked when the module is imported. There is no CLI verb: a
   `three_views` makes and the projection symbol the title block draws.
 - `general_tolerance="ISO 2768-m"`: note 1, "TOLERANCES PER ISO 2768-m UNLESS
   OTHERWISE SPECIFIED." `notes=` takes a LIST; a bare string is refused.
+  `notes=geometry_notes(part)` adds the general notes the part's geometry
+  states (below).
 - `revisions=[("A", "2026-09-01", "INITIAL RELEASE"), ...]`: a revision table.
 - `subtitle`: a second line under the title; a part's sheet of an assembly
   carries `ITEM 4 (QTY 2) OF RIG` there.
@@ -123,15 +118,18 @@ that finds no room is refused. A detail of a section keeps its hatching. Give
 it dimensions, callouts and notes like any view; `holes()` on it calls out only
 what its circle holds.
 
-### `sheet.parts_list(parts, first=1, last=None)`
+### `sheet.auxiliary(view, point, letter="C", scale=None, at=None, partial=True)`
 
-Draws `parts` as the parts list, standing on the title block and as wide as it
-(ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, the header
-against the block and item 1 above it. `first`/`last` draw a run of a list too
-long for one sheet; one that does not fit is refused, naming where to split it,
-and each run of a split list says on which sheet it continues. The views and
-any detail keep clear of it; a hand-placed view over it, or a note running
-under it, is refused.
+An auxiliary view: the part seen square to the flat face through `point` (a
+model point on it; the middle of a face with a hole in it will do), so an
+inclined face shows its true shape and its holes as circles. Labelled `VIEW C`;
+`view` gets an arrow pointing the way it looks, with the letter. Drawn with the
+face's slope running up the sheet, at `view`'s scale unless `scale` is given,
+in the free paper nearest `view` unless `at` places it. `partial` (the default)
+draws the face and what lies within its outline; the rest of the part is
+foreshortened there. A face square to a principal view is refused: draw that
+view. Give it dimensions and callouts like any view; `holes()` on it calls out
+the holes in that face.
 
 ### `sheet.view(shape, name, at=(x, y), label=None, hidden=True, centre_marks=True, scale=None)`
 
@@ -163,6 +161,13 @@ sheet millimetres.
   of the part read `6× ⌀6 THRU EQ SP ON ⌀60`, and their pitch circle is drawn.
   A blind or counterbored hole that opens on the far side belongs to the
   opposite view.
+- `view.hole_table(origin=None, at=None)`: tabulate the holes and slots the
+  view looks down instead of calling them out: each tagged on the view (A1, A2
+  for one kind, B1 for the next), an X and Y origin marked (the lower-left
+  corner of the view's extent unless `origin`, a model point, is given), and a
+  table of TAG, X, Y and SIZE in free paper beside the view (or with its
+  top-left corner at `at`). Sizes are read off the part as a callout reads
+  them. A view tabulates its holes or calls them out, not both.
 - `view.hole(point, diameter=None, depth=None, thru=None, cbore=None, csk=None, thread=None, count=None, angle=45, tol=None, fit=None, label=None)`:
   one callout on the hole whose axis passes through `point`, in a view looking
   down that axis. Every size and the count come from the part; a value given is
@@ -184,51 +189,27 @@ sheet millimetres.
   Cut faces are hatched, hidden lines are left out, the view is labelled
   `SECTION A-A`, and the cutting plane is drawn on a view of the same part
   that sees it edge-on. Letters I, O and Q are refused.
+- `view.broken(start, end)`: take the stretch between two model points (along
+  one model axis, in the view's plane) out of the view, the two ends drawn 10
+  mm apart with a zigzag break line across each cut. The other views of the
+  arrangement that show that length break alike; the isometric is drawn whole.
+  A dimension across the break, and `overall()`, state the true length. Holes
+  inside the stretch are not drawn, and the script says when the part changes
+  there. One break per view; not on a section, detail or auxiliary view.
 - `view.angle(vertex, p1, p2, offset=14)`: the angle at `vertex` between the
   legs toward `p1` and `p2`.
 - `view.note(text, at, offset=(10, 10))`: a leader from a model point to text.
-- `view.balloons(parts)`: balloon every item of `parts` the view shows, on a
-  view of `parts.assembly`. Each leader ends in a dot on a point of the part
-  the view sees; the balloons stand in a column each side of a tall view (rows
-  above and below a wide one), keep their leaders' order and stay clear of
-  dimension text. An item already ballooned in an earlier view of the sheet is
-  skipped, so balloon the views in order of preference. Not on a section or a
-  detail.
+## `geometry_notes(part)`
 
-## Assemblies
-
-### `parts_list(source)`
-
-`source` is a scene from `cadgen.read_scene(path)` or a live build123d
-`Compound` made with `children=`. Returns a `PartsList`: one `Item` per
-distinct part, numbered in the order the assembly first holds them. Occurrences
-sharing a prototype are one part; so are two with one name before the colon
-(`eye:upper`, `eye:lower`) when one is an exact translated copy of the other.
-Mirror images and identical shapes under different names stay apart.
-
-- `parts[3]`, `parts["coil_spring"]`: an item by number, label or the label's
-  name before the colon; an unknown or ambiguous key is refused with the list.
-- `parts.set(key, description=..., part_number=..., material=...)`: what the
-  model cannot carry; chains. Nothing else is accepted.
-- `item.number`, `.description` (the label read out: `piston_rod:chrome` is
-  `PISTON ROD, CHROME`), `.quantity`, `.part_number`, `.material`, `.labels`,
-  `.refs` (occurrence refs, `#o1.2`), `.shape` (one occurrence in its own
-  frame), `.occurrences` (each placed in the assembly).
-- `parts.assembly`: the whole assembly, placed, for the GA's views.
-
-### `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=())`
-
-Returns the set as a list of `Sheet`s: the general arrangement (front view, the
-one of top and right showing more, an isometric; no hidden lines; overall
-sizes; balloons; the parts list, continued on further sheets past 16
-items on A3), then one sheet per item. A part's sheet draws `item.shape` in three
-views and an isometric at the largest standard scale up to 10:1 that fits,
-states its overall sizes, calls out the holes and slots each view looks down,
-and is titled with the item's description over `ITEM n OF <title>`. Should its
-annotation outgrow the paper, it is redrawn at the next standard scale down
-rather than refused. Every sheet carries the drawing number, revision, author
-and date; `notes` and `revisions` go on the GA, `general_tolerance` on the part
-sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
+The general notes the part's own geometry states, for `Sheet(notes=...)`: its
+commonest blend radius (`FILLETS R2 UNLESS OTHERWISE SPECIFIED.` for inside
+corners, `ROUNDS` for outside edges, `FILLETS AND ROUNDS` for both) and its
+commonest 45-degree chamfer (`CHAMFERS 1 × 45° UNLESS OTHERWISE SPECIFIED.`).
+Each is a measured fact of the model, not a requirement. A blend is a
+part-cylinder or torus face tangent to the two faces it joins; a chamfer is a
+narrow flat strip bevelling a square edge, or a short cone bevelling a turned
+end. Blends and chamfers of other sizes are reported until a `radius()`, a
+`dim` of the chamfer's leg or a note states them.
 
 ## What the script prints
 
@@ -238,6 +219,9 @@ sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
 | `incomplete: 8 × 30 SLOT THRU is not called out. top.slot(...) ...` | a slot is not called out |
 | `incomplete: the overall size along Z (8) is not dimensioned. front.overall() ...` | an overall extent is not stated in any view |
 | `incomplete: the turned diameter ⌀30 is not dimensioned ...` | a shaft step or boss has no diameter |
+| `incomplete: 4 rounds R2 are not stated. Sheet(notes=geometry_notes(part)) ...` | a blend radius is not stated |
+| `incomplete: 2 chamfers 1 × 45° are not stated ...` | a chamfer is not stated |
+| `the break from X = 100 to 500 hides some of the part ...` | the part changes inside a break; move it |
 | `front dim 2: ... measures blank paper` | a dimension's points miss the view |
 | `annotation overlaps: '120' is printed over 'TOP' ...` | two pieces of text collide |
 | `views crowded: ... Sheet("A2") or Sheet(scale=0.5) gives them room` | the views' annotation needs more paper |
@@ -246,9 +230,6 @@ sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
 | `the part in the top view is 2 separate solids ...` | the model is in pieces |
 | `DETAIL B: no free paper on A3 for a 50 mm circle at 10:1 ...` | give `at=`, a smaller `scale=`, or a larger sheet |
 | `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
-| `incomplete: item 4 (CORE) has no balloon ...` | no ballooned view shows that part; balloon a view from a side where it shows |
-| `incomplete: the parts list leaves out items 18, 19 ...` | draw the rest with `parts_list(parts, first=18)` on another sheet |
-| `note ... runs under the parts list` / `view is drawn over the parts list` | shorten the note, move the view |
 
 ## Layers
 

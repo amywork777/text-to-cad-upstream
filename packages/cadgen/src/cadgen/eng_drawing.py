@@ -65,7 +65,7 @@ from typing import Any, Callable, Iterable, Sequence
 from cadgen._internal.drawing_assembly import Item, PartsList, parts_list
 
 __all__ = ["eng_drawing", "Sheet", "View", "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets",
-           "AssemblySheets"]
+           "AssemblySheets", "geometry_notes"]
 
 #: ISO 216 sheet sizes, landscape, in millimetres.
 SHEET_SIZES = {
@@ -204,6 +204,19 @@ class View:
     _arranged: tuple | None = None
     #: The parts lists :meth:`balloons` keys this view to.
     _balloons: list = field(default_factory=list)
+    #: ``(origin model point or None, table corner or None)`` when
+    #: :meth:`hole_table` tabulates this view's holes.
+    _table: tuple | None = None
+    #: ``(where the viewer stands, up)`` for a view whose direction is its own
+    #: rather than its name's: an auxiliary view.
+    _direction: tuple | None = None
+    #: ``(model axis 0-2, low, high)`` when :meth:`broken` takes the stretch
+    #: between low and high along that axis out of the view.
+    _break: tuple | None = None
+    #: ``(parent view, model point, letter, placed by the sheet, outline points or
+    #: None)`` when :meth:`Sheet.auxiliary` made this an auxiliary view; the
+    #: outline is the face's, for a partial view.
+    _aux: tuple | None = None
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
             tol: float | tuple[float, float] | None = None, fit: str | None = None) -> "View":
@@ -277,6 +290,23 @@ class View:
         self._dims.append(_Dim("holes", (0.0, 0.0, 0.0), None, 0.0, None, None, angle=float(angle)))
         return self
 
+    def hole_table(self, origin=None, *, at=None) -> "View":
+        """Tabulate the holes and slots this view looks down, as a part with many
+        holes is drawn: each tagged on the view (A1, A2 ... for one kind, B1 ...
+        for the next), and a table of TAG, X, Y and SIZE in free paper beside it.
+        Positions are measured from ``origin`` (a model point; the lower-left
+        corner of the view's extent by default), which the view marks with its
+        X and Y arrows; sizes are read off the part, as a callout reads them.
+        ``at`` puts the table's top-left corner at that sheet point instead.
+        A view tabulates its holes or calls them out, not both."""
+        if self.name == "iso":
+            raise ValueError("hole_table() tabulates an orthographic view's holes; an isometric has no X and Y")
+        corner = None
+        if at is not None:
+            corner = _pair("at", at)
+        self._table = (None if origin is None else _p3(origin), corner)
+        return self
+
     def diameter(self, center, *retired, size: float | None = None, angle: float = 45.0,
                  text: str | None = None) -> "View":
         """A diameter callout on the circle centred at ``center``, measured off the
@@ -333,6 +363,8 @@ class View:
         Dimensions and callouts are given in model coordinates as on any view."""
         if self.name == "iso":
             raise ValueError("section() cuts an orthographic view; an isometric is drawn whole")
+        if self._direction is not None:
+            raise ValueError("section() cuts a principal view; an auxiliary view is drawn whole")
         letter = str(letter).upper()
         if len(letter) != 1 or letter not in _SECTION_LETTERS:
             raise ValueError(f"section letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O "
@@ -352,6 +384,34 @@ class View:
         self._overall = frozenset(name for name, on in (("width", width), ("height", height)) if on)
         return self
 
+    def broken(self, start, end) -> "View":
+        """Draw the view with the stretch between two model points taken out, the
+        way a long part of constant section is drawn: the two ends at the sheet's
+        scale, close together, a break line across each cut. ``start`` and
+        ``end`` lie along one of the model's axes, in the plane of the view. A
+        dimension across the break states its true length. The other views of
+        the same arrangement that show that length are broken alike, so the
+        views stay in line; the isometric is drawn whole. The drawing says if
+        the part changes inside the break, since the break would hide it."""
+        if self.name == "iso" or self._detail is not None or self._aux is not None or self._section is not None:
+            raise ValueError("broken() shortens a whole principal view, not an isometric, a detail, an auxiliary "
+                             "view or a section")
+        a, b = _p3(start), _p3(end)
+        axis = max(range(3), key=lambda k: abs(b[k] - a[k]))
+        if abs(b[axis] - a[axis]) < 1e-6:
+            raise ValueError("broken() takes two different points along the part's length")
+        if abs(_look(self)[axis]) > 1e-9:
+            raise ValueError(f"the {self.name} view looks along {'XYZ'[axis]}, so it shows no length to break; "
+                             f"break a view that shows {'XYZ'[axis]} across the sheet")
+        brk = (axis, min(a[axis], b[axis]), max(a[axis], b[axis]))
+        views = [self]
+        if self._arranged is not None:
+            views = [v for v in self.sheet.views if v._arranged is self._arranged and v.name != "iso"
+                     and abs(_look(v)[axis]) < 1e-9]
+        for view in views:
+            view._break = brk
+        return self
+
     def balloons(self, parts: PartsList) -> "View":
         """Balloon every item of ``parts`` this view shows: its item number in a
         circle, with a leader ending in a dot on a point of the part the view
@@ -369,6 +429,7 @@ class View:
                 "(sheet.view(parts.assembly, ...)) and balloon that view."
             )
         _refuse_balloons_on(self)
+        parts._frozen = True
         if parts not in self._balloons:
             self._balloons.append(parts)
         return self
@@ -391,6 +452,8 @@ def _refuse_used_letter(sheet, letter: str, view=None) -> None:
             raise ValueError(f"letter {letter} already names DETAIL {letter} on this sheet; pick another letter")
         if other._detail is None and other._section is not None and other._section[0] == letter:
             raise ValueError(f"letter {letter} already names SECTION {letter}-{letter} on this sheet; pick another letter")
+        if other._aux is not None and other._aux[2] == letter:
+            raise ValueError(f"letter {letter} already names VIEW {letter} on this sheet; pick another letter")
 
 
 def _refuse_retired_size(verb: str, retired: tuple) -> None:
@@ -555,16 +618,55 @@ def _p3(p) -> tuple[float, float, float]:
     return values  # type: ignore[return-value]
 
 
+def _dirs(view) -> tuple:
+    """Where a view's viewer stands, and its up: an auxiliary view's own, or its name's."""
+    return view._direction or VIEW_DIRECTIONS[view.name]
+
+
+def _look(view) -> tuple:
+    return _dirs(view)[0]
+
+
+def _face_normal(shape, point) -> tuple:
+    """The outward normal of the flat face of ``shape`` through ``point``, and the
+    points of that face's outline."""
+    from build123d import GeomType, Vector
+
+    target = Vector(*point)
+    near = []
+    for face in shape.faces():
+        if face.geom_type != GeomType.PLANE:
+            continue
+        # On the face's plane and inside its outline: the middle of a face with a
+        # hole in it is a point on that face to whoever names it.
+        normal = face.normal_at(face.center())
+        box = face.bounding_box()
+        if abs((target - face.center()).dot(normal)) < 1e-3 and all(
+                lo - 1e-3 <= v <= hi + 1e-3 for v, lo, hi in zip(target, box.min, box.max)):
+            near.append((face.distance_to(target), face))
+    if not near:
+        raise ValueError(f"no flat face of the part passes through {_where(point)}; an auxiliary view looks "
+                         "square onto a flat face, so give a point on one")
+    face = min(near, key=lambda pair: pair[0])[1]
+    normal = face.normal_at(target)
+    return (normal.X, normal.Y, normal.Z), _wire_points(face.outer_wire())
+
+
 @dataclass
 class Sheet:
     """One sheet of a drawing: a frame, a title block and the views placed on it.
 
     ``at`` positions on views are the sheet's own millimetres with the origin at
     the sheet's bottom-left corner; ``scale`` is drawing scale (1 = 1:1, 0.5 = 1:2).
+
+    ``size=None`` and ``scale=None`` let the sheet choose: :meth:`three_views`
+    picks the smallest sheet and the largest standard scale its views and their
+    annotation fit at, and a scale the sheet chose steps down when it renders,
+    should the annotation added afterwards need more paper.
     """
 
-    size: str = "A3"
-    scale: float = 1.0
+    size: str | None = "A3"
+    scale: float | None = 1.0
     title: str = "UNTITLED"
     part_number: str = ""
     material: str = ""
@@ -590,15 +692,34 @@ class Sheet:
     views: list[View] = field(default_factory=list)
     #: ``(parts list, first item, last item)`` when :meth:`parts_list` draws one.
     _parts: tuple | None = field(default=None, init=False, repr=False)
-    #: The sheet chose its own scale and may take a smaller standard one when its
-    #: views and their annotation need it: a part sheet ``assembly_sheets`` made.
+    #: The sheet chose its own scale (``scale=None``) and may take a smaller
+    #: standard one when its views and their annotation need it.
     _fit: bool = field(default=False, init=False, repr=False)
+    #: ``(size chosen, scale chosen)``: which of the two the sheet settles itself.
+    _auto: tuple = field(default=(False, False), init=False, repr=False)
+    #: The largest scale a chosen scale may take: one that ran off the frame
+    #: lowers it, so the next choice does not take it again.
+    _ceiling: float | None = field(default=None, init=False, repr=False)
+    #: The smallest size a chosen size may take: a sheet that ran out of paper
+    #: raises it, so the next choice tries a larger sheet before a smaller scale.
+    _floor: int = field(default=0, init=False, repr=False)
+    #: ``(size, scale)`` as the sheet last chose them: a value the author sets
+    #: afterwards is theirs, and the sheet stops choosing it.
+    _chosen: tuple | None = field(default=None, init=False, repr=False)
+    #: ``(item, assembly title)`` for a part's sheet of an assembly drawing: its
+    #: title, subtitle and material are the item's when it renders.
+    _item: tuple | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
-        if self.size not in SHEET_SIZES:
-            raise ValueError(f"unknown sheet size {self.size!r}; one of {sorted(SHEET_SIZES)}")
-        if not (self.scale > 0):
-            raise ValueError("scale must be positive")
+        if self.size is not None and self.size not in SHEET_SIZES:
+            raise ValueError(f"unknown sheet size {self.size!r}; one of {sorted(SHEET_SIZES)}, or None to let "
+                             "three_views() choose")
+        if self.scale is not None and (isinstance(self.scale, bool) or not isinstance(self.scale, (int, float))
+                                       or not (self.scale > 0)):
+            raise ValueError(f"scale must be a positive number, or None to let three_views() choose; got "
+                             f"{self.scale!r}")
+        self._fit = self.scale is None
+        self._auto = (self.size is None, self.scale is None)
         if self.units not in UNITS:
             raise ValueError(
                 f"units={self.units!r}: a sheet prints millimetres, the unit every value on it is measured "
@@ -631,10 +752,14 @@ class Sheet:
         for row in self.revisions:
             if isinstance(row, (str, bytes)) or len(row) != 3:
                 raise ValueError(f"each revision must be a (rev, date, description) triple, got {row!r}")
-        # A note wider than the sheet runs off the paper, and the sheet is the one
-        # thing here that cannot be made bigger after the fact. Measure the line
-        # the sheet DRAWS -- numbered, prefixed, general tolerance expanded -- at
-        # the height it draws it, against the room it has.
+        if self.size is not None:
+            self._check_notes()
+
+    def _check_notes(self) -> None:
+        """A note wider than the sheet runs off the paper, and the sheet is the one
+        thing here that cannot be made bigger after the fact. Measure the line the
+        sheet DRAWS -- numbered, prefixed, general tolerance expanded -- at the
+        height it draws it, against the room it has."""
         room = self.width - 2 * (_MARGIN + _NOTE_INSET)
         for line, note in zip(self.note_lines(), self.drawn_notes()):
             if _text_width(line, _NOTE_HEIGHT) > room:
@@ -657,11 +782,27 @@ class Sheet:
 
     @property
     def width(self) -> float:
-        return SHEET_SIZES[self.size][0]
+        return SHEET_SIZES[self._size()][0]
 
     @property
     def height(self) -> float:
-        return SHEET_SIZES[self.size][1]
+        return SHEET_SIZES[self._size()][1]
+
+    def _size(self) -> str:
+        if self.size is None:
+            raise ValueError(
+                "Sheet(size=None) chooses its size when three_views() places the part, and nothing has been "
+                "placed yet. Call three_views() first, or give size= for views placed by hand."
+            )
+        return self.size
+
+    def _scale(self) -> float:
+        if self.scale is None:
+            raise ValueError(
+                "Sheet(scale=None) chooses its scale when three_views() places the part, and nothing has been "
+                "placed yet. Call three_views() first, or give scale= for views placed by hand."
+            )
+        return self.scale
 
     def three_views(self, shape, *, gap: float | None = None, hidden: bool = True, centre_marks: bool = True,
                     iso: bool = False) -> tuple[View, View, View] | tuple[View, View, View, View]:
@@ -672,10 +813,16 @@ class Sheet:
         The positions returned are provisional: when the sheet renders, the views
         are laid out again with each gap sized to the dimensions and callouts the
         facing views actually carry, so annotation added after this call gets
-        room. ``gap`` fixes the clear space between views instead."""
+        room. ``gap`` fixes the clear space between views instead.
+
+        On a sheet made with ``size=None`` or ``scale=None``, the first call
+        chooses them for this part (see :class:`Sheet`)."""
         size = shape.bounding_box().size
         arranged = (size, gap, _view_extent(shape, "iso", 1.0) if iso else False)
-        slots = _arrange_three_views(self, shape, size, gap, self.scale, arranged[2])
+        if self.size is None or self.scale is None:
+            _choose_size_and_scale(self, shape, arranged[2], {n: dict(_DEFAULT_ROOM) for n in ("top", "front", "right")},
+                                   gap)
+        slots = _arrange_three_views(self, shape, size, gap, self._scale(), arranged[2])
         views = tuple(
             self.view(shape, name, at=at, hidden=hidden if name != "iso" else False,
                       centre_marks=centre_marks if name != "iso" else False,
@@ -731,8 +878,59 @@ class Sheet:
         detail = View(self, view.shape, view.name, at or (0.0, 0.0), f"DETAIL {letter} ({_scale_label(scale)})",
                       view.hidden, view.centre_marks, scale)
         detail._detail = (view, _p3(center), r, letter, at is None, chosen)
+        detail._direction = view._direction
         self.views.append(detail)
         return detail
+
+    def auxiliary(self, view: "View", point, *, letter: str = "C", scale: float | None = None, at=None,
+                  partial: bool = True) -> "View":
+        """An auxiliary view: the part seen square to the flat face through
+        ``point`` (a model point on it), so an inclined face shows its true shape
+        and its holes as circles. Labelled ``VIEW C``; ``view``, the view it is
+        projected from, gets an arrow pointing the way it looks, and the letter.
+
+        It is drawn with the face's slope running up the sheet, at ``view``'s
+        scale unless ``scale`` is given, and placed in the free paper nearest
+        ``view`` unless ``at`` places it. It shows that face and what lies within
+        its outline, as a partial view does, since the rest of the part is
+        foreshortened there; ``partial=False`` draws the whole part. Give it
+        dimensions and callouts like any view; ``holes()`` on it calls out the
+        holes in that face."""
+        if view not in self.views:
+            raise ValueError("auxiliary() takes a view of this sheet")
+        if view.name == "iso" or view._detail is not None or view._aux is not None:
+            raise ValueError("auxiliary() projects from a principal view, not an isometric, a detail or another "
+                             "auxiliary view")
+        letter = str(letter).upper()
+        if len(letter) != 1 or letter not in _SECTION_LETTERS:
+            raise ValueError(f"auxiliary view letter must be one of {_SECTION_LETTERS} (ISO 128-40 leaves out I, O "
+                             f"and Q), got {letter!r}")
+        _refuse_used_letter(self, letter)
+        if scale is not None and not (scale > 0):
+            raise ValueError("an auxiliary view's scale must be positive")
+        corner = None if at is None else _pair("at", at)
+        n, outline = _face_normal(view.shape, _p3(point))
+        for name, (direction, _up) in VIEW_DIRECTIONS.items():
+            if name != "iso" and _dot(n, direction) > 1 - 1e-6:
+                raise ValueError(f"the face at {_where(point)} faces the {name} view square on; draw that view "
+                                 "rather than an auxiliary one")
+        look = _look(view)
+        if abs(_dot(n, look)) > 1 - 1e-6:
+            raise ValueError(f"the face at {_where(point)} faces the {view.name} view square on already")
+        # Up is the parent's up laid onto the face, so the face's slope runs up the sheet.
+        parent_up = _dirs(view)[1]
+        up = tuple(u - _dot(parent_up, n) * c for u, c in zip(parent_up, n))
+        if math.sqrt(_dot(up, up)) < 1e-6:
+            up = tuple(u - _dot(look, n) * c for u, c in zip(look, n))
+        length = math.sqrt(_dot(up, up))
+        up = tuple(c / length for c in up)
+        own = scale if scale is not None else view.scale
+        label = f"VIEW {letter}" + (f" ({_scale_label(own)})" if own is not None and own != self.scale else "")
+        aux = View(self, view.shape, "auxiliary", corner or (0.0, 0.0), label, view.hidden, view.centre_marks, own)
+        aux._direction = (n, up)
+        aux._aux = (view, _p3(point), letter, corner is None, outline if partial else None)
+        self.views.append(aux)
+        return aux
 
     def parts_list(self, parts: PartsList, *, first: int = 1, last: int | None = None) -> "Sheet":
         """Draw ``parts`` as the parts list, directly above the title block and as
@@ -752,6 +950,7 @@ class Sheet:
         if (isinstance(first, bool) or isinstance(last, bool) or not isinstance(first, int)
                 or not isinstance(last, int) or not 1 <= first <= last <= len(parts)):
             raise ValueError(f"parts_list(first={first!r}, last={last!r}): the items run 1 to {len(parts)}")
+        parts._frozen = True
         room = _list_room(self)
         if (last - first + 2) * _LIST_ROW > room:
             fits = int(room // _LIST_ROW) - 1
@@ -770,6 +969,8 @@ class Sheet:
             raise ValueError(f"unknown view {name!r}; one of {sorted(VIEW_DIRECTIONS)}")
         if scale is not None and not (scale > 0):
             raise ValueError("a view's scale must be positive")
+        self._size()
+        self._scale()  # a view placed by hand is placed on a sheet of known size and scale
         # A non-finite at= compares False against every frame edge, so the off-frame
         # guard passed it and the sheet rendered blank at exit 0 -- the one outcome
         # the guard exists to prevent.
@@ -853,7 +1054,7 @@ class _Projection:
         views beside it."""
         from build123d import Axis, Edge, Vector
 
-        direction, up = VIEW_DIRECTIONS[name]
+        direction, up = VIEW_DIRECTIONS[name] if isinstance(name, str) else name
         bbox = shape.bounding_box()
         centre = bbox.center()
         radius = max(bbox.size.length, 1.0)
@@ -915,8 +1116,11 @@ class _Projection:
         y = self.c[1] + self.m[0][1] * p[0] + self.m[1][1] * p[1] + self.m[2][1] * p[2]
         return (x, y)
 
+    #: A broken view's map from model points to the shortened part's, or None.
+    shift: Callable | None = None
+
     def point(self, p) -> tuple[float, float]:
-        return self._raw_point(p)
+        return self._raw_point(self.shift(p) if self.shift else p)
 
 
 def _edges_bounds(edges) -> tuple[float, float, float, float] | None:
@@ -1557,7 +1761,7 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
     callout per kind of hole. Anything the author typed is checked on the way."""
     import dataclasses
 
-    look = VIEW_DIRECTIONS[view.name][0]
+    look = _look(view)
     seen_cache: tuple | None = None
 
     def kept(feature, run: float) -> bool:
@@ -1566,6 +1770,11 @@ def _resolve_view(view: View, proj, bounds, part_features, warnings: list | None
         if view._detail is not None:
             centre, radius = view._detail[1], view._detail[2]
             if math.dist(proj.point(feature.mouth), proj.point(centre)) > radius + 1e-6:
+                return False
+        if view._break is not None:
+            # Taken out with the stretch a broken view leaves out.
+            axis, lo, hi = view._break
+            if lo < feature.mouth[axis] < hi:
                 return False
         if cut is None:
             return True
@@ -1849,7 +2058,7 @@ def _axis_lines(view: View, proj, part_axes, to_sheet) -> list[tuple[tuple[float
     axis, a hole drawn hidden through a plate. Axes that land on one drawn line
     (two holes one behind the other, a shaft's steps) merge into one line, which
     runs ``_CENTRE_OVERSHOOT`` past the feature at each end."""
-    look = VIEW_DIRECTIONS[view.name][0]
+    look = _look(view)
     lines: dict[tuple, list[list[float]]] = {}
     for axis in part_axes:
         d = tuple(e - s for e, s in zip(axis.end, axis.start))
@@ -1886,7 +2095,7 @@ def _end_on(view: View, proj, part_axes) -> list[tuple[tuple[float, float], floa
     """(centre, radius) of every turned feature a view looks straight down: its
     centre mark belongs there even when part of its circle is hidden behind
     something nearer, which leaves no closed circle to find it by."""
-    look = VIEW_DIRECTIONS[view.name][0]
+    look = _look(view)
     marks = []
     for axis in part_axes:
         d = tuple(e - s for e, s in zip(axis.end, axis.start))
@@ -1947,7 +2156,8 @@ _LIST_COLUMNS = (("ITEM", 12.0), ("QTY", 12.0), ("DESCRIPTION", 68.0), ("PART NO
 def _list_room(sheet: Sheet) -> float:
     """The height a parts list may take above the title block: the frame, less
     the block, a row for the line saying where a long list continues, and air."""
-    return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0
+    revisions = (len(sheet.revisions) + 1) * 6.0 + 4.0 if sheet.revisions else 0.0
+    return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0 - revisions
 
 
 def _list_height(sheet: Sheet) -> float:
@@ -1967,6 +2177,16 @@ def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
     from ezdxf.enums import TextEntityAlignment as A
 
     parts, first, last = sheet._parts
+    fields = {"DESCRIPTION": "description", "PART NO.": "part_number", "MATERIAL": "material"}
+    for item in parts.items[first - 1:last]:
+        for name, width in _LIST_COLUMNS:
+            value = getattr(item, fields[name]) if name in fields else ""
+            if value and _text_width(value, _MIN_TEXT_MM) > width - 3:
+                raise ValueError(
+                    f"item {item.number}'s {name} {value!r} does not fit the parts list's {name} column "
+                    f"({width:.0f} mm) even at the smallest legible text, and a parts list cut short is wrong. "
+                    f"Shorten it: parts.set({item.number}, {fields[name]}=...)."
+                )
     x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
     rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
         (str(item.number), str(item.quantity), item.description, item.part_number, item.material)
@@ -2134,7 +2354,7 @@ def _cut(view: View) -> tuple:
     letter, through = view._section
     shape = view.shape
     point = through if through is not None else tuple(shape.bounding_box().center())
-    look = VIEW_DIRECTIONS[view.name][0]
+    look = _look(view)
     kept = shape.split(Plane(origin=point, z_dir=look), keep=Keep.BOTTOM)
     if isinstance(kept, (list, tuple)):
         kept = Compound(list(kept))
@@ -2183,6 +2403,135 @@ def _clip_runs(points, region) -> list[list[tuple[float, float]]]:
         elif part.geom_type == "MultiLineString":
             runs.extend([tuple(c) for c in line.coords] for line in part.geoms)
     return runs
+
+
+#: A hole table's row height and its fixed columns; SIZE is as wide as its longest entry.
+_TABLE_ROW = 6.0
+_TABLE_COLUMNS = (("TAG", 12.0), ("X", 20.0), ("Y", 20.0))
+
+
+def _hole_table_rows(view: View, proj, bounds, features, cut, items) -> dict:
+    """The holes and slots a view tabulates, tagged and measured from its origin:
+    ``{"rows": [...], "origin": (x, y) projected, "size": (w, h)}``. Each row is a
+    dict of tag, x, y (model mm from the origin), size (the callout text without
+    a count), the feature and its projected centre."""
+    if any(dim.kind in ("hole", "slot", "holes") for dim in items):
+        raise ValueError(f"the {view.name} view both tabulates its holes and calls them out; hole_table() lists "
+                         "every hole the view looks down, so drop its holes(), hole() and slot() calls")
+    look = _look(view)
+
+    def kept(feature, run: float) -> bool:
+        if not cut:
+            return True
+        far = tuple(m + a * run for m, a in zip(feature.mouth, feature.axis))
+        return min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look) for end in (feature.mouth, far)) <= 1e-6
+
+    holes = [h for h in features.holes if abs(_dot(h.axis, look)) > 1 - 1e-6 and _faces_viewer(h, look)
+             and kept(h, h.length)]
+    slots = [sl for sl in features.slots if abs(_dot(sl.axis, look)) > 1 - 1e-6 and _slot_faces_viewer(sl, look)
+             and kept(sl, sl.run)]
+    if not holes and not slots:
+        raise ValueError(f"{view.name}.hole_table(): the {view.name} view looks down no hole or slot")
+    origin = proj.point(view._table[0]) if view._table[0] is not None else (bounds[0], bounds[2])
+    kinds: dict[tuple, list] = {}
+    for feature in holes:
+        kinds.setdefault(feature.signature(), []).append(feature)
+    order = sorted(kinds.values(), key=lambda g: (-g[0].diameter, g[0].signature()))
+    slot_kinds: dict[tuple, list] = {}
+    for feature in slots:
+        slot_kinds.setdefault(feature.signature(), []).append(feature)
+    order += sorted(slot_kinds.values(), key=lambda g: g[0].signature())
+    if len(order) > len(_SECTION_LETTERS):
+        raise ValueError(f"{view.name}.hole_table(): {len(order)} kinds of hole is more than the "
+                         f"{len(_SECTION_LETTERS)} letters a table tags them with")
+    def centre(feature):
+        """Where a hole's axis or a slot's middle meets the view."""
+        if hasattr(feature, "width"):
+            return proj.point(tuple((a + b) / 2 for a, b in zip(*feature.ends)))
+        return proj.point(feature.mouth)
+
+    rows = []
+    for letter, members in zip(_SECTION_LETTERS, order):
+        is_slot = hasattr(members[0], "width")
+        spec = _slot_spec(members[0], 1) if is_slot else _hole_spec(members[0], 1)
+        size = hole_callout_text(spec)
+        placed = sorted(((centre(f), f) for f in members),
+                        key=lambda pf: (round(pf[0][0] - origin[0], 3), round(pf[0][1] - origin[1], 3)))
+        for number, (point, feature) in enumerate(placed, start=1):
+            rows.append({"tag": f"{letter}{number}", "x": point[0] - origin[0], "y": point[1] - origin[1],
+                         "size": size, "feature": feature, "centre": point,
+                         "radius": _outer_radius(spec) if not is_slot else feature.width / 2})
+    width = sum(w for _n, w in _TABLE_COLUMNS) + max(28.0, max(_ink_width(r["size"], 2.5) for r in rows) + 6.0)
+    return {"rows": rows, "origin": origin, "size": (width, (len(rows) + 1) * _TABLE_ROW), "view": view}
+
+
+def _draw_hole_tags(msp, table: dict, to_sheet, sv: float, th: float, text) -> None:
+    """Each tabulated hole's tag beside it, and the origin its X and Y run from."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    for row in table["rows"]:
+        c, r = to_sheet(row["centre"]), row["radius"] * sv
+        lean = r * 0.71 + 0.8
+        text(row["tag"], c[0] + lean, c[1] + lean, 2.5, A.BOTTOM_LEFT, "DIM")
+    o = to_sheet(table["origin"])
+    for tip, name in (((o[0] + 10.0, o[1]), "X"), ((o[0], o[1] + 10.0), "Y")):
+        msp.add_leader([tip, o], dxfattribs={"layer": "DIM"},
+                       override={"dimasz": th * 0.7, "dimldrblk": "_CLOSEDFILLED"})
+        text(name, tip[0] + (1.5 if name == "X" else 0.0), tip[1] + (1.5 if name == "Y" else 0.0), 2.5,
+             A.MIDDLE_LEFT if name == "X" else A.BOTTOM_CENTER, "DIM")
+    text("0,0", o[0] - 1.0, o[1] - 1.0, 2.5, A.TOP_RIGHT, "DIM")
+
+
+def _draw_hole_table(msp, table: dict, text) -> None:
+    """The table itself, header on top: TAG, X, Y, SIZE."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    x0, y1 = table["corner"]
+    w, h = table["size"]
+    columns = list(_TABLE_COLUMNS) + [("SIZE", w - sum(cw for _n, cw in _TABLE_COLUMNS))]
+    msp.add_lwpolyline([(x0, y1), (x0 + w, y1), (x0 + w, y1 - h), (x0, y1 - h)], close=True,
+                       dxfattribs={"layer": "TITLE"})
+    for r in range(1, len(table["rows"]) + 1):
+        msp.add_line((x0, y1 - r * _TABLE_ROW), (x0 + w, y1 - r * _TABLE_ROW), dxfattribs={"layer": "TITLE"})
+    x = x0
+    for c, (name, width) in enumerate(columns):
+        if c:
+            msp.add_line((x, y1), (x, y1 - h), dxfattribs={"layer": "TITLE"})
+        text(name, x + width / 2, y1 - _TABLE_ROW / 2, _CAPTION_HEIGHT, A.MIDDLE_CENTER, fit=width - 2)
+        for r, row in enumerate(table["rows"], start=1):
+            value = (row["tag"], _fmt(row["x"]), _fmt(row["y"]), row["size"])[c]
+            mid = y1 - (r + 0.5) * _TABLE_ROW
+            if c == 3:
+                text(value, x + 2.0, mid, 2.5, A.MIDDLE_LEFT, "NOTES")
+            else:
+                text(value, x + width / 2, mid, 2.5, A.MIDDLE_CENTER, fit=width - 2)
+        x += width
+
+
+def _place_box(sheet: Sheet, w: float, h: float, occupied: list, near) -> tuple[float, float] | None:
+    """The top-left corner of the free ``w`` x ``h`` box nearest ``near``: inside
+    the paper above the notes, title block and any parts list, clear of everything
+    in ``occupied``."""
+    m = _MARGIN
+    note_rows = len(sheet.drawn_notes())
+    notes_h = (note_rows * 5.0 + 8.0) if note_rows else 0.0
+    table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+    list_h = _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0
+    x_lo, x_hi = m + 4.0, sheet.width - m - 4.0
+    y_lo, y_hi = m + _TITLE_H + max(notes_h, list_h) + 4.0, sheet.height - m - 4.0 - table_h
+    best = None
+    y = y_hi
+    while y - h >= y_lo:
+        x = x_lo
+        while x + w <= x_hi:
+            box = (x - 4.0, x + w + 4.0, y - h - 4.0, y + 4.0)
+            if not any(box[0] < o[1] and box[1] > o[0] and box[2] < o[3] and box[3] > o[2] for o in occupied):
+                distance = math.hypot(x + w / 2 - near[0], y - h / 2 - near[1])
+                if best is None or distance < best[0]:
+                    best = (distance, (x, y))
+            x += 2.0
+        y -= 2.0
+    return None if best is None else best[1]
 
 
 def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -> tuple[float, float] | None:
@@ -2257,10 +2606,135 @@ def _model_to_sheet(proj, at, centre, scale, point) -> tuple[float, float]:
     return (at[0] + (x - centre[0]) * scale, at[1] + (y - centre[1]) * scale)
 
 
-def _bbox_bounds(shape, proj) -> tuple[float, float, float, float]:
-    """A part's projected (x0, x1, y0, y1), from its bounding box's corners."""
+#: The paper left between the two ends of a broken view.
+_BREAK_GAP = 10.0
+
+
+def _break_shift(brk: tuple, gap: float) -> Callable:
+    """Where a model point lands in a broken view's shortened part: past the break
+    it moves back by the length taken out, less ``gap`` (model mm); inside it, it
+    is squeezed into the gap."""
+    axis, lo, hi = brk
+
+    def shift(p):
+        q = list(p)
+        if q[axis] >= hi:
+            q[axis] -= (hi - lo) - gap
+        elif q[axis] > lo:
+            q[axis] = lo + (q[axis] - lo) * gap / (hi - lo)
+        return tuple(q)
+
+    return shift
+
+
+def _broken_shape(shape, brk: tuple, gap: float):
+    """The part with the stretch between the break's ends taken out and its far
+    end moved up to ``gap`` (model mm) from its near one."""
+    from build123d import Compound, Keep, Location, Plane, Vector
+
+    axis, lo, hi = brk
+    normal = Vector(*(1.0 if k == axis else 0.0 for k in range(3)))
+    near = shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.BOTTOM)
+    far = shape.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.TOP)
+    far = far.moved(Location(normal * -((hi - lo) - gap)))
+    return Compound([near, far])
+
+
+def _broken_size(size, brk: tuple, scale: float):
+    """A part's extents as a broken view draws them at ``scale``."""
+    from build123d import Vector
+
+    axis, lo, hi = brk
+    shorter = [size.X, size.Y, size.Z]
+    shorter[axis] -= (hi - lo) - _BREAK_GAP / scale
+    return Vector(*shorter)
+
+
+def _break_hides(shape, brk: tuple) -> bool:
+    """Whether the part changes inside a break: the stretch taken out is not one
+    section drawn long, so the break hides some of the part."""
+    from build123d import Keep, Plane, Vector
+
+    axis, lo, hi = brk
+    normal = Vector(*(1.0 if k == axis else 0.0 for k in range(3)))
+    middle = shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.TOP)
+    middle = middle.split(Plane(origin=normal * hi, z_dir=normal), keep=Keep.BOTTOM)
+    # The section at each end, and the mean section between: one section drawn
+    # long has all three equal.
+    ends = [sum(f.area for f in middle.faces() if abs(f.center().dot(normal) - at) < 1e-6) for at in (lo, hi)]
+    mean = middle.volume / (hi - lo)
+    tolerance = 1e-6 * max(ends[0], 1.0)
+    return abs(ends[0] - ends[1]) > tolerance or abs(mean - ends[0]) > tolerance
+
+
+def _choose_for_breaks(sheet: Sheet) -> None:
+    """Settle a chosen size or scale before a sheet's broken views are projected,
+    with the room three_views() assumes and the extents the breaks leave."""
+    arranged = next((view for view in sheet.views if view._arranged is not None), None)
+    if arranged is None:
+        return
+    size, gap, iso = arranged._arranged
+    brk = next(view._break for view in sheet.views if view._break is not None)
+    _choose_size_and_scale(sheet, arranged.shape, iso, {n: dict(_DEFAULT_ROOM) for n in ("top", "front", "right")},
+                           gap, size=_broken_size(size, brk, sheet._scale()))
+
+
+def _break_cuts(view: View, proj) -> list[tuple]:
+    """A broken view's two cuts as projected lines: a point on each, and the unit
+    direction across them (the image of the broken axis)."""
+    axis, lo, hi = view._break
+    origin = proj.point((0.0, 0.0, 0.0))
+    unit = proj.point(tuple(1.0 if k == axis else 0.0 for k in range(3)))
+    length = math.hypot(unit[0] - origin[0], unit[1] - origin[1]) or 1.0
+    across = ((unit[0] - origin[0]) / length, (unit[1] - origin[1]) / length)
+    return [(proj.point(tuple(at if k == axis else 0.0 for k in range(3))), across) for at in (lo, hi)]
+
+
+def _on_cut(edge, cuts: list[tuple]) -> bool:
+    """Whether a projected edge lies along one of those cuts."""
+    points = [edge.position_at(t) for t in (0.0, 0.5, 1.0)]
+    return any(all(abs((p.X - c[0]) * d[0] + (p.Y - c[1]) * d[1]) < 1e-5 for p in points) for c, d in cuts)
+
+
+def _draw_break_lines(msp, view: View, proj, to_sheet) -> None:
+    """A thin zigzag line across each end of a broken view's break (ISO 128-2,
+    type 01.1), as long as the part's section there and a little over."""
+    from build123d import Keep, Plane, Vector
+
+    axis, lo, hi = view._break
+    normal = Vector(*(1.0 if k == axis else 0.0 for k in range(3)))
+    near = view.shape.split(Plane(origin=normal * lo, z_dir=normal), keep=Keep.BOTTOM)
+    section = [f for f in near.faces() if abs(f.center().dot(normal) - lo) < 1e-6]
+    if not section:
+        return
+    corners = []
+    for face in section:
+        box = face.bounding_box()
+        corners += [(x, y, z) for x in (box.min.X, box.max.X) for y in (box.min.Y, box.max.Y)
+                    for z in (box.min.Z, box.max.Z)]
+    for at in (lo, hi):
+        ends = [to_sheet(proj.point(tuple(at if k == axis else c[k] for k in range(3)))) for c in corners]
+        start, finish = min(ends), max(ends)
+        if math.dist(start, finish) < 1e-6:
+            continue
+        length = math.dist(start, finish)
+        t = ((finish[0] - start[0]) / length, (finish[1] - start[1]) / length)
+        d = (t[1], -t[0])
+        mid = ((start[0] + finish[0]) / 2, (start[1] + finish[1]) / 2)
+
+        def along(point, k: float, j: float = 0.0):
+            return (point[0] + t[0] * k + d[0] * j, point[1] + t[1] * k + d[1] * j)
+
+        msp.add_lwpolyline([along(start, -2.0), along(mid, -2.0), along(mid, -0.7, 2.5), along(mid, 0.7, -2.5),
+                            along(mid, 2.0), along(finish, 2.0)], dxfattribs={"layer": "NOTES"})
+
+
+def _bbox_bounds(shape, proj, raw: bool = False) -> tuple[float, float, float, float]:
+    """A part's projected (x0, x1, y0, y1), from its bounding box's corners;
+    ``raw`` maps them as the whole part, not a broken view's shortened one."""
     bb = shape.bounding_box()
-    points = [proj.point((x, y, z)) for x in (bb.min.X, bb.max.X) for y in (bb.min.Y, bb.max.Y)
+    to = proj._raw_point if raw else proj.point
+    points = [to((x, y, z)) for x in (bb.min.X, bb.max.X) for y in (bb.min.Y, bb.max.Y)
               for z in (bb.min.Z, bb.max.Z)]
     return (min(p[0] for p in points), max(p[0] for p in points),
             min(p[1] for p in points), max(p[1] for p in points))
@@ -2279,7 +2753,7 @@ def _draw_cutting_plane(msp, parent: tuple, point, look, letter: str, text, th: 
     from ezdxf.enums import TextEntityAlignment
 
     _view, model_to_sheet, box = parent
-    parent_look = VIEW_DIRECTIONS[_view.name][0]
+    parent_look = _look(_view)
     along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
              parent_look[0] * look[1] - parent_look[1] * look[0])
     p0 = model_to_sheet(point)
@@ -2321,6 +2795,18 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     the scale was the sheet's choice, not the author's. Only the drawing that
     succeeds reports anything.
     """
+    if sheet._item is not None:
+        item, whole = sheet._item
+        sheet.title = item.description or f"ITEM {item.number}"
+        sheet.material = item.material
+        sheet.subtitle = f"ITEM {item.number}{f' (QTY {item.quantity})' if item.quantity > 1 else ''} OF {whole}"
+    if sheet._chosen is not None:
+        # A size or scale the author set after the sheet chose one is theirs.
+        size_set, scale_set = sheet.size != sheet._chosen[0], sheet.scale != sheet._chosen[1]
+        if size_set or scale_set:
+            sheet._auto = (sheet._auto[0] and not size_set, sheet._auto[1] and not scale_set)
+            sheet._fit = sheet._auto[1]
+            sheet._chosen = None
     if not sheet._fit:
         return _draw_sheet(sheet, index=index, count=count, label=label, warnings=warnings, facts=facts,
                            continued=continued)
@@ -2331,9 +2817,18 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             doc = _draw_sheet(sheet, index=index, count=count, label=label, warnings=tried_warnings,
                               facts=tried_facts, continued=continued)
         except _OffFrame as exc:
-            if exc.fits is None or exc.fits >= sheet.scale:
+            # A larger sheet first, when the sheet chose its size and has a larger
+            # one to try at the scale it wanted; then a smaller scale.
+            if sheet._auto[0] and _SIZES_SMALLEST_FIRST.index(sheet._size()) < len(_SIZES_CHOSEN) - 1:
+                sheet._floor = _SIZES_SMALLEST_FIRST.index(sheet._size()) + 1
+                if sheet._auto[1]:
+                    # No larger than the scale that ran out of paper: the larger
+                    # sheet is for room, not for a larger scale.
+                    sheet._ceiling = min(sheet._ceiling or _PART_LARGEST, sheet._scale())
+                continue
+            if exc.fits is None or exc.fits >= sheet._scale():
                 raise
-            sheet.scale = exc.fits
+            sheet.scale = sheet._ceiling = exc.fits
             continue
         if warnings is not None:
             warnings.extend(tried_warnings)
@@ -2461,8 +2956,6 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 break
         claimed.append((value, box))
 
-    _draw_furniture(msp, sheet, index=index, count=count, label=label, text=text, continued=continued)
-
     # What the part's faces say, read once per part however many views show it.
     found_features: dict[int, _Features] = {}
     found_axes: dict[int, list] = {}
@@ -2480,8 +2973,16 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
 
     # Every view is projected, its callouts read off the part and its annotation
     # planned before anything is placed, so the layout knows what each view carries.
-    s = sheet.scale
+    sheet._size()
+    if any(sheet._auto) and any(view._break is not None for view in sheet.views):
+        # A break leaves a fixed gap of paper, so its views are drawn at the scale
+        # the sheet settles on now, not at the one three_views() guessed.
+        _choose_for_breaks(sheet)
+    s = sheet._scale()
     work = []
+    tables: dict[int, dict] = {}
+    outlines: dict[int, list] = {}
+    hidden_by_breaks: set = set()
     cuts: dict[int, tuple] = {}
     checked: set[int] = set()
     # The assemblies this sheet draws as assemblies: the one its parts list was
@@ -2508,7 +3009,28 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     "assembly_sheets(parts_list(cadgen.read_scene(path)), ...)."
                 )
         cut = _cut(view) if view._section else None
-        proj = _Projection(view.shape, view.name, draw=cut[0] if cut else None)
+        draw = cut[0] if cut else None
+        if view._break is not None:
+            # A broken view draws the part shortened, and maps every model point
+            # given to it onto the shortened part.
+            gap = _BREAK_GAP / (view.scale or s)
+            draw = _broken_shape(view.shape, view._break, gap)
+            if (id(view.shape), view._break) not in hidden_by_breaks:
+                hidden_by_breaks.add((id(view.shape), view._break))
+                if _break_hides(view.shape, view._break) and warnings is not None:
+                    axis, lo, hi = view._break
+                    warnings.append(
+                        f"the break from {'XYZ'[axis]} = {_fmt(lo)} to {_fmt(hi)} hides some of the part: it is not "
+                        "the same section all along that stretch. Move the break to where the part does not change."
+                    )
+        proj = _Projection(view.shape, _dirs(view), draw=draw)
+        if view._break is not None:
+            proj.shift = _break_shift(view._break, gap)
+            # Each end of the break is bounded by its break line, not by the edge
+            # of the cut.
+            break_cuts = _break_cuts(view, proj)
+            proj.visible = [e for e in proj.visible if not _on_cut(e, break_cuts)]
+            proj.hidden = [e for e in proj.hidden if not _on_cut(e, break_cuts)]
         bounds = _edges_bounds(list(proj.visible) + (list(proj.hidden) if view.hidden else []))
         if not bounds:
             continue
@@ -2518,6 +3040,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # A detail is the circle round its centre, whatever falls inside it.
             c2, r = proj.point(view._detail[1]), view._detail[2]
             bounds, centre = (c2[0] - r, c2[0] + r, c2[1] - r, c2[1] + r), c2
+        elif view._aux is not None and view._aux[4] is not None:
+            # A partial auxiliary view is its face's outline, whatever lies within it.
+            ring = [proj.point(p) for p in view._aux[4]]
+            outlines[id(view)] = ring
+            bounds = (min(x for x, _ in ring), max(x for x, _ in ring), min(y for _, y in ring),
+                      max(y for _, y in ring))
+            centre = ((bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2)
         elif cut:
             # Centred on the WHOLE part, so the section lines up with the views
             # beside it even when the half it keeps is not symmetric.
@@ -2526,6 +3055,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         else:
             centre = ((bounds[0] + bounds[1]) / 2, (bounds[2] + bounds[3]) / 2)
         items = _resolve_view(view, proj, bounds, part_features, warnings, cut)
+        if view._table is not None:
+            tables[id(view)] = _hole_table_rows(view, proj, bounds, part_features(view.shape), cut, items)
         work.append((view, proj, bounds, items, _plan_view(view, proj, bounds, items, sheet), centre))
 
     # A cutting plane runs out past the view it is drawn on, with an arrow and a
@@ -2536,13 +3067,13 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     for view in sheet.views:
         if view._section is None or view._detail is not None:
             continue
-        look = VIEW_DIRECTIONS[view.name][0]
+        look = _look(view)
         parent = next((other for name in _PLANE_SHOWN_ON[view.name] for other in sheet.views
                        if other.name == name and other.shape is view.shape and other._section is None
                        and other._detail is None and id(other) in projections), None)
         if parent is None:
             continue
-        parent_look = VIEW_DIRECTIONS[parent.name][0]
+        parent_look = _look(parent)
         along = (parent_look[1] * look[2] - parent_look[2] * look[1], parent_look[2] * look[0] - parent_look[0] * look[2],
                  parent_look[0] * look[1] - parent_look[1] * look[0])
         image = [sum(row[k] * a for row, a in zip(projections[id(parent)].m, along)) for k in (0, 1)]
@@ -2551,6 +3082,23 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     for view, _proj, _bounds, _items, plan, _centre in work:
         for side in plane_sides.get(id(view), ()):
             plan["room"][side] = max(plan["room"][side], _PLANE_ROOM + (11.5 if side == "bottom" else 0.0))
+
+    # A sheet that chooses its own size or scale chooses again now that each
+    # view's annotation is known: the choice three_views() made assumed two rows
+    # of dimensions round every view.
+    if any(sheet._auto) and not any(view._break is not None for view in sheet.views):
+        groups_seen = {id(view._arranged): view for view, *_rest in work if view._arranged is not None}
+        if len(groups_seen) == 1:
+            first = next(iter(groups_seen.values()))
+            rooms = {view.name: plan["room"] for view, _proj, _bounds, _items, plan, _centre in work
+                     if view._arranged is first._arranged}
+            size, gap, iso = first._arranged
+            brk = next((view._break for view, *_rest in work if view._arranged is first._arranged
+                        and view._break is not None), None)
+            _choose_size_and_scale(sheet, first.shape, iso, rooms, gap,
+                                   size=_broken_size(size, brk, s) if brk is not None else None)
+            s = sheet._scale()
+    _draw_furniture(msp, sheet, index=index, count=count, label=label, text=text, continued=continued)
 
     # A standard arrangement is laid out again from the room its views' annotation
     # takes; a view placed by hand stays where its author put it.
@@ -2563,6 +3111,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     groups = []
     for (size, gap, iso), by_name, room in arranged.values():
         shape = next(iter(by_name.values())).shape
+        brk = next((view._break for view in by_name.values() if view._break is not None), None)
+        if brk is not None:
+            size = _broken_size(size, brk, s)
         over: list = []
         for name, at, own, slot_label in _arrange_three_views(sheet, shape, size, gap, s, iso, room, over):
             if name in by_name:
@@ -2600,7 +3151,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
     # its place.
     occupied = []
     for view, _proj, bounds, _items, plan, (cx, cy) in work:
-        if view._detail is not None and view._detail[4]:
+        if (view._detail is not None and view._detail[4]) or (view._aux is not None and view._aux[3]):
             continue
         sv = view.scale or s
         room = plan["room"]
@@ -2645,6 +3196,41 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         room = plan["room"]
         occupied.append((spot[0] - size / 2 - room["left"], spot[0] + size / 2 + room["right"],
                          spot[1] - size / 2 - room["bottom"], spot[1] + size / 2 + room["top"]))
+    # Auxiliary views the sheet places: the free paper nearest the view they
+    # project from.
+    for view, _proj, bounds, _items, plan, _centre in work:
+        if view._aux is None or not view._aux[3]:
+            continue
+        sv = view.scale or s
+        room = plan["room"]
+        w = (bounds[1] - bounds[0]) * sv + room["left"] + room["right"]
+        h = (bounds[3] - bounds[2]) * sv + room["bottom"] + room["top"]
+        spot = _place_box(sheet, w, h, occupied, view._aux[0].at)
+        if spot is None:
+            smaller = next((c for c in _STANDARD_SCALES if c < s), None)
+            raise _OffFrame(f"VIEW {view._aux[2]}: no free paper on {sheet.size} for it at {_scale_label(sv)}. "
+                            "Give it at=, a smaller scale or a larger sheet.", smaller)
+        view.at = (spot[0] + room["left"] + (bounds[1] - bounds[0]) * sv / 2,
+                   spot[1] - room["top"] - (bounds[3] - bounds[2]) * sv / 2)
+        occupied.append((spot[0], spot[0] + w, spot[1] - h, spot[1]))
+    # Hole tables last: free paper nearest their view, or the corner given.
+    for view in sheet.views:
+        if id(view) not in tables:
+            continue
+        table = tables[id(view)]
+        w, h = table["size"]
+        if view._table[1] is not None:
+            x0, y1 = view._table[1]
+        else:
+            spot = _place_box(sheet, w, h, occupied, view.at)
+            if spot is None:
+                smaller = next((c for c in _STANDARD_SCALES if c < s), None)
+                raise _OffFrame(
+                    f"{view.name}.hole_table(): no free paper on {sheet.size} for a {w:.0f} x {h:.0f} mm table. "
+                    "Give it at=, a smaller scale or a larger sheet.", smaller)
+            x0, y1 = spot
+        table["corner"] = (x0, y1)
+        occupied.append((x0 - 4.0, x0 + w + 4.0, y1 - h - 4.0, y1 + 4.0))
 
     placed = []
     for view, proj, bounds, _items, _plan, (cx, cy) in work:
@@ -2654,6 +3240,18 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                        (view.at[0] + (bx0 - cx) * sv, view.at[0] + (bx1 - cx) * sv,
                         view.at[1] + (by0 - cy) * sv, view.at[1] + (by1 - cy) * sv)))
     boxes = [box for (_, _, _, _, _, box) in placed]
+    # The sheet's own furniture as (x0, x1, y0, y1): the title block with any
+    # parts list on it, and the revision table.
+    furniture = [(sheet.width - _MARGIN - _TITLE_W, sheet.width - _MARGIN, _MARGIN,
+                  _MARGIN + _TITLE_H + _list_height(sheet))]
+    if sheet.revisions:
+        rows_h = (len(sheet.revisions) + 1) * 6.0
+        furniture.append((sheet.width - _MARGIN - 110.0, sheet.width - _MARGIN, sheet.height - _MARGIN - rows_h,
+                          sheet.height - _MARGIN))
+    if sheet._parts is not None:
+        # Annotation printed over the parts list makes both unreadable; say so.
+        claim("the parts list", (sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H, sheet.width - _MARGIN,
+                                 _MARGIN + _TITLE_H + _list_height(sheet)))
     _assert_views_fit(sheet, placed, index=index, groups=groups)
     # A view drawn over the parts list prints both illegible.
     x_block, y_title = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
@@ -2692,9 +3290,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         if facts is not None:
             record = facts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
                                                        "axes": set(), "views": [], "sheet": (index, sheet.title),
-                                                       "assembly": id(view.shape) in assemblies})
+                                                       "assembly": id(view.shape) in assemblies,
+                                                       "notes": set(), "radii": set()})
+            # What the sheet's notes and this view's notes say, for the blends and
+            # chamfers a general note states.
+            record["notes"].update(sheet.drawn_notes())
+            record["notes"].update(d.text for d in view._dims if d.kind == "note" and d.text)
             if view.name != "iso":
-                record["views"].append(view.name)
+                record["views"].append((view.name, _look(view)))
 
         def to_sheet(p2):
             # Centre the projected geometry on `at`.
@@ -2732,6 +3335,10 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             from shapely.geometry import Point
 
             region = Point(view.at).buffer(view._detail[2] * sv, quad_segs=64)
+        elif id(view) in outlines:
+            from shapely.geometry import Polygon
+
+            region = Polygon([to_sheet(p) for p in outlines[id(view)]]).buffer(0.5, join_style=2)
 
         def centre_line(a, b) -> None:
             for run in _clip_runs([a, b], region) if region is not None else [[a, b]]:
@@ -2814,6 +3421,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         put(proj.visible, "VISIBLE")
         if view.hidden:
             put(proj.hidden, "HIDDEN")
+        if view._break is not None:
+            _draw_break_lines(msp, view, proj, to_sheet)
         if cut:
             from ezdxf import const
 
@@ -2847,7 +3456,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             # kept side of the plane (or lie in it) are the section's.
             turned = part_axes(view.shape)
             if cut:
-                look = VIEW_DIRECTIONS[view.name][0]
+                look = _look(view)
                 turned = [a for a in turned if min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look)
                                                    for end in (a.start, a.end)) <= 1e-6]
             for centre, radius in _centres(_circles(proj.visible) + _end_on(view, proj, turned)):
@@ -2861,7 +3470,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 centre_line(a, b)
             # A slot seen end-on: a centre line down its length and one across each
             # rounded end. A bolt circle: its pitch circle as a chain line.
-            look = VIEW_DIRECTIONS[view.name][0]
+            look = _look(view)
             features = part_features(view.shape)
 
             def kept(feature, run: float) -> bool:
@@ -2888,7 +3497,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 members = [h for h in features.holes if h.mouth in circle.mouths]
                 if abs(_dot(circle.axis, look)) > 1 - 1e-6 and any(kept(h, h.length) for h in members):
                     centre_circle(to_sheet(proj.point(circle.centre)), circle.diameter / 2 * sv)
-        if region is not None:
+        if view._detail is not None:
             # The detail's own boundary: a thin continuous circle, as ISO 128-34 draws it.
             msp.add_circle(view.at, view._detail[2] * sv, dxfattribs={"layer": "NOTES"})
         vx0, vx1, vy0, vy1 = own_box
@@ -2915,7 +3524,9 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 if axis is not None:
                     record["axes"].add((axis, round(value, 3)))
 
-        def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None):
+        def linear(a, b, offset, side, row, override, orientation, tol=None, fit=None, true=None):
+            """``true`` is the length measured on the whole part, when the paper's
+            is shorter: a dimension across a broken view's break."""
             horizontal = (orientation or _spans(a, b)) == "h"
             if offset is None:
                 # The row the plan gave it, measured from the VIEW's edge, so two
@@ -2942,11 +3553,16 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 style_override |= {"dimtol": 1, "dimtp": tol[0], "dimtm": tol[1],
                                    "dimtdec": 2, "dimtfac": 0.7}
             span = abs(b[0] - a[0]) if horizontal else abs(b[1] - a[1])
+            measured = span / sv
+            if true is not None and abs(true - measured) > 1e-6:
+                # The paper's length is the broken view's; the value is the part's.
+                measured = true
+                label = label.replace("<>", _fmt(true))
             # A value wider than the space between its extension lines is set beside
             # them, on the dimension line's side, instead of across them: centred,
             # "3 WALL" printed with both witness lines running through its glyphs.
             # One that fits stays centred and only its arrows go outside.
-            printed = label.replace("<>", _fmt(span / sv))
+            printed = label.replace("<>", _fmt(measured))
             width = _ink_width(printed, th) + (_text_width(_tol_suffix(tol), th * 0.7) if tol else 0.0)
             arrow = th * 0.85
             location = None
@@ -2971,7 +3587,7 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
             d.render()
             claim_rendered(d.dimension)
             _draw_dimension_symbols(doc, d.dimension)
-            state(span / sv, _sheet_axis(proj, horizontal))
+            state(measured, _sheet_axis(proj, horizontal))
 
         def on_view(point, margin: float = 1.0) -> bool:
             """Does a projected point land on the view's own drawn extent?"""
@@ -2993,6 +3609,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     "paper -- check the model coordinates it was given."
                 )
 
+        # A broken view's overall sizes are the whole part's, not the paper's.
+        whole = _bbox_bounds(view.shape, proj, raw=True) if view._break is not None else None
         # Dimensions first, in the rows the plan gave them, then the overall pair
         # outermost, then the callouts outside all of them, then notes and angles.
         for dim in items:
@@ -3008,11 +3626,22 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                         f"{'horizontal' if across >= up else 'vertical'}. Pass orientation=\"h\" or \"v\", or give "
                         "two points that differ in one direction only."
                     )
-                linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit)
+                true = None
+                if view._break is not None:
+                    ra, rb = proj._raw_point(dim.p1), proj._raw_point(dim.p2)
+                    horizontal = (dim.orientation or _spans(a, b)) == "h"
+                    true = abs(rb[0] - ra[0]) if horizontal else abs(rb[1] - ra[1])
+                linear(a, b, dim.offset, dim.side, dim.row, dim.text, dim.orientation, dim.tol, dim.fit, true)
         if "width" in view._overall:
-            linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h")
+            linear((vx0, vy1), (vx1, vy1), None, "top", plan["overall"]["top"], None, "h",
+                   true=whole[1] - whole[0] if whole else None)
         if "height" in view._overall:
-            linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v")
+            linear((vx0, vy0), (vx0, vy1), None, "left", plan["overall"]["left"], None, "v",
+                   true=whole[3] - whole[2] if whole else None)
+        # How far the callouts reach past each side, so balloons drawn later
+        # stand outside them; callouts on one side share a knee, so this is not
+        # applied until they are all placed.
+        callout_reach = {"left": 0.0, "right": 0.0}
         for dim in items:
             if dim.kind not in ("diameter", "radius", "hole", "slot"):
                 continue
@@ -3062,6 +3691,8 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                            override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
             align = TextEntityAlignment.MIDDLE_LEFT if go_right else TextEntityAlignment.MIDDLE_RIGHT
             text(value, landing[0] + sign * 2.0, landing[1], th, align, "DIM")
+            tip = landing[0] + sign * (2.0 + _ink_width(value, th))
+            callout_reach[side] = max(callout_reach[side], abs(tip - (vx1 if go_right else vx0)) + 2.0)
             if record is not None:
                 # A hole callout states its hole; a diameter callout states a diameter.
                 # A leader's radius is neither, so it is not a stated value.
@@ -3069,6 +3700,14 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                     record["called"].update(_member_key(f) for f in (dim.covers or (dim.feature,)))
                 elif dim.kind == "diameter":
                     record["values"].append(2 * dim.radius)
+                elif dim.kind == "radius":
+                    record["radii"].add(round(dim.radius, 3))
+        for name, value in callout_reach.items():
+            reach[name] = max(reach[name], value)
+        if id(view) in tables:
+            _draw_hole_tags(msp, tables[id(view)], to_sheet, sv, th, text)
+            if record is not None:
+                record["called"].update(_member_key(row["feature"]) for row in tables[id(view)]["rows"])
         for dim in items:
             if dim.kind == "angle":
                 v = model_to_sheet(dim.p1)
@@ -3096,20 +3735,23 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
                 reach["bottom"] = max(reach["bottom"], vy0 - q[1] + 1.0)
 
         if view._balloons:
-            _draw_balloons(msp, view, keyed_on_sheet, facts, model_to_sheet, own_box, reach, text,
-                           [box for _value, box in claimed])
+            _draw_balloons(msp, sheet, view, keyed_on_sheet, facts, model_to_sheet, own_box, reach, text,
+                           list(claimed), [b for b in boxes if b is not own_box] + furniture, warnings)
 
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.
         text((view.label or view.name).upper(), view.at[0], vy0 - reach["bottom"] - 6, 3.5,
              TextEntityAlignment.TOP_CENTER, "NOTES")
 
+    for table in tables.values():
+        _draw_hole_table(msp, table, text)
+
     # Each section's cutting plane, on a view that sees it edge-on.
     for view_id, (kept, _faces, point) in cuts.items():
         view = drawn[view_id][0]
         if view._detail is not None:
             continue  # a detail of a section shares its section's plane, drawn once
-        letter, look = view._section[0], VIEW_DIRECTIONS[view.name][0]
+        letter, look = view._section[0], _look(view)
         parent = next((drawn[id(other)] for name in _PLANE_SHOWN_ON[view.name]
                        for other in sheet.views
                        if other.name == name and other.shape is view.shape and other._section is None
@@ -3134,6 +3776,22 @@ def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: l
         lean = (math.cos(math.radians(45)), math.sin(math.radians(45)))
         text(letter, c[0] + lean[0] * (ring + th), c[1] + lean[1] * (ring + th), th + 1.5,
              TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+    # Each auxiliary view's arrow and letter on the view it is projected from.
+    for view in sheet.views:
+        if view._aux is None or id(view._aux[0]) not in drawn or id(view) not in drawn:
+            continue
+        parent, point, letter, _auto, _outline = view._aux
+        _parent_view, parent_to_sheet, _box = drawn[id(parent)]
+        n = view._direction[0]
+        tip = parent_to_sheet(point)
+        ahead = parent_to_sheet(tuple(p + c for p, c in zip(point, n)))
+        run = math.hypot(ahead[0] - tip[0], ahead[1] - tip[1]) or 1.0
+        d = ((ahead[0] - tip[0]) / run, (ahead[1] - tip[1]) / run)
+        head = (tip[0] + d[0] * 5.0, tip[1] + d[1] * 5.0)
+        tail = (tip[0] + d[0] * 20.0, tip[1] + d[1] * 20.0)
+        msp.add_leader([head, tail], dxfattribs={"layer": "NOTES"},
+                       override={"dimasz": th, "dimldrblk": "_CLOSEDFILLED"})
+        text(letter, tail[0] + d[0] * 4.0, tail[1] + d[1] * 4.0, th + 1.5, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
     _merge_centre_lines(msp)
     return doc
 
@@ -3160,25 +3818,29 @@ def _balloon_axis(bounds) -> bool:
     return (bounds[3] - bounds[2]) >= (bounds[1] - bounds[0])
 
 
-def _draw_balloons(msp, view: View, keyed_on_sheet: set, facts: dict | None, model_to_sheet, box, reach: dict,
-                   text, printed: Sequence[tuple]) -> None:
+def _draw_balloons(msp, sheet: Sheet, view: View, keyed_on_sheet: set, facts: dict | None, model_to_sheet, box,
+                   reach: dict, text, printed: Sequence[tuple], obstacles: Sequence[tuple],
+                   warnings: list | None) -> None:
     """Balloon each item the view shows that this sheet has not yet keyed.
 
     Each leader ends in a dot on a point of the part that the view sees (nothing
     of the assembly in front of it). The balloons stand in a column on each side
-    of a tall view, outside everything already drawn there, each at the height of
-    the point it keys and spread apart only as far as they must be, so their
-    leaders keep their order and do not cross. Points near the middle go to
-    whichever side has fewer, which keeps the two columns even. A leader runs
-    level from its balloon, so no balloon stands level with text ``printed``
-    between its column and the view: the height of a dimension beside it.
+    of a tall view (a row above and below a wide one), outside everything
+    already drawn there, each as near the height of the point it keys as the
+    others allow. Points near the middle go to whichever side has fewer, which
+    keeps the two columns even. A column may run the frame's height but keeps
+    off ``obstacles`` (other views, the title block, the parts list), and no
+    balloon stands where its leader would run through text already ``printed``
+    (``(value, box)`` pairs); leaders that would cross are swapped. A column the
+    paper cannot hold is refused, never drawn off the sheet.
     """
     from ezdxf.enums import TextEntityAlignment
     from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+    from shapely.geometry import LineString, box as rect
 
     from cadgen._internal.drawing_assembly import spread, visible_point
 
-    direction = VIEW_DIRECTIONS[view.name][0]
+    direction = _look(view)
     length = math.sqrt(sum(c * c for c in direction))
     look = tuple(c / length for c in direction)
     cast = IntCurvesFace_ShapeIntersector()
@@ -3191,10 +3853,7 @@ def _draw_balloons(msp, view: View, keyed_on_sheet: set, facts: dict | None, mod
             point = visible_point(item.occurrences, cast, look)
             if point is None:
                 continue
-            keyed_on_sheet.add((id(parts), item.number))
-            if facts is not None:
-                _parts_facts(facts, parts)["ballooned"].add(item.number)
-            keyed.append((item.number, model_to_sheet(point)))
+            keyed.append((item.number, model_to_sheet(point), parts))
     vx0, vx1, vy0, vy1 = box
     tall = _balloon_axis(box)
     pick, along = (0, 1) if tall else (1, 0)
@@ -3202,37 +3861,97 @@ def _draw_balloons(msp, view: View, keyed_on_sheet: set, facts: dict | None, mod
     band = 0.1 * ((vx1 - vx0) if tall else (vy1 - vy0))
     low, high = ("left", "right") if tall else ("bottom", "top")
     sides: dict[str, list] = {low: [], high: []}
-    for number, point in sorted(keyed, key=lambda k: (k[1][along], k[0])):
+    for number, point, parts in sorted(keyed, key=lambda k: (k[1][along], k[0])):
         if point[pick] < mid[pick] - band:
             side = low
         elif point[pick] > mid[pick] + band:
             side = high
         else:
             side = low if len(sides[low]) <= len(sides[high]) else high
-        sides[side].append((number, point))
-    r = _BALLOON_R
+        sides[side].append((number, point, parts))
+    r, pitch, m = _BALLOON_R, 2 * _BALLOON_R + _BALLOON_AIR, _MARGIN
+    frame = ((m, sheet.width - m), (m, sheet.height - m))
+    texts = [(value, rect(b[0], b[1], b[2], b[3])) for value, b in printed]
+
+    def centre_of(line: float, spot: float) -> tuple[float, float]:
+        return (line, spot) if tall else (spot, line)
+
+    def leader(centre, point) -> LineString:
+        run = math.hypot(point[0] - centre[0], point[1] - centre[1]) or 1.0
+        return LineString([(centre[0] + (point[0] - centre[0]) * r / run, centre[1] + (point[1] - centre[1]) * r / run),
+                           point])
+
     for side, rows in sides.items():
         if not rows:
             continue
         out = -1.0 if side in ("left", "bottom") else 1.0
         edge = {"left": vx0, "right": vx1, "bottom": vy0, "top": vy1}[side]
         line = edge + out * (reach[side] + _BALLOON_LEAD + r)
-        lo, hi = (vy0, vy1) if tall else (vx0, vx1)
+        across, lengthwise = frame[pick], frame[along]
+        if not across[0] + 1.0 <= line - r and line + r <= across[1] - 1.0:
+            raise _OffFrame(f"{view.name}.balloons(): no room on {sheet.size} for a column of balloons on the "
+                            f"{side} of the {view.name} view. A larger sheet or a smaller scale gives it room.",
+                            next((c for c in _STANDARD_SCALES if c < sheet._scale()), None))
+        lo, hi = lengthwise[0] + r + 1.0, lengthwise[1] - r - 1.0
         # The strip the leaders cross, between the column and the view.
         near, far = sorted((edge, line - out * r))
-        avoid = [(t[along] - 1.0, t[along + 2] + 1.0) for t in printed  # (x0, y0, x1, y1)
-                 if t[pick] < far and t[pick + 2] > near]
-        spots = spread([point[along] for _number, point in rows], 2 * r + _BALLOON_AIR, lo + r, hi - r, avoid)
-        for (number, point), spot in zip(rows, spots):
-            centre = (line, spot) if tall else (spot, line)
-            run = math.hypot(point[0] - centre[0], point[1] - centre[1]) or 1.0
-            start = (centre[0] + (point[0] - centre[0]) * r / run, centre[1] + (point[1] - centre[1]) * r / run)
-            msp.add_line(start, point, dxfattribs={"layer": "NOTES"})
+        avoid = [(b[along] - 1.0, b[along + 2] + 1.0) for _v, b in printed if b[pick] < far and b[pick + 2] > near]
+        # Paper the column itself may not take: other views, the title block and
+        # parts list, the revision table.
+        avoid += [(o[2 * along] - r - 1.0, o[2 * along + 1] + r + 1.0) for o in obstacles
+                  if o[2 * pick] < line + r + 1.0 and o[2 * pick + 1] > line - r - 1.0]
+        spots = spread([point[along] for _n, point, _p in rows], pitch, lo, hi, avoid)
+        if spots and (spots[-1] > hi + 1e-6 or spots[0] < lo - 1e-6):
+            raise _OffFrame(
+                f"{view.name}.balloons(): {len(rows)} balloons do not fit on the {side} of the {view.name} view on "
+                f"{sheet.size}, clear of the other views and the parts list. A larger sheet or a smaller scale gives "
+                "them room, or balloon some items on another view.",
+                next((c for c in _STANDARD_SCALES if c < sheet._scale()), None))
+        # Leaders that cross swap balloons until none do.
+        for _round in range(len(spots) ** 2):
+            crossed = next(((i, j) for i in range(len(rows)) for j in range(i + 1, len(rows))
+                            if leader(centre_of(line, spots[i]), rows[i][1]).crosses(
+                                leader(centre_of(line, spots[j]), rows[j][1]))), None)
+            if crossed is None:
+                break
+            i, j = crossed
+            spots[i], spots[j] = spots[j], spots[i]
+        # A leader through text: the nearest free place along the column where it
+        # runs clear, or a word saying where it does not.
+        for i, (number, point, _parts) in enumerate(rows):
+            def clear(spot: float) -> bool:
+                path = leader(centre_of(line, spot), point)
+                return not any(path.intersects(shape) for _v, shape in texts)
+
+            if clear(spots[i]):
+                continue
+            others = [spot for k, spot in enumerate(spots) if k != i]
+            candidates = sorted((spots[i] + k * 0.5 for k in range(-160, 161) if k),
+                                key=lambda y: abs(y - spots[i]))
+            better = next((y for y in candidates if lo <= y <= hi
+                           and all(abs(y - o) >= pitch - 1e-6 for o in others)
+                           and not any(a < y < b for a, b in avoid) and clear(y)
+                           and not any(leader(centre_of(line, y), point).crosses(
+                               leader(centre_of(line, spots[k]), rows[k][1])) for k in range(len(rows)) if k != i)),
+                          None)
+            if better is not None:
+                spots[i] = better
+            elif warnings is not None:
+                hit = next(v for v, shape in texts if leader(centre_of(line, spots[i]), point).intersects(shape))
+                warnings.append(f"{view.name}.balloons(): the leader to balloon {number} runs through {hit.strip()!r}; "
+                                "give the view more room, or balloon that item on another view.")
+        for (number, point, parts), spot in zip(rows, spots):
+            centre = centre_of(line, spot)
+            path = leader(centre, point)
+            msp.add_line(path.coords[0], path.coords[1], dxfattribs={"layer": "NOTES"})
             dot = msp.add_hatch(dxfattribs={"layer": "NOTES"})
             dot.set_solid_fill(color=256)
             dot.paths.add_edge_path().add_arc(point, _DOT_R, 0.0, 360.0)
             msp.add_circle(centre, r, dxfattribs={"layer": "NOTES"})
             text(str(number), centre[0], centre[1], _BALLOON_TEXT, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+            keyed_on_sheet.add((id(parts), number))
+            if facts is not None:
+                _parts_facts(facts, parts)["ballooned"].add(number)
         reach[side] += _BALLOON_LEAD + 2 * r
 
 
@@ -3287,9 +4006,8 @@ def _unstated(facts: dict) -> list[str]:
             text = _shown(hole_callout_text(_slot_spec(feature, len(members)) if is_slot
                                             else _hole_spec(feature, len(members))))
             faces = _slot_faces_viewer if is_slot else _faces_viewer
-            where = next((name for name in views
-                          if abs(_dot(feature.axis, VIEW_DIRECTIONS[name][0])) > 1 - 1e-6
-                          and faces(feature, VIEW_DIRECTIONS[name][0])), None)
+            where = next((name for name, look in views
+                          if abs(_dot(feature.axis, look)) > 1 - 1e-6 and faces(feature, look)), None)
             verb = "slot" if is_slot else "hole"
             fix = (f"{where}.{verb}({_where(feature.mouth)}) states it, or {where}.holes() calls out every hole "
                    f"and slot the {where} view looks down." if where else
@@ -3305,7 +4023,7 @@ def _unstated(facts: dict) -> list[str]:
                 continue
             if any(abs(d - extent) <= 0.01 for d in across):
                 continue
-            where = next((name for name in views if abs(VIEW_DIRECTIONS[name][0][axis]) < 1e-9), None)
+            where = next((name for name, look in views if abs(look[axis]) < 1e-9), None)
             fix = f"{where}.overall() states it." if where else "No view on the drawing shows that direction."
             lines.append(f"incomplete: {whose}the overall size along {'XYZ'[axis]} ({_fmt(extent)}) is not "
                          f"dimensioned. {fix}")
@@ -3317,6 +4035,11 @@ def _unstated(facts: dict) -> list[str]:
                 f"its profile with text=\"%%c<>\", or diameter(..., size={_fmt(diameter)}) where it is seen as a "
                 "circle."
             )
+    for record in records:
+        if record.get("assembly"):
+            continue
+        whose = f"sheet {record['sheet'][0]} ({record['sheet'][1]}): " if len(records) > 1 else ""
+        lines.extend(_unstated_edges(record, whose))
     for entry in (record for record in facts.values() if "parts" in record):
         parts, listed, keyed = entry["parts"], entry["listed"], entry["ballooned"]
         if not listed:
@@ -3328,6 +4051,10 @@ def _unstated(facts: dict) -> list[str]:
             lines.append(f"incomplete: the parts list leaves out item{'s' if len(missing) > 1 else ''} "
                          f"{', '.join(map(str, missing))}; draw the rest with parts_list(parts, first=...) on a "
                          "further sheet.")
+        for a, b in parts.twins:
+            lines.append(f"note: items {a} and {b} ({parts[a].description or 'unnamed'} and "
+                         f"{parts[b].description or 'unnamed'}) are the same shape under different names; "
+                         f"parts.merge({a}, {b}) lists them as one part, if they are one.")
         for item in parts:
             if item.number in listed and item.number not in keyed:
                 lines.append(
@@ -3359,6 +4086,8 @@ class AssemblySheets(list):
 _CALLOUT_ROOM = 50.0
 #: The largest enlargement a part sheet chooses: past it a part is a detail view.
 _PART_LARGEST = 10.0
+#: The smallest scale a general arrangement is drawn at: below it the views are specks.
+_GA_SMALLEST = 1 / 50
 #: The share of the general arrangement's frame height its parts list may take;
 #: longer lists continue on further sheets.
 _GA_LIST_SHARE = 0.45
@@ -3378,7 +4107,9 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     sheets when it is too long for one. Each part then has a sheet of its own,
     drawn in its own frame: three views and an isometric at the largest standard
     scale that fits, its overall sizes, every hole and slot called out in a view
-    that looks down it, and ``ITEM n OF <title>`` under its name.
+    that looks down it, and ``ITEM n OF <title>`` under its name. ``size`` is the
+    general arrangement's; each part's sheet chooses its own (``Sheet(size=None)``),
+    so a small part goes on A4.
 
     It is a first pass. The completeness report names what each sheet still
     leaves unstated, and every sheet is an ordinary :class:`Sheet` the script can
@@ -3423,7 +4154,7 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
     for item in parts:
         subtitle = f"ITEM {item.number}{f' (QTY {item.quantity})' if item.quantity > 1 else ''} OF {title}"
         sheet = Sheet(title=item.description or f"ITEM {item.number}", subtitle=subtitle, material=item.material,
-                      general_tolerance=general_tolerance, **common)
+                      general_tolerance=general_tolerance, **(common | {"size": None, "scale": None}))
         # Which views look down a hole or slot, and on which side its callout goes.
         features = [*find_holes(item.shape), *find_slots(item.shape)]
         middle = item.shape.bounding_box().center()
@@ -3436,8 +4167,8 @@ def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revi
                 if abs(_dot(f.axis, look)) > 1 - 1e-6 and faces:
                     callouts.setdefault(name, set()).add("right" if f.mouth[across] > centre[across] + 1e-6
                                                          else "left")
-        sheet.scale = _fitting_scale(sheet, item.shape, _first_pass_room(callouts))
-        sheet._fit = True
+        sheet._item = (item, title)
+        _choose_size_and_scale(sheet, item.shape, _view_extent(item.shape, "iso", 1.0), _first_pass_room(callouts))
         top, front, right = sheet.three_views(item.shape, iso=True)[:3]
         top.overall()
         front.overall(width=False)
@@ -3464,17 +4195,79 @@ def _first_pass_room(callouts: dict[str, set]) -> dict:
     return room
 
 
-def _fitting_scale(sheet: Sheet, shape, room: dict) -> float:
-    """The largest standard scale, up to 10:1, at which a part's three views and
-    isometric fit ``sheet`` with ``room`` for each view's annotation."""
-    size = shape.bounding_box().size
-    iso = _view_extent(shape, "iso", 1.0)
-    for scale in (c for c in _STANDARD_SCALES if c <= _PART_LARGEST):
-        over: list = []
-        _arrange_three_views(sheet, shape, size, None, scale, iso, room, over)
-        if max(over) <= 0:
-            return scale
-    return _STANDARD_SCALES[-1]
+#: The sheets a sheet choosing its own size tries, smallest first, for a part it
+#: can draw at full size or larger; a part bigger than that goes on A3, reduced.
+#: A1 and A0 are tried only at a scale the author fixed.
+_SIZES_SMALLEST_FIRST = ("A4", "A3", "A2", "A1", "A0")
+_SIZES_CHOSEN = ("A4", "A3", "A2")
+_SIZE_REDUCED = "A3"
+
+
+def _choose_size_and_scale(sheet: Sheet, shape, iso, room: dict, gap: float | None = None, size=None) -> None:
+    """Settle a sheet's chosen size or scale for ``shape`` drawn in three views
+    (and an isometric, ``iso`` being its 1:1 extent or False), each view with
+    ``room`` for its annotation. ``size`` is the extent the views draw, when it
+    is not the part's own (a broken view draws less).
+
+    A chosen scale is the largest standard one, up to 10:1 and no larger than
+    the sheet's ceiling (a scale that already ran off), that fits. A chosen size
+    is the smallest of A4 to A2 that draws the part at 1:1 or larger; failing
+    that, A3 at the largest scale that fits. Given a fixed scale, it is the
+    smallest sheet that fits it. A part too big for all of it takes the last
+    candidate, and the render refuses it, naming the scale that fits."""
+    extent = size or shape.bounding_box().size
+    auto_size, auto_scale = sheet._auto
+    ceiling = sheet._ceiling or _PART_LARGEST
+    scales = [c for c in _STANDARD_SCALES if c <= ceiling + 1e-9] if auto_scale else [sheet._scale()]
+
+    def largest(name: str) -> float | None:
+        sheet.size = name
+        try:
+            sheet._check_notes()
+        except ValueError:
+            return None  # its notes do not fit this sheet's width
+        for scale in scales:
+            over: list = []
+            _arrange_three_views(sheet, shape, extent, gap, scale, iso, room, over)
+            if max(over) <= 0:
+                return scale
+        return None
+
+    floor = sheet._floor
+    if not auto_size:
+        chosen = (sheet._size(), largest(sheet._size()))
+    elif not auto_scale:
+        # A fixed scale: the smallest sheet it fits.
+        chosen = (_SIZES_SMALLEST_FIRST[-1], None)
+        for name in _SIZES_SMALLEST_FIRST[floor:]:
+            fit = largest(name)
+            if fit is not None:
+                chosen = (name, fit)
+                break
+    else:
+        # Both chosen: the smallest sheet that draws the part full size or
+        # larger, else A3 (or the floor, if larger) reduced.
+        reduced = _SIZES_SMALLEST_FIRST[max(floor, _SIZES_SMALLEST_FIRST.index(_SIZE_REDUCED))]
+        chosen = None
+        for name in _SIZES_CHOSEN[floor:]:
+            fit = largest(name)
+            if fit is not None and fit >= 1.0 - 1e-9:
+                chosen = (name, fit)
+                break
+        if chosen is None:
+            chosen = (reduced, largest(reduced))
+    if chosen[1] is None and not auto_scale:
+        chosen = (chosen[0], sheet._scale())  # the render refuses it, naming the scale that fits
+    if chosen[1] is None:
+        raise ValueError(
+            f"the views do not fit {chosen[0]} at any standard scale: the room their dimensions, callouts and "
+            "labels take alone is more than the sheet has. Give Sheet a larger size=, or fewer views."
+        )
+    sheet.size = chosen[0]
+    if auto_scale:
+        sheet.scale = chosen[1]
+    sheet._check_notes()
+    sheet._chosen = (sheet.size, sheet.scale)
 
 
 def _assembly_room(name: str, size: tuple[float, float], overall: set) -> dict:
@@ -3538,8 +4331,24 @@ def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
             at = {"front": (x, yl), second: (x, yh)} if third else {"front": (x, yh), second: (x, yl)}
         return w <= a_x[1] - a_x[0] and h <= a_y[1] - a_y[0], at
 
-    scale, at = next(((c, at) for c in _STANDARD_SCALES if c <= _PART_LARGEST
-                      for fits, at in [layout(c)] if fits), (_STANDARD_SCALES[-1], layout(_STANDARD_SCALES[-1])[1]))
+    fitting = None
+    for c in _STANDARD_SCALES:
+        if not _GA_SMALLEST - 1e-12 <= c <= _PART_LARGEST:
+            continue
+        fits, at = layout(c)
+        if fits:
+            fitting = (c, at)
+            break
+    if fitting is None:
+        # The views' own annotation -- overall sizes, balloon columns, labels --
+        # does not fit beside the parts list at any useful scale. Drawing it at
+        # 1:1000 would print the views as specks.
+        raise ValueError(
+            f"the general arrangement does not fit {sheet.size} beside its parts list at any scale down to "
+            f"{_scale_label(_GA_SMALLEST)}: the front and {second} views with their sizes and balloons need more "
+            "than the paper left of the parts list. Give assembly_sheets() a larger size=."
+        )
+    scale, at = fitting
     slots = [("front", at["front"], None, None), (second, at[second], None, None)]
     table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
     b_x = (W - m - _TITLE_W, W - m - 4.0)
@@ -3568,10 +4377,85 @@ def _continuations(sheets: Sequence[Sheet]) -> dict[int, dict]:
     out: dict[int, dict] = {}
     for spans in runs.values():
         spans.sort()
-        for (_f0, _l0, before), (_f1, _l1, after) in zip(spans, spans[1:]):
+        for (_f0, l0, before), (f1, _l1, after) in zip(spans, spans[1:]):
+            if f1 <= l0:
+                raise ValueError(f"items {f1} to {l0} of one parts list are listed on sheet {before} and again on "
+                                 f"sheet {after}; each item belongs to one run of the list")
             out.setdefault(before, {})["to"] = after
             out.setdefault(after, {})["from"] = before
     return out
+
+
+def geometry_notes(part) -> list[str]:
+    """The general notes the part's own geometry states, for ``Sheet(notes=...)``:
+    its most common blend radius (``FILLETS R2 UNLESS OTHERWISE SPECIFIED.``,
+    ``ROUNDS`` for outside edges, ``FILLETS AND ROUNDS`` for both) and its most
+    common 45-degree chamfer (``CHAMFERS 1 × 45° UNLESS OTHERWISE SPECIFIED.``).
+    Each is a measured fact of the model, not a requirement: a blend or chamfer
+    of any other size still needs stating, and the completeness report says
+    which. A part with neither gets no notes."""
+    from collections import Counter
+
+    from cadgen._internal.drawing_features import blends, chamfers
+
+    notes = []
+    found = blends(part)
+    if found:
+        counts = Counter(round(b.radius, 3) for b in found)
+        radius = max(counts, key=lambda r: (counts[r], r))
+        kinds = {b.concave for b in found if abs(b.radius - radius) < 1e-3}
+        word = "FILLETS AND ROUNDS" if len(kinds) == 2 else ("FILLETS" if True in kinds else "ROUNDS")
+        notes.append(f"{word} R{_fmt(radius)} UNLESS OTHERWISE SPECIFIED.")
+    bevels = Counter(round(c.legs[0], 3) for c in chamfers(part) if c.symmetric)
+    if bevels:
+        size = max(bevels, key=lambda d: (bevels[d], d))
+        notes.append(f"CHAMFERS {_fmt(size)} × 45° UNLESS OTHERWISE SPECIFIED.")
+    return notes
+
+
+def _unstated_edges(record: dict, whose: str) -> list[str]:
+    """The blends and chamfers a part's sheets leave unstated. A blend is stated by
+    a note naming its radius and kind (FILLETS for inside corners, ROUNDS for
+    outside edges, RADII for either) or by a ``radius()`` callout of its size; a
+    chamfer by a note giving its size (``1 × 45°``) or, at 45 degrees, a
+    dimension of its leg."""
+    from cadgen._internal.drawing_features import blends, chamfers
+
+    notes = [note.upper() for note in record.get("notes", ())]
+    lines = []
+    groups: dict[tuple, int] = {}
+    for blend in blends(record["shape"]):
+        key = (round(blend.radius, 3), blend.concave)
+        groups[key] = groups.get(key, 0) + 1
+    for (radius, concave), count in sorted(groups.items()):
+        word = ("FILLET" if concave else "ROUND")
+        mark = re.compile(rf"\bR{re.escape(_fmt(radius))}(?![\d.])")
+        named = any(mark.search(note) and (word in note or "RADII" in note) for note in notes)
+        if named or radius in record.get("radii", ()):
+            continue
+        plural = count > 1
+        lines.append(
+            f"incomplete: {whose}{count} {word.lower()}{'s' if plural else ''} R{_fmt(radius)} "
+            f"{'are' if plural else 'is'} not stated. Sheet(notes=geometry_notes(part)) states the commonest "
+            "radius as a general note, or radius(...) states one where a view shows it as an arc."
+        )
+    bevels: dict[tuple, int] = {}
+    for chamfer in chamfers(record["shape"]):
+        key = tuple(sorted((round(chamfer.legs[0], 3), round(chamfer.legs[1], 3))))
+        bevels[key] = bevels.get(key, 0) + 1
+    for (a, b), count in sorted(bevels.items()):
+        size = f"{_fmt(a)} × 45°" if abs(a - b) < 1e-3 else f"{_fmt(a)} × {_fmt(b)}"
+        if any(size.upper() in note for note in notes):
+            continue
+        if abs(a - b) < 1e-3 and any(abs(v - a) <= 0.01 for v in record["values"]):
+            continue
+        plural = count > 1
+        lines.append(
+            f"incomplete: {whose}{count} chamfer{'s' if plural else ''} {size} {'are' if plural else 'is'} not "
+            "stated. Sheet(notes=geometry_notes(part)) states the commonest as a general note, or a note or a "
+            "dimension of its leg states it."
+        )
+    return lines
 
 
 def _write_pdf(docs, sheets: Sequence[Sheet], path: Path) -> None:

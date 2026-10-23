@@ -8,7 +8,7 @@ constant a dimension references comes from the model module.
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing
+from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
 from l_bracket import (
     BACK_CENTER_Y,
     BACK_HOLE_LOCATIONS,
@@ -31,7 +31,7 @@ def l_bracket_drawing():
     part = cadgen.read_step(STEP)
     sheet = Sheet(
         "A3", title="L BRACKET", part_number="LB-001", revision="A", author="text-to-cad",
-        general_tolerance="ISO 2768-m", notes=["BREAK SHARP EDGES."],
+        general_tolerance="ISO 2768-m", notes=geometry_notes(part),   # the bend's fillet radius, read off it
     )
     top, front, right, iso = sheet.three_views(part, iso=True)
     back_face = BACK_CENTER_Y - BACK_THICKNESS / 2  # the back plate's front face

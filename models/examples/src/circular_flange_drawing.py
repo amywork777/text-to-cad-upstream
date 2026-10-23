@@ -9,7 +9,7 @@ import math
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing
+from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
 from circular_flange import BOLT_CIRCLE_DIAMETER, OUTER_DIAMETER, THICKNESS
 
 STEP = Path(__file__).parent / "../STEP/circular_flange.step"
@@ -20,7 +20,7 @@ def circular_flange_drawing():
     part = cadgen.read_step(STEP)
     sheet = Sheet(
         "A4", title="CIRCULAR FLANGE", part_number="FLG-080", revision="A", author="text-to-cad",
-        general_tolerance="ISO 2768-m",
+        general_tolerance="ISO 2768-m", notes=geometry_notes(part),   # its outer edges' radius, read off it
     )
     top, front, _right = sheet.three_views(part)
     # Through the middle: the bore and two of the bolt holes, cut.

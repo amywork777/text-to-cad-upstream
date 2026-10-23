@@ -246,3 +246,37 @@ class TurnedTests(unittest.TestCase):
 
         self.assertEqual(turned_diameters(self._shaft()), [20.0, 30.0])
         self.assertEqual(turned_diameters(Box(40, 40, 10) - Cylinder(5, 10)), [], "a bore is a hole, not a step")
+
+
+class EdgeTests(unittest.TestCase):
+    """Blends and chamfers: what a general note states."""
+
+    def test_rounds_fillets_and_chamfers_are_told_apart(self) -> None:
+        from build123d import Align, Axis, Box, Cylinder, Pos, SlotCenterToCenter, chamfer, extrude, fillet
+        from cadgen._internal.drawing_features import blends, chamfers
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        block = fillet(Box(60, 40, 20, align=up).edges().filter_by(Axis.Z), 5)
+        block = chamfer(block.edges().group_by(Axis.Z)[-1], 1)
+        block -= extrude(SlotCenterToCenter(16, 6), 20)
+        self.assertEqual(sorted((b.radius, b.concave) for b in blends(block)), [(5.0, False)] * 4,
+                         "the corners are rounds; the slot's ends are the slot's")
+        self.assertEqual(sorted(c.legs for c in chamfers(block)), [(1.0, 1.0)] * 8,
+                         "four flat chamfers and four round the corner arcs")
+        pocket = Box(80, 50, 15, align=up) - Pos(0, 0, 5) * Box(40, 20, 10, align=up)
+        pocket = fillet(pocket.edges().filter_by(Axis.Z).group_by(lambda e: abs(e.center().X))[0], 3)
+        self.assertEqual(sorted((b.radius, b.concave) for b in blends(pocket)), [(3.0, True)] * 4)
+        self.assertEqual(blends(Cylinder(10, 40)) + blends(Box(40, 40, 10) - Cylinder(4, 10)), [])
+        self.assertEqual(chamfers(Box(40, 40, 10) - Cylinder(4, 10)), [], "a hole is not a chamfer")
+
+    def test_a_shaft_shoulder_fillet_and_its_end_chamfers(self) -> None:
+        from build123d import Align, Axis, Cylinder, Pos, chamfer, fillet
+        from cadgen._internal.drawing_features import blends, chamfers
+
+        up = (Align.CENTER, Align.CENTER, Align.MIN)
+        shaft = Cylinder(10, 40, align=up) + Pos(0, 0, 40) * Cylinder(6, 30, align=up)
+        shaft = fillet(shaft.edges().filter_by(lambda e: abs(e.center().Z - 40) < 1e-6 and e.radius < 7), 2)
+        shaft = chamfer(shaft.edges().group_by(Axis.Z)[-1], 1)
+        shaft = chamfer(shaft.edges().group_by(Axis.Z)[0], 1)
+        self.assertEqual([(b.radius, b.concave) for b in blends(shaft)], [(2.0, True)])
+        self.assertEqual(sorted(c.legs for c in chamfers(shaft)), [(1.0, 1.0), (1.0, 1.0)])

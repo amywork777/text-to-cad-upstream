@@ -9,7 +9,7 @@ below are that function's numbers, read from its source.
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing
+from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
 
 STEP = Path(__file__).parent / "../STEP/mounting_plate.step"
 
@@ -25,7 +25,7 @@ CORNER = (50.0 - 5.0, 35.0 - 5.0)
 def mounting_plate_drawing():
     part = cadgen.read_step(STEP)
     sheet = Sheet("A3", title="MOUNTING PLATE", part_number="MP-100", revision="A", author="text-to-cad",
-                  general_tolerance="ISO 2768-m", notes=["BREAK SHARP EDGES."])
+                  general_tolerance="ISO 2768-m", notes=[*geometry_notes(part), "BREAK SHARP EDGES."])
     top, front, right, iso = sheet.three_views(part, iso=True)
     top.overall()
     top.holes()                                                          # holes and the slot, from the part

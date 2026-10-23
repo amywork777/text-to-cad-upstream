@@ -10,7 +10,7 @@ so moving a standoff in the model moves the dimension here.
 from pathlib import Path
 
 import cadgen
-from cadgen.eng_drawing import Sheet, eng_drawing
+from cadgen.eng_drawing import Sheet, eng_drawing, geometry_notes
 from electronics_enclosure_base import (
     FLOOR_THICKNESS,
     OUTER_HEIGHT,
@@ -30,7 +30,7 @@ def electronics_enclosure_base_drawing():
     sheet = Sheet(
         "A3", title="ELECTRONICS ENCLOSURE BASE", part_number="ENC-001", material="ABS",
         revision="A", author="text-to-cad", general_tolerance="ISO 2768-m",
-        notes=["BREAK SHARP EDGES."],
+        notes=[*geometry_notes(part), "BREAK SHARP EDGES."],   # its corner radius, read off it
     )
     top, front, right, iso = sheet.three_views(part, iso=True)
     xs = sorted({x for x, _ in STANDOFF_LOCATIONS})
