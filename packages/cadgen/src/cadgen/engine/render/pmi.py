@@ -16,8 +16,9 @@ found broken (``missing``, ``ambiguous``, ``invalid``) is drawn where its code p
 its status colour with an open ring where it was anchored, its nominal ``?``. A leader or extension
 line whose start the model hides from the camera is faint, its marker hollow. Only the supported
 subset is drawn: distance (a basic one exact, its number boxed, measured to a hole's centre line),
-diameter, datum, flatness and position; anything else is counted, not drawn. Everything in the scene's coordinates (the document's millimetres), at rest: a still drawn
-exploded or posed draws none (``snapshot.py`` refuses asking for it).
+diameter, datum, flatness and position; anything else is left out of the picture. Everything in
+the scene's coordinates (the document's millimetres), at rest: a still drawn exploded or posed
+draws none (``snapshot.py`` refuses asking for it).
 """
 
 from __future__ import annotations
@@ -37,7 +38,9 @@ MINUS = "−"
 
 
 def _finite(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _text(value: Any) -> str:
@@ -55,7 +58,50 @@ def _tolerance(value: Any) -> dict[str, float] | None:
     return None if upper is None or lower is None else {"upper": upper, "lower": lower}
 
 
-def read(structure: dict[str, Any]) -> list[dict[str, Any]]:
+def _point3(value: Any) -> list[float] | None:
+    if not isinstance(value, list) or len(value) != 3 or any(_finite(v) is None for v in value):
+        return None
+    return [float(v) for v in value]
+
+
+def _ref(ref: Any) -> dict[str, str]:
+    ref = ref or {}
+    written = _text(ref.get("written")) or _text(ref.get("ref"))
+    return {"role": _text(ref.get("role")) or "feature", "ref": _text(ref.get("ref")) or written, "written": written,
+            "status": _status(ref.get("status"))}
+
+
+def _dimension(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or not value:
+        return None
+    basic = value.get("basic") is True
+    # A basic dimension is exact: a tolerance on one is not read as one.
+    tolerance = None if basic else _tolerance(value.get("tolerance"))
+    nominal = _finite((value.get("nominal") or {}).get("value"))
+    return {"type": _text(value.get("type")), "basic": basic, "nominal": nominal, "tolerance": tolerance}
+
+
+def _datum(value: Any) -> dict[str, str] | None:
+    letter = _text(value.get("letter")) if isinstance(value, dict) else ""
+    return {"letter": letter} if letter else None
+
+
+def _geometric_tolerance(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or not value:
+        return None
+    return {"characteristic": _text(value.get("characteristic")), "value": _finite(value.get("value")),
+            "zone": _text(value.get("zone")) or None,
+            "datums": [datum for datum in value.get("datums") or [] if isinstance(datum, str) and datum]}
+
+
+def _presentation(value: Any) -> dict[str, list[float]] | None:
+    if not isinstance(value, dict):
+        return None
+    anchor, offset = _point3(value.get("anchor")), _point3(value.get("offset"))
+    return {"anchor": anchor, "offset": offset} if anchor and offset else None
+
+
+def entries(structure: dict[str, Any]) -> list[dict[str, Any]]:
     """The document's PMI as the viewer reads it (``readXbfPmi``): each entry with what its kind
     carries, a field missing or of the wrong type read as nothing, and whether it is drawn."""
     found, seen = [], set()
@@ -66,29 +112,14 @@ def read(structure: dict[str, Any]) -> list[dict[str, Any]]:
         if ident in seen:
             ident = f"{ident}#{index + 1}"
         seen.add(ident)
-        refs = []
-        for ref in item.get("refs") or []:
-            written = _text((ref or {}).get("written")) or _text((ref or {}).get("ref"))
-            refs.append({"role": _text(ref.get("role")) or "feature", "ref": _text(ref.get("ref")) or written,
-                         "written": written, "status": _status(ref.get("status"))})
-        dimension = item.get("dimension") if isinstance(item.get("dimension"), dict) else None
-        gdt = item.get("geometric_tolerance") if isinstance(item.get("geometric_tolerance"), dict) else None
-        presentation = item.get("presentation") if isinstance(item.get("presentation"), dict) else None
-        point3 = lambda value: [float(v) for v in value] if isinstance(value, list) and len(value) == 3 and all(_finite(v) is not None for v in value) else None  # noqa: E731
-        entry = {
-            "id": ident, "kind": _text(item.get("kind")), "status": _status(item.get("status")), "problem": _text(item.get("problem")),
-            "part": item.get("part") if isinstance(item.get("part"), int) and not isinstance(item.get("part"), bool) else None, "refs": refs,
-            # A basic dimension is exact: a tolerance on one is not read as one.
-            "dimension": {"type": _text(dimension.get("type")), "basic": dimension.get("basic") is True,
-                          "nominal": _finite((dimension.get("nominal") or {}).get("value")),
-                          "tolerance": None if dimension.get("basic") is True else _tolerance(dimension.get("tolerance"))} if dimension else None,
-            "datum": {"letter": _text(item["datum"].get("letter"))} if isinstance(item.get("datum"), dict) and _text(item["datum"].get("letter")) else None,
-            "tolerance": {"characteristic": _text(gdt.get("characteristic")), "value": _finite(gdt.get("value")),
-                          "zone": _text(gdt.get("zone")) or None,
-                          "datums": [d for d in (gdt.get("datums") or []) if isinstance(d, str) and d]} if gdt else None,
-            "presentation": {"anchor": point3(presentation.get("anchor")), "offset": point3(presentation.get("offset"))}
-            if presentation and point3(presentation.get("anchor")) and point3(presentation.get("offset")) else None,
-        }
+        part = item.get("part")
+        entry = {"id": ident, "kind": _text(item.get("kind")), "status": _status(item.get("status")),
+                 "problem": _text(item.get("problem")),
+                 "part": part if isinstance(part, int) and not isinstance(part, bool) else None,
+                 "refs": [_ref(ref) for ref in item.get("refs") or []],
+                 "dimension": _dimension(item.get("dimension")), "datum": _datum(item.get("datum")),
+                 "tolerance": _geometric_tolerance(item.get("geometric_tolerance")),
+                 "presentation": _presentation(item.get("presentation"))}
         entry["supported"] = _supported(entry)
         found.append(entry)
     return found
@@ -100,7 +131,9 @@ def _supported(entry: dict[str, Any]) -> bool:
         dimension = entry["dimension"] or {}
         if dimension.get("basic") and dimension.get("type") != "distance":
             return False
-        return dimension.get("type") in DIMENSION_TYPES and (dimension.get("nominal") is not None or entry["status"] != "ok")
+        # A broken reference leaves nothing to measure (its nominal said as ``?``); one that resolved has one.
+        said = dimension.get("nominal") is not None or entry["status"] != "ok"
+        return dimension.get("type") in DIMENSION_TYPES and said
     if kind == "datum":
         return entry["datum"] is not None
     if kind == "geometric_tolerance":
@@ -130,6 +163,12 @@ def number(value: float, places: int | None = None) -> str:
     return fixed if float(fixed) == 0 else f"{MINUS if value < 0 else ''}{fixed}"
 
 
+def _signed(value: float, places: int) -> str:
+    if value == 0:
+        return "0"
+    return f"+{number(value, places)}" if value > 0 else number(value, places)
+
+
 def tolerance_text(tolerance: dict[str, float] | None) -> dict[str, Any] | None:
     """``pmiToleranceText``: ``±0.2`` the same both ways, else each deviation signed, a zero bare."""
     if not tolerance:
@@ -138,17 +177,22 @@ def tolerance_text(tolerance: dict[str, float] | None) -> dict[str, Any] | None:
     places = max(decimals(upper), decimals(lower))
     if upper > 0 and abs(upper + lower) < 1e-12:
         return {"symmetric": True, "text": f"±{number(upper, places)}", "places": places}
-    signed = lambda value: "0" if value == 0 else (f"+{number(value, places)}" if value > 0 else number(value, places))  # noqa: E731
-    return {"symmetric": False, "upper": signed(upper), "lower": signed(lower), "text": f"{signed(upper)}/{signed(lower)}", "places": places}
+    upper_text, lower_text = _signed(upper, places), _signed(lower, places)
+    return {"symmetric": False, "upper": upper_text, "lower": lower_text, "text": f"{upper_text}/{lower_text}",
+            "places": places}
 
 
 def callout(entry: dict[str, Any]) -> dict[str, Any]:
     """``pmiCallout``: what a callout says, in the pieces its label draws."""
     if entry["kind"] == "dimension":
-        tolerance = tolerance_text(entry["dimension"]["tolerance"])
-        nominal = entry["dimension"]["nominal"]
-        shown = "?" if nominal is None else number(nominal, max(tolerance["places"], 0) if tolerance else min(decimals(nominal), 2))
-        return {"kind": "dimension", "diameter": entry["dimension"]["type"] == "diameter", "basic": entry["dimension"]["basic"],
+        dimension = entry["dimension"]
+        tolerance = tolerance_text(dimension["tolerance"])
+        nominal = dimension["nominal"]
+        if nominal is None:
+            shown = "?"
+        else:
+            shown = number(nominal, max(tolerance["places"], 0) if tolerance else min(decimals(nominal), 2))
+        return {"kind": "dimension", "diameter": dimension["type"] == "diameter", "basic": dimension["basic"],
                 "nominal": shown, "tolerance": tolerance}
     if entry["kind"] == "datum":
         return {"kind": "datum", "letter": entry["datum"]["letter"]}
@@ -194,6 +238,10 @@ def _unit(a: Any) -> list[float] | None:
     return _scale(a, 1 / size) if size > 1e-12 else None
 
 
+def _across(v: Any, n: Any) -> list[float]:
+    return _sub(v, _scale(n, _dot(v, n)))
+
+
 def face_nodes(mesh: Any, ordinal: int) -> tuple[list[list[float]], list[list[float]]] | None:
     """``xbfFaceNodes``: a face's nodes and their normals, each node once, in the order its
     triangles first name them; None for no such face."""
@@ -218,12 +266,15 @@ def _solve3(m: list[float], b: list[float]) -> list[float] | None:
     size = max(abs(v) for v in m)
     if not abs(det) > size * size * size * 1e-9:
         return None
-    inverse = [e * i - f * h, c * h - bb * i, bb * f - c * e, f * g - d * i, a * i - c * g, c * d - a * f, d * h - e * g,
-               bb * g - a * h, a * e - bb * d]
-    return [(inverse[row * 3] * b[0] + inverse[row * 3 + 1] * b[1] + inverse[row * 3 + 2] * b[2]) / det for row in range(3)]
+    inverse = [e * i - f * h, c * h - bb * i, bb * f - c * e,
+               f * g - d * i, a * i - c * g, c * d - a * f,
+               d * h - e * g, bb * g - a * h, a * e - bb * d]
+    return [(inverse[row * 3] * b[0] + inverse[row * 3 + 1] * b[1] + inverse[row * 3 + 2] * b[2]) / det
+            for row in range(3)]
 
 
-def _meeting_point(points: list[list[float]], directions: list[list[float]], keep: list[float] | None = None) -> list[float] | None:
+def _meeting_point(points: list[list[float]], directions: list[list[float]],
+                   keep: list[float] | None = None) -> list[float] | None:
     m, b = [0.0] * 9, [0.0, 0.0, 0.0]
     for point, d in zip(points, directions):
         for row in range(3):
@@ -238,14 +289,16 @@ def _meeting_point(points: list[list[float]], directions: list[list[float]], kee
     return _solve3(m, b)
 
 
-def _round_about(points: list[list[float]], normals: list[list[float]], center: list[float], off: float) -> float | None:
+def _round_about(points: list[list[float]], normals: list[list[float]], center: list[float],
+                 off: float) -> float | None:
     radii = [_length(_sub(point, center)) for point in points]
     radius = sum(radii) / len(radii)
     if not radius > off:
         return None
     if any(abs(value - radius) > max(radius * ROUND, off) for value in radii):
         return None
-    radial = all(_length(_cross(_scale(_sub(point, center), 1 / radii[i]), normals[i])) <= RADIAL for i, point in enumerate(points))
+    radial = all(_length(_cross(_scale(_sub(point, center), 1 / radii[i]), normals[i])) <= RADIAL
+                 for i, point in enumerate(points))
     return radius if radial else None
 
 
@@ -266,7 +319,8 @@ def face_surface(mesh: Any, ordinal: int) -> dict[str, Any] | None:
     far = max(max(abs(point[0]), abs(point[1]), abs(point[2])) for point in points)
     off = max(span * 1e-4, far * 4e-6, 1e-7)
     first = normals[0]
-    if all(_dot(normal, first) >= 1 - PLANE_NORMAL for normal in normals) and all(abs(_dot(_sub(p, middle), first)) <= off for p in points):
+    parallel = all(_dot(normal, first) >= 1 - PLANE_NORMAL for normal in normals)
+    if parallel and all(abs(_dot(_sub(p, middle), first)) <= off for p in points):
         return {"type": "plane", "normal": first, "origin": middle}
     across = first
     for normal in normals:
@@ -274,12 +328,14 @@ def face_surface(mesh: Any, ordinal: int) -> dict[str, Any] | None:
             across = normal
     axis = _unit(_cross(first, across))
     if axis and _length(_cross(first, across)) > 1e-3 and all(abs(_dot(normal, axis)) <= SQUARE for normal in normals):
-        flat = lambda point: _sub(point, _scale(axis, _dot(point, axis)))  # noqa: E731
-        directions = [_unit(flat(normal)) or normal for normal in normals]
-        center = _meeting_point([flat(p) for p in points], directions, axis)
-        radius = center and _round_about([flat(p) for p in points], directions, center, off)
+        # Each node and normal flattened onto the plane square to the axis through the origin.
+        flat = [_across(point, axis) for point in points]
+        directions = [_unit(_across(normal, axis)) or normal for normal in normals]
+        center = _meeting_point(flat, directions, axis)
+        radius = center and _round_about(flat, directions, center, off)
         if radius:
-            return {"type": "cylinder", "axis": axis, "origin": _add(center, _scale(axis, _dot(middle, axis))), "radius": radius}
+            origin = _add(center, _scale(axis, _dot(middle, axis)))
+            return {"type": "cylinder", "axis": axis, "origin": origin, "radius": radius}
     return {"type": "surface"}
 
 
@@ -299,10 +355,11 @@ def element(mesh: Any, ordinal: int, matrix: list[float]) -> dict[str, Any] | No
     if surface is None or nodes is None:
         return None
     if surface["type"] == "plane":
-        placed = {"type": "plane", "normal": _place_direction(matrix, surface["normal"]), "origin": _place_point(matrix, surface["origin"])}
+        placed = {"type": "plane", "normal": _place_direction(matrix, surface["normal"]),
+                  "origin": _place_point(matrix, surface["origin"])}
     elif surface["type"] == "cylinder":
-        placed = {"type": "cylinder", "axis": _place_direction(matrix, surface["axis"]), "origin": _place_point(matrix, surface["origin"]),
-                  "radius": surface["radius"]}
+        placed = {"type": "cylinder", "axis": _place_direction(matrix, surface["axis"]),
+                  "origin": _place_point(matrix, surface["origin"]), "radius": surface["radius"]}
     else:
         placed = {"type": surface["type"]}
     return {"surface": placed, "points": [_place_point(matrix, point) for point in nodes[0]]}
@@ -314,12 +371,10 @@ SPREAD = math.pi / 4.5
 REACH_SHARE, REACH_MIN = 0.18, 4.0
 
 
-def _across(v: Any, n: Any) -> list[float]:
-    return _sub(v, _scale(n, _dot(v, n)))
-
-
 def _turned(v: Any, n: Any, angle: float) -> list[float]:
-    return _add(_add(_scale(v, math.cos(angle)), _scale(_cross(n, v), math.sin(angle))), _scale(n, _dot(n, v) * (1 - math.cos(angle))))
+    """``v`` turned by ``angle`` about the unit axis ``n`` (Rodrigues')."""
+    along = _scale(n, _dot(n, v) * (1 - math.cos(angle)))
+    return _add(_add(_scale(v, math.cos(angle)), _scale(_cross(n, v), math.sin(angle))), along)
 
 
 def _any_perpendicular(n: Any) -> list[float] | None:
@@ -364,7 +419,10 @@ def _edge_point(geometry: dict[str, Any], centre: Any, n: Any) -> list[float] | 
     if not points:
         origin = (geometry.get("surface") or {}).get("origin")
         return list(origin) if origin else None
-    out = lambda point: _length(_across(_sub(point, centre), n))  # noqa: E731
+
+    def out(point: Any) -> float:
+        return _length(_across(_sub(point, centre), n))
+
     best = points[0]
     for point in points:
         if out(point) > out(best) + 1e-9:
@@ -410,7 +468,26 @@ def _measured_along(source: dict[str, Any], target: dict[str, Any]) -> list[floa
     return n if all(not end["axis"] or abs(_dot(end["axis"], n)) <= AXIS_SQUARE for end in (source, target)) else None
 
 
-def construction(entry: dict[str, Any], geometry: dict[str, Any], bounds: tuple[Any, Any] | None, turn: int = 0) -> dict[str, Any] | None:
+def _on_level(point: Any, n: Any, end: dict[str, Any]) -> list[float]:
+    """``point`` moved along what a distance measures (``n``) to the level of one of its ends."""
+    return _sub(point, _scale(n, _dot(point, n) - _dot(end["origin"], n)))
+
+
+def _on_axis(point: Any, end: dict[str, Any]) -> list[float]:
+    """The point of a round end's axis nearest ``point``."""
+    return _add(end["origin"], _scale(end["axis"], _dot(_sub(point, end["origin"]), end["axis"])))
+
+
+def _broken(at: dict[str, Any] | None, placed: str) -> dict[str, Any] | None:
+    """A callout whose feature cannot be found: drawn where its code placed it, else nowhere."""
+    if not at:
+        return None
+    return {"anchor": at["anchor"], "label": _add(at["anchor"], at["offset"]), "dimension": None, "presentation": at,
+            "placed": placed, "broken": True}
+
+
+def construction(entry: dict[str, Any], geometry: dict[str, Any], bounds: tuple[Any, Any] | None,
+                 turn: int = 0) -> dict[str, Any] | None:
     """``pmiConstruction``: the scene points a callout is drawn from -- its anchor, its label, a
     distance's dimension and extension lines -- or None where it can be drawn nowhere."""
     centre = _scale(_add(bounds[0], bounds[1]), 0.5) if bounds else [0.0, 0.0, 0.0]
@@ -418,38 +495,36 @@ def construction(entry: dict[str, Any], geometry: dict[str, Any], bounds: tuple[
     given = entry["presentation"]
     at = {"anchor": list(given["anchor"]), "offset": list(given["offset"])} if given else None
     placed = "given" if given else "default"
-    broken = lambda: {"anchor": at["anchor"], "label": _add(at["anchor"], at["offset"]), "dimension": None, "presentation": at,  # noqa: E731
-                      "placed": placed, "broken": True} if at else None
     if entry["kind"] == "dimension" and entry["dimension"]["type"] == "distance":
         source, target = _distance_end(geometry.get("from")), _distance_end(geometry.get("to"))
         n = _measured_along(source, target) if source and target else None
         if not n:
-            return broken()
-        level = lambda point: _dot(point, n)  # noqa: E731
-        on_level = lambda point, end: _sub(point, _scale(n, level(point) - level(end["origin"])))  # noqa: E731
-        on_axis = lambda point, end: _add(end["origin"], _scale(end["axis"], _dot(_sub(point, end["origin"]), end["axis"])))  # noqa: E731
+            return _broken(at, placed)
         if at:
             anchor = at["anchor"]
         elif source["normal"]:
             anchor = _edge_point(geometry["from"], centre, n)
         else:
-            anchor = on_axis(feature_point(geometry["from"], centre), source)
+            anchor = _on_axis(feature_point(geometry["from"], centre), source)
         if at:
             offset = at["offset"]
         else:
             away = _unit(_across(_sub(anchor, centre), n)) or _any_perpendicular(n)
             side = _turned(away, n, turn * SPREAD)
-            offset = _add(_scale(n, (level(target["origin"]) - level(anchor)) / 2), _scale(side, far * 0.5))
+            # Halfway between the ends, out to the side.
+            offset = _add(_scale(n, (_dot(target["origin"], n) - _dot(anchor, n)) / 2), _scale(side, far * 0.5))
         label = _add(anchor, offset)
-        on_from, on_to = on_level(label, source), on_level(label, target)
-        extension = lambda end, on: [on_level(anchor, end) if end["normal"] else on_axis(on, end), on]  # noqa: E731
-        return {"anchor": anchor, "label": label, "dimension": {"from": on_from, "to": on_to,
-                "extensions": [extension(source, on_from), extension(target, on_to)]},
+        on_from, on_to = _on_level(label, n, source), _on_level(label, n, target)
+        # A plane's extension line runs square to it from the anchor's foot on it; an axis's from its
+        # point nearest the dimension line's end.
+        extensions = [[_on_level(anchor, n, end) if end["normal"] else _on_axis(on, end), on]
+                      for end, on in ((source, on_from), (target, on_to))]
+        return {"anchor": anchor, "label": label, "dimension": {"from": on_from, "to": on_to, "extensions": extensions},
                 "presentation": {"anchor": anchor, "offset": offset}, "placed": placed}
     feature = geometry.get("feature")
     out = _outward(feature)
     if not feature or not out:
-        return broken()
+        return _broken(at, placed)
     anchor = at["anchor"] if at else feature_point(feature, centre)
     if at:
         offset = at["offset"]
@@ -457,8 +532,8 @@ def construction(entry: dict[str, Any], geometry: dict[str, Any], bounds: tuple[
         away = _unit(_across(_sub(anchor, centre), out)) or _any_perpendicular(out)
         side = _turned(away, out, turn * SPREAD)
         offset = _add(_scale(out, far), _scale(side, far * 0.6))
-    return {"anchor": anchor, "label": _add(anchor, offset), "dimension": None, "presentation": {"anchor": anchor, "offset": offset},
-            "placed": placed}
+    return {"anchor": anchor, "label": _add(anchor, offset), "dimension": None,
+            "presentation": {"anchor": anchor, "offset": offset}, "placed": placed}
 
 
 def to_scene(presentation: dict[str, Any] | None, matrix: list[float] | None) -> dict[str, Any] | None:
@@ -470,16 +545,34 @@ def to_scene(presentation: dict[str, Any] | None, matrix: list[float] | None) ->
                        + matrix[8 + row] * presentation["offset"][2] for row in range(3)]}
 
 
-def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tuple[Any, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
+def rest_bounds(structure: dict[str, Any], meshes: dict[str, Any]) -> tuple[list[float], list[float]] | None:
+    """The box of the model at rest that its callouts are laid out by (the viewer's ``restBounds``):
+    each instance's part box where it stands; None for a document with no part to box."""
+    from cadgen.engine.render.explode import part_box, placed_box
+
+    boxes = []
+    for instance in structure["instances"]:
+        # part_box (every node, edge point and vertex), not Scene.rest_bounds: to match the viewer's restBounds.
+        box = part_box(meshes[structure["prototypes"][instance["prototype"]]["key"]])
+        if box is not None:
+            boxes.append(placed_box(box, np.array(instance["matrix"], float).reshape(4, 4).T))
+    if not boxes:
+        return None
+    return ([min(box[0][axis] for box in boxes) for axis in range(3)],
+            [max(box[1][axis] for box in boxes) for axis in range(3)])
+
+
+def constructions(structure: dict[str, Any], meshes: dict[str, Any],
+                  bounds: tuple[Any, Any] | None) -> list[tuple[dict[str, Any], dict[str, Any] | None]]:
     """Every supported entry with its construction (``useXbfPmi``'s): its references resolved as
     the engine resolves them, each that names one face of a part taken from that part's mesh, its
     placement taken from its part's frame, and each later annotation of a feature turned from the
-    one before it."""
-    from cadgen.engine import refs as grammar
+    one before it. ``bounds``: the model's at rest (``rest_bounds``)."""
+    from cadgen.engine import refs
 
     prototypes, instances = structure["prototypes"], structure["instances"]
     found, turns = [], {}
-    for entry in read(structure):
+    for entry in entries(structure):
         if not entry["supported"]:
             continue
         geometry, firsts = {}, []
@@ -487,8 +580,8 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tup
             face = None
             if ref["status"] == "ok":
                 try:
-                    hits = grammar.resolve_structure(structure, ref["ref"])
-                except Exception:  # noqa: BLE001 -- a ref the page cannot find names nothing here either
+                    hits = refs.resolve_structure(structure, ref["ref"])
+                except refs.RefError:  # a ref the page cannot find names nothing here either
                     hits = []
                 if len(hits) == 1 and hits[0].kind == "face":
                     instance = hits[0].node.payload["instance"]
@@ -497,7 +590,9 @@ def constructions(structure: dict[str, Any], meshes: dict[str, Any], bounds: tup
                     if at == 0:  # what a feature's turns count by: the first reference's element, as the viewer counts
                         firsts.append(f"i{instance}/face/{hits[0].ordinal}")
             geometry[ref["role"]] = face
-        frame = next((item["matrix"] for item in instances if item.get("prototype") == entry["part"]), None) if entry["part"] is not None else None
+        frame = None
+        if entry["part"] is not None:
+            frame = next((item["matrix"] for item in instances if item.get("prototype") == entry["part"]), None)
         placed = {**entry, "presentation": to_scene(entry["presentation"], frame)}
         first = firsts[0] if firsts else entry["id"]
         turn = turns.get(first, 0)
@@ -531,7 +626,10 @@ BOXED, BOXED_HEIGHT = 3.0, 16.0
 def _glyph(painter: Any, name: str, x: float, middle: float, color: Any, alpha: float) -> None:
     """A GD&T symbol on the 24-unit grid the viewer's are drawn on (``pmiGlyphs.jsx``), 12 px."""
     k = GLYPH / 24
-    at = lambda u, v: (x + u * k, middle - GLYPH / 2 + v * k)  # noqa: E731
+
+    def at(u: float, v: float) -> tuple[float, float]:
+        return x + u * k, middle - GLYPH / 2 + v * k
+
     width = 2 * k
     if name == "diameter":
         painter.disc(at(12, 12), 6.5 * k, color, ring=width, alpha=alpha)
@@ -568,7 +666,8 @@ def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
 
     words, small = face(*TEXT), face(*SMALL)
     if said["kind"] == "dimension":
-        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"], "small": None, "boxed": said["basic"]}
+        cell = {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["nominal"], "small": None,
+                "boxed": said["basic"]}
         tolerance = said["tolerance"]
         if tolerance and tolerance["symmetric"]:
             cell["words"] += f" {tolerance['text']}"
@@ -582,45 +681,53 @@ def _cells(said: dict[str, Any]) -> list[dict[str, Any]]:
                  {"glyphs": ["diameter"] if said["diameter"] else [], "words": said["value"], "small": None},
                  *({"glyphs": [], "words": datum, "small": None} for datum in said["datums"])]
     for cell in cells:
-        width = PAD * 2 + len(cell["glyphs"]) * (GLYPH + 1) + (words.width(cell["words"]) if cell["words"] else 0) + (BOXED * 2 if cell.get("boxed") else 0)
+        width = PAD * 2 + _content(cell, words)
         if cell["small"]:
             width += 2 + max(small.width(cell["small"][0]), small.width(cell["small"][1]))
         cell["width"] = max(width, cell.get("min", 0.0))
     return cells
 
 
-def _label(painter: Any, said: dict[str, Any], box: dict[str, float], ink: Any, paper: Any, border: Any, dashed: bool) -> None:
+def _content(cell: dict[str, Any], words: Any) -> float:
+    """How wide a cell's glyphs and words are, a basic number's box about them: its padding and a
+    tolerance's small words apart."""
+    glyphs = len(cell["glyphs"]) * (GLYPH + 1)
+    text = words.width(cell["words"]) if cell["words"] else 0
+    return glyphs + text + (BOXED * 2 if cell.get("boxed") else 0)
+
+
+def _label(painter: Any, said: dict[str, Any], box: dict[str, float], border: Any, dashed: bool) -> None:
     from cadgen.engine.render.text import face
 
     words, small = face(*TEXT), face(*SMALL)
     x, y, w, h = box["x"] - box["w"] / 2, box["y"] - box["h"] / 2, box["w"], box["h"]
-    painter.rounded_box(x, y, w, h, 2.0, paper, PAPER_ALPHA)
+    painter.rounded_box(x, y, w, h, 2.0, PAPER, PAPER_ALPHA)
     if dashed:
         _dashed_box(painter, x, y, w, h, border)
     else:
-        painter.rounded_box(x, y, w, h, 2.0, border, BORDER_ALPHA if border == ink else 1.0, stroke=1.0)
+        painter.rounded_box(x, y, w, h, 2.0, border, BORDER_ALPHA if border == INK else 1.0, stroke=1.0)
     at = x
     for index, cell in enumerate(box["cells"]):
         if index:
-            painter.line((at, y + 1), (at, y + h - 1), 1.0, ink, RULE_ALPHA)
+            painter.line((at, y + 1), (at, y + h - 1), 1.0, INK, RULE_ALPHA)
         # A datum's letter centred in its box (``min-w-5``); every other cell's content 4 px in.
-        content = len(cell["glyphs"]) * (GLYPH + 1) + (words.width(cell["words"]) if cell["words"] else 0) + (BOXED * 2 if cell.get("boxed") else 0)
-        start = at + (cell["width"] - content) / 2 if cell.get("min") else at + PAD
+        start = at + (cell["width"] - _content(cell, words)) / 2 if cell.get("min") else at + PAD
         for glyph in cell["glyphs"]:
-            _glyph(painter, glyph, start, box["y"], ink, 1.0)
+            _glyph(painter, glyph, start, box["y"], INK, 1.0)
             start += GLYPH + 1
         if cell.get("boxed"):
             # A basic dimension's number in its own box, ruled in the ink (``border px-0.5``).
-            painter.rounded_box(start, box["y"] - BOXED_HEIGHT / 2, words.width(cell["words"]) + BOXED * 2, BOXED_HEIGHT, 0.0, ink, 1.0, stroke=1.0)
+            boxed = words.width(cell["words"]) + BOXED * 2
+            painter.rounded_box(start, box["y"] - BOXED_HEIGHT / 2, boxed, BOXED_HEIGHT, 0.0, INK, 1.0, stroke=1.0)
             start += BOXED
         if cell["words"]:
-            _words(painter, cell["words"], words, start, box["y"], ink)
+            _words(painter, cell["words"], words, start, box["y"], INK)
             start += words.width(cell["words"])
         if cell.get("boxed"):
             start += BOXED
         if cell["small"]:
-            _words(painter, cell["small"][0], small, start + 2, box["y"] - 5.6, ink)
-            _words(painter, cell["small"][1], small, start + 2, box["y"] + 5.6, ink)
+            _words(painter, cell["small"][0], small, start + 2, box["y"] - 5.6, INK)
+            _words(painter, cell["small"][1], small, start + 2, box["y"] + 5.6, INK)
         at += cell["width"]
 
 
@@ -637,8 +744,9 @@ def _dashed(painter: Any, a: Any, b: Any, width: float, color: Any, alpha: float
 
 
 def _dashed_box(painter: Any, x: float, y: float, w: float, h: float, color: Any) -> None:
-    for a, b in (((x, y), (x + w, y)), ((x + w, y), (x + w, y + h)), ((x + w, y + h), (x, y + h)), ((x, y + h), (x, y))):
-        _dashed(painter, a, b, 1.0, color, 1.0)
+    corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+    for index, corner in enumerate(corners):
+        _dashed(painter, corner, corners[(index + 1) % 4], 1.0, color, 1.0)
 
 
 def _arrow(painter: Any, tip: Any, toward: Any, color: Any, alpha: float, hollow: bool = False) -> None:
@@ -656,7 +764,8 @@ def _arrow(painter: Any, tip: Any, toward: Any, color: Any, alpha: float, hollow
 def _datum_triangle(painter: Any, base: Any, toward: Any, color: Any, alpha: float, hollow: bool = False) -> None:
     angle = math.atan2(toward[1] - base[1], toward[0] - base[0])
     along, side = (math.cos(angle), math.sin(angle)), (-math.sin(angle), math.cos(angle))
-    corners = [(base[0] + side[0] * DATUM, base[1] + side[1] * DATUM), (base[0] - side[0] * DATUM, base[1] - side[1] * DATUM),
+    corners = [(base[0] + side[0] * DATUM, base[1] + side[1] * DATUM),
+               (base[0] - side[0] * DATUM, base[1] - side[1] * DATUM),
                (base[0] + along[0] * DATUM * 1.4, base[1] + along[1] * DATUM * 1.4)]
     if hollow:
         for index, corner in enumerate(corners):
@@ -673,27 +782,37 @@ def _box_edge(start: Any, box: dict[str, float]) -> tuple[float, float]:
     return box["x"] + dx * s, box["y"] + dy * s
 
 
+def _overlaps(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    return abs(a["x"] - b["x"]) * 2 < a["w"] + b["w"] and abs(a["y"] - b["y"]) * 2 < a["h"] + b["h"]
+
+
 def separate(boxes: list[dict[str, Any]]) -> None:
     """``separateLabels``: a label the code never placed that covers one before it steps below it, a
     few pixels clear; one the code placed stays, and the others keep clear of it (in place)."""
-    overlaps = lambda a, b: abs(a["x"] - b["x"]) * 2 < a["w"] + b["w"] and abs(a["y"] - b["y"]) * 2 < a["h"] + b["h"]  # noqa: E731
     fixed = [box for box in boxes if not box["movable"]]
     placed: list[dict[str, Any]] = []
     for box in boxes:
         if box["movable"]:
             for _ in range(len(boxes) + 1):
-                hit = next((other for other in [*fixed, *placed] if other is not box and overlaps(box, other)), None)
+                hit = next((other for other in [*fixed, *placed] if other is not box and _overlaps(box, other)), None)
                 if hit is None:
                     break
                 box["y"] = hit["y"] + (hit["h"] + box["h"]) / 2 + GAP_PX
         placed.append(box)
 
 
+# How far nearer than a point the ray must meet the model to hide it: a thousandth of the model's
+# size at rest, 0.05 mm at least, as the viewer's ``pmiHiddenAt`` (``XbfRenderer.jsx``). A leader
+# starts on a node of its own face, which the ray meets at the point's depth.
+HIDDEN_SHARE, HIDDEN_MIN = 1e-3, 0.05
+
+
 class Hidden:
     """Whether the model hides a point from the camera (``pmiHidden.js``): a ray from the eye
-    through the point meets a shown part's triangle nearer than the point by more than ``tolerance``."""
+    through the point meets a shown part's triangle nearer than the point by more than the
+    tolerance, from ``bounds``, the model's at rest (``rest_bounds``). After the camera is framed."""
 
-    def __init__(self, scene: Any, tolerance: float) -> None:
+    def __init__(self, scene: Any, bounds: tuple[Any, Any] | None) -> None:
         triangles = []
         for index, instance in enumerate(scene.structure["instances"]):
             if index in scene.hidden:
@@ -705,12 +824,12 @@ class Hidden:
             matrix = scene.matrices[index]
             triangles.append(corners @ matrix[:3, :3].T + matrix[:3, 3])
         self.triangles = np.concatenate(triangles) if triangles else np.zeros((0, 3, 3))
-        camera = scene.camera or {}
-        self.eye = np.asarray(camera.get("eye", (0, 0, 1)), float)
-        target = np.asarray(camera.get("target", (0, 0, 0)), float)
-        self.direction = (target - self.eye) / (np.linalg.norm(target - self.eye) or 1.0)
-        self.perspective = camera.get("projection") == "perspective"
-        self.tolerance = tolerance
+        camera = scene.camera
+        self.eye = np.asarray(camera["eye"], float)
+        self.direction = -np.asarray(camera["direction"], float)  # the camera's runs from the target to the eye
+        self.perspective = camera["projection"] == "perspective"
+        size = float(np.linalg.norm(np.subtract(bounds[1], bounds[0]))) if bounds else 0.0
+        self.tolerance = max(HIDDEN_MIN, size * HIDDEN_SHARE)
 
     def __call__(self, point: Any) -> bool:
         if not len(self.triangles):
@@ -739,83 +858,105 @@ class Hidden:
         return bool(t[hit].min() < float((point - origin) @ direction) - self.tolerance)
 
 
+def _box(entry: dict[str, Any], made: dict[str, Any], to_px: Any) -> dict[str, Any]:
+    """A callout's label box, in viewer pixels: at its label, a distance's beside its dimension line."""
+    said = callout(entry)
+    cells = _cells(said)
+    label = to_px(made["label"])
+    box = {"x": label[0], "y": label[1], "w": sum(cell["width"] for cell in cells), "h": ROW + 4, "cells": cells,
+           "movable": made["placed"] == "default" and not made["dimension"], "entry": entry, "made": made, "said": said}
+    dimension = made["dimension"]
+    if dimension:
+        # A distance's words beside its dimension line, out from the part, clear of it.
+        a, b, anchor = to_px(dimension["from"]), to_px(dimension["to"]), to_px(made["anchor"])
+        mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+        span = math.hypot(b[0] - a[0], b[1] - a[1])
+        along = ((b[0] - a[0]) / span, (b[1] - a[1]) / span) if span > 1e-6 else (0.0, 0.0)
+        out = (mid[0] - anchor[0], mid[1] - anchor[1])
+        share = out[0] * along[0] + out[1] * along[1]
+        out = (out[0] - along[0] * share, out[1] - along[1] * share)
+        size = math.hypot(*out)
+        if size < 1:
+            out, size = (-(b[1] - a[1]), b[0] - a[0]), math.hypot(b[1] - a[1], b[0] - a[0]) or 1.0
+        out = (out[0] / size, out[1] / size)
+        far = abs(out[0]) * box["w"] / 2 + abs(out[1]) * box["h"] / 2 + LABEL_CLEAR
+        box["x"], box["y"] = mid[0] + out[0] * far, mid[1] + out[1] * far
+    return box
+
+
+def _inside(at: float, size: float, edge: float) -> float:
+    """``at`` moved, where it must be, to keep a label ``size`` across within 0..``edge``, 4 px in."""
+    least = size / 2 + LABEL_MARGIN
+    return min(max(at, least), max(least, edge - size / 2 - LABEL_MARGIN))
+
+
+def _callout(painter: Any, box: dict[str, Any], to_px: Any, hidden: Any) -> None:
+    """A callout drawn at its box: a distance's extension and dimension lines and their arrows, any
+    other's leader from its anchor to the label with its marker; then the label. A broken
+    reference's lines dashed in its status's colour."""
+    entry, made = box["entry"], box["made"]
+    broken = entry["status"] != "ok"
+    color = STATUS_COLOR.get(entry["status"], INK) if broken else INK
+
+    def line(a: Any, b: Any, alpha: float) -> None:
+        if broken:
+            _dashed(painter, a, b, 1.0, color, alpha)
+        else:
+            painter.line(a, b, 1.0, color, alpha)
+
+    dimension = made["dimension"]
+    if dimension:
+        ends = [to_px(dimension["from"]), to_px(dimension["to"])]
+        for start, end in dimension["extensions"]:
+            line(to_px(start), to_px(end), LEADER_ALPHA * (BEHIND_ALPHA if hidden(start) else 1.0))
+        line(ends[0], ends[1], LEADER_ALPHA)
+        length = math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1])
+        if length >= ARROW * 2.5:
+            _arrow(painter, ends[0], ends[1], color, LEADER_ALPHA)
+            _arrow(painter, ends[1], ends[0], color, LEADER_ALPHA)
+        elif length > 1e-6:
+            # Too short for its arrows between its ends: each outside its end, pointing in.
+            ux, uy = (ends[1][0] - ends[0][0]) / length, (ends[1][1] - ends[0][1]) / length
+            before = (ends[0][0] - ux * ARROW * 2, ends[0][1] - uy * ARROW * 2)
+            after = (ends[1][0] + ux * ARROW * 2, ends[1][1] + uy * ARROW * 2)
+            line(before, ends[0], LEADER_ALPHA)
+            line(ends[1], after, LEADER_ALPHA)
+            _arrow(painter, ends[0], before, color, LEADER_ALPHA)
+            _arrow(painter, ends[1], after, color, LEADER_ALPHA)
+    elif made["anchor"] is not None:
+        anchor = to_px(made["anchor"])
+        end = _box_edge(anchor, box)
+        behind = not made.get("broken") and hidden(made["anchor"])
+        alpha = LEADER_ALPHA * (BEHIND_ALPHA if behind else 1.0)
+        line(anchor, end, alpha)
+        if made.get("broken"):
+            painter.disc(anchor, ARROW_HALF + 1, color, ring=1.0, alpha=alpha)
+        elif entry["kind"] == "datum":
+            _datum_triangle(painter, anchor, end, color, alpha, hollow=behind)
+        else:
+            _arrow(painter, anchor, end, color, alpha, hollow=behind)
+    _label(painter, box["said"], box, color, broken)
+
+
 def paint(frame: np.ndarray, drawn: list[tuple[dict[str, Any], dict[str, Any]]], project: Any, hidden: Any) -> None:
     """The callouts painted over ``frame`` (sRGB bytes, (h, w, 3), in place), as the viewer's
     overlay paints its canvas and lays its labels: ``drawn`` each entry with its construction,
     ``project`` world points to output pixels, ``hidden`` whether the model hides a world point."""
     from cadgen.engine.render.overlay import REFERENCE_HEIGHT, Painter
 
-    height = frame.shape[0]
+    height, width = frame.shape[:2]
     scale = height / REFERENCE_HEIGHT
     painter = Painter(frame, scale)
-    ink, paper = INK, PAPER
-    to_px = lambda point: tuple(v / scale for v in project(np.array([point], float))[0])  # noqa: E731
-    boxes = []
-    for entry, made in drawn:
-        if made is None:
-            continue
-        said = callout(entry)
-        cells = _cells(said)
-        label = to_px(made["label"])
-        box = {"x": label[0], "y": label[1], "w": sum(cell["width"] for cell in cells), "h": ROW + 4, "cells": cells,
-               "movable": made["placed"] == "default" and not made["dimension"], "entry": entry, "made": made, "said": said}
-        dimension = made["dimension"]
-        if dimension:
-            # A distance's words beside its dimension line, out from the part, clear of it.
-            a, b, anchor = to_px(dimension["from"]), to_px(dimension["to"]), to_px(made["anchor"])
-            mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
-            span = math.hypot(b[0] - a[0], b[1] - a[1])
-            along = ((b[0] - a[0]) / span, (b[1] - a[1]) / span) if span > 1e-6 else (0.0, 0.0)
-            out = (mid[0] - anchor[0], mid[1] - anchor[1])
-            share = out[0] * along[0] + out[1] * along[1]
-            out = (out[0] - along[0] * share, out[1] - along[1] * share)
-            size = math.hypot(*out)
-            if size < 1:
-                out, size = (-(b[1] - a[1]), b[0] - a[0]), math.hypot(b[1] - a[1], b[0] - a[0]) or 1.0
-            out = (out[0] / size, out[1] / size)
-            far = abs(out[0]) * box["w"] / 2 + abs(out[1]) * box["h"] / 2 + LABEL_CLEAR
-            box["x"], box["y"] = mid[0] + out[0] * far, mid[1] + out[1] * far
-        boxes.append(box)
+
+    def to_px(point: Any) -> tuple[float, ...]:
+        return tuple(v / scale for v in project(np.array([point], float))[0])
+
+    boxes = [_box(entry, made, to_px) for entry, made in drawn if made is not None]
     separate(boxes)
     # Every label inside the picture, 4 px in, as Measure's are kept (its leader follows it): a still
     # has no edge to pan past.
-    bounds = (frame.shape[1] / scale, height / scale)
     for box in boxes:
-        box["x"] = min(max(box["x"], box["w"] / 2 + LABEL_MARGIN), max(box["w"] / 2 + LABEL_MARGIN, bounds[0] - box["w"] / 2 - LABEL_MARGIN))
-        box["y"] = min(max(box["y"], box["h"] / 2 + LABEL_MARGIN), max(box["h"] / 2 + LABEL_MARGIN, bounds[1] - box["h"] / 2 - LABEL_MARGIN))
+        box["x"] = _inside(box["x"], box["w"], width / scale)
+        box["y"] = _inside(box["y"], box["h"], height / scale)
     for box in boxes:
-        entry, made, said = box["entry"], box["made"], box["said"]
-        broken = entry["status"] != "ok"
-        color = STATUS_COLOR.get(entry["status"], ink) if broken else ink
-        line = (lambda a, b, alpha: _dashed(painter, a, b, 1.0, color, alpha)) if broken else (lambda a, b, alpha: painter.line(a, b, 1.0, color, alpha))
-        dimension = made["dimension"]
-        if dimension:
-            ends = [to_px(dimension["from"]), to_px(dimension["to"])]
-            for (start, end) in dimension["extensions"]:
-                line(to_px(start), to_px(end), LEADER_ALPHA * (BEHIND_ALPHA if hidden(start) else 1.0))
-            line(ends[0], ends[1], LEADER_ALPHA)
-            length = math.hypot(ends[1][0] - ends[0][0], ends[1][1] - ends[0][1])
-            if length >= ARROW * 2.5:
-                _arrow(painter, ends[0], ends[1], color, LEADER_ALPHA)
-                _arrow(painter, ends[1], ends[0], color, LEADER_ALPHA)
-            elif length > 1e-6:
-                ux, uy = (ends[1][0] - ends[0][0]) / length, (ends[1][1] - ends[0][1]) / length
-                before = (ends[0][0] - ux * ARROW * 2, ends[0][1] - uy * ARROW * 2)
-                after = (ends[1][0] + ux * ARROW * 2, ends[1][1] + uy * ARROW * 2)
-                line(before, ends[0], LEADER_ALPHA)
-                line(ends[1], after, LEADER_ALPHA)
-                _arrow(painter, ends[0], before, color, LEADER_ALPHA)
-                _arrow(painter, ends[1], after, color, LEADER_ALPHA)
-        elif made["anchor"] is not None:
-            anchor = to_px(made["anchor"])
-            end = _box_edge(anchor, box)
-            behind = not made.get("broken") and hidden(made["anchor"])
-            alpha = LEADER_ALPHA * (BEHIND_ALPHA if behind else 1.0)
-            line(anchor, end, alpha)
-            if made.get("broken"):
-                painter.disc(anchor, ARROW_HALF + 1, color, ring=1.0, alpha=alpha)
-            elif entry["kind"] == "datum":
-                _datum_triangle(painter, anchor, end, color, alpha, hollow=behind)
-            else:
-                _arrow(painter, anchor, end, color, alpha, hollow=behind)
-        _label(painter, said, box, ink, paper, color if broken else ink, broken)
+        _callout(painter, box, to_px, hidden)

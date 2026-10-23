@@ -25,8 +25,8 @@ part, ``--pose`` for a mesh, and everything but ``appearance`` for a drawing. ``
 exploded=0.6`` (or ``display.exploded``) moves the parts apart as the viewer's Explode does, by its
 amount (0.5 unless one is given). A document's PMI is drawn as the viewer shows it, on the parts
 as made (``render/pmi.py``); ``pmi=off`` (``display.pmi`` false) draws none, and asking for it
-(``pmi``, ``display.pmi`` true) of a document that carries none, or exploded, posed or in Preview,
-is refused by name. ``--annotation FILE`` draws the viewer's annotation over the
+(``pmi`` or ``pmi=on``, ``display.pmi`` true) of a document that carries none, or exploded, posed or
+in Preview, is refused by name. ``--annotation FILE`` draws the viewer's annotation over the
 model (its ink on the parts it was drawn on, wherever they stand): an annotation file, or the Quick
 Edit packet that carries one (a ``.snapshot.json``). ``--measurements FILE`` draws Measure's
 dimensions. ``--camera authored`` draws the picture from the view the ink was drawn in, exactly
@@ -561,7 +561,7 @@ def refusals(still: Still, structure: dict[str, Any], name: str) -> None:
                               "Remove display.exploded.")
 
 
-def pmi_drawn(still: Still, structure: dict[str, Any], name: str) -> bool:
+def draws_pmi(still: Still, structure: dict[str, Any], name: str) -> bool:
     """Whether the picture draws the document's PMI (``structure["pmi"]``, its manufacturing
     annotations), as the viewer draws it: by default wherever the document carries any and its parts
     stand as made -- not exploded, posed or in Preview, where the viewer draws none; ``display.pmi``
@@ -571,14 +571,15 @@ def pmi_drawn(still: Still, structure: dict[str, Any], name: str) -> bool:
     if asked is False:
         return False
     carried = bool(structure.get("pmi"))
-    moved = [why for why, on in (("display.exploded", exploded_amount(still.display) > 0), ("--pose", still.pose is not None),
-                                 ("--preview", still.preview)) if on]
+    moved = [why for why, on in (("display.exploded", exploded_amount(still.display) > 0),
+                                 ("--pose", still.pose is not None), ("--preview", still.preview)) if on]
     if asked is True:
         if not carried:
             raise SnapshotRefused(f"display.pmi draws a document's PMI; {name} carries none. Remove display.pmi.")
         if moved:
             raise SnapshotRefused(f"display.pmi draws the PMI on the parts as made; {' and '.join(moved)} "
-                                  f"{'moves' if len(moved) == 1 else 'move'} or restage them. Remove one or the other.")
+                                  f"{'moves or restages' if len(moved) == 1 else 'move or restage'} them. "
+                                  "Remove one or the other.")
     return carried and not moved
 
 
@@ -1038,7 +1039,7 @@ def _arguments(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
                              "sizeProfile); the other flags override every job")
     parser.add_argument("--display", help="a mode (solid, shaded, parts, xray, hidden-line, wireframe), exploded=AMOUNT "
                                           "(the parts moved apart, 0 to 1; with a mode: hidden-line,exploded=0.6), pmi=off "
-                                          "(a document's PMI not drawn; pmi asks for it), or "
+                                          "(a document's PMI not drawn; pmi or pmi=on asks for it), or "
                                           "the display JSON object (mode, grid, appearance, camera, clip, exploded, pmi, "
                                           "hidden, isolated: part refs the picture leaves out, or alone draws), or "
                                           "a JSON file of it; a drawing takes appearance alone: light or dark, as the word "

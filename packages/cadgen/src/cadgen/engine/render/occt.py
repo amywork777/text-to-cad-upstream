@@ -200,6 +200,7 @@ class Scene:
         self.screen_marks: list[dict[str, Any]] = []  # painted over the frame: Measure's
         self.pmi_drawn: list[tuple[dict[str, Any], Any]] = []  # painted over the frame: the PMI's callouts
         self.pmi_points: np.ndarray | None = None  # their labels and dimension lines, which a fitted frame takes in
+        self.pmi_bounds: tuple[Any, Any] | None = None  # the model's box at rest they were laid out by (pmi.rest_bounds)
         self.fonts: set[str] = set()  # the faces the words of the frame were set in (text.face_source)
         self.stage: list[Any] = []  # Preview's studio: its floor and the floor's shadow
         self.studio = False
@@ -572,6 +573,7 @@ class Scene:
         self.screen_marks = []
         self.pmi_drawn = []
         self.pmi_points = None
+        self.pmi_bounds = None
         self.fonts = set()
 
     def _pixel_size(self, point: np.ndarray) -> float:
@@ -744,30 +746,24 @@ class Scene:
         if any(str(mark.get("label") or "").strip() for mark in marks):
             self.fonts.add(face(*LABEL_FACE).name)
 
-    def pmi(self) -> int:
+    def pmi(self) -> None:
         """The document's PMI (``structure["pmi"]``), painted over the finished frame as the viewer
         draws it over its page (``pmi.py``): each callout the viewer draws, where its layout puts it
         in the document at rest. Made before the camera is framed: a fitted frame takes in each
-        callout's label and dimension line (``placed_points``), so none is cut off. Returns how many
-        are drawn."""
+        callout's label and dimension line (``placed_points``), so none is cut off."""
         from cadgen.engine.render import pmi
-        from cadgen.engine.render.explode import part_box, placed_box
         from cadgen.engine.render.text import face
 
-        boxes = []
-        for index, instance in enumerate(self.rest_structure["instances"]):
-            box = part_box(self.meshes[self.prototypes[instance["prototype"]]["key"]])
-            if box is not None:
-                boxes.append(placed_box(box, self.rest[index]))
-        bounds = ([min(box[0][axis] for box in boxes) for axis in range(3)], [max(box[1][axis] for box in boxes) for axis in range(3)]) if boxes else None
-        self.pmi_drawn = [(entry, made) for entry, made in pmi.constructions(self.rest_structure, self.meshes, bounds) if made is not None]
-        self.pmi_bounds = bounds
+        self.pmi_bounds = pmi.rest_bounds(self.rest_structure, self.meshes)
+        found = pmi.constructions(self.rest_structure, self.meshes, self.pmi_bounds)
+        self.pmi_drawn = [(entry, made) for entry, made in found if made is not None]
         points = [made["label"] for _entry, made in self.pmi_drawn]
-        points += [point for _entry, made in self.pmi_drawn if made["dimension"] for point in (made["dimension"]["from"], made["dimension"]["to"])]
+        for _entry, made in self.pmi_drawn:
+            if made["dimension"]:
+                points += [made["dimension"]["from"], made["dimension"]["to"]]
         self.pmi_points = np.array(points, float) if points else None
         if self.pmi_drawn:
             self.fonts.add(face(*pmi.TEXT).name)
-        return len(self.pmi_drawn)
 
     # --- preview ------------------------------------------------------------------------------
 
@@ -1262,9 +1258,7 @@ class Scene:
             if self.pmi_drawn:
                 from cadgen.engine.render import pmi
 
-                bounds = self.pmi_bounds
-                size = float(np.linalg.norm(np.subtract(bounds[1], bounds[0]))) if bounds else 0.0
-                pmi.paint(frame, self.pmi_drawn, self.project, pmi.Hidden(self, max(0.05, size * 1e-3)))
+                pmi.paint(frame, self.pmi_drawn, self.project, pmi.Hidden(self, self.pmi_bounds))
             if self.screen_marks:
                 from cadgen.engine.render.overlay import paint_measurements
 
