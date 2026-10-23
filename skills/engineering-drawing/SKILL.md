@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part as a PDF - orthographic views with hidden lines and centre marks, real dimensions, hole callouts, notes and a title block on ISO sheets, all projected from the part's geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, a print, or "2D views of this part".
+description: Make an engineering drawing of a part as a PDF - orthographic views and section views with hidden lines and centre lines, real dimensions, hole callouts read off the model, notes and an ISO title block on a zoned sheet, all projected from the part's geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -10,17 +10,15 @@ Provenance: maintained in [earthtojake/text-to-cad](https://github.com/earthtoja
 Use the installed local skill files as the runtime source of truth.
 
 An engineering drawing is a DOCUMENT derived from a part. `cadgen.eng_drawing`
-projects views from the part's geometry, places dimensions between points ON
-that geometry, finds centre marks on it, and lays the result out on an ISO
-sheet with a frame and a title block. Change the model, rerun the drawing
-script, and the views, hidden lines and measured values move with it. Nothing
-on the sheet is drawn by hand, and nothing on it is a number you typed unless
-you chose to override a value.
+projects views from the part's geometry, measures dimensions between points ON
+it, reads hole sizes, depths and counts off its faces, draws centre lines on its
+turned features, and lays the result out on an ISO sheet: a zoned border, a
+title block with the projection symbol, numbered notes. Change the model, rerun
+the drawing script, and every view and value moves with it.
 
-**The output is one PDF.** That is what a shop receives and what every
-operating system opens. No DXF is written, nothing is paired or linked, and
-there is no CLI: the script is the interface. `$dxf` makes cut layouts and flat
-patterns, which are toolpaths, not documents; the two are different jobs.
+**The output is one PDF**, a page per sheet. No DXF is written and there is no
+CLI: the script is the interface. `$dxf` makes cut layouts and flat patterns,
+which are toolpaths, not documents.
 
 ## Setup
 
@@ -34,99 +32,84 @@ The first run downloads that installation; later runs reuse it.
 
 ## Workflow
 
-1. Get the part. `cadgen.read_step(Path(__file__).parent / "../STEP/part.step")`
+1. **Get the part.** `cadgen.read_step(Path(__file__).parent / "../STEP/part.step")`
    reads the artifact a `@step` model wrote (run `python <model>.py` first); a
-   live build123d shape works just as well. The drawing documents geometry, it
-   does not build it.
-2. Write `<name>_drawing.py` beside the model, from
-   [the template](references/sheet-api.md#template). Import the model facts the
-   dimensions reference (hole pitch, overall size, wall) from the model module
+   live build123d shape works too. The drawing documents geometry; it does not
+   build it.
+2. **Write `<name>_drawing.py`** beside the model, from
+   [the template](references/sheet-api.md#template). Import the facts your
+   dimensions reference (hole pitch, wall, step lengths) from the model module
    rather than retyping them, so moving a feature moves its dimension.
-3. Place views with `sheet.three_views(part, iso=True)`, which returns FOUR
-   views: top, front and right in third angle with room for two rows of
-   dimensions, plus an isometric in the free corner. `sheet.three_views(part)`
-   returns three. Use `sheet.view(part, name, at=(x, y))` (sheet millimetres
-   from the bottom-left corner; A3 is 420 × 297, A4 is 297 × 210) only for a
-   custom layout.
-4. Dimension what a maker needs, in MODEL coordinates: overall size per view
-   (`view.overall()`), feature positions and sizes (`view.dim`, with `tol=`
-   or `fit=` where the design requires one), holes as callouts (`view.hole`:
-   thru, depth, counterbore, countersink, thread), and notes with leaders
-   (`view.note`). Leave `text` unset so the dimension is measured; give a
-   value only where the model does not define it. Leave `offset` unset too and
-   the dimension takes the next free row outside the view; pass one only to
-   place a dimension deliberately, and remember it is measured from the
-   dimension's own points, not the view's edge. Keep notes few and short; one
-   wider than the sheet's note column is refused, and `notes=` takes a LIST
-   (`notes="BREAK EDGES"` is a sequence of eleven characters, so it is refused
-   too).
-5. Run `python <name>_drawing.py`. It prints the PDF it wrote, and **anything
-   it noticed while drawing** — read those first:
-   - *"measures blank paper"*: the dimension's model points do not land on the
-     view's geometry. Almost always the part was built from a corner and the
-     script assumed it was centred. Check the part's bounding box.
-   - *"annotation overlaps"*: two callouts print on top of each other, usually
-     one view's outermost dimension against the label of the view above it.
-     Pass a bigger `three_views(gap=...)` or place one with `offset=`. The text
-     is measured as the renderer draws it, glyph by glyph, so this fires on ink
-     and not on markup: a chain of toleranced dimensions is silent when the
-     values clear each other.
+3. **Choose the views.** `sheet.three_views(part, iso=True)` returns top, front,
+   right and an isometric, in the projection the sheet names. The sheet lays
+   them out again when it renders, spacing each pair for the dimensions they
+   end up carrying, so add annotation freely. Where hidden lines would be the
+   only way to show something (walls, floors, a bore's depth, a keyway), cut
+   that view: `front.section("A", through=(x, y, z))` draws SECTION A-A,
+   hatched, with its cutting plane on the view that sees it edge-on.
+4. **Dimension what a maker needs**, in MODEL coordinates:
+   - `view.overall()` for overall size; `overall(height=False)` where another
+     dimension already states it (a turned part's height is its diameter).
+   - `view.dim(p1, p2)` for feature sizes and positions. Leave `offset` unset:
+     the dimension goes on the side of the view its points are on and the
+     shortest sits nearest the view. Diameters of turned features go on the
+     profile with `text="%%c<>"`.
+   - `view.holes()` calls out every hole the view looks down; `view.hole(point)`
+     calls out one. Diameter, THRU or depth, counterbore, countersink and the
+     `4×` count are **read off the part**: do not type them. Anything you do
+     type is checked, and a value the part contradicts stops the script.
+     Only `thread=` (which the geometry cannot carry) and `label=` are yours.
+   - `view.diameter(center)` / `view.radius(center)` measure the circle or arc
+     there; pass `size=` only to pick one of several concentric ones.
+   - `tol=`, `fit=` and `general_tolerance=` only from the design requirements
+     or the user. Never invent a tolerance, material, finish or process note:
+     a field you leave blank prints as an empty, captioned cell, which says the
+     drawing does not state it.
+5. **Run `python <name>_drawing.py` and read what it prints** before the PDF:
+   - *"incomplete: …"*: a hole not called out, an overall size or a turned
+     diameter not dimensioned. Each line names the call that states it.
+   - *"measures blank paper"*: a dimension's points miss the view. Usually the
+     part was built from a corner and the script assumed it was centred.
+   - *"annotation overlaps"*, *"views crowded"*, *"leader crosses the view"*:
+     not enough paper. Take the larger sheet or smaller scale the message
+     names, or dimension that feature in a view with room to spare.
+   - A refusal (an exception, no PDF): a typed size the part contradicts, a
+     hole called out where no hole is, views that run off the frame. The
+     message says what the part has, or which scale fits.
 
-   Steps 3 and 5 stand on their own: a sheet of views with no dimensions on it
-   yet is a drawing, and writes its PDF.
+   Set `MPLCONFIGDIR` to a writable directory when running unattended.
+6. **Read the PDF** (render a page to PNG if you cannot view PDFs). Check that
+   every feature a maker needs is located and sized exactly once, that no text
+   sits on line work, that hidden lines and centre lines appear where they
+   should, and that the section shows what it was cut for. Fix the script, rerun,
+   and read it again.
 
-   When running unattended, set `MPLCONFIGDIR` to a writable directory so
-   matplotlib's font cache does not warn.
-6. **Read the PDF** and fix what collides. Check that no dimension text sits on
-   a view, that hidden lines appear where features are behind faces, that every
-   hole has a centre mark, and that no leader crosses the part. Very small
-   dimensions (a few mm) put their value on their own extension line; dimension
-   the larger feature instead. Move `at=` or `offset=` and rerun.
+Steps 3 and 5 stand on their own: a sheet of views with no dimensions is a
+drawing too, and writes its PDF with a list of everything it leaves unstated.
 
 ## What the sheet contains
 
-- Layers with meaning: `VISIBLE` (heavy outline), `HIDDEN` (dashed), `CENTER`
-  (centre marks), `DIM`, `NOTES`, `TITLE`, `SHEET` (frame), each printed at its
-  own weight — 0.5 mm down to 0.18 mm, so thick reads against thin on paper.
-  An edge is drawn once: a silhouette that the kernel returns as both visible
-  and hidden stays on `VISIBLE`. Hidden TANGENT transitions are not drawn at
-  all — a fillet running into a face, or the seam where a cylinder closes on
-  itself, marks nothing a shop can see, and drawn dashed it reads as a hidden
-  edge that is not there (on a bore, as a line down the hole's own axis).
-- Dimensions measured from the geometry, with filled arrowheads and witness
-  lines, and true-size values at any drawing scale.
-- A title block with title, part number, material, author, scale, units,
-  projection, revision, `SHEET n OF m` and the drawing function's name;
-  numbered notes above it (the general tolerance, when given, is note 1);
-  a revision table top-right when `revisions=` is given. Text longer than
-  its cell is set smaller, and cut with an ellipsis rather than overrun.
-- PDF bytes that are a function of the content: no creation date is stamped, so
-  an unchanged drawing rebuilds to an identical file.
-
-## What fails loudly
-
-The script raises rather than writing a wrong or missing document:
-
-- Views that run off the frame, naming a scale that has been laid out and
-  verified to fit, or saying that no standard scale does.
-- A part argument the vocabulary does not define: an unknown view name, sheet
-  size or projection, `orientation=` other than `"h"`/`"v"`, a negative or zero
-  diameter, a counterbore that is not a `(diameter, depth)` pair, a `tol` that
-  is not a number or a pair, a hole that is both `thru` and given a depth,
-  `notes=` or `revisions=` given a bare string, a note wider than the sheet,
-  `angle()` legs that are collinear or zero-length, a non-finite `at=` or
-  `offset=`.
-- A missing renderer. The PDF is the drawing, so no matplotlib is a failure,
-  not a skipped half. A failed render leaves no file behind.
-- `out=` missing or not naming a `.pdf`, at import time.
+- Line work with meaning, each at its own weight: visible outline (0.5),
+  hidden (dashed), centre lines (chain), section hatching (ANSI31), dimensions,
+  notes. Centre marks on every hole seen end-on and a centre line down every
+  turned feature seen from the side.
+- Dimensions measured from the geometry, true size at any scale; values wider
+  than their extension lines set beside them. Hole callouts in the standard
+  symbols (⌀ ↧ ⌴ ⌵), drawn as line work so they print the same everywhere.
+- An ISO 5457 zoned border, an ISO 7200-style title block (TITLE, DWG NO., REV,
+  SHEET, MATERIAL, FINISH, SCALE, SIZE, DRAWN, DATE, UNITS and the ISO 5456-2
+  projection symbol), numbered notes with the general tolerance as note 1, and
+  a revision table when `revisions=` is given.
+- PDF bytes that are a function of the content: an unchanged drawing rebuilds
+  to an identical file.
 
 ## Limits to state in the handoff
 
-- Tolerances come only from `tol=`, `fit=` and `general_tolerance=` that you
-  write; get the values from the design requirements or the user, never
-  invented. A dimension without one is nominal.
-- Views are orthographic projections with hidden lines from the kernel; no
-  sections, details, or auxiliary views yet. Say what a view does not show.
-- The sheet keeps callouts clear of the views it knows about, and reports
-  annotation that still prints over other annotation, but it does not check
-  annotation against line work. Read the PDF.
+- Every dimension without `tol=`/`fit=` is nominal, governed by the general
+  tolerance if one is given. Say which requirements came from the user.
+- Full sections only: no half, offset or broken-out sections, no detail or
+  auxiliary views. Say what a view does not show.
+- Holes, overall sizes and turned diameters are checked for completeness;
+  slots, chamfers, fillets, pockets and patterns (a bolt circle's PCD) are
+  not, and are stated with `dim`, `radius` or a `note`.
+- Millimetres only; one part per arrangement.
