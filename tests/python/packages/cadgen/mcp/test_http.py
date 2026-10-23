@@ -56,6 +56,14 @@ class HttpSessionsTest(unittest.TestCase):
     def test_two_sessions_share_engine_and_router_but_not_conversation_views(self):
         first, second = self.proxy(), self.proxy()
         self.assertNotEqual(first.session, second.session)
+        # Agent access works over the real transport before any view has opened.
+        status = self.tool(first, 'cad_http', {'method': 'GET', 'url': '/__cad/analytics'})
+        self.assertEqual(status['structuredContent']['status'], 200)
+        self.assertIn('sharing', json.loads(status['content'][0]['text']))
+        refused = self.tool(first, 'cad_http', {'method': 'POST', 'url': '/__cad/analytics',
+                            'body': base64.b64encode(b'{"share":true}').decode()})
+        self.assertTrue(refused['isError'])
+        self.assertEqual(refused['structuredContent']['status'], 403)
         info = request({'op': 'status'})
         sessions = {item['id'] for item in info['sessions'] if item['kind'] == 'mcp'}
         self.assertTrue({first.session, second.session} <= sessions)
@@ -63,13 +71,42 @@ class HttpSessionsTest(unittest.TestCase):
                   'state': {'selection': ['part#f1']}, 'focused': True})
         self.assertEqual(self.tool(first, 'cad_view')['structuredContent']['views'][0]['selection'], ['part#f1'])
         self.assertEqual(self.tool(second, 'cad_view')['structuredContent']['views'], [])
-        reply = self.tool(first, 'cad_http', {'url': '/__cad/server'})['structuredContent']
+        token = self.tool(first, 'cad_tab')['_meta']['dev.texttocad/httpToken']
+        reply = self.tool(first, 'cad_http', {'method': 'GET', 'url': '/__cad/server', 'headers': {'x-cadgen-app': token}})['structuredContent']
         self.assertEqual(reply['status'], 200)
         self.assertEqual(json.loads(base64.b64decode(reply['body']))['pid'], info['pid'])
         first.close()
         self.assertEqual(self.call(second, 'ping'), {})
         self.assertEqual(request({'op': 'status'})['pid'], info['pid'])
         self.assertFalse((self.root / 'state' / 'sidebar-views').exists())
+
+    def test_build_inspect_export_tools_run_without_a_view(self):
+        proxy = self.proxy()
+        def operation(name, arguments):
+            reply = self.tool(proxy, name, arguments)
+            self.assertFalse(reply.get('isError'), reply)
+            status = reply['structuredContent']
+            for _ in range(30):
+                if status['state'] in ('succeeded', 'failed', 'cancelled'):
+                    break
+                status = self.tool(proxy, name, {'action': 'status', 'operationId': status['id'],
+                    'epoch': status['epoch'], 'afterSequence': status['sequence'], 'waitMs': 25000})['structuredContent']
+            self.assertEqual(status['state'], 'succeeded', status)
+            return status['result']
+        cwd = self.root / 'tool-working-directory'
+        cwd.mkdir()
+        built = operation('cad_build', {'requestId': 'build-request-0001',
+            'code': 'from build123d import Box; result = Box(2, 3, 4)', 'name': 'http_part',
+            'cwd': str(cwd.resolve()), 'outputs': {'model': True}})
+        self.assertEqual(built['address'], 'code::http_part')
+        self.assertNotIn('url', built['report'])
+        self.assertEqual(list(cwd.iterdir()), [])
+        facts = operation('cad_inspect', {'requestId': 'inspect-request-01', 'source': built['address'], 'ref': 'face 1'})
+        self.assertEqual(facts['inspection']['kind'], 'face')
+        target = (self.root / 'tool-export.step').resolve()
+        written = operation('cad_export', {'requestId': 'export-request-001', 'source': built['address'], 'destinations': [str(target)]})
+        self.assertEqual(written['files'][0]['bytes'], target.stat().st_size)
+        self.assertGreater(target.stat().st_size, 0)
 
     def test_http_transport_validation_and_session_lifecycle(self):
         client = EngineClient()

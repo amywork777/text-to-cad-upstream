@@ -6,12 +6,12 @@
              width=None, height=None, annotation=None, measurements=None) -> Drawn
     snapshot_job(job, source=None, *, the snapshot's flags) -> list[Drawn]
     serve(source, port=0) -> Served
-    where(source, ref=None) -> Facts (the build closure without a ref)
+    inspect(source, ref=None) -> Facts (the build closure without a ref)
     status() / stop() / daemon()
 
 Every one goes through the daemon (``client``), so the warm worker of the script, of the code
 (by its ``name``) or of the document does the work and keeps what it made in memory for the
-next call. ``build`` takes code only (law 12) and requires an explicit destination:
+next call. ``build`` takes source text or a build123d shape (the CLI takes code only) and requires an explicit destination:
 ``model=NAME`` holds it in memory; file flags (``xbf=``, ``step=``, ...) write to the default
 path with ``True`` or to a supplied path. A script's models build when called by the script
 (``python model.py``), or from Python
@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, TypeVar, cast
 
 __all__ = ["Built", "Drawn", "EngineError", "Facts", "Report", "Served", "Written", "build", "daemon", "export",
-           "observers", "serve", "snapshot", "snapshot_job", "status", "stop", "where"]
+           "observers", "serve", "snapshot", "snapshot_job", "status", "stop", "inspect"]
 
 KINDS = ("xbf", "step", "glb", "stl", "threemf", "dxf")
 
@@ -207,9 +207,9 @@ def _outputs(flags: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
 
 
 def _built(script: Path, functions: list[str] | None, *, code: str | None = None, name: str | None = None,
-           outputs: dict[str, dict[str, Any]] | None = None, verify: bool = False,
+           outputs: dict[str, dict[str, Any]] | None = None, verify: bool = False, profile: bool = False,
            log: Callable[[str], None] | None = None, daemon: bool = True,
-           progress: Any = None) -> tuple[list[dict[str, Any]], Any, float]:
+           progress: Any = None, shape: dict | None = None, cwd: Path | None = None) -> tuple[list[dict[str, Any]], Any, float]:
     """One build -- of code, or of a script's models -- in the warm worker that holds it, or in
     this process: its reports, whether the worker was started for it, and its wall time. Where
     the build is goes, frame by frame, to ``progress`` (``progress.py``): by default a bar on
@@ -223,7 +223,7 @@ def _built(script: Path, functions: list[str] | None, *, code: str | None = None
     shown = log or (lambda _text: None)
     if bar is not None:
         shown = bar.around(shown)  # a line of the log goes above the bar
-    cwd = Path.cwd()
+    cwd = cwd or Path.cwd()
     started = time.perf_counter()
     try:
         if not daemon:
@@ -235,7 +235,7 @@ def _built(script: Path, functions: list[str] | None, *, code: str | None = None
                 with progressing.building(said):
                     said.load()
                     reports = engine_build.build(script, functions, log=shown, cwd=cwd, outputs=outputs, code=code,
-                                                 verify=verify)
+                                                 verify=verify, profile=profile, shape=shape)
             except BuildError as error:
                 raise EngineError(str(error)) from None
             said.attach(reports)
@@ -245,7 +245,7 @@ def _built(script: Path, functions: list[str] | None, *, code: str | None = None
                 shown(message["log"] if message.get("stream") == "model" else f"  {message['log']}")
 
             answer = _ask({"op": "build", "script": str(script), "functions": functions, "cwd": str(cwd),
-                           "outputs": outputs, "code": code, "name": name, "verify": verify}, relay, frames)
+                           "outputs": outputs, "code": code, "shape": shape, "name": name, "verify": verify, "profile": profile}, relay, frames)
             reports, fresh = answer["done"], answer.get("worker", {}).get("fresh")
     finally:
         if bar is not None:
@@ -253,19 +253,25 @@ def _built(script: Path, functions: list[str] | None, *, code: str | None = None
     return reports, fresh, time.perf_counter() - started
 
 
-def build(code: str, *, model: str | None = None, name: str | None = None, xbf: Any = None, step: Any = None, glb: Any = None,
-          stl: Any = None, threemf: Any = None, dxf: Any = None, verify: bool = False,
-          log: Callable[[str], None] | None = None, daemon: bool = True, progress: Any = None) -> Built:
-    """Build source text, ``cadgen build SOURCE`` (law 12): ``code`` assigns its final shape to
+def build(code: Any, *, model: str | None = None, name: str | None = None, xbf: Any = None, step: Any = None, glb: Any = None,
+          stl: Any = None, threemf: Any = None, dxf: Any = None, verify: bool = False, profile: bool = False,
+          log: Callable[[str], None] | None = None, daemon: bool = True, progress: Any = None,
+          cwd: Any = None) -> Built:
+    """Build source text or a build123d shape. Source text assigns its final shape to
     ``result``, and is built as ``name`` (``model`` by default) in the warm worker of that name.
     An output is required: ``model=NAME`` holds ``code::NAME`` in memory and updates it on
     subsequent builds. File flags are additive declarations:
-    ``True`` writes the kind where a decorator with no path puts it, in the working folder
+    ``True`` writes the kind at the CLI default in the working folder
     (``XBF/<name>.xbf``, ``<name>.step``, ...), a path writes it there. A child
     model the code calls writes the files it declares (law 10). ``verify`` runs every body the
     memo would replay and compares it with the logged one (``build.build``); ``daemon=False``
     builds in this process; ``progress`` as ``_built`` has it. Returns once every file is on
-    disk. A script's models build by running the script, or by ``Model.build()``."""
+    disk. For a supplied shape, its geometry already exists in the caller; metadata
+    and geometry travel in memory to the worker's normal document writer. Its prior
+    operations cannot be replayed or verified. ``profile=True`` reports the actual worker
+    build call, preserving cache hits; for a supplied shape only the remaining worker
+    processing is measured. ``cwd`` sets the build working directory without changing
+    the caller's process directory. A script's decorated models use ``Model.build()``."""
     from cadgen.engine.build import code_script
 
     outputs = _outputs({"xbf": xbf, "step": step, "glb": glb, "stl": stl, "threemf": threemf, "dxf": dxf})
@@ -277,10 +283,20 @@ def build(code: str, *, model: str | None = None, name: str | None = None, xbf: 
         if name is not None and name != model:
             raise EngineError("model and name must name the same model")
     name = model or name or "model"
-    cwd = Path.cwd()
+    cwd = Path(cwd).resolve() if cwd is not None else Path.cwd()
+    if not cwd.is_dir():
+        raise EngineError(f"no working directory {cwd}")
     script = code_script(name, cwd)
+    shape = None
+    if not isinstance(code, str):
+        if verify:
+            raise EngineError("verify requires source code: a supplied shape has already been built")
+        from cadgen.engine.shape_input import pack
+
+        shape = pack(code, name)
+        code = ""  # the same named worker/address as a source-code build
     reports, _fresh, wall = _built(script, [name], code=code, name=name, outputs=outputs, verify=verify, log=log,
-                                   daemon=daemon, progress=progress)
+                                   daemon=daemon, progress=progress, profile=profile, shape=shape, cwd=cwd)
     result = Built(name, script, {**reports[0], "wall": round(wall, 4)}, cwd)
     if not daemon and result.ok:
         from cadgen.engine.build import held
@@ -289,7 +305,7 @@ def build(code: str, *, model: str | None = None, name: str | None = None, xbf: 
     return result
 
 
-def build_script(script: Path, functions: list[str] | None = None, *, verify: bool = False,
+def build_script(script: Path, functions: list[str] | None = None, *, verify: bool = False, profile: bool = False,
                  log: Callable[[str], None] | None = None, daemon: bool = True, progress: Any = None) -> Report:
     """A script's models -- ``functions``, or every one it defines -- each built as its
     decorators declare, and every child model each calls as its own declare (law 10): what
@@ -297,7 +313,7 @@ def build_script(script: Path, functions: list[str] | None = None, *, verify: bo
     flags: its decorators are the whole definition of what it writes (law 11). ``progress`` as
     ``_built`` has it."""
     reports, fresh, wall = _built(Path(script).resolve(), functions, verify=verify, log=log, daemon=daemon,
-                                  progress=progress)
+                                  progress=progress, profile=profile)
     return Report(reports, round(wall, 4), fresh)
 
 
@@ -333,7 +349,8 @@ def _source(source: Any, *, scripts: bool = False) -> dict[str, Any]:
 
 
 def export(source: Any, *destinations: Any, pose: Any = None, part: str | None = None, inputs: bool = True,
-           log: Callable[[str], None] | None = None, daemon: bool = True) -> list[Written]:
+           log: Callable[[str], None] | None = None, daemon: bool = True,
+           progress: Callable[[dict], None] | None = None) -> list[Written]:
     """Write a document to each destination, its kind from its suffix (``.xbf``, ``.step``,
     ``.glb``, ``.stl``, ``.3mf``, and ``.dxf`` of a planar document): the document of an
     ``.xbf``, of a ``.step`` read into one, of a ``Model`` (built first) or of built code (a
@@ -372,14 +389,15 @@ def export(source: Any, *destinations: Any, pose: Any = None, part: str | None =
     shown = log or (lambda _text: None)
     order = {"op": "export", "source": spec, "destinations": [str(path) for path in resolved], "pose": pose,
              "part": part, "cwd": cwd}
-    done = _exported(order, spec, shown, daemon)
+    done = _exported(order, spec, shown, daemon, progress)
     return written + [Written(Path(row["path"]), row["kind"], row["bytes"], row["seconds"]) for row in done["files"]]
 
 
-def _exported(order: dict[str, Any], spec: dict[str, Any], shown: Callable[[str], None], daemon: bool) -> dict:
+def _exported(order: dict[str, Any], spec: dict[str, Any], shown: Callable[[str], None], daemon: bool,
+              progress: Callable[[dict], None] | None = None) -> dict:
     """An ``export`` request answered by the worker that holds the document (``worker._export``)."""
     if daemon:
-        done = _ask({**order, "code": spec.get("code")}, lambda message: shown(message["log"]))["done"]
+        done = _ask({**order, "code": spec.get("code")}, lambda message: shown(message["log"]), progress)["done"]
     else:
         from cadgen.engine.build import BuildError
         from cadgen.engine.worker import _export
@@ -487,7 +505,7 @@ def serve(source: Any, port: int = 0, three: str | None = None) -> Served:
     return Served(answer["url"], answer["port"])
 
 
-def where(source: Any, ref: str | None = None) -> Facts | list[Facts]:
+def inspect(source: Any, ref: str | None = None, *, query: str | None = None) -> Facts | list[Facts]:
     """What a ref names in a document (``refs``: ``hand/finger.2/face 7``, ``base/f:...``, a
     copied ``/abs/kit.xbf#...`` line) and what made it. An element answers what the kernel
     measures of it -- its points placed where its occurrence stands, in the document's frame --
@@ -496,7 +514,9 @@ def where(source: Any, ref: str | None = None) -> Facts | list[Facts]:
     (``cli.weighed``). One answer per selector (a list for several). Without ``ref``, the build
     closure the xbf holds (``previous``): its engine, libraries, source, modules, inputs and
     key, read from the file alone. A ref that names nothing, or several things, is refused by
-    name (``refs.RefError``)."""
+    name (``refs.RefError``). No query builds a missing model or writes its declared
+    outputs. ``query="build"`` returns file metadata/closure or live build metadata;
+    ``query="geometry"`` requires a ref, and ``query="closure"`` accepts none."""
     import urllib.error
     import urllib.request
 
@@ -506,10 +526,26 @@ def where(source: Any, ref: str | None = None) -> Facts | list[Facts]:
     from cadgen.engine.addresses import key, split
 
     source, embedded_ref = split(source)
+    if ref is not None and embedded_ref is not None and ref != embedded_ref:
+        raise EngineError("source reference and ref disagree")
     ref = ref if ref is not None else embedded_ref
+    query = query or ("geometry" if ref is not None else "closure")
+    if query not in ("closure", "geometry", "build"):
+        raise EngineError("query is closure, geometry or build")
+    if (query == "geometry") != (ref is not None):
+        raise EngineError("only a geometry query requires a reference")
     path = key(source)
     if isinstance(path, Path) and not path.is_file():
         raise EngineError(f"no document {source}")
+    if query == "build":
+        if not isinstance(path, Path):
+            return {"file": None, "live": _ask({"op": "model_info", "address": str(path)})["model"]}
+        from cadgen.engine import previous
+
+        stat = path.stat()
+        _writer, closure = previous.scan(path)
+        return {"file": {"path": str(path), "bytes": stat.st_size, "modifiedAt": stat.st_mtime},
+                "live": None, "closure": json.loads(closure) if closure else None}
     if ref is None and isinstance(path, Path):
         from cadgen.engine import previous
 
@@ -520,7 +556,7 @@ def where(source: Any, ref: str | None = None) -> Facts | list[Facts]:
         return json.loads(found)
     if ref is not None:
         refs.parse(ref)  # refuse invalid refs before serving
-    answer = _ask({"op": "serve", "path": str(path)})
+    answer = _ask({"op": "serve", "path": str(path), "build": False})
     base = answer["url"].split("/?", 1)[0]
     ident = answer["doc"]
 

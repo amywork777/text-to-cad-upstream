@@ -76,6 +76,23 @@ implementations. [Web storage](../../../apps/web/docs/storage.md) documents
 browser lifetimes. Shared component tests can
 use the [explicit fake host](../src/host/testing/host.ts).
 
+## Export destinations and jobs
+
+`ViewerHost.downloads` is an optional `DownloadPort`: `choose(name, extension)`
+opens a host-owned local picker directly in the initiating gesture, returning a
+`DownloadDestination` or null on cancel. Its `write(response, {signal, progress})`
+streams to that destination and resolves only after commit. `unavailable` explains
+an environmental limitation. Optional `remember`/`restore` persist an array of job
+requests and filenames, never handles or server paths. No shared UI detects a browser
+or writes to the host filesystem.
+
+`CadViewer` combines that port with `CadWorkspaceService.exports` (`ExportService`).
+Both are required to show Export. A host without a local-save capability, including
+the MCP host, omits the port. The XBF renderer publishes only displayed revision,
+selection and joint values. `FileViewer.navbarActions` and `overlay` are named
+composition slots: the first is in the navbar's right group; the second is in the
+relative viewport below it. The generic FileViewer knows nothing about export jobs.
+
 ## A CAD renderer's controls
 
 The controls of a CAD renderer (an engine document's, GLB, mesh, robot) are its own, over the viewport: its
@@ -275,14 +292,12 @@ document or revision never retargets it. A Quick Edit that reached its destinati
 `usage.used('quickEdit')`, for its count; a host that throws there changes nothing.
 
 `ViewerHost.promptFiles` is a `PromptFiles`: `create({ name, input, views, annotation })`
-answers `{ inline: compactJson }` or `{ snapshot: absolutePath }`, `read(path)` fetches JSON,
-and optional `save({ name, kind, data })` remains for older clients that export individual
-annotation files. Current chips do not call it. `createHttpPromptFiles({ origin, fetch })` from
+answers `{ inline: compactJson }` or `{ snapshot: absolutePath }`, and `read(path)` fetches JSON. `createHttpPromptFiles({ origin, fetch })` from
 `@text-to-cad/core/client` posts to `POST /__cad/prompt-files`, which validates the packet in memory and returns inline JSON or writes the larger
 snapshot and returns its path with HTTP 200. The client advertises `acceptInline: true`;
 requests without it always receive a saved path, so already-open clients remain compatible. There is no render worker
 or polling endpoint. Guarded `GET /__cad/prompt-files/<name>` serves JSON only;
-`POST /__cad/prompt-files/save` supports those older clients. The files
+The files
 are scratch in the system's temporary directory and outlive the viewer until the
 system clears them. The response and persisted snapshot name input and output
 files by absolute path; annotation data is inline, so replay works from another
@@ -503,6 +518,7 @@ hand's sub-toolbar under it, the file sidebar down the left edge, Quick Edit at 
 top-right, and the view cube at the bottom-right. A host's one notice goes through the shell too: `notice` is drawn at the top-right once the
 file is on screen, never while it loads or after it failed to, with Quick Edit stacked under
 it while it stands; the home never shows it. Neither app has one now.
+Quick Edit has no host preference or persisted enable/disable state.
 What Quick Edit offers follows the subscribed destination capability and
 the ports, never an app name: Copy Prompt always, Queue for a composer
 destination, Send where the prompt port has `send`. Native clipboard effects

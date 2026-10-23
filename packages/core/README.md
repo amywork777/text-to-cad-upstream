@@ -167,12 +167,15 @@ Where the mechanism is written:
 ## Public modules and lifetimes
 
 Use `@text-to-cad/core/client`, `/common/*` and `/lib/*` exports.
-Construct `createCadClient({ origin, fetch })` in a host. Construction is
+Construct `createCadClient({ origin, fetch })` in a host. Its `exports` service
+(`client/exports.js`) inspects formats, submits idempotent jobs, long-polls their
+status, cancels/releases them, and returns a streamed download response. It carries
+no local file handles or picker effects; those belong to the host. Construction is
 inert; subscriptions start catalog polling, which the host's `shouldPoll` gates
 (the web's pauses while its page is hidden). The client also carries what every
 CAD view asks of its server, so each host reaches it the same way: the model
 library (`recents`, `changeRecents`, `thumbnail`, `keepThumbnail`), Open
-(`pick`), Reveal (`reveal`), the person's analytics answer and feature settings (`consent`, `features`), the
+(`pick`), Reveal (`reveal`), the person's analytics answer and language (`consent`, `language`), the
 update check (`version`) and what the page did for
 telemetry (`reportActivity`: a touch, a Quick Edit that went, or a crash); every
 change is a POST with the viewer's guard header. A host reports its page's crashes

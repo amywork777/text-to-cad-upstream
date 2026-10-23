@@ -1,3 +1,4 @@
+import { createExportService } from './exports.js';
 import { encodeBase64 } from './base64.js';
 import { requestViewerJson, ViewerRequestError } from "./request.js";
 import { retainGlbMeshWorker } from '../lib/render/glbMeshWorkerClient.js';
@@ -175,6 +176,7 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
   }
 
   const client = {
+    exports: createExportService({ origin, fetch: fetchImpl }),
     origin,
     resources,
     getSnapshot: () => snapshot,
@@ -226,7 +228,7 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
     // What every CAD view on this machine shares, and the host's own effects, through this client's
     // fetch: the web page's own server, or the CAD app's through its tunnel. The home's library of
     // models and their pictures, Open with the desktop's chooser, Reveal, the person's analytics
-    // answer and features, and whether a newer text-to-cad is out.
+    // answer and language, and whether a newer text-to-cad is out.
     recents({ signal } = {}) {
       return request('/__cad/recents', { signal, operation: 'recents' }).then((reply) => reply.recents);
     },
@@ -254,10 +256,6 @@ export function createCadClient({ origin = '', fetch: fetchImpl = globalThis.fet
     consent(share) {
       return share === undefined ? request('/__cad/analytics', { operation: 'consent' })
         : request('/__cad/analytics', { method: 'POST', headers: JSON_POST, body: { share }, operation: 'consent' });
-    },
-    features(change) {
-      return change === undefined ? request('/__cad/features', { operation: 'features' })
-        : request('/__cad/features', { method: 'POST', headers: JSON_POST, body: change, operation: 'features' });
     },
     language(locale) {
       return locale === undefined ? request('/__cad/language', { operation: 'language' })
