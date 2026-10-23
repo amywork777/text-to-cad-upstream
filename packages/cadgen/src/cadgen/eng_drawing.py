@@ -1,12 +1,13 @@
 """Engineering drawings: ``@eng_drawing``, :class:`Sheet` and :class:`View`.
 
-An engineering drawing is a DOCUMENT derived from a part: orthographic views
-projected from the part's geometry, dimensions that reference points ON that
-geometry, centre marks found on it, a sheet frame and a title block. Because
-every view and every dimension is computed from the shape at run time, the
-drawing follows the part: change the model, rerun the drawing script, and the
-views, hidden lines and measured values move with it. Nothing on the sheet is
-drawn by hand.
+An engineering drawing is a DOCUMENT derived from a part: orthographic and
+section views projected from the part's geometry, dimensions that reference
+points ON that geometry, hole callouts whose sizes, depths and counts are read
+off its faces, centre lines on its turned features, and an ISO sheet with a
+zoned frame and a title block. Because every view and every value is computed
+from the shape at run time, the drawing follows the part: change the model,
+rerun the drawing script, and the views, hidden lines and measured values move
+with it. Nothing on the sheet is drawn by hand.
 
 The output is one PDF. A shop receives a PDF, every operating system opens and
 marks one up, and nothing here pairs the document with a second file. ezdxf is
@@ -26,19 +27,21 @@ Usage::
     def bracket_drawing():
         part = cadgen.read_step(Path(__file__).parent / "../STEP/bracket.step")
         sheet = Sheet("A3", title="BRACKET", part_number="BRK-001", revision="A")
-        top = sheet.view(part, "top", at=(110, 190))
-        front = sheet.view(part, "front", at=(110, 90))
+        top, front, right, iso = sheet.three_views(part, iso=True)
+        front.section("A")                               # the front view, cut
         top.overall()                                    # width and height
         top.dim((-35, 25, 0), (35, 25, 0))               # model coordinates
-        top.hole((35, 25, 15), 3, depth=8, count=4)
+        top.holes()                                      # sizes read off the part
         return sheet                                     # or [sheet1, sheet2]
 
     if __name__ == "__main__":
         bracket_drawing()
 
-Running the script writes one PDF at ``out`` with a page per sheet. There is no
-default location: ``out`` is the path the caller passes. A live build123d shape
-works in place of ``read_step``; the part is whatever geometry the function has.
+Running the script writes one PDF at ``out`` with a page per sheet, and prints
+what the sheet noticed (a dimension measuring blank paper, crowded annotation)
+and what the drawing leaves unstated (a hole not called out, a size not
+dimensioned). There is no default location: ``out`` is the path the caller
+passes. A live build123d shape works in place of ``read_step``.
 
 Bytes are a function of the content: the PDF carries no creation date, so an
 unchanged drawing rebuilds to an identical file.
@@ -813,7 +816,8 @@ _DEFAULT_ROOM = {"top": 2 * _DIM_ROW + 5.0, "bottom": 12.0, "left": 2 * _DIM_ROW
 
 
 def _arrange_three_views(sheet: "Sheet", shape, size, gap: float | None, s: float, iso,
-                         room: dict | None = None) -> list[tuple[str, tuple[float, float], float | None, str | None]]:
+                         room: dict | None = None, crowding: list | None = None
+                         ) -> list[tuple[str, tuple[float, float], float | None, str | None]]:
     """Where the three (or four) views of a standard arrangement go at scale ``s``.
 
     ``room`` is what each view's annotation takes on every side, in sheet
@@ -871,6 +875,8 @@ def _arrange_three_views(sheet: "Sheet", shape, size, gap: float | None, s: floa
     centres, block = place(gap_v, gap_h)
     over_w = (block[1] - block[0]) - (x_hi - x_lo)
     over_h = (block[3] - block[2]) - (y_hi - y_lo)
+    if crowding is not None:
+        crowding[:] = [max(0.0, over_w), max(0.0, over_h)]
     if gap is None and (over_w > 0 or over_h > 0):
         centres, block = place(max(_MIN_GAP, gap_v - max(0.0, over_h)), max(_MIN_GAP, gap_h - max(0.0, over_w)))
     # Centred in the paper the views and their annotation leave free; a block that
@@ -1023,6 +1029,8 @@ def _text_width(value: str, height: float) -> float:
     """How wide `value` prints at this cap height, in millimetres."""
     if not value:
         return 0.0
+    # %%c, %%d and %%p each draw one glyph; measured as written they read three wide.
+    value = value.replace("%%c", "Ø").replace("%%d", "°").replace("%%p", "±")
     font = _font(round(float(height), 4))
     if font is None:
         return len(value) * height * _CHAR_WIDTH
@@ -1099,9 +1107,111 @@ def _mtext_extent(raw: str, height: float) -> tuple[float, float]:
     return max(lines), tallest
 
 
+#: The drawing symbols a callout prints, drawn as line work rather than set as
+#: glyphs. Glyphs for them are a property of whatever font the machine resolves:
+#: ⌴ and ⌵ are missing from Arial and DejaVu alike (an empty box where the
+#: counterbore should be), and ezdxf fills the crossing strokes of Ø solid in
+#: every font that has it. Drawn, they print the same on every machine.
+_SYMBOLS = {"%%c": "diameter", "Ø": "diameter", "\u2300": "diameter", "\u21a7": "depth",
+            "\u2334": "cbore", "\u2335": "csk"}
+#: Each symbol's advance, as a multiple of the cap height.
+_SYMBOL_ADVANCE = {"diameter": 1.0, "depth": 0.8, "cbore": 1.0, "csk": 1.0}
+
+
+def _runs(value: str) -> list[tuple[str, str]]:
+    """``value`` split into ("text", run) and ("symbol", kind) pieces."""
+    out: list[tuple[str, str]] = []
+    run: list[str] = []
+    index = 0
+    while index < len(value):
+        token = next((t for t in _SYMBOLS if value.startswith(t, index)), None)
+        if token is None:
+            run.append(value[index])
+            index += 1
+            continue
+        if run:
+            out.append(("text", "".join(run)))
+            run = []
+        out.append(("symbol", _SYMBOLS[token]))
+        index += len(token)
+    if run:
+        out.append(("text", "".join(run)))
+    return out
+
+
+def _ink_width(value: str, height: float) -> float:
+    """How wide ``value`` prints with its symbols drawn: what a callout occupies."""
+    return sum(_text_width(piece, height) if kind == "text" else _SYMBOL_ADVANCE[piece] * height
+               for kind, piece in _runs(value))
+
+
+def _symbol(kind: str, x: float, mid: float, h: float) -> list[tuple]:
+    """One symbol as line work, its advance box starting at ``x`` and centred on
+    ``mid``, in the proportions ASME Y14.5 and ISO 129 draw them: ``("circle",
+    centre, radius)`` and ``("line", points)`` pieces."""
+    y0 = mid - h / 2
+    if kind == "diameter":
+        centre, r = (x + 0.5 * h, mid), 0.38 * h
+        dx, dy = 0.55 * h * math.cos(math.radians(60)), 0.55 * h * math.sin(math.radians(60))
+        return [("circle", centre, r), ("line", [(centre[0] - dx, mid - dy), (centre[0] + dx, mid + dy)])]
+    if kind == "depth":
+        stem = x + 0.4 * h
+        return [("line", [(stem, y0 + h), (stem, y0)]),
+                ("line", [(stem - 0.22 * h, y0 + 0.4 * h), (stem, y0), (stem + 0.22 * h, y0 + 0.4 * h)]),
+                ("line", [(x + 0.08 * h, y0), (x + 0.72 * h, y0)])]
+    if kind == "cbore":
+        return [("line", [(x + 0.12 * h, y0 + 0.75 * h), (x + 0.12 * h, y0), (x + 0.88 * h, y0),
+                          (x + 0.88 * h, y0 + 0.75 * h)])]
+    return [("line", [(x + 0.1 * h, y0 + 0.8 * h), (x + 0.5 * h, y0), (x + 0.9 * h, y0 + 0.8 * h)])]
+
+
+def _draw_symbol(layout, kind: str, x: float, mid: float, h: float, layer: str, place=None) -> None:
+    """Write :func:`_symbol`'s pieces into ``layout``, through ``place`` (a map from
+    the symbol's own frame to the layout's) when the text it sits in is rotated."""
+    place = place or (lambda p: p)
+    # Stroked as heavy as the glyphs beside it, not at the layer's hairline.
+    attribs = {"layer": layer, "lineweight": max(13, min(50, int(round(h * 10))))}
+    for piece in _symbol(kind, x, mid, h):
+        if piece[0] == "circle":
+            layout.add_circle(place(piece[1]), piece[2], dxfattribs=attribs)
+        else:
+            layout.add_lwpolyline([place(p) for p in piece[1]], dxfattribs=attribs)
+
+
+def _draw_dimension_symbols(doc, dimension, layer: str = "DIM") -> None:
+    """A dimension's value prefixed with ⌀ (``text="%%c<>"``) gets the symbol drawn
+    in its block, beside the number, instead of set as a glyph."""
+    try:
+        block = doc.blocks.get(dimension.dxf.geometry)
+    except Exception:  # noqa: BLE001 - nothing rendered, nothing to draw
+        return
+    for entity in list(block):
+        if entity.dxftype() != "MTEXT":
+            continue
+        raw = str(entity.text or "")
+        head = re.match(r"((?:\\A\d;)?)(%%c|Ø)", raw)
+        if not head:
+            continue
+        rest = raw[: head.start(2)] + raw[head.end(2):]
+        h = float(entity.dxf.char_height)
+        advance = _SYMBOL_ADVANCE["diameter"] * h
+        width, _tall = _mtext_extent(rest, h)
+        angle = math.radians(float(entity.dxf.rotation or 0.0))
+        along, across = (math.cos(angle), math.sin(angle)), (-math.sin(angle), math.cos(angle))
+        insert = entity.dxf.insert
+
+        def place(p, insert=insert, along=along, across=across):
+            return (insert.x + p[0] * along[0] + p[1] * across[0], insert.y + p[0] * along[1] + p[1] * across[1])
+
+        # The value was centred on the insert; symbol and number now share the space.
+        _draw_symbol(block, "diameter", -(width + advance) / 2, 0.0, h, layer, place)
+        entity.text = rest
+        entity.dxf.insert = place((advance / 2, 0.0))
+
+
 def _text_box(value: str, x: float, y: float, height: float, align) -> tuple[float, float, float, float]:
     """The rectangle a TEXT entity occupies, from its anchor and alignment."""
-    width = _text_width(value, height)
+    width = _ink_width(value, height)
     name = getattr(align, "name", str(align)).upper()
     if "CENTER" in name and "LEFT" not in name and "RIGHT" not in name:
         x0 = x - width / 2
@@ -1386,8 +1496,7 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
             # The side a callout prefers is its hole's own half of the view, the
             # short way out, past every dimension row on that side.
             side = "right" if proj.point(dim.p1)[0] > cx + 1e-6 else "left"
-            text = _callout_value(dim).replace("%%c", "Ø")
-            room[side] = max(room[side], rowed[side] + 10.0 + 8.0 + _text_width(text, th) + 2.0)
+            room[side] = max(room[side], rowed[side] + 10.0 + 8.0 + _ink_width(_callout_value(dim), th) + 2.0)
         elif dim.kind == "note":
             p = proj.point(dim.p1)
             width = _text_width(dim.text, th) + 4.0
@@ -1689,11 +1798,14 @@ def _draw_cutting_plane(msp, parent: tuple, point, look, letter: str, text, th: 
         # is the part's edges and nothing else.
         msp.add_line(end, (end[0] + inward[0] * 7.0, end[1] + inward[1] * 7.0),
                      dxfattribs={"layer": "NOTES", "lineweight": int(round(_LAYERS["VISIBLE"][2] * 100))})
-        head = (end[0] + d[0] * 9.0, end[1] + d[1] * 9.0)
+        head = (end[0] + d[0] * 7.0, end[1] + d[1] * 7.0)
         msp.add_leader([head, end], dxfattribs={"layer": "DIM"},
                        override={"dimasz": th * 0.85, "dimldrblk": "_CLOSEDFILLED"})
-        text(letter, head[0] + d[0] * (th + 1.0), head[1] + d[1] * (th + 1.0), th + 1.5,
-             TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+        # The letter beside its arrow, on the side away from the view: at the tip it
+        # sat on the extension lines that leave the view's corners.
+        out = (-inward[0], -inward[1])
+        text(letter, end[0] + d[0] * 3.5 + out[0] * (th + 0.5), end[1] + d[1] * 3.5 + out[1] * (th + 0.5),
+             th + 1.5, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
 
 
 def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: list | None = None,
@@ -1737,11 +1849,29 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                     while len(value) > 1 and _text_width(value[:-1] + "…", height) > fit:
                         value = value[:-1]
                     value = (value[:-1] + "…") if len(value) > 1 else value[:1]
+        if layer in ("DIM", "NOTES") and value and any(kind == "symbol" for kind, _ in _runs(value)):
+            symbols(value, x, y, height, align, layer)
+            return None
         entity = msp.add_text(value, dxfattribs={"height": height, "layer": layer})
         entity.set_placement((x, y), align=align)
         if layer in ("DIM", "NOTES") and value:
             claim(value, _text_box(value, x, y, height, align))
         return entity
+
+    def symbols(value, x, y, height, align, layer) -> None:
+        """Text whose symbols are drawn: each run of plain text a TEXT entity,
+        each symbol its line work, laid end to end where one TEXT would sit."""
+        box = _text_box(value, x, y, height, align)
+        cursor, mid = box[0], (box[1] + box[3]) / 2
+        for kind, piece in _runs(value):
+            if kind == "text":
+                run = msp.add_text(piece, dxfattribs={"height": height, "layer": layer})
+                run.set_placement((cursor, mid), align=TextEntityAlignment.MIDDLE_LEFT)
+                cursor += _text_width(piece, height)
+            else:
+                _draw_symbol(msp, piece, cursor, mid, height, layer)
+                cursor += _SYMBOL_ADVANCE[piece] * height
+        claim(value, box)
 
     # Annotation already on the paper, as (what it says, its box). The layout
     # gives each view the room its annotation asks for, but a sheet squeezed for
@@ -1827,12 +1957,32 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     groups = []
     for (size, gap, iso), by_name, room in arranged.values():
         shape = next(iter(by_name.values())).shape
-        for name, at, own, slot_label in _arrange_three_views(sheet, shape, size, gap, s, iso, room):
+        over: list = []
+        for name, at, own, slot_label in _arrange_three_views(sheet, shape, size, gap, s, iso, room, over):
             if name in by_name:
                 by_name[name].at = at
                 if name == "iso":
                     by_name[name].scale, by_name[name].label = own, slot_label
         groups.append((by_name, shape, size, gap, iso, room))
+        if gap is None and max(over) > _AIR and warnings is not None:
+            # The views were squeezed together past the air between them, so one
+            # view's annotation now crowds the next. Say what gives them the room.
+            def roomy(scale: float) -> bool:
+                over_at: list = []
+                _arrange_three_views(sheet, shape, size, None, scale, iso, room, over_at)
+                return max(over_at) <= 0
+
+            roomier = next((name for name in sorted(SHEET_SIZES, key=lambda n: SHEET_SIZES[n][0])
+                            if SHEET_SIZES[name][0] > sheet.width), None)
+            smaller = next((c for c in _STANDARD_SCALES if c < s and roomy(c)), None)
+            remedies = [f'Sheet("{roomier}")' if roomier else None,
+                        f"Sheet(scale={smaller:g}) ({_scale_label(smaller)})" if smaller else None]
+            warnings.append(
+                f"views crowded: their dimensions and callouts need {max(over):.0f} mm more than {sheet.size} "
+                f"leaves at {_scale_label(s)}, so the space between views was narrowed and one view's "
+                f"annotation can crowd the next. {' or '.join(r for r in remedies if r) or 'Fewer views'} "
+                "gives them room; or dimension a feature in a view with space to spare."
+            )
 
     placed = []
     for view, proj, bounds, _items, _plan, (cx, cy) in work:
@@ -1962,12 +2112,12 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             # the CENTER linetype's gaps in: the centre line printed solid, which is
             # the one thing its dashes are there to say it is not.
             # A section cuts its bores and bosses in half, which leaves no full
-            # cylinder to find their axes by; the whole part's axes that lie on the
-            # kept side of the plane (or in it) are the section's.
+            # cylinder to find their axes by; the whole part's axes that reach the
+            # kept side of the plane (or lie in it) are the section's.
             turned = part_axes(view.shape)
             if cut:
                 look = VIEW_DIRECTIONS[view.name][0]
-                turned = [a for a in turned if max(_dot(tuple(e - c for e, c in zip(end, cut[2])), look)
+                turned = [a for a in turned if min(_dot(tuple(e - c for e, c in zip(end, cut[2])), look)
                                                    for end in (a.start, a.end)) <= 1e-6]
             for centre, radius in _centres(_circles(proj.visible) + _end_on(view, proj, turned)):
                 c = to_sheet(centre)
@@ -2025,8 +2175,8 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             # them, on the dimension line's side, instead of across them: centred,
             # "3 WALL" printed with both witness lines running through its glyphs.
             # One that fits stays centred and only its arrows go outside.
-            printed = label.replace("<>", _fmt(span / sv)).replace("%%c", "Ø")
-            width = _text_width(printed, th) + (_text_width(_tol_suffix(tol), th * 0.7) if tol else 0.0)
+            printed = label.replace("<>", _fmt(span / sv))
+            width = _ink_width(printed, th) + (_text_width(_tol_suffix(tol), th * 0.7) if tol else 0.0)
             arrow = th * 0.85
             location = None
             if horizontal:
@@ -2049,6 +2199,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 reach[side] = max(reach[side], abs(base[0] - edge) + th * 1.5)
             d.render()
             claim_rendered(d.dimension)
+            _draw_dimension_symbols(doc, d.dimension)
             state(span / sv, _sheet_axis(proj, horizontal))
 
         def on_view(point, margin: float = 1.0) -> bool:
@@ -2093,7 +2244,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             check(dim.kind, dim.index, centre)
             r = dim.radius * sv
             value = _callout_value(dim)
-            text_w = 8.0 + _text_width(value.replace("%%c", "Ø"), th)
+            text_w = 8.0 + _ink_width(value, th)
             # Exit on the hole's own side of the view (the short way out), unless the
             # landing there would run into another view or off the frame; then the
             # other side. A leader across the whole part is the last resort.

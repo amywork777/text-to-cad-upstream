@@ -70,8 +70,7 @@ class DrawingSheetTests(unittest.TestCase):
         self.assertIn("40", texts)
         self.assertIn("30", texts)
         self.assertIn("10", texts)
-        callouts = [e.dxf.text for e in msp.query("TEXT") if e.dxf.layer == "DIM"]
-        self.assertEqual(callouts, ["%%c6 THRU"])
+        self.assertEqual(_callouts(doc), ["%%c6 THRU"])
         # The callout text sits outside the view's extent, not across the part.
         callout = next(e for e in msp.query("TEXT") if e.dxf.layer == "DIM")
         outline_x = [p[0] for e in msp.query("LWPOLYLINE LINE") if e.dxf.layer == "VISIBLE" for p in _points(e)]
@@ -336,7 +335,7 @@ class DrawingSheetTests(unittest.TestCase):
         title_texts = [e.dxf.text for e in msp.query("TEXT[layer=='TITLE']")]
         self.assertIn("DESCRIPTION", title_texts)
         self.assertIn("HOLE MOVED", title_texts)
-        callouts = [e.dxf.text for e in msp.query("TEXT[layer=='DIM']")]
+        callouts = _callouts(doc)
         self.assertIn("%%c6 THRU", callouts, "one hole is not '1×'")
         self.assertIn("M6x1 - 6H THRU", callouts, "a thread replaces the diameter; THRU is still the part's")
         self.assertEqual(hole_callout_text({"diameter": 6.6, "depth": 12, "thru": False, "cbore": (11, 6.5), "csk": None,
@@ -1086,8 +1085,32 @@ def _shaft():
             + Pos(20, 0, 0) * along_x * Cylinder(10, 30, align=align))
 
 
-def _callouts(doc) -> list[str]:
-    return [e.dxf.text for e in doc.modelspace().query("TEXT[layer=='DIM']")]
+def _callouts(doc, h: float = 3.5) -> list[str]:
+    """Each callout as a reader reads it: its text runs and its drawn symbols, left
+    to right along one line, the symbols spelled the way hole_callout_text spells
+    them. A symbol is line work on the DIM layer with its own stroke weight; which
+    one it is follows from its shape."""
+    rows: dict[float, list[tuple[float, str]]] = {}
+
+    def put(mid: float, x: float, piece: str) -> None:
+        key = next((k for k in rows if abs(k - mid) < h * 0.3), round(mid, 3))
+        rows.setdefault(key, []).append((x, piece))
+
+    msp = doc.modelspace()
+    for text in msp.query("TEXT[layer=='DIM']"):
+        put(text.dxf.insert.y, text.dxf.insert.x, text.dxf.text)
+    for circle in msp.query("CIRCLE[layer=='DIM']"):
+        put(circle.dxf.center.y, circle.dxf.center.x - 0.5 * h, "%%c")
+    for line in msp.query("LWPOLYLINE[layer=='DIM']"):
+        points = list(line.get_points("xy"))
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        if len(points) == 4:
+            put(min(ys) + h / 2, min(xs) - 0.12 * h, "\u2334")
+        elif len(points) == 3 and max(xs) - min(xs) > 0.6 * h:
+            put(min(ys) + h / 2, min(xs) - 0.1 * h, "\u2335")
+        elif len(points) == 3:
+            put(min(ys) + h / 2, min(xs) - 0.18 * h, "\u21a7")
+    return ["".join(piece for _x, piece in sorted(row)) for _y, row in sorted(rows.items(), reverse=True)]
 
 
 class FromThePartTests(unittest.TestCase):
@@ -1185,6 +1208,47 @@ class FromThePartTests(unittest.TestCase):
                                msg="the arrow stops on the circle")
         cross = (start[0] - centre[0]) * (knee[1] - centre[1]) - (start[1] - centre[1]) * (knee[0] - centre[0])
         self.assertAlmostEqual(cross, 0.0, places=6, msg="and its line runs through the centre")
+
+
+class SymbolTests(unittest.TestCase):
+    def test_drawing_symbols_are_line_work_not_glyphs(self) -> None:
+        """⌴ and ⌵ are missing from common fonts and ezdxf fills Ø solid in the
+        ones that have it, so no symbol reaches the page as a glyph."""
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        turned = Sheet("A3")
+        _top, front, _right = turned.three_views(_shaft())
+        front.dim((0, 0, -15), (0, 0, 15), text="%%c<>")
+        cbored = Sheet("A4")
+        cbored.view(_counterbored(), "top", at=(140, 120)).hole((15, 0, 12))
+        for sheet in (turned, cbored):
+            doc = _render_sheet(sheet, index=1, count=1, label="symbols")
+            texts = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+            for dim in doc.modelspace().query("DIMENSION"):
+                texts += [e.text for e in doc.blocks.get(dim.dxf.geometry) if e.dxftype() == "MTEXT"]
+            for glyph in ("%%c", "\u00d8", "\u2300", "\u21a7", "\u2334", "\u2335"):
+                self.assertFalse(any(glyph in text for text in texts), f"{glyph!r} set as a glyph: {texts}")
+        doc = _render_sheet(turned, index=1, count=1, label="symbols")
+        dim = next(d for d in doc.modelspace().query("DIMENSION")
+                   if any(e.dxftype() == "CIRCLE" for e in doc.blocks.get(d.dxf.geometry)))
+        values = [e.text for e in doc.blocks.get(dim.dxf.geometry) if e.dxftype() == "MTEXT"]
+        self.assertEqual(values, ["30"], "the number stays text; the ⌀ beside it is drawn")
+
+    def test_a_crowded_sheet_says_what_gives_it_room(self) -> None:
+        from build123d import Align, Box
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4")
+        top, front, _right = sheet.three_views(Box(120, 60, 50, align=(Align.CENTER, Align.CENTER, Align.MIN)))
+        top.overall()
+        front.overall()
+        for i in range(5):
+            front.dim((-60 + 8 * i, -30, 50), (60, -30, 50))
+        notices: list[str] = []
+        _render_sheet(sheet, index=1, count=1, label="crowded", warnings=notices)
+        crowded = [n for n in notices if n.startswith("views crowded")]
+        self.assertEqual(len(crowded), 1, notices)
+        self.assertIn('Sheet("A3")', crowded[0])
 
 
 class LayoutTests(unittest.TestCase):
