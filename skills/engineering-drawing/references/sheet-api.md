@@ -1,7 +1,7 @@
 # `cadgen.eng_drawing` reference
 
 ```python
-from cadgen.eng_drawing import eng_drawing, Sheet
+from cadgen.eng_drawing import eng_drawing, Sheet, parts_list, assembly_sheets
 ```
 
 ## Template
@@ -60,6 +60,20 @@ def shaft_drawing():
     return sheet
 ```
 
+An assembly is a drawing set: a general arrangement keyed to a parts list,
+then a sheet per part, each one refined like any sheet:
+
+```python
+@eng_drawing(out="../PDF/rig_drawing.pdf")
+def rig_drawing():
+    parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
+    parts.set("base_plate", material="6061-T6", part_number="RIG-101")   # stated, never guessed
+    sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100", general_tolerance="ISO 2768-m")
+    top, front, right, iso = sheets.part("base_plate").views
+    front.section("A")
+    return sheets
+```
+
 ## `@eng_drawing(out="<path>.pdf")`
 
 Declares the drawing. The function returns a `Sheet` or a list of them. Calling
@@ -84,6 +98,8 @@ script. Both are checked when the module is imported. There is no CLI verb: a
 - `general_tolerance="ISO 2768-m"`: note 1, "TOLERANCES PER ISO 2768-m UNLESS
   OTHERWISE SPECIFIED." `notes=` takes a LIST; a bare string is refused.
 - `revisions=[("A", "2026-09-01", "INITIAL RELEASE"), ...]`: a revision table.
+- `subtitle`: a second line under the title; a part's sheet of an assembly
+  carries `ITEM 4 (QTY 2) OF RIG` there.
 - `ink`: `"mono"` (default) or `"color"` (per-layer colours, for review).
 
 ### `sheet.three_views(shape, gap=None, iso=False)`
@@ -106,6 +122,16 @@ nearest its parent, clear of every view and its annotation; a scale you give
 that finds no room is refused. A detail of a section keeps its hatching. Give
 it dimensions, callouts and notes like any view; `holes()` on it calls out only
 what its circle holds.
+
+### `sheet.parts_list(parts, first=1, last=None)`
+
+Draws `parts` as the parts list, standing on the title block and as wide as it
+(ISO 7573, ASME Y14.34): ITEM, QTY, DESCRIPTION, PART NO., MATERIAL, the header
+against the block and item 1 above it. `first`/`last` draw a run of a list too
+long for one sheet; one that does not fit is refused, naming where to split it,
+and each run of a split list says on which sheet it continues. The views and
+any detail keep clear of it; a hand-placed view over it, or a note running
+under it, is refused.
 
 ### `sheet.view(shape, name, at=(x, y), label=None, hidden=True, centre_marks=True, scale=None)`
 
@@ -161,6 +187,48 @@ sheet millimetres.
 - `view.angle(vertex, p1, p2, offset=14)`: the angle at `vertex` between the
   legs toward `p1` and `p2`.
 - `view.note(text, at, offset=(10, 10))`: a leader from a model point to text.
+- `view.balloons(parts)`: balloon every item of `parts` the view shows, on a
+  view of `parts.assembly`. Each leader ends in a dot on a point of the part
+  the view sees; the balloons stand in a column each side of a tall view (rows
+  above and below a wide one), keep their leaders' order and stay clear of
+  dimension text. An item already ballooned in an earlier view of the sheet is
+  skipped, so balloon the views in order of preference. Not on a section or a
+  detail.
+
+## Assemblies
+
+### `parts_list(source)`
+
+`source` is a scene from `cadgen.read_scene(path)` or a live build123d
+`Compound` made with `children=`. Returns a `PartsList`: one `Item` per
+distinct part, numbered in the order the assembly first holds them. Occurrences
+sharing a prototype are one part; so are two with one name before the colon
+(`eye:upper`, `eye:lower`) when one is an exact translated copy of the other.
+Mirror images and identical shapes under different names stay apart.
+
+- `parts[3]`, `parts["coil_spring"]`: an item by number, label or the label's
+  name before the colon; an unknown or ambiguous key is refused with the list.
+- `parts.set(key, description=..., part_number=..., material=...)`: what the
+  model cannot carry; chains. Nothing else is accepted.
+- `item.number`, `.description` (the label read out: `piston_rod:chrome` is
+  `PISTON ROD, CHROME`), `.quantity`, `.part_number`, `.material`, `.labels`,
+  `.refs` (occurrence refs, `#o1.2`), `.shape` (one occurrence in its own
+  frame), `.occurrences` (each placed in the assembly).
+- `parts.assembly`: the whole assembly, placed, for the GA's views.
+
+### `assembly_sheets(parts, title=..., part_number="", revision="A", size="A3", author="", date="", projection="THIRD ANGLE", ink="mono", notes=(), general_tolerance="", revisions=())`
+
+Returns the set as a list of `Sheet`s: the general arrangement (front view, the
+one of top and right showing more, an isometric; no hidden lines; overall
+sizes; balloons; the parts list, continued on further sheets past 16
+items on A3), then one sheet per item. A part's sheet draws `item.shape` in three
+views and an isometric at the largest standard scale up to 10:1 that fits,
+states its overall sizes, calls out the holes and slots each view looks down,
+and is titled with the item's description over `ITEM n OF <title>`. Should its
+annotation outgrow the paper, it is redrawn at the next standard scale down
+rather than refused. Every sheet carries the drawing number, revision, author
+and date; `notes` and `revisions` go on the GA, `general_tolerance` on the part
+sheets. `sheets.part(key)` is an item's sheet; `sheets.parts` the list.
 
 ## What the script prints
 
@@ -177,18 +245,22 @@ sheet millimetres.
 | `front dim 0: ... which one it measures was guessed ...` | pass `orientation=` |
 | `the part in the top view is 2 separate solids ...` | the model is in pieces |
 | `DETAIL B: no free paper on A3 for a 50 mm circle at 10:1 ...` | give `at=`, a smaller `scale=`, or a larger sheet |
+| `incomplete: sheet 3 (PIN): the turned diameter ⌀6 ...` | on a drawing of several parts, each line names its sheet |
+| `incomplete: item 4 (CORE) has no balloon ...` | no ballooned view shows that part; balloon a view from a side where it shows |
+| `incomplete: the parts list leaves out items 18, 19 ...` | draw the rest with `parts_list(parts, first=18)` on another sheet |
+| `note ... runs under the parts list` / `view is drawn over the parts list` | shorten the note, move the view |
 
 ## Layers
 
 | Layer | Linetype | Weight | Holds |
 | --- | --- | --- | --- |
 | SHEET | continuous | 0.35 | frame, zone marks |
-| TITLE | continuous | 0.25 | title block, projection symbol |
+| TITLE | continuous | 0.25 | title block, projection symbol, parts list |
 | VISIBLE | continuous | 0.50 | visible edges |
 | HIDDEN | DASHED | 0.25 | hidden edges |
 | CENTER | CENTER | 0.18 | centre marks and centre lines, cutting planes |
 | DIM | continuous | 0.18 | dimensions, callouts |
-| NOTES | continuous | 0.25 | notes, view labels, leaders, detail circles |
+| NOTES | continuous | 0.25 | notes, view labels, leaders, detail circles, balloons |
 | HATCH | continuous | 0.18 | section hatching |
 
 They exist inside the ezdxf document the page is rendered from; the PDF carries

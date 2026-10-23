@@ -62,7 +62,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Sequence
 
-__all__ = ["eng_drawing", "Sheet", "View", "SHEET_SIZES"]
+from cadgen._internal.drawing_assembly import Item, PartsList, parts_list
+
+__all__ = ["eng_drawing", "Sheet", "View", "SHEET_SIZES", "parts_list", "PartsList", "Item", "assembly_sheets",
+           "AssemblySheets"]
 
 #: ISO 216 sheet sizes, landscape, in millimetres.
 SHEET_SIZES = {
@@ -199,6 +202,8 @@ class View:
     #: lays them out again from it, and the off-frame guard does at each candidate
     #: scale. None for a hand-placed ``at=``, which does not move.
     _arranged: tuple | None = None
+    #: The parts lists :meth:`balloons` keys this view to.
+    _balloons: list = field(default_factory=list)
 
     def dim(self, p1, p2, *, offset: float | None = None, text: str | None = None, orientation: str | None = None,
             tol: float | tuple[float, float] | None = None, fit: str | None = None) -> "View":
@@ -347,6 +352,27 @@ class View:
         self._overall = frozenset(name for name, on in (("width", width), ("height", height)) if on)
         return self
 
+    def balloons(self, parts: PartsList) -> "View":
+        """Balloon every item of ``parts`` this view shows: its item number in a
+        circle, with a leader ending in a dot on a point of the part the view
+        sees. The balloons stand in a column beside a tall view (a row above and
+        below a wide one), in the order of the points they key, so no two
+        leaders cross. An item already ballooned in an earlier view of the sheet
+        is not ballooned again, so ``balloons()`` on each view in turn keys each
+        part once, where it is first seen; an item no view shows unhidden is
+        reported. The view must draw ``parts.assembly``."""
+        if not isinstance(parts, PartsList):
+            raise TypeError(f"balloons() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
+        if self.shape is not parts.assembly:
+            raise ValueError(
+                "balloons() keys a view of the assembly the parts list was read from: draw parts.assembly "
+                "(sheet.view(parts.assembly, ...)) and balloon that view."
+            )
+        _refuse_balloons_on(self)
+        if parts not in self._balloons:
+            self._balloons.append(parts)
+        return self
+
 
 def _fmt(value: float) -> str:
     text = f"{value:.2f}".rstrip("0").rstrip(".")
@@ -376,6 +402,15 @@ def _refuse_retired_size(verb: str, retired: tuple) -> None:
             f"Pass size=<{'diameter' if verb == 'diameter' else 'radius'}> only to pick one of several "
             "concentric circles; it is checked against the part."
         )
+
+
+def _refuse_balloons_on(view) -> None:
+    """Balloons key a whole view. A section's cut faces are not any part's faces,
+    and a detail is a piece of another view; neither is ballooned yet."""
+    if view._section is not None or view._detail is not None:
+        kind = "a section" if view._detail is None else "a detail"
+        raise ValueError(f"balloons() keys a whole view, and the {view.name} view is {kind}; balloon a view "
+                         "of the assembly that is not cut or enlarged.")
 
 
 def _tol(value):
@@ -549,7 +584,15 @@ class Sheet:
     general_tolerance: str = ""
     #: Revision history rows (rev, date, description), drawn as a table top-right.
     revisions: Sequence[tuple[str, str, str]] = ()
+    #: A second line under the title: on a part's sheet of an assembly drawing,
+    #: which item it details and of what ("ITEM 4 OF SHOCK ABSORBER").
+    subtitle: str = ""
     views: list[View] = field(default_factory=list)
+    #: ``(parts list, first item, last item)`` when :meth:`parts_list` draws one.
+    _parts: tuple | None = field(default=None, init=False, repr=False)
+    #: The sheet chose its own scale and may take a smaller standard one when its
+    #: views and their annotation need it: a part sheet ``assembly_sheets`` made.
+    _fit: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.size not in SHEET_SIZES:
@@ -690,6 +733,36 @@ class Sheet:
         detail._detail = (view, _p3(center), r, letter, at is None, chosen)
         self.views.append(detail)
         return detail
+
+    def parts_list(self, parts: PartsList, *, first: int = 1, last: int | None = None) -> "Sheet":
+        """Draw ``parts`` as the parts list, directly above the title block and as
+        wide as it, the way ISO 7573 and ASME Y14.34 place one: ITEM, QTY,
+        DESCRIPTION, PART NO. and MATERIAL, the header against the title block
+        and item 1 above it, so the list reads upward. A blank PART NO. or
+        MATERIAL is one the drawing does not state.
+
+        ``first`` and ``last`` draw a run of the items, for a list too long for
+        one sheet; the rest goes on a further sheet's ``parts_list``, and each
+        run says on which sheet the list continues."""
+        if not isinstance(parts, PartsList):
+            raise TypeError(f"parts_list() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
+        if self._parts is not None:
+            raise ValueError("a sheet carries one parts list; draw the rest of a long one on a further sheet")
+        last = len(parts) if last is None else last
+        if (isinstance(first, bool) or isinstance(last, bool) or not isinstance(first, int)
+                or not isinstance(last, int) or not 1 <= first <= last <= len(parts)):
+            raise ValueError(f"parts_list(first={first!r}, last={last!r}): the items run 1 to {len(parts)}")
+        room = _list_room(self)
+        if (last - first + 2) * _LIST_ROW > room:
+            fits = int(room // _LIST_ROW) - 1
+            raise ValueError(
+                f"a parts list of {last - first + 1} items needs {(last - first + 2) * _LIST_ROW:.0f} mm above the "
+                f"title block, and {self.size} has {room:.0f}. Draw items {first} to {first + fits - 1} here "
+                f"(parts_list(parts, last={first + fits - 1})) and the rest on a further sheet "
+                f"(parts_list(parts, first={first + fits}))."
+            )
+        self._parts = (parts, first, last)
+        return self
 
     def view(self, shape, name: str, *, at, label: str | None = None, hidden: bool = True, centre_marks: bool = True,
              scale: float | None = None) -> View:
@@ -978,8 +1051,10 @@ def _arrange_three_views(sheet: "Sheet", shape, size, gap: float | None, s: floa
     m = _MARGIN
     note_rows = len(sheet.drawn_notes())
     notes_h = (note_rows * 5.0 + 8.0) if note_rows else 0.0
+    # A parts list stands on the title block beside the notes; the views go above both.
+    list_h = _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0
     x_lo, x_hi = m + 4.0, sheet.width - m - 4.0
-    y_lo, y_hi = m + _TITLE_H + notes_h + 4.0, sheet.height - m - 4.0
+    y_lo, y_hi = m + _TITLE_H + max(notes_h, list_h) + 4.0, sheet.height - m - 4.0
     sizes = {"top": (L, W), "front": (L, H), "right": (W, H)}
 
     def place(gv: float, gh: float):
@@ -1055,6 +1130,15 @@ def _arrange_three_views(sheet: "Sheet", shape, size, gap: float | None, s: floa
     return slots
 
 
+class _OffFrame(ValueError):
+    """Views that run off the frame, with the largest standard scale that fits
+    them (``fits``, None when none does)."""
+
+    def __init__(self, message: str, fits: float | None) -> None:
+        super().__init__(message)
+        self.fits = fits
+
+
 def _assert_views_fit(sheet: Sheet, placed: Sequence[tuple], *, index: int, groups: Sequence[tuple] = ()) -> None:
     """Refuse a sheet whose views run off the frame, naming the scale that fits.
 
@@ -1084,10 +1168,9 @@ def _assert_views_fit(sheet: Sheet, placed: Sequence[tuple], *, index: int, grou
               "views closer." if fits is not None else
               f"No standard scale down to {_scale_label(_STANDARD_SCALES[-1])} fits this part on "
               f"{sheet.size}; use a larger sheet size, or fewer views.")
-    raise ValueError(
+    raise _OffFrame(
         f"sheet {index} ({sheet.size}, scale {_scale_label(sheet.scale)}): the {names} view"
-        f"{'s run' if len(over) > 1 else ' runs'} off the frame. {remedy}"
-    )
+        f"{'s run' if len(over) > 1 else ' runs'} off the frame. {remedy}", fits)
 
 
 def _fits_at(sheet: Sheet, placed: Sequence[tuple], candidate: float, frame, groups: Sequence[tuple]) -> bool:
@@ -1753,6 +1836,10 @@ def _plan_view(view: View, proj, bounds, items: list["_Dim"], sheet: Sheet) -> d
                 room["top"] = max(room["top"], (p[1] - by1) * sv + dim.angle + th + 1.0)
             else:
                 room["bottom"] = max(room["bottom"], (by0 - p[1]) * sv - dim.angle)
+    if view._balloons:
+        # A column of balloons each side of a tall view, a row above and below a wide one.
+        for side in (("left", "right") if _balloon_axis(bounds) else ("bottom", "top")):
+            room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + 2.0
     room["bottom"] += 6.0 + 3.5 + 2.0  # the view's label hangs under everything below it
     return {"rows": rows, "overall": overall, "room": room}
 
@@ -1851,10 +1938,67 @@ _CAPTION_HEIGHT = 1.8
 _TITLE_FIT = _TITLE_CELLS["TITLE"][2] - 6.0
 #: ISO 5457 zone letters: I and O are left out, being read as 1 and 0.
 _ZONE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+#: A parts list: its row height and its columns, which together span the title
+#: block's width so the list stands on the block as one column of the sheet.
+_LIST_ROW = 7.0
+_LIST_COLUMNS = (("ITEM", 12.0), ("QTY", 12.0), ("DESCRIPTION", 68.0), ("PART NO.", 44.0), ("MATERIAL", 44.0))
 
 
-def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, text) -> None:
-    """Frame, zone grid, title block and notes: what makes a page a drawing sheet."""
+def _list_room(sheet: Sheet) -> float:
+    """The height a parts list may take above the title block: the frame, less
+    the block, a row for the line saying where a long list continues, and air."""
+    return sheet.height - 2 * _MARGIN - _TITLE_H - _LIST_ROW - 4.0
+
+
+def _list_height(sheet: Sheet) -> float:
+    """How far a sheet's parts list rises above its title block, its caption row
+    included; 0 without one."""
+    if sheet._parts is None:
+        return 0.0
+    parts, first, last = sheet._parts
+    partial = first > 1 or last < len(parts)
+    return (last - first + 2) * _LIST_ROW + (_LIST_ROW if partial else 0.0)
+
+
+def _draw_parts_list(msp, sheet: Sheet, text, continued: dict) -> None:
+    """The parts list, standing on the title block: header row at the bottom,
+    item numbers rising from it. ``continued`` says on which sheet the rest of a
+    split list is, ``{"from": n, "to": m}``, either or both."""
+    from ezdxf.enums import TextEntityAlignment as A
+
+    parts, first, last = sheet._parts
+    x0, y0 = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
+    rows = [tuple(name for name, _w in _LIST_COLUMNS)] + [
+        (str(item.number), str(item.quantity), item.description, item.part_number, item.material)
+        for item in parts.items[first - 1:last]]
+    top = y0 + len(rows) * _LIST_ROW
+    msp.add_lwpolyline([(x0, y0), (x0 + _TITLE_W, y0), (x0 + _TITLE_W, top), (x0, top)], close=True,
+                       dxfattribs={"layer": "TITLE"})
+    for r in range(1, len(rows)):
+        msp.add_line((x0, y0 + r * _LIST_ROW), (x0 + _TITLE_W, y0 + r * _LIST_ROW), dxfattribs={"layer": "TITLE"})
+    x = x0
+    for c, (_name, width) in enumerate(_LIST_COLUMNS):
+        if c:
+            msp.add_line((x, y0), (x, top), dxfattribs={"layer": "TITLE"})
+        for r, row in enumerate(rows):
+            if not row[c]:
+                continue
+            mid = y0 + (r + 0.5) * _LIST_ROW
+            if c < 2:  # the numbers, centred in their narrow columns
+                text(row[c], x + width / 2, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_CENTER, fit=width - 2)
+            else:
+                text(row[c], x + 1.5, mid, _CAPTION_HEIGHT if r == 0 else 2.5, A.MIDDLE_LEFT, fit=width - 3)
+        x += width
+    words = [f"CONTINUED FROM SHEET {continued['from']}" if "from" in continued else "",
+             f"CONTINUED ON SHEET {continued['to']}" if "to" in continued else ""]
+    if any(words):
+        text("PARTS LIST, " + ", ".join(w for w in words if w), x0, top + 2.0, 2.5, A.BOTTOM_LEFT, fit=_TITLE_W)
+
+
+def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, text,
+                    continued: dict | None = None) -> None:
+    """Frame, zone grid, title block, notes and any parts list: what makes a page a
+    drawing sheet."""
     from ezdxf.enums import TextEntityAlignment as A
 
     W, H, m = sheet.width, sheet.height, _MARGIN
@@ -1903,7 +2047,11 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
             value, height = values[name]
             text(str(value), x0 + x + 1.5, y0 + y + 1.6, height, A.BOTTOM_LEFT, fit=w - 3.0)
     tx, ty, _tw, th = _TITLE_CELLS["TITLE"]
-    text(sheet.title, x0 + tx + 3.0, y0 + ty + th / 2 + 1.0, 5.0, A.MIDDLE_LEFT, fit=_TITLE_FIT)
+    # A subtitle takes the line under the title, which moves up to make room.
+    text(sheet.title, x0 + tx + 3.0, y0 + ty + th / 2 + (2.5 if sheet.subtitle else 1.0), 5.0, A.MIDDLE_LEFT,
+         fit=_TITLE_FIT)
+    if sheet.subtitle:
+        text(sheet.subtitle, x0 + tx + 3.0, y0 + ty + 4.2, 2.5, A.BOTTOM_LEFT, fit=_TITLE_FIT)
     # The script that drew the sheet, so a print leads back to its source.
     text(label, x0 + tx + 3.0, y0 + ty + 1.4, _CAPTION_HEIGHT, A.BOTTOM_LEFT, fit=_TITLE_FIT)
     px, py, pw, ph = _TITLE_CELLS["PROJECTION"]
@@ -1911,6 +2059,17 @@ def _draw_furniture(msp, sheet: Sheet, *, index: int, count: int, label: str, te
     text(sheet.projection, right + 4.0, y0 + py + ph / 2, 2.5, A.MIDDLE_LEFT, fit=x0 + px + pw - right - 6.0)
 
     lines = sheet.note_lines()
+    if sheet._parts is not None:
+        # The notes share the strip above the title block with the parts list, so
+        # each must end before the list begins.
+        room = x0 - 4.0 - (m + _NOTE_INSET)
+        for line in lines:
+            if _text_width(line, _NOTE_HEIGHT) > room:
+                raise ValueError(
+                    f"note {line.strip()!r} runs under the parts list: beside it the {sheet.size} sheet leaves "
+                    f"{round(room)} mm. Shorten the note or split it across two."
+                )
+        _draw_parts_list(msp, sheet, text, continued or {})
     for row, line in enumerate(lines):
         text(line, m + _NOTE_INSET, y0 + _TITLE_H + 4 + (len(lines) - 1 - row) * 5, _NOTE_HEIGHT,
              A.BOTTOM_LEFT, "NOTES")
@@ -2035,7 +2194,8 @@ def _place_detail(sheet: Sheet, size: float, room: dict, occupied: list, near) -
     notes_h = (note_rows * 5.0 + 8.0) if note_rows else 0.0
     table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
     x_lo, x_hi = m + 4.0, sheet.width - m - 4.0
-    y_lo, y_hi = m + _TITLE_H + notes_h + 4.0, sheet.height - m - 4.0 - table_h
+    list_h = _list_height(sheet) + 6.0 if sheet._parts is not None else 0.0
+    y_lo, y_hi = m + _TITLE_H + max(notes_h, list_h) + 4.0, sheet.height - m - 4.0 - table_h
     half = size / 2
     best = None
     step = 2.0
@@ -2152,8 +2312,54 @@ def _draw_cutting_plane(msp, parent: tuple, point, look, letter: str, text, th: 
 
 
 def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: list | None = None,
-                  facts: dict | None = None):
+                  facts: dict | None = None, continued: dict | None = None):
     """Build the ezdxf document for one sheet. Returns the document.
+
+    A sheet that chose its own scale (a part sheet ``assembly_sheets`` made) and
+    whose views, with the annotation they turned out to carry, run off the frame
+    is drawn again at the largest standard scale that fits, rather than refused:
+    the scale was the sheet's choice, not the author's. Only the drawing that
+    succeeds reports anything.
+    """
+    if not sheet._fit:
+        return _draw_sheet(sheet, index=index, count=count, label=label, warnings=warnings, facts=facts,
+                           continued=continued)
+    while True:
+        tried_warnings: list = []
+        tried_facts: dict = {}
+        try:
+            doc = _draw_sheet(sheet, index=index, count=count, label=label, warnings=tried_warnings,
+                              facts=tried_facts, continued=continued)
+        except _OffFrame as exc:
+            if exc.fits is None or exc.fits >= sheet.scale:
+                raise
+            sheet.scale = exc.fits
+            continue
+        if warnings is not None:
+            warnings.extend(tried_warnings)
+        if facts is not None:
+            _merge_facts(facts, tried_facts)
+        return doc
+
+
+def _merge_facts(into: dict, more: dict) -> None:
+    """Fold one sheet's facts into the drawing's: a part shown on two sheets is
+    stated by both."""
+    for key, record in more.items():
+        if key not in into:
+            into[key] = record
+            continue
+        have = into[key]
+        for name, value in record.items():
+            if isinstance(value, set):
+                have[name] |= value
+            elif isinstance(value, list):
+                have[name].extend(value)
+
+
+def _draw_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings: list | None = None,
+                facts: dict | None = None, continued: dict | None = None):
+    """Build the ezdxf document for one sheet at its scale. Returns the document.
 
     ``warnings`` collects anything the sheet renders but a reader should look
     at -- a dimension whose points miss the geometry, say. The render never
@@ -2236,6 +2442,10 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
             value = str(entity.text or "")
             height = float(entity.dxf.char_height or th)
             width, tall = _mtext_extent(value, height)
+            # A vertical dimension's value is turned with its line: its box is too.
+            turn = math.radians(float(entity.dxf.get("rotation", 0.0) or 0.0))
+            width, tall = (abs(width * math.cos(turn)) + abs(tall * math.sin(turn)),
+                           abs(width * math.sin(turn)) + abs(tall * math.cos(turn)))
             insert = entity.dxf.insert
             claim(value, (insert.x - width / 2, insert.y - tall / 2, insert.x + width / 2, insert.y + tall / 2))
 
@@ -2251,7 +2461,7 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 break
         claimed.append((value, box))
 
-    _draw_furniture(msp, sheet, index=index, count=count, label=label, text=text)
+    _draw_furniture(msp, sheet, index=index, count=count, label=label, text=text, continued=continued)
 
     # What the part's faces say, read once per part however many views show it.
     found_features: dict[int, _Features] = {}
@@ -2274,20 +2484,28 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     work = []
     cuts: dict[int, tuple] = {}
     checked: set[int] = set()
+    # The assemblies this sheet draws as assemblies: the one its parts list was
+    # read from, and any a view balloons. Many solids there are the point.
+    assemblies = {id(parts.assembly) for view in sheet.views for parts in view._balloons}
+    if sheet._parts is not None:
+        assemblies.add(id(sheet._parts[0].assembly))
     for view in sheet.views:
         if view._detail is not None:
             # A detail shows what its parent shows when the sheet renders, so a
             # section() made after detail() still reaches it.
             parent = view._detail[0]
             view._section, view.hidden, view.centre_marks = parent._section, parent.hidden, parent.centre_marks
+        if view._balloons:
+            _refuse_balloons_on(view)
         if id(view.shape) not in checked:
             checked.add(id(view.shape))
             solids = len(view.shape.solids()) if hasattr(view.shape, "solids") else 1
-            if solids > 1 and warnings is not None:
+            if solids > 1 and id(view.shape) not in assemblies and warnings is not None:
                 warnings.append(
                     f"the part in the {view.name} view is {solids} separate solids, and a drawing documents one "
                     "part. A cut that runs right through the model splits it; check the model, or draw each "
-                    "solid on its own sheet."
+                    "solid on its own sheet. An assembly is drawn with a parts list and balloons: "
+                    "assembly_sheets(parts_list(cadgen.read_scene(path)), ...)."
                 )
         cut = _cut(view) if view._section else None
         proj = _Projection(view.shape, view.name, draw=cut[0] if cut else None)
@@ -2437,6 +2655,16 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                         view.at[1] + (by0 - cy) * sv, view.at[1] + (by1 - cy) * sv)))
     boxes = [box for (_, _, _, _, _, box) in placed]
     _assert_views_fit(sheet, placed, index=index, groups=groups)
+    # A view drawn over the parts list prints both illegible.
+    x_block, y_title = sheet.width - _MARGIN - _TITLE_W, _MARGIN + _TITLE_H
+    y_list = y_title + _list_height(sheet)
+    for view, _proj, _bounds, _cx, _cy, box in placed:
+        if sheet._parts is not None and box[1] > x_block + 1e-6 and box[2] < y_list - 1e-6 and box[3] > y_title:
+            raise ValueError(
+                f"sheet {index}: the {view.name} view is drawn over the parts list, which stands on the title "
+                f"block from {x_block:.0f} mm across and up to {y_list:.0f} mm. Place the view clear of it, or "
+                "draw at a smaller scale."
+            )
     m = _MARGIN
 
     def blocked(x0, x1, y0, y1, own_box):
@@ -2451,13 +2679,20 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
         return False
 
     drawn: dict[int, tuple] = {}
+    # Items ballooned on this sheet so far, as (parts list, item number): an item
+    # is keyed once per sheet, in the first view that shows it.
+    keyed_on_sheet: set[tuple[int, int]] = set()
+    if sheet._parts is not None and facts is not None:
+        parts, first, last = sheet._parts
+        _parts_facts(facts, parts)["listed"].update(range(first, last + 1))
     for (view, proj, bounds, items, plan, _centre), (_v, _p, _b, cx, cy, own_box) in zip(work, placed):
         sv = view.scale or s
         cut = cuts.get(id(view))
         record = None
         if facts is not None:
             record = facts.setdefault(id(view.shape), {"shape": view.shape, "called": set(), "values": [],
-                                                       "axes": set(), "views": []})
+                                                       "axes": set(), "views": [], "sheet": (index, sheet.title),
+                                                       "assembly": id(view.shape) in assemblies})
             if view.name != "iso":
                 record["views"].append(view.name)
 
@@ -2860,6 +3095,10 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
                 # dimension row there does.
                 reach["bottom"] = max(reach["bottom"], vy0 - q[1] + 1.0)
 
+        if view._balloons:
+            _draw_balloons(msp, view, keyed_on_sheet, facts, model_to_sheet, own_box, reach, text,
+                           [box for _value, box in claimed])
+
         # The view label goes under everything that hangs below the view, so a
         # dimension on the bottom side never sits on it.
         text((view.label or view.name).upper(), view.at[0], vy0 - reach["bottom"] - 6, 3.5,
@@ -2899,6 +3138,104 @@ def _render_sheet(sheet: Sheet, *, index: int, count: int, label: str, warnings:
     return doc
 
 
+#: A balloon: its radius and numeral height, the run of leader between the
+#: annotation it stands outside and its circle, the space between two balloons,
+#: and the dot a leader ends in on the part.
+_BALLOON_R = 5.0
+_BALLOON_TEXT = 5.0
+_BALLOON_LEAD = 8.0
+_BALLOON_AIR = 2.0
+_DOT_R = 0.7
+
+
+def _parts_facts(facts: dict, parts) -> dict:
+    """What the drawing says about one parts list: the items its tables list and
+    the items its balloons key."""
+    return facts.setdefault(("parts", id(parts)), {"parts": parts, "listed": set(), "ballooned": set()})
+
+
+def _balloon_axis(bounds) -> bool:
+    """Whether a view's balloons stand in columns beside it (a tall view) rather
+    than in rows above and below it (a wide one)."""
+    return (bounds[3] - bounds[2]) >= (bounds[1] - bounds[0])
+
+
+def _draw_balloons(msp, view: View, keyed_on_sheet: set, facts: dict | None, model_to_sheet, box, reach: dict,
+                   text, printed: Sequence[tuple]) -> None:
+    """Balloon each item the view shows that this sheet has not yet keyed.
+
+    Each leader ends in a dot on a point of the part that the view sees (nothing
+    of the assembly in front of it). The balloons stand in a column on each side
+    of a tall view, outside everything already drawn there, each at the height of
+    the point it keys and spread apart only as far as they must be, so their
+    leaders keep their order and do not cross. Points near the middle go to
+    whichever side has fewer, which keeps the two columns even. A leader runs
+    level from its balloon, so no balloon stands level with text ``printed``
+    between its column and the view: the height of a dimension beside it.
+    """
+    from ezdxf.enums import TextEntityAlignment
+    from OCP.IntCurvesFace import IntCurvesFace_ShapeIntersector
+
+    from cadgen._internal.drawing_assembly import spread, visible_point
+
+    direction = VIEW_DIRECTIONS[view.name][0]
+    length = math.sqrt(sum(c * c for c in direction))
+    look = tuple(c / length for c in direction)
+    cast = IntCurvesFace_ShapeIntersector()
+    cast.Load(view.shape.wrapped, 1e-7)
+    keyed = []
+    for parts in view._balloons:
+        for item in parts:
+            if (id(parts), item.number) in keyed_on_sheet:
+                continue
+            point = visible_point(item.occurrences, cast, look)
+            if point is None:
+                continue
+            keyed_on_sheet.add((id(parts), item.number))
+            if facts is not None:
+                _parts_facts(facts, parts)["ballooned"].add(item.number)
+            keyed.append((item.number, model_to_sheet(point)))
+    vx0, vx1, vy0, vy1 = box
+    tall = _balloon_axis(box)
+    pick, along = (0, 1) if tall else (1, 0)
+    mid = ((vx0 + vx1) / 2, (vy0 + vy1) / 2)
+    band = 0.1 * ((vx1 - vx0) if tall else (vy1 - vy0))
+    low, high = ("left", "right") if tall else ("bottom", "top")
+    sides: dict[str, list] = {low: [], high: []}
+    for number, point in sorted(keyed, key=lambda k: (k[1][along], k[0])):
+        if point[pick] < mid[pick] - band:
+            side = low
+        elif point[pick] > mid[pick] + band:
+            side = high
+        else:
+            side = low if len(sides[low]) <= len(sides[high]) else high
+        sides[side].append((number, point))
+    r = _BALLOON_R
+    for side, rows in sides.items():
+        if not rows:
+            continue
+        out = -1.0 if side in ("left", "bottom") else 1.0
+        edge = {"left": vx0, "right": vx1, "bottom": vy0, "top": vy1}[side]
+        line = edge + out * (reach[side] + _BALLOON_LEAD + r)
+        lo, hi = (vy0, vy1) if tall else (vx0, vx1)
+        # The strip the leaders cross, between the column and the view.
+        near, far = sorted((edge, line - out * r))
+        avoid = [(t[along] - 1.0, t[along + 2] + 1.0) for t in printed  # (x0, y0, x1, y1)
+                 if t[pick] < far and t[pick + 2] > near]
+        spots = spread([point[along] for _number, point in rows], 2 * r + _BALLOON_AIR, lo + r, hi - r, avoid)
+        for (number, point), spot in zip(rows, spots):
+            centre = (line, spot) if tall else (spot, line)
+            run = math.hypot(point[0] - centre[0], point[1] - centre[1]) or 1.0
+            start = (centre[0] + (point[0] - centre[0]) * r / run, centre[1] + (point[1] - centre[1]) * r / run)
+            msp.add_line(start, point, dxfattribs={"layer": "NOTES"})
+            dot = msp.add_hatch(dxfattribs={"layer": "NOTES"})
+            dot.set_solid_fill(color=256)
+            dot.paths.add_edge_path().add_arc(point, _DOT_R, 0.0, 360.0)
+            msp.add_circle(centre, r, dxfattribs={"layer": "NOTES"})
+            text(str(number), centre[0], centre[1], _BALLOON_TEXT, TextEntityAlignment.MIDDLE_CENTER, "NOTES")
+        reach[side] += _BALLOON_LEAD + 2 * r
+
+
 def _member_key(feature) -> tuple:
     """One hole or slot, by what it is and where it opens."""
     return (feature.signature(), tuple(round(c, 4) for c in feature.mouth))
@@ -2929,10 +3266,15 @@ def _unstated(facts: dict) -> list[str]:
     from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots, turned_diameters
 
     lines: list[str] = []
-    for record in facts.values():
+    records = [record for record in facts.values() if "shape" in record]
+    for record in records:
         shape, views = record["shape"], record["views"]
+        # On a drawing of several parts, each line says whose sheet it is about.
+        whose = f"sheet {record['sheet'][0]} ({record['sheet'][1]}): " if len(records) > 1 else ""
         kinds: dict[tuple, list] = {}
-        for feature in [*find_holes(shape), *find_slots(shape)]:
+        # An assembly's holes and diameters are its parts', stated on their sheets.
+        features = [] if record.get("assembly") else [*find_holes(shape), *find_slots(shape)]
+        for feature in features:
             kinds.setdefault(_feature_key(feature), []).append(feature)
         for key, members in kinds.items():
             # Each one, not each kind: a detail's callout covers what its circle
@@ -2952,9 +3294,9 @@ def _unstated(facts: dict) -> list[str]:
             fix = (f"{where}.{verb}({_where(feature.mouth)}) states it, or {where}.holes() calls out every hole "
                    f"and slot the {where} view looks down." if where else
                    f"No view on the drawing looks into it; add the view that looks down the {verb}.")
-            lines.append(f"incomplete: {text} is not called out. {fix}")
+            lines.append(f"incomplete: {whose}{text} is not called out. {fix}")
         size = shape.bounding_box().size
-        turned = turned_diameters(shape)
+        turned = [] if record.get("assembly") else turned_diameters(shape)
         # A stated diameter of the part's largest turned surface states its width
         # across that axis too: a shaft's ⌀30 is its size in Y and in Z.
         across = [d for d in turned if any(abs(v - d) <= 0.01 for v in record["values"])]
@@ -2965,15 +3307,271 @@ def _unstated(facts: dict) -> list[str]:
                 continue
             where = next((name for name in views if abs(VIEW_DIRECTIONS[name][0][axis]) < 1e-9), None)
             fix = f"{where}.overall() states it." if where else "No view on the drawing shows that direction."
-            lines.append(f"incomplete: the overall size along {'XYZ'[axis]} ({_fmt(extent)}) is not dimensioned. {fix}")
+            lines.append(f"incomplete: {whose}the overall size along {'XYZ'[axis]} ({_fmt(extent)}) is not "
+                         f"dimensioned. {fix}")
         for diameter in turned:
             if any(abs(v - diameter) <= 0.01 for v in record["values"]):
                 continue
             lines.append(
-                f"incomplete: the turned diameter ⌀{_fmt(diameter)} is not dimensioned. Dimension it across its "
-                f"profile with text=\"%%c<>\", or diameter(..., size={_fmt(diameter)}) where it is seen as a circle."
+                f"incomplete: {whose}the turned diameter ⌀{_fmt(diameter)} is not dimensioned. Dimension it across "
+                f"its profile with text=\"%%c<>\", or diameter(..., size={_fmt(diameter)}) where it is seen as a "
+                "circle."
             )
+    for entry in (record for record in facts.values() if "parts" in record):
+        parts, listed, keyed = entry["parts"], entry["listed"], entry["ballooned"]
+        if not listed:
+            lines.append("incomplete: balloons key a parts list that no sheet draws; sheet.parts_list(parts) draws "
+                         "it above the title block.")
+            continue
+        missing = [n for n in range(1, len(parts) + 1) if n not in listed]
+        if missing:
+            lines.append(f"incomplete: the parts list leaves out item{'s' if len(missing) > 1 else ''} "
+                         f"{', '.join(map(str, missing))}; draw the rest with parts_list(parts, first=...) on a "
+                         "further sheet.")
+        for item in parts:
+            if item.number in listed and item.number not in keyed:
+                lines.append(
+                    f"incomplete: item {item.number} ({item.description or 'unnamed'}) has no balloon: no ballooned "
+                    "view shows any of it unhidden. balloons() on a view from a side where it shows keys it."
+                )
     return lines
+
+
+# --- assembly drawings ---------------------------------------------------------------
+
+class AssemblySheets(list):
+    """The sheets :func:`assembly_sheets` makes, in order: the general arrangement,
+    any sheets its parts list continues onto, then one sheet per item.
+    ``part(key)`` is an item's sheet, by item number or part name; ``parts`` is
+    the parts list they key."""
+
+    def __init__(self, sheets: Sequence[Sheet], parts: PartsList, by_item: dict[int, Sheet]) -> None:
+        super().__init__(sheets)
+        self.parts = parts
+        self._by_item = by_item
+
+    def part(self, key: int | str) -> Sheet:
+        return self._by_item[self.parts[key].number]
+
+
+#: The room a hole callout is assumed to take beside a view before it is
+#: planned: the run out to its knee, the landing and a typical callout's text.
+_CALLOUT_ROOM = 50.0
+#: The largest enlargement a part sheet chooses: past it a part is a detail view.
+_PART_LARGEST = 10.0
+#: The share of the general arrangement's frame height its parts list may take;
+#: longer lists continue on further sheets.
+_GA_LIST_SHARE = 0.45
+
+
+def assembly_sheets(parts: PartsList, *, title: str, part_number: str = "", revision: str = "A",
+                    size: str = "A3", author: str = "", date: str = "", projection: str = "THIRD ANGLE",
+                    ink: str = "mono", notes: Sequence[str] = (), general_tolerance: str = "",
+                    revisions: Sequence[tuple[str, str, str]] = ()) -> AssemblySheets:
+    """An assembly drawing: a general arrangement sheet and a sheet for each part.
+
+    The general arrangement draws the assembly whole and without hidden lines: the
+    front view, whichever of the top and right views shows more of it, and an
+    isometric, at the largest standard scale that fits beside the parts list.
+    Overall sizes are stated, every part is ballooned in the first view that
+    shows it, and the parts list stands on the title block, continued on further
+    sheets when it is too long for one. Each part then has a sheet of its own,
+    drawn in its own frame: three views and an isometric at the largest standard
+    scale that fits, its overall sizes, every hole and slot called out in a view
+    that looks down it, and ``ITEM n OF <title>`` under its name.
+
+    It is a first pass. The completeness report names what each sheet still
+    leaves unstated, and every sheet is an ordinary :class:`Sheet` the script can
+    add to before returning them: ``sheets.part("coil_spring")`` is that part's.
+    The title block on every sheet carries the assembly's drawing number,
+    revision, author and date, the set being one drawing; ``notes`` and
+    ``revisions`` go on the general arrangement, ``general_tolerance`` on the part
+    sheets, whose sizes it governs. Materials and part numbers come from
+    ``parts.set(...)`` and are blank otherwise.
+    """
+    from cadgen._internal.drawing_features import holes as find_holes, slots as find_slots
+
+    if not isinstance(parts, PartsList):
+        raise TypeError(f"assembly_sheets() takes the PartsList that parts_list() returns, got {type(parts).__name__}")
+    common = dict(size=size, part_number=part_number, revision=revision, author=author, date=date,
+                  projection=projection, ink=ink)
+    ga = Sheet(title=title, notes=notes, revisions=revisions, **common)
+    frame = ga.height - 2 * _MARGIN
+    on_ga = min(len(parts), max(1, int(_GA_LIST_SHARE * frame // _LIST_ROW) - 1))
+    ga.parts_list(parts, last=on_ga)
+    more = []
+    first = on_ga + 1
+    while first <= len(parts):
+        sheet = Sheet(title=title, **common)
+        last = min(len(parts), first + int(_list_room(sheet) // _LIST_ROW) - 2)
+        sheet.parts_list(parts, first=first, last=last)
+        more.append(sheet)
+        first = last + 1
+    shape = parts.assembly
+    box = shape.bounding_box().size
+    second = "top" if box.X * box.Y > box.Y * box.Z else "right"
+    ga.scale, slots = _arrange_assembly(ga, shape, second)
+    views = {name: ga.view(shape, name, at=at, label=label, hidden=False, centre_marks=name != "iso", scale=own)
+             for name, at, own, label in slots}
+    views["front"].overall()
+    views[second].overall(width=second == "right", height=second == "top")
+    for name in ("front", second, "iso"):
+        if name in views:
+            views[name].balloons(parts)
+
+    by_item: dict[int, Sheet] = {}
+    for item in parts:
+        subtitle = f"ITEM {item.number}{f' (QTY {item.quantity})' if item.quantity > 1 else ''} OF {title}"
+        sheet = Sheet(title=item.description or f"ITEM {item.number}", subtitle=subtitle, material=item.material,
+                      general_tolerance=general_tolerance, **common)
+        # Which views look down a hole or slot, and on which side its callout goes.
+        features = [*find_holes(item.shape), *find_slots(item.shape)]
+        middle = item.shape.bounding_box().center()
+        centre = (middle.X, middle.Y, middle.Z)
+        callouts: dict[str, set] = {}
+        for name, across in (("top", 0), ("front", 0), ("right", 1)):
+            look = VIEW_DIRECTIONS[name][0]
+            for f in features:
+                faces = _slot_faces_viewer(f, look) if hasattr(f, "width") else _faces_viewer(f, look)
+                if abs(_dot(f.axis, look)) > 1 - 1e-6 and faces:
+                    callouts.setdefault(name, set()).add("right" if f.mouth[across] > centre[across] + 1e-6
+                                                         else "left")
+        sheet.scale = _fitting_scale(sheet, item.shape, _first_pass_room(callouts))
+        sheet._fit = True
+        top, front, right = sheet.three_views(item.shape, iso=True)[:3]
+        top.overall()
+        front.overall(width=False)
+        for view in (top, front, right):
+            if view.name in callouts:
+                view.holes()
+        by_item[item.number] = sheet
+    return AssemblySheets([ga, *more, *by_item.values()], parts, by_item)
+
+
+def _first_pass_room(callouts: dict[str, set]) -> dict:
+    """The room each view of a first-pass part sheet takes: the top view's overall
+    width above and height to its left, the front view's height to its left, a
+    callout on each side a view's holes leave by, and every view's label."""
+    row = _DIM_ROW + 3.5 * 1.5
+    room = {name: {"top": 4.0, "left": 4.0, "right": 4.0, "bottom": 6.0 + 3.5 + 2.0 + 4.0}
+            for name in ("top", "front", "right")}
+    room["top"]["top"] += row
+    room["top"]["left"] += row
+    room["front"]["left"] += row
+    for name, sides in callouts.items():
+        for side in sides:
+            room[name][side] += _CALLOUT_ROOM
+    return room
+
+
+def _fitting_scale(sheet: Sheet, shape, room: dict) -> float:
+    """The largest standard scale, up to 10:1, at which a part's three views and
+    isometric fit ``sheet`` with ``room`` for each view's annotation."""
+    size = shape.bounding_box().size
+    iso = _view_extent(shape, "iso", 1.0)
+    for scale in (c for c in _STANDARD_SCALES if c <= _PART_LARGEST):
+        over: list = []
+        _arrange_three_views(sheet, shape, size, None, scale, iso, room, over)
+        if max(over) <= 0:
+            return scale
+    return _STANDARD_SCALES[-1]
+
+
+def _assembly_room(name: str, size: tuple[float, float], overall: set) -> dict:
+    """What a general-arrangement view's annotation takes on each side: its
+    overall sizes, its balloons (beside a tall view, above and below a wide one)
+    and its label."""
+    room = {side: 4.0 for side in _SIDES}
+    row = _DIM_ROW + 3.5 * 1.5
+    if "width" in overall:
+        room["top"] += row
+    if "height" in overall:
+        room["left"] += row
+    for side in (("left", "right") if size[1] >= size[0] else ("bottom", "top")):
+        room[side] += _BALLOON_LEAD + 2 * _BALLOON_R + 2.0
+    room["bottom"] += 6.0 + 3.5 + 2.0
+    return room
+
+
+def _arrange_assembly(sheet: Sheet, shape, second: str) -> tuple[float, list]:
+    """The general arrangement's scale and views: the front view and ``second``
+    side by side (or one above the other) in the paper left of the title block,
+    each with room for its overall sizes, balloons and label, at the largest
+    standard scale that fits; the isometric in the column above the parts list,
+    at the largest standard scale up to that one which fits there, or left out
+    when even a fifth of it does not."""
+    m, W, H = _MARGIN, sheet.width, sheet.height
+    box = shape.bounding_box().size
+    extents = {"front": (box.X, box.Z), "right": (box.Y, box.Z), "top": (box.X, box.Y)}
+    overall = {"front": {"width", "height"}, second: {"width"} if second == "right" else {"height"}}
+    note_rows = len(sheet.drawn_notes())
+    a_x = (m + 4.0, W - m - _TITLE_W - 6.0)
+    a_y = (m + 4.0 + ((_TITLE_H + note_rows * 5.0 + 8.0) if note_rows else 0.0), H - m - 4.0)
+    third = sheet.projection == "THIRD ANGLE"
+
+    def layout(s: float):
+        sizes = {n: (extents[n][0] * s, extents[n][1] * s) for n in ("front", second)}
+        rooms = {n: _assembly_room(n, extents[n], overall[n]) for n in ("front", second)}
+        f, o = sizes["front"], sizes[second]
+        rf, ro = rooms["front"], rooms[second]
+        if second == "right":
+            # Side by side, sharing the front view's height: third angle puts the
+            # view from the right on the right.
+            left, right = ((f, rf), (o, ro)) if third else ((o, ro), (f, rf))
+            w = left[1]["left"] + left[0][0] + left[1]["right"] + right[1]["left"] + right[0][0] + right[1]["right"]
+            h = max(f[1] + rf["top"] + rf["bottom"], o[1] + ro["top"] + ro["bottom"])
+            x = a_x[0] + max(0.0, (a_x[1] - a_x[0] - w) / 2)
+            y = a_y[0] + max(0.0, (a_y[1] - a_y[0] - h) / 2) + max(rf["bottom"], ro["bottom"]) + f[1] / 2
+            cl = x + left[1]["left"] + left[0][0] / 2
+            cr = x + left[1]["left"] + left[0][0] + left[1]["right"] + right[1]["left"] + right[0][0] / 2
+            at = {"front": (cl, y), second: (cr, y)} if third else {"front": (cr, y), second: (cl, y)}
+        else:
+            # One above the other, sharing the front view's width: third angle
+            # puts the view from above above.
+            low, high = ((f, rf), (o, ro)) if third else ((o, ro), (f, rf))
+            h = low[1]["bottom"] + low[0][1] + low[1]["top"] + high[1]["bottom"] + high[0][1] + high[1]["top"]
+            w = max(f[0] + rf["left"] + rf["right"], o[0] + ro["left"] + ro["right"])
+            y = a_y[0] + max(0.0, (a_y[1] - a_y[0] - h) / 2)
+            x = a_x[0] + max(0.0, (a_x[1] - a_x[0] - w) / 2) + max(rf["left"], ro["left"]) + f[0] / 2
+            yl = y + low[1]["bottom"] + low[0][1] / 2
+            yh = y + low[1]["bottom"] + low[0][1] + low[1]["top"] + high[1]["bottom"] + high[0][1] / 2
+            at = {"front": (x, yl), second: (x, yh)} if third else {"front": (x, yh), second: (x, yl)}
+        return w <= a_x[1] - a_x[0] and h <= a_y[1] - a_y[0], at
+
+    scale, at = next(((c, at) for c in _STANDARD_SCALES if c <= _PART_LARGEST
+                      for fits, at in [layout(c)] if fits), (_STANDARD_SCALES[-1], layout(_STANDARD_SCALES[-1])[1]))
+    slots = [("front", at["front"], None, None), (second, at[second], None, None)]
+    table_h = (len(sheet.revisions) + 1) * 6.0 + 6.0 if sheet.revisions else 0.0
+    b_x = (W - m - _TITLE_W, W - m - 4.0)
+    b_y = (m + _TITLE_H + _list_height(sheet) + 6.0, H - m - 4.0 - table_h)
+    iso_w, iso_h = _view_extent(shape, "iso", 1.0)
+    room = _assembly_room("iso", (iso_w, iso_h), set())
+    for c in (c for c in _STANDARD_SCALES if scale / 5 - 1e-9 <= c <= scale):
+        if (iso_w * c + room["left"] + room["right"] <= b_x[1] - b_x[0]
+                and iso_h * c + room["bottom"] + room["top"] <= b_y[1] - b_y[0]):
+            x = b_x[0] + room["left"] + iso_w * c / 2 + (b_x[1] - b_x[0] - iso_w * c - room["left"] - room["right"]) / 2
+            y = b_y[0] + room["bottom"] + iso_h * c / 2 + (b_y[1] - b_y[0] - iso_h * c - room["bottom"] - room["top"]) / 2
+            own = None if abs(c / scale - 1) < 1e-9 else c
+            slots.append(("iso", (x, y), own, "ISOMETRIC" if own is None else f"ISOMETRIC {_scale_label(c)}"))
+            break
+    return scale, slots
+
+
+def _continuations(sheets: Sequence[Sheet]) -> dict[int, dict]:
+    """For each sheet carrying part of a split parts list, where the list
+    continues from and to: ``{sheet number: {"from": n, "to": m}}``."""
+    runs: dict[int, list] = {}
+    for index, sheet in enumerate(sheets, start=1):
+        if sheet._parts is not None:
+            parts, first, last = sheet._parts
+            runs.setdefault(id(parts), []).append((first, last, index))
+    out: dict[int, dict] = {}
+    for spans in runs.values():
+        spans.sort()
+        for (_f0, _l0, before), (_f1, _l1, after) in zip(spans, spans[1:]):
+            out.setdefault(before, {})["to"] = after
+            out.setdefault(after, {})["from"] = before
+    return out
 
 
 def _write_pdf(docs, sheets: Sequence[Sheet], path: Path) -> None:
@@ -3115,9 +3713,10 @@ def eng_drawing(func: Callable[..., Any] | None = None, *, out: str | Path | Non
             docs = []
             notices: list[str] = []
             facts: dict = {}
+            continued = _continuations(sheets)
             for index, sheet in enumerate(sheets, start=1):
                 doc = _render_sheet(sheet, index=index, count=len(sheets), label=fn.__name__,
-                                    warnings=notices, facts=facts)
+                                    warnings=notices, facts=facts, continued=continued.get(index))
                 # The same checks every @dxf build runs, against the document the
                 # page is rendered from: duplicate geometry, unset units, an empty
                 # sheet. A drawing skipping them is how the duplicates went unseen.

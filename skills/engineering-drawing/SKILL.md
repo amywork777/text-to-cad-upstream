@@ -1,6 +1,6 @@
 ---
 name: engineering-drawing
-description: Make an engineering drawing of a part as a PDF - orthographic, section and detail views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts read off the model, notes and an ISO title block on a zoned sheet, all projected from the part's geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, a print, or "2D views of this part".
+description: Make an engineering drawing of a part or an assembly as a PDF - orthographic, section and detail views with hidden lines and centre lines, real dimensions, hole, slot and bolt-circle callouts read off the model, notes and an ISO title block on a zoned sheet, and for an assembly a general arrangement with balloons and a parts list plus a sheet per part, all projected from the geometry so the drawing follows the model. Use when the user asks for a drawing, a dimensioned sheet, shop or manufacturing drawings, an assembly drawing, a parts list or BOM sheet, a print, or "2D views of this part".
 license: MIT
 ---
 
@@ -89,7 +89,8 @@ The first run downloads that installation; later runs reuse it.
    - *"was guessed"*: a dimension's points differ in both directions about
      equally; say which with `orientation=`.
    - *"separate solids"*: the part is in pieces, usually a cut that runs right
-     through the model. Fix the model before drawing it.
+     through the model. Fix the model before drawing it, or, if it is an
+     assembly, draw it as one (below).
    - A refusal (an exception, no PDF): a typed size the part contradicts, a
      hole called out where no hole is, views that run off the frame. The
      message says what the part has, or which scale fits.
@@ -103,6 +104,43 @@ The first run downloads that installation; later runs reuse it.
 
 Steps 3 and 5 stand on their own: a sheet of views with no dimensions is a
 drawing too, and writes its PDF with a list of everything it leaves unstated.
+
+## Assemblies
+
+An assembly is drawn as a set: a general arrangement (GA) that shows it whole,
+keys every part to a parts list with a balloon, and one sheet per distinct part.
+
+```python
+# in the @eng_drawing function; from cadgen.eng_drawing import assembly_sheets, parts_list
+parts = parts_list(cadgen.read_scene(Path(__file__).parent / "../STEP/rig.step"))
+parts.set("base_plate", material="6061-T6")        # only what the requirements state
+sheets = assembly_sheets(parts, title="RIG", part_number="RIG-100")
+sheets.part("base_plate").views[1].section("A")   # refine any part's sheet
+return sheets
+```
+
+- `parts_list` reads the parts off the STEP: one item per distinct part, with
+  its quantity. Occurrences sharing a prototype are one part, and so are two
+  with one name (`eye:upper`, `eye:lower`) when one is an exact translated
+  copy of the other. The description is the model's own name for the part
+  (`piston_rod:chrome` reads `PISTON ROD, CHROME`); PART NO. and MATERIAL stay
+  blank unless `parts.set(...)` states them. Label the model's parts
+  (`label_shape`, `shape.label`) before drawing it: an unnamed part has an
+  empty description.
+- `assembly_sheets` makes the GA (front view, whichever of top and right shows
+  more, an isometric, overall sizes, balloons, the parts list on the title
+  block, continued on further sheets when long) and a first-pass sheet per part
+  (three views and an isometric in the part's own frame, at the largest
+  standard scale that fits, overall sizes, every hole and slot called out). Each
+  is an ordinary `Sheet`: add sections, details and dimensions to
+  `sheets.part(name)` as on any sheet, then run and read the report.
+- The report says, per sheet, what each part's sheet leaves unstated, and names
+  any item no balloon keys (a part every ballooned view hides).
+
+For a custom GA, compose it yourself: `sheet.parts_list(parts)` draws the
+table, and `view.balloons(parts)` on a view of `parts.assembly` balloons what
+it shows; each item is ballooned once per sheet, in the first view that shows
+it.
 
 ## What the sheet contains
 
@@ -118,6 +156,10 @@ drawing too, and writes its PDF with a list of everything it leaves unstated.
   SHEET, MATERIAL, FINISH, SCALE, SIZE, DRAWN, DATE, UNITS and the ISO 5456-2
   projection symbol), numbered notes with the general tolerance as note 1, and
   a revision table when `revisions=` is given.
+- On an assembly's GA, balloons (item number in a circle, a leader ending in a
+  dot on the part) in even columns whose leaders do not cross, and an ISO 7573
+  parts list standing on the title block: ITEM, QTY, DESCRIPTION, PART NO.,
+  MATERIAL, read upward from the header.
 - PDF bytes that are a function of the content: an unchanged drawing rebuilds
   to an identical file.
 
@@ -132,3 +174,7 @@ drawing too, and writes its PDF with a list of everything it leaves unstated.
   `dim`, `radius`, a detail or a `note`. A bolt circle's clocking (where its
   first hole sits) is a `dim` or an `angle` you add.
 - Millimetres only; one part per arrangement.
+- Assembly sheets: balloons go on whole views, not on sections or details; a
+  part sheet always starts from three views; parts are drawn in their model
+  frame; copies rotated relative to one another are listed as separate items
+  unless they share a prototype. Say which part sheets are still a first pass.

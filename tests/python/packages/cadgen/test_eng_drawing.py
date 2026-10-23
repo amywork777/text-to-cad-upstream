@@ -1927,6 +1927,363 @@ class DetailTests(unittest.TestCase):
         self.assertLess(label.dxf.insert.y, lowest - 3, "the label hangs under the cutting plane's letter")
 
 
+def _assembly():
+    """A plate, two identical pins standing in its holes, a closed housing on it
+    and a core sealed inside the housing, which no view can show."""
+    from build123d import Align, Box, Compound, Cylinder, Pos
+
+    base_align = (Align.CENTER, Align.CENTER, Align.MIN)
+    base = Box(80, 50, 6, align=base_align) - Pos(25, 0, 0) * Cylinder(3, 6, align=base_align) \
+        - Pos(-25, 0, 0) * Cylinder(3, 6, align=base_align)
+    base.label = "base"
+    pins = []
+    for x, side in ((-25, "left"), (25, "right")):
+        pin = Pos(x, 0, 0) * Cylinder(3, 20, align=base_align)
+        pin.label = f"pin:{side}"
+        pins.append(pin)
+    housing = Pos(0, 0, 6) * (Box(20, 20, 10, align=base_align) - Pos(0, 0, 2) * Box(16, 16, 6, align=base_align))
+    housing.label = "housing"
+    core = Pos(0, 0, 9) * Box(4, 4, 4, align=base_align)
+    core.label = "core"
+    return Compound(children=[base, *pins, housing, core], label="fixture")
+
+
+def _balloons(doc):
+    """Each balloon as (item number, its centre, the point its leader keys)."""
+    from cadgen.eng_drawing import _BALLOON_R, _BALLOON_TEXT
+
+    msp = doc.modelspace()
+    circles = [e for e in msp.query("CIRCLE[layer=='NOTES']") if abs(e.dxf.radius - _BALLOON_R) < 1e-9]
+    numbers = [e for e in msp.query("TEXT[layer=='NOTES']") if abs(e.dxf.height - _BALLOON_TEXT) < 1e-9]
+    lines = list(msp.query("LINE[layer=='NOTES']"))
+    out = []
+    for circle in circles:
+        c = (circle.dxf.center.x, circle.dxf.center.y)
+        number = next(int(t.dxf.text) for t in numbers
+                      if math.hypot(t.dxf.align_point.x - c[0], t.dxf.align_point.y - c[1]) < 1e-6)
+        leader = next(e for e in lines if abs(math.hypot(e.dxf.start.x - c[0], e.dxf.start.y - c[1]) - _BALLOON_R)
+                      < 1e-6)
+        out.append((number, c, (leader.dxf.end.x, leader.dxf.end.y)))
+    return out
+
+
+class AssemblyDrawingTests(unittest.TestCase):
+    """An assembly drawn as one: a parts list read off it, balloons keyed to that
+    list, and a sheet per part."""
+
+    def test_the_parts_list_counts_copies_and_keeps_named_and_mirrored_parts_apart(self) -> None:
+        from build123d import Box, Compound, Cylinder, Plane, Pos
+
+        from cadgen.eng_drawing import parts_list
+
+        parts = parts_list(_assembly())
+        self.assertEqual([(i.number, i.description, i.quantity) for i in parts],
+                         [(1, "BASE", 1), (2, "PIN", 2), (3, "HOUSING", 1), (4, "CORE", 1)])
+        self.assertIs(parts["pin:left"], parts[2])
+        self.assertIs(parts["pin"], parts[2])
+        self.assertEqual(len(parts[2].occurrences), 2)
+        # Mirror images share a name and a volume, never a part number; and one
+        # shape under two names may be two materials.
+        bracket = Box(20, 10, 5) - Pos(5, 2, 0) * Cylinder(1.5, 5)
+        left, right = Pos(0, 0, 0) * bracket, Pos(40, 0, 0) * bracket.mirror(Plane.YZ)
+        left.label, right.label = "bracket:left", "bracket:right"
+        spacer_a, spacer_b = Pos(0, 30, 0) * Box(5, 5, 5), Pos(10, 30, 0) * Box(5, 5, 5)
+        spacer_a.label, spacer_b.label = "spacer_steel", "spacer_brass"
+        kept = parts_list(Compound(children=[left, right, spacer_a, spacer_b]))
+        self.assertEqual([i.quantity for i in kept], [1, 1, 1, 1])
+        self.assertEqual([i.description for i in kept], ["BRACKET, LEFT", "BRACKET, RIGHT", "SPACER STEEL",
+                                                         "SPACER BRASS"])
+
+    def test_items_are_found_by_number_or_name_and_filled_in_only_where_asked(self) -> None:
+        from cadgen.eng_drawing import parts_list
+
+        parts = parts_list(_assembly())
+        parts.set("base", material="6061-T6", part_number="FX-101").set(3, description="SEALED HOUSING")
+        self.assertEqual((parts[1].material, parts[1].part_number), ("6061-T6", "FX-101"))
+        self.assertEqual(parts[3].description, "SEALED HOUSING")
+        self.assertEqual((parts[2].material, parts[2].part_number), ("", ""), "nothing invented")
+        with self.assertRaisesRegex(KeyError, "its items are 1 base"):
+            parts["washer"]
+        with self.assertRaisesRegex(KeyError, "numbers 1 to 4"):
+            parts[5]
+        with self.assertRaisesRegex(TypeError, "not finish"):
+            parts.set(1, finish="ANODISE")
+        with self.assertRaisesRegex(TypeError, "single part"):
+            parts_list(_plate())
+
+    def test_a_saved_assembly_counts_shared_prototypes(self) -> None:
+        import os
+        from unittest import mock
+
+        from build123d import Box, Compound, Cylinder, Location
+
+        import cadgen
+        from cadgen.eng_drawing import parts_list
+        from cadgen.step_export import export_build123d_step_file
+
+        with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
+            with mock.patch.dict(os.environ, {"CADGEN_CACHE_DIR": str(Path(tmp) / "store"), "CADGEN_DAEMON": "0"}):
+                pin = Cylinder(3, 20)
+                placed = []
+                for x in (-10.0, 10.0, 30.0):
+                    copy = pin.moved(Location((x, 0, 0)))
+                    copy.label = "pin"
+                    placed.append(copy)
+                plate = Box(60, 20, 4)
+                plate.label = "plate"
+                path = Path(tmp) / "fixture.step"
+                export_build123d_step_file(Compound(children=[plate, *placed], label="fixture"), path)
+                parts = parts_list(cadgen.read_scene(path))
+        self.assertEqual([(i.description, i.quantity) for i in parts], [("PLATE", 1), ("PIN", 3)])
+        self.assertEqual(parts[2].refs, ("#o1.2", "#o1.3", "#o1.4"))
+
+    def test_balloons_key_each_part_it_shows_once_with_a_dot_on_the_part(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+
+        parts = parts_list(_assembly())
+        sheet = Sheet("A3", title="FIXTURE")
+        sheet.parts_list(parts)
+        front = sheet.view(parts.assembly, "front", at=(110, 200), hidden=False)
+        iso = sheet.view(parts.assembly, "iso", at=(110, 90), hidden=False)
+        front.balloons(parts)
+        iso.balloons(parts)
+        warnings: list = []
+        facts: dict = {}
+        doc = _render_sheet(sheet, index=1, count=1, label="balloons", warnings=warnings, facts=facts)
+        found = _balloons(doc)
+        self.assertEqual(sorted(n for n, _c, _p in found), [1, 2, 3], "the sealed core has no balloon")
+        for _n, centre, point in found:
+            self.assertGreater(math.hypot(centre[0] - point[0], centre[1] - point[1]), 5.0)
+        dots = [e for e in doc.modelspace().query("HATCH[layer=='NOTES']")]
+        self.assertEqual(len(dots), 3)
+        self.assertFalse([w for w in warnings if "separate solids" in w], warnings)
+        from cadgen.eng_drawing import _unstated
+
+        report = _unstated(facts)
+        self.assertTrue(any("item 4 (CORE) has no balloon" in line for line in report), report)
+        self.assertFalse([line for line in report if "turned diameter" in line or "not called out" in line],
+                         "an assembly's holes are its parts' to state")
+
+    def test_a_column_of_balloons_keeps_its_leaders_in_order(self) -> None:
+        from build123d import Box, Compound, Pos
+
+        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+
+        stack = []
+        for k in range(6):
+            block = Pos(0, 0, 12 * k) * Box(30 - 2 * k, 30 - 2 * k, 10)
+            block.label = f"block_{k}"
+            stack.append(block)
+        parts = parts_list(Compound(children=stack))
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        sheet.view(parts.assembly, "front", at=(120, 180), hidden=False).overall().balloons(parts)
+        doc = _render_sheet(sheet, index=1, count=1, label="column")
+        found = _balloons(doc)
+        self.assertEqual(len(found), 6)
+        # No leader runs through the overall height's value, which reads up the
+        # dimension line beside the left column.
+        value = next(m for d in doc.modelspace().query("DIMENSION") for m in doc.blocks.get(d.dxf.geometry)
+                     if m.dxftype() == "MTEXT" and abs(float(m.dxf.get("rotation", 0) or 0) - 90) < 1e-6)
+        half = len(value.text) * 0.7 * value.dxf.char_height / 2
+        x, y = value.dxf.insert.x, value.dxf.insert.y
+        for _n, c, p in found:
+            through = [(c[0] + (p[0] - c[0]) * t / 50, c[1] + (p[1] - c[1]) * t / 50) for t in range(51)]
+            self.assertFalse([q for q in through if abs(q[0] - x) < 1.5 and abs(q[1] - y) < half],
+                             "a leader runs through the height's value")
+        for side in (-1, 1):
+            column = sorted((c[1], p[1]) for _n, c, p in found if (c[0] - 120) * side > 0)
+            self.assertEqual([p for _c, p in column], sorted(p for _c, p in column), "leaders cross")
+        self.assertLessEqual(abs(sum(1 for _n, c, _p in found if c[0] < 120) - 3), 1, "columns are even")
+
+    def test_a_vertical_dimension_value_claims_the_paper_it_reads_up(self) -> None:
+        """A height's value is turned with its line. Measured unturned, its box was
+        wide and short, and a balloon's leader or a note over its digits went
+        unnoticed."""
+        from build123d import Box
+
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        tall = Box(20, 20, 150)
+        probe = Sheet("A3")
+        probe.view(tall, "front", at=(150, 150)).overall()
+        doc = _render_sheet(probe, index=1, count=1, label="probe")
+        value = next(m for d in doc.modelspace().query("DIMENSION") for m in doc.blocks.get(d.dxf.geometry)
+                     if m.dxftype() == "MTEXT" and m.text == "150")
+        x, y = value.dxf.insert.x, value.dxf.insert.y
+        # A note whose text starts just above the value's middle: on its digits,
+        # clear of the box an unturned value would claim. Its model point is
+        # drawn at (140, 225); a note leading left ends its text 4 short of the
+        # leader's end, 1 above it.
+        sheet = Sheet("A3")
+        sheet.view(tall, "front", at=(150, 150)).overall().note("X", (-10, -10, 75),
+                                                                  offset=(x + 5.25 - 140.0, y + 1.5 - 225.0))
+        warnings: list = []
+        _render_sheet(sheet, index=1, count=1, label="over", warnings=warnings)
+        self.assertTrue(any("'X' is printed over '150'" in w for w in warnings), warnings)
+
+    def test_a_separate_solids_notice_points_an_assembly_at_the_parts_list(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A3")
+        sheet.view(_assembly(), "front", at=(150, 150), hidden=False)
+        warnings: list = []
+        _render_sheet(sheet, index=1, count=1, label="solids", warnings=warnings)
+        self.assertTrue(any("separate solids" in w and "assembly_sheets(parts_list(" in w for w in warnings), warnings)
+
+    def test_balloons_refuse_another_shape_a_section_or_a_detail(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+
+        parts = parts_list(_assembly())
+        sheet = Sheet("A3")
+        with self.assertRaisesRegex(ValueError, "parts.assembly"):
+            sheet.view(_plate(), "front", at=(150, 150)).balloons(parts)
+        front = sheet.view(parts.assembly, "front", at=(150, 150))
+        front.section("A")
+        with self.assertRaisesRegex(ValueError, "is a section"):
+            front.balloons(parts)
+        sheet = Sheet("A3")
+        front = sheet.view(parts.assembly, "front", at=(150, 150)).balloons(parts)
+        front.section("A")
+        with self.assertRaisesRegex(ValueError, "is a section"):
+            _render_sheet(sheet, index=1, count=1, label="cut")
+
+    def test_the_parts_list_stands_on_the_title_block_and_reads_upward(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+
+        parts = parts_list(_assembly())
+        parts.set(1, material="6061-T6")
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        msp = _render_sheet(sheet, index=1, count=1, label="list").modelspace()
+        rows = {e.dxf.text: e.dxf.align_point.y for e in msp.query("TEXT[layer=='TITLE']")}
+        self.assertLess(rows["DESCRIPTION"], rows["BASE"])
+        self.assertLess(rows["BASE"], rows["PIN"])
+        self.assertLess(rows["PIN"], rows["CORE"])
+        self.assertIn("6061-T6", rows)
+        self.assertLess(rows["DESCRIPTION"], 10 + 40 + 7, "the header sits on the title block")
+
+    def test_a_long_parts_list_is_refused_with_where_to_split_it(self) -> None:
+        from build123d import Box, Compound, Pos
+
+        from cadgen.eng_drawing import Sheet, parts_list
+
+        blocks = []
+        for k in range(40):
+            block = Pos(0, 0, 12 * k) * Box(10, 10, 10 + k * 0.1)
+            block.label = f"block_{k}"
+            blocks.append(block)
+        parts = parts_list(Compound(children=blocks))
+        with self.assertRaisesRegex(ValueError, r"parts_list\(parts, last=\d+\).*parts_list\(parts, first=\d+\)"):
+            Sheet("A4").parts_list(parts)
+
+    def test_a_split_parts_list_says_where_it_continues(self) -> None:
+        from cadgen.eng_drawing import Sheet, eng_drawing, parts_list
+
+        parts = parts_list(_assembly())
+        with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
+            seen = {}
+
+            @eng_drawing(out=str(Path(tmp) / "split.pdf"))
+            def split():
+                first, rest = Sheet("A4"), Sheet("A4")
+                first.parts_list(parts, last=2)
+                rest.parts_list(parts, first=3)
+                return [first, rest]
+
+            import cadgen.eng_drawing as drawing
+
+            real = drawing._render_sheet
+
+            def capture(sheet, **kwargs):
+                doc = real(sheet, **kwargs)
+                seen[kwargs["index"]] = [e.dxf.text for e in doc.modelspace().query("TEXT")]
+                return doc
+
+            from unittest import mock
+
+            with mock.patch.object(drawing, "_render_sheet", capture):
+                split()
+        self.assertIn("PARTS LIST, CONTINUED ON SHEET 2", seen[1])
+        self.assertIn("PARTS LIST, CONTINUED FROM SHEET 1", seen[2])
+
+    def test_a_view_over_the_parts_list_or_a_note_under_it_is_refused(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, parts_list
+
+        parts = parts_list(_assembly())
+        sheet = Sheet("A3")
+        sheet.parts_list(parts)
+        sheet.view(_plate(), "top", at=(330, 70))
+        with self.assertRaisesRegex(ValueError, "over the parts list"):
+            _render_sheet(sheet, index=1, count=1, label="over")
+        sheet = Sheet("A4", notes=["A NOTE LONG ENOUGH TO RUN PAST THE LEFT HALF OF AN A4 SHEET AND UNDER IT"])
+        sheet.parts_list(parts)
+        with self.assertRaisesRegex(ValueError, "runs under the parts list"):
+            _render_sheet(sheet, index=1, count=1, label="note")
+
+    def test_assembly_sheets_draws_an_arrangement_and_a_sheet_per_part(self) -> None:
+        from cadgen.eng_drawing import assembly_sheets, eng_drawing, parts_list
+
+        parts = parts_list(_assembly())
+        sheets = assembly_sheets(parts, title="FIXTURE", part_number="FX-100")
+        self.assertEqual(len(sheets), 1 + len(parts))
+        ga, pin = sheets[0], sheets.part("pin")
+        self.assertEqual([v.name for v in ga.views], ["front", "top", "iso"])
+        self.assertTrue(all(not v.hidden for v in ga.views))
+        self.assertEqual((pin.title, pin.subtitle, pin.part_number), ("PIN", "ITEM 2 (QTY 2) OF FIXTURE", "FX-100"))
+        self.assertEqual(sheets.part(1).views[0].shape.bounding_box().size.Z, 6, "drawn in its own frame")
+        with temporary_directory(prefix="tmp-cad-eng-drawing-") as tmp:
+            printed: list[str] = []
+
+            @eng_drawing(out=str(Path(tmp) / "fixture.pdf"))
+            def fixture():
+                return sheets
+
+            from unittest import mock
+
+            with mock.patch("builtins.print", side_effect=lambda line: printed.append(str(line))):
+                fixture()
+        self.assertFalse([line for line in printed if "separate solids" in line or "holes():" in line], printed)
+        self.assertTrue(any("item 4 (CORE) has no balloon" in line for line in printed), printed)
+        self.assertFalse([line for line in printed if "incomplete: sheet" in line],
+                         "a first pass states every part's overall sizes and holes")
+
+    def test_on_a_drawing_of_several_parts_each_gap_names_its_sheet(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet, _unstated
+
+        facts: dict = {}
+        for index, (title, part) in enumerate((("SHAFT", _shaft()), ("PLATE", _plate())), start=1):
+            sheet = Sheet("A3", title=title)
+            sheet.three_views(part)
+            _render_sheet(sheet, index=index, count=2, label="two", facts=facts)
+        report = _unstated(facts)
+        self.assertTrue(report)
+        self.assertTrue(all(line.startswith(("incomplete: sheet 1 (SHAFT): ", "incomplete: sheet 2 (PLATE): "))
+                            for line in report), report)
+
+    def test_a_sheet_that_chose_its_scale_steps_down_rather_than_refusing(self) -> None:
+        from cadgen.eng_drawing import Sheet, _render_sheet
+
+        sheet = Sheet("A4", scale=5.0)
+        sheet._fit = True
+        sheet.three_views(_plate(), iso=True)
+        _render_sheet(sheet, index=1, count=1, label="fit")
+        self.assertLess(sheet.scale, 5.0)
+        refused = Sheet("A4", scale=5.0)
+        refused.three_views(_plate(), iso=True)
+        with self.assertRaisesRegex(ValueError, "off the frame"):
+            _render_sheet(refused, index=1, count=1, label="fixed")
+
+    def test_balloons_spread_clear_of_each_other_and_of_text_beside_them(self) -> None:
+        from cadgen._internal.drawing_assembly import spread
+
+        self.assertEqual(spread([0, 1, 2], 10, -100, 100), [-9.0, 1.0, 11.0])
+        self.assertEqual(spread([0, 1, 2], 10, 0, 100), [0, 10, 20])
+        placed = spread([0, 10, 20, 30], 10, -100, 100, avoid=[(5, 15)])
+        self.assertFalse([y for y in placed if 5 < y < 15])
+        self.assertEqual(placed, sorted(placed))
+
+
 def _points(entity):
     kind = entity.dxftype()
     if kind == "LINE":
