@@ -141,6 +141,7 @@
     "xcaf_type": null,
     "dimension": {
       "type": "distance",
+      "basic": false,
       "nominal": {
         "value": 10.0,
         "unit": "mm",
@@ -185,6 +186,7 @@
     "xcaf_type": null,
     "dimension": {
       "type": "diameter",
+      "basic": false,
       "nominal": {
         "value": 10.0,
         "unit": "mm",
@@ -195,6 +197,104 @@
         "upper": 0.1,
         "lower": 0.0
       }
+    }
+  },
+  {
+    "id": "hole-from-B",
+    "kind": "dimension",
+    "label": null,
+    "status": "ok",
+    "problem": null,
+    "part": 0,
+    "refs": [
+      {
+        "role": "from",
+        "written": "face 2",
+        "status": "ok",
+        "ref": "plate/f:pmi_plate.body_make_box1.3",
+        "candidates": null,
+        "problem": null
+      },
+      {
+        "role": "to",
+        "written": "face 7",
+        "status": "ok",
+        "ref": "plate/f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+        "candidates": null,
+        "problem": null
+      }
+    ],
+    "presentation": {
+      "anchor": [
+        0.0,
+        -15.0,
+        5.0
+      ],
+      "offset": [
+        6.0,
+        0.0,
+        0.0
+      ]
+    },
+    "xcaf_type": null,
+    "dimension": {
+      "type": "distance",
+      "basic": true,
+      "nominal": {
+        "value": 30.0,
+        "unit": "mm",
+        "source": "geometry"
+      },
+      "tolerance": null
+    }
+  },
+  {
+    "id": "hole-from-C",
+    "kind": "dimension",
+    "label": null,
+    "status": "ok",
+    "problem": null,
+    "part": 0,
+    "refs": [
+      {
+        "role": "from",
+        "written": "face 1",
+        "status": "ok",
+        "ref": "plate/f:pmi_plate.body_make_box1.1",
+        "candidates": null,
+        "problem": null
+      },
+      {
+        "role": "to",
+        "written": "face 7",
+        "status": "ok",
+        "ref": "plate/f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+        "candidates": null,
+        "problem": null
+      }
+    ],
+    "presentation": {
+      "anchor": [
+        -25.0,
+        0.0,
+        5.0
+      ],
+      "offset": [
+        0.0,
+        6.0,
+        0.0
+      ]
+    },
+    "xcaf_type": null,
+    "dimension": {
+      "type": "distance",
+      "basic": true,
+      "nominal": {
+        "value": 50.0,
+        "unit": "mm",
+        "source": "geometry"
+      },
+      "tolerance": null
     }
   },
   {

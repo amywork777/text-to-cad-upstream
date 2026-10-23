@@ -92,6 +92,32 @@ test("a distance is drawn square between its faces, through its label", async ()
   near(free.dimension.to[2], 2);
 });
 
+test("a basic dimension to a hole is drawn to its centre line, and between two holes square to both", async () => {
+  const scene = await bracket();
+  // The plate's left side (x = -20), the hole's wall (its axis z through the origin), the first peg's
+  // (r 3, its axis z through x = 12): a float32 mesh's fitted axis is within a few micrometres.
+  const SIDE = "i0/face/1", PEG = "i1/face/1";
+  const close = (actual, expected, what) => expected.forEach((value, axis) => assert.ok(Math.abs(actual[axis] - value) < 1e-4, `${what}[${axis}] ${actual[axis]} is not ${value}`));
+  const basic = (id, presentation) => entry({ id, kind: "dimension", presentation,
+    dimension: { type: "distance", basic: true, nominal: { value: 20, unit: "mm", source: "geometry" }, tolerance: null } });
+  const geometry = (from, to) => ({ from: scene.elementGeometry(from, { points: true }), to: scene.elementGeometry(to, { points: true }) });
+  const fromSide = pmiConstruction(basic("hole-from-side", { anchor: [-10, -10, 2], offset: [0, -6, 0] }), { geometry: geometry(SIDE, HOLE), bounds: BOUNDS });
+  close(fromSide.dimension.from, [-20, -16, 2], "on the side's plane");
+  close(fromSide.dimension.to, [0, -16, 2], "level with the hole's axis");
+  close(fromSide.dimension.extensions[0][0], [-20, -10, 2], "from the anchor's foot on the side");
+  close(fromSide.dimension.extensions[1][0], [0, 0, 2], "from the hole's centre line");
+  // Two holes: measured square to both axes, each extension line from its own centre line.
+  const between = pmiConstruction(basic("peg-from-hole", null), { geometry: geometry(HOLE, PEG), bounds: BOUNDS });
+  close([between.anchor[0], between.anchor[1]], [0, 0], "anchored on the hole's axis");
+  near(between.dimension.from[0], between.anchor[0], "from the hole's axis");
+  assert.ok(Math.abs(between.dimension.to[0] - 12) < 1e-4, `to the peg's axis: ${between.dimension.to}`);
+  near(between.label[0], (between.dimension.from[0] + between.dimension.to[0]) / 2, "halfway between them");
+  close([between.dimension.extensions[1][0][0], between.dimension.extensions[1][0][1]], [12, 0], "from the peg's centre line");
+  // An axis that crosses what is measured makes none: the hole's runs along the top's normal.
+  assert.equal(pmiConstruction(basic("crossing", null), { geometry: geometry(TOP, HOLE), bounds: BOUNDS }), null);
+  assert.equal(pmiConstruction(basic("crossing", { anchor: [0, 0, 2], offset: [0, 0, 6] }), { geometry: geometry(TOP, HOLE), bounds: BOUNDS }).broken, true);
+});
+
 test("a feature not on the page draws at its placement or not at all, and a move changes only the offset", () => {
   const broken = pmiConstruction(flatness({ anchor: [0, 0, 2], offset: [0, 0, 6] }), { geometry: { feature: null }, bounds: BOUNDS });
   assert.equal(broken.broken, true);

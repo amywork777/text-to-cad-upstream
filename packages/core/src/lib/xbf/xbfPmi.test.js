@@ -32,10 +32,30 @@ test("the document's PMI is read as it is served, and a document without any has
   assert.deepEqual(read.map(entry => [entry.id, entry.kind, entry.supported]), [
     ["A", "datum", true], ["thickness", "dimension", true], ["hole-dia", "dimension", true], ["top-flat", "geometric_tolerance", true], ["hole-pos", "geometric_tolerance", true]]);
   const thickness = read[1];
-  assert.deepEqual(thickness.dimension, { type: "distance", nominal: 4.000000001, unit: "mm", source: "geometry", tolerance: { type: "plus_minus", upper: 0.2, lower: -0.2 } });
+  assert.deepEqual(thickness.dimension, { type: "distance", basic: false, nominal: 4.000000001, unit: "mm", source: "geometry", tolerance: { type: "plus_minus", upper: 0.2, lower: -0.2 } });
   assert.deepEqual(thickness.refs.map(item => [item.role, item.ref, item.status]), [["from", BOTTOM, "ok"], ["to", TOP, "ok"]]);
   assert.deepEqual(thickness.presentation, { anchor: [20, 0, -2], offset: [6, 0, 2] });
   assert.deepEqual(read[4].tolerance, { characteristic: "position", value: 0.1, unit: "mm", zone: "diameter", modifier: null, datums: ["A"] });
+});
+
+test("a basic dimension is an exact distance: boxed, with no tolerance, made by pmi.basic", () => {
+  const SIDE = "plate/f:bracket.make_box1.1;M:bracket.fillet1";
+  const [basic] = readXbfPmi({ pmi: [{ id: "hole-from-side", kind: "dimension", status: "ok", refs: [ref("from", SIDE), ref("to", HOLE)],
+    // A tolerance a document puts on one is not read: it is exact.
+    dimension: { type: "distance", basic: true, nominal: { value: 20, unit: "mm", source: "geometry" }, tolerance: { type: "plus_minus", upper: 0.1, lower: -0.1 } },
+    presentation: { anchor: [-10, -10, 2], offset: [0, -6, 0] } }] });
+  assert.equal(basic.supported, true);
+  assert.deepEqual([basic.dimension.basic, basic.dimension.tolerance], [true, null]);
+  const said = pmiCallout(basic);
+  assert.deepEqual([said.basic, said.nominal, said.tolerance, said.title, said.text], [true, "20", null, "Basic distance", "20 basic"]);
+  assert.equal(pmiCallText(pmiEntryCall(basic, { presentation: null })), `pmi.basic("hole-from-side", "${SIDE}", "${HOLE}")`);
+  assert.equal(pmiCallText(pmiEntryCall(basic)),
+    `pmi.basic("hole-from-side", "${SIDE}", "${HOLE}", presentation=pmi.place(anchor=(-10, -10, 2), offset=(0, -6, 0)))`);
+  // Exact: a tolerance given one makes no call, rather than one the engine refuses.
+  assert.equal(pmiCallText({ kind: "dimension", type: "distance", basic: true, id: "b", from: SIDE, to: HOLE, tolerance: { type: "plus_minus", upper: 0.1, lower: -0.1 } }), null);
+  // A basic of another type is told, not drawn.
+  const [diameter] = readXbfPmi({ pmi: [{ id: "d", kind: "dimension", status: "ok", refs: [], dimension: { type: "diameter", basic: true, nominal: { value: 8 }, tolerance: null } }] });
+  assert.match(diameter.unsupported, /basic diameter/);
 });
 
 test("an entry the viewer does not draw is kept and says why, never dropped or guessed", () => {
@@ -188,16 +208,20 @@ test("a change the document now says is settled, and one it does not yet say is 
 });
 
 // The engine's own, as it served a plate built with `cadgen.engine.pmi` (`__fixtures__/pmi_plate`):
-// as made (v1), and after an edit put a square cut where the hole was (v3).
+// as made (v1), and after an edit put a square cut where the hole was (v3): the hole's name now on a
+// flat face, which a diameter cannot stand on, and a basic from the front crosses.
 test("the PMI the engine serves reads whole, and a reference an edit left on the wrong kind of face is invalid", async () => {
   const { readFileSync } = await import("node:fs");
   const served = version => JSON.parse(readFileSync(new URL(`./__fixtures__/pmi_plate/${version}/structure.json`, import.meta.url), "utf8"));
   const made = readXbfPmi(served("v1"));
   assert.deepEqual(made.map(entry => [entry.id, entry.supported, entry.status, entry.part]), [
-    ["A", true, "ok", 0], ["thickness", true, "ok", 0], ["hole-diameter", true, "ok", 0], ["top-flatness", true, "ok", 0], ["hole-position", true, "ok", 0]]);
-  assert.deepEqual(made.map(entry => pmiCallout(entry).text), ["Datum A", "10.0 ±0.2", "⌀10.0 +0.1/0", "Flatness 0.05", "Position ⌀0.1 | A"]);
+    ["A", true, "ok", 0], ["thickness", true, "ok", 0], ["hole-diameter", true, "ok", 0], ["hole-from-front", true, "ok", 0],
+    ["hole-from-left", true, "ok", 0], ["top-flatness", true, "ok", 0], ["hole-position", true, "ok", 0]]);
+  assert.deepEqual(made.map(entry => pmiCallout(entry).text), ["Datum A", "10.0 ±0.2", "⌀10.0 +0.1/0", "30 basic", "50 basic", "Flatness 0.05", "Position ⌀0.1 | A"]);
   const cut = readXbfPmi(served("v3"));
   const hole = cut.find(entry => entry.id === "hole-diameter");
   assert.deepEqual([hole.status, hole.supported, hole.dimension.nominal], ["invalid", true, null]);
   assert.match(pmiStatusText(hole), /is a plane face; a diameter is on a cylinder face/);
+  const fromFront = cut.find(entry => entry.id === "hole-from-front");
+  assert.deepEqual([fromFront.status, fromFront.dimension.basic, pmiCallout(fromFront).text], ["invalid", true, "? basic"]);
 });

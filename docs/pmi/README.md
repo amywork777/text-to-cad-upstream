@@ -12,6 +12,7 @@ Status of each interface: **stable** means it is not changed without a deprecati
 | Interface | Status |
 | --- | --- |
 | `pmi.annotate`, `pmi.datum`, `pmi.diameter`, `pmi.distance`, `pmi.flatness`, `pmi.position`, `pmi.plus_minus` | stable (signatures and meaning) |
+| `pmi.basic` (basic, theoretically exact distances) and the entries' `dimension.basic` | provisional (new in this branch; stable once reviewed) |
 | `pmi.dimension`, `pmi.geometric` (generic forms; only the verified types are accepted) | stable |
 | `structure["pmi"]` entry shape (below) | stable for the fields listed; new fields may be added |
 | `status` values `ok` / `missing` / `ambiguous` / `invalid` | stable |
@@ -41,6 +42,8 @@ with **illustrative** values:
 | `hole-diameter` | diameter | the hole's cylinder | Ø10 mm (measured) +0.1/0 |
 | `top-flatness` | flatness | top face | 0.05 mm |
 | `hole-position` | position, diametral zone | the hole's cylinder | Ø0.1 mm to A\|B\|C |
+| `hole-from-B` | basic distance, B → the hole's axis | front plane, the hole's cylinder | 30 mm (measured), no tolerance |
+| `hole-from-C` | basic distance, C → the hole's axis | left plane, the hole's cylinder | 50 mm (measured), no tolerance |
 
 `tests/python/packages/cadgen/engine/test_pmi.py` (`FixtureTest`) checks that the committed
 files are still what a fresh build makes.
@@ -55,12 +58,15 @@ from cadgen.engine import pmi, step, xbf
 def plate():
     body = bd.Box(100, 60, 10) - bd.Cylinder(5, 10)
     bottom = body.faces().sort_by(bd.Axis.Z)[0]
+    front = body.faces().sort_by(bd.Axis.Y)[0]
     hole = body.faces().filter_by(bd.GeomType.CYLINDER)[0]
     return pmi.annotate(body,
         pmi.datum("A", bottom),
+        pmi.datum("B", front),
         pmi.diameter("hole-diameter", hole, tolerance=pmi.plus_minus(0.1, 0)),
-        pmi.position("hole-position", hole, 0.1, datums=["A"],
-                     presentation=pmi.place(anchor=(0, 0, 5), offset=(20, 20, 0))))
+        pmi.position("hole-position", hole, 0.1, datums=["A", "B"],
+                     presentation=pmi.place(anchor=(0, 0, 5), offset=(20, 20, 0))),
+        pmi.basic("hole-from-B", front, hole))          # the true position: theoretically exact, measured
 ```
 
 - **The code is the source.** The document is made from the model on every build (engine laws 2
@@ -75,6 +81,12 @@ def plate():
   letter.
 - **Nominals are measured**, never typed in: a cylinder's diameter, or the distance between two
   parallel planes.
+- **Basic dimensions** (`pmi.basic`: ASME's basic, ISO's theoretically exact) are measured distances
+  with no tolerance. They locate what a geometric tolerance controls, such as a position
+  tolerance's true position. A basic dimension goes between two parallel planes, from a plane to
+  a hole's axis parallel to it, or between two parallel axes. Anything else is `invalid`, for
+  example an axis that crosses the plane. A tolerance on a basic dimension, or a basic diameter,
+  is refused.
 - **Tolerances are explicit.** `plus_minus(upper, lower=None)` takes signed deviations from the
   nominal; `lower` defaults to `-upper`. A dimension given no tolerance holds none.
 - **Datum frames** are ordered, primary first, with three datums at most. A datum holds one
@@ -141,6 +153,7 @@ warm build of a document holding PMI converts the whole document instead of patc
 
   // one of, by kind:
   "dimension": {"type": "diameter" | "distance",
+                "basic": false,             // true: theoretically exact (pmi.basic), tolerance always null
                 "nominal": {"value": 10.0, "unit": "mm", "source": "geometry"} | null,  // null when unlinked
                 "tolerance": null | {"type": "plus_minus", "upper": 0.1, "lower": 0.0}},
   "datum": {"letter": "A"},
@@ -175,6 +188,7 @@ GD&T mode:
 | datum | `DATUM` (identification = letter), `DATUM_FEATURE`, `SHAPE_ASPECT_RELATIONSHIP` |
 | diameter | `DIMENSIONAL_SIZE('diameter')`, `DIMENSIONAL_CHARACTERISTIC_REPRESENTATION` → `SHAPE_DIMENSION_REPRESENTATION` (nominal, `POSITIVE_LENGTH_MEASURE`) |
 | distance | `DIMENSIONAL_LOCATION('linear distance')` between two `SHAPE_ASPECT`s |
+| basic distance | the same `DIMENSIONAL_LOCATION`, with no tolerance, its `SHAPE_DIMENSION_REPRESENTATION` holding `DESCRIPTIVE_REPRESENTATION_ITEM('dimensional note','theoretical')`: CAx-IF PMI Recommended Practices 4.1, 5.3, Table 7 (a type 1 dimension modifier). To a hole, the distance is to its axis (5.1.1: by default a location dimension to a feature with a diameter is from its center). Written by OCCT from an XCAF dimension description, and read back into one |
 | plus-minus tolerance | `PLUS_MINUS_TOLERANCE` → `TOLERANCE_VALUE(lower, upper)` as `LENGTH_MEASURE_WITH_UNIT` |
 | flatness | `FLATNESS_TOLERANCE` |
 | position | `( GEOMETRIC_TOLERANCE GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE POSITION_TOLERANCE )`, `DATUM_SYSTEM` of ordered `DATUM_REFERENCE_COMPARTMENT`s, `TOLERANCE_ZONE` with `TOLERANCE_ZONE_FORM('cylindrical or circular')` |
@@ -213,6 +227,17 @@ Each claim below is backed by an automated test in `test_pmi.py` unless marked o
   file's. A warm rebuild writes the same bytes. Editing the thickness and radius re-measures both
   nominals and keeps the tolerances. Editing only a tolerance rewrites it. Removing the
   annotations from the code removes them from the document.
+- **Basic dimensions** (`BasicTest`).
+  - The xbf holds `hole-from-B` 30 and `hole-from-C` 50: measured, `basic`, no tolerance, on the
+    datum planes and the hole that the position tolerance names.
+  - The STEP has both as `DIMENSIONAL_LOCATION` with the `'theoretical'` note and no
+    `PLUS_MINUS_TOLERANCE`, read by the reader with no OCCT in it and by OCCT's reader.
+  - Moving the hole re-measures them (35, 60).
+  - An axis-to-axis basic between two holes measures 40. One whose axis crosses its plane is
+    `invalid`.
+  - A tolerance on a basic dimension, and a basic diameter, are refused.
+  - Outside the suite, the `steputils` parse and the EXPRESS attribute-count check of the refreshed
+    fixture found nothing malformed.
 - **Broken references.** A name-based ref whose face is deleted goes `missing`: it is kept in the
   xbf with its tolerance and reported in the build report, and the STEP is refused. A diameter
   on a plane is `invalid`. A name that names two faces is `ambiguous`; this one is a unit test,
@@ -249,7 +274,10 @@ Each claim below is backed by an automated test in `test_pmi.py` unless marked o
    - a `DIMENSIONAL_SIZE` 'diameter' 10 with `(0, 0.1)` on the cylindrical face of radius 5;
    - a `FLATNESS_TOLERANCE` 0.05 on the top face;
    - a `POSITION_TOLERANCE` 0.1 with a diametral zone and the datum system A, B, C, in that
-     order, on the hole.
+     order, on the hole;
+   - two basic `DIMENSIONAL_LOCATION`s with no tolerance, each carrying
+     `DESCRIPTIVE_REPRESENTATION_ITEM('dimensional note','theoretical')`: 30 from the front plane (B)
+     to the hole, and 50 from the left plane (C) to the hole.
 
    [`pmi_plate.report.json`](pmi_plate.report.json) lists the record numbers and face names.
 2. Compare with our reader:
@@ -270,19 +298,18 @@ Each claim below is backed by an automated test in `test_pmi.py` unless marked o
 ## Limitations (explicit)
 
 - **Scope.** Datums on plane or cylinder faces; diameter and linear-distance dimensions with
-  plus-minus tolerances; flatness; position with up to 3 ordered datums and a diametral zone
+  plus-minus tolerances; basic distances (plane to plane, plane to axis, axis to axis); flatness; position with up to 3 ordered datums and a diametral zone
   (`diameter_zone=False` writes a plain zone, not covered by a test). Everything else is refused by name with `PMIUnsupported` and never approximated:
   - other characteristics (perpendicularity, profile, runout and the rest);
   - radius and angle dimensions;
   - limits and fits, general tolerances;
   - material condition modifiers (Ⓜ/Ⓛ) and datum modifiers;
-  - basic (theoretically exact) dimensions;
+  - a basic dimension other than a distance (a basic diameter or angle), and reference (auxiliary) dimensions;
   - datum targets, composite frames and all-around;
   - assembly-level PMI.
-- **No basic dimensions.** The true position that a position tolerance refers to (the hole's
-  basic 50/30 from B and C) is not written, because XCAF's semantic writer path for theoretically
-  exact dimensions is not verified here. A reader gets the frame and the zone, but not the basic
-  location.
+- **Basic dimensions are separate annotations.** As in AP242, nothing links a basic dimension to
+  the tolerance it locates. A reader pairs them through their shared faces: the hole and the
+  frame's datums.
 - **No identifiers in the STEP.** OCCT writes every `SHAPE_ASPECT`, `DATUM` name and tolerance
   name empty, ignoring XCAF's semantic name. The author's ids live in the xbf only. In a STEP an
   annotation is identified by its entity, values and face (the face carries the engine's element

@@ -1038,7 +1038,8 @@ return pmi.annotate(body,
     pmi.distance("thickness", bottom, top, tolerance=pmi.plus_minus(0.2)),
     pmi.diameter("hole", hole, tolerance=pmi.plus_minus(0.1, 0)),
     pmi.flatness("top-flat", top, 0.05),
-    pmi.position("hole-pos", hole, 0.1, datums=["A", "B", "C"]))
+    pmi.position("hole-pos", hole, 0.1, datums=["A", "B", "C"]),
+    pmi.basic("hole-from-B", front, hole))      # the true position: basic, no tolerance
 ```
 
 A ref is a `Face` of the annotated shape or a ref of the grammar (**References**). A
@@ -1052,7 +1053,9 @@ attribute (JSON) for what XCAF has no place for: the id, the refs as written, th
 presentation (`pmi.place`, never in a STEP). A document holding PMI is converted whole on a warm
 build (GD&T labels link the sub-shape labels a patch remakes). Verified, and nothing else
 written: datums on planes and cylinders; diameter and linear-distance dimensions with plus-minus
-tolerances; flatness; position with an ordered datum frame and a diametral zone. Every other
+tolerances; basic distances (plane to plane, plane to a hole's axis, axis to axis), marked
+'theoretical' as AP242 marks them; flatness; position with an ordered datum frame and a diametral
+zone. Every other
 characteristic, dimension type, tolerance form and assembly-level PMI is refused by name
 (`PMIUnsupported`). A STEP another system wrote lists its PMI in the structure too, what is not
 modelled as `unsupported` with its XCAF type.

@@ -66,6 +66,8 @@ def pmi_plate():
         pmi.flatness("top-flatness", top, 0.05, presentation=pmi.place((-30, 20, 5), (0, 15, 0))),
         pmi.position("hole-position", hole, 0.1, datums=["A", "B", "C"],
                      presentation=pmi.place((-5, 0, 5), (-15, 15, 0))),
+        pmi.basic("hole-from-B", front, hole, presentation=pmi.place((0, -15, 5), (6, 0, 0))),
+        pmi.basic("hole-from-C", left, hole, presentation=pmi.place((-25, 0, 5), (0, 6, 0))),
     )
 '''
 
@@ -112,10 +114,11 @@ def _face(loaded: document.Loaded, entry: dict, at: int = 0) -> tuple[str, dict]
 class PlateTest(_Folder):
     def test_the_document_holds_each_annotation_on_its_face(self) -> None:
         report = self.build(plate())
-        self.assertEqual(report["pmi"], {"annotations": 7, "problems": []})
+        self.assertEqual(report["pmi"], {"annotations": 9, "problems": []})
         loaded = document.Loaded(self.xbf)
         found = _by_id(loaded.structure()["pmi"])
-        self.assertEqual(list(found), ["A", "B", "C", "thickness", "hole-diameter", "top-flatness", "hole-position"])
+        self.assertEqual(list(found), ["A", "B", "C", "thickness", "hole-diameter", "hole-from-B", "hole-from-C",
+                                       "top-flatness", "hole-position"])
         self.assertTrue(all(entry["status"] == "ok" for entry in found.values()))
         # Datums: A the bottom (z = -5), B the front (y = -30), C the left (x = -50).
         for letter, axis, at in (("A", 2, -5.0), ("B", 1, -30.0), ("C", 0, -50.0)):
@@ -127,7 +130,7 @@ class PlateTest(_Folder):
         # The thickness: measured, 10 mm, between the bottom and the top, +/-0.2 as given.
         thickness = found["thickness"]
         self.assertEqual(thickness["dimension"], {
-            "type": "distance", "nominal": {"value": 10.0, "unit": "mm", "source": "geometry"},
+            "type": "distance", "basic": False, "nominal": {"value": 10.0, "unit": "mm", "source": "geometry"},
             "tolerance": {"type": "plus_minus", "upper": 0.2, "lower": -0.2}})
         self.assertEqual([ref["role"] for ref in thickness["refs"]], ["from", "to"])
         self.assertAlmostEqual(_face(loaded, thickness, 0)[1]["origin"][2], -5.0)
@@ -183,7 +186,7 @@ class PlateTest(_Folder):
         self.assertEqual((size["name"], size["nominal"]["value"], size["nominal"]["unit"]), ("diameter", 10.0, "mm"))
         self.assertEqual((size["tolerance"]["lower"], size["tolerance"]["upper"], size["tolerance"]["unit"]), (0.0, 0.1, "mm"))
         self.assertEqual(size["features"][0]["surface"]["radius"], 5.0)
-        location = dimensions["DIMENSIONAL_LOCATION"]
+        [location] = [d for d in found["dimensions"] if d["entity"] == "DIMENSIONAL_LOCATION" and not d["notes"]]
         self.assertEqual((location["nominal"]["value"], location["tolerance"]["lower"], location["tolerance"]["upper"]),
                          (10.0, -0.2, 0.2))
         self.assertEqual([feature["surface"]["origin"][2] for feature in location["features"]], [-5.0, 5.0])
@@ -225,15 +228,18 @@ class PlateTest(_Folder):
         self.assertEqual(found["thickness"]["dimension"]["tolerance"]["upper"], 0.2)
         self.assertTrue(all(entry["status"] == "ok" for entry in found.values()))
         report = _reporter().report(self.step)
-        self.assertEqual({entry["entity"]: entry["nominal"]["value"] for entry in report["dimensions"]},
-                         {"DIMENSIONAL_SIZE": 12.0, "DIMENSIONAL_LOCATION": 12.0})
+        self.assertEqual(sorted((entry["entity"], entry["nominal"]["value"], bool(entry["notes"]))
+                                for entry in report["dimensions"]),
+                         [("DIMENSIONAL_LOCATION", 12.0, False), ("DIMENSIONAL_LOCATION", 30.0, True),
+                          ("DIMENSIONAL_LOCATION", 50.0, True), ("DIMENSIONAL_SIZE", 12.0, False)])
 
     def test_an_edit_of_a_tolerance_alone_is_written(self) -> None:
         self.build(plate())
         self.build(plate(thickness_tolerance=0.3))
         found = _by_id(pmi.read(self.xbf))
         self.assertEqual(found["thickness"]["dimension"]["tolerance"], {"type": "plus_minus", "upper": 0.3, "lower": -0.3})
-        location = next(e for e in _reporter().report(self.step)["dimensions"] if e["entity"] == "DIMENSIONAL_LOCATION")
+        location = next(e for e in _reporter().report(self.step)["dimensions"]
+                        if e["entity"] == "DIMENSIONAL_LOCATION" and not e["notes"])
         self.assertEqual((location["tolerance"]["lower"], location["tolerance"]["upper"]), (-0.3, 0.3))
 
     def test_annotations_removed_from_the_code_leave_the_document(self) -> None:
@@ -273,6 +279,82 @@ def pmi_plate():
         pmi.diameter("hole-diameter", "{ref}", tolerance=pmi.plus_minus(0.1, 0)),
     )
 '''
+
+
+class BasicTest(_Folder):
+    def test_basic_dimensions_locate_the_hole_from_its_datums_with_no_tolerance(self) -> None:
+        self.build(plate())
+        loaded = document.Loaded(self.xbf)
+        found = _by_id(loaded.structure()["pmi"])
+        for id, plane_axis, at, nominal in (("hole-from-B", 1, -30.0, 30.0), ("hole-from-C", 0, -50.0, 50.0)):
+            entry = found[id]
+            self.assertEqual(entry["status"], "ok", entry)
+            self.assertEqual(entry["dimension"], {"type": "distance", "basic": True, "tolerance": None,
+                                                  "nominal": {"value": nominal, "unit": "mm", "source": "geometry"}})
+            self.assertEqual([ref["role"] for ref in entry["refs"]], ["from", "to"])
+            kind, surface = _face(loaded, entry, 0)
+            self.assertEqual(kind, "plane")
+            self.assertAlmostEqual(surface["origin"][plane_axis], at)
+            self.assertEqual(_face(loaded, entry, 1), ("cylinder", {"radius": 5.0}))
+            # The datum the frame names, and the hole the position is on: the same faces.
+            self.assertEqual(entry["refs"][0]["ref"], found["B" if id.endswith("B") else "C"]["refs"][0]["ref"])
+            self.assertEqual(entry["refs"][1]["ref"], found["hole-position"]["refs"][0]["ref"])
+        self.assertFalse(found["thickness"]["dimension"]["basic"])
+
+    def test_the_step_marks_them_theoretical_to_occt_and_to_a_reader_of_no_occt(self) -> None:
+        self.build(plate())
+        report = _reporter().report(self.step)
+        self.assertEqual(report["problems"], [])
+        basic = sorted((d["nominal"]["value"], d["nominal"]["unit"], d["tolerance"], d["notes"],
+                        [f["surface"]["type"] for f in d["features"]])
+                       for d in report["dimensions"] if d["notes"])
+        self.assertEqual(basic, [
+            (30.0, "mm", None, [["dimensional note", "theoretical"]], ["plane", "cylinder"]),
+            (50.0, "mm", None, [["dimensional note", "theoretical"]], ["plane", "cylinder"])])
+        theirs = sorted((e["dimension"]["nominal"]["value"], e["dimension"]["basic"])
+                        for e in pmi.read(self.step) if e["kind"] == "dimension")
+        self.assertEqual(theirs, [(10.0, False), (10.0, False), (30.0, True), (50.0, True)])
+
+    def test_a_moved_hole_is_measured_again(self) -> None:
+        self.build(plate())
+        self.build(plate().replace("bd.Cylinder(5, 10)", "bd.Pos(10, 5, 0) * bd.Cylinder(5, 10)"))
+        found = _by_id(pmi.read(self.xbf))
+        self.assertEqual(found["hole-from-B"]["dimension"]["nominal"]["value"], 35.0)
+        self.assertEqual(found["hole-from-C"]["dimension"]["nominal"]["value"], 60.0)
+
+    def test_between_two_hole_axes_and_refused_where_the_axis_crosses_the_plane(self) -> None:
+        report = self.build('''
+import build123d as bd
+from cadgen.engine import pmi, step, xbf
+
+
+@xbf(out="XBF/pmi_plate.xbf")
+@step(out="pmi_plate.step")
+def pmi_plate():
+    body = bd.Box(100, 60, 10) - bd.Pos(-20, 0, 0) * bd.Cylinder(4, 10) - bd.Pos(20, 0, 0) * bd.Cylinder(4, 10)
+    body.label = "plate"
+    top = body.faces().sort_by(bd.Axis.Z)[-1]
+    left, right = sorted(body.faces().filter_by(bd.GeomType.CYLINDER), key=lambda face: face.center().X)
+    return pmi.annotate(body, pmi.basic("pitch", left, right), pmi.basic("crossing", top, left))
+''', ok=False)
+        [problem] = report["pmi"]["problems"]
+        self.assertEqual((problem["id"], problem["status"]), ("crossing", "invalid"))
+        self.assertIn("not parallel", problem["problem"])
+        found = _by_id(pmi.read(self.xbf))
+        self.assertEqual(found["pitch"]["dimension"]["nominal"]["value"], 40.0)
+        self.assertTrue(found["pitch"]["dimension"]["basic"])
+        self.assertEqual(found["crossing"]["status"], "invalid")
+        self.assertTrue(found["crossing"]["dimension"]["basic"], "an unlinked basic dimension stays basic")
+
+    def test_a_basic_dimension_takes_no_tolerance(self) -> None:
+        import build123d as bd
+
+        box = bd.Box(10, 10, 10)
+        faces = box.faces().sort_by(bd.Axis.Z)
+        with self.assertRaisesRegex(pmi.PMIError, "a basic dimension is theoretically exact"):
+            pmi.dimension("b", "distance", faces[0], faces[-1], basic=True, tolerance=pmi.plus_minus(0.1))
+        with self.assertRaisesRegex(pmi.PMIUnsupported, "basic"):
+            pmi.dimension("d", "diameter", faces[0], basic=True)
 
 
 class AssemblyTest(_Folder):
@@ -376,7 +458,7 @@ class RefTest(_Folder):
         self.assertEqual(kept["status"], "missing")
         self.assertIn(f"no face {hole}", kept["problem"])
         self.assertEqual(kept["refs"][0]["ref"], hole)
-        self.assertEqual(kept["dimension"], {"type": "diameter", "nominal": None,
+        self.assertEqual(kept["dimension"], {"type": "diameter", "basic": False, "nominal": None,
                                              "tolerance": {"type": "plus_minus", "upper": 0.1, "lower": 0.0}})
         self.assertEqual(_by_id(pmi.read(self.xbf))["A"]["status"], "ok")
 

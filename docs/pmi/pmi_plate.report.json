@@ -34,6 +34,7 @@
         "type": "POSITIVE_LENGTH_MEASURE",
         "role": "nominal value"
       },
+      "notes": [],
       "tolerance": {
         "lower": 0.0,
         "upper": 0.1,
@@ -92,6 +93,7 @@
         "type": "POSITIVE_LENGTH_MEASURE",
         "role": "nominal value"
       },
+      "notes": [],
       "tolerance": {
         "lower": -0.2,
         "upper": 0.2,
@@ -101,6 +103,120 @@
           "LENGTH_MEASURE"
         ]
       }
+    },
+    {
+      "record": "#500",
+      "entity": "DIMENSIONAL_LOCATION",
+      "name": "linear distance",
+      "features": [
+        {
+          "face": "#155",
+          "name": "f:pmi_plate.body_make_box1.3",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              -0.0,
+              1.0,
+              0.0
+            ]
+          },
+          "same_sense": "F"
+        },
+        {
+          "face": "#420",
+          "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+          "surface": {
+            "type": "cylinder",
+            "radius": 5.0,
+            "origin": [
+              0.0,
+              0.0,
+              -5.0
+            ],
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ],
+      "nominal": {
+        "value": 30.0,
+        "unit": "mm",
+        "type": "POSITIVE_LENGTH_MEASURE",
+        "role": "nominal value"
+      },
+      "notes": [
+        [
+          "dimensional note",
+          "theoretical"
+        ]
+      ],
+      "tolerance": null
+    },
+    {
+      "record": "#509",
+      "entity": "DIMENSIONAL_LOCATION",
+      "name": "linear distance",
+      "features": [
+        {
+          "face": "#35",
+          "name": "f:pmi_plate.body_make_box1.1",
+          "surface": {
+            "type": "plane",
+            "origin": [
+              -50.0,
+              -30.0,
+              -5.0
+            ],
+            "normal": [
+              1.0,
+              0.0,
+              -0.0
+            ]
+          },
+          "same_sense": "F"
+        },
+        {
+          "face": "#420",
+          "name": "f:pmi_plate.body_make_cylinder1.1;M:pmi_plate.body",
+          "surface": {
+            "type": "cylinder",
+            "radius": 5.0,
+            "origin": [
+              0.0,
+              0.0,
+              -5.0
+            ],
+            "axis": [
+              0.0,
+              0.0,
+              1.0
+            ]
+          },
+          "same_sense": "F"
+        }
+      ],
+      "nominal": {
+        "value": 50.0,
+        "unit": "mm",
+        "type": "POSITIVE_LENGTH_MEASURE",
+        "role": "nominal value"
+      },
+      "notes": [
+        [
+          "dimensional note",
+          "theoretical"
+        ]
+      ],
+      "tolerance": null
     }
   ],
   "datums": [
@@ -179,7 +295,7 @@
   ],
   "tolerances": [
     {
-      "record": "#495",
+      "record": "#513",
       "entity": "FLATNESS_TOLERANCE",
       "magnitude": {
         "value": 0.05,
@@ -210,7 +326,7 @@
       ]
     },
     {
-      "record": "#503",
+      "record": "#521",
       "entity": "POSITION_TOLERANCE",
       "magnitude": {
         "value": 0.1,

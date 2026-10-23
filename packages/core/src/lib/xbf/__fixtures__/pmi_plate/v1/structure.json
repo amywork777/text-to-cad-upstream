@@ -1,7 +1,7 @@
 {
  "name": "plate",
  "path": "pmi_plate.xbf",
- "version": "1792715402654276271-15515",
+ "version": "1792744247377389790-17480",
  "units": "mm",
  "prototypes": [
   {
@@ -164,6 +164,7 @@
    "xcaf_type": null,
    "dimension": {
     "type": "distance",
+    "basic": false,
     "nominal": {
      "value": 10.0,
      "unit": "mm",
@@ -208,6 +209,7 @@
    "xcaf_type": null,
    "dimension": {
     "type": "diameter",
+    "basic": false,
     "nominal": {
      "value": 10.0,
      "unit": "mm",
@@ -218,6 +220,104 @@
      "upper": 0.1,
      "lower": 0.0
     }
+   }
+  },
+  {
+   "id": "hole-from-front",
+   "kind": "dimension",
+   "label": null,
+   "status": "ok",
+   "problem": null,
+   "part": 0,
+   "refs": [
+    {
+     "role": "from",
+     "written": "f:edit_plate.body_make_box1.3",
+     "status": "ok",
+     "ref": "plate/f:edit_plate.body_make_box1.3",
+     "candidates": null,
+     "problem": null
+    },
+    {
+     "role": "to",
+     "written": "f:edit_plate.cut.1;M:edit_plate.body",
+     "status": "ok",
+     "ref": "plate/f:edit_plate.cut.1;M:edit_plate.body",
+     "candidates": null,
+     "problem": null
+    }
+   ],
+   "presentation": {
+    "anchor": [
+     0.0,
+     -15.0,
+     5.0
+    ],
+    "offset": [
+     6.0,
+     0.0,
+     0.0
+    ]
+   },
+   "xcaf_type": null,
+   "dimension": {
+    "type": "distance",
+    "basic": true,
+    "nominal": {
+     "value": 30.0,
+     "unit": "mm",
+     "source": "geometry"
+    },
+    "tolerance": null
+   }
+  },
+  {
+   "id": "hole-from-left",
+   "kind": "dimension",
+   "label": null,
+   "status": "ok",
+   "problem": null,
+   "part": 0,
+   "refs": [
+    {
+     "role": "from",
+     "written": "f:edit_plate.body_make_box1.1",
+     "status": "ok",
+     "ref": "plate/f:edit_plate.body_make_box1.1",
+     "candidates": null,
+     "problem": null
+    },
+    {
+     "role": "to",
+     "written": "f:edit_plate.cut.1;M:edit_plate.body",
+     "status": "ok",
+     "ref": "plate/f:edit_plate.cut.1;M:edit_plate.body",
+     "candidates": null,
+     "problem": null
+    }
+   ],
+   "presentation": {
+    "anchor": [
+     -25.0,
+     0.0,
+     5.0
+    ],
+    "offset": [
+     0.0,
+     6.0,
+     0.0
+    ]
+   },
+   "xcaf_type": null,
+   "dimension": {
+    "type": "distance",
+    "basic": true,
+    "nominal": {
+     "value": 50.0,
+     "unit": "mm",
+     "source": "geometry"
+    },
+    "tolerance": null
    }
   },
   {

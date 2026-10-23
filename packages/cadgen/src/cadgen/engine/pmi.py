@@ -55,7 +55,9 @@ written to a STEP, and moving it changes nothing an annotation means.
 **Scope.** What is written and read back is verified end to end (the engine's PMI tests, with
 an AP242 reader of no OCCT):
 datums on a plane or cylinder; diameter and linear-distance dimensions with a plus-minus
-tolerance; flatness; position with an ordered datum reference frame and a diametral zone. Every
+tolerance; basic (theoretically exact) distances, from planes and hole axes, with no tolerance,
+marked as AP242 marks them (CAx-IF's 'theoretical' dimension note); flatness; position with an
+ordered datum reference frame and a diametral zone. Every
 other XCAF characteristic, dimension type, modifier and tolerance form is refused by name
 (``PMIUnsupported``), never approximated. A document read from a STEP another system wrote lists
 its PMI too; what this module does not model is listed as ``unsupported`` with its XCAF type.
@@ -69,7 +71,7 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
-__all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "datum",
+__all__ = ["DIMENSION_TYPES", "GEOMETRIC_CHARACTERISTICS", "PMIError", "PMIUnsupported", "annotate", "basic", "datum",
            "diameter", "dimension", "distance", "flatness", "geometric", "place", "plus_minus", "position", "read"]
 
 # The attribute an annotated shape holds its annotations in (a tuple of plain dicts), as a part's
@@ -80,6 +82,9 @@ EXTRA_GUID = "5d3a7c1e-9f42-4b86-a0e5-3c7b9d2f6e18"
 # The GD&T tool's label under the main label (``XCAFDoc_DocumentTool::DimTolLabel``).
 DIMTOL_TAG = 4
 STATUSES = ("ok", "missing", "ambiguous", "invalid")
+# A basic dimension's mark in AP242 (CAx-IF PMI Recommended Practices 4.1, 5.3, Table 7): the
+# descriptive item's name and description.
+THEORETICAL = ("dimensional note", "theoretical")
 UNIT = "mm"
 
 # The dimension types and geometric characteristics written and read back, verified; every other
@@ -93,7 +98,9 @@ _XCAF_CHARACTERISTICS = ("angularity", "circular_runout", "circularity_or_roundn
 _XCAF_DIMENSION_TYPES = ("diameter", "distance", "radius", "angle", "curved_distance", "linear_distance",
                          "spherical_diameter", "spherical_radius", "toroidal_minor_diameter", "thickness")
 # The faces each annotation stands on.
+# A basic dimension is a distance between planes, a plane and a hole's axis, or two axes.
 _SURFACES = {"datum": ("plane", "cylinder"), "diameter": ("cylinder",), "distance": ("plane",),
+             "basic": ("plane", "cylinder"),
              "flatness": ("plane",), "position": ("cylinder",)}
 
 
@@ -133,10 +140,17 @@ def datum(letter: str, ref: Any, *, label: str | None = None, presentation: dict
     return _annotation(letter, "datum", [("feature", ref)], label, presentation, datum={"letter": letter})
 
 
-def dimension(id: str, type: str, *refs: Any, tolerance: dict | None = None, label: str | None = None,
-              presentation: dict | None = None) -> dict[str, Any]:
+def dimension(id: str, type: str, *refs: Any, tolerance: dict | None = None, basic: bool = False,
+              label: str | None = None, presentation: dict | None = None) -> dict[str, Any]:
     """A dimension of ``type`` (``DIMENSION_TYPES``) between ``refs``; its nominal is measured
-    from the geometry. Other types are refused (``PMIUnsupported``)."""
+    from the geometry. ``basic``: theoretically exact (ASME's basic, ISO's theoretical), a
+    distance with no tolerance that locates what a geometric tolerance controls. Other types
+    are refused (``PMIUnsupported``)."""
+    if basic and tolerance is not None:
+        raise PMIError(f"dimension {id!r}: a basic dimension is theoretically exact: it takes no tolerance")
+    if basic and type != "distance":
+        raise PMIUnsupported(f"dimension {id!r}: a basic {type} is not written verified yet; a basic dimension "
+                             "is a distance")
     if type not in DIMENSION_TYPES:
         if type in _XCAF_DIMENSION_TYPES:
             raise PMIUnsupported(f"dimension {id!r}: a {type} dimension is not written verified yet; "
@@ -148,7 +162,7 @@ def dimension(id: str, type: str, *refs: Any, tolerance: dict | None = None, lab
                        f"not {len(refs)}")
     roles = ["feature"] if wanted == 1 else ["from", "to"]
     return _annotation(id, "dimension", list(zip(roles, refs)), label, presentation,
-                       dimension={"type": type, "tolerance": _tolerance(tolerance, id)})
+                       dimension={"type": type, "basic": bool(basic), "tolerance": _tolerance(tolerance, id)})
 
 
 def diameter(id: str, ref: Any, *, tolerance: dict | None = None, label: str | None = None,
@@ -161,6 +175,14 @@ def distance(id: str, ref_from: Any, ref_to: Any, *, tolerance: dict | None = No
              presentation: dict | None = None) -> dict[str, Any]:
     """The distance between two parallel planar faces, measured; ``tolerance`` given explicitly."""
     return dimension(id, "distance", ref_from, ref_to, tolerance=tolerance, label=label, presentation=presentation)
+
+
+def basic(id: str, ref_from: Any, ref_to: Any, *, label: str | None = None,
+          presentation: dict | None = None) -> dict[str, Any]:
+    """A basic (theoretically exact) distance, measured, with no tolerance: between two parallel
+    planes, from a plane to a hole's axis parallel to it, or between two parallel axes. What a
+    position tolerance's true position is located by."""
+    return dimension(id, "distance", ref_from, ref_to, basic=True, label=label, presentation=presentation)
 
 
 def geometric(id: str, characteristic: str, ref: Any, value: float, *, datums: Iterable[str] = (),
@@ -405,7 +427,8 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
     if all(ref.status == "ok" for ref in refs):
         surfaces = [_surface(faces.FindKey(ref.ordinal)) for ref in refs]
         what = spec["kind"] if spec["kind"] == "datum" else \
-            spec["dimension"]["type"] if spec["kind"] == "dimension" else spec["geometric_tolerance"]["characteristic"]
+            ("basic" if spec["dimension"].get("basic") else spec["dimension"]["type"]) if spec["kind"] == "dimension" \
+            else spec["geometric_tolerance"]["characteristic"]
         wanted = _SURFACES[what]
         for ref, surface in zip(refs, surfaces):
             if surface[0] not in wanted:
@@ -415,18 +438,10 @@ def _resolved(spec: dict[str, Any], faces: Any, names: list[str | None], owners:
         if all(ref.status == "ok" for ref in refs):
             if what == "diameter":
                 nominal = 2.0 * surfaces[0][1]["radius"]
-            elif what == "distance":
-                (_kind, first), (_kind2, second) = surfaces
-                normal, other = first["normal"], second["normal"]
-                if abs(abs(sum(a * b for a, b in zip(normal, other))) - 1.0) > 1e-9:
-                    refs[1].status = "invalid"
-                    refs[1].problem = f"{refs[0].written} and {refs[1].written} are not parallel planes"
-                else:
-                    nominal = abs(sum((b - a) * n for a, b, n in zip(first["origin"], second["origin"], normal)))
-                    if nominal <= 1e-9:
-                        refs[1].status = "invalid"
-                        refs[1].problem = f"{refs[0].written} and {refs[1].written} lie in one plane"
-                        nominal = None
+            elif what in ("distance", "basic"):
+                nominal, why = _separation([faces.FindKey(ref.ordinal) for ref in refs], [ref.written for ref in refs])
+                if why is not None:
+                    refs[1].status, refs[1].problem = "invalid", why
         problem = next((ref.problem for ref in refs if ref.status != "ok"), None)
     status = _worst(ref.status for ref in refs)
     if status == "ok" and spec["kind"] == "geometric_tolerance":
@@ -477,6 +492,48 @@ def _ref(given: dict[str, Any], faces: Any, names: list[str | None], owners: set
     said = f"the part has no face {element}" + (f": {atom} is now {', '.join(now)}" if now else
                                                  f": no face is made of {atom} now")
     return Ref(role, written, None, "missing", problem=said)
+
+
+def _separation(shapes: list[Any], written: list[str]) -> tuple[float | None, str | None]:
+    """The distance between two faces as a location dimension measures it: between parallel
+    planes, from a plane to a cylinder's axis parallel to it, or between parallel axes; or why
+    there is none."""
+    import numpy as np
+
+    held = []
+    for shape in shapes:
+        kind, found = _surface(shape)
+        held.append((kind, found if kind == "plane" else _axis(shape)))
+    (first_kind, first), (second_kind, second) = held
+    if first_kind == "plane" and second_kind == "plane":
+        normal, other = np.array(first["normal"]), np.array(second["normal"])
+        if abs(abs(float(normal @ other)) - 1.0) > 1e-9:
+            return None, f"{written[0]} and {written[1]} are not parallel planes"
+        found = abs(float((np.array(second["origin"]) - np.array(first["origin"])) @ normal))
+        return (found, None) if found > 1e-9 else (None, f"{written[0]} and {written[1]} lie in one plane")
+    if first_kind == "cylinder" and second_kind == "cylinder":
+        point, direction = np.array(first["point"]), np.array(first["direction"])
+        if abs(abs(float(direction @ np.array(second["direction"]))) - 1.0) > 1e-9:
+            return None, f"the axes of {written[0]} and {written[1]} are not parallel"
+        found = float(np.linalg.norm(np.cross(np.array(second["point"]) - point, direction)))
+        return (found, None) if found > 1e-9 else (None, f"{written[0]} and {written[1]} share one axis")
+    plane, axis = (first, second) if first_kind == "plane" else (second, first)
+    normal = np.array(plane["normal"])
+    if abs(float(normal @ np.array(axis["direction"]))) > 1e-9:
+        return None, f"the axis of {written[1] if first_kind == 'plane' else written[0]} is not parallel to the plane " \
+                     f"{written[0] if first_kind == 'plane' else written[1]}"
+    found = abs(float((np.array(axis["point"]) - np.array(plane["origin"])) @ normal))
+    return (found, None) if found > 1e-9 else (None, f"the axis lies in the plane {written[0]}")
+
+
+def _axis(face: Any) -> dict[str, Any]:
+    """A cylindrical face's axis: a point on it and its unit direction."""
+    from OCP.BRepAdaptor import BRepAdaptor_Surface
+    from OCP.TopoDS import TopoDS
+
+    axis = BRepAdaptor_Surface(TopoDS.Face_s(face)).Cylinder().Axis()
+    point, direction = axis.Location(), axis.Direction()
+    return {"point": (point.X(), point.Y(), point.Z()), "direction": (direction.X(), direction.Y(), direction.Z())}
 
 
 def _worst(statuses: Iterable[str]) -> str:
@@ -629,6 +686,11 @@ def _dimension(label: Any, spec: dict[str, Any], nominal: float | None) -> None:
     found.SetType(X.XCAFDimTolObjects_DimensionType_Size_Diameter if kind == "diameter"
                   else X.XCAFDimTolObjects_DimensionType_Location_LinearDistance)
     found.SetValue(nominal if nominal is not None else 0.0)
+    if spec["dimension"].get("basic"):
+        # CAx-IF's type 1 dimension modifier: a descriptive item 'dimensional note' of description
+        # 'theoretical' in the dimension's shape_dimension_representation, which is what the
+        # writer makes of an XCAF description (and its reader makes one of again).
+        found.AddDescription(_ascii(THEORETICAL[1]), _ascii(THEORETICAL[0]))
     tolerance = spec["dimension"]["tolerance"]
     if tolerance is not None and nominal is not None:
         # XCAF's lower deviation is a magnitude the writer negates (see the module): -lower.
@@ -749,8 +811,18 @@ def records_of_document(doc: Any, prototypes: list[Any]) -> list[dict[str, Any]]
         if found.IsDimWithPlusMinusTolerance():
             tolerance = {"type": "plus_minus", "upper": _as_held(found.GetUpperTolValue()),
                          "lower": _as_held(-found.GetLowerTolValue())}
-        values = {"type": kind, "nominal": _as_held(found.GetValue()), "tolerance": tolerance}
-        record(label, "dimension" if kind else "unsupported", values, first, second, None if kind else type_name)
+        notes = [(found.GetDescriptionName(at).ToCString(), found.GetDescription(at).ToCString())
+                 for at in range(found.NbDescriptions())] if found.HasDescriptions() else []
+        is_basic = THEORETICAL in notes
+        values = {"type": kind, "basic": is_basic, "nominal": _as_held(found.GetValue()), "tolerance": tolerance}
+        # What this module does not model -- a reference (auxiliary) dimension, any other note, a
+        # basic dimension of another type -- is listed as unsupported, with what it holds.
+        other = [note for note in notes if note != THEORETICAL]
+        supported = kind is not None and not other and (kind == "distance" or not is_basic)
+        if notes:
+            values["notes"] = [list(note) for note in notes]
+        record(label, "dimension" if supported else "unsupported", values, first, second,
+               None if supported else type_name + (f" (notes {other})" if other else " (basic)" if is_basic else ""))
     sequence = TDF_LabelSequence()
     tool.GetGeomToleranceLabels(sequence)
     for at in range(1, sequence.Length() + 1):
@@ -810,7 +882,8 @@ def records_of_tree(tree: Any, index_of: dict[int, int]) -> list[dict[str, Any]]
                 values = {"letter": spec["datum"]["letter"]}
             elif spec["kind"] == "dimension":
                 tolerance = spec["dimension"]["tolerance"] if item.nominal is not None else None
-                values = {"type": spec["dimension"]["type"], "nominal": _as_held(item.nominal or 0.0),
+                values = {"type": spec["dimension"]["type"], "basic": bool(spec["dimension"].get("basic")),
+                          "nominal": _as_held(item.nominal or 0.0),
                           "tolerance": None if tolerance is None else
                           {"type": "plus_minus", "upper": _as_held(tolerance["upper"]),
                            "lower": _as_held(tolerance["lower"])}}
@@ -891,10 +964,11 @@ def entries(records: list[dict[str, Any]], structure: dict[str, Any]) -> list[di
             entry["datum"] = {"letter": values["letter"]}
         elif kind == "dimension":
             if unlinked is not None:
-                entry["dimension"] = {"type": unlinked["dimension"]["type"], "nominal": None,
+                entry["dimension"] = {"type": unlinked["dimension"]["type"],
+                                      "basic": bool(unlinked["dimension"].get("basic")), "nominal": None,
                                       "tolerance": unlinked["dimension"]["tolerance"]}
             else:
-                entry["dimension"] = {"type": values["type"],
+                entry["dimension"] = {"type": values["type"], "basic": bool(values.get("basic")),
                                       "nominal": {"value": values["nominal"], "unit": UNIT, "source": "geometry"},
                                       "tolerance": values["tolerance"]}
         elif kind == "geometric_tolerance":

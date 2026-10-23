@@ -9,11 +9,14 @@
 // placement says where a callout is drawn and nothing else: the feature it is about and every value
 // it says are the document's, wherever it stands.
 //
-// A distance between two parallel faces is drawn as a drawing draws one: its text at the label, the
-// dimension line through it square to the faces, from one face's plane to the other's, and the
-// extension lines from the anchor on the first face and its foot on the second out to it. One the
-// code never placed is anchored at the first face's edge, out from the part, so its extension lines
-// are short.
+// A distance is drawn as a drawing draws one: its text at the label, the dimension line through it
+// along what it measures, from one end to the other, and an extension line from each end out to it.
+// Each end is a flat face's plane or a round face's axis (a basic dimension to a hole is to its
+// centre line): between two planes it is measured along the first's normal, from a plane to an axis
+// along the plane's, between two axes square to both. A plane's extension line runs from the
+// anchor's foot on it, an axis's from the point of the axis nearest the dimension line. One the code
+// never placed is anchored at the first face's edge (a first axis: at its end), so its extension
+// lines are short.
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -74,12 +77,43 @@ function edgePoint(geometry, centre, n) {
   return points.reduce((best, point) => (out(point) > out(best) + 1e-9 ? point : best), points[0]).slice();
 }
 
+// How far an axis may lean off square to what a distance measures, or two axes off parallel (sin).
+const SQUARE = 1e-3;
+
 /** The direction a face's callouts go out along: a flat face's normal, a cylinder's axis. */
 function outward(geometry) {
   const surface = geometry?.surface || {};
   if (surface.type === "plane" && surface.normal) return unit(surface.normal);
   if (surface.type === "cylinder" && surface.axis) return unit(surface.axis);
   return null;
+}
+
+/**
+ * One end of a distance: a flat face's plane (`{ origin, normal }`) or a round face's axis
+ * (`{ origin, axis }`), else null.
+ */
+function distanceEnd(geometry) {
+  const surface = geometry?.surface || {};
+  if (surface.type === "plane" && surface.normal && surface.origin) return { origin: surface.origin, normal: unit(surface.normal) };
+  if (surface.type === "cylinder" && surface.axis && surface.origin) return { origin: surface.origin, axis: unit(surface.axis) };
+  return null;
+}
+
+/**
+ * The direction a distance between two ends is measured along, or null where they make none: the
+ * first plane's normal, else the other's; two axes, square to both from the first to the second
+ * (none where they are not parallel, or are one). An axis must lie square to it.
+ */
+function measuredAlong(from, to) {
+  let n;
+  if (from.normal) n = from.normal;
+  else if (to.normal) n = to.normal;
+  else {
+    if (length(cross(from.axis, to.axis)) > SQUARE) return null;
+    n = unit(across(sub(to.origin, from.origin), from.axis));
+  }
+  if (!n) return null;
+  return [from, to].every(end => !end.axis || Math.abs(dot(end.axis, n)) <= SQUARE) ? n : null;
 }
 
 /**
@@ -99,7 +133,7 @@ function defaultOffset({ anchor, out, centre, reach, turn }) {
  * - `anchor`: where its leader starts on its feature (a distance's: on its first face); where its
  *   feature is not on the page (a broken reference), where the code anchored it, and `broken`.
  * - `label`: where its text stands.
- * - `dimension`: a distance's dimension line (`from`, `to`: on each face's plane, through the label)
+ * - `dimension`: a distance's dimension line (`from`, `to`: at each end's plane or axis, through the label)
  *   and its extension lines (`extensions`), else null; a distance has no leader.
  * - `presentation`: the placement drawn (`{ anchor, offset }`), as `pmi.place` would write it.
  * - `placed`: `"given"` (its `placement` here, or the code's), or `"default"`.
@@ -118,27 +152,31 @@ export function pmiConstruction(entry, { geometry, bounds = null, turn = 0, plac
   const at = given ? { anchor: given.anchor.slice(), offset: given.offset.slice() } : null;
   const placed = given ? "given" : "default";
   if (entry.kind === "dimension" && entry.dimension?.type === "distance") {
-    const from = geometry.from, to = geometry.to;
-    const n = outward(from);
-    if (!from || !to || !n || to.surface?.type !== "plane" || from.surface?.type !== "plane") {
+    const from = distanceEnd(geometry.from), to = distanceEnd(geometry.to);
+    const n = from && to ? measuredAlong(from, to) : null;
+    if (!n) {
       return at ? { anchor: at.anchor, label: add(at.anchor, at.offset), dimension: null, presentation: at, placed, broken: true } : null;
     }
-    // Each plane through its own origin, along the first face's normal.
+    // How far along the measure a point stands; each end stands at its origin's (an axis lies square to it).
     const level = point => dot(point, n);
-    const anchor = at ? at.anchor : edgePoint(from, centre, n);
+    const onLevel = (point, end) => sub(point, scale(n, level(point) - level(end.origin)));
+    const onAxis = (point, end) => add(end.origin, scale(end.axis, dot(sub(point, end.origin), end.axis)));
+    const anchor = at ? at.anchor
+      : from.normal ? edgePoint(geometry.from, centre, n) : onAxis(pmiFeaturePoint(geometry.from, centre), from);
     const offset = at ? at.offset : (() => {
       const away = unit(across(sub(anchor, centre), n)) || anyPerpendicular(n);
       const side = turned(away, n, turn * SPREAD);
-      // Halfway between the faces, out to the side.
-      return add(scale(n, (level(to.surface.origin) - level(anchor)) / 2), scale(side, reach * 0.5));
+      // Halfway between the ends, out to the side.
+      return add(scale(n, (level(to.origin) - level(anchor)) / 2), scale(side, reach * 0.5));
     })();
     const label = add(anchor, offset);
-    // Each plane's point under a point, along the normal: the extension lines run square to it,
-    // from the anchor's foot on each face's plane (an anchor the code put off the face, at its side's
-    // mid-height, still extends from the face) out to the dimension line through the label.
-    const onPlane = (point, face) => sub(point, scale(n, level(point) - level(face.surface.origin)));
-    const onFrom = onPlane(label, from), onTo = onPlane(label, to);
-    return { anchor, label, dimension: { from: onFrom, to: onTo, extensions: [[onPlane(anchor, from), onFrom], [onPlane(anchor, to), onTo]] },
+    // The dimension line through the label, from one end's level to the other's. A plane's extension
+    // line runs square to it from the anchor's foot on the plane (an anchor the code put off the face,
+    // at its side's mid-height, still extends from the face); an axis's from its point nearest the
+    // dimension line's end, across to it.
+    const onFrom = onLevel(label, from), onTo = onLevel(label, to);
+    const extension = (end, on) => [end.normal ? onLevel(anchor, end) : onAxis(on, end), on];
+    return { anchor, label, dimension: { from: onFrom, to: onTo, extensions: [extension(from, onFrom), extension(to, onTo)] },
       presentation: { anchor, offset }, placed };
   }
   const feature = geometry.feature;

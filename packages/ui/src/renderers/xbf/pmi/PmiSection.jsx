@@ -110,7 +110,8 @@ function EntryDetails({ entry, pmi, letters }) {
       {entry.dimension.nominal === null ? <InfoRow label="Nominal" copy={false}>Unknown: nothing to measure</InfoRow>
         : <InfoRow label="Nominal" title="Measured on the geometry by the engine"><MonoValue>{mm(entry.callout.diameter ? `⌀${pmiNumber(entry.dimension.nominal, 3)}` : pmiNumber(entry.dimension.nominal, 3), entry.dimension.unit)}</MonoValue>
           <span className="text-muted-foreground">{entry.dimension.source === "geometry" ? ", measured" : ""}</span></InfoRow>}
-      {editable ? <ToleranceField value={given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance")}
+      {entry.dimension.basic ? <InfoRow label="Tolerance" copy={false}>None: a basic dimension is exact</InfoRow>
+        : editable ? <ToleranceField value={given("tolerance") === undefined ? entry.dimension.tolerance : given("tolerance")}
         onCommit={tolerance => pmi.edit(entry.id, { tolerance })} />
         : <InfoRow label="Tolerance">{entry.dimension.tolerance ? <MonoValue>{mm(pmiToleranceText(entry.dimension.tolerance).text, entry.dimension.unit)}</MonoValue> : "None given"}</InfoRow>}
     </> : null}
@@ -135,20 +136,24 @@ function EntryDetails({ entry, pmi, letters }) {
   </div>;
 }
 
+// A new annotation's glyph: a distance's, basic or not, is a dimension's.
+const optionGlyph = kind => (kind === "distance" || kind === "basic" ? "dimension" : kind);
+
 /** A new annotation being made: its kind's values to give, then Add to Quick Edit. */
 function NewEntry({ option, letters, onAdd, onCancel }) {
   const [call, setCall] = useState(option.call);
   const needsValue = call.kind === "geometric_tolerance";
   const ready = !needsValue || (Number.isFinite(call.value) && call.value > 0);
   return <div className="border-b border-border px-2 pb-2 pt-1" data-pmi-new={option.kind}>
-    <p className="flex items-center gap-1.5 py-0.5 text-tiny text-foreground"><PmiGlyph name={option.kind === "distance" ? "dimension" : option.kind} className="size-3" aria-hidden="true" />
+    <p className="flex items-center gap-1.5 py-0.5 text-tiny text-foreground"><PmiGlyph name={optionGlyph(option.kind)} className="size-3" aria-hidden="true" />
       {`New ${option.label.toLowerCase()} ${call.id}`}</p>
     {option.nominal !== null && option.nominal !== undefined ? <InfoRow label="Nominal" title="Read here off the mesh; the engine measures it exactly when the model builds" copy={false}>
       <MonoValue>{mm(pmiNumber(option.nominal, 3))}</MonoValue><span className="text-muted-foreground">, measured</span></InfoRow> : null}
-    {call.kind === "dimension" ? <ToleranceField value={call.tolerance} onCommit={tolerance => setCall(now => ({ ...now, tolerance }))} /> : null}
+    {call.kind === "dimension" && !call.basic ? <ToleranceField value={call.tolerance} onCommit={tolerance => setCall(now => ({ ...now, tolerance }))} /> : null}
     {needsValue ? <ValueField label="Tolerance" value={call.value} onCommit={value => setCall(now => ({ ...now, value }))} /> : null}
     {call.characteristic === "position" ? <DatumPicker letters={letters} value={call.datums} onChange={datums => setCall(now => ({ ...now, datums }))} /> : null}
-    {call.kind === "dimension" && !call.tolerance ? <FileSheetStatusText className="px-0">No tolerance: none is written unless you give one.</FileSheetStatusText> : null}
+    {call.kind === "dimension" && call.basic ? <FileSheetStatusText className="px-0">Exact: a basic dimension takes no tolerance.</FileSheetStatusText>
+      : call.kind === "dimension" && !call.tolerance ? <FileSheetStatusText className="px-0">No tolerance: none is written unless you give one.</FileSheetStatusText> : null}
     <div className="flex justify-end gap-1.5 pt-1">
       <Button type="button" variant="ghost" size="xs" className="h-6 text-tiny" onClick={onCancel}>Cancel</Button>
       <Button type="button" size="xs" className="h-6 text-tiny" disabled={!ready} onClick={() => onAdd(call)} data-pmi-add="">Add to Quick Edit</Button>
@@ -194,7 +199,7 @@ export default function PmiSection({ pmi, picked, moving, request = null, onRequ
           <DropdownMenuLabel className="text-muted-foreground">On the faces picked</DropdownMenuLabel>
           {options.map(option => <DropdownMenuItem key={option.kind} disabled={!option.available} data-pmi-new-kind={option.kind}
             onSelect={() => setDraft(option)}>
-            <PmiGlyph name={option.kind === "distance" ? "dimension" : option.kind} className="size-3.5" aria-hidden="true" />
+            <PmiGlyph name={optionGlyph(option.kind)} className="size-3.5" aria-hidden="true" />
             <span className="min-w-0 flex-1 truncate">{option.label}</span>
             {!option.available ? <span className="truncate text-micro text-muted-foreground">{option.need}</span> : null}
           </DropdownMenuItem>)}

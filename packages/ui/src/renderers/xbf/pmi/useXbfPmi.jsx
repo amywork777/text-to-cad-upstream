@@ -16,8 +16,8 @@ const NO_CHANGES = Object.freeze([]);
 const glyphOf = entry => (entry.kind === "datum" ? "datum" : entry.kind === "dimension" ? (entry.dimension?.type === "diameter" ? "diameter" : "dimension")
   : entry.kind === "geometric_tolerance" ? entry.tolerance?.characteristic || "frame" : "unsupported");
 const callGlyph = call => (call.kind === "datum" ? "datum" : call.kind === "dimension" ? (call.type === "diameter" ? "diameter" : "dimension") : call.characteristic);
-const KIND_WORDS = Object.freeze({ datum: "datum", distance: "distance", diameter: "diameter", flatness: "flatness", position: "position" });
-const callKind = call => (call.kind === "dimension" ? call.type : call.kind === "datum" ? "datum" : call.characteristic);
+const KIND_WORDS = Object.freeze({ datum: "datum", distance: "distance", basic: "basic dimension", diameter: "diameter", flatness: "flatness", position: "position" });
+const callKind = call => (call.kind === "dimension" ? (call.basic ? "basic" : call.type) : call.kind === "datum" ? "datum" : call.characteristic);
 
 /**
  * @param {{ scene: object | null, tree: ReturnType<typeof import("../xbfTree.js").presentXbfTree>, bounds: { min: number[], max: number[] } | null,
